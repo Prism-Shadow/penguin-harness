@@ -150,9 +150,7 @@ function readCollapsed(): Record<string, boolean> {
   try {
     const raw = localStorage.getItem(COLLAPSE_KEY);
     const parsed: unknown = raw === null ? {} : JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, boolean>)
-      : {};
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, boolean>) : {};
   } catch {
     return {};
   }
@@ -214,14 +212,13 @@ export function TicketsPage() {
   const [priFilter, setPriFilter] = useState<readonly OrgTicketPriority[]>(() => {
     const raw = params.get("pri");
     if (raw === null || raw === "") return [];
-    return raw.split(",").filter((p): p is OrgTicketPriority =>
-      p === "P0" || p === "P1" || p === "P2",
-    );
+    return raw
+      .split(",")
+      .filter((p): p is OrgTicketPriority => p === "P0" || p === "P1" || p === "P2");
   });
   const queueOnly = quick === "queue";
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(readCollapsed);
-  const isCollapsed = (section: string): boolean =>
-    collapsed[`${orgId}:${section}`] === true;
+  const isCollapsed = (section: string): boolean => collapsed[`${orgId}:${section}`] === true;
   const toggleCollapsed = (section: string) => {
     const key = `${orgId}:${section}`;
     setCollapsed((prev) => {
@@ -444,9 +441,7 @@ export function TicketsPage() {
   const cardBody = (t: OrgTicketItem) => {
     const overdue = isOverdue(t.due, todayKey) && t.status !== "done" && t.status !== "rejected";
     const age =
-      t.status === "proposed" || t.status === "review"
-        ? ticketAgeDays(t.ticketId, todayKey)
-        : null;
+      t.status === "proposed" || t.status === "review" ? ticketAgeDays(t.ticketId, todayKey) : null;
     const showAge = age !== null && age >= 1;
     return (
       <>
@@ -836,8 +831,7 @@ export function TicketsPage() {
             : visibleColumns.map((col) => {
                 const shut = isCollapsed(`col:${col.status}`);
                 const visibleIds = col.tickets.map((t) => t.ticketId);
-                const allSel =
-                  visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+                const allSel = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
                 const toggleColumn = () => toggleCollapsed(`col:${col.status}`);
                 const toggleAll = () => {
                   setSelected((prev) => {
@@ -859,92 +853,90 @@ export function TicketsPage() {
                         sort,
                       });
                 return (
-                <div
-                  key={col.status}
-                  role="group"
-                  aria-label={`${S.company.tickets.columns[col.status] ?? col.status} · ${col.tickets.length}`}
-                  {...{ [TICKET_COLUMN_ATTR]: col.status }}
-                  className={`${columnClass} ${
-                    dropOver === col.status
-                      ? "border-accent ring-1 ring-accent"
-                      : highlightColumn === col.status && isTicketStatus(highlightColumn)
-                        ? "border-gray-400 dark:border-gray-600"
-                        : ""
-                  }`}
-                >
-                  <div className={`h-1 rounded-t-md ${COLUMN_BAR[col.status]}`} />
-                  <div className="flex items-center gap-2 px-2.5 py-2">
-                    <button
-                      type="button"
-                      onClick={toggleColumn}
-                      aria-expanded={!shut}
-                      aria-label={shut ? S.company.tickets.expand : S.company.tickets.collapse}
-                      className="rounded text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
-                    >
-                      <Chevron open={!shut} size={ICON_SIZE.chevronDense} />
-                    </button>
-                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700 dark:text-gray-200">
-                      {S.company.tickets.columns[col.status] ?? col.status}
-                    </span>
-                    {selectMode && col.tickets.length > 0 && (
+                  <div
+                    key={col.status}
+                    role="group"
+                    aria-label={`${S.company.tickets.columns[col.status] ?? col.status} · ${col.tickets.length}`}
+                    {...{ [TICKET_COLUMN_ATTR]: col.status }}
+                    className={`${columnClass} ${
+                      dropOver === col.status
+                        ? "border-accent ring-1 ring-accent"
+                        : highlightColumn === col.status && isTicketStatus(highlightColumn)
+                          ? "border-gray-400 dark:border-gray-600"
+                          : ""
+                    }`}
+                  >
+                    <div className={`h-1 rounded-t-md ${COLUMN_BAR[col.status]}`} />
+                    <div className="flex items-center gap-2 px-2.5 py-2">
                       <button
                         type="button"
-                        onClick={toggleAll}
-                        className="shrink-0 text-xs text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+                        onClick={toggleColumn}
+                        aria-expanded={!shut}
+                        aria-label={shut ? S.company.tickets.expand : S.company.tickets.collapse}
+                        className="rounded text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
                       >
-                        {allSel ? S.company.tickets.deselectAll : S.company.tickets.selectAll}
+                        <Chevron open={!shut} size={ICON_SIZE.chevronDense} />
                       </button>
-                    )}
-                    <Count n={col.tickets.length} />
-                  </div>
-                  {!shut && (
-                    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
-                      {groups === null
-                        ? col.tickets.map(card)
-                        : groups.map((g) => {
-                            const gkey = `group:${col.status}:${g.key === "" ? "(none)" : g.key}`;
-                            const gshut = isCollapsed(gkey);
-                            return (
-                              <div key={g.key === "" ? "(none)" : g.key}>
-                                {/* The heading holds at the top of the column while its own cards
+                      <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700 dark:text-gray-200">
+                        {S.company.tickets.columns[col.status] ?? col.status}
+                      </span>
+                      {selectMode && col.tickets.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={toggleAll}
+                          className="shrink-0 text-xs text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+                        >
+                          {allSel ? S.company.tickets.deselectAll : S.company.tickets.selectAll}
+                        </button>
+                      )}
+                      <Count n={col.tickets.length} />
+                    </div>
+                    {!shut && (
+                      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
+                        {groups === null
+                          ? col.tickets.map(card)
+                          : groups.map((g) => {
+                              const gkey = `group:${col.status}:${g.key === "" ? "(none)" : g.key}`;
+                              const gshut = isCollapsed(gkey);
+                              return (
+                                <div key={g.key === "" ? "(none)" : g.key}>
+                                  {/* The heading holds at the top of the column while its own cards
                                     pass under it — an opaque band, or the card behind shows
                                     through the label. */}
-                                <button
-                                  type="button"
-                                  onClick={() => toggleCollapsed(gkey)}
-                                  aria-expanded={!gshut}
-                                  className="sticky top-0 z-[1] flex w-full items-center gap-1.5 rounded bg-gray-50 px-1 py-1 text-left text-xs text-gray-600 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-                                >
-                                  <Chevron open={!gshut} size={ICON_SIZE.chevronDense} />
-                                  <span className="min-w-0 flex-1 truncate font-medium">
-                                    {g.label === ""
-                                      ? S.company.tickets.noGroup
-                                      : g.label}
-                                  </span>
-                                  <Count n={g.tickets.length} />
-                                </button>
-                                {!gshut && g.tickets.map(card)}
-                              </div>
-                            );
-                          })}
-                    {col.tickets.length === 0 && (
-                      <div
-                        className={`flex min-h-20 flex-1 items-center justify-center rounded-md border border-dashed px-2 text-center text-xs ${
-                          dropOver === col.status
-                            ? "border-accent text-gray-600 dark:text-gray-300"
-                            : "border-gray-300 text-gray-400 dark:border-gray-700 dark:text-gray-500"
-                        }`}
-                      >
-                        {lifted !== null && canMove(lifted.ticket.status, col.status)
-                          ? S.company.tickets.dropHere
-                          : narrowed
-                            ? S.company.tickets.searchNoMatch
-                            : S.company.tickets.columnEmpty}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleCollapsed(gkey)}
+                                    aria-expanded={!gshut}
+                                    className="sticky top-0 z-[1] flex w-full items-center gap-1.5 rounded bg-gray-50 px-1 py-1 text-left text-xs text-gray-600 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                                  >
+                                    <Chevron open={!gshut} size={ICON_SIZE.chevronDense} />
+                                    <span className="min-w-0 flex-1 truncate font-medium">
+                                      {g.label === "" ? S.company.tickets.noGroup : g.label}
+                                    </span>
+                                    <Count n={g.tickets.length} />
+                                  </button>
+                                  {!gshut && g.tickets.map(card)}
+                                </div>
+                              );
+                            })}
+                        {col.tickets.length === 0 && (
+                          <div
+                            className={`flex min-h-20 flex-1 items-center justify-center rounded-md border border-dashed px-2 text-center text-xs ${
+                              dropOver === col.status
+                                ? "border-accent text-gray-600 dark:text-gray-300"
+                                : "border-gray-300 text-gray-400 dark:border-gray-700 dark:text-gray-500"
+                            }`}
+                          >
+                            {lifted !== null && canMove(lifted.ticket.status, col.status)
+                              ? S.company.tickets.dropHere
+                              : narrowed
+                                ? S.company.tickets.searchNoMatch
+                                : S.company.tickets.columnEmpty}
+                          </div>
+                        )}
                       </div>
                     )}
-                    </div>
-                  )}
-                </div>
+                  </div>
                 );
               })}
         </div>

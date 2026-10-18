@@ -356,10 +356,7 @@ describe("card facts", () => {
   it("groups cards by priority P0-first and by parent with the orphan bucket last", () => {
     expect(
       groupTickets(
-        [
-          ticket({ ticketId: "a", priority: "P2" }),
-          ticket({ ticketId: "b", priority: "P0" }),
-        ],
+        [ticket({ ticketId: "a", priority: "P2" }), ticket({ ticketId: "b", priority: "P0" })],
         "priority",
       ).map((g) => g.key),
     ).toEqual(["P0", "P2"]);

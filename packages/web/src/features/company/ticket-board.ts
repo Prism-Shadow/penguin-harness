@@ -215,9 +215,7 @@ export function matchesQuickFilter(
     // ticket is never "overdue", however old its date.
     case "overdue":
       return (
-        isOverdue(t.due, opts.todayKey ?? "") &&
-        t.status !== "done" &&
-        t.status !== "rejected"
+        isOverdue(t.due, opts.todayKey ?? "") && t.status !== "done" && t.status !== "rejected"
       );
     case "mine":
       return opts.me !== undefined && opts.me !== "" && t.owner === opts.me;
