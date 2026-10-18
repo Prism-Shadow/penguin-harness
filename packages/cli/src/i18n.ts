@@ -86,6 +86,9 @@ export interface Messages {
     addFastMode: string;
     addNoFastMode: string;
     fastModeUnsupported: (ref: string) => string;
+    addPromptCache1h: string;
+    addNoPromptCache1h: string;
+    promptCache1hUnsupported: (ref: string) => string;
     addPriceCacheRead: string;
     addPriceCacheWrite: string;
     addPriceOutput: string;
@@ -1266,6 +1269,12 @@ const en: Messages = {
     addNoFastMode: "Disable fast mode (the default); omit both to keep current",
     fastModeUnsupported: (ref: string): string =>
       `Warning: ${ref} cannot serve fast mode — MMSP's client for it rejects the parameter, so its requests will fail. Re-run with --no-fast-mode to turn it off.`,
+    addPromptCache1h:
+      "Ask the provider for the one-hour prompt cache (Anthropic only): a conversation resumed after more than five minutes still reads its prefix back instead of paying for it again",
+    addNoPromptCache1h:
+      "Use the provider's default five-minute cache (the default); omit both to keep current",
+    promptCache1hUnsupported: (ref: string): string =>
+      `Warning: ${ref} cannot carry the one-hour prompt cache — its MMSP client rejects the parameter, so its requests will fail. Re-run with --no-prompt-cache-1h to turn it off.`,
     addPriceCacheRead: "Price per 1M tokens: cache read (USD)",
     addPriceCacheWrite: "Price per 1M tokens: cache write (USD)",
     addPriceOutput: "Price per 1M tokens: output (USD)",
@@ -2407,6 +2416,11 @@ const zh: Messages = {
     addNoFastMode: "关闭快速模式（缺省即关闭）；两者都不给则保留原值",
     fastModeUnsupported: (ref: string): string =>
       `警告：${ref} 不支持快速模式——MMSP 为它选用的 client 会拒绝该参数，其请求都会失败。请用 --no-fast-mode 重新执行以关闭。`,
+    addPromptCache1h:
+      "要求提供方使用一小时提示缓存（仅 Anthropic）：间隔超过五分钟再回到会话时，前缀仍从缓存读取，不必重新付费",
+    addNoPromptCache1h: "使用提供方默认的五分钟缓存（缺省即如此）；两者都不给则保留原值",
+    promptCache1hUnsupported: (ref: string): string =>
+      `警告：${ref} 无法使用一小时提示缓存——MMSP 为它选用的 client 会拒绝该参数，其请求都会失败。请用 --no-prompt-cache-1h 重新执行以关闭。`,
     addPriceCacheRead: "每百万 token 价格：缓存命中（USD）",
     addPriceCacheWrite: "每百万 token 价格：缓存未命中（USD）",
     addPriceOutput: "每百万 token 价格：输出（USD）",

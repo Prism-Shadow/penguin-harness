@@ -155,6 +155,25 @@ describe("planModelSync", () => {
     expect(plan.models[0]?.apiKey).toBe("sk-newer-0123456789");
   });
 
+  it("carries the one-hour prompt-cache annotation in both directions", () => {
+    const plan = planModelSync(
+      { models: [local({ prompt_cache_1h: true })] },
+      remoteTable({
+        models: [
+          {
+            provider: "anthropic",
+            modelId: "claude-opus-5",
+            isDefault: false,
+            promptCache1h: true,
+            effective: followsNothing,
+          },
+        ],
+      }),
+    );
+    expect(plan.models.find((m) => m.provider === "deepseek")?.promptCache1h).toBe(true);
+    expect(plan.models.find((m) => m.modelId === "claude-opus-5")?.promptCache1h).toBe(true);
+  });
+
   it("omits a key we do not have, rather than clearing theirs", () => {
     const plan = planModelSync(
       { models: [local({ api_key: undefined, base_url: "https://gw.example" })] },

@@ -4,8 +4,9 @@
  * `prompt-cache-invariants.test.ts` asks whether the harness assembles each request as an
  * extension of the one before it. This suite asks the question a bill answers: with the
  * provider's own rules applied — the automatic breakpoint, the minimum cacheable prefix, the
- * position lookback, the five-minute TTL — does the conversation keep hitting the cache while it
- * is interrupted, backgrounded, delegated, scheduled, resumed, retuned and compacted?
+ * position lookback, the entry lifetime (five minutes by default, one hour under the opt-in
+ * annotation's `ttl: "1h"`) — does the conversation keep hitting the cache while it is
+ * interrupted, backgrounded, delegated, scheduled, resumed, retuned and compacted?
  *
  * Each scenario drives a real `Session` over a real `GenerativeModel` whose provider stream is
  * scripted, feeds every recorded request to one `PromptCacheSim` in the order it was issued (the
@@ -40,6 +41,7 @@ import type {
 } from "../src/interfaces/index.js";
 import {
   CHILD_SESSION_ID,
+  DEFAULT_TTL_MS,
   MAIN,
   META,
   SESSION_ID,
@@ -56,13 +58,14 @@ import {
   ordering,
   positionCount,
   prefixTokens,
+  PromptCacheSim,
   recordingModel,
   replay,
   tokensBeforeLastUserMessage,
   toolTurn,
   wireMessage,
 } from "./helpers/prompt-cache/index.js";
-import type { RecordedRequest } from "./helpers/prompt-cache/index.js";
+import type { CacheUsage, RecordedRequest } from "./helpers/prompt-cache/index.js";
 
 // ---------------------------------------------------------------------------
 // Scaffolding each scenario needs
@@ -164,6 +167,65 @@ describe("the prompt cache across a Session's lifecycle", () => {
 
     expect(order).toHaveLength(3);
     expectHits(order, replay(order));
+  });
+
+  it("a user back after ten minutes reads the whole prefix only with the one-hour annotation", async () => {
+    const tenMinutes = 10 * 60 * 1000;
+    // Longer than the default entry lives, shorter than the one-hour one: the gap alone decides
+    // whether the second task starts from the first task's cache or from nothing.
+    expect(tenMinutes).toBeGreaterThan(DEFAULT_TTL_MS);
+    const replies = [{ text: "Starting on it." }, { text: "Picking it up again." }];
+
+    // The default lifetime: the annotation is absent, the client sends the plain ephemeral
+    // marker, and the entry written by the first task has expired by the time the next arrives.
+    const plain = slowUser(tenMinutes);
+    const plainModel = recordingModel(modelConfig(), replies, {
+      label: "5m",
+      onRequest: plain.onRequest,
+    });
+    const plainSession = makeSession({ llm: plainModel.model, environment: fakeEnvironment });
+    await collect(
+      plainSession.run([userText("what does the entry point do?")], { approve: allowAll }),
+    );
+    plain.wait();
+    await collect(
+      plainSession.run([userText("anything else worth knowing?")], { approve: allowAll }),
+    );
+    expect(plainModel.requests).toHaveLength(2);
+    expect(plainModel.requests[0]!.wireConfig.cache_control).toEqual({ type: "ephemeral" });
+    expect(plain.usages[1]!.cache_read_input_tokens).toBe(0);
+    expect(plain.usages[1]!.cache_creation_input_tokens).toBe(
+      prefixTokens(plainModel.requests[1]!),
+    );
+
+    // The one-hour annotation: the same conversation, the same gap, and the client now sends
+    // `ttl: "1h"` — the entry the first task wrote is still live, so nothing is paid twice.
+    const annotated = slowUser(tenMinutes);
+    const cached = recordingModel(modelConfig({ promptCache1h: true }), replies, {
+      label: "1h",
+      onRequest: annotated.onRequest,
+    });
+    const cachedSession = makeSession({ llm: cached.model, environment: fakeEnvironment });
+    await collect(
+      cachedSession.run([userText("what does the entry point do?")], { approve: allowAll }),
+    );
+    annotated.wait();
+    await collect(
+      cachedSession.run([userText("anything else worth knowing?")], { approve: allowAll }),
+    );
+    expect(cached.requests).toHaveLength(2);
+    for (const request of cached.requests) {
+      expect(request.wireConfig.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+    }
+    expectHits(cached.requests, annotated.usages);
+    const report = formatCacheReport(cached.requests, annotated.usages);
+    expect(annotated.usages[1]!.cache_read_input_tokens, report).toBe(
+      prefixTokens(cached.requests[0]!),
+    );
+    // Only the new user message is written; the prefix behind it is read, not paid for again.
+    expect(annotated.usages[1]!.cache_creation_input_tokens, report).toBe(
+      prefixTokens(cached.requests[1]!) - prefixTokens(cached.requests[0]!),
+    );
   });
 
   it("an interrupted turn still hits the prompt cache up to its last user message", async () => {
@@ -519,6 +581,30 @@ describe("the prompt cache across a Session's lifecycle", () => {
 // ---------------------------------------------------------------------------
 // Scenario helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * One provider cache whose clock only moves when the user steps away.
+ *
+ * Every recorded request goes through the simulator as it is issued, so a write lands before the
+ * next request looks anything up; `wait` is the user's absence between two tasks. Nothing else in
+ * the scenario advances the clock, so the only expiry it can model is that absence.
+ */
+function slowUser(gapMs: number): {
+  onRequest: (request: RecordedRequest) => void;
+  usages: CacheUsage[];
+  wait: () => void;
+} {
+  let clock = 1_000_000;
+  const sim = new PromptCacheSim({ now: () => clock });
+  const usages: CacheUsage[] = [];
+  return {
+    usages,
+    onRequest: (request) => void usages.push(sim.request(request)),
+    wait: () => {
+      clock += gapMs;
+    },
+  };
+}
 
 /** One Session, a thinking-level move between its first and second task. */
 async function driveThinkingMove(onRequest: (request: RecordedRequest) => void): Promise<void> {

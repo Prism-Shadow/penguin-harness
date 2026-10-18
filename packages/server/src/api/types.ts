@@ -625,6 +625,15 @@ export interface ModelInfo {
    * unset = off. Models without a fast tier reject requests carrying it.
    */
   fastMode?: boolean;
+  /**
+   * Per-model one-hour prompt cache (TOML `prompt_cache_1h` annotation; user-only, never
+   * preset by the built-in catalog): when true, session requests ask the provider for the
+   * one-hour cache lifetime (MMSP UniConfig `prompt_caching = "enhance"`) instead of the
+   * five-minute default, so a conversation picked up after a longer break still reads its
+   * prefix back. Only `true` is reported; unset = the provider's default lifetime. Only the
+   * Anthropic client carries the value; every other client rejects it.
+   */
+  promptCache1h?: boolean;
   pricing?: ModelPricingDto;
   /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
   discount?: number;
@@ -720,6 +729,11 @@ export interface ModelUpdateEntry {
   maxTokens?: number;
   /** Per-model fast mode: only `true` is persisted; omitted or `false` clears the annotation (absent = off). */
   fastMode?: boolean;
+  /**
+   * Per-model one-hour prompt cache: only `true` is persisted; omitted or `false` clears the
+   * annotation (absent = the provider's default lifetime).
+   */
+  promptCache1h?: boolean;
   pricing?: ModelPricingDto;
   /**
    * Promotion to store for this row, a fraction in (0, 1) off `pricing`; `null` clears it. Omitted
@@ -799,6 +813,13 @@ export interface ModelTestRequest {
    * annotation. Lets "Test connection" surface a fast-mode rejection before saving.
    */
   fastMode?: boolean;
+  /**
+   * Test with the one-hour prompt cache (the frontend always sends the form's current value,
+   * so an unsaved toggle — either direction — is what gets tested); omitted falls back to the
+   * stored annotation. Lets "Test connection" surface a rejection on a client that cannot
+   * carry the hour before saving.
+   */
+  promptCache1h?: boolean;
 }
 
 /**

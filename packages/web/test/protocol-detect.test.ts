@@ -394,6 +394,7 @@ describe("rowToEntry (the persistence funnel)", () => {
     contextWindow: "",
     maxTokens: "",
     fastMode: false,
+    promptCache1h: false,
     clientType: "",
     cacheRead: "",
     cacheWrite: "",
@@ -430,6 +431,11 @@ describe("rowToEntry (the persistence funnel)", () => {
     expect(rowToEntry(row({ provider: "penguin-go", discount: 0.5 }))).not.toHaveProperty(
       "discount",
     );
+  });
+
+  it("submits the one-hour cache only when on, like fast mode", () => {
+    expect(rowToEntry(row({ promptCache1h: true }))).toHaveProperty("promptCache1h", true);
+    expect(rowToEntry(row({ promptCache1h: false }))).not.toHaveProperty("promptCache1h");
   });
 });
 

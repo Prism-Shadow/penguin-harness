@@ -1367,6 +1367,10 @@ export class Agent {
         // keeps them working (titles included) even while the annotation is enabled on a
         // model that rejects it.
         ...(entry.fast_mode === true ? { fastMode: true } : {}),
+        // The one-hour cache is the same kind of session-request annotation, scoped the same
+        // way: the bare/meta LLM and the vision describer keep the provider's five-minute
+        // default, since their one-off requests neither build a long prefix nor wait on one.
+        ...(entry.prompt_cache_1h === true ? { promptCache1h: true } : {}),
         ...(context.thinkingLevel !== undefined ? { thinkingLevel: context.thinkingLevel } : {}),
         sessionId,
         ...(context.requestTimeoutMs !== undefined

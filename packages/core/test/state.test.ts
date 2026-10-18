@@ -1312,6 +1312,65 @@ describe("project-config round trip", () => {
     expect(m?.max_tokens).toBe(2048);
   });
 
+  it("addModel persists prompt_cache_1h and upsert preserves it when not re-specified", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "hour-cache",
+      client_type: "anthropic-official",
+      prompt_cache_1h: true,
+    });
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(await fs.readFile(file, "utf8")).toContain("prompt_cache_1h = true");
+    const ref = { provider: "custom", model_id: "hour-cache" };
+    let m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref);
+    expect(m?.prompt_cache_1h).toBe(true);
+    // Only supplements context_window, without prompt_cache_1h: the annotation is kept.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "hour-cache",
+      context_window: 64000,
+    });
+    m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref);
+    expect(m?.prompt_cache_1h).toBe(true);
+    expect(m?.context_window).toBe(64000);
+    // An explicit false clears it rather than storing `false`: absent is the provider's default
+    // lifetime, so there is nothing to spell.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "hour-cache",
+      prompt_cache_1h: false,
+    });
+    expect(await fs.readFile(file, "utf8")).not.toContain("prompt_cache_1h");
+    m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref);
+    expect(m?.prompt_cache_1h).toBeUndefined();
+  });
+
+  it("a hand-edited prompt_cache_1h = false stays off, and the next addModel drops the key", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "hand-edited"',
+        "prompt_cache_1h = false",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const ref = { provider: "custom", model_id: "hand-edited" };
+    // Reading does not promote a stored `false` to `true`...
+    const loaded = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref);
+    expect(loaded?.prompt_cache_1h).toBe(false);
+    // ...and the next write of that row normalizes it away instead of persisting `false`.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { ...ref, context_window: 32000 });
+    expect(await fs.readFile(file, "utf8")).not.toContain("prompt_cache_1h");
+    const m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref);
+    expect(m?.prompt_cache_1h).toBeUndefined();
+    expect(m?.context_window).toBe(32000);
+  });
+
   it("setVisionModel persists and validates the target", async () => {
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "custom",

@@ -130,6 +130,7 @@ import {
   groupKeyReaches,
   isAddableGroup,
   modelHomepageUrl,
+  promptCache1hSupported,
   providerInfo,
   unroutableVendorModel,
 } from "@prismshadow/penguin-core/model-catalog";
@@ -423,6 +424,12 @@ export interface RowState {
    */
   fastMode: boolean;
   /**
+   * Per-model one-hour prompt cache (MMSP `prompt_caching: "enhance"`): off by default;
+   * user-only, never preset by the catalog, editable on every model. Only the Anthropic
+   * official client carries the value, hence the standing hint while ON.
+   */
+  promptCache1h: boolean;
+  /**
    * The row's OWN MMSP client type — an override of its group's. Empty means the row follows its
    * group (connection.ts): a gateway preset follows its group's protocol, a vendor preset is
    * routed by the vendor family its id begins with, and a NEW custom model starts with nothing
@@ -661,6 +668,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
     fastMode: m.fastMode === true,
+    promptCache1h: m.promptCache1h === true,
     clientType: m.clientType ?? "",
     cacheRead: m.pricing ? String(m.pricing.cacheRead) : "",
     cacheWrite: m.pricing ? String(m.pricing.cacheWrite) : "",
@@ -738,22 +746,51 @@ export function fastModeState(
 }
 
 /**
- * Layout of the dialog's capability row, which carries the vision-support and fast-mode
- * switches side by side in the two-up grid.
+ * Whether the dialog offers the one-hour prompt-cache switch for a draft row.
  *
- * Neither switch is guaranteed to be there: vision is read-only catalog metadata on preset
- * models (no switch at all), and fast mode is withheld wherever the routed client rejects the
- * parameter (see fastModeState). So the pair is a coincidence, not an invariant, and the row
- * degrades in both directions — with neither switch it must not be rendered at all (an empty
- * grid still draws the parent's `space-y` gap), and with exactly one the lone switch spans
- * both columns rather than sitting in a half-width cell next to dead space.
+ * Only MMSP's Anthropic official client carries `prompt_caching = "enhance"`; every other
+ * client throws `UnsupportedParameterError` before any network I/O, so arming the switch there
+ * would fail every turn. `show` keeps the switch for a row that already stores the annotation,
+ * for the same reason as fastModeState: a value that arrived another way has to stay switchable
+ * off. The client type is the one the entry will be used with — its own, else its group's, else
+ * the compatible client a custom-like entry is saved on — the same resolution fastModeState
+ * makes and for the same reason.
  */
-export function capabilityRow(present: { vision: boolean; fastMode: boolean }): {
+export function promptCache1hState(
+  row: Pick<RowState, "provider" | "modelId" | "clientType" | "promptCache1h">,
+  inherited: { clientType?: string | undefined } = {},
+): { supported: boolean; show: boolean } {
+  const clientType =
+    row.clientType.trim() ||
+    inherited.clientType?.trim() ||
+    (isCustomLikeGroup(row.provider) ? DEFAULT_CUSTOM_CLIENT_TYPE : "");
+  const supported = promptCache1hSupported(row.modelId.trim(), clientType || undefined);
+  return { supported, show: supported || row.promptCache1h };
+}
+
+/**
+ * Layout of the dialog's capability row, which carries the vision-support, fast-mode and
+ * one-hour-cache switches side by side in the two-up grid.
+ *
+ * None of the switches is guaranteed to be there: vision is read-only catalog metadata on
+ * preset models (no switch at all), fast mode is withheld wherever the routed client rejects the
+ * parameter (see fastModeState), and the one-hour cache only where the client is Anthropic's
+ * official one (see promptCache1hState). So which cells exist is a coincidence, not an
+ * invariant, and the row degrades both ways — with no switch it must not be rendered at all (an
+ * empty grid still draws the parent's `space-y` gap), and when the visible count does not fill
+ * the grid evenly the lone cell spans both columns rather than sitting in a half-width cell next
+ * to dead space.
+ */
+export function capabilityRow(present: {
+  vision: boolean;
+  fastMode: boolean;
+  promptCache1h: boolean;
+}): {
   show: boolean;
   cellClass: string | undefined;
 } {
-  const both = present.vision && present.fastMode;
-  return { show: present.vision || present.fastMode, cellClass: both ? undefined : "col-span-2" };
+  const count = [present.vision, present.fastMode, present.promptCache1h].filter(Boolean).length;
+  return { show: count > 0, cellClass: count % 2 === 1 ? "col-span-2" : undefined };
 }
 
 /**
@@ -829,6 +866,9 @@ export function rowToEntry(row: RowState, group?: ProviderConnectionDto): ModelU
   if (row.maxTokens.trim() && Number.isFinite(mt) && mt > 0) entry.maxTokens = mt;
   // Off by default: submitted only when enabled (omitting clears the stored annotation; the server never persists false).
   if (row.fastMode) entry.fastMode = true;
+  // The one-hour cache follows the same rule: absent is the provider's default lifetime, so
+  // only `true` is submitted and omitting clears the stored annotation.
+  if (row.promptCache1h) entry.promptCache1h = true;
   const cr = Number(row.cacheRead.trim());
   const cwr = Number(row.cacheWrite.trim());
   const out = Number(row.output.trim());
@@ -2773,6 +2813,7 @@ function ModelDialog({
       contextWindow: "",
       maxTokens: "",
       fastMode: false,
+      promptCache1h: false,
       clientType: "",
       cacheRead: "",
       cacheWrite: "",
@@ -2842,13 +2883,19 @@ function ModelDialog({
   // Read from the live form, not the saved row, so editing the upstream id, the protocol or
   // the base URL updates the answer as it is typed.
   const { protocol: fastProtocol, show: showFastMode } = fastModeState(form, inherited);
+  const { supported: promptCache1hSupport, show: showPromptCache1h } = promptCache1hState(
+    form,
+    inherited,
+  );
 
-  // Vision support and fast mode share one row; either can be missing, so the row's own
-  // presence and the cell width follow from which switches are actually there (capabilityRow).
+  // Vision support and the two per-model request switches share one row; any of them can be
+  // missing, so the row's own presence and the cell width follow from which switches are
+  // actually there (capabilityRow).
   const showVision = !preset;
   const { show: showCapabilityRow, cellClass: toggleCellClass } = capabilityRow({
     vision: showVision,
     fastMode: showFastMode,
+    promptCache1h: showPromptCache1h,
   });
 
   const set = (patch: Partial<RowState>) => draft.patch(patch);
@@ -2904,6 +2951,7 @@ function ModelDialog({
       // unsaved toggle-off must override a stored fast_mode=true, so the probe tests
       // exactly the draft's serving tier.
       body.fastMode = form.fastMode;
+      body.promptCache1h = form.promptCache1h;
       const res = await api.testModel(projectId, body);
       if (res.ok) toastSuccess(S.models.testOk(res.latencyMs ?? 0));
       else reportTestFailure(res.message ?? "");
@@ -3852,6 +3900,44 @@ function ModelDialog({
                 should be. */}
             {form.fastMode && fastProtocol === undefined && (
               <p className={`mt-1 text-xs ${toneInk.attention}`}>{S.models.fastModeUnsupported}</p>
+            )}
+          </div>
+        )}
+
+        {/* One-hour prompt cache: per-model opt-in to the provider's longer cache lifetime,
+            so a conversation resumed after a break longer than the default five minutes still
+            reads its prefix back instead of paying for it again. Offered only where MMSP's
+            routed client carries the value (promptCache1hSupported) — every other client
+            rejects it before any network I/O. */}
+        {showPromptCache1h && (
+          <div className={toggleCellClass}>
+            <label
+              className={`inline-flex items-center gap-2 ${canEdit ? "" : "cursor-not-allowed"}`}
+              data-tooltip={S.models.promptCache1hHint}
+              data-tooltip-extra
+            >
+              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                {S.models.promptCache1h}
+              </span>
+              <Switch
+                checked={form.promptCache1h}
+                disabled={!canEdit}
+                onChange={(promptCache1h) => set({ promptCache1h })}
+                aria-label={S.models.promptCache1h}
+              />
+            </label>
+            {form.promptCache1h && (
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                {S.models.promptCache1hHint}
+              </p>
+            )}
+            {/* Reachable only for a stored annotation the rule would not have offered (a
+                hand-edited config, the CLI flag, or a protocol changed after the fact): the
+                switch is kept visible precisely so it can be turned off. */}
+            {form.promptCache1h && !promptCache1hSupport && (
+              <p className={`mt-1 text-xs ${toneInk.attention}`}>
+                {S.models.promptCache1hUnsupported}
+              </p>
             )}
           </div>
         )}
