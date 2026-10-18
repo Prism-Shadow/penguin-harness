@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** feature
 - **Scope:** `server`
+- **PR:** [#1192](https://github.com/Prism-Shadow/penguin-harness/pull/1192)
 
 [English](2026-10-18-postgres-backend.md)
 
