@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** feature
 - **Scope:** `server`, `web`, `ui`, `ui-gallery`, `docs`
+- **PR:** [#1204](https://github.com/Prism-Shadow/penguin-harness/pull/1204)
 
 [中文版](2026-10-18-reconnect-retry.zh.md)
 
