@@ -24,8 +24,19 @@ import { ICONS, MenuItem, RowHoverActions } from "@prismshadow/penguin-ui";
 import type { AnchorRect, RowActionItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
-/** One thing a Session row can do to its Session. */
-export type SessionRowAction = "pin" | "rename" | "copy" | "messaging" | "archive" | "delete";
+/**
+ * One thing a Session row can do to its Session. `model` is a company desk row's alone: it
+ * sets the employee's own model (and renews the desk onto it). A development Session's model
+ * is switched from inside the conversation instead, so the development menu never offers it.
+ */
+export type SessionRowAction =
+  | "pin"
+  | "rename"
+  | "copy"
+  | "messaging"
+  | "archive"
+  | "delete"
+  | "model";
 
 /**
  * Row state the labels and glyphs read (the pin toggle flips on it). A row the sidebar draws is
@@ -74,9 +85,9 @@ export function rowActionsFor(
  * A company desk row's menu (features/company/org-session-groups.tsx). A desk's title and its
  * lifecycle belong to the organization — the employee names it, hiring and firing open and
  * close it — so rename, archive, delete and pin are not its reader's to run. What is left is
- * which Session this is and what it is bound to.
+ * which Session this is, what runs it, and what it is bound to.
  */
-export const DESK_ROW_ACTIONS: readonly SessionRowAction[] = ["copy", "messaging"];
+export const DESK_ROW_ACTIONS: readonly SessionRowAction[] = ["copy", "model", "messaging"];
 
 export interface SessionRowMenuItem {
   /** Label in the action's current state, and the icon-only buttons' accessible name. */
@@ -113,6 +124,8 @@ export function sessionRowMenuItem(
       return { label: S.chat.archiveSession, icon: ICONS.archive, danger: false };
     case "delete":
       return { label: S.chat.deleteSession, icon: ICONS.trash, danger: true };
+    case "model":
+      return { label: S.company.sessionList.setModel, icon: ICONS.chip, danger: false };
   }
 }
 

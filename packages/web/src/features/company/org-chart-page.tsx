@@ -80,14 +80,16 @@ import {
   HireDialog,
 } from "./employee-dialogs";
 import type { EmployeeEdit } from "./employee-dialogs";
+import { EmployeeModelDialog } from "./employee-model-dialog";
 
-/** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
+/** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, a chip for the model, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
 const MENU_ICONS = {
   openDesk: DESK_ICON,
   hire: ICONS.userPlus,
   profile: ICONS.user,
   budget: ICONS.dollarCircle,
   thinkingLevel: ICONS.sparkle,
+  model: ICONS.chip,
   reportsTo: ICONS.letterMArrow,
   renewDesk: ICONS.rotateCw,
   leave: ICONS.signOut,
@@ -140,6 +142,7 @@ export function OrgChartPage() {
     null,
   );
   const [renewFor, setRenewFor] = useState<OrgEmployeeItem | null>(null);
+  const [modelFor, setModelFor] = useState<OrgEmployeeItem | null>(null);
   const [leaveFor, setLeaveFor] = useState<OrgEmployeeItem | null>(null);
   const [busy, setBusy] = useState(false);
   /** The view the reader moved to; null follows the fit, which is what the chart opens at. */
@@ -372,6 +375,8 @@ export function OrgChartPage() {
   const byId = new Map(chart.employees.map((e) => [e.agentId, e]));
   /** The CEO's Agent was deleted: the organization cannot run until it is created again. */
   const ceoMissing = byId.get(chart.ceoAgentId)?.agentMissing === true;
+  /** The model dialog's employee, re-read from the chart so the dialog shows the row it just wrote. */
+  const modelEmployee = modelFor === null ? null : (byId.get(modelFor.agentId) ?? modelFor);
 
   const menuRow = (
     close: () => void,
@@ -418,6 +423,8 @@ export function OrgChartPage() {
           menuRow(close, MENU_ICONS.thinkingLevel, S.company.chart.setThinkingLevel, () =>
             setEditFor({ employee, edit: "thinkingLevel" }),
           )}
+        {!missing &&
+          menuRow(close, MENU_ICONS.model, S.company.chart.setModel, () => setModelFor(employee))}
         {!isCeo &&
           menuRow(close, MENU_ICONS.reportsTo, S.company.chart.changeReportsTo, () =>
             setEditFor({ employee, edit: "reportsTo" }),
@@ -640,6 +647,24 @@ export function OrgChartPage() {
             void company.reloadOrgChart();
             void company.reloadOrgSessions();
             navigate(`/chat/${sessionId}`);
+          }}
+        />
+      )}
+      {modelEmployee !== null && (
+        <EmployeeModelDialog
+          open
+          projectId={projectId}
+          orgId={orgId}
+          employee={modelEmployee}
+          deskSessionId={modelEmployee.desk?.sessionId ?? null}
+          onClose={() => setModelFor(null)}
+          onChartChanged={() => void load()}
+          onSwitched={(sessionId) => {
+            setModelFor(null);
+            void load();
+            void company.reloadOrgChart();
+            void company.reloadOrgSessions();
+            if (sessionId !== null) navigate(`/chat/${sessionId}`);
           }}
         />
       )}

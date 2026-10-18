@@ -2754,6 +2754,9 @@ function SidebarSessionRow({
       messaging: onMessaging,
       archive: onArchive,
       delete: onDelete,
+      // A development row never offers this (CONTEXT_MENU_ACTIONS): setting an employee's
+      // model belongs to the company desk rows, which run it themselves.
+      model: () => {},
     };
     handler[action](s);
   };
