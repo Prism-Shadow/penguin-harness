@@ -22,6 +22,7 @@ export const zh = {
     chat: "对话",
     newChat: "新建对话",
     agents: "智能体",
+    schedules: "定时任务",
     models: "模型库",
     machines: "机器管理",
     plugins: "插件市场",
@@ -2678,6 +2679,54 @@ export const zh = {
         ["{{VAULT_KEYS}}", "保险柜键名列表（每键一行「- KEY」，仅键名，值永不注入；无键时为空）"],
       ] as ReadonlyArray<readonly [string, string]>,
     },
+  },
+
+  /** The Scheduled tasks page (/schedules): every agent's tasks of this Project on one page. */
+  schedulesPage: {
+    title: "定时任务",
+    subtitle:
+      "本 Project 全部智能体的定时任务：到点自动向目标会话发送 prompt。按智能体分组；点任意一行看明细，明细里可直接编辑，每组右上角可为该智能体新建。",
+    refresh: "刷新",
+    /** The group header's create button: a task for that agent, in the shared form. */
+    newTask: "新建任务",
+    filterStatus: "状态",
+    filterType: "类型",
+    typeAll: "全部类型",
+    /** The type chips (schedule-category.ts): what the task's interval means in words. */
+    typeNames: {
+      once: "一次性",
+      minutes: "分钟级",
+      hours: "小时级",
+      days: "每日",
+      weeks: "每周",
+      custom: "自定义",
+    } as Record<string, string>,
+    searchPlaceholder: "搜索任务名或 prompt…",
+    noMatch: "没有符合筛选条件的定时任务",
+    clearFilters: "清除筛选",
+    detailTitle: "任务明细",
+    detailAgent: "所属智能体",
+    detailPrompt: "Prompt",
+    detailStart: "开始时间",
+    detailEnd: "结束时间",
+    detailWorkspace: "Workspace",
+    detailModel: "Model",
+    detailEditHint: "编辑会打开完整表单：prompt、周期、目标会话、模型与 Workspace 都在那里改。",
+    refreshed: "已刷新定时任务",
+    loadFailed: "定时任务加载失败",
+    colAgent: "智能体",
+    colTask: "任务",
+    colPlan: "计划",
+    colTarget: "目标",
+    colNext: "下次触发",
+    colLast: "最近触发",
+    openAgent: "打开该智能体的定时任务",
+    countAll: (n: number): string => `共 ${n} 条`,
+    /** While a filter is on: how much of the schedule is on screen. */
+    filteredCount: (shown: number, all: number): string => `已筛选 ${shown} / 共 ${all} 条`,
+    emptyTitle: "还没有任何定时任务",
+    emptyHint: "到某个智能体的设置 › 定时任务里新建，或直接让智能体自己安排。",
+    invalidFiles: "解析失败的文件（已跳过调度）",
   },
 
   schedule: {

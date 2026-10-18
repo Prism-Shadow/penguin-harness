@@ -74,7 +74,7 @@ export function describeInstant(iso: string, locale: Locale, now: Date): string 
  * then contradict the next trigger printed beside it ("Every day at 08:00 · Next: tomorrow
  * 09:00"). A period the grammar does not cover is shown as written.
  */
-function describePeriod(period: string, anchor: string, locale: Locale): string {
+export function describePeriod(period: string, anchor: string, locale: Locale): string {
   const h = S.schedule.human;
   const minutes = periodMinutes(period);
   const start = new Date(anchor);
