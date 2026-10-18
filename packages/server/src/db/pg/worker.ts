@@ -210,6 +210,13 @@ interface ReadCacheEntry {
 }
 const readCache = new Map<string, ReadCacheEntry>();
 const readCacheIndex = new Map<string, Set<string>>();
+/**
+ * Reads already running, so a second request for the same shape joins that query instead of
+ * starting it again. The synchronous bridge serializes the app's calls, so this is not the
+ * common path — it is the case where a call gave up (its `Atomics.wait` deadline passed, or
+ * the app retried after an error) while the statement was still running here.
+ */
+const readCacheInFlight = new Map<string, Promise<Result>>();
 
 const VOLATILE_SQL =
   /\b(random\s*\(|now\s*\(|clock_timestamp|current_timestamp|current_date|pg_sleep|pg_stat_)\b/i;
@@ -312,10 +319,19 @@ async function handleOnce(req: Req): Promise<Result> {
     const key = readCacheKey(req);
     const hit = readCacheGet(key);
     if (hit) return hit.result;
+    const pending = readCacheInFlight.get(key);
+    if (pending) return pending;
     const tables = tablesOf(req.sql);
-    const res = await handleQuery(req);
-    if (res.rows && tables.size > 0) readCachePut(key, tables, res);
-    return res;
+    const exec = handleQuery(req)
+      .then((res) => {
+        if (res.rows && tables.size > 0) readCachePut(key, tables, res);
+        return res;
+      })
+      .finally(() => {
+        readCacheInFlight.delete(key);
+      });
+    readCacheInFlight.set(key, exec);
+    return exec;
   }
   // write path: invalidate every cache entry touching the written tables
   if (req.want !== "rows") {

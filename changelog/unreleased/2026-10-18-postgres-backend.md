@@ -52,7 +52,9 @@ Every read pays for the synchronous bridge: the calling thread blocks while one 
 connection serialize the work, so a handful of small lookups per request adds up. Reads that
 repeat within 300 ms are served from a table-aware LRU inside the worker, and a write drops
 every entry that touches the tables the statement names — so read-after-write is correct
-within the process, and a writer outside it is at most 300 ms stale.
+within the process, and a writer outside it is at most 300 ms stale. A read that is still
+running when the same shape is asked for again is joined rather than started twice, which
+matters when a call gave up on its deadline and the app retried.
 
 ## Configuration
 
