@@ -9,6 +9,8 @@ import { ICONS } from "@prismshadow/penguin-ui";
 export const NAV_ICONS = {
   /** Agents: the robot head, the one glyph in the app that means "agent". */
   agents: ICONS.robot,
+  /** Scheduled tasks: the same alarm clock the session list marks a task-bearing conversation with. */
+  schedules: ICONS.alarmClock,
   /** Plugin library (the puzzle piece). */
   plugins: ICONS.puzzle,
   /** Model library (a chip). */

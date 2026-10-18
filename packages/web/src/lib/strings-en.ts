@@ -15,6 +15,7 @@ export const en: Strings = {
     chat: "Chat",
     newChat: "New chat",
     agents: "Agents",
+    schedules: "Scheduled tasks",
     models: "Models",
     machines: "Machines",
     plugins: "Plugins",
@@ -2499,6 +2500,54 @@ export const en: Strings = {
         ],
       ] as ReadonlyArray<readonly [string, string]>,
     },
+  },
+
+  /** The Scheduled tasks page (/schedules): every agent's tasks of this Project on one page. */
+  schedulesPage: {
+    title: "Scheduled tasks",
+    subtitle:
+      "Every agent's scheduled tasks in this Project: the prompt goes to the target Session on schedule. Grouped by agent; open a row for its details, and edit it from there. Creating one stays in the agent's Settings › Schedules.",
+    refresh: "Refresh",
+    filterStatus: "Status",
+    filterType: "Type",
+    typeAll: "All types",
+    /** The type chips (schedule-category.ts): what the task's interval means in words. */
+    typeNames: {
+      once: "One-off",
+      minutes: "Every few minutes",
+      hours: "Hourly",
+      days: "Daily",
+      weeks: "Weekly",
+      custom: "Custom",
+    } as Record<string, string>,
+    searchPlaceholder: "Search task name or prompt…",
+    noMatch: "No scheduled task matches these filters",
+    clearFilters: "Clear filters",
+    detailTitle: "Task details",
+    detailAgent: "Agent",
+    detailPrompt: "Prompt",
+    detailStart: "Start",
+    detailEnd: "End",
+    detailWorkspace: "Workspace",
+    detailModel: "Model",
+    detailEditHint:
+      "Editing opens the full form: the prompt, the interval, the target Session, the model and the Workspace are all changed there.",
+    refreshed: "Scheduled tasks refreshed",
+    loadFailed: "Could not load scheduled tasks",
+    colAgent: "Agent",
+    colTask: "Task",
+    colPlan: "Plan",
+    colTarget: "Target",
+    colNext: "Next fire",
+    colLast: "Last fired",
+    openAgent: "Open this agent's scheduled tasks",
+    countAll: (n: number): string => `${n} in total`,
+    /** While a filter is on: how much of the schedule is on screen. */
+    filteredCount: (shown: number, all: number): string => `${shown} of ${all} shown`,
+    emptyTitle: "No scheduled tasks yet",
+    emptyHint:
+      "Create one in an agent's Settings › Schedules, or ask the agent to schedule it itself.",
+    invalidFiles: "Files that failed to parse (skipped from scheduling)",
   },
 
   schedule: {

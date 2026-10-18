@@ -36,6 +36,13 @@ interface Entry {
   projectId: string;
   /** Null until this Project has answered once; a refetch keeps the list it already has. */
   items: ProjectScheduleItem[] | null;
+  /**
+   * The files that failed to parse, each with the agent holding it. Carried beside the list
+   * because it arrives in the same answer and describes the same directory: a broken file is a
+   * task that silently stopped being scheduled, which only a surface listing a whole Project can
+   * show. Empty until the first answer, and emptied by a success that finds none.
+   */
+  invalidFiles: ProjectSchedulesResponse["invalidFiles"];
   /** Last failure text, cleared by the next success. The panel shows it only while `items` is null. */
   error: string | null;
   /** This Project's request: concurrent readers share it, another Project gets its own. */
@@ -53,6 +60,7 @@ function entryFor(projectId: string): Entry {
   const created: Entry = {
     projectId,
     items: null,
+    invalidFiles: [],
     error: null,
     inflight: null,
     readers: 0,
@@ -104,6 +112,7 @@ export function refreshSchedules(projectId: string | null): Promise<void> {
     try {
       const res = await api.listProjectSchedules(projectId);
       entry.items = res.schedules;
+      entry.invalidFiles = res.invalidFiles;
       entry.error = null;
     } catch (e) {
       // The list it already has stays: a refetch failing is not news that the tasks are gone.
