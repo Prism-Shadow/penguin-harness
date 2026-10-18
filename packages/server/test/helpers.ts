@@ -613,6 +613,8 @@ export function makeTraceHarness(
   sources: SessionSources;
   /** Paths of every Trace shard the service read from disk (windowed-read IO assertions); reset freely between calls. */
   shardReads: string[];
+  /** Paths of every Trace shard the service actually PARSED — a shard-cache hit is not a parse. */
+  shardParses: string[];
   close: () => void;
 } {
   const db = openDatabase(":memory:");
@@ -620,6 +622,7 @@ export function makeTraceHarness(
   const repo = wire(TraceIndexRepo, { db });
   const traceIndex = wire(TraceIndexService, { paths: { root }, repo, sources });
   const shardReads: string[] = [];
+  const shardParses: string[] = [];
   const service = wire(TraceService, {
     paths: { root },
     index: traceIndex,
@@ -628,8 +631,9 @@ export function makeTraceHarness(
     ...(opts.lookupPricing !== undefined ? { lookupPricing: opts.lookupPricing } : {}),
     sources,
     observeShardRead: (p: string) => shardReads.push(p),
+    observeShardParse: (p: string) => shardParses.push(p),
   });
-  return { traceIndex, service, sources, shardReads, close: () => db.close() };
+  return { traceIndex, service, sources, shardReads, shardParses, close: () => db.close() };
 }
 
 /** Writes a Trace JSONL file directly (for building historical / discovery scenarios). */

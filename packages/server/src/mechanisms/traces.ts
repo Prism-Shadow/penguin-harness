@@ -122,6 +122,7 @@ export abstract class TraceIndex {
 @Interface()
 export abstract class Traces {
   abstract observeShardRead?: ((path: string) => void) | undefined;
+  abstract observeShardParse?: ((path: string) => void) | undefined;
   abstract subagentChildren(
     projectId: string,
     agentId: string,

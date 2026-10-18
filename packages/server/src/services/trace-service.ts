@@ -284,6 +284,82 @@ interface TraceSessionFacts {
   workspace: string;
 }
 
+/** Shard-cache bounds: 512 shards or 64 MiB of parsed bytes, whichever comes first. */
+const SHARD_CACHE_MAX_ENTRIES = 512;
+const SHARD_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+/** Bytes of a shard's tail scanned to locate the offset just past its last complete line. */
+const SHARD_TAIL_PROBE_BYTES = 8192;
+/**
+ * Bytes of the parsed prefix re-read on every cache hit, as the freshness check: a shard is
+ * append-only, but a same-path replacement is not — see the cache's own note on readShard.
+ */
+const SHARD_PREFIX_BYTES = 64;
+
+interface ShardCacheEntry {
+  /** Bytes of the file parsed into `messages`: always just past a complete line, or 0. */
+  parsedBytes: number;
+  /** The SHARD_PREFIX_BYTES bytes of the file just before `parsedBytes` (shorter at the start). */
+  prefix: Buffer;
+  messages: OmniMessage[];
+}
+
+/** Size of a shard, or null when it is gone — a normal read for a deleted Session. */
+async function shardSize(path: string): Promise<number | null> {
+  try {
+    return (await fs.stat(path)).size;
+  } catch {
+    return null;
+  }
+}
+
+/** Read `length` bytes at `offset`; null when the file cannot be read that far. */
+async function readShardBytes(
+  path: string,
+  offset: number,
+  length: number,
+): Promise<Buffer | null> {
+  if (length <= 0) return Buffer.alloc(0);
+  const buffer = Buffer.allocUnsafe(length);
+  const handle = await fs.open(path, "r");
+  let read = 0;
+  try {
+    while (read < length) {
+      const chunk = await handle.read(buffer, read, length - read, offset + read);
+      if (chunk.bytesRead === 0) break;
+      read += chunk.bytesRead;
+    }
+  } catch {
+    return null;
+  } finally {
+    await handle.close();
+  }
+  return read === length ? buffer : null;
+}
+
+/** The SHARD_PREFIX_BYTES bytes ending at the end of `next`, given the previous prefix. */
+function shardPrefix(previous: Buffer, next: Buffer): Buffer {
+  if (next.length >= SHARD_PREFIX_BYTES) {
+    return Buffer.from(next.subarray(next.length - SHARD_PREFIX_BYTES));
+  }
+  return Buffer.from(Buffer.concat([previous, next]).subarray(-SHARD_PREFIX_BYTES));
+}
+
+/**
+ * The offset just past a shard's last complete line, or null when its tail window holds no
+ * newline at all — in which case nothing is cached rather than an offset no later append
+ * could build on.
+ */
+async function parsedShardBytes(path: string, size: number): Promise<number | null> {
+  if (size === 0) return 0;
+  const window = Math.min(SHARD_TAIL_PROBE_BYTES, size);
+  const tail = await readShardBytes(path, size - window, window);
+  if (tail === null) return null;
+  // Byte-level, not string-level: an offset counted in characters would land mid-character
+  // as soon as the window holds multi-byte text.
+  const lastNewline = tail.lastIndexOf(0x0a);
+  return lastNewline < 0 ? null : size - window + lastNewline + 1;
+}
+
 @Component()
 export class TraceService implements Traces {
   @Use() private readonly paths!: Paths;
@@ -312,10 +388,40 @@ export class TraceService implements Traces {
    */
   observeShardRead?: (path: string) => void;
   /**
+   * Test observability: called with the path of every shard actually PARSED from disk — a
+   * cache hit is not a parse, so a test can prove the shard cache with it. Production
+   * wiring leaves it unset.
+   */
+  observeShardParse?: (path: string) => void;
+  /**
    * Record offsets per Trace file (trace-line-index.ts): the events endpoint and the image
    * route read only the records they serve. Tests wire their own to observe the reads.
    */
   private lineIndex = new TraceLineIndex();
+
+  /**
+   * Full-shard parse cache, keyed by path and validated by (size, prefix bytes).
+   *
+   * A shard is append-only by construction: core's Writer opens it `O_APPEND`, issues one
+   * `write(2)` per record and never seeks, and rotation moves to the NEXT index rather than
+   * rewriting one (see packages/core/src/trace/writer.ts). So a cached parse stays valid
+   * while the same file only grows. The validation does not assume it: a hit requires the
+   * file to be at least as long as what was parsed AND the bytes just before that offset to
+   * be the ones that were parsed, re-read (at most SHARD_PREFIX_BYTES of them) on every hit.
+   * A shard that shrank, or a different file at the same path — deleted and recreated by an
+   * import, edited by hand — fails one of the two and is read again. File identity is
+   * deliberately NOT used: an inode number is reused, and a replaced file whose parsed
+   * prefix is byte-identical is safe to keep building on.
+   *
+   * An append parses only the appended bytes, so the Session being written right now — the
+   * one the conversation pane re-reads on every focus, and the only one whose shard changes
+   * between reads — costs its new tail instead of the whole file. LRU by re-insertion,
+   * bounded by entry count and by total parsed bytes; a history larger than the bounds
+   * degrades to re-reading shards, never to serving the wrong ones.
+   */
+  private readonly shardCache = new Map<string, ShardCacheEntry>();
+  /** Total `parsedBytes` held by shardCache, for the byte bound. */
+  private shardCacheBytes = 0;
 
   /**
    * All of this Session's Trace files (sorted by index ascending), served from the
@@ -347,7 +453,93 @@ export class TraceService implements Traces {
   /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
   private async readShard(path: string): Promise<OmniMessage[]> {
     this.observeShardRead?.(path);
-    return readTraceTolerant(path);
+    const size = await shardSize(path);
+    if (size !== null) {
+      const cached = this.shardCache.get(path);
+      if (cached && size >= cached.parsedBytes && (await this.prefixIntact(path, cached))) {
+        if (size > cached.parsedBytes) await this.appendToShardCache(path, cached, size);
+        this.touchShardCache(path, cached);
+        return cached.messages.slice();
+      }
+    }
+    const messages = await readTraceTolerant(path);
+    this.observeShardParse?.(path);
+    if (size !== null) await this.rememberShard(path, size, messages);
+    return messages;
+  }
+
+  /**
+   * Whether the bytes just before the cached parse's offset are still the ones that were
+   * parsed. One bounded read per hit is what keeps the append-only assumption honest: an
+   * in-place edit, or a same-path replacement that kept the length, is caught here instead
+   * of being served as a stale transcript.
+   */
+  private async prefixIntact(path: string, cached: ShardCacheEntry): Promise<boolean> {
+    if (cached.prefix.length === 0) return true;
+    const from = cached.parsedBytes - cached.prefix.length;
+    const read = await readShardBytes(path, from, cached.prefix.length);
+    return read !== null && read.equals(cached.prefix);
+  }
+
+  /**
+   * Parse the bytes appended since `cached.parsedBytes` into the cached array. Only complete
+   * lines advance the offset: `parseTraceLines` tolerates a torn trailing line, but a
+   * partial line left out of the offset would be skipped forever once the writer completes
+   * it, so the incomplete tail is simply re-read next time.
+   */
+  private async appendToShardCache(
+    path: string,
+    cached: ShardCacheEntry,
+    size: number,
+  ): Promise<void> {
+    const from = cached.parsedBytes;
+    const appended = await readShardBytes(path, from, size - from);
+    if (appended === null) return;
+    // Byte-level, not string-level: a newline offset counted in characters would land
+    // mid-character as soon as the window holds multi-byte text.
+    const lastNewline = appended.lastIndexOf(0x0a);
+    if (lastNewline < 0) return;
+    const complete = appended.subarray(0, lastNewline + 1);
+    const added = parseTraceLines(complete.toString("utf8"));
+    if (added.length > 0) cached.messages.push(...added);
+    cached.parsedBytes = from + lastNewline + 1;
+    cached.prefix = shardPrefix(cached.prefix, complete);
+    this.shardCacheBytes += lastNewline + 1;
+  }
+
+  /** Cache a freshly parsed shard, bounded by entry count and total parsed bytes. */
+  private async rememberShard(path: string, size: number, messages: OmniMessage[]): Promise<void> {
+    const parsedBytes = await parsedShardBytes(path, size);
+    if (parsedBytes === null) return;
+    const prefix = await readShardBytes(
+      path,
+      Math.max(0, parsedBytes - SHARD_PREFIX_BYTES),
+      Math.min(SHARD_PREFIX_BYTES, parsedBytes),
+    );
+    this.evictShardCache(parsedBytes);
+    this.shardCache.set(path, { parsedBytes, prefix: prefix ?? Buffer.alloc(0), messages });
+    this.shardCacheBytes += parsedBytes;
+  }
+
+  /** Drop least-recently-used entries until the new one fits under both bounds. */
+  private evictShardCache(incomingBytes: number): void {
+    while (
+      this.shardCache.size > 0 &&
+      (this.shardCache.size >= SHARD_CACHE_MAX_ENTRIES ||
+        this.shardCacheBytes + incomingBytes > SHARD_CACHE_MAX_BYTES)
+    ) {
+      const oldest = this.shardCache.keys().next().value;
+      if (oldest === undefined) break;
+      const dropped = this.shardCache.get(oldest);
+      this.shardCache.delete(oldest);
+      if (dropped) this.shardCacheBytes -= dropped.parsedBytes;
+    }
+  }
+
+  /** Mark a cache entry as the most recently used. */
+  private touchShardCache(path: string, entry: ShardCacheEntry): void {
+    this.shardCache.delete(path);
+    this.shardCache.set(path, entry);
   }
 
   /**
