@@ -3,7 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** feature
 - **Scope:** `server`、`core`、`cli`、`web`、`docs`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#1208](https://github.com/Prism-Shadow/penguin-harness/pull/1208)
 
 [English](2026-10-18-server-restart-auto-resume.md)
 
