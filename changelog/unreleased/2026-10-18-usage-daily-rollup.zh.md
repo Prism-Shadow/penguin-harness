@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** refactor
 - **Scope:** `server`
+- **PR:** [#1199](https://github.com/Prism-Shadow/penguin-harness/pull/1199)
 
 [English](2026-10-18-usage-daily-rollup.md)
 
