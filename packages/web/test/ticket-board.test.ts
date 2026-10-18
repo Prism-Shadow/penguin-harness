@@ -2,7 +2,11 @@
  * The ticket board (features/company/ticket-board.ts).
  *
  * - Only the five lifecycle statuses are ticket statuses.
- * - Cards sort by priority, then the earlier due date, then id.
+ * - Cards sort by priority, then the earlier due date, then id; by due date, then priority; or
+ *   by how long they have been waiting (oldest first, unreadable dates last).
+ * - The quick filters keep what is waiting on a person, what is blocked, what is past its due
+ *   date while still open, and the reader's own tickets, and the counts report each of those
+ *   over the tickets the search box and the chips left.
  * - The board renders every column, narrowed to blocked cards and by the search box (title,
  *   id, owner and parent, case-insensitively, and the owner's name through the chart), both
  *   narrowings at once.
@@ -17,6 +21,7 @@ import type { OrgTicketItem, OrgTicketsResponse } from "@prismshadow/penguin-ser
 import {
   allTickets,
   boardColumns,
+  boardCounts,
   canMove,
   groupTickets,
   invalidTickets,
@@ -24,6 +29,7 @@ import {
   isOverdue,
   isTicketSlug,
   isTicketStatus,
+  matchesQuickFilter,
   matchesTicketQuery,
   moveNeedsReason,
   sortTickets,
@@ -119,6 +125,144 @@ describe("columns", () => {
         c.tickets.map((x) => x.ticketId),
       ),
     ).toEqual([["x"], [], [], [], []]);
+  });
+});
+
+describe("sorts", () => {
+  const dated = [
+    ticket({ ticketId: "2026-09-01-c", due: "2026-10-01", priority: "P2" }),
+    ticket({ ticketId: "2026-08-20-a", priority: "P0" }),
+    ticket({ ticketId: "2026-09-10-d", due: "2026-09-15", priority: "P1" }),
+    ticket({ ticketId: "2026-09-05-b", priority: "P1" }),
+  ];
+
+  it("due date first, undated last, priority breaking ties", () => {
+    expect(sortTickets(dated, "due").map((t) => t.ticketId)).toEqual([
+      "2026-09-10-d",
+      "2026-09-01-c",
+      "2026-08-20-a",
+      "2026-09-05-b",
+    ]);
+  });
+
+  it("age reads a column as a queue: the oldest id first, unreadable dates last", () => {
+    expect(sortTickets(dated, "age").map((t) => t.ticketId)).toEqual([
+      "2026-08-20-a",
+      "2026-09-01-c",
+      "2026-09-05-b",
+      "2026-09-10-d",
+    ]);
+    expect(sortTickets([ticket({ ticketId: "google-oauth" })], "age")[0]!.ticketId).toBe(
+      "google-oauth",
+    );
+    expect(
+      sortTickets(
+        [ticket({ ticketId: "google-oauth" }), ticket({ ticketId: "2026-09-01-x" })],
+        "age",
+      ).map((t) => t.ticketId),
+    ).toEqual(["2026-09-01-x", "google-oauth"]);
+  });
+
+  it("priority stays the default, and grouping keeps the chosen order inside a group", () => {
+    expect(sortTickets(dated).map((t) => t.ticketId)).toEqual([
+      "2026-08-20-a",
+      "2026-09-10-d",
+      "2026-09-05-b",
+      "2026-09-01-c",
+    ]);
+    const groups = groupTickets(
+      [
+        ticket({ ticketId: "2026-09-01-b", owner: "agent:dev", priority: "P1" }),
+        ticket({ ticketId: "2026-08-01-a", owner: "agent:dev", priority: "P2" }),
+      ],
+      "owner",
+      { sort: "age" },
+    );
+    expect(groups[0]!.tickets.map((t) => t.ticketId)).toEqual(["2026-08-01-a", "2026-09-01-b"]);
+  });
+});
+
+describe("quick filters and their counts", () => {
+  const today = "2026-09-05";
+  const res = board({
+    proposed: [
+      ticket({ ticketId: "2026-09-01-open", owner: "user:alice" }),
+      ticket({
+        ticketId: "2026-08-01-blocked",
+        owner: "user:bob",
+        blocked: "waiting",
+      }),
+    ],
+    in_progress: [
+      ticket({
+        ticketId: "2026-08-20-late",
+        status: "in_progress",
+        due: "2026-09-01",
+        owner: "user:alice",
+      }),
+    ],
+    review: [ticket({ ticketId: "2026-09-02-check", status: "review", owner: "user:bob" })],
+    done: [
+      ticket({
+        ticketId: "2026-08-01-shipped",
+        status: "done",
+        due: "2026-08-02",
+        owner: "user:bob",
+      }),
+    ],
+  });
+
+  it("one filter at a time: the queue, blocked, overdue (open only) and mine", () => {
+    expect(
+      boardColumns(res, { quick: "queue" }).flatMap((c) => c.tickets.map((t) => t.ticketId)),
+    ).toEqual(["2026-08-01-blocked", "2026-09-01-open", "2026-09-02-check"]);
+    expect(
+      boardColumns(res, { quick: "blocked" }).flatMap((c) => c.tickets.map((t) => t.ticketId)),
+    ).toEqual(["2026-08-01-blocked"]);
+    // The finished ticket's date is long past; a finished ticket is never overdue.
+    expect(
+      boardColumns(res, { quick: "overdue", todayKey: today }).flatMap((c) =>
+        c.tickets.map((t) => t.ticketId),
+      ),
+    ).toEqual(["2026-08-20-late"]);
+    expect(
+      boardColumns(res, { quick: "mine", me: "user:alice", todayKey: today }).flatMap((c) =>
+        c.tickets.map((t) => t.ticketId),
+      ),
+    ).toEqual(["2026-09-01-open", "2026-08-20-late"]);
+    // No principal, nothing is mine.
+    expect(boardColumns(res, { quick: "mine" }).flatMap((c) => c.tickets)).toEqual([]);
+  });
+
+  it("the counts report every chip over the tickets the search and chips left", () => {
+    expect(boardCounts(allTickets(res), { todayKey: today, me: "user:alice" })).toEqual({
+      total: 5,
+      queue: 3,
+      blocked: 1,
+      overdue: 1,
+      mine: 2,
+    });
+    expect(boardCounts(allTickets(res).slice(0, 1), { todayKey: today })).toEqual({
+      total: 1,
+      queue: 1,
+      blocked: 0,
+      overdue: 0,
+      mine: 0,
+    });
+  });
+
+  it("the quick filter composes with the search box and the priority chips", () => {
+    expect(
+      boardColumns(res, {
+        quick: "queue",
+        query: "check",
+        priorities: ["P1"],
+      }).flatMap((c) => c.tickets.map((t) => t.ticketId)),
+    ).toEqual(["2026-09-02-check"]);
+  });
+
+  it("an unknown quick filter reads as everything", () => {
+    expect(matchesQuickFilter(ticket({ ticketId: "a" }), "all")).toBe(true);
   });
 });
 
