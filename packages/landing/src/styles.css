@@ -375,6 +375,12 @@ html.dark .post-figure figcaption {
 .fig-svg .fig-bp {
   fill: var(--site-gray-800);
 }
+/* A breakpoint a simulator option adds but the harness does not send: the same mark, hollow. */
+.fig-svg .fig-bp-option {
+  fill: none;
+  stroke: var(--site-gray-800);
+  stroke-width: 1.25;
+}
 .fig-svg .fig-link {
   fill: none;
   stroke: var(--site-gray-400);
@@ -465,6 +471,9 @@ html.dark .fig-svg .fig-cost {
 }
 html.dark .fig-svg .fig-bp {
   fill: var(--site-gray-200);
+}
+html.dark .fig-svg .fig-bp-option {
+  stroke: var(--site-gray-200);
 }
 html.dark .fig-svg .fig-link,
 html.dark .fig-svg .fig-entry-miss,
