@@ -5889,6 +5889,12 @@ Benchmark：
       ageHint: "从建单到今天的天数",
       approve: "批准",
       reject: "打回",
+      /** The review column's vote-gate button (LOCAL-ONLY squad switch, one button for all registries). */
+      reviewVoteOn: "自动审核·开",
+      reviewVoteOff: "自动审核·关",
+      reviewVoteMixed: "自动审核·半",
+      reviewVoteHint:
+        "squad 三专家投票门：开 = 审核中工单由三专家投票自动关闭（2 票接受通过 / 2 票拒绝打回），关 = 人工逐张确认；点一下同时切换全部注册表",
       selectedCount: (n: number): string => `已选 ${n} 张`,
       bulkMoveTo: "移到…",
       bulkAssignTo: "指派给…",

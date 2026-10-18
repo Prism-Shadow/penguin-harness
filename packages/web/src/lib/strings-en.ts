@@ -5715,6 +5715,12 @@ Scenarios:
       ageHint: "Days since the ticket was created",
       approve: "Approve",
       reject: "Send back",
+      /** The review column's vote-gate button (LOCAL-ONLY squad switch, one button for all registries). */
+      reviewVoteOn: "Auto review · on",
+      reviewVoteOff: "Auto review · off",
+      reviewVoteMixed: "Auto review · mixed",
+      reviewVoteHint:
+        "Squad three-expert vote gate: on = in-review tickets close by expert vote (2 accepts pass / 2 rejects send back), off = a human confirms each one; one press flips every registry",
       selectedCount: (n: number): string => `${n} selected`,
       bulkMoveTo: "Move to…",
       bulkAssignTo: "Assign to…",

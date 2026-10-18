@@ -223,6 +223,44 @@ export function TicketsPage() {
   const [board, setBoard] = useState<OrgTicketsResponse | null>(null);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The squad vote-gate switches (LOCAL-ONLY): one row per registry, read once per
+   * visit — null until the fetch lands, and the review column's button stays hidden
+   * when the server has no such route yet (an older build answers 404).
+   */
+  const [reviewVote, setReviewVote] = useState<api.SquadReviewVoteTable[] | null>(null);
+  const [reviewVoteBusy, setReviewVoteBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api
+      .getSquadReviewVote()
+      .then((r) => {
+        if (alive) setReviewVote(r.tables);
+      })
+      .catch(() => {
+        if (alive) setReviewVote(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  /** One press flips every registry: on only when all of them already are. */
+  const flipReviewVote = useCallback(async () => {
+    if (reviewVote === null || reviewVote.length === 0 || reviewVoteBusy) return;
+    const next = !reviewVote.every((t) => t.reviewVote);
+    setReviewVoteBusy(true);
+    try {
+      const r = await api.putSquadReviewVote(next);
+      setReviewVote(r.tables);
+      toastSuccess(
+        next ? S.company.tickets.reviewVoteOn : S.company.tickets.reviewVoteOff,
+      );
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setReviewVoteBusy(false);
+    }
+  }, [reviewVote, reviewVoteBusy]);
   const [quick, setQuick] = useState<BoardQuickFilter>(() => readQuick(params));
   const [sort, setSort] = useState<TicketSort>(() => readSort(params.get("sort")));
   const [query, setQuery] = useState("");
@@ -925,6 +963,28 @@ export function TicketsPage() {
                       </button>
                     )}
                     <Count n={col.tickets.length} />
+                    {col.status === "review" &&
+                      reviewVote !== null &&
+                      reviewVote.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant={
+                            reviewVote.every((t) => t.reviewVote)
+                              ? "primary"
+                              : "secondary"
+                          }
+                          aria-pressed={reviewVote.every((t) => t.reviewVote)}
+                          title={S.company.tickets.reviewVoteHint}
+                          disabled={reviewVoteBusy}
+                          onClick={() => void flipReviewVote()}
+                        >
+                          {reviewVote.every((t) => t.reviewVote)
+                            ? S.company.tickets.reviewVoteOn
+                            : reviewVote.some((t) => t.reviewVote)
+                              ? S.company.tickets.reviewVoteMixed
+                              : S.company.tickets.reviewVoteOff}
+                        </Button>
+                      )}
                   </div>
                   {!shut && (
                     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">

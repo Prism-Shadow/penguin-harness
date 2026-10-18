@@ -2331,6 +2331,33 @@ export const updateOrgTicket = (
     { method: "PUT", body },
   );
 
+/**
+ * Squad review vote (LOCAL-ONLY mirror of the server contract in
+ * `packages/server/src/api/types.ts`: SquadReviewVoteTable/Response/Update —
+ * the two must stay identical; this tree's server dist is not rebuilt for web).
+ */
+export interface SquadReviewVoteTable {
+  key: string;
+  label: string;
+  path: string;
+  reviewVote: boolean;
+}
+
+export interface SquadReviewVoteResponse {
+  tables: SquadReviewVoteTable[];
+}
+
+/** The vote-gate switches of every squad registry (the review column's button reads this). */
+export const getSquadReviewVote = () =>
+  apiFetch<SquadReviewVoteResponse>("/api/squad/review-vote");
+
+/** Flips one registry (`key`) or all of them (`key` omitted) at once. */
+export const putSquadReviewVote = (reviewVote: boolean, key?: string) =>
+  apiFetch<SquadReviewVoteResponse>("/api/squad/review-vote", {
+    method: "PUT",
+    body: key === undefined ? { reviewVote } : { reviewVote, key },
+  });
+
 /** `…/tickets/:ticketId/<action>` POST helper shared by the six ticket actions. */
 const ticketAction = <T>(
   projectId: string,
