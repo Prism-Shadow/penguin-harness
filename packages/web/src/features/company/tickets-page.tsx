@@ -1,10 +1,22 @@
 /**
  * The ticket board: five columns in lifecycle order (shaping in ticket-board.ts), each with
  * its colour bar and count, a card per ticket — title, priority, due date (danger once
- * passed), the blocked badge, a muted line naming its parent, and its owner — a search box
- * and a blocked-only switch, moving a card between columns by dragging it, which
- * confirms the move (a move into rejected asks for a one-line reason) before posting it, the
- * create form, and the tickets and files the server could not accept.
+ * passed), the blocked badge, a muted line naming its parent, and its owner — moving a card
+ * between columns by dragging it, which confirms the move (a move into rejected asks for a
+ * one-line reason) before posting it, the create form, and the tickets and files the server
+ * could not accept.
+ *
+ * Above the columns sits one toolbar, and the page header keeps only what makes something new:
+ * quick-filter chips (everything, the approval queue, blocked, overdue, mine) each carrying the
+ * count it would leave on the board, the search box — `/` puts the caret in it — the priority
+ * chips, the grouping and the sort. The chips are one at a time; a search or a chip narrows the
+ * counts too, so a number never promises cards that are not there. `N` opens the create form and
+ * Escape leaves select mode (or clears the search) — plain keys, only while this page is on
+ * screen and no field has focus.
+ *
+ * Every column scrolls under its own fixed header and keeps its full height, so the five
+ * columns stay side by side however long one of them grows, and a group heading sticks to the
+ * top of its column while its cards pass under it.
  * The whole card is one button — the board's one exception to the company pages' rule against
  * whole-area click targets, and it holds no control of its own. A click anywhere on it (Enter
  * and Space too) opens the detail dialog in place (the shell's one host renders it, so the
@@ -51,7 +63,6 @@ import {
   Segmented,
   Select,
   Skeleton,
-  Switch,
   Textarea,
   discardUnsaved,
   toastError,
@@ -77,9 +88,11 @@ import {
   titledHint,
 } from "./shared";
 import {
+  BOARD_QUICK_FILTERS,
   TICKET_COLUMNS,
   allTickets,
   boardColumns,
+  boardCounts,
   canMove,
   groupTickets,
   invalidTickets,
@@ -87,10 +100,11 @@ import {
   isOverdue,
   isTicketSlug,
   isTicketStatus,
+  matchesTicketQuery,
   moveNeedsReason,
   ticketAgeDays,
 } from "./ticket-board";
-import type { TicketGroupBy } from "./ticket-board";
+import type { BoardQuickFilter, TicketGroupBy, TicketSort } from "./ticket-board";
 import { MoveTicketConfirm } from "./ticket-dialog";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
@@ -108,6 +122,28 @@ const GROUP_BY_VALUES: readonly TicketGroupBy[] = [
   "module",
   "project",
 ];
+
+/** Sort choices in toolbar order; mirrors TicketSort. */
+const SORT_VALUES: readonly TicketSort[] = ["priority", "due", "age"];
+
+function readSort(value: string | null): TicketSort {
+  return value === "due" || value === "age" ? value : "priority";
+}
+
+/**
+ * The active quick filter off the query. `?blocked=1` and `?queue=approve` are the deep links the
+ * overview has always written — they read as the chips of the same name, and writing the chip
+ * back writes `?quick=`.
+ */
+function readQuick(params: URLSearchParams): BoardQuickFilter {
+  const raw = params.get("quick");
+  if (raw !== null && (BOARD_QUICK_FILTERS as readonly string[]).includes(raw)) {
+    return raw as BoardQuickFilter;
+  }
+  if (params.get("blocked") === "1") return "blocked";
+  if (params.get("queue") === "approve") return "queue";
+  return "all";
+}
 
 function readGroupBy(value: string | null): TicketGroupBy {
   if (value === null) return "project";
@@ -160,8 +196,21 @@ const COLUMN_BAR: Record<OrgTicketStatus, string> = {
   rejected: toneDot.danger,
 };
 
+/**
+ * A column: full height, and no taller than the viewport — a long column scrolls under its own
+ * header instead of pushing its neighbours off the screen, so the five of them stay side by side
+ * whatever the work looks like. The height is capped against the viewport minus what the shell,
+ * the page header and the toolbar take.
+ */
 const columnClass =
-  "flex min-h-[26rem] flex-col rounded-md border border-gray-200 bg-gray-50/60 transition-colors duration-150 dark:border-gray-800 dark:bg-gray-900/40";
+  "flex min-h-[26rem] max-h-[calc(100vh-17rem)] flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50/60 transition-colors duration-150 dark:border-gray-800 dark:bg-gray-900/40";
+
+/** The hairline down a card's edge, by priority — the tone recedes as the priority drops. */
+const PRIORITY_ACCENT: Record<OrgTicketPriority, string> = {
+  P0: toneDot.danger,
+  P1: toneDot.attention,
+  P2: toneDot.muted,
+};
 
 export function TicketsPage() {
   const { projectId, orgId, org } = useOrg();
@@ -173,8 +222,10 @@ export function TicketsPage() {
   const [board, setBoard] = useState<OrgTicketsResponse | null>(null);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [blockedOnly, setBlockedOnly] = useState(params.get("blocked") === "1");
+  const [quick, setQuick] = useState<BoardQuickFilter>(() => readQuick(params));
+  const [sort, setSort] = useState<TicketSort>(() => readSort(params.get("sort")));
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const [groupBy, setGroupBy] = useState<TicketGroupBy>(() => readGroupBy(params.get("group")));
   const [priFilter, setPriFilter] = useState<readonly OrgTicketPriority[]>(() => {
     const raw = params.get("pri");
@@ -183,7 +234,7 @@ export function TicketsPage() {
       p === "P0" || p === "P1" || p === "P2",
     );
   });
-  const [queueOnly, setQueueOnly] = useState(params.get("queue") === "approve");
+  const queueOnly = quick === "queue";
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(readCollapsed);
   const isCollapsed = (section: string): boolean =>
     collapsed[`${orgId}:${section}`] === true;
@@ -250,6 +301,51 @@ export function TicketsPage() {
     (board === null ? [] : allTickets(board)).map((t) => [t.ticketId, t.title]),
   );
   const todayKey = dayKey(Date.now());
+  /** The reader's own principal, spelled as the organization files spell it (`user:<id>`). */
+  const me = user ? `user:${user.userId}` : undefined;
+
+  /**
+   * Two plain keys while the board is on screen: `/` puts the caret in the search box, `N` opens
+   * the create form. Both stand aside for a field being typed in, for a modifier chord (the
+   * app's own shortcuts all carry one) and for a dialog already open — a keystroke aimed at the
+   * detail dialog must not also rebuild the board behind it. Escape is the way out of select
+   * mode, then out of a search, and goes no further.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Escape") {
+        if (e.target instanceof HTMLElement && e.target.tagName === "INPUT" && query !== "") return;
+        if (selectMode) {
+          setSelectMode(false);
+          setSelected(new Set());
+        } else if (query !== "") {
+          setQuery("");
+        }
+        return;
+      }
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLElement &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT" ||
+          el.isContentEditable)
+      ) {
+        return;
+      }
+      if (company.ticketDialog !== null || createOpen) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        setCreateOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [createOpen, query, selectMode, company]);
 
   const setQueryParams = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -453,12 +549,17 @@ export function TicketsPage() {
     );
   };
 
-  /** The card's frame: a hairline box, danger-edged when the server flagged the ticket. */
+  /**
+   * The card's frame: a hairline box that lifts a little under the pointer — the board's way of
+   * saying the whole face is one target — danger-edged when the server flagged the ticket, and
+   * fully opaque white in both themes so a card passing under a sticky group heading is covered
+   * rather than blended.
+   */
   const cardFrame = (t: OrgTicketItem) =>
-    `block w-full rounded-md border bg-white p-3 text-left text-xs dark:bg-gray-900 ${
+    `relative block w-full overflow-hidden rounded-lg border bg-white p-3 pl-3.5 text-left text-xs transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md dark:bg-gray-900 ${
       t.invalid !== undefined
         ? "border-red-300 dark:border-red-800"
-        : "border-gray-200 dark:border-gray-800"
+        : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
     }`;
 
   /**
@@ -480,10 +581,17 @@ export function TicketsPage() {
           data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
           {...(selectMode ? { "aria-pressed": isSel } : drag.cardProps(t))}
           onClick={selectMode ? () => toggleSelect(t.ticketId) : undefined}
-          className={`${cardFrame(t)} cursor-pointer select-none transition-[border-color,opacity] duration-150 [-webkit-touch-callout:none] hover:border-gray-300 dark:hover:border-gray-600 ${
+          className={`${cardFrame(t)} cursor-pointer select-none [-webkit-touch-callout:none] ${
             lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
           }${isSel ? " border-accent ring-1 ring-accent" : ""}`}
         >
+          {/* What to reach for first, before a word is read: a hairline down the card's edge,
+              the priority's own tone. It is a mark next to the priority badge, never the only
+              carrier of it. */}
+          <span
+            aria-hidden
+            className={`absolute inset-y-0 left-0 w-0.5 ${PRIORITY_ACCENT[t.priority] ?? toneDot.muted}`}
+          />
           {selectMode ? (
             <span className="flex items-start gap-2">
               <span
@@ -522,15 +630,32 @@ export function TicketsPage() {
   const columns =
     board === null
       ? null
-      : boardColumns(board, { blockedOnly, query, names, priorities: priFilter });
+      : boardColumns(board, {
+          query,
+          names,
+          priorities: priFilter,
+          quick,
+          todayKey,
+          ...(me !== undefined ? { me } : {}),
+          sort,
+        });
   const visibleColumns =
     columns === null
       ? null
       : queueOnly
         ? columns.filter((c) => c.status === "proposed" || c.status === "review")
         : columns;
-  const narrowed =
-    blockedOnly || query.trim() !== "" || priFilter.length > 0 || queueOnly;
+  /** The chips' counts, over what the search box and the priority chips already left. */
+  const searched =
+    board === null
+      ? []
+      : allTickets(board).filter(
+          (t) =>
+            (priFilter.length === 0 || priFilter.includes(t.priority)) &&
+            matchesTicketQuery(t, query, names),
+        );
+  const counts = boardCounts(searched, { todayKey, ...(me !== undefined ? { me } : {}) });
+  const narrowed = quick !== "all" || query.trim() !== "" || priFilter.length > 0;
   const invalids = board === null ? [] : invalidTickets(board);
 
   return (
@@ -540,70 +665,11 @@ export function TicketsPage() {
       wide
       actions={
         <>
-          <SearchInput
-            size="sm"
-            className="w-44"
-            aria-label={S.company.tickets.searchPlaceholder}
-            placeholder={S.company.tickets.searchPlaceholder}
-            value={query}
-            onChange={setQuery}
-          />
-          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-            {S.company.tickets.blockedOnly}
-            <Switch
-              checked={blockedOnly}
-              onChange={(v) => {
-                setBlockedOnly(v);
-                setQueryParams({ blocked: v ? "1" : null });
-              }}
-            />
-          </label>
-          <Segmented<TicketGroupBy>
-            cols={5}
-            value={groupBy}
-            onChange={(v) => {
-              setGroupBy(v);
-              setQueryParams({ group: v });
-            }}
-            options={GROUP_BY_VALUES.map((v) => ({
-              value: v,
-              label: S.company.tickets.groupByName[v] ?? v,
-            }))}
-          />
-          <span className="flex items-center gap-1" role="group" aria-label={S.company.tickets.priority}>
-            {PRIORITIES.map((p) => {
-              const on = priFilter.includes(p);
-              return (
-                <Button
-                  key={p}
-                  size="sm"
-                  variant={on ? "primary" : "secondary"}
-                  aria-pressed={on}
-                  onClick={() => {
-                    const next = on ? priFilter.filter((x) => x !== p) : [...priFilter, p];
-                    setPriFilter(next);
-                    setQueryParams({ pri: next.length === 0 ? null : next.join(",") });
-                  }}
-                >
-                  {p}
-                </Button>
-              );
-            })}
-          </span>
-          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-            {S.company.tickets.queueOnly}
-            <Switch
-              checked={queueOnly}
-              onChange={(v) => {
-                setQueueOnly(v);
-                setQueryParams({ queue: v ? "approve" : null });
-              }}
-            />
-          </label>
           <Button
             size="sm"
             variant={selectMode ? "primary" : "secondary"}
             aria-pressed={selectMode}
+            data-tooltip={S.company.tickets.selectHint}
             onClick={() => {
               setSelectMode((v) => !v);
               setSelected(new Set());
@@ -646,6 +712,137 @@ export function TicketsPage() {
             {S.company.tickets.emptyHint}
           </Notice>
         )}
+
+      {/* One toolbar over the board. The quick chips come first because they are the question a
+          reader arrives with ("what is waiting on me?"); each carries the count it would leave,
+          so a chip that would show nothing says so before it is pressed. The rest — search,
+          priorities, grouping, sort — narrow or reshape what the chips left. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white/70 px-2 py-1.5 dark:border-gray-800 dark:bg-gray-900/50">
+        <span
+          className="flex flex-wrap items-center gap-1"
+          role="group"
+          aria-label={S.company.tickets.quickFilter}
+        >
+          {BOARD_QUICK_FILTERS.map((q) => {
+            // "Mine" needs a signed-in reader to mean anything.
+            if (q === "mine" && me === undefined) return null;
+            const n =
+              q === "all"
+                ? counts.total
+                : q === "queue"
+                  ? counts.queue
+                  : q === "blocked"
+                    ? counts.blocked
+                    : q === "overdue"
+                      ? counts.overdue
+                      : counts.mine;
+            const on = quick === q;
+            return (
+              <Button
+                key={q}
+                size="sm"
+                variant={on ? "primary" : "secondary"}
+                aria-pressed={on}
+                title={S.company.tickets.quickHint[q] ?? ""}
+                onClick={() => {
+                  setQuick(q);
+                  // The two legacy deep-link params fold into `quick` once a chip is pressed.
+                  setQueryParams({ quick: q === "all" ? null : q, blocked: null, queue: null });
+                }}
+              >
+                {S.company.tickets.quick[q] ?? q}
+                <Count n={n} />
+              </Button>
+            );
+          })}
+        </span>
+        <span aria-hidden className="h-5 w-px bg-gray-200 dark:bg-gray-700" />
+        <SearchInput
+          ref={searchRef}
+          size="sm"
+          icon
+          className="w-44 min-w-36 flex-1"
+          aria-label={S.company.tickets.searchPlaceholder}
+          placeholder={S.company.tickets.searchPlaceholder}
+          value={query}
+          onChange={setQuery}
+        />
+        <span
+          className="flex items-center gap-1"
+          role="group"
+          aria-label={S.company.tickets.priority}
+        >
+          {PRIORITIES.map((p) => {
+            const on = priFilter.includes(p);
+            return (
+              <Button
+                key={p}
+                size="sm"
+                variant={on ? "primary" : "secondary"}
+                aria-pressed={on}
+                onClick={() => {
+                  const next = on ? priFilter.filter((x) => x !== p) : [...priFilter, p];
+                  setPriFilter(next);
+                  setQueryParams({ pri: next.length === 0 ? null : next.join(",") });
+                }}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </span>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+          {S.company.tickets.sort}
+          <Select
+            size="sm"
+            value={sort}
+            aria-label={S.company.tickets.sortHint}
+            onChange={(e) => {
+              const next = readSort(e.target.value);
+              setSort(next);
+              setQueryParams({ sort: next === "priority" ? null : next });
+            }}
+          >
+            {SORT_VALUES.map((v) => (
+              <option key={v} value={v}>
+                {S.company.tickets.sortBy[v] ?? v}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+          {S.company.tickets.group}
+          <Select
+            size="sm"
+            value={groupBy}
+            aria-label={S.company.tickets.group}
+            onChange={(e) => {
+              const next = readGroupBy(e.target.value);
+              setGroupBy(next);
+              setQueryParams({ group: next });
+            }}
+          >
+            {GROUP_BY_VALUES.map((v) => (
+              <option key={v} value={v}>
+                {S.company.tickets.groupByName[v] ?? v}
+              </option>
+            ))}
+          </Select>
+        </label>
+        {narrowed && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setQuick("all");
+              setQuery("");
+              setPriFilter([]);
+              setQueryParams({ quick: null, blocked: null, queue: null, pri: null });
+            }}
+          >
+            {S.company.tickets.clearFilters}
+          </Button>
+        )}
+      </div>
 
       <div ref={drag.boardRef} className="overflow-x-auto pb-2">
         <div
@@ -719,7 +916,7 @@ export function TicketsPage() {
                     <Count n={col.tickets.length} />
                   </div>
                   {!shut && (
-                    <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
+                    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
                       {groups === null
                         ? col.tickets.map(card)
                         : groups.map((g) => {
@@ -727,11 +924,14 @@ export function TicketsPage() {
                             const gshut = isCollapsed(gkey);
                             return (
                               <div key={g.key === "" ? "(none)" : g.key}>
+                                {/* The heading holds at the top of the column while its own cards
+                                    pass under it — an opaque band, or the card behind shows
+                                    through the label. */}
                                 <button
                                   type="button"
                                   onClick={() => toggleCollapsed(gkey)}
                                   aria-expanded={!gshut}
-                                  className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                                  className="sticky top-0 z-[1] flex w-full items-center gap-1.5 rounded bg-gray-50/95 px-1 py-1 text-left text-xs text-gray-600 backdrop-blur hover:bg-gray-100 dark:bg-gray-900/95 dark:text-gray-300 dark:hover:bg-gray-800"
                                 >
                                   <Chevron open={!gshut} size={ICON_SIZE.chevronDense} />
                                   <span className="min-w-0 flex-1 truncate font-medium">
@@ -808,6 +1008,11 @@ export function TicketsPage() {
           <Button
             size="sm"
             variant="primary"
+            title={
+              bulkTarget === "rejected" && bulkNote.trim() === ""
+                ? S.company.tickets.bulkRejectHint
+                : ""
+            }
             disabled={
               bulkBusy ||
               (bulkTarget === "" && bulkOwner === "" && bulkNote.trim() === "") ||
@@ -820,6 +1025,13 @@ export function TicketsPage() {
           <Button size="sm" disabled={bulkBusy} onClick={() => setSelected(new Set())}>
             {S.company.tickets.bulkClear}
           </Button>
+          {/* The one combination the bar refuses, said where the button is: rejected takes a
+              reason, and the note field above is where it goes. */}
+          {bulkTarget === "rejected" && bulkNote.trim() === "" && (
+            <span className="text-xs text-amber-600 dark:text-amber-400">
+              {S.company.tickets.bulkRejectHint}
+            </span>
+          )}
         </div>
       )}
 
