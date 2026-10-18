@@ -11,13 +11,7 @@ import { FindBar } from "../components/find/find-bar";
  */
 import { useEffect, useLayoutEffect, useState } from "react";
 import { Outlet, useMatch } from "react-router";
-import {
-  AppShell,
-  Drawer,
-  MobileTopBar,
-  Notice,
-  UpdateDot,
-} from "@prismshadow/penguin-ui";
+import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { nagsAboutInitialPassword } from "../lib/account-menu";
 import { S } from "../lib/strings";
