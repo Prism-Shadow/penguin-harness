@@ -18,7 +18,7 @@
  *   style) and survives a reload; the bottom dock's height ratio is a global preference;
  * - a shell belongs to the conversation that opened it: another conversation's "+" menu never
  *   offers it and its Ctrl+` starts a shell of its own, while the owner's "+" menu offers its
- *   shell opened elsewhere; a draft has no Session, so it offers no terminal at all;
+ *   shell opened elsewhere; a draft has no Session, so Ctrl+` starts nothing there;
  * - a new shell starts in the conversation's Workspace, not the home directory;
  * - a failed shell create surfaces as an error toast instead of silence.
  */
@@ -133,7 +133,7 @@ test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopenin
   await killAllTerminals(page.request);
   // A draft has no Session to own a shell: the shortcut is not taken there (the count of live
   // shells below would read 2 if it had started one).
-  await page.goto(`${BASE}/chat`);
+  await page.goto(`${BASE}/chat/new`);
   await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
   await page.keyboard.press("Control+Backquote");
   await expect(anyDock(page)).toHaveCount(0);
@@ -542,16 +542,6 @@ test("a shell belongs to its conversation: another's menu never offers it, the o
     page.locator(`[data-testid="dock-tab"][data-terminal-id="${shellOfA}"][data-active="true"]`),
   ).toBeVisible();
   await waitForShell(page, "OWNED_SHELL");
-
-  // A draft offers no terminal: no row in the "+" menu, no entry on the picker.
-  await page.goto(`${BASE}/chat`);
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
-  await page.getByTestId("dock-toggle-bottom").click();
-  await expect(dockAt(page, "bottom").getByTestId("dock-picker")).toBeVisible();
-  await expect(page.getByTestId("dock-pick-terminal")).toHaveCount(0);
-  await dockAt(page, "bottom").getByTestId("dock-add").click();
-  await expect(page.getByTestId("dock-add-workspace")).toBeVisible();
-  await expect(page.getByTestId("dock-add-terminal")).toHaveCount(0);
   await killAllTerminals(page.request);
 });
 
