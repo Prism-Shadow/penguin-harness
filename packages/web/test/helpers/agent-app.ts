@@ -2,7 +2,8 @@
  * The Agent settings suites' world: a server behind the package's fetch fake ({@link stubFetch})
  * and the app frame the page and its dialogs render in.
  *
- * The server holds one Project the signed-in admin owns, with one Agent: its config (a PUT
+ * The server holds one Project the signed-in admin owns (and, when asked, a second one with no
+ * Agent of that id — {@link OTHER_PROJECT_ID}), with one Agent: its config (a PUT
  * merges the update into it and echoes the result, the way the real route does), its vault,
  * its scheduled tasks, its API settings, its skills and hooks (none installed) and the
  * Project's models. A test can refuse the next write with {@link AgentServer.refuseNext}, or
@@ -62,6 +63,8 @@ import type { FakeFetch, FetchRequest } from "./fetch";
 
 export const PROJECT_ID = "proj";
 export const AGENT_ID = "helper";
+/** The second Project `agentServer({ otherProject: true })` lists: it has no Agent at all. */
+export const OTHER_PROJECT_ID = "other";
 
 const AGENT_PATH = `/api/projects/${PROJECT_ID}/agents/${AGENT_ID}`;
 
@@ -148,7 +151,7 @@ export interface FakeMachine {
   alias: string;
   /** Being brought back: listed, but not connected, so nothing may be asked of it. */
   reconnecting?: boolean;
-  /** The ids of its own Agents, in the order its list answers them. */
+  /** The ids of its own Agents, in the order its list answers them (and they were created). */
   agents: string[];
   /** Its own plugin library (by default empty): what an Agent created there can start with. */
   library?: PluginItem[];
@@ -196,6 +199,8 @@ export function agentServer(
     library?: PluginItem[];
     /** Scheduled tasks the Agent already has, on a machine when one is named (this server's otherwise). */
     schedules?: Array<{ machineId?: string; item: ScheduleItem }>;
+    /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
+    otherProject?: boolean;
   } = {},
 ): AgentServer {
   /** Installed Skill names by `<machine or "">/<agent>`. */
@@ -250,6 +255,7 @@ export function agentServer(
 
   const summaryOf = (agentId: string): AgentSummary => ({
     agentId,
+    createdAt: "2026-01-01T00:00:00Z",
     activeSessionCount: 0,
     sessionCount: 0,
     sessionActivity: [],
@@ -313,7 +319,14 @@ export function agentServer(
     }
     const agentsPath = `/api/projects/${PROJECT_ID}/agents`;
     if (request.path === agentsPath && request.method === "GET") {
-      return json({ agents: machine.agents.map((id) => ({ ...summaryOf(id), name: id })) });
+      // Created on the machine after everything here, one day apart in list order.
+      return json({
+        agents: machine.agents.map((id, i) => ({
+          ...summaryOf(id),
+          name: id,
+          createdAt: `2026-10-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
+        })),
+      });
     }
     if (request.path === agentsPath && request.method === "POST") {
       const body = request.body as { agentId: string; name?: string };
@@ -388,17 +401,22 @@ export function agentServer(
       });
     }
     if (path === "/api/projects") {
+      const project = (projectId: string, name: string) => ({
+        projectId,
+        name,
+        role: "owner",
+        ownerUserId: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+      });
       return json({
         projects: [
-          {
-            projectId: PROJECT_ID,
-            name: "Project",
-            role: "owner",
-            ownerUserId: "admin",
-            createdAt: "2026-01-01T00:00:00Z",
-          },
+          project(PROJECT_ID, "Project"),
+          ...(options.otherProject ? [project(OTHER_PROJECT_ID, "Other")] : []),
         ],
       });
+    }
+    if (options.otherProject && path === `/api/projects/${OTHER_PROJECT_ID}/agents`) {
+      return json({ agents: [] });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
       return json({ agents: [{ ...summaryOf(AGENT_ID), name: stored.config.name }] });

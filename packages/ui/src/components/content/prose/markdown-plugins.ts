@@ -89,6 +89,14 @@ export const REMARK_PLUGINS: PluginList = [
 ];
 
 /**
+ * The remark stage of the public sites' articles (`SiteMarkdown`): GitHub-flavoured Markdown and
+ * nothing else. Their posts and pages are first-party Markdown written for GitHub's renderer —
+ * strikethrough means strikethrough, a `$` is a shell prompt, and their links are written as
+ * links — so the extras above, which answer model output, would change how they read.
+ */
+export const SITE_REMARK_PLUGINS: PluginList = [remarkGfm];
+
+/**
  * The rehype (mdast -> hast) stage. `rehype-katex` turns every element the remark stage classed
  * `math-inline` / `math-display` into KaTeX's own markup, replacing it outright — which is also why
  * a `$$…$$` block never reaches the chat renderer's `<pre>` override and never becomes a CodeBlock.

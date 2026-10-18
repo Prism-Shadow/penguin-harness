@@ -8,8 +8,9 @@
  *
  * - **About**: the full description (the "no description" placeholder in muted ink when the
  *   package carries none), and the package's own README.md where it ships one (every server
- *   module does). The README is read from the package on this server, never fetched from npm: a
- *   package this server does not have says so instead.
+ *   module does), in the Markdown reader with its outline and its find. The README is read from
+ *   the package on this server, never fetched from npm: a package this server does not have says
+ *   so instead.
  * - **MCP servers**, for a plugin that carries any (plugin-mcp.tsx): one row per server — its
  *   name, transport and target, and marks for the vault keys it needs, the sign-in it needs and,
  *   for a stdio server, the command it runs on this server.
@@ -23,7 +24,6 @@
  */
 import { Fragment, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
 import {
   Badge,
   CopyButton,
@@ -31,17 +31,25 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  MarkdownReader,
   Modal,
-  REHYPE_PLUGINS,
-  REMARK_PLUGINS,
+  ReaderFindBar,
+  ReaderTools,
   RuledSection,
   Skeleton,
+  useMarkdownReader,
 } from "@prismshadow/penguin-ui";
-import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
+import type {
+  FileBrowserPreview,
+  FileTreeRow,
+  MarkdownReaderState,
+  TreeToggle,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { linkSegments } from "../../lib/link-segments";
 import { apiErrorText } from "../../lib/api-error";
 import { baseName } from "../../lib/workspace-tree";
+import { useReaderFind } from "../../lib/reader-find";
 import { useLocale } from "../../state/locale";
 import { getLibraryPluginReadme, getPluginFiles, getPluginReadme } from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -260,6 +268,8 @@ export function PluginDetailSections({
   locale: "zh" | "en";
 }) {
   const version = rowVersion(row);
+  // The README's reader: its outline and find buttons sit in the section's title row.
+  const readmeReader = useMarkdownReader(useReaderFind());
   // Under a display name, the package it names: a server module's specifier line below says
   // the same, so it stands in for this one.
   const packageName =
@@ -333,20 +343,26 @@ export function PluginDetailSections({
         </div>
       </div>
 
-      <RuledSection title={S.plugins.detailDescription} level={3} className="mt-5">
+      <RuledSection
+        title={S.plugins.detailDescription}
+        level={3}
+        className="mt-5"
+        actions={
+          readme.kind === "text" ? (
+            <>
+              <ReaderFindBar reader={readmeReader} className="w-56 max-w-[50vw]" />
+              <ReaderTools reader={readmeReader} />
+            </>
+          ) : undefined
+        }
+      >
         <p
           className={`text-sm leading-relaxed ${rowHasDescription(row, locale) ? "" : "text-fg-muted"}`}
         >
           <LinkedText text={rowDescription(row, locale)} />
         </p>
         {readme.kind === "loading" && <Skeleton className="mt-4 h-24 w-full" />}
-        {readme.kind === "text" && (
-          <div className="md-body mt-4 text-sm">
-            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS}>
-              {readme.text}
-            </ReactMarkdown>
-          </div>
-        )}
+        {readme.kind === "text" && <ReadmeReader text={readme.text} reader={readmeReader} />}
         {readme.kind === "after-install" && (
           <p className="mt-2 text-xs text-fg-muted">{S.plugins.readmeAfterInstall}</p>
         )}
@@ -371,6 +387,21 @@ export function PluginDetailSections({
         </RuledSection>
       )}
     </>
+  );
+}
+
+/**
+ * The README in the Markdown reader: its own scroll box, capped so the sections under it stay in
+ * reach. Its outline and find (on the user's `find.open` binding) are drawn by the section's
+ * title row from the same `reader`.
+ */
+function ReadmeReader({ text, reader }: { text: string; reader: MarkdownReaderState }) {
+  return (
+    <MarkdownReader
+      reader={reader}
+      text={text}
+      className="mt-4 max-h-[60vh] overflow-hidden rounded-md border border-line"
+    />
   );
 }
 
@@ -611,6 +642,8 @@ function PluginFiles({ plugin }: { plugin: PluginItem }) {
   const text = current !== null && files !== null ? files[current] : undefined;
   const preview = current !== null && text !== undefined ? filePreview(current, text) : null;
 
+  const readerFind = useReaderFind();
+
   const toggleDir = (dir: string): void => {
     const open = collapsed.has(dir);
     // The serial makes toggling the same directory again a new event for the tree to animate.
@@ -639,6 +672,8 @@ function PluginFiles({ plugin }: { plugin: PluginItem }) {
       unsupportedLabel={S.files.previewUnsupported}
       downloadLabel={S.files.download}
       stripFrontmatter
+      isFindKey={readerFind.isFindKey}
+      findShortcut={readerFind.findShortcut}
       onToggleDir={toggleDir}
       onOpenFile={setSelected}
     />

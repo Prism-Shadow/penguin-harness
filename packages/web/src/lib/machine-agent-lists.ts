@@ -19,6 +19,8 @@ import { apiErrorText } from "./api-error";
 import { cachedMachineAgents, rememberMachineAgents } from "./machine-cache";
 import { machineLink, remoteAgentsEmpty } from "./machine-link";
 import type { MachineLink } from "./machine-link";
+import { scoped, scopedValue } from "./project-scope";
+import type { Scoped } from "./project-scope";
 import { useMachines } from "../state/machines";
 import { useProject } from "../state/project";
 
@@ -102,6 +104,44 @@ export interface MachineAgents {
   reason: string | null;
 }
 
+/** One Agent of a mixed list: where it lives (null: this server), and its summary. */
+export interface PlacedAgent {
+  agent: AgentSummary;
+  /** The machine's list it came from; null for this server's Agents. */
+  on: MachineAgents | null;
+}
+
+/**
+ * This server's Agents and every machine's in ONE list, the way the sidebar mixes machine
+ * Workspaces with this server's: no machine goes first, everything is ordered by the list's own
+ * key — here the Agents list's, oldest created first (the server's order) — and a machine's Agent
+ * simply falls where its creation puts it. Ties go by id, then this server's first, then by
+ * machine name, so the order is stable. An Agent whose creation time is unknown goes last.
+ * `liveOnly` leaves out the machines that cannot be acted on right now.
+ */
+export function mixAgents(
+  here: readonly AgentSummary[],
+  lists: readonly MachineAgents[],
+  { liveOnly = false }: { liveOnly?: boolean } = {},
+): PlacedAgent[] {
+  const placed: PlacedAgent[] = [
+    ...here.map((agent) => ({ agent, on: null })),
+    ...lists
+      .filter((list) => !liveOnly || list.live)
+      .flatMap((list) => list.agents.map((agent) => ({ agent, on: list }))),
+  ];
+  const created = (p: PlacedAgent) => p.agent.createdAt ?? "\uffff";
+  // Code-point order: an ISO time sorts by its digits, never by a locale's idea of punctuation.
+  const byCode = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+  return placed.sort(
+    (a, b) =>
+      byCode(created(a), created(b)) ||
+      a.agent.agentId.localeCompare(b.agent.agentId) ||
+      (a.on === null ? -1 : 0) - (b.on === null ? -1 : 0) ||
+      (a.on?.machine.label ?? "").localeCompare(b.on?.machine.label ?? ""),
+  );
+}
+
 /** A machine's answer: its Agents, or the failure in words. */
 type Answer = { agents: AgentSummary[] } | { error: string };
 
@@ -127,7 +167,12 @@ export function useMachineAgents(projectId: string | null): {
     .filter((m) => m.link === "connected")
     .map((m) => m.machineId)
     .join(",");
-  const [answers, setAnswers] = useState<ReadonlyMap<string, Answer>>(new Map());
+  /**
+   * The machines' answers, tagged with the Project they were read for (lib/project-scope.ts):
+   * the reset below lags a Project switch by one commit, and in that commit the previous
+   * Project's answers are not this one's.
+   */
+  const [answers, setAnswers] = useState<Scoped<ReadonlyMap<string, Answer>> | null>(null);
   /** The Project the page is on now: an answer about another is dropped. */
   const currentProject = useRef(projectId);
   currentProject.current = projectId;
@@ -139,21 +184,27 @@ export function useMachineAgents(projectId: string | null): {
     generation.current.set(machineId, gen);
     const current = () =>
       currentProject.current === askProject && generation.current.get(machineId) === gen;
+    /** The Project's answers so far, with this machine's set to `answer`. */
+    const withAnswer = (
+      prev: Scoped<ReadonlyMap<string, Answer>> | null,
+      answer: Answer,
+    ): Scoped<ReadonlyMap<string, Answer>> =>
+      scoped(askProject, new Map(scopedValue(prev, askProject)).set(machineId, answer));
     api.listAgents(askProject, machineId).then(
       (res) => {
         if (!current()) return;
         rememberMachineAgents(askProject, machineId, res.agents);
-        setAnswers((prev) => new Map(prev).set(machineId, { agents: res.agents }));
+        setAnswers((prev) => withAnswer(prev, { agents: res.agents }));
       },
       (err: unknown) => {
         if (!current()) return;
-        setAnswers((prev) => new Map(prev).set(machineId, { error: apiErrorText(err) }));
+        setAnswers((prev) => withAnswer(prev, { error: apiErrorText(err) }));
       },
     );
   }, []);
 
   useEffect(() => {
-    setAnswers(new Map());
+    setAnswers(null);
   }, [projectId]);
 
   /** The connected machines as last rendered, for a change heard between renders. */
@@ -185,30 +236,27 @@ export function useMachineAgents(projectId: string | null): {
     [connectedKey],
   );
 
-  const lists = useMemo(
-    () =>
-      projectId === null
-        ? []
-        : infos.map((machine): MachineAgents => {
-            const answer =
-              machine.link === "connected" ? answers.get(machine.machineId) : undefined;
-            if (answer !== undefined && "agents" in answer) {
-              return { machine, agents: answer.agents, live: true, reason: null };
-            }
-            const failure = answer !== undefined && "error" in answer ? answer.error : null;
-            return {
-              machine,
-              agents: cachedMachineAgents(projectId, machine.machineId),
-              live: false,
-              // Connected and not answered yet is a wait, not a reason.
-              reason:
-                machine.link === "connected" && failure === null
-                  ? null
-                  : remoteAgentsEmpty(machine.link, failure),
-            };
-          }),
-    [projectId, infos, answers],
-  );
+  const lists = useMemo(() => {
+    if (projectId === null) return [];
+    const answered = scopedValue(answers, projectId);
+    return infos.map((machine): MachineAgents => {
+      const answer = machine.link === "connected" ? answered?.get(machine.machineId) : undefined;
+      if (answer !== undefined && "agents" in answer) {
+        return { machine, agents: answer.agents, live: true, reason: null };
+      }
+      const failure = answer !== undefined && "error" in answer ? answer.error : null;
+      return {
+        machine,
+        agents: cachedMachineAgents(projectId, machine.machineId),
+        live: false,
+        // Connected and not answered yet is a wait, not a reason.
+        reason:
+          machine.link === "connected" && failure === null
+            ? null
+            : remoteAgentsEmpty(machine.link, failure),
+      };
+    });
+  }, [projectId, infos, answers]);
 
   return { lists, reload };
 }

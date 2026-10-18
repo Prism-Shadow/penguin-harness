@@ -1397,6 +1397,29 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         api: { answeredAt: iso(ago(0, 3)) },
         status: { state: "running", checkedAt: iso(ago(0, 3)), port: 7364 },
         root: "/home/ubuntu/.penguin/data",
+        // The last sync could not carry a key this server reads from its environment, and the
+        // machine would not take one hand-added model: the dialog's two notices.
+        configSync: {
+          at: iso(ago(0, 3)),
+          ok: true,
+          envOnly: [
+            {
+              projectId: IDS.project,
+              provider: "openai",
+              modelId: "gpt-5.6-luna",
+              variable: "OPENAI_API_KEY",
+            },
+          ],
+          skipped: [
+            {
+              projectId: IDS.project,
+              provider: "penguin-go",
+              modelId: "gemini-3.7-flash",
+              code: "model_not_addable",
+              reason: "cannot be added",
+            },
+          ],
+        },
       },
       {
         id: "ssh:office-mac",

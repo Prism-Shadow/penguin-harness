@@ -25,6 +25,8 @@
  *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
  *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
  *    (reload-midstream.spec reloads while the TEXT streams)
+ *  - "sticky rows test" -> thinking + three tool_use(exec_command) printing long runs of numbers
+ *    (sticky-rows.spec scrolls an open output under the pinned group head and tool row)
  *  - last message has tool_result -> final text (turn 2)
  *  - otherwise (first user turn) -> thinking + text + tool_use(exec_command)
  */
@@ -502,6 +504,29 @@ const server = http.createServer((req, res) => {
         { type: "input_json_delta", partial_json: ' echo line $i; sleep 0.2; done"}' },
       ]);
       messageStop(res, "tool_use", 14);
+      return;
+    }
+
+    // Sticky-rows test case (sticky-rows.spec): one work group of a thinking step and three
+    // exec_command calls whose output is one long run of numbers, so every line of an open
+    // output block is full of text, edge to edge, while it scrolls under the pinned rows.
+    if (flat.includes("sticky rows test") && !hasToolResult) {
+      block(
+        res,
+        0,
+        { type: "thinking", thinking: "" },
+        [{ type: "thinking_delta", thinking: "Three commands will print the numbers." }],
+        { type: "signature_delta", signature: "sig_mock_sticky" },
+      );
+      for (let i = 1; i <= 3; i++) {
+        block(
+          res,
+          i,
+          { type: "tool_use", id: `toolu_sticky_${i}`, name: "exec_command", input: {} },
+          [{ type: "input_json_delta", partial_json: `{"cmd": "seq -s ' ' ${i} 4000"}` }],
+        );
+      }
+      messageStop(res, "tool_use", 40);
       return;
     }
 

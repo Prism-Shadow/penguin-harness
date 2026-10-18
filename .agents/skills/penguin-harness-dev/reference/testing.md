@@ -100,6 +100,27 @@ own, and the real integration goes unchecked (see the seam-fakes note in `verifi
 - Parameterize instead of copying: `it.each` over the table of cases for one behaviour.
 - CI runs every suite on Linux, macOS and Windows. A slow or flaky test costs three times.
 
+## 6. CI time is a cost
+
+Every minute a suite takes is paid on Linux, macOS and Windows, on every pull request and every
+push to `main`, and a slow suite is a flaky one: the Windows runner has four vCPUs, scans every
+file a test creates, and runs a file several times slower than a dev box.
+
+- Keep a test well under 1 s. Nothing may come near its per-test timeout on a loaded Windows
+  runner (5 s, and the server's and core's larger Windows budgets are not headroom to spend).
+- Count what a fixture writes, not only what the test asserts. A file every app boot or every
+  new Project writes is written again by every test that boots one; that is how the built-in
+  Benchmarks a new Project gets made the Windows server shards several times slower within a
+  week. Shrink the fixture, or give the boot a test seam the way `passwordHashCost` does.
+- No large real fixtures (thousands of files, multi-megabyte archives — declare the size
+  instead), no sleeps, no polling loops with long deadlines. Wait on the event.
+- Share setup across a `describe`; type into a terminal only after the previous command's
+  output arrived.
+- A new CI job or shard pays checkout, install and build again and takes a runner from every
+  other PR: add one only with measured durations that justify it.
+- After CI, read your PR's job durations against `main`'s (`gh run view <id> --json jobs`). A
+  job that got slower is a regression to fix in the same PR, like a failing test.
+
 ## Checklist for a test PR
 
 - [ ] The scenario list is in the file header, and each `it` name is a behaviour.
@@ -107,3 +128,4 @@ own, and the real integration goes unchecked (see the seam-fakes note in `verifi
 - [ ] Fakes come from the package's helpers; nothing of the package's own is `vi.mock`ed.
 - [ ] The branches the change adds are exercised; pruning did not lower branch coverage.
 - [ ] No real sleeps, no network, no per-test servers where one per `describe` would do.
+- [ ] The PR's CI job durations are no worse than `main`'s.

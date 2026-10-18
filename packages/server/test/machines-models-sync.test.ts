@@ -12,7 +12,9 @@
  * plaintext, merged into theirs per field — a field we do not hold is left alone there.
  *
  * An entry the machine refuses by name is left out and the rest of the table still lands, with
- * no pointer to it. A value a row takes from this server's environment never travels, and
+ * no pointer to it. A Project the machine is still provisioning on its first boot (its creation
+ * refused as taken, the Project not listed yet) is written once it is listed; one that never is
+ * stays refused. A value a row takes from this server's environment never travels, and
  * `envSourced` names exactly those.
  *
  * The machine's API is faked. What travels between the two servers is HTTP through a tunnel
@@ -286,6 +288,70 @@ describe("syncModelsToMachine, against a scripted machine", () => {
         body: { models: [], providers: { tokendance: { apiKey: "td-group-0123456789" } } },
       },
     ]);
+  });
+
+  /**
+   * A machine on its first boot, still provisioning `default_project`: its directory is there, so
+   * a creation is refused as taken, and it is listed only once `ready` is set.
+   */
+  function provisioningMachine() {
+    const state = { ready: false, pauses: 0 };
+    const puts: string[] = [];
+    const api: MachineApi = {
+      postBytes: async () => ({ status: 500, text: "" }),
+      request: async (method, path) => {
+        if (path === "/api/projects" && method === "GET") {
+          const projects = state.ready ? [{ projectId: "default_project" }] : [];
+          return { status: 200, text: JSON.stringify({ projects }) };
+        }
+        if (path === "/api/projects" && method === "POST") {
+          return {
+            status: 409,
+            text: JSON.stringify({ error: { code: "project_exists", message: "taken" } }),
+          };
+        }
+        if (method === "PUT") {
+          puts.push(path);
+          return { status: 200, text: "{}" };
+        }
+        return { status: 200, text: JSON.stringify(remoteTable()) };
+      },
+    };
+    return { api, state, puts };
+  }
+
+  it("writes a Project the machine is still provisioning once it is listed", async () => {
+    const machine = provisioningMachine();
+    const outcome = await syncModelsToMachine({
+      api: machine.api,
+      projects: ["default_project"],
+      loadLocal: async () => ({ models: [local()] }),
+      pause: async () => {
+        machine.state.pauses += 1;
+        if (machine.state.pauses === 3) machine.state.ready = true;
+      },
+    });
+    expect(outcome).toMatchObject({ kind: "synced", projects: ["default_project"], created: [] });
+    expect(machine.puts).toEqual(["/api/projects/default_project/models"]);
+  });
+
+  it("refuses a Project still not listed after waiting, and writes nothing for it", async () => {
+    const machine = provisioningMachine();
+    const outcome = await syncModelsToMachine({
+      api: machine.api,
+      projects: ["default_project"],
+      loadLocal: async () => ({ models: [local()] }),
+      pause: async () => {
+        machine.state.pauses += 1;
+      },
+    });
+    expect(outcome).toMatchObject({
+      kind: "synced",
+      projects: [],
+      refused: [{ projectId: "default_project", detail: expect.stringContaining("409") }],
+    });
+    expect(machine.puts).toEqual([]);
+    expect(machine.state.pauses).toBeGreaterThan(0);
   });
 
   it("the channel giving out fails the sync as a whole — nothing after it would fare better", async () => {

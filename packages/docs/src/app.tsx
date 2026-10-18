@@ -1,20 +1,27 @@
 /**
- * App root: Locale -> Theme -> LocaleScope -> Router provider composition, same as
- * the landing page (LocaleScope remounts the tree keyed by locale so every `S.x`
- * read reflects the active language).
+ * App root: Locale -> Theme -> LocaleScope -> Router, the same composition as the landing page.
+ * The shared providers own the preferences; this site supplies its dictionaries.
  */
-import { LocaleProvider, LocaleScope } from "./state/locale";
-import { ThemeProvider } from "./state/theme";
+import {
+  SiteLocaleProvider,
+  SiteLocaleScope,
+  SiteThemeProvider,
+} from "@prismshadow/penguin-ui/site";
+import type { SiteLocale } from "@prismshadow/penguin-ui/site";
+import { setActiveStrings, zh } from "./lib/strings";
+import { en } from "./lib/strings-en";
 import { AppRouter } from "./router";
+
+const applyLocale = (locale: SiteLocale) => setActiveStrings(locale === "en" ? en : zh);
 
 export function App() {
   return (
-    <LocaleProvider>
-      <ThemeProvider>
-        <LocaleScope>
+    <SiteLocaleProvider onLocale={applyLocale}>
+      <SiteThemeProvider>
+        <SiteLocaleScope>
           <AppRouter />
-        </LocaleScope>
-      </ThemeProvider>
-    </LocaleProvider>
+        </SiteLocaleScope>
+      </SiteThemeProvider>
+    </SiteLocaleProvider>
   );
 }

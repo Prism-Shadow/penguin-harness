@@ -3,8 +3,9 @@
  * one action button, and the slash list with the pickers a slash command opens. The toolbar's
  * triggers are `ToolbarTrigger` (toolbar-trigger.tsx) and the pickers behind them `MenuSelect`.
  *
- * - `ComposerCard` is one bordered card: the chip row, then the text body — a textarea that grows
- *   with what is typed, up to about six lines, then scrolls — then a single toolbar row that never
+ * - `ComposerCard` is one bordered card: the staged images and files (`AttachmentList`), the chip
+ *   row, then the text body — a textarea that grows with what is typed, up to about six lines,
+ *   then scrolls — then a single toolbar row that never
  *   shares a line with the text. The toolbar's left group (a tight cluster of icon triggers, then a
  *   muted hint) is the part allowed to give way: it scrolls sideways on a narrow card, so the right
  *   group (status, model, the action button) always stays on screen. The card is a size container,
@@ -36,12 +37,15 @@ export type ComposerTextareaProps = Omit<
 > & { ref?: Ref<HTMLTextAreaElement> };
 
 export function ComposerCard({
+  attachments,
   chips,
   textarea,
   tools,
   hint,
   actions,
 }: {
+  /** The images and files staged for the message (`AttachmentList`), first in the card. */
+  attachments?: ReactNode;
   /** The chip row above the text body (`ChipRow`); nothing is drawn when absent. */
   chips?: ReactNode;
   /** The text body: a controlled textarea, two lines high to begin with. */
@@ -59,6 +63,9 @@ export function ComposerCard({
       data-slot="composer"
       className="ui-glass @container rounded-lg border border-line-emphasis bg-surface px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-fg-muted focus-within:ring-2 focus-within:ring-fg-subtle/30"
     >
+      {attachments !== undefined && attachments !== null && (
+        <div className="mb-2">{attachments}</div>
+      )}
       {chips}
       {/* The body rung rather than the form controls' small one: this is a typing surface for
           prose the user composes and re-reads, and the toolbar under it is the small rung. */}
@@ -88,7 +95,7 @@ export function ComposerCard({
 }
 
 /** The chip row above the composer's text body. */
-export function ChipRow(props: Omit<Parameters<typeof TagInput>[0], "variant" | "className">) {
+export function ChipRow(props: Omit<Parameters<typeof TagInput>[0], "className">) {
   return <TagInput {...props} className="mb-1" />;
 }
 

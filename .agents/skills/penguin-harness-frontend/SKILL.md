@@ -1,9 +1,14 @@
 ---
 name: penguin-harness-frontend
-description: Use when changing the PenguinHarness Web App (`packages/web`) or the shared UI package — adding or restyling any UI, picking a status colour, adding an icon, laying out a row or a form field, deciding when a control commits and how a form saves, writing user-facing copy, building a popup or a hover-revealed panel, or making anything open, fold, resize or maximize. Covers the semantic tone tokens, the icon size/stroke/gap scale, the settings commit model (switches commit, forms save, leaving asks), the semantic-versus-formatting rule and the hover "?", the two-dictionary i18n contract, the portal-panel pattern, motion (every disclosure folds through `Fold`, sizes move through the theme's layout motion), where a gradient may go (only where it has a job: data, a state, or one deliberate emphasis), and the recent owner decisions on favorites, maximized surfaces, the collapsed rail and example cards.
+description: >-
+  Use when changing PenguinHarness frontend code: the Web App (packages/web), landing
+  page (packages/landing), docs (packages/docs), component gallery (packages/ui-gallery),
+  or shared UI package (packages/ui). Always inspect, reuse and extend shared UI first.
+  Covers control behavior and cursors, theme tokens, icons, settings commits,
+  bilingual copy, popups, layout, motion, gradients, navigation and responsive forms.
 ---
 
-# Web App frontend conventions
+# Frontend conventions
 
 `packages/web` is React 19 + Vite + Tailwind CSS 4, with no `cn`/`clsx`, no `tailwind-merge`, and no
 variants library. Classes are composed with template literals, and a component's variants are a
@@ -12,6 +17,56 @@ that shape; do not introduce a styling dependency.
 
 This file records the decisions that already exist so they are not re-litigated per PR. Read
 `penguin-harness-dev` for the repo-wide contract (verification chain, changelog, two-repo layout).
+
+## Start in the shared UI package
+
+Before adding or changing a control on any frontend, inspect `packages/ui/src/index.ts`,
+`packages/ui/src/site.ts` and the relevant component under `packages/ui/src/components/`. Reuse its component, hook or class helper. When it
+lacks the behavior needed by the app, extend that shared component and update its callers. A
+reusable interaction or visual rule belongs in `packages/ui`; each host supplies domain data,
+routing, translated labels, preference persistence and actions. Do not copy a shared control into a feature or patch its defaults in
+`packages/web/src/styles.css`.
+
+Extract a common component or hook when the same interaction appears in multiple places. Keep the
+abstraction at the concrete behavior being shared; a one-off business rule stays with its feature.
+During review, check for duplicated markup, page-local overrides and call sites that bypass the
+shared component. Verify the shared change in the gallery and in a representative host surface.
+
+### Landing, docs and gallery chrome
+
+Use `@prismshadow/penguin-ui/site` for the shared `SiteHeader`, `SiteNavLinks`,
+`SiteLanguageMenu`, `SiteThemeToggle`, `SiteGitHubLink` and site icons, and for what the sites'
+pages share: `SiteFooter`, `SiteCodeCard`, `SiteCopyButton`, `SitePill`, `SiteMarkdown` (article
+prose with `SiteCodeBlock` and `SiteCodeTabs`; the docs pass `SITE_DOC_REMARK_PLUGINS` and every
+site passes `highlightSiteCode`), `SiteToc` with `useActiveTocEntry`, `SiteSidebarNav`,
+`SiteSearchDialog`, `SiteExternalLink`, the preference providers (`SiteThemeProvider`,
+`SiteLocaleProvider`, the shared `penguin-site.*` keys) and `useRouteScroll`. Import
+`@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors; a site's
+Tailwind entry also imports `site-page.css` (the `dark` variant, the brand scale, the neutral dark
+ramp, body defaults). This entry is independent of the app renderer and full theme; public sites
+do not need the app's bundled fonts just to render a page. Their wrappers only adapt routes,
+labels, content and preferences. Do not restore copied navbar markup, language-menu event
+handlers, theme cycles, footers, copy buttons or Markdown typography in a site package.
+
+A site component is held to the package's de-slop rules like any other: its look lives in
+`site-content.css` or `site-prose.css` on the `--site-*` palette (Tailwind's values, the neutral
+dark ramp), never as palette utilities, `dark:` variants or literal font sizes in its markup.
+
+Public-site controls keep their fixed visual identity through the gallery's theme changes.
+Their shared recipes live in `packages/ui/src/site.css`; landing content, marketing sections and
+docs prose retain their own layout. Reuse app primitives underneath (the language picker uses
+`Dropdown` and `MenuRadioItem`, mobile disclosure uses `Fold`). Native title hints remain allowed
+on this public-site chrome, which does not mount the app's `TooltipLayer`. The app conventions
+below still apply to app-themed controls and previews.
+
+### Cursors belong to the control
+
+`packages/ui/src/cursors.css`, imported by both `theme.css` and `site.css`, owns the arrow cursor for buttons, tabs, menus, option and tree rows,
+labels and form selectors. `NavRow` and `RailItem` also keep the arrow when rendered through a
+router link. Public-site navigation uses the same arrow policy. Use hover ink or fill to signal these controls; do not add `cursor-pointer` merely
+because something is clickable. Content links and `Button variant="link"` keep the hand. Text
+entry, drag, resize, zoom and disabled controls keep their operation-specific cursors. Custom
+interactive cards and table rows use their shared UI component's cursor behavior.
 
 ## Status colour: pick a tone, never a palette class
 
@@ -38,6 +93,19 @@ Rules:
   squeezing compress mark do, and it is legible to a reader who cannot separate hues.
 - **Never make colour the only carrier.** Every status mark also names its state in an accessible
   name or in adjacent text.
+- **No coloured dot carries a status on its own** (owner, 2026-10-15: 「不要用意义不明的颜色点」,
+  after the Machines page's blue dot). A dot whose meaning lives only in its hue and a hover is a
+  mark the reader has to decode. A state is a **labelled pill** — `Pill` in the state's tone, its
+  word on screen and no glyph, the reason on the pill's `tooltip` (`MachineStatusPill` is the
+  pattern) — or, where a row has no room for a word, an **icon** whose shape says the state and
+  whose tooltip and `aria-label` name it. A dot stays only as decoration beside words that already
+  say the state, or as a pulse on something live.
+- **One shape for every short label on a row** (owner, 2026-10-15: 「运行中胶囊和本服务端统一一下，用
+  ui 库抽象」). A state, a kind or a fact beside a name ("Running", "this server", "v0.2.16",
+  "vision", "CLI") is a `Pill`: the badge at its small size in its soft weight, words only, with
+  only the tone to choose. Two labels side by side never differ in height, padding, radius, type
+  or border. Reach for `Badge` itself only for what is not a row label: a count, an outline or
+  solid weight a design asks for, a superscript mark.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
   surfaces marks actually sit on — white and gray-50 in light, and the values the default theme
   *overrides* for dark (`packages/ui/src/themes/github.css`: gray-950 is `#000000`, gray-900 is
@@ -241,6 +309,11 @@ Every control defaults to `sm` so a forgotten prop lands where its neighbours al
 surfaces are outside the family entirely: the chat composer is `text-base` because it holds prose,
 the file editor `font-mono text-xs` because it holds code.
 
+**A toolbar is one height.** `Button`'s `sm` and `base` rungs are the controls' own heights, so a
+search box, a `Select` and a button of one rung line up. A choice in a toolbar is the package's
+`Select` at that rung (the machine picker is one), never a button dressed as a select with a fixed
+`h-*`: the old machine picker, a button with `h-8`, stood about 5px above the controls beside it.
+
 **A button takes the rung of whatever it stands beside.** `Button` defaults to `md`
 (`text-sm px-3 py-1.5`), the page rung, and that is for an action standing on its own: an empty
 state's, the login card's submit, a list's "add a custom model". Wherever a button sits next to form
@@ -367,6 +440,11 @@ label instead. A width passed to `Input` or `Select` through `className` loses t
 `w-full` (the built sheet emits `.w-full` after `.w-44`), and a full-width field beside a button is
 what squeezes it: put the width on a box around the field.
 
+**A row's text gives way; its actions never do.** Items with actions are `ListRow` rows: text
+`min-w-0` + `truncate` (whole on hover, no attribute), actions keep their width and wrap under the
+text, never clipped. A box that sizes to its content (a grid's `auto` column, a fold body) holds
+its child with `min-w-0`, or one long line widens every row past the card (ui-gallery `test:e2e`).
+
 The trap is a `Segmented` with long labels in a `PrefRow`: the row's control column is
 `minmax(0, max-content)` and its slot is `justify-end`, so a control that no longer fits overflows
 leftward over the row's label instead of wrapping. Keep such labels short, or give the options a
@@ -484,6 +562,13 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 - **Example and template cards show a short summary**, one line saying what it is; the full text
   (a mission, a prompt) lands in the field it fills, and examples live where the choice is made,
   not again under that field (company landing, 2026-10-03).
+- **What a message carries is an attachment tile.** An image or a file attached to a message —
+  staged in the composer, sent, or inside a steer — is the UI package's `AttachmentImage` /
+  `AttachmentFile` in an `AttachmentList`, never a hand-built thumbnail or a chip. An image box
+  takes a box radius (`rounded-md`), never `rounded-control`: Frost's controls are pills at
+  9999px, and that radius on a box that is not square draws a stadium (owner, 2026-10-17:
+  「图片传上去不知道为啥变成椭圆了」). The gallery's attachments board and its browser spec
+  (`packages/ui-gallery/e2e/attachments.spec.mjs`) hold the shapes.
 - **Comments explain constraints, not history**, and never cite a design doc — inline the constraint.
 
 ## Verify

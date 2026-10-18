@@ -19,11 +19,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DOCS_NAV, DOC_SLUGS, pagerFor } from "../src/lib/nav";
-import { parseFrontmatter } from "../src/lib/frontmatter";
-import { hashTargetId } from "../src/lib/hash";
 import { en } from "../src/lib/strings-en";
 import { zh } from "../src/lib/strings";
-import { extractToc } from "../src/lib/toc";
+import { extractToc, hashTargetId, parseFrontmatter } from "@prismshadow/penguin-ui/site";
 
 const contentDir = join(__dirname, "..", "content");
 const files = readdirSync(contentDir).filter((f) => f.endsWith(".md"));

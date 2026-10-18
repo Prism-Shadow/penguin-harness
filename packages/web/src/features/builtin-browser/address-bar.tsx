@@ -207,7 +207,7 @@ export function AddressBar({
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setHighlight(index)}
                 onClick={() => go(entry.url)}
-                className={`flex cursor-pointer flex-col px-2.5 py-1.5 text-xs ${
+                className={`flex flex-col px-2.5 py-1.5 text-xs ${
                   index === highlight ? "bg-gray-100 dark:bg-gray-800" : ""
                 }`}
               >

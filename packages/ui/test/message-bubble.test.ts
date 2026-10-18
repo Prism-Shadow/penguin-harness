@@ -1,5 +1,5 @@
 /**
- * MessageRow, MessageBubble, MessageImage and MessageMeta
+ * MessageRow, MessageBubble and MessageMeta
  * (src/components/chat/message-bubble/message-bubble.tsx): what the person sent, on the right with
  * its footer under it, and the run's one-line notices. Every word arrives as a prop.
  */
@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 import { ICONS } from "../src/components/icons/icons";
 import {
   MessageBubble,
-  MessageImage,
   MessageMeta,
   MessageRow,
 } from "../src/components/chat/message-bubble/message-bubble";
@@ -39,7 +38,6 @@ describe("MessageBubble", () => {
         {
           variant: "steering",
           label: "Steering",
-          media: createElement("img", { alt: "shot" }),
           attachments: createElement("p", null, "a.pdf"),
         },
         "go on",
@@ -47,7 +45,7 @@ describe("MessageBubble", () => {
     );
     expect(html).toContain(`d="${ICONS.user}"`);
     expect(html).toMatch(/>Steering<\/span>go on<\/p>/);
-    expect(html.indexOf('alt="shot"')).toBeLessThan(html.indexOf("a.pdf"));
+    expect(html.indexOf("go on")).toBeLessThan(html.indexOf("a.pdf"));
   });
 
   it("draws a notice in the muted ink, a reconnect in the attention ink with its controls last", () => {
@@ -66,14 +64,6 @@ describe("MessageBubble", () => {
     );
     expect(classTokens(html)).toContain("text-tone-attention-fg");
     expect(html).toMatch(/<span>Reconnecting<\/span><span [^>]*><button [^>]*>Retry now<\/button>/);
-  });
-});
-
-describe("MessageImage", () => {
-  it("opens large on a click, on the inner radius of the bubble it sits in", () => {
-    const html = renderStatic(createElement(MessageImage, { src: "/a.png", alt: "Image" }));
-    expect(html).toMatch(/^<button type="button" class="[^"]*cursor-zoom-in[^"]*">/);
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["max-h-48", "rounded-control"]));
   });
 });
 

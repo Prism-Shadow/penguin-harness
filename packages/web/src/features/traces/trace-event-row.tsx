@@ -199,7 +199,7 @@ function UsageTable({ p }: { p: Record<string, unknown> }) {
 }
 
 const summaryClass =
-  "cursor-pointer text-xs font-medium text-gray-500 marker:text-gray-400 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
+  "text-xs font-medium text-gray-500 marker:text-gray-400 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
 
 /** session_meta: a field table + system prompt (Markdown) + tool definition list. */
 function SessionMetaBody({ p }: { p: Record<string, unknown> }) {

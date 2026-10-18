@@ -45,7 +45,7 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 
 ## 在 Agent 上安装插件
 
-1. 在**插件市场**页面，点击插件卡片上的**管理安装**。对话框会列出当前 Project 里的所有 Agent：先是本服务端的，再是每台已连接机器自己的 Agent，名称之后写出机器，例如 `[SSH: gpu-box]`。安装到机器上的 Agent 时，用的是那台机器的插件库，行上的状态也读自那台机器。
+1. 在**插件市场**页面，点击插件卡片上的**管理安装**。对话框会在同一列表里、按**智能体**页面的顺序列出当前 Project 里的所有 Agent：本服务端与每台已连接机器自己的 Agent 并列，机器上的 Agent 名称之后写出机器，例如 `[SSH: gpu-box]`。安装到机器上的 Agent 时，用的是那台机器的插件库，行上的状态也读自那台机器。
 2. 在 Agent 旁边点击**安装**。
 
 安装的是整个插件：包括全部 Skill、钩子包和 MCP Server。新对话立即生效。已经打开的对话里，钩子包和 MCP Server 从下一轮起生效，Skill 在下一次压缩后生效。
@@ -251,6 +251,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装） |
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
 | | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
+| | `penguin-support` | PenguinHarness 产品客服，包含 `penguin-support` Skill（依据官方文档和源码解答产品问题、排查故障）和客服[工作台](#workbench-插件)：问题列表、新建问题弹窗，以及支持追问的对话详情。不预装：默认 Project 的内置客服 Agent「PenguinHarness Support」自带该插件，其他 Agent 可从插件库安装 |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含六个 Skill：`agent-initialization`（根据需求搭建 Agent：它的 `AGENTS.md`、Skill 与钩子）、`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`penguin-plugin`（搭建 Agent 在对话旁自己维护的 Workbench）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |

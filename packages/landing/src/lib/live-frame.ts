@@ -14,7 +14,7 @@ import { surfaceById } from "../../../ui-gallery/src/app/surfaces";
 import type { SurfaceId } from "../../../ui-gallery/src/app/surfaces";
 import { surfacePath } from "../../../ui-gallery/src/lib/page-paths";
 import { INITIAL_THEME_ID } from "../../../ui/src/tokens";
-import type { Locale } from "../state/locale";
+import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
 import { GALLERY_URL } from "./links";
 
 export type { SurfaceId };

@@ -12,8 +12,8 @@
  * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
  *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
  *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
- *   Update: this server's, then each connected machine's own, named `[SSH: alias]` after the
- *   Agent's name, every action on such a row going to that machine. Installing a plugin with a
+ *   Update: this server's and each connected machine's own in one list, a machine's named
+ *   `[SSH: alias]` after the Agent's name, every action on such a row going to that machine. Installing a plugin with a
  *   stdio MCP server on an Agent that lacks it asks first, showing the command it runs on the
  *   Agent's server, and an update's confirmation shows it too (the
  *   reinstall writes the servers again). Beside an Agent whose copy of the plugin's MCP
@@ -126,7 +126,7 @@ export interface PluginCardProps {
    * already does. The detail dialog names it either way.
    */
   showCategory: boolean;
-  /** Every Agent a library plugin can go on, for the manage-installs dialog: this server's first. */
+  /** Every Agent a library plugin can go on, for the manage-installs dialog, in the Agents page's order. */
   targets: readonly InstallTarget[];
   installed: InstalledMap;
   /** Whether there is a current Agent for quick start to open a draft on. */

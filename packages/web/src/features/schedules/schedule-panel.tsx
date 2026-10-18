@@ -235,7 +235,6 @@ export function SchedulePanel({
     all: S.schedule.filterAll,
     active: S.schedule.filterActive,
     paused: S.schedule.filterPaused,
-    completed: S.schedule.filterCompleted,
   };
 
   return (
@@ -273,7 +272,7 @@ export function SchedulePanel({
           onChange={setQuery}
         />
         <Segmented
-          cols={4}
+          cols={3}
           options={SCHEDULE_FILTERS.map((value) => ({ value, label: filterLabels[value] }))}
           value={filter}
           onChange={setFilter}

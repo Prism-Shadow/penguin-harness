@@ -16,10 +16,19 @@ PR CI runs `smoke.spec.mjs`, three browser scenarios against the real HTTP serve
 sign-in and its cookie across reload; a pending approval that must not write until allowed;
 and completed history plus a working follow-up after reload. The last scenario covers the
 post-reload send regression from #89. Only the LLM boundary is replaced by the shared mock.
+Beside it CI runs `sticky-rows.spec.mjs`: a work group's head and an open tool row stay pinned
+at the top of the transcript while the output scrolls under them, with and without a custom
+background.
+
+PR CI also runs `project-switch.spec.mjs`: two Projects with distinct Agents, switched while
+their lists are still loading — one late Agent list forced with a route delay, and a slow-machine
+run with the renderer CPU throttled and every API answer delayed from a fixed seed. It fails on
+anything of one Project shown under the other, on any request that pairs a Project with an Agent
+it does not have, and on any `agent_not_found` answer.
 
 ```sh
-pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs
-SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs
+SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs
 ```
 
 Arguments are forwarded to Playwright, so a spec path or `--grep` selects a focused run.

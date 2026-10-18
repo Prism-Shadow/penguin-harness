@@ -6,14 +6,14 @@ import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { formatPostDate, latestPosts } from "../lib/blog";
 import { useReveal } from "../lib/reveal";
-import { useLocale } from "../state/locale";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { ArrowRightIcon } from "../components/icons";
 
 /** How many posts the row shows: one row of four on wide screens. */
 const SHOWN = 4;
 
 export function Updates() {
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const ref = useReveal<HTMLElement>();
   const posts = latestPosts(locale, SHOWN);
   if (posts.length === 0) return null;

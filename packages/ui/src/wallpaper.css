@@ -1,3 +1,20 @@
+/* The first frames of a reload, before the app has decided what to show: the stored image, laid
+   exactly as the shell's own wallpaper layer lays it, on properties the pre-paint script writes
+   (boot.ts). Without it the window shows the bare page colour where the image will be until the
+   shell mounts. The first screen to mount ends it (`releaseBootWallpaper`); the shell paints its
+   own layer in that same frame. */
+:root[data-boot-wallpaper]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--boot-wallpaper-image);
+  background-size: var(--boot-wallpaper-size);
+  background-repeat: var(--boot-wallpaper-repeat);
+  background-position: var(--boot-wallpaper-position);
+  opacity: var(--boot-wallpaper-opacity);
+}
 /* Surface roles are shared across pages: canvas is clear, panels keep a light fill, and
    activity rows sit directly on the image. Overlay content keeps its theme surfaces. */
 .ui-shell[data-wallpaper] {
@@ -68,21 +85,64 @@
     background-color: var(--wallpaper-hover-fill);
   }
 }
-/* Activity rows need no painted strip. Let them scroll with their bodies: a clear sticky row
-   would otherwise superimpose its words on the text moving underneath. */
+/* Activity rows need no painted strip: they sit on the image like the canvas around them. */
 @media not (prefers-reduced-transparency: reduce) {
   .ui-shell[data-wallpaper] .ui-frame:has(> .ui-activity):not([role="dialog"] *),
   .ui-shell[data-wallpaper] .ui-activity:not([role="dialog"] *) {
     background-color: transparent;
   }
-  .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
-    position: relative;
-    top: auto;
-  }
   .ui-shell[data-wallpaper]
     .ui-activity:not([data-state="error"], [role="dialog"] *):is(button, :has(button)):hover
     :is([data-slot="label"], [data-slot="detail"]) {
     color: var(--ui-fg);
+  }
+}
+/* A pinned activity row (a work group's head, an open thinking or tool row) still pins. While it
+   is stuck, its backdrop (`WallpaperBackdrop`) paints the page colour and the image again under
+   its words, the image fixed to the window as the shell's own layer is, so the row still reads
+   as clear while the text scrolling under it stays hidden; at rest nothing is drawn. The image
+   is a fixed background, not a fixed box: a box would be laid against whatever ancestor makes
+   a containing block, and each one would split the transcript into another compositor layer.
+   A browser that cannot report a stuck row lets the rows scroll with their bodies instead: a
+   clear pinned row would lay its words over the text moving underneath. */
+[data-wallpaper-backdrop] {
+  display: none;
+}
+@media not (prefers-reduced-transparency: reduce) {
+  @supports (container-type: scroll-state) {
+    .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
+      container-type: scroll-state;
+    }
+    @container scroll-state(stuck: top) {
+      .ui-shell[data-wallpaper]
+        .ui-activity.sticky:not([role="dialog"] *)
+        > [data-wallpaper-backdrop] {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background-color: var(--ui-canvas);
+      }
+    }
+    .ui-shell[data-wallpaper] [data-wallpaper-backdrop] > [data-wallpaper-layer] {
+      position: absolute;
+      background-attachment: fixed;
+    }
+  }
+  @supports not (container-type: scroll-state) {
+    .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
+      position: relative;
+      top: auto;
+    }
+  }
+}
+/* A loading placeholder stands in for words and figures, which sit on the image once they
+   arrive: its block is a light tint of the line colour here rather than a solid slab. Its card
+   is a panel (SkeletonCard) and takes the panel fill above. Reduced transparency keeps it solid. */
+@media not (prefers-reduced-transparency: reduce) {
+  .ui-shell[data-wallpaper] [data-skeleton]:not([role="dialog"] *) {
+    background-color: color-mix(in srgb, var(--ui-line) 45%, transparent);
   }
 }
 /* The lifted dock owns an opaque canvas and a copy of the viewport-aligned image. Its cards

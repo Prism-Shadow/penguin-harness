@@ -134,8 +134,12 @@ function MemoryPanelBody({ active }: DockPanelBodyProps) {
       listingError={memoryListing.error}
       request={memoryRequest}
       active={active}
-      // Management (add / edit / delete) lives on the agent-settings memory tab.
-      onOpenSettings={() => openMemorySettings(selected.agentId)}
+      // Management (add / edit / delete) lives on the agent-settings memory tab, of the Agent
+      // on the machine this conversation is on.
+      machineId={machineForSession(selected.sessionId)}
+      onOpenSettings={() =>
+        openMemorySettings(selected.agentId, machineForSession(selected.sessionId))
+      }
     />
   );
 }

@@ -1,12 +1,12 @@
 /**
  * Router: home + blog list + blog post inside a shared Nav/Footer layout.
  * basename comes from Vite's BASE_URL so the site works under the GitHub Pages
- * project subpath; scroll restores to top on route change (hash targets excluded).
+ * project subpath; a route change scrolls to the top or to its hash target
+ * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry).
  */
-import { useEffect } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router";
+import { useRouteScroll } from "@prismshadow/penguin-ui/site";
 import { DOCS_URL, GALLERY_URL } from "./lib/links";
-import { hashTargetId } from "./lib/hash";
 import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
@@ -31,32 +31,8 @@ function SiblingRedirect({ url }: { url: string }) {
   return <Navigate to="/" replace />;
 }
 
-/**
- * Last history entry whose scroll was already handled. Module-level so it survives
- * the locale-keyed remount of the whole tree: switching language re-mounts Layout,
- * and without this guard the navigation effect would re-run (jumping to the hash or
- * to the top) and defeat LocaleScope's scroll preservation.
- */
-let handledLocationKey = "";
-
 function Layout() {
-  const { pathname, hash, key } = useLocation();
-  // Genuine route change: jump to top; with a hash (e.g. /#quickstart after leaving
-  // the blog) scroll to the target once the section is in the DOM. A native #anchor
-  // click (a blog TOC entry) also lands here, through popstate. The hash is decoded
-  // first: an anchor to a CJK heading arrives percent-encoded.
-  useEffect(() => {
-    if (key === handledLocationKey) return;
-    handledLocationKey = key;
-    if (hash) {
-      const el = document.getElementById(hashTargetId(hash));
-      if (el) {
-        el.scrollIntoView();
-        return;
-      }
-    }
-    window.scrollTo(0, 0);
-  }, [pathname, hash, key]);
+  useRouteScroll(useLocation());
 
   return (
     <div className="relative flex min-h-full flex-col">

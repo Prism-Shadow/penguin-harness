@@ -230,7 +230,7 @@ describe("the Plugins page's machine switch", () => {
     await click(switchNamed("Enable"));
     await type(field("Note"), "typed");
     const pick = async () => {
-      await click(button("Machine: This server"));
+      await click(button("Machine"));
       await click(button("box-1"));
     };
     await pick();
