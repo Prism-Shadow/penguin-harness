@@ -3,9 +3,10 @@
 Loaded on demand from `SKILL.md`. `packages/server/src/model-catalog/catalog.ts` is the single
 source of truth for presets: the server seeds a new Project's config from it (`seed.ts`), and the
 Web App, the CLI and the gallery display it through the browser-safe subpath
-`@prismshadow/penguin-server/model-catalog` (`index.ts`). MMSP's routing mirror is `routing.ts`,
-and the variable names the UI previews are `env-keys.ts`. Core never reads any of it (see the core
-rule in `SKILL.md`). It is a *catalog*, not a routing table — MMSP owns routing.
+`@prismshadow/penguin-server/model-catalog` (`index.ts`). What the UI shows about MMSP's clients
+is `client-protocols.ts`, and the variable names the UI previews are `env-keys.ts`, both asked of
+MMSP's credentials module. Core never reads any of it (see the core rule in `SKILL.md`). It is a
+*catalog*, not a routing table — MMSP owns routing and the environment-key rule.
 
 ## Pricing
 
@@ -37,18 +38,15 @@ rule in `SKILL.md`). It is a *catalog*, not a routing table — MMSP owns routin
   `baseUrl` with it. Everything else is routed by MMSP from the vendor family its id begins with.
 - A provider group is split only when the vendor genuinely has separate endpoints or billing paths
   (Qwen Token Plan vs Pay-As-You-Go). One endpoint serving several key types is one group.
-- `routedClientType` mirrors MMSP's routing exactly: the pinned client type (lowercased, `openai`
-  read as `openai-chat`), else the official client of the family prefix the lowercased id begins
-  with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`,
-  `minimax-`), with `openai-official` handing `text-embedding-` ids to `openai-embedding`; a pin
-  MMSP does not have, or an id of no family, gives nothing. `resolveModelEnv`, the env previews,
-  `fastModeProtocol` and the web's protocol path look the result up in core's `MMSP_CLIENTS`;
-  core's credential rule needs no family routing (it names a variable only from a stored client
-  type, and `keylessEndpoint` is the `mmsp` client's open-server exception). MMSP does
-  not export its family table, so the catalog keeps a copy: move it only with the MMSP release
-  that changes it, and never let it place an id MMSP refuses. An alias MMSP keeps after a rename
-  (`gemini-official`, `gemini-generate-content`) keeps its row until the MMSP release that drops
-  it, since a stored value is never rewritten.
+- MMSP owns routing and the environment-key rule, and exports both from its pure, browser-safe
+  `@prismshadow/mmsp/credentials`: which client an entry reaches (`routedClientType`, which
+  `client-protocols.ts` re-exports) and what that client does with no key
+  (`environmentCredential`). Keep no copy of either and no environment or refusal logic in the
+  harness: core hands MMSP the file's key, base URL and client type verbatim, and the previews in
+  `env-keys.ts` (`modelEnvironment`, `modelEnvPreviewKey`, `providerEnvFallbackKey`,
+  `clientEnvKey`) ask MMSP's credentials module. Only what MMSP exports nothing for lives here:
+  each client's request path and fast-mode protocol (`CLIENT_PROTOCOLS` in `client-protocols.ts`,
+  which a test holds to MMSP's client list, so a new MMSP client needs a row).
 
 ## What a change touches
 
@@ -75,15 +73,14 @@ once it stops being a preset.
 
 ## Who may use the environment
 
-A row with no key in the file uses an environment variable only when neither it nor its group
-names a base URL (PRN-021): core hands MMSP nothing and the routed client reads its own
-`*_API_KEY` / `*_BASE_URL`. A base URL from the file — a gateway's, a proxy, the vendor's own — is
-never lent one. So a first-party vendor group gets no table in the seed (`catalogGroupConnection`
-gives it none), and a new vendor group whose ids route by family needs nothing else to read its
-vendor's variable. The catalog only names the variable for the previews (`resolveModelEnv`,
-`modelEnvPreviewKey`, `providerEnvFallbackKey`); it decides nothing about who may use it.
-Gateways and the third-party adapters (Penguin Go, ModelScope) carry a base URL on their group,
-so their keys come from the config.
+Who may use an environment key is MMSP's rule (PRN-021), and the harness holds no copy of it: a
+row with no key in the file is handed no key, and MMSP's routed client reads its `*_API_KEY` only
+for no base URL or its own default endpoint, refusing any other base URL. So a first-party vendor
+group gets no table in the seed (`catalogGroupConnection` gives it none), and a new vendor group
+whose ids route by family needs nothing else to read its vendor's variable. The catalog only
+names the variable for the previews (`env-keys.ts`, which calls MMSP's `environmentCredential`);
+it decides nothing about who may use it. Gateways and the third-party adapters (Penguin Go,
+ModelScope) carry a base URL on their group, so their keys come from the config.
 
 Existing Projects never migrate automatically: presets are copied into `.project_config.toml` at
 creation and nothing rewrites them. Users pick changes up through the models page's explicit "sync

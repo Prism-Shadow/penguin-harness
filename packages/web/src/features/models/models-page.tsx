@@ -134,10 +134,10 @@ import {
 } from "@prismshadow/penguin-server/model-catalog";
 import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
 import type {
+  FastModeProtocol,
   ModelProviderBridgeAuth,
   ModelProviderInfo,
 } from "@prismshadow/penguin-server/model-catalog";
-import type { FastModeProtocol } from "@prismshadow/penguin-core/model-connection";
 import {
   allGroupKeys,
   discountedPrice,
@@ -159,7 +159,7 @@ import {
   DEFAULT_CUSTOM_CLIENT_TYPE,
   detectableBaseUrl,
   displayWidthCh,
-  envHintKeyFor,
+  envHintFor,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -3292,20 +3292,21 @@ function ModelDialog({
   // the model id and API key labels in both the add and edit dialogs; custom
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
-  // The variable a blank key may be PRESENTED as covered by, for the entry as drafted (the
-  // catalog's modelEnvPreviewKey, which the server's masked preview reads too): only with no
-  // base URL on the row or its group, since a base URL from the file is never lent a variable
-  // (a gateway's endpoint, a custom or vLLM server, a vendor's second host, a proxy). A custom,
+  // The variables a blank key may be PRESENTED as covered by, for the entry as drafted (the
+  // catalog's modelEnvironment, which the server's masked preview reads too): what MMSP's routed
+  // client reads, which is nothing for a base URL other than its own default endpoint (a
+  // gateway's endpoint, a custom or vLLM server, a vendor's second host, a proxy). A custom,
   // vLLM or user-group row with no base URL anywhere does get its protocol client's variable,
   // as its Session would, and the note below says where its requests go. The hint and the
   // stored-mask block below follow this.
-  const liveEnvKey = envHintKeyFor(
+  const liveEnv = envHintFor(
     form.provider,
     form.modelId,
     form.clientType,
     form.baseUrl,
     groupShape(group),
   );
+  const liveEnvKey = liveEnv.apiKeyEnv;
   // An id this entry's group cannot place (see unroutableFix). The save is refused by the
   // server for a new or rekeyed entry, so the warning and its way out are shown before the
   // attempt; a row that was already stored keeps saving and carries the same warning on its
@@ -3454,16 +3455,16 @@ function ModelDialog({
   // the same envHintKey). A vendor group whose client defaults to one of two hosts (zhipu /
   // moonshot) says how to reach the other one, when this entry goes through the provider's
   // own client (the resolved envKey matches the provider). Any other group's row on a protocol
-  // client — custom, vLLM, a user group — says that its requests go to that client's default
-  // endpoint (api.openai.com for OPENAI_API_KEY) unless the matching `*_BASE_URL` is set, so a
-  // self-hosted id is never sent there unannounced.
+  // client with no base URL anywhere — custom, vLLM, a user group — says that its requests go
+  // to that client's default endpoint (api.openai.com for OPENAI_API_KEY) unless the matching
+  // `*_BASE_URL` is set, so a self-hosted id is never sent there unannounced.
   const envNote =
     envHintKey === undefined
       ? undefined
       : envHintKey === dialogProvider?.envKey && S.models.providerEnvNotes[form.provider]
         ? S.models.providerEnvNotes[form.provider]
-        : !isVendorGroup(form.provider)
-          ? S.models.envBaseUrlNote(envHintKey.replace(/_API_KEY$/, "_BASE_URL"))
+        : !isVendorGroup(form.provider) && liveEnv.baseUrlEnv !== undefined
+          ? S.models.envBaseUrlNote(liveEnv.baseUrlEnv)
           : undefined;
   // The add dialog's note on the protocol a new model will speak, inside its Details: the
   // group's (with blank fields following the group where it also names the endpoint, the user's

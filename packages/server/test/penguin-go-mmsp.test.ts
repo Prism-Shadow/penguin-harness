@@ -4,7 +4,8 @@
  * - New authorization, reauthorization and sync use MMSP with the existing device flow.
  * - Old projects migrate on the server's read, including model overrides, and repeated reads do
  *   not rewrite; a load through the SDK alone leaves them as written (the migration needs the
- *   server's catalog).
+ *   server's catalog) — unless the App's start has swept every Project's file first, an
+ *   unparseable one left for its own read to report.
  * - Config migration needs no network requests, keys or current-catalog membership.
  * - Other groups and redirected Go rows keep their keys, settings and routes.
  * - The Go protocol is fixed: the group route and the whole-table PUT refuse another one, while
@@ -313,6 +314,32 @@ describe("Penguin Go stored projects", () => {
       expect(await fs.readFile(file, "utf8")).toBe(first);
     }
     expect(fake.calls).toHaveLength(0);
+  });
+  it("the App's start migrates every Project's stored routes before anything opens one, so an SDK load reads them migrated", async () => {
+    const ids = [await project(), await project()];
+    for (const id of ids) {
+      await t.deps.projectConfigService.writeRaw(id, oldConfig(`ep_sweep_${id}`));
+    }
+    // A file that does not parse is left for the read that needs it to report.
+    const broken = projectConfigPath(t.root, await project());
+    await fs.writeFile(broken, "this is = = not toml", "utf8");
+    const fake = stubFetch(() => {
+      throw new Error("Migration must not access the network");
+    });
+    try {
+      await t.deps.projectConfigService.migrateStoredConfigs();
+      for (const id of ids) {
+        expect((await loadProjectConfig(t.root, id)).models[0], id).toMatchObject({
+          model_id: "deepseek-flash",
+          client_type: "mmsp",
+          base_url: base,
+        });
+      }
+      expect(await fs.readFile(broken, "utf8")).toBe("this is = = not toml");
+      expect(fake.calls).toHaveLength(0);
+    } finally {
+      await fs.rm(broken, { force: true });
+    }
   });
   it("legacy row overrides migrate even when the group's defaults already use MMSP", async () => {
     const id = await project();

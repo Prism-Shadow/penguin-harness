@@ -1,14 +1,14 @@
 /**
  * Group balances (GET /api/projects/:p/models/balance): the server asks the vendor endpoint
  * the catalog's `balance` descriptor names, with the group's key (`[providers.<id>]`, never a
- * model's own) — or, without one, the vendor's environment variable for a first-party vendor
- * group that names no base URL (its keyless rows' client reads that variable) — and answers
- * with a small reading or a typed failure — never the key, never the vendor's own text.
+ * model's own) — or, without one, the vendor's environment variable where MMSP's client for
+ * the vendor reads it for the group's base URL — and answers with a small reading or a typed
+ * failure — never the key, never the vendor's own text.
  *
  * - A group key is asked with; a model's own key never is, so a group whose only key sits on
  *   one model answers no_key.
- * - Without a group key, DeepSeek borrows DEEPSEEK_API_KEY only while its group names no base
- *   URL: pointed at any base URL — its own endpoint included — it is lent nothing.
+ * - Without a group key, DeepSeek uses DEEPSEEK_API_KEY while its group names no base URL or
+ *   DeepSeek's own default endpoint; pointed at any other base URL, it uses nothing.
  * - A gateway is never lent a variable, even with its base URL cleared.
  *
  * The vendors are stood in for at the wire: `fetch` is stubbed globally, which is the call the
@@ -193,23 +193,27 @@ describe("GET /api/projects/:p/models/balance", () => {
     expect(calls).toEqual([]);
   });
 
-  it("DeepSeek pointed at any base URL as a group — its own endpoint included — is lent no DEEPSEEK_API_KEY; with the base URL cleared, it is", async () => {
+  it("DeepSeek pointed at another base URL as a group uses no DEEPSEEK_API_KEY; at its own default endpoint, or with none, it does", async () => {
     vi.stubEnv("DEEPSEEK_API_KEY", "sk-ds-env-0003");
     await storeKeys({});
     const group = `/api/projects/${projectId}/models/providers/deepseek`;
     const calls = stubVendors(() => json(200, DEEPSEEK_REPLY));
-    for (const baseUrl of ["https://proxy.example/deepseek", "https://api.deepseek.com"]) {
-      await owner.put(group, { baseUrl });
-      expect(await (await balance("deepseek")).json(), baseUrl).toMatchObject({
-        ok: false,
-        error: "no_key",
-      });
-    }
+    await owner.put(group, { baseUrl: "https://proxy.example/deepseek" });
+    expect(await (await balance("deepseek")).json()).toMatchObject({
+      ok: false,
+      error: "no_key",
+    });
     expect(calls).toEqual([]);
 
-    await owner.put(group, { baseUrl: null });
-    expect(await (await balance("deepseek")).json()).toMatchObject({ ok: true, amount: "110.00" });
-    expect(calls).toEqual([{ url: DEEPSEEK_URL, authorization: "Bearer sk-ds-env-0003" }]);
+    for (const baseUrl of ["https://api.deepseek.com/", null]) {
+      calls.length = 0;
+      await owner.put(group, { baseUrl });
+      expect(await (await balance("deepseek", true)).json(), String(baseUrl)).toMatchObject({
+        ok: true,
+        amount: "110.00",
+      });
+      expect(calls).toEqual([{ url: DEEPSEEK_URL, authorization: "Bearer sk-ds-env-0003" }]);
+    }
   });
 
   it("TokenDance is a gateway: the environment lends its rows nothing, so no stored key is no_key", async () => {

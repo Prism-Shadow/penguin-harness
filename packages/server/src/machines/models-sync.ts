@@ -21,7 +21,7 @@
  */
 import type { MachineApi } from "./machine-api.js";
 import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
-import { resolveModelEnv } from "../model-catalog/routing.js";
+import { modelEnvironment } from "../model-catalog/env-keys.js";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
@@ -259,14 +259,13 @@ export interface EnvSourced {
 
 /**
  * The values a Project's models take from this server's environment, which no sync can carry:
- * the config is all it sends. Core's credential rule decides, on each row's effective
- * connection (the row's own values, then its group's). Only a row with no base URL on the row
- * or its group reads anything from the environment, and from its routed client's pair:
+ * the config is all it sends. MMSP decides what each row reads (the catalog's modelEnvironment,
+ * on the row's effective connection — its own values, then its group's):
  *
- * - with no key in the file (core's `env`), it authenticates with the pair's `*_API_KEY` —
- *   when that variable is set here;
- * - with a key, from the file or from here, it goes where the pair's `*_BASE_URL` points, when
- *   that is set here.
+ * - with no key in the file, it authenticates with its routed client's `*_API_KEY` — only for no
+ *   base URL or the client's own default endpoint, and when that variable is set here;
+ * - with a key, from the file or from here, and no base URL in the file, it goes where the
+ *   client's `*_BASE_URL` points, when that is set here.
  *
  * A variable that is not set here is not listed: the row does not run here either.
  */
@@ -277,28 +276,23 @@ export function envSourced(
   const set = (name: string) => (env[name]?.trim() ?? "") !== "";
   const found: EnvSourced[] = [];
   for (const entry of local.models) {
-    const effective = effectiveConnection(
-      {
-        provider: entry.provider,
-        modelId: entry.model_id,
-        clientType: entry.client_type,
-        baseUrl: entry.base_url,
-        apiKey: entry.api_key,
-      },
-      providerConnectionShape(local.providers?.[entry.provider]),
-    );
-    // A base URL from the file is never lent a variable, and its requests go there.
-    if (effective.baseUrl !== undefined) continue;
-    const pair = resolveModelEnv(entry.model_id, effective.clientType);
-    if (pair === undefined) continue;
+    const own = {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: entry.client_type,
+      baseUrl: entry.base_url,
+      apiKey: entry.api_key,
+    };
+    const group = providerConnectionShape(local.providers?.[entry.provider]);
+    const { apiKeyEnv, baseUrlEnv } = modelEnvironment(own, group);
     const add = (variable: string) =>
       found.push({ provider: entry.provider, modelId: entry.model_id, variable });
-    let keyed = effective.apiKey !== undefined;
-    if (effective.apiKeySource === "env" && set(pair.envKey)) {
-      add(pair.envKey);
+    let keyed = effectiveConnection(own, group).apiKey !== undefined;
+    if (apiKeyEnv !== undefined && set(apiKeyEnv)) {
+      add(apiKeyEnv);
       keyed = true;
     }
-    if (keyed && set(pair.envBaseUrlKey)) add(pair.envBaseUrlKey);
+    if (keyed && baseUrlEnv !== undefined && set(baseUrlEnv)) add(baseUrlEnv);
   }
   return found;
 }

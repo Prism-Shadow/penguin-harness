@@ -191,8 +191,10 @@ catalog data. Model knowledge lives in the server's catalog (`packages/server/sr
 published as the browser-safe `@prismshadow/penguin-server/model-catalog`, which the Web App, the
 CLI and the gallery import) and reaches core only through the Project config the server seeds —
 `[providers.<id>]`, `[[models]]`, `default_model` — or through host hooks
-(`AgentAssembly`). Core keeps MMSP's client-type table (`state/mmsp-clients.ts`: variable prefix,
-open server, path, fast mode) because that is protocol knowledge, not model knowledge. The one exception
+(`AgentAssembly`). Nor does any package keep environment or refusal logic: which variable a
+keyless model reads, and which base URL is refused without a key, is MMSP's rule. Core passes the
+file's key, base URL and client type to MMSP verbatim, and every preview asks MMSP's
+`@prismshadow/mmsp/credentials` (the catalog's `env-keys.ts`). The one exception
 is App attribution: `llm/app-attribution.ts` (`attributionHeaders`) names the gateways whose headers
 `GenerativeModel` attaches. A change that wants core to know a model or a vendor belongs in the
 catalog and the config it seeds instead; a core test that needs a Project writes a fixture

@@ -22,7 +22,6 @@ import {
   DATE_PLACEHOLDER,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
-  MMSP_CLIENTS,
   OS_VERSION_PLACEHOLDER,
   PLATFORM_PLACEHOLDER,
   PROJECT_DIR_PLACEHOLDER,
@@ -1102,8 +1101,8 @@ describe("project-config round trip", () => {
       baseUrl: "https://generativelanguage.googleapis.com",
       clientType: "gemini-official",
     });
-    // Core's client table names it as it names google-official.
-    expect(MMSP_CLIENTS["gemini-official"]).toEqual(MMSP_CLIENTS["google-official"]);
+    // Which client the stored alias reaches, and with what variable, is MMSP's to say (the
+    // server catalog's tests hold the previews and the fast tier for it).
   });
 
   it("rewrites the client types of AgentHub 0.4 to MMSP's once, on load, keeping the rest of the file", async () => {
@@ -1724,15 +1723,10 @@ describe("providers (group-level connections)", () => {
   /** The credential and protocol each row's client is built with, the way a Session builds it. */
   const connections = (cfg: Pick<ProjectConfig, "models" | "providers">) =>
     Object.fromEntries(
-      cfg.models.map((m) => {
-        const key = `${m.provider}/${m.model_id}`;
-        try {
-          const group = providerConnectionShape(cfg.providers?.[m.provider]);
-          return [key, resolveEntryCredential(m, group)];
-        } catch (err) {
-          return [key, (err as Error).name];
-        }
-      }),
+      cfg.models.map((m) => [
+        `${m.provider}/${m.model_id}`,
+        resolveEntryCredential(m, providerConnectionShape(cfg.providers?.[m.provider])),
+      ]),
     );
   /** One `[[models]]` row of an old file. */
   const row = (fields: Record<string, string>): string[] => [
@@ -1838,7 +1832,7 @@ describe("providers (group-level connections)", () => {
         },
         providerConnectionShape(cfg.providers?.tokendance),
       ),
-    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "env" });
+    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
   });
 
   it("a file from before group tables moves what every row of a group shares onto the group, once, and every model runs on what it ran on", async () => {
@@ -1932,7 +1926,7 @@ describe("providers (group-level connections)", () => {
       model_id: "qwen-local",
     });
     // Every model runs on what it ran on; the keyless TokenDance model now has the group key.
-    expect(before["tokendance/seed-2.1-pro"]).toBe("ModelCredentialError");
+    expect(before["tokendance/seed-2.1-pro"]).not.toHaveProperty("apiKey");
     expect(after["tokendance/seed-2.1-pro"]).toEqual(after["tokendance/glm-5.3"]);
     expect({ ...after, "tokendance/seed-2.1-pro": "-" }).toEqual({
       ...before,

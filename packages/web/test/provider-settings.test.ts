@@ -443,13 +443,16 @@ describe("a blank group key and the environment", () => {
   const detected = new Set(["DEEPSEEK_API_KEY"]);
   const blank = { baseUrl: "", clientType: null };
 
-  it("promises the vendor's variable for a vendor group with no base URL, where the server proved it is set", () => {
+  it("promises the vendor's variable for a vendor group with no base URL or the client's default endpoint, where the server proved it is set", () => {
     expect(groupEnvKey("deepseek", blank, detected)).toBe("DEEPSEEK_API_KEY");
     expect(groupEnvKey("deepseek", blank, new Set())).toBeUndefined();
+    expect(
+      groupEnvKey("deepseek", { ...blank, baseUrl: "https://api.deepseek.com/" }, detected),
+    ).toBe("DEEPSEEK_API_KEY");
   });
 
-  it("promises nothing once the group names a base URL, the vendor's own included", () => {
-    for (const baseUrl of ["https://proxy.example/v1", "https://api.deepseek.com/"]) {
+  it("promises nothing once the group names another base URL", () => {
+    for (const baseUrl of ["https://proxy.example/v1", "https://api.deepseek.example/v1"]) {
       expect(groupEnvKey("deepseek", { ...blank, baseUrl }, detected), baseUrl).toBeUndefined();
     }
   });
@@ -483,7 +486,7 @@ describe("what a group's models inherit", () => {
     expect(inheritedConnection("openrouter", "x-ai/grok-5", undefined)).toEqual({
       baseUrlSource: "none",
       clientTypeSource: "none",
-      apiKeySource: "env",
+      apiKeySource: "none",
     });
   });
 

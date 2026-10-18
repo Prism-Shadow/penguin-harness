@@ -6,7 +6,8 @@
  * The probing itself is server-side (packages/server/src/services/protocol-detect.ts); these
  * only decide what the dialog shows and what is worth sending there.
  */
-import { modelEnvPreviewKey, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import { modelEnvironment, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import type { ModelEnvironment } from "@prismshadow/penguin-server/model-catalog";
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
 
 /**
@@ -182,25 +183,25 @@ export function needsProtocolDetectOnSave(
 }
 
 /**
- * The variable the dialog's API-key field may promise for the entry as drafted, or undefined
- * when nothing should be promised: the catalog's modelEnvPreviewKey — the same function the
- * server's GET /models preview reads, so the hint and the card's "read from environment
- * variable" can never disagree — on the form's own protocol and base URL and its group's
- * stored table. A variable only with no base URL on the row or its group (PRN-021): a gateway
- * row, or any row sent to a base URL, resolves to nothing. A custom, vLLM or user-group row
- * with no base URL anywhere does resolve, to its protocol client's variable — the Session would
- * use it — and the protocol is the one the row will be saved with (protocolForPersist), so a
+ * The variables the dialog may promise for the entry as drafted: the catalog's
+ * modelEnvironment — what MMSP's routed client reads, the same function the server's GET /models
+ * preview reads, so the hint and the card's "read from environment variable" can never disagree
+ * — on the form's own protocol and base URL and its group's stored table. `apiKeyEnv` only with
+ * no key in the file and no base URL or the client's own default endpoint (PRN-021): a gateway
+ * row, or any row sent to another base URL, resolves to nothing. A custom, vLLM or user-group row
+ * with no base URL anywhere does resolve, to its protocol client's variables — the Session would
+ * use them — and the protocol is the one the row will be saved with (protocolForPersist), so a
  * custom-like draft that names none reads the custom groups' default client, never the id's
- * family.
+ * family. `baseUrlEnv` only with no base URL anywhere: where the requests then go.
  */
-export function envHintKeyFor(
+export function envHintFor(
   provider: string,
   modelId: string,
   clientType: string,
   baseUrl: string,
   group?: ProviderConnectionShape,
-): string | undefined {
-  return modelEnvPreviewKey(
+): ModelEnvironment {
+  return modelEnvironment(
     {
       provider,
       modelId: modelId.trim(),

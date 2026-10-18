@@ -37,7 +37,7 @@ function sharedValue(
  *
  * Undefined for `custom` (it holds the user's own endpoints), for an id the catalog does not
  * know, and for a group with neither — the first-party vendors, whose rows go to the
- * client's defaults, so their keyless rows are handed nothing and MMSP's client reads the
+ * client's defaults, so their keyless rows are handed no key and MMSP's client reads the
  * vendor's environment variable (PRN-021). A reference value: nothing reads it when a request
  * is built.
  */

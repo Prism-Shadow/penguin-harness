@@ -25,7 +25,7 @@ import {
   PROTOCOL_CLIENT_TYPES,
   detectableBaseUrl,
   displayWidthCh,
-  envHintKeyFor,
+  envHintFor,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -205,73 +205,95 @@ describe("needsProtocolDetectOnSave (save detects a still-unset protocol first)"
   });
 });
 
-describe("envHintKeyFor (the API-key field promises a variable only where no base URL is set)", () => {
-  it("names nothing for a row sent to a base URL: a gateway's, a custom or vLLM server, the vendor's own", () => {
+describe("envHintFor (the dialog promises only what MMSP's routed client reads)", () => {
+  /** The key variable the API-key field may promise for the draft. */
+  const keyHint = (...args: Parameters<typeof envHintFor>) => envHintFor(...args).apiKeyEnv;
+
+  it("names nothing for a row sent to a base URL other than its client's default: a gateway's, a custom or vLLM server", () => {
     // The #786 finding: once an Anthropic row had proved OPENAI_API_KEY / ANTHROPIC_API_KEY
     // set, a TokenDance or OpenCode Go row read "leave empty to use the ... env var".
     for (const [provider, modelId, clientType, baseUrl] of [
       ["tokendance", "glm-5.3", "openai-chat", ""],
       ["openrouter", "openai/gpt-5.5", "openai-responses", ""],
       ["custom", "claude-sonnet-5", "ant-messages", "https://gw.example.com"],
-      ["custom", "gpt-5.6", "openai-chat", "https://api.openai.com/v1"],
       ["vllm", "Qwen/Qwen3.8-27B", "", "http://gpu-box:8000/v1"],
       ["my-group", "some-model", "", "https://gw.example.com/v1"],
       ["penguin-go", "gemini-3.8-flash", "", ""],
     ] as const) {
       expect(
-        envHintKeyFor(provider, modelId, clientType, baseUrl, presetGroup(provider)),
+        envHintFor(provider, modelId, clientType, baseUrl, presetGroup(provider)),
         `${provider}/${modelId}`,
-      ).toBeUndefined();
+      ).toEqual({});
     }
   });
 
-  it("names the vendor's variable for a first-party row with no base URL anywhere", () => {
-    expect(envHintKeyFor("anthropic", "claude-sonnet-4-6", "", "", presetGroup("anthropic"))).toBe(
-      "ANTHROPIC_API_KEY",
-    );
-    expect(envHintKeyFor("google", "gemini-3.1-pro", "", "", presetGroup("google"))).toBe(
+  it("names the vendor's variables for a first-party row with no base URL anywhere", () => {
+    expect(envHintFor("anthropic", "claude-sonnet-4-6", "", "", presetGroup("anthropic"))).toEqual({
+      apiKeyEnv: "ANTHROPIC_API_KEY",
+      baseUrlEnv: "ANTHROPIC_BASE_URL",
+    });
+    expect(keyHint("google", "gemini-3.1-pro", "", "", presetGroup("google"))).toBe(
       "GEMINI_API_KEY",
     );
-    expect(envHintKeyFor("deepseek", "deepseek-flash", "", "", presetGroup("deepseek"))).toBe(
+    expect(keyHint("deepseek", "deepseek-flash", "", "", presetGroup("deepseek"))).toBe(
       "DEEPSEEK_API_KEY",
     );
   });
 
-  it("drops the hint once the row or its group names a base URL, the vendor's own included", () => {
-    for (const baseUrl of ["https://proxy.example/anthropic", "https://api.anthropic.com/"]) {
-      expect(
-        envHintKeyFor("anthropic", "claude-sonnet-4-6", "", baseUrl, presetGroup("anthropic")),
-        baseUrl,
-      ).toBeUndefined();
-    }
-    for (const baseUrl of ["https://proxy.example/deepseek", "https://api.deepseek.com"]) {
-      expect(
-        envHintKeyFor("deepseek", "deepseek-flash", "", "", {
-          baseUrl,
-          clientType: "deepseek-official",
-        }),
-        baseUrl,
-      ).toBeUndefined();
-    }
+  it("keeps the key hint for the client's own default endpoint and drops it for any other base URL, on the row or its group", () => {
+    expect(
+      envHintFor(
+        "anthropic",
+        "claude-sonnet-4-6",
+        "",
+        "https://api.anthropic.com/",
+        presetGroup("anthropic"),
+      ),
+    ).toEqual({ apiKeyEnv: "ANTHROPIC_API_KEY" });
+    expect(
+      keyHint(
+        "anthropic",
+        "claude-sonnet-4-6",
+        "",
+        "https://proxy.example/anthropic",
+        presetGroup("anthropic"),
+      ),
+    ).toBeUndefined();
+    const group = (baseUrl: string) => ({ baseUrl, clientType: "deepseek-official" });
+    expect(keyHint("deepseek", "deepseek-flash", "", "", group("https://api.deepseek.com"))).toBe(
+      "DEEPSEEK_API_KEY",
+    );
+    expect(
+      keyHint("deepseek", "deepseek-flash", "", "", group("https://proxy.example/deepseek")),
+    ).toBeUndefined();
+    // A custom row typed with OpenAI's own endpoint reads OPENAI_API_KEY there, and no
+    // OPENAI_BASE_URL: its requests go to the URL it names.
+    expect(envHintFor("custom", "gpt-5.6", "openai-chat", "https://api.openai.com/v1")).toEqual({
+      apiKeyEnv: "OPENAI_API_KEY",
+    });
   });
 
-  it("names a custom-like row's protocol client's variable with no base URL anywhere — the protocol it will be saved on, never the id's family", () => {
+  it("names a custom-like row's protocol client's variables with no base URL anywhere — the protocol it will be saved on, never the id's family", () => {
     // `claude-sonnet-5` typed into a custom group is saved on the custom default client, so the
-    // hint names OPENAI_API_KEY, not the Anthropic variable its id's family would read.
-    expect(envHintKeyFor("custom", "claude-sonnet-5", "", "")).toBe("OPENAI_API_KEY");
-    expect(envHintKeyFor("my-group", "claude-sonnet-5", "", "")).toBe("OPENAI_API_KEY");
+    // hint names OPENAI_API_KEY, not the Anthropic variable its id's family would read, and its
+    // requests go to OPENAI_BASE_URL or the client's default.
+    expect(envHintFor("custom", "claude-sonnet-5", "", "")).toEqual({
+      apiKeyEnv: "OPENAI_API_KEY",
+      baseUrlEnv: "OPENAI_BASE_URL",
+    });
+    expect(keyHint("my-group", "claude-sonnet-5", "", "")).toBe("OPENAI_API_KEY");
     // A protocol the user chose is honoured.
-    expect(envHintKeyFor("custom", "whatever", "ant-messages", "")).toBe("ANTHROPIC_API_KEY");
+    expect(keyHint("custom", "whatever", "ant-messages", "")).toBe("ANTHROPIC_API_KEY");
     // A group protocol wins over the id: vLLM's preset table pins its client.
-    expect(envHintKeyFor("vllm", "deepseek-ai/DeepSeek-V4-Pro", "", "", presetGroup("vllm"))).toBe(
+    expect(keyHint("vllm", "deepseek-ai/DeepSeek-V4-Pro", "", "", presetGroup("vllm"))).toBe(
       "OPENAI_API_KEY",
     );
     // A vendor group still routes by id, which is how it really works.
-    expect(envHintKeyFor("anthropic", "claude-sonnet-5", "", "")).toBe("ANTHROPIC_API_KEY");
+    expect(keyHint("anthropic", "claude-sonnet-5", "", "")).toBe("ANTHROPIC_API_KEY");
   });
 
-  it("agrees with the server's preview rule on every case", () => {
-    // Both sides read the catalog's modelEnvPreviewKey on the row's own values and its group.
+  it("agrees with the server's preview on every case", () => {
+    // Both sides read the catalog on the row's own values and its group.
     const cases: Array<[string, string, string, string]> = [
       ...MODEL_CATALOG.filter((m) => m.provider === "vllm" || m.provider === "deepseek").map(
         (m): [string, string, string, string] => [
@@ -283,15 +305,13 @@ describe("envHintKeyFor (the API-key field promises a variable only where no bas
       ),
       ["custom", "local-model", "openai-chat", ""],
       ["anthropic", "claude-sonnet-4-6", "", ""],
+      ["anthropic", "claude-sonnet-4-6", "", "https://api.anthropic.com"],
       ["anthropic", "claude-sonnet-4-6", "", "https://proxy.example/anthropic"],
       ["tokendance", "glm-5.3", "openai-chat", ""],
     ];
     for (const [provider, modelId, clientType, baseUrl] of cases) {
       const group = presetGroup(provider);
-      expect(
-        envHintKeyFor(provider, modelId, clientType, baseUrl, group),
-        `${provider}/${modelId}`,
-      ).toBe(
+      expect(keyHint(provider, modelId, clientType, baseUrl, group), `${provider}/${modelId}`).toBe(
         modelEnvPreviewKey(
           {
             provider,

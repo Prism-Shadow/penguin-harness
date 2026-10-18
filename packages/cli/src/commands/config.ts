@@ -118,10 +118,9 @@ function sourceMark(source: ConnectionSource): string {
 
 /**
  * The key a row is used with, masked: its own, its group's (marked `(provider)`), or — with
- * neither, and no base URL on the row or its group (core's `env`) — the variable MMSP's routed
- * client reads (modelEnvPreviewKey, which the server's preview reads too), marked `(env)` when
- * that variable is set. An env mark therefore means no base URL anywhere. `-` when there is
- * none.
+ * neither — the variable MMSP's routed client reads (modelEnvPreviewKey, which the server's
+ * preview reads too: only for no base URL or the client's own default endpoint), marked `(env)`
+ * when that variable is set. `-` when there is none.
  */
 function displayedKey(
   entry: ModelEntry,
@@ -129,10 +128,9 @@ function displayedKey(
   group: ProviderConnection | undefined,
   env: Readonly<Record<string, string | undefined>>,
 ): string {
-  if (effective.apiKeySource === "model" || effective.apiKeySource === "provider") {
+  if (effective.apiKeySource !== "none") {
     return `${maskApiKey(effective.apiKey)}${sourceMark(effective.apiKeySource)}`;
   }
-  if (effective.apiKeySource === "none") return maskApiKey(undefined);
   const envKey = modelEnvPreviewKey(
     {
       provider: entry.provider,

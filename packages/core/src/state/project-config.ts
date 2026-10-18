@@ -35,7 +35,7 @@ import type {
 } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
-import { canonicalClientType, sameClientType } from "./mmsp-clients.js";
+import { canonicalClientType, sameClientType } from "./client-type.js";
 import { groupKeyReaches, sameEndpoint } from "./model-connection.js";
 import { projectConfigPath } from "./paths.js";
 
@@ -536,9 +536,8 @@ export function hoistProviderConnections(table: Record<string, unknown>): boolea
  * hoist (hoistProviderConnections), which compares the rows' protocols with each other in
  * MMSP's names. Both loaders — `loadProjectConfig` here and the server's
  * `ProjectConfigService.readTable` — call this and write the raw table back once when it
- * returns true. The migrations that need the catalog (Penguin Go's pre-MMSP routes, the
- * DeepSeek and MiniMax presets' vendor endpoints) run in the server's read path alone. All are
- * removed at the 0.3.0 release preparation.
+ * returns true. The migration that needs the catalog (Penguin Go's pre-MMSP routes) runs in the
+ * server's read path alone. All are removed at the 0.3.0 release preparation.
  */
 export function migrateProjectConfigTable(table: Record<string, unknown>): boolean {
   const legacy = migrateLegacyClientTypes(table);

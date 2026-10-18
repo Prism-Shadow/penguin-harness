@@ -28,8 +28,9 @@ export default defineConfig({
     // server — see src/machine-status.ts.
     "machine-status": "src/machine-status.ts",
     // "./model-catalog": the built-in model catalog. No Node dependency — it imports core's
-    // browser-safe connection subpath alone — so the Web App, the component gallery and the CLI
-    // bundle the same rows, groups and helpers the server seeds a Project with.
+    // browser-safe connection subpath and MMSP's credentials module alone — so the Web App, the
+    // component gallery and the CLI bundle the same rows, groups and helpers the server seeds a
+    // Project with.
     "model-catalog": "src/model-catalog/index.ts",
     "initial-password": "src/initial-password.ts",
     "reset-admin-password": "src/reset-admin-password.ts",

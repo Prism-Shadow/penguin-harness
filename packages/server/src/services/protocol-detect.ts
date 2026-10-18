@@ -47,13 +47,15 @@
  * before the next one is tried. The candidate that answered is reported back as `baseUrl`
  * so the caller can correct the field. Worst case a detection is six short probes.
  *
- * Credentials: the caller passes the key typed in the dialog or the entry's stored one, and
- * with neither the probes go out anonymously. Detection always has a URL, and a URL is never
- * lent an environment variable (PRN-021), the vendor's own included: sending the user's vendor
- * key to a URL they typed is exactly what the rule forbids, and detection works with no
- * credential at all (a protocol-shaped 401 identifies the route).
+ * Credentials: the caller passes the key typed in the dialog or the entry's stored one. With
+ * neither, each probe takes what MMSP's client for the protocol IT speaks would read (PRN-021,
+ * MMSP's rule — see envApiKeyForProtocol): the protocol's variable only when the probed URL is
+ * that client's own default endpoint, so a gateway or a private server gets an anonymous probe.
+ * Detection still works with no credential at all (a protocol-shaped 401 identifies the route),
+ * and the user's vendor key never goes to a URL they typed.
  */
 import { userAgent } from "@prismshadow/penguin-core";
+import { clientEnvKey } from "../model-catalog/env-keys.js";
 import type {
   ModelProtocolDetectResponse,
   ModelProtocolProbeDto,
@@ -105,6 +107,28 @@ export const PROTOCOL_PROBES: readonly ProbeSpec[] = [
   { clientType: "ant-messages", path: "/v1/messages", headers: anthropicHeaders },
   { clientType: "openai-chat", path: "/chat/completions", headers: bearerHeaders },
 ];
+
+/**
+ * Environment-variable fallback for a probe's credential, resolved PER PROTOCOL and PER URL:
+ * the variable MMSP's client for that protocol reads when handed no key at that URL (the
+ * catalog's clientEnvKey, which asks MMSP's credentials module) — `ANTHROPIC_API_KEY` for
+ * `ant-messages` at Anthropic's default endpoint, `OPENAI_API_KEY` for the two OpenAI protocols
+ * at OpenAI's, and nothing anywhere else. Which variable backs a request depends on the protocol
+ * spoken, and detection is precisely the case where the protocol is not yet known, so it is
+ * resolved once per probe; it is the rule the saved model is held to, so a probe never sends a
+ * key the model would not.
+ *
+ * Server-side only: the value is placed in a request header and never returned to the
+ * browser, echoed in a result, or logged.
+ */
+export function envApiKeyForProtocol(
+  clientType: ProtocolClientType,
+  baseUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const name = clientEnvKey(clientType, baseUrl);
+  return name !== undefined ? env[name]?.trim() || undefined : undefined;
+}
 
 /** Whether a string is an absolute http(s) URL (the only base URLs worth probing). */
 export function isHttpUrl(value: string): boolean {
@@ -323,22 +347,26 @@ async function runProbe(
 export async function detectModelProtocol(options: {
   baseUrl: string;
   /**
-   * Explicit credential (the key typed in the dialog, or the entry's stored key); absent, the
-   * probes go out anonymously. An authenticated probe is what makes the difference between a
-   * protocol-shaped error (which identifies the route) and the generic 401 or gateway HTML
-   * that an anonymous request often draws.
+   * Explicit credential (the key typed in the dialog, or the entry's stored key). When absent,
+   * each probe takes the environment variable MMSP's client for its protocol would read at the
+   * probed URL, if any — see envApiKeyForProtocol. An authenticated probe is what makes the
+   * difference between a protocol-shaped error (which identifies the route) and the generic 401
+   * or gateway HTML that an anonymous request often draws.
    */
   apiKey?: string;
   /** Injection point for tests; defaults to global fetch (which routes through the admin proxy settings, see net/proxy.ts). */
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Environment source for the per-protocol fallback; injectable so tests need not mutate process.env. */
+  env?: NodeJS.ProcessEnv;
 }): Promise<ModelProtocolDetectResponse> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? PROBE_TIMEOUT_MS;
   const probes: ModelProtocolProbeDto[] = [];
   for (const baseUrl of candidateBaseUrls(options.baseUrl)) {
     for (const spec of PROTOCOL_PROBES) {
-      const probe = await runProbe(spec, baseUrl, options.apiKey, fetchImpl, timeoutMs);
+      const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, baseUrl, options.env);
+      const probe = await runProbe(spec, baseUrl, apiKey, fetchImpl, timeoutMs);
       probes.push(probe);
       if (probe.outcome === "served") return { detected: spec.clientType, baseUrl, probes };
     }

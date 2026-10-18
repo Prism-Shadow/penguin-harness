@@ -8,11 +8,11 @@
 
 [中文版](2026-10-15-model-catalog-server.zh.md)
 
-The built-in model catalog moved from `packages/core` to `packages/server`. It covers the model rows, the provider groups, pricing and off-peak rules, presets and their sync helpers, the UI helpers, the vendor endpoint table and the mirror of MMSP's id routing. Core now special-cases no model, provider or gateway; the one exception is the gateway attribution headers.
+The built-in model catalog moved from `packages/core` to `packages/server`. It covers the model rows, the provider groups, pricing and off-peak rules, presets and their sync helpers, and the UI helpers. Core now special-cases no model, provider or gateway; the one exception is the gateway attribution headers.
 
 ## Where things are
 
-- The catalog is `packages/server/src/model-catalog/`, published as the browser-safe subpath `@prismshadow/penguin-server/model-catalog`. The Web App, the CLI and the component gallery import it from there. Its only runtime import is core's `@prismshadow/penguin-core/model-connection`. It is split by concern: the catalog data and lookups, MMSP's routing mirror, the environment variable names a keyless row reads, and the Project seed.
+- The catalog is `packages/server/src/model-catalog/`, published as the browser-safe subpath `@prismshadow/penguin-server/model-catalog`. The Web App, the CLI and the component gallery import it from there. Its runtime imports are core's `@prismshadow/penguin-core/model-connection` and MMSP's `@prismshadow/mmsp/credentials`, which the server now depends on. It is split by concern: the catalog data and lookups, what the UI shows about MMSP's clients (MMSP's routing passed through, each client's request path and fast-mode protocol), the environment variable names a model reads (asked of MMSP), and the Project seed.
 - Core's `@prismshadow/penguin-core/model-catalog` subpath and the catalog's re-export from the core root were removed.
 - `attributionHeaders` (OpenRouter, TokenDance, OpenCode's `x-opencode-session`) moved into core's own App attribution module, `llm/app-attribution.ts`, whose headers `GenerativeModel` attaches to every request. `APP_URL` is exported from the core root.
 
@@ -23,10 +23,10 @@ The built-in model catalog moved from `packages/core` to `packages/server`. It c
 
 ## Migrations
 
-The Penguin Go route migration (`migratePenguinGoRoutes`) moved from core's `loadProjectConfig` path into the server's read path, beside the one-time migration of the DeepSeek and MiniMax presets' vendor endpoints. See [data compatibility](2026-10-15-backward-compatibility.md).
+The Penguin Go route migration (`migratePenguinGoRoutes`) moved from core's `loadProjectConfig` path into the server's read path and the App's startup read of every Project. See [data compatibility](2026-10-15-backward-compatibility.md).
 
 ## Compatibility
 
-- SDK code that imported the catalog from `@prismshadow/penguin-core` or `@prismshadow/penguin-core/model-catalog` imports it from `@prismshadow/penguin-server/model-catalog`. Connection helpers (`effectiveConnection`, `groupKeyReaches`, `MMSP_CLIENTS`, `canonicalClientType`) stay in core.
+- SDK code that imported the catalog from `@prismshadow/penguin-core` or `@prismshadow/penguin-core/model-catalog` imports it from `@prismshadow/penguin-server/model-catalog`. Connection helpers (`effectiveConnection`, `groupKeyReaches`, `resolveEntryCredential`, `canonicalClientType`) stay in core.
 - A data root only the SDK touches starts with no models and no default model. Add models with `addModel` and set a default before creating a Session; a model with no key and no base URL on itself or its group uses the vendor's environment variable. Projects created by the server, the desktop app or the CLI's server are seeded as before.
 - `penguin config model …` on a Project whose config file does not exist starts from an empty table instead of the catalog presets.

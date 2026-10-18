@@ -72,7 +72,7 @@
  * OpenRouter, TokenDance, SiliconFlow and Atlas Cloud, whose do — see each group's own block
  * comment.
  * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
- * the family its spelling begins with and never looks at base_url (see routedClientType), so
+ * the family its spelling begins with and never looks at base_url (MMSP's routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
  * reach DeepSeek's official client aimed at a gateway, and `openai/gpt-5.6-sol` would throw
  * outright (no known family begins with "openai/"). Gateway protocols are pinned:
@@ -98,11 +98,16 @@
  * own (`llm/app-attribution.ts`), whose headers GenerativeModel attaches to every request.
  *
  * This file imports no Node built-ins: core's types, core's browser-safe connection subpath and
- * the routing mirror (routing.ts) only, so it can be bundled directly for the browser.
+ * MMSP's credentials module (`@prismshadow/mmsp/credentials`, which imports nothing) only, so it
+ * can be bundled directly for the browser.
  */
+import {
+  CLIENT_CREDENTIALS,
+  OFFICIAL_CLIENT_TYPES,
+  routedClientType,
+} from "@prismshadow/mmsp/credentials";
 import type { ModelPricing } from "@prismshadow/penguin-core";
 import { sameClientType } from "@prismshadow/penguin-core/model-connection";
-import { routedClientType } from "./routing.js";
 
 /** Model provider info (used for web grouping/logo and the "API key blank falls back to env var" hint). */
 /**
@@ -163,11 +168,10 @@ export interface ModelProviderInfo {
   /** Display name (brand name, shared by Chinese and English UI). */
   label: string;
   /**
-   * API key env var name: the pair MMSP's client for this group's rows reads when handed
-   * nothing. Whether a row is handed nothing is core's effectiveConnection (`apiKeySource ===
-   * "env"`: no key in the file and no base URL on the row or its group, PRN-021) — a gateway
-   * group records OPENAI_* because that is what its generic client reads, and its rows carry
-   * the gateway's base URL, so they are never handed nothing.
+   * API key env var name: the variable MMSP's client for this group's rows reads when handed no
+   * key, which it does only for its own default endpoint (PRN-021, MMSP's rule). A gateway group
+   * records OPENAI_* because that is what its generic client reads, and its rows carry the
+   * gateway's base URL, so that client never reads it for them.
    */
   envKey: string;
   /** base URL env var name. */
@@ -324,15 +328,7 @@ const QWEN_TOKEN_PLAN_BASE_URL =
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
-/**
- * The vendor endpoints the DeepSeek and MiniMax presets carried as a row base URL from
- * 2026-08-18 / 2026-09-10 until 2026-10-03 (#917), which a Project from that window may still
- * store. The server's one-time vendor-endpoint migration removes them from those groups; it and
- * MINIMAX_BASE_URL go at the 0.3.0 release preparation (DEEPSEEK_BASE_URL stays for the
- * balance endpoint).
- */
-export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
-export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
 export const PENGUIN_GO_BASE_URL = "https://go.penguin.ooo/api/v1";
@@ -404,7 +400,7 @@ export const MODELSCOPE_PROVIDER_ID = "modelscope";
  * (**OPENAI_API_KEY / OPENAI_BASE_URL**, and ANTHROPIC_* for OpenCode Go's `ant-messages`
  * rows) when the credential is blank, not the gateway's own variable names, so every gateway
  * group records the OPENAI_* pair as the fact it is. A new Project writes each gateway's base
- * URL on its group, so a keyless gateway row is refused rather than handed nothing: the
+ * URL on its group, so MMSP refuses a keyless gateway row rather than reading a variable: the
  * variable holds the user's OpenAI (or Anthropic) key, and a gateway is neither. ModelScope
  * also records the OPENAI_* pair; its group credential is an api-inference access token taken
  * from the config alone.
@@ -3538,10 +3534,10 @@ export function isVendorGroup(providerId: string): boolean {
  * the configuration that produces `No client for model "<id>": its family is not known` on
  * the first request, and nothing before it.
  *
- * `routedClientType` is the authority: it mirrors AutoLLMClient's routing rule and returns
- * undefined on exactly the entries that client rejects. A blank id is not a routing failure —
- * the entry is still being typed, and the required-field validation is what has something
- * to say about it.
+ * MMSP's `routedClientType` is the authority: AutoLLMClient routes through it, and it returns
+ * null on exactly the entries that client rejects. A blank id is not a routing failure — the
+ * entry is still being typed, and the required-field validation is what has something to say
+ * about it.
  */
 export function unroutableVendorModel(
   provider: string,
@@ -3549,7 +3545,21 @@ export function unroutableVendorModel(
   clientType?: string,
 ): boolean {
   const id = modelId.trim();
-  return id !== "" && isVendorGroup(provider) && routedClientType(id, clientType) === undefined;
+  if (id === "" || !isVendorGroup(provider)) return false;
+  // A blank pin is none, which routes by the id.
+  return routedClientType(id, clientType?.trim() ? clientType : null) === null;
+}
+
+/**
+ * The official MMSP client a first-party vendor group's unpinned rows route to: the vendor's
+ * own, the official client that reads the variable the group records (`envKey`; MMSP's
+ * credentials module). Undefined for every other group, whose protocol its table or its rows
+ * decide.
+ */
+export function vendorClientType(providerId: string): string | undefined {
+  if (!isVendorGroup(providerId)) return undefined;
+  const envKey = providerInfo(providerId)?.envKey;
+  return OFFICIAL_CLIENT_TYPES.find((t) => CLIENT_CREDENTIALS[t]?.apiKeyEnv === envKey);
 }
 
 /**

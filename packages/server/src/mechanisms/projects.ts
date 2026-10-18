@@ -192,8 +192,8 @@ export abstract class ProjectConfigStore {
   ): Promise<string | undefined>;
   /**
    * The key a group's account balance is read with: the group key (never a row's own), or
-   * else, for a first-party vendor group that names no base URL, the vendor's environment
-   * variable, which its keyless rows' client reads. Server-side only.
+   * else the vendor's environment key where MMSP's vendor client reads it for the group's base
+   * URL (none, or the vendor's own default endpoint). Server-side only.
    */
   abstract getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined>;
   abstract setModelApiKeyResolver(
