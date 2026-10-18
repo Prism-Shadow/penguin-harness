@@ -3,7 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** feat
 - **Scope:** `server`, `cli`, `web`, `docs`
-- **PR:** TBD
+- **PR:** [#1200](https://github.com/Prism-Shadow/penguin-harness/pull/1200)
 
 [中文版](2026-10-18-schedule-manual-fire.zh.md)
 
