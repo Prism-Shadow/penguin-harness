@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1195](https://github.com/Prism-Shadow/penguin-harness/pull/1195)
 
 [English](2026-10-18-latest-trace-lookup.md)
 
