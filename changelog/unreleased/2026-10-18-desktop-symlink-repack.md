@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#1201](https://github.com/Prism-Shadow/penguin-harness/pull/1201)
 
 [中文版](2026-10-18-desktop-symlink-repack.zh.md)
 
