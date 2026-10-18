@@ -60,7 +60,9 @@ export function useRoutedSession({
    * the open conversation. See resolveRoutedSession.
    */
   const [fetchedSession, setFetchedSession] = useState<SessionInfo | null>(null);
-  const listed = draft ? null : resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId);
+  const listed = draft
+    ? null
+    : resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId);
   /**
    * The routed Session, held across a refetch that momentarily does not list it.
    *
