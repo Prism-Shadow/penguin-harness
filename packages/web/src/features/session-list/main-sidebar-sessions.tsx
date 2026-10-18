@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { useSessionSeen } from "../../lib/session-seen";
 import { isSidebarRow } from "../../lib/session-grouping";
-import { pendingScheduleSessions } from "../schedules";
-import { useSchedulesAcross } from "../schedules/schedule-store";
+import { pendingScheduleSessions, useSchedulesAcross } from "../schedules";
 import { useLocalShown } from "../../lib/local-first";
 import {
   collapsedGroupsKey,

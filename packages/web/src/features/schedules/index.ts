@@ -13,3 +13,5 @@ export { toggleBody } from "./schedule-upsert";
 export { SchedulePanel } from "./schedule-panel";
 
 export { noteScheduleEvent } from "./schedule-store";
+
+export { useSchedulesAcross } from "./schedule-store";

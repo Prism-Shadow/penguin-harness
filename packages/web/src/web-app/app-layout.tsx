@@ -24,7 +24,6 @@ import { S } from "../lib/strings";
 import { onCommand } from "../lib/shortcuts/dispatcher";
 import { useWebAppLayers } from "./index";
 import { useUpdateBadges } from "../lib/use-update-badges";
-import { backgroundStyle, useBackground } from "../state/background";
 import { dispatchBrowser } from "../features/builtin-browser";
 import { useAuth } from "../state/auth";
 import { useCompletionNotifications } from "../state/use-completion-notifications";
