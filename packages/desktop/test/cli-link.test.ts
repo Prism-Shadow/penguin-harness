@@ -18,6 +18,10 @@ import { appImageWrapperScript, posixLauncherScript } from "../src/launcher.js";
 /**
  * A real directory tree, not a mocked fs: the whole point of these functions is what they
  * do to symlinks, modes and dangling targets, none of which a mock would reproduce.
+ *
+ * - Given nothing at the target, when synced, the link is created.
+ * - Given a dangling or stale link, when synced, it is repacked.
+ * - Given a real directory at the target, when synced, it is refused and left in place.
  */
 let tmp: string;
 
@@ -106,6 +110,29 @@ describe("syncSymlink (the macOS form)", () => {
     expect(result.detail).toContain("not a symlink this app wrote");
     expect(fs.readFileSync(link, "utf8")).toBe("#!/bin/sh\necho not ours\n");
     expect(fs.lstatSync(link).isSymbolicLink()).toBe(false);
+  });
+
+  it("never deletes a directory sitting at the target", () => {
+    // The automatic install passes force=false: a directory is not a `penguin` this app
+    // wrote, so it is left alone.
+    const desired = packApp("PenguinHarness.app");
+    const link = path.join(tmp, "bin", "penguin");
+    fs.mkdirSync(path.join(link, "inside"), { recursive: true });
+
+    expect(syncSymlink(link, desired, false).action).toBe("skipped");
+    expect(fs.lstatSync(link).isDirectory()).toBe(true);
+    expect(fs.lstatSync(path.join(link, "inside")).isDirectory()).toBe(true);
+  });
+
+  it("refuses to force a directory at the target rather than deleting it", () => {
+    // Even the forced menu-item path only repacks a link; a directory is refused with
+    // ERR_FS_EISDIR and stays where it was.
+    const desired = packApp("PenguinHarness.app");
+    const link = path.join(tmp, "bin", "penguin");
+    fs.mkdirSync(path.join(link, "inside"), { recursive: true });
+
+    expect(() => syncSymlink(link, desired, true)).toThrow(/EISDIR/);
+    expect(fs.lstatSync(path.join(link, "inside")).isDirectory()).toBe(true);
   });
 
   it("never follows a foreign symlink either", () => {
