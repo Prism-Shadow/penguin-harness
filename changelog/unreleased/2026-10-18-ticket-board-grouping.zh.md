@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** feat
 - **Scope:** `web`
+- **PR:** [#1202](https://github.com/Prism-Shadow/penguin-harness/pull/1202)
 
 [English](2026-10-18-ticket-board-grouping.md)
 
