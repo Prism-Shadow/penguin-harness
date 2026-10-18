@@ -34,17 +34,15 @@ It is a *catalog*, not a routing table — MMSP owns routing.
   `baseUrl` with it. Everything else is routed by MMSP from the vendor family its id begins with.
 - A provider group is split only when the vendor genuinely has separate endpoints or billing paths
   (Qwen Token Plan vs Pay-As-You-Go). One endpoint serving several key types is one group.
-- `routedClientType` mirrors MMSP's routing exactly: the pinned client type (lowercased, `openai`
-  read as `openai-chat`), else the official client of the family prefix the lowercased id begins
-  with (`gpt-`, `text-embedding-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`,
-  `minimax-`), with `openai-official` handing `text-embedding-` ids to `openai-embedding`; a pin
-  MMSP does not have, or an id of no family, gives nothing. `resolveModelEnv`,
-  `fastModeProtocol`, the credential rule (`keylessEndpoint`: the `mmsp` client's open-server
-  exception) and the web's protocol path look the result up in `MMSP_CLIENTS`. MMSP does not
-  export its family table, so core keeps a copy: move it only with the MMSP release that
-  changes it, and never let it place an id MMSP refuses. An alias MMSP keeps after a rename
-  (`gemini-official`, `gemini-generate-content`) keeps its row until the MMSP release that drops
-  it, since a stored value is never rewritten.
+- MMSP owns routing and the environment-key rule, and exports both from its pure, browser-safe
+  `@prismshadow/mmsp/credentials`: which client an entry reaches (`routedClientType`, which the
+  catalog re-exports) and what that client does with no key (`environmentCredential`). Keep no
+  copy of either and no environment or refusal logic in the harness: core hands MMSP the file's
+  key, base URL and client type verbatim, and the previews (`modelEnvironment`,
+  `modelEnvPreviewKey`, `providerEnvFallbackKey`, `clientEnvKey`) ask MMSP's credentials module.
+  Only what MMSP exports nothing for lives here: each client's request path and fast-mode
+  protocol (`CLIENT_PROTOCOLS`, which a test holds to MMSP's client list, so a new MMSP client
+  needs a row).
 
 ## What a change touches
 

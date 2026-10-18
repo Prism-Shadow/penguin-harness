@@ -15,9 +15,10 @@
  * - Auth headers mirror MMSP's clients (Bearer for the OpenAI protocols; x-api-key, Bearer
  *   and anthropic-version for ant-messages); a keyless probe sends no credential; the key never
  *   reaches a URL or the reported probes.
- * - With no key typed or stored, every probe goes out anonymously — a vendor's own URL included,
- *   whatever vendor variables are set: a URL is never lent an environment variable. A typed key
- *   goes to every probe.
+ * - With no key typed or stored, each probe takes what MMSP's client for its protocol reads at
+ *   the probed URL: the protocol's variable (ANTHROPIC_* for ant-messages, OPENAI_* for the
+ *   others) only for that client's own default endpoint, never for any other URL, one
+ *   `*_BASE_URL` names included; unset and blank are absent, and a typed key wins.
  * - POST /api/projects/:p/models/detect validates the URL, falls back to the stored key of the
  *   paired reference unless clearApiKey says not to — the model's own key, else its group's —
  *   takes a group alone (the group settings dialog) and probes with the group's key unless
@@ -30,13 +31,14 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ModelProtocolDetectResponse, ModelsResponse } from "../src/api/types.js";
 import {
   MAX_PROBE_BODY_BYTES,
   candidateBaseUrls,
   classifyProbeResponse,
   detectModelProtocol,
+  envApiKeyForProtocol,
   isHttpUrl,
   probeUrl,
 } from "../src/services/protocol-detect.js";
@@ -478,6 +480,9 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     const seen: SeenCall[] = [];
     const res = await detectModelProtocol({
       baseUrl: BASE,
+      // Empty env: no key from anywhere, so this stays the genuinely keyless case
+      // regardless of what the machine running the suite happens to export.
+      env: {},
       fetchImpl: gateway({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }, seen),
     });
     expect(res.detected).toBe("openai-responses");
@@ -487,26 +492,128 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// No environment fallback (no key typed, none stored)
+// Environment-variable fallback (no key typed, none stored)
 // ---------------------------------------------------------------------------
 
-describe("detectModelProtocol never reads the environment", () => {
-  it("probes a vendor's own URL with no key anonymously, even with the vendor variables set", async () => {
-    vi.stubEnv("OPENAI_API_KEY", "sk-openai-env");
-    vi.stubEnv("ANTHROPIC_API_KEY", "sk-anthropic-env");
-    try {
-      for (const baseUrl of ["https://api.openai.com/v1", "https://api.anthropic.com"]) {
-        const seen: SeenCall[] = [];
-        await detectModelProtocol({ baseUrl, fetchImpl: gateway({}, seen) });
-        expect(seen, baseUrl).toHaveLength(6);
-        for (const call of seen) {
-          expect(call.headers.authorization, call.url).toBeUndefined();
-          expect(call.headers["x-api-key"], call.url).toBeUndefined();
-        }
-      }
-    } finally {
-      vi.unstubAllEnvs();
+describe("envApiKeyForProtocol", () => {
+  const OPENAI = "https://api.openai.com/v1";
+  const ANTHROPIC = "https://api.anthropic.com";
+
+  it("maps each protocol to the variable its MMSP client actually reads, for the vendor's own endpoint", () => {
+    const env = { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" };
+    expect(envApiKeyForProtocol("openai-responses", OPENAI, env)).toBe("sk-openai");
+    expect(envApiKeyForProtocol("openai-chat", OPENAI, env)).toBe("sk-openai");
+    // The whole point of resolving per protocol: this one is NOT an OPENAI_* reader.
+    expect(envApiKeyForProtocol("ant-messages", ANTHROPIC, env)).toBe("sk-anthropic");
+  });
+
+  it("lends nothing to a URL that is not the vendor's own, even one OPENAI_BASE_URL names", () => {
+    const env = { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" };
+    // A gateway, a private server: the user's vendor key must not be sent there.
+    expect(envApiKeyForProtocol("openai-chat", "https://gw.example.com/v1", env)).toBeUndefined();
+    expect(envApiKeyForProtocol("ant-messages", "http://127.0.0.1:8000", env)).toBeUndefined();
+    // Only the client's default endpoint takes the key when a URL is given: naming the URL in
+    // OPENAI_BASE_URL does not make it one.
+    expect(
+      envApiKeyForProtocol("openai-chat", "https://gw.example.com/v1", {
+        ...env,
+        OPENAI_BASE_URL: "https://gw.example.com/v1/",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("treats unset and blank as absent", () => {
+    expect(envApiKeyForProtocol("openai-chat", OPENAI, {})).toBeUndefined();
+    expect(envApiKeyForProtocol("openai-chat", OPENAI, { OPENAI_API_KEY: "   " })).toBeUndefined();
+    expect(
+      envApiKeyForProtocol("ant-messages", ANTHROPIC, { OPENAI_API_KEY: "sk-openai" }),
+    ).toBeUndefined();
+  });
+});
+
+describe("detectModelProtocol env fallback", () => {
+  const BASE = "https://gw.example.com/v1";
+
+  it("probes a URL that is not a vendor's own anonymously, whatever vendor keys are set", async () => {
+    const seen: SeenCall[] = [];
+    await detectModelProtocol({
+      baseUrl: BASE,
+      // OPENAI_BASE_URL naming the URL changes nothing: environment keys are for official
+      // endpoints only.
+      env: {
+        OPENAI_API_KEY: "sk-openai",
+        OPENAI_BASE_URL: BASE,
+        ANTHROPIC_API_KEY: "sk-anthropic",
+      },
+      fetchImpl: gateway({}, seen), // every path 404s, so both candidates run all three probes
+    });
+    expect(seen).toHaveLength(6);
+    for (const call of seen) {
+      expect(call.headers.authorization).toBeUndefined();
+      expect(call.headers["x-api-key"]).toBeUndefined();
     }
+  });
+
+  it("authenticates each probe of a vendor's own URL from the env var for the protocol THAT probe speaks", async () => {
+    const seen: SeenCall[] = [];
+    await detectModelProtocol({
+      baseUrl: "https://api.openai.com/v1",
+      env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
+      fetchImpl: gateway({}, seen), // every path 404s, so both candidates run all three probes
+    });
+    expect(seen).toHaveLength(6);
+    const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
+    expect(responses.headers.authorization).toBe("Bearer sk-openai");
+    expect(chat.headers.authorization).toBe("Bearer sk-openai");
+    // OpenAI's host is not Anthropic's endpoint: the Messages probe stays anonymous there.
+    expect(messages.headers.authorization).toBeUndefined();
+    expect(messages.headers["x-api-key"]).toBeUndefined();
+    // The neighbouring /v1-less candidate is not the official endpoint either.
+    const [responses2, messages2, chat2] = seen.slice(3) as [SeenCall, SeenCall, SeenCall];
+    expect(responses2.headers.authorization).toBeUndefined();
+    expect(messages2.headers["x-api-key"]).toBeUndefined();
+    expect(chat2.headers.authorization).toBeUndefined();
+    // Whatever the source, the credential never reaches a URL.
+    for (const call of seen) {
+      expect(call.url).not.toContain("sk-openai");
+      expect(call.url).not.toContain("sk-anthropic");
+    }
+  });
+
+  it("an explicit key wins over the environment for every probe", async () => {
+    const seen: SeenCall[] = [];
+    await detectModelProtocol({
+      baseUrl: BASE,
+      apiKey: "sk-typed",
+      env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
+      fetchImpl: gateway({}, seen),
+    });
+    for (const call of seen) expect(call.headers.authorization).toBe("Bearer sk-typed");
+    expect((seen[1] as SeenCall).headers["x-api-key"]).toBe("sk-typed");
+  });
+
+  it("falls back per protocol, so a half-configured environment still authenticates its own probe", async () => {
+    const seen: SeenCall[] = [];
+    await detectModelProtocol({
+      baseUrl: "https://api.anthropic.com",
+      env: { ANTHROPIC_API_KEY: "sk-anthropic" },
+      fetchImpl: gateway({}, seen),
+    });
+    const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
+    expect(responses.headers.authorization).toBeUndefined();
+    expect(chat.headers.authorization).toBeUndefined();
+    expect(messages.headers["x-api-key"]).toBe("sk-anthropic");
+  });
+
+  it("never echoes an env-sourced key into the reported probes", async () => {
+    const res = await detectModelProtocol({
+      baseUrl: "https://api.openai.com/v1",
+      env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
+      fetchImpl: gateway({ "/v1/responses": { status: 401, body: OPENAI_ERROR } }),
+    });
+    expect(res.detected).toBe("openai-responses");
+    expect(JSON.stringify(res)).not.toContain("sk-openai");
+    expect(JSON.stringify(res)).not.toContain("sk-anthropic");
   });
 });
 
@@ -657,8 +764,9 @@ describe("POST /api/projects/:p/models/detect", () => {
         expect(keyless?.auth).toBeUndefined();
 
         // Same request with the env var present — and even with ANTHROPIC_BASE_URL naming
-        // this very server: the stored key stays suppressed, and a URL is never lent an
-        // environment variable, so the probe stays anonymous.
+        // this very server: the stored key stays suppressed, and the local server is not
+        // Anthropic's endpoint, so the Anthropic key is NOT lent to it and the probe stays
+        // anonymous. Only the client's own default endpoint takes the environment key.
         process.env.ANTHROPIC_API_KEY = "sk-env-anthropic";
         process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${port}`;
         seen.length = 0;

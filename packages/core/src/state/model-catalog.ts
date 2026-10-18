@@ -65,7 +65,7 @@
  * OpenRouter, TokenDance, SiliconFlow and Atlas Cloud, whose do — see each group's own block
  * comment.
  * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
- * the family its spelling begins with and never looks at base_url (see routedClientType), so
+ * the family its spelling begins with and never looks at base_url (MMSP's routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
  * reach DeepSeek's official client aimed at a gateway, and `openai/gpt-5.6-sol` would throw
  * outright (no known family begins with "openai/"). Gateway protocols are pinned:
@@ -90,23 +90,24 @@
  * pins: it names PenguinHarness to the gateways that read such a header, keyed on the
  * endpoint host rather than on the provider group.
  *
- * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
- * for the browser.
+ * This file imports no Node built-ins: its runtime imports are core's model-connection module
+ * and MMSP's credentials module (`@prismshadow/mmsp/credentials`, which imports nothing), so it
+ * can be bundled directly for the browser.
  */
+import {
+  CLIENT_CREDENTIALS,
+  OFFICIAL_CLIENT_TYPES,
+  environmentCredential,
+  routedClientType,
+} from "@prismshadow/mmsp/credentials";
 import type { ModelEntry, ModelPricing, ProviderTable } from "./project-config.js";
 import {
-  MMSP_CLIENTS,
   canonicalClientType,
   effectiveConnection,
-  mmspClient,
   sameClientType,
   sameEndpoint,
 } from "./model-connection.js";
-import type {
-  FastModeProtocol,
-  ModelCredentialShape,
-  ProviderConnectionShape,
-} from "./model-connection.js";
+import type { ModelCredentialShape, ProviderConnectionShape } from "./model-connection.js";
 
 /** Model provider info (used for web grouping/logo and the "API key blank falls back to env var" hint). */
 /**
@@ -167,11 +168,10 @@ export interface ModelProviderInfo {
   /** Display name (brand name, shared by Chinese and English UI). */
   label: string;
   /**
-   * API key env var name: the pair MMSP's client for this group's rows reads when handed
-   * nothing. Whether a row is handed nothing is core's effectiveConnection (`apiKeySource ===
-   * "env"`: no key in the file and no base URL on the row or its group, PRN-021) — a gateway
-   * group records OPENAI_* because that is what its generic client reads, and its rows carry
-   * the gateway's base URL, so they are never handed nothing.
+   * API key env var name: the variable MMSP's client for this group's rows reads when handed no
+   * key, which it does only for its own default endpoint (PRN-021, MMSP's rule). A gateway group
+   * records OPENAI_* because that is what its generic client reads, and its rows carry the
+   * gateway's base URL, so that client never reads it for them.
    */
   envKey: string;
   /** base URL env var name. */
@@ -328,15 +328,7 @@ const QWEN_TOKEN_PLAN_BASE_URL =
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
-/**
- * The vendor endpoints the DeepSeek and MiniMax presets carried as a row base URL from
- * 2026-08-18 / 2026-09-10 until 2026-10-03 (#917), which a Project from that window may still
- * store. The server's one-time vendor-endpoint migration removes them from those groups; it and
- * MINIMAX_BASE_URL go at the 0.3.0 release preparation (DEEPSEEK_BASE_URL stays for the
- * balance endpoint).
- */
-export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
-export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
 export const PENGUIN_GO_BASE_URL = "https://go.penguin.ooo/api/v1";
@@ -434,7 +426,7 @@ export const MODELSCOPE_PROVIDER_ID = "modelscope";
  * (**OPENAI_API_KEY / OPENAI_BASE_URL**, and ANTHROPIC_* for OpenCode Go's `ant-messages`
  * rows) when the credential is blank, not the gateway's own variable names, so every gateway
  * group records the OPENAI_* pair as the fact it is. A new Project writes each gateway's base
- * URL on its group, so a keyless gateway row is refused rather than handed nothing: the
+ * URL on its group, so MMSP refuses a keyless gateway row rather than reading a variable: the
  * variable holds the user's OpenAI (or Anthropic) key, and a gateway is neither. ModelScope
  * also records the OPENAI_* pair; its group credential is an api-inference access token taken
  * from the config alone.
@@ -3568,10 +3560,10 @@ export function isVendorGroup(providerId: string): boolean {
  * the configuration that produces `No client for model "<id>": its family is not known` on
  * the first request, and nothing before it.
  *
- * `routedClientType` is the authority: it mirrors AutoLLMClient's routing rule and returns
- * undefined on exactly the entries that client rejects. A blank id is not a routing failure —
- * the entry is still being typed, and the required-field validation is what has something
- * to say about it.
+ * MMSP's `routedClientType` is the authority: AutoLLMClient routes through it, and it returns
+ * null on exactly the entries that client rejects. A blank id is not a routing failure — the
+ * entry is still being typed, and the required-field validation is what has something to say
+ * about it.
  */
 export function unroutableVendorModel(
   provider: string,
@@ -3579,7 +3571,7 @@ export function unroutableVendorModel(
   clientType?: string,
 ): boolean {
   const id = modelId.trim();
-  return id !== "" && isVendorGroup(provider) && routedClientType(id, clientType) === undefined;
+  return id !== "" && isVendorGroup(provider) && routedClientType(id, pinned(clientType)) === null;
 }
 
 /**
@@ -3605,99 +3597,136 @@ export function unaddableModel(provider: string, modelId: string): boolean {
   return !isAddableGroup(provider) && catalogEntryFor(provider, modelId.trim()) === undefined;
 }
 
-/** Env var fallback for a single model (the var names MMSP's client actually reads when api_key / base_url is blank). */
-export interface ModelEnvInfo {
-  envKey: string;
-  envBaseUrlKey: string;
+// MMSP's routing, passed through for browser code that reads the catalog: which client an entry
+// reaches (its pinned client type, else its id's family). The catalog keeps no copy of it.
+export { routedClientType } from "@prismshadow/mmsp/credentials";
+
+/** A pinned client type as MMSP's routing takes it: blank or absent is none, which routes by id. */
+function pinned(clientType: string | undefined): string | null {
+  return clientType?.trim() ? clientType : null;
 }
 
 /**
- * MMSP's routing rule, mirrored: without a client type, the family a model id begins with
- * names its official client (AutoLLMClient's `MODEL_FAMILIES` as of MMSP 0.5.2, which the
- * package does not export), and an id of no known family cannot be started at all.
+ * The official MMSP client a first-party vendor group's unpinned rows route to: the vendor's
+ * own, the official client that reads the variable the group records (`envKey`). Undefined for
+ * every other group, whose protocol its table or its rows decide.
  */
-const MODEL_FAMILIES: readonly (readonly [prefix: string, clientType: string])[] = [
-  ["gpt-", "openai-official"],
-  ["text-embedding-", "openai-official"],
-  ["claude-", "anthropic-official"],
-  ["gemini-", "google-official"],
-  ["glm-", "zai-official"],
-  ["kimi-", "moonshot-official"],
-  ["deepseek-", "deepseek-official"],
-  ["minimax-", "minimax-official"],
-];
-
-/**
- * The MMSP client that serves an entry, exactly as AutoLLMClient picks it: the pinned client
- * type (lowercased; the bare `openai` alias canonicalized), else the official client of the
- * family the model id begins with — where `openai-official` hands a `text-embedding-` id to
- * the Embeddings client. `undefined` when MMSP refuses the entry: an id of no known family,
- * or a pin MMSP does not have.
- */
-export function routedClientType(modelId: string, clientType?: string): string | undefined {
-  const id = modelId.toLowerCase();
-  const routed =
-    canonicalClientType(clientType)?.trim().toLowerCase() ||
-    MODEL_FAMILIES.find(([prefix]) => id.startsWith(prefix))?.[1];
-  if (routed === "openai-official" && id.startsWith("text-embedding-")) return "openai-embedding";
-  return routed !== undefined && Object.hasOwn(MMSP_CLIENTS, routed) ? routed : undefined;
+export function vendorClientType(providerId: string): string | undefined {
+  if (!isVendorGroup(providerId)) return undefined;
+  const envKey = providerInfo(providerId)?.envKey;
+  return OFFICIAL_CLIENT_TYPES.find((t) => CLIENT_CREDENTIALS[t]?.apiKeyEnv === envKey);
 }
 
 /**
- * Resolves the env var fallback for a model: the pair the client MMSP routes it to reads
- * (see routedClientType). Returns undefined when nothing routes — an id of no known family
- * with no client type, or a client type MMSP does not have — which is exactly when MMSP
- * rejects the entry: it needs an explicit client_type, or should be added under custom / a
- * self-built group via the OpenAI protocol.
+ * The variable MMSP's client of this type reads its key from when handed none at this base URL
+ * (environmentCredential), or undefined: the client refuses that URL, calls it keyless, or is
+ * not one MMSP has. With no base URL it is always the client's own `*_API_KEY`.
  */
-export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvInfo | undefined {
-  const client = MMSP_CLIENTS[routedClientType(modelId, clientType) ?? ""];
-  if (client === undefined) return undefined;
-  return { envKey: `${client.env}_API_KEY`, envBaseUrlKey: `${client.env}_BASE_URL` };
+export function clientEnvKey(clientType: string, baseUrl: string | undefined): string | undefined {
+  const credential = environmentCredential(clientType, baseUrl?.trim() || undefined);
+  return credential?.kind === "env" ? credential.apiKeyEnv : undefined;
+}
+
+/** The variables MMSP's routed client reads for a row as configured (see modelEnvironment). */
+export interface ModelEnvironment {
+  /** The key's variable: only for a row with no key in the file. */
+  apiKeyEnv?: string;
+  /** The endpoint's variable: only for a row with no base URL in the file. */
+  baseUrlEnv?: string;
 }
 
 /**
- * The variable a group's settings may present as covering a blank group key, or undefined —
- * the group dialog's hint. Only a group with no base URL has one: its rows are handed nothing
- * (core's effectiveConnection, `env`) and the routed client reads its own variable. That is the
- * group protocol's variable when it names one, else, for a first-party vendor group whose rows
- * route by id to the vendor's own client, the vendor's (isVendorGroup); nothing for a gateway,
- * custom, vLLM or user-defined group with no protocol.
+ * What a row takes from the environment, as MMSP decides it (PRN-021) — the harness asks MMSP's
+ * credentials module and keeps no rule of its own. The row's effective connection (core's
+ * effectiveConnection) picks the client MMSP routes it to (`routedClientType`) and the base URL
+ * that client is handed; `environmentCredential` then says what the client reads. With no key in
+ * the file it reads its `*_API_KEY` only for no base URL or its own default endpoint, and with
+ * no base URL in the file it goes where its `*_BASE_URL` points, key or not. A row MMSP refuses
+ * (no key and another base URL), an open MMSP server and a row nothing routes read nothing.
+ * `entry` is the row's OWN values, key included, and `group` its `[providers.<id>]` table.
  */
-export function providerEnvFallbackKey(
-  providerId: string,
-  group: Pick<ProviderConnectionShape, "baseUrl" | "clientType"> | undefined,
-): string | undefined {
-  if (group?.baseUrl?.trim()) return undefined;
-  const client = mmspClient(group?.clientType);
-  if (client !== undefined) return `${client.env}_API_KEY`;
-  return isVendorGroup(providerId) ? providerInfo(providerId)?.envKey : undefined;
+export function modelEnvironment(
+  entry: ModelCredentialShape & { apiKey?: string | undefined },
+  group: ProviderConnectionShape | undefined,
+): ModelEnvironment {
+  const effective = effectiveConnection(entry, group);
+  const routed = routedClientType(entry.modelId, pinned(effective.clientType));
+  const credential = routed === null ? null : environmentCredential(routed, effective.baseUrl);
+  if (credential?.kind !== "env") return {};
+  return {
+    ...(effective.apiKey === undefined ? { apiKeyEnv: credential.apiKeyEnv } : {}),
+    ...(credential.baseUrlEnv !== null ? { baseUrlEnv: credential.baseUrlEnv } : {}),
+  };
 }
 
 /**
- * The variable a row with no key authenticates with, or undefined. Only with no base URL on the
- * row or its group (core's effectiveConnection, `apiKeySource === "env"`): the `*_API_KEY` the
- * client MMSP routes the row to reads (resolveModelEnv on the effective protocol, the id's
- * family otherwise). A row with a key in the file, or sent to a base URL from the file, gets
- * none. `entry` is the row's OWN values, key included, and `group` its `[providers.<id>]` table.
- *
- * The server's `GET /models` preview, the machine sync's report, the web dialog's hint and the
- * CLI's list read this, so they cannot disagree with what a Session gets.
+ * The variable a row with no key in the file authenticates with, or undefined: modelEnvironment's
+ * `apiKeyEnv`. The server's `GET /models` preview, the web dialog's hint and the CLI's list read
+ * this, so none of them can disagree with what a Session does.
  */
 export function modelEnvPreviewKey(
   entry: ModelCredentialShape & { apiKey?: string | undefined },
   group: ProviderConnectionShape | undefined,
 ): string | undefined {
-  const effective = effectiveConnection(entry, group);
-  return effective.apiKeySource === "env"
-    ? resolveModelEnv(entry.modelId, effective.clientType)?.envKey
-    : undefined;
+  return modelEnvironment(entry, group).apiKeyEnv;
 }
+
+/**
+ * The variable a group's settings may present as covering a blank group key, or undefined —
+ * the group dialog's hint: what MMSP's client for the group reads when handed no key at the
+ * group's base URL (clientEnvKey). That client is the group protocol's when it names
+ * one, else, for a first-party vendor group, the vendor's (vendorClientType); a gateway, custom,
+ * vLLM or user-defined group with no protocol names nothing, since its rows route by id.
+ */
+export function providerEnvFallbackKey(
+  providerId: string,
+  group: Pick<ProviderConnectionShape, "baseUrl" | "clientType"> | undefined,
+): string | undefined {
+  const clientType = pinned(group?.clientType) ?? vendorClientType(providerId);
+  return clientType === undefined ? undefined : clientEnvKey(clientType, group?.baseUrl);
+}
+
+/**
+ * The wire protocol that carries MMSP's `fast_mode` on a client: `"openai"` for the clients
+ * that send `service_tier: "priority"` (the OpenAI protocols, and Google's Interactions API
+ * and MiniMax alike), `"anthropic"` for those that send `speed: "fast"` plus the
+ * `fast-mode-2026-02-01` beta header. The two differ in what the user must be warned about,
+ * not just in wire shape.
+ */
+export type FastModeProtocol = "openai" | "anthropic";
+
+/**
+ * What the UI shows about each MMSP client, which MMSP exports nothing for: the path it appends
+ * to its base URL (the models page's endpoint hint) and the protocol that carries `fast_mode`
+ * (absent = the client rejects it, or the harness cannot tell what it does with it). Keyed by
+ * the canonical client type MMSP's routedClientType returns; the catalog test holds it to the
+ * client types MMSP's credentials module knows.
+ */
+export const CLIENT_PROTOCOLS: Readonly<
+  Record<string, { path: string; fastMode?: FastModeProtocol }>
+> = {
+  "openai-official": { path: "/responses", fastMode: "openai" },
+  "anthropic-official": { path: "/v1/messages", fastMode: "anthropic" },
+  "google-official": { path: "/v1beta/interactions", fastMode: "openai" },
+  "zai-official": { path: "/chat/completions" },
+  "moonshot-official": { path: "/chat/completions" },
+  "deepseek-official": { path: "/responses" },
+  "minimax-official": { path: "/responses", fastMode: "openai" },
+  "openai-responses": { path: "/responses", fastMode: "openai" },
+  "openai-chat": { path: "/chat/completions", fastMode: "openai" },
+  "openai-chat-vllm-adapter": { path: "/chat/completions", fastMode: "openai" },
+  "openai-embedding": { path: "/embeddings" },
+  "ant-messages": { path: "/v1/messages", fastMode: "anthropic" },
+  "google-genai": { path: "/v1beta/models" },
+  // An MMSP server: the client posts to {base}/stream. It forwards `fast_mode` to the server,
+  // whose upstream client decides, so the harness offers no toggle it cannot vouch for.
+  mmsp: { path: "/stream" },
+};
 
 /**
  * Whether a model can carry fast mode at all, and on which protocol - `undefined` means no.
  *
- * The fast tier is a property of the **client MMSP routes to** (routedClientType), never of
+ * The fast tier is a property of the **client MMSP routes to** (MMSP's routedClientType), never of
  * the catalog row: the registry carries no fast-tier capability flag, but the routing is
  * deterministic, so the answer is too. This reports what the selected client does with the
  * parameter:
@@ -3730,7 +3759,7 @@ export function fastModeProtocol(
   clientType?: string,
   baseUrl?: string,
 ): FastModeProtocol | undefined {
-  const routed = routedClientType(modelId, clientType);
+  const routed = routedClientType(modelId, pinned(clientType));
   // Bedrock has no fast tier, and these Claude generations reject the `speed` parameter (MMSP
   // 0.5.2's NO_FAST_MODE); both tests run against what the client was constructed with, as the
   // client's own do.
@@ -3743,7 +3772,7 @@ export function fastModeProtocol(
   ) {
     return undefined;
   }
-  return MMSP_CLIENTS[routed ?? ""]?.fastMode;
+  return routed === null ? undefined : CLIENT_PROTOCOLS[routed]?.fastMode;
 }
 
 /**
@@ -3769,7 +3798,7 @@ function sharedValue(
  *
  * Undefined for `custom` (it holds the user's own endpoints), for an id the catalog does not
  * know, and for a group with neither — the first-party vendors, whose rows go to the
- * client's defaults, so their keyless rows are handed nothing and MMSP's client reads the
+ * client's defaults, so their keyless rows are handed no key and MMSP's client reads the
  * vendor's environment variable (PRN-021). A reference value: nothing reads it when a request
  * is built.
  */

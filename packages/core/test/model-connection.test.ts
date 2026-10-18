@@ -1,36 +1,25 @@
 /**
- * A row's effective connection and the credential its MMSP client is built with, decided from
- * the Project config alone (PRN-021). No catalog data: every group here is a fixture table.
+ * A row's effective connection and the values its MMSP client is built with, decided from the
+ * Project config alone (PRN-021). No catalog data: every group here is a fixture table.
  *
  * Effective connection:
- * - Per field, a row's own base URL / protocol wins over its group's table; blank counts as
- *   absent at every level; with neither, the row has none (the client's default).
+ * - Per field, a row's own base URL / protocol / key wins over its group's table; blank counts
+ *   as absent at every level; with neither, the row has none (the client's default).
  * - A group's key follows its endpoint (groupKeyReaches): it reaches a row with no base URL of
  *   its own, or one on the group's origin, and nothing else.
  *
- * Credential (no environment is ever read here: the resolver takes none):
- * - Given a key on the row, or the group's key that reaches it, it is used as written.
- * - Given no base URL on the row or its group, a keyless row is handed nothing, whatever it
- *   pins: the routed client reads its own variable pair.
- * - Given a base URL on the row or on the group — the vendor's own included — a keyless row is
- *   refused before any client exists, with one message that says "API key" (what hosts classify
- *   a missing credential by), names the URL, and names the `*_API_KEY` / `*_BASE_URL` pair only
- *   when the row's protocol is pinned (a Bedrock region included).
- * - Given an mmsp row with a base URL and no key (an open MMSP server, the Penguin Go relay),
- *   it goes out keyless.
+ * The values a client is built with (core decides nothing about the environment):
+ * - Given a key on the row, or the group's key that reaches it, it is passed as written.
+ * - Given a row with no key, only the base URL and protocol the file resolves to are passed, and
+ *   nothing for a field the file leaves empty, wherever the base URL points: what a missing key
+ *   means is MMSP's to decide when the client is built (model-client.test.ts).
  * - Given Session creation's explicit pair, it sits above the row, an override base URL counting
  *   as the row's own; a blank one is no override.
- * - Given no key, the endpoint listing of a base URL is refused before any client exists,
- *   except on an open MMSP server, which is listed keyless on the wire (list-endpoint-models
- *   holds the no-base-URL case).
  */
-import { describe, expect, it, vi } from "vitest";
-import { listEndpointModels } from "../src/llm/list-models.js";
+import { describe, expect, it } from "vitest";
 import {
-  ModelCredentialError,
   effectiveConnection,
   groupKeyReaches,
-  keylessEndpoint,
   providerConnectionShape,
   resolveEntryCredential,
   sameEndpoint,
@@ -76,7 +65,7 @@ describe("effectiveConnection (a row follows its group's table, then nothing)", 
   it("a group table covers a row that stores nothing, and the deprecated protocol spelling converges", () => {
     expect(
       effectiveConnection({ provider: "my-ollama", modelId: "qwen-local" }, undefined),
-    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "env" });
+    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
     const group = providerConnectionShape({
       base_url: "http://127.0.0.1:11434/v1",
       client_type: "openai",
@@ -163,21 +152,10 @@ describe("effectiveConnection (a row follows its group's table, then nothing)", 
   });
 });
 
-describe("resolveEntryCredential (PRN-021: the environment only where no base URL is set)", () => {
+describe("resolveEntryCredential (the file's values, verbatim)", () => {
   const VENDOR_ROW = { provider: "deepseek", model_id: "deepseek-flash" };
 
-  /** The ModelCredentialError a resolution throws, or a failure when it resolves. */
-  function refusal(...args: Parameters<typeof resolveEntryCredential>): ModelCredentialError {
-    try {
-      resolveEntryCredential(...args);
-    } catch (err) {
-      expect(err).toBeInstanceOf(ModelCredentialError);
-      return err as ModelCredentialError;
-    }
-    throw new Error("expected a refusal");
-  }
-
-  it("a key on the row, or the group's key that reaches it, is used as written", () => {
+  it("a key on the row, or the group's key that reaches it, is passed as written", () => {
     const group = { apiKey: "sk-group" };
     expect(resolveEntryCredential(VENDOR_ROW, group)).toEqual({ apiKey: "sk-group" });
     expect(resolveEntryCredential({ ...VENDOR_ROW, api_key: "sk-row" }, group)).toEqual({
@@ -192,108 +170,55 @@ describe("resolveEntryCredential (PRN-021: the environment only where no base UR
     ).toEqual({ apiKey: "gw-key", baseUrl: "https://gw.example/v1", clientType: "openai-chat" });
   });
 
-  it("with no base URL on the row or its group, a keyless row is handed nothing, so the routed client reads its own pair", () => {
+  it("a keyless row is passed only what the file sets, wherever its base URL points", () => {
+    // Nothing set anywhere: nothing passed, so MMSP's routed client applies its own defaults.
     for (const group of [undefined, {}, { baseUrl: "  ", apiKey: "" }]) {
       expect(resolveEntryCredential(VENDOR_ROW, group)).toEqual({});
     }
-    // A protocol on the row or the group travels with it, and no key is ever added: a row
-    // pinned to another vendor's client goes to that vendor's endpoint with that vendor's
-    // variable, both read by the client itself.
-    expect(resolveEntryCredential(VENDOR_ROW, { clientType: "deepseek-official" })).toEqual({
-      clientType: "deepseek-official",
-    });
-    expect(
-      resolveEntryCredential(
-        { provider: "openai", model_id: "claude-sonnet-5", client_type: "anthropic-official" },
-        { clientType: "openai-official" },
-      ),
-    ).toEqual({ clientType: "anthropic-official" });
-    // A custom or self-hosted protocol row with no base URL anywhere is no exception.
-    expect(
-      resolveEntryCredential(
-        { provider: "custom", model_id: "qwen-local", client_type: "openai-chat" },
-        undefined,
-      ),
-    ).toEqual({ clientType: "openai-chat" });
-  });
-
-  it("a keyless row sent to a base URL from the file is refused, the vendor's own endpoint included", () => {
-    const cases: Array<[string, Parameters<typeof resolveEntryCredential>]> = [
-      ["the vendor's own URL on the group", [VENDOR_ROW, { baseUrl: "https://api.deepseek.com" }]],
+    // A base URL or a protocol from the file travels as written, and no key is ever added —
+    // the vendor's own endpoint, a proxy and a gateway alike, and a group key that does not
+    // reach a row on another host.
+    const cases: Array<[Parameters<typeof resolveEntryCredential>, object]> = [
       [
-        "the vendor's own URL on the row",
-        [{ ...VENDOR_ROW, base_url: "https://api.deepseek.com" }, undefined],
+        [VENDOR_ROW, { baseUrl: "https://api.deepseek.com" }],
+        { baseUrl: "https://api.deepseek.com" },
       ],
-      ["a proxy on the row", [{ ...VENDOR_ROW, base_url: "https://proxy.example/deepseek" }, {}]],
       [
-        "a gateway group",
+        [{ ...VENDOR_ROW, base_url: "https://proxy.example/deepseek" }, {}],
+        { baseUrl: "https://proxy.example/deepseek" },
+      ],
+      [
         [
           { provider: "gw", model_id: "gpt-6" },
           { baseUrl: "https://gw.example/v1", clientType: "openai-chat" },
         ],
+        { baseUrl: "https://gw.example/v1", clientType: "openai-chat" },
       ],
       [
-        "a group key that does not reach a row on another host",
         [
           { ...VENDOR_ROW, base_url: "https://other.example/v1" },
           { baseUrl: "https://gw.example/v1", apiKey: "sk-group" },
         ],
+        { baseUrl: "https://other.example/v1" },
       ],
       [
-        "an override base URL, which is the row's own",
-        [VENDOR_ROW, undefined, { baseUrl: "https://api.deepseek.com" }],
+        [
+          { provider: "openai", model_id: "claude-sonnet-5", client_type: "anthropic-official" },
+          { clientType: "openai-official" },
+        ],
+        { clientType: "anthropic-official" },
+      ],
+      [
+        [
+          { provider: "penguin-go", model_id: "gemini-3.8-flash" },
+          { baseUrl: "https://relay.example/api/v1", clientType: "mmsp" },
+        ],
+        { baseUrl: "https://relay.example/api/v1", clientType: "mmsp" },
       ],
     ];
-    for (const [name, args] of cases) {
-      const err = refusal(...args);
-      expect(err.message, name).toMatch(
-        /^Model \S+ has no API key\. It is sent to https?:\/\/\S+, so no environment variable is used for it: set the API key on the model entry or its group/,
-      );
+    for (const [args, expected] of cases) {
+      expect(resolveEntryCredential(...args)).toEqual(expected);
     }
-  });
-
-  it("the refusal names the variable pair only for a pinned protocol, and stops at the config fix otherwise", () => {
-    const pinned = refusal(
-      { provider: "zhipu", model_id: "glm-5.3", client_type: "zai-official" },
-      { baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
-    );
-    expect(pinned.message).toContain(
-      "or clear the base URL and set ZAI_API_KEY (and ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4 if that endpoint is not the client's default) in the server environment.",
-    );
-    // A Bedrock region is a base URL like any other: the tail names ANTHROPIC_BASE_URL with it.
-    const bedrock = refusal(
-      {
-        provider: "anthropic",
-        model_id: "claude-sonnet-5",
-        base_url: "bedrock://us-east-1",
-        client_type: "anthropic-official",
-      },
-      undefined,
-    );
-    expect(bedrock.message).toContain("ANTHROPIC_BASE_URL=bedrock://us-east-1");
-    // With no pinned protocol (or one MMSP does not have), core cannot name the variable.
-    for (const clientType of [undefined, "not-a-client"]) {
-      const unnamed = refusal(VENDOR_ROW, { baseUrl: "https://api.deepseek.com", clientType });
-      expect(unnamed.message).toMatch(/set the API key on the model entry or its group\.$/);
-      expect(unnamed.message).not.toContain("_API_KEY");
-    }
-  });
-
-  it("a Penguin Go-shaped row goes out keyless on its relay unless the config has a key", () => {
-    const relay = { baseUrl: "https://relay.example/api/v1", clientType: "mmsp" };
-    const row = { provider: "penguin-go", model_id: "gemini-3.8-flash" };
-    expect(resolveEntryCredential(row, relay)).toEqual(relay);
-    expect(resolveEntryCredential(row, { ...relay, apiKey: "pg-config" })).toEqual({
-      ...relay,
-      apiKey: "pg-config",
-    });
-    expect(keylessEndpoint("mmsp", relay.baseUrl)).toBe(true);
-    // The open-server exception is the mmsp client's alone, and needs a base URL.
-    expect(keylessEndpoint("openai-chat", relay.baseUrl)).toBe(false);
-    expect(keylessEndpoint("mmsp", undefined)).toBe(false);
-    expect(() => resolveEntryCredential(row, { ...relay, clientType: "openai-chat" })).toThrow(
-      ModelCredentialError,
-    );
   });
 
   it("Session creation's explicit pair sits above the row; a blank one is no override", () => {
@@ -319,40 +244,13 @@ describe("resolveEntryCredential (PRN-021: the environment only where no base UR
       baseUrl: "https://row.example/v1",
       clientType: "openai-chat",
     });
-  });
-});
-
-describe("listEndpointModels credential gate (the add-group import)", () => {
-  it("refuses a keyless listing before any client exists, the vendor's own endpoint included", async () => {
-    for (const [clientType, baseUrl] of [
-      ["openai-chat", "https://gw.example.com/v1"],
-      ["ant-messages", "http://127.0.0.1:8000"],
-      ["openai-chat", "https://api.openai.com/v1"],
-    ] as const) {
-      await expect(listEndpointModels({ clientType, baseUrl })).rejects.toThrow(
-        /enter the endpoint's API key/,
-      );
-    }
-  });
-
-  it("lists an open MMSP server with no key on the wire", async () => {
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
-      Response.json({ object: "list", data: [{ id: "qwen3.8" }, { id: "gpt-5.5" }] }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubEnv("MMSP_API_KEY", "sk-mmsp-env");
-    try {
-      const models = await listEndpointModels({
-        clientType: "mmsp",
-        baseUrl: "http://127.0.0.1:25752/v1",
-      });
-      expect(models).toEqual(["qwen3.8", "gpt-5.5"]);
-      const [url, init] = fetchMock.mock.calls[0]!;
-      expect(url).toBe("http://127.0.0.1:25752/v1/models");
-      expect(new Headers(init?.headers).has("authorization")).toBe(false);
-    } finally {
-      vi.unstubAllGlobals();
-      vi.unstubAllEnvs();
-    }
+    // An override base URL is the row's own: a group key on another origin does not reach it.
+    expect(
+      resolveEntryCredential(
+        VENDOR_ROW,
+        { baseUrl: "https://gw.example/v1", apiKey: "sk-group" },
+        { baseUrl: "https://explicit.example/v1" },
+      ),
+    ).toEqual({ baseUrl: "https://explicit.example/v1" });
   });
 });

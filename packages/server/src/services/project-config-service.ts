@@ -27,7 +27,6 @@
  * caught by the stat. The cached table is shared between callers and must be treated
  * as immutable — every mutating method here copies before changing.
  */
-import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
@@ -66,13 +65,14 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import {
+  clientEnvKey,
   fixedClientType,
   fixedClientTypeRefuses,
-  isVendorGroup,
   modelEnvPreviewKey,
   providerInfo,
   unaddableModel,
   unroutableVendorModel,
+  vendorClientType,
 } from "@prismshadow/penguin-core/model-catalog";
 import { sameClientType, sameEndpoint } from "@prismshadow/penguin-core/model-connection";
 import type {
@@ -121,7 +121,6 @@ import type {
   PlatformModelCatalog,
 } from "./platform-auth-types.js";
 import { detectModelProtocol } from "./protocol-detect.js";
-import { migratePresetVendorEndpoints } from "./project-config-migrations.js";
 import {
   VISION_PROBE_IMAGE,
   VISION_PROBE_MAX_TOKENS,
@@ -364,10 +363,11 @@ function ownConnection(
 /**
  * The connection a probe of one row's form draft is built with (the connectivity, speed and
  * vision probes): the draft's own values — the request's, else the stored row's — then the
- * group's `[providers.<id>]` table, then the client's defaults, under core's credential rule
- * (resolveEntryCredential, which throws where a Session would be refused). A row not stored
- * yet is probed from the request alone. "Clear" drops the row's own key and a `null` base URL
- * its own endpoint: the draft then follows its group, as the saved row would.
+ * group's `[providers.<id>]` table, then the client's defaults (core's resolveEntryCredential;
+ * a keyless base URL MMSP refuses throws when the probe's client is built, as a Session's
+ * would). A row not stored yet is probed from the request alone. "Clear" drops the row's own key
+ * and a `null` base URL its own endpoint: the draft then follows its group, as the saved row
+ * would.
  */
 function draftCredential(
   raw: RawTable,
@@ -711,9 +711,9 @@ export function utilityCompletionConfig(
   provider?: ProviderConnection,
 ): GenerativeModelConfig {
   // The connection is the entry's effective one — its own values, then its group's
-  // `[providers.<id>]` table, then the client's defaults — under the same credential rule as
-  // every other client the harness builds (core's resolveEntryCredential): a keyless entry
-  // pointed away from its vendor throws here, which completeOnce reports as the failure it is.
+  // `[providers.<id>]` table, then the client's defaults — as every other client the harness
+  // builds gets it (core's resolveEntryCredential). A keyless base URL MMSP refuses throws when
+  // the client is built, which completeOnce reports as the failure it is.
   const { clientType, ...credential } = resolveEntryCredential(
     {
       provider: optStr(entry.provider) ?? "",
@@ -846,33 +846,6 @@ export class ProjectConfigService implements ProjectConfigStore {
   }
 
   /**
-   * Reads every Project's config once through readTable, so what the server's read path writes
-   * back — core's one-time migrations and the server's own (project-config-migrations.ts) — is
-   * on disk before anything else opens a file: core's loader, which a Session created or
-   * resumed through the SDK reads with, runs none of the server's. Called once as the App
-   * starts, before the schedulers. A file that does not parse is left for the next read that
-   * needs it to report. Exists for the one-time migrations alone, so it goes with them at the
-   * 0.3.0 release preparation (changelog/unreleased/2026-10-15-backward-compatibility.md).
-   */
-  async migrateStoredConfigs(): Promise<void> {
-    let entries: Dirent[];
-    try {
-      entries = await fs.readdir(this.root, { withFileTypes: true });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw err;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-      try {
-        await this.readTable(entry.name);
-      } catch {
-        // An unparseable file: the read that needs it reports it, with its own context.
-      }
-    }
-  }
-
-  /**
    * mtime-gated read of the parsed table; null when the file doesn't exist (readRaw
    * flattens that to `{}`, loadConfig to the preset default config — the two
    * pre-existing missing-file behaviors). Serving the shared cached object is safe
@@ -899,19 +872,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       return null;
     }
     const table = asTable(parseToml(raw));
-    // Core's one-time migrations first (MMSP 0.5.0's client types, the group-level hoist), then
-    // the server's, which need the catalog: the DeepSeek and MiniMax presets' vendor endpoints
-    // (migratePresetVendorEndpoints). Both run on every call; `||` would skip the second
-    // whenever the first changed something.
-    const migrated = migrateProjectConfigTable(table);
-    const vendorEndpoints = migratePresetVendorEndpoints(table);
-    if (migrated || vendorEndpoints) {
-      // A file from before MMSP 0.5.0 or before group-level connections, or one that stores a
-      // DeepSeek or MiniMax preset's vendor endpoint: rewritten once, before it is served; the
-      // next read parses the rewritten file (writeRaw drops the cache). Every file writeRaw
-      // renders carries a `[providers]` table, which is what keeps the key hoist from ever
-      // running on it again, and none of those endpoints, so the next read migrates nothing.
-      // All of them go at the 0.3.0 release preparation.
+    if (migrateProjectConfigTable(table)) {
+      // A file from before MMSP 0.5.0 or before group-level connections (core's
+      // migrateProjectConfigTable): rewritten once, before it is served; the next read parses
+      // the rewritten file (writeRaw drops the cache). Every file writeRaw renders carries a
+      // `[providers]` table, which is what keeps the key hoist from ever running on it again.
+      // Removed with the two migrations at the 0.3.0 release preparation.
       await this.writeRaw(projectId, table);
       return table;
     }
@@ -1231,8 +1197,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    *
    * Credential resolution is the connectivity test's, verbatim — the draft row (the request's
    * key, else the row's own unless "clear" is checked), then the group's `[providers.<id>]`
-   * connection, then the environment where core's credential rule allows it (no base URL on
-   * the row or its group; never a gateway's). Nothing secret is returned; the failure
+   * connection, then what MMSP's client does with no key (its vendor's variable for its own
+   * default endpoint only; never for a gateway's). Nothing secret is returned; the failure
    * message is the provider's own text, truncated.
    */
   async detectVision(
@@ -1241,8 +1207,8 @@ export class ProjectConfigService implements ProjectConfigStore {
   ): Promise<ModelVisionDetectResponse> {
     const raw = await this.readRaw(projectId);
     try {
-      // Inside the try for the same reason as testModel: both the credential rule's refusal
-      // and the SDK's own missing-credential throw at construction must read as "probe
+      // Inside the try for the same reason as testModel: both MMSP's refusal of a keyless base
+      // URL and the SDK's own missing-credential throw at construction must read as "probe
       // failed", not a 500.
       const { clientType, ...credential } = draftCredential(raw, req);
       const llm = new GenerativeModel({
@@ -1349,9 +1315,9 @@ export class ProjectConfigService implements ProjectConfigStore {
 
     const startedAt = Date.now();
     try {
-      // Credential resolution and construction must both be inside the try block: core's
-      // credential rule refuses a keyless entry sent to a base URL from the file (a gateway row
-      // never borrows OPENAI_API_KEY / ANTHROPIC_API_KEY from the server environment — the
+      // Credential resolution and construction must both be inside the try block: MMSP refuses
+      // a keyless entry sent to a base URL other than its client's default endpoint (a gateway
+      // row never borrows OPENAI_API_KEY / ANTHROPIC_API_KEY from the server environment — the
       // group speed test runs through here too), and the provider SDK can throw during
       // **client construction** itself when a credential is missing. The whole point of a
       // connectivity test is to collapse that kind of failure into `{ ok:false }`; outside
@@ -1435,8 +1401,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    *      or cleared, since that row then follows its group, and for a request naming the
    *      group alone (the group settings dialog has no model), unless "clear" is checked
    *      there, which clears the group key itself;
-   *   4. otherwise none: the probes go out anonymously. Detection always has a URL, and a URL
-   *      is never lent an environment variable (PRN-021), the vendor's own included.
+   *   4. otherwise the environment, per probe, as MMSP's client for that probe's protocol reads
+   *      it (PRN-021): its variable only when the probed URL is that client's own default
+   *      endpoint (envApiKeyForProtocol); anywhere else the probe goes out anonymously.
    * Layers 2 and 3 are read server-side only and never travel back to the browser.
    * Detection still runs with no credential at all: a protocol-shaped 401/403 proves the
    * route. Never throws on probe failures — every outcome is reported per probe.
@@ -1474,8 +1441,8 @@ export class ProjectConfigService implements ProjectConfigStore {
   /**
    * Endpoint model listing for the add-group import (see EndpointModelListRequest). All
    * parameters come from the request — a group being created has no stored entry to fall
-   * back to; an omitted key is never lent an environment variable (a URL is never lent one,
-   * PRN-021), so core refuses the listing unless the endpoint is an open MMSP server. Never
+   * back to; with an omitted key, MMSP's client reads its variable only for its own default
+   * endpoint and refuses any other URL (PRN-021), except an open MMSP server. Never
    * throws: SDK construction and request failures collapse into `{ ok:false, message }`, an MMSP
    * UnsupportedOperationError additionally sets `unsupported` so the dialog can point at
    * the manual path, and a listing that outlives LIST_MODELS_TIMEOUT_MS is reported as
@@ -1528,8 +1495,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    * beside `effective` — what the row is actually used with after core's effectiveConnection
    * (row -> group -> none, per field; the file's values only), with where each value came
    * from. The environment fallback (`envKey`, `envKeyMasked`, an `env` key source) is the
-   * variable MMSP's routed client reads for a row core hands nothing (PRN-021: no key in the
-   * file, no base URL on the row or its group), named by the catalog's modelEnvPreviewKey.
+   * variable MMSP's routed client reads for a row with no key in the file (PRN-021: only with
+   * no base URL or the client's own default endpoint), named by the catalog's
+   * modelEnvPreviewKey, which asks MMSP's credentials module.
    */
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
@@ -1560,11 +1528,10 @@ export class ProjectConfigService implements ProjectConfigStore {
         const group = providers[provider];
         const groupShape = providerConnectionShape(group);
         const eff = effectiveConnection(own, groupShape);
-        // The variable the row authenticates with when core hands it nothing (PRN-021): no key
-        // in the file — its own, or its group's that reaches it — and no base URL on the row or
-        // its group, so the routed client reads its own pair. A row sent to a base URL from the
-        // file (a gateway's, a vendor's second host, a proxy) gets no envKey: reporting a name
-        // there would promise a fallback the harness refuses.
+        // The variable the row authenticates with when it has no key in the file — its own, or
+        // its group's that reaches it — as MMSP's routed client decides (PRN-021): only with no
+        // base URL or the client's own default endpoint. A row sent to any other base URL (a
+        // gateway's, a vendor's second host, a proxy) gets no envKey: MMSP refuses it.
         const envKey = modelEnvPreviewKey(own, groupShape);
         // The file's annotation only: absent = supported, whatever the catalog says.
         const vision = typeof m.vision === "boolean" ? m.vision : undefined;
@@ -1599,7 +1566,7 @@ export class ProjectConfigService implements ProjectConfigStore {
           ...(eff.clientType !== undefined ? { clientType: eff.clientType } : {}),
           clientTypeSource: eff.clientTypeSource,
           apiKeySource:
-            eff.apiKeySource !== "env"
+            eff.apiKeySource !== "none"
               ? eff.apiKeySource
               : envKeyMasked !== undefined
                 ? "env"
@@ -2125,23 +2092,23 @@ export class ProjectConfigService implements ProjectConfigStore {
    * The key a group's account balance is read with (the catalog's `balance` descriptor names
    * the endpoint): the group's key, and never a row's own — a model keyed to another account
    * says nothing about this group's balance. Without a group key, the vendor's environment
-   * variable, read from this process's env as the routed client itself would read it — but only
-   * for a first-party vendor group (isVendorGroup) whose table names no base URL: its rows are
-   * then handed nothing and their client reads that variable (PRN-021). A group with a base URL
-   * is lent nothing, the vendor's own endpoint included, and the isVendorGroup guard keeps a
-   * gateway's variable (TokenDance's OPENAI_API_KEY, if a user clears its base URL) off its
-   * balance endpoint. Penguin Go takes its key from the config alone. Never returned to the
-   * browser.
+   * variable, read from this process's env, where MMSP's own client for the vendor reads it for
+   * the group's base URL (the catalog's clientEnvKey): no base URL, or the vendor's default
+   * endpoint. Only a first-party
+   * vendor group has a vendor client (vendorClientType), so a gateway's variable (TokenDance's
+   * OPENAI_API_KEY, if a user clears its base URL) never reaches its balance endpoint, and
+   * Penguin Go takes its key from the config alone. Never returned to the browser.
    */
   async getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined> {
     const raw = await this.readRaw(projectId);
     const group = providerTableOf(raw)[provider];
     if (group?.api_key !== undefined) return group.api_key;
-    const info = providerInfo(provider);
-    if (info?.balance === undefined || !isVendorGroup(provider) || group?.base_url !== undefined) {
+    const vendorClient = vendorClientType(provider);
+    if (providerInfo(provider)?.balance === undefined || vendorClient === undefined) {
       return undefined;
     }
-    return process.env[info.envKey]?.trim() || undefined;
+    const envKey = clientEnvKey(vendorClient, group?.base_url);
+    return envKey !== undefined ? process.env[envKey]?.trim() || undefined : undefined;
   }
 
   /**

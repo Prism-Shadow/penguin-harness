@@ -22,7 +22,6 @@ import {
   DATE_PLACEHOLDER,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
-  MMSP_CLIENTS,
   MODEL_CATALOG,
   OS_VERSION_PLACEHOLDER,
   PLATFORM_PLACEHOLDER,
@@ -60,10 +59,9 @@ import {
   removeVaultEntry,
   renderProjectConfigToml,
   resolveEntryCredential,
-  resolveModelEnv,
   resolveModelRef,
   resolveRoot,
-  routedClientType,
+  modelEnvPreviewKey,
   saveProjectConfig,
   setDefaultModel,
   setProviderConnection,
@@ -1106,13 +1104,15 @@ describe("project-config round trip", () => {
       clientType: "gemini-official",
     });
 
-    // Routed, and so accepted by the models page, the server and the CLI alike.
+    // Routed — MMSP keeps the alias — and so accepted by the models page, the server and the
+    // CLI alike, with google-official's variable and fast tier.
     expect(unroutableVendorModel("google", "gemini-3.8-flash", "gemini-official")).toBe(false);
-    const routed = routedClientType("gemini-3.8-flash", "gemini-official")!;
-    expect(MMSP_CLIENTS[routed]).toEqual(MMSP_CLIENTS["google-official"]);
-    expect(resolveModelEnv("gemini-3.8-flash", "gemini-official")).toEqual(
-      resolveModelEnv("gemini-3.8-flash"),
-    );
+    expect(
+      modelEnvPreviewKey(
+        { provider: "google", modelId: "gemini-3.8-flash", clientType: "gemini-official" },
+        undefined,
+      ),
+    ).toBe("GEMINI_API_KEY");
     expect(fastModeProtocol("gemini-3.8-flash", "gemini-official")).toBe("openai");
   });
 
@@ -1813,15 +1813,10 @@ describe("providers (group-level connections)", () => {
   /** The credential and protocol each row's client is built with, the way a Session builds it. */
   const connections = (cfg: Pick<ProjectConfig, "models" | "providers">) =>
     Object.fromEntries(
-      cfg.models.map((m) => {
-        const key = `${m.provider}/${m.model_id}`;
-        try {
-          const group = providerConnectionShape(cfg.providers?.[m.provider]);
-          return [key, resolveEntryCredential(m, group)];
-        } catch (err) {
-          return [key, (err as Error).name];
-        }
-      }),
+      cfg.models.map((m) => [
+        `${m.provider}/${m.model_id}`,
+        resolveEntryCredential(m, providerConnectionShape(cfg.providers?.[m.provider])),
+      ]),
     );
   /** One `[[models]]` row of an old file. */
   const row = (fields: Record<string, string>): string[] => [
@@ -1925,7 +1920,7 @@ describe("providers (group-level connections)", () => {
         },
         providerConnectionShape(cfg.providers?.tokendance),
       ),
-    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "env" });
+    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
   });
 
   it("Go-owned routes switch to MMSP while OpenCode Go rows keep their own protocols", async () => {
@@ -2043,7 +2038,7 @@ describe("providers (group-level connections)", () => {
       model_id: "qwen-local",
     });
     // Every model runs on what it ran on; the keyless TokenDance model now has the group key.
-    expect(before["tokendance/seed-2.1-pro"]).toBe("ModelCredentialError");
+    expect(before["tokendance/seed-2.1-pro"]).not.toHaveProperty("apiKey");
     expect(after["tokendance/seed-2.1-pro"]).toEqual(after["tokendance/glm-5.3"]);
     expect({ ...after, "tokendance/seed-2.1-pro": "-" }).toEqual({
       ...before,

@@ -7,8 +7,9 @@
  */
 import fs from "node:fs/promises";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  GenerativeModel,
   assistantText,
   partialText,
   partialThinking,
@@ -57,16 +58,24 @@ describe("utilityCompletionConfig", () => {
     expect(config.clientType).toBe("openai-chat");
   });
 
-  it("refuses a keyless entry whose endpoint is not the vendor's own (core's credential rule)", () => {
-    // completeOnce reports this as a failure; the environment's OPENAI_API_KEY is never
-    // borrowed for a third-party endpoint.
-    expect(() =>
-      utilityCompletionConfig("m-bench", {
+  it("hands a keyless entry's endpoint over with no key, and its client refuses to be built (MMSP's rule)", () => {
+    // completeOnce builds the client inside its try and reports the refusal as the failure it
+    // is; the environment's OPENAI_API_KEY is never borrowed for a third-party endpoint.
+    vi.stubEnv("OPENAI_API_KEY", "sk-env-must-not-cross");
+    try {
+      const config = utilityCompletionConfig("m-bench", {
         provider: "custom",
         base_url: "https://example.test/v1",
         client_type: "openai",
-      }),
-    ).toThrow(/has no API key/);
+      });
+      expect(config).not.toHaveProperty("apiKey");
+      expect(config.baseUrl).toBe("https://example.test/v1");
+      expect(() => new GenerativeModel(config)).toThrow(
+        /has no API key for https:\/\/example\.test\/v1/,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("runs a keyless entry on its group's connection, and a value of the entry's own over it", () => {

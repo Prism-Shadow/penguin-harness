@@ -23,6 +23,7 @@ export {
   buildUniConfig,
 } from "./generative-model.js";
 export { listEndpointModels } from "./list-models.js";
+export { ModelCredentialError } from "./model-client.js";
 export type { ListEndpointModelsOptions } from "./list-models.js";
 export { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 export {

@@ -116,15 +116,15 @@ export function effectiveOf(
     },
     group && { baseUrl: group.baseUrl, clientType: group.clientType, apiKey: group.apiKeyMasked },
   );
-  // The resolver was handed masks for keys, so the key it picked is already masked. A row
-  // handed nothing (`env`) reads as `env` only where the server reported the variable's mask.
-  const masked = e.apiKeySource === "env" ? m.envKeyMasked : e.apiKey;
+  // The resolver was handed masks for keys, so the key it picked is already masked. A row with
+  // no key in the file reads as `env` only where the server reported the variable's mask.
+  const masked = e.apiKeySource === "none" ? m.envKeyMasked : e.apiKey;
   return {
     ...(e.baseUrl !== undefined ? { baseUrl: e.baseUrl } : {}),
     baseUrlSource: e.baseUrlSource,
     ...(e.clientType !== undefined ? { clientType: e.clientType } : {}),
     clientTypeSource: e.clientTypeSource,
-    apiKeySource: e.apiKeySource !== "env" ? e.apiKeySource : m.envKeyMasked ? "env" : "none",
+    apiKeySource: e.apiKeySource !== "none" ? e.apiKeySource : m.envKeyMasked ? "env" : "none",
     ...(masked !== undefined ? { apiKeyMasked: masked } : {}),
   };
 }

@@ -329,14 +329,14 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(body, "tokendance", "hy4-preview")).not.toHaveProperty("discount");
   });
 
-  it("reports and masks the env fallback only for keyless rows with no base URL anywhere, and never leaks a value", async () => {
+  it("reports and masks the env fallback only where MMSP's client reads it (no base URL, or its own default endpoint), and never leaks a value", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test-secret-value-123456");
     vi.stubEnv("OPENAI_API_KEY", "sk-openai-test-secret-value-789");
     // A relay variable is nobody's: Penguin Go takes its key from the config alone.
     vi.stubEnv("PENGUIN_GO_API_KEY", "sk-penguin-test-secret-value-456");
     // Empty counts as absent — it would not authenticate either.
     vi.stubEnv("DEEPSEEK_API_KEY", "");
-    // Two vendor-group rows no PUT may add any more, stored as a table from before would hold them.
+    // Vendor-group rows no PUT may add any more, stored as a table from before would hold them.
     await storeRows(t.root, projectId, [
       { provider: "anthropic", modelId: "claude-sonnet-4-6-preview" },
       { provider: "anthropic", modelId: "claude-via-gateway", clientType: "openai" },
@@ -345,6 +345,7 @@ describe("models preset & catalog enrichment", () => {
         modelId: "claude-own-endpoint",
         baseUrl: "https://api.anthropic.com",
       },
+      { provider: "anthropic", modelId: "claude-on-proxy", baseUrl: "https://proxy.example/v1" },
     ]);
     try {
       const put = await api.put(url(), {
@@ -359,12 +360,17 @@ describe("models preset & catalog enrichment", () => {
           // A vendor-group row on a generic protocol with no base URL: MMSP's OpenAI client
           // reads its own pair and talks to the OpenAI default, so that is the variable.
           { provider: "anthropic", modelId: "claude-via-gateway", clientType: "openai" },
-          // A vendor-group row naming a base URL of its own — the vendor's own included — gets
-          // nothing from the environment.
+          // A vendor-group row naming its client's own default endpoint: still the variable,
+          // which MMSP's client reads for that endpoint; one naming a proxy: nothing.
           {
             provider: "anthropic",
             modelId: "claude-own-endpoint",
             baseUrl: "https://api.anthropic.com",
+          },
+          {
+            provider: "anthropic",
+            modelId: "claude-on-proxy",
+            baseUrl: "https://proxy.example/v1",
           },
           // A gateway row: it carries the gateway's base URL.
           {
@@ -407,6 +413,11 @@ describe("models preset & catalog enrichment", () => {
         effective: { apiKeySource: "env", apiKeyMasked: anthropic },
       });
       expect(pick(body, "anthropic", "claude-sonnet-4-6-preview").envKeyMasked).toBe(anthropic);
+      expect(pick(body, "anthropic", "claude-own-endpoint")).toMatchObject({
+        envKey: "ANTHROPIC_API_KEY",
+        envKeyMasked: anthropic,
+        effective: { apiKeySource: "env", apiKeyMasked: anthropic },
+      });
       // Named, but unset here: no preview, and the row reads as keyless.
       const unset = pick(body, "deepseek", "deepseek-v4-pro");
       expect(unset.envKey).toBe("DEEPSEEK_API_KEY");
@@ -424,7 +435,7 @@ describe("models preset & catalog enrichment", () => {
         });
       }
       for (const [provider, modelId] of [
-        ["anthropic", "claude-own-endpoint"],
+        ["anthropic", "claude-on-proxy"],
         ["openrouter", "xiaomi/mimo-v2.5"],
         ["custom", "my-local"],
         ["penguin-go", "gemini-3.8-flash"],
@@ -1765,8 +1776,8 @@ describe("model-reference rekeying and the connectivity test", () => {
     try {
       // A gateway preset: the group's endpoint, no key. Both OpenAI-protocol gateways and the
       // Messages-protocol custom preset (Atria — the path that carried the Anthropic key in the
-      // #786 finding) are refused, and the refusal is the harness's own sentence — it may name
-      // a variable to set, never a value the environment holds.
+      // #786 finding) are refused by MMSP when the client is built, worded by core for the
+      // config — it may name a variable to set, never a value the environment holds.
       for (const [provider, modelId] of [
         ["tokendance", "glm-5.3"],
         ["openrouter", "openai/gpt-5.5"],
@@ -1779,7 +1790,9 @@ describe("model-reference rekeying and the connectivity test", () => {
           const body = (await res.json()) as ModelTestResponse;
           expect(body.ok).toBe(false);
           expect(body.message).toMatch(
-            /has no API key\. It is sent to \S+, so no environment variable is used for it: set the API key on the model entry or its group/,
+            new RegExp(
+              `^Model ${modelId} has no API key for https://\\S+: [A-Z]+_API_KEY is used only`,
+            ),
           );
           expect(body.message).not.toMatch(/must-not-cross/);
         }

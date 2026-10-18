@@ -388,10 +388,12 @@ describe("envSourced", () => {
           { provider: "anthropic", model_id: "claude-opus-5" },
           // No key, and DEEPSEEK_API_KEY is not set here: it does not run here either.
           { provider: "deepseek", model_id: "deepseek-v4-flash" },
-          // A base URL from the file — the row's own or its group's, the vendor's own included —
-          // is never lent a variable, and its requests go there, not to `*_BASE_URL`.
-          { provider: "custom", model_id: "gpt-5", base_url: "https://gw.example.com/v1" },
+          // The client's own default endpoint from the file: its key variable, and its requests
+          // go there, not to `*_BASE_URL`.
           { provider: "openai", model_id: "gpt-5-own", base_url: "https://api.openai.com/v1" },
+          // Any other base URL from the file — the row's own or its group's — reads nothing:
+          // MMSP refuses it keyless, and a key from the file goes there.
+          { provider: "custom", model_id: "gpt-5", base_url: "https://gw.example.com/v1" },
           { provider: "gateway", model_id: "claude-opus-5", api_key: "sk-gw-0123456789" },
         ],
         providers: {
@@ -410,6 +412,7 @@ describe("envSourced", () => {
       { provider: "openai", modelId: "gpt-5", variable: "OPENAI_API_KEY" },
       { provider: "myproxy", modelId: "gpt-5-proxy", variable: "OPENAI_API_KEY" },
       { provider: "anthropic", modelId: "claude-opus-5", variable: "ANTHROPIC_BASE_URL" },
+      { provider: "openai", modelId: "gpt-5-own", variable: "OPENAI_API_KEY" },
     ]);
   });
 });
