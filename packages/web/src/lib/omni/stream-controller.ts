@@ -204,6 +204,12 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   let lastEventId: string | null = null;
   /** Load epoch: incremented on rebuild/retry; any replay or finalization from an older epoch is discarded. */
   let epoch = 0;
+  /**
+   * Loads in flight. A superseded round must not clear `loading` while a newer one is still
+   * fetching — the flag belongs to whichever load is actually outstanding, and the last one to
+   * settle is the one that clears it. Read in load()'s `finally` (see there).
+   */
+  let loadPending = 0;
   /** Whether the most recent load failed (retry only takes effect after a failure, to avoid mistakenly replaying history). */
   let failed = false;
 
@@ -442,6 +448,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     freshModel?: StreamModel,
     opts: { page?: MessagesPageQuery; splice?: boolean } = {},
   ): Promise<void> => {
+    loadPending += 1;
     try {
       let res = await deps.loadMessages(opts.page);
       if (disposed || currentEpoch !== epoch) return;
@@ -503,13 +510,30 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       if (streamStatus === "idle") finalizeHistory(target);
       failed = false;
       deps.onError(null);
-      deps.onLoading(false);
       deps.onModelChange();
     } catch (e) {
-      if (disposed || currentEpoch !== epoch) return;
-      failed = true;
-      deps.onLoading(false);
-      deps.onError(e instanceof Error ? e.message : String(e));
+      if (!disposed && currentEpoch === epoch) {
+        failed = true;
+        deps.onError(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      // The ONE place loading is cleared. It used to be cleared only on the two "clean" exits
+      // above, but this function has five more early `return`s (the epoch bumped by a rebuild
+      // mid-flight, the controller disposed, the replay loop handing the rest to a newer
+      // round). Every one of them left `loading` at true — and since the consumer renders a
+      // skeleton purely off that flag, an abandoned round meant a spinner that never ended,
+      // with no error and nothing to retry from.
+      //
+      // Deciding it here rather than per-exit makes "this load settled" a property of the LOAD
+      // instead of which branch happened to run. The one case that must NOT clear it is a
+      // round superseded while ANOTHER load is still in flight for this same consumer: that
+      // newer load owns the flag, and clearing on its behalf would drop the spinner while its
+      // history is still arriving. So the guard is not `currentEpoch === epoch` but "no newer
+      // load is running" — and a rebuild is exactly a newer load, which is what `loadPending`
+      // counts. `disposed` skips the update outright: React warns on setState after unmount,
+      // and nothing is on screen to settle.
+      loadPending -= 1;
+      if (!disposed && loadPending === 0) deps.onLoading(false);
     }
   };
 
