@@ -518,7 +518,7 @@ jobs:
       - name: Browser integration smoke (mock LLM)
         env:
           SKIP_BUILD: "1"
-        run: pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs
+        run: pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs goal-no-plugin.spec.mjs
       # Layout the component library only shows in a real engine, measured in the gallery:
       # list rows keep their actions inside the card, attachment tiles keep their image's shape.
       - name: Component layout checks (ui-gallery)

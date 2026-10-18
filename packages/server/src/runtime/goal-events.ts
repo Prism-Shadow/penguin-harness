@@ -9,8 +9,8 @@
 import { isEventMessage } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 
-/** The name the goal plugin's hook package answers under. */
-const GOAL_HOOK_NAME = "goal";
+/** The name the goal plugin's hook package answers under — and its directory under `hooks/`. */
+export const GOAL_HOOK_NAME = "goal";
 
 /** The four ways a goal ends: the two the model may claim, and the two the hook decides. */
 const GOAL_OUTCOMES = ["complete", "blocked", "budget_limited", "aborted"] as const;

@@ -4087,6 +4087,9 @@ Scenarios:
       "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
     goalBudgetSave: "Save budget",
     goalRemove: "Exit goal mode",
+    /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
+    goalPluginMissing: "Goal mode needs the goal plugin: install it on this Agent to start a goal.",
+    goalPluginInstall: "Install on this Agent",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "Injected by the harness",
     /** The goal line's fixed phrase; the objective follows it as the line's subject. */

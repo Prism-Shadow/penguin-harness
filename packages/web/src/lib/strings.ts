@@ -4291,6 +4291,9 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
+    /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
+    goalPluginMissing: "目标模式需要 goal 插件：安装到此 Agent 后即可发起目标。",
+    goalPluginInstall: "安装到此 Agent",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "由 harness 注入",
     /** The goal line's fixed phrase; the objective follows it as the line's subject. */

@@ -144,6 +144,8 @@ import { matchSlash, removeSlashToken } from "./slash-token";
 import { ThinkingLevelSelect } from "./thinking-level-select";
 import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import { useGoalPluginGate } from "./goal-plugin-gate";
+import type { GoalPluginGate } from "./goal-plugin-gate";
 import { mergeRecalledDraft } from "./recall-draft";
 import { buildExampleFill } from "./example-fill";
 import {
@@ -581,6 +583,7 @@ export function ChatInput({
   skills,
   initialSkills,
   initialGoal,
+  goalPlugin = null,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -781,6 +784,12 @@ export function ChatInput({
   initialSkills?: string[];
   /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
   initialGoal?: boolean;
+  /**
+   * The goal plugin check for the Agent this composer sends to (goal-plugin-gate.ts): while the
+   * goal chip is engaged and the plugin is missing, a notice above the input offers to install
+   * it and Send is held. Absent or null, nothing is checked and the server refuses instead.
+   */
+  goalPlugin?: GoalPluginGate | null;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -911,6 +920,7 @@ export function ChatInput({
     goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
+  const goalGate = useGoalPluginGate(goalPlugin, goalOn);
   /**
    * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
    * all right now (see stagedSendRoute): a fork branches a NEW session off this session's
@@ -932,7 +942,8 @@ export function ChatInput({
   // combined with the editor refusing to close over an invalid draft (below), no click sequence
   // can fire a goal with a stale committed budget.
   // Images may come along with a goal objective (they ride its round-1 message), but they don't
-  // substitute for the text; file attachments cannot — the server refuses them on a goal.
+  // substitute for the text; file attachments cannot — the server refuses them on a goal. Nor
+  // does a goal go out while its Agent lacks the goal plugin (the notice above says so).
   const canSend =
     !running &&
     !compacting &&
@@ -941,7 +952,8 @@ export function ChatInput({
       ? text.trim().length > 0 &&
         attachments.length === 0 &&
         goalBudget !== null &&
-        !(goalBudgetOpen && goalBudgetDraftInvalid)
+        !(goalBudgetOpen && goalBudgetDraftInvalid) &&
+        !goalGate.holdsSend
       : draftHasContent);
 
   /**
@@ -2180,6 +2192,25 @@ export function ChatInput({
             humanizeTokens(contextWindow),
             humanizeTokens(compactionLimit),
           )}
+        </Notice>
+      )}
+
+      {/* Goal mode on an Agent without the goal plugin: the goal could not start, so Send is held
+          and the plugin is offered right here — installed on the Agent this composer sends to.
+          `attention`, like the threshold notice above: it waits on the user. */}
+      {goalOn && (goalGate.status === "missing" || goalGate.status === "installing") && (
+        <Notice
+          tone="attention"
+          glyph={GOAL_ICON}
+          role="status"
+          className="anim-fade mb-1"
+          action={{
+            label: S.chat.goalPluginInstall,
+            onClick: () => void goalGate.install(),
+            busy: goalGate.status === "installing",
+          }}
+        >
+          {S.chat.goalPluginMissing}
         </Notice>
       )}
 

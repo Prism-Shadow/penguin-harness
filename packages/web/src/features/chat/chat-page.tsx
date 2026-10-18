@@ -127,6 +127,8 @@ import type { CostStatDisplay } from "./header-stats";
 import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
+import { goalPluginGate } from "./goal-plugin-gate";
+import { discardUnstartedSession } from "./unstarted-session";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { modelLabel } from "./model-select";
 import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "./model-switch";
@@ -691,6 +693,15 @@ export function ChatPage() {
    * written over there. The same id on this server is another Agent.
    */
   const selectedAgentMachine = selected === null ? null : machineForSession(selected.sessionId);
+  // Goal mode's plugin check, against the Session's Agent on the server that holds it
+  // (goal-plugin-gate.ts).
+  const goalPlugin = useMemo(
+    () =>
+      projectId && selectedAgentId
+        ? goalPluginGate(projectId, selectedAgentId, selectedAgentMachine)
+        : null,
+    [projectId, selectedAgentId, selectedAgentMachine],
+  );
   // The thinking level pinned on THIS Session, read straight off the Session row
   // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
@@ -1458,12 +1469,18 @@ export function ChatPage() {
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
         toastError(apiErrorText(e, { modelId: ref.modelId }));
         return false;
       }
     },
-    [projectId, selected, addSession, discardSessionDraft, navigate, company],
+    [projectId, selected, addSession, removeSession, discardSessionDraft, navigate, company],
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
@@ -1499,7 +1516,13 @@ export function ChatPage() {
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
         // The new chat uses the project's default model (createSession doesn't specify a model reference), so the error copy's model context follows suit.
         toastError(
           apiErrorText(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {}),
@@ -1507,7 +1530,16 @@ export function ChatPage() {
         return false;
       }
     },
-    [projectId, currentAgent, selected, addSession, discardSessionDraft, navigate, models],
+    [
+      projectId,
+      currentAgent,
+      selected,
+      addSession,
+      removeSession,
+      discardSessionDraft,
+      navigate,
+      models,
+    ],
   );
 
   const onStop = useCallback(async () => {
@@ -2238,6 +2270,7 @@ export function ChatPage() {
       {...(sessionDraft.skills && sessionDraft.skills.length > 0
         ? { initialSkills: sessionDraft.skills }
         : {})}
+      goalPlugin={goalPlugin}
       onSkillsChange={onDraftSkillsChange}
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}
