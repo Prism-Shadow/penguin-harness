@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** feature
 - **Scope:** `ui`
+- **PR:** [#1223](https://github.com/Prism-Shadow/penguin-harness/pull/1223)
 
 [English](2026-10-19-accent-tint.md)
 
