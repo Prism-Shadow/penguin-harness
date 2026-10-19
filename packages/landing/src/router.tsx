@@ -24,6 +24,7 @@ import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
 import { NeonBackground } from "./components/neon-bg";
+import { PostPending } from "./components/post-pending";
 import { HomePage } from "./pages/home";
 import { BlogListPage } from "./pages/blog-list";
 import { DownloadPage } from "./pages/download";
@@ -34,7 +35,8 @@ const BlogPostPage = lazy(() =>
 
 /**
  * A post's route. Its body starts downloading beside the page's code instead of after it; the
- * main column stays empty until both are in, and the page then shows header and body together.
+ * main column holds a screen of empty space until both are in, and the page then shows header
+ * and body together.
  */
 function BlogPostRoute() {
   const { slug = "" } = useParams();
@@ -45,7 +47,7 @@ function BlogPostRoute() {
     if (post) void loadPostBody(post).catch(() => undefined);
   }, [post]);
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PostPending />}>
       <BlogPostPage />
     </Suspense>
   );

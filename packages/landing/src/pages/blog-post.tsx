@@ -30,6 +30,7 @@ import { blogAssetUrl } from "../lib/links";
 import { formatAuthors, formatPostDate, getPost, loadPostBody, loadedPostBody } from "../lib/blog";
 import type { BlogPost } from "../lib/blog";
 import { CategoryBadge } from "../components/category-badge";
+import { PostPending } from "../components/post-pending";
 
 /**
  * Link adapter: every link in a post body opens in a new tab (`target="_blank"` + `rel="noreferrer"`,
@@ -152,7 +153,7 @@ function usePostBody(post: BlogPost | undefined): string | undefined {
         const other = getPost(post.slug, otherLocale(post));
         if (other && other !== post) void loadPostBody(other).catch(() => undefined);
       },
-      // A chunk that fails to load reloads the page (main.tsx); nothing to render meanwhile.
+      // A chunk that fails to load reloads the page (main.tsx); the page stays pending meanwhile.
       () => undefined,
     );
     return () => {
@@ -207,7 +208,7 @@ export function BlogPostPage() {
 
   // The header and the body appear together, as one page: the layout depends on the body's
   // headings (the TOC column), so a header shown alone would shift sideways when the body lands.
-  if (body === undefined) return null;
+  if (body === undefined) return <PostPending />;
 
   const showToc = toc.length >= 2;
 
