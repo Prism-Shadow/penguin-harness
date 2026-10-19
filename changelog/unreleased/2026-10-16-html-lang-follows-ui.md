@@ -3,6 +3,7 @@
 - **Date:** 2026-10-16
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1212](https://github.com/Prism-Shadow/penguin-harness/pull/1212)
 
 [中文版](2026-10-16-html-lang-follows-ui.zh.md)
 
