@@ -9,9 +9,9 @@ A post is a pair under `packages/landing/content/blog/`: `<slug>.en.md` and `<sl
 with `title` / `date` / `category` / `excerpt` frontmatter. Same rule as changelog entries — one
 without the other is unfinished.
 
-**Before drafting or revising a post, read the `penguin-harness-blog` skill**: a gateway model
-writes every reader-facing sentence through its `blog-prose.mjs`, and agents research, prompt,
-draw, check and ship.
+**Before drafting or revising a post, read the `penguin-harness-writing` skill**: a gateway model
+writes every reader-facing sentence through its `prose.mjs`, and agents research, prompt, draw,
+check and ship. Docs pages and landing copy go the same way.
 
 **The images are not in this repo.** Screenshots and demo videos live in the sibling
 `Prism-Shadow/penguin-harness-community` repo, under `blog-assets/` and `videos/`. A published
