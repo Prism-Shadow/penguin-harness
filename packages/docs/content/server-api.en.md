@@ -277,6 +277,8 @@ The URL uses the machine's own id rather than the ssh alias it was reached throu
 
 This proxy is admin only and uses one identity: the request runs on the far side as that machine's admin, with a session this server mints through its own ssh access (`penguin auth token` on the machine). The browser's cookies never go across, and the machine's cookies never come back. Only `/api` is forwarded; the frontend stays local.
 
+Before a bot is turned on, this server also asks each connected machine of the Project which bot accounts it has enabled (`GET /api/messaging/accounts`); see [Bot accounts across servers](#bot-accounts-across-servers).
+
 A connected machine's own user-level events reach a page through this server rather than through the proxy: the server subscribes to each machine's `GET /api/events` over its ssh session and republishes every server event as `machine_event` (`{machineId, event}`) on its own user stream, to admins. A page therefore holds one event stream however many machines are connected — a browser allows six HTTP/1.1 connections to one origin, and a stream per machine used them all up with five. A subscription that ends is resumed from the last event id, and the machine's own `resync_required` is relayed like any other event.
 
 ### Jobs
@@ -1081,6 +1083,21 @@ A Session can be connected to a messaging bot. The channels today are Feishu, Te
 - `POST …/state` with `{enabled: true}` connects with the stored credentials, and `{enabled: false}` disconnects. It returns 409 `another_channel_enabled` while another channel of this Session is enabled, and 409 `account_enabled_elsewhere` while another Session has the same account enabled. Both mean: turn that one off first. The second names nothing about the holder, which may be in a Project the caller cannot see. Without a stored secret, the toggle returns 400 `feishu_secret_required`, `telegram_token_required`, `qq_secret_required` or `wechat_token_required`.
 - The Feishu, Telegram and QQ test routes probe with the draft values in the request, each falling back to the stored config; the WeChat test takes no body (see below). A rejected credential is `ok: false`, not an HTTP error.
 - The test-message routes return 409 `feishu_no_chat`, `telegram_no_chat`, `qq_no_chat` or `wechat_no_chat` until someone has messaged the bot once in that app. On WeChat the route also returns 409 `wechat_needs_recent_message` when WeChat will not take a bot message until the user messages the bot again. The test message is never held.
+
+### Bot accounts across servers
+
+A binding belongs to the server that runs its Session. A Session on a machine keeps its configs in that machine's database and connects from that machine, and it keeps relaying while this server is away; the Web App edits it through `/server/<machineId>/api/sessions/:sessionId/messaging…`. The per-account rule above holds within one server. These two routes extend it to a server and the machines it connects, so that a bot is enabled on one server at a time.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/messaging/accounts` | Admin only: every bot account this server has enabled, across Projects → `{accounts: [{channel, accountId}]}` |
+| GET | `/api/projects/:projectId/messaging/account-holders?channel=&accountId=` | Which servers have that account enabled → `{holders: [{machineId, alias}], unreachable: [{machineId, alias, reason}]}` |
+
+- `accounts` carries no Session ids and no secrets. A binding whose Session no longer exists does not count, as in the `state` route's check.
+- In `holders`, `machineId: null` with `alias: null` is this server; a machine is listed when it answers that it has the account enabled. No Session is named.
+- `unreachable` lists the Project's machines that could not be asked: `not_connected` (no connection is held to it), `older_build` (it answered 404, a build from before this route; the next connect upgrades it) or `failed` (any other failed answer).
+- Any Project member may ask (404 `project_not_found` otherwise). Machines are asked for an admin only; anyone else is answered for this server alone. A missing or unknown `channel`, or an empty `accountId`, returns 400.
+- A client asks before `POST …/state` with `{enabled: true}` and does not turn the bot on while another server holds it. The server that holds it still applies its own `account_enabled_elsewhere` check.
 
 ### Per-channel details
 

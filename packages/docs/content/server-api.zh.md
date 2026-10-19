@@ -277,6 +277,8 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 该代理仅限管理员，且只使用单一身份：请求在对端以那台机器的管理员身份执行，所用会话由本服务器凭借自身的 ssh 访问能力签发（在那台机器上执行 `penguin auth token`）。浏览器的 Cookie 不会传到对端，机器上的 Cookie 也不会带回本地。只有 `/api` 会转发，前端仍在本地运行。
 
+启用机器人之前，本服务器还会询问 Project 的每台已连接机器启用了哪些机器人账号（`GET /api/messaging/accounts`），见[跨服务器的机器人账号](#跨服务器的机器人账号)。
+
 已连接机器自己的用户级事件经由本服务器而不是代理送到页面：服务器经各机器的 ssh 会话订阅它的 `GET /api/events`，把每个服务端事件包成 `machine_event`（`{machineId, event}`）重新发布到自己的用户事件流上，只发给管理员。因此无论连了多少台机器，页面都只持有一条事件流——浏览器对同一来源只允许 6 条 HTTP/1.1 连接，每台机器一条流的做法连上 5 台就会把它们占满。订阅断开后按上次的事件 id 续订，机器自己的 `resync_required` 同其他事件一样转发。
 
 ### 任务
@@ -1081,6 +1083,21 @@ Session 可以连接消息机器人。目前支持的渠道是飞书、Telegram�
 - `POST …/state` 传入 `{enabled: true}` 时用已存储的凭据建立连接，传入 `{enabled: false}` 时断开。本 Session 的另一个渠道处于启用状态时，返回 409 `another_channel_enabled`；另一个 Session 已启用同一账号时，返回 409 `account_enabled_elsewhere`。两种情况的含义相同：先把那一个停用。第二种错误不会透露占用者是谁，对方可能位于调用者看不到的 Project 里。没有已存储的密钥时，开关操作返回 400 `feishu_secret_required`、`telegram_token_required`、`qq_secret_required` 或 `wechat_token_required`。
 - 飞书、Telegram 和 QQ 的 test 路由用请求中的草稿值探测，缺少的值回退到已存储的配置；微信的 test 不接受请求体（见下文）。凭据未通过验证时返回 `ok: false`，而不是 HTTP 错误。
 - test-message 路由在有人在对应应用里给机器人发过消息之前，返回 409 `feishu_no_chat`、`telegram_no_chat`、`qq_no_chat` 或 `wechat_no_chat`。微信的 test-message 路由在微信暂不接受机器人发消息、需要用户先给机器人发一条消息时，另外返回 409 `wechat_needs_recent_message`。测试消息从不暂存。
+
+### 跨服务器的机器人账号
+
+绑定归运行其 Session 的服务器所有。机器上的 Session 把配置存在那台机器的数据库里，从那台机器建立连接，本服务器不在时也照常收发；Web App 通过 `/server/<machineId>/api/sessions/:sessionId/messaging…` 编辑它。上面的按账号规则只在单个服务器内生效。下面两个路由把它扩展到本服务器及其连接的机器，使同一个机器人同一时刻只在一个服务器上启用。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/messaging/accounts` | 仅限管理员：本服务器已启用的全部机器人账号，跨所有 Project → `{accounts: [{channel, accountId}]}` |
+| GET | `/api/projects/:projectId/messaging/account-holders?channel=&accountId=` | 哪些服务器启用了该账号 → `{holders: [{machineId, alias}], unreachable: [{machineId, alias, reason}]}` |
+
+- `accounts` 不含 Session id，也不含密钥。Session 已不存在的绑定不计入，与 `state` 路由的检查一致。
+- `holders` 中 `machineId: null` 且 `alias: null` 表示本服务器；某台机器回答它启用了该账号时才会列出。不会指明任何 Session。
+- `unreachable` 列出 Project 中无法询问的机器：`not_connected`（本服务器没有与它保持连接）、`older_build`（它返回 404，即该路由出现之前的版本，下次连接时会升级）或 `failed`（其他失败的回答）。
+- 任何 Project 成员都可以询问（否则返回 404 `project_not_found`）。只有管理员询问时才会去问各台机器，其他人只得到本服务器的回答。缺少 `channel` 或渠道未知，或 `accountId` 为空，返回 400。
+- 客户端在 `POST …/state` 传入 `{enabled: true}` 之前先询问，另一台服务器持有该机器人时不予启用。持有它的服务器仍会执行自己的 `account_enabled_elsewhere` 检查。
 
 ### 各渠道细节
 
