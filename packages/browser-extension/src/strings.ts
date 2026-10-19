@@ -48,7 +48,7 @@ const en = {
 
   pairHeading: "PenguinHarness Browser",
   pairIntro:
-    "Lets the agents of a PenguinHarness server drive the Chrome tabs you hand them: the tabs they open in the Penguin group, and tabs you add with the toolbar icon. Your other tabs, your browsing history and Chrome's cookie store stay out of reach.",
+    "Lets the agents of a PenguinHarness server drive the Chrome tabs you hand them: the tabs they open in the Penguin group, and tabs you add with the toolbar icon. Those tabs keep your sign-ins, but agents cannot see your other tabs or your browsing history, or read and change Chrome's cookies directly.",
   pairedTitle: "Paired servers",
   pairedNone: "No server is paired yet.",
   pairedBy: (user: string) => `paired by ${user}`,
@@ -128,7 +128,7 @@ const zh: Strings = {
 
   pairHeading: "PenguinHarness Browser",
   pairIntro:
-    "让 PenguinHarness 服务器上的 Agent 驱动你交给它的 Chrome 标签页：它在 Penguin 标签组里打开的标签页，以及你用工具栏图标添加的标签页。其他标签页、浏览历史和 Chrome 的 Cookie 存储都不会被触及。",
+    "让 PenguinHarness 服务器上的 Agent 操作你交给它的 Chrome 标签页：它在 Penguin 标签组里打开的，以及你用工具栏图标添加的。这些标签页沿用你的登录状态，但 Agent 看不到你的其他标签页和浏览历史，也不能直接读取或修改 Chrome 的 Cookie。",
   pairedTitle: "已配对的服务器",
   pairedNone: "还没有配对任何服务器。",
   pairedBy: (user) => `由 ${user} 配对`,
@@ -172,9 +172,9 @@ const zh: Strings = {
   popupAdd: "添加此标签页",
   popupAddTo: (label) => `将此标签页交给 ${label}`,
   popupRelease: "收回此标签页",
-  popupDriven: (label) => `${label} 可以驱动此标签页。`,
+  popupDriven: (label) => `${label} 可以操作此标签页。`,
   popupReleased: "你已停止 Agent 操作此标签页。再次添加即可交还。",
-  popupRestricted: "Chrome 不允许扩展驱动此页面。",
+  popupRestricted: "Chrome 不允许扩展操作此页面。",
   popupPause: "暂停",
   popupResume: "继续",
   popupPaused: "已暂停：恢复之前，Agent 无法在任何标签页中操作。",
