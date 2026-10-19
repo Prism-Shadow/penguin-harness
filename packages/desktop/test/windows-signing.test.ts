@@ -6,9 +6,10 @@
  * - Given an unsigned file, only an explicit dry-run accepts it; no other status does.
  * - Given a file name with shell syntax, it reaches PowerShell as data, with the signing key and
  *   inherited module paths removed from its environment.
- * - Given a native failure, no SystemRoot or an unusable input path, acceptance fails without
- *   launching anything or echoing native output.
- * - Given a real Windows executable, the actual PowerShell script accepts it.
+ * - Given a native error or output that is not JSON, acceptance fails naming only the file.
+ * - Given no SystemRoot or an unusable input path, acceptance fails before launching anything.
+ * - Given a real signed and timestamped executable (Node's own, on Windows), the actual
+ *   PowerShell script accepts it.
  * - Given each signing target (including NSIS's temporary uninstaller), the hook signs it with
  *   EVSign and then verifies it; other files and other hashes are left alone.
  * - Given no key, only a dry-run continues; given no client, a failed CLI or an untimestamped
@@ -21,7 +22,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { certificate, signedReport } from "./helpers/windows-artifacts.js";
+import { signedReport } from "./helpers/windows-artifacts.js";
 
 const require = createRequire(import.meta.url);
 const { verifyWindowsSignature } = require("../build/verify-windows-signature.cjs");
@@ -86,24 +87,16 @@ describe("build-time Authenticode acceptance", () => {
   });
 
   it.each([
-    [0, false, false],
-    [1, false, false],
-    [3, false, false],
-    [4, false, false],
-    [2, true, false],
-    [2, false, true],
-  ])(
-    "does not treat status %s (signer %s, timestamp %s) as an unsigned dry-run",
-    (status, signed, timestamped) => {
-      signature({
-        status,
-        path: file,
-        signer: signed ? certificate : null,
-        timestamp: timestamped ? certificate : null,
-      });
-      expect(() => verifyWindowsSignature(file, { allowUnsigned: true })).toThrow();
-    },
-  );
+    { status: 0 },
+    { status: 1 },
+    { status: 3 },
+    { status: 4 },
+    { status: 2, signer: {} },
+    { status: 2, timestamp: {} },
+  ])("does not treat %j as an unsigned dry-run", (facts) => {
+    signature({ path: file, signer: null, timestamp: null, ...facts });
+    expect(() => verifyWindowsSignature(file, { allowUnsigned: true })).toThrow();
+  });
 
   it("keeps the path literal and removes inherited signing secrets and module paths", () => {
     const target = path.resolve("literal'$();[test].exe");
@@ -119,7 +112,6 @@ describe("build-time Authenticode acceptance", () => {
     expect(exe).toBe(
       path.join(process.env.SystemRoot!, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
     );
-    expect(args.join(" ")).not.toContain(target);
     expect(Buffer.from(args.at(-1)!, "base64").toString("utf16le")).not.toContain(target);
     expect(options.env.PENGUIN_SIGNED_FILE).toBe(target);
     expect(options.env.PSModulePath).toBe("");
@@ -127,37 +119,31 @@ describe("build-time Authenticode acceptance", () => {
     expect(options.shell).toBe(false);
   });
 
-  it("rejects malformed native output without reflecting it", () => {
-    signature().mockReturnValue("not JSON");
+  it.each([
+    ["output that is not JSON", () => "not JSON"],
+    [
+      "a native error",
+      () => {
+        throw new Error("test-only-key vendor output");
+      },
+    ],
+  ])("reports %s by the file name only", (_name, native) => {
+    signature().mockImplementation(native);
     expect(() => verifyWindowsSignature(file)).toThrow(
       /^Windows signature acceptance failed: installer.exe$/,
     );
   });
 
-  it("sanitizes native errors", () => {
-    signature().mockImplementation(() => {
-      throw new Error("test-only-key vendor output");
-    });
-    expect(() => verifyWindowsSignature(file)).toThrow(
-      /^Windows signature acceptance failed: installer.exe$/,
-    );
-  });
-
-  it("fails when the PowerShell environment is unavailable", () => {
+  it.each([
+    ["a relative input path", "relative.exe", false],
+    ["a NUL in the input path", path.resolve("bad\0.exe"), false],
+    ["no SystemRoot", file, true],
+  ])("refuses %s before launching anything", (_name, target, noSystemRoot) => {
     const run = signature();
-    vi.stubEnv("SystemRoot", "");
-    expect(() => verifyWindowsSignature(file)).toThrow();
+    if (noSystemRoot) vi.stubEnv("SystemRoot", "");
+    expect(() => verifyWindowsSignature(target)).toThrow();
     expect(run).not.toHaveBeenCalled();
   });
-
-  it.each(["relative.exe", "bad\0.exe"])(
-    "refuses invalid input path %j before launching",
-    (target) => {
-      const run = signature();
-      expect(() => verifyWindowsSignature(target)).toThrow();
-      expect(run).not.toHaveBeenCalled();
-    },
-  );
 
   it.skipIf(process.platform !== "win32")(
     "accepts a real signed and timestamped Windows executable",

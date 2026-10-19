@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 const builderRequire = createRequire(require.resolve("electron-builder"));
 export const { buildBlockMap } = builderRequire("app-builder-lib/out/targets/blockmap/blockmap.js");
 
-export const certificate = {
+const certificate = {
   subject: "CN=Rotated Publisher, O=Rotated Publisher",
   issuer: "Another trusted CA",
   thumbprint: "recorded-not-pinned",
