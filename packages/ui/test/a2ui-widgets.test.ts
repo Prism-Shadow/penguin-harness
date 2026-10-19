@@ -77,13 +77,16 @@ describe("WeatherBlock", () => {
     expect(html).toContain("Source: Open-Meteo");
   });
 
-  it("draws the next hours as a chart, and the coming days as rows from today", () => {
+  it("draws the next hours as a line chart, and the coming days as range rows from today", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 9, 4, 14, 10));
     const html = renderStatic(createElement(WeatherBlock, { spec: WEATHER }));
     expect(html).toMatch(/<svg[^>]*role="img" aria-label="Next hours: 14:00 18°, 15:00 19°/);
-    expect(html).toContain("ui-chart");
+    expect(html).toContain('data-chart="line"');
     expect(html).toContain('data-condition="cloudy"');
+    // The days are a range chart named by its section, each day's low to high on the week's scale.
+    expect(html).toContain('aria-label="Coming days"');
+    expect(html).toMatch(/data-part="bar"[^>]*style="left:\d+(\.\d+)?%;width:\d+(\.\d+)?%/);
     expect(html).toContain("Today");
     expect(html).toContain("Mon");
     expect(html).toContain("80%");
