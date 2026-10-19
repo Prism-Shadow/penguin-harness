@@ -58,6 +58,5 @@ describe("Checkbox", () => {
     const html = box({ label: "Enabled", disabled: true });
     expect(html).toContain('disabled=""');
     expect(classTokens(html)).toEqual(expect.arrayContaining(["opacity-60", "cursor-not-allowed"]));
-    expect(classTokens(box({ label: "Enabled" }))).toContain("cursor-pointer");
   });
 });

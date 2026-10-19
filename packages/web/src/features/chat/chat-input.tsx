@@ -38,8 +38,8 @@
  * The "+" menu carries the input add-ons: image upload, file attachment (any type, several at a
  * time — they ride the task request as base64 data URLs, and the server writes them into the
  * session scratchpad and appends an `[attached file: <path>]` line to the message, so the model
- * opens them by path), and goal mode; selected files show as removable chips above the text
- * body, next to the image thumbnails, and — like images — an attachments-only message is
+ * opens them by path), and goal mode; staged images and files show as removable tiles at the
+ * top of the card — the images first, each at its own ratio — and an attachments-only message is
  * sendable with no text at all. Dragging files onto the chat area feeds the same two intakes
  * (images → paste pipeline, other files → attachments; see FileDropZone/addDroppedFiles),
  * with an overlay bounded to that region while the drag is over it.
@@ -68,7 +68,8 @@
  *
  * This module is the composer's container: the draft, sending, attachments, slash matching, IME,
  * paste and drop, history recall and the draft cache live here. What it draws with is the UI
- * package's composer family — `ComposerCard`, `ChipRow` and `Chip`, the `MenuSelect` pickers on
+ * package's composer family — `ComposerCard`, `ChipRow` and `Chip`, the attachment tiles
+ * (`AttachmentList`, `AttachmentImage`, `AttachmentFile`), the `MenuSelect` pickers on
  * `ToolbarTrigger`s, `SendButton`, `SlashMenu` and `SlashPicker` — and the model picker bound to
  * the catalog (model-select.tsx) and the context gauge (context-gauge.tsx).
  */
@@ -97,7 +98,9 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
-  Button,
+  AttachmentFile,
+  AttachmentImage,
+  AttachmentList,
   CheckIcon,
   ChevronDown,
   Chip,
@@ -109,14 +112,12 @@ import {
   ICONS,
   ICON_SIZE,
   MenuSelect,
-  NoticeStrip,
+  Notice,
   PickerList,
   ProviderLogo,
   SendButton,
   SlashMenu,
   SlashPicker,
-  TagInput,
-  ZoomableImage,
   noAutofill,
   toastError,
   toastInfo,
@@ -153,7 +154,6 @@ import {
 } from "./input-history";
 import type { HistoryStep } from "./input-history";
 import { isStopAction, midRunAction } from "./composer-send";
-import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { modelWindowBelowCompactionLimit } from "../../lib/context";
@@ -2147,48 +2147,6 @@ export function ChatInput({
         </SlashPicker>
       )}
 
-      {images.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {images.map((url, i) => (
-            <div key={i} className="anim-pop relative">
-              <ZoomableImage
-                src={url}
-                alt={S.chat.imageAlt}
-                className="h-16 w-16 rounded-md border border-gray-200 object-cover dark:border-gray-700"
-              />
-              <button
-                type="button"
-                aria-label={S.chat.removeImage}
-                onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
-                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-gray-700 text-xs text-white transition-colors duration-150 hover:bg-gray-900"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Attached files, right below the image thumbnails: one removable chip each (name +
-          size), since there is nothing to preview. The name is the picked file's — the server
-          sanitizes it when writing to the scratchpad, and the message's banner then shows the
-          on-disk name. */}
-      {attachments.length > 0 && (
-        <TagInput
-          variant="outline"
-          className="mb-2"
-          chips={attachments.map((file, i) => ({
-            key: String(i),
-            label: file.name,
-            glyph: <GlyphIcon d={PAPERCLIP_ICON} size={13} className="shrink-0 text-fg-subtle" />,
-            meta: formatBytes(file.size),
-            tooltip: file.name,
-            removeLabel: `${S.chat.removeFile} ${file.name}`,
-          }))}
-          onRemove={(key) => setAttachments((prev) => prev.filter((_, j) => String(j) !== key))}
-        />
-      )}
-
       {/* The Agent's compaction threshold is above what this model can hold, so compaction fires
           at the window's edge instead of at the number the user set. Amber rather than muted
           body text like the notices below it: the other two describe what the composer is about
@@ -2196,36 +2154,33 @@ export function ChatInput({
           waiting on the user. Dismissible, because keeping the threshold high on purpose is a
           legitimate answer and a notice with no way down stops being read. */}
       {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
-        // The buttons keep their labels whole, so where the sentence would be left a few
-        // characters a line beside them (a phone at a large text size), they drop to a row
-        // of their own instead; the sentence keeps a readable width either way.
-        <NoticeStrip
+        // The shared notice: its buttons keep their labels whole, so where the sentence would
+        // be left a few characters a line beside them (a phone at a large text size), they
+        // drop to a row of their own instead.
+        <Notice
           tone="attention"
-          className="anim-fade mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-2.5 py-2 text-xs"
+          className="anim-fade mb-1"
+          dismiss={{
+            label: S.chat.contextWindowUnderThresholdDismiss,
+            onClick: () => {
+              if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
+              setWindowNoticeDismissed(true);
+            },
+          }}
+          {...(onOpenAgentSettings
+            ? {
+                action: {
+                  label: S.chat.contextWindowUnderThresholdAction,
+                  onClick: onOpenAgentSettings,
+                },
+              }
+            : {})}
         >
-          <p className="min-w-0 grow basis-56">
-            {S.chat.contextWindowUnderThreshold(
-              humanizeTokens(contextWindow),
-              humanizeTokens(compactionLimit),
-            )}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
-                setWindowNoticeDismissed(true);
-              }}
-            >
-              {S.chat.contextWindowUnderThresholdDismiss}
-            </Button>
-            {onOpenAgentSettings && (
-              <Button size="sm" variant="primary" onClick={onOpenAgentSettings}>
-                {S.chat.contextWindowUnderThresholdAction}
-              </Button>
-            )}
-          </div>
-        </NoticeStrip>
+          {S.chat.contextWindowUnderThreshold(
+            humanizeTokens(contextWindow),
+            humanizeTokens(compactionLimit),
+          )}
+        </Notice>
       )}
 
       {/* When the model doesn't support viewing images directly: images still upload as usual,
@@ -2325,6 +2280,34 @@ export function ChatInput({
           container breakpoints) — the card's width changes with the viewport and with the Files
           panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
       <ComposerCard
+        attachments={
+          // The staged images, then the staged files, as one row of tiles at the top of the
+          // card: the same tiles the message shows once sent. A file's name is the picked
+          // file's — the server sanitizes it when writing to the scratchpad, and the sent
+          // message then shows the on-disk name.
+          images.length > 0 || attachments.length > 0 ? (
+            <AttachmentList>
+              {images.map((url, i) => (
+                <AttachmentImage
+                  key={`image-${i}`}
+                  src={url}
+                  alt={S.chat.imageAlt}
+                  removeLabel={S.chat.removeImage}
+                  onRemove={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                />
+              ))}
+              {attachments.map((file, i) => (
+                <AttachmentFile
+                  key={`file-${i}`}
+                  name={file.name}
+                  size={formatBytes(file.size)}
+                  removeLabel={`${S.chat.removeFile} ${file.name}`}
+                  onRemove={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                />
+              ))}
+            </AttachmentList>
+          ) : undefined
+        }
         chips={
           // Chip row above the text body: the goal chip, the staged switch target (an /agent
           // handoff or a /model fork — never both), the selected skills, and whatever the Files
@@ -2435,7 +2418,7 @@ export function ChatInput({
                   },
                   {
                     key: "file",
-                    icon: PAPERCLIP_ICON,
+                    icon: ICONS.paperclip,
                     label: S.chat.uploadFile,
                     // The description doubles as the explanation of where the file ends up:
                     // it is filed into the session scratchpad and reached by path, never

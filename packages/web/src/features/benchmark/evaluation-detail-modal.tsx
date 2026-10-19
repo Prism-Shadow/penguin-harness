@@ -105,7 +105,7 @@ function CaseRow({
     <>
       <tr
         onClick={() => setOpen((v) => !v)}
-        className="cursor-pointer text-xs transition-colors duration-150 hover:bg-gray-100/70 dark:hover:bg-gray-800/40"
+        className="cursor-default text-xs transition-colors duration-150 hover:bg-gray-100/70 dark:hover:bg-gray-800/40"
       >
         <td className="px-2 py-1">
           <span className="flex items-start gap-1.5">

@@ -248,7 +248,7 @@ export function FileTree<Row extends FileTreeRow>({
         aria-label={rowLabel?.(row)}
         {...(retained ? {} : { onClick: () => activate(row), onFocus: () => setFocused(row.path) })}
         style={{ paddingLeft: TREE_PAD_PX + row.depth * TREE_INDENT_PX }}
-        className={`flex cursor-pointer select-none items-center gap-1.5 py-1 pr-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-subtle/60 ${
+        className={`flex select-none items-center gap-1.5 py-1 pr-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-subtle/60 ${
           dropHere
             ? "bg-tone-info-bg ring-2 ring-inset ring-tone-info-emphasis/60"
             : selected

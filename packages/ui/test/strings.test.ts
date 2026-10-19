@@ -42,6 +42,7 @@ describe("UiStrings", () => {
       "notifications",
       "pagePosition",
       "previous",
+      "reader",
       "showPassword",
     ]);
     expect(DEFAULT_UI_STRINGS).toMatchObject({

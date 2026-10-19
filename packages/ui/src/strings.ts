@@ -13,11 +13,12 @@
  * A key joins the interface when a component that moves into the package needs one; the app's
  * mapping from its dictionaries must then cover it in every language it ships.
  *
- * One group is chrome rather than an accessibility fallback: `a2ui`, the words around the
+ * Two groups are chrome rather than accessibility fallbacks. `a2ui` holds the words around the
  * components a model writes into its reply (a choice's fill button, a callout's tone name, a
  * widget's labels and units). Those blocks render from inside Markdown, where no caller stands
  * between the reply and the block to pass copy down as props, so their few words come from here
- * like the rest.
+ * like the rest. `reader` holds the Markdown reader's controls (its outline and its find), which
+ * the file browser and the preview pane draw for their callers, who pass no copy for them.
  */
 import { createContext, createElement, useContext } from "react";
 import type { ReactElement, ReactNode } from "react";
@@ -91,6 +92,22 @@ export interface A2uiStrings {
   deltaDown: string;
 }
 
+/** The Markdown reader's controls (components/content/markdown-reader). */
+export interface ReaderStrings {
+  /** The outline: its rail's title and accessible name, and the name of the button that opens it. */
+  outline: string;
+  /** The find button's name and tooltip. */
+  find: string;
+  /** The find box's placeholder and accessible name. */
+  findPlaceholder: string;
+  /** The find bar's steps and its close. */
+  previousMatch: string;
+  nextMatch: string;
+  closeFind: string;
+  /** The counter while the query matches nothing. */
+  noResults: string;
+}
+
 export interface UiStrings {
   /** The close cross's accessible name (`CloseButton`). */
   close: string;
@@ -130,6 +147,8 @@ export interface UiStrings {
   pagePosition: (page: number, pageCount: number) => string;
   /** The A2UI blocks' words. */
   a2ui: A2uiStrings;
+  /** The Markdown reader's words. */
+  reader: ReaderStrings;
 }
 
 /** The English fallbacks, used wherever no provider is mounted (a test, a stand-alone page). */
@@ -204,6 +223,15 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     done: "Done",
     deltaUp: "up",
     deltaDown: "down",
+  },
+  reader: {
+    outline: "Outline",
+    find: "Find in document",
+    findPlaceholder: "Find in document…",
+    previousMatch: "Previous match",
+    nextMatch: "Next match",
+    closeFind: "Close find",
+    noResults: "No results",
   },
 };
 

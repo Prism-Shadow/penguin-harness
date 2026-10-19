@@ -47,8 +47,10 @@ import {
   listCategory,
   listingMarksOf,
   readRecordedSource,
+  sourceSeenBy,
   unrunSource,
 } from "../runtime/session-sources.js";
+import type { ListingView } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
@@ -376,14 +378,17 @@ export class SessionService {
    * Session the user never kept reads archived, and a subagent with a stray mark does not.
    *
    * `orgIds` is the list flow's one-query organization map (see listSessions); without it the
-   * organization is a point lookup, which is what the single-Session paths want.
+   * organization is a point lookup, which is what the single-Session paths want. `view` is who
+   * is reading (sourceSeenBy): a server that adopted this one sees its earlier Sessions as CLI
+   * tasks, in `source` and `archived` alike.
    */
   async toInfo(
     row: SessionRow,
     hasTrace: boolean,
     orgIds?: ReadonlyMap<string, string>,
+    view?: ListingView,
   ): Promise<SessionInfo> {
-    const source = await this.sourceOf(row, hasTrace);
+    const source = await this.sourceOf(row, hasTrace, view);
     const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
     const orgId = orgIds ? orgIds.get(row.sessionId) : this.deps.orgIdOfSession?.(row.sessionId);
     const backgroundTasks = this.deps.manager.backgroundTasksOf(row.sessionId);
@@ -422,9 +427,21 @@ export class SessionService {
    * no source is read with the row's client (readRecordedSource). A Session with no Trace yet
    * is NOT cached — its meta appears with the first run — and reads as its row says
    * (unrunSource): the organization runtime's as `company`, the Agent API's as `api`, any other
-   * as unknown.
+   * as unknown. What the reader sees of it (sourceSeenBy) is applied last and never cached.
    */
-  private async sourceOf(row: SessionRow, hasTrace: boolean): Promise<SessionSource | undefined> {
+  private async sourceOf(
+    row: SessionRow,
+    hasTrace: boolean,
+    view?: ListingView,
+  ): Promise<SessionSource | undefined> {
+    return sourceSeenBy(await this.recordedSourceOf(row, hasTrace), row.createdAt, view);
+  }
+
+  /** The source as recorded (see sourceOf), whoever reads it. */
+  private async recordedSourceOf(
+    row: SessionRow,
+    hasTrace: boolean,
+  ): Promise<SessionSource | undefined> {
     const known = this.deps.sources.get(row.sessionId);
     if (known !== undefined) return readRecordedSource(known, row.client);
     if (!hasTrace) return unrunSource(row.client);
@@ -444,8 +461,12 @@ export class SessionService {
    * whatever its marks, which the list never serves; otherwise archived when the user archived
    * it or when a program opened it and the user has not kept it, else active.
    */
-  private async categoryOf(row: SessionRow, hasTrace: boolean): Promise<SessionCategory | null> {
-    return listCategory(await this.sourceOf(row, hasTrace), listingMarksOf(row));
+  private async categoryOf(
+    row: SessionRow,
+    hasTrace: boolean,
+    view?: ListingView,
+  ): Promise<SessionCategory | null> {
+    return listCategory(await this.sourceOf(row, hasTrace, view), listingMarksOf(row));
   }
 
   /**
@@ -454,9 +475,9 @@ export class SessionService {
    * through the trace index once (hasTrace reconciles the Agent), so a subagent Session is
    * known for one even before any list has walked it.
    */
-  async listingOf(row: SessionRow): Promise<SessionCategory | null> {
+  async listingOf(row: SessionRow, view?: ListingView): Promise<SessionCategory | null> {
     const known = this.deps.sources.get(row.sessionId) !== undefined;
-    return this.categoryOf(row, known ? row.hasTrace === true : await this.hasTrace(row));
+    return this.categoryOf(row, known ? row.hasTrace === true : await this.hasTrace(row), view);
   }
 
   /**
@@ -515,6 +536,9 @@ export class SessionService {
    * stays `user`, and a row the organization caches name before the reconcile pass stamps it
    * reads as `user`. Without the flag every row is served, whichever client created it, but
    * for that rule.
+   *
+   * `view` is who reads the list (sourceSeenBy): every row is classified and served as that
+   * reader sees it.
    */
   async listSessions(
     projectId: string,
@@ -526,6 +550,7 @@ export class SessionService {
       workspaceGroup?: string;
       withCounts?: boolean;
       excludeOrg?: boolean;
+      view?: ListingView;
     } = {},
   ): Promise<{
     sessions: SessionInfo[];
@@ -534,7 +559,15 @@ export class SessionService {
     workspaceLatest?: Record<string, string>;
     workspaceLatestActive?: Record<string, string>;
   }> {
-    const { paging, order = "created", category, workspaceGroup, withCounts, excludeOrg } = opts;
+    const {
+      paging,
+      order = "created",
+      category,
+      workspaceGroup,
+      withCounts,
+      excludeOrg,
+      view,
+    } = opts;
     const { rows, orgIds, traces } = await this.walkRows(projectId, agentId, excludeOrg === true);
 
     const sorted = [...rows.values()].sort(
@@ -551,7 +584,7 @@ export class SessionService {
     const rowHasTrace = (row: SessionRow): boolean =>
       traces ? traces.has(row.sessionId) : row.hasTrace === true;
     const toPage = (page: SessionRow[]) =>
-      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), orgIds)));
+      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), orgIds, view)));
 
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && workspaceGroup === undefined && !withCounts) {
@@ -573,7 +606,7 @@ export class SessionService {
       const servable = i >= start;
       if (!servable && !withCounts) continue;
       if (!withCounts && matched.length >= want) break;
-      const cat = await this.categoryOf(row, rowHasTrace(row));
+      const cat = await this.categoryOf(row, rowHasTrace(row), view);
       // A subagent or company Session is in no category: neither served nor counted, nor
       // stamped on its Workspace, so no total describes a row the list cannot serve.
       if (cat === null) continue;
@@ -613,14 +646,18 @@ export class SessionService {
    * and `excludeOrg`, classified the same way — with the source each was classified by and
    * whether it has a Trace. It builds no SessionInfo: the page makes one (toInfo) only for the
    * rows a response carries, so a request costs a classification per archived row, not a full
-   * row view per archived row.
+   * row view per archived row. `view` is who reads it, as for listSessions.
    */
-  async archivedRows(projectId: string, agentId: string): Promise<ArchivedRow[]> {
+  async archivedRows(
+    projectId: string,
+    agentId: string,
+    view?: ListingView,
+  ): Promise<ArchivedRow[]> {
     const { rows, traces } = await this.walkRows(projectId, agentId, true);
     const out: ArchivedRow[] = [];
     for (const row of rows.values()) {
       const hasTrace = traces ? traces.has(row.sessionId) : row.hasTrace === true;
-      const source = await this.sourceOf(row, hasTrace);
+      const source = await this.sourceOf(row, hasTrace, view);
       if (listCategory(source, listingMarksOf(row)) !== "archived") continue;
       out.push({ row, hasTrace, ...(source !== undefined ? { source } : {}) });
     }

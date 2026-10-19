@@ -336,7 +336,7 @@ export function ErrorsPanel({
                         data-tooltip={e.message}
                         data-tooltip-content="text"
                         onClick={() => toggle(i)}
-                        className="flex w-full min-w-0 cursor-pointer items-baseline gap-1.5 text-left transition-colors hover:text-gray-700 dark:hover:text-gray-300"
+                        className="flex w-full min-w-0 items-baseline gap-1.5 text-left transition-colors hover:text-gray-700 dark:hover:text-gray-300"
                       >
                         <span
                           className={`min-w-0 ${

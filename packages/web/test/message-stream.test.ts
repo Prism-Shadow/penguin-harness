@@ -6,8 +6,15 @@
  * It also draws a run-ending LLM failure as its error banner, with a hint under a context overflow.
  * The line a run ended on — that banner, or the marker of a run the user stopped — offers Retry
  * while it is the stream's last item and no Task runs.
+ *
+ * What a prompt carried is drawn as one message, the way the composer showed it:
+ * - Given a prompt's text and the image items right behind it, the images sit above the text in
+ *   the same message (one outline anchor), not as messages of their own.
+ * - Given a prompt with no text, its images make one message.
+ * - Given files attached to a prompt, each file is named in its own tile above the text.
+ * - Given a prompt that follows a reply, its images do not join the earlier prompt.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -15,7 +22,9 @@ import { MessageStream } from "../src/features/chat/message-stream";
 import type { StreamRenderContext } from "../src/features/chat/message-stream";
 import type { ChatItem } from "../src/lib/omni/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
-import { S } from "../src/lib/strings";
+import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { LocaleProvider } from "../src/state/locale";
+import { stubLocalStorage } from "./helpers/storage";
 
 /** The behaviour each rendered link received, by the href it was sorted from. */
 const rendered = vi.hoisted(() => new Map<string | undefined, LinkBehavior>());
@@ -118,5 +127,79 @@ describe("MessageStream error banner", () => {
     expect(stream([ended])).toContain(retry);
     expect(stream([ended, reply])).not.toContain(retry);
     expect(stream([ended], true)).not.toContain(retry);
+  });
+});
+
+describe("MessageStream prompts with attachments", () => {
+  const ctx: StreamRenderContext = {
+    pendingApprovals: new Map(),
+    onApprove: async () => {},
+    origin: [],
+    taskRunning: false,
+  };
+  // A message the person sent carries its time in the reader's locale.
+  beforeEach(() => {
+    stubLocalStorage().setItem("penguin.lang", "en");
+  });
+  afterEach(() => {
+    setActiveStrings(zh);
+    vi.unstubAllGlobals();
+  });
+  const stream = (items: ChatItem[]) =>
+    renderToStaticMarkup(
+      createElement(
+        LocaleProvider,
+        null,
+        createElement(MessageStream, { items, version: 1, ctx, onAddExcerpt: () => {} }),
+      ),
+    );
+  const anchorCount = (html: string) => html.match(/data-outline-anchor=/g)?.length ?? 0;
+  const imageCount = (html: string) => html.match(/<img\b/g)?.length ?? 0;
+  const image = (id: number, imageUrl: string): ChatItem => ({ kind: "user_image", id, imageUrl });
+  const DIR = "/home/u/.penguin/data/p1/agents/a1/scratchpad/s1";
+
+  it("a prompt's text and the images behind it are one message, images above the text", () => {
+    const html = stream([
+      { kind: "user_text", id: 1, text: "Why is this red?" },
+      image(2, "data:image/png;base64,AAAA"),
+      image(3, "data:image/png;base64,BBBB"),
+    ]);
+    expect(anchorCount(html)).toBe(1);
+    expect(imageCount(html)).toBe(2);
+    expect(html.indexOf("BBBB")).toBeLessThan(html.indexOf("Why is this red?"));
+  });
+
+  it("a prompt with only images is one message", () => {
+    const html = stream([
+      image(1, "data:image/png;base64,AAAA"),
+      image(2, "data:image/png;base64,BBBB"),
+    ]);
+    expect(anchorCount(html)).toBe(1);
+    expect(imageCount(html)).toBe(2);
+  });
+
+  it("each attached file is named above the text", () => {
+    const html = stream([
+      {
+        kind: "user_text",
+        id: 1,
+        text: `Review these\n\n[attached file: ${DIR}/report.pdf]\n[attached file: ${DIR}/rows.csv]`,
+      },
+    ]);
+    for (const name of ["report.pdf", "rows.csv"]) {
+      expect(html).toContain(`>${name}</span>`);
+      expect(html.indexOf(name)).toBeLessThan(html.indexOf("Review these"));
+    }
+    expect(html).not.toContain(DIR);
+  });
+
+  it("images after a reply belong to the next prompt, not the one before", () => {
+    const html = stream([
+      { kind: "user_text", id: 1, text: "First" },
+      { kind: "assistant_text", id: 2, text: "Answer.", streaming: false },
+      image(3, "data:image/png;base64,AAAA"),
+    ]);
+    expect(anchorCount(html)).toBe(2);
+    expect(html.indexOf("AAAA")).toBeGreaterThan(html.indexOf("Answer."));
   });
 });

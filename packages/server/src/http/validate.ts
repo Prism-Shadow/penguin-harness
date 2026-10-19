@@ -14,8 +14,18 @@ import type {
   SessionListPaging,
 } from "../services/session-service.js";
 import { HttpError, badRequest } from "./errors.js";
+import { ADOPTED_AT_HEADER, listingViewOf } from "../runtime/session-sources.js";
+import type { ListingView } from "../runtime/session-sources.js";
 
 export { badRequest };
+
+/**
+ * Who reads a Session list or row (session-sources.ts sourceSeenBy): a server that adopted this
+ * one says when, and sees the Sessions held here before then as CLI tasks.
+ */
+export function listingViewOfRequest(c: Context): ListingView {
+  return listingViewOf(c.req.header(ADOPTED_AT_HEADER));
+}
 
 /**
  * Get a path parameter (under sub-route mounting, hono infers string | undefined; the

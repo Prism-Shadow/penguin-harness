@@ -36,7 +36,7 @@ export function railItemClass({
     : active
       ? `${NAV_FILL.selected} text-fg`
       : "text-fg-muted hover:bg-fg/7 hover:text-fg";
-  return `relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${state}`;
+  return `${disabled ? "" : "cursor-default "}relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${state}`;
 }
 
 export interface RailProps {

@@ -16,6 +16,7 @@ import {
   projectDir,
   provisionProjectAgents,
   provisionProjectBenchmarks,
+  type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
 import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
@@ -81,6 +82,7 @@ export class ProjectService implements ProjectLifecycle {
   @Use() private readonly traceIndex!: TraceIndex;
   /** The Project's Agents' API settings and keys (web.db): a destroyed Project exposes nothing. */
   @Use() private readonly agentApi!: AgentApi;
+  @Use() private readonly benchmarkSeeds!: BuiltinBenchmarkSeeds;
 
   // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
   // in-package callers keep one entry point.
@@ -373,9 +375,21 @@ export class ProjectService implements ProjectLifecycle {
         createdAt: new Date(base + i).toISOString(),
       });
     });
-    await provisionProjectBenchmarks(this.root, projectId);
+    await provisionProjectBenchmarks(this.root, projectId, this.benchmarkSeeds.benchmarks);
   }
 }
+
+/**
+ * The built-in Benchmarks a new Project is written with, beside the example. Absent is the
+ * shipped catalog. A test stands in none: they are most of the files a Project is created with
+ * (several hundred), and only the scenarios about them read them.
+ */
+@Interface()
+export abstract class BuiltinBenchmarkSeeds {
+  abstract benchmarks?: readonly BuiltinBenchmark[];
+}
+@Component()
+export class ShippedBuiltinBenchmarkSeeds implements BuiltinBenchmarkSeeds {}
 
 /** What destroying a Project needs of the session runtime — declared at the consumer. */
 @Interface()

@@ -1,8 +1,10 @@
 /**
  * 提示条: the package's NoticeStrip in every tone — plain, with the leading mark a call site draws
  * (`data-slot="icon"`, which a theme that draws its own tone mark hides), and with actions — then
- * the Notice built on it in its three variants with its action slots, and the page to-do.
+ * the Notice built on it in its four variants with its action slots, the closable notices (a cross
+ * in the notice's own ink that closes it here, the banner's at its far edge), and the page to-do.
  */
+import { useState } from "react";
 import { Button, Dot, ICONS, Notice, NoticeStrip, TodoNotice } from "@prismshadow/penguin-ui";
 import type { NoticeStripTone } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
@@ -15,6 +17,9 @@ const STRIP_CLASS = "flex flex-wrap items-center gap-2 rounded-md border px-3 py
 export function NoticesBoard() {
   const { S } = useGallery();
   const t = S.library.notices;
+  const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
+  const close = (key: string) => () => setClosed((was) => new Set([...was, key]));
+  const reopen = () => setClosed(new Set());
   return (
     <div className="gf-board">
       <BoardGroup title={t.plain}>
@@ -76,6 +81,46 @@ export function NoticesBoard() {
           <Notice tone="info" variant="inline" dismiss={{ onClick: noop }}>
             {t.texts.info}
           </Notice>
+          <span className="lib-caption">{t.variantNames.banner}</span>
+          <div className="lib-box">
+            <Notice
+              tone="attention"
+              variant="banner"
+              action={{ label: t.bannerAction, onClick: noop }}
+              dismiss={{ onClick: noop }}
+            >
+              {t.bannerText}
+            </Notice>
+          </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup
+        title={t.closable}
+        aside={t.closableHint}
+        action={
+          <Button size="sm" variant="ghost" onClick={reopen} disabled={closed.size === 0}>
+            {t.reopen}
+          </Button>
+        }
+      >
+        <div className="lib-stack">
+          {!closed.has("banner") && (
+            <div className="lib-box">
+              <Notice
+                tone="attention"
+                variant="banner"
+                action={{ label: t.bannerAction, onClick: noop }}
+                dismiss={{ onClick: close("banner") }}
+              >
+                {t.bannerText}
+              </Notice>
+            </div>
+          )}
+          {!closed.has("inline") && (
+            <Notice tone="attention" dismiss={{ onClick: close("inline") }}>
+              {t.closableText}
+            </Notice>
+          )}
         </div>
       </BoardGroup>
       <BoardGroup title={t.todo}>

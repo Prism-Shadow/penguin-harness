@@ -22,7 +22,7 @@ import type { A2uiForm, A2uiFormField, A2uiOption } from "@prismshadow/penguin-c
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
 import { Button } from "../../actions/button/button";
-import { Badge } from "../../feedback/badge/badge";
+import { Pill } from "../../feedback/pill/pill";
 import { Checkbox } from "../../forms/checkbox/checkbox";
 import { RequiredMark } from "../../forms/field/field";
 import { Input } from "../../forms/input/input";
@@ -116,11 +116,7 @@ function FormField({
                   ...(option.recommended === true
                     ? {
                         badge: {
-                          node: (
-                            <Badge tone="info" size="sm">
-                              {strings.recommended}
-                            </Badge>
-                          ),
+                          node: <Pill tone="info">{strings.recommended}</Pill>,
                           name: strings.recommended,
                         },
                       }

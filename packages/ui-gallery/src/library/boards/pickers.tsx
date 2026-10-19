@@ -1,14 +1,17 @@
 /**
  * 选择器: the package's Select, Segmented, Switch, ToggleRow, SwatchPicker, OptionMenu and
- * Dropdown, each holding its own choice, and the Menu rows at both densities.
+ * Dropdown, each holding its own choice, and the Menu rows at both densities. The control sizes
+ * group sets a Select beside an Input and a Button of the same rung: one row, one height.
  */
 import { useState } from "react";
+import type { ControlSize } from "@prismshadow/penguin-ui";
 import {
   ACCENT_PRESETS,
   Button,
   ChevronDown,
   Dropdown,
   ICONS,
+  Input,
   Menu,
   MenuItem,
   MenuLabel,
@@ -60,6 +63,39 @@ export function PickersBoard() {
               </option>
             ))}
           </Select>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.sizes}>
+        <div className="lib-stack lib-stack-wide">
+          {(["sm", "base"] as const satisfies readonly ControlSize[]).map((size) => (
+            <div key={size}>
+              <p className="lib-caption">{t.sizeRow(size)}</p>
+              <div className="lib-row">
+                <div className="w-44">
+                  <Select
+                    size={size}
+                    aria-label={t.selectLabel}
+                    value={model}
+                    onChange={(event) => setModel(event.target.value)}
+                  >
+                    {t.options.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="w-44">
+                  <Input size={size} aria-label={t.sizeSearch} placeholder={t.sizeSearch} />
+                </div>
+                {/* A button's sm and base rungs are the controls' own heights. */}
+                <Button size={size} variant="primary">
+                  {t.sizeButton}
+                </Button>
+                <Button size={size}>{t.sizeButton}</Button>
+              </div>
+            </div>
+          ))}
         </div>
       </BoardGroup>
       <BoardGroup title={t.segmented}>

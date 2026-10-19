@@ -27,6 +27,13 @@ export interface MachineRow {
   remotePort: number | null;
   /** What the install found the machine to be; null until one has. The status probe speaks that dialect. */
   platform: "linux" | "darwin" | "win32" | null;
+  /**
+   * When this server adopted the machine: when it first recorded it at this address, again when
+   * the address answers with another machine's id. The Sessions that machine held before then
+   * read as CLI tasks through this server (runtime/session-sources.ts). Null for a machine
+   * recorded before the time was kept, which never gets one and which the rule leaves alone.
+   */
+  adoptedAt: string | null;
 }
 
 /** Everything but the address may be patched; absent fields keep their value. */
@@ -94,12 +101,13 @@ export class MachinesRepo {
         sessionPid: null,
         remotePort: null,
         platform: null,
+        adoptedAt: null,
       }),
       ...patch,
     };
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO machines (address, machine_id, version, installed_at, session_pid, remote_port, platform) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO machines (address, machine_id, version, installed_at, session_pid, remote_port, platform, adopted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         address,
@@ -109,6 +117,7 @@ export class MachinesRepo {
         next.sessionPid,
         next.remotePort,
         next.platform,
+        next.adoptedAt,
       );
   }
 
@@ -136,5 +145,6 @@ function toRow(row: Record<string, unknown>): MachineRow {
     sessionPid: (row.session_pid as number | null) ?? null,
     remotePort: (row.remote_port as number | null) ?? null,
     platform: (row.platform as MachineRow["platform"]) ?? null,
+    adoptedAt: (row.adopted_at as string | null) ?? null,
   };
 }

@@ -32,8 +32,17 @@ export interface MachineApi {
   ): Promise<{ status: number; text: string }>;
 }
 
-/** One client per (machine, session): `agent` dials the machine's server through its session, `port` is the server's port over there. */
-export function machineApi(agent: http.Agent, port: number, cookie: string): MachineApi {
+/**
+ * One client per (machine, session): `agent` dials the machine's server through its session,
+ * `port` is the server's port over there. `headers` ride on every call (the adoption time a
+ * reading of that machine's Sessions carries, see runtime/session-sources.ts).
+ */
+export function machineApi(
+  agent: http.Agent,
+  port: number,
+  cookie: string,
+  headers: Record<string, string> = {},
+): MachineApi {
   /** One request, answered whole — so both shapes agree on Host, cookie and what a failure is. */
   const send = (
     method: string,
@@ -52,6 +61,7 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
           path,
           method,
           headers: {
+            ...headers,
             ...extra,
             host: `localhost:${port}`,
             cookie,

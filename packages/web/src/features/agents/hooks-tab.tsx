@@ -57,6 +57,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
 import { useAiBridge } from "../ai-create";
@@ -80,9 +82,12 @@ export function HooksTab({
   onConfigChanged?: () => void;
 }) {
   const { locale } = useLocale();
-  const { currentProject, agents, reloadAgents } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
+  const machineId = useAgentLocation();
+  const agents = useAgentsOn(machineId);
   // The Agent-level hook switch: owner-only, like the Vault and Schedules switches.
   const { applyConfig, toggleCard } = usePromptInjection({
     agentId,
@@ -108,15 +113,15 @@ export function HooksTab({
     try {
       // The switch card's state loads in parallel with the tab's own list.
       const [res, configView] = await Promise.all([
-        api.getAgentHooks(projectId, agentId),
-        api.getAgentConfig(projectId, agentId),
+        api.getAgentHooks(projectId, agentId, machineId),
+        api.getAgentConfig(projectId, agentId, machineId),
       ]);
       setHooks(res.hooks);
       applyConfig(configView.config);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId, applyConfig]);
+  }, [projectId, agentId, machineId, applyConfig]);
 
   useEffect(() => {
     void load();
@@ -130,7 +135,7 @@ export function HooksTab({
   const exportHook = async (name: string) => {
     if (!projectId) return;
     try {
-      await downloadArchive(api.agentHookArchiveUrl(projectId, agentId, name), name);
+      await downloadArchive(api.agentHookArchiveUrl(projectId, agentId, name, machineId), name);
     } catch (e) {
       toastError(apiErrorText(e));
     }
@@ -141,11 +146,11 @@ export function HooksTab({
     if (!projectId || removing === null) return;
     setBusy(true);
     try {
-      await api.uninstallAgentHook(projectId, agentId, removing);
+      await api.uninstallAgentHook(projectId, agentId, removing, machineId);
       toastSuccess(S.hooks.uninstalledToast(removing, agentName));
       await load();
       // The agent card's hook count (and its plugin-update marks) changed; refresh the list provider too.
-      void reloadAgents();
+      if (machineId === null) void reloadAgents();
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -160,7 +165,7 @@ export function HooksTab({
     toastSuccess(S.hooks.importDoneToast);
     await load();
     // The agent card's hook count changed; refresh the list provider too.
-    void reloadAgents();
+    if (machineId === null) void reloadAgents();
   };
 
   if (!projectId) return null;
@@ -311,6 +316,7 @@ function HookImportDialog({
   onImported: () => void;
 }) {
   const { openAiChat } = useAiBridge();
+  const machineId = useAgentLocation();
   const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
   const source = form.draft;
   const [uploading, setUploading] = useState(false);
@@ -329,10 +335,12 @@ function HookImportDialog({
     setUploading(true);
     setUploadError(null);
     try {
-      await api.installAgentHookArchive(projectId, agentId, {
-        dataBase64,
-        ...(overwrite ? { overwrite: true } : {}),
-      });
+      await api.installAgentHookArchive(
+        projectId,
+        agentId,
+        { dataBase64, ...(overwrite ? { overwrite: true } : {}) },
+        machineId,
+      );
       setOverwriting(null);
       onImported();
     } catch (e) {
@@ -385,7 +393,11 @@ function HookImportDialog({
   const openChat = () => {
     if (trimmedSource === "") return;
     discardUnsaved(form.scope);
-    openAiChat({ agentId, text: buildHookImportPrompt(trimmedSource, projectId, agentId) });
+    openAiChat({
+      agentId,
+      text: buildHookImportPrompt(trimmedSource, projectId, agentId),
+      machineId,
+    });
     onClose();
   };
 

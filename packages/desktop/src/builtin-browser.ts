@@ -1,8 +1,8 @@
 /**
  * The built-in browser's shell half: it hosts the <webview> guests the Web App creates in the
  * main window, and relays for the embedded server what only the main process can do — raw CDP
- * through each guest's `webContents.debugger`, and cookie and storage writes on the guests'
- * partition session. Mechanism only (see main.ts's header and packages/hmr/README.md): no page
+ * through each guest's `webContents.debugger` (a command that types first gives its guest the
+ * window's keyboard focus), and cookie and storage writes on the guests' partition session. Mechanism only (see main.ts's header and packages/hmr/README.md): no page
  * scripts, no importers, no formatting. The tab registry, the page scripts, scan / exec /
  * click, import and history are the server platform's (packages/server/src/builtin-browser).
  *
@@ -37,6 +37,7 @@ import {
   BUILTIN_BROWSER_PROTOCOL_VERSION,
   METRICS_INTERVAL_MS,
   clearDataPlan,
+  focusGuestScript,
   guestContextMenu,
   hardenGuestPreferences,
   isGrantedPermission,
@@ -48,6 +49,7 @@ import {
   plainChromeUserAgent,
   privateMemoryKB,
   tabLoads,
+  typesIntoGuest,
 } from "./builtin-browser-rules.js";
 import type { GuestMenuAction } from "./builtin-browser-rules.js";
 import type { TrayLocale } from "./tray-menu.js";
@@ -353,6 +355,25 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
     return (await dbg.sendCommand(method, params ?? {})) as unknown;
   }
 
+  /**
+   * Before a command that types (typesIntoGuest), gives the guest the window's keyboard focus
+   * by focusing its <webview> element in the embedder. A guest that cannot take it gets no
+   * keystrokes at all (`keyboard_focus_failed`): sent anyway, they would land in the app's own
+   * UI — the composer, the address bar.
+   */
+  async function focusForTyping(guest: Guest): Promise<void> {
+    const embedder = guest.wc.hostWebContents as WebContents | null;
+    let focused: unknown = false;
+    try {
+      if (embedder !== null && !embedder.isDestroyed()) {
+        focused = await embedder.executeJavaScript(focusGuestScript(guest.id));
+      }
+    } catch {
+      // The embedder could not run it (navigating, gone): the guest stays unfocused.
+    }
+    if (focused !== true) throw new Error("keyboard_focus_failed");
+  }
+
   /** Writes cookies one by one, so a bad one costs itself only. Failures name the cookie, never its value. */
   async function setCookies(cookies: DesktopBrowserCookie[], partition?: string) {
     const ses = browserSession(partition);
@@ -424,6 +445,7 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
         // A page with no renderer cannot answer; it takes a reload first.
         if (guest.wc.isCrashed()) throw new Error("tab_crashed");
         if (command.events !== undefined) guest.relayed = new Set(command.events);
+        if (typesIntoGuest(command.method)) await focusForTyping(guest);
         return sendCdp(guest, command.method, command.params);
       }
       case "set-cookies":

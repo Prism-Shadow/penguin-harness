@@ -24,6 +24,7 @@ import { S } from "../../lib/strings";
 import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
 
@@ -31,6 +32,8 @@ import { SkillTile } from "../skills/skill-icon-view";
 export function WorkbenchesTab({ agentId }: { agentId: string }) {
   const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId;
+  /** The machine the Agent lives on, where its workbenches are; null for this server. */
+  const machineId = useAgentLocation();
   const { locale } = useLocale();
   const navigate = useNavigate();
   const [items, setItems] = useState<WorkbenchInfo[] | null>(null);
@@ -46,12 +49,12 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
   const load = useCallback(async () => {
     if (!projectId) return;
     try {
-      setItems((await api.getWorkbenches(projectId, agentId)).workbenches);
+      setItems((await api.getWorkbenches(projectId, agentId, machineId)).workbenches);
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
     }
-  }, [projectId, agentId]);
+  }, [projectId, agentId, machineId]);
   useEffect(() => {
     void load();
     const changed = (event: Event) => {
@@ -66,7 +69,7 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
     try {
       await action();
       await load();
-      void reloadAgents();
+      if (machineId === null) void reloadAgents();
     } catch (err) {
       toastError(apiErrorText(err));
     } finally {
@@ -116,11 +119,13 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
                               state: {
                                 agentId,
                                 workspace: "",
+                                // A machine's Agent runs there: its temporary Workspace on it.
+                                ...(machineId !== null ? { machineId } : {}),
                                 workbench: {
                                   projectId,
                                   agentId,
                                   tabId: first.tabId,
-                                  machineId: null,
+                                  machineId,
                                 },
                               },
                             })
@@ -134,7 +139,9 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
                         title={S.workbenches.reload}
                         disabled={busy}
                         onClick={() =>
-                          void act(() => api.reloadWorkbench(projectId, agentId, workbench.id))
+                          void act(() =>
+                            api.reloadWorkbench(projectId, agentId, workbench.id, machineId),
+                          )
                         }
                       >
                         <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.iconButton} />
@@ -148,7 +155,12 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
                             setHistory({
                               workbench,
                               versions: (
-                                await api.getWorkbenchHistory(projectId, agentId, workbench.id)
+                                await api.getWorkbenchHistory(
+                                  projectId,
+                                  agentId,
+                                  workbench.id,
+                                  machineId,
+                                )
                               ).versions,
                             }),
                           )
@@ -225,8 +237,9 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
                 agentId,
                 confirm.workbench.id,
                 confirm.revision,
+                machineId,
               );
-            else await api.removeWorkbench(projectId, agentId, confirm.workbench.id);
+            else await api.removeWorkbench(projectId, agentId, confirm.workbench.id, machineId);
             setConfirm(null);
             setHistory(null);
           })

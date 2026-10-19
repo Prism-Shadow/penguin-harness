@@ -1,0 +1,16 @@
+/* Find-in-page highlights (find-dom.ts): the CSS Custom Highlight API, so a search paints ranges
+   without wrapping them in elements — nothing in the DOM changes, which is what lets React
+   re-render a streaming transcript without noticing or fighting the paint. Two names: every hit,
+   and the one hit a bar is currently on. Only `background-color` and `color` are allowed in
+   `::highlight()`, and both rules must stand alone (no selector lists, no nesting). The wash is
+   the info tone's emphasis, deliberately translucent so the text under it keeps its own weight;
+   `color: inherit` is spelled out because a highlight otherwise inherits the highlight pseudo's
+   own (user-agent) colour. */
+::highlight(penguin-find) {
+  background-color: color-mix(in srgb, var(--ui-tone-info-emphasis) 32%, transparent);
+  color: inherit;
+}
+::highlight(penguin-find-current) {
+  background-color: color-mix(in srgb, var(--ui-tone-info-emphasis) 70%, transparent);
+  color: inherit;
+}

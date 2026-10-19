@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
+    "test:e2e": "playwright test -c e2e/playwright.config.mjs",
     "shots": "node scripts/shots.mjs"
   },
   "dependencies": {

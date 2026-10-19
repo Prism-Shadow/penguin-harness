@@ -123,7 +123,7 @@ export function ChangesCard({
         type="button"
         data-tooltip={row.tooltip}
         onClick={row.onOpen}
-        className={`group ${ROW} ${ROW_HOVER} cursor-pointer`}
+        className={`group ${ROW} ${ROW_HOVER}`}
       >
         {rowInner(row)}
         {/* A span, not a nested button: the row itself is the button. */}
@@ -152,7 +152,7 @@ export function ChangesCard({
           <button
             type="button"
             onClick={action.onClick}
-            className="shrink-0 cursor-pointer text-xs text-fg-subtle transition-colors duration-150 hover:text-fg-muted"
+            className="shrink-0 text-xs text-fg-subtle transition-colors duration-150 hover:text-fg-muted"
           >
             {action.label}
           </button>

@@ -484,7 +484,9 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       const rc = "trap 'echo err-trap' ERR\n";
       const session = await open(onPath("bash")!, bashWith(rc), pathFirst());
       try {
-        session.write("false\r");
+        // Not typed ahead: a line typed while `false` runs is echoed by the terminal at once,
+        // and can land inside the trap's own line on a slow machine.
+        await run(session, "false", "err-trap");
         const lines = await run(session, "echo done-mark", "done-mark");
         expect(lines.filter((line) => line === "err-trap")).toHaveLength(1);
       } finally {
@@ -525,7 +527,8 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       const rc = "TRAPZERR() { print zerr-trap }\n";
       const session = await open(onPath("zsh")!, zshWith(rc), pathFirst());
       try {
-        session.write("false\r");
+        // Not typed ahead, as in bash's case above.
+        await run(session, "false", "zerr-trap");
         const lines = await run(session, "echo done-mark", "done-mark");
         expect(lines.filter((line) => line === "zerr-trap")).toHaveLength(1);
       } finally {

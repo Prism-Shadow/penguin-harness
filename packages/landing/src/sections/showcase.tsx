@@ -10,8 +10,8 @@ import { DOCS_URL } from "../lib/links";
 import { RSI_TOOLKITS } from "../lib/rsi-stats";
 import type { SurfaceId } from "../lib/live-frame";
 import { useReveal } from "../lib/reveal";
-import { useLocale } from "../state/locale";
-import type { Locale } from "../state/locale";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
+import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
 import { LiveAppFrame } from "../components/live-app-frame";
 import { ArrowRightIcon } from "../components/icons";
 
@@ -68,7 +68,7 @@ function Row({
 }
 
 export function Showcase() {
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const c = S.showcase;
   return (
     <section className="px-4 pt-6 pb-10 sm:px-6 sm:pt-10 sm:pb-16">

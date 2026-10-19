@@ -19,7 +19,11 @@
  *   ships one) in the Agent's installed hooks, and each of its MCP servers among the Agent's
  *   servers as an entry it installed — which is why the page fetches the three lists per Agent.
  *   Uninstall takes it apart the same way: one DELETE per skill, one for the hook package and
- *   one per MCP server.
+ *   one per MCP server. The dialog lists this server's Agents and each connected machine's own in
+ *   one list, in the Agents page's order (lib/machine-agent-lists.ts `mixAgents`): a machine's
+ *   Agent is installed on, read back from and updated on that machine, from that machine's
+ *   library, and counts towards the card's "used by" and status. The update notice and the nav
+ *   badge it answers are this server's alone.
  * - A server module is installed on the whole server for every Project, by an admin only (a
  *   member sees the card read-only). Installing or removing one re-assembles the App, which stops
  *   the agent runs in progress in every Project, so the confirm says what the install does and,
@@ -67,6 +71,8 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
+import { agentKey } from "../../lib/agent-location";
+import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
@@ -78,6 +84,7 @@ import { SettingsDialog } from "../settings/settings-dialog";
 import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
+import type { InstallTarget } from "./plugin-card";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
 import { usePluginsIncompatibleOnly, writePluginsIncompatibleOnly } from "./incompatible-only";
@@ -436,30 +443,60 @@ export function PluginsPage() {
     reloadDeployment();
   };
 
-  // Installed skills, hook packages and MCP servers for every Agent in the current Project
-  // (fetched in parallel, same convention as the sessions context): a single Agent's failure is
-  // treated as "nothing installed" and does not break the whole page. The server keeps the
-  // file-backed parts visible if its MCP configuration cannot be read.
-  const agentIdsKey = agents.map((a) => a.agentId).join(",");
+  /**
+   * Every Agent a library plugin can be installed on: this server's and each connected
+   * machine's own, in one list in the Agents page's order, keyed so that two servers' Agents of
+   * one id stay two (lib/agent-location.ts). A machine out of reach offers none: nothing could
+   * be installed there.
+   */
+  const { lists: machineLists, reload: reloadMachineAgents } = useMachineAgents(projectId);
+  const targets: InstallTarget[] = mixAgents(agents, machineLists, { liveOnly: true }).map(
+    ({ agent, on }) =>
+      on === null
+        ? { key: agent.agentId, agent, machine: null }
+        : {
+            key: agentKey(on.machine.machineId, agent.agentId),
+            agent,
+            machine: { machineId: on.machine.machineId, label: on.machine.label },
+          },
+  );
+  const targetOf = (key: string) => targets.find((t) => t.key === key);
+  /** The machine an install target lives on; null for this server. */
+  const machineOfTarget = (key: string) => targetOf(key)?.machine?.machineId ?? null;
+  /** A target's own Agent id: the key minus its machine. */
+  const agentIdOf = (key: string) => targetOf(key)?.agent.agentId ?? key;
+  /** After a change to one target: the list its counts and update marks are read from, again. */
+  const reloadTargetAgents = (key: string) => {
+    const machineId = machineOfTarget(key);
+    if (machineId === null) void reloadAgents();
+    else reloadMachineAgents(machineId);
+  };
+
+  // Installed skills, hook packages and MCP servers for every install target (fetched in
+  // parallel, same convention as the sessions context): a single Agent's failure is treated as
+  // "nothing installed" and does not break the whole page. The server keeps the file-backed
+  // parts visible if its MCP configuration cannot be read.
+  const targetsKey = targets.map((t) => t.key).join(",");
   useEffect(() => {
     // Clear the snapshot before fetching: agentId (e.g. default_agent) is
     // reused across Projects, and leftover state from the previous project
     // would otherwise overwrite the new data when merged below, leaving the
     // page permanently showing the old project's install state.
     setInstalled(new Map());
-    if (!projectId || agentIdsKey === "") return;
+    if (!projectId || targetsKey === "") return;
     let cancelled = false;
-    const ids = agentIdsKey.split(",");
+    const keys = targetsKey.split(",");
     void Promise.all(
-      ids.map(async (agentId) => {
+      keys.map(async (key) => {
+        // `<machineId>/<agentId>` for a machine's Agent (agentKey), the bare id for this server's.
+        const slash = key.indexOf("/");
+        const machineId = slash < 0 ? null : key.slice(0, slash);
+        const agentId = slash < 0 ? key : key.slice(slash + 1);
         try {
-          const res = await api.getAgentPlugins(projectId, agentId);
-          return [
-            agentId,
-            installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches),
-          ] as const;
+          const res = await api.getAgentPlugins(projectId, agentId, machineId);
+          return [key, installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches)] as const;
         } catch {
-          return [agentId, NO_INSTALLS] as const;
+          return [key, NO_INSTALLS] as const;
         }
       }),
     ).then((entries) => {
@@ -478,20 +515,20 @@ export function PluginsPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentIdsKey]);
+  }, [projectId, targetsKey]);
 
-  /** Rewrite one Agent's snapshot entry in place (shared by optimistic updates, install responses and failure rollback). */
-  const setAgentInstalls = (agentId: string, installs: AgentInstalls) =>
-    setInstalled((prev) => new Map(prev).set(agentId, installs));
+  /** Rewrite one target's snapshot entry in place (shared by optimistic updates, install responses and failure rollback). */
+  const setAgentInstalls = (key: string, installs: AgentInstalls) =>
+    setInstalled((prev) => new Map(prev).set(key, installs));
 
-  /** Reads one Agent's MCP servers again (Set up wrote its vault): what they wait for moved. */
-  const refreshAgentMcp = (agentId: string) => {
+  /** Reads one target's MCP servers again (Set up wrote its vault): what they wait for moved. */
+  const refreshAgentMcp = (key: string) => {
     if (!projectId) return;
-    api.getAgentMcpServers(projectId, agentId).then(
+    api.getAgentMcpServers(projectId, agentIdOf(key), machineOfTarget(key)).then(
       (res) =>
         setInstalled((prev) => {
-          const current = prev.get(agentId) ?? NO_INSTALLS;
-          return new Map(prev).set(agentId, {
+          const current = prev.get(key) ?? NO_INSTALLS;
+          return new Map(prev).set(key, {
             ...current,
             mcp: new Map(res.servers.map((server) => [server.name, server])),
           });
@@ -547,19 +584,25 @@ export function PluginsPage() {
    * plugin-level delete, and a plugin's parts are what an Agent actually holds. The Agent list is re-read afterwards either way: the card's counts
    * and its `pluginUpdates` moved, and both are read off that list.
    */
-  const toggleInstall = async (agentId: string, plugin: PluginItem, on: boolean) => {
+  const toggleInstall = async (key: string, plugin: PluginItem, on: boolean) => {
     if (!projectId) return false;
-    const prev = installed.get(agentId) ?? NO_INSTALLS;
-    setAgentInstalls(agentId, withPlugin(prev, plugin, on));
-    const target = agents.find((a) => a.agentId === agentId);
-    const agentName = target ? agentDisplayName(target) : agentId;
+    const prev = installed.get(key) ?? NO_INSTALLS;
+    setAgentInstalls(key, withPlugin(prev, plugin, on));
+    const target = targetOf(key);
+    const agentId = agentIdOf(key);
+    /** Every part goes to the server the Agent lives on. */
+    const machineId = machineOfTarget(key);
+    // A machine's Agent is named with its machine, as the dialog lists it.
+    const agentName =
+      target === undefined
+        ? agentId
+        : target.machine === null
+          ? agentDisplayName(target.agent)
+          : `${agentDisplayName(target.agent)} ${S.chat.machineTag(target.machine.label)}`;
     try {
       if (on) {
-        const res = await api.installAgentPlugins(projectId, agentId, [plugin.name]);
-        setAgentInstalls(
-          agentId,
-          installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches),
-        );
+        const res = await api.installAgentPlugins(projectId, agentId, [plugin.name], machineId);
+        setAgentInstalls(key, installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches));
         toastSuccess(
           `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
         );
@@ -574,19 +617,19 @@ export function PluginsPage() {
         await Promise.all([
           ...(plugin.workbenches ?? [])
             .filter((w) => prev.workbenches?.get(w.name)?.plugin === plugin.name)
-            .map((w) => api.removeWorkbench(projectId, agentId, w.name).catch(gone)),
+            .map((w) => api.removeWorkbench(projectId, agentId, w.name, machineId).catch(gone)),
           ...plugin.skills.map((skill) =>
-            api.removeAgentSkill(projectId, agentId, skill.name).catch(gone),
+            api.removeAgentSkill(projectId, agentId, skill.name, machineId).catch(gone),
           ),
           ...(plugin.hooks.length > 0
-            ? [api.uninstallAgentHook(projectId, agentId, plugin.name).catch(gone)]
+            ? [api.uninstallAgentHook(projectId, agentId, plugin.name, machineId).catch(gone)]
             : []),
           // Only the entries the plugin installed: a server the user added under one of its
           // names is the user's.
           ...plugin.mcpServers
             .filter((server) => prev.mcp.get(server.name)?.plugin === plugin.name)
             .map((server) =>
-              api.uninstallAgentMcpServer(projectId, agentId, server.name).catch(gone),
+              api.uninstallAgentMcpServer(projectId, agentId, server.name, machineId).catch(gone),
             ),
         ]);
         toastSuccess(
@@ -594,11 +637,11 @@ export function PluginsPage() {
         );
       }
     } catch (e) {
-      setAgentInstalls(agentId, prev);
+      setAgentInstalls(key, prev);
       toastError(apiErrorText(e));
       return false;
     }
-    void reloadAgents();
+    reloadTargetAgents(key);
     return true;
   };
 
@@ -607,25 +650,30 @@ export function PluginsPage() {
    * (install-again-is-update semantics). One success toast for the whole batch; on partial
    * failure the succeeded Agents keep their calibrated state and the first error is toasted.
    */
-  const updateOutdated = async (name: string, agentIds: string[]) => {
-    if (!projectId || agentIds.length === 0) return;
+  const updateOutdated = async (name: string, keys: string[]) => {
+    if (!projectId || keys.length === 0) return;
     const results = await Promise.allSettled(
-      agentIds.map(async (agentId) => {
-        const res = await api.installAgentPlugins(projectId, agentId, [name]);
-        setAgentInstalls(
-          agentId,
-          installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches),
+      keys.map(async (key) => {
+        const res = await api.installAgentPlugins(
+          projectId,
+          agentIdOf(key),
+          [name],
+          machineOfTarget(key),
         );
+        setAgentInstalls(key, installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches));
       }),
     );
     const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
-    if (!failed) toastSuccess(S.plugins.updatedToast(name, agentIds.length));
+    if (!failed) toastSuccess(S.plugins.updatedToast(name, keys.length));
     else toastError(apiErrorText(failed.reason));
     // The outdated marks and the nav badge are both read off `AgentSummary.pluginUpdates`,
     // which this page's install map does not feed: without reloading the Agent list the dot
     // would survive the very update it led the user to. Runs after a partial failure too —
-    // some Agent moved.
-    void reloadAgents();
+    // some Agent moved. A machine's Agents are read from that machine again.
+    for (const machineId of new Set(keys.map(machineOfTarget))) {
+      if (machineId === null) void reloadAgents();
+      else reloadMachineAgents(machineId);
+    }
   };
 
   /**
@@ -739,7 +787,14 @@ export function PluginsPage() {
   const usages = new Map<string, LibraryUsage>();
   for (const row of rows) {
     if (row.library !== undefined) {
-      usages.set(row.key, libraryUsage(row.library, agents, installed));
+      usages.set(
+        row.key,
+        libraryUsage(
+          row.library,
+          targets.map((t) => ({ agentId: t.key, pluginUpdates: t.agent.pluginUpdates })),
+          installed,
+        ),
+      );
     }
   }
   const statusOf = (row: PluginRow): PluginStatus => pluginStatus(row, usages.get(row.key) ?? null);
@@ -760,7 +815,7 @@ export function PluginsPage() {
       usage={usages.get(row.key) ?? null}
       categoryTitle={categoryTitle(row.category)}
       showCategory={groupBy !== "category"}
-      agents={agents}
+      targets={targets}
       installed={installed}
       canQuickStart={currentAgent !== null}
       isAdmin={isAdmin}

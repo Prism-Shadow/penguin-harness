@@ -145,6 +145,8 @@ export const DUOTONE: Readonly<Partial<Record<GlyphKey, string>>> = {
   zap: ICONS.zap,
   /** The disc inside the rays. */
   sun: "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
+  /** The crescent body behind its outline. */
+  moon: "M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z",
   /** The half disc, closed across its foot above the horizon. */
   sunrise: "M6 18a6 6 0 0 1 12 0z",
 
@@ -347,6 +349,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   lightbulb: "amber",
   zap: "amber",
   sun: "amber",
+  moon: "slate",
   sunrise: "amber",
   percent: "amber",
   barChart: "amber",

@@ -616,6 +616,8 @@ The paths below omit the `/api/projects/:projectId` prefix.
 
 Schedule writes are owner only. A task in new-Session mode carries `modelId` and `provider` together or not at all. The pair is checked against the Project's model table when the task is saved, and again when the scheduler reconciles it.
 
+A `POST` or `PUT` is refused with 400 when `startAt` has passed on a one-shot task, or `endAt` has passed on any task. The listings never include a task that is done, missed or expired: the scheduler archives its file into `agent_state/schedule/expired/` (see [Finished tasks are archived](/schedules#finished-tasks-are-archived)), so such a task only shows while a queued fire is still to be sent, or if the move failed.
+
 ## Benchmarks
 
 Benchmarks belong to the Project, not to an agent: one Benchmark can evaluate any number of agents, and each evaluation names the agent it tested (`agentId`, or `null` for a record that names none). A summary's `agentIds` lists those agents in the order they first appear. The paths below again omit the `/api/projects/:projectId` prefix.
