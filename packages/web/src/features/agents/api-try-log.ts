@@ -510,6 +510,8 @@ export function rawLines(state: Pick<TryState, "payloads" | "closed">): string[]
 export interface TryTarget {
   projectId: string;
   agentId: string;
+  /** The machine it lives on, where the run and its Session are; null (or absent) for this server. */
+  machineId?: string | null;
 }
 
 /**
@@ -525,7 +527,10 @@ export async function runTry(
 ): Promise<void> {
   dispatch({ type: "start" });
   try {
-    const res = await api.tryAgentApi(target.projectId, target.agentId, body, { signal });
+    const res = await api.tryAgentApi(target.projectId, target.agentId, body, {
+      signal,
+      machineId: target.machineId ?? null,
+    });
     if (res.body !== null) {
       for await (const data of readSse(res.body)) dispatch({ type: "payload", data });
     }
@@ -543,9 +548,14 @@ export async function runTry(
  * and ends with `run.done` aborted, as a program sees it; before that, the request itself is
  * aborted.
  */
-export async function stopTry(state: TryState, controller: AbortController | null): Promise<void> {
+export async function stopTry(
+  state: TryState,
+  controller: AbortController | null,
+  /** The machine the run's Session is on (null: this server): the run named no route for it. */
+  machineId: string | null = null,
+): Promise<void> {
   if (state.startedAt !== null && state.sessionId !== null) {
-    await api.postAbort(state.sessionId);
+    await api.postAbort(state.sessionId, machineId);
     return;
   }
   controller?.abort();
@@ -560,7 +570,9 @@ export async function answerApproval(
   toolCallId: string,
   decision: "allow" | "deny",
   dispatch: (action: TryAction) => void,
+  /** The machine the run's Session is on; null for this server. */
+  machineId: string | null = null,
 ): Promise<void> {
-  await api.postApproval(sessionId, toolCallId, { decision });
+  await api.postApproval(sessionId, toolCallId, { decision }, machineId);
   dispatch({ type: "decided", toolCallId });
 }

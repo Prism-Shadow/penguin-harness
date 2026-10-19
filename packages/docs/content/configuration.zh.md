@@ -557,6 +557,8 @@ frontmatter 就只有这三个字段。记忆属于哪个作用域由所在目�
 
 `provider` 和 `model_id` 要么都写，要么都不写。只写 `model_id` 的文件无效；两者都不写时使用 Project 的默认模型。
 
+不会再触发的任务——已触发或已错过的一次性任务，以及已过 `end_at` 的任务——会由调度器原样移进 `agent_state/schedule/expired/`，见[结束的任务会归档](/schedules#结束的任务会归档)。
+
 ```toml
 prompt = "Check yesterday's builds and summarize the failures"
 enabled = true

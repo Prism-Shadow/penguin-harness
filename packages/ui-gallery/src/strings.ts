@@ -463,7 +463,8 @@ export const zh = {
       },
       pickers: {
         title: "选择器",
-        description: "下拉选择、分段控件、开关与开关行、色板、选项菜单、下拉菜单与菜单行。",
+        description:
+          "下拉选择、同档控件的尺寸、分段控件、开关与开关行、色板、选项菜单、下拉菜单与菜单行。",
       },
       toasts: {
         title: "提示弹窗",
@@ -522,6 +523,11 @@ export const zh = {
         title: "机器",
         description:
           "机器管理页的组件：每种状态的状态胶囊、机器卡片与列表、详情工具栏与添加对话框。",
+      },
+      attachments: {
+        title: "附件",
+        description:
+          "对话里附加的图片与文件：输入框里待发送的、发出后消息里的、插话小块里的，以及窄屏、长文件名与加载失败。",
       },
       colour: {
         title: "颜色",
@@ -613,6 +619,10 @@ export const zh = {
     pickers: {
       select: "下拉选择",
       selectLabel: "模型",
+      sizes: "控件尺寸",
+      sizeRow: (size: string) => `${size} 档：下拉选择、输入框与按钮同高`,
+      sizeSearch: "搜索插件",
+      sizeButton: "导入插件",
       options: ["DeepSeek V4.1 Flash", "Claude Sonnet 4.5", "GLM-5.3"] as readonly string[],
       segmented: "分段控件",
       segments: ["浅色", "深色", "跟随系统"] as readonly string[],
@@ -839,7 +849,7 @@ export const zh = {
       received: "已全部到达",
       modes: {
         instant: "即时：文字一到就显示，不加动效",
-        fade: "淡入：按词显现，最新的一行半从一层轻纱里浮现",
+        fade: "淡入：按词显现，每段新到的文字各自淡入，最新的一行半从一层轻纱里浮现",
         typewriter: "打字机：逐字打出，末尾跟着一个实心块状光标",
       } as Record<StreamReveal, string>,
       unset: "按即时处理",
@@ -1570,6 +1580,33 @@ export const zh = {
       submitCount: (count: number) => `添加 ${count} 台`,
       exhaustedCaption: "ssh 配置里已没有可添加的主机",
       noHosts: "ssh 配置里的主机都已在本页。",
+    },
+    attachments: {
+      composer: "输入框",
+      composerHint:
+        "待发送的图片与文件在输入框顶部排成一行：图片按原比例、等高，文件带类型图标、名称与大小；移除按钮常驻。",
+      sent: "发出的消息",
+      sentHint: "与输入框里同一套图块，排在正文气泡上方：图片一行、文件一行，只有一个时间页脚。",
+      steer: "插话",
+      steerHint: "插话小块里的图片与文件，与输入框同一尺寸。",
+      narrow: "窄屏",
+      narrowHint: "手机宽度下，图块换行，长文件名先截断，移除按钮始终可见。",
+      shapes: "比例与尺寸",
+      shapesHint:
+        "横图、竖图、方图、极小与超宽的图都保持原比例；超出边界或小于图块时完整放进图块，不拉伸、不裁切、不放大。",
+      failed: "加载失败",
+      failedHint: "加载不出来的图片保留方形图块，显示图片图标，悬停说明原因。",
+      reset: "恢复全部附件",
+      imageAlt: "用户上传的图片",
+      removeImage: "移除图片",
+      removeFile: "移除文件",
+      unavailable: "图片无法加载",
+      prompt: "这是昨天那次构建的截图和日志，帮我看看为什么失败了？",
+      steerText: "顺便看看这两个",
+      steerLabel: "插话",
+      time: "14:05",
+      copy: "复制消息",
+      placeholder: "输入消息…",
     },
   },
 };

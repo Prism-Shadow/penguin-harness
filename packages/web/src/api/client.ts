@@ -230,6 +230,8 @@ export interface ApiFetchStreamOptions {
   body?: unknown;
   /** Aborting it closes the connection; the call then rejects with the abort's reason. */
   signal?: AbortSignal;
+  /** Which machine answers, as on {@link ApiFetchOptions.server}. */
+  server?: string | null;
 }
 
 /**
@@ -243,7 +245,7 @@ export async function apiFetchStream(
   path: string,
   options: ApiFetchStreamOptions = {},
 ): Promise<Response> {
-  const target = machineForPath(path);
+  const target = "server" in options ? (options.server ?? null) : machineForPath(path);
   let response: Response;
   try {
     response = await fetch(apiUrl(path, target), requestInit(options));

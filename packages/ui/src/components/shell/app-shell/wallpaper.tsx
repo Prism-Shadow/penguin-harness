@@ -17,6 +17,21 @@ export function WallpaperLayer() {
   );
 }
 
+/**
+ * What a pinned row of the transcript paints under its words while it is stuck: the page colour
+ * and, over it, the image again, laid against the window exactly as the shell's own layer is. The
+ * row then looks as clear as every activity row on the image, yet hides the text scrolling under
+ * it. `wallpaper.css` shows it only while the row is stuck; with no wallpaper it renders nothing.
+ */
+export function WallpaperBackdrop() {
+  const wallpaper = useContext(WallpaperContext);
+  return wallpaper === undefined ? null : (
+    <span aria-hidden="true" data-wallpaper-backdrop>
+      <span data-wallpaper-layer style={wallpaper} />
+    </span>
+  );
+}
+
 /** Filtering a separate layer leaves navigation menus outside the filter's stacking context. */
 export function NavigationBackdrop() {
   const wallpaper = useContext(WallpaperContext);

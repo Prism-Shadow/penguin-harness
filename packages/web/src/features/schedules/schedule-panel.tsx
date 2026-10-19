@@ -14,6 +14,9 @@
  *
  * Readable by any member; the switch, edit and delete are owner-only, like the settings tab,
  * while the AI path stays open to everyone — asking the agent is a message, not a write.
+ *
+ * A conversation on a machine runs that machine's Agent, and its tasks are files there: the list
+ * is that machine's, and every switch, edit, delete and new task acts on the machine.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -39,6 +42,8 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { AgentLocationContext } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
@@ -123,20 +128,33 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
 
 export interface SchedulePanelProps {
   session: SessionInfo;
+  /** The server the conversation runs on (null: this one): its Agent's tasks are files there. */
+  machineId?: string | null;
   /** Whether this tab is the one on screen (the dock keeps hidden tabs mounted): a hidden tab does not poll. */
   active: boolean;
   /** Writes the AI dialog's prompt into this conversation's composer (see ScheduleAiModal). */
   onPrefillComposer: (text: string) => void;
 }
 
-export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePanelProps) {
-  const { currentProject, agents, reloadAgents } = useProject();
+export function SchedulePanel({
+  session,
+  machineId = null,
+  active,
+  onPrefillComposer,
+}: SchedulePanelProps) {
+  const { currentProject, reloadAgents } = useProject();
   const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  /** The Agents of the server the conversation runs on: the AI dialog names its Agent from them. */
+  const agents = useAgentsOn(machineId);
   // The shared store's list, narrowed to this conversation; only the first load's failure shows
   // in place, and row actions report via toast.
-  const { items: projectItems, error } = useProjectSchedules(projectId, session.sessionId);
+  const { items: projectItems, error } = useProjectSchedules(
+    projectId,
+    session.sessionId,
+    machineId,
+  );
   const items = projectItems === null ? null : sessionSchedules(projectItems, session.sessionId);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ScheduleFilter>("all");
@@ -155,17 +173,17 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
   // the poll keeps the rows as fresh as this panel.
   useEffect(() => {
     if (!active) return;
-    void refreshSchedules(projectId);
+    void refreshSchedules(projectId, machineId);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void refreshSchedules(projectId);
+      if (document.visibilityState === "visible") void refreshSchedules(projectId, machineId);
     }, REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [active, projectId]);
+  }, [active, projectId, machineId]);
 
-  /** After a create or delete: the list, and the agent card's schedule count. */
+  /** After a create or delete: the list, and (on this server) the agent card's schedule count. */
   const changed = () => {
-    void refreshSchedules(projectId);
-    void reloadAgents();
+    void refreshSchedules(projectId, machineId);
+    if (machineId === null) void reloadAgents();
   };
 
   /**
@@ -177,9 +195,15 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
     if (!projectId) return;
     setBusy(true);
     try {
-      await api.updateSchedule(projectId, item.agentId, item.name, toggleBody(item, !item.enabled));
+      await api.updateSchedule(
+        projectId,
+        item.agentId,
+        item.name,
+        toggleBody(item, !item.enabled),
+        machineId,
+      );
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
-      await refreshSchedules(projectId);
+      await refreshSchedules(projectId, machineId);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -191,7 +215,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
     if (!projectId || deleting === null) return;
     setBusy(true);
     try {
-      await api.deleteSchedule(projectId, deleting.agentId, deleting.name);
+      await api.deleteSchedule(projectId, deleting.agentId, deleting.name, machineId);
       // The form may be sitting open on the very task just deleted (the row menu offers both).
       const editing = form?.editing;
       if (editing?.agentId === deleting.agentId && editing?.name === deleting.name) setForm(null);
@@ -211,7 +235,6 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
     all: S.schedule.filterAll,
     active: S.schedule.filterActive,
     paused: S.schedule.filterPaused,
-    completed: S.schedule.filterCompleted,
   };
 
   return (
@@ -249,7 +272,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
           onChange={setQuery}
         />
         <Segmented
-          cols={4}
+          cols={3}
           options={SCHEDULE_FILTERS.map((value) => ({ value, label: filterLabels[value] }))}
           value={filter}
           onChange={setFilter}
@@ -322,16 +345,20 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         {!searching && <ScheduleSuggestions mode="session" onPick={openAi} />}
       </div>
 
-      <ScheduleFormModal
-        open={form !== null}
-        // Editing writes back to the file's own agent; creating pins the new task to this
-        // conversation, which is this agent's.
-        agentId={form?.editing?.agentId ?? session.agentId}
-        editing={form?.editing ?? null}
-        lockedSessionId={session.sessionId}
-        onClose={() => setForm(null)}
-        onSaved={changed}
-      />
+      {/* The form reads the Agent's location from context: a task of a conversation on a
+          machine is written there, with that machine's models and Workspaces. */}
+      <AgentLocationContext.Provider value={machineId}>
+        <ScheduleFormModal
+          open={form !== null}
+          // Editing writes back to the file's own agent; creating pins the new task to this
+          // conversation, which is this agent's.
+          agentId={form?.editing?.agentId ?? session.agentId}
+          editing={form?.editing ?? null}
+          lockedSessionId={session.sessionId}
+          onClose={() => setForm(null)}
+          onSaved={changed}
+        />
+      </AgentLocationContext.Provider>
 
       <ScheduleAiModal
         open={ai !== null}

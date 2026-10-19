@@ -170,6 +170,8 @@ function SchedulesPanelBody({ active }: DockPanelBodyProps) {
     <SchedulePanel
       key={selected.sessionId}
       session={selected}
+      // A conversation on a machine has its tasks there.
+      machineId={machineForSession(selected.sessionId)}
       active={active}
       onPrefillComposer={prefillComposer}
     />

@@ -1571,6 +1571,10 @@ export const en: Strings = {
     createPluginsHint:
       "Installed into the agent at creation (skills, hook packages and MCP servers); add or remove them later in its Skills, Hooks and Tools tabs.",
     createPluginsEmpty: "The plugin library has nothing to install.",
+    createLocation: "Location",
+    createLocationHere: "This server",
+    createLocationInfo:
+      "Which server the new agent is created on. An agent created on a machine belongs to that machine: its plugins come from that machine's library, and its settings, chats and deletion all happen there.",
     createStdioQuestion: (agent: string): string => `Create ${agent}?`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "No skills selected",
@@ -1818,7 +1822,11 @@ export const en: Strings = {
     mcpRemoveFromPlugin: (plugin: string): string =>
       `It was installed by plugin ${plugin}; Manage installs on the Plugins page can put it back.`,
     defaultValue: "(default)",
-    livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
+    onMachineHint: (machine: string) =>
+      `This agent lives on ${machine}: its settings, chats and deletion all happen on that machine, apart from this server's agents of the same id.`,
+    usageThisServerOnly: "The usage center counts this server's agents only",
+    deleteConfirmOnMachine: (name: string, machine: string): string =>
+      `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     employeesSection: "Company employees",
@@ -1890,6 +1898,7 @@ export const en: Strings = {
       "Applies to API conversations created from now on; when a mode asks, the request goes to the caller and can also be answered here.",
     apiConnection: "Connection",
     apiBaseUrl: "Base URL",
+    apiBaseUrlOnMachine: (machine: string): string => `Base URL (on ${machine})`,
     apiAgentId: "Agent ID",
     apiCopy: (what: string): string => `Copy ${what}`,
     apiKeys: "Keys",
@@ -2568,7 +2577,6 @@ export const en: Strings = {
     filterAll: "All",
     filterActive: "Active",
     filterPaused: "Paused",
-    filterCompleted: "Completed",
     panelEmpty: "No scheduled tasks in this conversation yet",
     panelNoMatch: "No matching scheduled tasks",
     /** The panel's body on the draft page, where no Session exists yet. */
@@ -2615,7 +2623,7 @@ export const en: Strings = {
      * the file branch, so they are never read as flags of the command beside them.
      */
     aiCreateTail: (agentId: string): string =>
-      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <ISO 8601 or now>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
+      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <future ISO 8601, or now with --period>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
     /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
     suggestionsTitle: "Suggestions",
     suggestions: {
@@ -2928,8 +2936,8 @@ export const en: Strings = {
     mcpRunsCommand: (command: string): string =>
       `Runs ${command} on this server when an agent session starts`,
     installStdioTitle: (plugin: string, agent: string): string => `Install ${plugin} on ${agent}?`,
-    installStdioBody: (server: string, command: string): string =>
-      `Its MCP server ${server} runs ${command} on this server whenever a session of the agent starts.`,
+    installStdioBody: (server: string, command: string, machine?: string): string =>
+      `Its MCP server ${server} runs ${command} on ${machine ?? "this server"} whenever a session of the agent starts.`,
     setUp: "Set up",
     setUpTitle: (plugin: string, agent: string): string => `Set up ${plugin} on ${agent}`,
     setUpDesc: "The values go into the agent's vault; its MCP servers read them when they connect.",
@@ -3709,6 +3717,8 @@ Scenarios:
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
     retryNothing: "Nothing to retry: that turn's input has already been sent.",
     imageAlt: "Image uploaded by user",
+    /** The hint on a sent image that did not load (its file was removed, or its machine is out of reach). */
+    imageUnavailable: "This image could not be loaded",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via read_file)",
@@ -4047,9 +4057,7 @@ Scenarios:
     },
     /** The skills note's fixed phrase (the count picks the plural); the skill names follow it as `nameList`. */
     skillsLabel: (count: number): string => `Using skill${count === 1 ? "" : "s"}`,
-    /** Attached-file notice above a user message: this fixed phrase, then the file names as `nameList`. */
-    attachedFilesLabel: (count: number): string => `Attached file${count === 1 ? "" : "s"}`,
-    /** Names listed after a note's fixed phrase (skills, files). */
+    /** Names listed after a note's fixed phrase (the skills). */
     nameList: (names: string[]): string => names.join(", "),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "More input options",

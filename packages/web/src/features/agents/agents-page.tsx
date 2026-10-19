@@ -19,11 +19,19 @@
  * skills, hook package and MCP servers), and Skills from a project directory's .agents/skills or
  * .claude/skills. A plain new Agent otherwise starts with none. A picked plugin with a stdio MCP
  * server asks before the Agent is created, showing the command it runs on this server.
+ *
+ * A machine's Agents are that machine's own (lib/agent-location.ts), and they sit in the same
+ * list as this server's, the way the sidebar mixes machine Workspaces with local ones: one order
+ * for all (lib/machine-agent-lists.ts `mixAgents`), each machine card named `[SSH: alias]` after
+ * the Agent's name as a machine's Workspace group is. Every control on such a card acts on that
+ * machine — its settings page there, a new chat in its temporary workspace, its delete. A machine
+ * out of reach keeps what it was last seen holding on the list, greyed, every control off, with
+ * the reason beside the tag and on each control.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
-import type { PluginItem } from "@prismshadow/penguin-server/api";
+import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
   Pill,
@@ -65,11 +73,12 @@ import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { mergeAgents } from "../../lib/benchmark-merge";
-import type { AgentSource } from "../../lib/benchmark-merge";
-import { useSessions } from "../../state/sessions";
+import { agentKey, agentSettingsPath } from "../../lib/agent-location";
+import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
+import type { PlacedAgent } from "../../lib/machine-agent-lists";
+import { toneInk } from "../../lib/tone";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
-import { CreateAgentDialog } from "./create-agent-dialog";
+import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
 import type { PluginPickItem } from "./create-agent-dialog";
 
 /** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
@@ -122,22 +131,24 @@ export function AgentApiMark({ enabled }: { enabled: boolean }) {
  * An Agent's card: a click anywhere on its body goes to the Agent's settings page, while each
  * control inside it (the name's link, New chat, Settings, the stat links, Usage, Delete, the
  * update pill) acts on its own. The card itself is no control; the keyboard's way in is the name
- * (`AgentNameLink`). An Agent that lives only on a machine has no settings page on this server,
- * so its card opens nothing.
+ * (`AgentNameLink`). A machine's Agent whose machine is out of reach opens nothing.
  */
 export function AgentCard({
   onOpen,
+  dimmed = false,
   children,
 }: {
-  /** Enters the Agent's settings page; null for an Agent this server does not have. */
+  /** Enters the Agent's settings page; null for one that cannot be reached right now. */
   onOpen: (() => void) | null;
+  /** Greyed: a machine's Agent as last seen, while that machine cannot be asked. */
+  dimmed?: boolean;
   children: ReactNode;
 }) {
   return (
     <Card
       padding="md"
       interactive={onOpen !== null}
-      className="flex flex-wrap items-center gap-x-6 gap-y-2"
+      className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${dimmed ? "opacity-60" : ""}`}
       {...(onOpen === null ? {} : { onClick: cardBodyClick(onOpen) })}
     >
       {children}
@@ -146,17 +157,20 @@ export function AgentCard({
 }
 
 /**
- * The Agent's name on its card: a link to the Agent's settings page — the card's keyboard way in,
- * and a real address a middle click opens in a new tab — or plain text for an Agent this server
- * does not have.
+ * The Agent's name on its card: a link to the Agent's settings page, wherever the Agent lives —
+ * the card's keyboard way in, and a real address a middle click opens in a new tab — or plain
+ * text for an Agent that cannot be reached right now.
  */
 export function AgentNameLink({
   agentId,
   name,
+  machineId = null,
   onFollow,
 }: {
   agentId: string;
   name: string;
+  /** The machine the Agent lives on; null for this server. */
+  machineId?: string | null;
   /** What following the link also does (make it the current Agent); null for plain text. */
   onFollow: (() => void) | null;
 }) {
@@ -165,7 +179,7 @@ export function AgentNameLink({
   if (onFollow === null) return <span className={className}>{name}</span>;
   return (
     <Link
-      to={`/agents/${agentId}`}
+      to={agentSettingsPath(agentId, machineId)}
       onClick={onFollow}
       className={`${className} rounded-sm hover:underline`}
     >
@@ -174,29 +188,12 @@ export function AgentNameLink({
   );
 }
 
-/**
- * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
- * already carries (name, descriptions, icon, version); a plugin without an icon.svg draws the
- * puzzle piece rather than the book.
- */
-function pluginPickItems(plugins: readonly PluginItem[]): PluginPickItem[] {
-  return plugins.map((plugin) => ({ ...plugin, fallbackIcon: ICONS.puzzle }));
-}
-
 export function AgentsPage() {
   const navigate = useNavigate();
   useDocumentTitle(S.nav.agents);
   const { locale } = useLocale();
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
-  /**
-   * An Agent belongs to the Project, but its state directory is created on whichever machine it
-   * has run on — so one that has only ever run over there exists only over there, and a list
-   * built from this server alone does not have it at all.
-   */
-  const { machineIds, machineLabels } = useSessions();
-  const [machineAgents, setMachineAgents] = useState<AgentSource[]>([]);
-  const machinesKey = [...machineIds].join(",");
   /** Header search, the Models page's shape: name, id and description, case-insensitive. */
   const [query, setQuery] = useState("");
   /** The kernel trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
@@ -250,40 +247,33 @@ export function AgentsPage() {
     navigate(location.pathname, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createIntent]);
-  /** Agent pending delete confirmation (null = none). */
-  const [deleting, setDeleting] = useState<{ agentId: string; name: string } | null>(null);
+  /** Agent pending delete confirmation (null = none), with the machine it is deleted on. */
+  const [deleting, setDeleting] = useState<{
+    agentId: string;
+    name: string;
+    machine: { machineId: string; label: string } | null;
+  } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const projectId = currentProject?.projectId;
+  /** Each installed machine's own Agents, mixed into this server's list (lib/machine-agent-lists.ts). */
+  const { lists: machineLists, reload: reloadMachine } = useMachineAgents(projectId ?? null);
 
-  /** The dialog created an Agent: close it, and land on the new Agent's settings. */
-  const onCreated = async (createdId: string) => {
+  /**
+   * The dialog created an Agent: close it, and land on the new Agent's settings — on the machine
+   * it was created on, whose list is read again for its card.
+   */
+  const onCreated = async (createdId: string, machineId: string | null) => {
     setCreateOpen(false);
+    if (machineId !== null) {
+      reloadMachine(machineId);
+      navigate(agentSettingsPath(createdId, machineId));
+      return;
+    }
     await reloadAgents();
     setCurrentAgentId(createdId);
-    navigate(`/agents/${createdId}`);
+    navigate(agentSettingsPath(createdId, null));
   };
-
-  useEffect(() => {
-    setMachineAgents([]);
-    if (!projectId || machinesKey === "") return;
-    let cancelled = false;
-    void Promise.allSettled(
-      machinesKey.split(",").map(async (machineId) => ({
-        machineId,
-        agents: (await api.listAgents(projectId, machineId)).agents,
-      })),
-    ).then((answers) => {
-      // A machine that cannot answer contributes no Agents, which is what not reading it
-      // means; this server's own list still stands on its own.
-      if (!cancelled) {
-        setMachineAgents(answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : [])));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, machinesKey]);
 
   /**
    * "New Chat": enters draft state (same as sidebar group header) — the Session is only
@@ -310,30 +300,28 @@ export function AgentsPage() {
     });
   };
 
-  /** The ssh alias of a machine, or null for this server; an unlabelled machine falls back to its id. */
-  const machineNameOf = (machineId: string | null): string | null =>
-    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
-
-  /** Every Agent of the Project, wherever its state directory is, this server's described first. */
-  const mergedAgents = useMemo(
-    () => mergeAgents([{ machineId: null, agents }, ...machineAgents]),
-    [agents, machineAgents],
-  );
-  const shownAgents = useMemo(() => {
+  /** Header search, over name, id, description and an employee's organizations and titles. */
+  const searching = query.trim() !== "";
+  const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (needle === "") return mergedAgents;
-    return mergedAgents.filter(({ agent: a }) =>
+    return (a: AgentSummary) =>
+      needle === "" ||
       [
         agentDisplayName(a),
         a.agentId,
         a.description ?? "",
         ...employmentsOf(a).flatMap((e) => [e.orgName, e.title]),
-      ].some((field) => field.toLowerCase().includes(needle)),
-    );
-  }, [mergedAgents, query]);
+      ].some((field) => field.toLowerCase().includes(needle));
+  }, [query]);
+  /** Every Agent, this server's and each machine's, in one order; then what the search leaves. */
+  const shownAgents = useMemo(
+    () => mixAgents(agents, machineLists).filter((row) => matches(row.agent)),
+    [agents, machineLists, matches],
+  );
   /**
    * The list in two sections: the Agents the user works with directly, then the employees of
-   * the Project's organizations (agent-employment.ts). The search box filters both.
+   * the Project's organizations (agent-employment.ts), a machine's among them. The search box
+   * filters both.
    */
   const sections = useMemo(() => splitByEmployment(shownAgents, (row) => row.agent), [shownAgents]);
 
@@ -346,30 +334,37 @@ export function AgentsPage() {
     agentId: string,
     tab:
       "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "workbenches" | "memory",
+    machineId: string | null = null,
   ) => {
-    setCurrentAgentId(agentId);
-    navigate(`/agents/${agentId}?tab=${tab}`);
+    // The current Agent is one of THIS server's: a machine's Agent never becomes it.
+    if (machineId === null) setCurrentAgentId(agentId);
+    navigate(agentSettingsPath(agentId, machineId, tab));
   };
 
   /** Where a click on a card's body goes: the page its "Settings" button opens. */
-  const openSettings = (agentId: string) => {
-    setCurrentAgentId(agentId);
-    navigate(`/agents/${agentId}`);
+  const openSettings = (agentId: string, machineId: string | null = null) => {
+    if (machineId === null) setCurrentAgentId(agentId);
+    navigate(agentSettingsPath(agentId, machineId));
   };
 
   const doDelete = async () => {
     if (!projectId || !deleting) return;
+    const machineId = deleting.machine?.machineId ?? null;
     setBusy(true);
     setDeleteError(null);
     try {
-      await api.deleteAgent(projectId, deleting.agentId);
+      await api.deleteAgent(projectId, deleting.agentId, machineId);
       setDeleting(null);
-      await reloadAgents();
+      if (machineId !== null) reloadMachine(machineId);
+      else await reloadAgents();
     } catch (e) {
       setDeleteError(apiErrorText(e));
       // Hired since the list was read: re-read it, so the card moves to the employees and its
       // delete button turns off.
-      if (e instanceof ApiError && e.code === "agent_employed") void reloadAgents().catch(() => {});
+      if (e instanceof ApiError && e.code === "agent_employed") {
+        if (machineId !== null) reloadMachine(machineId);
+        else void reloadAgents().catch(() => {});
+      }
     } finally {
       setBusy(false);
     }
@@ -417,28 +412,35 @@ export function AgentsPage() {
     }
   };
 
-  /** One Agent's card: the same band in both sections. */
-  const renderCard = ({ agent: a, machineIds: on }: (typeof shownAgents)[number]) => {
+  /**
+   * One Agent's card: the same band for every Agent. `on` is the machine's list for a machine's
+   * Agent — every control then acts on that machine, and while the machine cannot be reached the
+   * card is greyed and inert, its controls disabled with the reason — and null for this server's.
+   */
+  const renderCard = ({ agent: a, on }: PlacedAgent) => {
     const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
-    // An Agent this server does not have: everything below reads and writes its state
-    // directory, which is on the machine. Its name says where it is, its New chat opens
-    // there, and the rest is inert rather than answering 404 from here.
-    const machineName = on.includes(null) ? null : machineNameOf(on[0] ?? null);
-    const elsewhere = machineName !== null;
-    const elsewhereTitle = machineName === null ? "" : S.agent.livesOnMachine(machineName);
+    const machineId = on?.machine.machineId ?? null;
+    /** Whether the server holding the Agent can be asked right now (this one always can). */
+    const reachable = on === null || on.live;
+    /** Why a control is off on an unreachable machine's card. */
+    const offReason = on !== null && !on.live ? (on.reason ?? S.common.loading) : null;
     // An organization's employee: its delete waits for it to leave (the server refuses
     // with 409 agent_employed), and the card says where it works.
     const employments = employmentsOf(a);
     const employedTitle =
       employments.length === 0 ? null : S.agent.employedUndeletable(employments);
     return (
-      <AgentCard key={a.agentId} onOpen={elsewhere ? null : () => openSettings(a.agentId)}>
+      <AgentCard
+        key={agentKey(machineId, a.agentId)}
+        onOpen={reachable ? () => openSettings(a.agentId, machineId) : null}
+        dimmed={!reachable}
+      >
         {/* Info column: once it can't fit within 14rem, everything after it
                     (sparkline/buttons) wraps as a whole. The avatar counts as the first line
                     (same line as the name); description/stats share the same left edge as the
                     avatar (the column's left edge) */}
         <div className="min-w-[14rem] flex-1">
-          {/* Title line: small avatar + name + agentId + version badge */}
+          {/* Title line: small avatar + name (+ the machine's SSH address) + agentId + version badge */}
           <div className="flex items-center gap-2">
             <AgentAvatar
               id={a.agentId}
@@ -449,15 +451,36 @@ export function AgentsPage() {
             <AgentNameLink
               agentId={a.agentId}
               name={agentDisplayName(a)}
-              onFollow={elsewhere ? null : () => setCurrentAgentId(a.agentId)}
+              machineId={machineId}
+              onFollow={
+                !reachable
+                  ? null
+                  : machineId === null
+                    ? () => setCurrentAgentId(a.agentId)
+                    : () => {}
+              }
             />
-            {machineName !== null && (
+            {/* The machine the Agent lives on, written as a machine's Workspace group writes it;
+                its hint says what that means. A machine out of reach adds the lifted plug, its
+                reason in the hint. */}
+            {on !== null && (
               <span
                 className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
-                data-tooltip={elsewhereTitle}
+                data-tooltip={S.agent.onMachineHint(on.machine.label)}
                 data-tooltip-extra
               >
-                {S.chat.machineTag(machineName)}
+                {S.chat.machineTag(on.machine.label)}
+              </span>
+            )}
+            {offReason !== null && (
+              <span
+                role="img"
+                aria-label={offReason}
+                data-tooltip={offReason}
+                data-tooltip-extra
+                className={`shrink-0 ${toneInk.attention}`}
+              >
+                <GlyphIcon d={ICONS.plugLifted} size={ICON_SIZE.inlineGlyph} />
               </span>
             )}
             <AgentApiMark enabled={a.apiEnabled} />
@@ -469,9 +492,9 @@ export function AgentsPage() {
                         names the state in words rather than as another bare dot — a capsule in
                         the version badge's own geometry, in the attention tint (behind is
                         unfinished, not failed), opening the settings overview where the update
-                        action lives. */}
-            {a.kernelOutdated && (
-              <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview")}>
+                        action lives. Not on a card that cannot open it. */}
+            {a.kernelOutdated && reachable && (
+              <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview", machineId)}>
                 {S.agent.kernelUpdateNeeded}
               </UpdatePill>
             )}
@@ -511,83 +534,45 @@ export function AgentsPage() {
               <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
               {a.sessionCount}
             </span>
-            <button
-              type="button"
-              className={STAT_LINK_CLASS}
-              disabled={elsewhere}
-              data-tooltip={S.agent.toolCount(a.toolCount)}
-              aria-label={S.agent.toolCount(a.toolCount)}
-              onClick={() => openSettingsTab(a.agentId, "tools")}
-            >
-              <GlyphIcon d={STAT_ICONS.toolCalls} size={ICON_SIZE.inlineGlyph} />
-              {a.toolCount}
-            </button>
-            <button
-              type="button"
-              className={STAT_LINK_CLASS}
-              disabled={elsewhere}
-              data-tooltip={S.skills.skillCount(a.skillCount)}
-              aria-label={S.skills.skillCount(a.skillCount)}
-              onClick={() => openSettingsTab(a.agentId, "skills")}
-            >
-              <GlyphIcon d={CARD_ICONS.skills} size={ICON_SIZE.inlineGlyph} />
-              {a.skillCount}
-            </button>
-            <button
-              type="button"
-              className={STAT_LINK_CLASS}
-              disabled={elsewhere}
-              data-tooltip={S.hooks.hookCount(a.hookCount)}
-              aria-label={S.hooks.hookCount(a.hookCount)}
-              onClick={() => openSettingsTab(a.agentId, "hooks")}
-            >
-              <GlyphIcon d={ICONS.fishHook} size={ICON_SIZE.inlineGlyph} />
-              {a.hookCount}
-            </button>
-            <button
-              type="button"
-              className={STAT_LINK_CLASS}
-              disabled={elsewhere}
-              data-tooltip={S.workbenches.count(a.workbenchCount ?? 0)}
-              aria-label={S.workbenches.count(a.workbenchCount ?? 0)}
-              onClick={() => openSettingsTab(a.agentId, "workbenches")}
-            >
-              <GlyphIcon d={ICONS.anvil} size={ICON_SIZE.inlineGlyph} />
-              {a.workbenchCount ?? 0}
-            </button>
-            <button
-              type="button"
-              className={STAT_LINK_CLASS}
-              disabled={elsewhere}
-              data-tooltip={S.agent.memoryCount(a.memoryCount)}
-              aria-label={S.agent.memoryCount(a.memoryCount)}
-              onClick={() => openSettingsTab(a.agentId, "memory")}
-            >
-              <GlyphIcon d={CARD_ICONS.memory} size={ICON_SIZE.inlineGlyph} />
-              {a.memoryCount}
-            </button>
-            <button
-              type="button"
-              className={STAT_LINK_CLASS}
-              disabled={elsewhere}
-              data-tooltip={S.agent.vaultKeyCount(a.vaultKeyCount)}
-              aria-label={S.agent.vaultKeyCount(a.vaultKeyCount)}
-              onClick={() => openSettingsTab(a.agentId, "vault")}
-            >
-              <GlyphIcon d={CARD_ICONS.vaultKeys} size={ICON_SIZE.inlineGlyph} />
-              {a.vaultKeyCount}
-            </button>
-            <button
-              type="button"
-              className={STAT_LINK_CLASS}
-              disabled={elsewhere}
-              data-tooltip={S.agent.scheduleCount(a.scheduleCount)}
-              aria-label={S.agent.scheduleCount(a.scheduleCount)}
-              onClick={() => openSettingsTab(a.agentId, "schedules")}
-            >
-              <GlyphIcon d={CARD_ICONS.schedules} size={ICON_SIZE.inlineGlyph} />
-              {a.scheduleCount}
-            </button>
+            {(
+              [
+                ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
+                ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
+                ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
+                [
+                  "workbenches",
+                  ICONS.anvil,
+                  a.workbenchCount ?? 0,
+                  S.workbenches.count(a.workbenchCount ?? 0),
+                ],
+                ["memory", CARD_ICONS.memory, a.memoryCount, S.agent.memoryCount(a.memoryCount)],
+                [
+                  "vault",
+                  CARD_ICONS.vaultKeys,
+                  a.vaultKeyCount,
+                  S.agent.vaultKeyCount(a.vaultKeyCount),
+                ],
+                [
+                  "schedules",
+                  CARD_ICONS.schedules,
+                  a.scheduleCount,
+                  S.agent.scheduleCount(a.scheduleCount),
+                ],
+              ] as const
+            ).map(([tab, glyph, count, label]) => (
+              <button
+                key={tab}
+                type="button"
+                className={STAT_LINK_CLASS}
+                disabled={!reachable}
+                data-tooltip={label}
+                aria-label={label}
+                onClick={() => openSettingsTab(a.agentId, tab, machineId)}
+              >
+                <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
+                {count}
+              </button>
+            ))}
             <span
               className="inline-flex shrink-0 items-center gap-1"
               data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
@@ -618,28 +603,28 @@ export function AgentsPage() {
           <Button
             size="sm"
             variant="primary"
-            onClick={() => newChat(a.agentId, on.includes(null) ? null : (on[0] ?? null))}
+            disabled={!reachable}
+            {...(offReason !== null ? { title: offReason, "data-tooltip-extra": true } : {})}
+            onClick={() => newChat(a.agentId, machineId)}
           >
             <GlyphIcon d={CARD_ICONS.newChat} />
             {S.chat.newSessionMenu}
           </Button>
           <Button
             size="sm"
-            disabled={elsewhere}
-            {...(elsewhere ? { title: elsewhereTitle, "data-tooltip-extra": true } : {})}
-            onClick={() => {
-              setCurrentAgentId(a.agentId);
-              navigate(`/agents/${a.agentId}`);
-            }}
+            disabled={!reachable}
+            {...(offReason !== null ? { title: offReason, "data-tooltip-extra": true } : {})}
+            onClick={() => openSettings(a.agentId, machineId)}
           >
             <GlyphIcon d={ICONS.gear} />
             {S.common.settings}
           </Button>
+          {/* The usage center reads this server's records: a machine's Agent has none here. */}
           <Button
             size="icon"
-            title={elsewhere ? elsewhereTitle : S.nav.usage}
+            title={machineId !== null ? S.agent.usageThisServerOnly : S.nav.usage}
             aria-label={S.nav.usage}
-            disabled={elsewhere}
+            disabled={machineId !== null}
             onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
           >
             <GlyphIcon
@@ -665,10 +650,19 @@ export function AgentsPage() {
             <Button
               size="icon"
               variant="danger"
-              title={elsewhere ? elsewhereTitle : (employedTitle ?? S.agent.deleteAgent)}
+              title={offReason ?? employedTitle ?? S.agent.deleteAgent}
               aria-label={S.agent.deleteAgent}
-              disabled={elsewhere || employedTitle !== null}
-              onClick={() => setDeleting({ agentId: a.agentId, name: agentDisplayName(a) })}
+              disabled={!reachable || employedTitle !== null}
+              onClick={() =>
+                setDeleting({
+                  agentId: a.agentId,
+                  name: agentDisplayName(a),
+                  machine:
+                    on === null
+                      ? null
+                      : { machineId: on.machine.machineId, label: on.machine.label },
+                })
+              }
             >
               <GlyphIcon d={CARD_ICONS.trash} size={15} />
             </Button>
@@ -778,6 +772,9 @@ export function AgentsPage() {
         projectId={projectId ?? null}
         library={library}
         libraryError={libraryError}
+        machines={machineLists
+          .filter((list) => list.machine.link === "connected")
+          .map((list) => ({ value: list.machine.machineId, label: list.machine.label }))}
         onClose={() => setCreateOpen(false)}
         onCreated={onCreated}
       />
@@ -845,7 +842,11 @@ export function AgentsPage() {
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          {deleting ? S.agent.deleteConfirm(deleting.name) : ""}
+          {deleting === null
+            ? ""
+            : deleting.machine === null
+              ? S.agent.deleteConfirm(deleting.name)
+              : S.agent.deleteConfirmOnMachine(deleting.name, deleting.machine.label)}
         </p>
         {deleteError && (
           <p className="mt-2 text-xs text-red-600 dark:text-red-400">{deleteError}</p>

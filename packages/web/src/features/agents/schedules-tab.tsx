@@ -46,6 +46,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { ScheduleFormModal } from "../schedules/schedule-form-modal";
@@ -71,9 +73,12 @@ export function SchedulesTab({
   /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: () => void;
 }) {
-  const { currentProject, agents, reloadAgents } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
+  const machineId = useAgentLocation();
+  const agents = useAgentsOn(machineId);
   // Prompt-injection controls follow the tab's existing gate: owner-only edits.
   const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
     agentId,
@@ -101,15 +106,15 @@ export function SchedulesTab({
     try {
       // The injection controls' state loads in parallel with the tab's own table.
       const [schedules, configView] = await Promise.all([
-        api.listSchedules(projectId, agentId),
-        api.getAgentConfig(projectId, agentId),
+        api.listSchedules(projectId, agentId, machineId),
+        api.getAgentConfig(projectId, agentId, machineId),
       ]);
       setData(schedules);
       applyConfig(configView.config);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId, applyConfig]);
+  }, [projectId, agentId, machineId, applyConfig]);
 
   useEffect(() => {
     void load();
@@ -118,7 +123,7 @@ export function SchedulesTab({
   /** After a create, update or delete: the table, and the agent card's schedule count. */
   const changed = () => {
     void load();
-    void reloadAgents();
+    if (machineId === null) void reloadAgents();
   };
 
   /** Toggle: whole-file-replace semantics — resend original fields, only flip enabled. */
@@ -126,7 +131,13 @@ export function SchedulesTab({
     if (!projectId) return;
     setBusy(true);
     try {
-      await api.updateSchedule(projectId, agentId, item.name, toggleBody(item, !item.enabled));
+      await api.updateSchedule(
+        projectId,
+        agentId,
+        item.name,
+        toggleBody(item, !item.enabled),
+        machineId,
+      );
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
       await load();
     } catch (e) {
@@ -141,7 +152,7 @@ export function SchedulesTab({
     if (!projectId || deleting === null) return;
     setBusy(true);
     try {
-      await api.deleteSchedule(projectId, agentId, deleting);
+      await api.deleteSchedule(projectId, agentId, deleting, machineId);
       if (form?.editing?.name === deleting) setForm(null);
       changed();
     } catch (e) {
@@ -318,6 +329,7 @@ export function SchedulesTab({
         examples={scheduleExamples("agent")}
         tail={S.schedule.aiCreateTail(agentId)}
         agents={agents}
+        machineId={machineId}
       />
 
       {/* Delete confirmation (shared ConfirmModal, same pattern as Vault / Agent deletion). */}

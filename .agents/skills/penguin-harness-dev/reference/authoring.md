@@ -10,6 +10,10 @@ with `title` / `date` / `category` / `excerpt` frontmatter. Same rule as changel
 without the other is unfinished. A technical deep dive (how something was built and what it
 measured) also follows the `penguin-harness-tech-blog` skill for its shape, figures and voice.
 
+**Before drafting or revising a post, read the `penguin-harness-writing` skill**: a gateway model
+writes every reader-facing sentence through its `prose.mjs`, and agents research, prompt, draw,
+check and ship. Docs pages and landing copy go the same way.
+
 **The images are not in this repo.** Screenshots and demo videos live in the sibling
 `Prism-Shadow/penguin-harness-community` repo, under `blog-assets/` and `videos/`. A published
 post's screenshots are never deleted, so that asset class grows without bound in the number of

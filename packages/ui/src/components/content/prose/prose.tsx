@@ -23,6 +23,11 @@
  * imported here, so a consumer never loads it on its own; the `.katex` rules in prose.css out-rank
  * it by specificity, whichever of the two a bundle happens to emit first.
  *
+ * `arrivals`, from a host whose theme fades streaming text in (StreamText), adds one rehype pass
+ * that puts each run of newly arrived text in a `data-arrive` span, or marks an element that
+ * arrived whole; a fenced block's runs ride on its `<code>` to CodeBlock (stream-arrivals.ts).
+ * Without arrivals the stage is exactly the shared one.
+ *
  * Links open in a new tab unless a `ProseLinksProvider` above decides otherwise — the Web App's
  * conversation sends a link to a Workspace file to its Files panel that way.
  *
@@ -39,6 +44,8 @@ import { A2uiBlock } from "../a2ui/a2ui-block";
 import { MermaidBlock } from "../a2ui/mermaid-block";
 import { CodeBlock } from "../code-block/code-block";
 import { NO_REHYPE_PLUGINS, REHYPE_PLUGINS, REMARK_PLUGINS } from "./markdown-plugins";
+import { decodeArrivals, rehypeStreamArrivals } from "./stream-arrivals";
+import type { RevealArrival } from "./stream-arrivals";
 import "katex/dist/katex.min.css";
 import "./prose.css";
 
@@ -64,19 +71,38 @@ function codeText(children: unknown): string {
  * `streaming` the way the highlighter does — a quiet placeholder while deltas arrive, drawn once
  * on the settle — and both fall back to their source in a CodeBlock when they cannot be drawn.
  * They are module-level components, so routing to them adds no element type per render.
+ *
+ * A block still fading in (stream-arrivals.ts) carries its own arrival and its code's runs on the
+ * `<code>`; they go to CodeBlock, which fades the block and the runs.
  */
 function MdPre({ children, streaming }: { children?: ReactNode; streaming: boolean }) {
   if (isValidElement(children)) {
-    const props = children.props as { className?: string; children?: unknown };
+    const props = children.props as {
+      className?: string;
+      children?: unknown;
+      "data-arrive"?: string;
+      "data-arrivals"?: string;
+    };
     const language = /language-([\w+-]+)/.exec(props.className ?? "")?.[1] ?? "";
     if (language === "math") return <pre>{children}</pre>;
     const code = codeText(props.children).replace(/\n$/, "");
     if (language === "a2ui") return <A2uiBlock source={code} streaming={streaming} />;
     if (language === "mermaid") return <MermaidBlock source={code} streaming={streaming} />;
-    return <CodeBlock language={language} code={code} highlight={!streaming} />;
+    const arrive = props["data-arrive"] === undefined ? undefined : Number(props["data-arrive"]);
+    return (
+      <CodeBlock
+        language={language}
+        code={code}
+        highlight={!streaming}
+        arrive={arrive}
+        arrivals={decodeArrivals(props["data-arrivals"])}
+      />
+    );
   }
   return <pre>{children}</pre>;
 }
+
+type RehypePlugins = NonNullable<Options["rehypePlugins"]>;
 
 /** The attributes a rendered link adds on top of its own. */
 export interface ProseLinkBehavior {
@@ -180,17 +206,39 @@ export interface MdProps {
    * *type*, so a fresh function per render remounts everything it renders.
    */
   components?: Components;
+  /**
+   * Runs of the text still fading in, as offsets into it (StreamText under a `fade` reveal):
+   * they are put in `data-arrive` runs for the theme to fade (stream-arrivals.ts). Empty or
+   * missing, the output is the shared pipeline's.
+   */
+  arrivals?: readonly RevealArrival[];
+}
+
+/** A rehype stage with the arrivals pass after it, or the stage itself when nothing is fading. */
+function withArrivals(
+  stage: RehypePlugins,
+  arrivals: readonly RevealArrival[] | undefined,
+): RehypePlugins {
+  return arrivals === undefined || arrivals.length === 0
+    ? stage
+    : [...stage, [rehypeStreamArrivals, { arrivals }]];
 }
 
 /** The Markdown alone, for a caller that supplies its own `.md-body` box. */
-export const Md = memo(function Md({ text, streaming = false, extraPlugins, components }: MdProps) {
+export const Md = memo(function Md({
+  text,
+  streaming = false,
+  extraPlugins,
+  components,
+  arrivals,
+}: MdProps) {
   const base = streaming ? STREAMING_COMPONENTS : SETTLED_COMPONENTS;
   return (
     <ReactMarkdown
       remarkPlugins={
         extraPlugins === undefined ? REMARK_PLUGINS : [...REMARK_PLUGINS, ...extraPlugins]
       }
-      rehypePlugins={streaming ? NO_REHYPE_PLUGINS : REHYPE_PLUGINS}
+      rehypePlugins={withArrivals(streaming ? NO_REHYPE_PLUGINS : REHYPE_PLUGINS, arrivals)}
       components={components === undefined ? base : { ...base, ...components }}
     >
       {text}
