@@ -7,7 +7,7 @@
 
 [中文版](2026-10-19-messaging-account-holders.zh.md)
 
-A server already refused to enable one bot account on two of its own Sessions. Two new routes extend that check to the server and the machines it connects, so a client can see where a bot is enabled before turning it on, and keep one bot on one server at a time.
+A server already refused to enable one bot account on two of its own Sessions. Two new routes extend that check to the server and the machines it connects, so a client can see where a bot is enabled before turning it on, and keep one bot on one server at a time. The Web App asks them before an enable in [#1219](https://github.com/Prism-Shadow/penguin-harness/pull/1219).
 
 ## Details
 
