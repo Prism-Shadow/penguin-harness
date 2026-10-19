@@ -285,6 +285,13 @@ html.dark .shiki span {
   font-size: var(--ui-text-body-size);
   line-height: var(--ui-text-body-lh);
 }
+/* Inline code in a cell: the chip is a tint of the ink rather than the neutral fill. Some themes
+   paint that fill opaque, in the same grey as a stripe, where a chip on a striped row would
+   vanish; a tint composes over whatever is under it, so the chip stays one step deeper than its
+   row — plain, striped, hovered or inside a bubble — in every theme and mode. */
+.md-body .md-table code:not(pre > code) {
+  background-color: color-mix(in srgb, var(--ui-fg) 6%, transparent);
+}
 
 /* A message that is a line in a stream (a channel message body): the same Markdown typography,
    one size tighter. Its blocks sit closer, its headings step down towards body size, and the
@@ -305,7 +312,7 @@ html.dark .shiki span {
 .md-compact {
   --md-table-pad-y: var(--ui-space-unit);
   --md-table-pad-x: calc(var(--ui-space-unit) * 2);
-  --md-table-prose-min: 9rem;
+  --md-table-prose-min: 15rem;
 }
 .md-compact h1 {
   font-size: 1.0625rem;
