@@ -58,6 +58,8 @@ export async function verifyWindowsUpdateSignature(
         [
           "-NoProfile",
           "-NonInteractive",
+          "-InputFormat",
+          "None",
           "-EncodedCommand",
           Buffer.from(SIGNATURE_SCRIPT, "utf16le").toString("base64"),
         ],
