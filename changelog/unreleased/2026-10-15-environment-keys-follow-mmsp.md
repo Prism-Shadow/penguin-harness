@@ -8,7 +8,7 @@
 
 [中文版](2026-10-15-environment-keys-follow-mmsp.zh.md)
 
-Whether a keyless model uses a vendor's environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, …) became MMSP's rule alone, from the MMSP release that carries MMSP [#258](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/258). PenguinHarness resolves each model's key, base URL and protocol from the Project config and hands them to MMSP as they are. It reads no environment variable to decide where a request goes, and refuses nothing itself.
+Whether a keyless model uses a vendor's environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, …) became MMSP's rule alone, from MMSP 0.5.4, which carries MMSP [#258](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/258) and which the harness now requires. PenguinHarness resolves each model's key, base URL and protocol from the Project config and hands them to MMSP as they are. It reads no environment variable to decide where a request goes, and refuses nothing itself.
 
 ## The rule
 
