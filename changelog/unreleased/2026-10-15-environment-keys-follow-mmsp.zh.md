@@ -8,7 +8,7 @@
 
 [English](2026-10-15-environment-keys-follow-mmsp.md)
 
-无 key 的模型是否使用厂商环境变量（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DEEPSEEK_API_KEY` 等），改由 MMSP 一家决定，自包含 MMSP [#258](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/258) 的 MMSP 版本起生效。PenguinHarness 从 Project 配置解析每个模型的 key、base URL 与协议，原样交给 MMSP；它不读取任何环境变量来判断请求发往哪里，自己也不拒绝任何请求。
+无 key 的模型是否使用厂商环境变量（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DEEPSEEK_API_KEY` 等），改由 MMSP 一家决定，自 MMSP 0.5.4 起生效；该版本包含 MMSP [#258](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/258)，harness 随之要求这一版本。PenguinHarness 从 Project 配置解析每个模型的 key、base URL 与协议，原样交给 MMSP；它不读取任何环境变量来判断请求发往哪里，自己也不拒绝任何请求。
 
 ## 规则
 
