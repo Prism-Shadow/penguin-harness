@@ -465,6 +465,13 @@ function post(key, body, timeoutS) {
   });
 }
 
+/** A raw response is never overwritten: a rerun of the same step gets a timestamped name. */
+function freshPath(file) {
+  if (!existsSync(file)) return file;
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "");
+  return file.replace(/(\.raw)?\.json$/, `.${stamp}$&`);
+}
+
 const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
 
 function unwrapFence(text) {
@@ -485,11 +492,16 @@ async function callApi(step, o, messages) {
   };
   const timeoutS = Number(o.timeout ?? 1800);
   const body = JSON.stringify(request);
-  const rawPath =
+  const rawPath = freshPath(
     o.raw ??
-    (o["raw-dir"]
-      ? path.join(o["raw-dir"], `${path.basename(o.out)}.raw.json`)
-      : `${o.out}.raw.json`);
+      (o["raw-dir"]
+        ? // One raw dir serves every post, so the name carries the post's folder and the step.
+          path.join(
+            o["raw-dir"],
+            `${path.basename(path.dirname(path.resolve(o.out)))}-${step}-${path.basename(o.out)}.raw.json`,
+          )
+        : `${o.out}.raw.json`),
+  );
 
   const started = Date.now();
   let res;
@@ -1359,6 +1371,9 @@ function checkDoc(doc, lang, o, r, facts) {
       if (/——|—/.test(t)) r.add("error", it.n, "破折号");
       if (/[！!]/.test(t.replace(/!\[[^\]]*\]\([^)]*\)/g, ""))) r.add("error", it.n, "感叹号");
       if (/"/.test(maskProse(it.line))) r.add("error", it.n, "中文正文里的英文引号");
+      if (new RegExp(`[${CJK}]\`|\`[${CJK}]`).test(it.line)) {
+        r.add("error", it.n, "代码与中文之间缺半角空格");
+      }
       const sp = spacing.exec(t.replace(/\*\*/g, ""));
       if (sp) r.add("error", it.n, `中英文或数字之间缺半角空格: "${sp[0]}"`);
       for (const m of t.matchAll(/：(?![「“『])/g)) {
