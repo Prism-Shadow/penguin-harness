@@ -1779,4 +1779,138 @@ describe("session-manager", () => {
     expect(runs).toEqual(["m-alpha", "m-beta"]);
     expect(manager.statusOf("session-1")).toBe("idle");
   });
+
+  it("a ladder-exhausted turn (timeout) moves to the next model of the chain, and the resent turn runs there", async () => {
+    const runs: string[] = [];
+    const switched: Array<{ provider: string; modelId: string }> = [];
+    const fake = {
+      sessionId: "session-1",
+      provider: "custom",
+      modelId: "m-alpha",
+      toolPermission: () => "rw" as const,
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      async *run(): AsyncGenerator<OmniMessage> {
+        runs.push(fake.modelId!);
+        yield requestBegin();
+        if (runs.length === 1) {
+          // The reconnect ladder is spent on this model (attempts exhausted, no recovery):
+          // the turn ends here and the manager moves it down the chain.
+          yield requestEnd("retryable", { errorCode: "timeout" });
+          return;
+        }
+        yield assistantText("answered on the fallback");
+        yield requestEnd("completed");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+      async *switchModel(opts: {
+        provider: string;
+        modelId: string;
+      }): AsyncGenerator<OmniMessage, StopReason> {
+        switched.push({ provider: opts.provider, modelId: opts.modelId });
+        (fake as { provider: string; modelId: string }).provider = opts.provider;
+        (fake as { provider: string; modelId: string }).modelId = opts.modelId;
+        return "completed";
+      },
+    } as unknown as RuntimeSession;
+    const manager = makeManager(loaderOf(fake), undefined, undefined, async () => [
+      { provider: "custom", modelId: "m-alpha" },
+      { provider: "custom", modelId: "m-beta" },
+    ]);
+
+    await manager.startTask("session-1", [userText("hi")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runs.length === 2, 5000);
+
+    expect(switched).toEqual([{ provider: "custom", modelId: "m-beta" }]);
+    expect(fake.modelId).toBe("m-beta");
+    expect(runs).toEqual(["m-alpha", "m-beta"]);
+    expect(manager.statusOf("session-1")).toBe("idle");
+  });
+
+  it("a refused turn (rejected) ends without failover: the request fails identically on every model", async () => {
+    const runs: string[] = [];
+    const switched: Array<{ provider: string; modelId: string }> = [];
+    const fake = {
+      sessionId: "session-1",
+      provider: "custom",
+      modelId: "m-alpha",
+      toolPermission: () => "rw" as const,
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      async *run(): AsyncGenerator<OmniMessage> {
+        runs.push(fake.modelId!);
+        yield requestBegin();
+        yield requestEnd("fatal", { errorCode: "rejected" });
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+      async *switchModel(opts: {
+        provider: string;
+        modelId: string;
+      }): AsyncGenerator<OmniMessage, StopReason> {
+        switched.push({ provider: opts.provider, modelId: opts.modelId });
+        return "completed";
+      },
+    } as unknown as RuntimeSession;
+    const manager = makeManager(loaderOf(fake), undefined, undefined, async () => [
+      { provider: "custom", modelId: "m-alpha" },
+      { provider: "custom", modelId: "m-beta" },
+    ]);
+
+    await manager.startTask("session-1", [userText("hi")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle", 5000);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(runs).toEqual(["m-alpha"]);
+    expect(switched).toEqual([]);
+    expect(fake.modelId).toBe("m-alpha");
+  });
+
+  it("a stop during the reconnect backoff does not fail over: the stopped turn is never resent", async () => {
+    const runs: string[] = [];
+    const switched: Array<{ provider: string; modelId: string }> = [];
+    let manager!: SessionManager;
+    const fake = {
+      sessionId: "session-1",
+      provider: "custom",
+      modelId: "m-alpha",
+      toolPermission: () => "rw" as const,
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      async *run(): AsyncGenerator<OmniMessage> {
+        runs.push(fake.modelId!);
+        yield requestBegin();
+        // An intermediate retryable end (a retry was planned), then the user stops
+        // the run while it waits: no terminal end ever arrives.
+        yield requestEnd("retryable", { errorCode: "timeout" });
+        manager.abortTask("session-1");
+        yield abortEvent("user_abort");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+      async *switchModel(opts: {
+        provider: string;
+        modelId: string;
+      }): AsyncGenerator<OmniMessage, StopReason> {
+        switched.push({ provider: opts.provider, modelId: opts.modelId });
+        return "completed";
+      },
+    } as unknown as RuntimeSession;
+    manager = makeManager(loaderOf(fake), undefined, undefined, async () => [
+      { provider: "custom", modelId: "m-alpha" },
+      { provider: "custom", modelId: "m-beta" },
+    ]);
+
+    await manager.startTask("session-1", [userText("hi")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle", 5000);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(runs).toEqual(["m-alpha"]);
+    expect(switched).toEqual([]);
+    expect(fake.modelId).toBe("m-alpha");
+  });
 });

@@ -6,7 +6,7 @@
  * pinned here rather than through a whole run.
  */
 import { describe, expect, it } from "vitest";
-import { nextFailoverTarget } from "../src/runtime/session-manager.js";
+import { isFailoverEligibleEnd, nextFailoverTarget } from "../src/runtime/session-manager.js";
 
 const ref = (provider: string, modelId: string) => ({ provider, modelId });
 const chain = [ref("deepseek", "deepseek-flash"), ref("anthropic", "claude-sonnet-4-6")];
@@ -45,5 +45,20 @@ describe("nextFailoverTarget", () => {
     expect(
       nextFailoverTarget(same, ref("openai", "gpt-6"), new Set(["azure/gpt-6"])),
     ).toBeUndefined();
+  });
+});
+
+describe("isFailoverEligibleEnd", () => {
+  it("moves on transport failures: a 429, or a ladder the retries did not recover", () => {
+    for (const code of ["rate_limited", "timeout", "network", "connect_failed"]) {
+      expect(isFailoverEligibleEnd(code)).toBe(true);
+    }
+  });
+
+  it("stays on successes and refused requests: moving changes nothing for them", () => {
+    expect(isFailoverEligibleEnd(undefined)).toBe(false);
+    for (const code of ["auth", "rejected", "unsupported", "image_rejected", "malformed"]) {
+      expect(isFailoverEligibleEnd(code)).toBe(false);
+    }
   });
 });
