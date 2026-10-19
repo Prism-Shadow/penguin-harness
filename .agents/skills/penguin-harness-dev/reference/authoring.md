@@ -7,8 +7,7 @@ changing behavior.
 
 A post is a pair under `packages/landing/content/blog/`: `<slug>.en.md` and `<slug>.zh.md`, each
 with `title` / `date` / `category` / `excerpt` frontmatter. Same rule as changelog entries — one
-without the other is unfinished. A technical deep dive (how something was built and what it
-measured) also follows the `penguin-harness-tech-blog` skill for its shape, figures and voice.
+without the other is unfinished.
 
 **Before drafting or revising a post, read the `penguin-harness-writing` skill**: a gateway model
 writes every reader-facing sentence through its `prose.mjs`, and agents research, prompt, draw,
