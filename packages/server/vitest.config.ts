@@ -15,7 +15,7 @@
  * of discarding it after each one. Every file here imports the whole app graph, core's
  * bundle included, so evaluating that graph once per file rather than once per worker
  * dominated the suite's wall clock; sharing it also drops fork spawns from one per file to
- * one per worker, which is worth more on the two-core Windows runner than anywhere else.
+ * one per worker, which is worth more on the Windows runner than anywhere else.
  * What makes it safe: no file in this suite mocks a module — `vi.mock` would leak into
  * every later file in the same fork, which `test/isolation.test.ts` guards against — the
  * few that mutate `process.env` save and restore it, and files inside a worker still run
@@ -36,21 +36,37 @@
  * `restoreMocks` makes the spy half of that mechanical rather than a reading of the suite:
  * a `vi.spyOn` whose inline `mockRestore()` is skipped by a failing assertion above it
  * would otherwise stay installed for every later file in the same worker.
+ *
+ * `--shard` deals files by their measured Windows durations rather than by a hash of the path
+ * (test/setup/weighted-shards.ts, weights in test/shard-weights.json).
  */
+import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
+import { WeightedShards } from "./test/setup/weighted-shards";
+
+/**
+ * Workers: one per core on macOS, at most four; two elsewhere. Each worker boots app trees and
+ * runs real TypeScript compilers, so the count that pays is the number of physical cores. The
+ * macOS runner's three vCPUs are three cores: three workers ran the suite there in 96 s (two:
+ * 114–171 s). The Linux and Windows runners' four vCPUs are two cores with two threads each:
+ * four workers on Linux doubled the summed test time (226 → 465 s) for no shorter run, and a
+ * third on Windows nearly doubled every file's time for no shorter shard. `availableParallelism`
+ * counts threads, not cores, which is why it is consulted only where the two are the same.
+ *
+ * `minWorkers` equals `maxWorkers` because with `isolate: false` a worker above the minimum is
+ * terminated while idle, and that termination can reject inside tinypool after every file has
+ * passed ("Terminating worker thread"), failing the run with no failing test. Three workers over
+ * a minimum of one did so on every run on a four-core machine; equal counts were not seen to.
+ */
+const WORKERS =
+  process.platform === "darwin" ? Math.max(1, Math.min(4, availableParallelism())) : 2;
 
 export default defineConfig({
   test: {
     environment: "node",
-    // Two workers: each boots app trees and runs real TypeScript compilers, and `pnpm test` runs
-    // other packages alongside. A third on the four-vCPU runners nearly doubled every file's time
-    // on Windows for no shorter shard. `minWorkers` equals `maxWorkers` because with
-    // `isolate: false` a worker above the minimum is terminated while idle, and that termination
-    // can reject inside tinypool after every file has passed ("Terminating worker thread"),
-    // failing the run with no failing test. Three workers over a minimum of one did so on every
-    // run on a four-core machine; two over one was not seen to, but takes the same path.
-    maxWorkers: 2,
-    minWorkers: 2,
+    maxWorkers: WORKERS,
+    minWorkers: WORKERS,
+    sequence: { sequencer: WeightedShards },
     isolate: false,
     restoreMocks: true,
     testTimeout: process.platform === "win32" ? 30_000 : 5_000,

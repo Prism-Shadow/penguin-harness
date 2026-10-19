@@ -34,6 +34,14 @@
  * (`liveStatuses`), row or no row — company mode's surfaces read them for the Sessions this
  * list deliberately does not fetch (useLiveSessionStatuses).
  *
+ * **Deleted stays deleted**: an id this tab knows is deleted — it removed it, or the user channel
+ * said so — is listed by no snapshot again: not by a reload or a next page that was read while
+ * the Session still existed and answered after it was gone, nor by a machine's cache. A deletion
+ * heard while a reload is in flight also drops that reload and asks again, since its totals still
+ * count the Session. (A new conversation whose first Task is refused is deleted moments after the
+ * creating tab's own reload read it; without this the reload put it back as a row that opens to
+ * nothing.)
+ *
  * **Sessions are not auto-created here**: a new conversation starts as a draft (chat page `/chat/new`),
  * and the Session is only actually created when the first message is sent — after landing, the user
  * may still switch models or configure an API key first, so persisting the Session early would both
@@ -687,8 +695,10 @@ export function createSessionsStore() {
         rows = rows.map((s) => (s.sessionId === change.sessionId ? next : s));
       }
       // A change must not be undone by a reload already in flight (remove()'s rule): that one is
-      // dropped, and asked again so the list still lands.
-      if (rows !== get().sessions) {
+      // dropped, and asked again so the list still lands. A deletion counts even when no held
+      // row moved: the snapshot in flight may have read the Session before it went, and its
+      // totals count it.
+      if (rows !== get().sessions || (gone.length > 0 && reloadsInFlight > 0)) {
         gen += 1;
         if (reloadsInFlight > 0) fetchUnheld = true;
       }
@@ -828,6 +838,9 @@ export function createSessionsStore() {
           );
           const nextSessions: SessionInfo[] = [];
           const seen = new Set<string>();
+          // Deleted stays deleted (see the header), read now: a deletion heard while the answers
+          // were on their way counts.
+          const deleted = get().deletedSessionIds;
           // What each machine answered, kept so it can be shown after the next restart while
           // the server re-holds its connection to that machine (lib/machine-cache.ts).
           const rowsByMachine = new Map<string, SessionInfo[]>();
@@ -890,7 +903,7 @@ export function createSessionsStore() {
                 foldStamps(nextWorkspaceLatestActive, r.agentId, r.source, p.workspaceLatestActive);
               }
               for (const s of p.items) {
-                if (seen.has(s.sessionId)) continue;
+                if (seen.has(s.sessionId) || deleted.has(s.sessionId)) continue;
                 seen.add(s.sessionId);
                 nextSessions.push(s);
                 if (r.source !== null)
@@ -946,7 +959,7 @@ export function createSessionsStore() {
           // cannot make that claim.
           for (const machineId of new Set([...offlineMachineIds, ...silent])) {
             for (const s of cachedMachineSessions(projectId, machineId)) {
-              if (seen.has(s.sessionId)) continue;
+              if (seen.has(s.sessionId) || deleted.has(s.sessionId)) continue;
               seen.add(s.sessionId);
               nextSessions.push(s);
               rememberSessionMachine(s.sessionId, machineId);
@@ -1139,10 +1152,12 @@ export function createSessionsStore() {
         const ok = results.filter((r) => r !== null);
         const prev = get().sessions;
         const seen = new Set(prev.map((s) => s.sessionId));
+        // Deleted stays deleted (see the header): the page may have been read before it went.
+        const deleted = get().deletedSessionIds;
         const appended: SessionInfo[] = [];
         for (const r of ok) {
           for (const row of r.items) {
-            if (seen.has(row.sessionId)) continue;
+            if (seen.has(row.sessionId) || deleted.has(row.sessionId)) continue;
             seen.add(row.sessionId);
             appended.push(row);
             rememberSessionMachine(row.sessionId, r.source);

@@ -524,6 +524,11 @@ export const en: GalleryStrings = {
         description:
           "The Machines page's parts: the status pill in every state, the machine card and its list, the dialog toolbar and the add dialog.",
       },
+      retry: {
+        title: "Retry",
+        description:
+          "The status line every retry and reconnect shares: trying, waiting for the next attempt (a countdown and Retry now), gave up (Retry), not worth retrying — and how it sits in a machine card, a dialog and a chat notice.",
+      },
       attachments: {
         title: "Attachments",
         description:
@@ -1568,6 +1573,7 @@ export const en: GalleryStrings = {
         queued: "Queued",
         working: "Working",
         reconnecting: "Reconnecting",
+        reconnectStopped: "Reconnect stopped",
         failed: "Failed",
         signInRefused: "Sign-in refused",
         installedOnly: "Installed",
@@ -1582,7 +1588,9 @@ export const en: GalleryStrings = {
         failed: "Failed at Restart the server: no answer on port 7364 within 30 s.",
         unreachable: "ssh: connect to host 10.0.0.12 port 22: Connection timed out",
         working: "Downloading penguin-harness 0.2.16…",
-        reconnecting: "Attempt 4",
+        reconnecting: "Reconnect 3 of 8 failed",
+        reconnectStopped:
+          "lab-2 refused the connection: no ssh server listens at that address and port.",
         behind: "Version 0.2.16 is available",
       },
       cards: "Machine cards",
@@ -1601,12 +1609,9 @@ export const en: GalleryStrings = {
         installing: "Installing the program",
       },
       waits: {
-        reconnecting: "Reconnecting…",
         stopped: "Its server is stopped",
         notConnected: "Not connected yet",
         failed: "The last job failed",
-        signInRefused:
-          "That machine refused the saved password — enter it again in the machine's SSH settings.",
         notInstalled: "Not installed yet",
         windows: "Installed; start its server by hand on this Windows machine",
       },
@@ -1637,6 +1642,45 @@ export const en: GalleryStrings = {
       submitCount: (count: number) => `Add ${count}`,
       exhaustedCaption: "Nothing left in the ssh config to add",
       noHosts: "Every host in the ssh config is on this page already.",
+    },
+    retry: {
+      phases: "Four phases",
+      phasesHint:
+        "A card's middle line: trying (a spinner), waiting for the next attempt (an hourglass, a countdown by the second and Retry now), gave up (a pause, the reason and Retry), not worth retrying (a cross in the danger tone and the fix; only the mark is coloured).",
+      blocks: "As a block",
+      blocksHint:
+        "In a dialog section: body type, the reason under the sentence, the buttons under that on the form rung.",
+      inCard: "In a machine card",
+      inCardHint:
+        "The card's middle while no job runs; a press disables the buttons and spins until the next attempt begins.",
+      inChat: "In a chat notice",
+      inChatHint:
+        "The chat's reconnect notice takes the same pair: Retry now as secondary, Give up as ghost.",
+      narrow: "Narrow",
+      narrowHint: "At phone width the line wraps under the name; the buttons are never cut.",
+      trying: (n: number, m: number) => `Trying to reconnect (${n} of ${m})…`,
+      failed: (n: number, m: number) => `Reconnect ${n} of ${m} failed`,
+      countdown: (s: number) => `next try in ${s} s`,
+      gaveUp: (m: number) => `Stopped retrying after ${m} failed reconnects`,
+      stoppedSsh: "Stopped reconnecting",
+      stoppedPassword: "Sign-in refused; stopped reconnecting",
+      retryNow: "Retry now",
+      retry: "Retry",
+      lasting: "For 16 minutes",
+      refused: (alias: string) =>
+        `${alias} refused the connection: no ssh server listens at that address and port.`,
+      hostKey:
+        "mini presented a different host key from the one remembered, so ssh refuses to connect. If that machine was reinstalled, remove the old key with ssh-keygen -R and connect once.",
+      password: "That machine refused the saved password. Enter it again in its SSH settings.",
+      states: {
+        ready: "Running",
+        reconnecting: "Reconnecting",
+        reconnectStopped: "Reconnect stopped",
+      },
+      card: { checked: "4 min", use: "Use", settings: "Settings", remove: "Delete" },
+      chatRetryNow: "Retry now",
+      chatGiveUp: "Give up",
+      chatLine: (n: number) => `[Retry] Connection timed out or dropped; retry #${n} shortly…`,
     },
     attachments: {
       composer: "Composer",

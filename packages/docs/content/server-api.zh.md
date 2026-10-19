@@ -228,6 +228,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 | POST | `/api/projects/:projectId/machines/stop-using` | 把 `{machines: [id…]}` 从本 Project 删除：断开各自的连接，不再保持连接；那台机器上的程序与数据都保留，ssh 配置里的主机也不变 |
 | POST | `/api/projects/:projectId/machines/:machineId/install` | 开始在这台主机上安装当前构建，并将这台主机分配给本 Project；任务运行期间返回 `202`，响应体相同 |
 | POST | `/api/projects/:projectId/machines/:machineId/connect` | 启动那台机器的服务器，并维持那条唯一的连接，此后保持连接；connect 任务运行期间返回 `202`，响应体相同 |
+| POST | `/api/projects/:projectId/machines/:machineId/reconnect` | 重试连回本服务端保持连接的机器：跳过下次尝试前剩余的等待（次数不变），或在自动重连停止后（连续失败 8 次，或重试也不会好转的 ssh 失败）重新开始一轮；正在尝试或已连接时什么都不做。返回 `200` 与列表，或 `409`（`job_running`、`password_refused`、`not_kept_connected`） |
 | POST | `/api/projects/:projectId/machines/:machineId/disconnect` | 断开连接、不再保持连接，远端服务器继续运行 |
 | POST | `/api/projects/:projectId/machines/:machineId/restart` | 停止那台机器的服务器，并在同一端口重新启动；返回 `202`，那台机器有任务在运行时返回 `409` |
 | POST | `/api/projects/:projectId/machines/:machineId/stop` | 停止那台机器的服务器，不再保持连接，安装保留；返回 `202` 或 `409` |
@@ -242,7 +243,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `POST …/install` 可以携带请求体 `{replaceProgram: true}`，用来回应任务过程中提出的这个要求：即使版本已经一致，服务器也会重新安装程序并重启它。
 - 主机可以用密码代替密钥登录。`POST …/ssh-hosts` 与 `PUT …/ssh-hosts/:alias` 接受 `password`：字符串即保存；`PUT` 时 `null` 删除已保存的密码，不带则保持不变。对手写的配置段，`PUT` 可以只设置密码，其余字段原样传回该段的内容。`GET …/ssh-hosts/:alias` 与机器列表在保存了密码时答 `passwordSaved: true`，从不返回密码本身。密码存放在 `<root>/machines/ssh-passwords/` 下权限为 0600 的文件里，不写进 ssh 配置、数据库或日志，只经 `SSH_ASKPASS` 出现在那一个 ssh 进程的环境变量里；这样的机器不提供密钥，每种方式只问一次。ssh 拒绝了的密码不再重试，直到为这台机器重新保存或删除密码：任务立即以 `sshReason: "password-rejected"` 失败（主机不接受密码时为 `"password-not-offered"`），保持连接的机器带上 `reconnect.waitsForPassword` 并停止重试。把机器从最后一个使用它的 Project 中删除时，它的密码一并删除。密码为空或不止一行时返回 `400` `ssh_password_invalid`；本机的 OpenSSH 无法接收密码时（Windows 上低于 8.4）返回 `409` `ssh_password_unsupported`，`details.ssh` 为 `ssh -V` 的输出。
 - `POST …/connect` 维持一条 `ssh -T -D` 会话，空闲时永不超时。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
-- 连接过的机器会被**保持连接**（`keepConnected`），直到被停止（`POST …/stop`）、删除（`POST …/stop-using`）或断开：它的 ssh 会话断开、服务停止或重启、本服务器自身重启时，服务器都会自己把它连回来——探测它，服务没在运行就启动它，重新持有连接并下发 Project 配置。每次失败后的等待是上一次的两倍，从 5 秒起、封顶 5 分钟；其间这台机器带 `reconnect`，连续失败 3 次后自动运行下文的连接检查，结果保存在其中。有任务在处理这台机器时不重连。
+- 连接过的机器会被**保持连接**（`keepConnected`），直到被停止（`POST …/stop`）、删除（`POST …/stop-using`）或断开：它的 ssh 会话断开、服务停止或重启、本服务器自身重启时，服务器都会自己把它连回来——探测它，服务没在运行就启动它，重新持有连接并下发 Project 配置。每次失败后的等待是上一次的两倍，从 5 秒起、封顶 5 分钟，连续失败 8 次（约 15 分钟）后停止自动重连；重试也不会好转的 ssh 失败——主机密钥未知或已变、私钥文件不可用、密钥被拒、ssh 配置有误——第一次失败即停止。`POST …/reconnect` 重试：立即尝试，停止后则从第 1 次重新开始。其间这台机器带 `reconnect`，连续失败 3 次后自动运行下文的连接检查，结果保存在其中。有任务在处理这台机器时不重连；本服务器重启后每一轮都重新开始。
 - 下发给一台机器的，是使用它的每个 Project 的配置：模型及各分组的连接、默认模型与视觉模型、Project 名称，沙箱命令策略（对端的 `PUT …/command-policy`），新对话默认值（对端的 `PUT …/chat-defaults`；工作区是本服务器上的目录，保留那台机器自己的，那台机器没有的默认 Agent 也保留它自己的），以及插件列表。某个 Project 的某一部分被拒绝时写进日志，其余照常下发。对端按名拒绝的模型条目（`model_not_addable`、`model_not_routable`，见 `PUT /models`）被跳过，表中其余条目照常写入；指向它的默认模型或视觉模型不下发。本服务器取自环境变量的值（模型条目自己没有的 Key 或 base URL）不在配置里，从不随同下发。每次连接、`POST …/sync`，以及本服务器上每次写入 Project 配置之后（模型、默认模型、命令策略、新对话默认值、重命名、插件列表），都会下发给运行本服务器镜像的已连接机器。
 - 向一台机器下发 Project 配置之前（连接、启用，或服务器自己把它连回来时），服务器先问那台机器的服务在运行什么（`GET /api/version`）。服务没有在运行那里安装的构建（例如在那个数据目录上启动的正式版自带的服务），就把它重启到这个构建上。服务运行的构建与本服务器的镜像不同，就先通过它的更新通道把镜像交给它。两样都做不到时，任务停在 `sync`，说明那台机器在运行什么、需要先更新，什么都不下发。问不到的机器照常连接，但不下发，日志里写明原因。修改配置时，只有运行本服务器镜像的已连接机器会收到。
 - `POST …/sync` 是带 `check`、`sync` 两步的任务。`check` 像连接时一样问那台机器在运行什么，但不做任何改动：运行其他构建的机器以同样的话失败于 `check`，要靠更新把它带到本服务器的构建。没有连接的机器返回 `409` `not_connected`。
@@ -258,7 +259,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `elsewhere`：这台主机已由其他 Project 安装，可以直接接管，而不必重新安装。
 - `keepConnected`：本服务器保持这台机器连接期间为 `true`（见上文）；只添加过、已停止、已删除或已断开的机器没有这个字段。
 - `configSync`：最近一次向这台机器下发配置的结果，只存在内存中，本服务器启动后第一次下发之前没有这个字段：`{at, ok, detail?, envOnly, skipped}`。`detail` 逐行列出没有下发成功的部分。`envOnly` 为模型条目取自本服务器环境变量、因而无法下发的每个值列出 `{projectId, provider, modelId, variable}`；`skipped` 为对端拒绝的每个模型条目列出 `{projectId, provider, modelId, code, reason}`。两者都只含本 Project 的条目。
-- `reconnect`：服务器正在把一台保持连接的机器连回来时出现：`{since, attempts, nextAt, lastError, sshReason?, diagnosis, waitsForPassword?}`——这一轮从何时开始、已失败几次、下次何时尝试（正在尝试时为 `null`）、最近一次失败的对端原话、ssh 拒绝时的原因、连续失败 3 次后运行的连接检查（此前为 `null`），以及保存的密码被拒后的 `waitsForPassword: true`——此后在密码改变之前不再尝试。
+- `reconnect`：服务器正在把一台保持连接的机器连回来时出现：`{since, attempts, maxAttempts, nextAt, gaveUp?, lastError, sshReason?, diagnosis, waitsForPassword?}`——这一轮从何时开始、已失败几次与失败几次即停止、下次何时尝试（正在尝试时与停止后为 `null`）、停止的原因（`attempts` 或 `ssh`，重试后清除）、最近一次失败的对端原话、ssh 拒绝时的原因、连续失败 3 次后运行的连接检查（此前为 `null`），以及保存的密码被拒后的 `waitsForPassword: true`——此后在密码改变之前不再尝试。
 - `passwordSaved`：本服务器用自己保存的密码登录这台机器时为 `true`（见上文）。
 - `member`：机器在本 Project 的列表中时为 `true`，机器管理页为它显示一张卡片。`POST …/add` 只把它加入列表而不安装；`POST …/use` 在被要求时就把它加入列表，因此首次安装失败的机器连同它的任务留在列表中，直到被删除。
 - `checkoutImage`：仅当本服务器从源码检出运行（`pnpm dev`、`pnpm desktop`）时出现。这样的服务器在每次安装或启用机器时，用与热推送相同的打包器（`scripts/deploy.mjs --out`）从检出构建安装镜像，存放在 `<root>/machines/checkout-image/` 下，从不写进自己的 `hmr/`。字段为 `{state}`：`unbuilt`、`building`、`built`，或 `failed` 并在 `detail` 中带上构建输出的最后几行。构建失败时，该任务停在 `build the install image` 这一步。

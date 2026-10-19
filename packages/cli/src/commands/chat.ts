@@ -21,7 +21,9 @@
  * banner shows the agent, Workspace and model the Session will have; `/thinking` and
  * `/switch-model` typed before then change what it is created with, `/compact` and `/clear`
  * say there is no conversation yet. When creating it fails, the message is kept: the next
- * Enter sends it again.
+ * Enter sends it again. So it is when the server refuses that first message (a 4xx: no goal
+ * plugin, no model credential), and the Session just created for it is deleted — it never ran,
+ * and left behind it would be an empty conversation in every Web sidebar.
  *
  * `--resume` reuses an existing Session (full id or unique fragment; omitted = the
  * agent's most recent Session) and first renders its history from GET /messages; it
@@ -798,6 +800,11 @@ export function registerChatCommand(program: Command, t: Messages): void {
           state = "running";
           mark("C");
           let failed = false;
+          // What a Session this message creates is created with, for the catch below to put back.
+          const unstarted: {
+            pending: PendingSession | null;
+            pinAfterCreate: ThinkingLevelName | null;
+          } | null = session === null ? { pending, pinAfterCreate } : null;
           try {
             if (text === "/compact") {
               // Proactive context compaction: POST /compact and render its paired events
@@ -859,6 +866,26 @@ export function registerChatCommand(program: Command, t: Messages): void {
           } catch (err) {
             failed = true;
             out.write(`\n${t.error(err instanceof Error ? err.message : String(err))}\n`);
+            // The server refused the first message of the Session this message just created (no
+            // goal plugin, no model credential): that Session never ran and never will, and left
+            // on the server it is an empty conversation in every Web sidebar. It goes, and the
+            // message is kept for the next one, the way a failed create keeps it. A network error
+            // or a 5xx keeps the Session: the request may have reached it, and a resend goes there.
+            if (
+              unstarted !== null &&
+              session !== null &&
+              err instanceof ApiError &&
+              err.status >= 400 &&
+              err.status < 500
+            ) {
+              const refused = session.sessionId;
+              await client.request("DELETE", `/api/sessions/${refused}`).catch(() => undefined);
+              session = null;
+              ({ pending, pinAfterCreate } = unstarted);
+              resumable = false;
+              kept = text;
+              out.write(`${dim(t.chatMessageKept())}\n`);
+            }
           } finally {
             state = "idle";
             mark("D", failed ? 1 : 0);

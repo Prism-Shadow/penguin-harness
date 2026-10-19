@@ -57,6 +57,9 @@
  *   about again once it is unarchived.
  * - A deleted Session (session_deleted) is dropped and tombstoned, held or not, and a batch of
  *   them is one update.
+ * - A Session deleted while a reload or a next page that read it is on its way is not listed
+ *   by that answer; a reload in flight is dropped and asked again, so its totals do not count
+ *   the Session either.
  *
  * Property (seeded, 100 runs): after any sequence of loads, live flips and reloads, every list
  * the sidebar draws — time mode's, each Agent group's, each Workspace group's — is a prefix of
@@ -1002,6 +1005,68 @@ describe("archive, unarchive and delete", () => {
       expect(store.getState().deletedSessionIds.has(id), id).toBe(true);
     }
     expect(fetch.requests).toEqual([]);
+  });
+
+  /** Holds the next sidebar fetch's answer — read from the server now, delivered on release. */
+  function holdNextBatch(): { release: () => void } {
+    let release = () => {};
+    let held = false;
+    fetch.answer((request) => {
+      if (held || !request.path.endsWith("/sessions/batch")) return serve(request);
+      held = true;
+      const answer = serve(request);
+      return new Promise<Response>((resolve) => {
+        release = () => resolve(answer);
+      });
+    });
+    return { release: () => release() };
+  }
+  const withoutRow = (sessionId: string) =>
+    served.set(
+      key(null, "a1"),
+      served.get(key(null, "a1"))!.filter((s) => s.sessionId !== sessionId),
+    );
+
+  it("keeps out a Session deleted while a reload that read it was on its way, and asks again", async () => {
+    vi.useFakeTimers();
+    const store = await onScreen();
+    // A new conversation is announced and the list reloads; the server reads it...
+    served
+      .get(key(null, "a1"))!
+      .push(session("fresh", { lastActiveAt: "2026-09-16T11:00:00.000Z" }));
+    const hold = holdNextBatch();
+    const reload = store.getState().reload();
+    // ...then its first Task is refused and it is deleted, before that reload answers.
+    withoutRow("fresh");
+    applyUserEvent(store, deletedEvent("fresh"), () => undefined);
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    hold.release();
+    await reload;
+    await vi.runAllTimersAsync();
+    expect(ids(store)).not.toContain("fresh");
+    expect(store.getState().deletedSessionIds.has("fresh")).toBe(true);
+    // Asked once more: the late answer's totals counted the Session too.
+    expect(fetch.requests.filter((r) => r.path.endsWith("/sessions/batch"))).toHaveLength(2);
+    expect(active(store)).toBe(2);
+  });
+
+  it("keeps out a Session deleted while a next page that read it was on its way", async () => {
+    vi.useFakeTimers();
+    const rows = activeRun("r", 15);
+    served.set(key(null, "a1"), rows);
+    const store = boot();
+    await store.getState().reload();
+    // Below the first page: no held row stands for it.
+    const victim = rows[12]!.sessionId;
+    const hold = holdNextBatch();
+    const more = store.getState().loadMoreFor(["a1"]);
+    withoutRow(victim);
+    applyUserEvent(store, deletedEvent(victim), () => undefined);
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    hold.release();
+    await more;
+    expect(ids(store)).not.toContain(victim);
+    expect(ids(store)).toHaveLength(14);
   });
 });
 
