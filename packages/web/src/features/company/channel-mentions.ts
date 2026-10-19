@@ -4,12 +4,13 @@
  * what was typed, the token being typed at the caret, what a pick sends (the draft that
  * shows it by name is mention-draft.ts), how a stored message is split into plain runs
  * and mention runs for highlighting, and what a mention run displays and whether it
- * addresses the reader. What can follow `@` mirrors the server's findMentions
- * (organization/names.ts) — an employee's id or its NAME, a member's user id, `all`,
- * and the explicit `@agent:id` / `@user:id` / `@squad:id` — with its rules: the longest
- * handle wins, an ASCII handle ends at the end of its word, a name in a script without
- * spaces needs no space after it, and an employee comes before a member of the same id.
- * So what the composer highlights is what the server delivers.
+ * addresses the reader.
+ *
+ * TRIGGERING is exact (organization/names.ts): only `[@Label](mention://agent|user|squad/<id>)`
+ * and `[@Label](mention://all)` page someone; a bare `@name`, `@id`, `@all` or `@agent:<id>`
+ * in prose is inert. Picks therefore always insert the markdown form. RENDERING is generous:
+ * mentionRuns also chips legacy bare handles, so messages written before the exact grammar
+ * keep their chips — a chip is display, never proof of delivery.
  *
  * Membership is the source, not the org chart: a mention delivers only inside the channel it
  * was written in, and the server rejects a message naming an outsider (`mention_not_member`).
@@ -90,20 +91,27 @@ export function rankMentionCandidates(
 }
 
 /**
- * What a pick sends after the `@`: an employee's bare id, a member's bare id — unless an
- * employee shares it, in which case `user:` disambiguates, since the server resolves a bare
- * id to the employee first — a squad's explicit `squad:<id>` (a bare squad id resolves to
- * nothing on the server), and `all`.
+ * What a pick sends: always the exact markdown — `[@Label](mention://agent|user|squad/<id>)`,
+ * `[@Everyone](mention://all)` — since bare handles no longer trigger on the server. The
+ * label is the candidate's display name with brackets stripped (a name may hold any script
+ * and spaces, but link brackets would break the span); the URL carries kind and id.
  */
-export function mentionInsertId(
+export function mentionInsertWire(
   c: MentionCandidate,
-  candidates: readonly MentionCandidate[],
+  _candidates: readonly MentionCandidate[],
 ): string {
-  if (c.kind === "squad") return `squad:${c.id}`;
-  if (c.kind === "member" && candidates.some((o) => o.kind === "employee" && o.id === c.id)) {
-    return `user:${c.id}`;
-  }
-  return c.id;
+  void _candidates;
+  const label = c.label.replace(/[\[\]]/g, "");
+  if (c.kind === "all") return `[@${label}](mention://all)`;
+  const kind = c.kind === "squad" ? "squad" : c.kind === "member" ? "user" : "agent";
+  return `[@${label}](mention://${kind}/${c.id})`;
+}
+
+/** The mention token a draft wire carries: the `kind:id` (or `all`) inside its markdown, or the wire itself when it predates the exact grammar (old clipboard payloads). */
+export function wireToken(wire: string): string {
+  const m = /^\[@[^\]\n]*\]\(mention:\/\/(?:(agent|user|squad)\/([^)\s]+)|(all))\)$/.exec(wire.trim());
+  if (!m) return wire;
+  return m[3] === "all" ? "all" : `${m[1]}:${m[2]}`;
 }
 
 /** What a mention token displays: the employee's name for an agent id (prefixed or bare), the user id for a member, the squad's name for `squad:<id>` (the names map carries `squad:<id>` → name entries for this), the "everyone" label for `all`. */
@@ -183,16 +191,48 @@ function endsHandle(handle: string, rest: string): boolean {
 }
 
 /**
- * Splits a message into plain runs and mention runs, in order. `names` are the employees'
- * names (name → agent id): a mention by name becomes a run whose token is `agent:<id>`, so
- * it is labelled and recognised exactly like one written by id. Without them only the ASCII
- * forms are found, as before; trailing `.`/`-` stay outside the mention as the server reads
- * them.
+ * Splits a message into plain runs and mention runs, in order: the exact markdown spans
+ * first (the server's grammar, character for character — the run's token is the URL's
+ * `kind:id`, or `all`, so labels and chips read exactly like the stored mention), then
+ * the legacy bare handles in the gaps between them (`@id`, `@name`, `@all`,
+ * `@agent|user|squad:<id>`), so messages written before the exact grammar keep their
+ * chips. A chip is display: only the markdown spans page someone.
+ *
+ * `names` are the employees' names (name → agent id) for the legacy pass: a mention by
+ * name becomes a run whose token is `agent:<id>`. Without them only the ASCII legacy
+ * forms are found; trailing `.`/`-` stay outside a legacy mention as they always did.
  */
 export function mentionRuns(
   text: string,
   names: ReadonlyMap<string, string> = new Map(),
 ): TextRun[] {
+  const spans: Array<{ start: number; end: number; token: string }> = [];
+  MENTION_MD_RUN.lastIndex = 0;
+  for (let m = MENTION_MD_RUN.exec(text); m !== null; m = MENTION_MD_RUN.exec(text)) {
+    spans.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      token: m[4] === "all" ? "all" : `${m[2]}:${m[3]}`,
+    });
+  }
+  const runs: TextRun[] = [];
+  let last = 0;
+  for (const span of spans) {
+    if (span.start > last) runs.push(...legacyRuns(text.slice(last, span.start), names));
+    runs.push({ text: text.slice(span.start, span.end), mention: span.token });
+    last = span.end;
+  }
+  if (last < text.length) runs.push(...legacyRuns(text.slice(last), names));
+  return runs;
+}
+
+// The exact span, mirrored from the server (organization/names.ts): an `@`-labelled link
+// to mention://agent|user|squad/<id> or mention://all. The label must start with `@`.
+const MENTION_MD_RUN =
+  /\[(@[^\]\n]*)\]\(mention:\/\/(?:(agent|user|squad)\/([^)\s]+)|(all))\)/g;
+
+/** The pre-exact-grammar pass over one gap between markdown spans: bare handles chip, but page nobody. */
+function legacyRuns(text: string, names: ReadonlyMap<string, string>): TextRun[] {
   const byLength = [...names.keys()].sort((a, b) => b.length - a.length);
   const runs: TextRun[] = [];
   let last = 0;

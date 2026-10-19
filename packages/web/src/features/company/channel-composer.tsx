@@ -52,10 +52,11 @@ import { S } from "../../lib/strings";
 import { fitTextarea } from "../../lib/textarea-fit";
 import { PrincipalChip } from "./shared";
 import {
-  mentionInsertId,
+  mentionInsertWire,
   mentionLabel,
   mentionQueryAt,
   rankMentionCandidates,
+  wireToken,
 } from "./channel-mentions";
 import type { MentionCandidate, MentionKind } from "./channel-mentions";
 import {
@@ -243,14 +244,16 @@ export function ChannelComposer({
   }, []);
 
   /**
-   * The name a mention of this token shows: exactly what a sent message's chip renders
-   * (channel-markdown). A pick writes it, and a pasted mention must still read it.
+   * The name a mention of this wire shows: exactly what a sent message's chip renders
+   * (channel-markdown). A pick writes it, and a pasted mention must still read it. The
+   * wire is the exact markdown; its token reads the label (and a pre-exact-grammar wire
+   * reads itself, so old clips still paste).
    */
-  const labelOf = (wire: string) => mentionLabel(wire, names, S.company.principalAll);
+  const labelOf = (wire: string) => mentionLabel(wireToken(wire), names, S.company.principalAll);
 
   const pick = (c: MentionCandidate) => {
     if (mention === null) return;
-    const wire = mentionInsertId(c, candidates);
+    const wire = mentionInsertWire(c, candidates);
     const next = draftInsertMention(draft, mention.start, caret, labelOf(wire), wire);
     setDraft(next.draft);
     setCaret(next.caret);
