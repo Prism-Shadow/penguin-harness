@@ -48,7 +48,7 @@ export const en: Strings = {
     badge: "for free",
     /** No-break spaces keep each "any …" pair on one line when a phone wraps the tagline. */
     automation:
-      "Fully automatic optimization: any\u00a0model, any\u00a0algorithm, any\u00a0Benchmark",
+      "Fully automatic optimization: any\u00a0model, any\u00a0algorithm, any\u00a0benchmark",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [
