@@ -73,7 +73,7 @@ Voice:
 - Long explanatory sentences, with a short one where a result lands.
 - Humour only about the work, never about readers or other projects.
 - Headings in sentence case, each saying what happens in its section; a play on words is fine.
-- One rhetorical question at most in the whole post, as the turn: it ends the section before the turn, and the next section answers it. This overrides the style guide's ban on rhetorical questions for that one place only; no section and not the post opens or ends on a question.
+- One rhetorical question at most in the whole post, as the turn: it ends the section before the turn, and the next section answers it. Apart from it, no section opens or ends on a question, and the post never does.
 <!-- /prompt -->
 
 <!-- prompt zh -->
@@ -142,7 +142,7 @@ TL;DR：只在大纲要求、而且 FACTS 里至少有三个核心数字时才�
 - 解释用长句，结果落地的地方用一个短句。
 - 幽默只拿工作本身开玩笑，不拿读者或其他项目开玩笑。
 - 每个标题都按这一节的作用来选词，说出这一节发生了什么。英文标题里的双关不硬译，换一个起同样作用的中文标题。
-- 全文最多一个设问，用在转折处：它放在转折前一节的末尾，由下一节回答。这一处覆盖文风指南「不反问」的规定，仅限这一处；任何一节和全文都不以问句开头或结尾。
+- 全文最多一个设问，用在转折处：它放在转折前一节的末尾，由下一节回答。除此之外，任何一节都不以问句开头或结尾，全文也不以问句结尾。
 <!-- /prompt -->
 
 ## Notes
@@ -167,11 +167,11 @@ a key they authorize for that purpose.
 `check` only warns about a question that opens a section. Exclamation marks keep the script's
 default of none. Change this file and the script together.
 
-**Where the rest of the old `penguin-harness-tech-blog` skill went.** Drawing (inline SVG, classes,
-the hidden text list, ids, both themes at 390 px) is the skill's figures section and
-`check --svg`. Polishing is the pipeline's `polish` and `review` steps. The pre-PR checklist is
-`check`, `review` and the visual check. The file pair, frontmatter and screenshot hosting are in
-`penguin-harness-dev`'s `reference/authoring.md`.
+**What this profile leaves to others.** Drawing a figure (inline SVG, classes, the hidden text
+list, ids, both themes at 390 px) is the skill's figures section and `check --svg`. Polishing is
+the pipeline's `polish` and `review` steps. What is checked before the PR is `check`, `review` and
+the visual check. The file pair, frontmatter and screenshot hosting are in `penguin-harness-dev`'s
+`reference/authoring.md`.
 
 ## Check settings
 
