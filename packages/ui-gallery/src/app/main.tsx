@@ -12,7 +12,8 @@
  *
  * `open=settings` (or `settings.<page>`) asks the app for its Settings dialog through the
  * app's own request seam, which the account menu answers as soon as it mounts; `embed=1` makes
- * the app the guest of the page that frames it (guest-frame.ts).
+ * the app the guest of the page that frames it (guest-frame.ts); `notices=1` raises the notices a
+ * conversation can carry in the demo store (mock/notices.ts).
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -42,7 +43,7 @@ const isSettingsPage = (value: string): value is SettingsSectionKey =>
   (SETTINGS_PAGES as readonly string[]).includes(value);
 
 const params = parseFrameParams(window.location.search);
-getStore({ lang: params.lang, signedIn: !params.signedOut });
+getStore({ lang: params.lang, signedIn: !params.signedOut, notices: params.notices === true });
 installFetchShim();
 
 // Framed, a focus must not scroll the page around the frame: the chat composer focuses itself
