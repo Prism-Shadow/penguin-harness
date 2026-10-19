@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** fix
 - **Scope:** `ui`
+- **PR:** [#1220](https://github.com/Prism-Shadow/penguin-harness/pull/1220)
 
 [English](2026-10-19-wallpaper-message-fills.md)
 
