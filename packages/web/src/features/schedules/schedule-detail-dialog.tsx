@@ -36,6 +36,7 @@ import { describeInstant, describePeriod } from "./schedule-describe";
 import { autoPauseReasonOf } from "./schedule-panel-state";
 import { fireErrorText, shortSession } from "./schedule-fire";
 import { toggleBody } from "./schedule-upsert";
+import { ScheduleWebhookSection } from "./schedule-webhook-section";
 
 /** Display status → badge, the same mapping the page's table and the settings tab use. */
 const STATUS_BADGE: Record<ScheduleStatus | "auto_paused", BadgeStyle> = {
@@ -270,6 +271,15 @@ export function ScheduleDetailDialog({
           <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-control-well p-3 font-mono text-xs">
             {item.prompt}
           </pre>
+
+          {projectId !== null && (
+            <ScheduleWebhookSection
+              projectId={projectId}
+              agentId={item.agentId}
+              name={item.name}
+              canEdit={canEdit}
+            />
+          )}
 
           {canEdit && (
             <p className="mt-3 text-xs text-fg-muted">{S.schedulesPage.detailEditHint}</p>

@@ -1744,6 +1744,101 @@ export const fireSchedule = (projectId: string, agentId: string, name: string) =
     { method: "POST" },
   );
 
+/**
+ * Schedule webhook triggers — LOCAL-ONLY mirrors of the server contract in
+ * `packages/server/src/api/types.ts` (ScheduleWebhook*), for the same reason the inbox
+ * requests above are mirrored: the published server package in this tree may lag the
+ * server tree, so new contracts are mirrored here rather than imported.
+ */
+export type ScheduleWebhookProvider = "generic" | "github";
+
+export interface ScheduleWebhookView {
+  provider: ScheduleWebhookProvider;
+  enabled: boolean;
+  /** Empty except at creation/rotation: the path embeds the bearer token. */
+  path: string;
+  hasSecret: boolean;
+  secretHint: string | null;
+  lastFiredAt: string | null;
+}
+
+export interface ScheduleWebhookSecretView extends ScheduleWebhookView {
+  token: string;
+}
+
+export type ScheduleWebhookDeliveryStatus =
+  | "queued"
+  | "accepted"
+  | "skipped"
+  | "ignored"
+  | "duplicate"
+  | "rejected";
+
+export interface ScheduleWebhookDeliveryView {
+  id: string;
+  dedupeKey: string | null;
+  event: string;
+  signatureStatus: string;
+  status: ScheduleWebhookDeliveryStatus;
+  firingId: number | null;
+  payload: string;
+  createdAt: string;
+  attemptCount: number;
+}
+
+const webhookBase = (projectId: string, agentId: string, name: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/schedules/${encodeURIComponent(name)}/webhook`;
+
+/** Creates the trigger; the only answer (besides rotation) that carries the token. */
+export const createScheduleWebhook = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  body: { provider?: ScheduleWebhookProvider; secret?: string },
+) => apiFetch<ScheduleWebhookSecretView>(webhookBase(projectId, agentId, name), { method: "POST", body });
+
+/** Reads the trigger; the token stays redacted (path reads empty). */
+export const getScheduleWebhook = (projectId: string, agentId: string, name: string) =>
+  apiFetch<ScheduleWebhookView>(webhookBase(projectId, agentId, name));
+
+export const updateScheduleWebhook = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  body: { provider?: ScheduleWebhookProvider; secret?: string | null; enabled?: boolean },
+) => apiFetch<ScheduleWebhookView>(webhookBase(projectId, agentId, name), { method: "PUT", body });
+
+/** Mints a fresh token (the old URL dies); the only other answer carrying it. */
+export const rotateScheduleWebhook = (projectId: string, agentId: string, name: string) =>
+  apiFetch<ScheduleWebhookSecretView>(`${webhookBase(projectId, agentId, name)}/rotate`, { method: "POST" });
+
+export const deleteScheduleWebhook = (projectId: string, agentId: string, name: string) =>
+  apiFetch<void>(webhookBase(projectId, agentId, name), { method: "DELETE" });
+
+export const listScheduleWebhookDeliveries = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  limit = 10,
+) =>
+  apiFetch<{ deliveries: ScheduleWebhookDeliveryView[] }>(
+    `${webhookBase(projectId, agentId, name)}/deliveries`,
+    { query: { limit } },
+  );
+
+/** Replays a delivery: a deliberate second firing of the same payload. */
+export const replayScheduleWebhookDelivery = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  deliveryId: string,
+) =>
+  apiFetch<{ status: string; delivery_id: string; run_id: string; queued: boolean }>(
+    `${webhookBase(projectId, agentId, name)}/deliveries/${encodeURIComponent(deliveryId)}/replay`,
+    { method: "POST" },
+  );
+
 // Plugin library, and an Agent's installed skills and hook packages ----------------------------
 
 /** Plugin library (available to any logged-in user): groups, each plugin's manifest and the metadata of its skills — never SKILL.md bodies or hook scripts. */
