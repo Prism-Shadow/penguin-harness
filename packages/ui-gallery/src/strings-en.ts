@@ -254,6 +254,7 @@ export const en: GalleryStrings = {
     themeAccent: "theme",
     sampleSend: "Send",
     selectedRow: "Selected",
+    sampleBubble: "My message",
     sampleLink: "Open the docs",
     linkHover: "hover",
     tones: "Tones",
