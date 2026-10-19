@@ -1,7 +1,7 @@
 ---
 name: penguin-orchestration
 description: Drive PenguinHarness itself from a shell — list and create agents and sessions, send and steer messages mid-flight, and query costs and scheduled tasks via the penguin CLI over the local server.
-version: 2026.10.10.1
+version: 2026.10.15.1
 ---
 
 # Penguin Orchestration
@@ -130,7 +130,7 @@ penguin schedule update daily-report --period 12h    # adjust; --enable/--disabl
 penguin schedule rm daily-report                     # remove — no confirmation prompt
 ```
 
-- `--agent-id` defaults to yourself from the caller env, so this schedules the current agent. `--start-at` takes ISO 8601 or `now`; `--period` is at least 5m (`30m`/`12h`/`1d`/`7d`), omit it for a one-shot; `--end-at` bounds recurrence. Target the session you are in — `--session-id "$PENGUIN_SESSION_ID"` — unless the user asked for somewhere else: the prompt then arrives in this conversation, with its context. Leave the target off when the user wants a separate session, or when the task is better off starting clean (a nightly report that should not inherit this conversation); each firing then opens a new session, which `--workspace <path>` and the `--model-id` + `--provider` pair configure.
+- `--agent-id` defaults to yourself from the caller env, so this schedules the current agent. `--start-at` takes ISO 8601 or `now`; `--period` is at least 5m (`30m`/`12h`/`1d`/`7d`), omit it for a one-shot, which needs a future `--start-at` (`now` is refused there); `--end-at` bounds recurrence. Target the session you are in — `--session-id "$PENGUIN_SESSION_ID"` — unless the user asked for somewhere else: the prompt then arrives in this conversation, with its context. Leave the target off when the user wants a separate session, or when the task is better off starting clean (a nightly report that should not inherit this conversation); each firing then opens a new session, which `--workspace <path>` and the `--model-id` + `--provider` pair configure.
 - `add` creates the schedule **enabled** (`--disabled` stages it off) — deliberately diverging from the raw file, where `enabled` defaults to false. `update` is read-modify-write: unspecified fields keep their stored values, and switching the target form clears the other one.
 - In `schedule ls`, read: the AGENT column (without `--agent-id` the listing spans agents), `enabled` (a disabled entry never fires), `startAt` (first firing), `period` (absent means one-shot), the target — an existing session versus a new session per firing — and `lastFiredAt`.
 - The CLI writes through the schedules API, so mistakes are rejected synchronously. The TOML file stays the single source of truth — `<app_data_dir>/agents/<agent_id>/agent_state/schedule/<name>.toml`, fields mirroring the flags (`prompt`, `enabled` — false by default in the file, `start_at`, `period`, `end_at`, `session_id` / `workspace`+`provider`+`model_id`) — and remains editable with file tools; your system prompt's schedule roster lists yours. A hand edit is only validated by the periodic reconcile (roughly every 30s), with errors landing in error records rather than your terminal — prefer the CLI.

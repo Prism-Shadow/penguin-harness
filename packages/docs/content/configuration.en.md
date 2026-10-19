@@ -556,6 +556,8 @@ Each file `agent_state/schedule/<name>.toml` describes one scheduled task, which
 
 Write both `provider` and `model_id`, or neither. A lone `model_id` is rejected; with neither, the Project's default model is used.
 
+A task that can never fire again — a one-shot task that has fired or was missed, or a task past `end_at` — is moved, unchanged, into `agent_state/schedule/expired/` by the scheduler; see [Finished tasks are archived](/schedules#finished-tasks-are-archived).
+
 ```toml
 prompt = "Check yesterday's builds and summarize the failures"
 enabled = true

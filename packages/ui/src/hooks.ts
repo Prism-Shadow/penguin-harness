@@ -48,7 +48,7 @@
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
  * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
  * | `ui-scrim`         | the dimmed layer behind a dialog, drawer or sheet        | —                                                     |
- * | `ui-stream`        | text that may still be streaming in: an assistant        | `data-state="streaming" \| "done"`; while streaming, the markdown blocks (or a `<pre>` host's text node) are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends |
+ * | `ui-stream`        | text that may still be streaming in: an assistant        | `data-state="streaming" \| "done"` (and `data-settling` for the moments a settled host eases its veil away); while streaming, the markdown blocks (or a `<pre>` host's text node) are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends; under a `fade` reveal, runs of text that just arrived (or elements that arrived whole) carry `data-arrive` until they have faded in |
  * |                    | reply, a thinking row, a compaction summary, a tool's    |                                                       |
  * |                    | output; host: `StreamText`                               |                                                       |
  * | `ui-glyph`         | an icon drawn in every theme's style; the theme's CSS    | direct children `data-set="line" \| "octicons" \| "pixel"`, one drawing each; the line set may hold a `data-part="duo"` body under its stroke; a decorative glyph may carry `data-tint="<hue>"` |
@@ -188,10 +188,18 @@
  * blocks or the text; whatever else it holds (a stop reason, a files card) comes after the
  * caret, and the host holds those back until `done`. Primer changes nothing: the host's own
  * pulsing caret glyph stays. Frost hides the caret and lets the trailing
- * lines surface through a soft veil — a gradient from nothing to the page's colour over the last
- * line and a half, so the newest words are the faintest — drawn only while the caret is
- * the host's last child, so the veil covers the text and never what the host appends after it;
- * on `done` the veil eases away over the reveal duration instead of snapping off. Console draws
+ * lines surface through a soft veil — a mask on the host that fades the last line and a half to
+ * six tenths of its ink, so the newest words are the faintest and whatever lies behind them (the
+ * page, a card, a custom background image) shows through with nothing painted over it — drawn
+ * only while the caret is the host's last child, so the veil covers the text and never what the
+ * host appends after it. How far it is drawn is the registered `--_stream-veil`; on `done` the host
+ * holds `data-settling` while a theme's transition on it runs, so the veil eases away over the
+ * reveal duration instead of snapping off, and drops the attribute once the transition ends (at
+ * once where no theme transitions it), so a settled reply carries no mask. Under Frost's `fade`
+ * reveal each run of words the reveal puts on screen also fades in on its own — `data-arrive` on
+ * the run, which theme.css fades over the reveal duration, with nothing painted — and the host
+ * renders without the runs once the last has faded, so a settled reply is the markup of one that
+ * never streamed. Console draws
  * the caret as a solid block cursor in the body ink, a mono cell wide, blinking in steps, and
  * runs a last paragraph in so the cursor follows its last character; nothing else moves. Under
  * reduced motion the caret holds still and Frost draws no veil.

@@ -7,6 +7,9 @@
  *   in word by word) or `typewriter` (character by character). Missing or unknown → `instant`.
  * - `--ui-stream-rate`: characters per second of a paced reveal (`fade` paces its words at this
  *   rate too). Missing, zero or not a number → no pacing.
+ * - `--ui-dur-reveal`, the theme's reveal duration: how long each run a `fade` reveal puts on
+ *   screen stays a run of its own while the theme fades it in (stream-arrivals.ts). Missing, zero
+ *   or not a duration → the runs are not kept apart, and nothing fades.
  *
  * Read the way chart-style.ts reads the chart tokens: one MutationObserver on <html> drops the
  * cached record when anything there changes, a subscriber gets the same object while nothing it
@@ -24,6 +27,8 @@ export interface StreamStyle {
   reveal: StreamReveal;
   /** Characters per second of a paced reveal; 0 when the theme sets none. */
   rate: number;
+  /** How long a newly revealed run fades in under `fade`, ms; 0 when the theme sets none. */
+  fadeMs: number;
   /** The root asks for reduced motion (`data-motion="reduced"`). */
   reducedMotion: boolean;
 }
@@ -32,11 +37,22 @@ export interface StreamStyle {
 export const DEFAULT_STREAM_STYLE: StreamStyle = {
   reveal: "instant",
   rate: 0,
+  fadeMs: 0,
   reducedMotion: false,
 };
 
 /** Far past any reading pace: a larger value is a typo, and is held to this. */
 const MAX_RATE = 5000;
+/** Far past any fade a reader waits through: a larger value is a typo, and is held to this. */
+const MAX_FADE_MS = 2000;
+
+/** A CSS duration (`360ms`, `0.36s`) in milliseconds; 0 for anything else. */
+function durationMs(value: string): number {
+  const match = /^(-?[\d.]+)(ms|s)$/.exec(value.trim());
+  if (match === null) return 0;
+  const amount = Number.parseFloat(match[1]!) * (match[2] === "s" ? 1000 : 1);
+  return Number.isFinite(amount) && amount > 0 ? Math.min(amount, MAX_FADE_MS) : 0;
+}
 
 /**
  * The record, from a reader of custom properties (`getPropertyValue` on the root's computed
@@ -53,6 +69,7 @@ export function readStreamStyle(
   return {
     reveal: keyword === "fade" || keyword === "typewriter" ? keyword : "instant",
     rate: Number.isFinite(rate) && rate > 0 ? Math.min(rate, MAX_RATE) : 0,
+    fadeMs: durationMs(read("--ui-dur-reveal")),
     reducedMotion: motion === "reduced",
   };
 }
@@ -69,7 +86,12 @@ export function effectiveReveal(style: StreamStyle, prefersReducedMotion: boolea
 
 /** Whether two records reveal the same way. */
 export function sameStreamStyle(a: StreamStyle, b: StreamStyle): boolean {
-  return a.reveal === b.reveal && a.rate === b.rate && a.reducedMotion === b.reducedMotion;
+  return (
+    a.reveal === b.reveal &&
+    a.rate === b.rate &&
+    a.fadeMs === b.fadeMs &&
+    a.reducedMotion === b.reducedMotion
+  );
 }
 
 /**

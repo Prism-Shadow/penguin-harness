@@ -17,6 +17,7 @@ import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { ScopeFiles } from "./memory-nav";
+import { scopeKey } from "../../lib/project-scope";
 
 export function useMemoryListing(
   projectId: string | null,
@@ -25,8 +26,12 @@ export function useMemoryListing(
   wanted: boolean,
   changes: readonly MemoryChangeRow[],
 ): { scopes: ScopeFiles[] | null; error: string | null } {
-  /** The Agent a listing is about: its id on the server that holds it. */
-  const agentKey = agentId === null ? null : `${machineId ?? ""}\0${agentId}`;
+  /**
+   * The Agent a listing is about: its id in its Project, on the server that holds it. The
+   * Project is part of it — every Project has a `default_agent`, and one Project's memory
+   * shown under another's is that other Agent's memory, delete marks and all.
+   */
+  const agentKey = scopeKey(projectId, agentId, machineId);
   const [state, setState] = useState<{
     forAgent: string | null;
     scopes: ScopeFiles[] | null;

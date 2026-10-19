@@ -1260,7 +1260,7 @@ export interface AgentSummary {
   kernelOutdated: boolean;
   /** Vault key count (number of keys in agent_state/.vault.toml). */
   vaultKeyCount: number;
-  /** Schedule count (number of .toml files under agent_state/schedule/, including invalid ones). */
+  /** Schedule count (number of .toml files directly under agent_state/schedule/, including invalid ones; archived files under schedule/expired/ are not counted). */
   scheduleCount: number;
   /** Workbench folders with a manifest, including ones with a load error. */
   workbenchCount: number;
@@ -4153,7 +4153,11 @@ export interface UsageResponse {
 // Schedule
 // ---------------------------------------------------------------------------
 
-/** Display-facing schedule status: the file's `enabled` only expresses intent; the rest is derived from runtime state. */
+/**
+ * Display-facing schedule status: the file's `enabled` only expresses intent; the rest is derived from runtime state.
+ * The scheduler archives an agent's settled tasks (done / missed / expired) into `schedule/expired/`, so the agent
+ * listings show those three only while a queued fire is still to be sent or when the move failed.
+ */
 export type ScheduleStatus = "active" | "disabled" | "expired" | "done" | "missed" | "invalid";
 
 export interface ScheduleItem {

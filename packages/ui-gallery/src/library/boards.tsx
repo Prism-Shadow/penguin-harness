@@ -12,6 +12,7 @@ import { IconsBoard } from "../foundations/icons";
 import { MotionBoard } from "../foundations/motion";
 import { ShapeBoard } from "../foundations/shape";
 import { TypeBoard } from "../foundations/typography";
+import { AttachmentsBoard } from "./boards/attachments";
 import { AvatarsBoard } from "./boards/avatars";
 import { BadgesBoard } from "./boards/badges";
 import { ButtonsBoard } from "./boards/buttons";
@@ -55,6 +56,7 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   layout: LayoutBoard,
   data: DataBoard,
   machines: MachinesBoard,
+  attachments: AttachmentsBoard,
   colour: ColourBoard,
   type: TypeBoard,
   shape: ShapeBoard,

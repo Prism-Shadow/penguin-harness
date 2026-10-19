@@ -13,7 +13,7 @@
  * instead: the router then runs in memory from that path, so the app navigates without
  * touching the host document's URL — the only seam the app needs to be mounted elsewhere.
  */
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -23,6 +23,7 @@ import {
   createMemoryRouter,
   createRoutesFromElements,
 } from "react-router";
+import { releaseBootWallpaper } from "@prismshadow/penguin-ui/boot";
 import { NavigationGuard } from "./lib/unsaved/navigation-guard";
 import { useAuth } from "./state/auth";
 import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
@@ -121,8 +122,19 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
-/** The root of every route: the leave guard above the page the route renders. */
+/**
+ * The root of every route: the leave guard above the page the route renders. Until the session is
+ * known no screen shows, and the pre-paint script's boot layer keeps the stored custom background
+ * on the window meanwhile; once it is, the first screen mounts in the same commit — the shell,
+ * painting its own wallpaper, or a screen outside it — and the boot layer ends before that frame
+ * is painted.
+ */
 function RootFrame() {
+  const { user } = useAuth();
+  const settled = user !== undefined;
+  useLayoutEffect(() => {
+    if (settled) releaseBootWallpaper(document.documentElement);
+  }, [settled]);
   return (
     <>
       <NavigationGuard />

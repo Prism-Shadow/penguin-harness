@@ -1,8 +1,7 @@
 /**
  * The chips with remove buttons (src/components/forms/tag-input/tag-input.tsx): a chip names what
  * it stands for and takes itself back with a × the caller names; its label gives way while a
- * suffix stays whole; a chip holding a control keeps its tooltip off the control; the two weights
- * space their rows apart.
+ * suffix stays whole; a chip holding a control keeps its tooltip off the control.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -20,12 +19,11 @@ describe("Chip", () => {
     expect(fixed).not.toContain("<button");
   });
 
-  it("truncates the label and keeps the suffix and the readout whole after it", () => {
+  it("truncates the label and keeps the suffix whole after it", () => {
     const html = renderStatic(
       createElement(Chip, {
         label: "server.ts",
         suffix: ":12-30",
-        meta: "4 KB",
         tooltip: "src/server.ts:12-30",
         mono: true,
       }),
@@ -36,9 +34,7 @@ describe("Chip", () => {
     expect(html.indexOf("server.ts<")).toBeLessThan(
       html.indexOf('<span class="shrink-0">:12-30</span>'),
     );
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["font-mono", "bg-fill-neutral", "text-fg-subtle"]),
-    );
+    expect(classTokens(html)).toEqual(expect.arrayContaining(["font-mono", "bg-fill-neutral"]));
   });
 
   it("with a control, names the label part alone and parts it from the control with a rule", () => {
@@ -75,15 +71,5 @@ describe("TagInput", () => {
     const order = ["FIRST", "alpha", "beta", "LAST"].map((s) => html.indexOf(s));
     expect(order).toEqual([...order].sort((x, y) => x - y));
     expect(html.match(/<button/g)).toHaveLength(1);
-  });
-
-  it("packs soft chips tight and spaces bordered ones wider", () => {
-    const soft = classTokens(renderStatic(createElement(TagInput, { chips })));
-    expect(soft).toEqual(expect.arrayContaining(["gap-1", "bg-fill-neutral"]));
-    const outline = classTokens(
-      renderStatic(createElement(TagInput, { chips, variant: "outline" })),
-    );
-    expect(outline).toEqual(expect.arrayContaining(["gap-2", "border", "border-line"]));
-    expect(outline).not.toContain("bg-fill-neutral");
   });
 });

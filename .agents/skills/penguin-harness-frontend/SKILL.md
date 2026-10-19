@@ -309,6 +309,11 @@ Every control defaults to `sm` so a forgotten prop lands where its neighbours al
 surfaces are outside the family entirely: the chat composer is `text-base` because it holds prose,
 the file editor `font-mono text-xs` because it holds code.
 
+**A toolbar is one height.** `Button`'s `sm` and `base` rungs are the controls' own heights, so a
+search box, a `Select` and a button of one rung line up. A choice in a toolbar is the package's
+`Select` at that rung (the machine picker is one), never a button dressed as a select with a fixed
+`h-*`: the old machine picker, a button with `h-8`, stood about 5px above the controls beside it.
+
 **A button takes the rung of whatever it stands beside.** `Button` defaults to `md`
 (`text-sm px-3 py-1.5`), the page rung, and that is for an action standing on its own: an empty
 state's, the login card's submit, a list's "add a custom model". Wherever a button sits next to form
@@ -557,6 +562,13 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 - **Example and template cards show a short summary**, one line saying what it is; the full text
   (a mission, a prompt) lands in the field it fills, and examples live where the choice is made,
   not again under that field (company landing, 2026-10-03).
+- **What a message carries is an attachment tile.** An image or a file attached to a message —
+  staged in the composer, sent, or inside a steer — is the UI package's `AttachmentImage` /
+  `AttachmentFile` in an `AttachmentList`, never a hand-built thumbnail or a chip. An image box
+  takes a box radius (`rounded-md`), never `rounded-control`: Frost's controls are pills at
+  9999px, and that radius on a box that is not square draws a stadium (owner, 2026-10-17:
+  「图片传上去不知道为啥变成椭圆了」). The gallery's attachments board and its browser spec
+  (`packages/ui-gallery/e2e/attachments.spec.mjs`) hold the shapes.
 - **Comments explain constraints, not history**, and never cite a design doc — inline the constraint.
 
 ## Verify

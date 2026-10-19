@@ -1,12 +1,23 @@
 /**
  * Scheduler runtime semantics: missed slots are not
- * backfilled; a one-shot task registered after its time is marked missed
- * immediately; periodic stepping never fires twice for the same slot; a busy
+ * backfilled; periodic stepping never fires twice for the same slot; a busy
  * target queues and sends once idle; a deleted bound Session marks the task
  * invalid, recoverable by editing the file; deleting the file clears the run
  * state; new-Session mode; event notifications.
+ *
+ * Archiving settled tasks into `schedule/expired/`:
+ * - A fired one-shot is archived before `schedule_fired` reaches the user, and it is gone from the
+ *   listing and from SQLite; it never fires again.
+ * - A one-shot found already past at registration is archived, not listed as missed.
+ * - A periodic task past end_at is archived by the reconcile pass.
+ * - An expired periodic task with a queued fire stays until that fire is sent, then is archived.
+ * - Disabled and invalid tasks stay, even once their time has passed.
+ * - A clash in `expired/` keeps every file: the newcomer takes a timestamped name.
+ * - A file moved back with its time still past is archived again, without firing twice.
+ * - When the move fails, the error is recorded, the task stays listed, and a later pass archives it.
  * All tests use doubles and a controlled clock — no real LLM / core Session.
  */
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -45,6 +56,8 @@ describe("scheduler", () => {
   let started: Array<{ sessionId: string; text: string }>;
   let created: Array<Parameters<ScheduleSessionCreator["createSession"]>[0]>;
   let events: Array<{ userId: string; event: ScheduleServerEvent }>;
+  /** Runs inside the notification itself: what a client refetching on the event would see. */
+  let onNotify: ((event: ScheduleServerEvent) => void) | null;
   let errors: ErrorRecordArgs[];
   let scheduler: Scheduler;
 
@@ -77,6 +90,7 @@ describe("scheduler", () => {
     started = [];
     created = [];
     events = [];
+    onNotify = null;
     errors = [];
     let seq = 0;
     scheduler = wire(Scheduler, {
@@ -101,7 +115,10 @@ describe("scheduler", () => {
       },
       projectConfig: wire(ProjectConfigService, { paths: { root } }),
       errors: { record: (args: ErrorRecordArgs) => void errors.push(args) },
-      notify: (userId: string, event: ScheduleServerEvent) => void events.push({ userId, event }),
+      notify: (userId: string, event: ScheduleServerEvent) => {
+        onNotify?.(event);
+        events.push({ userId, event });
+      },
       now: () => nowMs,
     });
     await fs.mkdir(scheduleDir(root, P, A), { recursive: true });
@@ -136,6 +153,26 @@ describe("scheduler", () => {
 
   function iso(ms: number): string {
     return new Date(ms).toISOString();
+  }
+
+  const expiredDir = (): string => path.join(scheduleDir(root, P, A), "expired");
+
+  /** Task names the scheduler lists (the routes' view). */
+  async function listed(): Promise<string[]> {
+    return (await scheduler.listAgent(P, A)).entries.map((e) => e.def.name);
+  }
+
+  /** File names under `schedule/expired/`, sorted. */
+  async function archived(): Promise<string[]> {
+    try {
+      return (await fs.readdir(expiredDir())).sort();
+    } catch {
+      return [];
+    }
+  }
+
+  function inSchedule(name: string): boolean {
+    return existsSync(path.join(scheduleDir(root, P, A), `${name}.toml`));
   }
 
   /**
@@ -266,32 +303,207 @@ describe("scheduler", () => {
     expect(state?.lastFiredAt).toBe(iso(T0 + 30 * MIN));
   });
 
-  it("one-shot task: fires once when the future slot arrives; already expired at registration is marked missed and never fires", async () => {
+  it("a fired one-shot is archived before schedule_fired reaches the user, gone from the listing and from SQLite", async () => {
     insertSession("session-1");
-    await writeFile("future", [
+    const lines = [
       `prompt = "f"`,
       `enabled = true`,
       `start_at = "${iso(T0 + 10 * MIN)}"`,
       `session_id = "session-1"`,
-    ]);
+    ];
+    await writeFile("future", lines);
+    await scheduler.tickOnce();
+    expect(await listed()).toEqual(["future"]);
+
+    // What a client refetching on the event would find at that very moment.
+    let seenAtEvent: { inSchedule: boolean; hasRunState: boolean } | null = null;
+    onNotify = (event) => {
+      if (event.type !== "schedule_fired") return;
+      seenAtEvent = {
+        inSchedule: inSchedule("future"),
+        hasRunState: repo.find(P, A, "future") !== null,
+      };
+    };
+    nowMs = T0 + 11 * MIN;
+    await scheduler.tickOnce();
+    expect(started).toHaveLength(1);
+    expect(events.map((e) => e.event.type)).toEqual(["schedule_fired"]);
+    expect(seenAtEvent).toEqual({ inSchedule: false, hasRunState: false });
+    // Moved unchanged; the run state is dropped as for a deleted file.
+    expect(await archived()).toEqual(["future.toml"]);
+    expect(await fs.readFile(path.join(expiredDir(), "future.toml"), "utf8")).toBe(
+      lines.join("\n"),
+    );
+    expect(repo.find(P, A, "future")).toBeNull();
+    expect(await listed()).toEqual([]);
+
+    nowMs = T0 + 60 * MIN;
+    await scheduler.tickOnce();
+    expect(started).toHaveLength(1);
+  });
+
+  it("a one-shot found already past at registration is archived, not listed as missed", async () => {
+    insertSession("session-1");
     await writeFile("stale", [
       `prompt = "s"`,
       `enabled = true`,
       `start_at = "${iso(T0 - 10 * MIN)}"`,
       `session_id = "session-1"`,
     ]);
-    await scheduler.tickOnce();
+    expect(await scheduler.listAgent(P, A)).toEqual({ entries: [], invalid: [] });
+    expect(await archived()).toEqual(["stale.toml"]);
+    expect(inSchedule("stale")).toBe(false);
+    expect(repo.find(P, A, "stale")).toBeNull();
     expect(started).toHaveLength(0);
-    expect(repo.find(P, A, "stale")?.missed).toBe(true);
+  });
 
-    nowMs = T0 + 11 * MIN;
+  it("a periodic task past end_at is archived by the reconcile pass", async () => {
+    insertSession("session-1");
+    await writeFile("window", [
+      `prompt = "w"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + MIN)}"`,
+      `period = "5m"`,
+      `end_at = "${iso(T0 + 20 * MIN)}"`,
+      `session_id = "session-1"`,
+    ]);
+    await scheduler.tickOnce();
+    nowMs = T0 + 20 * MIN; // Still inside the window (end_at is inclusive): stays.
+    await scheduler.tickOnce();
+    expect(inSchedule("window")).toBe(true);
+
+    nowMs = T0 + 21 * MIN;
+    await scheduler.tickOnce();
+    expect(await archived()).toEqual(["window.toml"]);
+    expect(repo.find(P, A, "window")).toBeNull();
+    expect(await listed()).toEqual([]);
+  });
+
+  it("an expired periodic task with a queued fire stays until that fire is sent, then is archived", async () => {
+    insertSession("session-1");
+    busy.add("session-1");
+    await writeFile("late", [
+      `prompt = "late"`,
+      `enabled = true`,
+      `start_at = "${iso(T0)}"`,
+      `period = "5m"`,
+      `end_at = "${iso(T0 + 7 * MIN)}"`,
+      `session_id = "session-1"`,
+    ]);
+    nowMs = T0 - MIN;
+    await scheduler.tickOnce();
+    nowMs = T0 + 5 * MIN; // Due while the Session is busy: queued.
+    await scheduler.tickOnce();
+    expect(events.map((e) => e.event.type)).toEqual(["schedule_queued"]);
+
+    nowMs = T0 + 10 * MIN; // Past end_at, the fire still waiting: the task must not move yet.
+    await scheduler.tickOnce();
+    expect(inSchedule("late")).toBe(true);
+    const [entry] = (await scheduler.listAgent(P, A)).entries;
+    expect(entry).toMatchObject({ def: { name: "late" }, queued: true });
+
+    busy.delete("session-1");
+    await scheduler.tickOnce();
+    expect(started.map((s) => s.sessionId)).toEqual(["session-1"]);
+    expect(events.map((e) => e.event.type)).toEqual(["schedule_queued", "schedule_fired"]);
+    expect(await archived()).toEqual(["late.toml"]);
+    expect(repo.find(P, A, "late")).toBeNull();
+  });
+
+  it("disabled and invalid tasks stay listed, even once their time has passed", async () => {
+    insertSession("session-1");
+    await writeFile("paused", [
+      `prompt = "p"`,
+      `enabled = false`,
+      `start_at = "${iso(T0 + 5 * MIN)}"`,
+      `session_id = "session-1"`,
+    ]);
+    await writeFile("ghost", [
+      `prompt = "g"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + MIN)}"`,
+      `period = "5m"`,
+      `end_at = "${iso(T0 + 10 * MIN)}"`,
+      `session_id = "session-gone"`,
+    ]);
+    await scheduler.tickOnce();
+    nowMs = T0 + MIN; // ghost's Session is gone: invalid.
+    await scheduler.tickOnce();
+    nowMs = T0 + 30 * MIN; // Past paused's one-shot time and past ghost's end_at.
+    await scheduler.tickOnce();
+    expect(await listed()).toEqual(["ghost", "paused"]);
+    expect(await archived()).toEqual([]);
+    expect(repo.find(P, A, "ghost")?.invalidReason).toBe("session_missing");
+    expect(started).toHaveLength(0);
+  });
+
+  it("a clash in expired/ keeps every file: the newcomer takes a timestamped name", async () => {
+    const stale = (prompt: string) => [
+      `prompt = "${prompt}"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 - 10 * MIN)}"`,
+    ];
+    await fs.mkdir(expiredDir(), { recursive: true });
+    await fs.writeFile(path.join(expiredDir(), "stale.toml"), "older", "utf8");
+    await writeFile("stale", stale("second"));
+    await listed();
+    await writeFile("stale", stale("third"));
+    await listed();
+    expect(await archived()).toEqual([
+      "stale.20260716T090000Z-2.toml",
+      "stale.20260716T090000Z.toml",
+      "stale.toml",
+    ]);
+    const read = (f: string) => fs.readFile(path.join(expiredDir(), f), "utf8");
+    expect(await read("stale.toml")).toBe("older");
+    expect(await read("stale.20260716T090000Z.toml")).toContain("second");
+    expect(await read("stale.20260716T090000Z-2.toml")).toContain("third");
+  });
+
+  it("a file moved back with its time still past is archived again, without firing twice", async () => {
+    insertSession("session-1");
+    await writeFile("once", [
+      `prompt = "o"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + MIN)}"`,
+      `session_id = "session-1"`,
+    ]);
+    await scheduler.tickOnce();
+    nowMs = T0 + 2 * MIN;
     await scheduler.tickOnce();
     expect(started).toHaveLength(1);
-    expect(repo.find(P, A, "future")?.firedOnce).toBe(true);
+    expect(await archived()).toEqual(["once.toml"]);
 
-    nowMs = T0 + 60 * MIN;
+    // Moving it back registers it as a new task, whose time is already past.
+    await fs.rename(
+      path.join(expiredDir(), "once.toml"),
+      path.join(scheduleDir(root, P, A), "once.toml"),
+    );
+    nowMs = T0 + 3 * MIN;
     await scheduler.tickOnce();
     expect(started).toHaveLength(1);
+    expect(inSchedule("once")).toBe(false);
+    expect(await archived()).toEqual(["once.toml"]);
+    expect(await listed()).toEqual([]);
+  });
+
+  it("when the move fails, the error is recorded, the task stays listed, and a later pass archives it", async () => {
+    await writeFile("stale", [
+      `prompt = "s"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 - 10 * MIN)}"`,
+    ]);
+    // A plain file where the archive directory should be: the move cannot happen.
+    await fs.writeFile(expiredDir(), "in the way", "utf8");
+    const { entries } = await scheduler.listAgent(P, A);
+    expect(entries.map((e) => [e.def.name, e.state.missed])).toEqual([["stale", true]]);
+    expect(errors.some((e) => e.code === "schedule_archive_failed")).toBe(true);
+    expect(inSchedule("stale")).toBe(true);
+
+    await fs.unlink(expiredDir());
+    await scheduler.tickOnce();
+    expect(await archived()).toEqual(["stale.toml"]);
+    expect(await listed()).toEqual([]);
   });
 
   it("busy queueing: a running target queues and notifies, sends once idle; repeated slots don't stack", async () => {
