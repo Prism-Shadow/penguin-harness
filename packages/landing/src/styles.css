@@ -385,9 +385,10 @@ html.dark .fig-svg .fig-s2 {
   fill: var(--site-brand-950);
   stroke: var(--site-brand-400);
 }
+/* The dashed edge keeps amber-800 in dark: against the lighter fill it is what tells this series
+   from .fig-s1, which is about as light there. */
 html.dark .fig-svg .fig-s3 {
   fill: color-mix(in oklab, var(--site-amber-300) 70%, var(--site-amber-800));
-  stroke: var(--site-amber-300);
 }
 
 /* Guides: an axis, a bracket over a span, a dotted line that lines one point up with another,
