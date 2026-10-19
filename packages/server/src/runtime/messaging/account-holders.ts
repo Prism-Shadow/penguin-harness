@@ -31,19 +31,18 @@ import { isMessagingChannel } from "./enabled-channel.js";
 /** Where a server answers its enabled accounts (GET, admin only). */
 export const MESSAGING_ACCOUNTS_PATH = "/api/messaging/accounts";
 
-/** The bot accounts this server has enabled, once each, whatever Project their Sessions are in. */
+/**
+ * The bot accounts this server has enabled, whatever Project their Sessions are in. Each appears
+ * once: the state route lets one Session at a time hold an account.
+ */
 export function enabledAccounts(
   bindings: Pick<MessagingBindings, "listAll">,
   sessions: Pick<SessionIndex, "findById">,
 ): MessagingAccount[] {
-  const seen = new Set<string>();
   const out: MessagingAccount[] = [];
   for (const row of bindings.listAll()) {
     if (!row.enabled || !isMessagingChannel(row.channel)) continue;
     if (sessions.findById(row.sessionId) === null) continue;
-    const key = `${row.channel}:${row.accountId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
     out.push({ channel: row.channel, accountId: row.accountId });
   }
   return out;
@@ -109,8 +108,9 @@ async function askMachine(
 
 /**
  * The holders of one account: this server when `heldHere`, then each machine that says it holds
- * it, in the order given. The machines are asked at once; each request carries the machine API's
- * own deadline, so one silent machine costs at most that and holds no other answer back.
+ * it, in the order given. The machines are asked at once, and each request carries the machine
+ * API's own deadline: a silent machine delays the answer by at most that, and its failure only
+ * lists it as unreachable.
  */
 export async function findAccountHolders(args: {
   heldHere: boolean;
