@@ -219,9 +219,7 @@ Before the Optimizer changes a Reference State, it makes sure `<agent>/snapshots
 
 In the Web App, an agent's settings page offers **Export snapshot** to any member and **Import snapshot** to the Project owner. An import replaces the whole Agent State, takes the `version` inside the package, and keeps the current Vault; the current version is snapshotted first. Importing a version that is not newer than the current one asks for confirmation. The create dialog on the Agents page can also start a new agent from an exported package (**Initialize from a snapshot**): the agent starts with the package's state and version, with no confirmation.
 
-Export returns the existing snapshot of the current version, creating it on first use. A confirmed import with the same version preserves that snapshot. The package must contain a real `agent_state/` directory and a readable `system_config.yaml` file. Configuration symlinks must use relative targets and stay inside that directory throughout resolution, so the configuration remains usable after import. Internal configuration and Skill links are preserved.
-
-The server serializes imports and snapshot creation for the same Agent, including requests spanning a platform reload. Replacement failures restore the previous State; a failed restoration keeps a recovery copy and reports its path. Cleanup failures are logged with the staging path and preserve the transfer's committed result. This coordination covers server transfers within one process; direct filesystem edits and other server processes have their own writers.
+A package is accepted only if `agent_state/` is a real directory and every symbolic link inside it resolves within it; a link that leaves `agent_state/` or points at nothing is rejected, and so is a package whose `system_config.yaml` cannot be read. An import stops before touching the State if the current Vault cannot be read. Should the swap fail and the previous State not be restorable, that State and the Vault stay in the import's staging directory under the agent's folder, and the server log names it.
 
 ## Auditability
 

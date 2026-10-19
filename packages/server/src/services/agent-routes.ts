@@ -96,6 +96,7 @@ export class AgentRoutes {
       now: () => clock.now(),
     });
     this.transferRoutes = agentTransferRoutes({
+      agentConfigService,
       access,
       snapshots: this.snapshots,
     });

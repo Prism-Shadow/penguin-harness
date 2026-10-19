@@ -7,10 +7,13 @@
  * repacked. Import goes by the `version` inside the package and keeps the current
  * vault; a snapshot of the current version is automatically taken before import;
  * importing a package version equal to or lower than the current version requires
- * explicit confirmation (otherwise 409).
+ * explicit confirmation (otherwise 409). A package's `agent_state/` must be a real
+ * directory whose links all resolve inside it; the current vault must be readable (a
+ * missing one is simply absent).
  * Docs: /docs/self-improvement § "Snapshots and versions".
  */
 import { randomBytes } from "node:crypto";
+import type { Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as tar from "tar";
@@ -26,90 +29,68 @@ import {
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { Paths } from "../hmr/capabilities.js";
+import type { Log, Paths } from "../hmr/capabilities.js";
 import type { Snapshots } from "../mechanisms/agents.js";
 
 /** Vault file name inside a snapshot/import package (used for archive filtering). */
 const VAULT_BASENAME = ".vault.toml";
-const TRANSFERS_RESOURCE_ID = "platform.agentStateTransfers";
 
 function isVaultEntry(entryPath: string): boolean {
   return path.posix.basename(entryPath.replaceAll("\\", "/")) === VAULT_BASENAME;
 }
 
-/** Resolve only links that survive moving agent_state out of the extracted package. */
-async function packageConfigPath(stateDir: string): Promise<string> {
-  if (!(await fs.lstat(stateDir)).isDirectory()) {
-    throw new Error("agent_state must be a directory, not a symbolic link.");
+/** `target` is `base` itself or lies below it (both already resolved by `realpath`). */
+function isInside(base: string, target: string): boolean {
+  const rel = path.relative(base, target);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+/**
+ * The package's `agent_state/` must be a real directory whose symbolic links all resolve
+ * inside it. The directory is moved out of the staging area whole, so a link that leaves it
+ * (into a sibling the package also carried, or anywhere else) would dangle or point at files
+ * that are not this Agent's. `realpath` lets the filesystem resolve chains and `..` in
+ * filesystem order, which no lexical check gets right; a link whose target is missing is
+ * refused for the same reason. tar itself already confines entry paths and hard links to the
+ * extraction directory, and a hard link keeps its content once staging is removed.
+ */
+async function assertLinksStayInside(stateDir: string): Promise<void> {
+  let top: Stats;
+  try {
+    top = await fs.lstat(stateDir);
+  } catch {
+    return; // No agent_state at all: the config read below reports the missing file.
   }
-  const parts = ["system_config.yaml"];
-  let current = stateDir;
-  let hops = 0;
-  while (parts.length > 0) {
-    const part = parts.shift()!;
-    if (part === "" || part === ".") continue;
-    if (part === "..") {
-      if (current === stateDir)
-        throw new Error("Configuration links must stay inside agent_state.");
-      current = path.dirname(current);
-      continue;
-    }
-    const next = path.join(current, part);
-    const entry = await fs.lstat(next);
-    if (entry.isSymbolicLink()) {
-      // Match the existing config writer's 40-hop limit.
-      if (++hops > 40) throw new Error("Too many configuration symbolic links.");
-      const link = await fs.readlink(next);
-      if (path.parse(link).root !== "") {
-        throw new Error("Configuration links must be relative to agent_state.");
+  if (!top.isDirectory()) {
+    throw badRequest("Import failed: the package's agent_state is not a real directory.");
+  }
+  const base = await fs.realpath(stateDir);
+  const pending = [stateDir];
+  for (let dir = pending.pop(); dir !== undefined; dir = pending.pop()) {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(full); // A Dirent is lstat-based: a linked directory is a link, not walked.
+        continue;
       }
-      parts.unshift(...link.split(process.platform === "win32" ? /[/\\]+/ : /\/+/));
-    } else {
-      current = next;
-      if (parts.length === 0 && entry.isFile()) return path.join(stateDir, "system_config.yaml");
-      if (!entry.isDirectory()) throw new Error("Configuration must resolve to a regular file.");
+      if (!entry.isSymbolicLink()) continue;
+      const target = await fs.realpath(full).catch(() => null);
+      if (target === null || !isInside(base, target)) {
+        const name = path.relative(stateDir, full).replaceAll("\\", "/");
+        throw badRequest(
+          `Import failed: the package's link agent_state/${name} leaves agent_state or points at nothing.`,
+        );
+      }
     }
   }
-  throw new Error("Configuration must resolve to a regular file.");
 }
 
 @Component()
 export class SnapshotService implements Snapshots {
   @Use() private readonly paths!: Paths;
-  private transfers = new Map<string, Promise<void>>();
+  @Use() private readonly log!: Log;
   private get root(): string {
     return this.paths.root;
-  }
-
-  setup({ resources }: ClassCtx) {
-    // In-flight HTTP transfers outlive the platform generation that accepted them.
-    this.transfers = resources.claim(TRANSFERS_RESOURCE_ID) ?? this.transfers;
-    resources.register(TRANSFERS_RESOURCE_ID, this.transfers);
-  }
-
-  private async withTransfer<T>(
-    projectId: string,
-    agentId: string,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    let key: string;
-    try {
-      key = await fs.realpath(agentDir(this.root, projectId, agentId));
-    } catch {
-      throw new HttpError(404, "agent_not_found", "Agent does not exist.");
-    }
-    const next = (this.transfers.get(key) ?? Promise.resolve()).then(operation);
-    const settled = next.then(
-      () => undefined,
-      () => undefined,
-    );
-    this.transfers.set(key, settled);
-    try {
-      return await next;
-    } finally {
-      if (this.transfers.get(key) === settled) this.transfers.delete(key);
-    }
   }
 
   /** Current Agent State version number (missing field treated as 1); throws 404 if the Agent doesn't exist. */
@@ -128,14 +109,6 @@ export class SnapshotService implements Snapshots {
 
   /** Ensures a snapshot exists for the current version (not repacked for the same version), returns the snapshot file path and version number. */
   async ensureSnapshot(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string }> {
-    return this.withTransfer(projectId, agentId, () => this.packSnapshot(projectId, agentId));
-  }
-
-  /** Called while this Agent's transfer owns the state directory. */
-  private async packSnapshot(
     projectId: string,
     agentId: string,
   ): Promise<{ version: number; file: string }> {
@@ -162,8 +135,10 @@ export class SnapshotService implements Snapshots {
         ["agent_state"],
       );
       await fs.rename(tmp, file);
-    } finally {
-      await fs.rm(tmp, { force: true });
+    } catch (err) {
+      // A half-written archive must not sit beside the real snapshots.
+      await fs.rm(tmp, { force: true }).catch(() => {});
+      throw err;
     }
     return { version, file };
   }
@@ -194,22 +169,12 @@ export class SnapshotService implements Snapshots {
     archive: Buffer,
     opts: { confirm: boolean; preSnapshot?: boolean },
   ): Promise<{ version: number }> {
-    return this.withTransfer(projectId, agentId, () =>
-      this.replaceFromArchive(projectId, agentId, archive, opts),
-    );
-  }
-
-  private async replaceFromArchive(
-    projectId: string,
-    agentId: string,
-    archive: Buffer,
-    opts: { confirm: boolean; preSnapshot?: boolean },
-  ): Promise<{ version: number }> {
     const current = await this.currentVersion(projectId, agentId);
     const base = agentDir(this.root, projectId, agentId);
     const staging = path.join(base, `.import-${randomBytes(6).toString("hex")}`);
     await fs.mkdir(staging, { recursive: true });
-    let preserveStaging = false;
+    // Set when staging holds the only copy of the previous State (swap and rollback both failed).
+    let keepStaging = false;
     try {
       const archiveFile = path.join(staging, "archive.tar.gz");
       await fs.writeFile(archiveFile, archive);
@@ -226,14 +191,15 @@ export class SnapshotService implements Snapshots {
       }
 
       const incomingState = path.join(extractDir, "agent_state");
+      await assertLinksStayInside(incomingState);
+
+      // Validation: the package must contain agent_state/system_config.yaml, and version must be valid.
+      const configPath = path.join(extractDir, "agent_state", "system_config.yaml");
       let parsed: unknown;
       try {
-        const configPath = await packageConfigPath(incomingState);
         parsed = parseYaml(await fs.readFile(configPath, "utf8"));
       } catch {
-        throw badRequest(
-          "Import failed: agent_state must be a directory containing a readable system_config.yaml; configuration links must be relative and stay inside agent_state.",
-        );
+        throw badRequest("Import failed: the package is missing agent_state/system_config.yaml.");
       }
       if (
         parsed === null ||
@@ -261,10 +227,13 @@ export class SnapshotService implements Snapshots {
       }
 
       // Automatically snapshots the current version before import (reused if one already exists for that version), so a mistaken import can be rolled back.
-      if (opts.preSnapshot !== false) await this.packSnapshot(projectId, agentId);
+      if (opts.preSnapshot !== false) await this.ensureSnapshot(projectId, agentId);
 
-      // Prepare the vault before swapping directories; snapshots exclude secrets,
-      // so a failed rollback must retain the original state in staging.
+      // Replace agent_state: merge the current vault into the directory to be swapped in
+      // (extraction filtered any vault inside the package), so the replacement is a pure
+      // rename swap. The vault never goes into a snapshot: only a *missing* vault means there
+      // is nothing to keep — any other read failure stops the import, because the swap would
+      // otherwise discard the only copy.
       const stateDir = agentStateDir(this.root, projectId, agentId);
       let vault: Buffer | null = null;
       try {
@@ -281,24 +250,26 @@ export class SnapshotService implements Snapshots {
         await fs.rename(incomingState, stateDir);
       } catch (err) {
         try {
-          await fs.rename(trash, stateDir);
-        } catch (restoreError) {
-          preserveStaging = true;
+          await fs.rename(trash, stateDir); // Rollback: restore the old directory if swapping in the new one fails.
+        } catch (rollbackErr) {
+          keepStaging = true;
           throw new AggregateError(
-            [err, restoreError],
-            `Import failed and the previous Agent State could not be restored. Recovery copy: ${trash}`,
+            [err, rollbackErr],
+            `Import failed and the previous Agent State could not be restored; it is kept at ${trash} — move it back to ${stateDir}.`,
           );
         }
         throw err;
       }
       return { version: incoming };
     } finally {
-      if (!preserveStaging) {
-        try {
-          await fs.rm(staging, { recursive: true, force: true });
-        } catch (error) {
-          console.warn(`Could not remove import staging directory: ${staging}`, error);
-        }
+      // Once the swap has landed the import is committed: a cleanup failure is logged, not
+      // reported as a failed import (which would also make the retry a 409).
+      if (!keepStaging) {
+        await fs.rm(staging, { recursive: true, force: true }).catch((err: unknown) => {
+          this.log.line(
+            `[snapshots] import staging directory could not be removed: ${staging}: ${String(err)}`,
+          );
+        });
       }
     }
   }

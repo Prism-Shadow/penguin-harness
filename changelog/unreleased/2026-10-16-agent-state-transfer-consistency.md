@@ -1,4 +1,4 @@
-# Serialized Agent State transfers
+# Agent State imports keep the previous State and vault when they fail
 
 - **Date:** 2026-10-16
 - **Type:** fix
@@ -7,14 +7,12 @@
 
 [中文版](2026-10-16-agent-state-transfer-consistency.zh.md)
 
-Serialized snapshot creation and package imports for each Agent. Concurrent imports checked the version committed by the preceding transfer, and failed transfers released the queue for subsequent requests.
+Made a failed Agent State import keep the previous State and the vault, and refused packages whose links leave `agent_state/`.
 
 ## Details
 
-- Keyed transfer queues by the real Agent directory, so filesystem aliases shared the same queue, and retained in-flight queues across platform reloads.
-- Preserved the current vault by stopping imports when reading it failed for reasons other than a missing file.
-- Retained the previous Agent State in staging when both replacement and rollback failed, and included its recovery path in the error.
-- Rejected package roots and configuration links that would become unreadable after import. Preserved internal relative configuration links, hardlinks, and Skill links.
-- Kept the committed import result when removing the old State failed, and logged the staging path for cleanup.
-- Removed incomplete snapshot archives after packing or publication failed.
-- Added HTTP scenarios covering concurrent transfers, filesystem aliases, platform reloads, independent Agents, archive-based Agent creation, and recovery from real filesystem failures.
+- Treated only a missing vault as absent: an import that could not read the current vault stopped before replacing the State.
+- Kept both States in the import's staging directory when the new State could not be moved in and the previous one could not be moved back, and named that path in the error.
+- Logged a failed cleanup of the staging directory after a committed import instead of failing the import; it still reported its version.
+- Removed the `.tmp-` file a failed snapshot packing left beside the snapshots.
+- Rejected a package whose `agent_state/` is not a real directory or whose symbolic links leave `agent_state/` or point at nothing; relative links inside `agent_state/` were kept.
