@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** feature
 - **Scope:** `landing`
+- **PR:** [#1217](https://github.com/Prism-Shadow/penguin-harness/pull/1217)
 
 [中文版](2026-10-19-blog-figure-styles.zh.md)
 
