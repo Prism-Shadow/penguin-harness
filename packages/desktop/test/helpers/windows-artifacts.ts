@@ -3,11 +3,9 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { stringify } from "yaml";
 
 const require = createRequire(import.meta.url);
-const { stringify } = createRequire(new URL("../../../server/package.json", import.meta.url))(
-  "yaml",
-);
 const builderRequire = createRequire(require.resolve("electron-builder"));
 export const { buildBlockMap } = builderRequire("app-builder-lib/out/targets/blockmap/blockmap.js");
 
@@ -19,10 +17,12 @@ export const certificate = {
   notAfter: "2025-01-01T00:00:00Z",
 };
 
+/** What the build-side Authenticode script reports for a valid, timestamped signature. */
 export function signedReport(file: string) {
   return { status: 0, path: file, signer: certificate, timestamp: certificate };
 }
 
+/** A Windows build output directory whose latest.yml describes the installer's bytes. */
 export async function artifactFixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "penguin-windows-artifacts-"));
   const installer = path.join(root, "penguin-desktop-win32-x64.exe");
@@ -32,6 +32,7 @@ export async function artifactFixture() {
   await writeFile(installer, bytes);
   await writeFile(path.join(root, "win-unpacked/PenguinHarness.exe"), "signed app fixture");
   await writeFile(path.join(root, "win-unpacked/resources/elevate.exe"), "signed helper fixture");
+  await writeFile(path.join(root, "win-unpacked/resources/app-update.yml"), "provider: github\n");
   await buildBlockMap(installer, "gzip", `${installer}.blockmap`);
   const pkg = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
   const latest = {
@@ -40,17 +41,7 @@ export async function artifactFixture() {
     sha512,
     files: [{ url: path.basename(installer), sha512, size: bytes.length }],
   };
-  const config: Record<string, unknown> = {
-    provider: "github",
-    owner: "Prism-Shadow",
-    repo: "penguin-harness",
-    publisherName: ["Rotated Publisher"],
-    updaterCacheDirName: "penguin-harness-desktop-updater",
-  };
-  const save = async () => {
-    await writeFile(path.join(root, "latest.yml"), stringify(latest));
-    await writeFile(path.join(root, "win-unpacked/resources/app-update.yml"), stringify(config));
-  };
+  const save = () => writeFile(path.join(root, "latest.yml"), stringify(latest));
   await save();
-  return { root, installer, bytes, sha512, latest, config, save };
+  return { root, installer, bytes, sha512, latest, save };
 }
