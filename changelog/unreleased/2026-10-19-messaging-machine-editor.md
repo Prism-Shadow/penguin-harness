@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** feature
 - **Scope:** `web`, `ui-gallery`
+- **PR:** [#1219](https://github.com/Prism-Shadow/penguin-harness/pull/1219)
 
 [中文版](2026-10-19-messaging-machine-editor.zh.md)
 
