@@ -4,7 +4,6 @@
  * supply — WebApp carries none, and company mode passes its own (features/company/org-routes.tsx).
  */
 import type { ComponentType } from "react";
-import { Navigate } from "react-router";
 import type { PageEntry } from "./page-table";
 
 export function ContributedPage({
@@ -20,5 +19,10 @@ export function ContributedPage({
     );
   }
   const Component = builtins[page.renderer.builtin];
-  return Component === undefined ? <Navigate to="/chat" replace /> : <Component />;
+  if (Component === undefined) {
+    throw new Error(
+      `Missing builtin renderer "${page.renderer.builtin}" for contributed page "${page.key}" (${page.path})`,
+    );
+  }
+  return <Component />;
 }
