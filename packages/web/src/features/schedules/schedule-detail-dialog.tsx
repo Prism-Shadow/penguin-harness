@@ -6,12 +6,17 @@
  * The row click is the way in (the Project list has one row per task and no room for the
  * prompt); editing is the way out — Edit hands the task to the shared form
  * (schedule-form-modal.tsx), which is the only place a task is written, so this dialog never
- * duplicates the form's rules. Enable/disable and delete stay here, owner-only like every other
- * write, and both go through the same whole-file-replace semantics the settings tab uses:
- * toggling resends every field with `enabled` flipped (toggleBody).
+ * duplicates the form's rules. Fire-now, enable/disable and delete stay here, owner-only like
+ * every other write: toggling goes through the same whole-file-replace semantics the settings
+ * tab uses (resends every field with `enabled` flipped — toggleBody), firing is an extra run
+ * that never consumes the schedule (fireSchedule, errors mapped by fireErrorText).
  */
 import { useState } from "react";
-import type { ProjectScheduleItem, ScheduleItem, ScheduleStatus } from "@prismshadow/penguin-server/api";
+import type {
+  ProjectScheduleItem,
+  ScheduleItem,
+  ScheduleStatus,
+} from "@prismshadow/penguin-server/api";
 import {
   Badge,
   Button,
@@ -29,6 +34,7 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { describeInstant, describePeriod } from "./schedule-describe";
 import { autoPauseReasonOf } from "./schedule-panel-state";
+import { fireErrorText, shortSession } from "./schedule-fire";
 import { toggleBody } from "./schedule-upsert";
 
 /** Display status → badge, the same mapping the page's table and the settings tab use. */
@@ -97,6 +103,22 @@ export function ScheduleDetailDialog({
     }
   };
 
+  /** Fire once now: an extra run (queued when the target is busy), then re-read so the last-fired time agrees. */
+  const fire = async () => {
+    if (projectId === null) return;
+    setBusy(true);
+    try {
+      const fired = await api.fireSchedule(projectId, item.agentId, item.name);
+      const short = shortSession(fired.sessionId);
+      toastSuccess(fired.queued ? S.schedule.toastQueued(short) : S.schedule.toastFired(short));
+      onChanged();
+    } catch (e) {
+      toastError(fireErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async () => {
     if (projectId === null) return;
     setBusy(true);
@@ -122,11 +144,26 @@ export function ScheduleDetailDialog({
         footer={
           <>
             {canEdit && (
-              <Button size="sm" variant="danger" disabled={busy} onClick={() => setConfirmingDelete(true)}>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy}
+                onClick={() => setConfirmingDelete(true)}
+              >
                 {S.common.delete}
               </Button>
             )}
             <div className="grow" />
+            {canEdit && (
+              <Button
+                size="sm"
+                disabled={busy || item.status === "invalid"}
+                title={item.status === "invalid" ? S.schedule.fireInvalidHint : undefined}
+                onClick={() => void fire()}
+              >
+                {S.schedule.fireNow}
+              </Button>
+            )}
             {canEdit && (
               <Button size="sm" disabled={busy} onClick={() => void toggle()}>
                 {item.enabled ? S.schedule.disable : S.schedule.enable}
@@ -214,7 +251,9 @@ export function ScheduleDetailDialog({
             {item.prompt}
           </pre>
 
-          {canEdit && <p className="mt-3 text-xs text-fg-muted">{S.schedulesPage.detailEditHint}</p>}
+          {canEdit && (
+            <p className="mt-3 text-xs text-fg-muted">{S.schedulesPage.detailEditHint}</p>
+          )}
           {!canEdit && <p className="mt-3 text-xs text-fg-muted">{S.schedule.readOnlyHint}</p>}
         </div>
       </Modal>

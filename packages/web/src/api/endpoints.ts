@@ -1722,6 +1722,19 @@ export const deleteSchedule = (projectId: string, agentId: string, name: string)
     { method: "DELETE" },
   );
 
+/**
+ * Fire one scheduled task right now (an extra run; the schedule itself is untouched).
+ * Answers where the firing went — the session, sent or queued behind a busy target.
+ * The shape is inline: the server's ScheduleFireResponse rides the deployed server,
+ * which may lag this page (see fireErrorText).
+ */
+export const fireSchedule = (projectId: string, agentId: string, name: string) =>
+  apiFetch<{ sessionId: string; queued: boolean }>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/schedules/${encodeURIComponent(name)}/fire`,
+    { method: "POST" },
+  );
+
 // Plugin library, and an Agent's installed skills and hook packages ----------------------------
 
 /** Plugin library (available to any logged-in user): groups, each plugin's manifest and the metadata of its skills — never SKILL.md bodies or hook scripts. */
