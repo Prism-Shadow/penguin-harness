@@ -1,12 +1,15 @@
 /**
- * The dock's terminal-side helpers: creating shells for terminal tabs, bringing back a
- * conversation's own shells, and the global `terminal.*` commands. Split from dock-state.ts so
- * the store stays pure (unit-testable without fetch); this module owns every server round-trip a
- * terminal tab needs.
+ * The dock's terminal-side helpers: the conversation the docks belong to, its shells, creating
+ * one, opening the terminal panel, and the global `terminal.*` commands. Split from
+ * dock-state.ts so the store stays pure (unit-testable without fetch); this module owns every
+ * server round-trip the terminal panel needs.
  *
- * A shell belongs to the Session that created it (the server records `sessionId`): a
- * conversation creates its shells with its own id, and lists and opens only those. A draft has
- * no Session yet, so it has no terminal at all until its first send.
+ * The terminal is ONE dock panel per conversation (`terminal`, 「命令行终端」), and its body
+ * draws the conversation's shells as a strip of tabs inside it, the way the browser panel draws
+ * its pages. A shell belongs to the Session that created it (the server records `sessionId`): a
+ * conversation creates its shells with its own id, and its panel lists exactly those, on its
+ * machine — including ones opened on another device. A draft has no Session yet, so it has no
+ * terminal at all until its first send.
  */
 import { useSyncExternalStore } from "react";
 import { toastError } from "@prismshadow/penguin-ui";
@@ -18,20 +21,29 @@ import {
   noteTerminalCreated,
   noteTerminalReowned,
   refreshTerminals,
+  terminalApiSupported,
   terminalsOf,
+  watchTerminals,
 } from "../terminal/terminal-list";
 import { rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
-  addTerminalTab,
   currentDockScope,
   docksOnScreen,
-  showTerminal,
+  isTabShown,
+  openPanel,
+  setShownShell,
+  shownShell,
   subscribeDock,
-  terminalTabDock,
   toggleDock,
-  toggleTerminalDocks,
+  togglePanelShown,
   type DockPosition,
 } from "./dock-state";
+
+/** The terminal panel's id in the registry and the dock store (and its stored tab key). */
+export const TERMINAL_PANEL = "terminal";
+
+/** Where the panel's tab lands when it has none yet and nothing asked for a dock. */
+const TERMINAL_DOCK: DockPosition = "bottom";
 
 /** Where a new shell starts when no Workspace is known: the user's home directory. */
 const HOME_CWD = "~";
@@ -96,11 +108,46 @@ export function useDockSessionId(): string | null {
   return useSyncExternalStore(subscribeDockSession, dockSessionId);
 }
 
-/** This conversation's live shells with no tab in its docks (the "+" menu's small rows). */
-export function untabbedTerminals(sessionId: string): TerminalInfo[] {
-  return terminalsOf(sessionId, conversation.machineId).filter(
-    (t) => terminalTabDock(t.id) === null,
-  );
+/** The conversation's live shells, on its machine, in creation order — the panel's strip. */
+export function ownTerminals(): TerminalInfo[] {
+  const sessionId = dockSessionId();
+  return sessionId === null ? [] : terminalsOf(sessionId, conversation.machineId);
+}
+
+/**
+ * The shell the panel shows: the one last shown here while it is still one of the
+ * conversation's live shells, else the newest; null when it has none.
+ */
+export function shownTerminalId(): string | null {
+  const own = ownTerminals();
+  const kept = shownShell();
+  if (kept !== null && own.some((t) => t.id === kept)) return kept;
+  return own.at(-1)?.id ?? null;
+}
+
+/** Whether the panel is offered here: a server with terminals, and a Session to own them. */
+export function terminalPanelOffered(): boolean {
+  return terminalApiSupported() && dockSessionId() !== null;
+}
+
+/**
+ * terminalPanelOffered's change feed, for the panel registry: fires only when the answer flips,
+ * and only listens — the registry follows it for good, from module load, on every page.
+ */
+export function subscribeTerminalPanelOffered(listener: () => void): () => void {
+  let last = terminalPanelOffered();
+  const check = (): void => {
+    const next = terminalPanelOffered();
+    if (next === last) return;
+    last = next;
+    listener();
+  };
+  const offList = watchTerminals(check);
+  const offSession = subscribeDockSession(check);
+  return () => {
+    offList();
+    offSession();
+  };
 }
 
 /**
@@ -120,18 +167,18 @@ function isBadCwd(err: unknown): boolean {
 }
 
 /**
- * Creates a fresh shell for this conversation and tabs it into `position` (the bottom dock by
- * default). Nothing happens without a Session to own it (a draft). The shell starts in the
- * conversation's Workspace, on its machine; a Workspace the server rejects (deleted since, or a
- * path that server cannot see) falls back to home rather than leaving the user with no terminal
- * at all.
- * Failures surface as a toast — with no tab created there is no surface of its own to
+ * Starts another shell for this conversation and shows it in the terminal panel, which comes on
+ * screen in `position` (where its tab already lives, else the bottom dock). Nothing happens
+ * without a Session to own it (a draft). The shell starts in the conversation's Workspace, on its
+ * machine; a Workspace the server rejects (deleted since, or a path that server cannot see) falls
+ * back to home rather than leaving the user with no terminal at all.
+ * Failures surface as a toast — with no shell created there is no surface of its own to
  * carry the error, and a swallowed create looks like nothing happened, which is exactly
- * how a server-side spawn failure used to present.
+ * how a server-side spawn failure used to present. Resolves whether a shell started.
  */
-export async function createShellInDock(position?: DockPosition): Promise<void> {
+export async function createShell(position?: DockPosition): Promise<boolean> {
   const sessionId = dockSessionId();
-  if (sessionId === null) return;
+  if (sessionId === null) return false;
   // The machine is named explicitly: there is no terminal id yet for the routing rule to
   // read, which is the one call in this feature that cannot use it.
   const { workspace, machineId: machine } = conversation;
@@ -155,9 +202,12 @@ export async function createShellInDock(position?: DockPosition): Promise<void> 
     rememberTerminalMachine(created.id, machine);
     noteTerminalCreated(created);
     // Only into the docks it was asked from: the user may have moved to another conversation
-    // while the shell started. It is that conversation's own either way, and its "+" menu
-    // offers it there.
-    if (currentDockScope() === sessionId) addTerminalTab(created.id, position);
+    // while the shell started. It is that conversation's own either way, and its panel lists it.
+    if (currentDockScope() === sessionId) {
+      setShownShell(created.id);
+      openPanel(TERMINAL_PANEL, position, TERMINAL_DOCK);
+    }
+    return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // A 404 here is not "this terminal is gone" — the endpoint itself is absent, which
@@ -169,38 +219,54 @@ export async function createShellInDock(position?: DockPosition): Promise<void> 
         : message;
     console.error("[terminal] create failed:", detail);
     toastError(`${S.terminal.createFailed}: ${detail}`);
+    return false;
   } finally {
     void refreshTerminals();
   }
 }
 
 /**
- * Puts a terminal on screen in `position` (or the bottom dock): the newest of this
- * conversation's live shells that has no tab here — one opened on another device or in another
- * browser — rather than a second shell beside it; only when there is none is a new one created.
- * Another Session's shell is never taken, whatever its state.
+ * Puts the terminal panel on screen in `position` (where its tab lives, else the bottom dock).
+ * Opening it starts nothing by itself: the panel's body starts the conversation's first shell
+ * when it has none (ensureShell).
  */
-export async function openTerminalInDock(position?: DockPosition): Promise<void> {
+export function openTerminalPanel(position?: DockPosition): void {
+  if (dockSessionId() === null) return;
+  openPanel(TERMINAL_PANEL, position, TERMINAL_DOCK);
+}
+
+let ensuring: Promise<boolean> | null = null;
+
+/**
+ * The panel is never empty: shown with no live shell of the conversation, it starts one. The list
+ * is read first — the conversation may have shells this window has not heard of yet (another
+ * device, the CLI) — and nothing is started when the panel has left the screen meanwhile (its
+ * last shell was just closed with ×, which closes the panel too). Concurrent asks share one try.
+ * Resolves false only when a start was tried and failed (the toast has said why): the panel then
+ * closes rather than stay empty, and the next open tries again.
+ */
+export function ensureShell(): Promise<boolean> {
+  if (ensuring !== null) return ensuring;
   const sessionId = dockSessionId();
-  if (sessionId === null) return;
-  // Through the list, not a bare fetch of this server's collection: a terminal is a pty on
-  // ONE machine, and `/api/terminals` asked without a machine answers for this one alone —
-  // so a conversation on a machine would never find the shell it already has there.
-  await refreshTerminals();
-  if (dockSessionId() !== sessionId) return; // the user moved on while the list loaded
-  const newest = untabbedTerminals(sessionId).at(-1);
-  if (newest !== undefined) {
-    addTerminalTab(newest.id, position);
-    return;
-  }
-  await createShellInDock(position);
+  if (sessionId === null) return Promise.resolve(true);
+  ensuring = (async () => {
+    try {
+      await refreshTerminals();
+      if (dockSessionId() !== sessionId || !isTabShown(TERMINAL_PANEL)) return true;
+      if (ownTerminals().length > 0) return true;
+      return await createShell();
+    } finally {
+      ensuring = null;
+    }
+  })();
+  return ensuring;
 }
 
 /**
  * A conversation's id self-healed (the server answered with a new one): its shells are
- * refiled under the new id, before its arrangement moves there, so its tabs stay its own.
- * Best effort per shell — one that cannot be refiled keeps its old owner and its tab is
- * dropped on the next prune, while the shell itself keeps running.
+ * refiled under the new id, before its arrangement moves there, so its panel keeps listing
+ * them. Best effort per shell — one that cannot be refiled keeps its old owner and leaves the
+ * panel, while the shell itself keeps running (reachable on /terminal).
  */
 export async function reownTerminals(fromSessionId: string, toSessionId: string): Promise<void> {
   await refreshTerminals();
@@ -221,20 +287,17 @@ export async function reownTerminals(fromSessionId: string, toSessionId: string)
 }
 
 /**
- * The terminal toggle: hide the shown terminals, or bring them back — and with no terminal
- * tab in this conversation, bring back or create one of its shells (the async tail the
- * store's synchronous toggle hands off). False when there is nothing to toggle and no
- * Session to open a shell for (a draft, a page without docks): the key is not taken then.
+ * The terminal toggle: hide the terminal panel when it is the shown tab, bring it forward when
+ * it is behind another or its dock is hidden, and open it when this conversation has none. False
+ * when there is nothing to toggle and no Session to open it for (a draft, a page without docks):
+ * the key is not taken then.
  */
 export function toggleTerminal(): boolean {
-  if (toggleTerminalDocks()) return true;
+  if (togglePanelShown(TERMINAL_PANEL)) return true;
   if (dockSessionId() === null) return false;
-  void openTerminalInDock();
+  openTerminalPanel();
   return true;
 }
-
-/** Re-exported for callers that already know which shell they want on screen. */
-export { showTerminal };
 
 // `terminal.toggle` (Ctrl+` on every platform by default — the Codex/VS Code binding),
 // registered at module scope: a React-effect registration leaves a window after first paint
@@ -249,7 +312,7 @@ onCommand("terminal.toggle", toggleTerminal);
 // flip nothing visible. A new terminal also declines without a Session to own it (a draft).
 onCommand("terminal.new", () => {
   if (dockSessionId() === null) return false;
-  void createShellInDock();
+  void createShell();
 });
 onCommand("dock.toggleRight", () => {
   if (!docksOnScreen()) return false;

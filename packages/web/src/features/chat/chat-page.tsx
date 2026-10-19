@@ -341,6 +341,8 @@ export function ChatPage() {
   // stream. The tabs themselves deliberately survive the switch — the panels re-bind to
   // the conversation on screen.
   useSyncExternalStore(subscribeDock, dockVersion);
+  // Keeps the terminal list fresh while a conversation is on screen — which is also how the
+  // page learns whether this server serves terminals at all (the terminal panel's `offered`).
   useSyncExternalStore(subscribeTerminals, terminalApiSupported);
   /** Workspace tab: locate this file in the tree (a message file card's click, or a reply's link to a file). */
   const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string } | null>(null);
@@ -2091,7 +2093,6 @@ export function ChatPage() {
     views.find((view) => view.position === "bottom") ?? null,
     closedDockView("bottom"),
   );
-  const terminalSupported = terminalApiSupported();
 
   // The Memory panel's way to its management: add / edit / delete live on the Agent's
   // settings page, on the memory tab — the page of the Agent on the machine the conversation
@@ -2786,7 +2787,6 @@ export function ChatPage() {
                 open={rightMount.open}
                 animateEntrance={rightMount.animateEntrance}
                 panelBadges={{ agents: anySubagentPending }}
-                terminalSupported={terminalSupported}
               />
             )}
           </div>
@@ -2797,7 +2797,6 @@ export function ChatPage() {
               open={bottomMount.open}
               animateEntrance={bottomMount.animateEntrance}
               panelBadges={{ agents: anySubagentPending }}
-              terminalSupported={terminalSupported}
             />
           )}
         </div>

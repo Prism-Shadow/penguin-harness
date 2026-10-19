@@ -1,23 +1,25 @@
 /**
- * The dock's terminals belong to the conversation that opened them (features/dock/dock-terminal.ts
- * over the terminal list and the dock store). The servers are faked at `fetch`; everything else is
- * the real code: the list, its machine routing, the dock store and its prune.
+ * The terminal panel's conversation side (features/dock/dock-terminal.ts over the terminal list
+ * and the dock store): which shells a conversation lists, which one it shows, and the shells it
+ * starts. The servers are faked at `fetch`; everything else is the real code.
  *
- * - Given a conversation on a machine owns a live shell there, when a local conversation opens a
- *   terminal, it creates its own shell on this server under its own id and A's is not tabbed.
- * - Given a conversation's own shell has no tab here (opened on another device), when it opens a
- *   terminal, that shell is tabbed and none is created; the "+" menu lists its other untabbed
- *   shells and never another Session's or a shell no Session owns.
- * - Given a conversation on a machine, when it creates a shell, the shell is created on that
- *   machine under its id, falling back to home there when its Workspace is gone.
- * - Given a draft, neither terminal shortcut is taken and no shell is created; nor while the next
- *   conversation's docks are up before its page has said which Session it is.
- * - Given a conversation whose id self-heals, its shells are refiled on their own machines and its
- *   tabs survive the move and the next prune; another Session's shell is not touched.
- * - Given a complete list, a tab whose shell another Session owns leaves the docks, while a shell
- *   from a server that reports no owner (an older build) keeps its tab.
- * - Given a list fetched while this window creates a shell, the stale answer neither prunes the
- *   new tab nor replaces the list; the list is read again.
+ * - Given a conversation on a machine owns a live shell there, when a local conversation opens
+ *   its terminal panel with no shell, the list is read first and one shell is started on this
+ *   server under its own id; the machine conversation's shell is not listed.
+ * - Given a conversation with live shells of its own (one opened on another device among them),
+ *   the panel lists exactly those — never another Session's, a shell no Session owns, or one
+ *   whose server reports no owner — shows the newest, and starts nothing.
+ * - Given a conversation on a machine, its shells start on that machine under its id, falling back
+ *   to home there when its Workspace is gone.
+ * - Given the panel asked to start its first shell twice at once, one shell starts.
+ * - Given `terminal.new`, another shell starts and becomes the shown one, the panel on screen.
+ * - Given the shown shell ends, the panel shows the newest that is left.
+ * - Given a draft, neither terminal shortcut is taken, nothing starts and the panel is not
+ *   offered; nor while the next conversation's docks are up before its page says which it is.
+ * - Given a conversation whose id self-heals, its shells are refiled on their own machines and
+ *   its panel goes on listing them; another Session's shell is not touched.
+ * - Given a list fetched while this window starts a shell, the stale answer is not applied and
+ *   the list is read again.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryStorage } from "./helpers/storage";
@@ -118,58 +120,106 @@ afterEach(async () => {
   await list.refreshTerminals();
 });
 
-describe("which shells a conversation opens", () => {
-  it("a local conversation creates its own shell here and never takes a machine conversation's", async () => {
+describe("which shells a conversation's panel lists and starts", () => {
+  it("a local conversation reads the list, then starts its own shell here, never a machine one's", async () => {
     machines.setTerminalMachines(["M"]);
     held.set("M", [{ id: "machine-shell", sessionId: "session-on-machine" }]);
     const fake = stubFetch(answer);
     const local = openConversation(null, "/work/local");
 
-    await terminal.openTerminalInDock();
+    terminal.openTerminalPanel();
+    await terminal.ensureShell();
 
-    expect(dock.terminalTabIds()).toEqual(["created-1"]);
     expect(writes(fake)).toMatchObject([
       { method: "POST", machine: null, body: { cwd: "/work/local", sessionId: local } },
     ]);
-    expect(terminal.untabbedTerminals(local)).toEqual([]);
+    expect(fake.requests[0]).toMatchObject({ method: "GET" }); // the list came first
+    expect(terminal.ownTerminals().map((t) => t.id)).toEqual(["created-1"]);
+    expect(terminal.shownTerminalId()).toBe("created-1");
+    expect(dock.panelDock(terminal.TERMINAL_PANEL)).toBe("bottom");
   });
 
-  it("brings back its own untabbed shell instead of creating one, and lists only its own", async () => {
+  it("lists exactly the conversation's own shells, shows the newest, and starts nothing", async () => {
     const fake = stubFetch(answer);
     const mine = openConversation();
     held.set(null, [
       { id: "mine-older", sessionId: mine },
-      { id: "mine-newer", sessionId: mine },
       { id: "someone-elses", sessionId: "another-session" },
       { id: "no-session", sessionId: null },
+      { id: "older-build" },
+      { id: "mine-from-another-device", sessionId: mine },
     ]);
 
-    await terminal.openTerminalInDock();
+    terminal.openTerminalPanel();
+    await terminal.ensureShell();
 
-    expect(dock.terminalTabIds()).toEqual(["mine-newer"]);
     expect(writes(fake)).toEqual([]);
-    // The "+" menu's small rows: this conversation's shells with no tab here, nothing else.
-    expect(terminal.untabbedTerminals(mine).map((t) => t.id)).toEqual(["mine-older"]);
+    expect(terminal.ownTerminals().map((t) => t.id)).toEqual([
+      "mine-older",
+      "mine-from-another-device",
+    ]);
+    expect(terminal.shownTerminalId()).toBe("mine-from-another-device");
   });
 
-  it("a machine conversation creates its shell on its machine, falling back to home there", async () => {
+  it("a machine conversation starts its shell on its machine, falling back to home there", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const fake = stubFetch(answer);
     const remote = openConversation("M", "/gone");
 
-    await terminal.createShellInDock();
+    await terminal.createShell();
 
     expect(writes(fake)).toMatchObject([
       { method: "POST", machine: "M", body: { cwd: "/gone", sessionId: remote } },
       { method: "POST", machine: "M", body: { cwd: "~", sessionId: remote } },
     ]);
-    expect(dock.terminalTabIds()).toEqual(["created-1"]);
     expect(machines.machineForTerminal("created-1")).toBe("M");
+    expect(terminal.shownTerminalId()).toBe("created-1");
+  });
+
+  it("asked twice at once to start the first shell, starts one", async () => {
+    const fake = stubFetch(answer);
+    openConversation();
+    terminal.openTerminalPanel();
+
+    await Promise.all([terminal.ensureShell(), terminal.ensureShell()]);
+
+    expect(writes(fake)).toHaveLength(1);
+  });
+
+  it("terminal.new starts another shell and shows it, the panel on screen", async () => {
+    const fake = stubFetch(answer);
+    const mine = openConversation();
+    held.set(null, [{ id: "first", sessionId: mine }]);
+    await list.refreshTerminals();
+
+    expect(commands.runCommand("terminal.new")).toBe(true);
+    await vi.waitFor(() => expect(terminal.shownTerminalId()).toBe("created-1"));
+
+    expect(writes(fake)).toHaveLength(1);
+    expect(terminal.ownTerminals().map((t) => t.id)).toEqual(["first", "created-1"]);
+    expect(dock.isTabShown(terminal.TERMINAL_PANEL)).toBe(true);
+  });
+
+  it("shows the newest shell left when the shown one ends", async () => {
+    stubFetch(answer);
+    const mine = openConversation();
+    held.set(null, [
+      { id: "older", sessionId: mine },
+      { id: "newer", sessionId: mine },
+    ]);
+    await list.refreshTerminals();
+    dock.setShownShell("older");
+    expect(terminal.shownTerminalId()).toBe("older");
+
+    held.set(null, [{ id: "newer", sessionId: mine }]); // `exit` in the shown shell
+    await list.refreshTerminals();
+
+    expect(terminal.shownTerminalId()).toBe("newer");
   });
 });
 
 describe("where no Session owns the docks", () => {
-  it("a draft takes neither terminal shortcut and creates nothing", async () => {
+  it("a draft takes neither terminal shortcut, starts nothing and offers no terminal panel", async () => {
     const fake = stubFetch(answer);
     seq += 1;
     dock.setDockScope(`default_project:draft-${seq}`);
@@ -177,28 +227,31 @@ describe("where no Session owns the docks", () => {
 
     expect(commands.runCommand("terminal.new")).toBe(false);
     expect(commands.runCommand("terminal.toggle")).toBe(false);
-    await terminal.openTerminalInDock();
+    await terminal.ensureShell();
 
     expect(fake.requests).toEqual([]);
-    expect(dock.terminalTabIds()).toEqual([]);
+    expect(terminal.terminalPanelOffered()).toBe(false);
+    expect(dock.panelDock(terminal.TERMINAL_PANEL)).toBeNull();
   });
 
   it("the next conversation's docks borrow nothing from the last one before its page says which it is", async () => {
     const fake = stubFetch(answer);
     openConversation();
+    expect(terminal.terminalPanelOffered()).toBe(true);
     seq += 1;
     dock.setDockScope(`session-${seq}`); // the route moved on; the page has not published yet
 
     expect(terminal.dockSessionId()).toBeNull();
+    expect(terminal.terminalPanelOffered()).toBe(false);
     expect(commands.runCommand("terminal.new")).toBe(false);
-    await terminal.createShellInDock();
+    await terminal.createShell();
 
     expect(fake.requests).toEqual([]);
   });
 });
 
-describe("keeping tabs with their owner", () => {
-  it("a self-healed conversation refiles its shells on their own machines and keeps its tabs", async () => {
+describe("keeping shells with their owner", () => {
+  it("a self-healed conversation refiles its shells on their own machines and goes on listing them", async () => {
     machines.setTerminalMachines(["M"]);
     const fake = stubFetch(answer);
     const before = openConversation();
@@ -207,13 +260,11 @@ describe("keeping tabs with their owner", () => {
       { id: "here", sessionId: before },
       { id: "not-mine", sessionId: "another-session" },
     ]);
-    await list.refreshTerminals();
-    dock.addTerminalTab("on-machine");
-    dock.addTerminalTab("here");
     const after = `${before}-healed`;
 
     await terminal.reownTerminals(before, after);
     dock.adoptDockScope(after);
+    terminal.setDockConversation({ sessionId: after, workspace: "/work", machineId: null });
     await list.refreshTerminals();
 
     expect(writes(fake)).toEqual(
@@ -233,27 +284,11 @@ describe("keeping tabs with their owner", () => {
       ]),
     );
     expect(writes(fake)).toHaveLength(2);
-    expect(dock.terminalTabIds()).toEqual(["on-machine", "here"]);
+    // The panel lists the conversation's shells on its own machine: this server's here.
+    expect(terminal.ownTerminals().map((t) => t.id)).toEqual(["here"]);
   });
 
-  it("a complete list removes another Session's tab and keeps an older server's shell", async () => {
-    stubFetch(answer);
-    const mine = openConversation();
-    held.set(null, [
-      { id: "crossed-over", sessionId: "another-session" },
-      { id: "from-older-build" },
-    ]);
-    dock.addTerminalTab("crossed-over");
-    dock.addTerminalTab("from-older-build");
-
-    await list.refreshTerminals();
-
-    expect(dock.terminalTabIds()).toEqual(["from-older-build"]);
-    // …which no menu offers, though: its owner is unknown.
-    expect(terminal.untabbedTerminals(mine)).toEqual([]);
-  });
-
-  it("a list fetched while a shell is created keeps the new tab and is read again", async () => {
+  it("a list fetched while a shell starts is not applied, and is read again", async () => {
     const fake = stubFetch(answer);
     openConversation();
     let release = () => {};
@@ -262,13 +297,12 @@ describe("keeping tabs with their owner", () => {
     });
     const refreshing = list.refreshTerminals(); // asked before the shell exists
 
-    await terminal.createShellInDock();
+    await terminal.createShell();
     listGate = null;
     release();
     await refreshing;
 
-    expect(dock.terminalTabIds()).toEqual(["created-1"]);
-    expect(list.liveTerminals().map((t) => t.id)).toEqual(["created-1"]);
+    expect(terminal.ownTerminals().map((t) => t.id)).toEqual(["created-1"]);
     expect(fake.requests.filter((request) => request.method === "GET")).toHaveLength(2);
   });
 });

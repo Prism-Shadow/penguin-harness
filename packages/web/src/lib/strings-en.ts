@@ -399,10 +399,12 @@ export const en: Strings = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
-    /** The standalone /terminal page's button that starts a fresh shell there. */
+    /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "New terminal",
-    /** The dock "+" menu's row that starts a shell for this conversation. */
+    /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
     shellEntry: "Command-line terminal",
+    /** The terminal panel's strip of shells, for assistive technology. */
+    tabsLabel: "Terminal tabs",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
