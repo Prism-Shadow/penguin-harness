@@ -61,8 +61,11 @@
 .md-table [data-cell="num"] {
   text-align: end;
 }
+/* The floor is wide on purpose: a table that has to scroll gives every column its minimum, and a
+   narrow prose column then stacks its text into a tall cell that makes the whole row tall while
+   the cell itself sits scrolled out of view. Twenty ems keeps a long note to two or three lines. */
 .md-table [data-cell="prose"] {
-  min-width: var(--md-table-prose-min, 12rem);
+  min-width: var(--md-table-prose-min, 20rem);
   white-space: normal;
 }
 /* Inline code never breaks inside a cell. The prose sheets let it break anywhere, which in a table
