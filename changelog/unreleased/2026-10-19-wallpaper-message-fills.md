@@ -25,6 +25,8 @@ follows without changes of its own.
   glass, with its shadow and its tone dot.
 - In Console, a notice in the page paints nothing under its line, with or without an image; a
   toast still takes the page colour where it floats.
+- The amber approval band under a tool call waiting on a decision thins like a notice: at half
+  its tint in Primer and Frost, and with nothing painted in Console, where the tone tint is clear.
 
 ## What stays solid
 
