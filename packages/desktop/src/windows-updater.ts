@@ -1,7 +1,6 @@
 import electronUpdater from "electron-updater";
 import type { DownloadExecutorTask } from "electron-updater/out/AppUpdater.js";
 import { verifyWindowsUpdateSignature } from "./windows-update-signature.js";
-import type { SignatureExecFile } from "./windows-update-signature.js";
 
 export class WindowsUpdateVerificationError extends Error {
   constructor() {
@@ -17,11 +16,9 @@ export class WindowsUpdater extends electronUpdater.NsisUpdater {
   constructor(
     options?: ConstructorParameters<typeof electronUpdater.NsisUpdater>[0],
     app?: ConstructorParameters<typeof electronUpdater.NsisUpdater>[1],
-    run?: SignatureExecFile,
   ) {
     super(options, app);
-    this.autoInstallOnAppQuit = false;
-    this.verifyUpdateCodeSignature = (_publishers, file) => verifyWindowsUpdateSignature(file, run);
+    this.verifyUpdateCodeSignature = (_publishers, file) => verifyWindowsUpdateSignature(file);
   }
 
   protected override executeDownload(task: DownloadExecutorTask): Promise<string[]> {
@@ -46,26 +43,20 @@ export class WindowsUpdater extends electronUpdater.NsisUpdater {
 
   override quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void {
     if (this.installationCheck !== null || this.quitAndInstallCalled) return;
-    this.installationCheck = this.installVerified(isSilent, isForceRunAfter)
-      .catch((error: Error) => this.dispatchError(error))
-      .finally(() => {
-        this.installationCheck = null;
-      });
+    this.installationCheck = this.installVerified(isSilent, isForceRunAfter).finally(() => {
+      this.installationCheck = null;
+    });
   }
 
   private async installVerified(isSilent?: boolean, isForceRunAfter?: boolean): Promise<void> {
-    try {
-      const file = this.installerPath;
-      if (file === null || (await this.verifyUpdateCodeSignature([], file)) !== null) {
-        throw new WindowsUpdateVerificationError();
-      }
-    } catch {
-      // Clearing also drops in-memory install state, so a fresh download can recover.
-      try {
-        await this.downloadedUpdateHelper?.clear();
-      } finally {
-        this.dispatchError(new WindowsUpdateVerificationError());
-      }
+    const file = this.installerPath;
+    const trusted =
+      file !== null &&
+      (await this.verifyUpdateCodeSignature([], file).catch(() => "failed")) === null;
+    if (!trusted) {
+      // Clearing drops the in-memory install state too, so a fresh download can recover.
+      await this.downloadedUpdateHelper?.clear().catch(() => undefined);
+      this.dispatchError(new WindowsUpdateVerificationError());
       return;
     }
     super.quitAndInstall(isSilent, isForceRunAfter);

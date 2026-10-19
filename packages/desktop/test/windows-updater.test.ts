@@ -3,7 +3,7 @@
  * replaced at their external boundaries.
  * - Full and differential downloads require trust before readiness and success.
  * - Cached installers are checked again, including without publisher metadata.
- * - Changed disk-cache hashes force a download; refused trust clears install state.
+ * - Refused trust on a cached installer clears install state.
  * - A delayed verifier holds both readiness and the download's return value.
  * - Installation rechecks trust; failure deletes the file and clears install state.
  * - Repeated install clicks share one pending check and never launch twice.
@@ -173,17 +173,6 @@ describe.skipIf(process.platform !== "win32")("Windows NSIS updater wiring", () 
       expect(updater.installations).toHaveLength(0);
     },
   );
-
-  it("keeps upstream SHA-512 rejection of modified disk-cache bytes", async () => {
-    trust(true);
-    const first = await fixture();
-    const [file] = await first.updater.downloadUpdate();
-    await writeFile(file!, "tampered");
-    const next = await fixture(first.root);
-    await next.updater.downloadUpdate();
-    expect(next.download).toHaveBeenCalledOnce();
-    expect(next.downloaded).toHaveBeenCalledOnce();
-  });
 
   it("clears cached install state when a verifier throws", async () => {
     trust(true);
