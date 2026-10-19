@@ -44,9 +44,12 @@ site passes `highlightSiteCode`), `SiteToc` with `useActiveTocEntry`, `SiteSideb
 `@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors; a site's
 Tailwind entry also imports `site-page.css` (the `dark` variant, the brand scale, the neutral dark
 ramp, body defaults). This entry is independent of the app renderer and full theme; public sites
-do not need the app's bundled fonts just to render a page. Their wrappers only adapt routes,
-labels, content and preferences. Do not restore copied navbar markup, language-menu event
-handlers, theme cycles, footers, copy buttons or Markdown typography in a site package.
+do not need the app's bundled fonts just to render a page, nor the theme icon sets: a site control
+draws line icons (`site-icons`, `CheckLineIcon`) and builds menu rows with `MenuRow`, never
+`GlyphIcon`, `MenuItem` or a mark drawn in every set, any of which carries the sets into the
+landing and docs bundles. Their wrappers only adapt routes, labels, content and preferences. Do
+not restore copied navbar markup, language-menu event handlers, theme cycles, footers, copy
+buttons or Markdown typography in a site package.
 
 A site component is held to the package's de-slop rules like any other: its look lives in
 `site-content.css` or `site-prose.css` on the `--site-*` palette (Tailwind's values, the neutral
