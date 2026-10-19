@@ -314,7 +314,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | `max_turns` | `-1` | Maximum LLM turns per Task |
 | `model.max_tokens` | `32000` | Output Token ceiling per Request |
 | `model.thinking_level` | `medium` | The thinking level each model context opens at, unless the Session pins one |
-| `model.timeoutMs` | `300000` | **Idle** budget for a Request, in milliseconds |
+| `model.timeoutMs` | `600000` | **Idle** budget for a Request, in milliseconds |
 | `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
@@ -338,7 +338,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `max_turns`: `-1` means unlimited; a positive integer caps the Task.
 - `model.max_tokens`: `-1` means no cap (the provider default). Each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model is never asked for more than fits.
 - `model.thinking_level`: `none` / `low` / `medium` / `high` / `xhigh` / `max`. The level is fixed for a model context, so a change lands at the next compaction. Without this field, the Project's `[default_chat]` `thinking_level` applies, then `medium`.
-- `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, which the default leaves room for.
+- `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, and so does a model behind a relay that consumes the thinking stream upstream and sends nothing until the answer starts. The default leaves room for both.
 - `compaction.max_context_length`: the effective threshold is the smaller of this value and the model's `context_window` − 2048. A small-window model therefore compacts inside its window, while a window above 258048 fires at this number. An entry with no `context_window` assumes a 128000 window.
 - `compaction.max_session_turns`: `-1` means unlimited.
 - `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Skills**, and `schedules.prompt` on **Schedules**.
@@ -370,7 +370,7 @@ max_turns: -1
 model:
   max_tokens: 32000
   thinking_level: medium
-  timeoutMs: 300000
+  timeoutMs: 600000
 
 compaction:
   max_context_length: 256000

@@ -849,11 +849,11 @@ describe("config helpers", () => {
     expect("max_tokens" in uncapped).toBe(false);
   });
 
-  it("defaults the request idle budget to 300s (a silent reasoning phase fits inside it)", () => {
+  it("defaults the request idle budget to 600s (a silent reasoning phase fits inside it)", () => {
     // The budget is the wait for the NEXT upstream event, and a model that keeps its
     // reasoning off the wire spends its whole thinking phase inside the first-event gap.
     const model = new GenerativeModel({ modelId: "claude-sonnet-4-6", tools: [] });
-    expect((model as unknown as { requestTimeoutMs: number }).requestTimeoutMs).toBe(300000);
+    expect((model as unknown as { requestTimeoutMs: number }).requestTimeoutMs).toBe(600000);
     // An explicit value still wins, and <=0 still disables the timer.
     const explicit = new GenerativeModel({
       modelId: "claude-sonnet-4-6",
