@@ -417,14 +417,11 @@ function researchText(files) {
     .join("\n\n");
 }
 
-/** `draft.en.v3.md` → `findings.en.v3.api.md` beside it. */
+/** `draft.en.v3.md` → `findings.en.v3.api.md` beside it; any other name needs --out. */
 function defaultReviewOut(input) {
-  const base = path.basename(input);
-  const m = /^draft\.(en|zh)\.(v\d+)\.md$/.exec(base);
-  const name = m
-    ? `findings.${m[1]}.${m[2]}.api.md`
-    : base.replace(/\.md$/, "") + ".findings.api.md";
-  return path.join(path.dirname(input), name);
+  // Only for a scratch draft: findings written beside a file in the repo would land in its tree.
+  const m = /^draft\.(en|zh)\.(v\d+)\.md$/.exec(path.basename(input));
+  return m ? path.join(path.dirname(input), `findings.${m[1]}.${m[2]}.api.md`) : undefined;
 }
 
 function buildMessages(step, o) {
