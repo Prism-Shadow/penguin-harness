@@ -51,10 +51,6 @@ const OWN_REGISTERS: Record<string, OwnRegister> = {
     const { registerScheduleCommand } = await import("./commands/schedule.js");
     registerScheduleCommand(program, t);
   },
-  benchmark: async (program, t) => {
-    const { registerBenchmarkCommand } = await import("./commands/benchmark.js");
-    registerBenchmarkCommand(program, t);
-  },
   org: async (program, t) => {
     const { registerOrgCommand } = await import("./commands/org.js");
     registerOrgCommand(program, t);
@@ -79,7 +75,6 @@ export function ownCliEntries(): CliCommandEntry[] {
     { id: "cli.project", key: "project", summary: summary((t) => t.project.desc) },
     { id: "cli.cost", key: "cost", summary: summary((t) => t.cost.desc) },
     { id: "cli.schedule", key: "schedule", summary: summary((t) => t.schedule.desc) },
-    { id: "cli.benchmark", key: "benchmark", summary: summary((t) => t.benchmark.desc) },
     { id: "cli.org", key: "org", summary: summary((t) => t.org.desc) },
     { id: "cli.browser", key: "browser", summary: summary((t) => t.browser.desc) },
   ];

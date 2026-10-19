@@ -383,7 +383,6 @@ describe("the host over fixture plugins (cli() end to end)", () => {
     // Own commands, the server package's serve group, the fixture's — all in one listing.
     expect(out).toContain("config");
     expect(out).toContain("session");
-    expect(out).toContain("benchmark");
     expect(out).toContain("server");
     expect(out).toContain("web");
     expect(out).toContain("deploy (en)");
