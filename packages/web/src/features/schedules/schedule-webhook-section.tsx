@@ -281,7 +281,7 @@ export function ScheduleWebhookSection({
                     className="min-w-0 flex-1 rounded-md border border-line-muted bg-control px-2 py-1 text-xs"
                   />
                   <Button size="sm" variant="primary" disabled={busy || secret.trim() === ""} onClick={() => void saveSecret()}>
-                    {S.common.save}
+                    {S.schedule.webhook.saveSecret}
                   </Button>
                   <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setEditingSecret(false); setSecret(""); }}>
                     {S.common.cancel}
