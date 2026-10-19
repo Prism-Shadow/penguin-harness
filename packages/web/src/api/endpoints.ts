@@ -2212,6 +2212,26 @@ export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
 
 /**
+ * Live squads for the composer's @-menu — LOCAL-ONLY mirror of the server contract in
+ * `packages/server/src/api/types.ts` (OrgSquad), for the same reason the inbox requests
+ * above are mirrored: the published server package in this tree may lag the server tree,
+ * so new contracts are mirrored here rather than imported.
+ */
+export interface OrgSquad {
+  id: string;
+  name: string;
+  /** `agent:<id>` of an employee; always a member too. */
+  leader: string;
+  /** `agent:<id>` / `user:<id>` principals. */
+  members: string[];
+  archived: boolean;
+}
+
+/** Every squad of the org, archived included (the menu keeps the live ones). */
+export const listOrgSquads = (projectId: string, orgId: string) =>
+  apiFetch<OrgSquad[]>(`${orgBase(projectId, orgId)}/squads`);
+
+/**
  * Inbox row state — LOCAL-ONLY mirrors of the server contract in
  * `packages/server/src/api/types.ts` (OrgInboxReadRequest / OrgInboxArchiveRequest), for the same
  * reason the squad tables below are mirrored: the published server package in this tree may

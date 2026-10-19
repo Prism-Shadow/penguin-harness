@@ -285,3 +285,93 @@ describe("mentionNote", () => {
     expect(mentionNote("nobody", titles)).toBe("");
   });
 });
+
+describe("squad mentions", () => {
+  const squads = [
+    { id: "demo-builders", name: "Demo Builders", leader: "agent:ceo" },
+    { id: "doc-crew", name: "Doc Crew", leader: "agent:pm" },
+  ];
+  const list = mentionCandidates(
+    [{ agentId: "ceo", name: "Alice" }],
+    ["bob"],
+    "Everyone",
+    squads,
+  );
+
+  it("lists squads after members and before all, carrying their leaders", () => {
+    expect(list.map((c) => c.principal)).toEqual([
+      "agent:ceo",
+      "user:bob",
+      "squad:demo-builders",
+      "squad:doc-crew",
+      "all",
+    ]);
+    expect(list[2]).toMatchObject({ kind: "squad", label: "Demo Builders", leader: "agent:ceo" });
+  });
+
+  it("inserts the explicit squad form, since a bare squad id resolves to nothing", () => {
+    expect(mentionInsertId(list[2]!, list)).toBe("squad:demo-builders");
+  });
+
+  it("keeps a squad only when its leader sits in the channel", () => {
+    expect(
+      channelMentionCandidates(list, new Set(["agent:ceo"])).map((c) => c.principal),
+    ).toEqual(["agent:ceo", "squad:demo-builders", "all"]);
+    expect(channelMentionCandidates(list, new Set(["user:bob"])).map((c) => c.principal)).toEqual([
+      "user:bob",
+      "all",
+    ]);
+  });
+
+  it("drops a squad whose leader is unknown, and keeps every squad when membership is null", () => {
+    const leaderless = mentionCandidates([], [], "Everyone", [
+      { id: "x", name: "X", leader: "" },
+    ]);
+    delete leaderless[0]!.leader;
+    expect(channelMentionCandidates(leaderless, new Set(["agent:ceo"])).map((c) => c.principal)).toEqual([
+      "all",
+    ]);
+    expect(channelMentionCandidates(list, null).map((c) => c.principal)).toContain(
+      "squad:demo-builders",
+    );
+  });
+
+  it("splits a squad token into a mention run, like the server's grammar", () => {
+    expect(mentionRuns("ping @squad:demo-builders.")).toEqual([
+      { text: "ping ", mention: null },
+      { text: "@squad:demo-builders", mention: "squad:demo-builders" },
+      { text: ".", mention: null },
+    ]);
+    // A bare `@squad` reads as an id-shaped token, exactly as `@agent`/`@user` do —
+    // the server only resolves the explicit `squad:<id>` form, same as for the other kinds.
+    expect(mentionRuns("@squad: alone")).toEqual([
+      { text: "@squad", mention: "squad" },
+      { text: ": alone", mention: null },
+    ]);
+  });
+
+  it("labels a squad token by the squad name map, and never addresses the reader", () => {
+    const names = new Map([
+      ["ceo", "Alice"],
+      ["squad:demo-builders", "Demo Builders"],
+    ]);
+    expect(mentionLabel("squad:demo-builders", names, "Everyone")).toBe("Demo Builders");
+    expect(mentionLabel("squad:unknown", names, "Everyone")).toBe("squad:unknown");
+    expect(mentionIsMe("squad:demo-builders", "bob", new Set(["ceo"]))).toBe(false);
+  });
+
+  it("never turns a squad name into a name-handle, and still matches squads by query", () => {
+    const names = new Map([
+      ["ceo", "Alice"],
+      ["squad:demo-builders", "Demo Builders"],
+    ]);
+    expect([...mentionNameHandles(names).keys()]).toEqual(["Alice"]);
+    expect(rankMentionCandidates(list, "squad").map((c) => c.principal)).toEqual([
+      "squad:demo-builders",
+      "squad:doc-crew",
+    ]);
+    expect(rankMentionCandidates(list, "demo").map((c) => c.principal)).toEqual([
+      "squad:demo-builders",
+    ]);
+  });
+});

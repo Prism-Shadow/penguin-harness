@@ -194,6 +194,12 @@ export function ChannelView() {
       .listMembers(projectId)
       .then((res) => setMembers(res.members.map((m) => m.userId)))
       .catch(() => undefined);
+    void api
+      .listOrgSquads(projectId, orgId)
+      .then((res) => {
+        if (current()) setSquads(res);
+      })
+      .catch(() => undefined);
     void loadDetail();
     try {
       const res = await api.getOrgChannelMessages(projectId, orgId, channelId);
@@ -389,7 +395,15 @@ export function ChannelView() {
     }
   };
 
-  const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
+  /** The org's squads for the @-menu (live ones offered) and for labelling `squad:` chips. */
+  const [squads, setSquads] = useState<api.OrgSquad[]>([]);
+  const names = useMemo(() => {
+    const map = new Map(employees.map((e) => [e.agentId, e.name]));
+    // `squad:<id>` → squad name, so chips and the @-menu label squads by name; agent
+    // lookups never collide with these keys, and mentionNameHandles skips them.
+    for (const squad of squads) map.set(`squad:${squad.id}`, squad.name);
+    return map;
+  }, [employees, squads]);
   const titles = useMemo(() => new Map(employees.map((e) => [e.agentId, e.title])), [employees]);
   const nameHandles = useMemo(() => mentionNameHandles(names), [names]);
   const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
@@ -406,10 +420,17 @@ export function ChannelView() {
   const candidates = useMemo(
     () =>
       channelMentionCandidates(
-        mentionCandidates(employees, members, S.company.channels.mentionAll),
+        mentionCandidates(
+          employees,
+          members,
+          S.company.channels.mentionAll,
+          squads
+            .filter((s) => !s.archived)
+            .map((s) => ({ id: s.id, name: s.name, leader: s.leader })),
+        ),
         memberPrincipals,
       ),
-    [employees, members, memberPrincipals],
+    [employees, members, squads, memberPrincipals],
   );
   const stream = useMemo(
     () => (days === null ? [] : buildStream(days, { unreadAfterId: meta?.unreadAfterId ?? null })),

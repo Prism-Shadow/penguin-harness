@@ -1,39 +1,44 @@
 /**
  * A channel's @-mentions (pure, unit tested): the candidates the composer offers — the
- * channel's own members, plus `all` — and how they rank against what was typed, the token
- * being typed at the caret, what a pick sends (the draft that shows it by name is
- * mention-draft.ts), how a stored message is split into plain runs and mention runs for
- * highlighting, and what a mention run displays and whether it addresses the reader. What can
- * follow `@` mirrors the server's findMentions (organization/names.ts) — an employee's id or
- * its NAME, a member's user id, `all`, and the explicit `@agent:id` / `@user:id` — with its
- * rules: the longest handle wins, an ASCII handle ends at the end of its word, a name in a
- * script without spaces needs no space after it, and an employee comes before a member of the
- * same id. So what the composer highlights is what the server delivers.
+ * channel's own members, the org's live squads, plus `all` — and how they rank against
+ * what was typed, the token being typed at the caret, what a pick sends (the draft that
+ * shows it by name is mention-draft.ts), how a stored message is split into plain runs
+ * and mention runs for highlighting, and what a mention run displays and whether it
+ * addresses the reader. What can follow `@` mirrors the server's findMentions
+ * (organization/names.ts) — an employee's id or its NAME, a member's user id, `all`,
+ * and the explicit `@agent:id` / `@user:id` / `@squad:id` — with its rules: the longest
+ * handle wins, an ASCII handle ends at the end of its word, a name in a script without
+ * spaces needs no space after it, and an employee comes before a member of the same id.
+ * So what the composer highlights is what the server delivers.
  *
  * Membership is the source, not the org chart: a mention delivers only inside the channel it
  * was written in, and the server rejects a message naming an outsider (`mention_not_member`).
- * The composer therefore offers the channel's members and nobody else.
+ * The composer therefore offers the channel's members and nobody else — a squad through its
+ * leader, exactly as the server's outsider check covers squads by their leader's membership.
  */
 
-export type MentionKind = "employee" | "member" | "all";
+export type MentionKind = "employee" | "member" | "squad" | "all";
 
 export interface MentionCandidate {
-  /** The principal the pick stands for (`agent:<id>`, `user:<id>`, `all`). */
+  /** The principal the pick stands for (`agent:<id>`, `user:<id>`, `squad:<id>`, `all`). */
   principal: string;
-  /** The display name (an employee's name, a member's user id, "everyone"). */
+  /** The display name (an employee's name, a member's user id, a squad's name, "everyone"). */
   label: string;
-  /** The bare id the user may have typed (`ceo`, `alice`, `all`). */
+  /** The bare id the user may have typed (`ceo`, `alice`, `<squad id>`, `all`). */
   id: string;
   kind: MentionKind;
   /** Secondary text beside the name: an employee's title. */
   detail?: string;
+  /** A squad's leader principal (`agent:<id>`): the channel filter's membership test. */
+  leader?: string;
 }
 
-/** Employees first, then Project members, then `all` — the order the panel lists them in. */
+/** Employees first, then Project members, then live squads, then `all` — the order the panel lists them in. */
 export function mentionCandidates(
   employees: ReadonlyArray<{ agentId: string; name: string; title?: string }>,
   members: readonly string[],
   allLabel: string,
+  squads: readonly { id: string; name: string; leader: string }[] = [],
 ): MentionCandidate[] {
   const out: MentionCandidate[] = employees.map((e) => ({
     principal: `agent:${e.agentId}`,
@@ -45,6 +50,15 @@ export function mentionCandidates(
   for (const userId of members) {
     out.push({ principal: `user:${userId}`, label: userId, id: userId, kind: "member" });
   }
+  for (const squad of squads) {
+    out.push({
+      principal: `squad:${squad.id}`,
+      label: squad.name,
+      id: squad.id,
+      kind: "squad",
+      leader: squad.leader,
+    });
+  }
   out.push({ principal: "all", label: allLabel, id: "all", kind: "all" });
   return out;
 }
@@ -52,7 +66,7 @@ export function mentionCandidates(
 /**
  * Candidates ranked for the panel: an id or name that starts with the query ranks above one
  * that merely contains it (or whose principal does), and ties keep the list's own order —
- * employees, then members, then `all`. An empty query keeps everyone in that order.
+ * employees, then members, then squads, then `all`. An empty query keeps everyone in that order.
  */
 export function rankMentionCandidates(
   candidates: readonly MentionCandidate[],
@@ -78,19 +92,21 @@ export function rankMentionCandidates(
 /**
  * What a pick sends after the `@`: an employee's bare id, a member's bare id — unless an
  * employee shares it, in which case `user:` disambiguates, since the server resolves a bare
- * id to the employee first — and `all`.
+ * id to the employee first — a squad's explicit `squad:<id>` (a bare squad id resolves to
+ * nothing on the server), and `all`.
  */
 export function mentionInsertId(
   c: MentionCandidate,
   candidates: readonly MentionCandidate[],
 ): string {
+  if (c.kind === "squad") return `squad:${c.id}`;
   if (c.kind === "member" && candidates.some((o) => o.kind === "employee" && o.id === c.id)) {
     return `user:${c.id}`;
   }
   return c.id;
 }
 
-/** What a mention token displays: the employee's name for an agent id (prefixed or bare), the user id for a member, the "everyone" label for `all`. */
+/** What a mention token displays: the employee's name for an agent id (prefixed or bare), the user id for a member, the squad's name for `squad:<id>` (the names map carries `squad:<id>` → name entries for this), the "everyone" label for `all`. */
 export function mentionLabel(
   token: string,
   names: ReadonlyMap<string, string>,
@@ -150,7 +166,7 @@ export interface TextRun {
   mention: string | null;
 }
 
-const ASCII_TOKEN = /^((?:(?:agent|user):)?[A-Za-z0-9][A-Za-z0-9_.-]*)/;
+const ASCII_TOKEN = /^((?:(?:agent|user|squad):)?[A-Za-z0-9][A-Za-z0-9_.-]*)/;
 const WORD = /[A-Za-z0-9_]/;
 
 /**
@@ -186,7 +202,7 @@ export function mentionRuns(
     const rest = text.slice(at + 1);
     let ascii = ASCII_TOKEN.exec(rest)?.[1] ?? "";
     ascii = ascii.replace(/[.-]+$/, "");
-    if (/^(agent|user):$/.test(ascii)) ascii = "";
+    if (/^(agent|user|squad):$/.test(ascii)) ascii = "";
     const name = byLength.find(
       (handle) => handle !== "" && rest.startsWith(handle) && endsHandle(handle, rest),
     );
@@ -204,17 +220,21 @@ export function mentionRuns(
   return runs;
 }
 
-/** Employees' names as `mentionRuns` wants them (name → agent id), from the usual id → name map. */
+/** Employees' names as `mentionRuns` wants them (name → agent id), from the usual id → name map. Keys that are principals rather than bare ids (`squad:<id>` entries the channel view adds so chips label squads) are skipped: a squad's name must not become a name-handle, since the server resolves no bare name to a squad. */
 export function mentionNameHandles(names: ReadonlyMap<string, string>): Map<string, string> {
   const out = new Map<string, string>();
-  for (const [agentId, name] of names)
+  for (const [agentId, name] of names) {
+    if (agentId.includes(":")) continue;
     if (name !== agentId && !name.includes("@")) out.set(name, agentId);
+  }
   return out;
 }
 
 /**
  * The candidates a channel's composer offers: everyone above who is a member of it, `all`
- * always kept (it means that channel's membership). A null membership — the channel detail
+ * always kept (it means that channel's membership). A squad is kept when its leader is a
+ * member — the server's outsider rule, which covers squads by their leader's membership —
+ * and dropped when its leader is unknown. A null membership — the channel detail
  * has not arrived, or its request failed — offers the whole list rather than an empty panel:
  * the server still refuses a mention that leaves the channel, so this degrades to a slower
  * error rather than to a composer that can name nobody.
@@ -224,5 +244,9 @@ export function channelMentionCandidates(
   memberPrincipals: ReadonlySet<string> | null,
 ): MentionCandidate[] {
   if (memberPrincipals === null) return [...candidates];
-  return candidates.filter((c) => c.kind === "all" || memberPrincipals.has(c.principal));
+  return candidates.filter((c) => {
+    if (c.kind === "all") return true;
+    if (c.kind === "squad") return c.leader !== undefined && memberPrincipals.has(c.leader);
+    return memberPrincipals.has(c.principal);
+  });
 }

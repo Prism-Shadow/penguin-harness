@@ -6004,6 +6004,7 @@ Scenarios:
       mentionAllDesc: "Every member of the channel",
       employees: "Employees",
       members: "Members",
+      squads: "Squads",
       earlierDays: "Earlier days",
       ticketRef: (id: string): string => `Ticket ${id}`,
       sessionRef: "View session",

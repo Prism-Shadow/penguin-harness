@@ -1,11 +1,12 @@
 /**
- * Principal notation as organization files use it (pure): `agent:<id>` / `user:<id>`, plus
- * `all` and `system`. Mirrors the server's organization/principal.ts, which the browser
- * bundle cannot import; the two must keep spelling principals identically.
+ * Principal notation as organization files use it (pure): `agent:<id>` / `user:<id>` /
+ * `squad:<id>`, plus `all` and `system`. Mirrors the server's organization/principal.ts,
+ * which the browser bundle cannot import; the two must keep spelling principals identically.
  */
 export type ParsedPrincipal =
   | { kind: "agent"; id: string }
   | { kind: "user"; id: string }
+  | { kind: "squad"; id: string }
   | { kind: "all" }
   | { kind: "system" }
   | { kind: "unknown"; raw: string };
@@ -14,9 +15,11 @@ export function parsePrincipal(raw: string): ParsedPrincipal {
   const value = raw.trim();
   if (value === "all") return { kind: "all" };
   if (value === "system") return { kind: "system" };
-  const m = /^(agent|user):(.+)$/.exec(value);
+  const m = /^(agent|user|squad):(.+)$/.exec(value);
   if (!m) return { kind: "unknown", raw: value };
-  return m[1] === "agent" ? { kind: "agent", id: m[2]! } : { kind: "user", id: m[2]! };
+  if (m[1] === "agent") return { kind: "agent", id: m[2]! };
+  if (m[1] === "squad") return { kind: "squad", id: m[2]! };
+  return { kind: "user", id: m[2]! };
 }
 
 export const agentPrincipal = (agentId: string): string => `agent:${agentId}`;

@@ -489,6 +489,8 @@ export function principalLabel(principal: string, names: ReadonlyMap<string, str
       return names.get(p.id) ?? p.id;
     case "user":
       return p.id;
+    case "squad":
+      return names.get(principal) ?? p.id;
     case "all":
       return S.company.principalAll;
     case "system":

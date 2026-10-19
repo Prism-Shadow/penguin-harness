@@ -104,6 +104,7 @@ const POINTER_SELECT = new Set(["mouseup", "contextmenu", "dragend"]);
 function kindTitle(kind: MentionKind): string {
   if (kind === "employee") return S.company.channels.employees;
   if (kind === "member") return S.company.channels.members;
+  if (kind === "squad") return S.company.channels.squads;
   return S.company.channels.mentionAll;
 }
 

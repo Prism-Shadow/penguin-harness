@@ -6185,6 +6185,7 @@ Benchmark：
       mentionAllDesc: "频道全部成员",
       employees: "员工",
       members: "成员",
+      squads: "Squad",
       earlierDays: "更早的记录",
       ticketRef: (id: string): string => `工单 ${id}`,
       sessionRef: "查看会话",
