@@ -8,14 +8,16 @@
  *   node prose.mjs <step> [options]
  *
  *   API steps:   outline | write | translate | polish | fix | review
- *   local steps: check | strip | pair
+ *   local steps: check | strip | pair | selftest
  *
  * Run with --help for the options. The key comes from TOKENDANCE_API_KEY or the file named by
  * TOKENDANCE_KEY_FILE, never from an argument, so it stays out of shell history; nothing here
  * prints it, and the saved raw JSON holds the request body and the response, not the headers.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import https from "node:https";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,7 +29,7 @@ const REFERENCE = path.join(SKILL, "reference");
 const ENDPOINT = "https://tokendance.space/gateway/v1/chat/completions";
 const DEFAULT_MODEL = "seed-2.1-pro";
 const API_STEPS = ["outline", "write", "translate", "polish", "fix", "review"];
-const LOCAL_STEPS = ["check", "strip", "pair"];
+const LOCAL_STEPS = ["check", "strip", "pair", "selftest"];
 const LANG_NAME = { en: "English", zh: "Chinese" };
 const BLOG_CATEGORIES = ["news", "practice", "perspectives", "changelog"];
 const CATEGORY_NAME = {
@@ -91,7 +93,8 @@ local steps:
                removes {F#}/{O#} markers and the model's HTML-comment notes; a drawn figure block
                becomes <dir>/<id>.<lang>.html on one line, a screenshot block becomes
                ![alt](/blog-assets/<id>-<lang>.png) + its italic caption (.jpg when --assets
-               holds only that)`;
+               holds only that)
+  selftest                        runs check and strip on built-in fixtures; exits 1 on a regression`;
 
 const OPTIONS = new Set([
   "out",
@@ -1570,13 +1573,15 @@ function checkDoc(doc, lang, prof, o, r, facts) {
       r.add("warn", it.n, `model note: ${it.line.trim()}`);
   }
 
-  // Forbidden syntax
+  // Forbidden syntax. A figure block's strings are data the drawer escapes, not Markdown or
+  // HTML of the post, so only the rules about the words themselves apply to them.
   for (const it of items) {
     if (["code", "fence", "comment", "htmlfigure"].includes(it.type)) continue;
+    const data = it.type === "figure";
     const t = it.line.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, "");
-    if (post && /\]\(#/.test(t)) r.add("error", it.n, "in-page anchor link ](#…)");
-    if (/^\s*:::/.test(t)) r.add("error", it.n, "callout syntax :::");
-    if (/<\/?[a-zA-Z][^>]*>/.test(t))
+    if (!data && post && /\]\(#/.test(t)) r.add("error", it.n, "in-page anchor link ](#…)");
+    if (!data && /^\s*:::/.test(t)) r.add("error", it.n, "callout syntax :::");
+    if (!data && /<\/?[a-zA-Z][^>]*>/.test(t))
       r.add("error", it.n, "raw HTML (the only HTML a post may hold is a one-line inline figure)");
     if (EMOJI.test(t)) r.add("error", it.n, "emoji");
     if (/\{\{[A-Z_]+\}\}/.test(t))
@@ -1850,6 +1855,17 @@ function runPair(o) {
   process.exit(errors ? 1 : 0);
 }
 
+/** `<`, `>` and `&` as entities outside code spans, so a placeholder like `<path>` stays text. */
+function escapeInline(text) {
+  return text
+    .split(/((`+)[\s\S]*?[^`]\2(?!`))/)
+    .map((part, i) =>
+      i % 3 === 0 ? part.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : part,
+    )
+    .filter((part, i) => i % 3 !== 2)
+    .join("");
+}
+
 /** The published form of a figure block: its drawn file on one line, or a screenshot image line. */
 function publishFigure(fig, lang, o) {
   if (isDrawn(fig)) {
@@ -1866,6 +1882,10 @@ function publishFigure(fig, lang, o) {
     if (!HTML_FIGURE.test(html) || !html.endsWith("</figure>")) {
       fail(`${file} is not one <figure class="post-figure" …>…</figure> element`, 1);
     }
+    // An unescaped `<path>` in a label parses as a tag, so it shows up here as a mismatch.
+    const problems = figureProblems(html, fig, { slug: slugOf(o, o.out), lang });
+    if (problems.length)
+      fail(`${file} does not match figure ${fig.id}'s block:\n  ${problems.join("\n  ")}`, 1);
     return [html];
   }
   let ext = "png";
@@ -1873,7 +1893,10 @@ function publishFigure(fig, lang, o) {
     if (existsSync(path.join(o.assets, `${fig.id}-${lang}.jpg`))) ext = "jpg";
     else note(`${fig.id}-${lang}.png is not under --assets yet`);
   }
-  return [`![${fig.alt ?? ""}](/blog-assets/${fig.id}-${lang}.${ext})`, `_${fig.caption ?? ""}_`];
+  return [
+    `![${escapeInline(fig.alt ?? "")}](/blog-assets/${fig.id}-${lang}.${ext})`,
+    `_${escapeInline(fig.caption ?? "")}_`,
+  ];
 }
 
 function runStrip(o) {
@@ -1940,6 +1963,175 @@ function runStrip(o) {
 }
 
 // ---------------------------------------------------------------------------
+// selftest: the local steps against built-in fixtures, each run as its own process
+// ---------------------------------------------------------------------------
+
+const FIXTURE_FACTS = `## FACTS
+- F1: Archived tool output is written to a file under the Project root. Source: https://example.com/docs
+
+## OPINIONS
+- O1: A marker beats a gap.
+
+## TERMS
+| Term | zh |
+| --- | --- |
+| Trace | Trace |
+`;
+
+const FIXTURE_DRAFT = `---
+title: "Self-test post"
+date: 2026-10-19
+category: perspectives
+excerpt: "A fixture for the script's own checks."
+---
+
+Archived output keeps its place in the Trace. {F1}
+
+## Where files go
+
+Files live under one root per Project. {F1}
+
+\`\`\`figure id=demo-flow
+alt: Archived tool output moving to a path under the Project root.
+caption: The Trace keeps a marker where the output was.
+text:
+- root: <root>/<project>/
+- marker: [output archived: <path>]
+\`\`\`
+
+## What the Trace keeps
+
+The Trace keeps a short marker. {F1}
+
+\`\`\`figure id=demo-shot
+alt: The Trace view showing an archived output.
+caption: The marker names the file as <path> and the id as \`<id>\`.
+\`\`\`
+
+## A marker beats a gap
+
+We would rather keep a marker than leave a gap. {O1}
+
+## What to read next
+
+The docs describe the archive in full. {F1}
+
+---
+
+**Sources**: [docs](https://example.com/docs)
+`;
+
+const FIXTURE_FIGURE = [
+  '<figure class="post-figure" data-figure="demo-flow">',
+  '  <svg class="fig-svg" viewBox="0 0 560 120" role="img" aria-labelledby="selftest-post-demo-flow-en-title">',
+  '    <title id="selftest-post-demo-flow-en-title">Archived tool output moving to a path under the Project root.</title>',
+  '    <text class="fig-label" x="10" y="40">&lt;root&gt;/&lt;project&gt;/</text>',
+  '    <text class="fig-note" x="10" y="80"><tspan>[output archived: &lt;path&gt;]</tspan></text>',
+  '    <text class="fig-tick" x="500" y="80">1</text>',
+  "  </svg>",
+  '  <ol class="fig-steps"><li>&lt;root&gt;/&lt;project&gt;/</li><li>[output archived: &lt;path&gt;]</li></ol>',
+  "  <figcaption>The Trace keeps a marker where the output was.</figcaption>",
+  "</figure>",
+  "",
+].join("\n");
+
+function runSelftest() {
+  const root = mkdtempSync(path.join(os.tmpdir(), "prose-selftest-"));
+  const post = path.join(root, "selftest-post");
+  const good = path.join(post, "figures");
+  const bad = path.join(post, "figures-unescaped");
+  mkdirSync(good, { recursive: true });
+  mkdirSync(bad, { recursive: true });
+  const at = (name) => path.join(post, name);
+  writeFileSync(at("facts.md"), FIXTURE_FACTS);
+  writeFileSync(
+    at("figures.md"),
+    "| id | kind |\n| --- | --- |\n| demo-flow | flow |\n| demo-shot | screenshot |\n",
+  );
+  writeFileSync(at("draft.en.v1.md"), FIXTURE_DRAFT);
+  writeFileSync(path.join(good, "demo-flow.en.html"), FIXTURE_FIGURE);
+  writeFileSync(
+    path.join(bad, "demo-flow.en.html"),
+    FIXTURE_FIGURE.replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
+  );
+  writeFileSync(
+    at("strings.en.txt"),
+    "hero.title: One harness for every agent\nhero.badge: Unlock it now!\n",
+  );
+  const published = path.join(root, "selftest-post.en.md");
+
+  const self = fileURLToPath(import.meta.url);
+  const cases = [
+    {
+      name: "angle-bracket placeholders in figure strings are data, and an escaped drawing matches them",
+      args: [
+        "check",
+        "--in",
+        at("draft.en.v1.md"),
+        "--facts",
+        at("facts.md"),
+        "--figures",
+        at("figures.md"),
+        "--svg",
+        good,
+      ],
+      code: 0,
+    },
+    {
+      name: "a drawing that leaves <path> unescaped does not match its block",
+      args: ["check", "--in", at("draft.en.v1.md"), "--svg", bad],
+      code: 1,
+      stdout: /is not drawn as a <text>\/<tspan> leaf/,
+    },
+    {
+      name: "strip refuses to inline an unescaped drawing",
+      args: ["strip", "--in", at("draft.en.v1.md"), "--out", published, "--figures-dir", bad],
+      code: 1,
+      stderr: /does not match figure demo-flow/,
+    },
+    {
+      name: "strip inlines the drawing on one line and escapes a screenshot caption outside code spans",
+      args: ["strip", "--in", at("draft.en.v1.md"), "--out", published, "--figures-dir", good],
+      code: 0,
+      file: [
+        published,
+        /\n<figure class="post-figure" data-figure="demo-flow">[^\n]*<\/figure>\n[\s\S]*_The marker names the file as &lt;path&gt; and the id as `<id>`\._/,
+      ],
+    },
+    {
+      name: "the stripped post passes, its inline figure checked against the draft",
+      args: ["check", "--in", published, "--draft", at("draft.en.v1.md")],
+      code: 0,
+    },
+    {
+      name: "landing strings with a banned word and an exclamation mark fail",
+      args: ["check", "--in", at("strings.en.txt"), "--profile", "landing"],
+      code: 1,
+      stdout: /marketing register: unlock[\s\S]*exclamation mark/,
+    },
+  ];
+
+  let failed = 0;
+  for (const c of cases) {
+    const res = spawnSync(process.execPath, [self, ...c.args], { encoding: "utf8" });
+    const why = [];
+    if (res.status !== c.code) why.push(`exit ${res.status}, expected ${c.code}`);
+    if (c.stdout && !c.stdout.test(res.stdout)) why.push(`stdout lacks ${c.stdout}`);
+    if (c.stderr && !c.stderr.test(res.stderr)) why.push(`stderr lacks ${c.stderr}`);
+    if (c.file && !(existsSync(c.file[0]) && c.file[1].test(readFileSync(c.file[0], "utf8")))) {
+      why.push(`${path.basename(c.file[0])} lacks ${c.file[1]}`);
+    }
+    if (why.length) {
+      failed++;
+      process.stdout.write(`FAIL ${c.name}\n  ${why.join("\n  ")}\n${res.stdout}${res.stderr}`);
+    } else process.stdout.write(`ok   ${c.name}\n`);
+  }
+  rmSync(root, { recursive: true, force: true });
+  process.stdout.write(`${cases.length - failed}/${cases.length} passed\n`);
+  process.exit(failed ? 1 : 0);
+}
+
+// ---------------------------------------------------------------------------
 
 const { step, opts } = parseArgs(process.argv.slice(2));
 if (!step || step === "--help" || opts.help) {
@@ -1963,6 +2155,7 @@ if (API_STEPS.includes(step)) {
 } else if (LOCAL_STEPS.includes(step)) {
   if (step === "check") runCheck(opts);
   else if (step === "pair") runPair(opts);
+  else if (step === "selftest") runSelftest();
   else runStrip(opts);
 } else {
   fail(`unknown step "${step}"; steps: ${[...API_STEPS, ...LOCAL_STEPS].join(", ")}`);
