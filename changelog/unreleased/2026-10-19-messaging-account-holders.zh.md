@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** feature
 - **Scope:** `server`, `docs`
+- **PR:** [#1218](https://github.com/Prism-Shadow/penguin-harness/pull/1218)
 
 [English](2026-10-19-messaging-account-holders.md)
 
