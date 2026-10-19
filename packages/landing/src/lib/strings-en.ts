@@ -47,7 +47,8 @@ export const en: Strings = {
     positioning: "Unified and Stable RSI Framework",
     badge: "for free",
     /** No-break spaces keep each "any …" pair on one line when a phone wraps the tagline. */
-    automation: "Fully automatic optimization: any model, any algorithm, any Benchmark",
+    automation:
+      "Fully automatic optimization: any\u00a0model, any\u00a0algorithm, any\u00a0Benchmark",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [
