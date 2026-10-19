@@ -3,6 +3,7 @@
 - **Date:** 2026-10-20
 - **Type:** fix
 - **Scope:** `ui`, `landing`, `docs`
+- **PR:** [#1226](https://github.com/Prism-Shadow/penguin-harness/pull/1226)
 
 [English](2026-10-20-site-chrome-icons.md)
 
