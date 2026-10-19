@@ -991,13 +991,15 @@
      absolutely at the row's inset with the host padded to make room, because a host lays its
      body and actions out as a flex row — a dot in the flow would be a third item and push the
      body to the middle. A toast that also carries `ui-glass` frosts like every other floating
-     layer. */
+     layer. On a custom background a notice in the page is a card like any other there: the
+     panel's light glass (wallpaper.css), shadow and dot kept, never a tinted slab; a toast, or
+     a notice in a dialog, keeps the overlay. */
   :root[data-theme="modern"] .ui-notice {
     position: relative;
     padding-inline-start: calc(var(--ui-row-px) + 1.125em);
     border-color: transparent;
     border-radius: var(--ui-radius-lg);
-    background-color: var(--ui-overlay);
+    background-color: var(--wallpaper-panel-fill, var(--ui-overlay));
     box-shadow: var(--ui-shadow-overlay);
     color: var(--ui-fg);
   }
