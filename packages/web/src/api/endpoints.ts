@@ -1722,6 +1722,14 @@ export const deleteSchedule = (projectId: string, agentId: string, name: string)
     { method: "DELETE" },
   );
 
+/** Lift an auto-pause: the ticks run again and the count behind the pause is forgotten. */
+export const resumeSchedule = (projectId: string, agentId: string, name: string) =>
+  apiFetch<{ resumed: boolean }>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/schedules/${encodeURIComponent(name)}/resume`,
+    { method: "POST" },
+  );
+
 /**
  * Fire one scheduled task right now (an extra run; the schedule itself is untouched).
  * Answers where the firing went — the session, sent or queued behind a busy target.

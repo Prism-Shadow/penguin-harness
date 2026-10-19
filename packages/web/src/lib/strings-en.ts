@@ -2604,6 +2604,8 @@ export const en: Strings = {
     toastSaved: "Scheduled task saved",
     toastEnabled: "Scheduled task enabled",
     toastDisabled: "Scheduled task disabled",
+    resume: "Resume",
+    toastResumed: "Scheduled task resumed",
     /** Manual fire (fireSchedule): an extra run now; queued when the target Session is busy. */
     fireNow: "Run now",
     toastFired: (session: string): string => `Fired once by hand into session ${session}`,

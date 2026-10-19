@@ -2771,6 +2771,8 @@ export const zh = {
     toastSaved: "已保存定时任务",
     toastEnabled: "已启用定时任务",
     toastDisabled: "已停用定时任务",
+    resume: "恢复",
+    toastResumed: "已恢复定时任务",
     /** Manual fire (fireSchedule): an extra run now; queued when the target Session is busy. */
     fireNow: "立即触发",
     toastFired: (session: string): string => `已手工触发，会话 ${session}`,
