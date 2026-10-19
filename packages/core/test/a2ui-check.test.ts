@@ -80,6 +80,21 @@ describe("checkReply", () => {
     );
   });
 
+  it("L2: a resources board is a snapshot and needs `asOf`; a chart need not be one", () => {
+    const fence = (spec: object) => `\`\`\`a2ui\n${JSON.stringify(spec)}\n\`\`\``;
+    const board = fence({ type: "resources", cpu: { percent: 37 } });
+    expect(checkReply(`Here is the machine now.\n\n${board}\n`).issues.map((i) => i.code)).toEqual([
+      "no_as_of",
+    ]);
+    const chart = fence({
+      type: "chart",
+      kind: "bar",
+      categories: ["Mon", "Tue"],
+      series: [{ label: "Builds", values: [12, 9] }],
+    });
+    expect(checkReply(`Here are this week's builds.\n\n${chart}\n`).issues).toEqual([]);
+  });
+
   it("scores: 15 per L2 warning, 5 per prose warning, the rounded mean when there is no error", () => {
     const l2 = checkReply(callout);
     expect(l2.score).toEqual({ l1: 100, l2: 85, prose: 100, total: 93 });

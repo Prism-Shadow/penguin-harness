@@ -8,8 +8,11 @@
  * the call's `now` and `timeZone`.
  */
 import { parseA2ui } from "./catalog.js";
+import { chartMarkdown } from "./chart.js";
 import { scanFences, splitLines } from "./fences.js";
+import { metricLine } from "./metric.js";
 import { detectLang } from "./prose.js";
+import { resourcesMarkdown } from "./resources.js";
 import type {
   A2uiCallout,
   A2uiChoice,
@@ -28,14 +31,10 @@ import {
   countdownParts,
   countdownText,
   formatAsOf,
-  formatDelta,
-  formatMetricValue,
   formatNumber,
   formatTemp,
   localeOf,
-  metricDetail,
   parseA2uiInstant,
-  resolveMetric,
   weekdayOf,
   zonedParts,
 } from "./widgets.js";
@@ -79,7 +78,6 @@ const STR = {
     localTime: "本地时间",
     left: (time: string) => `还有 ${time}`,
     reached: "已到",
-    metricTone: { attention: "注意", danger: "警告", done: "已完成" },
   },
   en: {
     recommended: "recommended",
@@ -106,7 +104,6 @@ const STR = {
     localTime: "Local time",
     left: (time: string) => `${time} left`,
     reached: "reached",
-    metricTone: { attention: "warning", danger: "critical", done: "done" },
   },
 } as const;
 
@@ -291,27 +288,17 @@ function countdownMarkdown(spec: A2uiCountdown, lang: A2uiLang, at: Moment): str
   return [line];
 }
 
-function metricsMarkdown(spec: A2uiMetrics, lang: A2uiLang, at: Moment): string[] {
-  const t = STR[lang];
+function metricsMarkdown(spec: A2uiMetrics, lang: A2uiLang): string[] {
   const out: string[] = [];
   if (spec.title) out.push(`**${spec.title}**`, "");
-  for (const item of spec.items) {
-    let line = `- ${item.label}${t.colon}${formatMetricValue(item, lang)}`;
-    const detail = item.detail ?? metricDetail(item, lang);
-    if (detail !== undefined) line += ` — ${detail}`;
-    const delta = formatDelta(item, lang);
-    if (delta !== undefined) {
-      const change = item.deltaLabel ? `${delta} ${item.deltaLabel}` : delta;
-      line += lang === "zh" ? `（${change}）` : ` (${change})`;
-    }
-    const { tone } = resolveMetric(item);
-    if (tone !== undefined) line += ` — ${t.metricTone[tone]}`;
-    out.push(line);
-  }
-  if (spec.asOf) {
-    out.push("", `${t.asOf} ${formatAsOf(spec.asOf, lang, at.now, at.timeZone)}`);
-  }
+  for (const item of spec.items) out.push(metricLine(item, lang));
   return out;
+}
+
+/** A snapshot's lines, then the time it was read: "As of 14:05" / 「数据时间 14:05」. */
+function withAsOf(lines: string[], asOf: string | undefined, lang: A2uiLang, at: Moment): string[] {
+  if (!asOf) return lines;
+  return [...lines, "", `${STR[lang].asOf} ${formatAsOf(asOf, lang, at.now, at.timeZone)}`];
 }
 
 /** Readable Markdown for one valid block; a widget is printed for `ctx`'s moment and zone. */
@@ -337,7 +324,11 @@ export function specToMarkdown(
     case "countdown":
       return countdownMarkdown(spec, lang, at).join("\n");
     case "metrics":
-      return metricsMarkdown(spec, lang, at).join("\n");
+      return withAsOf(metricsMarkdown(spec, lang), spec.asOf, lang, at).join("\n");
+    case "chart":
+      return withAsOf(chartMarkdown(spec, lang), spec.asOf, lang, at).join("\n");
+    case "resources":
+      return withAsOf(resourcesMarkdown(spec, lang), spec.asOf, lang, at).join("\n");
   }
 }
 
