@@ -69,6 +69,7 @@ import type {
   MeResponse,
   LanguageIndexResponse,
   MessagesResponse,
+  MessagingAccountHoldersResponse,
   MessagingBindingsResponse,
   ModelBalanceResponse,
   ModelProtocolDetectResponse,
@@ -1277,6 +1278,11 @@ router
   .post("/api/sessions/:sessionId/messaging/wechat/scan/poll", () => readOnly("poll a WeChat scan"))
   .post("/api/sessions/:sessionId/messaging/wechat/scan/verify", () => empty())
   .post("/api/sessions/:sessionId/messaging/wechat/scan/cancel", () => empty());
+// Nothing in the demo holds a bot, and the demo's machines have nothing to be asked.
+router.get(
+  "/api/projects/:projectId/messaging/account-holders",
+  (): MessagingAccountHoldersResponse => ({ holders: [], unreachable: [] }),
+);
 
 // ---------------------------------------------------------------------------------------------
 // Messages, tasks, approvals, the run
