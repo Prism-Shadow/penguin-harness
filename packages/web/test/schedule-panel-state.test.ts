@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { ProjectScheduleItem, ScheduleItem } from "@prismshadow/penguin-server/api";
 import {
   SCHEDULE_FILTERS,
+  autoPauseReasonOf,
   pendingScheduleSessions,
   filterBucket,
   filterSchedules,
@@ -93,6 +94,7 @@ describe("filterBucket / scheduleGlyph", () => {
   it("buckets every display status under exactly one chip, invalid under none", () => {
     expect(filterBucket("active")).toBe("active");
     expect(filterBucket("disabled")).toBe("paused");
+    expect(filterBucket("auto_paused")).toBe("paused");
     expect(filterBucket("done")).toBe("completed");
     expect(filterBucket("expired")).toBe("completed");
     expect(filterBucket("missed")).toBe("completed");
@@ -107,9 +109,20 @@ describe("filterBucket / scheduleGlyph", () => {
   it("gives the glyph the same grouping as the chips, plus the alert for an invalid file", () => {
     expect(scheduleGlyph("active")).toBe("play");
     expect(scheduleGlyph("disabled")).toBe("pause");
+    expect(scheduleGlyph("auto_paused")).toBe("pause");
     expect(scheduleGlyph("done")).toBe("check");
     expect(scheduleGlyph("missed")).toBe("check");
     expect(scheduleGlyph("invalid")).toBe("alert");
+  });
+
+  it("reads the auto-pause reason defensively: older servers omit the field", () => {
+    expect(autoPauseReasonOf({ autoPauseReason: "schedule_send_failed" })).toBe(
+      "schedule_send_failed",
+    );
+    expect(autoPauseReasonOf({})).toBeUndefined();
+    expect(autoPauseReasonOf({ autoPauseReason: "" })).toBeUndefined();
+    expect(autoPauseReasonOf({ autoPauseReason: 42 })).toBeUndefined();
+    expect(autoPauseReasonOf(null)).toBeUndefined();
   });
 });
 

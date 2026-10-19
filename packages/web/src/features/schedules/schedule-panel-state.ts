@@ -15,11 +15,12 @@ export const SCHEDULE_FILTERS: readonly ScheduleFilter[] = ["all", "active", "pa
  * and every settled state is "completed". An invalid file fits no chip: it shows under "all"
  * only, with its reason on the row.
  */
-export function filterBucket(status: ScheduleStatus): Exclude<ScheduleFilter, "all"> | null {
+export function filterBucket(status: ScheduleStatus | "auto_paused"): Exclude<ScheduleFilter, "all"> | null {
   switch (status) {
     case "active":
       return "active";
     case "disabled":
+    case "auto_paused":
       return "paused";
     case "done":
     case "expired":
@@ -84,12 +85,23 @@ export function filterSchedules<T extends Pick<ScheduleItem, "status" | "name" |
 
 export type ScheduleGlyph = "play" | "pause" | "check" | "alert";
 
-/** The row's state mark: play for an armed task, pause for a disabled one, a check for every settled state, an alert for an invalid file. */
-export function scheduleGlyph(status: ScheduleStatus): ScheduleGlyph {
+/**
+ * The auto-pause reason a server new enough to report one carries; older servers omit
+ * the field. Read defensively so the same bundle renders both.
+ */
+export function autoPauseReasonOf(item: unknown): string | undefined {
+  if (item === null || typeof item !== "object") return undefined;
+  const reason = (item as { autoPauseReason?: unknown }).autoPauseReason;
+  return typeof reason === "string" && reason !== "" ? reason : undefined;
+}
+
+/** The row's state mark: play for an armed task, pause for a disabled or auto-paused one, a check for every settled state, an alert for an invalid file. */
+export function scheduleGlyph(status: ScheduleStatus | "auto_paused"): ScheduleGlyph {
   switch (status) {
     case "active":
       return "play";
     case "disabled":
+    case "auto_paused":
       return "pause";
     case "done":
     case "expired":

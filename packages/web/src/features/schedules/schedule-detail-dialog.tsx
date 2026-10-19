@@ -28,16 +28,18 @@ import { formatDateTime } from "../../lib/format";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { describeInstant, describePeriod } from "./schedule-describe";
+import { autoPauseReasonOf } from "./schedule-panel-state";
 import { toggleBody } from "./schedule-upsert";
 
 /** Display status → badge, the same mapping the page's table and the settings tab use. */
-const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
+const STATUS_BADGE: Record<ScheduleStatus | "auto_paused", BadgeStyle> = {
   active: { tone: "success" },
   disabled: { tone: "neutral" },
   expired: { tone: "attention" },
   done: { tone: "neutral", variant: "solid" },
   missed: { tone: "attention" },
   invalid: { tone: "danger" },
+  auto_paused: { tone: "attention" },
 };
 
 /** One label/value line of the definition list. */
@@ -194,6 +196,13 @@ export function ScheduleDetailDialog({
             {item.invalidReason !== undefined && (
               <Row label={S.schedule.statusNames.invalid ?? item.status}>
                 <span className="text-red-600 dark:text-red-400">{item.invalidReason}</span>
+              </Row>
+            )}
+            {autoPauseReasonOf(item) !== undefined && (
+              <Row label={S.schedule.statusNames.auto_paused ?? item.status}>
+                <span className="text-amber-600 dark:text-amber-400">
+                  {autoPauseReasonOf(item)}
+                </span>
               </Row>
             )}
           </div>

@@ -49,18 +49,20 @@ import { useProject } from "../../state/project";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { ScheduleFormModal } from "../schedules/schedule-form-modal";
+import { autoPauseReasonOf } from "../schedules/schedule-panel-state";
 import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
 import { toggleBody } from "../schedules/schedule-upsert";
 import { usePromptInjection } from "./prompt-injection-controls";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
-const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
+const STATUS_BADGE: Record<ScheduleStatus | "auto_paused", BadgeStyle> = {
   active: { tone: "success" },
   disabled: { tone: "neutral" },
   expired: { tone: "attention" },
   done: { tone: "neutral", variant: "solid" },
   missed: { tone: "attention" },
   invalid: { tone: "danger" },
+  auto_paused: { tone: "attention" },
 };
 
 export function SchedulesTab({
@@ -211,8 +213,11 @@ export function SchedulesTab({
                   {item.name}
                 </TableCell>
                 <TableCell nowrap>
-                  {/* invalid reason is folded into the hover title. */}
-                  <span data-tooltip={item.invalidReason} data-tooltip-extra>
+                  {/* invalid/auto-pause reason is folded into the hover title. */}
+                  <span
+                    data-tooltip={item.invalidReason ?? autoPauseReasonOf(item)}
+                    data-tooltip-extra
+                  >
                     <Badge {...STATUS_BADGE[item.status]}>
                       {S.schedule.statusNames[item.status] ?? item.status}
                     </Badge>

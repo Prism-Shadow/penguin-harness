@@ -2735,6 +2735,7 @@ export const zh = {
       done: "已完成",
       missed: "已错过",
       invalid: "无效",
+      auto_paused: "自动暂停",
     } as Record<string, string>,
     queued: "排队中",
     once: "一次性",
