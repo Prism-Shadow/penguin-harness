@@ -38,6 +38,7 @@ import { toStoredUsd, unitLabel } from "./budget-input";
 import { budgetTone } from "./finance-tree";
 import type { BudgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";
+import type { InboxRow } from "./overview-summary";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
 import type { OrgStatusKind } from "./shell-org-status";
 
@@ -76,6 +77,19 @@ export function JumpButton({
     >
       <GlyphIcon d={ICONS.arrowUpRight} size={ICON_SIZE.inlineGlyph} />
     </button>
+  );
+}
+
+/**
+ * An inbox row's state dot: attention while the row needs the reader, muted once it is only
+ * news. Nothing here rests on the colour alone — every row wears the chip that names its
+ * category beside it.
+ */
+export function InboxDot({ row }: { row: InboxRow }) {
+  return (
+    <span className="flex shrink-0 items-center">
+      <span aria-hidden className={`block h-1.5 w-1.5 rounded-full ${toneDot[row.tone]}`} />
+    </span>
   );
 }
 

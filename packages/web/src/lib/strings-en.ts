@@ -38,6 +38,7 @@ export const en: Strings = {
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "Overview",
+      inbox: "Inbox",
       chart: "Org Chart",
       calendar: "Calendar",
       tickets: "Tickets",
@@ -2506,8 +2507,10 @@ export const en: Strings = {
   schedulesPage: {
     title: "Scheduled tasks",
     subtitle:
-      "Every agent's scheduled tasks in this Project: the prompt goes to the target Session on schedule. Grouped by agent; open a row for its details, and edit it from there. Creating one stays in the agent's Settings › Schedules.",
+      "Every agent's scheduled tasks in this Project: the prompt goes to the target Session on schedule. Grouped by agent; open a row for its details and edit it there, or create a task for an agent from its group's header.",
     refresh: "Refresh",
+    /** The group header's create button: a task for that agent, in the shared form. */
+    newTask: "New task",
     filterStatus: "Status",
     filterType: "Type",
     typeAll: "All types",
@@ -2600,6 +2603,14 @@ export const en: Strings = {
     toastSaved: "Scheduled task saved",
     toastEnabled: "Scheduled task enabled",
     toastDisabled: "Scheduled task disabled",
+    /** Manual fire (fireSchedule): an extra run now; queued when the target Session is busy. */
+    fireNow: "Run now",
+    toastFired: (session: string): string => `Fired once by hand into session ${session}`,
+    toastQueued: (session: string): string => `Session ${session} is busy; the firing is queued`,
+    /** Hover hint on a disabled fire button: invalid tasks cannot fire. */
+    fireInvalidHint: "This task is invalid and cannot fire",
+    /** A fire that 404s without the server's error envelope: this page is newer than the deployed server. */
+    fireStaleServer: "The server predates manual firing; it takes effect after a restart",
     /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "This conversation",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -3626,6 +3637,8 @@ Scenarios:
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "Loading earlier messages…",
+    /** Top-of-stream affordance while more history exists but nothing is in flight: click to fetch the previous window (also triggered by scrolling near the top). */
+    loadEarlier: "Load earlier messages",
     /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
     loadEarlierRetry: "Failed to load earlier messages — click to retry",
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
@@ -3697,7 +3710,9 @@ Scenarios:
             ? "aborted during reconnect backoff"
             : item?.errorCode === "compaction_interrupted"
               ? "aborted during compaction"
-              : (item?.errorCode ?? item?.reason ?? "");
+              : item?.errorCode === "server_restart"
+                ? "interrupted by a server restart"
+                : (item?.errorCode ?? item?.reason ?? "");
       const text = cause ? `${cause}${item?.errorMessage ? `: ${item.errorMessage}` : ""}` : "";
       return `[Aborted]${text ? `: ${text}` : ""}`;
     },
@@ -5353,6 +5368,8 @@ Scenarios:
       closeTemporary: "Remove from Temporary",
       closeAllTemporary: "Close all",
       agentMissing: "Agent deleted; its desk cannot be opened",
+      /** The desk row menu's entry that sets the employee's own model. */
+      setModel: "Set model",
     },
     overview: {
       title: "Overview",
@@ -5424,6 +5441,26 @@ Scenarios:
       inboxCategories: { mention: "@me", blocked: "Blocked", done: "Done" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `${n} more — open the calendar`,
+      /** The jump beside the inbox chips, to the notification center. */
+      inboxAll: "All notifications",
+    },
+    /** The notification center: the inbox as a page of its own, with per-category preferences. */
+    inbox: {
+      /** The page's own info line: what the center shows and where a row leads. */
+      info: "Everything the organization has to tell you: messages naming you, blocked tickets, tickets closed as done. A title jumps to its channel or ticket; mute a category below to stop seeing it.",
+      /** The preferences block: which categories feed the inbox at all. */
+      prefsTitle: "Categories",
+      prefsInfo: "A muted category leaves the inbox (on the overview and here alike); the channel and the board themselves are untouched.",
+      /** One line per category: what turning it off hides. */
+      prefHint: {
+        mention: "Messages naming you (or everyone) in the all-hands channel",
+        blocked: "Blocked tickets",
+        done: "Tickets closed as done this period",
+      } as Record<string, string>,
+      /** Every category muted: the list is empty by choice, not by luck. */
+      emptyAllOff: "Every category is muted, so the inbox is empty by choice",
+      /** The chip in force matches nothing (its category feeds rows, just not this one). */
+      emptyFilter: "No notifications under this filter",
     },
     calendarOutcomes: {
       fired: "Fired",
@@ -5451,6 +5488,7 @@ Scenarios:
       leave: "Leave the organization",
       ceoCannotLeave: "The CEO cannot leave",
       setThinkingLevel: "Set thinking level",
+      setModel: "Set model",
       agentMissing: "Agent deleted",
       ceoMissing: (ceoId: string): string =>
         `The CEO's Agent was deleted, so the organization cannot run: create an Agent with the id ${ceoId} again to restore it.`,
@@ -5530,6 +5568,16 @@ Scenarios:
       thinkingLevelDefault: (level: string): string => `Project default (${level})`,
       thinkingLevelPinned: (level: string): string =>
         `The current desk session is pinned to "${level}" on its own; this setting reaches the desk from its next desk session.`,
+      /** The employee-model dialog: it writes the chart entry, then moves the current desk onto the model at once. */
+      employeeModelTitle: (name: string): string => `Set ${name}'s model`,
+      employeeModelInfo:
+        "Written to the employee entry: every desk and ticket session opened later uses this model. The current desk moves to it at once and its context resets; with no desk yet, it takes effect when the desk opens. Empty follows the organization default, and when the organization names none, the Project default.",
+      /** No model of the employee's own: the organization's default applies (then the Project's). */
+      employeeModelFollowDefault: "Follow the organization default",
+      employeeModelClear: "Back to the organization default",
+      /** The desk moved under the dialog (another renewal won the race): the chart write still landed, the lists re-read it. */
+      employeeModelDeskMoved:
+        "The desk changed while this was open; the model is written to the employee entry and the current desk is left alone",
     },
     calendar: {
       title: "Calendar",
@@ -5663,6 +5711,9 @@ Scenarios:
       blockByHint: "The ticket or principal it waits on",
       sessions: "Ticket sessions",
       sessionsCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
+      sessionsRunning: (n: number): string => `${n} running`,
+      sessionRunning: "Running",
+      sessionIdle: "Idle",
       progress: "Progress",
       progressEmpty: "No progress recorded yet",
       addProgress: "Add progress",
@@ -6071,6 +6122,10 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
+      schedule_invalid: "This scheduled task's file is invalid, so it cannot fire.",
+      schedule_session_missing:
+        "The Session this task is bound to no longer exists; the task is marked invalid. Editing the task file recovers it.",
+      schedule_fire_failed: "The firing failed: no Session could be opened for it.",
       model_not_addable:
         "This group carries its built-in models only; add the model under a custom group.",
       penguin_go_protocol_fixed: "Penguin Go always uses the MMSP protocol; it cannot be changed.",

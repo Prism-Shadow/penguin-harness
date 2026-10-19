@@ -28,7 +28,7 @@
  * -> bottom user row, which opens the shared account menu (user-menu.tsx).
  * In company mode the shape holds but the objects change: the organization switcher stands
  * where the Project switcher stands, "New channel" where "New chat" is, the organization's
- * six pages in the nav group, and the channel list where the conversation list is, followed
+ * seven pages in the nav group, and the channel list where the conversation list is, followed
  * by the organization's own 工位 group — one row per employee
  * (features/company/channel-sidebar.tsx, features/company/org-session-groups.tsx). The
  * development list is the user's OWN conversations only: an organization's desk, ticket and
@@ -1664,7 +1664,7 @@ export function Sidebar({
   };
 
   /**
-   * Company mode's nav rows: the organization's six pages (COMPANY_NAV_KEYS) — channels are not
+   * Company mode's nav rows: the organization's seven pages (COMPANY_NAV_KEYS) — channels are not
    * among them, they are the list below — all in the fold, with no pins and no drag. Always
    * mounted — the fold animates their height to zero and turns them inert.
    */
@@ -1677,7 +1677,7 @@ export function Sidebar({
   }> = inCompany
     ? COMPANY_NAV_KEYS.map((key) => ({
         key,
-        // Company mode with no organization keeps its six rows and disables them: the pages
+        // Company mode with no organization keeps its seven rows and disables them: the pages
         // exist, they just have no organization to show yet, and a nav that empties itself
         // reads as a broken shell rather than as an empty one.
         to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
@@ -2076,7 +2076,7 @@ export function Sidebar({
     >
       {/* The page nav: in development mode the pinned pages, then the collapsible ones folded
           away under the slim toggle (with nothing collapsible there is no toggle); in company
-          mode the organization's six pages, all under the toggle. The fold persists. Folding
+          mode the organization's seven pages, all under the toggle. The fold persists. Folding
           rows tween their height to zero, inert, and leave once folded. The nav and the session
           list scroll together. Mid-drag, an empty pinned run keeps a row's height and a hidden
           toggle band comes back, so either side can take the drop. */}

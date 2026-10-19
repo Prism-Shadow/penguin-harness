@@ -45,6 +45,7 @@ export const zh = {
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "概览",
+      inbox: "通知",
       chart: "组织图",
       calendar: "日历",
       tickets: "工单",
@@ -2675,8 +2676,10 @@ export const zh = {
   schedulesPage: {
     title: "定时任务",
     subtitle:
-      "本 Project 全部智能体的定时任务：到点自动向目标会话发送 prompt。按智能体分组；点任意一行看明细，明细里可直接编辑。新建仍在各智能体的设置 › 定时任务里。",
+      "本 Project 全部智能体的定时任务：到点自动向目标会话发送 prompt。按智能体分组；点任意一行看明细，明细里可直接编辑，每组右上角可为该智能体新建。",
     refresh: "刷新",
+    /** The group header's create button: a task for that agent, in the shared form. */
+    newTask: "新建任务",
     filterStatus: "状态",
     filterType: "类型",
     typeAll: "全部类型",
@@ -2767,6 +2770,14 @@ export const zh = {
     toastSaved: "已保存定时任务",
     toastEnabled: "已启用定时任务",
     toastDisabled: "已停用定时任务",
+    /** Manual fire (fireSchedule): an extra run now; queued when the target Session is busy. */
+    fireNow: "立即触发",
+    toastFired: (session: string): string => `已手工触发，会话 ${session}`,
+    toastQueued: (session: string): string => `会话 ${session} 正忙，触发已排队`,
+    /** Hover hint on a disabled fire button: invalid tasks cannot fire. */
+    fireInvalidHint: "任务无效，无法触发",
+    /** A fire that 404s without the server's error envelope: this page is newer than the deployed server. */
+    fireStaleServer: "服务端版本过旧，尚无手工触发接口，重启后生效",
     /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "本对话",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -3788,6 +3799,8 @@ Benchmark：
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "正在加载更早的对话…",
+    /** Top-of-stream affordance while more history exists but nothing is in flight: click to fetch the previous window (also triggered by scrolling near the top). */
+    loadEarlier: "加载更早的对话",
     /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
     loadEarlierRetry: "更早的对话加载失败，点击重试",
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
@@ -3855,7 +3868,9 @@ Benchmark：
             ? "重试等待中被中断"
             : item?.errorCode === "compaction_interrupted"
               ? "压缩过程中被中断"
-              : (item?.errorCode ?? item?.reason ?? "");
+              : item?.errorCode === "server_restart"
+                ? "服务重启导致中断"
+                : (item?.errorCode ?? item?.reason ?? "");
       const text = cause ? `${cause}${item?.errorMessage ? `：${item.errorMessage}` : ""}` : "";
       return `[已中断]${text ? `：${text}` : ""}`;
     },
@@ -5550,6 +5565,8 @@ Benchmark：
       closeAllTemporary: "全部关闭",
       /** A desk row whose employee's Agent was deleted: dimmed, never opened. */
       agentMissing: "Agent 已删除，无法打开工位",
+      /** The desk row menu's entry that sets the employee's own model. */
+      setModel: "设置模型",
     },
     overview: {
       title: "概览",
@@ -5617,6 +5634,26 @@ Benchmark：
       inboxCategories: { mention: "@我", blocked: "阻塞", done: "已完成" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `还有 ${n} 项，打开日历查看`,
+      /** The jump beside the inbox chips, to the notification center. */
+      inboxAll: "全部通知",
+    },
+    /** The notification center: the inbox as a page of its own, with per-category preferences. */
+    inbox: {
+      /** The page's own info line: what the center shows and where a row leads. */
+      info: "组织要对你说的全部事情：@我的消息、被阻塞的工单、已完成的工单。点标题直达频道或工单；在下面关掉不想看的类别。",
+      /** The preferences block: which categories feed the inbox at all. */
+      prefsTitle: "通知类别",
+      prefsInfo: "关掉的类别不再出现在收件箱里（概览页与本页都不再列出），频道与看板本身不受影响。",
+      /** One line per category: what turning it off hides. */
+      prefHint: {
+        mention: "全员频道里 @我（或 @所有人）的消息",
+        blocked: "被阻塞的工单",
+        done: "本周期已完成的工单",
+      } as Record<string, string>,
+      /** Every category muted: the list is empty by choice, not by luck. */
+      emptyAllOff: "三个类别都关掉了，收件箱自然是空的",
+      /** The chip in force matches nothing (its category feeds rows, just not this one). */
+      emptyFilter: "这个筛选下没有通知",
     },
     calendarOutcomes: {
       fired: "已触发",
@@ -5644,6 +5681,7 @@ Benchmark：
       leave: "离任",
       ceoCannotLeave: "CEO 不能离任",
       setThinkingLevel: "设思考等级",
+      setModel: "设模型",
       /** An entry whose Agent no longer exists: the card's flag, and the chart's notice when it is the CEO. */
       agentMissing: "Agent 已删除",
       ceoMissing: (ceoId: string): string =>
@@ -5720,6 +5758,15 @@ Benchmark：
       thinkingLevelDefault: (level: string): string => `Project 默认（${level}）`,
       thinkingLevelPinned: (level: string): string =>
         `当前工位会话已单独固定为「${level}」，此设置自下次换工位起对工位生效。`,
+      /** The employee-model dialog: it writes the chart entry, then moves the current desk onto the model at once. */
+      employeeModelTitle: (name: string): string => `设置 ${name} 的模型`,
+      employeeModelInfo:
+        "写入员工条目：之后新开的工位和工单会话都用这个模型。当前工位会立刻换过去，上下文重置；还没有工位时下次打开生效。不填则跟随组织默认，组织没填则跟随 Project 默认。",
+      /** No model of the employee's own: the organization's default applies (then the Project's). */
+      employeeModelFollowDefault: "跟随组织默认",
+      employeeModelClear: "恢复组织默认",
+      /** The desk moved under the dialog (another renewal won the race): the chart write still landed, the lists re-read it. */
+      employeeModelDeskMoved: "工位在此期间已更新，模型已写入员工条目，当前工位保持不动",
     },
     calendar: {
       title: "日历",
@@ -5836,6 +5883,11 @@ Benchmark：
       blockByHint: "等哪张工单或哪位主体",
       sessions: "关联工单会话",
       sessionsCount: (n: number): string => `${n} 个会话`,
+      /** The session fold's summary while any of them is working: "8 个会话 · 1 运行中". */
+      sessionsRunning: (n: number): string => `${n} 运行中`,
+      /** A session row's run dot, and the board card's mark: what each state reads as. */
+      sessionRunning: "运行中",
+      sessionIdle: "空闲",
       progress: "进度",
       progressEmpty: "还没有进度记录",
       addProgress: "追加进度",
@@ -6263,6 +6315,9 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
+      schedule_invalid: "该定时任务文件无效，无法触发。",
+      schedule_session_missing: "该任务绑定的会话已不存在，任务已标为无效；改一下任务文件可恢复。",
+      schedule_fire_failed: "触发失败，未能为这次触发打开会话。",
       model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
       penguin_go_protocol_fixed: "Penguin Go 固定使用 MMSP 协议，不能改为其他协议。",
       model_not_routable:

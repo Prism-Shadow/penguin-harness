@@ -1,5 +1,5 @@
 /**
- * Company mode's navigation manifest and route grammar (pure, unit tested): the six page
+ * Company mode's navigation manifest and route grammar (pure, unit tested): the seven page
  * entries in rendered order, the `/org/:projectId/:orgId/<page>` paths they lead to, the
  * `/channels/:channelId` path of a channel, the `<projectId>/<orgId>` key the shell remembers
  * an organization by, where a freshly created one opens and which key the shell becomes
@@ -20,6 +20,7 @@ export type WorkMode = "dev" | "company";
  */
 export const COMPANY_NAV_KEYS = [
   "overview",
+  "inbox",
   "chart",
   "calendar",
   "tickets",

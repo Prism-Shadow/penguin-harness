@@ -64,6 +64,7 @@ import { OrgEmptyLine, OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
   BudgetBar,
   ErrorLine,
+  InboxDot,
   JumpButton,
   OrgStatusPill,
   PrincipalChip,
@@ -72,12 +73,12 @@ import {
   principalLabel,
 } from "./shared";
 import { agentPrincipal } from "./principals";
+import { readInboxFilter, readInboxPrefs, resolveInboxFilter, writeInboxFilter } from "./inbox-prefs";
 import { liveEmployeeStates } from "./org-sessions";
 import { timeLabel } from "./calendar-geom";
 import {
   BOARD_SEGMENT_TONE,
   FIRST_STEPS,
-  INBOX_FILTERS,
   TIMELINE_TONE,
   boardSummary,
   employeeCounts,
@@ -93,36 +94,12 @@ import type {
   FirstStep,
   InboxCategory,
   InboxFilter,
-  InboxRow,
   InboxTarget,
   TimelineMark,
 } from "./overview-summary";
 
 /** How many of today's instances the timeline shows before pointing at the calendar. */
 const TIMELINE_ROWS = 6;
-
-/**
- * The inbox chip the reader last left in force, kept per organization — the chip is a reading
- * habit, not a fact about the visit, so it outlives it. One entry per organization inside a
- * single localStorage object, and a stored value that names no real chip reads as "all".
- */
-const INBOX_FILTER_KEY = "overview.inbox-filter.v1";
-
-function readInboxFilter(orgId: string | null | undefined): InboxFilter {
-  if (!orgId) return "all";
-  try {
-    const raw = localStorage.getItem(INBOX_FILTER_KEY);
-    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
-    const bucket =
-      typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
-    const stored = bucket[orgId];
-    return (INBOX_FILTERS as readonly string[]).includes(stored as string)
-      ? (stored as InboxFilter)
-      : "all";
-  } catch {
-    return "all";
-  }
-}
 
 /** The mark that leads an inbox row: the channel hash for what was said, the board's glyph for a ticket. */
 const INBOX_ICON: Record<InboxCategory, string> = {
@@ -280,19 +257,6 @@ function MissionFold({ mission }: { mission: string }) {
   );
 }
 
-/**
- * An inbox row's state dot: attention while the row needs the reader, muted once it is only
- * news. Nothing here rests on the colour alone — every row wears the chip that names its
- * category beside it.
- */
-function InboxDot({ row }: { row: InboxRow }) {
-  return (
-    <span className="flex shrink-0 items-center">
-      <span aria-hidden className={`block h-1.5 w-1.5 rounded-full ${toneDot[row.tone]}`} />
-    </span>
-  );
-}
-
 /** One step of the first-steps guide: its number (a check once done), title, what to do, and the button that does it. */
 function StepCard({
   index,
@@ -357,35 +321,27 @@ export function OverviewPage() {
   const [openingDesk, setOpeningDesk] = useState(false);
   /** The inbox chip in force; the reader's own, so it is kept once they move it. */
   const [inboxFilter, setInboxFilter] = useState<InboxFilter>(() => readInboxFilter(orgId));
+  /** The categories feeding the inbox, kept on the notification center's page. */
+  const [inboxPrefs, setInboxPrefs] = useState<readonly InboxCategory[]>(() =>
+    readInboxPrefs(orgId),
+  );
   /** A moved chip is stored back for the next visit — after the first run, which reads it. */
   const inboxDirty = useRef(false);
   useEffect(() => {
     if (!inboxDirty.current) return;
     inboxDirty.current = false;
-    /** An entry that will not parse starts over rather than blocking the write (see readInboxFilter). */
-    let bucket: Record<string, unknown> = {};
-    try {
-      const raw = localStorage.getItem(INBOX_FILTER_KEY);
-      const parsed: unknown = raw === null ? {} : JSON.parse(raw);
-      if (typeof parsed === "object" && parsed !== null) {
-        bucket = parsed as Record<string, unknown>;
-      }
-    } catch {
-      bucket = {};
-    }
-    try {
-      localStorage.setItem(INBOX_FILTER_KEY, JSON.stringify({ ...bucket, [orgId]: inboxFilter }));
-    } catch {
-      // Private mode: the chip lasts the visit.
-    }
+    writeInboxFilter(orgId, inboxFilter);
   }, [orgId, inboxFilter]);
 
-  // Another organization's data must not linger while this one loads.
+  // Another organization's data — and reading state — must not linger while this one
+  // loads. The outlet reuses this element across organizations, so state persists without this.
   useEffect(() => {
     setDetail(null);
     setChart(null);
     setCalendarCount(null);
     setError(null);
+    setInboxFilter(readInboxFilter(orgId));
+    setInboxPrefs(readInboxPrefs(orgId));
   }, [projectId, orgId]);
 
   const load = useCallback(async () => {
@@ -488,9 +444,11 @@ export function OverviewPage() {
   const inbox = inboxRows({
     inbox: detail.inbox,
     names: (principal) => principalLabel(principal, names),
-  });
+  }).filter((row) => (inboxPrefs as readonly string[]).includes(row.category));
+  const inboxFilterInForce = resolveInboxFilter(inboxFilter, inboxPrefs);
+  const inboxChips: readonly InboxFilter[] = ["all", ...inboxPrefs];
   const inboxTotals = inboxCounts(inbox);
-  const visibleInbox = inbox.filter((row) => inboxMatches(row, inboxFilter));
+  const visibleInbox = inbox.filter((row) => inboxMatches(row, inboxFilterInForce));
   const ceoName = names.get(chart.ceoAgentId) ?? chart.ceoAgentId;
 
   const deskButton = (variant: "primary" | "secondary", size: "sm" | "md") => (
@@ -766,19 +724,24 @@ export function OverviewPage() {
             count={inbox.length}
             className="mt-8"
             actions={
-              <div role="group" aria-label={S.company.overview.inbox}>
-                <Segmented
-                  cols={4}
-                  value={inboxFilter}
-                  onChange={(f) => {
-                    inboxDirty.current = true;
-                    setInboxFilter(f);
-                  }}
-                  options={INBOX_FILTERS.map((f) => ({
-                    value: f,
-                    label: `${S.company.overview.inboxFilters[f]} ${inboxTotals[f]}`,
-                  }))}
-                />
+              <div className="flex items-center gap-2">
+                <div role="group" aria-label={S.company.overview.inbox}>
+                  <Segmented
+                    cols={Math.max(2, Math.min(5, inboxChips.length)) as 2 | 3 | 4 | 5}
+                    value={inboxFilterInForce}
+                    onChange={(f) => {
+                      inboxDirty.current = true;
+                      setInboxFilter(f);
+                    }}
+                    options={inboxChips.map((f) => ({
+                      value: f,
+                      label: `${S.company.overview.inboxFilters[f]} ${inboxTotals[f]}`,
+                    }))}
+                  />
+                </div>
+                <Button size="sm" variant="secondary" onClick={() => page("inbox")}>
+                  {S.company.overview.inboxAll}
+                </Button>
               </div>
             }
           >

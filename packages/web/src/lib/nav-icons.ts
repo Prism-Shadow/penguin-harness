@@ -26,6 +26,8 @@ export const NAV_ICONS = {
   terminal: ICONS.terminalWindow,
   /** Company mode's overview. */
   orgOverview: ICONS.dashboard,
+  /** The notification center: a bell, the one glyph that means "for you". */
+  orgInbox: ICONS.bell,
   /** The org chart. */
   orgChart: ICONS.network,
   /** The organization calendar: the same calendar the sidebar's time grouping wears. */

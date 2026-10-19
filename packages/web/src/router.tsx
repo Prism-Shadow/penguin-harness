@@ -44,6 +44,7 @@ import { BenchmarkDetailPage } from "./features/benchmark/benchmark-detail-page"
 import { TerminalPage } from "./features/terminal/terminal-page";
 import { OrgIndexRedirect, OrgLayout } from "./features/company/org-layout";
 import { OverviewPage } from "./features/company/overview-page";
+import { InboxPage } from "./features/company/inbox-page";
 import { OrgChartPage } from "./features/company/org-chart-page";
 import { CalendarPage } from "./features/company/calendar-page";
 import { TicketsPage } from "./features/company/tickets-page";
@@ -177,6 +178,7 @@ function appRoutes() {
         <Route path="/org/:projectId/:orgId" element={<OrgLayout />}>
           <Route index element={<Navigate to="overview" replace />} />
           <Route path="overview" element={<OverviewPage />} />
+          <Route path="inbox" element={<InboxPage />} />
           <Route path="chart" element={<OrgChartPage />} />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="tickets" element={<TicketsPage />} />
