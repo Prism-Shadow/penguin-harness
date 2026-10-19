@@ -26,9 +26,10 @@
  * scrolls the page as usual (ticket-press.ts, ticket-drag.ts). The dialog's move control is the
  * way to move a ticket without dragging. The create form's Create is live once a title is typed
  * and the slug, if any, keeps its rule; closing it with anything typed asks first.
- * The priority rides on the title's line, one size under it. What a card deliberately does
- * not carry is the session count, the cost and any live session status — those are the
- * dialog's, and a ticket is not the place to watch a session run.
+ * The priority rides on the title's line, one size under it. The owner line's far end carries
+ * the session count with the run mark — live-corrected, so a ticket whose sessions all went
+ * quiet reads quiet on the board (asked by the board on 2026-10-18; before that the card
+ * deliberately carried neither). Only the cost stays the dialog's.
  * The board is always on screen: a skeleton of it until the first fetch, the empty columns
  * as drop zones — with a one-line note above them while the organization has no tickets at
  * all, dismissible and repeated in the page's "?" — the board plus an error strip when a
@@ -78,7 +79,9 @@ import { bareKey, isTypingTarget } from "../../lib/shortcuts/page-keys";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
+import { useLiveSessionStatuses } from "../../state/sessions";
 import { OrgPage, useOrg } from "./org-layout";
+import { ticketLiveRunning } from "./org-sessions";
 import {
   BlockedBadge,
   INVALID_ICON,
@@ -132,6 +135,30 @@ function readSort(value: string | null): TicketSort {
 }
 
 /**
+ * The sort off the query, falling back to the organization's stored choice. A stored value that
+ * no longer names a real choice reads as the default rather than as a broken toolbar.
+ */
+function sortFromParams(params: URLSearchParams, orgId: string | null | undefined): TicketSort {
+  const url = readSort(params.get("sort"));
+  if (url !== "priority") return url;
+  const stored = readPrefs(orgId).sort;
+  return stored === "due" || stored === "age" ? stored : "priority";
+}
+
+/** The grouping off the query, falling back the same way the sort does. */
+function groupFromParams(
+  params: URLSearchParams,
+  orgId: string | null | undefined,
+): TicketGroupBy {
+  const url = readGroupBy(params.get("group"));
+  if (url !== "project") return url;
+  const stored = readPrefs(orgId).group;
+  return GROUP_BY_VALUES.includes(stored as TicketGroupBy)
+    ? (stored as TicketGroupBy)
+    : "project";
+}
+
+/**
  * The active quick filter off the query. `?blocked=1` and `?queue=approve` are the deep links the
  * overview has always written — they read as the chips of the same name, and writing the chip
  * back writes `?quick=`.
@@ -172,6 +199,61 @@ function readCollapsed(): Record<string, boolean> {
       : {};
   } catch {
     return {};
+  }
+}
+
+/**
+ * The board's own shape — which grouping and which sort it keeps between visits. One object per
+ * organization in a single localStorage entry, so a person who sits in two companies does not
+ * inherit one company's arrangement into the other. The URL still wins over the stored value
+ * (readSort/readGroupBy are asked first): a link that says `?group=owner` opens the owner view
+ * whether or not it was the last one the board showed.
+ */
+const PREFS_KEY = "tickets.board-prefs.v1";
+
+/** What the stored entry is allowed to say: a real grouping and a real sort, nothing else. */
+type BoardPrefs = { group?: TicketGroupBy; sort?: TicketSort };
+
+function readPrefs(orgId: string | null | undefined): BoardPrefs {
+  if (!orgId) return {};
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    const bucket =
+      typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+    const own = bucket[orgId];
+    if (typeof own !== "object" || own === null) return {};
+    const value = own as Record<string, unknown>;
+    return {
+      ...(typeof value.group === "string" ? { group: value.group as TicketGroupBy } : {}),
+      ...(typeof value.sort === "string" ? { sort: value.sort as TicketSort } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writePrefs(orgId: string | null | undefined, prefs: BoardPrefs): void {
+  if (!orgId) return;
+  /**
+   * A bucket that will not parse is treated as empty rather than as a reason to give up: one
+   * malformed value in localStorage would otherwise keep this feature silent forever, since the
+   * read never sees past it either.
+   */
+  let bucket: Record<string, unknown> = {};
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null) {
+      bucket = parsed as Record<string, unknown>;
+    }
+  } catch {
+    bucket = {};
+  }
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...bucket, [orgId]: prefs }));
+  } catch {
+    // Private mode: the arrangement lasts the visit.
   }
 }
 
@@ -216,6 +298,7 @@ const PRIORITY_ACCENT: Record<OrgTicketPriority, string> = {
 export function TicketsPage() {
   const { projectId, orgId, org } = useOrg();
   const company = useCompany();
+  const liveStatuses = useLiveSessionStatuses();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const location = useLocation();
@@ -262,10 +345,34 @@ export function TicketsPage() {
     }
   }, [reviewVote, reviewVoteBusy]);
   const [quick, setQuick] = useState<BoardQuickFilter>(() => readQuick(params));
-  const [sort, setSort] = useState<TicketSort>(() => readSort(params.get("sort")));
+  const [sort, setSort] = useState<TicketSort>(() => sortFromParams(params, orgId));
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const [groupBy, setGroupBy] = useState<TicketGroupBy>(() => readGroupBy(params.get("group")));
+  const [groupBy, setGroupBy] = useState<TicketGroupBy>(() => groupFromParams(params, orgId));
+  /**
+   * A move of the grouping or the sort is the person's arrangement, so it is stored back for the
+   * next visit — but only once the board has settled on what the URL and the stored entry ask
+   * for, so an arriving `?group=owner` link is not written back over the stored choice by the
+   * effect's first run.
+   */
+  const prefsDirty = useRef(false);
+  /** A person's move of the sort: the toolbar, the address bar, and the stored arrangement all take it. */
+  const moveSort = (next: TicketSort) => {
+    prefsDirty.current = true;
+    setSort(next);
+    setQueryParams({ sort: next === "priority" ? null : next });
+  };
+  /** The grouping, the same way. */
+  const moveGroupBy = (next: TicketGroupBy) => {
+    prefsDirty.current = true;
+    setGroupBy(next);
+    setQueryParams({ group: next });
+  };
+  useEffect(() => {
+    if (!prefsDirty.current) return;
+    prefsDirty.current = false;
+    writePrefs(orgId, { group: groupBy, sort });
+  }, [orgId, groupBy, sort]);
   const [priFilter, setPriFilter] = useState<readonly OrgTicketPriority[]>(() => {
     const raw = params.get("pri");
     if (raw === null || raw === "") return [];
@@ -498,6 +605,7 @@ export function TicketsPage() {
   /** A card's face: the title with its priority first, then what decides its urgency, then where it hangs and who holds it. */
   const cardBody = (t: OrgTicketItem) => {
     const overdue = isOverdue(t.due, todayKey) && t.status !== "done" && t.status !== "rejected";
+    const running = ticketLiveRunning(t.sessions, t.running, liveStatuses);
     const age =
       t.status === "proposed" || t.status === "review"
         ? ticketAgeDays(t.ticketId, todayKey)
@@ -573,6 +681,27 @@ export function TicketsPage() {
           >
             <PrincipalChip principal={t.owner} names={names} size={ICON_SIZE.rowLead} />
           </span>
+          {t.sessions.length > 0 && (
+            <span
+              className="ml-auto inline-flex shrink-0 items-center gap-1.5"
+              data-tooltip={
+                running ? S.company.tickets.sessionRunning : S.company.tickets.sessionIdle
+              }
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${running ? `${toneDot.busy} ui-live animate-pulse` : toneDot.muted}`}
+              >
+                <span className="sr-only">
+                  {running ? S.company.tickets.sessionRunning : S.company.tickets.sessionIdle}
+                </span>
+              </span>
+              <span className="tabular-nums">
+                {running
+                  ? `${S.company.tickets.sessionRunning} · ${S.company.tickets.sessionsCount(t.sessions.length)}`
+                  : S.company.tickets.sessionsCount(t.sessions.length)}
+              </span>
+            </span>
+          )}
         </span>
       </>
     );
@@ -834,11 +963,7 @@ export function TicketsPage() {
             className="min-w-[7rem]"
             value={sort}
             aria-label={S.company.tickets.sortHint}
-            onChange={(e) => {
-              const next = readSort(e.target.value);
-              setSort(next);
-              setQueryParams({ sort: next === "priority" ? null : next });
-            }}
+            onChange={(e) => moveSort(readSort(e.target.value))}
           >
             {SORT_VALUES.map((v) => (
               <option key={v} value={v}>
@@ -854,11 +979,7 @@ export function TicketsPage() {
             className="min-w-[7rem]"
             value={groupBy}
             aria-label={S.company.tickets.group}
-            onChange={(e) => {
-              const next = readGroupBy(e.target.value);
-              setGroupBy(next);
-              setQueryParams({ group: next });
-            }}
+            onChange={(e) => moveGroupBy(readGroupBy(e.target.value))}
           >
             {GROUP_BY_VALUES.map((v) => (
               <option key={v} value={v}>

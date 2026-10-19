@@ -101,6 +101,29 @@ import type {
 /** How many of today's instances the timeline shows before pointing at the calendar. */
 const TIMELINE_ROWS = 6;
 
+/**
+ * The inbox chip the reader last left in force, kept per organization — the chip is a reading
+ * habit, not a fact about the visit, so it outlives it. One entry per organization inside a
+ * single localStorage object, and a stored value that names no real chip reads as "all".
+ */
+const INBOX_FILTER_KEY = "overview.inbox-filter.v1";
+
+function readInboxFilter(orgId: string | null | undefined): InboxFilter {
+  if (!orgId) return "all";
+  try {
+    const raw = localStorage.getItem(INBOX_FILTER_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    const bucket =
+      typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+    const stored = bucket[orgId];
+    return (INBOX_FILTERS as readonly string[]).includes(stored as string)
+      ? (stored as InboxFilter)
+      : "all";
+  } catch {
+    return "all";
+  }
+}
+
 /** The mark that leads an inbox row: the channel hash for what was said, the board's glyph for a ticket. */
 const INBOX_ICON: Record<InboxCategory, string> = {
   mention: CHANNEL_ICON,
@@ -332,8 +355,30 @@ export function OverviewPage() {
   const [calendarCount, setCalendarCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openingDesk, setOpeningDesk] = useState(false);
-  /** The inbox chip in force; local to the visit, as a filter over one section should be. */
-  const [inboxFilter, setInboxFilter] = useState<InboxFilter>("all");
+  /** The inbox chip in force; the reader's own, so it is kept once they move it. */
+  const [inboxFilter, setInboxFilter] = useState<InboxFilter>(() => readInboxFilter(orgId));
+  /** A moved chip is stored back for the next visit — after the first run, which reads it. */
+  const inboxDirty = useRef(false);
+  useEffect(() => {
+    if (!inboxDirty.current) return;
+    inboxDirty.current = false;
+    /** An entry that will not parse starts over rather than blocking the write (see readInboxFilter). */
+    let bucket: Record<string, unknown> = {};
+    try {
+      const raw = localStorage.getItem(INBOX_FILTER_KEY);
+      const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+      if (typeof parsed === "object" && parsed !== null) {
+        bucket = parsed as Record<string, unknown>;
+      }
+    } catch {
+      bucket = {};
+    }
+    try {
+      localStorage.setItem(INBOX_FILTER_KEY, JSON.stringify({ ...bucket, [orgId]: inboxFilter }));
+    } catch {
+      // Private mode: the chip lasts the visit.
+    }
+  }, [orgId, inboxFilter]);
 
   // Another organization's data must not linger while this one loads.
   useEffect(() => {
@@ -725,7 +770,10 @@ export function OverviewPage() {
                 <Segmented
                   cols={4}
                   value={inboxFilter}
-                  onChange={setInboxFilter}
+                  onChange={(f) => {
+                    inboxDirty.current = true;
+                    setInboxFilter(f);
+                  }}
                   options={INBOX_FILTERS.map((f) => ({
                     value: f,
                     label: `${S.company.overview.inboxFilters[f]} ${inboxTotals[f]}`,
