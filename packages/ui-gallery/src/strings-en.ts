@@ -1029,7 +1029,7 @@ export const en: GalleryStrings = {
       articleHint:
         "The prose blog posts and doc pages share. Headings carry anchors, fenced code is highlighted, and tab groups and callouts are the docs' Markdown extensions; its contents sit on the right.",
       articleBody:
-        '## Install\n\nOne command in a terminal installs it:\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### By platform\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- Blocked on first launch\n>\n> Allow it in the system settings.\n\n## Next steps\n\n- Run `penguin web` to open the Web App\n- Back to [Install](#install)\n\n| Command | What it does |\n| --- | --- |\n| `penguin` | Chat in the terminal |\n| `penguin web` | Start the Web App |',
+        '## Install\n\nOne command in a terminal installs it:\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### By platform\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- Blocked on first launch\n>\n> Allow it in the system settings.\n\n## Next steps\n\n- Run `penguin web` to open the Web App\n- Back to [Install](#install)\n\n| Command | What it does |\n| --- | --- |\n| `penguin` | Chat in the terminal |\n| `penguin web` | Start the Web App |\n\n## API\n\n| Method | Path | Description |\n| --- | --- | --- |\n| POST | `/api/auth/login` | Logs in: `{userId, password}` → `{user}` |\n| GET | `/api/auth/claim?token=…` | Redeems a sign-in link: sets the cookie and redirects to `/` |\n| PUT | `/api/me/prefs` | Writes UI preferences (shallow merge); `browserBackend` is refused (`400`), since the built-in browser chooses it through its own endpoint |\n| GET | `/api/me/archived-sessions` | One group\'s archived Sessions: `?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |',
       toc: "On this page",
       sidebar: "Docs sidebar",
       sidebarHint:
@@ -1158,6 +1158,12 @@ export const en: GalleryStrings = {
         "- Every entry in `changelog/unreleased/` has its English and Chinese pair",
         "- No breaking change is waiting to merge",
         "",
+        "| Check | Command | Takes |",
+        "| --- | --- | --- |",
+        "| Types | `pnpm typecheck` | 40 s |",
+        "| Tests | `pnpm test` | 6 min |",
+        "| Format | `pnpm format:check` | 25 s |",
+        "",
         "### Version numbers",
         "",
         "Versions follow semantic versioning. A number that was ever tagged is never reused: a failed release burns its number and the next one is used.",
@@ -1208,6 +1214,15 @@ export const en: GalleryStrings = {
       ].join("\n"),
       compact: "Compact: a channel message",
       compactSample: "Merged **#897** — `feat/ui-w2` can go.",
+      tables: "Tables",
+      tablesHint:
+        "Markdown tables fill the text column and scroll sideways in their own box when they do not fit. Figure columns align right, short cells and inline code stay on one line, long cells wrap; even rows are striped and the row under the pointer is lit.",
+      tableWide: "Wide: fills the column, scrolls when it does not fit",
+      tableWideSample:
+        "| Endpoint | Route | Status | Requests | Errors | Cost | Notes | Updated |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| Sign in | `/api/auth/login` | Healthy | 12,480 | 0.3% | $0.42 | Rate-limited per address after five failures in a minute; the limit lifts after ten minutes | 2026-10-18 |\n| Session events | `/api/projects/:projectId/sessions/:sessionId/events` | Healthy | 3,912 | 0.1% | $1.86 | Streams the Session's events until it settles; a reconnect resumes from the last event id | 2026-10-17 |\n| Import a snapshot | `/api/projects/:projectId/import` | Degraded | 48 | 6.2% | — | Archives over 200 MB time out; uploads are moving to chunks | 2026-10-16 |\n| Model balance | `/api/models/balance` | Healthy | 905 | 0% | $0.03 | Cached for a minute | 2026-10-12 |",
+      tableShort: "Short: key and value",
+      tableShortSample:
+        "| Setting | Value |\n| --- | --- |\n| Model | `gpt-5.6-luna` |\n| Approval | Ask before writing files |\n| Sandbox | Workspace only |\n| Context window | 400k tokens |",
       code: "Code",
       surface: "Code surface: line numbers, no frame",
       diff: "Diff",
