@@ -12,7 +12,7 @@ const prefix = "@prismshadow/penguin-";
  * Windows durations (packages/server/test/setup/weighted-shards.ts), not by vitest's path hash,
  * which left one shard carrying the heaviest files.
  */
-const WINDOWS_SERVER_SHARDS = 4;
+const WINDOWS_SERVER_SHARDS = 3;
 const isCatalogReadme = (file) => /^(?:plugins\/)?README(?:\.zh)?\.md$/.test(file);
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 const command = (names, task) =>
