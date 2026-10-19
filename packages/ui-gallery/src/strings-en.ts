@@ -445,7 +445,7 @@ export const en: GalleryStrings = {
       pickers: {
         title: "Pickers",
         description:
-          "Select, segmented control, switch and toggle rows, swatches, option menu, dropdown and menu rows.",
+          "Select, control sizes, segmented control, switch and toggle rows, swatches, option menu, dropdown and menu rows.",
       },
       toasts: {
         title: "Toasts",
@@ -495,6 +495,11 @@ export const en: GalleryStrings = {
         title: "Avatars",
         description: "The user and agent avatars at their sizes, and a stack of them.",
       },
+      site: {
+        title: "Public site",
+        description:
+          "What the landing page and the docs share: the footer, the code card and copy button, pills, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
+      },
       files: {
         title: "Files",
         description:
@@ -518,6 +523,16 @@ export const en: GalleryStrings = {
         title: "Machines",
         description:
           "The Machines page's parts: the status pill in every state, the machine card and its list, the dialog toolbar and the add dialog.",
+      },
+      retry: {
+        title: "Retry",
+        description:
+          "The status line every retry and reconnect shares: trying, waiting for the next attempt (a countdown and Retry now), gave up (Retry), not worth retrying — and how it sits in a machine card, a dialog and a chat notice.",
+      },
+      attachments: {
+        title: "Attachments",
+        description:
+          "Images and files attached in a conversation: staged in the composer, in the message once sent, in a steer's chip, at phone width, with long names and when an image fails to load.",
       },
       colour: {
         title: "Colour",
@@ -612,6 +627,10 @@ export const en: GalleryStrings = {
     pickers: {
       select: "Select",
       selectLabel: "Model",
+      sizes: "Control sizes",
+      sizeRow: (size: string) => `${size}: a select, an input and a button of one height`,
+      sizeSearch: "Search plugins",
+      sizeButton: "Import plugin",
       options: ["DeepSeek V4.1 Flash", "Claude Sonnet 4.5", "GLM-5.3"],
       segmented: "Segmented",
       segments: ["Light", "Dark", "System"],
@@ -781,6 +800,15 @@ export const en: GalleryStrings = {
       body: (tab) => `The “${tab}” tab's content.`,
     },
     badges: {
+      pills: "Label pills",
+      pillsHint:
+        "One shape — the same height, padding, radius, type and border — only the tone changes with the meaning; words only, no glyph.",
+      pillRow: {
+        thisServer: "this server",
+        running: "Running",
+        update: "Update needed",
+        caption: "A card's title row: tag, state and update pill in one shape",
+      },
       badges: "Badges",
       tones: {
         neutral: "default",
@@ -849,7 +877,7 @@ export const en: GalleryStrings = {
       received: "All received",
       modes: {
         instant: "shows text the moment it arrives, with no motion",
-        fade: "fades in word by word, the newest line and a half rising out of a soft veil",
+        fade: "reveals word by word, each new run fading in, the newest line and a half rising out of a soft veil",
         typewriter: "types out character by character behind a solid block caret",
       },
       unset: "treated as instant",
@@ -971,6 +999,89 @@ export const en: GalleryStrings = {
         { id: "qa", name: "QA" },
       ],
     },
+    site: {
+      footer: "Footer",
+      footerHint:
+        "The landing page's brand and link columns; the docs' single line of copyright and links.",
+      tagline: "Unified and Stable RSI Framework.",
+      columns: [
+        { title: "Product", links: ["Cases", "Quick start", "Blog", "Download"] },
+        { title: "Resources", links: ["GitHub repository", "Docs", "Gallery"] },
+      ],
+      lineLinks: ["Home", "GitHub repository", "Apache-2.0 License"],
+      copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+      code: "Code and copy",
+      codeHint:
+        "A command card carries a copy button; once the text is on the clipboard its icon turns to a check, the label stays, and a screen reader hears Copied.",
+      copy: "Copy",
+      copiedAnnouncement: "Copied",
+      copyMarkdown: "Copy Markdown",
+      copyLink: "Copy page link",
+      pills: "Pills",
+      pillsHint: "A blog post's category and pinned mark: the tone names a kind, not a state.",
+      pillTones: {
+        brand: "Product news",
+        "brand-outline": "Practice",
+        teal: "Perspectives",
+        neutral: "Release notes",
+      },
+      article: "Article",
+      articleHint:
+        "The prose blog posts and doc pages share. Headings carry anchors, fenced code is highlighted, and tab groups and callouts are the docs' Markdown extensions; its contents sit on the right.",
+      articleBody:
+        '## Install\n\nOne command in a terminal installs it:\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### By platform\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- Blocked on first launch\n>\n> Allow it in the system settings.\n\n## Next steps\n\n- Run `penguin web` to open the Web App\n- Back to [Install](#install)\n\n| Command | What it does |\n| --- | --- |\n| `penguin` | Chat in the terminal |\n| `penguin web` | Start the Web App |',
+      toc: "On this page",
+      sidebar: "Docs sidebar",
+      sidebarHint:
+        "Pages by section, sub-pages indented under their parent, the current page in the brand colour; search at the top.",
+      sidebarSections: [
+        {
+          title: "Get started",
+          pages: ["Introduction", "Quickstart", "Key concepts"],
+          children: ["Desktop app", "CLI and Web App"],
+        },
+        { title: "Guides", pages: ["Web App", "Chat"], children: [] },
+      ],
+      search: "Search",
+      searchHint: "Ctrl/⌘ K or the sidebar's button opens it; arrow keys choose, Enter opens.",
+      searchLabels: {
+        open: "Search docs",
+        label: "Search docs",
+        placeholder: "Search titles, sections and text",
+        start: "Type to search every page in this language",
+        noResults: "No matching pages",
+        noResultsHint: "Try a shorter or different word",
+        results: "Search results",
+        close: "Close search",
+        keyboardHint: "Use the arrow keys to select, then press Enter to open",
+      },
+      searchResults: [
+        {
+          title: "Install the CLI",
+          context: "CLI and Web App",
+          snippet: "Run the installer for your platform; it bundles its own Node.js runtime.",
+        },
+        {
+          title: "Offline install",
+          context: "CLI and Web App",
+          snippet: "Download your platform's bundle, extract it and run the installer inside.",
+        },
+        {
+          title: "Install the SDK",
+          context: "SDK",
+          snippet: "In your project directory: npm install @prismshadow/penguin-core.",
+        },
+      ],
+      leave: "External link",
+      leaveHint: "A link that leaves the site asks first, with the full address in the dialog.",
+      leaveLink: "GitHub repository",
+      leaveLabels: {
+        title: "You're about to open an external link",
+        body: "This link goes to a site outside PenguinHarness and opens in a new tab:",
+        cancel: "Cancel",
+        open: "Open link",
+      },
+    },
     files: {
       tree: "File tree",
       treeLabel: "Workspace",
@@ -1030,6 +1141,71 @@ export const en: GalleryStrings = {
       prose: "Markdown prose",
       proseSample:
         "## Release checks\n\nConfirm **three things** before you release, then run `pnpm -r build`. See the [release notes](https://penguin.ooo).\n\n- Type checks pass\n- Every test passes\n- The changelog is written\n\n> When a data root is taken, use another one — never end someone else's process.\n\n| Check | Command |\n| --- | --- |\n| Types | `pnpm typecheck` |\n| Tests | `pnpm test` |\n\n```bash\npnpm -r build && pnpm test\n```\n\nThe cache hit rate is \\(r = h / (h + m)\\).",
+      reader: "Markdown reader",
+      readerHint:
+        "The reader the plugin README, the file browser and the handbook share: two or more headings add an outline (a rail when there is room, behind a button in the title row when not), and the find button in the host's title row, or Mod+F while the reader has the focus, searches the rendered text.",
+      readerNarrow: "Narrow: the outline folds behind its title-row button",
+      readerSample: [
+        "# Release process",
+        "",
+        "This page walks a release from preparation to announcement. Each trigger reads the index first, then this page when it needs it.",
+        "",
+        "## Before the release",
+        "",
+        "The release branch is cut from `main` as `release/<version>`. Before cutting it, confirm three things:",
+        "",
+        "- Type checks and tests pass: `pnpm typecheck && pnpm test`",
+        "- Every entry in `changelog/unreleased/` has its English and Chinese pair",
+        "- No breaking change is waiting to merge",
+        "",
+        "### Version numbers",
+        "",
+        "Versions follow semantic versioning. A number that was ever tagged is never reused: a failed release burns its number and the next one is used.",
+        "",
+        "### Dependencies",
+        "",
+        "The lockfile changes only in a commit of its own, whose message names the packages upgraded and why.",
+        "",
+        "## Build and signing",
+        "",
+        "| Platform | Artifact | Signing |",
+        "| --- | --- | --- |",
+        "| macOS | `.dmg` | Notarized before release |",
+        "| Windows | `.exe` | Code-signing certificate |",
+        "| Linux | `.tar.gz` | With checksums |",
+        "",
+        "Builds run on CI; locally, only a smoke check:",
+        "",
+        "```bash",
+        "pnpm -r build",
+        "node packages/cli/dist/index.js --version",
+        "```",
+        "",
+        "## Announcement",
+        "",
+        "### Release notes",
+        "",
+        "`changelog/<version>/RELEASE.md` becomes the GitHub Release body as written, and must be committed before the tag — the release workflow reads it from the tag's checkout.",
+        "",
+        "### Blog",
+        "",
+        "The blog post and its screenshots are prepared with the release; screenshots use the Frost theme, light mode, default text size.",
+        "",
+        "## Rolling back",
+        "",
+        "When a serious problem turns up, pin a note under the release announcement first, then ship a patch release. A published tag is never moved or deleted.",
+        "",
+        "## FAQ",
+        "",
+        "### The installer cannot find the new version",
+        "",
+        "Mirrors sync with a delay, usually within ten minutes; if a mirror is still behind after an hour, @ the on-call in the ops channel.",
+        "",
+        "### Signing failed",
+        "",
+        "Check whether the certificate expired first; when macOS notarization fails, read the first error in the notarization log — the rest usually follow from it.",
+        "",
+      ].join("\n"),
       compact: "Compact: a channel message",
       compactSample: "Merged **#897** — `feat/ui-w2` can go.",
       code: "Code",
@@ -1390,13 +1566,14 @@ export const en: GalleryStrings = {
     machines: {
       pills: "Status pills",
       pillsHint:
-        "Every state is a word beside a glyph, its reason on the pill's hover; never an unexplained coloured dot.",
+        "Every state is a word in the shape of the this-server tag, its reason on the pill's hover; no glyph, and never an unexplained coloured dot.",
       states: {
         serving: "Running",
         ready: "Running",
         queued: "Queued",
         working: "Working",
         reconnecting: "Reconnecting",
+        reconnectStopped: "Reconnect stopped",
         failed: "Failed",
         signInRefused: "Sign-in refused",
         installedOnly: "Installed",
@@ -1411,7 +1588,9 @@ export const en: GalleryStrings = {
         failed: "Failed at Restart the server: no answer on port 7364 within 30 s.",
         unreachable: "ssh: connect to host 10.0.0.12 port 22: Connection timed out",
         working: "Downloading penguin-harness 0.2.16…",
-        reconnecting: "Attempt 4",
+        reconnecting: "Reconnect 3 of 8 failed",
+        reconnectStopped:
+          "lab-2 refused the connection: no ssh server listens at that address and port.",
         behind: "Version 0.2.16 is available",
       },
       cards: "Machine cards",
@@ -1430,12 +1609,9 @@ export const en: GalleryStrings = {
         installing: "Installing the program",
       },
       waits: {
-        reconnecting: "Reconnecting…",
         stopped: "Its server is stopped",
         notConnected: "Not connected yet",
         failed: "The last job failed",
-        signInRefused:
-          "That machine refused the saved password — enter it again in the machine's SSH settings.",
         notInstalled: "Not installed yet",
         windows: "Installed; start its server by hand on this Windows machine",
       },
@@ -1466,6 +1642,75 @@ export const en: GalleryStrings = {
       submitCount: (count: number) => `Add ${count}`,
       exhaustedCaption: "Nothing left in the ssh config to add",
       noHosts: "Every host in the ssh config is on this page already.",
+    },
+    retry: {
+      phases: "Four phases",
+      phasesHint:
+        "A card's middle line: trying (a spinner), waiting for the next attempt (an hourglass, a countdown by the second and Retry now), gave up (a pause, the reason and Retry), not worth retrying (a cross in the danger tone and the fix; only the mark is coloured).",
+      blocks: "As a block",
+      blocksHint:
+        "In a dialog section: body type, the reason under the sentence, the buttons under that on the form rung.",
+      inCard: "In a machine card",
+      inCardHint:
+        "The card's middle while no job runs; a press disables the buttons and spins until the next attempt begins.",
+      inChat: "In a chat notice",
+      inChatHint:
+        "The chat's reconnect notice takes the same pair: Retry now as secondary, Give up as ghost.",
+      narrow: "Narrow",
+      narrowHint: "At phone width the line wraps under the name; the buttons are never cut.",
+      trying: (n: number, m: number) => `Trying to reconnect (${n} of ${m})…`,
+      failed: (n: number, m: number) => `Reconnect ${n} of ${m} failed`,
+      countdown: (s: number) => `next try in ${s} s`,
+      gaveUp: (m: number) => `Stopped retrying after ${m} failed reconnects`,
+      stoppedSsh: "Stopped reconnecting",
+      stoppedPassword: "Sign-in refused; stopped reconnecting",
+      retryNow: "Retry now",
+      retry: "Retry",
+      lasting: "For 16 minutes",
+      refused: (alias: string) =>
+        `${alias} refused the connection: no ssh server listens at that address and port.`,
+      hostKey:
+        "mini presented a different host key from the one remembered, so ssh refuses to connect. If that machine was reinstalled, remove the old key with ssh-keygen -R and connect once.",
+      password: "That machine refused the saved password. Enter it again in its SSH settings.",
+      states: {
+        ready: "Running",
+        reconnecting: "Reconnecting",
+        reconnectStopped: "Reconnect stopped",
+      },
+      card: { checked: "4 min", use: "Use", settings: "Settings", remove: "Delete" },
+      chatRetryNow: "Retry now",
+      chatGiveUp: "Give up",
+      chatLine: (n: number) => `[Retry] Connection timed out or dropped; retry #${n} shortly…`,
+    },
+    attachments: {
+      composer: "Composer",
+      composerHint:
+        "Staged images and files share one row at the top of the composer: images at one height and their own ratio, files with their kind's glyph, name and size; the remove button always shows.",
+      sent: "Sent message",
+      sentHint:
+        "The same tiles as the composer, above the text bubble: a row of images, a row of files, one time footer.",
+      steer: "Steer",
+      steerHint: "A steer's images and files inside its chip, at the composer's size.",
+      narrow: "Phone width",
+      narrowHint:
+        "At phone width the tiles wrap, a long file name truncates first, and the remove button stays in view.",
+      shapes: "Ratios and sizes",
+      shapesHint:
+        "Landscape, portrait, square, tiny and very wide images keep their own ratio; past a bound or smaller than the tile, the whole picture is fitted inside it — never stretched, cropped or enlarged.",
+      failed: "Failed to load",
+      failedHint:
+        "An image that cannot load keeps a square tile with the image glyph, and says why on hover.",
+      reset: "Restore every attachment",
+      imageAlt: "Image uploaded by user",
+      removeImage: "Remove image",
+      removeFile: "Remove file",
+      unavailable: "This image could not be loaded",
+      prompt: "Here are the screenshots and the logs from yesterday's build. Why did it fail?",
+      steerText: "Also look at these two",
+      steerLabel: "Steer",
+      time: "14:05",
+      copy: "Copy message",
+      placeholder: "Type a message…",
     },
   },
 };

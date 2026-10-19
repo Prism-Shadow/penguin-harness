@@ -21,6 +21,7 @@ describe("ComposerCard", () => {
   const card = (hint?: string) =>
     renderStatic(
       createElement(ComposerCard, {
+        attachments: createElement("p", null, "ATTACHED"),
         chips: createElement("p", null, "CHIPS"),
         textarea: { value: "draft", placeholder: "Type a message", onChange: noop },
         tools: createElement("button", { type: "button" }, "TOOL"),
@@ -42,13 +43,13 @@ describe("ComposerCard", () => {
     );
   });
 
-  it("stacks the chips, a two-line text body, then the toolbar: tools, hint, actions", () => {
+  it("stacks the attachments, the chips, a two-line text body, then the toolbar", () => {
     const html = card("Type / for commands");
     const textarea = /<textarea\b[^>]*>/.exec(html)?.[0] ?? "";
     expect(textarea).toContain('rows="2"');
     expect(textarea).toContain('placeholder="Type a message"');
-    const order = ["CHIPS", "<textarea", "TOOL", "Type / for commands", "ACTION"].map((s) =>
-      html.indexOf(s),
+    const order = ["ATTACHED", "CHIPS", "<textarea", "TOOL", "Type / for commands", "ACTION"].map(
+      (s) => html.indexOf(s),
     );
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(order.every((i) => i >= 0)).toBe(true);

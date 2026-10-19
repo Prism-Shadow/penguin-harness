@@ -93,6 +93,7 @@ import {
   DEFAULT_CHANNEL_ID,
   ORG_TICKET_COLUMNS,
   ceoAgentId,
+  handbookDir,
   isChannelId,
   isHandbookFilePath,
   isTicketColumn,
@@ -1187,6 +1188,7 @@ export class OrganizationService {
     const org = await this.requireOrg(projectId, orgId);
     const files = await this.deps.store.listHandbookFiles(org.dir);
     return {
+      dir: handbookDir(org.dir),
       files: files.map((f) => ({
         path: f.path,
         size: f.size,

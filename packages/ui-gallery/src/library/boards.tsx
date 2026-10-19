@@ -12,6 +12,7 @@ import { IconsBoard } from "../foundations/icons";
 import { MotionBoard } from "../foundations/motion";
 import { ShapeBoard } from "../foundations/shape";
 import { TypeBoard } from "../foundations/typography";
+import { AttachmentsBoard } from "./boards/attachments";
 import { AvatarsBoard } from "./boards/avatars";
 import { BadgesBoard } from "./boards/badges";
 import { ButtonsBoard } from "./boards/buttons";
@@ -27,6 +28,8 @@ import { LoadingBoard } from "./boards/loading";
 import { MachinesBoard } from "./boards/machines";
 import { NoticesBoard } from "./boards/notices";
 import { PickersBoard } from "./boards/pickers";
+import { RetryBoard } from "./boards/retry";
+import { SiteBoard } from "./boards/site";
 import { StreamingBoard } from "./boards/streaming";
 import { TabsBoard } from "./boards/tabs";
 import { ToastsBoard } from "./boards/toasts";
@@ -48,11 +51,14 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   streaming: StreamingBoard,
   charts: ChartsBoard,
   avatars: AvatarsBoard,
+  site: SiteBoard,
   files: FilesBoard,
   content: ContentBoard,
   layout: LayoutBoard,
   data: DataBoard,
   machines: MachinesBoard,
+  retry: RetryBoard,
+  attachments: AttachmentsBoard,
   colour: ColourBoard,
   type: TypeBoard,
   shape: ShapeBoard,

@@ -2,9 +2,9 @@
  * The Machine dialog: everything about one machine that its card leaves out, and every verb it
  * takes.
  *
- * - The header: a tile, the state as one chip — a glyph (a spinner while a job runs or the server
- *   brings the machine back) and one plain word, the reason behind it on the glyph's hover — the
- *   installed version, and one line saying how this server reaches the machine.
+ * - The header: a tile, the state as one label pill — one plain word in its tone, the reason behind
+ *   it on the pill's hover — the installed version and this server's tag in the same pill shape,
+ *   and one line saying how this server reaches the machine.
  * - The toolbar, right under it: every verb in one row of flat buttons, as a file manager lays out
  *   its commands, set apart by spacing alone — Update while the machine carries another build
  *   (Enable when nothing is installed), Stop or Start its server, Restart it, Sync config while it
@@ -13,9 +13,10 @@
  * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and an
  *   attention notice listing what it could not carry: models keyed from this server's
  *   environment, and models the machine would not take.
- * - Reconnecting, while the server brings a machine it keeps connected back: for how long, which
- *   attempt and when the next, the last failure — and what the connection check found, once the
- *   server ran it after failures in a row.
+ * - Reconnecting, while the server brings a machine it keeps connected back or has stopped trying:
+ *   the shared retry status (the attempt of how many, the countdown to the next with Retry now,
+ *   where it stopped with Retry — none for a refused password), for how long, the last failure —
+ *   and what the connection check found, once the server ran it after failures in a row.
  * - Progress, while a job is queued or running and after one: its own steps one per line, each
  *   marked done, current, failed or still to come; a job that finished well is a single quiet
  *   line. The log is folded underneath, open while the job runs, with a copy button for the whole
@@ -39,7 +40,6 @@ import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 import type { MachineInfo, MachineJob, SshHostResponse } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
   Button,
   Chevron,
   CopyButton,
@@ -56,6 +56,8 @@ import {
   Modal,
   Notice,
   NoticeStrip,
+  Pill,
+  RetryStatus,
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
@@ -83,12 +85,15 @@ import type {
   ToolbarVerb,
 } from "./machine-detail-view";
 import { outOfDate, readMachine } from "./machines-view";
+import { retryStatus } from "./machine-card";
 
 /**
  * Everything the dialog can ask its page to do for the machine. `use` is the whole pipeline —
- * what Enable, Update and Retry each run; `replaceProgram` the forced install a failure offers.
+ * what Enable, Update and a failed job's Retry each run; `replaceProgram` the forced install a
+ * failure offers; `reconnect` the Retry while the server brings the machine back.
  */
-export type MachineVerb = Exclude<ToolbarVerb, "enable" | "update"> | "use" | "replaceProgram";
+export type MachineVerb =
+  Exclude<ToolbarVerb, "enable" | "update"> | "use" | "replaceProgram" | "reconnect";
 
 /** The page verb a toolbar button asks for. */
 const VERB_OF: Record<ToolbarVerb, MachineVerb> = {
@@ -126,7 +131,11 @@ export interface MachineDetailBodyProps {
   envOnlyDismissed?: boolean | null;
   /** Closes that notice; without it the notice has no close cross. */
   onDismissEnvOnly?: () => void;
-  onAct: (verb: MachineVerb) => void;
+  /**
+   * Asks the page for a verb. The page may answer with the request's promise (the reconnect's
+   * Retry does), which rejects when the server refused it.
+   */
+  onAct: (verb: MachineVerb) => void | Promise<void>;
 }
 
 /** The header tile's box and glyph, in px: the plugin dialog's header tile, so the two match. */
@@ -147,8 +156,8 @@ function MachineTile() {
 }
 
 /**
- * The state as the shared status pill, the one the machine's card wears: the glyph — a spinner for
- * a machine that is working or coming back — then the word, the reason on the pill's hover.
+ * The state as the shared status pill, the one the machine's card wears: the word in its tone, the
+ * reason on the pill's hover.
  */
 function StatusChip({ chip }: { chip: MachineChip }) {
   return <MachineStatusPill state={chip.state} label={chip.word} reason={chip.reason} />;
@@ -509,11 +518,9 @@ export function MachineDetailBody({
               <StatusChip chip={chip} />
               {/* The version on offer is Details' to say, beside the installed one. */}
               {machine.installed !== null && (
-                <Badge variant="soft" tone={behind ? "attention" : "neutral"}>
-                  v{machine.installed.version}
-                </Badge>
+                <Pill tone={behind ? "attention" : "neutral"}>v{machine.installed.version}</Pill>
               )}
-              {machine.local && <Badge variant="outline">{m.localTitle}</Badge>}
+              {machine.local && <Pill>{m.localTitle}</Pill>}
             </div>
             <p className="mt-1 text-sm text-fg-muted">
               {machine.local ? d.describeLocal : d.describeRemote(machine.alias)}
@@ -542,33 +549,17 @@ export function MachineDetailBody({
 
       {reconnect !== null && (
         <RuledSection level={3} title={d.reconnect.title}>
-          {/* A refused password stops the retries: the line says so instead of counting down. */}
-          {reconnect.stopped ? (
-            <p
-              data-reconnect="stopped"
-              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
-            >
-              <GlyphIcon
-                d={ICONS.xCircle}
-                size={ICON_SIZE.inlineGlyph}
-                className={toneInk.danger}
-              />
-              <span className="font-semibold">{d.reconnect.stopped}</span>
-              <span className="text-fg-muted">{d.reconnect.lasting(reconnect.lasting)}</span>
-            </p>
-          ) : (
-            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
-              <Spinner size="xs" tone="success" label={d.reconnect.trying} />
-              <span className="font-semibold">{d.reconnect.trying}</span>
-              <span className="text-fg-muted">
-                {[
-                  d.reconnect.lasting(reconnect.lasting),
-                  d.reconnect.attempt(reconnect.attempt),
-                  reconnect.next === null ? d.reconnect.now : d.reconnect.next(reconnect.next),
-                ].join(" · ")}
-              </span>
-            </p>
-          )}
+          {/* The card's retry status, at the dialog's size: the Retry sits under where the streak
+              stands, and the last failure, in full, under that. A job moving on the machine
+              decides first, so the Retry waits for it. */}
+          <RetryStatus
+            {...retryStatus(reconnect.status, {
+              onRetry: () => onAct("reconnect"),
+              held: busy || (job !== null && (job.queued || job.running)),
+              layout: "block",
+              reason: d.reconnect.lasting(reconnect.lasting),
+            })}
+          />
           {reconnect.lastError !== null && (
             <p className="mt-2 text-sm break-words whitespace-pre-line">
               <span className="text-fg-muted">{d.reconnect.lastError}</span> {reconnect.lastError}

@@ -27,6 +27,10 @@
       "style": "./src/site.css",
       "default": "./src/site.css"
     },
+    "./site-page.css": {
+      "style": "./src/site-page.css",
+      "default": "./src/site-page.css"
+    },
     "./cursors.css": {
       "style": "./src/cursors.css",
       "default": "./src/cursors.css"

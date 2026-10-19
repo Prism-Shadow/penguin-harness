@@ -1,122 +1,32 @@
 /**
- * Doc page: renders the Markdown body (react-markdown + GFM) in .md-body style with a
- * sticky "on this page" TOC on wide screens, a per-page Copy Markdown button, and
- * prev/next pagination following the sidebar order. Headings get slug ids (same
- * slugifier as the TOC) and the active section is tracked while scrolling — the same
- * mechanics as the landing page blog. Internal links written as "/<slug>" navigate
- * client-side; external links open in a new tab.
- *
- * Two remark plugins extend the Markdown the content may use: remark-tabs groups adjacent
- * `tab="…"` fences into one switcher, and remark-callout turns a `[!TYPE]` blockquote into
- * a boxed (optionally collapsed) note. Both emit plain elements carrying data attributes,
- * which the component overrides below pick back up.
+ * Doc page: the Markdown body in the shared site prose (`SiteMarkdown`, the `doc` variant) with
+ * the sticky "on this page" column on wide screens, a per-page Copy Markdown button, and
+ * prev/next pagination following the sidebar order. The page picks the docs' Markdown dialect
+ * (`SITE_DOC_REMARK_PLUGINS`: GFM, tabbed code groups and boxed notes) and supplies its link
+ * adapter: internal links written as "/<slug>" navigate client-side, external ones open a new
+ * tab.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Link, useParams } from "react-router";
+import {
+  ArrowRightIcon,
+  extractToc,
+  highlightSiteCode,
+  SITE_DOC_REMARK_PLUGINS,
+  SiteCopyButton,
+  SiteMarkdown,
+  SiteToc,
+  useActiveTocEntry,
+  useSiteLocale,
+} from "@prismshadow/penguin-ui/site";
+import type { SiteMarkdownComponents } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
-import { useLocale } from "../state/locale";
 import { docMarkdown, docTitle, getDoc } from "../lib/docs";
 import { HOME_SLUG, pagerFor, sectionOf } from "../lib/nav";
-import { extractToc, slugifyHeading } from "../lib/toc";
-import { hashTargetId } from "../lib/hash";
-import { remarkCallout } from "../lib/remark-callout";
-import { remarkTabs } from "../lib/remark-tabs";
-import { CopyMarkdownButton } from "../components/copy-markdown-button";
-import { CodeBlock } from "../components/code-block";
-import { DocTabs } from "../components/doc-tabs";
-import { ArrowRightIcon } from "../components/icons";
-
-/** The hast shape the tab / code overrides read back off their rendered nodes. */
-interface HastElement {
-  type: string;
-  tagName?: string;
-  properties?: Record<string, unknown>;
-  children?: HastElement[];
-  value?: string;
-}
-
-/** Tab labels a tab group carries, in child order; empty when the value is unusable. */
-function parseTabLabels(raw: unknown): string[] {
-  if (typeof raw !== "string") return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
-/** Fence language and source text of a `<pre><code class="language-x">` hast node. */
-function readFencedCode(node: HastElement | undefined): { code: string; language: string } {
-  const codeEl = node?.children?.find((child) => child.tagName === "code");
-  const className = codeEl?.properties?.className;
-  const language = (Array.isArray(className) ? className : [])
-    .map(String)
-    .find((name) => name.startsWith("language-"))
-    ?.slice("language-".length);
-  const collect = (el: HastElement | undefined): string =>
-    el?.type === "text" ? (el.value ?? "") : (el?.children ?? []).map(collect).join("");
-  return { code: collect(codeEl).replace(/\n$/, ""), language: language ?? "" };
-}
-
-/** Flatten react-markdown heading children to plain text for slugging. */
-function nodeText(node: ReactNode): string {
-  if (node === null || node === undefined || typeof node === "boolean") return "";
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(nodeText).join("");
-  if (typeof node === "object" && "props" in node) {
-    return nodeText((node as { props: { children?: ReactNode } }).props.children);
-  }
-  return "";
-}
-
-function Toc({
-  entries,
-  activeId,
-  onNavigate,
-}: {
-  entries: ReturnType<typeof extractToc>;
-  activeId: string;
-  onNavigate: (id: string) => void;
-}) {
-  return (
-    <aside className="hidden xl:block">
-      <nav
-        className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto"
-        aria-label={S.doc.toc}
-      >
-        <p className="text-xs font-semibold tracking-wide text-gray-400 uppercase dark:text-gray-500">
-          {S.doc.toc}
-        </p>
-        <ul className="mt-3 space-y-1 border-l border-gray-200 text-sm dark:border-gray-800">
-          {entries.map((entry) => (
-            <li key={entry.id}>
-              <a
-                href={`#${entry.id}`}
-                onClick={() => onNavigate(entry.id)}
-                className={`-ml-px block border-l py-0.5 transition-colors ${
-                  entry.depth === 3 ? "pl-6" : "pl-3"
-                } ${
-                  activeId === entry.id
-                    ? "border-brand-600 font-medium text-brand-700 dark:border-brand-400 dark:text-brand-300"
-                    : "border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-                }`}
-              >
-                {entry.text}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    </aside>
-  );
-}
 
 function Pager({ slug }: { slug: string }) {
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const { prev, next } = pagerFor(slug);
   const card = (target: string, dir: "prev" | "next") => (
     <Link
@@ -158,99 +68,18 @@ function MdLink({ href = "", children }: { href?: string; children?: ReactNode }
   return <a href={href}>{children}</a>;
 }
 
+/** Module-level, so react-markdown keeps one element type across renders. */
+const MD_COMPONENTS: SiteMarkdownComponents = {
+  a: ({ href, children }) => <MdLink href={href}>{children}</MdLink>,
+};
+
 export function DocPage() {
   const { slug = HOME_SLUG } = useParams();
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const doc = getDoc(slug, locale);
   const section = sectionOf(slug);
   const toc = useMemo(() => (doc ? extractToc(doc.body) : []), [doc]);
-  const [activeId, setActiveId] = useState("");
-  /**
-   * A TOC click (or an initial #hash) pins the target entry as active: a short tail
-   * section can never reach the reading line, so pure position tracking would highlight
-   * a neighbor instead of what the user just chose. The pin releases on the first real
-   * scroll gesture (wheel / touch / scroll keys) — programmatic smooth scrolling fires
-   * only `scroll` events, so it never unpins by itself.
-   */
-  const pinnedId = useRef<string | null>(null);
-
-  const pinTo = useCallback((id: string) => {
-    pinnedId.current = id;
-    setActiveId(id);
-  }, []);
-
-  // Track the heading last crossed by a moving reading line for TOC highlighting.
-  // The line sits 100px under the sticky header at the top of the page and slides down
-  // to ~40px above the viewport bottom at full scroll: it is monotonic in scrollY, so
-  // every heading gets a highlight band of its own — short tail sections that could
-  // never reach a fixed line are not skipped, and the highlight steps through sections
-  // in order. Scroll-position based rather than an IntersectionObserver: with an
-  // observer nothing intersects the narrow band between headings, so the highlight
-  // would stall while scrolling.
-  useEffect(() => {
-    if (toc.length < 2) return;
-    // Deep links carry the anchor percent-encoded (CJK headings); pin it if it is ours.
-    const initialHash = hashTargetId(window.location.hash);
-    pinnedId.current = toc.some((entry) => entry.id === initialHash) ? initialHash : null;
-    let raf = 0;
-    const update = () => {
-      raf = 0;
-      if (pinnedId.current !== null) {
-        setActiveId(pinnedId.current);
-        return;
-      }
-      const docEl = document.documentElement;
-      const maxScroll = Math.max(0, docEl.scrollHeight - window.innerHeight);
-      const progress = maxScroll > 0 ? Math.min(1, window.scrollY / maxScroll) : 0;
-      const line = 100 + Math.max(0, window.innerHeight - 140) * progress;
-      let current = toc[0]!.id;
-      for (const entry of toc) {
-        const el = document.getElementById(entry.id);
-        if (el && el.getBoundingClientRect().top <= line) current = entry.id;
-      }
-      // Safety net: fully at the bottom nothing can advance further — settle on the last
-      // entry (only after the page actually scrolled; a viewport-short page stays on top).
-      if (maxScroll > 0 && window.scrollY >= maxScroll - 4) current = toc[toc.length - 1]!.id;
-      setActiveId(current);
-    };
-    const onScroll = () => {
-      if (raf === 0) raf = requestAnimationFrame(update);
-    };
-    const unpin = (e?: KeyboardEvent) => {
-      if (e && !["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(e.key))
-        return;
-      if (pinnedId.current === null) return;
-      pinnedId.current = null;
-      onScroll();
-    };
-    const onWheel = () => unpin();
-    const onKey = (e: KeyboardEvent) => unpin(e);
-    // Same-page hash navigation (address bar / in-content anchors) re-runs no effect,
-    // so re-evaluate the pin whenever the hash changes.
-    const onHashChange = () => {
-      const hash = hashTargetId(window.location.hash);
-      if (toc.some((entry) => entry.id === hash)) {
-        pinnedId.current = hash;
-        setActiveId(hash);
-      }
-    };
-    update();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    window.addEventListener("wheel", onWheel, { passive: true });
-    window.addEventListener("touchmove", onWheel, { passive: true });
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("hashchange", onHashChange);
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("touchmove", onWheel);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("hashchange", onHashChange);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [toc]);
+  const { activeId, pinTo } = useActiveTocEntry(toc);
 
   if (!doc) {
     return (
@@ -289,55 +118,32 @@ export function DocPage() {
               </h1>
             </div>
             <div className="pt-1.5">
-              <CopyMarkdownButton text={docMarkdown(doc)} />
+              <SiteCopyButton
+                text={docMarkdown(doc)}
+                label={S.doc.copyMarkdown}
+                announcement={S.doc.copied}
+                look="pill-md"
+              />
             </div>
           </div>
           {doc.description && (
             <p className="mt-3 text-[15px] text-gray-600 dark:text-gray-400">{doc.description}</p>
           )}
         </header>
-        <div className="md-body mt-6 text-[15px] text-gray-800 dark:text-gray-200">
-          <Markdown
-            remarkPlugins={[remarkGfm, remarkTabs, remarkCallout]}
-            components={{
-              a: ({ href, children }) => <MdLink href={href}>{children}</MdLink>,
-              h2: ({ children }) => (
-                <h2 id={slugifyHeading(nodeText(children))} className="scroll-mt-20">
-                  {children}
-                </h2>
-              ),
-              h3: ({ children }) => (
-                <h3 id={slugifyHeading(nodeText(children))} className="scroll-mt-20">
-                  {children}
-                </h3>
-              ),
-              pre: ({ node, children }) => {
-                const { code, language } = readFencedCode(node as HastElement | undefined);
-                // Not a fenced block (no language-* class and no text): leave it alone.
-                if (!code) return <pre>{children}</pre>;
-                return <CodeBlock code={code} language={language} />;
-              },
-              div: ({ node, className, children, ...props }) => {
-                if (className !== "md-tabs") {
-                  return (
-                    <div className={className} {...props}>
-                      {children}
-                    </div>
-                  );
-                }
-                const raw = (node as HastElement | undefined)?.properties?.["data-tab-labels"];
-                const labels = parseTabLabels(raw);
-                if (labels.length === 0) return <div className={className}>{children}</div>;
-                return <DocTabs labels={labels}>{children}</DocTabs>;
-              },
-            }}
-          >
-            {doc.body}
-          </Markdown>
-        </div>
+        <SiteMarkdown
+          variant="doc"
+          className="mt-6"
+          remarkPlugins={SITE_DOC_REMARK_PLUGINS}
+          components={MD_COMPONENTS}
+          highlight={highlightSiteCode}
+        >
+          {doc.body}
+        </SiteMarkdown>
         <Pager slug={slug} />
       </article>
-      {showToc && <Toc entries={toc} activeId={activeId} onNavigate={pinTo} />}
+      {showToc && (
+        <SiteToc label={S.doc.toc} entries={toc} activeId={activeId} onNavigate={pinTo} />
+      )}
     </div>
   );
 }

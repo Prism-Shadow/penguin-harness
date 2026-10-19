@@ -1,9 +1,9 @@
 /**
  * Landing copy (bilingual): this file holds the Chinese dictionary `zh` and the runtime
  * active dictionary `S`; the English dictionary lives in strings-en.ts (constrained to
- * the same shape by the `Strings` type). Locale switching is handled by state/locale.tsx,
- * which calls `setActiveStrings` and remounts the tree keyed by locale — keep `S.x`
- * reads inside components. English marketing copy uses lowercase `agent`; preserve the
+ * the same shape by the `Strings` type). Locale switching is handled by the shared
+ * SiteLocaleProvider (app.tsx), which calls `setActiveStrings`, and SiteLocaleScope remounts
+ * the tree keyed by locale — keep `S.x` reads inside components. English marketing copy uses lowercase `agent`; preserve the
  * established casing of Workspace, Token, Task, Skill, Trace, and other product terms.
  */
 export const zh = {
@@ -47,7 +47,7 @@ export const zh = {
     positioning: "统一、稳定的 Agent 自进化框架",
     /** The badge on the positioning line's top-right corner. */
     badge: "免费开源",
-    automation: "全自动优化模型 × Agent Harness",
+    automation: "全自动优化：任意模型 任意算法 任意 Benchmark",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [

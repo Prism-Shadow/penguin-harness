@@ -1,0 +1,562 @@
+/* Public-site content: the footer, the copy button, code cards, pills, the article's table of
+   contents, the docs sidebar, the search and external-link dialogs, and article prose.
+
+   Plain CSS on the sites' own palette — Tailwind's values, with the landing page's neutral dark
+   ramp — so a component looks the same on the landing page, on the docs and in the gallery,
+   whatever app theme the gallery is previewing. Components carry layout as utilities and their
+   look as the classes here. The palette is declared on :root: these classes sit inside the
+   sites' own text (a pill in a line of metadata, a code card in a section), which a scope class
+   with its own type would override. */
+
+:root {
+  --site-gray-50: oklch(98.5% 0.002 247.839);
+  --site-gray-100: oklch(96.7% 0.003 264.542);
+  --site-gray-200: oklch(92.8% 0.006 264.531);
+  --site-gray-300: oklch(87.2% 0.01 258.338);
+  --site-gray-400: oklch(70.7% 0.022 261.325);
+  --site-gray-500: oklch(55.1% 0.027 264.364);
+  --site-gray-600: oklch(44.6% 0.03 256.802);
+  --site-gray-700: oklch(37.3% 0.034 259.733);
+  --site-gray-800: oklch(27.8% 0.033 256.848);
+  --site-gray-900: oklch(21% 0.034 264.665);
+  --site-gray-950: oklch(13% 0.028 261.692);
+  --site-brand-50: #e8f0fe;
+  --site-brand-200: #aecbfa;
+  --site-brand-300: #8ab4f8;
+  --site-brand-400: #669df6;
+  --site-brand-600: #1a73e8;
+  --site-brand-700: #0b57d0;
+  --site-brand-800: #0842a0;
+  --site-brand-900: #062e6f;
+  --site-brand-950: #041e49;
+  --site-teal-50: oklch(98.4% 0.014 180.72);
+  --site-teal-300: oklch(85.5% 0.138 181.071);
+  --site-teal-700: oklch(51.1% 0.096 186.391);
+  --site-teal-800: oklch(43.7% 0.078 188.216);
+  --site-teal-950: oklch(27.7% 0.046 192.524);
+  --site-amber-50: oklch(98.7% 0.022 95.277);
+  --site-amber-200: oklch(92.4% 0.12 95.746);
+  --site-amber-300: oklch(87.9% 0.169 91.605);
+  --site-amber-800: oklch(47.3% 0.137 46.201);
+  --site-amber-900: oklch(41.4% 0.112 45.904);
+  --site-amber-950: oklch(27.9% 0.077 45.635);
+  --site-green-400: oklch(79.2% 0.209 151.711);
+  --site-green-600: oklch(62.7% 0.194 149.214);
+  --site-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --site-text-xs: 0.75rem;
+  --site-text-xs-lh: calc(1 / 0.75);
+  --site-text-sm: 0.875rem;
+  --site-text-sm-lh: calc(1.25 / 0.875);
+}
+/* A calm neutral dark: the canvas lifted off black, surfaces a step lighter, and the gray ramp
+   re-pointed to true neutrals (Tailwind's own grays lean blue). Body text (100) sits at 16:1 on
+   the canvas, muted (400) at 7:1 and subtle (500) above 4.5:1 on the surfaces. */
+:root.dark {
+  --site-gray-950: #141414;
+  --site-gray-900: #1c1c1c;
+  --site-gray-800: #2a2a2a;
+  --site-gray-700: #383838;
+  --site-gray-600: #575757;
+  --site-gray-500: #8f8f8f;
+  --site-gray-400: #ababab;
+  --site-gray-300: #d4d4d4;
+  --site-gray-200: #e3e3e3;
+  --site-gray-100: #f0f0f0;
+  --site-gray-50: #f7f7f7;
+}
+
+@layer components {
+  /* ---------- Group labels: the TOC's heading and the docs sidebar's sections ---------- */
+  .site-eyebrow.ui-eyebrow {
+    font-family: inherit;
+    font-size: var(--site-text-xs);
+    line-height: var(--site-text-xs-lh);
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-eyebrow.ui-eyebrow {
+    color: var(--site-gray-500);
+  }
+
+  /* ---------- Footer ---------- */
+  .site-footer {
+    border-top: 1px solid var(--site-gray-200);
+  }
+  .site-footer-name {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
+  .site-footer-tagline,
+  .site-footer-links {
+    color: var(--site-gray-500);
+  }
+  .site-footer-copyright,
+  .site-footer-line {
+    color: var(--site-gray-400);
+  }
+  .site-footer-link:hover {
+    color: var(--site-gray-900);
+  }
+  .site-footer-line .site-footer-link {
+    transition: color 150ms var(--site-ease);
+  }
+  :root.dark .site-footer {
+    border-color: var(--site-gray-800);
+  }
+  :root.dark .site-footer-tagline,
+  :root.dark .site-footer-links {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-footer-copyright,
+  :root.dark .site-footer-line {
+    color: var(--site-gray-500);
+  }
+  :root.dark .site-footer-link:hover {
+    color: var(--site-gray-100);
+  }
+
+  /* ---------- Copy button ---------- */
+  .site-copy {
+    border: 1px solid var(--site-gray-200);
+    border-radius: 0.375rem;
+    background: #fff;
+    color: var(--site-gray-600);
+    transition:
+      color 150ms var(--site-ease),
+      background-color 150ms var(--site-ease);
+  }
+  .site-copy:hover {
+    background: var(--site-gray-50);
+    color: var(--site-gray-900);
+  }
+  .site-copy-text {
+    transition: color 150ms var(--site-ease);
+  }
+  .site-copy-text:hover {
+    color: var(--site-gray-900);
+  }
+  .site-copy-done {
+    color: var(--site-green-600);
+  }
+  :root.dark .site-copy {
+    border-color: var(--site-gray-700);
+    background: var(--site-gray-900);
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-copy:hover {
+    background: var(--site-gray-800);
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-copy-text:hover {
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-copy-done {
+    color: var(--site-green-400);
+  }
+
+  /* ---------- Code card ---------- */
+  .site-code-card {
+    overflow: hidden;
+    border: 1px solid var(--site-gray-200);
+    border-radius: 0.75rem;
+    background: var(--site-gray-50);
+    text-align: left;
+  }
+  .site-code-card-head {
+    border-bottom: 1px solid var(--site-gray-200);
+  }
+  .site-code-card-label {
+    color: var(--site-gray-500);
+  }
+  .site-code-card-body {
+    font-size: 13px;
+    line-height: 1.5rem;
+  }
+  .site-code-card-line {
+    color: var(--site-gray-800);
+  }
+  .site-code-card-line[data-comment] {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-code-card {
+    border-color: var(--site-gray-800);
+    background: var(--site-gray-900);
+  }
+  :root.dark .site-code-card-head {
+    border-color: var(--site-gray-800);
+  }
+  :root.dark .site-code-card-label {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-code-card-line {
+    color: var(--site-gray-200);
+  }
+  :root.dark .site-code-card-line[data-comment] {
+    color: var(--site-gray-500);
+  }
+
+  /* ---------- Pill ---------- */
+  .site-pill {
+    border: 1px solid;
+    border-radius: 9999px;
+    padding: 0.125rem 0.5rem;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .site-pill[data-tone="brand"] {
+    border-color: var(--site-brand-200);
+    background: var(--site-brand-50);
+    color: var(--site-brand-700);
+  }
+  .site-pill[data-tone="brand-outline"] {
+    border-color: var(--site-brand-200);
+    background: transparent;
+    color: var(--site-brand-700);
+  }
+  .site-pill[data-tone="teal"] {
+    border-color: var(--site-teal-300);
+    background: var(--site-teal-50);
+    color: var(--site-teal-800);
+  }
+  .site-pill[data-tone="neutral"] {
+    border-color: var(--site-gray-200);
+    background: var(--site-gray-50);
+    color: var(--site-gray-600);
+  }
+  :root.dark .site-pill[data-tone="brand"] {
+    border-color: var(--site-brand-800);
+    background: var(--site-brand-950);
+    color: var(--site-brand-300);
+  }
+  :root.dark .site-pill[data-tone="brand-outline"] {
+    border-color: var(--site-brand-800);
+    color: var(--site-brand-300);
+  }
+  :root.dark .site-pill[data-tone="teal"] {
+    border-color: var(--site-teal-700);
+    background: var(--site-teal-950);
+    color: var(--site-teal-300);
+  }
+  :root.dark .site-pill[data-tone="neutral"] {
+    border-color: var(--site-gray-700);
+    background: var(--site-gray-800);
+    color: var(--site-gray-300);
+  }
+
+  /* ---------- Rails: the article's table of contents and the docs sidebar ---------- */
+  .site-rail-list {
+    border-left: 1px solid var(--site-gray-200);
+  }
+  .site-rail-tight > li + li {
+    margin-top: 0.125rem;
+  }
+  .site-rail-link {
+    display: block;
+    margin-left: -1px;
+    border-left: 1px solid transparent;
+    transition:
+      color 150ms var(--site-ease),
+      border-color 150ms var(--site-ease);
+  }
+  .site-toc .site-rail-link {
+    color: var(--site-gray-500);
+  }
+  .site-toc .site-rail-link:hover {
+    color: var(--site-gray-900);
+  }
+  .site-sidebar .site-rail-link {
+    color: var(--site-gray-600);
+  }
+  .site-sidebar .site-rail-link:hover {
+    border-color: var(--site-gray-300);
+    color: var(--site-gray-900);
+  }
+  .site-sidebar .site-rail-link[data-nested] {
+    font-size: 13px;
+  }
+  .site-rail-link[aria-current],
+  .site-rail-link[aria-current]:hover {
+    border-color: var(--site-brand-600);
+    font-weight: 500;
+    color: var(--site-brand-700);
+  }
+  :root.dark .site-rail-list {
+    border-color: var(--site-gray-800);
+  }
+  :root.dark .site-toc .site-rail-link,
+  :root.dark .site-sidebar .site-rail-link {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-toc .site-rail-link:hover {
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-sidebar .site-rail-link:hover {
+    border-color: var(--site-gray-700);
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-rail-link[aria-current],
+  :root.dark .site-rail-link[aria-current]:hover {
+    border-color: var(--site-brand-400);
+    color: var(--site-brand-300);
+  }
+
+  /* ---------- Search: the sidebar's trigger and the dialog ---------- */
+  .site-search-trigger {
+    border: 1px solid var(--site-gray-200);
+    border-radius: 0.5rem;
+    color: var(--site-gray-500);
+    transition:
+      color 150ms var(--site-ease),
+      background-color 150ms var(--site-ease),
+      border-color 150ms var(--site-ease);
+  }
+  .site-search-trigger:hover {
+    border-color: var(--site-gray-300);
+    background: var(--site-gray-50);
+    color: var(--site-gray-900);
+  }
+  .site-search-kbd {
+    border: 1px solid var(--site-gray-200);
+    border-radius: 0.25rem;
+    background: var(--site-gray-50);
+    padding: 0.125rem 0.375rem;
+    font-size: 10px;
+    line-height: 1;
+    color: var(--site-gray-500);
+  }
+  :root.dark .site-search-trigger {
+    border-color: var(--site-gray-800);
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-search-trigger:hover {
+    border-color: var(--site-gray-700);
+    background: var(--site-gray-900);
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-search-kbd {
+    border-color: var(--site-gray-700);
+    background: var(--site-gray-800);
+    color: var(--site-gray-400);
+  }
+
+  .site-search-backdrop {
+    background: rgb(0 0 0 / 0.5);
+  }
+  .site-search-panel {
+    border: 1px solid var(--site-gray-200);
+    border-radius: 0.75rem;
+    background: #fff;
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  }
+  .site-search-head {
+    border-bottom: 1px solid var(--site-gray-200);
+  }
+  .site-search-foot {
+    border-top: 1px solid var(--site-gray-200);
+    font-size: var(--site-text-xs);
+    line-height: var(--site-text-xs-lh);
+    color: var(--site-gray-500);
+  }
+  .site-search-glyph {
+    color: var(--site-gray-400);
+  }
+  .site-search-input {
+    background: transparent;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--site-gray-900);
+    outline: none;
+  }
+  .site-search-input::placeholder {
+    color: var(--site-gray-400);
+  }
+  .site-search-close {
+    border-radius: 0.5rem;
+    color: var(--site-gray-500);
+    transition:
+      color 150ms var(--site-ease),
+      background-color 150ms var(--site-ease);
+  }
+  .site-search-close:hover {
+    background: var(--site-gray-100);
+    color: var(--site-gray-900);
+  }
+  .site-search-empty-glyph {
+    color: var(--site-gray-300);
+  }
+  .site-search-note {
+    font-size: var(--site-text-sm);
+    line-height: var(--site-text-sm-lh);
+    color: var(--site-gray-500);
+  }
+  .site-search-note[data-strong] {
+    font-weight: 500;
+    color: var(--site-gray-900);
+  }
+  .site-search-result {
+    border-radius: 0.5rem;
+    color: var(--site-gray-800);
+    transition:
+      color 150ms var(--site-ease),
+      background-color 150ms var(--site-ease);
+  }
+  .site-search-result:hover {
+    background: var(--site-gray-50);
+  }
+  .site-search-result[aria-selected="true"] {
+    background: var(--site-brand-50);
+    color: var(--site-gray-950);
+  }
+  .site-search-context,
+  .site-search-snippet {
+    font-size: var(--site-text-xs);
+    line-height: var(--site-text-xs-lh);
+    color: var(--site-gray-500);
+  }
+  .site-search-snippet {
+    line-height: 1.25rem;
+  }
+  .site-search-result mark {
+    background: transparent;
+    color: var(--site-brand-700);
+  }
+  .site-search-arrow {
+    color: var(--site-gray-300);
+  }
+  .site-search-result[aria-selected="true"] .site-search-arrow {
+    color: var(--site-brand-600);
+  }
+  :root.dark .site-search-panel {
+    border-color: var(--site-gray-700);
+    background: var(--site-gray-950);
+  }
+  :root.dark .site-search-head,
+  :root.dark .site-search-foot {
+    border-color: var(--site-gray-800);
+  }
+  :root.dark .site-search-foot {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-search-input {
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-search-input::placeholder {
+    color: var(--site-gray-500);
+  }
+  :root.dark .site-search-close {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-search-close:hover {
+    background: var(--site-gray-800);
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-search-empty-glyph {
+    color: var(--site-gray-600);
+  }
+  :root.dark .site-search-note {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-search-note[data-strong] {
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-search-result {
+    color: var(--site-gray-200);
+  }
+  :root.dark .site-search-result:hover {
+    background: var(--site-gray-900);
+  }
+  :root.dark .site-search-result[aria-selected="true"] {
+    background: var(--site-gray-800);
+    color: #fff;
+  }
+  :root.dark .site-search-context,
+  :root.dark .site-search-snippet {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-search-result mark {
+    color: var(--site-brand-300);
+  }
+  :root.dark .site-search-arrow {
+    color: var(--site-gray-600);
+  }
+  :root.dark .site-search-result[aria-selected="true"] .site-search-arrow {
+    color: var(--site-brand-300);
+  }
+
+  /* ---------- External-link confirmation: a native modal <dialog> ---------- */
+  .site-leave {
+    border: 1px solid var(--site-gray-200);
+    border-radius: 0.75rem;
+    background: #fff;
+    color: var(--site-gray-900);
+    box-shadow:
+      0 20px 25px -5px rgb(0 0 0 / 0.1),
+      0 8px 10px -6px rgb(0 0 0 / 0.1);
+  }
+  .site-leave::backdrop {
+    background: rgb(0 0 0 / 0.4);
+  }
+  .site-leave-body {
+    padding: 1.25rem;
+  }
+  .site-leave-text {
+    color: var(--site-gray-600);
+  }
+  .site-leave-href {
+    color: var(--site-gray-900);
+  }
+  .site-leave-cancel,
+  .site-leave-open {
+    border-radius: 0.5rem;
+    transition:
+      color 150ms var(--site-ease),
+      background-color 150ms var(--site-ease);
+  }
+  .site-leave-cancel {
+    border: 1px solid var(--site-gray-200);
+    background: #fff;
+    color: var(--site-gray-900);
+  }
+  .site-leave-cancel:hover {
+    background: var(--site-gray-50);
+  }
+  .site-leave-open {
+    background: var(--site-gray-900);
+    color: #fff;
+  }
+  .site-leave-open:hover {
+    background: var(--site-gray-700);
+  }
+  :root.dark .site-leave {
+    border-color: var(--site-gray-800);
+    background: var(--site-gray-900);
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-leave::backdrop {
+    background: rgb(0 0 0 / 0.6);
+  }
+  :root.dark .site-leave-text {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-leave-href {
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-leave-cancel {
+    border-color: var(--site-gray-700);
+    background: var(--site-gray-900);
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-leave-cancel:hover {
+    background: var(--site-gray-800);
+  }
+  :root.dark .site-leave-open {
+    background: var(--site-gray-100);
+    color: var(--site-gray-900);
+  }
+  :root.dark .site-leave-open:hover {
+    background: #fff;
+  }
+}

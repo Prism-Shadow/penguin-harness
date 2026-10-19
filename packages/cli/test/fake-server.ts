@@ -1,7 +1,7 @@
 /**
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
  * handler covering exactly the endpoints the server-backed commands touch (the current
- * user, session create/get/patch, tasks/steer/compact/switch-model/abort, SSE stream,
+ * user, session create/get/patch/delete, tasks/steer/compact/switch-model/abort, SSE stream,
  * messages, agents and their public API settings, projects, usage, schedules, the admin settings,
  * organizations and their channels, the plugins installed on the server, and — through
  * the `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
@@ -239,6 +239,8 @@ export class FakeServer {
   steerMode: "accept" | "reject" = "accept";
   /** How many Session-create POSTs still fail, with a 503 the way a server that is down or restarting answers. */
   failSessionCreates = 0;
+  /** Codes the next task POSTs are refused with, one per request, oldest first: a 409 each, the way a goal without its plugin is refused. */
+  refuseTasks: string[] = [];
   /** The Project's default model GET models reports: what a Session created without one runs on. */
   defaultModel: { provider: string; modelId: string } | null = {
     provider: "prov-default",
@@ -2008,6 +2010,10 @@ export class FakeServer {
       const session = this.sessions.get(sessionId);
       if (!session) return this.error(404, "session_not_found", "Session does not exist.");
       if (rest === "" && method === "GET") return this.json({ session: this.sessionInfo(session) });
+      if (rest === "" && method === "DELETE") {
+        this.sessions.delete(sessionId);
+        return new Response(null, { status: 204 });
+      }
       if (rest === "" && method === "PATCH") {
         session.patches.push(body ?? {});
         if (typeof body?.thinkingLevel === "string") session.thinkingLevel = body.thinkingLevel;
@@ -2045,6 +2051,8 @@ export class FakeServer {
         });
       }
       if (rest === "/tasks" && method === "POST") {
+        const refusal = this.refuseTasks.shift();
+        if (refusal !== undefined) return this.error(409, refusal, `Refused: ${refusal}.`);
         session.tasks.push(body ?? {});
         if (this.hangTasks) {
           session.status = "running";

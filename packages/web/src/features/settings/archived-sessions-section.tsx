@@ -23,7 +23,7 @@
 import { useEffect, useState } from "react";
 import type { ArchivedSessionGroup, SessionInfo } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
+  Pill,
   Button,
   Checkbox,
   ConfirmModal,
@@ -452,9 +452,7 @@ function ArchiveRow({
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
           <Truncated text={title} className="min-w-0" />
-          <Badge tone="neutral" size="sm">
-            {S.chat.sessionSource[source]}
-          </Badge>
+          <Pill tone="neutral">{S.chat.sessionSource[source]}</Pill>
           {(s.status === "running" || s.status === "compacting") && (
             <span className="shrink-0" data-tooltip={S.archivedSessions.running}>
               <Spinner size="sm" tone="success" label={S.archivedSessions.running} />

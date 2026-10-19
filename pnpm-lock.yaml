@@ -396,6 +396,9 @@ importers:
       vitest:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@30.1.2(@noble/hashes@1.8.0))(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
 
   packages/docs:
     dependencies:
@@ -408,18 +411,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.2.7(react@19.2.7)
-      react-markdown:
-        specifier: ^10.1.0
-        version: 10.1.0(@types/react@19.2.17)(react@19.2.7)(supports-color@10.2.2)
       react-router:
         specifier: ^8.3.0
         version: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      remark-gfm:
-        specifier: ^4.0.0
-        version: 4.0.1(supports-color@10.2.2)
-      shiki:
-        specifier: ^4.3.1
-        version: 4.3.1
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.1.0

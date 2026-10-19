@@ -1,6 +1,10 @@
 /**
  * 内容: the type roles (every heading rung, the display title, the text roles, inline code),
- * Markdown as reading text in its two densities, a code block and a bare code surface with its
+ * Markdown as reading text in its two densities, the Markdown reader over a long document under
+ * a title row that holds its outline and find buttons, as the app's hosts place them (wide, with
+ * the outline as a rail, and narrow, with the outline behind its button; the find opens from the
+ * button or with Mod+F inside the reader, in the title row's place), a code block and a bare code
+ * surface with its
  * gutter, the diff viewer unified, side by side and read from a patch, and a reply carrying A2UI
  * blocks — all from the package. Code is highlighted by the highlighter the frame provides, as in
  * the app.
@@ -21,9 +25,13 @@ import {
   DiffViewer,
   Heading,
   InlineCode,
+  MarkdownReader,
   Prose,
+  ReaderFindBar,
+  ReaderTools,
   Text,
   toastInfo,
+  useMarkdownReader,
 } from "@prismshadow/penguin-ui";
 import type { A2uiActions, HeadingLevel, TextVariant } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
@@ -78,6 +86,30 @@ const PATCH = `diff --git a/src/limits.ts b/src/limits.ts
    retries: 3,
  };
 `;
+
+/** The sample document's file name: data, the same in both languages. */
+const READER_FILE = "handbook/release-process.md";
+
+/**
+ * A reader as the app's hosts draw it: a title row naming the file, with the reader's outline and
+ * find buttons at its end and an open find bar in the name's place, over the text.
+ */
+function ReaderHost({ text, className }: { text: string; className: string }) {
+  const reader = useMarkdownReader();
+  return (
+    <div className={`flex flex-col overflow-hidden rounded-md border border-line ${className}`}>
+      <div className="flex min-h-10 shrink-0 items-center gap-2 border-b border-line px-3 py-1.5">
+        {reader.findShown ? (
+          <ReaderFindBar reader={reader} className="flex-1" />
+        ) : (
+          <p className="min-w-0 flex-1 truncate font-mono text-xs text-fg-muted">{READER_FILE}</p>
+        )}
+        <ReaderTools reader={reader} />
+      </div>
+      <MarkdownReader reader={reader} text={text} label={READER_FILE} className="min-h-0 flex-1" />
+    </div>
+  );
+}
 
 /** A fill shows up as a toast; the empty fill of "Other…" (a cleared composer) shows nothing. */
 const showFill = (text: string): void => {
@@ -151,6 +183,13 @@ export function ContentBoard() {
           <Prose text={t.proseSample} className="text-base leading-relaxed text-fg" />
           <span className="lib-caption">{t.compact}</span>
           <Prose variant="compact" text={t.compactSample} className="text-sm text-fg" />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.reader} aside={t.readerHint}>
+        <div className="lib-stack lib-stack-wide">
+          <ReaderHost text={t.readerSample} className="h-[30rem]" />
+          <span className="lib-caption">{t.readerNarrow}</span>
+          <ReaderHost text={t.readerSample} className="h-[22rem] max-w-sm" />
         </div>
       </BoardGroup>
       <BoardGroup title={t.code}>

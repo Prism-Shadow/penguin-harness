@@ -13,7 +13,7 @@ import type {
   MachinePhase,
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
-import { ICONS, MACHINE_STATE_LOOK } from "@prismshadow/penguin-ui";
+import { ICONS } from "@prismshadow/penguin-ui";
 import type { MachineState } from "@prismshadow/penguin-ui";
 import {
   formatBytes,
@@ -30,21 +30,21 @@ import {
   failureText,
   isPhase,
   outOfDate,
+  readMachine,
   readingTone,
+  retryReading,
   sshWords,
   stepLabel,
 } from "./machines-view";
-import type { MachineReading } from "./machines-view";
+import type { MachineReading, RetryReading } from "./machines-view";
 
-/** The machine's state as one chip: a glyph (or a spinner) and one plain word. */
+/** The machine's state as one pill: one plain word in the state's tone. */
 export interface MachineChip {
   /** The state the shared status pill draws (`MachineStatusPill`). */
   state: MachineState;
   /** The state's one word (`S.machines.state[kind]`; `serving` for this server's own entry). */
   word: string;
   tone: Tone;
-  /** A registry path; null for a working machine, which wears a spinner instead. */
-  glyph: string | null;
   /** The reason behind the word, on hover; null when the word says it all. */
   reason: string | null;
 }
@@ -63,7 +63,6 @@ export function machineChip(
       state: "serving",
       word: S.machines.state.serving,
       tone: "link",
-      glyph: MACHINE_STATE_LOOK.serving.glyph,
       reason: null,
     };
   }
@@ -71,9 +70,6 @@ export function machineChip(
     state: reading.kind,
     word: S.machines.state[reading.kind],
     tone: readingTone(reading),
-    // The shape beside the word, as the shared pill draws it: two states that share a tone (a
-    // stopped machine and one out of reach are both amber) still read apart by it.
-    glyph: MACHINE_STATE_LOOK[reading.kind].glyph,
     reason:
       reading.kind === "behind"
         ? imageVersion === null
@@ -465,22 +461,21 @@ export function envOnlyItems(machine: MachineInfo): string[] {
   );
 }
 
-/** The Reconnecting section: how long, which attempt, when the next, why the last one failed. */
+/**
+ * The Reconnecting section: where the streak stands — the attempt, the countdown to the next, or
+ * where it stopped, with its Retry — how long it has lasted, and why the last attempt failed.
+ */
 export interface ReconnectView {
+  /** Where the streak stands, as the shared retry status says it (the card's middle says the same). */
+  status: RetryReading;
   /** How long the streak has lasted, in words. */
   lasting: string;
-  /** The attempt running or next to run (one past the failures so far). */
-  attempt: number;
-  /** When the next attempt runs, in words; null while one runs. */
-  next: string | null;
   /** The last attempt's failure — ssh's refusal in the reader's language; null before one. */
   lastError: string | null;
   /** ssh's own words under a refusal it caused; null otherwise. */
   detail: string | null;
   /** What the connection check found after failures in a row; null until it ran. */
   check: CheckLine[] | null;
-  /** The stored password was refused: no attempt runs until the machine's SSH settings change. */
-  stopped: boolean;
 }
 
 export function reconnectView(
@@ -490,6 +485,9 @@ export function reconnectView(
 ): ReconnectView | null {
   const r = machine.reconnect;
   if (r === undefined) return null;
+  // The reading the card gives with no job in the way: a streak is always one of these.
+  const status = retryReading(readMachine(machine, null, null), machine.alias);
+  if (status === null) return null;
   const failure =
     r.lastError === null
       ? null
@@ -501,14 +499,12 @@ export function reconnectView(
           machine.alias,
         );
   return {
+    status,
     lasting: formatSpan(now - Date.parse(r.since), locale),
-    attempt: r.attempts + 1,
-    next: r.nextAt === null ? null : formatSpan(Date.parse(r.nextAt) - now, locale),
     lastError: failure?.message ?? null,
     detail: failure?.detail ?? null,
     check:
       r.diagnosis === null ? null : r.diagnosis.checks.map((one) => checkLine(one, machine.alias)),
-    stopped: r.waitsForPassword === true,
   };
 }
 

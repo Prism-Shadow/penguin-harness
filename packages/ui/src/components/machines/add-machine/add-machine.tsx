@@ -17,7 +17,7 @@
 import type { ReactNode } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { Button } from "../../actions/button/button";
-import { Badge } from "../../feedback/badge/badge";
+import { Pill } from "../../feedback/pill/pill";
 import { NoticeStrip } from "../../feedback/notice/notice-strip";
 import { Checkbox } from "../../forms/checkbox/checkbox";
 import { SearchInput } from "../../forms/search-input/search-input";
@@ -120,11 +120,7 @@ export function MachineHostRow({
             <span className="min-w-0 truncate font-mono text-xs text-fg-muted">{reach}</span>
           )}
         </span>
-        {note !== null && (
-          <Badge variant="soft" tone="neutral">
-            {note}
-          </Badge>
-        )}
+        {note !== null && <Pill>{note}</Pill>}
       </label>
     </li>
   );

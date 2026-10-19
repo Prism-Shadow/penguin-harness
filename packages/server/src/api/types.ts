@@ -1261,7 +1261,7 @@ export interface AgentSummary {
   kernelOutdated: boolean;
   /** Vault key count (number of keys in agent_state/.vault.toml). */
   vaultKeyCount: number;
-  /** Schedule count (number of .toml files under agent_state/schedule/, including invalid ones). */
+  /** Schedule count (number of .toml files directly under agent_state/schedule/, including invalid ones; archived files under schedule/expired/ are not counted). */
   scheduleCount: number;
   /** Workbench folders with a manifest, including ones with a load error. */
   workbenchCount: number;
@@ -4154,7 +4154,11 @@ export interface UsageResponse {
 // Schedule
 // ---------------------------------------------------------------------------
 
-/** Display-facing schedule status: the file's `enabled` only expresses intent; the rest is derived from runtime state. */
+/**
+ * Display-facing schedule status: the file's `enabled` only expresses intent; the rest is derived from runtime state.
+ * The scheduler archives an agent's settled tasks (done / missed / expired) into `schedule/expired/`, so the agent
+ * listings show those three only while a queued fire is still to be sent or when the move failed.
+ */
 export type ScheduleStatus = "active" | "disabled" | "expired" | "done" | "missed" | "invalid";
 
 export interface ScheduleItem {
@@ -5246,17 +5250,28 @@ export interface MachineEnvOnly {
 
 /**
  * A machine this server keeps connected, while it is being brought back. Attempts back off
- * from 5 s, doubling to a 5-minute cap, so a machine that is down for a day costs a probe every
- * five minutes; after three failures in a row the connection check runs on its own, and its
- * answer is what the page shows as the explanation.
+ * from 5 s, doubling to a 5-minute cap, and stop after `maxAttempts` failures in a row (about a
+ * quarter of an hour) — or after the first, when ssh refused in a way no retry fixes — until a
+ * person asks for a Retry (`POST …/machines/:machineId/reconnect`). After three failures in a
+ * row the connection check runs on its own, and its answer is what the page shows as the
+ * explanation.
  */
 export interface MachineReconnect {
-  /** When this streak began: the moment the machine was found not connected. */
+  /** When this streak began: the moment the machine was found not connected, or the Retry that began it again. */
   since: string;
   /** Attempts that failed in this streak; 0 while the first is still to run or running. */
   attempts: number;
-  /** When the next attempt runs; null while one is running. */
+  /** How many failures in a row end the streak: the page says "attempt n of this". */
+  maxAttempts: number;
+  /** When the next attempt runs; null while one is running, and once the streak stopped. */
   nextAt: string | null;
+  /**
+   * The streak stopped, and nothing runs until a person asks for a Retry, which begins a new
+   * one: `attempts` — `maxAttempts` failed in a row; `ssh` — ssh refused in a way retrying
+   * cannot fix (a host key unknown or changed, an unusable key file, a key refused, a broken
+   * ssh config), said by `sshReason`.
+   */
+  gaveUp?: "attempts" | "ssh";
   /** The last attempt's failure in the far side's words; null before the first one fails. */
   lastError: string | null;
   /** Why ssh refused, when the last failure was ssh's own — for the page to say in its language. */
@@ -6323,6 +6338,11 @@ export interface OrgHandbookFile {
 }
 
 export interface OrgHandbookFilesResponse {
+  /**
+   * The handbook directory's absolute path on this server: the Web App browses it with the Files
+   * panel's own directory-addressed routes, which take the same Project access these do.
+   */
+  dir: string;
   /** The index first, then the other documents by path. */
   files: OrgHandbookFile[];
 }

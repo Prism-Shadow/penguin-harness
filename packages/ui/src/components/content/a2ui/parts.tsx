@@ -8,7 +8,7 @@
 import type { ReactNode } from "react";
 import type { A2uiOption } from "@prismshadow/penguin-core/a2ui";
 import { ICONS } from "../../icons/icons";
-import { Badge } from "../../feedback/badge/badge";
+import { Pill } from "../../feedback/pill/pill";
 import { Notice } from "../../feedback/notice/notice";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { useUiStrings } from "../../../strings";
@@ -205,11 +205,7 @@ export function OptionLabel({ option, strings }: { option: A2uiOption; strings: 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <InlineText text={option.label} />
-      {option.recommended === true && (
-        <Badge tone="info" size="sm">
-          {strings.recommended}
-        </Badge>
-      )}
+      {option.recommended === true && <Pill tone="info">{strings.recommended}</Pill>}
     </span>
   );
 }

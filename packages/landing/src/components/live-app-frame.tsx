@@ -20,8 +20,7 @@ import type { SyntheticEvent } from "react";
 import { S } from "../lib/strings";
 import { frameSize, gallerySurfaceUrl, liveFrameSrc } from "../lib/live-frame";
 import type { SurfaceId } from "../lib/live-frame";
-import { useLocale } from "../state/locale";
-import { useTheme } from "../state/theme";
+import { useSiteLocale, useSiteTheme } from "@prismshadow/penguin-ui/site";
 import { BrowserFrame } from "./browser-frame";
 import { ArrowUpRightIcon } from "./icons";
 
@@ -76,8 +75,8 @@ export function LiveAppFrame({
   title: string;
   className?: string;
 }) {
-  const { locale } = useLocale();
-  const { dark } = useTheme();
+  const { locale } = useSiteLocale();
+  const { dark } = useSiteTheme();
   const phone = useMedia("(max-width: 639.98px)");
   const fine = useMedia("(hover: hover) and (pointer: fine)");
   const size = frameSize(phone);

@@ -33,6 +33,7 @@ export * from "./components/icons/status-icon/status-icon";
 export * from "./components/icons/activity-icon/activity-icon";
 export * from "./components/icons/update-dot/update-dot";
 export * from "./components/feedback/badge/badge";
+export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
 export * from "./components/feedback/empty-state/empty-state";
 
@@ -147,6 +148,11 @@ export * from "./components/feedback/notice/notice";
 export * from "./components/feedback/todo-notice/todo-notice";
 export * from "./components/feedback/progress-bar/progress-bar";
 export * from "./components/feedback/duration-slot/duration-slot";
+// Retry — the retry and reconnect status every surface shares (trying, waiting with its countdown,
+// gave up, blocked), its one-press buttons, and the second-ticking countdown under them.
+export * from "./components/feedback/retry-status/countdown";
+export * from "./components/feedback/retry-status/use-countdown";
+export * from "./components/feedback/retry-status/retry-status";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";
 export * from "./components/data/stat-tile/stat-tile";
@@ -192,6 +198,8 @@ export * from "./components/overlays/command-palette/command-palette";
 // behind it, the assistant reply on it, and the changes card.
 // The reveal's pacing (stream-reveal.ts) stays inside the family: its hook is the door.
 export * from "./components/chat/message-bubble/message-bubble";
+// The images and files a message carries: the composer, the sent message and a steer's chip.
+export * from "./components/chat/attachments/attachments";
 export * from "./components/chat/stream-text/stream-text";
 export * from "./components/chat/assistant-text/assistant-text";
 export * from "./components/chat/assistant-text/streaming-caret";
@@ -240,9 +248,10 @@ export * from "./components/navigation/breadcrumbs/crumb-fit";
 export * from "./components/navigation/breadcrumbs/breadcrumbs";
 export * from "./components/content/prose/frontmatter";
 
-// W7-C — the dock: its tab strip, its frame and header buttons, the picker of an empty dock, the
-// toolbar's dock toggles, and the floating launcher's ball and fan.
+// W7-C — the dock: its tab strip and the strip inside a panel, its frame and header buttons, the
+// picker of an empty dock, the toolbar's dock toggles, and the floating launcher's ball and fan.
 export * from "./components/navigation/dock-tabs/dock-tabs";
+export * from "./components/navigation/panel-tabs/panel-tabs";
 export * from "./components/shell/dock-frame/dock-frame";
 export * from "./components/shell/dock-picker/dock-picker";
 export * from "./components/shell/panels-toolbar/panels-toolbar";
@@ -271,3 +280,18 @@ export * from "./components/machines/machine-card/machine-card";
 export * from "./components/machines/machine-list/machine-list";
 export * from "./components/machines/machine-toolbar/machine-toolbar";
 export * from "./components/machines/add-machine/add-machine";
+
+// Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
+// (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
+// reader with its outline model, and the measured width a layout that follows its own room reads.
+export * from "./components/content/find/find-text";
+export * from "./components/content/find/find-dom";
+export * from "./components/content/find/find-field";
+export * from "./components/content/markdown-reader/outline";
+export * from "./components/content/markdown-reader/markdown-reader";
+export * from "./components/layout/measure/use-measured-width";
+
+// The files browser's frame: its layout at the measured width, the toolbar row and the two panes,
+// which the Workspace Files panel and the organization handbook both lay out with.
+export * from "./components/files/files-frame/files-layout";
+export * from "./components/files/files-frame/files-frame";

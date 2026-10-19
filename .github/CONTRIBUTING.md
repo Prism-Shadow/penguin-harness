@@ -187,7 +187,7 @@ End-to-end suites (optional locally, slower):
 ```bash
 npx playwright install chromium                      # once
 pnpm --filter @prismshadow/penguin-web test:e2e      # browser e2e against a mock LLM
-pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs  # CI smoke only
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs  # what CI runs
 pnpm test:e2e                                        # core live-model e2e, needs DEEPSEEK_API_KEY
 ```
 

@@ -35,6 +35,15 @@ export function uiStringsOf(dict: Strings): UiStrings {
     next: dict.common.nextPage,
     pagePosition: dict.chat.groupPagePosition,
     a2ui: dict.chat.a2ui,
+    reader: {
+      outline: dict.find.outline,
+      find: dict.find.inDocument,
+      findPlaceholder: dict.find.documentPlaceholder,
+      previousMatch: dict.find.prev,
+      nextMatch: dict.find.next,
+      closeFind: dict.find.close,
+      noResults: dict.find.noResults,
+    },
   };
 }
 

@@ -118,8 +118,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "SkillTile",
   ],
   // `Text` carries it for its eyebrow role (W7), the one door a group label takes in new code —
-  // the sidebar's list label among them (W7).
-  "ui-eyebrow": ["GroupHeader", "PagedDialog", "Text"],
+  // the sidebar's list label among them (W7). The public sites' group labels (an article's
+  // contents, the docs sidebar's sections) carry it too; site-content.css fixes their look.
+  "ui-eyebrow": ["GroupHeader", "PagedDialog", "Text", "SiteToc", "SiteSidebarNav"],
   // The page titles are `PageHeader`'s; the draft view's hero writes its own.
   "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
   "ui-live": ["Spinner", "Dot", "MachineStepper", "ProgressBar", "StreamingCaret"],

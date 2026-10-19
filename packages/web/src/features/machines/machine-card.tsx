@@ -9,8 +9,10 @@
  *   pill's hover; this server's own entry is simply running;
  * - the stats: how this server reaches the machine, the build it carries, the port its server
  *   answers on, and when it was last checked;
- * - the middle: the job's stepper while a job for the machine is queued or running, else why Use
- *   waits (a hint would never open on the button, which shows its word);
+ * - the middle: the job's stepper while a job for the machine is queued or running, else the retry
+ *   status while the server brings the machine back or stopped trying (the attempt of how many,
+ *   the countdown to the next with Retry now, where it stopped with Retry), else why Use waits (a
+ *   hint would never open on the button, which shows its word);
  * - the buttons: Use starts a new conversation in the machine's temporary workspace, Settings
  *   opens the Machine dialog, Delete takes the machine off this Project after a confirmation, and
  *   Sync config hands a connected machine on this server's build this Project's config now. A
@@ -29,6 +31,7 @@ import type {
   MachineStatusPillProps,
   MachineStepState,
   MachineStepperProps,
+  RetryStatusProps,
   ToneName,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -42,10 +45,11 @@ import {
   outOfDate,
   readMachine,
   readingTone,
+  retryReading,
   stepLabel,
   useWaitsBecause,
 } from "./machines-view";
-import type { MachineReading } from "./machines-view";
+import type { MachineReading, RetryReading } from "./machines-view";
 
 /**
  * The reason a machine's state gives beside its word, when it has one: the far side's own words,
@@ -60,7 +64,11 @@ export function reasonText(reading: MachineReading): string | null {
     case "working":
       return reading.step;
     case "reconnecting":
-      return reading.attempts === 0 ? null : S.machines.detail.reconnect.attempt(reading.attempts);
+      return reading.attempts === 0
+        ? null
+        : S.machines.retry.failed(reading.attempts, reading.maxAttempts);
+    case "reconnectStopped":
+      return reading.message;
     default:
       return null;
   }
@@ -79,7 +87,7 @@ export function machineStatus(reading: MachineReading | null): MachineStatusPill
   };
 }
 
-/** What a machine's state mark shows: its pill, and its words, tone and shape in one record. */
+/** What a machine's state mark shows: its pill, and its words and tone in one record. */
 export interface MachineMark {
   state: MachineState;
   /** The state's word alone, as the pill shows it. */
@@ -91,11 +99,6 @@ export interface MachineMark {
   tone: Tone;
   /** A job is queued or running for it. */
   moving: boolean;
-  /**
-   * The glyph of a machine that is not working — a cross for a failed job (danger), an alert for
-   * a machine out of reach (attention: waiting on its network, not failed); null otherwise.
-   */
-  glyph: string | null;
 }
 
 /** A machine's mark; `reading` is null for this server's own entry, which is simply serving. */
@@ -115,12 +118,6 @@ export function machineMark(reading: MachineReading | null): MachineMark {
           : `${status.label} · ${reason}`,
     tone: reading === null ? "link" : readingTone(reading),
     moving: reading !== null && (reading.kind === "queued" || reading.kind === "working"),
-    glyph:
-      reading?.kind === "failed" || reading?.kind === "signInRefused"
-        ? ICONS.xCircle
-        : reading?.kind === "unreachable"
-          ? ICONS.alertCircle
-          : null,
   };
 }
 
@@ -173,6 +170,41 @@ export function jobProgress(job: MachineJob): MachineStepperProps {
   return { steps: job.steps.map((_, index) => stateOf(index)), caption, running: job.running };
 }
 
+/**
+ * The shared retry status for a machine's retry reading: the countdown in the reader's words, and
+ * the Retry — "Retry now" while waiting, "Retry" after a stop — where one is on offer. `reason`
+ * replaces the reading's own (the dialog says the last failure on a line of its own).
+ */
+export function retryStatus(
+  view: RetryReading,
+  {
+    onRetry,
+    held,
+    layout = "line",
+    reason = view.reason,
+  }: {
+    /** Retries now; a promise that rejects says the server refused, so the press can be made again. */
+    onRetry: () => unknown;
+    /** Something else is in flight or moving on the machine: the Retry takes no press. */
+    held: boolean;
+    layout?: "line" | "block";
+    reason?: string | null;
+  },
+): RetryStatusProps {
+  const r = S.machines.retry;
+  return {
+    phase: view.phase,
+    label: view.label,
+    reason,
+    nextAt: view.nextAtMs,
+    countdown: r.countdown,
+    retry: view.canRetry
+      ? { label: view.phase === "waiting" ? r.retryNow : r.retry, onClick: onRetry, disabled: held }
+      : null,
+    layout,
+  };
+}
+
 /** The job's stepper. */
 export function Stepper({ job, className = "" }: { job: MachineJob; className?: string }) {
   return <MachineStepper {...jobProgress(job)} className={className} />;
@@ -194,6 +226,11 @@ export interface MachineCardProps {
   onSyncConfig: () => void;
   /** Asks to take the machine off this Project (the page confirms first). */
   onDelete: () => void;
+  /**
+   * Retries bringing the machine back now. Rejects when the server refused (the page says why),
+   * which lets the press be made again.
+   */
+  onRetry: () => Promise<void>;
 }
 
 /** The card's stats: how the machine is reached, its build, its server's port, the last check. */
@@ -226,9 +263,11 @@ export function MachineCard({
   onUse,
   onSyncConfig,
   onDelete,
+  onRetry,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
   const moving = !machine.local && jobMoving(job);
+  const retry = reading === null || moving ? null : retryReading(reading, machine.alias);
   const card = S.machines.card;
   return (
     <MachineCardView
@@ -248,7 +287,8 @@ export function MachineCard({
       root={machine.root}
       facts={cardFacts(machine, locale)}
       progress={moving && job !== null ? jobProgress(job) : null}
-      waits={useWaitsBecause(machine, job, reading, locale, Date.now())}
+      retry={retry === null ? null : retryStatus(retry, { onRetry, held: busy })}
+      waits={useWaitsBecause(machine, job, reading)}
       onOpen={onOpen}
       onBodyClick={cardBodyClick(onOpen)}
       use={{ label: card.use, disabled: busy || !canUse(machine, job), onClick: onUse }}

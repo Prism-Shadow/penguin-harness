@@ -8,10 +8,16 @@
  * the language it resolves to, and the menu checks `system` while that is what applies.
  */
 import { useCallback, useEffect } from "react";
+import {
+  readSitePref,
+  SITE_LANG_KEY,
+  SITE_THEME_KEY,
+  subscribeSitePref,
+  writeSitePref,
+} from "@prismshadow/penguin-ui/site";
 import { MODE_PREFS, resolveSiteLang, SITE_LANG_PREFS } from "../lib/url-state";
 import type { Lang, ModePref, SiteLangPref } from "../lib/url-state";
 import { useGallery } from "../state";
-import { LANG_KEY, readPref, subscribePref, THEME_KEY, writePref } from "./site-prefs";
 
 export type ThemeMode = ModePref;
 export type LangPref = SiteLangPref;
@@ -20,7 +26,7 @@ export function useTheme(): { mode: ThemeMode; setMode: (mode: ThemeMode) => voi
   const { state, update } = useGallery();
   const setMode = useCallback(
     (mode: ThemeMode) => {
-      writePref(THEME_KEY, mode);
+      writeSitePref(SITE_THEME_KEY, mode);
       update({ mode });
     },
     [update],
@@ -34,14 +40,14 @@ export function useLocale(): {
   setLang: (lang: LangPref) => void;
 } {
   const { state, update } = useGallery();
-  const stored = readPref<LangPref>(LANG_KEY, SITE_LANG_PREFS);
+  const stored = readSitePref<LangPref>(SITE_LANG_KEY, SITE_LANG_PREFS);
   const lang =
     stored !== null && resolveSiteLang(stored, navigator.language) === state.lang
       ? stored
       : state.lang;
   const setLang = useCallback(
     (next: LangPref) => {
-      writePref(LANG_KEY, next);
+      writeSitePref(SITE_LANG_KEY, next);
       update({ lang: resolveSiteLang(next, navigator.language) });
     },
     [update],
@@ -53,12 +59,12 @@ export function useLocale(): {
 export function useSitePrefsSync(): void {
   const { update } = useGallery();
   useEffect(
-    () => subscribePref<ThemeMode>(THEME_KEY, MODE_PREFS, (mode) => update({ mode })),
+    () => subscribeSitePref<ThemeMode>(SITE_THEME_KEY, MODE_PREFS, (mode) => update({ mode })),
     [update],
   );
   useEffect(
     () =>
-      subscribePref<LangPref>(LANG_KEY, SITE_LANG_PREFS, (pref) =>
+      subscribeSitePref<LangPref>(SITE_LANG_KEY, SITE_LANG_PREFS, (pref) =>
         update({ lang: resolveSiteLang(pref, navigator.language) }),
       ),
     [update],

@@ -116,6 +116,7 @@ export const en: Strings = {
       working: "Working",
       ready: "Running",
       reconnecting: "Reconnecting",
+      reconnectStopped: "Reconnect stopped",
       failed: "Failed",
       installedOnly: "Installed",
       behind: "Update available",
@@ -159,6 +160,7 @@ export const en: Strings = {
     refusedUnknown: (alias: string) => `${alias} is not in this server's ssh config.`,
     composer: {
       reconnecting: "That machine is reconnecting…",
+      reconnectStopped: "That machine stopped reconnecting — retry it from the Machines page",
       stopped: "That machine's server is stopped — start it from the Machines page",
       notConnected: "That machine is not connected — enable it from the Machines page",
       missing: "That machine is not on this Project's machine list",
@@ -179,8 +181,6 @@ export const en: Strings = {
       delete: "Delete",
       localUndeletable: "This server cannot be deleted",
       why: {
-        reconnecting: "Reconnecting…",
-        reconnectingFor: (span: string) => `Reconnecting… · for ${span}`,
         stopped: "Server stopped",
         notConnected: "Not connected",
         notInstalled: "Not installed yet",
@@ -249,15 +249,21 @@ export const en: Strings = {
       },
       reconnect: {
         title: "Reconnecting",
-        trying: "Reconnecting…",
-        lasting: (span: string) => `for ${span}`,
-        attempt: (n: number) => `attempt ${n}`,
-        next: (span: string) => `next try in ${span}`,
-        now: "trying now",
+        lasting: (span: string) => `For ${span}`,
         lastError: "Last failure:",
         checked: "What the automatic check found:",
-        stopped: "Stopped retrying",
       },
+    },
+    retry: {
+      trying: (n: number, m: number) => `Trying to reconnect (${n} of ${m})…`,
+      lost: "Connection lost",
+      failed: (n: number, m: number) => `Reconnect ${n} of ${m} failed`,
+      countdown: (seconds: number) => `next try in ${seconds} s`,
+      gaveUp: (m: number) => `Stopped retrying after ${m} failed reconnects`,
+      stoppedSsh: "Stopped reconnecting",
+      stoppedPassword: "Sign-in refused; stopped reconnecting",
+      retryNow: "Retry now",
+      retry: "Retry",
     },
     confirm: {
       deleteTitle: (alias: string) => `Delete ${alias}?`,
@@ -399,7 +405,12 @@ export const en: Strings = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
+    /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "New terminal",
+    /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
+    shellEntry: "Command-line terminal",
+    /** The terminal panel's strip of shells, for assistive technology. */
+    tabsLabel: "Terminal tabs",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
@@ -409,8 +420,6 @@ export const en: Strings = {
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
     noTerminalApi:
       "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
-    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
-    detach: "Open in new window",
     status: {
       connecting: "connecting",
       ready: "ready",
@@ -1269,6 +1278,9 @@ export const en: Strings = {
     moreRows: (count: number): string => `${count} more not shown`,
     /** Name of the aggregated result list (read out when it is announced). */
     resultsLabel: "Find results",
+    outline: "Outline",
+    inDocument: "Find in document",
+    documentPlaceholder: "Find in document…",
   },
 
   common: {
@@ -1568,6 +1580,10 @@ export const en: Strings = {
     createPluginsHint:
       "Installed into the agent at creation (skills, hook packages and MCP servers); add or remove them later in its Skills, Hooks and Tools tabs.",
     createPluginsEmpty: "The plugin library has nothing to install.",
+    createLocation: "Location",
+    createLocationHere: "This server",
+    createLocationInfo:
+      "Which server the new agent is created on. An agent created on a machine belongs to that machine: its plugins come from that machine's library, and its settings, chats and deletion all happen there.",
     createStdioQuestion: (agent: string): string => `Create ${agent}?`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "No skills selected",
@@ -1815,7 +1831,11 @@ export const en: Strings = {
     mcpRemoveFromPlugin: (plugin: string): string =>
       `It was installed by plugin ${plugin}; Manage installs on the Plugins page can put it back.`,
     defaultValue: "(default)",
-    livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
+    onMachineHint: (machine: string) =>
+      `This agent lives on ${machine}: its settings, chats and deletion all happen on that machine, apart from this server's agents of the same id.`,
+    usageThisServerOnly: "The usage center counts this server's agents only",
+    deleteConfirmOnMachine: (name: string, machine: string): string =>
+      `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     employeesSection: "Company employees",
@@ -1887,6 +1907,7 @@ export const en: Strings = {
       "Applies to API conversations created from now on; when a mode asks, the request goes to the caller and can also be answered here.",
     apiConnection: "Connection",
     apiBaseUrl: "Base URL",
+    apiBaseUrlOnMachine: (machine: string): string => `Base URL (on ${machine})`,
     apiAgentId: "Agent ID",
     apiCopy: (what: string): string => `Copy ${what}`,
     apiKeys: "Keys",
@@ -2567,7 +2588,6 @@ export const en: Strings = {
     filterAll: "All",
     filterActive: "Active",
     filterPaused: "Paused",
-    filterCompleted: "Completed",
     panelEmpty: "No scheduled tasks in this conversation yet",
     panelNoMatch: "No matching scheduled tasks",
     /** The panel's body on the draft page, where no Session exists yet. */
@@ -2614,7 +2634,7 @@ export const en: Strings = {
      * the file branch, so they are never read as flags of the command beside them.
      */
     aiCreateTail: (agentId: string): string =>
-      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <ISO 8601 or now>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
+      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <future ISO 8601, or now with --period>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
     /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
     suggestionsTitle: "Suggestions",
     suggestions: {
@@ -2927,8 +2947,8 @@ export const en: Strings = {
     mcpRunsCommand: (command: string): string =>
       `Runs ${command} on this server when an agent session starts`,
     installStdioTitle: (plugin: string, agent: string): string => `Install ${plugin} on ${agent}?`,
-    installStdioBody: (server: string, command: string): string =>
-      `Its MCP server ${server} runs ${command} on this server whenever a session of the agent starts.`,
+    installStdioBody: (server: string, command: string, machine?: string): string =>
+      `Its MCP server ${server} runs ${command} on ${machine ?? "this server"} whenever a session of the agent starts.`,
     setUp: "Set up",
     setUpTitle: (plugin: string, agent: string): string => `Set up ${plugin} on ${agent}`,
     setUpDesc: "The values go into the agent's vault; its MCP servers read them when they connect.",
@@ -3708,6 +3728,8 @@ Scenarios:
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
     retryNothing: "Nothing to retry: that turn's input has already been sent.",
     imageAlt: "Image uploaded by user",
+    /** The hint on a sent image that did not load (its file was removed, or its machine is out of reach). */
+    imageUnavailable: "This image could not be loaded",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via read_file)",
@@ -4046,9 +4068,7 @@ Scenarios:
     },
     /** The skills note's fixed phrase (the count picks the plural); the skill names follow it as `nameList`. */
     skillsLabel: (count: number): string => `Using skill${count === 1 ? "" : "s"}`,
-    /** Attached-file notice above a user message: this fixed phrase, then the file names as `nameList`. */
-    attachedFilesLabel: (count: number): string => `Attached file${count === 1 ? "" : "s"}`,
-    /** Names listed after a note's fixed phrase (skills, files). */
+    /** Names listed after a note's fixed phrase (the skills). */
     nameList: (names: string[]): string => names.join(", "),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "More input options",
@@ -4078,6 +4098,9 @@ Scenarios:
       "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
     goalBudgetSave: "Save budget",
     goalRemove: "Exit goal mode",
+    /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
+    goalPluginMissing: "Goal mode needs the goal plugin: install it on this Agent to start a goal.",
+    goalPluginInstall: "Install on this Agent",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "Injected by the harness",
     /** The goal line's fixed phrase; the objective follows it as the line's subject. */
@@ -5883,36 +5906,8 @@ Scenarios:
     },
     /** The handbook page: the knowledge base directory, its index and its documents. */
     handbook: {
-      info: "The company's knowledge base: the Markdown documents under handbook/. The index (README.md) is the page every trigger makes the employee Agent read first; the other documents are listed from it and read on demand.",
-      /** The pinned first row: the index, and why it is pinned. */
-      indexLabel: "Index · read first every run",
-      documents: "Documents",
-      /** The tree's own controls: closing every folder, and what a folder row's count means. */
-      collapseAll: "Collapse all",
-      documentsInFolder: (n: number): string => `${n} document${n === 1 ? "" : "s"}`,
-      noOtherDocuments: "No other documents yet. Create one and list it in the index.",
-      emptyDocument: "This document is still empty.",
-      newDocument: "New document",
-      creating: "Creating…",
-      pathField: "Path",
-      pathPlaceholder: "decisions/2026-09-02-hire-plan.md",
-      pathHint:
-        "Relative to handbook/, folders separated by /; each segment starts with a letter or digit and uses only letters, digits, . _ -; .md is added when the extension is left out.",
-      pathInvalid:
-        "Invalid path: each segment starts with a letter or digit and uses only letters, digits, . _ -, folders separated by /, at most eight levels.",
-      pathExists: "That document already exists.",
-      documentCreated: "Document created",
-      deleteDocument: "Delete document",
-      deleteConfirm: (path: string): string =>
-        `Delete ${path}? The document is removed from handbook/; the index entry pointing at it is not updated automatically.`,
-      documentDeleted: "Document deleted",
+      /** The page could not read the handbook's listing (which names its directory). */
       loadFailed: "Could not load the handbook",
-      documentLoadFailed: "Could not load the document",
-      /** A row's tooltip: when the file was last written, and its size. */
-      updatedAt: (time: string, size: string): string => `Updated ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
-      editorHint: (shortcut: string | null): string =>
-        shortcut === null ? "Markdown" : `Markdown · ${shortcut} to save`,
     },
   },
   errors: {
@@ -5939,6 +5934,11 @@ Scenarios:
       not_found: "This resource does not exist, or you do not have access.",
       internal: "The server hit an internal error. Please try again shortly.",
       agent_not_found: "This agent no longer exists.",
+      job_running: "A job is running on that machine; wait for it to finish.",
+      password_refused:
+        "That machine refused the saved password. Enter it again in its SSH settings; saving it retries.",
+      not_kept_connected:
+        "This server does not keep that machine connected, so there is nothing to reconnect. Start it instead.",
       unknown_agent: "That agent does not exist in this Project.",
       agent_exists: "This agent id is already taken.",
       agent_deleting: "This agent is being deleted.",

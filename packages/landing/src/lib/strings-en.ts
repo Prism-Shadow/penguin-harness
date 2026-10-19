@@ -1,7 +1,8 @@
 /**
  * English dictionary (constrained by the `Strings` type to the same shape as zh):
- * locale switching goes through state/locale.tsx. Marketing copy uses lowercase `agent`;
- * preserve the established casing of Workspace, Token, Task, Skill, Trace, and other terms.
+ * locale switching goes through the shared SiteLocaleProvider (app.tsx). Marketing copy uses
+ * lowercase `agent`; preserve the established casing of Workspace, Token, Task, Skill, Trace,
+ * and other terms.
  */
 import type { Strings } from "./strings";
 
@@ -45,7 +46,9 @@ export const en: Strings = {
   hero: {
     positioning: "Unified and Stable RSI Framework",
     badge: "for free",
-    automation: "Automatically improve model × agent harness",
+    /** No-break spaces keep each "any …" pair on one line when a phone wraps the tagline. */
+    automation:
+      "Fully automatic optimization: any\u00a0model, any\u00a0algorithm, any\u00a0benchmark",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [

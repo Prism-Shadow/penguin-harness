@@ -62,6 +62,7 @@ import { createStore } from "zustand/vanilla";
 import { toastAttention } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { apiErrorText } from "../lib/api-error";
+import { isCurrentProject } from "../lib/project-scope";
 import { S } from "../lib/strings";
 import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/company-beta";
 import { channelBadgeCounts } from "../features/company/channel-list";
@@ -276,6 +277,11 @@ function settleWorkMode(state: CompanyStoreState): void {
  * the first render already knows whether company mode may be entered.
  */
 export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
+  /**
+   * The Project the newest organization-sessions read is for. The Provider asks on every
+   * Project switch, so this is the current Project; an answer for any other is dropped.
+   */
+  let orgSessionsFor: string | null = null;
   return createStore<CompanyStoreState>((set, get) => ({
     serverEnabled: options.serverEnabled ?? false,
     personalEnabled: true,
@@ -493,6 +499,7 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
     },
 
     reloadOrgSessions: async (projectId) => {
+      orgSessionsFor = projectId;
       const orgs = get().organizations.filter((o) => o.projectId === projectId);
       const entries = await Promise.all(
         orgs.map(async (o) => {
@@ -506,6 +513,9 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
           }
         }),
       );
+      // The map is replaced whole: an answer for the Project just left, landing after the
+      // current one's, would take the current organizations' desks and tickets off screen.
+      if (!isCurrentProject(projectId, orgSessionsFor)) return;
       const next = new Map<string, OrgSessionsResponse>();
       for (const entry of entries) if (entry !== null) next.set(entry[0], entry[1]);
       set({ orgSessions: next });

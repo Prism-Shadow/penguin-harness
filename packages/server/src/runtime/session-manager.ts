@@ -81,6 +81,7 @@ import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/
 import type { SessionRow } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
+import { goalPluginNotInstalled, hasGoalHookPackage } from "./goal-plugin.js";
 import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
@@ -427,6 +428,12 @@ export interface SessionManagerDeps {
   /** Session-origin registry (session_meta is the single source of truth; subagent registration records the forwarded meta's source here). */
   sources: SessionOrigins;
   recorder: UsageRecorderLike;
+  /**
+   * The data root, for what is read off an Agent's state on disk before a Session is loaded
+   * (startGoal's goal-plugin check). Optional: a manager built without one — unit tests on a
+   * fake loader — skips those reads, and the loaded Session's own answer decides.
+   */
+  root?: string;
   /** Automatic Session title generation (optional: not injected in tests or when disabled). */
   titles?: TitleNotifier;
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
@@ -1202,7 +1209,9 @@ export class SessionManager {
    * `user_prompt` hook (hooks run in core and nowhere else — `Session.runUserPromptHook`)
    * writes the Session's goal file and answers the round-1 protocol message; it runs under
    * the session lock AFTER the idle check, since it overwrites the goal file a running goal
-   * is reading. Not installed (null) is the route's 409; an empty answer a 500. Round inputs
+   * is reading. An Agent without the goal plugin's hook package is refused with the route's
+   * 409 before the Session is even loaded (goal-plugin.ts); a loaded Session whose hook
+   * answers null is the same 409, and an empty answer a 500. Round inputs
    * are yielded by core and published like any streamed message; progress additionally goes
    * out as goal_* server events (the run state itself is the goal file the plugin maintains).
    */
@@ -1220,19 +1229,14 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
+      await this.assertGoalPluginInstalled(sessionId);
       const entry = await this.ensureEntry(sessionId);
       this.assertIdle(entry);
       const objective = args.objective;
       const started = await entry.session.runUserPromptHook?.("goal", objective, {
         budget: args.budget,
       });
-      if (!started) {
-        throw new HttpError(
-          409,
-          "goal_plugin_not_installed",
-          "Goal mode needs the goal plugin installed on this agent.",
-        );
-      }
+      if (!started) throw goalPluginNotInstalled();
       if (!started.context) {
         throw new HttpError(
           500,
@@ -2089,6 +2093,17 @@ export class SessionManager {
   }
 
   /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key on self-heal. */
+  /** startGoal's check before the load (goal-plugin.ts); an unknown id is left to ensureEntry's 404. */
+  private async assertGoalPluginInstalled(sessionId: string): Promise<void> {
+    const root = this.deps.root;
+    if (root === undefined) return;
+    const row = this.deps.sessions.findById(sessionId);
+    if (row === null) return;
+    if (!(await hasGoalHookPackage(root, row.projectId, row.agentId))) {
+      throw goalPluginNotInstalled();
+    }
+  }
+
   private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
     /** Background-task counts the discarded runtime last reported (see the publish below). */
@@ -2879,6 +2894,7 @@ export class SessionsModule {
       state: this.state,
       sessions: sessionsRepo,
       channels,
+      root: config.root,
       loader: this.sessionLoaders.create(config.root, sources, {
         proxyEnv: env.proxyEnv,
         controlEnv: env.controlEnv,
