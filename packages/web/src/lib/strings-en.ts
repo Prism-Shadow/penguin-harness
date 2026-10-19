@@ -5464,6 +5464,20 @@ Scenarios:
       emptyAllOff: "Every category is muted, so the inbox is empty by choice",
       /** The chip in force matches nothing (its category feeds rows, just not this one). */
       emptyFilter: "No notifications under this filter",
+      /** Row actions: the read mark both ways, and archiving. */
+      markRead: "Mark as read",
+      markUnread: "Mark as unread",
+      markAllRead: "Mark all read",
+      archive: "Archive",
+      /** The row's own state, for readers who hear the list rather than see the dot. */
+      readRow: "Read",
+      unreadRow: "Unread",
+      /** The archived list below the inbox: rows kept out of sight, restorable one by one. */
+      archivedTitle: "Archived",
+      archivedInfo:
+        "An archived row leaves the inbox and can be restored at any time. An archived message is kept as it was when it was archived; a ticket is still resolved against the board.",
+      unarchive: "Restore",
+      archivedEmpty: "Nothing archived",
     },
     calendarOutcomes: {
       fired: "Fired",

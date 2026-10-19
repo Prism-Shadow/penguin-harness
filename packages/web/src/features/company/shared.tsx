@@ -82,13 +82,20 @@ export function JumpButton({
 
 /**
  * An inbox row's state dot: attention while the row needs the reader, muted once it is only
- * news. Nothing here rests on the colour alone — every row wears the chip that names its
- * category beside it.
+ * news. A row the reader has already seen wears a hollow ring instead of a filled dot, which is
+ * what "nothing here is new" looks like without a second colour — flipping the mark back brings
+ * the filled dot back. Nothing here rests on the colour alone — every row wears the chip that
+ * names its category beside it, and the row's own read button says which way the mark goes.
  */
 export function InboxDot({ row }: { row: InboxRow }) {
   return (
-    <span className="flex shrink-0 items-center">
-      <span aria-hidden className={`block h-1.5 w-1.5 rounded-full ${toneDot[row.tone]}`} />
+    <span className="flex shrink-0 items-center" data-read={row.read ? "1" : undefined}>
+      <span
+        aria-hidden
+        className={`block h-1.5 w-1.5 rounded-full ${
+          row.read ? "bg-control ring-1 ring-line-emphasis" : toneDot[row.tone]
+        }`}
+      />
     </span>
   );
 }

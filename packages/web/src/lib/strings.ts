@@ -5657,6 +5657,20 @@ Benchmark：
       emptyAllOff: "三个类别都关掉了，收件箱自然是空的",
       /** The chip in force matches nothing (its category feeds rows, just not this one). */
       emptyFilter: "这个筛选下没有通知",
+      /** Row actions: the read mark both ways, and archiving. */
+      markRead: "标记已读",
+      markUnread: "标记未读",
+      markAllRead: "全部已读",
+      archive: "归档",
+      /** The row's own state, for readers who hear the list rather than see the dot. */
+      readRow: "已读",
+      unreadRow: "未读",
+      /** The archived list below the inbox: rows kept out of sight, restorable one by one. */
+      archivedTitle: "已归档",
+      archivedInfo:
+        "归档的行离开收件箱，随时可以恢复。归档的消息按归档时的内容保留；工单仍按看板实时解析。",
+      unarchive: "恢复",
+      archivedEmpty: "没有已归档的通知",
     },
     calendarOutcomes: {
       fired: "已触发",

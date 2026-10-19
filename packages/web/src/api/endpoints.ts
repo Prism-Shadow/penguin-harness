@@ -127,6 +127,7 @@ import type {
   OrgHandbookFilesResponse,
   OrgHandbookResponse,
   OrgHireRequest,
+  OrgInbox,
   OrgSessionsResponse,
   OrgTicketAttachRequest,
   OrgTicketBlockRequest,
@@ -2209,6 +2210,50 @@ export const deleteOrganization = (projectId: string, orgId: string) =>
 
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
+
+/**
+ * Inbox row state — LOCAL-ONLY mirrors of the server contract in
+ * `packages/server/src/api/types.ts` (OrgInboxReadRequest / OrgInboxArchiveRequest), for the same
+ * reason the squad tables below are mirrored: the published server package in this tree may
+ * predate them, and an older server answers the routes with 404.
+ */
+export interface OrgInboxReadRequest {
+  keys: string[];
+  read: boolean;
+}
+
+/** Archiving a mention sends the message the client is showing: the server has no lookup by id. */
+export interface OrgInboxArchiveRequest {
+  keys: string[];
+  archived: boolean;
+  snapshots?: Record<string, OrgChannelMessage>;
+}
+
+/** Marks rows read (or unread) for the signed-in user. */
+export const markOrgInboxRead = (
+  projectId: string,
+  orgId: string,
+  body: OrgInboxReadRequest,
+): Promise<{ updated: number }> =>
+  apiFetch<{ updated: number }>(`${orgBase(projectId, orgId)}/inbox/read`, {
+    method: "POST",
+    body,
+  });
+
+/** Archives rows out of the inbox, or brings them back with `archived: false`. */
+export const archiveOrgInbox = (
+  projectId: string,
+  orgId: string,
+  body: OrgInboxArchiveRequest,
+): Promise<{ updated: number }> =>
+  apiFetch<{ updated: number }>(`${orgBase(projectId, orgId)}/inbox/archive`, {
+    method: "POST",
+    body,
+  });
+
+/** The user's archived rows, the same three lists the inbox carries. */
+export const getArchivedOrgInbox = (projectId: string, orgId: string) =>
+  apiFetch<OrgInbox>(`${orgBase(projectId, orgId)}/inbox/archived`);
 
 export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
   apiFetch<OrgEmployeeItem>(`${orgBase(projectId, orgId)}/employees`, { method: "POST", body });

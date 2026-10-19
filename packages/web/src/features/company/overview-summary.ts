@@ -209,7 +209,20 @@ export interface InboxRow {
   /** ISO 8601, or null when the source carries no time at all. */
   time: string | null;
   tone: Tone;
+  /** The reader has already seen this row (the server's mark); a row of a row-less build is unread. */
+  read: boolean;
   target: InboxTarget;
+}
+
+/**
+ * The read mark the server sends on each inbox row. Read through a check rather than off
+ * `OrgInbox`: the published server package in this tree may predate the field, and a server that
+ * sends none is an inbox where every row is unread.
+ */
+function readMark(row: unknown): boolean {
+  return (
+    typeof row === "object" && row !== null && (row as { inboxRead?: unknown }).inboxRead === true
+  );
 }
 
 export interface InboxInput {
@@ -280,6 +293,7 @@ export function inboxRows(input: InboxInput): InboxRow[] {
       detail: input.names(message.sender),
       time: message.time,
       tone: "attention",
+      read: readMark(message),
       target: { kind: "channel", channelId: DEFAULT_CHANNEL_ID },
     });
   }
@@ -293,6 +307,7 @@ export function inboxRows(input: InboxInput): InboxRow[] {
       ...(detail !== "" ? { detail } : {}),
       time: ticketTime(ticket.ticketId),
       tone: "attention",
+      read: readMark(ticket),
       target: { kind: "ticket", ticketId: ticket.ticketId },
     });
   }
@@ -307,6 +322,7 @@ export function inboxRows(input: InboxInput): InboxRow[] {
       time: ticket.closedAt ?? ticketTime(ticket.ticketId),
       // Nothing is asked of the reader: the row is news, and its mark recedes.
       tone: "muted",
+      read: readMark(ticket),
       target: { kind: "ticket", ticketId: ticket.ticketId },
     });
   }
