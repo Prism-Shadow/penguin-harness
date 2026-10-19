@@ -3,7 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** fix
 - **Scope:** `web`
-- **PR:** (pending)
+- **PR:** [#1209](https://github.com/Prism-Shadow/penguin-harness/pull/1209)
 
 [English](2026-10-19-chat-history-scroll-pagination.md)
 
