@@ -23,7 +23,7 @@ import {
   type WorkbenchTab,
 } from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
-import { AppPalette } from "../palette";
+import { usePaletteActions } from "../../lib/palette-actions";
 import { openUserEvents } from "../../api/sse";
 import { WorkbenchFrame } from "./workbench-tabs";
 
@@ -106,6 +106,7 @@ export function WorkbenchAppPage() {
     ],
     [projectId, agentId, navigate, returnTo, tab?.tabId, workbenchId, tabKey, machineId],
   );
+  usePaletteActions(exit);
 
   return (
     <div className="relative h-full w-full bg-white pt-[env(titlebar-area-height,0px)] dark:bg-gray-950">
@@ -143,7 +144,6 @@ export function WorkbenchAppPage() {
           {S.workbenches.exitFullPageButton}
         </Button>
       </div>
-      <AppPalette extra={exit} />
     </div>
   );
 }
