@@ -39,6 +39,7 @@ import rehypeKatex from "rehype-katex";
 import type { Options } from "react-markdown";
 import { remarkAutolinkBoundary } from "./remark-autolink-boundary";
 import { remarkLiteralTildes } from "./remark-literal-tildes";
+import { rehypeMarkdownTables } from "./markdown-table";
 import { remarkMathBrackets } from "./remark-math-brackets";
 import { remarkMathDollars } from "./remark-math-dollars";
 
@@ -96,24 +97,35 @@ export const REMARK_PLUGINS: PluginList = [
  */
 export const SITE_REMARK_PLUGINS: PluginList = [remarkGfm];
 
+/** react-markdown's rehype plugin-list type. */
+type RehypePluginList = NonNullable<Options["rehypePlugins"]>;
+
 /**
- * The rehype (mdast -> hast) stage. `rehype-katex` turns every element the remark stage classed
+ * The rehype (mdast -> hast) stage. `rehypeMarkdownTables` boxes every table and classifies its
+ * cells (markdown-table.ts). `rehype-katex` turns every element the remark stage classed
  * `math-inline` / `math-display` into KaTeX's own markup, replacing it outright — which is also why
  * a `$$…$$` block never reaches the chat renderer's `<pre>` override and never becomes a CodeBlock.
  */
-export const REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [[rehypeKatex, KATEX_OPTIONS]];
+export const REHYPE_PLUGINS: RehypePluginList = [
+  rehypeMarkdownTables,
+  [rehypeKatex, KATEX_OPTIONS],
+];
 
 /**
- * The rehype stage for a message that is still streaming: nothing, so the remark stage's own
- * `math-*` elements reach the DOM carrying the TeX source, and the formula is typeset once on the
- * settle render.
+ * The rehype stage for a message that is still streaming: the table pass alone, so the remark
+ * stage's own `math-*` elements reach the DOM carrying the TeX source, and the formula is typeset
+ * once on the settle render.
+ *
+ * The table pass is the one stage kept on: it re-parses nothing, it only walks the tree, so it
+ * costs next to nothing per delta — and with it a table has its scroll box and its column kinds
+ * from the first row that arrives, so nothing rewraps or jumps when the reply settles.
  *
  * KaTeX itself is cheap — ~0.3ms for a typical formula. What is not cheap is the rest of the stage
  * around it: `rehype-katex` re-parses KaTeX's ~2.5KB of markup per formula back into hast, and
  * React then builds several hundred elements from it. Measured through this pipeline with
  * `renderToStaticMarkup` on a 3.6KB reply carrying 60 formulas: 16ms for gfm alone, 13ms with the
  * math parsed but not rendered, 284ms for the full stage. Streamed in 40 deltas — chat bodies
- * re-parse on every delta, ~8 times a second — that is 196ms of total work without the rehype
+ * re-parse on every delta, ~8 times a second — that is 196ms of total work without KaTeX's
  * stage and 2352ms with it, and it grows with the square of the reply's length. One oversized
  * formula shows the same shape on its own: a 16KB formula is 885ms per render, and a 20KB
  * paragraph accidentally wrapped by an unmatched `\[ … \]` is 856ms.
@@ -123,4 +135,12 @@ export const REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [[rehypeKat
  * 2352ms in place. This is the same trade as `highlight={!streaming}` for code blocks — the settle
  * render re-parses the message anyway, so it is where the expensive stage belongs.
  */
-export const NO_REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [];
+export const STREAMING_REHYPE_PLUGINS: RehypePluginList = [rehypeMarkdownTables];
+
+/**
+ * The rehype stage of the public sites' articles (`SiteMarkdown`): the table pass, so a table on
+ * the docs site or the blog is boxed and classified the way a chat reply's is. A host that brings
+ * its own rehype stage (the blog's raw HTML) gets the pass appended after it, so a table written
+ * as raw HTML is shaped too.
+ */
+export const SITE_REHYPE_PLUGINS: RehypePluginList = [rehypeMarkdownTables];
