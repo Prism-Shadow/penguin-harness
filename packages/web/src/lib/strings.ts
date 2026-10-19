@@ -3764,6 +3764,8 @@ Benchmark：
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "正在加载更早的对话…",
+    /** Top-of-stream affordance while more history exists but nothing is in flight: click to fetch the previous window (also triggered by scrolling near the top). */
+    loadEarlier: "加载更早的对话",
     /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
     loadEarlierRetry: "更早的对话加载失败，点击重试",
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
