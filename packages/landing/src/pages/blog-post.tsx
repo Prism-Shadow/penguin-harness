@@ -3,15 +3,19 @@
  * variant) with the sticky "on this page" column on wide screens. The page supplies what is the
  * blog's own: raw HTML in post bodies (`rehype-raw`, see the boundary note below), links that
  * open in a new tab, and images resolved to where the blog's media is hosted.
+ *
+ * This module and each post's body are chunks of their own (see the router and lib/blog.ts),
+ * so the Markdown renderer and the post text reach a reader only when a post is opened.
  */
-import { useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer } from "react";
 import type { ComponentPropsWithoutRef } from "react";
 import type { ExtraProps } from "react-markdown";
 import rehypeRaw from "rehype-raw";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 import {
   ArrowRightIcon,
   extractToc,
+  hashTargetId,
   highlightSiteCode,
   SiteCopyButton,
   SiteMarkdown,
@@ -23,7 +27,8 @@ import {
 import type { SiteMarkdownComponents, SiteRemarkPlugins } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { blogAssetUrl } from "../lib/links";
-import { formatAuthors, formatPostDate, getPost } from "../lib/blog";
+import { formatAuthors, formatPostDate, getPost, loadPostBody, loadedPostBody } from "../lib/blog";
+import type { BlogPost } from "../lib/blog";
 import { CategoryBadge } from "../components/category-badge";
 
 /**
@@ -96,10 +101,11 @@ export const REMARK_PLUGINS: SiteRemarkPlugins = SITE_REMARK_PLUGINS;
  * as elements instead of escaped text.
  *
  * **The trust boundary this depends on.** Post bodies are first-party Markdown committed to this
- * repo and inlined at build time (`import.meta.glob("../../content/blog/*.md", { query: "?raw" })`
- * in lib/blog.ts) — never fetched, never user-submitted, never model output. Re-enabling raw HTML
- * therefore grants the content exactly the privilege its neighbours in the same repo already have:
- * anything able to land HTML here could equally land a `<script>` in this very file, so a sanitizer
+ * repo and bundled at build time (`import.meta.glob("../../content/blog/*.md", { query: "?raw" })`
+ * in lib/blog.ts; each file becomes a chunk of this site's own build) — never fetched from anywhere
+ * else, never user-submitted, never model output. Re-enabling raw HTML therefore grants the
+ * content exactly the privilege its neighbours in the same repo already have: anything able to
+ * land HTML here could equally land a `<script>` in this very file, so a sanitizer
  * would be guarding the *least* privileged input in the build while costing a dependency and
  * silently dropping attributes authors legitimately write. It is deliberately not paired with
  * `rehype-sanitize` for that reason, and the reason is the boundary, not the risk appetite:
@@ -128,12 +134,62 @@ export function PostBody({ body, className }: { body: string; className?: string
   );
 }
 
+const otherLocale = (post: BlogPost) => (post.lang === "en" ? "zh" : "en");
+
+/**
+ * The post's body: in the first render when it is already loaded, otherwise once it arrives.
+ * The other language's version is fetched next, so a language switch — which remounts the page
+ * and restores the reader's scroll position in the same frame — finds the whole post at once.
+ */
+function usePostBody(post: BlogPost | undefined): string | undefined {
+  const [, arrived] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!post) return;
+    let live = true;
+    void loadPostBody(post).then(
+      () => {
+        if (live) arrived();
+        const other = getPost(post.slug, otherLocale(post));
+        if (other && other !== post) void loadPostBody(other).catch(() => undefined);
+      },
+      // A chunk that fails to load reloads the page (main.tsx); nothing to render meanwhile.
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [post]);
+  return post && loadedPostBody(post);
+}
+
+/**
+ * The navigation whose hash target this page last scrolled to. Module state, like
+ * useRouteScroll's, so the remount a language switch causes does not jump again.
+ */
+let scrolledFor = "";
+
+/**
+ * Scroll to the hash target (a TOC entry, a shared `#heading` link) once the body is in the
+ * DOM. The layout's own route scroll runs when the route commits, which for a body still on
+ * its way is before the heading exists.
+ */
+function useHashTarget(ready: boolean) {
+  const { key, hash } = useLocation();
+  useLayoutEffect(() => {
+    if (!ready || key === scrolledFor) return;
+    scrolledFor = key;
+    if (hash) document.getElementById(hashTargetId(hash))?.scrollIntoView();
+  }, [ready, key, hash]);
+}
+
 export function BlogPostPage() {
   const { slug = "" } = useParams();
   const { locale } = useSiteLocale();
   const post = getPost(slug, locale);
-  const toc = useMemo(() => (post ? extractToc(post.body) : []), [post]);
+  const body = usePostBody(post);
+  const toc = useMemo(() => (body === undefined ? [] : extractToc(body)), [body]);
   const { activeId, pinTo } = useActiveTocEntry(toc);
+  useHashTarget(body !== undefined);
 
   if (!post) {
     return (
@@ -148,6 +204,10 @@ export function BlogPostPage() {
       </div>
     );
   }
+
+  // The header and the body appear together, as one page: the layout depends on the body's
+  // headings (the TOC column), so a header shown alone would shift sideways when the body lands.
+  if (body === undefined) return null;
 
   const showToc = toc.length >= 2;
 
@@ -183,7 +243,7 @@ export function BlogPostPage() {
             />
           </div>
         </header>
-        <PostBody body={post.body} className="mt-8" />
+        <PostBody body={body} className="mt-8" />
       </article>
       {showToc && (
         <SiteToc label={S.blog.toc} entries={toc} activeId={activeId} onNavigate={pinTo} />
