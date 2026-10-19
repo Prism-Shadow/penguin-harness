@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** fix
 - **Scope:** `core`, `docs`
+- **PR:** [#1221](https://github.com/Prism-Shadow/penguin-harness/pull/1221)
 
 [English](2026-10-19-model-timeout-ten-minutes.md)
 
