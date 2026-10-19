@@ -1,20 +1,22 @@
 # English style
 
-The voice and the banned list for English posts. The block between the `prompt` markers is sent
-to the model verbatim as `{{STYLE}}` / `{{STYLE_TARGET}}` by `scripts/blog-prose.mjs`; the check
-patterns after it are what `blog-prose.mjs check` greps for. Change the two together: a phrase
-banned in the prompt and missing from the patterns slips through `check`, and a pattern with no
-line in the prompt fails drafts for a rule the model was never given.
+The voice and the banned list for English text: posts, docs pages and landing copy alike. What
+differs by kind of text (shape, reader, how it ends) lives in the `profile-*.md` files.
+
+The block between the `prompt` markers is sent to the model verbatim as `{{STYLE}}` /
+`{{STYLE_TARGET}}` by `scripts/prose.mjs`. The check patterns after it are what
+`prose.mjs check` greps for. Change the two together: a phrase banned in the prompt and missing
+from the patterns slips through `check`, and a pattern with no line in the prompt fails drafts for
+a rule the model was never given.
 
 <!-- prompt -->
-Voice: a senior engineer writing a perspective piece on a good engineering blog. The reader is a developer or technical founder who has used an agent product and has ten minutes. One thesis, stated in the first paragraph, carried by every section, never restated at the end.
+Voice: an engineer who builds what they write about, writing for developers: plain, direct and specific.
 
 Shape:
 - Short paragraphs, one idea each, at most four sentences. Vary sentence length; average under 20 words.
 - Concrete over abstract: name the product, the file, the command, the number, and let it carry the point. An example beats an adjective.
 - Figures carry part of the argument. Introduce each figure in the sentence before it, with the same nouns the figure's labels use, and do not describe in prose what the figure already shows.
 - State our position as ours: "we think", "our bet is", "in PenguinHarness we chose". Attribute others' claims to them by name. Mark uncertainty plainly ("we do not know whether…").
-- End on a concrete point or a next step, not on a summary, a question or a line about the future.
 
 Banned (do not use, do not paraphrase around):
 - Marketing register: powerful, seamless, effortless, game-changer, next-level, revolutionary, unlock, empower, supercharge, leverage (verb), robust, transform/transformative, "the future of", "imagine a world", "say goodbye to", "in seconds, not", "meet your new".

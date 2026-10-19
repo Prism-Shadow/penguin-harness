@@ -1,12 +1,12 @@
 ---
-name: penguin-harness-blog
+name: penguin-harness-writing
 description: "Use when writing or revising a penguin.ooo blog post of any category: the division of labour (a gateway model writes every reader-facing word, agents research, prompt, draw, check and ship), the FACTS guard, the prompt files, the figure rules, the checks, and how it is verified."
 ---
 
 # Writing a penguin.ooo blog post
 
 A post here is written by a model on the TokenDance gateway, one API call per text step, and
-shipped by agents. This page is the contract; `scripts/blog-prose.mjs` is the only way text
+shipped by agents. This page is the contract; `scripts/prose.mjs` is the only way text
 reaches a draft, and `prompts/` plus `reference/` hold every word that is sent to the model.
 `penguin-harness-dev/reference/authoring.md` covers what is true of every post (the bilingual
 pair, frontmatter, where images live).
@@ -15,7 +15,7 @@ pair, frontmatter, where images live).
 
 **The API model writes every word a reader sees**: outline, title, excerpt, body, every string
 inside a figure, alt text and captions, the counterpart language, and every later fix. Each of
-those is its own API call through `blog-prose.mjs`.
+those is its own API call through `prose.mjs`.
 
 **Agents never type a sentence into a post.** They research, compile FACTS, write prompts and
 findings, draw figures from the model's figure blocks, take screenshots, run the checks, review
@@ -176,7 +176,7 @@ traps.
 
 | Path | What it holds |
 | --- | --- |
-| `scripts/blog-prose.mjs` | The runner: API steps `outline`, `write`, `translate`, `polish`, `fix`, `review`; local steps `check`, `strip`, `pair`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
+| `scripts/prose.mjs` | The runner: API steps `outline`, `write`, `translate`, `polish`, `fix`, `review`; local steps `check`, `strip`, `pair`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
 | `prompts/markdown-contract.md` | The output contract shared by `write`, `translate`, `polish` and `fix` |
 | `prompts/fragments.md` | Prompt text used as slot values: the version-note rule, the meme brief, the outline feedback block, the default translate title rules, the translation tells, the review's FACTS lines |

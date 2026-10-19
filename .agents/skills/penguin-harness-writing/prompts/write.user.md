@@ -8,4 +8,4 @@
 
 {{MEME_BRIEF_SECTION}}
 
-Write the full post now in {{LANG_NAME}}.
+Write the full {{NOUN}} now in {{LANG_NAME}}.

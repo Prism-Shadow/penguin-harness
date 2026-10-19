@@ -1,21 +1,22 @@
 # Chinese style
 
-The voice and the banned list for Chinese posts. The block between the `prompt` markers is sent
-to the model verbatim as `{{STYLE}}` / `{{STYLE_TARGET}}` by `scripts/blog-prose.mjs`, and its
-`翻译腔` line doubles as the core of the zh `polish` tells; the check patterns after it are what
-`blog-prose.mjs check` greps for. Change the two together: a phrase banned in the prompt and
-missing from the patterns slips through `check`, and a pattern with no line in the prompt fails
-drafts for a rule the model was never given.
+The voice and the banned list for Chinese text: posts, docs pages and landing copy alike. What
+differs by kind of text (shape, reader, how it ends) lives in the `profile-*.md` files.
+
+The block between the `prompt` markers is sent to the model verbatim as `{{STYLE}}` /
+`{{STYLE_TARGET}}` by `scripts/prose.mjs`, and its `翻译腔` line doubles as the core of the zh
+translation tells. The check patterns after it are what `prose.mjs check` greps for. Change the
+two together: a phrase banned in the prompt and missing from the patterns slips through `check`,
+and a pattern with no line in the prompt fails drafts for a rule the model was never given.
 
 <!-- prompt -->
-语气：一位做过工程、也写过设计文档的人在讲自己的看法。读者是用过 Agent 产品的开发者或技术负责人，有十分钟。全文一个论点，第一段就说出来，每一节往前推一步，结尾不再复述。
+语气：一位做过工程、也写过设计文档的人在写给开发者看，平实、直接、具体。
 
 写法：
 - 段落短，一段一件事，最多四句。长短句交替，先出主语和动作，再接条件与原因。
 - 具体压过抽象：写出产品名、文件名、命令、数字，让事实自己说话。能举例就不堆形容词。
 - 图承担一部分论证。图前一句用图里标签的原词把它引出来，图里已经画出的东西正文不再描述一遍。
 - 我们的立场写成我们的（「我们认为」「我们的判断是」「PenguinHarness 选择了」），别人的说法点名归属。不确定就直说不确定。
-- 结尾落在一件具体的事或下一步上，不升华，不展望，不反问。
 
 技术名词保持标准英文大小写，不翻译：Agent、Agent Runtime、Environment、Workspace、Token、Session、Project、Skill、Plugin、Trace、Workbench、A2UI、A2APP、CLI、Web App、API、vibe coding、sandbox 写作沙箱亦可。界面上的按钮与页面名用「」引出并照抄 TERMS 里的中文标签（如「工作台」「智能体」）。中英文与数字之间留一个半角空格；标点用全角，括号内全为英文或数字时用半角括号。
 

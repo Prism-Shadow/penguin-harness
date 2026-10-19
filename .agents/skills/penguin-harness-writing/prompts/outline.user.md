@@ -18,7 +18,7 @@ Three, in {{LANG_NAME}}. Plain, specific, no colon-teaser, under 70 characters. 
 # Sections
 For each section: `## <working heading>` then 2–4 bullets, each bullet = the point, the FACTS/OPINIONS ids, and the example or figure that carries it. Mark the lead (no heading) as section 0.
 # Figures
-A table: id | after | position | kind | shows | working labels | facts | takeaway.
+A table: id | after | position | kind (diagram, chart, flow, comparison or screenshot) | shows | working labels | facts | numbers | takeaway.
 # Word budget
 Per section, summing to {{WORD_BUDGET}}.
 # What this post does not argue

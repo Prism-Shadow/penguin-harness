@@ -3,12 +3,11 @@ Output contract (the file is published as-is):
   ---
   title: "<title>"
   date: {{DATE}}
-  category: perspectives
+  category: {{CATEGORY}}
   excerpt: "<one or two sentences, at most 60 English words / 90 Chinese characters, no colon-led teaser>"
   ---
 - {{VERSION_NOTE_RULE}}
-- Then a lead of one or two paragraphs with no heading that states the thesis in plain words.
-- Then 4 to 6 sections headed with `## ` only. No `###`, no numbered headings, at most one heading containing a colon.
+- Sections are headed with `## ` only. No `###`, no numbered headings, at most one heading containing a colon. The profile above gives the shape and the number of sections.
 - Figures: exactly the figures in the manifest, each at the position the manifest gives, written as a figure block. The picture is drawn from this block and from nothing else, so it must hold every word the figure shows:
   ```figure id=<stem>
   alt: <what is in the picture, one sentence, no "image of">
@@ -21,5 +20,5 @@ Output contract (the file is published as-is):
 - No callout syntax (:::), no in-page anchors (](#…)), no HTML, no tables wider than 4 columns, no emoji, no horizontal rules except one before the footer.
 - Footer: a line `**Sources**: [name](url) · [name](url)` listing only URLs that appear in FACTS and were used. Nothing after it.
 - Code spans, URLs, numbers, versions and file paths are copied from FACTS byte for byte.
-- After every factual sentence write its fact id in braces, e.g. `{F3}`; after a sentence that states our position write `{O1}`. Several ids: `{F3}{F7}`. These are removed before publishing, so write the sentence as if they were not there. Headings, figure blocks, frontmatter and the footer carry no markers.
+- {{MARKER_RULE}}
 - Return the Markdown only. No preamble, no commentary, no fence around the document.
