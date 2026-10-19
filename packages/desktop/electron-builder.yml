@@ -129,10 +129,8 @@ win:
     sign: build/evsign.cjs
     signingHashAlgorithms:
       - sha256
-    # Keep signature verification enabled in electron-updater. WindowsUpdater checks
-    # Authenticode validity without comparing these names: the signing service may
-    # rotate its certificate's subject. These describe the currently observed signer,
-    # not a future certificate pin. File integrity still uses the feed's SHA-512.
+    # Never compared: WindowsUpdater verifies Authenticode validity itself. Non-empty keeps
+    # electron-updater's own verify call on fresh downloads.
     publisherName:
       - CN=Keroro Software Ltd, O=Keroro Software Ltd
       - Keroro Software Ltd

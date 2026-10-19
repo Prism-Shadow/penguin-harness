@@ -4,6 +4,7 @@
 - **Type:** fix
 - **Scope:** `desktop`, `web`, `ci`, `docs`
 - **PR:** [#1144](https://github.com/Prism-Shadow/penguin-harness/pull/1144)
+- **Breaking:** yes — Windows clients installed from 0.2.16 or earlier reject the rotated signer; install the next release manually once.
 
 [中文版](2026-10-15-windows-update-signature.zh.md)
 
@@ -15,8 +16,8 @@ The web dialog stopped waiting for a restart when the shell reported installatio
 
 ## Details
 
-The default EVSign invocation was retained without selecting the old certificate. Release verification made missing timestamps and mismatched signed-file metadata fatal. The security documentation recorded the reliance on publishing-channel security rather than a pinned publisher.
+The EVSign hook verified every file it signed. Release verification made missing timestamps and mismatched signed-file metadata fatal. The security documentation recorded the reliance on publishing-channel security rather than a pinned publisher.
 
 ## Compatibility
 
-Older clients retain their embedded publisher checks. They need a compatible transitional release or a manual installation to accept installers from the new signer. This change did not publish a transitional release or modify update feeds.
+Clients installed from 0.2.16 or earlier keep their embedded publisher check and reject installers signed by the new certificate. Install the next release manually once; later updates then install normally.

@@ -168,11 +168,9 @@ The one usable credential a backup can hold is the local API token of the server
 
 ## Windows desktop updates
 
-Windows updates retain electron-updater's SHA-512 checks against the update feed and require a valid Authenticode signature. The client does not pin the signer's name, certificate fingerprint, or certificate authority, so a signing-service certificate rotation does not by itself block an update. Cached downloads are verified before they become ready, and the signature is checked again before installation. A failed or unavailable signature check refuses the update. If the final check fails, the cached installer is discarded and the app reports an error, allowing you to check for updates and download again. The web dialog ends its restart wait when it receives the failure, without waiting for the restart timeout. Updates do not install automatically on exit.
+Windows updates keep electron-updater's SHA-512 check against the update feed and require a valid Authenticode signature. The client pins no signer name, certificate fingerprint or certificate authority, so a certificate rotation at the signing service does not block an update. A cached installer is verified before it is offered and again right before installation; a failed or unavailable check refuses the update, discards the installer and offers a retry. Updates never install on exit.
 
-This policy relies on the security of the GitHub and OSS publishing channels and their accounts. A file hash does not independently authenticate a release: someone able to replace both the update metadata and the installer can supply a matching hash and a different, validly signed executable. The update metadata is not independently signed by PenguinHarness.
-
-Clients installed from older releases retain their embedded publisher-name checks. They need a compatible transitional installer or a manual installation before they can use this policy; changing a release's update metadata cannot replace those checks.
+Trust therefore rests on the GitHub and OSS publishing channels and the accounts that control them. PenguinHarness does not sign the update metadata, so someone able to replace both the metadata and the installer can ship a different, validly signed executable with a matching hash. Clients installed from 0.2.16 or earlier still check the old publisher name and need one manual installation of a newer release.
 
 ## How it works
 
