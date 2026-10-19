@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** fix
 - **Scope:** `browser-extension`, `docs`
+- **PR:** [#1213](https://github.com/Prism-Shadow/penguin-harness/pull/1213)
 
 [English](2026-10-19-chrome-tab-copy.md)
 
