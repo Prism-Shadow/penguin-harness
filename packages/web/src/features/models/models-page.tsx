@@ -58,6 +58,7 @@ import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type {
   CredentialInfo,
   ModelProtocolDetectRequest,
+  ModelInfo,
   ModelRefDto,
   ModelsResponse,
   ModelsUpdateRequest,
@@ -108,6 +109,7 @@ import {
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { FallbackChainCard } from "./fallback-chain";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -911,6 +913,8 @@ export function ModelsPage() {
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
   // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
   const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
+  /** The Project's fallback chain, in priority order (empty = no failover). */
+  const [fallbackChain, setFallbackChain] = useState<ModelRefDto[]>([]);
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
   /**
@@ -1017,6 +1021,7 @@ export function ModelsPage() {
     setProviders(res.providers ?? {});
     setDefaultModel(res.defaultModel);
     setVisionModel(res.visionModel);
+    setFallbackChain(res.fallbackChain ?? []);
   }, []);
 
   const load = useCallback(async () => {
@@ -1062,6 +1067,8 @@ export function ModelsPage() {
     successText?: string,
     /** Group connections written in the same request (an import writes its group's once). */
     providerUpdates?: Record<string, ProviderConnectionUpdate>,
+    /** The whole fallback chain, when this request reorders or edits it (omitted = keep it). */
+    nextFallbackChain?: ModelRefDto[],
   ): Promise<boolean> => {
     if (!projectId) return false;
     setBusy(true);
@@ -1082,6 +1089,7 @@ export function ModelsPage() {
       if (providerUpdates !== undefined) body.providers = providerUpdates;
       if (nextDefault) body.defaultModel = nextDefault;
       if (effectiveVision) body.visionModel = effectiveVision;
+      if (nextFallbackChain !== undefined) body.fallbackChain = nextFallbackChain;
       const res = await api.putModels(projectId, body);
       adopt(res);
       // Default model changed: drop the stored draft's model selection so the draft chat
@@ -1781,6 +1789,18 @@ export function ModelsPage() {
           />
         )}
       </PageHeader>
+
+      {/* The fallback chain, above the groups: it is a Project-level answer to "what happens
+          when a model is rate-limited", not a property of any one group. */}
+      {rows !== null && isOwner && (
+        <FallbackChainCard
+          chain={fallbackChain}
+          models={rows.map((r) => ({ provider: r.provider, modelId: r.modelId }) as ModelInfo)}
+          onChange={(next) =>
+            void persist(rows, defaultModel, visionModel, undefined, undefined, next)
+          }
+        />
+      )}
 
       {/* Above every group, while the TokenDance group has models but no key: its own connect
           flow, pitched as the way to skip setting keys by hand. */}

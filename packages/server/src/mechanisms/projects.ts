@@ -128,6 +128,10 @@ export abstract class ProjectConfigStore {
   abstract setName(projectId: string, name: string): Promise<void>;
   abstract getDefaultModelRef(projectId: string): Promise<ModelRef | undefined>;
   abstract setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
+  /** The Project's ordered fallback chain (`model_fallback_chain`); empty when unset. */
+  abstract getFallbackChain(projectId: string): Promise<ModelRefDto[]>;
+  /** Replaces the fallback chain wholesale; an empty list clears the key. */
+  abstract setFallbackChain(projectId: string, refs: ModelRefDto[]): Promise<ModelRefDto[]>;
   abstract getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
   abstract setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;
   /** The `[plugins]` key: the shared table and each machine's own, package name → requirement, in the file's order. */
