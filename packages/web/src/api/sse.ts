@@ -9,11 +9,14 @@
  *   machine's own server event, tagged with the machine it came from.
  * - A stream is a call on the page's one API socket (api/socket.ts, PRFC-0011), which
  *   re-issues it with `last-event-id` after any interruption (the server replays from its
- *   ring buffer; if the event was already evicted, it pushes resync_required instead). There
- *   is no second transport for a stream: without a socket it waits for one, in silence.
+ *   ring buffer; if the event was already evicted, it pushes resync_required instead). When
+ *   the socket is not to be had, the same stream is an EventSource: the browser then
+ *   auto-reconnects with the same header, and auth rides the same-origin cookie either way.
  * - Liveness: a connection can die without any error (half-open TCP, a stuck proxy or NAT).
- *   Once a stream has carried its beat (`heartbeat` every 20 s), {@link STREAM_HEARTBEAT_MS}
- *   without any frame of its own ends it and re-issues it from its last event id.
+ *   Once a stream has sent a `ping` (the server's heartbeat, every 20 s), {@link SILENCE_MS}
+ *   without any event closes it and opens a new one with `?lastEventId=` set to the last id
+ *   seen; the tab becoming visible checks at once, since background timers run late. A stream
+ *   that never pinged (an older server), or that the browser gave up on, is left as it is.
  * Docs: /docs/server-api § "Streaming (SSE)".
  */
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
@@ -31,6 +34,9 @@ import type { StreamOptions } from "./socket";
  * A stream that writes no beat must not ask for the watchdog, or it would be ended every 40 s.
  */
 export const STREAM_HEARTBEAT_MS = 20_000;
+
+/** The server pings every 20 s: this much silence means the connection is gone. */
+const SILENCE_MS = 50_000;
 
 export interface StreamHandlers {
   /**
@@ -53,9 +59,9 @@ export interface StreamHandlers {
   /** Connection established (including a successful auto-reconnect, and a reopen after silence). */
   onOpen?: () => void;
   /**
-   * Connection error. `closed` is true when the stream is over for good — the endpoint
-   * answered with a fatal status (401, 403, 404…) — and false when it is being retried,
-   * which is this module's own doing: the caller needs no reconnection of its own.
+   * Connection error. `closed` is true when the browser has deemed the connection fatally
+   * broken and closed it (e.g. the handshake returned 401/403, so it won't auto-reconnect);
+   * when false, the browser will auto-reconnect and no manual handling is needed.
    */
   onError?: (closed: boolean) => void;
 }
@@ -65,16 +71,117 @@ export interface StreamConnection {
 }
 
 /**
- * A stream is a call on the page's one API socket, which owns the reconnection and the
- * per-stream heartbeat watchdog: each stream is re-issued from its last event id after any
- * interruption, and traffic on another stream is never read as this one's beat.
+ * A stream is a call on the page's one API socket; when the socket is not to be had, the same
+ * stream runs as an EventSource instead — the browser's own reconnect carries a last event id
+ * forward, and auth rides the same-origin cookie either way.
+ *
+ * The socket's heartbeat watchdog and EventSource's named-ping watchdog each reopen their own
+ * stream from its last event id; neither treats traffic on another stream as this one's beat.
  */
 function subscribe(
   url: string,
   handlers: StreamHandlers,
   options: StreamOptions = {},
 ): StreamConnection {
-  return apiSocket.stream(url, handlers, options);
+  return apiSocket.stream(url, handlers, () => subscribeEventSource(url, handlers), options);
+}
+
+/** The EventSource fallback retains its heartbeat watchdog. */
+function subscribeEventSource(url: string, handlers: StreamHandlers): StreamConnection {
+  let source: EventSource | undefined;
+  /** The newest event id seen on any of this subscription's connections. */
+  let lastEventId = "";
+  let lastHeard = 0;
+  /** The stream has pinged, so silence means a dead connection. */
+  let armed = false;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+
+  const heard = (e: MessageEvent<string>) => {
+    lastHeard = Date.now();
+    if (e.lastEventId) lastEventId = e.lastEventId;
+  };
+  const onMessage = (e: MessageEvent<string>) => {
+    heard(e);
+    try {
+      // Every server event carries an `id:` line; lastEventId is "" only if none did.
+      handlers.onOmniMessage(JSON.parse(e.data) as OmniMessage, e.lastEventId || null);
+    } catch {
+      // Ignore lines that fail to parse (the protocol guarantees single-line JSON data, so this shouldn't normally happen).
+    }
+  };
+  const onServerEvent = (e: MessageEvent<string>) => {
+    heard(e);
+    try {
+      // On the aggregate this is the hub's own frame (`hello` / `resync_required`), which the
+      // aggregate's onServerEvent adapter routes to onHubEvent; on every other stream it is a
+      // server event like any other.
+      const event = JSON.parse(e.data) as ServerEvent;
+      if (event.type === "heartbeat") return;
+      handlers.onServerEvent(event, e.lastEventId || null);
+    } catch {
+      // Same as above.
+    }
+  };
+  const onPing = (e: MessageEvent<string>) => {
+    heard(e);
+    armed = true;
+    check();
+  };
+  const onError = () => {
+    const closed = source?.readyState === EventSource.CLOSED;
+    // The browser gave up on the connection: what happens next is the caller's call, as before.
+    if (closed) disarm();
+    handlers.onError?.(closed);
+  };
+  const connect = () => {
+    source?.close();
+    lastHeard = Date.now();
+    source = new EventSource(
+      lastEventId ? `${url}?lastEventId=${encodeURIComponent(lastEventId)}` : url,
+    );
+    source.onmessage = onMessage;
+    source.addEventListener("server_event", onServerEvent);
+    source.addEventListener("ping", onPing);
+    source.addEventListener("machine_event", (e: MessageEvent<string>) => {
+      heard(e);
+      try {
+        handlers.onEvent?.(
+          "machine_event",
+          JSON.parse(e.data) as MachineEvent,
+          e.lastEventId || null,
+        );
+      } catch {
+        // Ignore malformed frames, as for other event names.
+      }
+    });
+    if (handlers.onOpen) source.onopen = handlers.onOpen;
+    source.onerror = onError;
+  };
+
+  /** Reopens a stream silent for the whole window; otherwise waits out the rest of it. */
+  const check = () => {
+    clearTimeout(watchdog);
+    if (!armed) return;
+    if (Date.now() - lastHeard >= SILENCE_MS) connect();
+    watchdog = setTimeout(check, lastHeard + SILENCE_MS - Date.now());
+  };
+  const disarm = () => {
+    armed = false;
+    clearTimeout(watchdog);
+  };
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") check();
+  };
+
+  document.addEventListener("visibilitychange", onVisibility);
+  connect();
+  return {
+    close: () => {
+      disarm();
+      document.removeEventListener("visibilitychange", onVisibility);
+      source?.close();
+    },
+  };
 }
 
 /** Subscribes to a Session's output stream (GET /api/sessions/:sessionId/stream). */

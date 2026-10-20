@@ -16,6 +16,13 @@
  * - Given the task answering with a self-healed id, the row and the route carry the new id, and
  *   the new id is still addressed to the machine the Session is on.
  */
+// This page's runtime has no API socket — the browser without WebSocket the design promises a
+// fallback for: calls run as fetches, streams as the EventSource `draftWorld` plays. The socket
+// transport itself is pinned by api-socket.test.ts and machines-events-stream.test.ts.
+vi.hoisted(() => {
+  vi.stubGlobal("WebSocket", undefined);
+});
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { toastStore } from "@prismshadow/penguin-ui";

@@ -1896,10 +1896,10 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
         publishUserEvent(ev);
       },
       // This stream is the only thing an idle window has open, and the server ends it when
-      // the session behind it is revoked — answered with a fatal status, which reads exactly
-      // like a dead network from this side. Asking settles it: a session that is really gone
-      // takes the window to the sign-in page instead of leaving it here listening to nothing
-      // (api/session-probe.ts).
+      // the session behind it is revoked — which EventSource reports as an ordinary fatal
+      // error, indistinguishable from a dead network. Asking settles it: a session that is
+      // really gone takes the window to the sign-in page instead of leaving it here
+      // listening to nothing (api/session-probe.ts).
       onError: (closed) => {
         if (closed) void probeSession();
       },
