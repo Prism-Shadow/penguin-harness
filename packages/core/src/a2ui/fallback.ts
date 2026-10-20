@@ -31,6 +31,7 @@ import type {
   A2uiWeather,
 } from "./types.js";
 import {
+  appendUnit,
   conditionName,
   countdownParts,
   countdownText,
@@ -152,14 +153,15 @@ function fieldDetail(field: A2uiFormField, lang: A2uiLang): string[] {
       detail.push((field.options ?? []).map((o) => o.label).join(" / "));
       break;
     case "number":
-      if (rule !== undefined) detail.push(rule);
-      if (field.unit) detail.push(field.unit);
+    case "slider": {
+      // The range with its unit, spaced as every A2UI value is: "1–10 pods", "0–100%".
+      const range = rule === undefined ? field.unit : appendUnit(rule, field.unit);
+      if (range) detail.push(range);
+      if (field.kind === "slider" && field.step !== undefined) {
+        detail.push(`${t.step} ${field.step}`);
+      }
       break;
-    case "slider":
-      if (rule !== undefined) detail.push(rule);
-      if (field.unit) detail.push(field.unit);
-      if (field.step !== undefined) detail.push(`${t.step} ${field.step}`);
-      break;
+    }
     case "switch":
       detail.push(t.yesNo);
       break;
@@ -434,9 +436,7 @@ function fillAnswer(field: A2uiFormField, raw: A2uiFormAnswer, lang: A2uiLang): 
     .map((value) => byLabel.get(value) ?? value);
   if (parts.length === 0) return undefined;
   const answer = parts.join(listSeparator(lang));
-  if ((field.kind === "number" || field.kind === "slider") && field.unit) {
-    return `${answer} ${field.unit}`;
-  }
+  if (field.kind === "number" || field.kind === "slider") return appendUnit(answer, field.unit);
   return field.kind === "datetime" ? answer.replace("T", " ") : answer;
 }
 
