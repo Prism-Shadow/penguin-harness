@@ -469,6 +469,17 @@ describe("fill texts", () => {
     );
   });
 
+  it("an answer of the wrong shape for its kind fills nothing", () => {
+    const form: A2uiForm = {
+      type: "form",
+      fields: [
+        { id: "on", label: "CDN", kind: "switch" },
+        { id: "name", label: "Name", kind: "text" },
+      ],
+    };
+    expect(formFillText(form, { on: "yes", name: true }, "en")).toBe("");
+  });
+
   it("a form left at its initial answers fills its defaults, a switch and a slider included", () => {
     const form: A2uiForm = {
       type: "form",

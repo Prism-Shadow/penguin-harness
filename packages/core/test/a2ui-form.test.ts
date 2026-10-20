@@ -208,6 +208,12 @@ describe("parseForm: errors withhold the spec", () => {
       },
     ],
     ["a switch default as a word", { kind: "switch", default: "yes" }],
+    ["a select default as a number", { kind: "select", options: options(2), default: 1 }],
+    [
+      "a multiple default as one label",
+      { kind: "multiple", options: options(2), default: "Option 1" },
+    ],
+    ["a date default as a number", { kind: "date", default: 20261020 }],
     ["a date that does not exist", { kind: "date", default: "2026-02-30" }],
     ["a time past the day", { kind: "time", default: "24:00" }],
     ["a datetime with a space", { kind: "datetime", default: "2026-10-20 09:30" }],
@@ -233,6 +239,9 @@ describe("parseForm: errors withhold the spec", () => {
       ["error", "invalid_enum", "fields[0].kind"],
     ]);
     expect(parse(form()).issues.map((issue) => issue.code)).toEqual(["count_out_of_range"]);
+    expect(parse({ type: "form", fields: ["Name"] }).issues.map((i) => [i.code, i.path])).toEqual([
+      ["wrong_type", "fields[0]"],
+    ]);
   });
 });
 
@@ -377,6 +386,16 @@ describe("fieldProblem", () => {
     ["a label the single does not offer", pick, "C", { code: "not_an_option" }],
     ["a list on a single", pick, ["A"], { code: "not_an_option" }],
     ["a boolean on a text", field({ kind: "text" }), true, { code: "format" }],
+    ["a boolean on a number", field({ kind: "number" }), true, { code: "not_a_number" }],
+    [
+      "a list on a date",
+      field({ kind: "date" }),
+      ["2026-10-20"],
+      {
+        code: "format",
+        rule: "YYYY-MM-DD",
+      },
+    ],
     ["a word on a switch", field({ kind: "switch" }), "yes", { code: "format" }],
   ])("refuses %s", (_case, f, answer, expected) => {
     expect(fieldProblem(f, answer)).toEqual(expected);
