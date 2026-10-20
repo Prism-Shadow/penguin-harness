@@ -1108,6 +1108,15 @@ export class ContextEngine {
       if (this.toolCallSignatures.length > TOOL_LOOP_WINDOW) this.toolCallSignatures.shift();
       if (this.detectToolLoop()) {
         yield* this.emitToolLoop(turn.toolCalls);
+        // The loop stops the run, but this turn's tool outputs (plus any notices or
+        // steering delivered above) still belong to the NEXT request: MMSP's stateful
+        // history ends on the just-committed tool_calls, and a next run that opens
+        // without their outputs is rejected by the provider ("No tool output found
+        // for function call") — and stays rejected on every retry. Hold them as
+        // carry-over exactly like the next-input assembly below, so the next run
+        // resends them merged with the user's message.
+        const stashed = this.pendingCarryOver;
+        this.pendingCarryOver = [...stashed, ...turn.toolOutputs, ...injected];
         return {
           kind: "tool_loop",
           errorMessage: `tool loop detected: the same ${turn.toolCalls.length} tool calls repeated across consecutive turns`,

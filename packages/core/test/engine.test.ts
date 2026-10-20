@@ -3233,6 +3233,45 @@ describe("ContextEngine tool-call loop detection", () => {
     expect(llm.calls).toBeLessThanOrEqual(5);
   });
 
+  it("carries the loop-stopping turn's tool outputs into the next run", async () => {
+    const inputs: OmniMessage[][] = [];
+    class CapturingLoopingLLM extends LoopingLLM {
+      async *streamGenerate(
+        params: GenerativeModelParameters,
+      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+        inputs.push(params.newMessages);
+        return yield* super.streamGenerate(params);
+      }
+    }
+
+    const llm = new CapturingLoopingLLM();
+    const environment = new Environment({
+      workspaceDir: await mkdtemp(join(tmpdir(), "loop-carry-test-")),
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxTurns: -1 });
+
+    const first = await collectRunWithReturn(engine, [userText("go")], allowAll);
+    expect(first.cutoff!.kind).toBe("tool_loop");
+    const stoppedCalls = llm.calls;
+
+    // The loop stops the run, but the just-committed tool_calls must not be left
+    // unanswered in MMSP's stateful history — otherwise the next request is rejected
+    // ("No tool output found for function call") and stays rejected on every retry.
+    expect(engine.hasPendingInput()).toBe(true);
+
+    await collectRunWithReturn(engine, [userText("go on")], allowAll);
+
+    // The next run resends the carried outputs merged with the user message.
+    const resent = inputs[inputs.length - 1]!;
+    const outputIds = resent
+      .filter((m) => (m.payload as { type?: string }).type === "tool_call_output")
+      .map((m) => (m.payload as { tool_call_id?: string }).tool_call_id);
+    expect(outputIds).toContain(`call_a_${stoppedCalls}`);
+    expect(outputIds).toContain(`call_b_${stoppedCalls}`);
+    expect(resent.some((m) => (m.payload as { text?: string }).text === "go on")).toBe(true);
+  });
+
   it("does not flag a loop while the tool calls differ from turn to turn", async () => {
     class VaryingLLM implements LLMInterface {
       calls = 0;
