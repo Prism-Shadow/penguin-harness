@@ -8,7 +8,8 @@
  * - single: a segmented control when a few short options fit one row, else a radio group;
  * - multiple: a row of toggle chips when a few short options fit, else a column of checkboxes;
  * - select: a dropdown whose first row is the empty answer;
- * - switch: an on/off row, which changes the form's answer and nothing else until the fill;
+ * - switch: the switch at the end of a row whose title is set as every other field's, which changes
+ *   the form's answer and nothing else until the fill;
  * - date, time, datetime: the input with the browser's own picker.
  *
  * Each control shows the model's hint under it. While its answer breaks the field's rule the
@@ -16,6 +17,7 @@
  * the rule in symbols ("1–10", "YYYY-MM-DD"), else a plain "not valid". A required field left
  * empty shows no error: its asterisk and the disabled fill button say it.
  */
+import { useId } from "react";
 import type { KeyboardEvent, ReactElement, ReactNode } from "react";
 import { A2UI_LIMITS } from "@prismshadow/penguin-core/a2ui";
 import type {
@@ -29,14 +31,20 @@ import type { A2uiStrings } from "../../../strings";
 import { Pill } from "../../feedback/pill/pill";
 import { Checkbox } from "../../forms/checkbox/checkbox";
 import { ChoiceGroup } from "../../forms/choice-group/choice-group";
-import { FieldError, FieldHint, FieldLegend, RequiredMark } from "../../forms/field/field";
+import {
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  FieldLegend,
+  RequiredMark,
+} from "../../forms/field/field";
 import { Input, Textarea } from "../../forms/input/input";
 import { NumberInput } from "../../forms/number-input/number-input";
 import { RadioGroup } from "../../forms/radio/radio";
 import { Segmented } from "../../forms/segmented/segmented";
 import { Select } from "../../forms/select/select";
 import { Slider } from "../../forms/slider/slider";
-import { ToggleRow } from "../../forms/toggle-row/toggle-row";
+import { Switch } from "../../forms/switch/switch";
 import { InlineText, OptionLabel, displayWidth, plainText, shortOptions } from "./parts";
 
 /** What every field's control is handed. */
@@ -344,16 +352,36 @@ function SelectField({ field, answer, onChange, disabled, strings, problem }: Fi
   );
 }
 
+/**
+ * A switch at the end of its row. The title is the field label every other field wears, a real
+ * `<label for>` on the switch, so the row reads as one field of the form rather than a settings
+ * row — and a click on the title flips it, as on a checkbox's.
+ */
 function SwitchField({ field, answer, onChange, disabled }: FieldControlProps) {
+  const id = useId();
+  const hintId = useId();
   return (
-    <ToggleRow
-      variant="plain"
-      label={plainText(field.label)}
-      hint={hintText(field)}
-      checked={answer === true}
-      onChange={onChange}
-      disabled={disabled}
-    />
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <FieldLabel htmlFor={id} required={field.required} block={false}>
+          <InlineText text={field.label} />
+        </FieldLabel>
+        {field.hint !== undefined && (
+          <FieldHint>
+            <span id={hintId}>
+              <InlineText text={field.hint} />
+            </span>
+          </FieldHint>
+        )}
+      </div>
+      <Switch
+        id={id}
+        checked={answer === true}
+        onChange={onChange}
+        disabled={disabled}
+        aria-describedby={field.hint !== undefined ? hintId : undefined}
+      />
+    </div>
   );
 }
 

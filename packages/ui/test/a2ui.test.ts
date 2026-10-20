@@ -289,7 +289,10 @@ describe("FormBlock", () => {
     const schedule = block(SCHEDULE, LIVE);
     expect(tags(schedule, "button", 'aria-haspopup="listbox"')).toHaveLength(1);
     expect(schedule).toContain(DEFAULT_UI_STRINGS.a2ui.choose);
-    expect(tags(schedule, "button", 'role="switch"')).toHaveLength(1);
+    // The switch's title is a field label like the others, naming the switch it sits beside.
+    const [toggle] = tags(schedule, "button", 'role="switch"');
+    const switchId = /id="([^"]+)"/.exec(toggle ?? "")?.[1];
+    expect(schedule).toMatch(new RegExp(`<label for="${switchId}"[^>]*>Notify me</label>`));
     expect(tags(schedule, "input", 'type="date"')).toHaveLength(1);
     expect(tags(schedule, "input", 'type="time"')).toHaveLength(1);
     expect(tags(schedule, "input", 'type="datetime-local"')).toHaveLength(1);
