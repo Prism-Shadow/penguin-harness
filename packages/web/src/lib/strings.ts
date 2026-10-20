@@ -4257,6 +4257,8 @@ Benchmark：
       /** The network chart's two series. */
       received: "接收",
       sent: "发送",
+      /** The network chart's caption: its readings carry no times, only their count and order. */
+      lastReadings: (n: number) => `近 ${n} 次读数`,
     },
     forkSession: "从这里分叉对话",
     forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",

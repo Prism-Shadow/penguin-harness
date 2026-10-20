@@ -1,7 +1,8 @@
 /**
  * The plot frame (src/components/charts/chart-frame): the `ui-chart` root in the muted ink, its
  * grid and axis labels as named parts with the caller's formatting, the caller's marks between
- * them, and no bubble until a point is hovered. The frame's geometry is chart-geom.test.ts.
+ * them, and no bubble until a point is hovered — a column with no name (a reading with no time)
+ * included. The frame's geometry is chart-geom.test.ts.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -58,5 +59,13 @@ describe("ChartFrame", () => {
     const hovered = frame({ bubble, hover: 1 });
     expect(hovered).toContain("day 1");
     expect(classTokens(hovered)).toEqual(expect.arrayContaining(["border-line", "bg-overlay"]));
+  });
+
+  it("draws the cursor and the bubble for a hovered column that has no name", () => {
+    const bubble = (i: number) => `reading ${i}`;
+    const hovered = frame({ dates: ["", "", ""], bubble, hover: 1 });
+    expect(hovered).toContain("reading 1");
+    expect(hovered).toContain("stroke-line-emphasis");
+    expect(frame({ dates: ["", "", ""], bubble, hover: 3 })).not.toContain("reading");
   });
 });

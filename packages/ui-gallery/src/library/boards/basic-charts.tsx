@@ -1,8 +1,8 @@
 /**
  * The charts page's basic charts: each chart drawn from data on fixed demo values, so the themes'
- * chart styles compare — bars grouped and stacked, a histogram, horizontal bars by value and by
- * range, a line with a gap, a stacked area, a bare line that traces in, a scatter of two series,
- * a pie and a donut, and gauges at rest, past the attention mark and past the danger mark.
+ * chart styles compare — bars grouped and stacked, a histogram, horizontal bars by value, by range
+ * and stacked, a line with a gap, a stacked area, a bare line that traces in, a scatter of two
+ * series, a pie and a donut, and gauges at rest, past the attention mark and past the danger mark.
  *
  * Every chart is given the width its box measures, the way an A2UI block gives it; each input is
  * built once (module level, or memoized on the dictionary), since a chart keeps effects keyed on
@@ -15,6 +15,7 @@ import {
   Gauge,
   HBarChart,
   LineChart,
+  niceDomain,
   PieChart,
   ScatterChart,
   useChartWidth,
@@ -22,6 +23,7 @@ import {
 import type {
   CartesianSeries,
   HBarRow,
+  HBarSeries,
   PieSlice,
   ScatterSeries,
   ToneName,
@@ -56,6 +58,22 @@ const DISKS: readonly HBarRow[] = [
   { label: "/data", to: 86, value: "431 / 500 GB", tone: "attention" },
   { label: "/backup", to: 96, value: "1.92 / 2 TB", tone: "danger" },
 ];
+
+/** Each region's traffic, read and written, GB: one row each, the two stacked end to end. */
+const REGIONS = [
+  { name: "eu-west", read: 420, write: 120 },
+  { name: "us-east", read: 610, write: 240 },
+  { name: "ap-south", read: 180, write: 60 },
+] as const;
+const TRAFFIC: readonly HBarRow[] = REGIONS.map((region) => ({
+  label: region.name,
+  stack: [region.read, region.write],
+  value: gb(region.read + region.write),
+}));
+const TRAFFIC_MAX = niceDomain(
+  [REGIONS.map((region) => region.read), REGIONS.map((region) => region.write)],
+  { stacked: true },
+).max;
 
 /** Five days' lows and highs, °, with the chance of rain. */
 const DAYS = [
@@ -183,6 +201,7 @@ export function BasicCharts() {
     () => STORAGE_GB.map((value, i) => ({ label: t.storage[i] ?? "", value })),
     [t],
   );
+  const traffic = useMemo<HBarSeries[]>(() => [{ label: t.read }, { label: t.write }], [t]);
   return (
     <>
       <BoardGroup title={t.bar} aside={t.barHint}>
@@ -236,6 +255,15 @@ export function BasicCharts() {
           </div>
           <div className="lib-box p-3">
             <HBarChart rows={days} min={DAY_LOW} max={DAY_HIGH} label={t.temperatureLabel} />
+          </div>
+          <div className="lib-box p-3 md:col-span-2">
+            <HBarChart
+              rows={TRAFFIC}
+              max={TRAFFIC_MAX}
+              series={traffic}
+              fmtValue={gb}
+              label={t.trafficLabel}
+            />
           </div>
         </div>
       </BoardGroup>

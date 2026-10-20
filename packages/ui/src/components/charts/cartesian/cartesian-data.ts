@@ -5,7 +5,8 @@
  *
  * - A value axis runs from zero to a round number at or above the data, in three to six equal
  *   round steps (`niceDomain`). A bound the caller gives is kept exactly, and is widened only when a
- *   value lies past it, so no mark is ever drawn off the plot.
+ *   value lies past it, so no mark is ever drawn off the plot. An axis whose marks are not read
+ *   from zero (a scatter's) fits round numbers around the data alone instead (`zero: false`).
  * - A null value is no reading: a line breaks around it (`gapRuns`), a bar is simply absent, and
  *   a stack counts it as nothing.
  * - A stack adds the non-negative values bottom to top in series order (`stackLevels`).
@@ -48,7 +49,7 @@ export const isReading = (v: number | null | undefined): v is number =>
 const tidy = (v: number): number => Number(v.toPrecision(12)) + 0;
 
 /** The series' paint: its own, or palette slot `i`. */
-export function seriesPaint(series: CartesianSeries, i: number): ChartPaint {
+export function seriesPaint(series: Partial<CartesianSeries>, i: number): ChartPaint {
   return series.paint ?? { series: i };
 }
 
@@ -98,18 +99,28 @@ export function stackLevels(series: readonly (readonly (number | null)[])[]): nu
  * The value axis for `series`: zero to a round number above the data by default (and down to
  * one below it when a value is negative), in three to six round steps — of the round steps that
  * give that many, the one whose axis wastes the least room, then the one with fewer steps; a
- * stack is scaled by its totals. `min` / `max` fix that bound exactly, unless a value lies past
- * it: the steps then run from the fixed bound.
+ * stack is scaled by its totals. With `zero: false` the axis need not reach zero: it runs from a
+ * round number at or below the lowest value to one at or above the highest, so readings of 900 to
+ * 1,000 fill the plot rather than sitting in its top tenth (a single value has no extent of its
+ * own, and keeps zero). `min` / `max` fix that bound exactly, unless a value lies past it: the
+ * steps then run from the fixed bound.
  */
 export function niceDomain(
   series: readonly (readonly (number | null)[])[],
-  { min, max, stacked = false }: { min?: number; max?: number; stacked?: boolean } = {},
+  {
+    min,
+    max,
+    stacked = false,
+    zero = true,
+  }: { min?: number; max?: number; stacked?: boolean; zero?: boolean } = {},
 ): ValueDomain {
   const values = (stacked ? [stackTotals(series)] : series).flatMap((s) => s.filter(isReading));
   const low = values.length > 0 ? Math.min(...values) : 0;
   const high = values.length > 0 ? Math.max(...values) : 0;
-  let lo = Math.min(isReading(min) ? min : 0, low);
-  let hi = Math.max(isReading(max) ? max : 0, high);
+  const floor = zero || low === high ? 0 : low;
+  const ceiling = zero || low === high ? 0 : high;
+  let lo = Math.min(isReading(min) ? min : floor, low);
+  let hi = Math.max(isReading(max) ? max : ceiling, high);
   const fixLo = isReading(min) && lo === min;
   let fixHi = isReading(max) && hi === max;
   if (hi <= lo) {

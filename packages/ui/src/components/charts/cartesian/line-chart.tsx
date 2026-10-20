@@ -8,8 +8,9 @@
  * Two frames:
  * - `plot` (the default): the plot frame (ChartFrame) — grid, a value axis from zero to a round
  *   number above the data (`min` / `max` set it otherwise: a `min` zooms in on the data), category
- *   labels shortened and thinned to fit, and hover: pointing at a column draws the cursor, grows
- *   the column's dots and opens the bubble with each series' value.
+ *   labels shortened and thinned to fit (none at all, and no room kept for them, when the
+ *   categories have no names: readings with no times), and hover: pointing at a column draws the
+ *   cursor, grows the column's dots and opens the bubble with each series' value.
  * - `bare`: no grid, no value axis and no hover — a line across the width with its category
  *   labels under it, on the readings' own range (at least `minSpan` wide, centred) so a flat run
  *   draws level through the middle rather than along an edge: an hourly forecast.
