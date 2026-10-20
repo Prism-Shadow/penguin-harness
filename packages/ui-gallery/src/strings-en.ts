@@ -1026,6 +1026,20 @@ export const en: GalleryStrings = {
         memory: "Memory",
         memoryLabel: "Memory use by process",
         forecastLabel: "Temperature over the next twelve hours",
+        scatter: "Scatter chart",
+        scatterHint:
+          "Two series of points on two value axes, with units on both; pointing at a legend item fades the other series.",
+        pie: "Pie and donut",
+        pieHint:
+          "Slices run clockwise from twelve o'clock, each its share of the whole; the list legend gives each amount and share, and pointing at a row fades the other slices.",
+        gauge: "Gauge",
+        gaugeHint:
+          "One reading against a whole: the ring takes the accent while the reading is fine, and the figure and ring turn to the attention or danger ink past a threshold.",
+        payload: "Response size (KB)",
+        scatterLabel: "Response size against latency for two services",
+        storage: ["Images", "Video", "Documents", "Other"],
+        storageLabel: "What the storage holds",
+        gauges: ["CPU", "Memory", "Disk"],
       },
     },
     avatars: {

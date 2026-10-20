@@ -204,6 +204,9 @@ describe("every chart in the package", () => {
     "components/charts/cartesian/bar-chart.tsx",
     "components/charts/cartesian/hbar-chart.tsx",
     "components/charts/cartesian/line-chart.tsx",
+    "components/charts/pie-chart/pie-chart.tsx",
+    "components/charts/scatter-chart/scatter-chart.tsx",
+    "components/charts/gauge/gauge.tsx",
   ];
 
   it("draws its marks through the primitives, never with its own shapes, paint or geometry", () => {

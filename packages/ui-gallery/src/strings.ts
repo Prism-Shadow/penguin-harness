@@ -994,6 +994,19 @@ export const zh = {
         memory: "内存",
         memoryLabel: "各进程的内存占用",
         forecastLabel: "未来十二小时的气温",
+        scatter: "散点图",
+        scatterHint:
+          "两个系列的数据点画在两条数值轴上，坐标轴带单位；指向图例中的一项，其余系列淡出。",
+        pie: "饼图与环形图",
+        pieHint:
+          "各切片从十二点钟方向顺时针排开，占比即其份额；列表图例写出数值与占比，指向一行时其余切片淡出。",
+        gauge: "仪表",
+        gaugeHint: "一个读数对照整体：正常时圆环取强调色，越过阈值后读数与圆环换成提醒色或危险色。",
+        payload: "响应大小（KB）",
+        scatterLabel: "两个服务的响应大小与延迟",
+        storage: ["图片", "视频", "文档", "其他"] as readonly string[],
+        storageLabel: "存储空间的构成",
+        gauges: ["CPU", "内存", "磁盘"] as readonly string[],
       },
     },
     avatars: {
