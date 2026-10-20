@@ -339,6 +339,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.machineMessaging.",
+    scope: "install",
+    why: "The messaging binding each machine conversation last answered, shown read-only while that machine is out of reach. Project, machine and Session ids in the key — a new root knows none of them.",
+  },
+  {
+    kind: "family",
     key: "penguin.sessionOrder.",
     scope: "install",
     why: "Manual Session order — an array of Session ids.",

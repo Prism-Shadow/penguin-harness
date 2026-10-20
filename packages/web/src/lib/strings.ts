@@ -3966,6 +3966,21 @@ Benchmark：
     sessionNotFoundHint: "这个链接指向的会话已经不在了，或者你没有访问它的权限。",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",
+    /**
+     * A conversation on a machine the server cannot reach: its history lives there. The headline
+     * names the machine by its alias and says its link state; the transport's own error is folded
+     * under the details row.
+     */
+    machineAway: {
+      reconnecting: (alias: string) => `${alias} 当前连不上，正在重连`,
+      reconnectStopped: (alias: string) => `${alias} 当前连不上，已停止自动重连`,
+      signInRefused: (alias: string) => `${alias} 当前连不上：保存的登录密码被拒绝`,
+      stopped: (alias: string) => `${alias} 上的服务已停止`,
+      notConnected: (alias: string) => `${alias} 尚未连接`,
+      missing: "这个对话所在的机器不在当前 Project 的机器列表中",
+      hint: "对话保存在那台机器上，连接恢复后会自动加载。",
+      details: "技术细节",
+    },
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openAgents: "智能体面板",
@@ -4580,6 +4595,8 @@ Benchmark：
     sendingTestMessage: "发送中…",
     testMessageSent: "测试消息已发送",
     statusLabel: "连接状态",
+    /** The status label while the machine is out of reach: what follows is its last answer, not a live state. */
+    statusLastKnown: "最后已知状态",
     status: {
       disconnected: "未连接",
       connecting: "连接中",
@@ -4685,6 +4702,60 @@ Benchmark：
       "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
     troubleNoGroupInbound:
       "在群里发消息，面板却一直显示「本次连接建立以来还没有收到过消息」？这一行只能作为你读到它之后再发的那条消息的证据：它只覆盖当前这条连接，停用再启用连接、或者再保存一次凭证，都会开启一条新连接并把它清零。所以先重新发一条。如果这一行仍然显示没有收到过，那就是 Telegram 没有把它投递过来，本机再怎么查也无济于事：确认机器人确实还在这个群里；如果刚在 @BotFather 关掉 Group Privacy，必须把机器人移出该群再重新拉入，已有的群不会自动生效；并确认没有别的程序（包括你自己手动跑的 getUpdates，见上一条）在用同一个 Token 轮询。另外，Telegram 频道（channel）的贴文不受支持——本连接只处理群聊与私聊。",
+    /**
+     * A conversation that lives on a machine: its bot connects from that machine, not from this
+     * server. The dock panel and the dialog say where, above the channels.
+     */
+    runsOn: (alias: string) => `连接自 ${alias}`,
+    /**
+     * In the "what binding does" fold, for a conversation on a machine: what running there means
+     * for the connection, for a QR login, and for this app being away.
+     */
+    machineHelp: (alias: string) =>
+      `这个对话位于 ${alias}，它的机器人也在那里运行。连接由 ${alias} 主动向平台发起：那台机器需要能访问该平台，不需要公网地址。扫码登录的是 ${alias}，而不是这台电脑。即使本应用关闭或与 ${alias} 断开，只要那台机器的服务在运行，机器人就会继续回复。`,
+    /**
+     * The notice over a machine conversation's editor while the machine is out of reach: why, in
+     * the Machines page's terms; whether the bot still answers; and how old the state shown under
+     * it is (null: nothing was ever read from it in this browser). The editor is read-only then.
+     */
+    machineUnreachable: (
+      alias: string,
+      state: "reconnecting" | "reconnectStopped" | "signInRefused" | "stopped" | "notConnected",
+      asOf: string | null,
+    ): string => {
+      const why = {
+        reconnecting: `${alias} 正在重新连接。`,
+        reconnectStopped: `${alias} 的自动重连已停止，请在「机器管理」页面重试。`,
+        signInRefused: `${alias} 拒绝了本服务端的登录，请在「机器管理」页面修改它的 SSH 设置。`,
+        stopped: `${alias} 的服务已停止，请在「机器管理」页面启动它。`,
+        notConnected: `${alias} 尚未连接，请在「机器管理」页面启用它。`,
+      }[state];
+      const bot =
+        state === "stopped" || state === "notConnected"
+          ? "服务启动之前，机器人不会回复。"
+          : `机器人从 ${alias} 连接而不是从这里，只要那台机器的服务在运行，它就会继续回复。`;
+      const shown =
+        asOf === null
+          ? "机器恢复连接后，这里会显示它的设置。"
+          : `以下是 ${asOf} 时的状态；机器恢复连接后才能修改。`;
+      return `${why}${bot}${shown}`;
+    },
+    /** The same notice when the conversation's machine is not on this Project's list at all. */
+    machineMissing: "这个对话所在的机器不在本 Project 的机器列表里，无法在这里查看或修改它的连接。",
+    /** Enabling refused: the bot is connected on another server this one can see (null: this server). */
+    accountHeldOn: (where: string | null) =>
+      `${where === null ? "该机器人已在本服务端上连接。" : `该机器人已在 ${where} 上连接。`}先在那里停用，再在这里启用。`,
+    /** After enabling: the machines that could not be asked whether they hold the bot, and why not. */
+    holdersUnchecked: (
+      machines: ReadonlyArray<{
+        alias: string;
+        reason: "not_connected" | "older_build" | "failed";
+      }>,
+    ) => {
+      const reason = { not_connected: "未连接", older_build: "需要更新", failed: "没有答复" };
+      const list = machines.map((m) => `${m.alias}（${reason[m.reason]}）`).join("、");
+      return `已启用，但未能询问 ${list}。如果同一个机器人在那里也已连接，请在那里停用：一个机器人同一时刻只能在一处运行。`;
+    },
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

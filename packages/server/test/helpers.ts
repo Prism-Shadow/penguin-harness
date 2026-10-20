@@ -354,6 +354,11 @@ export interface TestAppOptions {
   beforeSeed?: (root: string) => Promise<void>;
   /** Overrides merged onto the default test ServerConfig (e.g. `previewOrigin`). */
   config?: Partial<ServerConfig>;
+  /**
+   * Keep the database in a file under the root instead of in memory, so that
+   * {@link restartTestApp} can boot the next process on it.
+   */
+  durableDatabase?: boolean;
 }
 
 /** The node each option stands in for. */
@@ -439,13 +444,58 @@ export function replacementsFor(o: TestAppOptions): Replacements {
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
-  const { beforeSeed, config, plugins, ...overrides } = options;
+  const { beforeSeed, config, durableDatabase, ...rest } = options;
   const root = await makeTempRoot();
-  let boot: ServerBoot | undefined;
+  const finalConfig = {
+    ...testConfig(root),
+    ...(durableDatabase === true ? { dbPath: path.join(root, "web.db") } : {}),
+    ...config,
+  };
   try {
     if (beforeSeed) await beforeSeed(root);
+    return await bootTestApp(finalConfig, root, rest);
+  } catch (error) {
+    // A boot a scenario expects to be refused still wrote the root it was given.
+    await removeTempRoot(root).catch(() => {});
+    throw error;
+  }
+}
+
+/**
+ * Stops `t` the way a server process stops — its runs drained, the App disposed, the database
+ * closed — and boots a new App on the same root and database file, as the next process would.
+ * `t` must have been created with `durableDatabase`: an in-memory database ends with the process
+ * that held it. The new App owns the root from then on, so clean up that one instead of `t`.
+ */
+export async function restartTestApp(
+  t: TestApp,
+  options: Omit<TestAppOptions, "beforeSeed" | "config" | "durableDatabase"> = {},
+): Promise<TestApp> {
+  if (t.boot.config.dbPath === ":memory:") {
+    throw new Error("restartTestApp needs an app created with durableDatabase: true");
+  }
+  await t.deps.manager.shutdown();
+  t.deps.hmr.dispose();
+  t.deps.channels.dispose();
+  t.deps.db.close();
+  return bootTestApp(t.boot.config, t.root, options);
+}
+
+/**
+ * Boots an App on `config` and seeds its admin. `root` is the temp root the App owns — what its
+ * `cleanup` removes — which a scenario sharing a root of its own across apps (`config.root`)
+ * keeps apart from that one. The caller owns removing it when the boot fails.
+ */
+async function bootTestApp(
+  config: ServerConfig,
+  root: string,
+  options: Omit<TestAppOptions, "beforeSeed" | "config" | "durableDatabase">,
+): Promise<TestApp> {
+  const { plugins, ...overrides } = options;
+  let boot: ServerBoot | undefined;
+  try {
     boot = await bootAppDeps(
-      { ...testConfig(root), ...config },
+      config,
       replacementsFor({
         log: () => {},
         passwordHashCost: TEST_PASSWORD_HASH_COST,
@@ -460,16 +510,13 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
     await flattenForTests(boot).authService.seedAdmin();
   } catch (error) {
-    // A boot a scenario expects to be refused still wrote the root it was given.
     if (boot !== undefined) flattenForTests(boot).db.close();
-    await removeTempRoot(root).catch(() => {});
     throw error;
   }
   const deps = flattenForTests(boot);
-  const finalConfig = { ...testConfig(root), ...config };
   // The seed hashes and discards; tests know the password only because the config injects it.
   // With a null override there is nothing to know, and such tests never password-login.
-  const adminPassword = finalConfig.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
+  const adminPassword = config.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
   const app = createApp(boot);
   return {
     app,

@@ -2645,7 +2645,8 @@ export interface SessionProcessesResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Messaging bindings (/api/sessions/:sessionId/messaging/*)
+// Messaging bindings (/api/sessions/:sessionId/messaging/*) and enabled bot accounts
+// (/api/messaging/accounts, /api/projects/:projectId/messaging/account-holders)
 // ---------------------------------------------------------------------------
 
 /** Messaging channels a Session can bind to. */
@@ -3196,6 +3197,56 @@ export interface WeChatScanVerifyRequest {
  */
 export interface MessagingTestMessageResponse {
   ok: true;
+}
+
+/**
+ * One bot account a server has enabled: the channel and its account id (Feishu `app_id`,
+ * Telegram bot id, QQ App ID, WeChat bot id), which is public by design. Never a Session,
+ * never a secret.
+ */
+export interface MessagingAccount {
+  channel: MessagingChannel;
+  accountId: string;
+}
+
+/**
+ * GET /api/messaging/accounts (admin only) — every bot account this server has enabled,
+ * across all its Projects. A server that connects machines asks each of them this when a
+ * bot is about to be turned on, so that one account is enabled on one server at a time.
+ */
+export interface MessagingAccountsResponse {
+  accounts: MessagingAccount[];
+}
+
+/** A server that has the asked-about bot enabled: a machine by id and alias, or this server (both null). */
+export interface MessagingAccountHolder {
+  machineId: string | null;
+  alias: string | null;
+}
+
+/**
+ * Why a machine could not be asked: no connection to it, a build without the accounts
+ * route (it answered 404), or any other failed answer.
+ */
+export type MessagingUnreachableReason = "not_connected" | "older_build" | "failed";
+
+/** A machine of the Project that could not be asked whether it holds the bot. */
+export interface MessagingUnreachableMachine {
+  machineId: string;
+  alias: string;
+  reason: MessagingUnreachableReason;
+}
+
+/**
+ * GET /api/projects/:projectId/messaging/account-holders?channel=&accountId= — which servers
+ * have this bot enabled: this server, and each machine the Project uses that could be asked.
+ * Machines that could not be asked are listed apart; the caller decides what to do about
+ * them. Never names a Session. A caller who is not an admin is answered for this server
+ * only, because machines are admins' (both lists then hold no machine).
+ */
+export interface MessagingAccountHoldersResponse {
+  holders: MessagingAccountHolder[];
+  unreachable: MessagingUnreachableMachine[];
 }
 
 // ---------------------------------------------------------------------------

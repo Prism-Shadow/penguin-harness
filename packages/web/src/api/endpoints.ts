@@ -74,6 +74,7 @@ import type {
   MemoryScopeExport,
   MeResponse,
   MessagesResponse,
+  MessagingAccountHoldersResponse,
   MessagingBindingsResponse,
   MessagingChannel,
   MessagingTestMessageResponse,
@@ -1241,6 +1242,22 @@ export const sendMessagingTestMessage = (sessionId: string, channel: MessagingCh
   apiFetch<MessagingTestMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,
     { method: "POST", body: {} },
+  );
+
+/**
+ * Which servers this one can see have a bot's connection enabled — this server and the
+ * Project's machines, each asked by this server — and which machines could not be asked. Asked
+ * before turning a bot on, so it is never connected in two places; it names servers, never a
+ * conversation. Always this server's own answer: the path names no Session to route by.
+ */
+export const getMessagingAccountHolders = (
+  projectId: string,
+  channel: MessagingChannel,
+  accountId: string,
+) =>
+  apiFetch<MessagingAccountHoldersResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/messaging/account-holders`,
+    { query: { channel, accountId }, server: null },
   );
 
 /** Windowed history request: the newest N units (tail), or the N units before a cursor. */

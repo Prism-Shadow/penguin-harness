@@ -17,6 +17,13 @@
  * (`/server/<id>/api/…`) with an Agent list of their own — created and deleted there, never
  * here — and every other Agent request with the same one server's worth of state, the way the
  * gallery's demo does; one being brought back answers nothing, as a real one has nothing to answer.
+ * A machine lists its own Sessions to the sidebar ({@link FakeMachine.sessions}), and a test can
+ * take it out of reach or bring it back mid-test ({@link AgentServer.setReconnecting}; the page
+ * hears of it through `publishMachinesChanged`, as the server's event would tell it).
+ *
+ * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
+ * answers them masked, and the state switch turns one on or off. This server answers which
+ * servers hold a bot (`accountHolders`), the way it would after asking its machines.
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
@@ -36,6 +43,9 @@ import type {
   AgentSummary,
   ChatDefaultsDto,
   MachineInfo,
+  MessagingAccountHoldersResponse,
+  MessagingChannel,
+  MessagingChannelState,
   PluginItem,
   AgentApiSettings,
   ModelsResponse,
@@ -43,6 +53,7 @@ import type {
   AgentConfigUpdateRequest,
   McpServerTestResponse,
   ScheduleItem,
+  SessionInfo,
   SessionsBatchRequest,
   WorkbenchInfo,
   WorkbenchVersion,
@@ -155,6 +166,8 @@ export interface FakeMachine {
   agents: string[];
   /** Its own plugin library (by default empty): what an Agent created there can start with. */
   library?: PluginItem[];
+  /** The Sessions it lists to the sidebar (by default none), per Agent as its batch read asks. */
+  sessions?: SessionInfo[];
 }
 
 export interface AgentServer {
@@ -184,6 +197,10 @@ export interface AgentServer {
   release(): void;
   /** How the MCP connection test answers an entry (by default: connected, no tools). */
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
+  /** Takes a machine out of reach (being brought back), or brings it back. */
+  setReconnecting(machineId: string, reconnecting: boolean): void;
+  /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
+  messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
 }
 
 export function agentServer(
@@ -201,6 +218,10 @@ export function agentServer(
     schedules?: Array<{ machineId?: string; item: ScheduleItem }>;
     /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
     otherProject?: boolean;
+    /** Saved messaging bindings, per conversation, on a machine when one is named. */
+    messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
+    /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
+    accountHolders?: MessagingAccountHoldersResponse;
   } = {},
 ): AgentServer {
   /** Installed Skill names by `<machine or "">/<agent>`. */
@@ -237,6 +258,15 @@ export function agentServer(
     if (machine === null) schedules = next;
     else machineSchedules.set(machine, next);
   };
+  /** Bindings by `<machine or "">/<session>`: each server keeps its own conversations'. */
+  const messagingKey = (machineId: string | null, sessionId: string) =>
+    `${machineId ?? ""}/${sessionId}`;
+  const messaging = new Map<string, MessagingChannelState[]>(
+    (options.messaging ?? []).map((entry) => [
+      messagingKey(entry.machineId ?? null, entry.sessionId),
+      entry.bindings,
+    ]),
+  );
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
@@ -337,6 +367,16 @@ export function agentServer(
     if (request.path === "/api/plugins") {
       return json({ groups: [{ id: "all", title: "All", plugins: machine.library ?? [] }] });
     }
+    if (request.path === SESSIONS_BATCH_PATH && request.method === "POST") {
+      const { requests } = request.body as SessionsBatchRequest;
+      return json({
+        results: requests.map((r) => ({
+          agentId: r.agentId,
+          ok: true,
+          sessions: (machine.sessions ?? []).filter((s) => s.agentId === r.agentId),
+        })),
+      });
+    }
     if (request.path.startsWith(`${agentsPath}/`) && request.method === "DELETE") {
       const agentId = decodeURIComponent(request.path.slice(agentsPath.length + 1));
       if (!agentId.includes("/")) {
@@ -428,6 +468,28 @@ export function agentServer(
       return json(options.models ?? { models: [], providers: {} });
     if (path === `/api/projects/${PROJECT_ID}/machines`) {
       return json({ machines: machinesList(), imageVersion: "0.2.16", job: null, jobs: [] });
+    }
+    if (path === `/api/projects/${PROJECT_ID}/messaging/account-holders` && method === "GET") {
+      return json(options.accountHolders ?? { holders: [], unreachable: [] });
+    }
+    const messagingPath = /^\/api\/sessions\/([^/]+)\/messaging(?:\/([^/]+)\/state)?$/.exec(path);
+    if (messagingPath !== null) {
+      const key = messagingKey(request.machine, decodeURIComponent(messagingPath[1]!));
+      const bindings = messaging.get(key) ?? [];
+      if (messagingPath[2] === undefined) return json({ bindings });
+      const channel = messagingPath[2] as MessagingChannel;
+      const entry = bindings.find((b) => b.binding.channel === channel);
+      if (entry === undefined || method !== "POST") return apiError(404, "not_found");
+      const { enabled } = request.body as { enabled: boolean };
+      const next: MessagingChannelState = {
+        binding: { ...entry.binding, enabled },
+        status: { state: enabled ? "connected" : "disconnected" },
+      };
+      messaging.set(
+        key,
+        bindings.map((b) => (b === entry ? next : b)),
+      );
+      return json(next);
     }
     if (/^\/api\/projects\/[^/]+\/agents\/[^/]+\/sessions$/.test(path) && method === "GET") {
       return json({ sessions: [] });
@@ -576,6 +638,11 @@ export function agentServer(
     answerMcpTest: (answer) => {
       mcpTest = answer;
     },
+    setReconnecting: (machineId, reconnecting) => {
+      const machine = machines.find((m) => m.machineId === machineId);
+      if (machine !== undefined) machine.reconnecting = reconnecting;
+    },
+    messagingOn: (machineId, sessionId) => messaging.get(messagingKey(machineId, sessionId)) ?? [],
   };
 }
 

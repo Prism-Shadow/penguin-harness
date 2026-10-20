@@ -39,6 +39,7 @@ import {
   MessagingModule,
   QQScan,
 } from "./runtime/messaging/bridge.js";
+import { MessagingAccountsModule } from "./runtime/messaging/accounts-module.js";
 import { FeishuSdkProvider } from "./runtime/messaging/feishu-connector.js";
 import { TelegramTransportProvider } from "./runtime/messaging/telegram-connector.js";
 import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
@@ -438,6 +439,7 @@ export class WorkspaceModule {}
     MessagingBindingsRepo,
     MessagingConversationsRepo,
     MessagingModule,
+    MessagingAccountsModule,
   ],
   exports: [Messaging, QQScan, MessagingBindings],
 })

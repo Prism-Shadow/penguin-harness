@@ -120,6 +120,7 @@ import {
 } from "./session-project";
 import { RouteProbe } from "./route-probe";
 import { machineForSession } from "../../lib/session-machines";
+import { HistoryLoadFailed } from "./history-load-failed";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
@@ -2693,13 +2694,15 @@ export function ChatPage() {
                     />
                   ) : selected ? (
                     stream.error ? (
-                      // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
-                      <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
-                        <p className="text-sm text-red-600 dark:text-red-400">
-                          {S.chat.historyLoadFailed}：{stream.error}
-                        </p>
-                        <Button onClick={stream.retry}>{S.common.retry}</Button>
-                      </div>
+                      // History failed to load: say why and offer the way on, instead of staying on
+                      // a misleading empty state — for a conversation on a machine out of reach,
+                      // the machine's state rather than the transport's error.
+                      <HistoryLoadFailed
+                        projectId={projectId}
+                        sessionId={selected.sessionId}
+                        error={stream.error}
+                        onRetry={stream.retry}
+                      />
                     ) : stream.loading ? (
                       <div className="space-y-3 p-6">
                         <Skeleton className="h-5 w-1/3" />
