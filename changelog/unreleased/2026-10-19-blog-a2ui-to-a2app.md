@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** process
 - **Scope:** `landing`
+- **PR:** [#1240](https://github.com/Prism-Shadow/penguin-harness/pull/1240)
 
 [中文版](2026-10-19-blog-a2ui-to-a2app.zh.md)
 
