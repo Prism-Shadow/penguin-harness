@@ -798,6 +798,16 @@ export const zh = {
     noMatches: "没有匹配的对话",
     /** The busy glyph's tooltip on a row whose Session is running. */
     running: "运行中",
+    /** A row's own archive time, when the server says it: when it was filed away. */
+    archivedAt: (time: string) => `归档于 ${time}`,
+    /** A row's last activity, beside the archive time. */
+    lastActive: (time: string) => `最后活动 ${time}`,
+    /** The page's line above the list: how many conversations it holds. */
+    total: (n: number): string => `共 ${n} 条对话`,
+    /** After a restore: the conversation is back in the sidebar. */
+    restored: "已放回侧栏",
+    /** After a delete: the conversation is gone for good. */
+    deleted: "已删除",
     loadFailed: (reason: string): string => `无法读取已归档对话：${reason}`,
     actionFailed: (reason: string): string => `操作没有完成：${reason}`,
     /** The confirm before a batch or group delete (a single row uses the chat's own confirm). */

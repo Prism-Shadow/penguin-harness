@@ -17,9 +17,11 @@ import { en } from "../src/lib/strings-en";
 import { zh } from "../src/lib/strings";
 import {
   archiveReceiptStore,
+  archivedPageUrl,
   dismissArchiveReceipt,
   showArchiveReceipt,
 } from "../src/features/archived/archive-receipt";
+import { archivedAtOf } from "../src/features/archived/archive-row-meta";
 
 describe("the archived page", () => {
   it("the manifest names it as a released main-nav page at /archived", () => {
@@ -61,5 +63,25 @@ describe("the archive receipt", () => {
 
     dismissArchiveReceipt();
     expect(archiveReceiptStore.getState().receipt).toBeNull();
+  });
+
+  it("its way to the archive page carries the title, so the page lands on that one row", () => {
+    for (const title of ["请求确认收到", "a b & c", "带/斜杠和%百分号", ""]) {
+      const url = archivedPageUrl(title);
+      expect(url.startsWith("/archived?q=")).toBe(true);
+      const carried = new URLSearchParams(url.slice(url.indexOf("?") + 1)).get("q");
+      expect(carried).toBe(title);
+    }
+  });
+});
+
+describe("the archive row's own facts", () => {
+  it("the archive time is read when the server carries it, and left alone when it does not", () => {
+    expect(archivedAtOf({ archivedAt: "2026-10-20T05:20:54.901Z" })).toBe(
+      "2026-10-20T05:20:54.901Z",
+    );
+    expect(archivedAtOf({ archivedAt: null })).toBeNull();
+    expect(archivedAtOf({ archivedAt: "" })).toBeNull();
+    expect(archivedAtOf({})).toBeNull();
   });
 });

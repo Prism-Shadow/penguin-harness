@@ -12,6 +12,7 @@
  * are behind the source filter; and the page scrolls as a page rather than scrolling its
  * own list inside the dialog's pane.
  */
+import { useSearchParams } from "react-router";
 import { PageFrame, PageHeader } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -19,6 +20,10 @@ import { ArchivedSessionsSection } from "../settings/archived-sessions-section";
 
 export function ArchivedPage() {
   useDocumentTitle(S.archivedPage.title);
+  // The archive receipt's "View archived" carries the conversation's title, so the page
+  // opens on that one row instead of on the whole archive.
+  const [params] = useSearchParams();
+  const query = params.get("q") ?? "";
   return (
     <PageFrame width="lg">
       <PageHeader
@@ -26,7 +31,7 @@ export function ArchivedPage() {
         description={S.archivedPage.description}
         info={S.archivedPage.info}
       />
-      <ArchivedSessionsSection variant="page" initialSource="user" />
+      <ArchivedSessionsSection variant="page" initialSource="user" initialQuery={query} />
     </PageFrame>
   );
 }

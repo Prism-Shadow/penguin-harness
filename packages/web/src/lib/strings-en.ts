@@ -676,6 +676,16 @@ export const en: Strings = {
     empty: "No archived chats",
     noMatches: "No matching chats",
     running: "Running",
+    /** A row's own archive time, when the server says it: when it was filed away. */
+    archivedAt: (time: string) => `Archived ${time}`,
+    /** A row's last activity, beside the archive time. */
+    lastActive: (time: string) => `Last active ${time}`,
+    /** The page's line above the list: how many conversations it holds. */
+    total: (n: number): string => `${n} chats in all`,
+    /** After a restore: the conversation is back in the sidebar. */
+    restored: "Back in the sidebar",
+    /** After a delete: the conversation is gone for good. */
+    deleted: "Deleted",
     loadFailed: (reason: string): string => `Could not read the archived chats: ${reason}`,
     actionFailed: (reason: string): string => `That did not finish: ${reason}`,
     deleteTitle: (n: number): string => (n === 1 ? "Delete chat" : `Delete ${n} chats`),

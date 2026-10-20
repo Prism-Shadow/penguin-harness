@@ -55,6 +55,15 @@ export function dismissArchiveReceipt(): void {
 }
 
 /**
+ * The archive page's address for a conversation: the page with its title query, so it opens
+ * on that one row instead of on the whole archive. The title is carried as a query value, so
+ * whatever it holds — spaces, punctuation, CJK — survives the round trip.
+ */
+export function archivedPageUrl(title: string): string {
+  return `/archived?q=${encodeURIComponent(title)}`;
+}
+
+/**
  * The receipt itself, mounted once beside the app shell: a small bordered card in the
  * bottom-right corner with the conversation's name and the two ways back.
  */
@@ -88,7 +97,9 @@ export function ArchiveReceiptHost() {
 
   const viewArchived = () => {
     dismissArchiveReceipt();
-    navigate("/archived");
+    // The archive page carries the conversation's title, so it opens on that one row
+    // instead of on the whole archive.
+    navigate(archivedPageUrl(receipt.title));
   };
 
   return (

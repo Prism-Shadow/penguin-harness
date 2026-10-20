@@ -34,8 +34,10 @@ import {
   SkeletonList,
   Spinner,
   toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import { useStore } from "zustand/react";
+import { Link } from "react-router";
 import { formatDateTime } from "../../lib/format";
 import { subscribeUserEvents } from "../../lib/omni/user-events";
 import { revealPlan, workspaceLabel } from "../../lib/session-grouping";
@@ -43,6 +45,7 @@ import { programSource } from "../../lib/session-source-mark";
 import { S } from "../../lib/strings";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
+import { archivedAtOf } from "../archived/archive-row-meta";
 import {
   ARCHIVE_ROW_PAGE,
   createArchiveStore,
@@ -77,6 +80,7 @@ interface PendingDelete {
 
 export function ArchivedSessionsSection({
   initialSource = null,
+  initialQuery = "",
   variant = "settings",
 }: {
   /**
@@ -85,6 +89,12 @@ export function ArchivedSessionsSection({
    * (every source) in the settings page, whose job is the whole archive.
    */
   initialSource?: ArchiveFilters["source"];
+  /**
+   * The search box's first value — the title query the page was opened with (the archive
+   * receipt's "View archived" carries the conversation's title, so the page lands on that
+   * one row instead of on the whole archive).
+   */
+  initialQuery?: string;
   /**
    * `settings` fills the dialog's pane and scrolls its own list inside it; `page` lets the
    * page scroll, the way the other pages do.
@@ -96,7 +106,7 @@ export function ArchivedSessionsSection({
     createArchiveStore((reason) => toastError(S.archivedSessions.actionFailed(reason))),
   );
   const state = useStore(store);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQuery);
   const [source, setSource] = useState<ArchiveFilters["source"]>(initialSource);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
@@ -140,8 +150,17 @@ export function ArchivedSessionsSection({
     void store
       .getState()
       .remove(pendingDelete.target)
-      .then(() => setPendingDelete(null));
+      .then((done) => {
+        if (done) toastSuccess(S.archivedSessions.deleted);
+        setPendingDelete(null);
+      });
   };
+
+  /** A restore: the conversation goes back to the sidebar, and the page says so. */
+  const restore = (target: ArchiveTarget) =>
+    void store.getState().unarchive(target).then((done) => {
+      if (done) toastSuccess(S.archivedSessions.restored);
+    });
 
   return (
     // The page fills the dialog's pane and scrolls its list itself, below the controls; the
@@ -199,7 +218,7 @@ export function ArchivedSessionsSection({
               <Button
                 size="sm"
                 disabled={state.busy}
-                onClick={() => void store.getState().unarchive({ kind: "selection" })}
+                onClick={() => restore({ kind: "selection" })}
               >
                 {S.chat.unarchiveSession}
               </Button>
@@ -229,6 +248,9 @@ export function ArchivedSessionsSection({
             : "-mx-1 px-1 pb-1"
         }
       >
+        {variant === "page" && state.groups !== null && state.total > 0 && (
+          <p className="pb-2 text-xs text-fg-muted">{S.archivedSessions.total(state.total)}</p>
+        )}
         {state.groups === null ? (
           <SkeletonList rows={4} />
         ) : state.groups.length === 0 ? (
@@ -250,11 +272,12 @@ export function ArchivedSessionsSection({
                 chosen={(id) => isChosen(state, groupKey(group), id)}
                 choosing={choosing}
                 busy={state.busy}
+                linkTitles={variant === "page"}
                 onMore={() => void store.getState().showMoreRows(groupKey(group))}
                 onLess={() => store.getState().showLessRows(groupKey(group))}
                 onToggle={(id) => store.getState().toggle(groupKey(group), id)}
                 onToggleAll={() => store.getState().toggleGroup(groupKey(group))}
-                onUnarchive={(target) => void store.getState().unarchive(target)}
+                onUnarchive={(target) => restore(target)}
                 onDelete={askDelete}
               />
             ))}
@@ -302,6 +325,7 @@ function ArchiveGroup({
   chosen,
   choosing,
   busy,
+  linkTitles,
   onMore,
   onLess,
   onToggle,
@@ -317,6 +341,8 @@ function ArchiveGroup({
   chosen: (sessionId: string) => boolean;
   choosing: boolean;
   busy: boolean;
+  /** The titles open their conversation: only on the page, where the route can change. */
+  linkTitles: boolean;
   onMore: () => void;
   onLess: () => void;
   onToggle: (sessionId: string) => void;
@@ -376,6 +402,7 @@ function ArchiveGroup({
               selected={chosen(s.sessionId)}
               choosing={choosing}
               busy={busy}
+              linkTitle={linkTitles}
               onToggle={() => onToggle(s.sessionId)}
               onUnarchive={() => onUnarchive({ kind: "ids", ids: [s.sessionId] })}
               onDelete={() =>
@@ -420,6 +447,7 @@ function ArchiveRow({
   selected,
   choosing,
   busy,
+  linkTitle,
   onToggle,
   onUnarchive,
   onDelete,
@@ -428,12 +456,15 @@ function ArchiveRow({
   selected: boolean;
   choosing: boolean;
   busy: boolean;
+  /** The title opens the conversation (the page only: in the settings dialog the route must not change under it). */
+  linkTitle: boolean;
   onToggle: () => void;
   onUnarchive: () => void;
   onDelete: () => void;
 }) {
   const title = s.title ?? S.chat.defaultSessionTitle;
   const source = programSource(s);
+  const archivedAt = archivedAtOf(s as { archivedAt?: string | null });
   return (
     <li className="group flex items-center gap-3 py-2.5">
       <Checkbox
@@ -444,7 +475,15 @@ function ArchiveRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
-          <Truncated text={title} className="min-w-0" />
+          {/* The title opens the conversation: an archived one shows what it is (its title,
+              its time, who opened it) and offers the restore in place. */}
+          {linkTitle ? (
+            <Link to={`/chat/${s.sessionId}`} className="min-w-0 hover:underline">
+              <Truncated text={title} className="min-w-0" />
+            </Link>
+          ) : (
+            <Truncated text={title} className="min-w-0" />
+          )}
           {source !== null && (
             <Badge tone="neutral" size="sm">
               {S.chat.sessionSource[source]}
@@ -456,7 +495,17 @@ function ArchiveRow({
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-xs text-fg-muted">{formatDateTime(s.lastActiveAt)}</p>
+        <p className="mt-0.5 text-xs text-fg-muted">
+          {archivedAt !== null ? (
+            <>
+              {S.archivedSessions.archivedAt(formatDateTime(archivedAt))}
+              {" · "}
+              {S.archivedSessions.lastActive(formatDateTime(s.lastActiveAt))}
+            </>
+          ) : (
+            formatDateTime(s.lastActiveAt)
+          )}
+        </p>
       </div>
       <button
         type="button"
