@@ -69,11 +69,9 @@ describe("the a2ui plugin", () => {
   it("quotes the exported weights and the gate", async () => {
     const skill = await read("SKILL.md");
     expect(skill).toContain(`L2 loses ${A2UI_SCORING.l2PerWarning} per block warning`);
-    expect(skill).toContain(`prose loses ${A2UI_SCORING.prosePerWarning} per prose warning`);
     expect(skill).toContain(`a total of ${A2UI_SCORING.passTotal} or more`);
     const reference = await read("references/components.md");
     expect(reference).toContain(`L2 = 100 − ${A2UI_SCORING.l2PerWarning} ×`);
-    expect(reference).toContain(`prose = 100 − ${A2UI_SCORING.prosePerWarning} ×`);
     expect(reference).toContain(`total ≥ ${A2UI_SCORING.passTotal}`);
   });
 });

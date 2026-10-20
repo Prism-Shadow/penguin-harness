@@ -1,9 +1,9 @@
 /**
  * `@prismshadow/penguin-core/a2ui`: the grammar of A2UI blocks — catalog types and limits, fence
- * discovery, L1 validation, the mermaid checks, the STE-lite prose lint, the whole-reply check
- * with its score, the text fallback, the composer fill texts, the self-review rubric, and the
- * pure helpers the renderers share with the fallback (formatting, a series' extent, the
- * resource board's tiles and judgement). Pure TypeScript with no
+ * discovery, L1 validation, a form field's answer rule, the mermaid checks, the whole-reply check
+ * with its score, the reply's language, the text fallback, the composer fill texts, the
+ * self-review rubric, and the pure helpers the renderers share with the fallback (formatting, a
+ * series' extent, the resource board's tiles and judgement). Pure TypeScript with no
  * dependencies, safe to bundle into the browser; the checker CLI (cli.ts) is the one Node-only
  * file and is not exported here.
  */
@@ -17,7 +17,10 @@ export type {
   A2uiClock,
   A2uiClockZone,
   A2uiCountdown,
+  A2uiFieldKind,
   A2uiForm,
+  A2uiFormAnswer,
+  A2uiFormAnswers,
   A2uiFormField,
   A2uiIssue,
   A2uiLang,
@@ -48,6 +51,14 @@ export type {
 export { A2UI_LIMITS, A2UI_SCORING } from "./types.js";
 export { findBlocks } from "./fences.js";
 export { parseA2ui, type A2uiParseResult } from "./catalog.js";
+export {
+  A2UI_FIELD_FORMATS,
+  fieldProblem,
+  fieldRule,
+  initialAnswer,
+  type A2uiFieldProblem,
+  type A2uiFieldProblemCode,
+} from "./form.js";
 export { A2UI_CHART_KINDS, seriesExtent, type A2uiExtent } from "./chart.js";
 export {
   resolveResources,
@@ -59,7 +70,7 @@ export {
   type A2uiResourceTone,
 } from "./resources.js";
 export { MERMAID_TYPES, checkMermaid } from "./mermaid.js";
-export { A2UI_VAGUE_WORDS, PROSE_LIMITS, detectLang, lintProse } from "./prose.js";
+export { detectLang } from "./lang.js";
 export { checkReply } from "./check.js";
 export {
   choiceFillText,

@@ -9,8 +9,9 @@
  * so the renderer shows the block while the checker still teaches strict JSON. Every message
  * ends with what to do, because the checker prints it to the model verbatim.
  *
- * The field readers live in fields.ts. The charts and the blocks built on them have their own
- * modules — a metrics item (metric.ts, read by `metrics` and by a gauge), `chart` (chart.ts) and
+ * The field readers live in fields.ts and the option list a choice and a form share in
+ * options.ts. A form (form.ts), the charts and the blocks built on them have their own modules —
+ * a metrics item (metric.ts, read by `metrics` and by a gauge), `chart` (chart.ts) and
  * `resources` (resources.ts) — and this file dispatches to them by `type`.
  */
 import { parseChart } from "./chart.js";
@@ -20,8 +21,6 @@ import {
   type Obj,
   checkHighLow,
   isObj,
-  join,
-  length,
   present,
   readArray,
   readBoolean,
@@ -32,7 +31,9 @@ import {
   readString,
   unknownFields,
 } from "./fields.js";
+import { parseForm } from "./form.js";
 import { parseMetric } from "./metric.js";
+import { parseOptions } from "./options.js";
 import { parseResources } from "./resources.js";
 import {
   A2UI_LIMITS,
@@ -41,12 +42,9 @@ import {
   type A2uiClock,
   type A2uiClockZone,
   type A2uiCountdown,
-  type A2uiForm,
-  type A2uiFormField,
   type A2uiIssue,
   type A2uiMetric,
   type A2uiMetrics,
-  type A2uiOption,
   type A2uiSpec,
   type A2uiStep,
   type A2uiSteps,
@@ -63,67 +61,6 @@ export interface A2uiParseResult {
   issues: A2uiIssue[];
   /** The `type` the block named, valid or not, so a report can label an invalid block. */
   type?: string;
-}
-
-const OPTION_FIELDS = ["label", "value", "description", "recommended"] as const;
-
-function parseOptions(is: Issues, obj: Obj, key: string, path: string): A2uiOption[] | undefined {
-  const raw = readArray(is, obj, key, path, {
-    ...A2UI_LIMITS.options,
-    warnCode: "too_many_options",
-    what: "options",
-  });
-  if (raw === undefined) return undefined;
-  const p = join(path, key);
-  const options: A2uiOption[] = [];
-  const labels = new Map<string, number>();
-  let recommended = 0;
-  raw.forEach((item, i) => {
-    const ip = `${p}[${i}]`;
-    if (!isObj(item)) {
-      is.error("wrong_type", `\`${ip}\` must be an object with a \`label\`.`, ip);
-      return;
-    }
-    const label = readString(is, item, "label", ip, { required: true, max: A2UI_LIMITS.label });
-    const value = readString(is, item, "value", ip, { max: A2UI_LIMITS.value });
-    const description = readString(is, item, "description", ip, {
-      max: A2UI_LIMITS.description,
-    });
-    const rec = readBoolean(is, item, "recommended", ip);
-    unknownFields(is, item, OPTION_FIELDS, ip, "an option");
-    if (rec === true) recommended++;
-    if (label === undefined) return;
-    if (length(label) > A2UI_LIMITS.labelWarn) {
-      is.warn(
-        "option_label_long",
-        `\`${ip}.label\` is longer than ${A2UI_LIMITS.labelWarn} characters; keep labels short and put the detail in \`description\`.`,
-        `${ip}.label`,
-      );
-    }
-    const seen = labels.get(label);
-    if (seen !== undefined) {
-      is.error(
-        "duplicate_label",
-        `\`${ip}.label\` repeats option ${seen + 1}'s label "${label}"; labels must be unique.`,
-        `${ip}.label`,
-      );
-    } else {
-      labels.set(label, i);
-    }
-    const option: A2uiOption = { label };
-    if (value !== undefined) option.value = value;
-    if (description !== undefined) option.description = description;
-    if (rec !== undefined) option.recommended = rec;
-    options.push(option);
-  });
-  if (recommended > 1) {
-    is.error(
-      "multiple_recommended",
-      `\`${p}\` marks ${recommended} options as recommended; at most one may be.`,
-      p,
-    );
-  }
-  return options;
 }
 
 const CHOICE_FIELDS = ["type", "id", "question", "options", "multiple", "allowOther"] as const;
@@ -147,136 +84,6 @@ function parseChoice(is: Issues, obj: Obj): A2uiChoice | undefined {
   if (id !== undefined) spec.id = id;
   if (multiple !== undefined) spec.multiple = multiple;
   if (allowOther !== undefined) spec.allowOther = allowOther;
-  return spec;
-}
-
-const FIELD_KINDS = ["single", "multiple", "text", "number"] as const;
-const FIELD_FIELDS = [
-  "id",
-  "label",
-  "kind",
-  "options",
-  "placeholder",
-  "min",
-  "max",
-  "step",
-  "unit",
-  "required",
-] as const;
-const NUMBER_ONLY = ["min", "max", "step", "unit"] as const;
-const FORM_FIELDS = ["type", "id", "title", "fields", "submitLabel"] as const;
-
-function parseFormField(is: Issues, item: unknown, fp: string): A2uiFormField | undefined {
-  if (!isObj(item)) {
-    is.error("wrong_type", `\`${fp}\` must be an object with \`id\`, \`label\` and \`kind\`.`, fp);
-    return undefined;
-  }
-  const id = readString(is, item, "id", fp, {
-    required: true,
-    max: 32,
-    pattern: A2UI_LIMITS.fieldIdPattern,
-    patternHint: "lower-case letters, digits or _, starting with a letter, at most 32",
-  });
-  const label = readString(is, item, "label", fp, { required: true, max: A2UI_LIMITS.label });
-  const kind = readEnum(is, item, "kind", fp, FIELD_KINDS);
-  const hasOptions = item.options !== undefined && item.options !== null;
-  let options: A2uiOption[] | undefined;
-  if (kind === "single" || kind === "multiple") {
-    if (!hasOptions) {
-      is.error(
-        "options_required",
-        `\`${fp}.options\` is required for kind "${kind}".`,
-        `${fp}.options`,
-      );
-    } else {
-      options = parseOptions(is, item, "options", fp);
-    }
-  } else if (kind !== undefined && hasOptions) {
-    is.error(
-      "options_forbidden",
-      `\`${fp}.options\` is not allowed for kind "${kind}"; use kind "single" or "multiple" to offer options.`,
-      `${fp}.options`,
-    );
-  }
-  const placeholder = readString(is, item, "placeholder", fp, { max: A2UI_LIMITS.placeholder });
-  if (placeholder !== undefined && (kind === "single" || kind === "multiple")) {
-    is.warn(
-      "ignored_field",
-      `\`${fp}.placeholder\` has no effect on kind "${kind}"; it is ignored.`,
-      `${fp}.placeholder`,
-    );
-  }
-  const min = readNumber(is, item, "min", fp);
-  const max = readNumber(is, item, "max", fp);
-  const step = readNumber(is, item, "step", fp);
-  const unit = readString(is, item, "unit", fp, { max: A2UI_LIMITS.unit });
-  if (kind !== undefined && kind !== "number") {
-    for (const key of NUMBER_ONLY) {
-      if (item[key] !== undefined && item[key] !== null) {
-        is.error(
-          "number_only",
-          `\`${fp}.${key}\` is only valid for kind "number"; remove it or change the kind.`,
-          `${fp}.${key}`,
-        );
-      }
-    }
-  }
-  if (min !== undefined && max !== undefined && min > max) {
-    is.error("range_invalid", `\`${fp}\`: min ${min} is greater than max ${max}.`, `${fp}.min`);
-  }
-  if (step !== undefined && step <= 0) {
-    is.error("range_invalid", `\`${fp}.step\` must be greater than 0.`, `${fp}.step`);
-  }
-  const required = readBoolean(is, item, "required", fp);
-  unknownFields(is, item, FIELD_FIELDS, fp, "a form field");
-  if (id === undefined || label === undefined || kind === undefined) return undefined;
-  const field: A2uiFormField = { id, label, kind };
-  if (options !== undefined) field.options = options;
-  if (placeholder !== undefined) field.placeholder = placeholder;
-  if (min !== undefined) field.min = min;
-  if (max !== undefined) field.max = max;
-  if (step !== undefined) field.step = step;
-  if (unit !== undefined) field.unit = unit;
-  if (required !== undefined) field.required = required;
-  return field;
-}
-
-function parseForm(is: Issues, obj: Obj): A2uiForm | undefined {
-  const id = readString(is, obj, "id", "", {
-    max: 32,
-    pattern: A2UI_LIMITS.idPattern,
-    patternHint: ID_HINT,
-  });
-  const title = readString(is, obj, "title", "", { max: A2UI_LIMITS.title });
-  const raw = readArray(is, obj, "fields", "", {
-    ...A2UI_LIMITS.fields,
-    warnCode: "form_too_many_fields",
-    what: "fields",
-  });
-  const submitLabel = readString(is, obj, "submitLabel", "", { max: A2UI_LIMITS.submitLabel });
-  unknownFields(is, obj, FORM_FIELDS, "", "a form");
-  if (raw === undefined) return undefined;
-  const fields: A2uiFormField[] = [];
-  const ids = new Map<string, number>();
-  raw.forEach((item, i) => {
-    const field = parseFormField(is, item, `fields[${i}]`);
-    if (field === undefined) return;
-    const seen = ids.get(field.id);
-    if (seen !== undefined) {
-      is.error(
-        "duplicate_id",
-        `\`fields[${i}].id\` repeats field ${seen + 1}'s id "${field.id}"; ids must be unique.`,
-        `fields[${i}].id`,
-      );
-    } else {
-      ids.set(field.id, i);
-    }
-    fields.push(field);
-  });
-  const spec: A2uiForm = { type: "form", fields };
-  if (id !== undefined) spec.id = id;
-  if (title !== undefined) spec.title = title;
-  if (submitLabel !== undefined) spec.submitLabel = submitLabel;
   return spec;
 }
 
