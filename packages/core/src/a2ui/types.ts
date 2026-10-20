@@ -41,19 +41,61 @@ export interface A2uiChoice {
   allowOther?: boolean;
 }
 
+/** What a form field asks for; each kind has its own control and its own answer. */
+export type A2uiFieldKind =
+  | "text"
+  | "textarea"
+  | "number"
+  | "slider"
+  | "single"
+  | "multiple"
+  | "select"
+  | "switch"
+  | "date"
+  | "time"
+  | "datetime";
+
+/** The answer a field holds: text (and date/time strings), option labels, or a switch's state. */
+export type A2uiFormAnswer = string | string[] | boolean;
+export type A2uiFormAnswers = Record<string, A2uiFormAnswer>;
+
 export interface A2uiFormField {
+  /** `^[a-z][a-z0-9_]{0,31}$`, unique in the form. */
   id: string;
+  /** ≤ 60. */
   label: string;
-  kind: "single" | "multiple" | "text" | "number";
-  /** Required for single/multiple, not allowed otherwise. */
+  kind: A2uiFieldKind;
+  /**
+   * A line under the control, ≤ 80: the format or the convention ("one per line", "in GB").
+   * Also the error line when the answer breaks the field's rule. Any kind.
+   */
+  hint?: string;
+  /** Any kind; a switch and a slider are always answered. */
+  required?: boolean;
+  /**
+   * single, multiple: 2–7 (warn > 5); select: 2–30 (warn > 12). Required for those three, not
+   * allowed elsewhere. A select ignores `description` (one-line rows).
+   */
   options?: A2uiOption[];
+  /** text, textarea, number; select: the words of the empty row. ≤ 80. */
   placeholder?: string;
-  /** Number fields only. */
+  /** number, slider: finite, min < max; a slider requires both. */
   min?: number;
   max?: number;
+  /** number, slider: > 0 (default 1). */
   step?: number;
+  /** number, slider: ≤ 12, after the figure in the fill text and in the box. */
   unit?: string;
-  required?: boolean;
+  /** text ≤ 500, textarea ≤ 2000: the answer's length ceiling (default: that ceiling). */
+  maxLength?: number;
+  /** text only: a JS regular expression (no flags, ≤ 120) the whole answer must match. */
+  pattern?: string;
+  /**
+   * The starting answer, typed by kind: text/textarea/date/time/datetime a string in the field's
+   * rule; number/slider a number in range; single/select an option label; multiple option labels;
+   * switch a boolean. Must satisfy the field's own rule.
+   */
+  default?: string | number | boolean | string[];
 }
 
 /** Several questions answered at once (1–6 fields); the answers fill the composer one line per field. */
@@ -401,11 +443,10 @@ export type A2uiLevel = "error" | "warning";
 
 /**
  * Which bucket of the score an issue counts toward: `l1` protocol validity (always an error),
- * `l2` task construction (block limits, cross-block heuristics; warnings), `prose` the STE-lite
- * lint of the text outside fences (warnings). Set by checkReply; absent on issues from the
- * single-block functions.
+ * `l2` task construction (block limits, cross-block heuristics; warnings). Set by checkReply;
+ * absent on issues from the single-block functions.
  */
-export type A2uiScope = "l1" | "l2" | "prose";
+export type A2uiScope = "l1" | "l2";
 
 export interface A2uiIssue {
   level: A2uiLevel;
@@ -444,9 +485,9 @@ export interface A2uiReport {
   ok: boolean;
   blocks: Array<{ index: number; fence: "a2ui" | "mermaid"; type?: string; ok: boolean }>;
   issues: A2uiIssue[];
-  /** 0–100 each; any L1 error makes `total` 0. See A2UI_SCORING. */
-  score: { l1: number; l2: number; prose: number; total: number };
-  /** The language the prose rules and the rubric used (resolved from `auto`). */
+  /** 0–100 each; any L1 error makes `total` 0, else it is L2. See A2UI_SCORING. */
+  score: { l1: number; l2: number; total: number };
+  /** The language the rubric used (resolved from `auto`). */
   lang: A2uiLang;
 }
 
@@ -463,6 +504,12 @@ export const A2UI_LIMITS = {
   description: 160,
   options: { min: 2, max: 7, warn: 5 },
   fields: { min: 1, max: 6, warn: 4 },
+  // form fields
+  fieldHint: 80,
+  selectOptions: { min: 2, max: 30, warn: 12 },
+  textMaxLength: 500,
+  textareaMaxLength: 2000,
+  pattern: 120,
   steps: { min: 1, max: 15, warn: 10 },
   title: 80,
   placeholder: 80,
@@ -512,14 +559,11 @@ export const A2UI_LIMITS = {
 } as const;
 
 /**
- * The score's weights, in one place so the skill can quote them. l1 is 100 or 0; l2 and prose
- * lose points per warning down to 0; total is 0 on any L1 error, else the weighted mean.
- * `passTotal` is the gate the skill teaches ("errors 0, total at least 70").
+ * The score's weights, in one place so the skill can quote them. l1 is 100 or 0; l2 loses points
+ * per block warning down to 0; total is 0 on any L1 error, else l2. `passTotal` is the gate the
+ * skill teaches ("errors 0, total at least 70"): at most two block warnings.
  */
 export const A2UI_SCORING = {
   l2PerWarning: 15,
-  prosePerWarning: 5,
-  l2Weight: 0.5,
-  proseWeight: 0.5,
   passTotal: 70,
 } as const;

@@ -10,8 +10,9 @@
 import { parseA2ui } from "./catalog.js";
 import { chartMarkdown } from "./chart.js";
 import { scanFences, splitLines } from "./fences.js";
+import { fieldRule, initialAnswer } from "./form.js";
+import { detectLang } from "./lang.js";
 import { metricLine } from "./metric.js";
-import { detectLang } from "./prose.js";
 import { resourcesMarkdown } from "./resources.js";
 import type {
   A2uiCallout,
@@ -20,6 +21,9 @@ import type {
   A2uiClockZone,
   A2uiCountdown,
   A2uiForm,
+  A2uiFormAnswer,
+  A2uiFormAnswers,
+  A2uiFormField,
   A2uiLang,
   A2uiMetrics,
   A2uiSpec,
@@ -59,6 +63,11 @@ const STR = {
     replyChoice: "回复编号或直接写出你的答案。",
     replyForm: "按字段逐行回复。",
     required: "必填",
+    yes: "是",
+    no: "否",
+    yesNo: "是 / 否",
+    step: "步长",
+    byDefault: (value: string) => `（默认 ${value}）`,
     colon: "：",
     sep: "、",
     stepWarning: "警告：",
@@ -85,6 +94,11 @@ const STR = {
     replyChoice: "Reply with a number or your own answer.",
     replyForm: "Reply with one line per field.",
     required: "required",
+    yes: "Yes",
+    no: "No",
+    yesNo: "yes / no",
+    step: "step",
+    byDefault: (value: string) => ` (default ${value})`,
     colon: ": ",
     sep: ", ",
     stepWarning: "WARNING:",
@@ -126,6 +140,48 @@ function choiceMarkdown(spec: A2uiChoice, lang: A2uiLang): string[] {
   return out;
 }
 
+/** What a field asks for, as the bullet's detail: its options, range, format or placeholder. */
+function fieldDetail(field: A2uiFormField, lang: A2uiLang): string[] {
+  const t = STR[lang];
+  const detail: string[] = [];
+  const rule = fieldRule(field);
+  switch (field.kind) {
+    case "single":
+    case "multiple":
+    case "select":
+      detail.push((field.options ?? []).map((o) => o.label).join(" / "));
+      break;
+    case "number":
+      if (rule !== undefined) detail.push(rule);
+      if (field.unit) detail.push(field.unit);
+      break;
+    case "slider":
+      if (rule !== undefined) detail.push(rule);
+      if (field.unit) detail.push(field.unit);
+      if (field.step !== undefined) detail.push(`${t.step} ${field.step}`);
+      break;
+    case "switch":
+      detail.push(t.yesNo);
+      break;
+    case "date":
+    case "time":
+    case "datetime":
+      if (rule !== undefined) detail.push(rule);
+      break;
+  }
+  if (field.placeholder && field.kind !== "select") detail.push(field.placeholder);
+  return detail;
+}
+
+/** A field's default as the bullet shows it: labels, not values; yes or no; a space for `T`. */
+function defaultText(field: A2uiFormField, lang: A2uiLang): string | undefined {
+  if (field.default === undefined) return undefined;
+  const answer = initialAnswer(field);
+  if (typeof answer === "boolean") return (answer ? STR[lang].yes : STR[lang].no).toLowerCase();
+  if (Array.isArray(answer)) return answer.join(listSeparator(lang));
+  return field.kind === "datetime" ? answer?.replace("T", " ") : answer;
+}
+
 function formMarkdown(spec: A2uiForm, lang: A2uiLang): string[] {
   const t = STR[lang];
   const out: string[] = [];
@@ -133,19 +189,11 @@ function formMarkdown(spec: A2uiForm, lang: A2uiLang): string[] {
   for (const field of spec.fields) {
     let line = `- **${field.label}**`;
     if (field.required) line += lang === "zh" ? `（${t.required}）` : ` (${t.required})`;
-    const detail: string[] = [];
-    if (field.options) detail.push(field.options.map((o) => o.label).join(" / "));
-    if (field.kind === "number") {
-      if (field.min !== undefined && field.max !== undefined)
-        detail.push(`${field.min}–${field.max}`);
-      else if (field.min !== undefined) detail.push(`≥ ${field.min}`);
-      else if (field.max !== undefined) detail.push(`≤ ${field.max}`);
-      if (field.unit) detail.push(field.unit);
-    }
-    if (field.placeholder && (field.kind === "text" || field.kind === "number")) {
-      detail.push(field.placeholder);
-    }
+    const detail = fieldDetail(field, lang);
     if (detail.length > 0) line += `${t.colon}${detail.join(" ")}`;
+    const fallback = defaultText(field, lang);
+    if (fallback !== undefined) line += t.byDefault(fallback);
+    if (field.hint) line += ` — ${field.hint}`;
     out.push(line);
   }
   out.push("", t.replyForm);
@@ -335,7 +383,7 @@ export function specToMarkdown(
 /**
  * The reply with every valid, closed ```a2ui fence replaced by readable Markdown. Mermaid fences
  * stay as they are; an invalid or unclosed block stays as its source fence (the reader still sees
- * what the model wrote). Language from `opts.lang`, else detected from the prose; widgets are
+ * what the model wrote). Language from `opts.lang`, else detected from the reply; widgets are
  * printed for `opts.now` in `opts.timeZone` (defaults: the time of the call, the runtime's zone).
  */
 export function toFallbackMarkdown(
@@ -373,32 +421,49 @@ export function choiceFillText(spec: A2uiChoice, picked: string[], lang: A2uiLan
     .join(listSeparator(lang));
 }
 
+/** One field's answer as the fill text writes it, or undefined when the field has none. */
+function fillAnswer(field: A2uiFormField, raw: A2uiFormAnswer, lang: A2uiLang): string | undefined {
+  if (field.kind === "switch") {
+    return typeof raw === "boolean" ? (raw ? STR[lang].yes : STR[lang].no) : undefined;
+  }
+  if (typeof raw === "boolean") return undefined;
+  const byLabel = new Map((field.options ?? []).map((o) => [o.label, o.value ?? o.label] as const));
+  const parts = (Array.isArray(raw) ? raw : [raw])
+    .map((value) => value.trim())
+    .filter((value) => value !== "")
+    .map((value) => byLabel.get(value) ?? value);
+  if (parts.length === 0) return undefined;
+  const answer = parts.join(listSeparator(lang));
+  if ((field.kind === "number" || field.kind === "slider") && field.unit) {
+    return `${answer} ${field.unit}`;
+  }
+  return field.kind === "datetime" ? answer.replace("T", " ") : answer;
+}
+
 /**
  * The text a form fills into the composer: one line per answered field in the form's order,
  * `label: answer` (en) / `label：answer` (zh). Answers for option fields are LABELS and map to
- * values like a choice's; several are joined with the list separator; a number gets its unit.
- * Unanswered fields (missing, empty, or an empty list) produce no line.
+ * values like a choice's; several are joined with the list separator; a number or a slider gets
+ * its unit; a switch is Yes or No; a datetime's `T` is a space. Text of several lines starts on
+ * the next line, each line indented two spaces. A field with no answer (missing, blank text, no
+ * option) fills no line; the renderer starts every field at its initial answer (initialAnswer),
+ * so a switch and a slider always hold one and always fill a line.
  */
-export function formFillText(
-  spec: A2uiForm,
-  answers: Record<string, string | string[]>,
-  lang: A2uiLang,
-): string {
+export function formFillText(spec: A2uiForm, answers: A2uiFormAnswers, lang: A2uiLang): string {
+  const t = STR[lang];
   const lines: string[] = [];
   for (const field of spec.fields) {
     const raw = answers[field.id];
     if (raw === undefined) continue;
-    const byLabel = new Map(
-      (field.options ?? []).map((o) => [o.label, o.value ?? o.label] as const),
-    );
-    const parts = (Array.isArray(raw) ? raw : [raw])
-      .map((value) => value.trim())
-      .filter((value) => value !== "")
-      .map((value) => byLabel.get(value) ?? value);
-    if (parts.length === 0) continue;
-    let answer = parts.join(listSeparator(lang));
-    if (field.kind === "number" && field.unit) answer = `${answer} ${field.unit}`;
-    lines.push(`${field.label}${STR[lang].colon}${answer}`);
+    const answer = fillAnswer(field, raw, lang);
+    if (answer === undefined) continue;
+    if (!answer.includes("\n")) {
+      lines.push(`${field.label}${t.colon}${answer}`);
+      continue;
+    }
+    lines.push(`${field.label}${t.colon.trimEnd()}`);
+    for (const line of answer.split("\n"))
+      lines.push(line.trim() === "" ? "" : `  ${line.trimEnd()}`);
   }
   return lines.join("\n");
 }
