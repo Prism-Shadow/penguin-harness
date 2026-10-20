@@ -16,9 +16,8 @@ Output contract (the file is published as-is):
   text:
   - <where>: <one string drawn inside the figure, exactly as it will appear>
   ```
-  `<where>` is one or two lowercase English words saying where the string sits (box, column, row, layer, arrow, axis, legend, note, step). List every string the picture shows, in reading order: box and node names, column and row headers, arrow labels, axis and legend labels, annotations. Strings are short nouns or phrases in the post's language ({{LANG}}), and the prose reuses them. A screenshot's block has `alt` and `caption` only. Then a blank line. Never add, drop or reorder a figure, and never change a block's `id`.
-- No callout syntax (:::), no in-page anchors (](#…)), no HTML, no tables wider than 4 columns, no emoji, no horizontal rules except one before the footer.
-- Footer: a line `**Sources**: [name](url) · [name](url)` listing only URLs that appear in FACTS and were used. Nothing after it.
+  `<where>` is a short lowercase English key saying where the string sits: one or two words, digits allowed (box, column, row, layer, arrow, axis, legend, note, step1, config2). List every string the picture shows, in reading order: box and node names, column and row headers, arrow labels, axis and legend labels, annotations. Strings are short nouns or phrases in the post's language ({{LANG}}), and the prose reuses them. A screenshot's block has `alt` and `caption` only. Then a blank line. Never add, drop or reorder a figure, and never change a block's `id`.
+- No callout syntax (:::), no in-page anchors (](#…)), no footnotes or `[^n]`, no HTML, no "Sources" line, no tables wider than 4 columns, no emoji, no horizontal rules. Citations are added mechanically from your fact markers; do not write them.
 - Code spans, URLs, numbers, versions and file paths are copied from FACTS byte for byte.
 - {{MARKER_RULE}}
 - Return the Markdown only. No preamble, no commentary, no fence around the document.

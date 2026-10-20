@@ -1,4 +1,4 @@
-{{FACTS_SECTION}}## Post
+{{FACTS_SECTION}}{{NEIGHBOURS}}## {{DRAFT_LABEL}}
 {{DRAFT}}
 
-Review the post now.
+Review it now.

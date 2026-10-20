@@ -165,12 +165,15 @@ from their own blocks, on the same layout, wider where CJK needs it. Read the `d
 any chart and use the site tokens, not its placeholder palette.
 
 `check --in <draft> --svg <figures dir>` proves each drawn file against its block, in both
-directions; `strip --figures-dir <figures dir>` inlines each file as one line; and
-`check --in <post> --draft <draft>` re-runs the same assertions on the stripped post.
+directions, comparing text after unescaping (a block string such as `<root>/<project>/` is data,
+and the drawing must escape it); `strip --figures-dir <figures dir>` refuses a file that does not
+match its block and inlines the rest as one line; and `check --in <post> --draft <draft>` re-runs
+the same assertions on the stripped post.
 
 **Screenshots** stay in `Prism-Shadow/penguin-harness-community` under `blog-assets/`,
 referenced as `/blog-assets/<name>-<lang>.png`; a new one is merged there before the post's PR.
-`strip` writes them as an image line plus an italic caption.
+`strip` writes them as an image line plus an italic caption, escaping `<`, `>` and `&` outside
+code spans so a placeholder in the alt text or caption stays text.
 
 **Visual check**, on the test host only (a browser runs nowhere else): build the landing
 (`--build "@prismshadow/penguin-landing..."` with the remote runner), serve it with
@@ -225,13 +228,16 @@ blog tests (content integrity, anchors, links) or the docs package's content tes
 A post PR runs the landing tests, `format:check` and
 `node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs packages/landing/content/blog`.
 When the author asks for the suite on another machine, `penguin-harness-dev/reference/verification.md`
-has the remote runner and its traps.
+has the remote runner and its traps. After changing the script, a contract or the check patterns,
+run `node .agents/skills/penguin-harness-writing/scripts/prose.mjs selftest` (local, no
+network): it runs `check` and `strip` on built-in fixtures, and a case that guards a fixed bug goes
+there.
 
 ## 10. Files
 
 | Path | What it holds |
 | --- | --- |
-| `scripts/prose.mjs` | The runner: API steps `outline`, `write`, `translate`, `polish`, `fix`, `review`; local steps `check`, `strip`, `pair`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
+| `scripts/prose.mjs` | The runner: API steps `outline`, `write`, `translate`, `polish`, `fix`, `review`; local steps `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
 | `prompts/contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for each kind of text |
 | `prompts/fragments.md` | Prompt text used as slot values: the marker rules, the version-note rule, the meme brief, the outline feedback block, the default translate title rules, the translation tells, the review's FACTS lines |

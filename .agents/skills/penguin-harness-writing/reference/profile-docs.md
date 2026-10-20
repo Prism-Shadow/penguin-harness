@@ -14,8 +14,15 @@ A docs page helps a reader get one kind of task done in the product, in the mann
 - State what the product does, its defaults and its limits. No opinions, no "we think", no marketing, no history of how a feature came to be.
 - Second person and present tense. Exceptions and caveats go after the steps they qualify, as a "Good to know" list or a callout.
 - The page exists in English and Chinese with the same sections in the same order.
+- Keep it short: at most 500 words in all, an opening of at most 60 and sections of at most 120; link another page instead of repeating it.
 <!-- /prompt -->
 
 ## Check settings
 
 - lead: yes
+- words: 1-500
+- lead-words: 1-60
+- section-words: 1-120
+- zh-chars: 1-1200
+- zh-lead-chars: 1-150
+- zh-section-chars: 1-300

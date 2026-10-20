@@ -3,5 +3,5 @@
 ## Findings
 {{FINDINGS}}
 
-## Post
+{{NEIGHBOURS}}## {{DRAFT_LABEL}}
 {{DRAFT}}
