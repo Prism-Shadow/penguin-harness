@@ -4,8 +4,9 @@
  *
  * - Given a value, the slider is a native range — so the browser reports it as a slider with its
  *   value, minimum and maximum — named by its title, carrying the bounds and the step.
- * - The readout shows the value at the step's precision, with the unit, and the words read out
- *   for the value are the same; a caller's decimals win over the step's; a value outside the
+ * - The readout shows the value at the step's precision, with the unit — a percent or a degree
+ *   tight to the figure, any other unit after a space — and the words read out for the value
+ *   are the same; a caller's decimals win over the step's; a value outside the
  *   range reads as the bound the thumb stops at. The readout itself is hidden from assistive
  *   technology, which hears the value from the slider.
  * - The track is filled in the accent up to the value — none at the minimum, all at the maximum,
@@ -73,8 +74,11 @@ describe("the slider", () => {
 
   it("reads out the value at the step's precision with its unit, and says the same words", () => {
     const html = render({ value: 60, min: 0, max: 100, step: 5, unit: "%" });
-    expect(readout(html)).toBe("60 %");
-    expect(range(html)).toContain('aria-valuetext="60 %"');
+    expect(readout(html)).toBe("60%");
+    expect(range(html)).toContain('aria-valuetext="60%"');
+    const spaced = render({ unit: "dB" });
+    expect(readout(spaced)).toBe("0.7 dB");
+    expect(range(spaced)).toContain('aria-valuetext="0.7 dB"');
     const plain = render({ value: 0.70000001 });
     expect(readout(plain)).toBe("0.7");
     expect(range(plain)).toContain('aria-valuetext="0.7"');

@@ -11,7 +11,7 @@
  * part in WebKit: two flat bars, the fill ending at the thumb's centre. No gradient.
  *
  * The readout is decorative for assistive technology: the slider's own `aria-valuetext` carries
- * the same words ("0.7 °C"), which is what is read out as the value moves. A slider always holds
+ * the same words ("70%", "0.7 dB"), which is what is read out as the value moves. A slider always holds
  * a value, so `required` only draws the mark beside the title. An `error` takes the hint's place
  * and draws the thumb's line in the danger ink. Disabled, the fill and the thumb turn grey, the
  * whole row dims, and it takes no input.
@@ -82,6 +82,18 @@ function fillWidth(value: number, min: number, max: number): string {
   return `calc((100% - var(--spacing) * 4) * ${share} + var(--spacing) * 2)`;
 }
 
+/**
+ * A unit that hugs its figure ("70%", "21°C"); any other takes a space ("0.7 dB"). The spacing
+ * every A2UI value and chart reading uses, so a form's slider reads as its fill text does.
+ */
+const TIGHT_UNIT = /^[%°′″]/;
+
+/** The unit as it follows the figure: tight, or after a space; nothing without one. */
+function unitSuffix(unit: string | undefined): string {
+  if (unit === undefined || unit === "") return "";
+  return TIGHT_UNIT.test(unit) ? unit : ` ${unit}`;
+}
+
 /** The thumb's line: the knob's hairline, or the danger ink while the value is refused. */
 const THUMB_LINE = {
   ok: "[&::-webkit-slider-thumb]:border-switch-knob-line [&::-moz-range-thumb]:border-switch-knob-line",
@@ -110,7 +122,7 @@ export function Slider({
   const figure = (n: number) => n.toFixed(places);
   // The browser keeps the thumb inside the range, so the readout does too.
   const shown = figure(Math.min(max, Math.max(min, value)));
-  const spoken = unit !== undefined ? `${shown} ${unit}` : shown;
+  const spoken = `${shown}${unitSuffix(unit)}`;
   // As wide as the widest figure the range can show, so the track never shifts as it moves.
   const width = Math.max(figure(min).length, figure(max).length);
   const bad = Boolean(error);
@@ -154,7 +166,7 @@ export function Slider({
           <span className="inline-block text-right" style={{ minWidth: `${width}ch` }}>
             {shown}
           </span>
-          {unit !== undefined && ` ${unit}`}
+          {unitSuffix(unit)}
         </span>
       </div>
       {bad ? (
