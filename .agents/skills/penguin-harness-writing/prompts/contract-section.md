@@ -1,0 +1,16 @@
+Output contract for one section (the sections are assembled into the published file without edits):
+- Return only section {{SECTION_N}} of the piece: {{SECTION_SHAPE}}
+- The budget is binding: at most {{SECTION_BUDGET}} of body text; the plan asks for about {{SECTION_WORDS_PLANNED}}. Headings, frontmatter and figure blocks do not count. Count before you answer: a section over its budget is rejected and written again.
+- Figures: exactly the figure blocks this section owns ({{SECTION_FIGURE_IDS}}), each at the place the plan gives, written as a figure block. The picture is drawn from this block and from nothing else, so it must hold every word the figure shows:
+  ```figure id=<stem>
+  alt: <what is in the picture, one sentence, no "image of">
+  caption: <what the reader should take from it, one sentence>
+  title: <the figure's own heading, if it has one; otherwise leave this line out>
+  text:
+  - <where>: <one string drawn inside the figure, exactly as it will appear>
+  ```
+  `<where>` is a short lowercase English key saying where the string sits (box, column, row, layer, arrow, axis, legend, note, step1). List every string the picture shows, in reading order. Strings are short nouns or phrases in the post's language ({{LANG}}), and the prose reuses them. A screenshot's block has `alt` and `caption` only. Then a blank line. Never add, drop or reorder a figure, and never change a block's `id`.
+- No callout syntax (:::), no in-page anchors (](#…)), no footnotes or `[^n]`, no HTML, no "Sources" line, no tables wider than 4 columns, no emoji, no horizontal rules. Citations are added mechanically from your fact markers; do not write them.
+- Code spans, URLs, numbers, versions and file paths are copied from FACTS byte for byte.
+- {{MARKER_RULE}}
+- Return the Markdown only. No preamble, no commentary, no fence around the section.

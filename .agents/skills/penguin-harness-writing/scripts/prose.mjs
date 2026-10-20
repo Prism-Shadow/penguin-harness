@@ -7,15 +7,27 @@
  *
  *   node prose.mjs <step> [options]
  *
- *   API steps:   outline | write | translate | polish | fix | review
- *   local steps: check | strip | pair | selftest
+ *   API steps:   outline | section | write | translate | polish | fix | review
+ *   local steps: plan | assemble | route | check | strip | pair | selftest
+ *
+ * A post is planned once (outline, then plan validates and freezes it), written one section per
+ * call, assembled byte for byte, reviewed and fixed per section, and published by strip, which
+ * turns the fact markers into numbered footnotes.
  *
  * Run with --help for the options. The key comes from TOKENDANCE_API_KEY or the file named by
  * TOKENDANCE_KEY_FILE, never from an argument, so it stays out of shell history; nothing here
  * prints it, and the saved raw JSON holds the request body and the response, not the headers.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
@@ -28,8 +40,8 @@ const REFERENCE = path.join(SKILL, "reference");
 
 const ENDPOINT = "https://tokendance.space/gateway/v1/chat/completions";
 const DEFAULT_MODEL = "seed-2.1-pro";
-const API_STEPS = ["outline", "write", "translate", "polish", "fix", "review"];
-const LOCAL_STEPS = ["check", "strip", "pair", "selftest"];
+const API_STEPS = ["outline", "section", "write", "translate", "polish", "fix", "review"];
+const LOCAL_STEPS = ["plan", "assemble", "route", "check", "strip", "pair", "selftest"];
 const LANG_NAME = { en: "English", zh: "Chinese" };
 const BLOG_CATEGORIES = ["news", "practice", "perspectives", "changelog"];
 const CATEGORY_NAME = {
@@ -50,24 +62,39 @@ const BACKOFF_S = [10, 20, 40, 60, 90];
 
 const HELP = `usage: node prose.mjs <step> [options]
 
+The flow for a post (one language; the second follows by translate per section):
+  outline → plan --freeze → section 0 … N (each: check --section) → assemble → check → review
+  + truth review → route → fix per section → assemble → … → strip (citations) → check --draft
+
 API steps (one gateway call each; --dry-run prints the messages instead and saves nothing):
-  outline    --brief <f> --facts <f> --word-budget <text> --figure-count <text>
-             [--research <f>]... [--feedback <f> --previous <f>] [--meme <f>] [--title-rule <text|@f>]
+  outline    --brief <f> --facts <f> --figure-count <text> [--figures <manifest>]
+             [--word-budget <n|a-b>] [--section-cap <n>] [--research <f>]...
+             [--feedback <text|@f> --previous <f>] [--meme <f>] [--title-rule <text|@f>]
+               the answer's # Plan table is validated against the profile's budgets, the
+               manifest and FACTS; a failure writes outline-feedback.auto.md beside --out
+  section    --outline <outline.final.md> --section <n> --facts <f> [--figures <manifest>]
+             [--sections-dir <dir>] [--out <dir>/s<n>.<lang>.v<k>.md] [--reuse-figures <frozen draft>]
+             [--feedback <text|@f> [--previous <f>]] [--facts-all] [--title-rule …] [--meme <f>]
+             [--version-note <t>] [--date YYYY-MM-DD]
+               writes one section from the frozen plan; --out defaults to the next version
   write      --outline <f> --figures <f> --facts <f> [--meme <f>] [--title-rule <text|@f>]
+               a whole piece in one call (docs pages, landing strings; posts use section)
   translate  --in <f> --facts <f> --to en|zh [--title-rule <text|@f>]
-  polish     --in <f>
-  fix        --in <f> --findings <f> --facts <f>
+             section mode (an s<n>.<lang>.v<k>.md input, or --sections-dir): --outline <f>;
+             [--reuse-figures <frozen target draft> --reuse-source <frozen source draft>]
+  polish     --in <f>                       section mode: neighbours read-only
+  fix        --in <f> --findings <f> --facts <f>   section mode: returns the section only
   review     --in <f> [--facts <f>] [--tells]   numbered findings in the form fix reads; --out
-             defaults to findings.<lang>.vN.api.md beside a draft.<lang>.vN.md
+             defaults to findings.<lang>.vN.api.md (findings.s<n>.<lang>.vK.api.md for a section)
 
   common:    --profile <name|f>   blog-perspectives | blog-practice | blog-news | blog-changelog |
                                   docs | landing, or a profile file; loads reference/profile-<name>.md
              --category <c>       shorthand: perspectives -> blog-perspectives, docs -> docs, ...
                                   Default: the input's frontmatter category (a docs page is
                                   recognised by its description), else blog-perspectives
-             --out <f>            the completion (required unless --dry-run); the raw JSON goes to
-                                  <out>.raw.json, or <raw-dir>/<folder>-<step>-<out name>.raw.json,
-                                  or --raw <f>; an existing raw file is never overwritten
+             --out <f>            the completion (required unless --dry-run or defaulted); the raw
+                                  JSON goes to <out>.raw.json, or <raw-dir>/<folder>-<step>-<out
+                                  name>.raw.json, or --raw <f>; an existing raw file is never overwritten
              --model <id>         default ${DEFAULT_MODEL}
              --temperature <n>    default 0.3 (outline 0.5, review 0.2)
              --max-tokens <n>     default 32000 (reasoning counts against it)
@@ -79,22 +106,32 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
              --timeout <s>        per attempt, default 1800
 
 local steps:
-  check      --in <f> [--profile <name|f>] [--facts <f>] [--figures <manifest>] [--svg <dir>]
-             [--draft <f>] [--slug <slug>] [--pair <f>] [--assets <dir>] [--version-note <t>]
-             [--lang en|zh]
+  plan       --in <outline> [--profile …] [--facts <f>] [--figures <manifest>] [--lang en|zh]
+             [--freeze]   validates the # Plan table; --freeze copies it to outline.final.md
+  assemble   --sections-dir <dir> --lang en|zh --out <draft.<lang>.vN.md> [--outline <f>]
+             [--pin s<n>=v<k>]...   joins the latest (or pinned) s0 … sN, byte for byte
+  route      --findings <findings.<lang>.vN.md> --sections-dir <dir>
+               splits findings into findings.s<n>.<lang>.vN.md by the section quoting each
+               passage; the rest go to findings.unrouted.<lang>.vN.md
+  check      --in <f> [--profile <name|f>] [--facts <f>] [--outline <f>] [--section <n>]
+             [--figures <manifest>] [--svg <dir>] [--draft <f>] [--slug <slug>] [--pair <f>]
+             [--assets <dir>] [--version-note <t>] [--lang en|zh]
+               budgets are hard: a section above min(plan × 1.1, profile cap) is an error
+               --section (or an s<n>… file): one section — its shape and the figures its row owns
                --figures: every manifest stem has a figure block, in order, and no others
                --svg: on a draft, <dir>/<id>.<lang>.html must exist for every drawn figure block
                  and match it exactly (title = alt, figcaption = caption, fig-steps = text,
                  drawn text leaves = text, ids <slug>-<id>-<lang>, no blank line)
                --draft: on a stripped post, the same assertions for its inline figures against
-                 the draft's blocks
-  pair       --in <f> --pair <f>
-  strip      --in <f> --out <f> [--figures-dir <dir>] [--assets <dir>]
-               removes {F#}/{O#} markers and the model's HTML-comment notes; a drawn figure block
-               becomes <dir>/<id>.<lang>.html on one line, a screenshot block becomes
-               ![alt](/blog-assets/<id>-<lang>.png) + its italic caption (.jpg when --assets
-               holds only that)
-  selftest                        runs check and strip on built-in fixtures; exits 1 on a regression`;
+                 the draft's blocks; footnotes are checked against ## SOURCES with --facts
+  pair       --in <f> --pair <f>   per section: markers, citations, figures, code, URLs, numbers
+  strip      --in <f> --out <f> [--facts <f> [--numbering-from <other language's post>]]
+             [--figures-dir <dir>] [--assets <dir>]
+               removes the model's notes; with --facts each marker group becomes [^n] after its
+               sentence (public sources, numbered by first use or by the other post) and the
+               [^n]: [title](url) list closes the post; a drawn figure block becomes
+               <dir>/<id>.<lang>.html on one line, a screenshot block an image line + caption
+  selftest                        runs the local steps on built-in fixtures; exits 1 on a regression`;
 
 const OPTIONS = new Set([
   "out",
@@ -130,9 +167,16 @@ const OPTIONS = new Set([
   "draft",
   "slug",
   "figures-dir",
+  "section",
+  "sections-dir",
+  "reuse-figures",
+  "reuse-source",
+  "pin",
+  "numbering-from",
+  "section-cap",
 ]);
-const FLAGS = new Set(["dry-run", "help", "tells"]);
-const REPEATABLE = new Set(["research"]);
+const FLAGS = new Set(["dry-run", "help", "tells", "facts-all", "freeze"]);
+const REPEATABLE = new Set(["research", "pin"]);
 
 /** Which option fills a slot, so an unfilled slot can say what to pass. */
 const SLOT_OPTION = {
@@ -147,6 +191,10 @@ const SLOT_OPTION = {
   SOURCE: "--in",
   DRAFT: "--in",
   FEEDBACK_NOTES: "--feedback",
+  WORD_CAP: "--word-budget (or the profile's words / zh-chars setting)",
+  SECTION_CAP: "--section-cap (or the profile's section-words / zh-section-chars setting)",
+  LEAD_RANGE: "the profile's lead-words / zh-lead-chars setting",
+  PREVIOUS_SECTION: "--previous (the attempt the feedback is about)",
   PREVIOUS_OUTLINE: "--previous (the outline the feedback is about)",
   MEME_BRIEF: "--meme",
 };
@@ -162,7 +210,7 @@ function note(message) {
 
 function parseArgs(argv) {
   const [step, ...rest] = argv;
-  const opts = { research: [] };
+  const opts = { research: [], pin: [] };
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (!arg.startsWith("--")) fail(`unexpected argument "${arg}" (options are --name value)`);
@@ -422,9 +470,466 @@ function researchText(files) {
 
 /** `draft.en.v3.md` → `findings.en.v3.api.md` beside it; any other name needs --out. */
 function defaultReviewOut(input) {
-  // Only for a scratch draft: findings written beside a file in the repo would land in its tree.
+  // Only for a scratch draft or section: findings beside a file in the repo would land in its tree.
   const m = /^draft\.(en|zh)\.(v\d+)\.md$/.exec(path.basename(input));
-  return m ? path.join(path.dirname(input), `findings.${m[1]}.${m[2]}.api.md`) : undefined;
+  if (m) return path.join(path.dirname(input), `findings.${m[1]}.${m[2]}.api.md`);
+  const s = sectionOfFile(input);
+  return s
+    ? path.join(path.dirname(input), `findings.s${s.n}.${s.lang}.v${s.v}.api.md`)
+    : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Plans, sections and budgets
+// ---------------------------------------------------------------------------
+
+const SECTION_FILE = /^s(\d+)\.(en|zh)\.v(\d+)\.md$/;
+/** Chinese characters per English word, measured on translated drafts; used to size a translation. */
+const ZH_PER_EN = 2.4;
+/** A translated section above this many characters per English word is flagged by `pair`. */
+const ZH_PER_EN_MAX = 2.6;
+
+/** The section number, language and version a `s<n>.<lang>.v<k>.md` file name carries. */
+function sectionOfFile(file) {
+  const m = SECTION_FILE.exec(path.basename(file ?? ""));
+  return m ? { n: Number(m[1]), lang: m[2], v: Number(m[3]) } : undefined;
+}
+
+/** Every version of every section of one language in a directory: n → [{ v, file }], ascending. */
+function sectionFiles(dir, lang) {
+  const out = new Map();
+  if (!dir || !existsSync(dir)) return out;
+  for (const name of readdirSync(dir)) {
+    const s = sectionOfFile(name);
+    if (!s || s.lang !== lang) continue;
+    if (!out.has(s.n)) out.set(s.n, []);
+    out.get(s.n).push({ v: s.v, file: path.join(dir, name) });
+  }
+  for (const list of out.values()) list.sort((a, b) => a.v - b.v);
+  return out;
+}
+
+function latestSection(dir, n, lang) {
+  const list = sectionFiles(dir, lang).get(n);
+  return list ? list[list.length - 1] : undefined;
+}
+
+/** The next free `s<n>.<lang>.v<k>.md` path in a directory. */
+function nextSectionFile(dir, n, lang) {
+  const last = latestSection(dir, n, lang);
+  return path.join(dir, `s${n}.${lang}.v${last ? last.v + 1 : 1}.md`);
+}
+
+/** The lines that count as body text: no frontmatter, version note, figures, headings, notes or references. */
+function bodyLines(text) {
+  const { body } = splitFrontmatter(text);
+  const out = [];
+  let fence = null;
+  let figure = false;
+  let comment = false;
+  let first = true;
+  for (const line of body.split("\n")) {
+    const t = line.trim();
+    if (figure) {
+      if (/^```\s*$/.test(t)) figure = false;
+      continue;
+    }
+    if (fence) {
+      if (t.startsWith(fence)) fence = null;
+      else out.push(line);
+      continue;
+    }
+    if (comment) {
+      if (t.includes("-->")) comment = false;
+      continue;
+    }
+    if (FIGURE_OPEN.test(t)) {
+      figure = true;
+      continue;
+    }
+    const fenceMark = /^(```+|~~~+)/.exec(t);
+    if (fenceMark) {
+      fence = fenceMark[1];
+      continue;
+    }
+    if (t.startsWith("<!--")) {
+      comment = !t.includes("-->");
+      continue;
+    }
+    if (first && t) {
+      first = false;
+      if (VERSION_NOTE_LINE.test(t)) continue;
+    }
+    if (
+      HEADING.test(t) ||
+      HTML_FIGURE.test(t) ||
+      FOOTER.test(t) ||
+      IMAGE_LINE.test(t) ||
+      CAPTION.test(t) ||
+      FOOTNOTE_DEF.test(t) ||
+      /^([-*_])(\s*\1){2,}$/.test(t)
+    ) {
+      continue;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+/**
+ * Body size: English words (whitespace tokens holding a letter or digit) or Chinese characters
+ * (non-whitespace after the Markdown syntax is removed). One counter for check, assemble and the
+ * section step, so a budget means the same number everywhere.
+ */
+function countBody(text, lang) {
+  let t = bodyLines(text)
+    .join("\n")
+    .replace(MARKER, " ")
+    .replace(/\[\^\d+\]/g, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  if (lang === "zh") {
+    t = t
+      .replace(/^\s*\|?[\s:|-]*-{3,}[\s:|-]*\|?\s*$/gm, "")
+      .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, "")
+      .replace(/^\s*>\s?/gm, "")
+      .replace(/[*_`|#]/g, "");
+    return t.replace(/\s+/g, "").length;
+  }
+  return t.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+}
+
+/** A text cut at its `## ` headings (outside fences); section 0 is what precedes the first. */
+function splitSections(text) {
+  const { body, bodyLine } = splitFrontmatter(text);
+  const sections = [{ n: 0, heading: null, line: bodyLine, lines: [] }];
+  let fence = null;
+  body.split("\n").forEach((line, i) => {
+    const fenceMark = /^\s*(```+|~~~+)/.exec(line);
+    if (fence) {
+      if (fenceMark && fenceMark[1].startsWith(fence)) fence = null;
+    } else if (fenceMark) {
+      fence = fenceMark[1];
+    } else if (/^## /.test(line)) {
+      sections.push({
+        n: sections.length,
+        heading: line.slice(3).trim(),
+        line: bodyLine + i,
+        lines: [],
+      });
+    }
+    sections[sections.length - 1].lines.push(line);
+  });
+  return sections.map((s) => ({ ...s, text: s.lines.join("\n") }));
+}
+
+/** The raw text of every figure block in a text, by id (from the ```figure line to its close). */
+function figureBlockTexts(text) {
+  const out = new Map();
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const open = FIGURE_OPEN.exec(lines[i].trim());
+    if (!open) continue;
+    const id = /\bid\s*=\s*"?([^\s"`]+)"?/.exec(open[1])?.[1];
+    let j = i + 1;
+    while (j < lines.length && !/^\s*```\s*$/.test(lines[j])) j++;
+    if (id) out.set(id, lines.slice(i, j + 1).join("\n"));
+    i = j;
+  }
+  return out;
+}
+
+function rangeOf(value) {
+  const text = String(value ?? "");
+  const m = /(\d+)\s*[-–]\s*(\d+)/.exec(text);
+  if (m) return { floor: Number(m[1]), cap: Number(m[2]) };
+  const one = /^\s*(\d+)\s*$/.exec(text);
+  return one ? { floor: 0, cap: Number(one[1]) } : undefined;
+}
+
+/** The profile's budgets for one language, with --word-budget and --section-cap applied. */
+function budgetsOf(prof, lang, o = {}) {
+  const s = profileSettings(prof);
+  const zh = lang === "zh";
+  const b = {
+    unit: zh ? "chars" : "words",
+    unitName: zh ? "Chinese characters" : "English words",
+    total: rangeOf(s[zh ? "zh-chars" : "words"]),
+    lead: rangeOf(s[zh ? "zh-lead-chars" : "lead-words"]),
+    section: rangeOf(s[zh ? "zh-section-chars" : "section-words"]),
+    sections: rangeOf(s.sections),
+    tldr: rangeOf(s["tldr-words"]),
+  };
+  if (o["word-budget"] !== undefined && rangeOf(o["word-budget"]))
+    b.total = rangeOf(o["word-budget"]);
+  if (o["section-cap"] !== undefined) {
+    b.section = { floor: b.section?.floor ?? 0, cap: Number(o["section-cap"]) };
+  }
+  return b;
+}
+
+/** A row's hard limit: the smaller of the profile cap and the plan's number plus ten percent. */
+function rowCap(budgets, n, planned) {
+  const limit = n === 0 ? budgets.lead : budgets.section;
+  const caps = [limit?.cap, planned > 0 ? Math.round(planned * 1.1) : undefined].filter(
+    (x) => x !== undefined,
+  );
+  return caps.length ? Math.min(...caps) : undefined;
+}
+
+/** The outline's top-level `# ` parts, its plan rows and each section's bullets. */
+function parseOutline(text) {
+  const parts = {};
+  let current = null;
+  for (const line of text.split("\n")) {
+    const h = /^# (.+?)\s*$/.exec(line);
+    if (h) {
+      current = h[1].trim();
+      parts[current] = [];
+    } else if (current) parts[current].push(line);
+  }
+  for (const k of Object.keys(parts)) parts[k] = parts[k].join("\n").trim();
+  const tableLines = (parts.Plan ?? "").split("\n").filter((l) => /^\s*\|/.test(l));
+  const cells = (l) =>
+    l
+      .trim()
+      .replace(/^\||\|$/g, "")
+      .split("|")
+      .map((c) => c.trim());
+  const rows = [];
+  let unit = "words";
+  if (tableLines.length >= 2) {
+    const header = cells(tableLines[0]).map((c) => c.toLowerCase().replace(/[`*]/g, ""));
+    const col = (re) => header.findIndex((h) => re.test(h));
+    const ci = {
+      n: col(/^(n|#|no\.?|row)$/),
+      heading: col(/^heading/),
+      budget: col(/^(words|chars|characters|budget|字)/),
+      facts: col(/^facts/),
+      opinions: col(/^opinions/),
+      figures: col(/^figures/),
+      ends: col(/^ends/),
+    };
+    if (ci.budget >= 0 && /^(chars|characters|字)/.test(header[ci.budget])) unit = "chars";
+    for (const l of tableLines.slice(1)) {
+      if (/^\s*\|\s*:?-{3,}/.test(l)) continue;
+      const c = cells(l);
+      const get = (k) => (ci[k] >= 0 ? (c[ci[k]] ?? "") : "");
+      rows.push({
+        n: Number((get("n").match(/\d+/) ?? [NaN])[0]),
+        heading: get("heading"),
+        budget: Number((get("budget").match(/\d+/) ?? [NaN])[0]),
+        facts: get("facts").match(/\bF\d+\b/g) ?? [],
+        opinions: get("opinions").match(/\bO\d+\b/g) ?? [],
+        figures: get("figures").match(/[a-z0-9]+(?:-[a-z0-9]+)+/g) ?? [],
+        ends: get("ends"),
+        line: l.trim(),
+      });
+    }
+  }
+  const sectionPlans = new Map();
+  for (const chunk of (parts.Sections ?? "").split(/^(?=## )/m)) {
+    const m = /^##\s*(?:section\s*)?(\d+)\b/i.exec(chunk.trim());
+    if (m) sectionPlans.set(Number(m[1]), chunk.trim());
+  }
+  const header = tableLines.slice(0, 2).join("\n");
+  return { parts, rows, unit, header, planTable: tableLines.join("\n"), sectionPlans };
+}
+
+/** Every way a plan breaks its budgets, its manifest or its facts. Empty when it is sound. */
+function planProblems(outline, budgets, { facts, manifest } = {}) {
+  const p = [];
+  const { rows } = outline;
+  if (!rows.length) {
+    return [
+      "no `# Plan` table with rows (n | heading | words | facts | opinions | figures | ends with)",
+    ];
+  }
+  const u = budgets.unit;
+  if (outline.unit !== u)
+    p.push(
+      `the plan counts ${outline.unit}; a ${u === "chars" ? "Chinese" : "English"} plan counts ${u}`,
+    );
+  rows.forEach((row, i) => {
+    if (row.n !== i) {
+      p.push(
+        `row ${i + 1} is numbered ${Number.isNaN(row.n) ? "(none)" : row.n}; rows run 0, 1, 2, … with the lead as 0`,
+      );
+    }
+    if (!(row.budget > 0)) p.push(`row ${i}: no ${u} number`);
+  });
+  const sum = rows.reduce((s, r) => s + (r.budget > 0 ? r.budget : 0), 0);
+  if (budgets.total && sum > budgets.total.cap) {
+    p.push(`the rows sum to ${sum} ${u}; the cap for the whole piece is ${budgets.total.cap}`);
+  }
+  for (const row of rows.slice(1)) {
+    if (budgets.section && row.budget > budgets.section.cap) {
+      p.push(`row ${row.n} asks for ${row.budget} ${u}; a section's cap is ${budgets.section.cap}`);
+    }
+  }
+  const lead = rows[0];
+  if (
+    lead &&
+    budgets.lead &&
+    (lead.budget > budgets.lead.cap || lead.budget < budgets.lead.floor)
+  ) {
+    p.push(
+      `row 0 (the lead) asks for ${lead.budget} ${u}; the lead stays within ${budgets.lead.floor}–${budgets.lead.cap}`,
+    );
+  }
+  const count = rows.length - 1;
+  if (budgets.sections && (count < budgets.sections.floor || count > budgets.sections.cap)) {
+    p.push(
+      `${count} sections after the lead; the profile asks for ${budgets.sections.floor} to ${budgets.sections.cap}`,
+    );
+  }
+  if (manifest) {
+    const owned = rows.flatMap((r) => r.figures);
+    for (const stem of manifest) {
+      const k = owned.filter((x) => x === stem).length;
+      if (k !== 1)
+        p.push(`figure ${stem} appears in ${k} rows; every figure belongs to exactly one`);
+    }
+    for (const stem of new Set(owned)) {
+      if (!manifest.includes(stem)) p.push(`figure ${stem} is in the plan but not in the manifest`);
+    }
+  }
+  if (facts) {
+    for (const row of rows) {
+      for (const id of [...row.facts, ...row.opinions]) {
+        if (!facts.ids.has(id)) p.push(`row ${row.n} cites ${id}, which is not in the facts file`);
+      }
+    }
+  }
+  return p;
+}
+
+/** Entries of one facts section by id: the id's line and the indented lines under it. */
+function factsEntries(sectionText) {
+  const out = new Map();
+  let current = null;
+  for (const line of (sectionText ?? "").split("\n")) {
+    const id = /^\s*(?:[-*]\s*)?(?:\*\*)?`?([FOS]\d+)\b/.exec(line)?.[1];
+    if (id && !/^\s{2,}/.test(line)) {
+      current = id;
+      out.set(id, line);
+    } else if (current && /^\s+\S/.test(line)) out.set(current, `${out.get(current)}\n${line}`);
+    else current = null;
+  }
+  return out;
+}
+
+/** What one section may cite: its facts and opinions, their sources, and the terms and limits in full. */
+function factsSubset(F, factsText, row) {
+  const pick = (name, ids) => {
+    const entries = factsEntries(factsSection(factsText, name));
+    const lines = ids.map((id) => entries.get(id)).filter(Boolean);
+    return lines.length ? lines.join("\n") : "(none)";
+  };
+  const factLines = pick("FACTS", row.facts);
+  const sourceIds = [...new Set(factLines.match(/\bS\d+\b/g) ?? [])];
+  const parts = [
+    F["facts-subset-intro"],
+    factLines,
+    "",
+    "## OPINIONS",
+    pick("OPINIONS", row.opinions),
+  ];
+  if (sourceIds.length && factsSection(factsText, "SOURCES") !== undefined) {
+    parts.push("", "## SOURCES (of these facts)", pick("SOURCES", sourceIds));
+  }
+  parts.push("", "## TERMS", factsSection(factsText, "TERMS") ?? "(none)");
+  parts.push("", "## NOT-FACTS", factsSection(factsText, "NOT-FACTS") ?? "(none)");
+  return parts.join("\n");
+}
+
+/** The outline's head for a section call: thesis and reader, and for the lead the title candidates. */
+function outlineHead(outline, n) {
+  const pick = ["Thesis", "Reader and takeaway", ...(n === 0 ? ["Title candidates"] : [])];
+  return pick
+    .filter((k) => outline.parts[k] !== undefined)
+    .map((k) => `# ${k}\n${outline.parts[k]}`)
+    .join("\n\n");
+}
+
+/** The manifest lines that name the given figure stems, under the manifest's table header. */
+function manifestRows(manifestText, stems) {
+  if (!stems.length) return "none";
+  if (!manifestText) return stems.join(", ");
+  const lines = manifestText.split("\n");
+  const header = lines.filter((l) => /^\s*\|/.test(l)).slice(0, 2);
+  const hits = lines.filter((l) =>
+    stems.some((s) => new RegExp(`(^|[^a-z0-9-])${s}([^a-z0-9-]|$)`).test(l)),
+  );
+  const tableHits = hits.filter((l) => /^\s*\|/.test(l));
+  return tableHits.length && header.length === 2
+    ? [...header, ...tableHits].join("\n")
+    : hits.join("\n");
+}
+
+/** Sections 0 … n−1 of one language, latest versions, fenced; a gap is an error. */
+function previousSections(F, dir, n, lang) {
+  if (n === 0) return F["previous-none"];
+  const parts = [];
+  for (let k = 0; k < n; k++) {
+    const s = latestSection(dir, k, lang);
+    if (!s) fail(`section s${k}.${lang} is missing in ${dir}: sections are written in order`);
+    parts.push(read(s.file).trim());
+  }
+  return `\`\`\`\`markdown\n${parts.join("\n\n")}\n\`\`\`\``;
+}
+
+/** Sections n−1 and n+1 of one language, latest versions, for context only. */
+function neighbourText(dir, n, lang) {
+  const parts = [];
+  for (const k of [n - 1, n + 1]) {
+    const s = k >= 0 ? latestSection(dir, k, lang) : undefined;
+    if (s) parts.push(`### Section ${k}\n\`\`\`\`markdown\n${read(s.file).trim()}\n\`\`\`\``);
+  }
+  return parts.length ? parts.join("\n\n") : "(none)";
+}
+
+/** Section mode for translate / polish / fix / review: a `s<n>.…` input or --sections-dir. */
+function sectionModeOf(o) {
+  const fromName = sectionOfFile(o.in);
+  if (!fromName && !o["sections-dir"]) return undefined;
+  const n = o.section !== undefined ? Number(o.section) : fromName?.n;
+  if (n === undefined || Number.isNaN(n)) {
+    fail("section mode needs an input named s<n>.<lang>.v<k>.md, or --section <n>");
+  }
+  return { n, dir: o["sections-dir"] ?? path.dirname(o.in) };
+}
+
+/** --feedback takes text, @file, or the path of an existing file. */
+function feedbackText(value) {
+  if (value.startsWith("@")) return read(value.slice(1), "--feedback").trim();
+  if (existsSync(value)) return read(value, "--feedback").trim();
+  return value.trim();
+}
+
+/** The figure ids a text's figure blocks carry, in order. */
+function figureIdsIn(text) {
+  return [...figureBlockTexts(text).keys()];
+}
+
+/** The contract and budget slots a call that returns one section needs. */
+function sectionParams(
+  F,
+  prof,
+  lang,
+  n,
+  { cap, planned, budgets, figureIds, markers, date, versionNote },
+) {
+  const params = profileParams(F, prof, lang, { contract: true, markers, date, versionNote });
+  params.CONTRACT = read(path.join(PROMPTS, "contract-section.md")).trim();
+  params.SECTION_N = String(n);
+  params.SECTION_SHAPE = n === 0 ? F["section-shape-lead"] : F["section-shape-body"];
+  params.SECTION_BUDGET =
+    cap !== undefined ? `${cap} ${budgets.unitName}` : "the size the plan gives";
+  params.SECTION_WORDS_PLANNED =
+    planned !== undefined ? `${planned} ${budgets.unitName}` : "the size the plan gives";
+  params.SECTION_FIGURE_IDS = figureIds.length ? figureIds.join(", ") : "none";
+  return params;
 }
 
 function buildMessages(step, o) {
@@ -432,6 +937,7 @@ function buildMessages(step, o) {
   let params = {};
   const content = {};
   let lang;
+  const hooks = {};
 
   const meme = o.meme ? F["meme-brief"] : "";
   if (o.meme) content.MEME_BRIEF = read(o.meme, "--meme").trim();
@@ -440,6 +946,17 @@ function buildMessages(step, o) {
   const input = o.in ? read(o.in, "--in") : undefined;
   const doc = input !== undefined ? splitFrontmatter(input) : { meta: {}, body: "" };
   const prof = resolveProfile(o, doc.meta);
+  const sec = ["translate", "polish", "fix", "review"].includes(step)
+    ? sectionModeOf(o)
+    : undefined;
+  // The plan, when one is given and counts in this language's unit, sizes a section call.
+  const planRow = (n, l) => {
+    if (!o.outline) return undefined;
+    const outline = parseOutline(read(o.outline, "--outline"));
+    return outline.unit === budgetsOf(prof, l, o).unit
+      ? outline.rows.find((r) => r.n === n)
+      : undefined;
+  };
 
   switch (step) {
     case "outline": {
@@ -448,18 +965,31 @@ function buildMessages(step, o) {
       params.STYLE = stylePrompt(lang);
       params.TITLE_RULE = titleRule ?? "";
       params.MEME_BRIEF_SECTION = meme;
+      const b = budgetsOf(prof, lang, o);
       if (o["word-budget"] !== undefined) params.WORD_BUDGET = o["word-budget"];
+      else if (b.total) {
+        params.WORD_BUDGET = `${b.total.floor}–${b.total.cap} ${b.unitName} of body, at most ${b.total.cap}`;
+      }
+      params.BUDGET_UNIT = b.unit;
+      params.BUDGET_UNIT_DESC = b.unitName;
+      if (b.total) params.WORD_CAP = `${b.total.cap}`;
+      if (b.section) params.SECTION_CAP = `${b.section.cap}`;
+      if (b.lead) params.LEAD_RANGE = `${b.lead.floor}–${b.lead.cap}`;
+      params.SECTION_RANGE = b.sections
+        ? `${b.sections.floor} to ${b.sections.cap}`
+        : "the outline's number of";
       if (o["figure-count"] !== undefined) params.FIGURE_COUNT = o["figure-count"];
       if (o.brief) content.BRIEF = read(o.brief, "--brief").trim();
       content.RESEARCH_SUMMARY = researchText(o.research);
       if (o.feedback) {
         params.FEEDBACK = F["outline-feedback"];
-        content.FEEDBACK_NOTES = read(o.feedback, "--feedback").trim();
+        content.FEEDBACK_NOTES = feedbackText(o.feedback);
         if (o.previous) content.PREVIOUS_OUTLINE = read(o.previous, "--previous").trim();
       } else {
         if (o.previous) fail("--previous only goes with --feedback");
         params.FEEDBACK = "";
       }
+      hooks.after = (out) => validateOutline(out, o, prof, lang);
       break;
     }
     case "write": {
@@ -478,6 +1008,66 @@ function buildMessages(step, o) {
       else if (prof.kind !== "post") content.FIGURES = "(none: this text has no figures)";
       break;
     }
+    case "section": {
+      if (!o.outline) fail("section needs --outline <outline.final.md>");
+      if (o.section === undefined) fail("section needs --section <n>");
+      const n = Number(o.section);
+      const dir = o["sections-dir"] ?? (o.out ? path.dirname(o.out) : undefined);
+      if (!dir) fail("section needs --sections-dir <dir>");
+      lang = checkLang(o.lang ?? langOf(o.out) ?? "en", "--lang");
+      o.out ??= nextSectionFile(dir, n, lang);
+      const outline = parseOutline(read(o.outline, "--outline"));
+      const row = outline.rows.find((r) => r.n === n);
+      if (!row) fail(`the outline's plan has no row ${n}`);
+      const budgets = budgetsOf(prof, lang, o);
+      const planned = outline.unit === budgets.unit ? row.budget : undefined;
+      const cap = rowCap(budgets, n, planned);
+      params = sectionParams(F, prof, lang, n, {
+        cap,
+        planned,
+        budgets,
+        figureIds: row.figures,
+        markers: "write",
+        date: o.date ?? today(),
+        versionNote: o["version-note"],
+      });
+      params.STYLE = stylePrompt(lang);
+      params.SECTION_COUNT = String(outline.rows.length);
+      params.TITLE_RULE = n === 0 ? (titleRule ?? F["title-rule-section"]) : "";
+      params.MEME_BRIEF_SECTION = meme;
+      params.FIGURE_REUSE_RULE = "";
+      params.EXISTING_FIGURE_BLOCKS = "";
+      if (o["reuse-figures"] && row.figures.length) {
+        const blocks = figureBlockTexts(read(o["reuse-figures"], "--reuse-figures"));
+        const found = row.figures.map((id) => blocks.get(id)).filter(Boolean);
+        if (found.length) {
+          params.FIGURE_REUSE_RULE = F["figure-reuse"];
+          params.EXISTING_FIGURE_BLOCKS = F["existing-figure-blocks"];
+          content.EXISTING_BLOCKS = found.join("\n\n");
+        }
+      }
+      if (o.feedback) {
+        params.FEEDBACK = F["section-feedback"];
+        content.FEEDBACK_NOTES = feedbackText(o.feedback);
+        const prev = o.previous ?? latestSection(dir, n, lang)?.file;
+        if (!prev) fail("--feedback needs --previous <the attempt it is about>");
+        content.PREVIOUS_SECTION = read(prev, "--previous").trim();
+      } else params.FEEDBACK = "";
+      content.OUTLINE_HEAD = outlineHead(outline, n);
+      content.PLAN_TABLE = outline.planTable;
+      content.SECTION_PLAN = [`${outline.header}\n${row.line}`, outline.sectionPlans.get(n) ?? ""]
+        .filter(Boolean)
+        .join("\n\n");
+      content.SECTION_FIGURES = manifestRows(
+        o.figures ? read(o.figures, "--figures") : "",
+        row.figures,
+      );
+      content.PREVIOUS_SECTIONS = previousSections(F, dir, n, lang);
+      if (content.FACTS === undefined) fail("section needs --facts <facts.md>");
+      content.FACTS_SUBSET = o["facts-all"] ? content.FACTS : factsSubset(F, content.FACTS, row);
+      hooks.after = (out) => sectionAfter(out, { n, lang, row, budgets, cap, file: o.out });
+      break;
+    }
     case "translate": {
       if (!o.to) fail("translate needs --to en|zh");
       lang = checkLang(o.to, "--to");
@@ -490,12 +1080,36 @@ function buildMessages(step, o) {
           `the source carries a version note ("${sourceNote}"); pass --version-note with the ${LANG_NAME[lang]} line, or "none"`,
         );
       }
-      params = profileParams(F, prof, lang, {
-        contract: true,
+      const shared = {
         markers: "keep",
         date: o.date ?? doc.meta.date ?? today(),
         versionNote: o["version-note"],
-      });
+      };
+      if (sec) {
+        if (!o.outline) fail("translate in section mode needs --outline <outline.final.md>");
+        const outline = parseOutline(read(o.outline, "--outline"));
+        const budgets = budgetsOf(prof, lang, o);
+        const sourceCount = countBody(input, sourceLang);
+        const planned = Math.round(
+          lang === "zh" ? sourceCount * ZH_PER_EN : sourceCount / ZH_PER_EN,
+        );
+        params = sectionParams(F, prof, lang, sec.n, {
+          ...shared,
+          cap: rowCap(budgets, sec.n, undefined),
+          planned,
+          budgets,
+          figureIds: figureIdsIn(input),
+        });
+        params.SECTION_CONTEXT = `${F["translated-context"]}\n\n`;
+        params.SOURCE_LABEL = `Source section ${sec.n}`;
+        content.PLAN_TABLE = outline.planTable;
+        content.PREVIOUS_SECTIONS = previousSections(F, sec.dir, sec.n, lang);
+        o.out ??= nextSectionFile(sec.dir, sec.n, lang);
+      } else {
+        params = profileParams(F, prof, lang, { contract: true, ...shared });
+        params.SECTION_CONTEXT = "";
+        params.SOURCE_LABEL = `Source ${NOUN[prof.kind]}`;
+      }
       params.STYLE_TARGET = stylePrompt(lang);
       params.TARGET_LANG_NAME = LANG_NAME[lang];
       params.SOURCE_LANG_NAME = LANG_NAME[sourceLang];
@@ -506,22 +1120,51 @@ function buildMessages(step, o) {
         const terms = factsSection(content.FACTS, "TERMS");
         if (terms !== undefined) content.TERMS = terms;
       }
+      if (o["reuse-figures"]) {
+        if (!o["reuse-source"]) {
+          fail(
+            "--reuse-figures on translate needs --reuse-source <the frozen draft in the source language>",
+          );
+        }
+        hooks.transform = (out) =>
+          reuseTranslatedFigures(out, input, read(o["reuse-source"]), read(o["reuse-figures"]));
+      }
       break;
     }
     case "polish":
     case "fix": {
       if (input === undefined) fail(`${step} needs --in <draft>`);
       lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
-      params = profileParams(F, prof, lang, {
-        contract: true,
+      const shared = {
         markers: step === "polish" ? "keep" : "fix",
         date: o.date ?? doc.meta.date ?? today(),
         versionNote: o["version-note"] ?? versionNoteOf(doc),
-      });
+      };
+      if (sec) {
+        const budgets = budgetsOf(prof, lang, o);
+        const row = planRow(sec.n, lang);
+        params = sectionParams(F, prof, lang, sec.n, {
+          ...shared,
+          cap: rowCap(budgets, sec.n, row?.budget),
+          planned: row?.budget ?? countBody(input, lang),
+          budgets,
+          figureIds: figureIdsIn(input),
+        });
+        params.NEIGHBOURS = `${F.neighbours}\n\n`;
+        content.NEIGHBOUR_TEXT = neighbourText(sec.dir, sec.n, lang);
+        params.DRAFT_LABEL = `Section ${sec.n} (return this section only)`;
+        params.DRAFT_HEADING = `## Section ${sec.n} (the one to edit; return it only)\n`;
+        if (step === "fix") o.out ??= nextSectionFile(sec.dir, sec.n, lang);
+      } else {
+        params = profileParams(F, prof, lang, { contract: true, ...shared });
+        params.NEIGHBOURS = "";
+        params.DRAFT_LABEL = NOUN[prof.kind][0].toUpperCase() + NOUN[prof.kind].slice(1);
+        params.DRAFT_HEADING = "";
+      }
       params[step === "polish" ? "STYLE_TARGET" : "STYLE"] = stylePrompt(lang);
       if (step === "polish") Object.assign(params, tells(F, lang));
       else if (o.findings) content.FINDINGS = read(o.findings, "--findings").trim();
-      content.DRAFT = input.trim();
+      content.DRAFT = sec ? fenced(input) : input.trim();
       break;
     }
     case "review": {
@@ -534,7 +1177,17 @@ function buildMessages(step, o) {
       // Fragments are trimmed; the rule follows a sentence and the section precedes a heading.
       params.FACTS_RULE = content.FACTS !== undefined ? ` ${F["review-facts-rule"]}` : "";
       params.FACTS_SECTION = content.FACTS !== undefined ? `${F["review-facts-section"]}\n\n` : "";
-      content.DRAFT = input.trim();
+      if (sec) {
+        params.SCOPE = F["review-scope-section"];
+        params.NEIGHBOURS = `${F.neighbours}\n\n`;
+        content.NEIGHBOUR_TEXT = neighbourText(sec.dir, sec.n, lang);
+        params.DRAFT_LABEL = `Section ${sec.n} (the one to review)`;
+      } else {
+        params.SCOPE = F["review-scope-post"];
+        params.NEIGHBOURS = "";
+        params.DRAFT_LABEL = NOUN[prof.kind][0].toUpperCase() + NOUN[prof.kind].slice(1);
+      }
+      content.DRAFT = sec ? fenced(input) : input.trim();
       break;
     }
     default:
@@ -543,7 +1196,87 @@ function buildMessages(step, o) {
 
   const system = render(prompt(step, "system"), params, content, `${step}.system.md`);
   const user = render(prompt(step, "user"), params, content, `${step}.user.md`);
-  return { lang, prof, system, user, input };
+  return { lang, prof, system, user, input, ...hooks };
+}
+
+/**
+ * A figure that did not change in the source keeps its frozen translation: when the source
+ * section's block equals the frozen source draft's block byte for byte, the frozen target block
+ * replaces whatever the model wrote, so an unchanged figure needs no redraw.
+ */
+function reuseTranslatedFigures(out, source, frozenSource, frozenTarget) {
+  const now = figureBlockTexts(source);
+  const was = figureBlockTexts(frozenSource);
+  const target = figureBlockTexts(frozenTarget);
+  const written = figureBlockTexts(out);
+  let text = out;
+  for (const [id, block] of now) {
+    if (was.get(id) === block && target.has(id) && written.has(id)) {
+      text = text.replace(written.get(id), () => target.get(id));
+      note(`figure ${id}: unchanged in the source, so its frozen translation is kept`);
+    }
+  }
+  return text;
+}
+
+/** What the section call's answer must look like; printed, never silently fixed. */
+function sectionAfter(out, { n, lang, row, budgets, cap, file }) {
+  const problems = [];
+  const sections = splitSections(out);
+  const h2 = sections.length - 1;
+  if (n === 0) {
+    if (!out.startsWith("---\n")) problems.push("the lead does not start with its frontmatter");
+    if (h2) problems.push(`the lead carries ${h2} \`## \` heading(s)`);
+  } else {
+    if (!out.startsWith("## ")) problems.push("the section does not start with its `## ` heading");
+    if (h2 !== 1) problems.push(`${h2} \`## \` headings (exactly one)`);
+  }
+  const ids = figureIdsIn(out);
+  const want = row.figures;
+  if (ids.join() !== want.join()) {
+    problems.push(
+      `figure blocks [${ids.join(", ")}]; the plan gives this section [${want.join(", ")}]`,
+    );
+  }
+  if (/\[\^/.test(out)) problems.push("a footnote `[^…]` (citations are generated, not written)");
+  if (/^\*\*(Sources|来源)/m.test(out)) problems.push("a Sources line");
+  const count = countBody(out, lang);
+  process.stderr.write(
+    `section ${n}: ${count} ${budgets.unit}${cap !== undefined ? ` of at most ${cap}` : ""}${row.budget > 0 ? ` (plan ${row.budget})` : ""}\n`,
+  );
+  if (cap !== undefined && count > cap)
+    problems.push(`over budget: ${count} ${budgets.unit} > ${cap}`);
+  for (const p of problems) note(p);
+  note(
+    problems.length
+      ? `rerun this section with --feedback naming the problems; never trim it by hand (${file})`
+      : `next: check --in ${file} --section ${n} --outline <outline> --facts <facts> --figures <manifest>`,
+  );
+}
+
+/** After an outline call: the plan is validated, and a failure writes the feedback for one rerun. */
+function validateOutline(out, o, prof, lang) {
+  const budgets = budgetsOf(prof, lang, o);
+  const facts = o.facts ? loadFacts(o.facts) : undefined;
+  const manifest = o.figures ? manifestStems(read(o.figures, "--figures")) : undefined;
+  const problems = planProblems(parseOutline(out), budgets, { facts, manifest });
+  if (!problems.length) {
+    note("plan: within budget, every figure placed once, every id in FACTS");
+    return;
+  }
+  const file = path.join(path.dirname(o.out), "outline-feedback.auto.md");
+  writeFileSync(file, planFeedback(problems));
+  for (const p of problems) note(`plan: ${p}`);
+  process.stderr.write(
+    `prose: the plan fails ${problems.length} rule(s); wrote ${file}\n` +
+      `  rerun once: outline … --feedback ${file} --previous ${o.out}\n`,
+  );
+  process.exitCode = 1;
+}
+
+function planFeedback(problems) {
+  const F = loadFragments();
+  return `${F["plan-feedback"]}\n${problems.map((p, i) => `${i + 1}. ${p}`).join("\n")}\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -601,9 +1334,12 @@ function freshPath(file) {
 const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
 
 function unwrapFence(text) {
-  const m = /^```(?:markdown|md)?\n([\s\S]*)\n```$/.exec(text.trim());
-  return m ? m[1] : text.trim();
+  const m = /^(`{3,})(?:markdown|md)?\n([\s\S]*)\n\1$/.exec(text.trim());
+  return m ? m[2] : text.trim();
 }
+
+/** A section given to a model fenced, so its own `## ` heading is not read as the prompt's. */
+const fenced = (text) => `\`\`\`\`markdown\n${text.trim()}\n\`\`\`\``;
 
 const MARKER = /\{[FO]\d+\}/g;
 
@@ -705,17 +1441,20 @@ async function callApi(step, o, messages) {
   const text = choice?.message?.content ?? "";
   if (!text.trim()) fail("empty completion; nothing written", 1);
 
-  const out = `${unwrapFence(text)}\n`;
+  let out = `${unwrapFence(text)}\n`;
+  if (messages.transform) out = messages.transform(out);
   mkdirSync(path.dirname(path.resolve(o.out)), { recursive: true });
   writeFileSync(o.out, out);
   process.stderr.write(`wrote ${o.out}\n`);
   if (["translate", "polish", "fix"].includes(step) && messages.input !== undefined) {
     markerDrift(step, messages.input, out);
   }
-  if (messages.prof.kind !== "landing" && !["outline", "review"].includes(step)) {
+  const sectionAnswer = step === "section" || sectionOfFile(o.out);
+  if (messages.prof.kind !== "landing" && !["outline", "review"].includes(step) && !sectionAnswer) {
     if (!out.startsWith("---\n"))
       note("the answer does not start with frontmatter; run check on it");
   }
+  if (messages.after) messages.after(out);
 }
 
 // ---------------------------------------------------------------------------
@@ -731,6 +1470,7 @@ const EMOJI = /(?![©®™])\p{Extended_Pictographic}/u;
 const CJK = "\\u3400-\\u4dbf\\u4e00-\\u9fff\\uf900-\\ufaff";
 const HTML_FIGURE = /^<figure\b[^>]*\bclass="[^"]*\bpost-figure\b/;
 const TLDR = /^\*\*TL;DR\*\*\s*$/;
+const FOOTNOTE_DEF = /^\[\^[^\]]+\]:/;
 
 const FIGURE_OPEN = /^```figure\b(.*)$/;
 const SPEC_KEY = /^\s*([a-z_]+)\s*:\s*(.*)$/;
@@ -769,9 +1509,13 @@ function isDrawn(fig) {
   return fig.text.length > 0 || !!fig.title;
 }
 
-/** Split a document into typed lines with their file line numbers; fenced code is opaque. */
+/** A document file, split into typed lines. */
 function parseDoc(file) {
-  const raw = read(file, "--in");
+  return parseText(read(file, "--in"), file);
+}
+
+/** A text split into typed lines with their line numbers; fenced code is opaque. */
+function parseText(raw, file) {
   const doc = splitFrontmatter(raw);
   const lines = doc.body.split("\n");
   const items = [];
@@ -812,6 +1556,7 @@ function parseDoc(file) {
     let type = "text";
     if (line.trim() === "") type = "blank";
     else if (HTML_FIGURE.test(line.trim())) type = "htmlfigure";
+    else if (FOOTNOTE_DEF.test(line.trim())) type = "footnote";
     else if (HEADING.test(line)) type = "heading";
     else if (IMAGE_LINE.test(line.trim())) type = "image";
     else if (CAPTION.test(line.trim())) type = "caption";
@@ -916,7 +1661,21 @@ function loadFacts(file) {
     if (term && term.length >= 3 && !/^(term|terms|en|english|名词|术语)$/i.test(term))
       terms.push(term);
   }
-  return { text, ids, urls, terms };
+  const sources = new Map();
+  for (const line of (factsSection(text, "SOURCES") ?? "").split("\n")) {
+    const m = /^\s*[-*]\s*(S\d+)\s*[:：]\s*(.+?)\s*·\s*(\S+)\s*$/.exec(line);
+    if (!m) continue;
+    const where = m[3];
+    const url = /^https?:\/\//.test(where) ? where : null;
+    const kind = url ? "url" : where === "private" || where === "nolink" ? where : "unknown";
+    sources.set(m[1], { id: m[1], title: m[2].trim(), url, kind, raw: where });
+  }
+  const tags = new Map();
+  for (const [id, entry] of factsEntries(factsSection(text, "FACTS"))) {
+    const t = /\[((?:S\d+[\s,]*)+)\]\s*$/.exec(entry.trim());
+    tags.set(id, t ? t[1].match(/S\d+/g) : []);
+  }
+  return { text, ids, urls, terms, sources, tags };
 }
 
 function codeSpans(doc) {
@@ -934,7 +1693,7 @@ function codeSpans(doc) {
       } else block?.push(it.line);
       continue;
     }
-    if (it.type === "figure" || it.type === "htmlfigure") continue;
+    if (["figure", "htmlfigure", "footnote"].includes(it.type)) continue;
     for (const m of it.line.matchAll(/(`+)([\s\S]*?[^`])\1(?!`)/g)) spans.push(m[2].trim());
   }
   return spans;
@@ -957,7 +1716,9 @@ function numbersOf(doc) {
   const out = [];
   for (const it of [...doc.items, ...figureLines(doc)]) {
     if (!PROSE_TYPES.includes(it.type)) continue;
-    const t = maskProse(it.line).replace(MARKER, " ");
+    const t = maskProse(it.line)
+      .replace(MARKER, " ")
+      .replace(/\[\^\d+\]/g, " ");
     for (const m of t.matchAll(/\d+(?:[.,]\d+)*/g)) out.push(m[0].replace(/,(?=\d{3}\b)/g, ""));
   }
   return out;
@@ -1210,7 +1971,7 @@ function checkFrontmatter(doc, lang, prof, o, r) {
   }
 }
 
-function checkFigures(doc, lang, prof, o, r) {
+function checkFigures(doc, lang, prof, o, r, secN) {
   const { items } = doc;
   const seen = new Set();
   for (const fig of doc.figures) {
@@ -1291,7 +2052,28 @@ function checkFigures(doc, lang, prof, o, r) {
     );
   }
 
-  if (o.figures) {
+  if (secN !== undefined && o.outline) {
+    const row = parseOutline(read(o.outline, "--outline")).rows.find((x) => x.n === secN);
+    const ids = doc.figures.map((f) => f.id).filter(Boolean);
+    if (!row) r.add("error", null, `the outline's plan has no row ${secN}`);
+    else {
+      for (const id of ids) {
+        if (!row.figures.includes(id))
+          r.add("error", null, `figure ${id} is not in row ${secN} of the plan`);
+      }
+      for (const id of row.figures) {
+        if (!ids.includes(id))
+          r.add("error", null, `figure ${id} belongs to this section and has no block`);
+      }
+    }
+  }
+  if (o.figures && secN !== undefined) {
+    const want = manifestStems(read(o.figures, "--figures"));
+    for (const f of doc.figures) {
+      if (f.id && !want.includes(f.id))
+        r.add("error", f.n, `figure ${f.id} is not in the manifest`);
+    }
+  } else if (o.figures) {
     const want = manifestStems(read(o.figures, "--figures"));
     if (!want.length)
       r.add(
@@ -1489,14 +2271,33 @@ function checkDoc(doc, lang, prof, o, r, facts) {
   const { items } = doc;
   const settings = profileSettings(prof);
   const post = prof.kind === "post";
-  checkFrontmatter(doc, lang, prof, o, r);
+  // One section of a piece: s<n>.<lang>.v<k>.md, or --section <n>.
+  const secN = o.section !== undefined ? Number(o.section) : sectionOfFile(doc.file)?.n;
+  const content = items.filter((it) => it.type !== "blank");
+  if (secN === undefined || secN === 0) checkFrontmatter(doc, lang, prof, o, r);
+  else if (doc.metaRaw !== null)
+    r.add("error", 1, `section ${secN} carries frontmatter (only the lead does)`);
+  if (secN !== undefined) {
+    const h2s = items.filter((it) => it.type === "heading" && it.line.startsWith("## "));
+    if (secN === 0 && h2s.length) r.add("error", h2s[0].n, "the lead carries a `## ` heading");
+    if (secN > 0) {
+      if (content[0]?.type !== "heading" || !content[0].line.startsWith("## ")) {
+        r.add("error", content[0]?.n, `section ${secN} does not start with its \`## \` heading`);
+      }
+      if (h2s.length !== 1)
+        r.add("error", null, `section ${secN} has ${h2s.length} \`## \` headings (exactly one)`);
+    }
+  }
 
   // Lead and TL;DR
-  const content = items.filter((it) => it.type !== "blank");
   const firstNonNote = content.find(
     (it) => !(it.type === "quote" && VERSION_NOTE_LINE.test(it.line.trim())),
   );
-  if ((settings.lead ?? "yes") === "yes" && firstNonNote?.type === "heading") {
+  if (
+    secN === undefined &&
+    (settings.lead ?? "yes") === "yes" &&
+    firstNonNote?.type === "heading"
+  ) {
     r.add("error", firstNonNote.n, "no lead paragraph before the first heading");
   }
   const tldr = items.find((it) => TLDR.test(it.line.trim()));
@@ -1531,7 +2332,11 @@ function checkDoc(doc, lang, prof, o, r, facts) {
     if (it.line.match(MARKER)) r.add("error", it.n, "fact marker in a heading");
   }
   const range = /^(\d+)\s*[-–]\s*(\d+)$/.exec(settings.sections ?? "");
-  if (range && (h2.length < Number(range[1]) || h2.length > Number(range[2]))) {
+  if (
+    secN === undefined &&
+    range &&
+    (h2.length < Number(range[1]) || h2.length > Number(range[2]))
+  ) {
     r.add(
       "error",
       null,
@@ -1548,44 +2353,38 @@ function checkDoc(doc, lang, prof, o, r, facts) {
       );
   }
 
-  checkFigures(doc, lang, prof, o, r);
+  checkFigures(doc, lang, prof, o, r, secN);
+  if (prof.kind !== "landing") checkBudgets(doc, lang, prof, o, r, { section: secN });
 
-  // Footer, rules, comments (posts)
-  const footers = items.filter((it) => it.type === "footer");
-  const footer = footers[0];
-  if (post) {
-    if (footers.length === 0) r.add("error", null, "no **Sources** footer line");
-    if (footers.length > 1) r.add("error", footers[1].n, "more than one **Sources** footer");
-    if (footer) {
-      const after = items.filter(
-        (it) => it.n > footer.n && it.type !== "blank" && it.type !== "comment",
-      );
-      if (after.length) r.add("error", after[0].n, "content after the **Sources** footer");
-      if (footer.line.match(MARKER)) r.add("error", footer.n, "fact marker in the footer");
-      if (facts) {
-        for (const m of footer.line.matchAll(/\]\((\S+?)\)/g)) {
-          if (!facts.urls.has(m[1])) r.add("error", footer.n, `footer URL not in FACTS: ${m[1]}`);
-        }
-      }
-    }
-    for (const it of items.filter((x) => x.type === "rule")) {
-      const next = items.find((x) => x.n > it.n && x.type !== "blank");
-      if (!next || next.type !== "footer")
-        r.add("error", it.n, "horizontal rule (only one, directly before the footer, is allowed)");
-    }
+  // The old Sources footer and its rule; citations are footnotes generated from the markers now.
+  for (const it of items.filter((x) => x.type === "footer")) {
+    r.add(
+      "error",
+      it.n,
+      "a **Sources** footer: citations are generated from the fact markers by strip",
+    );
   }
+  if (post) {
+    for (const it of items.filter((x) => x.type === "rule"))
+      r.add("error", it.n, "horizontal rule");
+  }
+  // A model's note (omitted / not applied / figure changed) may close any section.
   for (const it of items.filter((x) => x.type === "comment")) {
+    const isNote = /^<!--\s*(omitted|not applied|figure changed)\b/.test(it.line.trim());
     const rest = items.filter((x) => x.n > it.n && x.type !== "blank" && x.type !== "comment");
-    if (rest.length)
-      r.add("error", it.n, "HTML comment inside the text (notes belong at the very end)");
+    if (isNote) r.add("warn", it.n, `model note: ${it.line.trim()}`);
+    else if (rest.length) r.add("error", it.n, "HTML comment inside the text");
     else if (it.line.trim().startsWith("<!--"))
       r.add("warn", it.n, `model note: ${it.line.trim()}`);
   }
+  checkFootnotes(doc, o, r, facts);
+  if (facts && doc.raw.match(MARKER)) checkSources(doc, r, facts);
+  const footer = undefined;
 
   // Forbidden syntax. A figure block's strings are data the drawer escapes, not Markdown or
   // HTML of the post, so only the rules about the words themselves apply to them.
   for (const it of items) {
-    if (["code", "fence", "comment", "htmlfigure"].includes(it.type)) continue;
+    if (["code", "fence", "comment", "htmlfigure", "footnote"].includes(it.type)) continue;
     const data = it.type === "figure";
     const t = it.line.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, "");
     if (!data && post && /\]\(#/.test(t)) r.add("error", it.n, "in-page anchor link ](#…)");
@@ -1809,12 +2608,481 @@ function pairDocs(a, b, o, r) {
       );
     }
   };
-  compare("code spans", codeSpans(a), codeSpans(b), "error");
-  compare("URLs", urlsOf(a), urlsOf(b), "error");
-  const markers = (d) =>
+  const refList = (d) =>
+    d.items
+      .filter((it) => it.type === "footnote")
+      .map((it) => it.line.trim().replace(/^\[\^(\d+)\]:\s*\[[\s\S]*\]\((\S+)\)$/, "$1 $2"));
+  const ra = refList(a);
+  const rb = refList(b);
+  if (ra.join("\n") !== rb.join("\n")) {
+    const at = ra.findIndex((x, i) => x !== rb[i]);
+    r.add(
+      "error",
+      null,
+      `reference lists differ (${ra.length} here, ${rb.length} in ${path.basename(b.file)}; first difference at [^${at === -1 ? Math.min(ra.length, rb.length) + 1 : at + 1}])`,
+    );
+  }
+  const sa = splitSections(a.raw);
+  const sb = splitSections(b.raw);
+  if (sa.length !== sb.length) {
+    r.add(
+      "error",
+      null,
+      `${sa.length - 1} sections here, ${sb.length - 1} in ${path.basename(b.file)}`,
+    );
+  }
+  const langOfA = langA ?? "en";
+  const zhSide = langOfA === "zh" ? "a" : langB === "zh" ? "b" : undefined;
+  const zhBudgets = zhSide
+    ? budgetsOf(resolveProfile(o, a.meta, { announce: false }), "zh", {})
+    : undefined;
+  const markersOf = (d) =>
     d.items.flatMap((it) => (it.type === "code" ? [] : (it.line.match(MARKER) ?? [])));
-  compare("fact markers", markers(a), markers(b), "error");
-  compare("numbers", numbersOf(a), numbersOf(b), "warn");
+  const refsOf = (d) =>
+    d.items.flatMap((it) =>
+      ["code", "footnote"].includes(it.type) ? [] : (it.line.match(/\[\^\d+\]/g) ?? []),
+    );
+  for (let i = 0; i < Math.min(sa.length, sb.length); i++) {
+    const da = parseText(sa[i].text, `${a.file}#s${i}`);
+    const db = parseText(sb[i].text, `${b.file}#s${i}`);
+    const where = i === 0 ? "the lead" : `section ${i}`;
+    compare(`${where}: code spans`, codeSpans(da), codeSpans(db), "error");
+    compare(`${where}: URLs`, urlsOf(da), urlsOf(db), "error");
+    compare(`${where}: fact markers`, markersOf(da), markersOf(db), "error");
+    compare(`${where}: citations`, refsOf(da), refsOf(db), "error");
+    compare(`${where}: numbers`, numbersOf(da), numbersOf(db), "warn");
+    const fa2 = da.figures.map((f) => `${f.id}:${f.text.length}`);
+    const fb2 = db.figures.map((f) => `${f.id}:${f.text.length}`);
+    if (fa2.join() !== fb2.join()) {
+      r.add(
+        "error",
+        null,
+        `${where}: figure blocks [${fa2.join(", ")}] here, [${fb2.join(", ")}] in ${path.basename(b.file)}`,
+      );
+    }
+    if (zhSide) {
+      const [zhText, enText] = zhSide === "a" ? [sa[i].text, sb[i].text] : [sb[i].text, sa[i].text];
+      const zh = countBody(zhText, "zh");
+      const en = countBody(enText, "en");
+      if (en && zh > en * ZH_PER_EN_MAX) {
+        r.add(
+          "warn",
+          null,
+          `${where}: ${zh} Chinese characters for ${en} English words (above ${ZH_PER_EN_MAX} per word)`,
+        );
+      }
+      const cap = rowCap(zhBudgets, i, undefined);
+      if (cap !== undefined && zh > cap)
+        r.add("error", null, `${where}: ${zh} Chinese characters; the cap is ${cap}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// plan / assemble / route
+// ---------------------------------------------------------------------------
+
+function runPlan(o) {
+  if (!o.in) fail("plan needs --in <outline>");
+  const lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
+  const prof = resolveProfile(o, {}, { announce: false });
+  const outline = parseOutline(read(o.in, "--in"));
+  const budgets = budgetsOf(prof, lang, o);
+  const facts = o.facts ? loadFacts(o.facts) : undefined;
+  const manifest = o.figures ? manifestStems(read(o.figures, "--figures")) : undefined;
+  const problems = planProblems(outline, budgets, { facts, manifest });
+  const sum = outline.rows.reduce((s, r) => s + (r.budget > 0 ? r.budget : 0), 0);
+  for (const row of outline.rows) {
+    process.stdout.write(
+      `  ${String(row.n).padStart(2)}  ${String(row.budget).padStart(4)} ${budgets.unit}  ${row.figures.join(", ") || "—"}  ${row.heading}\n`,
+    );
+  }
+  process.stdout.write(
+    `plan ${o.in} (${prof.name}, ${lang}): ${outline.rows.length} rows, ${sum} ${budgets.unit}` +
+      `${budgets.total ? ` of at most ${budgets.total.cap}` : ""}\n`,
+  );
+  if (problems.length) {
+    for (const p of problems) process.stdout.write(`ERROR ${p}\n`);
+    const file = path.join(path.dirname(o.in), "outline-feedback.auto.md");
+    writeFileSync(file, planFeedback(problems));
+    process.stdout.write(
+      `wrote ${file}; rerun once: outline … --feedback ${file} --previous ${o.in}\n`,
+    );
+    process.exit(1);
+  }
+  if (o.freeze) {
+    const frozen = path.join(path.dirname(o.in), "outline.final.md");
+    const text = read(o.in);
+    if (existsSync(frozen) && read(frozen) !== text) {
+      fail(`${frozen} exists and differs; the outline is frozen once (delete it to refreeze)`, 1);
+    }
+    writeFileSync(frozen, text);
+    process.stdout.write(`froze ${frozen}\n`);
+  }
+}
+
+/** Concatenate the sections of one language in order, byte for byte; refuse a gap or a shared figure. */
+function runAssemble(o) {
+  const dir = o["sections-dir"];
+  if (!dir) fail("assemble needs --sections-dir <dir>");
+  if (!o.out) fail("assemble needs --out <draft.<lang>.vN.md>");
+  const lang = checkLang(o.lang ?? langOf(o.out) ?? "", "assemble: pass --lang en|zh");
+  const files = sectionFiles(dir, lang);
+  if (!files.size) fail(`no s<n>.${lang}.v<k>.md files in ${dir}`);
+  const pins = new Map(
+    (o.pin ?? []).map((p) => {
+      const m = /^s(\d+)=v(\d+)$/.exec(p);
+      if (!m) fail(`--pin ${p}: write it as s<n>=v<k>`);
+      return [Number(m[1]), Number(m[2])];
+    }),
+  );
+  const outline = o.outline ? parseOutline(read(o.outline, "--outline")) : undefined;
+  const last = Math.max(...files.keys(), outline ? outline.rows.length - 1 : 0);
+  const chosen = [];
+  for (let n = 0; n <= last; n++) {
+    const list = files.get(n);
+    if (!list) fail(`section s${n}.${lang} is missing in ${dir} (sections run 0 to ${last})`);
+    const pick = pins.has(n) ? list.find((x) => x.v === pins.get(n)) : list[list.length - 1];
+    if (!pick) fail(`--pin s${n}=v${pins.get(n)}: no such file`);
+    chosen.push({ n, ...pick, text: read(pick.file) });
+  }
+  for (const n of pins.keys()) if (n > last) fail(`--pin s${n}: there is no section ${n}`);
+  if (!chosen[0].text.startsWith("---\n"))
+    fail(`s0 (the lead, ${chosen[0].file}) has no frontmatter`);
+  const owners = new Map();
+  for (const s of chosen) {
+    for (const id of figureIdsIn(s.text)) {
+      if (owners.has(id)) fail(`figure ${id} is in s${owners.get(id)} and in s${s.n}`);
+      owners.set(id, s.n);
+    }
+  }
+  const out = `${chosen.map((s) => s.text.replace(/\s+$/, "")).join("\n\n")}\n`;
+  writeFileSync(o.out, out);
+  const prof = resolveProfile(o, splitFrontmatter(chosen[0].text).meta, { announce: false });
+  const budgets = budgetsOf(prof, lang, o);
+  let total = 0;
+  for (const s of chosen) {
+    const count = countBody(s.text, lang);
+    total += count;
+    const row = outline?.rows.find((r) => r.n === s.n);
+    const planned = row && outline.unit === budgets.unit ? row.budget : undefined;
+    const cap = rowCap(budgets, s.n, planned);
+    const owned = figureIdsIn(s.text);
+    const flag = cap !== undefined && count > cap ? "  OVER" : "";
+    process.stdout.write(
+      `  s${s.n}  v${s.v}  ${String(count).padStart(4)} ${budgets.unit}` +
+        `${planned !== undefined ? ` / plan ${planned}` : ""}${cap !== undefined ? ` / cap ${cap}` : ""}` +
+        `  figures: ${owned.join(", ") || "—"}${flag}\n`,
+    );
+    if (row && owned.join() !== row.figures.join()) {
+      note(`s${s.n} owns [${owned.join(", ")}]; its plan row gives [${row.figures.join(", ")}]`);
+    }
+  }
+  process.stdout.write(
+    `wrote ${o.out}: ${chosen.length} sections, ${total} ${budgets.unit}` +
+      `${budgets.total ? ` of at most ${budgets.total.cap}` : ""}\n`,
+  );
+}
+
+/** Normalised for locating a quoted passage: markers, code ticks and emphasis gone, quotes folded. */
+function locatable(text) {
+  return foldQuotes(text.replace(MARKER, " ").replace(/[`*]/g, "")).replace(/\s+/g, " ").trim();
+}
+
+/** Split a merged findings list by the section that holds each quoted passage. */
+function runRoute(o) {
+  if (!o.findings) fail("route needs --findings <findings.<lang>.vN.md>");
+  const dir = o["sections-dir"];
+  if (!dir) fail("route needs --sections-dir <dir>");
+  const lang = checkLang(o.lang ?? langOf(o.findings) ?? "", "route: pass --lang en|zh");
+  const version = /\.v(\d+)\b/.exec(path.basename(o.findings))?.[1] ?? "1";
+  const items = read(o.findings, "--findings")
+    .split(/^(?=\s*\d+\.\s)/m)
+    .map((s) => s.trim())
+    .filter((s) => /^\d+\.\s/.test(s));
+  const sections = [...sectionFiles(dir, lang).entries()].map(([n, list]) => ({
+    n,
+    text: locatable(read(list[list.length - 1].file)),
+  }));
+  const routed = new Map();
+  const unrouted = [];
+  for (const item of items) {
+    const quote = /^\d+\.\s*\[([\s\S]+?)\]\s*[—–-]/.exec(item)?.[1];
+    const hits = quote ? sections.filter((s) => s.text.includes(locatable(quote))) : [];
+    if (hits.length === 1) {
+      if (!routed.has(hits[0].n)) routed.set(hits[0].n, []);
+      routed.get(hits[0].n).push(item);
+    } else {
+      unrouted.push(
+        `${item}\n   (route: ${quote ? `found in ${hits.length} sections` : "no [quoted passage]"})`,
+      );
+    }
+  }
+  const renumber = (list) => list.map((item, i) => item.replace(/^\d+\./, `${i + 1}.`)).join("\n");
+  const base = path.dirname(o.findings);
+  for (const [n, list] of [...routed.entries()].sort((a, b) => a[0] - b[0])) {
+    const file = path.join(base, `findings.s${n}.${lang}.v${version}.md`);
+    writeFileSync(file, `${renumber(list)}\n`);
+    process.stdout.write(`s${n}: ${list.length} finding(s) → ${file}\n`);
+  }
+  if (unrouted.length) {
+    const file = path.join(base, `findings.unrouted.${lang}.v${version}.md`);
+    writeFileSync(file, `${renumber(unrouted)}\n`);
+    process.stdout.write(
+      `unrouted: ${unrouted.length} finding(s) → ${file} (for the orchestrator)\n`,
+    );
+  }
+  process.stdout.write(
+    `route: ${items.length} findings, ${items.length - unrouted.length} routed\n`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Citations: fact markers become numbered footnotes
+// ---------------------------------------------------------------------------
+
+const sourceKey = (s) => (s.url ? s.url : `nolink:${s.title}`);
+
+/** The source → number map a published post's `[^n]: …` lines carry. */
+function readNumbering(file) {
+  const map = new Map();
+  for (const line of read(file, "--numbering-from").split("\n")) {
+    const m = /^\[\^(\d+)\]:\s*(.*)$/.exec(line.trim());
+    if (!m) continue;
+    const link = /^\[([\s\S]*)\]\((\S+)\)$/.exec(m[2].trim());
+    map.set(
+      link ? link[2] : `nolink:${decode(m[2].trim().replace(/\\([[\]])/g, "$1"))}`,
+      Number(m[1]),
+    );
+  }
+  if (!map.size) fail(`${file} has no [^n]: definitions to number from`, 1);
+  return map;
+}
+
+/**
+ * The citation renderer for one post: each marker group becomes `[^n]` after the sentence's
+ * closing punctuation, one per distinct public source of its facts, numbered by first use (or by
+ * the other language's map); opinions and private sources emit nothing.
+ */
+function citations(facts, numberingFrom) {
+  if (!facts.sources.size) fail("the facts file has no ## SOURCES section; citations need it", 1);
+  const fixed = numberingFrom ? readNumbering(numberingFrom) : null;
+  const numbers = new Map();
+  const used = new Map();
+  const problems = new Set();
+  const sourcesOf = (ids) => {
+    const out = [];
+    for (const id of ids) {
+      if (id.startsWith("O")) continue;
+      if (!facts.ids.has(id)) problems.add(`{${id}} is not an id in the facts file`);
+      const tags = facts.tags.get(id) ?? [];
+      if (facts.ids.has(id) && !tags.length) problems.add(`{${id}} has no [S…] source tag`);
+      for (const t of tags) {
+        const s = facts.sources.get(t);
+        if (!s) problems.add(`{${id}} names ${t}, which is not in ## SOURCES`);
+        else if (s.kind === "url" || s.kind === "nolink") out.push(s);
+      }
+    }
+    return out;
+  };
+  const numberOf = (s) => {
+    const key = sourceKey(s);
+    if (!numbers.has(key)) {
+      let n = fixed ? fixed.get(key) : numbers.size + 1;
+      if (n === undefined) {
+        problems.add(`source "${s.title}" is cited here but not in the --numbering-from post`);
+        n = 1000 + numbers.size;
+      }
+      numbers.set(key, n);
+      used.set(n, s);
+    }
+    return numbers.get(key);
+  };
+  const refs = (group) => {
+    const ns = [...new Set(sourcesOf(group.match(/[FO]\d+/g)).map(numberOf))].sort((a, b) => a - b);
+    return ns.map((n) => `[^${n}]`).join("");
+  };
+  const render = (line) =>
+    line.replace(
+      /([.!?。！？)）"”’」』]+)[ \t]*((?:\{[FO]\d+\})+)|[ \t]*((?:\{[FO]\d+\})+)([.!?。！？,，;；:：]+)?/g,
+      (m, punct, after, group, punctAfter) =>
+        after !== undefined ? punct + refs(after) : (punctAfter ?? "") + refs(group),
+    );
+  const definitions = () => {
+    if (fixed) {
+      for (const [key, n] of fixed) {
+        if (!numbers.has(key))
+          problems.add(`source [^${n}] of the --numbering-from post is never cited here`);
+      }
+    }
+    return [...used.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([n, s]) =>
+        s.url
+          ? `[^${n}]: [${escapeInline(s.title).replace(/([[\]])/g, "\\$1")}](${s.url})`
+          : `[^${n}]: ${escapeInline(s.title)}`,
+      );
+  };
+  return { render, definitions, problems };
+}
+
+/** The footnotes of a stripped post: defined, used, numbered 1 … N, linked to SOURCES. */
+function checkFootnotes(doc, o, r, facts) {
+  const refs = [];
+  for (const it of doc.items) {
+    if (["code", "fence", "footnote"].includes(it.type)) continue;
+    for (const m of it.line.matchAll(/\[\^([^\]\s]+)\]/g)) {
+      if (["htmlfigure", "caption", "figure", "image"].includes(it.type)) {
+        r.add("error", it.n, "a citation inside a figure or a caption");
+      }
+      refs.push({ n: Number(m[1]), line: it.n });
+    }
+  }
+  const defs = doc.items
+    .filter((it) => it.type === "footnote")
+    .map((it) => {
+      const m = /^\[\^([^\]]+)\]:\s*(.*)$/.exec(it.line.trim());
+      return { n: Number(m[1]), body: m[2], line: it.n };
+    });
+  if (!refs.length && !defs.length) return;
+  if (doc.raw.match(MARKER)) {
+    r.add(
+      "error",
+      null,
+      "footnotes in a draft that still has fact markers: citations are generated by strip, not written",
+    );
+    return;
+  }
+  const defined = new Map();
+  for (const d of defs) {
+    if (Number.isNaN(d.n)) r.add("error", d.line, "a footnote label that is not a number");
+    else if (defined.has(d.n)) r.add("error", d.line, `[^${d.n}] is defined twice`);
+    defined.set(d.n, d);
+  }
+  const usedNs = new Set(refs.map((x) => x.n));
+  for (const x of refs)
+    if (!defined.has(x.n)) r.add("error", x.line, `[^${x.n}] has no definition`);
+  for (const d of defs)
+    if (!usedNs.has(d.n)) r.add("error", d.line, `[^${d.n}] is defined and never cited`);
+  const ns = [...defined.keys()].sort((a, b) => a - b);
+  if (ns.some((n, i) => n !== i + 1))
+    r.add("error", null, `footnotes are numbered ${ns.join(", ")}; they run 1 … N`);
+  const firstUse = [...new Set(refs.map((x) => x.n))];
+  if (firstUse.some((n, i) => n !== i + 1)) {
+    r.add(
+      "warn",
+      null,
+      `footnotes first appear in the order ${firstUse.join(", ")} (fine for a post numbered from the other language)`,
+    );
+  }
+  const lastBody = doc.items
+    .filter((it) => !["blank", "footnote", "comment"].includes(it.type))
+    .pop();
+  const firstDef = defs[0];
+  if (lastBody && firstDef && lastBody.n > firstDef.line)
+    r.add("error", lastBody.n, "text after the footnote definitions");
+  const sources = facts ? [...facts.sources.values()] : [];
+  for (const d of defs) {
+    const link = /^\[([\s\S]*)\]\((\S+)\)$/.exec(d.body.trim());
+    if (link) {
+      if (/\/blob\/main\//.test(link[2]))
+        r.add("error", d.line, `[^${d.n}] links blob/main; pin it to the release`);
+      if (facts && !sources.some((s) => s.url === link[2]))
+        r.add("error", d.line, `[^${d.n}] links ${link[2]}, which is not in ## SOURCES`);
+    } else if (
+      facts &&
+      !sources.some((s) => s.kind === "nolink" && escapeInline(s.title) === d.body.trim())
+    ) {
+      r.add("error", d.line, `[^${d.n}] is neither [title](url) nor the title of a nolink source`);
+    }
+  }
+  for (const it of doc.items.filter((x) => x.type === "heading")) {
+    const id = HEADING.exec(it.line)[2].trim().toLowerCase().replace(/\s+/g, "-");
+    if (id === "footnote-label" || /^fn(ref)?-\d/.test(id)) {
+      r.add("error", it.n, `the heading's anchor "${id}" collides with the footnote ids`);
+    }
+  }
+}
+
+/** What a draft's markers promise for its citations: tagged facts, public sources, pinned links. */
+function checkSources(doc, r, facts) {
+  if (!facts.sources.size) {
+    r.add(
+      "error",
+      null,
+      "the facts file has no ## SOURCES section, so no citation can be generated",
+    );
+    return;
+  }
+  for (const s of facts.sources.values()) {
+    if (s.kind === "unknown")
+      r.add("error", null, `${s.id}: "${s.raw}" is not a URL, private or nolink`);
+    if (s.url && /\/blob\/main\//.test(s.url))
+      r.add("error", null, `${s.id} links blob/main; pin it to the release`);
+  }
+  const cited = new Set();
+  for (const it of doc.items) for (const m of it.line.matchAll(/\{(F\d+)\}/g)) cited.add(m[1]);
+  for (const id of cited) {
+    if (!facts.ids.has(id)) continue;
+    const tags = facts.tags.get(id) ?? [];
+    if (!tags.length) {
+      r.add("error", null, `{${id}} is cited and its fact has no [S…] source tag`);
+      continue;
+    }
+    for (const t of tags)
+      if (!facts.sources.has(t))
+        r.add("error", null, `{${id}} names ${t}, which is not in ## SOURCES`);
+    const kinds = tags.map((t) => facts.sources.get(t)?.kind);
+    if (kinds.every((k) => k === "private")) {
+      r.add("warn", null, `no reference will be rendered for {${id}}: its sources are all private`);
+    }
+  }
+}
+
+/** Budgets: a section above its cap (or 1.1 × its plan) is an error, one below its floor a warning. */
+function checkBudgets(doc, lang, prof, o, r, { section } = {}) {
+  const budgets = budgetsOf(prof, lang, o);
+  const outline = o.outline ? parseOutline(read(o.outline, "--outline")) : undefined;
+  const plan = outline && outline.unit === budgets.unit ? outline : undefined;
+  const u = budgets.unit;
+  const judge = (n, count, line) => {
+    const row = plan?.rows.find((x) => x.n === n);
+    const limit = n === 0 ? budgets.lead : budgets.section;
+    const cap = rowCap(budgets, n, row?.budget);
+    const what = n === 0 ? "the lead" : `section ${n}`;
+    if (cap !== undefined && count > cap) {
+      r.add(
+        "error",
+        line,
+        `${what} is ${count} ${u}; its cap is ${cap}${row ? ` (plan ${row.budget}, profile cap ${limit?.cap ?? "none"})` : ""}`,
+      );
+    } else if (limit && count < limit.floor) {
+      r.add("warn", line, `${what} is ${count} ${u}, below the profile's floor of ${limit.floor}`);
+    }
+    if (n > 0 && count === 0) r.add("error", line, `${what} has no body text`);
+    return count;
+  };
+  if (section !== undefined) return [judge(section, countBody(doc.raw, lang), null)];
+  const sections = splitSections(doc.raw);
+  const counts = sections.map((s) => judge(s.n, countBody(s.text, lang), s.n ? s.line : null));
+  const total = counts.reduce((a, b) => a + b, 0);
+  if (budgets.total && total > budgets.total.cap) {
+    r.add("error", null, `the body is ${total} ${u}; the cap is ${budgets.total.cap}`);
+  } else if (budgets.total && total < budgets.total.floor) {
+    r.add(
+      "warn",
+      null,
+      `the body is ${total} ${u}, below the profile's floor of ${budgets.total.floor}`,
+    );
+  }
+  if (plan && plan.rows.length !== sections.length) {
+    r.add(
+      "error",
+      null,
+      `${sections.length - 1} sections after the lead; the plan has ${plan.rows.length - 1}`,
+    );
+  }
+  return counts;
 }
 
 function runCheck(o) {
@@ -1839,7 +3107,7 @@ function runCheck(o) {
     summary =
       `${info.h2.length} sections · ${doc.figures.length} figure blocks · ${inline} inline figures · ` +
       `${images(doc).length} images · ${doc.items.filter((it) => it.type === "fence").length} code fences · ` +
-      `footer ${info.footer ? "yes" : "no"} · ` +
+      `${doc.items.filter((it) => it.type === "footnote").length} references · ` +
       `${info.used.size ? `${info.used.size} distinct markers (F ${f}, O ${info.used.size - f})` : "no markers"}`;
   }
   process.stdout.write(`${doc.file} (${lang}, ${prof.name}): ${summary}\n`);
@@ -1917,7 +3185,7 @@ const CJK_PUNCT = "。，；：！？、）」』";
 function tidyCjkSpaces(line) {
   return line.replace(
     new RegExp(
-      `(\`+)[\\s\\S]*?[^\`]\\1(?!\`)|[ \\t]+(?=[${CJK_PUNCT}])|(?<=[${CJK_PUNCT}])[ \\t]+`,
+      `(\`+)[\\s\\S]*?[^\`]\\1(?!\`)|[ \\t]+(?=[${CJK_PUNCT}])|(?<=[${CJK_PUNCT}](?:\\[\\^\\d+\\])*)[ \\t]+`,
       "g",
     ),
     (m) => (m.trim() ? m : ""),
@@ -1938,6 +3206,9 @@ function runStrip(o) {
   if (!o.in || !o.out) fail("strip needs --in <file> --out <file>");
   const doc = parseDoc(o.in);
   const lang = o.lang ?? langOf(o.in);
+  const cite = o.facts ? citations(loadFacts(o.facts), o["numbering-from"]) : null;
+  if (!cite && o["numbering-from"]) fail("--numbering-from needs --facts");
+  if (!cite && doc.raw.match(/\{F\d+\}/)) note("no --facts: markers removed without citations");
   if (doc.figures.length) {
     checkLang(
       lang ?? "",
@@ -1991,7 +3262,15 @@ function runStrip(o) {
       inComment = !line.includes("-->");
       continue;
     }
-    kept.push(prose(line.replace(/^(?:\{[FO]\d+\})+[ \t]*/, "").replace(/[ \t]*\{[FO]\d+\}/g, "")));
+    const cited = cite
+      ? cite.render(line)
+      : line.replace(/^(?:\{[FO]\d+\})+[ \t]*/, "").replace(/[ \t]*\{[FO]\d+\}/g, "");
+    kept.push(prose(cited));
+  }
+  if (cite) {
+    const defs = cite.definitions();
+    if (cite.problems.size) fail(`citations:\n  ${[...cite.problems].join("\n  ")}`, 1);
+    if (defs.length) kept.push("", ...defs);
   }
   let body = kept
     .join("\n")
@@ -2010,7 +3289,14 @@ function runStrip(o) {
 // ---------------------------------------------------------------------------
 
 const FIXTURE_FACTS = `## FACTS
-- F1: Archived tool output is written to a file under the Project root. Source: https://example.com/docs
+- F1: Archived tool output is written to a file under the Project root. [S1]
+- F2: The Trace keeps a marker where the output was. [S2]
+- F3: The archive format was settled in a design review. [S3]
+
+## SOURCES
+- S1: PenguinHarness docs: Agent loop · https://penguin.ooo/docs/agent-loop
+- S2: packages/core/src/trace/writer.ts · https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/packages/core/src/trace/writer.ts
+- S3: design notes (paraphrased) · private
 
 ## OPINIONS
 - O1: A marker beats a gap.
@@ -2019,6 +3305,9 @@ const FIXTURE_FACTS = `## FACTS
 | Term | zh |
 | --- | --- |
 | Trace | Trace |
+
+## NOT-FACTS
+- Do not claim the archive is compressed.
 `;
 
 const FIXTURE_DRAFT = `---
@@ -2044,7 +3333,7 @@ text:
 
 ## What the Trace keeps
 
-The Trace keeps a short marker. {F1} The writer’s “marker” is kept, and \`it’s\` stays in code. {F1}
+The Trace keeps a short marker. {F2} The writer’s “marker” is kept, and \`it’s\` stays in code. {F2}
 
 \`\`\`figure id=demo-shot
 alt: The Trace view showing an archived output.
@@ -2053,15 +3342,11 @@ caption: The marker names the file as <path> and the id as \`<id>\`.
 
 ## A marker beats a gap
 
-We would rather keep a marker than leave a gap. {O1}
+We would rather keep a marker than leave a gap. {O1} The format was settled early. {F3}
 
 ## What to read next
 
-The docs describe the archive in full. {F1}
-
----
-
-**Sources**: [docs](https://example.com/docs)
+The docs describe the archive in full. {F1}{F2}
 `;
 
 const FIXTURE_DRAFT_ZH = `---
@@ -2072,6 +3357,67 @@ excerpt: "脚本自检用的样例。"
 ---
 
 规则写在 CLAUDE.md。{F1} Anthropic 也这样做（见文档）{F1}，代码 \`a。 b\` 保持原样。{O1}
+`;
+
+/** The zh post cites S2 before S1, so numbering from the en post keeps [^2] for S2. */
+const FIXTURE_CITES_ZH = `---
+title: "自检文章"
+date: 2026-10-19
+category: perspectives
+excerpt: "脚本自检用的样例。"
+---
+
+Trace 记下标记，规则写在 CLAUDE.md。{F2} Anthropic 也这样做。{F1}
+`;
+
+const FIXTURE_CITES_ZH_PARTIAL = FIXTURE_CITES_ZH.replace("CLAUDE.md。{F2} ", "CLAUDE.md。");
+
+/** A published zh post whose reference list does not match the en one. */
+const FIXTURE_PUBLISHED_ZH_OTHER = `---
+title: "自检文章"
+date: 2026-10-19
+category: perspectives
+excerpt: "脚本自检用的样例。"
+---
+
+规则写在别处。[^1]
+
+[^1]: [Other](https://example.com/other)
+`;
+
+const FIXTURE_OUTLINE = (rowBudget) => `# Thesis
+A marker in the Trace beats a gap.
+
+# Reader and takeaway
+Developers who read Traces.
+
+# Title candidates
+1. Self-test post
+
+# Sections
+## 0: (lead)
+- The thesis. F1.
+## 1: Where files go
+- Where the archive lives. F1. Figure demo-flow.
+## 2: What the Trace keeps
+- The marker. F2. Figure demo-shot.
+## 3: A marker beats a gap
+- Our position. O1, F3.
+## 4: What to read next
+- The docs. F1 F2.
+
+# Plan
+| n | heading | words | facts | opinions | figures | ends with |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | (lead) | 60 | F1 | O1 | — | the scope sentence |
+| 1 | Where files go | ${rowBudget} | F1 | — | demo-flow | a result |
+| 2 | What the Trace keeps | ${rowBudget} | F2 | — | demo-shot | a question |
+| 3 | A marker beats a gap | ${rowBudget} | F3 | O1 | — | a constraint |
+| 4 | What to read next | ${rowBudget} | F1 F2 | — | — | a next step |
+`;
+
+const FIXTURE_FINDINGS = `1. [The Trace keeps a short marker.] — repeats the lead — concision — the section must add what the marker holds
+2. [a sentence that is in no section] — vague — flow — the passage must be located first
 `;
 
 const FIXTURE_FIGURE = [
@@ -2093,8 +3439,10 @@ function runSelftest() {
   const post = path.join(root, "selftest-post");
   const good = path.join(post, "figures");
   const bad = path.join(post, "figures-unescaped");
-  mkdirSync(good, { recursive: true });
-  mkdirSync(bad, { recursive: true });
+  const sections = path.join(post, "sections");
+  const stray = path.join(post, "sections-stray");
+  const long = path.join(post, "sections-long");
+  for (const d of [good, bad, sections, stray, long]) mkdirSync(d, { recursive: true });
   const at = (name) => path.join(post, name);
   writeFileSync(at("facts.md"), FIXTURE_FACTS);
   writeFileSync(
@@ -2103,6 +3451,11 @@ function runSelftest() {
   );
   writeFileSync(at("draft.en.v1.md"), FIXTURE_DRAFT);
   writeFileSync(at("draft.zh.v1.md"), FIXTURE_DRAFT_ZH);
+  writeFileSync(at("cites.zh.v1.md"), FIXTURE_CITES_ZH);
+  writeFileSync(at("partial.zh.v1.md"), FIXTURE_CITES_ZH_PARTIAL);
+  writeFileSync(at("outline.final.md"), FIXTURE_OUTLINE(100));
+  writeFileSync(at("outline.over.md"), FIXTURE_OUTLINE(200));
+  writeFileSync(at("findings.en.v1.md"), FIXTURE_FINDINGS);
   writeFileSync(path.join(good, "demo-flow.en.html"), FIXTURE_FIGURE);
   writeFileSync(
     path.join(bad, "demo-flow.en.html"),
@@ -2112,10 +3465,34 @@ function runSelftest() {
     at("strings.en.txt"),
     "hero.title: One harness for every agent\nhero.badge: Unlock it now!\n",
   );
+  // The draft as the section step would have written it, one file per section.
+  const split = splitSections(FIXTURE_DRAFT);
+  split.forEach((s, n) => {
+    const text =
+      n === 0 ? `---\n${splitFrontmatter(FIXTURE_DRAFT).metaRaw}\n---\n${s.text}` : s.text;
+    writeFileSync(path.join(sections, `s${n}.en.v1.md`), `${text.trim()}\n`);
+  });
+  // Section 2 carrying the figure that row 1 owns.
+  writeFileSync(
+    path.join(stray, "s2.en.v1.md"),
+    `${split[2].text.trim()}\n\n${figureBlockTexts(FIXTURE_DRAFT).get("demo-flow")}\n`,
+  );
+  // Section 3 at twice the size its plan row allows.
+  writeFileSync(
+    path.join(long, "s3.en.v1.md"),
+    `## A marker beats a gap\n\n${"We would rather keep a marker than leave a gap in the Trace. ".repeat(18).trim()} {O1}\n`,
+  );
   const published = path.join(root, "selftest-post.en.md");
   const publishedZh = path.join(root, "selftest-post.zh.md");
+  const citedZh = path.join(root, "cites", "selftest-post.zh.md");
+  mkdirSync(path.dirname(citedZh), { recursive: true });
+  const otherZh = path.join(root, "other", "selftest-post.zh.md");
+  mkdirSync(path.dirname(otherZh), { recursive: true });
+  writeFileSync(otherZh, FIXTURE_PUBLISHED_ZH_OTHER);
+  const assembled = at("draft.en.v2.md");
 
   const self = fileURLToPath(import.meta.url);
+  const facts = ["--facts", at("facts.md")];
   const cases = [
     {
       name: "angle-bracket placeholders in figure strings are data, and an escaped drawing matches them",
@@ -2123,14 +3500,14 @@ function runSelftest() {
         "check",
         "--in",
         at("draft.en.v1.md"),
-        "--facts",
-        at("facts.md"),
+        ...facts,
         "--figures",
         at("figures.md"),
         "--svg",
         good,
       ],
       code: 0,
+      stdout: /no reference will be rendered for \{F3\}/,
     },
     {
       name: "a drawing that leaves <path> unescaped does not match its block",
@@ -2145,8 +3522,41 @@ function runSelftest() {
       stderr: /does not match figure demo-flow/,
     },
     {
+      name: "figure keys with digits (step1, config2) are keys, not part of the string",
+      args: ["check", "--in", at("draft.en.v1.md"), "--svg", good],
+      code: 0,
+      stdout: /0 errors/,
+    },
+    {
+      name: "strip turns tagged facts into numbered footnotes after the punctuation, private sources into none",
+      args: [
+        "strip",
+        "--in",
+        at("draft.en.v1.md"),
+        "--out",
+        published,
+        "--figures-dir",
+        good,
+        ...facts,
+      ],
+      code: 0,
+      file: [
+        published,
+        /keeps its place in the Trace\.\[\^1\]\n[\s\S]*The Trace keeps a short marker\.\[\^2\][\s\S]*The format was settled early\.\n[\s\S]*in full\.\[\^1\]\[\^2\]\n\n\[\^1\]: \[PenguinHarness docs: Agent loop\]\(https:\/\/penguin\.ooo\/docs\/agent-loop\)\n\[\^2\]: \[packages\/core\/src\/trace\/writer\.ts\]\(https:\/\/github\.com\/Prism-Shadow\/penguin-harness\/blob\/v0\.2\.16\/packages\/core\/src\/trace\/writer\.ts\)\n$/,
+      ],
+    },
+    {
       name: "strip inlines the drawing on one line and escapes a screenshot caption outside code spans",
-      args: ["strip", "--in", at("draft.en.v1.md"), "--out", published, "--figures-dir", good],
+      args: [
+        "strip",
+        "--in",
+        at("draft.en.v1.md"),
+        "--out",
+        published,
+        "--figures-dir",
+        good,
+        ...facts,
+      ],
       code: 0,
       file: [
         published,
@@ -2154,16 +3564,24 @@ function runSelftest() {
       ],
     },
     {
-      name: "figure keys with digits (step1, config2) are keys, not part of the string",
-      args: ["check", "--in", at("draft.en.v1.md"), "--svg", good],
+      name: "strip straightens curly quotes in English prose but not in code spans",
+      args: [
+        "strip",
+        "--in",
+        at("draft.en.v1.md"),
+        "--out",
+        published,
+        "--figures-dir",
+        good,
+        ...facts,
+      ],
       code: 0,
-      stdout: /0 errors/,
+      file: [published, /The writer's "marker" is kept, and `it’s` stays in code\.\[\^2\]/],
     },
     {
-      name: "strip straightens curly quotes in English prose but not in code spans",
-      args: ["strip", "--in", at("draft.en.v1.md"), "--out", published, "--figures-dir", good],
+      name: "the stripped post passes, its figure and its footnotes checked against the draft and SOURCES",
+      args: ["check", "--in", published, "--draft", at("draft.en.v1.md"), ...facts],
       code: 0,
-      file: [published, /The writer's "marker" is kept, and `it’s` stays in code\./],
     },
     {
       name: "strip leaves no space where a marker sat after CJK punctuation, outside code spans",
@@ -2172,9 +3590,141 @@ function runSelftest() {
       file: [publishedZh, /CLAUDE\.md。Anthropic 也这样做（见文档），代码 `a。 b` 保持原样。\n/],
     },
     {
-      name: "the stripped post passes, its inline figure checked against the draft",
-      args: ["check", "--in", published, "--draft", at("draft.en.v1.md")],
+      name: "--numbering-from reproduces the other language's numbers",
+      args: [
+        "strip",
+        "--in",
+        at("cites.zh.v1.md"),
+        "--out",
+        citedZh,
+        ...facts,
+        "--numbering-from",
+        published,
+      ],
       code: 0,
+      file: [
+        citedZh,
+        /CLAUDE\.md。\[\^2\]Anthropic 也这样做。\[\^1\]\n\n\[\^1\]: \[PenguinHarness docs/,
+      ],
+    },
+    {
+      name: "--numbering-from rejects a source the other language cites and this one does not",
+      args: [
+        "strip",
+        "--in",
+        at("partial.zh.v1.md"),
+        "--out",
+        path.join(root, "partial.zh.md"),
+        ...facts,
+        "--numbering-from",
+        published,
+      ],
+      code: 1,
+      stderr: /source \[\^2\] of the --numbering-from post is never cited here/,
+    },
+    {
+      name: "pair flags reference lists that differ",
+      args: ["pair", "--in", published, "--pair", otherZh],
+      code: 1,
+      stdout: /reference lists differ/,
+    },
+    {
+      name: "a plan over its budget fails plan and writes the feedback for one rerun",
+      args: ["plan", "--in", at("outline.over.md"), ...facts, "--figures", at("figures.md")],
+      code: 1,
+      stdout:
+        /the rows sum to 860 words; the cap for the whole piece is 750[\s\S]*row 1 asks for 200 words/,
+    },
+    {
+      name: "a sound plan passes and freezes",
+      args: [
+        "plan",
+        "--in",
+        at("outline.final.md"),
+        ...facts,
+        "--figures",
+        at("figures.md"),
+        "--freeze",
+      ],
+      code: 0,
+      stdout: /froze/,
+    },
+    {
+      name: "a section owning a figure its plan row does not give fails check --section",
+      args: [
+        "check",
+        "--in",
+        path.join(stray, "s2.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+        "--figures",
+        at("figures.md"),
+      ],
+      code: 1,
+      stdout: /figure demo-flow is not in row 2 of the plan/,
+    },
+    {
+      name: "a section over min(plan × 1.1, profile cap) is an error",
+      args: ["check", "--in", path.join(long, "s3.en.v1.md"), "--outline", at("outline.final.md")],
+      code: 1,
+      stdout: /section 3 is 234 words; its cap is 110 \(plan 100, profile cap 160\)/,
+    },
+    {
+      name: "a section within its row passes check --section",
+      args: [
+        "check",
+        "--in",
+        path.join(sections, "s2.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+        ...facts,
+        "--figures",
+        at("figures.md"),
+      ],
+      code: 0,
+    },
+    {
+      name: "a section's dry run carries the sections before it and only its own facts",
+      args: [
+        "section",
+        "--dry-run",
+        "--outline",
+        at("outline.final.md"),
+        "--section",
+        "2",
+        ...facts,
+        "--figures",
+        at("figures.md"),
+        "--sections-dir",
+        sections,
+      ],
+      code: 0,
+      stdout:
+        /Sections already written[\s\S]*Files live under one root per Project\.[\s\S]*- F2: The Trace keeps a marker/,
+      notStdout: /- F1: Archived tool output|- F3: The archive format/,
+    },
+    {
+      name: "assemble joins the sections back into the draft, byte for byte",
+      args: [
+        "assemble",
+        "--sections-dir",
+        sections,
+        "--lang",
+        "en",
+        "--out",
+        assembled,
+        "--outline",
+        at("outline.final.md"),
+      ],
+      code: 0,
+      file: [assembled, new RegExp(`^${FIXTURE_DRAFT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)],
+    },
+    {
+      name: "route sends a finding to the section that quotes it and keeps the rest unrouted",
+      args: ["route", "--findings", at("findings.en.v1.md"), "--sections-dir", sections],
+      code: 0,
+      stdout: /s2: 1 finding\(s\)[\s\S]*unrouted: 1 finding\(s\)/,
+      file: [at("findings.s2.en.v1.md"), /^1\. \[The Trace keeps a short marker\.\]/],
     },
     {
       name: "landing strings with a banned word and an exclamation mark fail",
@@ -2190,6 +3740,7 @@ function runSelftest() {
     const why = [];
     if (res.status !== c.code) why.push(`exit ${res.status}, expected ${c.code}`);
     if (c.stdout && !c.stdout.test(res.stdout)) why.push(`stdout lacks ${c.stdout}`);
+    if (c.notStdout && c.notStdout.test(res.stdout)) why.push(`stdout has ${c.notStdout}`);
     if (c.stderr && !c.stderr.test(res.stderr)) why.push(`stderr lacks ${c.stderr}`);
     if (c.file && !(existsSync(c.file[0]) && c.file[1].test(readFileSync(c.file[0], "utf8")))) {
       why.push(`${path.basename(c.file[0])} lacks ${c.file[1]}`);
@@ -2199,7 +3750,8 @@ function runSelftest() {
       process.stdout.write(`FAIL ${c.name}\n  ${why.join("\n  ")}\n${res.stdout}${res.stderr}`);
     } else process.stdout.write(`ok   ${c.name}\n`);
   }
-  rmSync(root, { recursive: true, force: true });
+  if (process.env.PROSE_SELFTEST_KEEP) process.stdout.write(`fixtures kept in ${root}\n`);
+  else rmSync(root, { recursive: true, force: true });
   process.stdout.write(`${cases.length - failed}/${cases.length} passed\n`);
   process.exit(failed ? 1 : 0);
 }
@@ -2228,6 +3780,9 @@ if (API_STEPS.includes(step)) {
 } else if (LOCAL_STEPS.includes(step)) {
   if (step === "check") runCheck(opts);
   else if (step === "pair") runPair(opts);
+  else if (step === "plan") runPlan(opts);
+  else if (step === "assemble") runAssemble(opts);
+  else if (step === "route") runRoute(opts);
   else if (step === "selftest") runSelftest();
   else runStrip(opts);
 } else {

@@ -17,10 +17,11 @@ Shape:
 - Concrete over abstract: name the product, the file, the command, the number, and let it carry the point. An example beats an adjective.
 - Figures carry part of the argument. Introduce each figure in the sentence before it, with the same nouns the figure's labels use, and do not describe in prose what the figure already shows.
 - State our position as ours: "we think", "our bet is", "in PenguinHarness we chose". Attribute others' claims to them by name. Mark uncertainty plainly ("we do not know whether…").
+- Write for a reader with dyslexia, a person who reads with effort: the point first, short sentences with one idea each, common words over rare ones. No asides or "by the way" detours, no defensive hedging or pre-emptive caveats, no padding.
 
 Banned (do not use, do not paraphrase around):
 - Marketing register: powerful, seamless, effortless, game-changer, next-level, revolutionary, unlock, empower, supercharge, leverage (verb), robust, transform/transformative, "the future of", "imagine a world", "say goodbye to", "in seconds, not", "meet your new".
-- Essay tics: "it's not just X, it's Y" and every "not X but Y" pivot; "Here's the thing"; "Let's be honest"; "In today's fast-paced"; "delve"; "landscape"; "paradigm"; "journey"; "at the end of the day"; "In conclusion"; rhetorical questions as openers; sentences of three words in a row for effect; triads where two items would do.
+- Essay tics: "it's not just X, it's Y" and every "not X but Y" pivot; every "Yes, but…" concession pivot (state the claim and its limit plainly instead); "Here's the thing"; "Let's be honest"; "In today's fast-paced"; "delve"; "landscape"; "paradigm"; "journey"; "at the end of the day"; "In conclusion"; rhetorical questions as openers; sentences of three words in a row for effect; triads where two items would do.
 - Punctuation: em dashes at most once per section, spaced ` — `; no exclamation marks; no bold on scattered words (bold only for UI labels and product names on first mention, if at all).
 - Structure: no "Challenges and future outlook" section; no bullet list longer than five items; no list where a paragraph works.
 - Theatre framing: never dismiss something as "X theater".
@@ -67,6 +68,7 @@ paragraph and sentence length, a question that opens a section) are counted in t
 - `/\bin conclusion\b/i` — essay tic: "In conclusion"
 - `/\b[A-Za-z-]+ theat(er|re)\b/i` — theatre framing: "X theater"
 - `/\bchallenges and (the )?future\b|\bfuture outlook\b/i` — structure: "Challenges and future outlook" section
+- `/\byes,? but\b/i` — concession pivot: "Yes, but…"
 
 ### Warnings
 
@@ -74,3 +76,5 @@ paragraph and sentence length, a question that opens a section) are counted in t
 - `/\bnot\b[^.;:!?]{1,40}, but\b/i` — possible "not X, but Y" pivot
 - `/\bnot [a-z]+ but [a-z]+\b/i` — possible "not X but Y" pivot
 - `/\bwe can see that\b|\bit is worth noting\b|\bit'?s worth noting\b/i` — filler signpost
+- `/\bby the way\b|\bincidentally\b|\bas an aside\b/i` — aside: a "by the way" detour
+- `/\b(that said|having said that|to be fair|of course,)/i` — possible defensive hedge or concession
