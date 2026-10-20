@@ -1372,6 +1372,53 @@ export const zh = {
     taskCompleteTitle: "任务完成",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
+    /** Company push groups (lib/company-notify.ts): one toggle each under the master switch. */
+    groups: {
+      mention: "有人 @ 我",
+      mentionInfo: "频道里点名你的消息弹窗提醒。",
+      channel: "频道新消息",
+      channelInfo: "每条新消息都弹窗；消息量大的频道建议关掉。",
+      ticket: "工单动态",
+      ticketInfo: "工单的创建、进度、阻塞等变更。",
+      run: "员工开工",
+      runInfo: "工位或工单会话启动一次运行。",
+      budget: "预算预警",
+      budgetInfo: "员工预算的警告、暂停与恢复，金额不多但重要。",
+    },
+    companyMentionTitle: (channel: string): string => `有人在 #${channel} @ 你`,
+    companyMentionBody: (sender: string, text: string): string => `${sender}：${text}`,
+    companyChannelTitle: (channel: string): string => `#${channel} 有新消息`,
+    companyChannelBody: (sender: string, text: string): string =>
+      text === "" ? sender : `${sender}：${text}`,
+    companyTicketTitle: (ticket: string): string => `工单 ${ticket} 有动态`,
+    companyTicketBody: (change: string): string =>
+      (
+        ({
+          created: "刚创建",
+          progress: "有新进展",
+          updated: "有更新",
+          attached: "关联了新会话",
+          archived: "已归档",
+        }) as Record<string, string>
+      )[change] ?? change,
+    companyRunTitle: (agent: string): string => `${agent} 开工了`,
+    companyRunBody: (kind: string): string =>
+      (
+        ({
+          init: "初始化运行",
+          event: "日程触发",
+          mention: "被点名唤醒",
+          ticket_notice: "工单通知",
+          ticket_work: "工单工作",
+        }) as Record<string, string>
+      )[kind] ?? kind,
+    companyBudgetTitle: (agent: string): string => `${agent} 的预算`,
+    companyBudgetBody: (state: string, ratio: number): string => {
+      const pct = `${Math.round(ratio * 100)}%`;
+      if (state === "paused") return `已暂停（${pct}）`;
+      if (state === "resumed") return "已恢复";
+      return `预警（${pct}）`;
+    },
   },
 
   /**

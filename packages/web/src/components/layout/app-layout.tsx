@@ -37,6 +37,7 @@ import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
+import { useCompanyNotifications } from "../../state/use-company-notifications";
 import { useTrayLocale } from "../../state/use-tray-locale";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { useCompany } from "../../state/company";
@@ -328,6 +329,9 @@ export function AppLayout() {
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
+  // Company push types (lib/company-notify.ts): one system notification per enabled
+  // group while the window is unfocused; the settings switches decide the groups.
+  useCompanyNotifications();
   // Desktop shell only: keeps the tray menu in the language this window is in.
   useTrayLocale();
   // The single eager owner of the update checks (use-update-badges.ts): one request per

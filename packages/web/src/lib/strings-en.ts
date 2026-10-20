@@ -701,7 +701,8 @@ export const en: Strings = {
    */
   archivedPage: {
     title: "Archived chats",
-    description: "Archived chats are not in the sidebar; find them here, bring them back, or delete them.",
+    description:
+      "Archived chats are not in the sidebar; find them here, bring them back, or delete them.",
     info: "Archiving only files a conversation away from the sidebar — its messages and Trace are still there. This list shows the chats you archived by hand; the ones a program opened (the Agent API, a scheduled task, the CLI) are behind the source filter.",
   },
 
@@ -1263,6 +1264,53 @@ export const en: Strings = {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
+    /** Company push groups (lib/company-notify.ts): one toggle each under the master switch. */
+    groups: {
+      mention: "Someone @s me",
+      mentionInfo: "Pop up for messages that name you in a channel.",
+      channel: "Channel messages",
+      channelInfo: "Pop up for every new message; leave off for busy channels.",
+      ticket: "Ticket activity",
+      ticketInfo: "Ticket creates, progress, blocks and similar changes.",
+      run: "Employee runs",
+      runInfo: "A desk or ticket session starting a run.",
+      budget: "Budget alerts",
+      budgetInfo: "Warnings, pauses and resumes — rare and important.",
+    },
+    companyMentionTitle: (channel: string): string => `You were mentioned in #${channel}`,
+    companyMentionBody: (sender: string, text: string): string => `${sender}: ${text}`,
+    companyChannelTitle: (channel: string): string => `New messages in #${channel}`,
+    companyChannelBody: (sender: string, text: string): string =>
+      text === "" ? sender : `${sender}: ${text}`,
+    companyTicketTitle: (ticket: string): string => `Ticket ${ticket} moved`,
+    companyTicketBody: (change: string): string =>
+      (
+        ({
+          created: "created",
+          progress: "made progress",
+          updated: "updated",
+          attached: "linked a new session",
+          archived: "archived",
+        }) as Record<string, string>
+      )[change] ?? change,
+    companyRunTitle: (agent: string): string => `${agent} started a run`,
+    companyRunBody: (kind: string): string =>
+      (
+        ({
+          init: "initialization run",
+          event: "scheduled",
+          mention: "woken by a mention",
+          ticket_notice: "ticket notice",
+          ticket_work: "ticket work",
+        }) as Record<string, string>
+      )[kind] ?? kind,
+    companyBudgetTitle: (agent: string): string => `Budget for ${agent}`,
+    companyBudgetBody: (state: string, ratio: number): string => {
+      const pct = `${Math.round(ratio * 100)}%`;
+      if (state === "paused") return `paused (${pct})`;
+      if (state === "resumed") return "resumed";
+      return `warning (${pct})`;
+    },
   },
 
   find: {
@@ -2663,7 +2711,8 @@ export const en: Strings = {
       lastFired: "Last fired",
       rotate: "Rotate token",
       rotateTitle: "Rotate the webhook token",
-      rotateConfirm: "The old URL dies the moment you rotate; callers must move to the new one. Continue?",
+      rotateConfirm:
+        "The old URL dies the moment you rotate; callers must move to the new one. Continue?",
       deleteTitle: "Delete the webhook trigger",
       deleteConfirm: "The URL stops firing (deliveries stay on record). Continue?",
       deliveries: "Deliveries",
@@ -5541,7 +5590,8 @@ Scenarios:
       info: "Everything the organization has to tell you: messages naming you, blocked tickets, tickets closed as done. A title jumps to its channel or ticket; mute a category below to stop seeing it.",
       /** The preferences block: which categories feed the inbox at all. */
       prefsTitle: "Categories",
-      prefsInfo: "A muted category leaves the inbox (on the overview and here alike); the channel and the board themselves are untouched.",
+      prefsInfo:
+        "A muted category leaves the inbox (on the overview and here alike); the channel and the board themselves are untouched.",
       /** One line per category: what turning it off hides. */
       prefHint: {
         mention: "Messages naming you (or everyone) in the all-hands channel",

@@ -22,6 +22,14 @@ import {
   writeNotificationsEnabled,
 } from "../../lib/notification-pref";
 import type { NotificationAccess } from "../../lib/notification-pref";
+import {
+  COMPANY_NOTIFY_GROUPS,
+  notifyGroupsVersion,
+  readNotifyGroups,
+  subscribeNotifyGroups,
+  writeNotifyGroups,
+} from "../../lib/company-notify";
+import type { CompanyNotifyGroup } from "../../lib/company-notify";
 import { useCompany } from "../../state/company";
 import { resolveSystemLocale, useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
@@ -36,6 +44,8 @@ export function GeneralSection() {
 
   useSyncExternalStore(subscribeNotificationsEnabled, notificationsEnabledVersion);
   const notificationsOn = readNotificationsEnabled();
+  useSyncExternalStore(subscribeNotifyGroups, notifyGroupsVersion);
+  const notifyGroups = readNotifyGroups();
   // What the platform last answered: its own state, because a refusal has to stay on screen
   // as a hint after the click that produced it. `asked` goes with it, so a prompt closed
   // without an answer is told apart from a browser that was simply never asked.
@@ -99,6 +109,19 @@ export function GeneralSection() {
           });
         }}
       />
+      {/* Company push types: which company events may pop an OS notification. They ride
+          under the master switch above, so they rest disabled while it is off — toggles
+          that could never fire would only invite the question of why. */}
+      {COMPANY_NOTIFY_GROUPS.map((group) => (
+        <ToggleRow
+          key={group}
+          label={S.notify.groups[group]}
+          info={S.notify.groups[`${group}Info` as const]}
+          checked={notificationsOn && notifyGroups[group]}
+          disabled={!notificationsOn}
+          onChange={(on) => writeNotifyGroups({ [group]: on })}
+        />
+      ))}
       {/* The personal company-mode switch: off hides this user's mode switch and nothing else.
           Offered only while the server allows company mode at all — a switch that changes
           nothing would only invite the question of why. */}
