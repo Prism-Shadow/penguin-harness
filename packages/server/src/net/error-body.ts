@@ -73,7 +73,10 @@ export async function normalizeErrorBodyResponse(response: Response): Promise<Re
   return new Response(
     // Merged, not replaced: the SDK reads `error`, and a caller that already understood this
     // gateway's own fields keeps them.
-    JSON.stringify({ ...record, error: { message, ...(code === undefined ? {} : { type: code, code }) } }),
+    JSON.stringify({
+      ...record,
+      error: { message, ...(code === undefined ? {} : { type: code, code }) },
+    }),
     { status: response.status, statusText: response.statusText, headers },
   );
 }
