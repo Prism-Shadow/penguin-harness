@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1254](https://github.com/Prism-Shadow/penguin-harness/pull/1254)
 
 [中文版](2026-10-19-machine-scope-requests.zh.md)
 
