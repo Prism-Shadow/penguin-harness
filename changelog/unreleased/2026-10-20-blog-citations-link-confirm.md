@@ -1,0 +1,17 @@
+# Blog posts cite their sources by number, and links that leave the site ask first
+
+- **Date:** 2026-10-20
+- **Type:** feature
+- **Scope:** `landing`, `ui`
+
+[中文版](2026-10-20-blog-citations-link-confirm.zh.md)
+
+Blog posts render GFM footnotes as numbered citations: a raised `[n]` after a sentence jumps to entry n of a References list at the end of the post, and each entry links back to every place that cites it. Links in a post now open by destination: a `#` link scrolls within the page, a page of this site opens in a new tab as before, and a link to another site first shows the confirmation the home page's catalogue rows use, then opens in a new tab.
+
+## Details
+
+- A post cites with `…a sentence.[^1]`, placed after the sentence's closing punctuation, and defines each source at the end as `[^1]: [Title](https://…)`, or as a bare title when the source has no URL. The list's heading comes from the site's dictionary (References / 参考资料); a post does not write one.
+- The ids are ASCII in both languages: `fn-n` for an entry, `fnref-n` and `fnref-n-k` for the places that cite it. A back-link names its destination for screen readers.
+- A page of this site is a relative path or an address on `penguin.ooo`, `www.penguin.ooo` or the host the page is served from. Any other host, and a scheme such as `mailto:`, leaves the site.
+- `SiteMarkdown` in `@prismshadow/penguin-ui/site` takes `remarkRehypeOptions`, and its `##` and `###` headings keep an id the pipeline already assigned (the footnote list's label, which every citation names) instead of replacing it with a slug.
+- `site-prose.css` styles the citations and the list in light and dark, keeps a jump clear of the sticky navigation bar, highlights the entry or citation it lands on, and prints the list with its URLs.

@@ -5,7 +5,8 @@
  *   block shows its code as text before any highlighter answers; with the docs' dialect a run
  *   of `tab="…"` fences becomes one tab strip showing only the first panel, and a `[!INFO]-`
  *   quote becomes a collapsed box with its title; a host's link adapter replaces the links
- *   while the headings stay the shared ones.
+ *   while the headings stay the shared ones; a host's footnote options name the citations and
+ *   label their list, and the label keeps the id every citation is described by.
  * - The highlighter a site hands its articles colours a PowerShell and a JSON Lines fence with
  *   both themes baked in, and answers nothing for a language it does not carry.
  * - The footer: an external link opens a new tab and a route link renders through the host's
@@ -76,6 +77,19 @@ describe("an article", () => {
     const html = article("## Links\n\n[repo](https://example.test)", { components });
     expect(html).toContain('<a href="https://example.test" target="_blank">repo</a>');
     expect(html).toContain('id="links"');
+  });
+
+  it("names citations and labels their list with the host's footnote options", () => {
+    const html = article("A claim.[^1]\n\n[^1]: A source.", {
+      remarkRehypeOptions: {
+        clobberPrefix: "",
+        footnoteLabel: "References",
+        footnoteLabelProperties: { className: ["refs"] },
+      },
+    });
+    expect(html).toContain('href="#fn-1" id="fnref-1"');
+    expect(html).toContain('aria-describedby="footnote-label"');
+    expect(html).toMatch(/<h2 id="footnote-label" class="[^"]*\brefs\b[^"]*">References<\/h2>/);
   });
 });
 
