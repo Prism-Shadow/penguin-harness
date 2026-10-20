@@ -14,7 +14,8 @@ person's own words, through one new theme token, `accent-tint`: the accent mixed
 ## Surfaces
 
 - The user message bubble and the steering chip sit on the accent's tint; the chip keeps its
-  neutral border.
+  neutral border, and its "User steering" label is now in the body text colour rather than the
+  muted gray, so it reads clearly on the tint.
 - In a company channel, the reader's own bubble takes the same tint in place of the light blue
   wash of the link colour. Other people's bubbles stay neutral gray.
 - With the accent left at "Theme's own" the tint is a gray: in light mode about half a gray step
