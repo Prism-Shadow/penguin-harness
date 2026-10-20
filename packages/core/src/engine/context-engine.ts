@@ -448,6 +448,23 @@ interface TurnRetryState {
 const RETRY_STATUSES: readonly StopReason[] = ["retryable"];
 
 /**
+ * Tool-call loop detection: how many recent turns' signatures are kept, and how many of them
+ * have to repeat (plus the one before the run of repeats) before the loop is called. A window
+ * of 3 means four consecutive identical turns fire it — long enough that a legitimate retry
+ * with the same arguments is not mistaken for a stuck model, short enough to stop one in
+ * seconds rather than at the Task's turn cap (`maxTurns` defaults to unlimited).
+ */
+const TOOL_LOOP_WINDOW = 8;
+const TOOL_LOOP_REPEAT_WINDOW = 3;
+
+/** A stable, cheap digest of one tool call's argument JSON (not a security hash). */
+function simpleHash(str: string): string {
+  let h = 0;
+  for (let i = 0; i < str.length; i += 1) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return h.toString(36);
+}
+
+/**
  * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
  * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (2s base, 30s ceiling,
  * 5 reconnects) the ladder is 2s, 4s, 8s, 16s, 30s ≈ 60s of total patience: one shared
@@ -476,6 +493,14 @@ export class ContextEngine {
   private readonly compactionMaxReconnects: number;
   /** Interruption cleanup: content to resend generated when the previous run was aborted, held on the engine across runs. */
   private pendingCarryOver: OmniMessage[] = [];
+
+  /**
+   * The signatures of the last few turns that issued tool calls (see TOOL_LOOP_WINDOW): when
+   * a model keeps calling the same tools with the same arguments, the ReAct loop would
+   * otherwise run those calls forever. Cleared when a context opens — a new context is a
+   * fresh start.
+   */
+  private toolCallSignatures: string[] = [];
   /** Current LLM object; swapped for the one `openNextContext` returns after a successful compaction (a fresh model context). */
   private llm: LLMInterface;
   /**
@@ -1076,6 +1101,18 @@ export class ContextEngine {
       // No tool_call this turn and nothing injected -> the Task ends (the final reply has
       // already been streamed out). A compaction stash, if any, rides the next run.
       if (!midTask && injected.length === 0) return null;
+      // Tool-call loop detection: identical tool calls across consecutive turns mean the
+      // model is stuck — the same call will answer the same way on every further turn.
+      const signature = this.computeSignature(turn.toolCalls);
+      this.toolCallSignatures.push(signature);
+      if (this.toolCallSignatures.length > TOOL_LOOP_WINDOW) this.toolCallSignatures.shift();
+      if (this.detectToolLoop()) {
+        yield* this.emitToolLoop(turn.toolCalls);
+        return {
+          kind: "tool_loop",
+          errorMessage: `tool loop detected: the same ${turn.toolCalls.length} tool calls repeated across consecutive turns`,
+        };
+      }
       // Anything a failed boundary compaction stashed (synthesized repair outputs from
       // rejected attempts) rides the very next request, ahead of the turn outputs so
       // tool_results stay contiguous and first.
@@ -2140,6 +2177,8 @@ export class ContextEngine {
     if (opened.compaction) this.compaction = opened.compaction;
     this.sessionTurns = 0;
     this.lastRequestTotal = 0;
+    // A new context is a fresh start for loop detection too.
+    this.toolCallSignatures = [];
     // First-run records no run has written yet describe the context this one replaces: they
     // are dropped with it rather than written into this context's file.
     this.pendingBootstrapRecords = null;
@@ -2177,6 +2216,54 @@ export class ContextEngine {
   }
 
   /** User interruption: emits an abort event carrying the machine-readable cause. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
+  /**
+   * A turn's tool calls as one comparable signature: its `name:argsDigest` pairs, sorted and
+   * joined, so the same calls in a different order are the same signature.
+   */
+  private computeSignature(toolCalls: OmniMessage<ToolCallPayload>[]): string {
+    const parts = toolCalls.map((tc) => {
+      const args = tc.payload.arguments;
+      return `${tc.payload.name}:${typeof args === "string" ? simpleHash(args) : "null"}`;
+    });
+    return parts.sort().join("|");
+  }
+
+  /**
+   * Whether the recent turns are a loop: the last {@link TOOL_LOOP_REPEAT_WINDOW} signatures
+   * are identical AND the one before them matches too — i.e. at least
+   * `TOOL_LOOP_REPEAT_WINDOW + 1` consecutive identical turns. An empty signature (a turn
+   * with no tool calls) is never a loop.
+   */
+  private detectToolLoop(): boolean {
+    const sigs = this.toolCallSignatures;
+    if (sigs.length < TOOL_LOOP_REPEAT_WINDOW + 1) return false;
+    const last = sigs[sigs.length - 1]!;
+    if (last === "") return false;
+    for (let i = sigs.length - TOOL_LOOP_REPEAT_WINDOW; i < sigs.length; i += 1) {
+      if (sigs[i] !== last) return false;
+    }
+    return sigs[sigs.length - 1 - TOOL_LOOP_REPEAT_WINDOW] === last;
+  }
+
+  /** Says what stopped the run, on the stream and in the Trace. */
+  private async *emitToolLoop(
+    toolCalls: OmniMessage<ToolCallPayload>[],
+  ): AsyncGenerator<OmniMessage> {
+    const names = toolCalls.map((tc) => tc.payload.name).join(", ");
+    const text = `[tool loop detected: the same tool calls (${names}) repeated across consecutive turns — stopping]`;
+    for (const partial of [
+      partialText("start"),
+      partialText("delta", text),
+      partialText("stop", "", "fatal"),
+    ]) {
+      yield partial;
+      await this.write(partial);
+    }
+    const note = assistantText(text, "fatal");
+    yield note;
+    await this.write(note);
+  }
+
   private async *emitAbort(
     errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted",
   ): AsyncGenerator<OmniMessage> {
