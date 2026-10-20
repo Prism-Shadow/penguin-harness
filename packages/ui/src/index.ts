@@ -189,6 +189,14 @@ export * from "./components/charts/token-donut/token-donut";
 export * from "./components/charts/sparkline/sparkline";
 export * from "./components/charts/ring/ring";
 export * from "./components/charts/legend/legend";
+// The basic charts drawn from data (an A2UI chart block draws one; the composites build on them):
+// the value axis and stacks, the axis captions, and the bar, horizontal bar and line charts.
+export * from "./components/charts/cartesian/cartesian-data";
+export * from "./components/charts/cartesian/plot-layout";
+export * from "./components/charts/cartesian/plot-captions";
+export * from "./components/charts/cartesian/bar-chart";
+export * from "./components/charts/cartesian/hbar-chart";
+export * from "./components/charts/cartesian/line-chart";
 
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";

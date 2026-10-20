@@ -16,6 +16,7 @@ import {
   ChartBar,
   ChartCursor,
   ChartGrid,
+  ChartLabel,
   ChartLine,
   ChartPoint,
   ChartSwatch,
@@ -47,6 +48,20 @@ describe("the chart primitives, in the default theme", () => {
     expect(barPath(0, 0, 10, 20, 0)).toBeNull();
     expect(barPath(0, 0, 10, 20, 3)).toBe("M0,20 V3 A3,3 0 0 1 3,0 H7 A3,3 0 0 1 10,3 V20 Z");
     expect(barPath(0, 0, 4, 20, 9)).toContain("A2,2");
+  });
+
+  it("draw a flush bar across its whole band less a one-pixel seam, square-cornered", () => {
+    const html = render(ChartBar, {
+      cx: 50,
+      band: 20,
+      y: 10,
+      height: 30,
+      paint: { series: 0 },
+      flush: true,
+    });
+    expect(html).toContain("<rect");
+    expect(html).toContain('width="19"');
+    expect(html).toContain('x="40.5"');
   });
 
   it("draw a line straight at the theme's width, and a point as a round rect", () => {
@@ -81,6 +96,30 @@ describe("the chart primitives, in the default theme", () => {
     expect(area).toContain('d="M0,10 L10,20 L10,30 L0,30 Z"');
     expect(area).toMatch(/opacity="0\.06/);
     expect(area).toContain("text-tone-success-fg");
+  });
+
+  it("close a stacked band back along the series under it instead of the baseline", () => {
+    const band = render(ChartArea, {
+      points: [
+        [0, 10],
+        [10, 5],
+      ],
+      floor: [
+        [0, 20],
+        [10, 18],
+      ],
+      baseY: 30,
+      paint: { series: 1 },
+    });
+    expect(band).toContain('d="M0,10 L10,5 L10,18 L0,20 Z"');
+  });
+
+  it("write a value beside its mark as a label part, in the muted ink", () => {
+    const label = render(ChartLabel, { x: 5, y: 8, children: "21°" });
+    expect(label).toContain('data-part="label"');
+    expect(label).toContain('text-anchor="middle"');
+    expect(label).toContain("fill-fg-muted");
+    expect(label).toContain(">21°<");
   });
 
   it("draw an arc from twelve o'clock, round-capped only when asked, its track a grid part", () => {
@@ -160,6 +199,11 @@ describe("every chart in the package", () => {
     "components/charts/sparkline/sparkline.tsx",
     "components/charts/ring/ring.tsx",
     "components/charts/legend/legend.tsx",
+    "components/charts/cartesian/plot-captions.tsx",
+    "components/charts/cartesian/series-readout.tsx",
+    "components/charts/cartesian/bar-chart.tsx",
+    "components/charts/cartesian/hbar-chart.tsx",
+    "components/charts/cartesian/line-chart.tsx",
   ];
 
   it("draws its marks through the primitives, never with its own shapes, paint or geometry", () => {

@@ -1,0 +1,225 @@
+/**
+ * The charts page's basic charts: each chart drawn from data on fixed demo values, so the themes'
+ * chart styles compare — bars grouped and stacked, a histogram, horizontal bars by value and by
+ * range, a line with a gap, a stacked area, and a bare line that traces in.
+ *
+ * Every chart is given the width its box measures, the way an A2UI block gives it; each input is
+ * built once (module level, or memoized on the dictionary), since a chart keeps effects keyed on
+ * its data.
+ */
+import { useMemo } from "react";
+import type { ReactNode } from "react";
+import { BarChart, HBarChart, LineChart, useChartWidth } from "@prismshadow/penguin-ui";
+import type { CartesianSeries, HBarRow } from "@prismshadow/penguin-ui";
+import { BoardGroup } from "../../foundations/shared";
+import { useGallery } from "../../state";
+
+const ms = (v: number) => `${v} ms`;
+const gb = (v: number) => `${v} GB`;
+const degrees = (v: number) => `${v}°`;
+const count = (v: number) => String(v);
+
+/** The p50 and p95 latency of each day of a week, ms. */
+const P50 = [120, 98, 143, 160, 151, 72, 64];
+const P95 = [310, 280, 365, 402, 388, 190, 170];
+
+/** Build minutes per runner over five weeks. */
+const RUNNERS = [
+  { label: "Linux", values: [42, 51, 38, 60, 57] },
+  { label: "macOS", values: [18, 22, 25, 21, 30] },
+  { label: "Windows", values: [30, 28, 35, 41, 33] },
+] as const;
+
+/** Response times in 50 ms bins up to 500 ms, and how many requests fell in each. */
+const BIN_EDGES = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500];
+const BINS = BIN_EDGES.slice(1).map((edge, i) => `${BIN_EDGES[i]}–${edge}`);
+const BIN_COUNTS = [4, 18, 42, 61, 38, 22, 11, 6, 3, 1];
+
+/** Three disks, one fine, one past the attention mark and one past the danger mark. */
+const DISKS: readonly HBarRow[] = [
+  { label: "/", to: 41, value: "41 / 100 GB" },
+  { label: "/data", to: 86, value: "431 / 500 GB", tone: "attention" },
+  { label: "/backup", to: 96, value: "1.92 / 2 TB", tone: "danger" },
+];
+
+/** Five days' lows and highs, °, with the chance of rain. */
+const DAYS = [
+  { low: 12, high: 21, rain: 10 },
+  { low: 10, high: 19, rain: 40 },
+  { low: 8, high: 15, rain: 80 },
+  { low: 11, high: 18, rain: 20 },
+  { low: 14, high: 24, rain: 0 },
+] as const;
+const DAY_LOW = Math.min(...DAYS.map((d) => d.low));
+const DAY_HIGH = Math.max(...DAYS.map((d) => d.high));
+
+/** Eight hours of p95 latency for two services; the api missed its 13:00 reading. */
+const HOURS = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"];
+const SERVICES: CartesianSeries[] = [
+  { label: "api", values: [182, 190, 240, 228, null, 205, 260, 248] },
+  { label: "web", values: [120, 128, 150, 162, 171, 140, 155, 149] },
+];
+
+/** Memory per process over the same hours, GB. */
+const PROCESSES: CartesianSeries[] = [
+  { label: "postgres", values: [3.2, 3.4, 3.9, 4.1, 4.0, 4.4, 4.6, 4.5] },
+  { label: "node", values: [1.8, 2.1, 2.6, 2.4, 2.9, 3.1, 2.7, 2.8] },
+  { label: "redis", values: [0.6, 0.6, 0.7, 0.8, 0.8, 0.9, 0.9, 1.0] },
+];
+
+/** Twelve hours of temperature, the way an hourly forecast hands them over. */
+const FORECAST_HOURS = Array.from({ length: 12 }, (_, i) => `${String(9 + i).padStart(2, "0")}:00`);
+const FORECAST: CartesianSeries[] = [
+  {
+    label: "",
+    values: [14, 15, 17, 19, 21, 22, 22, 21, 19, 17, 16, 15],
+    paint: { ink: "text-accent" },
+  },
+];
+
+/** A chart's box: it measures its width and hands it to the chart once known. */
+function Measured({ children }: { children: (width: number) => ReactNode }) {
+  const [ref, width] = useChartWidth();
+  return (
+    <div className="lib-box p-3">
+      <div ref={ref} className="min-w-0">
+        {width > 0 && children(width)}
+      </div>
+    </div>
+  );
+}
+
+export function BasicCharts() {
+  const { S } = useGallery();
+  const t = S.library.charts.basic;
+  const latency = useMemo<CartesianSeries[]>(
+    () => [
+      { label: "p50", values: P50 },
+      { label: "p95", values: P95 },
+    ],
+    [],
+  );
+  const runners = useMemo<CartesianSeries[]>(
+    () => RUNNERS.map((runner) => ({ label: runner.label, values: runner.values })),
+    [],
+  );
+  const bins = useMemo<CartesianSeries[]>(() => [{ label: t.requests, values: BIN_COUNTS }], [t]);
+  const days = useMemo<HBarRow[]>(
+    () =>
+      DAYS.map((day, i) => ({
+        label: t.days[i] ?? "",
+        from: day.low,
+        to: day.high,
+        aside: <span className="text-xs text-fg-muted tabular-nums">{`${day.rain}%`}</span>,
+        value: `${day.low}° / ${day.high}°`,
+        paint: { ink: "text-fg-subtle", swatch: "bg-fg-subtle" },
+      })),
+    [t],
+  );
+  return (
+    <>
+      <BoardGroup title={t.bar} aside={t.barHint}>
+        <Measured>
+          {(width) => (
+            <BarChart
+              categories={t.days}
+              series={latency}
+              width={width}
+              fmtValue={ms}
+              label={t.latencyLabel}
+              captions={{ y: t.latency }}
+            />
+          )}
+        </Measured>
+      </BoardGroup>
+      <BoardGroup title={t.stacked} aside={t.stackedHint}>
+        <Measured>
+          {(width) => (
+            <BarChart
+              categories={t.weeks}
+              series={runners}
+              width={width}
+              stacked
+              fmtValue={t.minutes}
+              label={t.buildLabel}
+              captions={{ y: t.buildTime }}
+            />
+          )}
+        </Measured>
+      </BoardGroup>
+      <BoardGroup title={t.histogram} aside={t.histogramHint}>
+        <Measured>
+          {(width) => (
+            <BarChart
+              categories={BINS}
+              series={bins}
+              width={width}
+              flush
+              fmtValue={count}
+              label={t.histogramLabel}
+              captions={{ x: t.responseTime, y: t.requests }}
+            />
+          )}
+        </Measured>
+      </BoardGroup>
+      <BoardGroup title={t.hbar} aside={t.hbarHint}>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="lib-box p-3">
+            <HBarChart rows={DISKS} max={100} label={t.diskLabel} />
+          </div>
+          <div className="lib-box p-3">
+            <HBarChart rows={days} min={DAY_LOW} max={DAY_HIGH} label={t.temperatureLabel} />
+          </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.line} aside={t.lineHint}>
+        <Measured>
+          {(width) => (
+            <LineChart
+              categories={HOURS}
+              series={SERVICES}
+              width={width}
+              fmtValue={ms}
+              label={t.serviceLabel}
+              captions={{ x: t.hour, y: t.latency }}
+            />
+          )}
+        </Measured>
+      </BoardGroup>
+      <BoardGroup title={t.area} aside={t.areaHint}>
+        <Measured>
+          {(width) => (
+            <LineChart
+              categories={HOURS}
+              series={PROCESSES}
+              width={width}
+              area
+              stacked
+              fmtValue={gb}
+              label={t.memoryLabel}
+              captions={{ y: t.memory }}
+            />
+          )}
+        </Measured>
+      </BoardGroup>
+      <BoardGroup title={t.bare} aside={t.bareHint}>
+        <Measured>
+          {(width) => (
+            <LineChart
+              categories={FORECAST_HOURS}
+              series={FORECAST}
+              width={width}
+              frame="bare"
+              area
+              pointLabels
+              drawIn
+              minSpan={6}
+              fmtValue={degrees}
+              label={t.forecastLabel}
+            />
+          )}
+        </Measured>
+      </BoardGroup>
+    </>
+  );
+}

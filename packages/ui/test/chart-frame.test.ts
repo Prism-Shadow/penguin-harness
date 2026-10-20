@@ -6,7 +6,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { ChartFrame } from "../src/components/charts/chart-frame/chart-frame";
-import { makeGeom } from "../src/components/charts/chart-frame/chart-geom";
+import { makeGeom, makeRangeGeom, PAD_R } from "../src/components/charts/chart-frame/chart-geom";
 import { classTokens, renderStatic } from "../src/testing";
 
 type Props = Parameters<typeof ChartFrame>[0];
@@ -29,6 +29,16 @@ describe("ChartFrame", () => {
     expect(html).toContain('role="img"');
     expect(classTokens(html)).toEqual(expect.arrayContaining(["ui-chart", "text-fg-muted"]));
     expect(html).not.toMatch(/gray-|dark:/);
+  });
+
+  it("takes the caller's name for the image, and the canvas height its geometry asks for", () => {
+    const html = frame({
+      geom: makeRangeGeom(3, 0, 100, 640, PAD_R, { h: 120 }),
+      label: "Cost, last 3 days",
+    });
+    expect(html).toContain('aria-label="Cost, last 3 days"');
+    expect(html).toContain('height="120"');
+    expect(html).toContain('viewBox="0 0 640 120"');
   });
 
   it("names its grid and axis parts, and prints the caller's tick and date formats", () => {

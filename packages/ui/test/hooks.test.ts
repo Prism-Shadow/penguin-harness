@@ -165,8 +165,19 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-notice": ["Toaster", "NoticeStrip"],
   // The Trace timeline draws its lanes and spans as HTML (`grid` on a lane track, `bar` on a
   // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
-  // SVG ones. A weather widget's next hours are a line chart of their own (2026-10-04).
-  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart", "WeatherHourly"],
+  // SVG ones. A weather widget's next hours are a line chart of their own (2026-10-04). The basic
+  // charts drawn from data (2026-10-19): the line chart's bare frame draws its own svg, and the
+  // horizontal bar chart is HTML rows of tracks and bars, like the timeline's lanes.
+  "ui-chart": [
+    "ChartFrame",
+    "TokenDonut",
+    "Sparkline",
+    "Ring",
+    "TimelineChart",
+    "WeatherHourly",
+    "LineChart",
+    "HBarChart",
+  ],
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
   // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],

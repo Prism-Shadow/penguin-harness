@@ -986,6 +986,47 @@ export const en: GalleryStrings = {
       timeline: "Trace timeline",
       timelineHint:
         "One Task's model segments and tool calls: thinking, reply, tool-call generation, approval wait and execution, each in its lane.",
+      basic: {
+        part: "Basic charts",
+        partHint:
+          "The basic charts drawn from data, with units on their axes; the caller passes the width and the words. An A2UI chart block draws one of them, and the composites (system resources, weather) are built on them.",
+        bar: "Bar chart · grouped",
+        barHint:
+          "A group of bars per category, one per series, each on its slot; pointing at a column opens a bubble with every series' value.",
+        stacked: "Bar chart · stacked",
+        stackedHint:
+          "A category's series stack into one bar, its top the total; pointing at a legend item fades the other series.",
+        histogram: "Histogram",
+        histogramHint: "Neighbouring bins fill their columns, with a one-pixel seam between them.",
+        hbar: "Horizontal bars",
+        hbarHint:
+          "Rows on one shared scale: a value drawn from zero (disk usage, turning to the attention or danger ink past a threshold), or a range (each day's low to high over a week).",
+        line: "Line chart",
+        lineHint:
+          "Two series, one missing a reading: its line breaks at the gap, and the bubble shows a dash there.",
+        area: "Area chart · stacked",
+        areaHint: "The series pile into bands, each filled down to the one under it.",
+        bare: "Line chart · bare",
+        bareHint:
+          "No grid and no value axis: the readings sit over their points on their own range, and the line traces in once as it appears.",
+        days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        weeks: ["W38", "W39", "W40", "W41", "W42"],
+        minutes: (v: number) => `${v} min`,
+        latency: "Latency",
+        latencyLabel: "p50 and p95 latency for each day of the week",
+        buildTime: "Build time",
+        buildLabel: "Build time per runner, by week",
+        responseTime: "Response time (ms)",
+        requests: "Requests",
+        histogramLabel: "Response time distribution",
+        diskLabel: "Disk usage",
+        temperatureLabel: "Temperature over the next five days",
+        hour: "Hour",
+        serviceLabel: "Hourly p95 latency of two services",
+        memory: "Memory",
+        memoryLabel: "Memory use by process",
+        forecastLabel: "Temperature over the next twelve hours",
+      },
     },
     avatars: {
       user: "User avatar",
