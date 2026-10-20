@@ -147,6 +147,23 @@ export class SchedulesRepo implements Schedules {
       .run(firedAt, oneShot ? 1 : 0, projectId, agentId, name);
   }
 
+  /** Links one firing to the session it went to (scheduled and manual alike). */
+  recordFiring(
+    projectId: string,
+    agentId: string,
+    name: string,
+    sessionId: string,
+    firedAt: string,
+    manual: boolean,
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO schedule_firings (project_id, agent_id, name, session_id, fired_at, manual)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(projectId, agentId, name, sessionId, firedAt, manual ? 1 : 0);
+  }
+
   /** Missed marker for a one-shot task (the scheduled time had already passed at startup/registration reconciliation; missed means not backfilled). */
   markMissed(projectId: string, agentId: string, name: string): void {
     this.db

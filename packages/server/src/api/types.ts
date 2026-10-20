@@ -4272,6 +4272,82 @@ export interface ProjectSchedulesResponse {
   invalidFiles: Array<{ agentId: string; name: string; error: string }>;
 }
 
+/**
+ * A hand trigger's answer: the session the extra run went to — a fresh one created for
+ * it, or the bound one — sent now or queued behind a busy target.
+ */
+export interface ScheduleFireResponse {
+  sessionId: string;
+  /** True when the target Session was busy: the firing waits and is sent once it turns idle. */
+  queued: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Schedule webhook triggers (Multica's "run from a webhook", slimmed)
+// ---------------------------------------------------------------------------
+
+/** Header conventions per provider: `generic` reads Idempotency-Key, `github` reads X-GitHub-Delivery + X-Hub-Signature-256. */
+export type ScheduleWebhookProvider = "generic" | "github";
+
+export interface ScheduleWebhookCreateRequest {
+  provider?: ScheduleWebhookProvider;
+  /** HMAC-SHA256 secret; when set, every delivery must carry a valid signature. */
+  secret?: string;
+}
+
+export interface ScheduleWebhookUpdateRequest {
+  provider?: ScheduleWebhookProvider;
+  /** A new secret, or null to stop requiring signatures. */
+  secret?: string | null;
+  enabled?: boolean;
+}
+
+/** A trigger as the owner reads it: the token never appears here (creation and rotation return it once). */
+export interface ScheduleWebhookView {
+  provider: ScheduleWebhookProvider;
+  enabled: boolean;
+  /**
+   * The ingress path — empty except at creation/rotation, since the path embeds the
+   * bearer token and reading it would be reading the credential. Lost it? Rotate.
+   */
+  path: string;
+  hasSecret: boolean;
+  /** Last 4 chars of the secret, so two secrets tell apart. */
+  secretHint: string | null;
+  lastFiredAt: string | null;
+}
+
+/** Creation and rotation answer: the only responses that carry the bearer token. */
+export interface ScheduleWebhookSecretView extends ScheduleWebhookView {
+  token: string;
+}
+
+export type ScheduleWebhookDeliveryStatus =
+  "queued" | "accepted" | "skipped" | "ignored" | "duplicate" | "rejected";
+
+export interface ScheduleWebhookDeliveryView {
+  id: string;
+  dedupeKey: string | null;
+  event: string;
+  signatureStatus: string;
+  status: ScheduleWebhookDeliveryStatus;
+  firingId: number | null;
+  payload: string;
+  createdAt: string;
+  attemptCount: number;
+}
+
+export interface ScheduleWebhookDeliveryListResponse {
+  deliveries: ScheduleWebhookDeliveryView[];
+}
+
+/** The public ingress answer: accepted and duplicate both carry the run to watch. */
+export type ScheduleWebhookIngressResponse =
+  | { status: "accepted"; delivery_id: string; run_id: string; queued: boolean }
+  | { status: "duplicate"; delivery_id: string; run_id: string | null }
+  | { status: "ignored"; delivery_id: string; reason: string }
+  | { status: "rejected"; delivery_id: string; reason: string };
+
 export interface ScheduleUpsertRequest {
   prompt: string;
   enabled: boolean;

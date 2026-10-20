@@ -116,6 +116,7 @@ import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
 import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
+import { WebhookRoutes } from "./http/routes/webhooks.js";
 import { Machines, MachinesModule } from "./machines/service.js";
 import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
 import { OrgRoutes } from "./http/routes/organizations.js";
@@ -346,6 +347,7 @@ export class ProjectsModule {}
     SessionsModule,
     SessionApiRoutes,
     SchedulerRoutes,
+    WebhookRoutes,
     EventsRoutes,
   ],
   exports: [

@@ -425,3 +425,72 @@ describe("2026-10-12-messaging-conversations on a named-migration root", () => {
     }
   });
 });
+
+describe("2026-10-20-schedule-firings on a named-migration root", () => {
+  it("creates the firings table on the swap path, and its down keeps table and rows", () => {
+    const db = openFresh();
+    try {
+      migrate(db);
+      db.exec("DROP TABLE schedule_firings");
+      db.exec("DELETE FROM schema_migrations WHERE name = '2026-10-20-schedule-firings'");
+      const previous = "2026-10-16-machines-adopted-at";
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-10-20-schedule-firings"]);
+      db.prepare(
+        "INSERT INTO schedule_firings (project_id, agent_id, name, session_id, fired_at, manual)" +
+          " VALUES ('p1', 'a1', 'n', 's1', '2026-10-20T00:00:00.000Z', 1)",
+      ).run();
+      expect(
+        db.prepare("SELECT manual FROM schedule_firings WHERE session_id = 's1'").get(),
+      ).toEqual({ manual: 1 });
+      // Audit history survives the rollback; only the ledger row goes.
+      rollbackTo(db, previous);
+      expect(shape(db)).toContain("schedule_firings");
+      expect(db.prepare("SELECT count(*) AS n FROM schedule_firings").get()).toEqual({ n: 1 });
+      // The rollback also unwound the later webhooks migration; both come back.
+      expect(migrate(db).applied).toEqual([
+        "2026-10-20-schedule-firings",
+        "2026-10-20-schedule-webhooks",
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("2026-10-20-schedule-webhooks on a named-migration root", () => {
+  it("creates triggers and deliveries on the swap path, and its down keeps them", () => {
+    const db = openFresh();
+    try {
+      migrate(db);
+      db.exec("DROP TABLE schedule_webhook_deliveries");
+      db.exec("DROP TABLE schedule_webhook_triggers");
+      db.exec("DELETE FROM schema_migrations WHERE name = '2026-10-20-schedule-webhooks'");
+      const previous = "2026-10-20-schedule-firings";
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-10-20-schedule-webhooks"]);
+      db.prepare(
+        "INSERT INTO schedule_webhook_triggers (id, project_id, agent_id, name, token, created_at, updated_at)" +
+          " VALUES ('wht_1', 'p1', 'a1', 'n', 'whk_1', '2026-10-20T00:00:00.000Z', '2026-10-20T00:00:00.000Z')",
+      ).run();
+      const insertDelivery = (id: string, key: string | null) =>
+        db
+          .prepare(
+            "INSERT INTO schedule_webhook_deliveries (id, trigger_id, dedupe_key, created_at)" +
+              " VALUES (?, 'wht_1', ?, '2026-10-20T00:00:00.000Z')",
+          )
+          .run(id, key);
+      insertDelivery("whd_1", "k1");
+      expect(() => insertDelivery("whd_2", "k1")).toThrow(/UNIQUE/);
+      insertDelivery("whd_3", null);
+      insertDelivery("whd_4", null);
+      // Audit history survives the rollback; only the ledger row goes.
+      rollbackTo(db, previous);
+      expect(shape(db)).toContain("schedule_webhook_deliveries");
+      expect(db.prepare("SELECT count(*) AS n FROM schedule_webhook_deliveries").get()).toEqual({
+        n: 3,
+      });
+      expect(migrate(db).applied).toEqual(["2026-10-20-schedule-webhooks"]);
+    } finally {
+      db.close();
+    }
+  });
+});
