@@ -3,6 +3,7 @@
 - **Date:** 2026-10-20
 - **Type:** fix
 - **Scope:** `web`, `ui`
+- **PR:** [#1250](https://github.com/Prism-Shadow/penguin-harness/pull/1250)
 
 [中文版](2026-10-20-chat-scroll-up-bounce.zh.md)
 
