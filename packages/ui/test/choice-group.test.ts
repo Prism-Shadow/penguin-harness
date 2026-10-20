@@ -15,8 +15,10 @@
  * - Given cards, each leads with the radio's disc, filled only on the pressed option, unless the
  *   caller gives a lead of its own; a description sits under its label, and a muted option is in
  *   the muted ink.
- * - Given a multiple group of chips, every option is a toggle with a tab stop of its own; given
- *   cards, every option is a real checkbox whose description describes it.
+ * - Given a multiple group of chips, every option is a toggle with a tab stop of its own, led by
+ *   the checkbox's box, ticked only while pressed — so a multiple choice never reads as a single
+ *   one, whose chips carry no box and whose cards carry a disc; given cards, every option is a
+ *   real checkbox whose description describes it.
  * - When an option of a multiple group is pressed, it turns over and the group reports every
  *   option that is on, in the options' order, whatever order they were pressed in.
  * - Disabled, every option of every shape takes no press; one option's own flag closes only it.
@@ -53,9 +55,14 @@ const render = (props: Partial<ChoiceGroupProps> & Pick<ChoiceGroupProps, "shape
 const buttons = (html: string): string[] => html.match(/<button\b[^>]*>/g) ?? [];
 /** The opening tags that hold the one tab stop. */
 const stops = (html: string) => buttons(html).filter((tag) => tag.includes('tabindex="0"'));
-/** A drawn disc, and one with the dot of a selected disc in it. */
-const DISC = /<span aria-hidden="true" class="relative inline-block size-3\.5[^"]*"/g;
+/** A drawn disc, and the dot of a selected disc in it. */
+const DISC =
+  /<span aria-hidden="true" class="relative inline-block size-3\.5 shrink-0 rounded-full/g;
 const DOT = /bg-accent-fg/g;
+/** A drawn checkbox box, and the tick of a ticked one. */
+const BOX =
+  /<span aria-hidden="true" class="relative inline-block size-3\.5 shrink-0 rounded-\[min/g;
+const TICK = /d="M2\.6 6\.2l2\.2 2\.2 4\.6-4\.8"/g;
 
 describe("a single choice group", () => {
   it("presses exactly the chosen option, and makes it the one tab stop", () => {
@@ -118,6 +125,8 @@ describe("a single choice group", () => {
     );
     expect(classTokens(render({ shape: "chip", size: "sm" }))).toContain("text-xs");
     expect(render({ shape: "chip" })).not.toMatch(DISC);
+    expect(render({ shape: "chip" })).not.toMatch(BOX);
+    expect(render({ shape: "card" })).not.toMatch(BOX);
   });
 });
 
@@ -163,6 +172,16 @@ describe("a multiple choice group", () => {
       "true",
     ]);
     for (const tag of tags) expect(tag).not.toContain("tabindex");
+  });
+
+  it("as chips, leads every option with the checkbox's box, ticked only while pressed", () => {
+    const html = render({ shape: "chip", multiple: true, value: ["pg", "mongo"] });
+    expect(html.match(BOX)).toHaveLength(3);
+    expect(html.match(TICK)).toHaveLength(2);
+    expect(html).not.toMatch(DISC);
+    const none = render({ shape: "chip", multiple: true, value: [] });
+    expect(none.match(BOX)).toHaveLength(3);
+    expect(none).not.toMatch(TICK);
   });
 
   it("as cards, makes every option a real checkbox that its description describes", () => {

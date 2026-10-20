@@ -1,14 +1,20 @@
 /**
  * The slider: a native `<input type="range">` — so the role, the value, the arrow keys, Page Up /
- * Page Down and Home / End stay the browser's — drawn on the switch's roles: the track in the
- * switch's off track (the control well is close to invisible on Frost's dark canvas), the thumb
- * in the accent with the switch knob's hairline, both round like the switch in every theme. Beside it a readout states the value and its unit in tabular figures;
- * the track has no filled part, since the readout already says where the value sits.
+ * Page Down and Home / End stay the browser's — drawn on the switch's roles. The part of the track
+ * up to the thumb is filled in the accent, the switch's "on", and the rest is the switch's off
+ * track (the control well is close to invisible on Frost's dark canvas), so where the value sits
+ * reads at a glance. The thumb is the accent with the switch knob's hairline; track and thumb are
+ * round like the switch in every theme, and every fill is an opaque token, so nothing depends on
+ * transparency. Beside the track a readout states the value and its unit in tabular figures.
+ *
+ * The track is drawn under the input rather than on the browser's track, which has no filled
+ * part in WebKit: two flat bars, the fill ending at the thumb's centre. No gradient.
  *
  * The readout is decorative for assistive technology: the slider's own `aria-valuetext` carries
  * the same words ("0.7 °C"), which is what is read out as the value moves. A slider always holds
  * a value, so `required` only draws the mark beside the title. An `error` takes the hint's place
- * and draws the thumb's line in the danger ink. Disabled, the whole row dims and takes no input.
+ * and draws the thumb's line in the danger ink. Disabled, the fill and the thumb turn grey, the
+ * whole row dims, and it takes no input.
  *
  * The title is a real `<label for>`. Without a `label`, give the slider an `id` and label it
  * from outside.
@@ -37,29 +43,44 @@ export interface SliderProps {
   id?: string;
 }
 
-/** The input itself: no browser widget, the room the thumb needs, the closed state. */
+/** The input itself, over the drawn track: no browser widget, the thumb's room, the closed state. */
 const RANGE =
-  "h-4 min-w-0 flex-1 appearance-none bg-transparent disabled:cursor-not-allowed " +
+  "relative h-4 w-full appearance-none bg-transparent disabled:cursor-not-allowed " +
   // The ring sits on the thumb, the part that moves, rather than around the whole bar.
   "focus-visible:outline-none " +
   "focus-visible:[&::-webkit-slider-thumb]:[outline:var(--ui-focus-ring)] " +
   "focus-visible:[&::-webkit-slider-thumb]:[outline-offset:var(--ui-focus-ring-offset)] " +
   "focus-visible:[&::-moz-range-thumb]:[outline:var(--ui-focus-ring)] " +
   "focus-visible:[&::-moz-range-thumb]:[outline-offset:var(--ui-focus-ring-offset)] " +
-  // The track: a pill in the switch's off track.
-  "[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full " +
-  "[&::-webkit-slider-runnable-track]:bg-switch-track " +
-  "[&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full " +
-  "[&::-moz-range-track]:bg-switch-track " +
-  // The thumb: the accent with a hairline, centred on the track (WebKit lays it from the
-  // track's top edge, so it is pulled up by half the difference of the two heights).
+  // The browser's track stays, empty, for the thumb to sit on: the drawn bars show through it.
+  "[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:bg-transparent " +
+  "[&::-moz-range-track]:h-1.5 [&::-moz-range-track]:bg-transparent " +
+  // The thumb, centred on the track (WebKit lays it from the track's top edge, so it is pulled up
+  // by half the difference of the two heights).
   "[&::-webkit-slider-thumb]:mt-[calc(var(--spacing)*-1.25)] " +
   "[&::-webkit-slider-thumb]:box-border [&::-webkit-slider-thumb]:size-4 " +
   "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full " +
-  "[&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:bg-accent " +
+  "[&::-webkit-slider-thumb]:border " +
   "[&::-moz-range-thumb]:box-border [&::-moz-range-thumb]:size-4 " +
-  "[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border " +
-  "[&::-moz-range-thumb]:bg-accent";
+  "[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border";
+
+/** The thumb's fill: the accent, or the grey of a closed control. */
+const THUMB_FILL = {
+  on: "[&::-webkit-slider-thumb]:bg-accent [&::-moz-range-thumb]:bg-accent",
+  off: "[&::-webkit-slider-thumb]:bg-fg-muted [&::-moz-range-thumb]:bg-fg-muted",
+} as const;
+
+/** One bar of the drawn track: the track's height, centred on the input's line, under it. */
+const BAR = "pointer-events-none absolute inset-y-0 left-0 my-auto h-1.5 rounded-full";
+
+/**
+ * How far along the range a value sits, from 0 at `min` to 1 at `max`. The fill ends at the
+ * thumb's centre, which travels the track less the thumb's own width.
+ */
+function fillWidth(value: number, min: number, max: number): string {
+  const share = max > min ? (Math.min(max, Math.max(min, value)) - min) / (max - min) : 0;
+  return `calc((100% - var(--spacing) * 4) * ${share} + var(--spacing) * 2)`;
+}
 
 /** The thumb's line: the knob's hairline, or the danger ink while the value is refused. */
 const THUMB_LINE = {
@@ -102,20 +123,31 @@ export function Slider({
         </FieldLabel>
       )}
       <div className={`flex items-center gap-3 ${disabled ? "opacity-60" : ""}`}>
-        <input
-          id={controlId}
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          disabled={disabled}
-          aria-valuetext={spoken}
-          aria-invalid={bad ? true : undefined}
-          aria-describedby={bad || note != null ? belowId : undefined}
-          onChange={(event) => onChange(Number(event.target.value))}
-          className={`${RANGE} ${bad ? THUMB_LINE.bad : THUMB_LINE.ok}`}
-        />
+        <div className="relative flex min-w-0 flex-1 items-center">
+          <span aria-hidden data-track="rest" className={`${BAR} right-0 bg-switch-track`} />
+          <span
+            aria-hidden
+            data-track="fill"
+            className={`${BAR} ${disabled ? "bg-fg-muted" : "bg-accent"}`}
+            style={{ width: fillWidth(value, min, max) }}
+          />
+          <input
+            id={controlId}
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            disabled={disabled}
+            aria-valuetext={spoken}
+            aria-invalid={bad ? true : undefined}
+            aria-describedby={bad || note != null ? belowId : undefined}
+            onChange={(event) => onChange(Number(event.target.value))}
+            className={`${RANGE} ${bad ? THUMB_LINE.bad : THUMB_LINE.ok} ${
+              disabled ? THUMB_FILL.off : THUMB_FILL.on
+            }`}
+          />
+        </div>
         {/* A floor under the readout's width, so the tracks of a stack of sliders end at one
             edge whatever their figures and units. */}
         <span aria-hidden className="min-w-12 shrink-0 text-right text-xs text-fg tabular-nums">
