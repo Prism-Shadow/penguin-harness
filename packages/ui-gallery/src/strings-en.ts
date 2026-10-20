@@ -1031,7 +1031,7 @@ export const en: GalleryStrings = {
         forecastLabel: "Temperature over the next twelve hours",
         scatter: "Scatter chart",
         scatterHint:
-          "Two series of points on two value axes, with units on both; pointing at a legend item fades the other series.",
+          "Two series of points on two value axes, each fitted to the data's own range rather than run from zero, with units on both; pointing at a legend item fades the other series.",
         pie: "Pie and donut",
         pieHint:
           "Slices run clockwise from twelve o'clock, each its share of the whole; the list legend gives each amount and share, and pointing at a row fades the other slices.",

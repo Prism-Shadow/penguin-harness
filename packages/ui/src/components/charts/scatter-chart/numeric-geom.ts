@@ -1,9 +1,11 @@
 /**
  * A scatter plot's two numeric axes: pure, no React (test/chart-scatter.test.ts). Both axes are
- * value axes laid out as the bar and line charts lay out theirs (niceDomain: zero to a round
- * number above the data, in three to six round steps; a value below zero takes the axis down),
+ * value axes laid out as the bar and line charts lay out theirs, in three to six round steps,
  * inside the plot frame's paddings (chart-geom's PAD_T / PAD_B, the left padding grown to the
- * widest y label).
+ * widest y label) — but a point is not read from zero, so each axis runs from a round number at
+ * or below the data's lowest value to one at or above its highest (niceDomain `zero: false`):
+ * readings of 900 to 1,000 fill the plot instead of sitting in its top tenth. A `min` / `max` the
+ * caller gives for the y axis still holds.
  *
  * The x axis is a number line, not columns: its first tick sits on the plot's left edge and its
  * last on the right, so the right padding leaves room for half the last label; labels thin to
@@ -57,8 +59,8 @@ export function numericPlot({
   min?: number;
   max?: number;
 }): NumericPlot {
-  const xd = niceDomain([xs]);
-  const yd = niceDomain([ys], { min, max });
+  const xd = niceDomain([xs], { zero: false });
+  const yd = niceDomain([ys], { min, max, zero: false });
   const xText = tickLabels(xd.ticks, fmtX);
   const yText = tickLabels(yd.ticks, fmtY);
   const padL = plotPadLeft(yText);
