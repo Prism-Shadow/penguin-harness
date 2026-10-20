@@ -150,6 +150,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
 
   it("filters by the perspectives category", () => {
     expect(postsFor("en", "perspectives").map((p) => p.slug)).toEqual([
+      "rules-for-vibe-coding",
       "agent-company-mode",
       // The next three share 2026-07-22, so slug ascending is the tie-break.
       "ai-infrastructure-past-present-future",
