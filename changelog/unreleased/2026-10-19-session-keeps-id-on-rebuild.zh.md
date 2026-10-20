@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** fix
 - **Scope:** `server`, `core`
+- **PR:** [#1233](https://github.com/Prism-Shadow/penguin-harness/pull/1233)
 
 [English](2026-10-19-session-keeps-id-on-rebuild.md)
 
