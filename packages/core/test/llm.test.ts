@@ -2018,3 +2018,84 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
     expect(callIdsOf(out)).toEqual(["get_time#2"]);
   });
 });
+
+describe("GenerativeModel repairs a history left on unanswered tool_calls", () => {
+  /** Records the merged request message of every request the model issues. */
+  class RecordingModel extends GenerativeModel {
+    readonly requests: UniMessage[] = [];
+    protected override openStream(uniMessage: UniMessage): AsyncIterable<UniEvent> {
+      this.requests.push(uniMessage);
+      return okStream();
+    }
+  }
+
+  const newModel = (): RecordingModel =>
+    new RecordingModel({
+      modelId: "modelscope-model",
+      apiKey: "k",
+      clientType: "openai-chat",
+      tools: [],
+    });
+
+  const drain = async (model: GenerativeModel): Promise<void> => {
+    const gen = model.streamGenerate({ newMessages: [userText("next")] });
+    let res = await gen.next();
+    while (!res.done) res = await gen.next();
+  };
+
+  const toolResults = (message: UniMessage): UniMessage["content_items"] =>
+    message.content_items.filter((item) => item.type === "tool_result.done");
+
+  it("pairs a tool_call the history left unanswered, so the next request is accepted", async () => {
+    const model = newModel();
+    // A committed assistant turn whose tool_call never got a result: the request that
+    // carried the result failed, so the history ends unanswered and the provider would
+    // refuse every later request ("tool_calls with no result").
+    model.setHistory([
+      userText("edit it"),
+      toolCall({ name: "edit_file", arguments: "{}", toolCallId: "call-1" }),
+    ]);
+
+    await drain(model);
+
+    const results = toolResults(model.requests[0]!);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ type: "tool_result.done", tool_call_id: "call-1" });
+    // The placeholder says the tool produced nothing, so the model cannot read the
+    // pairing as a successful run.
+    expect(JSON.stringify(results[0])).toContain("no result");
+  });
+
+  it("does not answer twice a tool_call the request itself answers", async () => {
+    const model = newModel();
+    model.setHistory([
+      userText("edit it"),
+      toolCall({ name: "edit_file", arguments: "{}", toolCallId: "call-1" }),
+    ]);
+
+    // The engine holds the real output and resends it as carry-over: a second result for
+    // the same call would be refused as a duplicate.
+    const gen = model.streamGenerate({
+      newMessages: [toolCallOutput({ output: "the real output", toolCallId: "call-1" })],
+    });
+    let res = await gen.next();
+    while (!res.done) res = await gen.next();
+
+    const results = toolResults(model.requests[0]!);
+    expect(results).toHaveLength(1);
+    expect(JSON.stringify(results[0])).toContain("the real output");
+  });
+
+  it("leaves a history whose tool_call is already answered alone", async () => {
+    const model = newModel();
+    model.setHistory([
+      userText("edit it"),
+      toolCall({ name: "edit_file", arguments: "{}", toolCallId: "call-1" }),
+      toolCallOutput({ output: "done", toolCallId: "call-1" }),
+    ]);
+
+    await drain(model);
+
+    expect(toolResults(model.requests[0]!)).toHaveLength(0);
+  });
+});

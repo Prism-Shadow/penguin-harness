@@ -53,6 +53,7 @@ import {
   thinkingMessage,
   tokenUsage,
   toolCall,
+  toolCallOutput,
 } from "../omnimessage/index.js";
 import type {
   CompleteModelPayload,
@@ -218,6 +219,48 @@ export function mergeOmniToUniMessage(messages: OmniMessage[]): UniMessage {
 
   return { role, content_items: contentItems };
 }
+
+/**
+ * The tool_call ids an MMSP history holds that no tool_result answers.
+ *
+ * A request that fails leaves the client's history exactly as it was before it: MMSP
+ * commits a turn's messages only when the stream's `stop` event arrives, so the input of a
+ * failed request — the tool outputs that were meant to answer the model's committed
+ * tool_calls — never lands. The history then ends on an assistant turn whose tool_calls
+ * have no result, and **every later request is refused** by the provider ("An assistant
+ * message with 'tool_calls' must be followed by a tool message answering each call"): the
+ * session is wedged, and nothing in the engine can undo it, because the repair has to
+ * reach the LLM history itself.
+ *
+ * Only the last assistant turn can be unpaired: the provider's own rule requires each
+ * assistant turn's tool_calls to be answered before the next assistant turn, so an earlier
+ * one would have been refused already.
+ */
+export function unpairedToolCallIds(history: UniMessage[]): string[] {
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const calls = history[i]!.content_items.filter(
+      (item): item is ToolCallDoneItem => item.type === "tool_call.done",
+    );
+    if (calls.length === 0) continue;
+    const answered = new Set<string>();
+    for (let j = i + 1; j < history.length; j += 1) {
+      for (const item of history[j]!.content_items) {
+        if (item.type === "tool_result.done") answered.add(item.tool_call_id);
+      }
+    }
+    return calls.map((call) => call.tool_call_id).filter((id) => !answered.has(id));
+  }
+  return [];
+}
+
+/**
+ * The text of the placeholder that pairs a tool_call the history left unanswered.
+ *
+ * It says the tool produced no result, so the model cannot read the pairing as a
+ * successful run — the next turn is then free to re-issue the call.
+ */
+const UNPAIRED_TOOL_RESULT =
+  "[no result: the request that ran this tool failed before its output was recorded — treat the tool as not run]";
 
 // ---------------------------------------------------------------------------
 // Token accounting (as defined by SKILL.md)
@@ -793,6 +836,45 @@ export class GenerativeModel implements LLMInterface {
   }
 
   /**
+   * Pairs the tool_calls the LLM history left unanswered, so the next request is accepted.
+   *
+   * The engine cannot do this: the unpaired tool_calls live in the provider client's own
+   * history, and the repair has to reach *there* — a tool_result sent as the next request's
+   * input is what the provider pairs with the committed assistant turn.
+   *
+   * Ids this request's own input already answers are left alone: when the engine holds the
+   * real outputs it resends them as carry-over (the tool_loop cutoff keeps them for the
+   * next run), and a second result for the same call would be refused as a duplicate.
+   */
+  private repairUnpairedToolCalls(messages: OmniMessage[]): OmniMessage[] {
+    const unpaired = unpairedToolCallIds(this.client.getHistory());
+    if (unpaired.length === 0) return messages;
+    const answered = new Set<string>();
+    for (const message of messages) {
+      const payload = message.payload as { type?: string; tool_call_id?: string };
+      if (payload.type === "tool_call_output" && payload.tool_call_id !== undefined) {
+        answered.add(payload.tool_call_id);
+      }
+    }
+    const missing = unpaired.filter((id) => !answered.has(id));
+    if (missing.length === 0) return messages;
+    // The merge requires one role for the whole group, and a tool result is user-side:
+    // only a user-side input can take it.
+    const role = (messages[0]?.payload as { role?: string } | undefined)?.role;
+    if (role !== "user") return messages;
+    return [
+      ...messages,
+      ...missing.map((id) =>
+        toolCallOutput({
+          output: UNPAIRED_TOOL_RESULT,
+          toolCallId: id,
+          stopReason: "aborted",
+        }),
+      ),
+    ];
+  }
+
+  /**
    * Per-request output cap: `min(configured max_tokens, context_window − estimated input −
    * safety margin)`, floored — recomputed for every request (compaction requests included:
    * they run through the same path, exactly when the context is largest) from the freshest
@@ -884,7 +966,7 @@ export class GenerativeModel implements LLMInterface {
     // and never throw to context_engine.
     let uniMessage: UniMessage;
     try {
-      uniMessage = mergeOmniToUniMessage(params.newMessages);
+      uniMessage = mergeOmniToUniMessage(this.repairUnpairedToolCalls(params.newMessages));
     } catch (err) {
       return { status: "fatal", errorCode: "invalid_input", errorMessage: describeError(err) };
     }
