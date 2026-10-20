@@ -99,7 +99,7 @@ export function HistoryLoadFailed({
         ) : (
           <Button onClick={onRetry}>{S.common.retry}</Button>
         )}
-        <HelpFold title={S.chat.machineAway.details} className="mt-2 w-full text-left">
+        <HelpFold title={S.chat.machineAway.details} className="mt-2 max-w-full text-left">
           <p className="break-words font-mono text-xs text-fg-muted">{error}</p>
         </HelpFold>
       </div>
