@@ -53,6 +53,10 @@ export interface A2uiStrings {
   /** A form's number stepper: the buttons that add and subtract one step. */
   stepUp: string;
   stepDown: string;
+  /** A form field's error line when the model gave no hint and the rule has no symbols. */
+  invalid: string;
+  /** A form's dropdown: its empty first row, when the model wrote no placeholder. */
+  choose: string;
   /** The weather conditions a weather widget names, by the catalog's condition key. */
   conditions: Readonly<Record<A2uiWeatherCondition, string>>;
   /** A snapshot widget's head: when its data was read ("As of 14:05"). */
@@ -209,6 +213,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     showSource: "Show source",
     stepUp: "Increase",
     stepDown: "Decrease",
+    invalid: "Not a valid value",
+    choose: "Choose…",
     conditions: {
       clear: "Clear",
       "partly-cloudy": "Partly cloudy",
