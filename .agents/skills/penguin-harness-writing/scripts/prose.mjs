@@ -746,8 +746,10 @@ function unquote(value) {
 function parseSpecLine(fig, line, n) {
   const item = SPEC_ITEM.exec(line);
   if (item && fig.inText) {
-    const m = /^([a-z][a-z-]*(?: [a-z][a-z-]*)?):\s+(.+)$/.exec(item[1].trim());
-    fig.text.push({ where: m?.[1], value: unquote(m ? m[2] : item[1]), n });
+    // A key is short and lowercase: `box`, `step1`, `config2`, `left column`, `step (a)`.
+    const m = /^([a-z][a-z0-9 ()-]*?):\s+(.+)$/.exec(item[1].trim());
+    const keyed = m && m[1].length <= 24 && m[1].split(" ").length <= 3;
+    fig.text.push({ where: keyed ? m[1] : undefined, value: unquote(keyed ? m[2] : item[1]), n });
     return;
   }
   const kv = SPEC_KEY.exec(line);
@@ -1031,14 +1033,21 @@ function decode(text) {
 }
 
 /** Tags dropped, entities decoded, whitespace collapsed. */
+/** Typographic quotes as straight ones: strip straightens them in English text. */
+function foldQuotes(text) {
+  return text.replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+}
+
 function plain(html) {
-  return decode(html.replace(/<[^>]*>/g, " "))
+  return foldQuotes(decode(html.replace(/<[^>]*>/g, " ")))
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function normalize(text) {
-  return (text ?? "").replace(/\s+/g, " ").trim();
+  return foldQuotes(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** The drawn text of an SVG: every `<tspan>`, and the direct text of every `<text>`. */
@@ -1899,6 +1908,32 @@ function publishFigure(fig, lang, o) {
   ];
 }
 
+const CJK_PUNCT = "。，；：！？、）」』";
+
+/**
+ * A space that removing a marker left next to CJK punctuation (`CLAUDE.md。 Anthropic`): drop
+ * it after the punctuation and before it. Code spans keep their spaces.
+ */
+function tidyCjkSpaces(line) {
+  return line.replace(
+    new RegExp(
+      `(\`+)[\\s\\S]*?[^\`]\\1(?!\`)|[ \\t]+(?=[${CJK_PUNCT}])|(?<=[${CJK_PUNCT}])[ \\t]+`,
+      "g",
+    ),
+    (m) => (m.trim() ? m : ""),
+  );
+}
+
+/**
+ * Straight quotes and apostrophes in English text, outside code spans and URLs: the published
+ * English posts use them, and a CJK fallback font draws a curly ’ full-width.
+ */
+function straightQuotes(line) {
+  return line.replace(/(`+)[\s\S]*?[^`]\1(?!`)|\]\([^)]*\)|https?:\/\/[^\s)<>]+|[‘’“”]/g, (m) =>
+    m.length === 1 ? foldQuotes(m) : m,
+  );
+}
+
 function runStrip(o) {
   if (!o.in || !o.out) fail("strip needs --in <file> --out <file>");
   const doc = parseDoc(o.in);
@@ -1920,7 +1955,8 @@ function runStrip(o) {
   let inComment = false;
   let fence = null;
   let skipUntil = 0;
-  const head = doc.metaRaw === null ? "" : `---\n${doc.metaRaw}\n---\n`;
+  const prose = (line) => (lang === "en" ? straightQuotes(line) : tidyCjkSpaces(line));
+  const head = doc.metaRaw === null ? "" : `---\n${prose(doc.metaRaw)}\n---\n`;
   const lines = doc.body.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -1928,7 +1964,14 @@ function runStrip(o) {
     if (n <= skipUntil) continue;
     const fig = doc.figures.find((f) => f.n === n);
     if (fig) {
-      kept.push("", ...publishFigure(fig, lang, o), "");
+      // A drawn figure's HTML keeps its strings as drawn (only English quotes are straightened,
+      // which the figure check folds); a screenshot's alt and caption are prose.
+      const out = publishFigure(fig, lang, o);
+      kept.push(
+        "",
+        ...out.map((l) => (l.startsWith("<figure") && lang !== "en" ? l : prose(l))),
+        "",
+      );
       skipUntil = fig.end;
       continue;
     }
@@ -1948,7 +1991,7 @@ function runStrip(o) {
       inComment = !line.includes("-->");
       continue;
     }
-    kept.push(line.replace(/^(?:\{[FO]\d+\})+[ \t]*/, "").replace(/[ \t]*\{[FO]\d+\}/g, ""));
+    kept.push(prose(line.replace(/^(?:\{[FO]\d+\})+[ \t]*/, "").replace(/[ \t]*\{[FO]\d+\}/g, "")));
   }
   let body = kept
     .join("\n")
@@ -1995,13 +2038,13 @@ Files live under one root per Project. {F1}
 alt: Archived tool output moving to a path under the Project root.
 caption: The Trace keeps a marker where the output was.
 text:
-- root: <root>/<project>/
-- marker: [output archived: <path>]
+- step1: <root>/<project>/
+- config2: [output archived: <path>]
 \`\`\`
 
 ## What the Trace keeps
 
-The Trace keeps a short marker. {F1}
+The Trace keeps a short marker. {F1} The writer’s “marker” is kept, and \`it’s\` stays in code. {F1}
 
 \`\`\`figure id=demo-shot
 alt: The Trace view showing an archived output.
@@ -2019,6 +2062,16 @@ The docs describe the archive in full. {F1}
 ---
 
 **Sources**: [docs](https://example.com/docs)
+`;
+
+const FIXTURE_DRAFT_ZH = `---
+title: "自检文章"
+date: 2026-10-19
+category: perspectives
+excerpt: "脚本自检用的样例。"
+---
+
+规则写在 CLAUDE.md。{F1} Anthropic 也这样做（见文档）{F1}，代码 \`a。 b\` 保持原样。{O1}
 `;
 
 const FIXTURE_FIGURE = [
@@ -2049,6 +2102,7 @@ function runSelftest() {
     "| id | kind |\n| --- | --- |\n| demo-flow | flow |\n| demo-shot | screenshot |\n",
   );
   writeFileSync(at("draft.en.v1.md"), FIXTURE_DRAFT);
+  writeFileSync(at("draft.zh.v1.md"), FIXTURE_DRAFT_ZH);
   writeFileSync(path.join(good, "demo-flow.en.html"), FIXTURE_FIGURE);
   writeFileSync(
     path.join(bad, "demo-flow.en.html"),
@@ -2059,6 +2113,7 @@ function runSelftest() {
     "hero.title: One harness for every agent\nhero.badge: Unlock it now!\n",
   );
   const published = path.join(root, "selftest-post.en.md");
+  const publishedZh = path.join(root, "selftest-post.zh.md");
 
   const self = fileURLToPath(import.meta.url);
   const cases = [
@@ -2097,6 +2152,24 @@ function runSelftest() {
         published,
         /\n<figure class="post-figure" data-figure="demo-flow">[^\n]*<\/figure>\n[\s\S]*_The marker names the file as &lt;path&gt; and the id as `<id>`\._/,
       ],
+    },
+    {
+      name: "figure keys with digits (step1, config2) are keys, not part of the string",
+      args: ["check", "--in", at("draft.en.v1.md"), "--svg", good],
+      code: 0,
+      stdout: /0 errors/,
+    },
+    {
+      name: "strip straightens curly quotes in English prose but not in code spans",
+      args: ["strip", "--in", at("draft.en.v1.md"), "--out", published, "--figures-dir", good],
+      code: 0,
+      file: [published, /The writer's "marker" is kept, and `it’s` stays in code\./],
+    },
+    {
+      name: "strip leaves no space where a marker sat after CJK punctuation, outside code spans",
+      args: ["strip", "--in", at("draft.zh.v1.md"), "--out", publishedZh],
+      code: 0,
+      file: [publishedZh, /CLAUDE\.md。Anthropic 也这样做（见文档），代码 `a。 b` 保持原样。\n/],
     },
     {
       name: "the stripped post passes, its inline figure checked against the draft",
