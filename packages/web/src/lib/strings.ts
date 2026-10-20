@@ -3966,6 +3966,21 @@ Benchmark：
     sessionNotFoundHint: "这个链接指向的会话已经不在了，或者你没有访问它的权限。",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",
+    /**
+     * A conversation on a machine the server cannot reach: its history lives there. The headline
+     * names the machine by its alias and says its link state; the transport's own error is folded
+     * under the details row.
+     */
+    machineAway: {
+      reconnecting: (alias: string) => `${alias} 当前连不上，正在重连`,
+      reconnectStopped: (alias: string) => `${alias} 当前连不上，已停止自动重连`,
+      signInRefused: (alias: string) => `${alias} 当前连不上：保存的登录密码被拒绝`,
+      stopped: (alias: string) => `${alias} 上的服务已停止`,
+      notConnected: (alias: string) => `${alias} 尚未连接`,
+      missing: "这个对话所在的机器不在当前 Project 的机器列表中",
+      hint: "对话保存在那台机器上，连接恢复后会自动加载。",
+      details: "技术细节",
+    },
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openAgents: "智能体面板",
