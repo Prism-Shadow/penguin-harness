@@ -271,18 +271,17 @@ describe("the rule checks, on known shapes", () => {
     expect(found("theme.css", ".a { transition-property: width, border-radius; }")).toEqual([
       "1:transition-property: border-radius",
     ]);
-    // The stream's veil may hold its gradient through its fade-out with a discrete transition;
-    // the same hold on another hook, or an interpolating one on the stream, is refused.
-    const hold =
-      "opacity var(--ui-dur-reveal) var(--ui-ease-out), background-image var(--ui-dur-reveal) step-end allow-discrete";
-    expect(found("t.css", `:root .ui-stream::after { transition: ${hold}; }`)).toEqual([]);
+    // The stream's veil eases its registered strength away; the same property on another hook,
+    // another custom property on the stream, or a gradient transition there is refused.
+    const veil = "--_stream-veil var(--ui-dur-reveal) var(--ui-ease-out)";
+    expect(found("t.css", `:root .ui-stream { transition: ${veil}; }`)).toEqual([]);
     expect(
       found(
         "t.css",
-        `:root .ui-frame::after { transition: ${hold}; }\n` +
-          ":root .ui-stream::after { transition: opacity 150ms, background-image 150ms; }",
+        `:root .ui-frame { transition: ${veil}; }\n` +
+          ":root .ui-stream { transition: --ui-other 150ms, background-image 150ms; }",
       ),
-    ).toEqual(["1:transition: background-image", "1:transition: background-image"]);
+    ).toEqual(["1:transition: --_stream-veil", "1:transition: --ui-other, background-image"]);
   });
 
   it("rule 2 — hover and press transforms", () => {
@@ -542,18 +541,20 @@ describe("the rule checks, on known shapes", () => {
           ':root .ui-activity[data-state="done"] { background: linear-gradient(red, blue); }',
       ),
     ).toEqual(['18::root .ui-activity[data-state="done"] { background: …gradient() }']);
-    // A streaming reply's veil may paint one too (its newest lines fade in through it); the
-    // finished reply, or the stream's rules outside the streaming state, may not.
+    // A streaming reply's veil may mask with one too (its newest lines fade in through it), and
+    // so may the host while the veil eases away (`data-settling`); the finished reply, or the
+    // stream's rules outside those states, may not.
     expect(
       found(
         "t.css",
-        ':root .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child)::after { background-image: linear-gradient(transparent, #000), radial-gradient(closest-side, red, transparent); }\n' +
-          ":root .ui-stream::after { background-image: linear-gradient(red, blue); }\n" +
-          ':root .ui-stream[data-state="done"]::after { mask-image: linear-gradient(red, blue); }',
+        ':root .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child) { mask-image: linear-gradient(#000, transparent); }\n' +
+          ":root .ui-stream[data-settling] { -webkit-mask-image: linear-gradient(#000, transparent); }\n" +
+          ":root .ui-stream { mask-image: linear-gradient(red, blue); }\n" +
+          ':root .ui-stream[data-state="done"]::after { background-image: linear-gradient(red, blue); }',
       ),
     ).toEqual([
-      "18::root .ui-stream::after { background-image: …gradient() }",
-      '18::root .ui-stream[data-state="done"]::after { mask-image: …gradient() }',
+      "18::root .ui-stream { mask-image: …gradient() }",
+      '18::root .ui-stream[data-state="done"]::after { background-image: …gradient() }',
     ]);
     // A chart may paint a gradient as a mask (an area's fade, a bar's hatch); a mask gradient on
     // any other hook is the tell like a background one.

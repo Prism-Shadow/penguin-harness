@@ -334,7 +334,7 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   // Tab click switches; the terminal's view survives being covered (still attached below).
   await right.locator('[data-tab-id="workspace"]').click();
   await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
-  await expect(right.getByText("根目录")).toBeVisible();
+  await expect(right.getByRole("button", { name: "刷新" })).toBeVisible();
   await right.locator('[data-testid="dock-tab"][data-terminal-id]').click();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("MIXED_DOCK");
 

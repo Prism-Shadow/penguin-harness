@@ -61,7 +61,7 @@ Press Enter to send, and Shift+Enter for a new line. In an empty composer, the u
 - Paste a very long text (more than 20,000 characters or 400 lines, such as a whole log) and it is attached as a text file named `pasted-<date>-<time>.txt` instead of filling the text box, so typing stays responsive; the model still reads all of it. In goal mode, which takes no file attachments, it is pasted as text.
 - In the + menu (**More input options**), select **Upload image** or **Upload file**.
 
-An attachment can be any type. Selected files show as removable chips above the text, in the order you picked them, and a message with attachments and no text can be sent.
+An attachment can be any type. Selected images and files show as removable tiles at the top of the composer, in the order you picked them: the images first, each at its own shape, then the files with their name, type and size. A message with attachments and no text can be sent.
 
 Limits apply at two moments:
 
@@ -70,7 +70,7 @@ Limits apply at two moments:
 
 An admin can change both sizes under [Settings › Upload limits](/settings#upload-limits). The 20MB cap for images placed inline does not follow them: an inline image enters the conversation and the Trace, where its size is paid again on every Session resume.
 
-On send, attached files are written into the Session's scratchpad, which is deleted with the Session. The conversation shows an "Attached files" notice; the file contents never enter the conversation, and the model opens each file by path with its file tools. On a model without image input, images are saved to the scratchpad the same way and passed as file paths, and a hint above the composer says so.
+On send, attached files are written into the Session's scratchpad, which is deleted with the Session. The sent message shows the same tiles above its text, and clicking an image opens it large; the file contents never enter the conversation, and the model opens each file by path with its file tools. On a model without image input, images are saved to the scratchpad the same way and passed as file paths, and a hint above the composer says so.
 
 ### Drag files onto the chat
 

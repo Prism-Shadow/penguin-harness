@@ -148,6 +148,11 @@ export * from "./components/feedback/notice/notice";
 export * from "./components/feedback/todo-notice/todo-notice";
 export * from "./components/feedback/progress-bar/progress-bar";
 export * from "./components/feedback/duration-slot/duration-slot";
+// Retry — the retry and reconnect status every surface shares (trying, waiting with its countdown,
+// gave up, blocked), its one-press buttons, and the second-ticking countdown under them.
+export * from "./components/feedback/retry-status/countdown";
+export * from "./components/feedback/retry-status/use-countdown";
+export * from "./components/feedback/retry-status/retry-status";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";
 export * from "./components/data/stat-tile/stat-tile";
@@ -193,6 +198,8 @@ export * from "./components/overlays/command-palette/command-palette";
 // behind it, the assistant reply on it, and the changes card.
 // The reveal's pacing (stream-reveal.ts) stays inside the family: its hook is the door.
 export * from "./components/chat/message-bubble/message-bubble";
+// The images and files a message carries: the composer, the sent message and a steer's chip.
+export * from "./components/chat/attachments/attachments";
 export * from "./components/chat/stream-text/stream-text";
 export * from "./components/chat/assistant-text/assistant-text";
 export * from "./components/chat/assistant-text/streaming-caret";

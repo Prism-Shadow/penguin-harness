@@ -45,7 +45,7 @@ The buttons on the right of a card:
 
 ## Install a plugin on an agent
 
-1. On the **Plugins** page, select **Manage installs** on the plugin's card. The dialog lists every agent in the current Project.
+1. On the **Plugins** page, select **Manage installs** on the plugin's card. The dialog lists every agent in the current Project in one list, in the **Agents** page's order: this server's and each connected machine's own agents side by side, a machine's with the machine after the name, as in `[SSH: gpu-box]`. Installing on a machine's agent installs from that machine's plugin library, and the row reads what that machine answers.
 2. Next to the agent, select **Install**.
 
 The whole plugin is installed: all of its Skills, its hook package and its MCP servers. New conversations pick it up right away. In a conversation already open, the hook package and the MCP servers apply from the next turn, and the Skills after the next compaction.

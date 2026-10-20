@@ -190,10 +190,29 @@ const KEEP_HELD_MS = 60_000;
 /**
  * The first wait before a machine that was lost is tried again — long enough for a server that
  * restarts itself (a plugin load, a hot update) to be back. Each failed attempt doubles the wait,
- * up to the cap: a machine down for a day costs a probe every five minutes.
+ * up to the cap.
  */
 const RECONNECT_FIRST_MS = 5_000;
 const RECONNECT_MAX_MS = 5 * 60_000;
+/**
+ * After this many failed attempts in a row the streak stops, and waits for a person's Retry.
+ * With the waits above the last one lands about fifteen minutes after the loss: a restart, a
+ * reboot or a network blip is back well inside that, and a machine still down after it needs
+ * someone to look — a probe every five minutes for a day would only fill its auth log.
+ */
+const RECONNECT_MAX_ATTEMPTS = 8;
+/**
+ * ssh's refusals that another try cannot fix: each needs a person to act (accept a host key,
+ * fix a key file or the ssh config, authorize a key) and then press Retry. The first one ends the
+ * streak. A refused password has its own stop (`waitsForPassword`).
+ */
+const UNRECOVERABLE_SSH: ReadonlySet<MachineSshFailure> = new Set<MachineSshFailure>([
+  "host-key-unknown",
+  "host-key-changed",
+  "key-file",
+  "auth",
+  "ssh-config",
+]);
 /** After this many failed attempts in a row, the connection check runs on its own. */
 const DIAGNOSE_AFTER = 3;
 /** `machines_changed` goes out at most this often: a burst of log lines is one event per window. */
@@ -221,13 +240,22 @@ type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
 type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported";
 /** Why a config sync was refused before any ssh ran: those, or a machine not connected. */
 type SyncRefusal = ConnectRefusal | "not-connected";
+/**
+ * What a person's Retry of a reconnect did — `started` false when an attempt already runs or
+ * the machine is up — or why it was refused before anything ran.
+ */
+export type RetryReconnectAnswer =
+  | { ok: true; started: boolean }
+  | { ok: false; why: "unknown-machine" | "busy" | "password" | "not-kept" };
 
 /** A machine this server keeps connected, while it is brought back (MachineReconnect, in epoch ms). */
 interface Reconnecting {
   since: number;
   attempts: number;
-  /** When the next attempt is due; null while one runs. */
+  /** When the next attempt is due; null while one runs, and once the streak stopped. */
   nextAt: number | null;
+  /** The streak stopped: nothing runs until a person's Retry (retryReconnect) begins another. */
+  gaveUp?: "attempts" | "ssh";
   lastError: string | null;
   sshReason?: MachineSshFailure;
   diagnosis: MachineDiagnosis | null;
@@ -1775,6 +1803,46 @@ export class MachinesService {
     return { ok: true };
   }
 
+  /**
+   * A person's Retry on a machine this server keeps connected: an attempt now, whatever the
+   * streak's schedule says. A streak that is waiting skips the rest of its wait and keeps its
+   * count; one that stopped (`gaveUp`) begins again from the first attempt, its last failure
+   * and check still said until the new attempt answers; a machine that is down with no streak
+   * yet begins one. An attempt already running, or a machine that is up, is left alone, so a
+   * second press starts no second attempt. Refused before anything runs: while a job is queued
+   * or running for it (the job decides how it ends), while its stored password is refused (a
+   * try could lock the account; saving a password tries again), and for a machine not kept
+   * connected (nothing to bring back — Start it).
+   */
+  retryReconnect(address: string): RetryReconnectAnswer {
+    const machine = this.#allMachines().find((entry) => entry.id === address);
+    if (machine === undefined || machine.local) return { ok: false, why: "unknown-machine" };
+    const job = this.#jobs.get(address);
+    if (job !== undefined && (job.queued || job.running)) return { ok: false, why: "busy" };
+    if (!this.#keepsConnected(address)) return { ok: false, why: "not-kept" };
+    const state = this.#reconnects.get(address);
+    if (state === undefined) {
+      if (this.#isUp(address)) return { ok: true, started: false };
+      this.#lost(address, 0);
+    } else if (state.waitsForPassword === true) {
+      return { ok: false, why: "password" };
+    } else if (state.gaveUp !== undefined) {
+      const now = this.#effects.now().getTime();
+      state.since = now;
+      state.attempts = 0;
+      state.nextAt = now;
+      delete state.gaveUp;
+      // The new streak checks the machine again after its own third failure.
+      state.diagnosedFor = null;
+    } else if (state.nextAt === null) {
+      return { ok: true, started: false };
+    } else {
+      state.nextAt = this.#effects.now().getTime();
+    }
+    this.#tryNow(address);
+    return { ok: true, started: true };
+  }
+
   async #connect(
     machine: MachineInfo,
     say: Say,
@@ -2077,6 +2145,18 @@ export class MachinesService {
     this.#retryTimers.set(address, timer);
   }
 
+  /**
+   * Runs a machine's due attempt now rather than when its timer fires. The attempt marks itself
+   * running before the first thing it awaits, so the list read right after already says so.
+   */
+  #tryNow(address: string): void {
+    const pending = this.#retryTimers.get(address);
+    if (pending !== undefined) clearTimeout(pending);
+    this.#retryTimers.delete(address);
+    this.#changed();
+    void this.#bringBack([address]);
+  }
+
   /** A machine stops being brought back: it came back, or it is no longer to be kept connected. */
   #settle(address: string): void {
     const timer = this.#retryTimers.get(address);
@@ -2091,7 +2171,9 @@ export class MachinesService {
     return {
       since: iso(state.since),
       attempts: state.attempts,
+      maxAttempts: RECONNECT_MAX_ATTEMPTS,
       nextAt: state.nextAt === null ? null : iso(state.nextAt),
+      ...(state.gaveUp === undefined ? {} : { gaveUp: state.gaveUp }),
       lastError: state.lastError,
       ...(state.sshReason === undefined ? {} : { sshReason: state.sshReason }),
       diagnosis: state.diagnosis,
@@ -2142,7 +2224,8 @@ export class MachinesService {
    * One attempt to bring a machine back — the whole connect: what runs there, its server started
    * if it is not, the connection held, the Project config handed over. A failure waits twice as long
    * as the one before, up to the cap; the third in a row, and any later one that fails
-   * differently, runs the connection check, whose answer the page shows as the explanation.
+   * differently, runs the connection check, whose answer the page shows as the explanation. The
+   * streak stops at RECONNECT_MAX_ATTEMPTS failures, or at the first that no retry can fix.
    */
   async #attempt(address: string): Promise<void> {
     const state = this.#reconnects.get(address);
@@ -2176,9 +2259,24 @@ export class MachinesService {
       this.#changed();
       return;
     }
-    const wait = Math.min(RECONNECT_FIRST_MS * 2 ** state.attempts, RECONNECT_MAX_MS);
-    state.nextAt = this.#effects.now().getTime() + wait;
-    this.#schedule(address, wait);
+    // A host key, a key file, a refused key or the ssh config: the next try would fail the same
+    // way until someone fixes it, and the sentence for the reason already says how — no check.
+    if (state.sshReason !== undefined && UNRECOVERABLE_SSH.has(state.sshReason)) {
+      state.gaveUp = "ssh";
+      state.nextAt = null;
+      this.#changed();
+      return;
+    }
+    if (state.attempts >= RECONNECT_MAX_ATTEMPTS) {
+      // The stated give-up point: no timer, and the look-over passes a streak with no next
+      // attempt by (#bringBack), until a Retry or this server's restart begins another.
+      state.gaveUp = "attempts";
+      state.nextAt = null;
+    } else {
+      const wait = Math.min(RECONNECT_FIRST_MS * 2 ** state.attempts, RECONNECT_MAX_MS);
+      state.nextAt = this.#effects.now().getTime() + wait;
+      this.#schedule(address, wait);
+    }
     this.#changed();
     if (
       machine !== undefined &&

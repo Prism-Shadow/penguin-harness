@@ -40,7 +40,7 @@
  */
 import { browserState } from "../builtin-browser/browser-store";
 import { adoptBrowserSession } from "../builtin-browser/browser-actions";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
@@ -72,6 +72,8 @@ import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import { goalPluginGate } from "./goal-plugin-gate";
+import { discardUnstartedSession } from "./unstarted-session";
 import { APPROVAL_MODES } from "./approval-mode";
 import { adoptDockScope } from "../dock/dock-state";
 import { setDockCwd } from "../dock/dock-terminal";
@@ -164,7 +166,7 @@ export function DraftView({
   const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
   /** Why a connected machine's list may be empty: still asking, or its answer was a failure. */
   const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<string | null>(null);
-  const { add } = useSessions();
+  const { add, remove } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
   // type allows null), it's better to disable caching entirely than to read/write a
@@ -485,12 +487,20 @@ export function DraftView({
   // (or after a failed fetch) the picker stays disabled (null). The Agent is the one on the
   // workspace's machine, so its settings are read and written over there.
   const [agentThinkingLevel, setAgentThinkingLevel] = useState<string | null>(null);
+  /**
+   * The draft's Agent once the list on offer carries it. Nothing is asked about an id the cache
+   * or the route named until then: a cached id may be one this Project does not have (deleted
+   * since, or written while another Project's Agents were on screen), and the request would only
+   * come back "This agent no longer exists."
+   */
+  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
+  const resolvedAgentId = selectedAgent?.agentId ?? null;
   useEffect(() => {
     setAgentThinkingLevel(null);
-    if (!agentId) return;
+    if (!resolvedAgentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, agentId, workspaceMachine)
+      .getAgentConfig(projectId, resolvedAgentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
       })
@@ -498,7 +508,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, workspaceMachine]);
+  }, [projectId, resolvedAgentId, workspaceMachine]);
   const thinkingLevel =
     agentThinkingLevel === null || chatDefaults === null
       ? null
@@ -542,10 +552,10 @@ export function DraftView({
   useEffect(() => {
     setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
     setSkillsLoaded(false);
-    if (!agentId) return;
+    if (!resolvedAgentId) return;
     let cancelled = false;
     api
-      .getAgentSkills(projectId, agentId, workspaceMachine)
+      .getAgentSkills(projectId, resolvedAgentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentSkills(res.skills);
       })
@@ -556,7 +566,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, workspaceMachine]);
+  }, [projectId, resolvedAgentId, workspaceMachine]);
 
   // —— Auto-cache ——
   // Options (Agent / Workspace / approval mode / Model) are discrete clicks: written
@@ -812,12 +822,12 @@ export function DraftView({
         navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
       } catch (e) {
-        // The Session was created but the first message failed to send (postTask failed): delete
-        // this empty Session, otherwise every resend attempt would create another one, piling up
-        // empty sessions with no messages in the sidebar (best-effort cleanup).
+        // The Session was created but its first Task was refused or failed (postTask failed):
+        // discard it — out of the list first, then off the server (unstarted-session.ts says why
+        // in that order) — or every resend would pile up another empty Session in the sidebar.
         if (createdId) {
           await adoptBrowserSession(createdId, browserScope);
-          void api.deleteSession(createdId).catch(() => undefined);
+          void discardUnstartedSession(createdId, { remove, deleteSession: api.deleteSession });
         }
         toastError(apiErrorText(e, modelRef ? { modelId: modelRef.modelId } : {}));
         return false;
@@ -837,6 +847,7 @@ export function DraftView({
       // the Session on this server.
       workspaceMachine,
       add,
+      remove,
       discardDraft,
       navigate,
     ],
@@ -861,8 +872,6 @@ export function DraftView({
   }, []);
   const readComposerText = useCallback(() => textRef.current, []);
 
-  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
-  const resolvedAgentId = selectedAgent?.agentId ?? null;
   useEffect(() => {
     onAgentChange?.(resolvedAgentId, workspaceMachine);
     if (resolvedAgentId && workspaceMachine === null) setCurrentAgentId(resolvedAgentId);
@@ -870,6 +879,12 @@ export function DraftView({
 
   // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
   const modelInfo = models?.models.find((m) => sameModelRef(m, modelRef));
+  // Goal mode's plugin check, against the Agent the Session will be created for, on the server
+  // that holds it: nothing is created for a goal that cannot start (goal-plugin-gate.ts).
+  const goalPlugin = useMemo(
+    () => (resolvedAgentId ? goalPluginGate(projectId, resolvedAgentId, workspaceMachine) : null),
+    [projectId, resolvedAgentId, workspaceMachine],
+  );
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
 
@@ -903,6 +918,7 @@ export function DraftView({
         skills={agentSkills}
         {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
         {...(cached.goal === true ? { initialGoal: true } : {})}
+        goalPlugin={goalPlugin}
         onSkillsChange={onSkillsChange}
         initialText={cached.text ?? ""}
         onTextChange={onTextChange}

@@ -19,7 +19,8 @@
  *   failure. What it does yield to: a **different** version being fetched
  *   (`available`/`download-started`/`downloaded` with another version —
  *   electron-updater invalidates the held package the moment a replacement download
- *   starts, so keeping the old headline would point the install button at a deleted file).
+ *   starts, so keeping the old headline would point the install button at a deleted file),
+ *   or an explicit failed installation trust check (`download-invalidated`).
  * - While `downloading`, a concurrent check's `checking` (and a same-version
  *   re-announce) is suppressed: folding it would drop the download context and every
  *   later progress tick with it. A download's own failure still lands as `error`.
@@ -43,6 +44,8 @@ export type UpdaterEvent =
   | { kind: "download-started"; version: string }
   | { kind: "progress"; percent: number }
   | { kind: "downloaded"; version: string }
+  /** A held installer failed its final trust check; discard readiness and allow recovery. */
+  | { kind: "download-invalidated"; message: string }
   | { kind: "error"; message: string };
 
 /** Before any event: the app is simply running its installed version. */
@@ -57,7 +60,8 @@ export function nextUpdateStatus(prev: DesktopUpdateStatus, ev: UpdaterEvent): D
     const replacement =
       (ev.kind === "available" || ev.kind === "download-started" || ev.kind === "downloaded") &&
       ev.version !== prev.version;
-    if (!replacement && ev.kind !== "unsupported") return prev;
+    if (!replacement && ev.kind !== "unsupported" && ev.kind !== "download-invalidated")
+      return prev;
   }
   if (prev.state === "downloading") {
     if (ev.kind === "checking" || ev.kind === "not-available") return prev;
@@ -90,6 +94,7 @@ export function nextUpdateStatus(prev: DesktopUpdateStatus, ev: UpdaterEvent): D
         : prev;
     case "downloaded":
       return { appVersion, state: "downloaded", version: ev.version };
+    case "download-invalidated":
     case "error":
       return { appVersion, state: "error", message: ev.message };
   }

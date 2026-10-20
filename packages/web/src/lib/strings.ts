@@ -144,6 +144,8 @@ export const zh = {
       working: "处理中",
       ready: "运行中",
       reconnecting: "重新连接中",
+      /** The automatic attempts stopped (eight failures, or an ssh failure no retry mends): Retry is the way on. */
+      reconnectStopped: "重连已停止",
       failed: "失败",
       installedOnly: "已安装",
       behind: "有新版本",
@@ -196,6 +198,7 @@ export const zh = {
      */
     composer: {
       reconnecting: "那台机器正在重新连接…",
+      reconnectStopped: "那台机器的自动重连已停止——请在「机器管理」页面重试",
       stopped: "那台机器的服务已停止——请在「机器管理」页面启动它",
       notConnected: "那台机器尚未连接——请在「机器管理」页面启用它",
       missing: "那台机器不在本 Project 的机器列表里",
@@ -222,8 +225,6 @@ export const zh = {
       localUndeletable: "本服务端不能删除",
       /** Why Use waits, in the card's middle while no job moves there. */
       why: {
-        reconnecting: "重新连接中…",
-        reconnectingFor: (span: string) => `重新连接中… · 已 ${span}`,
         stopped: "服务已停止",
         notConnected: "未连接",
         notInstalled: "尚未安装",
@@ -305,19 +306,31 @@ export const zh = {
         stopped: "服务已停止。",
         noImage: "本服务端没有可安装的版本。",
       },
-      /** The section while the server brings a machine it keeps connected back. */
+      /** The section while the server brings a machine it keeps connected back, or stopped trying. */
       reconnect: {
         title: "重新连接",
-        trying: "重新连接中…",
         lasting: (span: string) => `已持续 ${span}`,
-        attempt: (n: number) => `第 ${n} 次尝试`,
-        next: (span: string) => `下次尝试在 ${span}后`,
-        now: "正在尝试",
         lastError: "上次失败：",
         checked: "自动检查的结果：",
-        /** The stored password was refused: no attempt runs until it is saved again. */
-        stopped: "已停止重试",
       },
+    },
+    /**
+     * The retry status while the server brings a machine back (the card's middle, the dialog's
+     * Reconnecting section): `n` is the attempt, `m` the failures in a row that stop the streak.
+     */
+    retry: {
+      trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连…`,
+      /** Waiting for the first attempt: nothing has failed yet. */
+      lost: "连接已断开",
+      failed: (n: number, m: number) => `第 ${n}/${m} 次重连失败`,
+      countdown: (seconds: number) => `${seconds} 秒后重连`,
+      gaveUp: (m: number) => `${m} 次重连都没连上，已停止自动重试`,
+      /** ssh refused in a way no retry mends; the reason under it says the fix. */
+      stoppedSsh: "已停止自动重连",
+      /** The stored password was refused: no Retry, the fix is in the machine's SSH settings. */
+      stoppedPassword: "登录被拒，已停止重连",
+      retryNow: "立即重试",
+      retry: "重试",
     },
     /** The confirmations the page asks before a verb that stops or removes something. */
     confirm: {
@@ -1681,6 +1694,11 @@ export const zh = {
     createPluginsHint:
       "创建时安装到该 Agent（技能、钩子包与 MCP 服务器），之后可在其「技能」「钩子」「工具」标签页增删",
     createPluginsEmpty: "插件库暂无可安装的插件",
+    /** Where the new Agent is created (shown once a machine is connected), and its "?". */
+    createLocation: "位置",
+    createLocationHere: "本机",
+    createLocationInfo:
+      "新 Agent 建在哪台服务端上。建在机器上的 Agent 归那台机器所有：插件取那台机器的插件库，之后的设置、对话与删除也都在那台机器上进行。",
     /** The confirmation a picked plugin's stdio MCP server asks for before the Agent is created: the question; the commands follow it. */
     createStdioQuestion: (agent: string): string => `创建 ${agent}？`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
@@ -1920,8 +1938,14 @@ export const zh = {
       `它由插件 ${plugin} 安装，可在插件页的「管理安装」中重新装回。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
-    /** An Agent whose state directory is on a machine: what this server cannot act on, and where it can be. */
-    livesOnMachine: (machine: string) => `该 Agent 在 ${machine} 上，请到那台机器上管理`,
+    /** The hint on a machine Agent's `[SSH: …]` tag: whose Agent this is, and where its actions go. */
+    onMachineHint: (machine: string) =>
+      `这个 Agent 在 ${machine} 上：设置、对话与删除都在那台机器上进行，和本服务端同 id 的 Agent 互不相干。`,
+    /** The disabled Usage button on a machine's Agent: what the usage center counts. */
+    usageThisServerOnly: "成本中心只统计本服务端的 Agent",
+    /** Delete's confirmation for a machine's Agent: the machine it is deleted on. */
+    deleteConfirmOnMachine: (name: string, machine: string): string =>
+      `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     /** The Agents page's section of organization employees, and its "?" (what an employee is here). */
@@ -2000,6 +2024,8 @@ export const zh = {
       "应用于之后新建的 API 会话；需要确认时，确认请求会发给调用方，也可在 Web App 中回答。",
     apiConnection: "连接",
     apiBaseUrl: "Base URL",
+    /** A machine's Agent: its API is that machine's server, at this address over there. */
+    apiBaseUrlOnMachine: (machine: string): string => `Base URL（在 ${machine} 上）`,
     apiAgentId: "Agent ID",
     /** A copy button beside a connection value, named for what it copies. */
     apiCopy: (what: string): string => `复制 ${what}`,
@@ -2739,7 +2765,6 @@ export const zh = {
     filterAll: "全部",
     filterActive: "生效中",
     filterPaused: "已暂停",
-    filterCompleted: "已完成",
     panelEmpty: "这段对话还没有定时任务",
     panelNoMatch: "没有匹配的定时任务",
     /** The panel's body on the draft page, where no Session exists yet. */
@@ -2784,7 +2809,7 @@ export const zh = {
      * the file branch, so they are never read as flags of the command beside them.
      */
     aiCreateTail: (agentId: string): string =>
-      `请为 Agent「${agentId}」创建这个定时任务。可以执行 \`penguin schedule add <名称> --agent-id ${agentId} --prompt "<请求内容>" --start-at <ISO 8601 或 now>\`，需要重复执行时加 \`--period <30m | 12h | 7d>\`，请求有自然终点时加 \`--end-at <ISO 8601>\`——不写 \`--agent-id\` 时任务会落到运行本对话的那个 Agent 上，而不是它；也可以直接在该 Agent 的 agent_state/schedule/ 下写 TOML 文件，文件名取有意义的英文名，用 \`start_at\`、\`period\`、\`end_at\` 这几个键。除非用户指定了 Session，否则采用每次新建 Session 的模式。创建后用一行确认你设定的时间安排。`,
+      `请为 Agent「${agentId}」创建这个定时任务。可以执行 \`penguin schedule add <名称> --agent-id ${agentId} --prompt "<请求内容>" --start-at <未来的 ISO 8601 时刻，带 --period 时也可用 now>\`，需要重复执行时加 \`--period <30m | 12h | 7d>\`，请求有自然终点时加 \`--end-at <ISO 8601>\`——不写 \`--agent-id\` 时任务会落到运行本对话的那个 Agent 上，而不是它；也可以直接在该 Agent 的 agent_state/schedule/ 下写 TOML 文件，文件名取有意义的英文名，用 \`start_at\`、\`period\`、\`end_at\` 这几个键。除非用户指定了 Session，否则采用每次新建 Session 的模式。创建后用一行确认你设定的时间安排。`,
     /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
     suggestionsTitle: "建议",
     suggestions: {
@@ -3078,8 +3103,9 @@ export const zh = {
     mcpRunsCommand: (command: string): string => `Agent 会话开始时在本服务器上运行 ${command}`,
     /** The confirm before installing a plugin with a stdio server (any member): the command the server will run. */
     installStdioTitle: (plugin: string, agent: string): string => `将 ${plugin} 安装到 ${agent}？`,
-    installStdioBody: (server: string, command: string): string =>
-      `它的 MCP 服务器 ${server} 会在该 Agent 每次开始会话时，在本服务器上运行 ${command}。`,
+    /** `machine`: the machine the Agent lives on, where the command runs; omitted, this server. */
+    installStdioBody: (server: string, command: string, machine?: string): string =>
+      `它的 MCP 服务器 ${server} 会在该 Agent 每次开始会话时，在${machine === undefined ? "本服务器" : ` ${machine} `}上运行 ${command}。`,
     /** The Set up form (Project owner): the vault values a plugin's MCP servers wait for. */
     setUp: "设置",
     setUpTitle: (plugin: string, agent: string): string => `为 ${agent} 设置 ${plugin}`,
@@ -3872,6 +3898,8 @@ Benchmark：
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
     retryNothing: "没有可重试的内容：那一轮的输入已随后续消息发出。",
     imageAlt: "用户上传的图片",
+    /** The hint on a sent image that did not load (its file was removed, or its machine is out of reach). */
+    imageUnavailable: "图片无法加载",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:
       "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 read_file 查看）",
@@ -4244,9 +4272,7 @@ Benchmark：
     },
     /** The skills note's fixed phrase (the count picks the en plural); the skill names follow it as `nameList`. */
     skillsLabel: (_count: number): string => "使用技能",
-    /** Attached-file notice above a user message: this fixed phrase, then the file names (only the names; the paths stay in the Trace) as `nameList`. */
-    attachedFilesLabel: (_count: number): string => "附加文件",
-    /** Names listed after a note's fixed phrase (skills, files). */
+    /** Names listed after a note's fixed phrase (the skills). */
     nameList: (names: string[]): string => names.join("、"),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "更多输入方式",
@@ -4278,6 +4304,9 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
+    /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
+    goalPluginMissing: "目标模式需要 goal 插件：安装到此 Agent 后即可发起目标。",
+    goalPluginInstall: "安装到此 Agent",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "由 harness 注入",
     /** The goal line's fixed phrase; the objective follows it as the line's subject. */
@@ -6112,6 +6141,10 @@ Benchmark：
       not_found: "资源不存在，或你没有访问权限。",
       internal: "服务器内部错误，请稍后重试。",
       agent_not_found: "该 Agent 已不存在。",
+      job_running: "这台机器上有任务在执行，请等它完成。",
+      password_refused:
+        "那台机器拒绝了保存的密码——请在机器的 SSH 设置里重新填写，保存后会自动重试。",
+      not_kept_connected: "本服务端没有保持这台机器的连接，无需重连——请用「启动服务」启动它。",
       unknown_agent: "该 Agent 不存在于本 Project。",
       agent_exists: "该 Agent id 已被占用。",
       agent_deleting: "该 Agent 正在删除中。",

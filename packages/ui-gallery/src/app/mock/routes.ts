@@ -2424,6 +2424,11 @@ router
     readOnly("install on a machine"),
   )
   .post("/api/projects/:projectId/machines/:machineId/connect", () => readOnly("connect a machine"))
+  // Nothing in the fixtures is being brought back: a Retry finds nothing to do, as the server
+  // answers for a machine that is up.
+  .post("/api/projects/:projectId/machines/:machineId/reconnect", ({ store }) =>
+    machinesResponse(store),
+  )
   .post("/api/projects/:projectId/machines/:machineId/restart", () => readOnly("restart a machine"))
   .post("/api/projects/:projectId/machines/:machineId/sync", () =>
     readOnly("sync a machine's config"),

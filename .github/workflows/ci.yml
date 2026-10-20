@@ -199,7 +199,8 @@ jobs:
           done
           echo "server tarball carries web-dist/ and LICENSE"
 
-  # Typecheck the affected packages after building their dependency closure.
+  # Typecheck the affected packages after building what they import: their dependencies, never
+  # the packages themselves nor a site bundle (tsc reads declarations, not a package's own dist).
   typecheck:
     needs: plan
     if: needs.plan.outputs.typecheck == 'true'
@@ -214,8 +215,10 @@ jobs:
       - name: Typecheck (tsc)
         run: ${{ needs.plan.outputs.typecheck_command }}
 
-  # Linux runs every affected package. New packages enter the rest shard automatically.
-  # PENGUIN_MUST_RUN keeps host-dependent sandbox suites from silently skipping.
+  # Linux runs every affected package. New packages enter the rest shard automatically. The web
+  # suite runs in two jobs (web-1, web-2), each half of the web's, ui's and cli's files, and each
+  # uploads the coverage of its half. PENGUIN_MUST_RUN keeps host-dependent sandbox suites from
+  # silently skipping.
   test:
     needs: plan
     if: needs.plan.outputs.tests == 'true'
@@ -258,6 +261,23 @@ jobs:
             packages/web/coverage/coverage-summary.json
             packages/web/coverage/lcov.info
           if-no-files-found: error
+          retention-days: 7
+      # Layout the component library only shows in a real engine, measured in the gallery: list
+      # rows keep their actions inside the card, attachment tiles keep their image's shape. Run by
+      # the job that tests the gallery (the plan's `gallery`), against its own dev server.
+      - name: Install Chromium (gallery layout checks)
+        if: matrix.gallery
+        run: pnpm --filter @prismshadow/penguin-ui-gallery exec playwright install --with-deps chromium
+      - name: Component layout checks (ui-gallery)
+        if: matrix.gallery
+        run: pnpm --filter @prismshadow/penguin-ui-gallery test:e2e
+      - name: Gallery layout failure diagnostics
+        if: failure() && matrix.gallery
+        uses: actions/upload-artifact@v4
+        with:
+          name: gallery-layout-failure
+          path: packages/ui-gallery/test-results/
+          if-no-files-found: ignore
           retention-days: 7
 
   # The installer bundle and the live-LLM e2e, together because both want a full build and
@@ -320,8 +340,10 @@ jobs:
         run: node packages/desktop/scripts/terminal-smoke.mjs
 
   # Windows. The runner is the slowest and the most I/O-variable of the three, so the
-  # server suite — the longest here by a wide margin — is split across three vitest shards
-  # on top of the per-package split. core runs alone rather than beside anything else:
+  # server suite — the longest here by a wide margin — is split across vitest shards (how
+  # many: WINDOWS_SERVER_SHARDS in scripts/ci-plan.mjs), its files dealt by their measured
+  # Windows durations (packages/server/test/shard-weights.json), on top of the per-package
+  # split. core runs alone rather than beside anything else:
   # its exec_command suites spawn real shells and read their output under timeouts, races
   # they lose when oversubscribed. Every selected package runs once across the
   # shards. The runner ships Git-Bash on PATH, so core's exec_command tests exercise
@@ -337,10 +359,10 @@ jobs:
   #     terminal suites in terminal.test.ts run here.
   #   - plugins/sandbox-dsh test/live.test.ts: what its live suite runs on Windows, and what
   #     it leaves unmeasured there, is stated at the TODO(win32) in that file.
-  # Full validation includes browser and site packages too. Line
-  # endings come from .gitattributes (LF working tree), keeping build
-  # outputs and fixtures byte-identical. No format:check, no typecheck, no e2e — see the
-  # macOS note above.
+  # Full validation includes browser and site packages too, in two halves (each runs half of
+  # every site package's files). Line endings come from .gitattributes (LF working tree),
+  # keeping build outputs and fixtures byte-identical. No format:check, no typecheck, no e2e —
+  # see the macOS note above.
   test-windows:
     needs: plan
     if: needs.plan.outputs.windows_tests == 'true'
@@ -502,19 +524,34 @@ jobs:
     if: needs.plan.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The e2e server runs from its built JavaScript; its declarations are typecheck's to build.
+    env:
+      PENGUIN_BUILD_JS_ONLY: "1"
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
-        with:
-          build: "@prismshadow/penguin-server...,@prismshadow/penguin-web..."
-      - name: Install Chromium
-        run: pnpm --filter @prismshadow/penguin-web exec playwright install --with-deps chromium
+      # Chromium downloads while the server and the Web App build: one waits on the network, the
+      # other on the CPU, so neither has to wait for the other.
+      - name: Build, with Chromium installing alongside
+        run: |
+          pnpm --filter @prismshadow/penguin-web exec playwright install --with-deps chromium >"$RUNNER_TEMP/chromium.log" 2>&1 &
+          chromium=$!
+          pnpm --config.verify-deps-before-run=false --filter '@prismshadow/penguin-server...' --filter '@prismshadow/penguin-web...' --if-present build
+          wait "$chromium" || { cat "$RUNNER_TEMP/chromium.log"; exit 1; }
+      # project-switch.spec.mjs holds the Project-isolation line: two Projects with distinct
+      # Agents, switched quickly under a throttled CPU and seeded API latency, must never pair
+      # one Project with the other's Agents. It costs about half a minute. sticky-rows.spec.mjs
+      # holds the transcript's sticky rows: pinning is layout only a real engine computes.
+      # dock.spec.mjs and terminal.spec.mjs are the only tests that run a real shell through the
+      # server: each conversation's own dock tabs (nothing leaks to another), a shell starting in
+      # the conversation's Workspace, a failed create surfacing, and a shell surviving a reload.
+      # Playwright reads each name as a pattern, so dock.spec.mjs runs mobile-dock.spec.mjs too.
       - name: Browser integration smoke (mock LLM)
         env:
           SKIP_BUILD: "1"
-        run: pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs
+        run: pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs dock.spec.mjs terminal.spec.mjs
       - name: Browser failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

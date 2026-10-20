@@ -374,7 +374,7 @@ penguin schedule update <name> [options]
 penguin schedule rm <name> [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
 ```
 
-`penguin schedule ls` 列出所有 Agent 的定时任务，用 `--agent-id` 可只看一个。各列为：Agent、名称、是否启用、开始时间、周期（一次性任务显示 `once`）、目标（绑定的 Session 短 id，或 `new session`）、上次触发时间，以及每个非 active 状态的标记（`expired`、`done`、`missed` 或 `invalid`）。无法解析的定时任务文件也会列出，并标记 `invalid`。
+`penguin schedule ls` 列出所有 Agent 的定时任务，用 `--agent-id` 可只看一个。各列为：Agent、名称、是否启用、开始时间、周期（一次性任务显示 `once`）、目标（绑定的 Session 短 id，或 `new session`）、上次触发时间，以及每个非 active 状态的标记（`expired`、`done`、`missed` 或 `invalid`）。无法解析的定时任务文件也会列出，并标记 `invalid`。已完成、已错过和已过期的任务会由服务端归档，随即从列表中消失，见[结束的任务会归档](/schedules#结束的任务会归档)。
 
 `add`、`update` 和 `rm` 走 API，由 API 写入定时任务的 TOML 文件。文件始终是唯一事实来源，CLI 是经过校验的写入方——模型配置和 vault 都遵循这一模式：更新经由系统接口，校验发生在接口层，手工编辑依然可行。API 错误原样打印，Agent 立即得到校验结果，不必像手工编辑那样等下一轮对账。
 
@@ -383,9 +383,9 @@ penguin schedule rm <name> [--project-id <id>] [--agent-id <id>] [--json] [--ser
 | 选项 | 说明 | 默认值 |
 | --- | --- | --- |
 | `--prompt <text>` | 每次触发发送的文本。`add` 必填。 | — |
-| `--start-at <ISO\|now>` | 首次触发时间，ISO 8601 格式，或用字面量 `now` 表示当前时刻。`add` 必填。 | — |
+| `--start-at <ISO\|now>` | 首次触发时间，ISO 8601 格式，或用字面量 `now` 表示当前时刻。一次性任务的时间必须晚于当前时刻，因此 `now` 只适用于带 `--period` 的任务。`add` 必填。 | — |
 | `--period <duration>` | 固定间隔，至少 `5m`（例如 `30m`、`12h`、`1d`、`7d`）。 | 一次性 |
-| `--end-at <ISO>` | 这个时刻之后不再触发。 | — |
+| `--end-at <ISO>` | 这个时刻之后不再触发，不能早于当前时刻。 | — |
 | `--session-id <id>` | 把每次触发绑定到一个 Session。只能在它和新建 Session 选项之间二选一。 | — |
 | `--workspace <path>` / `--model-id <id> --provider <group>` | 新建 Session 模式：每次触发都在这个 Workspace 和模型上创建一个 Session。模型对要么都给，要么都不给。 | 临时 Workspace；Project 的默认模型 |
 | `--disabled`（`add`） | 创建时即处于禁用状态。 | 启用 |
@@ -398,7 +398,7 @@ penguin schedule rm <name> [--project-id <id>] [--agent-id <id>] [--json] [--ser
 
 ```bash
 penguin schedule add daily-report --prompt "summarize the day" --start-at 2026-09-01T09:00:00Z --period 1d
-penguin schedule add once-now --prompt "check the deploy" --start-at now --session-id 402a2e24
+penguin schedule add deploy-watch --prompt "check the deploy" --start-at now --period 30m --session-id 402a2e24
 penguin schedule update daily-report --period 12h --disable
 penguin schedule rm daily-report
 ```

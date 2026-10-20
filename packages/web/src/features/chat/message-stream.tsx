@@ -22,6 +22,7 @@ import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
+import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
 import { WorkspaceLinksProvider } from "./workspace-links";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
@@ -116,12 +117,28 @@ export interface StreamRenderContext {
   a2uiActions?: A2uiActions;
 }
 
+/**
+ * Whether the image items right behind this one belong to the same message: a prompt the person
+ * wrote (its text arrives first, its images as separate items behind it), or the first image of a
+ * prompt that had no text. A harness input or a source block that renders as a banner carries no
+ * images of its own.
+ */
+function takesImages(item: ChatItem): boolean {
+  if (item.kind === "user_image") return true;
+  if (item.kind !== "user_text" || item.sender === "harness") return false;
+  const body = parseUserMessageBody(item.text);
+  return body !== null && body.backgroundDone !== true;
+}
+
 /** Pure list rendering (reused recursively inside subagent cards): consecutive thinking + tool-call items are aggregated into one "Reasoning & Tools" group. */
 export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRenderContext }) {
   // Split into segments first — group (consecutive thinking + tool calls) or single (everything
   // else) — then render. ActivityGroup needs to know whether it's the last segment (current turn
-  // still in progress) to decide its default expanded/collapsed state.
-  type Seg = { type: "group"; items: ChatItem[] } | { type: "single"; item: ChatItem };
+  // still in progress) to decide its default expanded/collapsed state. A prompt's images arrive as
+  // image items right behind its text; they join the prompt's segment, so the message draws them
+  // as one row above its text with one footer, the way the composer showed them.
+  type Seg =
+    { type: "group"; items: ChatItem[] } | { type: "single"; item: ChatItem; images?: string[] };
   const segs: Seg[] = [];
   let run: ChatItem[] = [];
   const flushRun = () => {
@@ -134,6 +151,11 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
     if (isWorkItem(item)) run.push(item);
     else {
       flushRun();
+      const prev = segs[segs.length - 1];
+      if (item.kind === "user_image" && prev?.type === "single" && takesImages(prev.item)) {
+        (prev.images ??= []).push(item.imageUrl);
+        continue;
+      }
       segs.push({ type: "single", item });
     }
   }
@@ -175,7 +197,13 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
         <MessageItem item={seg.item} ctx={ctx} />
       </A2uiActionsProvider>
     ) : (
-      <MessageItem key={seg.item.id} item={seg.item} ctx={ctx} last={seg.item === tail} />
+      <MessageItem
+        key={seg.item.id}
+        item={seg.item}
+        ctx={ctx}
+        last={seg.item === tail}
+        {...(seg.images !== undefined ? { images: seg.images } : {})}
+      />
     );
 
   /**
