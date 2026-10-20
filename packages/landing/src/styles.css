@@ -301,6 +301,8 @@
   font-size: 13.5px;
   line-height: 1.6;
   color: var(--site-gray-600);
+  /* No last line of a single character, which a CJK caption otherwise ends on easily. */
+  text-wrap: pretty;
 }
 html.dark .post-figure figcaption {
   color: var(--site-gray-400);
