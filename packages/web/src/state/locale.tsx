@@ -84,8 +84,10 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   setActiveStrings(locale === "en" ? en : zh);
   // The document root goes with it, in the same render pass and for the same reason: `lang` is
   // what screen readers and translation heuristics read, and it must never name a language the
-  // tree is not about to render.
-  applyDocumentLang(document, locale);
+  // tree is not about to render. Renders without a DOM (server-side rendering, the node test
+  // environment) simply get nothing: there is no root there to stamp, and the served page keeps
+  // the static template's tag until the client's first render takes over.
+  if (typeof document !== "undefined") applyDocumentLang(document, locale);
 
   useEffect(() => {
     if (lang !== "system") return;
