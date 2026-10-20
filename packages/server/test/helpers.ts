@@ -453,7 +453,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   };
   try {
     if (beforeSeed) await beforeSeed(root);
-    return await bootTestApp(finalConfig, rest);
+    return await bootTestApp(finalConfig, root, rest);
   } catch (error) {
     // A boot a scenario expects to be refused still wrote the root it was given.
     await removeTempRoot(root).catch(() => {});
@@ -478,12 +478,17 @@ export async function restartTestApp(
   t.deps.hmr.dispose();
   t.deps.channels.dispose();
   t.deps.db.close();
-  return bootTestApp(t.boot.config, options);
+  return bootTestApp(t.boot.config, t.root, options);
 }
 
-/** Boots an App on `config` and seeds its admin; the caller owns removing the root on failure. */
+/**
+ * Boots an App on `config` and seeds its admin. `root` is the temp root the App owns — what its
+ * `cleanup` removes — which a scenario sharing a root of its own across apps (`config.root`)
+ * keeps apart from that one. The caller owns removing it when the boot fails.
+ */
 async function bootTestApp(
   config: ServerConfig,
+  root: string,
   options: Omit<TestAppOptions, "beforeSeed" | "config" | "durableDatabase">,
 ): Promise<TestApp> {
   const { plugins, ...overrides } = options;
@@ -517,7 +522,7 @@ async function bootTestApp(
     app,
     deps,
     boot,
-    root: config.root,
+    root,
     adminPassword,
     cleanup: async () => {
       // Terminals are real child processes owned by the platform: disposing the hot host
@@ -525,7 +530,7 @@ async function bootTestApp(
       deps.hmr.dispose();
       deps.channels.dispose();
       deps.db.close();
-      await removeTempRoot(config.root);
+      await removeTempRoot(root);
     },
   };
 }
