@@ -3,7 +3,7 @@
 - **Date:** 2026-10-20
 - **Type:** feature
 - **Scope:** `web`
-- **PR:** #TBD
+- **PR:** [#1258](https://github.com/Prism-Shadow/penguin-harness/pull/1258)
 
 [English](2026-10-20-sticky-new-chat-workspace.md)
 
