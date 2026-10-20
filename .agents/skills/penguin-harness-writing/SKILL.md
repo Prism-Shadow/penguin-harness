@@ -1,39 +1,42 @@
 ---
 name: penguin-harness-writing
-description: "Use when writing or revising reader-facing prose for penguin.ooo — a blog post of any category, a docs page, or landing-page copy: the division of labour (a gateway model writes every reader-facing word, agents research, prompt, draw, check and ship), the profiles, the FACTS guard, the prompt files, inline SVG figures drawn from the model's figure blocks, the checks, and how it is verified."
+description: "Use when writing or revising reader-facing prose for penguin.ooo — a blog post of any category, a docs page, or landing-page copy: the division of labour (a gateway model writes every reader-facing word, agents research, prompt, assemble, draw, check and ship), the outline-then-sections flow with budgets, the FACTS guard and footnote citations, the profiles, inline SVG figures drawn from the model's figure blocks, the checks, and how it is verified."
 ---
 
 # Writing for penguin.ooo
 
-Posts, docs pages and landing copy are written by a model on the TokenDance gateway, one API call
-per text step, and shipped by agents. This page is the contract; `scripts/prose.mjs` is the only
-way text reaches a draft, and `prompts/` plus `reference/` hold every word sent to the model.
-`penguin-harness-dev/reference/authoring.md` covers what is true of every post (the bilingual
-pair, frontmatter, where screenshots live).
+Posts, docs pages and landing copy are written by a model on the TokenDance gateway and shipped
+by agents. A post is written the way a person writes one: an outline first, then one section at a
+time, each within the size the outline gave it. This page is the contract; `scripts/prose.mjs` is
+the only way text reaches a draft, and `prompts/` plus `reference/` hold every word sent to the
+model. `penguin-harness-dev/reference/authoring.md` covers what is true of every post (the
+bilingual pair, frontmatter, where screenshots live).
 
 ## 1. Who writes what
 
-**The API model writes every word a reader sees**: outline, title, excerpt, body, every string
-inside a figure, alt text and captions, the counterpart language, every docs sentence and landing
-string, and every later fix. Each is its own API call through `prose.mjs`.
+**The API model writes every word a reader sees**: the outline and its plan, every section, the
+title and excerpt, every string inside a figure, alt text and captions, the second language, every
+docs sentence and landing string, and every later fix. Each is its own API call through
+`prose.mjs`.
 
 **Agents never type a sentence into the text.** They research, compile FACTS, write prompts and
-findings, draw figures from the model's figure blocks, take screenshots, run the checks, review
-blind, assemble and open the PRs. A wrong sentence is fixed by a `fix` call that carries a numbered
-findings list, never by hand. The only hand edits are mechanical: frontmatter `date` /
-`category`, screenshot paths and their `-en` / `-zh` suffixes, removing `{F#}` / `{O#}` markers
-(`strip` does it), whitespace, the boilerplate version note copied verbatim from an existing post,
-and copying landing strings into the dictionaries verbatim.
+findings, put the model's sections together, draw figures from the model's figure blocks, take
+screenshots, run the checks, review blind and ship. Putting the text into the manuscript is also
+the agent's job, and it is mechanical: `assemble` joins the section files byte for byte and
+`strip` publishes them. A wrong sentence goes back through a `fix` call with a numbered finding,
+never through an editor. The only hand edits are mechanical: frontmatter `date` / `category`,
+screenshot paths and their `-en` / `-zh` suffixes, whitespace, the boilerplate version note copied
+verbatim from an existing post, and copying landing strings into the dictionaries verbatim.
 
 **The key never enters the repo.** It sits in a chmod-600 file outside the tree; the script reads
 `TOKENDANCE_API_KEY` or the file named by `TOKENDANCE_KEY_FILE`, never an argument, and prints
-neither. Raw responses (which include the model's reasoning) are saved in a scratch directory and
-never committed.
+neither. Raw responses (with the model's reasoning) are saved in a scratch directory and never
+committed.
 
-The default model is `seed-2.1-pro`, a reasoning model: a call can take several minutes, its
-reasoning counts against `max_tokens` (32000 by default), and `finish_reason: length` is a
-failure. The key has a concurrency cap; run at most three calls at once and let the script's 429
-backoff absorb the rest. `--model` overrides the default per call.
+The default model is `seed-2.1-pro`, a reasoning model: a call can take minutes, its reasoning
+counts against `max_tokens` (32000 by default), and `finish_reason: length` is a failure. The key
+has a concurrency cap; a post's calls run one after another, and the script's 429 backoff absorbs
+the rest. `--model` overrides the default per call.
 
 ## 2. Profiles
 
@@ -42,83 +45,144 @@ What differs by kind of text lives in one profile, `reference/profile-<name>.md`
 
 | Profile | For | Contract |
 | --- | --- | --- |
-| `blog-perspectives` | a perspective post: one thesis, a lead, 4–6 sections | `prompts/contract-post.md` |
-| `blog-practice` | a technical post: the system-post shape, numbers rules, TL;DR | `prompts/contract-post.md` |
+| `blog-perspectives` | a perspective post: one thesis, a lead, a few short sections | `prompts/contract-section.md` (per section), `contract-post.md` |
+| `blog-practice` | a technical post: the system-post shape, numbers rules, TL;DR | the same |
 | `docs` | a page of `packages/docs/content/`, Obsidian-Help style | `prompts/contract-docs.md` |
 | `landing` | strings for the landing page's dictionaries | `prompts/contract-landing.md` |
 
-A blog category without a profile file (`blog-news`, `blog-changelog`) needs `--profile <file>`
-until one is written; `--profile <file>` also tries a profile before it lands.
+A blog category without a profile file needs `--profile <file>` until one is written;
+`--profile <file>` also tries a profile before it lands.
 
-A profile holds the reader, the shape, the length and any rule that overrides the style guide for
+A profile holds the reader, the shape, the sizes and any rule that overrides the style guide for
 that kind of text, inside `<!-- prompt -->` markers (a `<!-- prompt zh -->` block, when present,
 replaces it for Chinese). The model receives it after the style guide, introduced as winning where
-the two differ. A profile does not repeat the style guide's voice or banned lists, and it states
-nothing about the product: facts come from FACTS only. Its `## Check settings` (`sections: 4-6`,
-`lead: yes`, `tldr: yes`, `exclamations: 0`) is what `check` enforces for it, and a prompt rule
-with no matching setting is a rule `check` cannot see; change the two together.
+the two differ. A profile does not repeat the style guide and states nothing about the product:
+facts come from FACTS only. Its `## Check settings` are what the script enforces —
+`sections`, `lead`, `tldr`, `exclamations`, and the budgets `words`, `lead-words`,
+`section-words`, `zh-chars`, `zh-lead-chars`, `zh-section-chars`, `tldr-words`, each `floor-cap`.
+A prompt rule with no matching setting is a rule `check` cannot see; change the two together.
 
-## 3. The pipeline
+## 3. Voice
 
-All work happens in a scratch directory, one folder per piece: `<scratch>/articles/<slug>/` for
-inputs and drafts, `<scratch>/articles/raw/` for raw responses (`--raw-dir`). Drafts are
-versioned by name (`outline.v1.md`, `draft.en.v1.md`, `findings.en.v1.api.md`, …); the `.en.` /
-`.zh.` token is how the script knows the language, and the folder name is the slug the figure ids
-carry.
+`reference/en-style.md` and `reference/zh-style.md` hold the voice and the banned lists for every
+kind of text; the outline, section, translate, polish, fix and review calls all receive them.
+
+One rule there asks the model to write for a reader with dyslexia, a person who reads with
+effort: the point first, short sentences with one idea each, common words, no asides or "by the
+way" detours, no defensive hedging, no padding. Stating the reader that way measurably shortens
+the model's output and keeps it on its point. The one habit it does not remove is the
+"Yes, but…" / 「是的，但是……」 concession pivot, so that pivot is banned by name next to the
+"not X but Y" pivot, and `check` and `review` look for it.
+
+## 4. The pipeline
+
+All work happens in a scratch directory, one folder per post: `<scratch>/articles/<slug>/` for
+inputs, the outline, `sections/` and drafts, `<scratch>/articles/raw/` for raw responses
+(`--raw-dir`). The folder name is the slug the figure ids carry; the `.en.` / `.zh.` token in a
+file name is how the script knows the language.
 
 | # | Step | Who | Notes |
 | --- | --- | --- | --- |
-| 1 | Research | agents | every claim with a URL or a repo path |
-| 2 | FACTS | agent | `facts.md` (section 4) |
-| 3 | `outline` | API | profile, word budget, figure count; one feedback round at most (`--feedback` + `--previous`); pick the title; freeze the figure ids into `figures.md` (id, kind, shows, working labels) |
-| 4 | `write` | API | the text, with one figure block per manifest figure; nothing is drawn yet |
-| 5 | `check` | script | structure, markers, banned phrases, `--figures` coverage |
-| 6 | `review` + truth review | API + agent | the model's editor pass and an agent reading against FACTS and the sources; merged, deduplicated, numbered |
-| 7 | `fix` | API | repeat 5–7 until both reviews return `none`, three rounds at most, then ask the author |
-| 8 | `translate` | API | figure blocks translated string for string, same count and order |
-| 9 | `polish` | API | target language only |
-| 10 | `review --tells` + native reader | API + agent | → `fix`, same cap |
-| 11 | `pair` | script | headings, figure ids and string counts, code spans, URLs, markers, date, category; numbers compared |
-| 12 | Draw | agent | from the frozen blocks, each language separately (section 6) |
-| 13 | `check --svg` | script | every drawn file against its block |
-| 14 | `strip` → assembly | script + agent | inline the figures, screenshot suffixes, files into the worktree (section 8) |
-| 15 | Visual check | agent | on the test host, both languages, themes and widths (section 6) |
-| 16 | Verify + PR | agent | section 9 |
+| 1 | Research, FACTS | agents | `facts.md` (section 6), each fact tagged with its sources |
+| 2 | `outline` | API | thesis, title candidates, section bullets, the figure plan, and the `# Plan` table: one row per section with its size, facts, opinions, figures and how it ends |
+| 3 | `plan` | script | checks the plan against the profile's budgets, the manifest and FACTS; a failure writes `outline-feedback.auto.md` for one rerun (`outline --feedback … --previous …`); a second failure goes to the author. `plan --freeze` writes `outline.final.md` |
+| 4 | `section` 0 … N | API | one call per section, in order, each seeing the plan, the sections already written and only its own facts → `sections/s<n>.<lang>.v<k>.md` |
+| 5 | `check --section` | script | after every section: size, shape, the figures its row owns, markers, style; an error → `section --feedback` (size, shape) or `fix` (wording) |
+| 6 | `assemble` | script | joins the latest section files byte for byte → `draft.<lang>.vN.md` |
+| 7 | `check` | script | the whole: total size, section count against the plan, markers against FACTS, sources |
+| 8 | `review` + truth review | API + agent | the model's editor pass (flow across sections) and an agent reading against FACTS and the sources; merged and numbered |
+| 9 | `route` → `fix` per section | script + API | findings split by the section that quotes them; one `fix` per affected section; back to 6. Two rounds per section and two whole-post rounds, then the author |
+| 10 | `translate` per section | API | in order, each seeing the plan and the sections already translated; markers and figure blocks kept string for string |
+| 11 | `polish` per section, `assemble`, `review --tells` + native reader, `route`, `fix` | API + agent | the same loop in the second language |
+| 12 | `pair` | script | section by section: markers, citations, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
+| 13 | Draw | agent | from the frozen figure blocks (section 9) |
+| 14 | `check --svg` | script | every drawn file against its block |
+| 15 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` |
+| 16 | Visual check, verify, PR | agent | sections 9 and 12 |
 
-**The ordering rule**: the text of a language is frozen before any figure of it is drawn, and no
-string inside a figure is ours. A figure that needs a string its block lacks goes back through a
+**The ordering rule.** The outline is frozen before the first section call; a section is final
+before the next one starts; the text of a language is frozen before any figure of it is drawn; and
+no string inside a figure is ours. A figure that needs a string its block lacks goes back through a
 `fix` finding.
 
-## 4. The FACTS file and the markers
+## 5. Budgets
 
-`facts.md` has five sections, each a `## ` heading:
+Sizes are set three times, so a post cannot grow past them unnoticed:
 
-- `## FACTS` — atomic, numbered facts with their source: `- F1: … Source: <url or repo path>`.
+1. **The plan.** The outline's `# Plan` table gives every section a number, in English words or
+   Chinese characters (Chinese-first posts plan in characters). `plan` rejects a table whose rows
+   exceed the profile's section cap, whose lead leaves the lead range, whose sum exceeds the total
+   cap, or whose section count leaves the profile's range.
+2. **The section call.** The prompt states the section's planned size and its cap, and says a
+   section over its cap is written again.
+3. **`check`.** A section above `min(plan × 1.1, profile cap)` is an error; so is a lead above its
+   cap and a whole post above the total cap. Without `--outline`, the profile caps apply. Below a
+   floor is a warning: short is allowed, empty is not.
+
+An over-budget section is rerun with `--feedback`; nobody trims it by hand. Counting is the same
+everywhere: English words are whitespace tokens holding a letter or digit, Chinese characters are
+non-whitespace characters once the Markdown syntax is removed; frontmatter, headings, figure
+blocks, markers and the references do not count. The numbers themselves live in each profile's
+`## Check settings`.
+
+## 6. The FACTS file and the markers
+
+`facts.md` has these sections, each a `## ` heading:
+
+- `## FACTS` — atomic, numbered facts, each ending with its source tags:
+  `- F12: … [S3]` or `[S3 S4]`.
+- `## SOURCES` — one line per source: `- S3: <title> · <url>`, `· private` for a source that is
+  never cited (the design repo), `· nolink` for a public source without a URL. A title is data:
+  the page's own title, a repo file's path, `PR #N: <PR title>`, `PenguinHarness docs: <page>`,
+  copied as it is, never reworded. Repo file links are pinned to the release the version note
+  names (`blob/v<version>/<path>`, after `git ls-tree` confirms the file is there); `blob/main` is
+  refused.
 - `## OPINIONS` — the author's thesis points, ours to assert: `- O1: …`.
 - `## TERMS` — spelling, the zh rendering and the UI labels, as a table whose first column is the
-  term. `translate` sends this section as its term list; a docs page's TERMS carries the labels
-  exactly as the product's dictionaries spell them.
+  term; a docs page's TERMS carries the labels exactly as the product's dictionaries spell them.
 - `## NOT-FACTS` — claims the model must not make.
 - `## EXISTING-FIGURES` — published screenshots the outline may reuse, by stem.
 
-The writer makes a factual claim only when FACTS holds it. `write` ends every factual sentence
-with its id (`{F3}`, several as `{F3}{F7}`) and every position with an OPINIONS id (`{O1}`);
-headings, figure blocks, frontmatter and the footer carry none. `translate` and `polish` keep the
-markers exactly as they are and never add one; `fix` adds one only on a sentence a finding changed.
-After each of those three calls the script prints any marker it saw added or dropped. No URL,
-number, product name, quote or UI label outside FACTS / TERMS: `check --facts` rejects an unknown id
-or a URL outside FACTS and lists numbers and code spans it cannot find there. `strip` removes the
-markers before publishing.
+The writer makes a factual claim only when FACTS holds it. A section call ends every factual
+sentence with its id (`{F3}`, several as `{F3}{F7}`) and every position with an OPINIONS id
+(`{O1}`); headings, figure blocks and frontmatter carry none. `translate` and `polish` keep the
+markers as they are and never add one; `fix` adds one only on a sentence a finding changed; the
+script prints any marker a call added or dropped. A fact that needs a citation needs a public
+source: a fact whose sources are all private may be used, with a warning, and gets no footnote.
 
-## 5. Source language
+## 7. Citations
 
-English first by default: write in English, `translate --to zh` re-authors it, and `polish`
-removes what still reads translated. Write Chinese first when the title, a meme or the sources are
-Chinese (`outline --lang zh`, a `draft.zh.v1.md`, then `translate --to en`); the steps are
-symmetric. If a polished translation still reads translated after one fix round, re-author that
-language from the outline and FACTS (`write` with a `.<tgt>.` output name) instead of iterating.
+The markers become paper-style citations when the post is published. `strip --facts facts.md`
+turns each marker group into GFM footnotes placed after the sentence's closing punctuation
+(`…was.[^1][^2]`, `……。[^1]`): one per distinct public source of its facts, numbered by first use
+through the post; opinions and private sources emit nothing. The post ends with the list:
 
-## 6. Figures
+```markdown
+[^1]: [PenguinHarness docs: Agent loop](https://penguin.ooo/docs/agent-loop)
+[^2]: A title without a link
+```
+
+The post carries no references heading and no `**Sources**` line (the older form, now an error):
+the site labels the list from its own dictionary and renders the numbers as superscript `[n]`
+that jump to the list and back. The second language is stripped with `--numbering-from <the first
+language's post>`, so both posts number the same sources the same way; a source cited in only one
+of them is an error. `check` on a published post proves every `[^n]` is defined and every
+definition used, the numbers run 1 … N, every link is in `## SOURCES`, and no citation sits in a
+figure or a caption; `pair` proves the two lists are identical and each section cites the same
+sources.
+
+## 8. Source language and translation
+
+English first by default. Write Chinese first when the title, a meme or the sources are Chinese:
+`outline --lang zh` plans in characters, and the English follows by translation. Translation runs
+per section, in order: each call sees the plan and the sections already translated, keeps the
+markers at the ends of the same sentences, and translates figure blocks string for string. With
+`--reuse-figures <frozen target draft> --reuse-source <frozen source draft>`, a figure whose source
+block did not change keeps its frozen translation, so it needs no redraw. If a polished section
+still reads translated after one fix round, write that language's section afresh from the outline
+(`section --lang <tgt>`) instead of iterating on the translation.
+
+## 9. Figures
 
 **Kinds.** Diagrams and charts we draw as inline SVG, real product screenshots in the light theme
 (captured with the e2e harness and its mock LLM, or reused from the published inventory), or a
@@ -126,8 +190,7 @@ Markdown table when the comparison is words. No AI-generated illustrations, grad
 shadows, emoji or icons, and no invented data: a conceptual comparison is drawn as states or flows,
 never as a chart with made-up numbers.
 
-**The words come from the model.** `write` emits one figure block per manifest figure, at its
-position:
+**The words come from the model.** The section that owns a figure writes its block:
 
 ````markdown
 ```figure id=<stem>
@@ -139,8 +202,9 @@ text:
 ```
 ````
 
-`<where>` is a lowercase English word or two (box, column, layer, arrow, note, …) telling the
-drawer where the string goes. A block with `alt` and `caption` only is a screenshot.
+`<where>` is a short lowercase English key (box, column, layer, step1, config2, …) telling the
+drawer where the string goes. A block with `alt` and `caption` only is a screenshot. A string is
+data: a placeholder such as `<path>` in it is escaped by the drawer, never read as HTML.
 
 **Drawn figures are inline SVG in the post**, one file per figure and language,
 `<scratch>/articles/<slug>/figures/<id>.<lang>.html`, holding exactly one
@@ -165,81 +229,91 @@ from their own blocks, on the same layout, wider where CJK needs it. Read the `d
 any chart and use the site tokens, not its placeholder palette.
 
 `check --in <draft> --svg <figures dir>` proves each drawn file against its block, in both
-directions, comparing text after unescaping (a block string such as `<root>/<project>/` is data,
-and the drawing must escape it); `strip --figures-dir <figures dir>` refuses a file that does not
-match its block and inlines the rest as one line; and `check --in <post> --draft <draft>` re-runs
-the same assertions on the stripped post.
+directions, comparing text after unescaping; `strip --figures-dir <figures dir>` refuses a file
+that does not match its block and inlines the rest as one line; `check --in <post> --draft
+<draft>` re-runs the same assertions on the published post.
 
 **Screenshots** stay in `Prism-Shadow/penguin-harness-community` under `blog-assets/`,
 referenced as `/blog-assets/<name>-<lang>.png`; a new one is merged there before the post's PR.
-`strip` writes them as an image line plus an italic caption, escaping `<`, `>` and `&` outside
-code spans so a placeholder in the alt text or caption stays text.
+`strip` writes them as an image line plus an italic caption, escaping `<`, `>` and `&` outside code
+spans.
 
 **Visual check**, on the test host only (a browser runs nowhere else): build the landing
 (`--build "@prismshadow/penguin-landing..."` with the remote runner), serve it with
 `pnpm --filter @prismshadow/penguin-landing preview --port <p>`, and drive a scratch Playwright
 script over the post in both languages, light and dark (the `html.dark` class, set the way the
-site's toggle sets it), at 1280 and 390 px. Assert `scrollWidth <= innerWidth`, no console or page
-errors, every `.fig-steps` hidden and every figure inside the prose column; save the screenshots and
-look at them (labels not clipped, CJK inside its boxes, strokes visible in dark). `curl` there may
-need `--noproxy '*'`.
+site's toggle sets it), at a desktop and a phone width. Assert `scrollWidth <= innerWidth`, no
+console or page errors, every `.fig-steps` hidden and every figure inside the prose column; save
+the screenshots and look at them (labels not clipped, CJK inside its boxes, strokes visible in
+dark, the references list and a jump to it). `curl` there may need `--noproxy '*'`.
 
-## 7. Checks
+## 10. Checks
 
-- **`check`** (local, no network) exits 1 on a hard hit. For every kind: frontmatter fields, a lead
-  where the profile asks for one, the profile's section range and TL;DR rule, no numbered headings,
-  no emoji, raw HTML or leaked `{{SLOT}}`s, markers against FACTS (`--facts`), and the language
-  rules — the patterns at the end of `reference/en-style.md` / `reference/zh-style.md` plus what
-  the script counts (em dashes per section, exclamation marks against the profile, list and
-  paragraph length, CJK–Latin spacing, `——`, ASCII quotes and colons in Chinese). For posts also:
-  `## ` only, figure blocks complete and in manifest order (`--figures`), drawn figures
-  (`--svg`, `--draft`), screenshot paths with the file's language and present (`--assets`), the
-  `**Sources**` footer last, no in-page anchors. Landing strings are checked as `key: text` lines.
+- **`check`** (local, no network) exits 1 on a hard hit. For every kind: frontmatter, the
+  profile's budgets, section range and TL;DR rule, no numbered headings, no emoji, raw HTML or
+  leaked `{{SLOT}}`s, markers against FACTS and their sources (`--facts`), and the language rules
+  — the patterns at the end of `reference/en-style.md` / `reference/zh-style.md` plus what the
+  script counts (em dashes per section, exclamation marks against the profile, list and paragraph
+  length, CJK–Latin spacing, `——`, ASCII quotes and colons in Chinese). For one section
+  (`--section`, or an `s<n>.…` file): its shape and the figures its plan row owns. For posts also:
+  `## ` only, figure blocks complete and in manifest order (`--figures`), drawn figures (`--svg`,
+  `--draft`), screenshot paths and files (`--assets`), footnotes on a published post, no
+  `**Sources**` line, no in-page anchors. Landing strings are checked as `key: text` lines.
   Warnings are for a person to judge.
 - **The fact diff** (agent): every number, URL, code span, bold or 「」 label and proper noun
   resolves to a FACT or TERM; headings and figures match the outline.
-- **Review**: the API `review` step (an editor's findings on naturalness, flow and concision, in
-  the form `fix` consumes, never a rewrite) and the agents' blind reviews — a truth reviewer with
-  FACTS and the sources, a reader without them, a native reader for the target language.
-- **The fix loop** is capped at three rounds; after that the author decides. Nobody hand-edits
-  prose at any point.
+- **Review**: the API `review` step (an editor's findings on naturalness, flow, concision, reading
+  effort and figures, in the form `fix` consumes, never a rewrite; per section, or the whole post
+  with flow across sections as its main question) and the agents' blind reviews — a truth reviewer
+  with FACTS and the sources, a native reader for the second language.
 
 Findings, from any reviewer, are numbered and quote the passage:
 `N. [passage quoted verbatim] — problem — the fact (F#) or rule it violates — what the fix must achieve (not the wording)`.
+`route` relies on that quote to find the section; a passage it finds nowhere or twice goes to
+`findings.unrouted.<lang>.vN.md` for the orchestrator.
 
-## 8. Assembly
+## 11. Assembly and publishing
 
+- **`assemble`** picks the latest version of each `s<n>.<lang>.v<k>.md` (or `--pin s<n>=v<k>`),
+  requires sections 0 … N with frontmatter in section 0, refuses a figure owned by two sections,
+  and prints each section's size against its plan and cap.
+- **Manual-paste fallback.** When `assemble` cannot run, concatenate the latest section files in
+  order (`cat`, one blank line between them) into `draft.<lang>.vN.md`, change nothing, run
+  `check --in … --outline …`, and say in the PR body that assembly was manual. Typing a word into a
+  section file is never the fallback.
 - **A post**: `strip --in <frozen draft> --out packages/landing/content/blog/<slug>.<lang>.md
-  --figures-dir <figures dir> [--assets <community>/blog-assets]` for both languages. It prints the
-  model's trailing notes (`<!-- omitted: … -->`, `<!-- not applied: … -->`) so they are read.
-  Then `check --in <post> --draft <draft> --pair <other post>`.
+  --facts facts.md --figures-dir <figures dir> [--assets <community>/blog-assets]`, the first
+  language first and the second with `--numbering-from` the first's post. It prints the model's
+  notes (`<!-- omitted: … -->`, `<!-- not applied: … -->`, `<!-- figure changed: … -->`) so they are
+  read. Then `check --in <post> --draft <draft> --facts facts.md --pair <other post>`.
   `packages/landing/test/blog.test.ts` pins post order per category, so a new post edits that
   list. Add a changelog pair (`Type: process`, `Scope: landing`) per
   `penguin-harness-dev/reference/changelog.md`.
-- **A docs page**: `strip` to `packages/docs/content/<slug>.<lang>.md`; a new page is also added
-  to `src/lib/nav.ts`, which the docs package's content test keeps in sync.
-- **Landing strings**: each `key: text` line is copied verbatim into `strings-en.ts` or the zh
-  dictionary in `strings.ts`.
+- **A docs page**: `write` (one call) to a draft, `strip` to
+  `packages/docs/content/<slug>.<lang>.md`; a new page is also added to `src/lib/nav.ts`, which the
+  docs package's content test keeps in sync.
+- **Landing strings**: `write` with `--profile landing`; each `key: text` line is copied verbatim
+  into `strings-en.ts` or the zh dictionary in `strings.ts`.
 
-## 9. Verification
+## 12. Verification
 
 Markdown is skipped by `format:check`; the text is covered by `check`, by the landing package's
 blog tests (content integrity, anchors, links) or the docs package's content tests, and by reading.
 A post PR runs the landing tests, `format:check` and
 `node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs packages/landing/content/blog`.
 When the author asks for the suite on another machine, `penguin-harness-dev/reference/verification.md`
-has the remote runner and its traps. After changing the script, a contract or the check patterns,
-run `node .agents/skills/penguin-harness-writing/scripts/prose.mjs selftest` (local, no
-network): it runs `check` and `strip` on built-in fixtures, and a case that guards a fixed bug goes
-there.
+has the remote runner and its traps. After changing the script, a contract, a profile's settings or
+the check patterns, run `node .agents/skills/penguin-harness-writing/scripts/prose.mjs selftest`
+(local, no network): it runs the local steps on built-in fixtures, and a case that guards a fixed
+bug goes there.
 
-## 10. Files
+## 13. Files
 
 | Path | What it holds |
 | --- | --- |
-| `scripts/prose.mjs` | The runner: API steps `outline`, `write`, `translate`, `polish`, `fix`, `review`; local steps `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
+| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
-| `prompts/contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for each kind of text |
-| `prompts/fragments.md` | Prompt text used as slot values: the marker rules, the version-note rule, the meme brief, the outline feedback block, the default translate title rules, the translation tells, the review's FACTS lines |
+| `prompts/contract-section.md`, `contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for one section, a whole post, a docs page, landing strings |
+| `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
 | `reference/en-style.md`, `reference/zh-style.md` | Voice and the full banned lists, for every kind of text. The block between the `prompt` markers is what the model receives; the check patterns below it are what `check` greps for; change both together |
 | `reference/profile-<name>.md` | One per kind of text (section 2) |
