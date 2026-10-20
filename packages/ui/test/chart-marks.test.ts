@@ -233,7 +233,13 @@ describe("every chart in the package", () => {
 });
 
 describe("every A2UI block composed of charts", () => {
-  const COMPOSITES = ["components/content/a2ui/metrics-block.tsx"];
+  const COMPOSITES = [
+    "components/content/a2ui/chart-block.tsx",
+    "components/content/a2ui/metrics-block.tsx",
+    "components/content/a2ui/resources-block.tsx",
+    "components/content/a2ui/weather-block.tsx",
+    "components/content/a2ui/weather-hourly.tsx",
+  ];
   /** The basic charts (under src/components/charts/), one of which a composite must draw through. */
   const BASIC_CHARTS = [
     "cartesian/bar-chart",

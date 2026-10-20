@@ -111,6 +111,8 @@ export interface A2uiStrings {
   /** The network chart's two series. */
   received: string;
   sent: string;
+  /** The network chart's caption: its readings carry no times, only their count and order. */
+  lastReadings: (n: number) => string;
 }
 
 /** The Markdown reader's controls (components/content/markdown-reader). */
@@ -265,6 +267,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     uptime: "Uptime",
     received: "Received",
     sent: "Sent",
+    lastReadings: (n) => `Last ${n} readings`,
   },
   reader: {
     outline: "Outline",

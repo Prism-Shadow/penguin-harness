@@ -6,9 +6,9 @@
  * - Every value prints with the values' unit and the block's decimals ("120 ms", "37%"), a
  *   scatter's x with its own unit, and a histogram's bins as "0–10 ms": the words the text
  *   fallback prints for the same block.
- * - A horizontal bar chart is rows on one scale: a bar per series of each category, the category
- *   named on its first row; a stack's series sit end to end along the scale, each where it
- *   begins in the stack. A series with no reading in a category has no row there.
+ * - A horizontal bar chart is rows on one scale. Grouped, each category has a bar per series, the
+ *   category named on its first row, and a series with no reading there has no row. Stacked, each
+ *   category is one row whose series sit end to end from zero, its total printed after it.
  * - The summary names the kind and the title, counts the categories and the series, then gives
  *   each series' range: "Bar chart: Latency. 5 categories, 2 series: p50 10–40 ms, p95 20–90 ms."
  */
@@ -25,20 +25,29 @@ export interface ChartCaptions {
   y?: string;
 }
 
-/** One row of a horizontal bar chart. */
-export interface HBarModelRow {
-  category: string;
-  /** The first row of its category: the one that prints the category's name. */
-  first: boolean;
-  /** The series the bar belongs to, by index. */
-  series: number;
-  paint: ChartPaint;
-  /** Where the bar starts on the scale (a stack's lower layers), else the scale's zero. */
-  from: number;
-  to: number;
-  /** The reading in words. */
-  value: string;
-}
+/** One row of a horizontal bar chart: one series' bar, or a category's stack of every series. */
+export type HBarModelRow =
+  | {
+      kind: "bar";
+      category: string;
+      /** The first row of its category: the one that prints the category's name. */
+      first: boolean;
+      /** The series the bar belongs to, by index. */
+      series: number;
+      /** The bar runs from the scale's zero to the reading. */
+      from: number;
+      to: number;
+      /** The reading in words. */
+      value: string;
+    }
+  | {
+      kind: "stack";
+      category: string;
+      /** One reading per series, in series order; null where a series has none. */
+      stack: (number | null)[];
+      /** The stack's total in words. */
+      value: string;
+    };
 
 /** Which basic chart draws the block, with the props it takes from the spec. */
 export type ChartModel =
@@ -59,8 +68,10 @@ export type ChartModel =
       rows: HBarModelRow[];
       min: number;
       max: number;
-      /** The series, for the legend a chart of several draws under the rows. */
+      /** The series: the legend's names, the bars' colours. */
       series: CartesianSeries[];
+      /** A reading as a segment's bubble and words print it. */
+      fmtValue: (v: number) => string;
     }
   | {
       draw: "line";
@@ -145,20 +156,25 @@ function hbarModel(
     },
   );
   const zero = Math.min(Math.max(0, domain.min), domain.max);
-  const rows = (spec.categories ?? []).flatMap((category, c) => {
-    let base = zero;
-    const cells: Omit<HBarModelRow, "first">[] = [];
-    series.forEach((s, i) => {
-      const v = s.values[c];
-      if (!isReading(v)) return;
-      const from = stacked ? base : zero;
-      const to = stacked ? base + Math.max(v, 0) : v;
-      if (stacked) base = to;
-      cells.push({ category, series: i, paint: slot(i), from, to, value: fmtValue(v) });
-    });
-    return cells.map((cell, k) => ({ ...cell, first: k === 0 }));
+  const rows = (spec.categories ?? []).flatMap((category, c): HBarModelRow[] => {
+    const readings = series.map((s) => s.values[c] ?? null);
+    if (stacked) {
+      const total = readings.reduce<number>((sum, v) => sum + (isReading(v) && v > 0 ? v : 0), 0);
+      return [{ kind: "stack", category, stack: readings, value: fmtValue(total) }];
+    }
+    return readings
+      .flatMap((v, i) => (isReading(v) ? [{ series: i, v }] : []))
+      .map(({ series: i, v }, k): HBarModelRow => ({
+        kind: "bar",
+        category,
+        first: k === 0,
+        series: i,
+        from: zero,
+        to: v,
+        value: fmtValue(v),
+      }));
   });
-  return { draw: "hbar", rows, min: domain.min, max: domain.max, series };
+  return { draw: "hbar", rows, min: domain.min, max: domain.max, series, fmtValue };
 }
 
 /** The basic chart a block draws, and what it draws it from. */

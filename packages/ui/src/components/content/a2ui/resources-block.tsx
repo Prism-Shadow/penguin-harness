@@ -2,7 +2,7 @@
  * The system-resource board: one machine's readings as a snapshot, built from the basic charts —
  * a tile per reading (CPU, memory, swap, load, uptime: the metrics block's tile, with its gauge,
  * bar and history), the disks as horizontal bars on one percent scale, and the network's received
- * and sent rates as a line chart.
+ * and sent rates as a line chart over its last readings.
  *
  * The model gives the readings, not the judgement: the marks that colour them are fixed in the
  * grammar (resourcesTiles, resolveResources), the same ones the text fallback prints by, so a
@@ -60,7 +60,8 @@ function Network({ network, strings }: { network: A2uiResourcesNetwork; strings:
     { label: strings.received, values: network.rx },
     { label: strings.sent, values: network.tx },
   ];
-  // The readings carry no times: the axis names no category, and the summary reads the ranges.
+  // The readings carry no times, only an order: the plot prints no category axis and keeps no
+  // band for one, and the caption under it says how many readings it spans, oldest at the left.
   const categories = network.rx.map(() => "");
   const summary = chartSummary(
     {
@@ -82,6 +83,7 @@ function Network({ network, strings }: { network: A2uiResourcesNetwork; strings:
         height={NETWORK_H}
         fmtValue={(v) => formatValue(v, network.unit, lang)}
         label={summary}
+        captions={{ x: strings.lastReadings(network.rx.length) }}
       />
     </div>
   );

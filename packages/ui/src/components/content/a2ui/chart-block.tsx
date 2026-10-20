@@ -17,7 +17,6 @@ import { HBarChart } from "../../charts/cartesian/hbar-chart";
 import type { HBarRow } from "../../charts/cartesian/hbar-chart";
 import { LineChart } from "../../charts/cartesian/line-chart";
 import { useChartWidth } from "../../charts/chart-frame/chart-frame";
-import { Legend } from "../../charts/legend/legend";
 import { PieChart } from "../../charts/pie-chart/pie-chart";
 import { ScatterChart } from "../../charts/scatter-chart/scatter-chart";
 import { chartModel, chartSummary } from "./chart-model";
@@ -81,13 +80,15 @@ function Plot({ model, label }: { model: PlotModel; label: string }) {
 }
 
 /**
- * Horizontal bars, a row per reading on one scale. With several series a category's rows follow
- * one another, the category named on the first, each row's series said to a screen reader and
- * shown by its colour, which the legend under the rows names.
+ * Horizontal bars on one scale. Grouped, each reading is a row: a category's rows follow one
+ * another, the category named on the first and each row's series said to a screen reader. Stacked,
+ * each category is one row of segments, its total after it. Either way the series' colours are
+ * named by the legend the chart draws under the rows, and a stack's segments answer the pointer.
  */
 function HBars({ model, label }: { model: Extract<ChartModel, { draw: "hbar" }>; label: string }) {
   const several = model.series.length > 1;
   const rows: HBarRow[] = model.rows.map((row) => {
+    if (row.kind === "stack") return { label: row.category, stack: row.stack, value: row.value };
     const series = model.series[row.series]?.label ?? "";
     return {
       label: several ? (
@@ -101,22 +102,18 @@ function HBars({ model, label }: { model: Extract<ChartModel, { draw: "hbar" }>;
       from: row.from,
       to: row.to,
       value: row.value,
-      paint: row.paint,
+      series: row.series,
     };
   });
   return (
-    <div className="flex flex-col gap-2">
-      <HBarChart rows={rows} min={model.min} max={model.max} label={label} />
-      {several && (
-        <Legend
-          items={model.series.map((s, i) => ({
-            key: String(i),
-            label: s.label,
-            paint: s.paint ?? { series: i },
-          }))}
-        />
-      )}
-    </div>
+    <HBarChart
+      rows={rows}
+      min={model.min}
+      max={model.max}
+      series={model.series}
+      fmtValue={model.fmtValue}
+      label={label}
+    />
   );
 }
 

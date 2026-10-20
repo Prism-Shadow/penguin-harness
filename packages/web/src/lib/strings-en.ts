@@ -4047,6 +4047,7 @@ Scenarios:
       uptime: "Uptime",
       received: "Received",
       sent: "Sent",
+      lastReadings: (n: number) => `Last ${n} readings`,
     },
     forkSession: "Fork chat from here",
     forkSessionConfirmBody:

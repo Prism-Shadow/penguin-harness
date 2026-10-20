@@ -9,14 +9,16 @@
  *   picture named by the data in words: the kind, the title, the counts, each series' range.
  * - Given a gauge, the block is one tile: the same meter, figure ink and tone a one-item metrics
  *   block draws for the same reading.
- * - Given horizontal bars of several series, each reading is a row on one scale, the category
- *   named on its first row and the series said to a screen reader and named in a legend; in a
- *   stack each series starts where the one before it ends; a series with no reading in a
+ * - Given stacked horizontal bars, each category is one row on one scale, its series end to end
+ *   from zero, its total after it, its parts read out in words, the series named in a legend.
+ * - Given grouped horizontal bars of several series, each reading is a row, the category named
+ *   on its first row and the series said to a screen reader; a series with no reading in a
  *   category draws no row there.
  * - Given the reader's language is Chinese, the summary is worded and punctuated in Chinese.
  * - Given a resource board, each reading is a tile in board order, toned by the fixed marks
  *   (not by anything the model sets); each disk is a row with its used of total, its bar toned
- *   the same way; the network is a line chart of the received and the sent rate in their unit.
+ *   the same way; the network is a line chart of the received and the sent rate in their unit,
+ *   with no category axis (the readings carry no times) and a caption counting its readings.
  * - Given a board with only disks, it draws no tiles and no network chart.
  */
 import { createElement } from "react";
@@ -194,7 +196,7 @@ describe("ChartBlock", () => {
     expect(figureClasses(gauge)[0]).toContain("text-tone-danger-fg");
   });
 
-  it("lays horizontal bars of several series out as rows, a stack's series end to end", () => {
+  it("stacks each category's series end to end in one row, its total after it", () => {
     const stacked = draw({
       type: "chart",
       kind: "bar",
@@ -205,21 +207,23 @@ describe("ChartBlock", () => {
         { label: "read", values: [20, 30] },
         { label: "write", values: [20, 10] },
       ],
+      yUnit: "GB",
     });
-    expect(count(stacked, "<li")).toBeGreaterThanOrEqual(4);
     const [euRead, euWrite, usRead, usWrite] = barPlaces(stacked);
     expect(euRead?.left).toBe(0);
     expect(euWrite?.left).toBe(euRead?.width);
     expect(usWrite?.left).toBe(usRead?.width);
     expect(euWrite?.width).toBeCloseTo(50);
     expect(usWrite?.width).toBeCloseTo(25);
-    // The category is named once; each row's series is said, and the legend names both.
+    // One row per category, its total printed and its parts said; the legend names the series.
     expect(count(stacked, ">eu<")).toBe(1);
-    expect(stacked).toMatch(/class="sr-only">write</);
-    expect(stacked).toContain(">read<");
+    expect(stacked).toContain('<span class="sr-only"> · read 20 GB · write 20 GB</span>');
+    expect(count(stacked, ">40 GB<")).toBe(2);
+    expect(count(stacked, "data-hit")).toBe(4);
+    expect(stacked).toMatch(/>read<[\s\S]*>write</);
   });
 
-  it("draws no row for a series with no reading in a category", () => {
+  it("lays grouped horizontal bars out as a row per reading, none for a missing one", () => {
     const html = draw({
       type: "chart",
       kind: "bar",
@@ -230,7 +234,13 @@ describe("ChartBlock", () => {
         { label: "write", values: [20, 10] },
       ],
     });
-    expect(barPlaces(html)).toHaveLength(3);
+    const places = barPlaces(html);
+    expect(places).toHaveLength(3);
+    for (const place of places) expect(place.left).toBe(0);
+    expect(count(html, ">eu<")).toBe(1);
+    expect(html).toMatch(/class="sr-only">write</);
+    expect(html).toMatch(/data-series="2"[^>]*left:0%;width:50%/);
+    expect(html).not.toContain("data-hit");
   });
 
   it("words the summary in the reader's language", () => {
@@ -303,6 +313,8 @@ describe("ResourcesBlock", () => {
     expect(html).toMatch(/data-part="series" data-series="2"/);
     expect(html).toContain(">Received<");
     expect(html).toContain(">Sent<");
+    // No times, so no category axis: the caption says how many readings the lines span.
+    expect(html).toMatch(/data-caption="x"[^>]*>Last 3 readings</);
   });
 
   it("draws no tiles and no network chart for a board of disks alone", () => {
