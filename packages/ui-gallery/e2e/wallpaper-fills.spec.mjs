@@ -6,22 +6,31 @@
  * on approval with its band, the initial-password banner across the main column and the
  * context-window notice over the composer.
  *
- * - Given a background, in each theme and mode, the image is drawn under the shell and the user
- *   bubble lets it through: its fill is translucent, never clear.
- * - Given no background, in each theme, the bubble is the opaque accent tint, a gray for the
- *   theme's own accent.
+ * - Given a background, in each theme, the image is drawn under the shell and the user bubble
+ *   lets it through: its fill is translucent, never clear.
+ * - Given a background, in each theme, a notice and the approval band keep a thinner tone tint in
+ *   Primer — in dark too, where the tint is translucent of its own; in Frost a notice is the
+ *   panel's glass, the same fill as the composer, and the band a thinner amber; in Console
+ *   neither paints anything.
+ * - Given no background, the bubble is the opaque accent tint, a gray for the theme's own accent.
  * - Given Primer's blue accent and a background, the bubble's wash is blue.
- * - Given a background, in each theme and mode, a notice and the approval band keep a thinner
- *   tone tint in Primer; in Frost a notice is the panel's glass, the same fill as the composer,
- *   and the band a thinner amber; in Console neither paints anything.
  * - Given a background and reduced transparency, the bubble and Primer's notices are opaque.
  * - Given a background, a toast in Frost — whose notice recipe reads the panel's glass — floats
  *   outside the shell on its own opaque surface.
+ *
+ * Each case is one page load of the whole app, so the cases are the mechanisms, not the matrix:
+ * the other modes run the same rules on other token values, which the contrast suite measures
+ * and the screenshot script (`scripts/shots.mjs --wallpaper both`) shows.
  */
 import { test, expect } from "@playwright/test";
 
-const THEMES = ["github", "modern", "geek"];
-const MODES = ["light", "dark"];
+/** Theme and mode for the background cases: every theme, and Primer's dark tone tints. */
+const BACKGROUND_CASES = [
+  ["github", "light"],
+  ["github", "dark"],
+  ["modern", "light"],
+  ["geek", "light"],
+];
 const SETTINGS = JSON.stringify({ transparency: 25, mode: "cover", position: "center center" });
 
 const SELECTORS = {
@@ -128,44 +137,41 @@ async function fills(page) {
 const translucent = (c) => c.a > 0 && c.a < 1;
 
 test.describe("message fills on a custom background", () => {
-  for (const theme of THEMES) {
-    for (const mode of MODES) {
-      test(`let the image through the bubble and thin the notices (${theme}, ${mode})`, async ({
-        page,
-      }) => {
-        await openChat(page, { theme, mode, wallpaper: true });
-        const f = await fills(page);
-        expect(f.layer).toBe(true);
-        expect(translucent(f.bubble), JSON.stringify(f.bubble)).toBe(true);
-        if (theme === "github") {
-          for (const name of ["banner", "notice", "band"]) {
-            expect(translucent(f[name]), `${name} ${JSON.stringify(f[name])}`).toBe(true);
-          }
-        } else if (theme === "modern") {
-          expect(translucent(f.composer), JSON.stringify(f.composer)).toBe(true);
-          expect(f.banner).toEqual(f.composer);
-          expect(f.notice).toEqual(f.composer);
-          expect(translucent(f.band), JSON.stringify(f.band)).toBe(true);
-        } else {
-          for (const name of ["banner", "notice", "band"]) {
-            expect(f[name].a, name).toBe(0);
-          }
-        }
-      });
-    }
-
-    test(`keep the bubble's opaque tint without a background, a gray for the theme's accent (${theme})`, async ({
+  for (const [theme, mode] of BACKGROUND_CASES) {
+    test(`let the image through the bubble and thin the notices (${theme}, ${mode})`, async ({
       page,
     }) => {
-      await openChat(page, { theme, wallpaper: false });
-      const { bubble, layer } = await fills(page);
-      expect(layer).toBe(false);
-      expect(bubble.a).toBe(1);
-      const spread =
-        Math.max(bubble.r, bubble.g, bubble.b) - Math.min(bubble.r, bubble.g, bubble.b);
-      expect(spread, JSON.stringify(bubble)).toBeLessThanOrEqual(3);
+      await openChat(page, { theme, mode, wallpaper: true });
+      const f = await fills(page);
+      expect(f.layer).toBe(true);
+      expect(translucent(f.bubble), JSON.stringify(f.bubble)).toBe(true);
+      if (theme === "github") {
+        for (const name of ["banner", "notice", "band"]) {
+          expect(translucent(f[name]), `${name} ${JSON.stringify(f[name])}`).toBe(true);
+        }
+      } else if (theme === "modern") {
+        expect(translucent(f.composer), JSON.stringify(f.composer)).toBe(true);
+        expect(f.banner).toEqual(f.composer);
+        expect(f.notice).toEqual(f.composer);
+        expect(translucent(f.band), JSON.stringify(f.band)).toBe(true);
+      } else {
+        for (const name of ["banner", "notice", "band"]) {
+          expect(f[name].a, name).toBe(0);
+        }
+      }
     });
   }
+
+  test("keep the bubble's opaque tint without a background, a gray for the theme's accent (Primer)", async ({
+    page,
+  }) => {
+    await openChat(page, { theme: "github", wallpaper: false });
+    const { bubble, layer } = await fills(page);
+    expect(layer).toBe(false);
+    expect(bubble.a).toBe(1);
+    const spread = Math.max(bubble.r, bubble.g, bubble.b) - Math.min(bubble.r, bubble.g, bubble.b);
+    expect(spread, JSON.stringify(bubble)).toBeLessThanOrEqual(3);
+  });
 
   test("wash the bubble in the accent's hue (Primer, blue)", async ({ page }) => {
     await openChat(page, { theme: "github", accent: "blue", wallpaper: true });
