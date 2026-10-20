@@ -438,11 +438,15 @@ function profileParams(F, prof, lang, { contract, markers, date, versionNote } =
     params.CONTRACT = read(path.join(PROMPTS, `contract-${prof.kind}.md`)).trim();
     params.MARKER_RULE = F[`markers-${markers}`];
     params.DATE = date;
+    // Without a note the lead's shape says nothing about one: an instruction that names the note
+    // ("No version note.") was copied into a post as a line of text.
     if (versionNote && versionNote !== "none") {
       params.VERSION_NOTE_RULE = F["version-note-rule"];
+      params.VERSION_NOTE_SENTENCE = ` ${F["version-note-rule"]}`;
       params.VERSION_NOTE = versionNote;
     } else {
       params.VERSION_NOTE_RULE = F["no-version-note"];
+      params.VERSION_NOTE_SENTENCE = "";
     }
   }
   return params;
@@ -1510,6 +1514,9 @@ const CJK = "\\u3400-\\u4dbf\\u4e00-\\u9fff\\uf900-\\ufaff";
 const HTML_FIGURE = /^<figure\b[^>]*\bclass="[^"]*\bpost-figure\b/;
 const TLDR = /^\*\*TL;DR\*\*\s*$/;
 const FOOTNOTE_DEF = /^\[\^[^\]]+\]:/;
+/** A line that only says there is no version note: the prompt's own words copied into the text. */
+const STRAY_NOTE =
+  /^(>\s*)?[(（]?\s*(no version note|without a version note|无版本说明|没有版本说明|无版本注释|不附版本说明|本文不含版本说明)\s*[.。)）]?\s*$/i;
 
 const FIGURE_OPEN = /^```figure\b(.*)$/;
 const SPEC_KEY = /^\s*([a-z_]+)\s*:\s*(.*)$/;
@@ -2416,6 +2423,11 @@ function checkDoc(doc, lang, prof, o, r, facts) {
     else if (it.line.trim().startsWith("<!--"))
       r.add("warn", it.n, `model note: ${it.line.trim()}`);
   }
+  for (const it of items.filter((x) => ["text", "quote"].includes(x.type))) {
+    if (STRAY_NOTE.test(it.line.trim())) {
+      r.add("error", it.n, `a stray "${it.line.trim()}" line: an instruction copied as text`);
+    }
+  }
   checkFootnotes(doc, o, r, facts);
   if (facts && doc.raw.match(MARKER)) checkSources(doc, r, facts);
   const footer = undefined;
@@ -2839,7 +2851,11 @@ function runAssemble(o) {
 
 /** Normalised for locating a quoted passage: markers, code ticks and emphasis gone, quotes folded. */
 function locatable(text) {
-  return foldQuotes(text.replace(MARKER, " ").replace(/[`*]/g, "")).replace(/\s+/g, " ").trim();
+  // A marker may sit before the period ("…08 {F1}.") or after it; neither placement may stop a quote matching.
+  return foldQuotes(text.replace(/[ \t]*\{[FO]\d+\}/g, "").replace(/[`*]/g, ""))
+    .replace(/\s+/g, " ")
+    .replace(/ (?=[.,;:!?。，；：！？、）」』])/g, "")
+    .trim();
 }
 
 /** Split a merged findings list by the section that holds each quoted passage. */
@@ -3426,7 +3442,7 @@ caption: The marker names the file as <path> and the id as \`<id>\`.
 
 ## A marker beats a gap
 
-We would rather keep a marker than leave a gap. {O1} The format was settled early. {F3}
+We would rather keep a marker than leave a gap. {O1} The format was settled early {F3}.
 
 ## What to read next
 
@@ -3601,6 +3617,7 @@ const TLDR_OVER = [
 
 const FIXTURE_FINDINGS = `1. [The Trace keeps a short marker.] — repeats the lead — concision — the section must add what the marker holds
 2. [a sentence that is in no section] — vague — flow — the passage must be located first
+3. [The format was settled early.] — vague — concision — the sentence must say when
 `;
 
 const FIXTURE_FIGURE = [
@@ -3680,6 +3697,13 @@ function runSelftest() {
     `---\ntitle: "Self-test post"\ndate: 2026-10-19\ncategory: perspectives\nexcerpt: "A fixture."\n---\n\n${PRACTICE_LEAD} ${PRACTICE_LEAD}\n`,
   );
   const practice = ["--profile", at("profile-blog-practice.md"), "--category", "practice"];
+  // A lead that copied the prompt's "no version note" wording as a line of its own.
+  const strayNote = path.join(post, "sections-stray-note");
+  mkdirSync(strayNote, { recursive: true });
+  writeFileSync(
+    path.join(strayNote, "s0.en.v1.md"),
+    `---\ntitle: "Self-test post"\ndate: 2026-10-19\ncategory: perspectives\nexcerpt: "A fixture."\n---\n\nNo version note.\n\n${PRACTICE_LEAD}\n`,
+  );
   const published = path.join(root, "selftest-post.en.md");
   const publishedZh = path.join(root, "selftest-post.zh.md");
   const citedZh = path.join(root, "cites", "selftest-post.zh.md");
@@ -3947,6 +3971,49 @@ function runSelftest() {
         /at most 66 English words of body text[\s\S]*has its own, 30–50 English words, and is counted apart/,
     },
     {
+      name: "a lead without a version note is told nothing about one",
+      args: [
+        "section",
+        "--dry-run",
+        "--outline",
+        at("outline.final.md"),
+        "--section",
+        "0",
+        ...facts,
+        "--sections-dir",
+        sections,
+        "--version-note",
+        "none",
+      ],
+      code: 0,
+      notStdout: /version note|Nothing goes between/i,
+    },
+    {
+      name: "a lead with a version note is told to reproduce it after the frontmatter",
+      args: [
+        "section",
+        "--dry-run",
+        "--outline",
+        at("outline.final.md"),
+        "--section",
+        "0",
+        ...facts,
+        "--sections-dir",
+        sections,
+        "--version-note",
+        "Written for PenguinHarness 0.2.16. Later releases may differ in some details.",
+      ],
+      code: 0,
+      stdout:
+        /with no heading\. Directly after the frontmatter, reproduce this line verbatim and then a blank line: > Written for PenguinHarness 0\.2\.16\./,
+    },
+    {
+      name: 'a stray "No version note." line is an error',
+      args: ["check", "--in", path.join(strayNote, "s0.en.v1.md")],
+      code: 1,
+      stdout: /a stray "No version note\." line/,
+    },
+    {
       name: "a section within its row passes check --section",
       args: [
         "check",
@@ -4000,7 +4067,7 @@ function runSelftest() {
       name: "route sends a finding to the section that quotes it and keeps the rest unrouted",
       args: ["route", "--findings", at("findings.en.v1.md"), "--sections-dir", sections],
       code: 0,
-      stdout: /s2: 1 finding\(s\)[\s\S]*unrouted: 1 finding\(s\)/,
+      stdout: /s2: 1 finding\(s\)[\s\S]*s3: 1 finding\(s\)[\s\S]*unrouted: 1 finding\(s\)/,
       file: [at("findings.s2.en.v1.md"), /^1\. \[The Trace keeps a short marker\.\]/],
     },
     {

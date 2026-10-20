@@ -28,7 +28,7 @@ The fact markers (`{F3}`, `{O1}`) stay exactly as the input has them, at the end
 The fact markers (`{F3}`, `{O1}`) stay exactly as the input has them. Add a marker only to a factual sentence you write or change because of a finding, using an id from FACTS; never add one to a sentence you leave unchanged. Headings, figure blocks and frontmatter carry no markers.
 
 <!-- fragment: section-shape-lead -->
-the frontmatter below, nothing before it, then {{VERSION_NOTE_RULE}} then the lead, one or two paragraphs with no heading:
+the frontmatter below, nothing before it, then the lead, one or two paragraphs with no heading.{{VERSION_NOTE_SENTENCE}}
   ---
   title: "<title>"
   date: {{DATE}}
@@ -93,7 +93,7 @@ The plan table in the previous outline breaks these limits. Return the whole out
 Directly after the frontmatter, reproduce this line verbatim and then a blank line: > {{VERSION_NOTE}}
 
 <!-- fragment: no-version-note -->
-No version note.
+Nothing goes between the frontmatter and the lead.
 
 <!-- fragment: meme-brief -->
 ## Meme brief
