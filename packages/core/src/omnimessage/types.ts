@@ -353,6 +353,7 @@ export type ErrorCode =
   | "malformed" // response failed parsing/validation, or the stream was truncated
   | "auth" // the provider rejected the credentials
   | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
+  | "model_unavailable" // the provider named this model (or its route) as unable to serve the request
   | "image_rejected" // a provider 4xx on an input holding images, retried with them replaced
   | "unsupported" // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input" // the input failed to assemble into a request

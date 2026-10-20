@@ -38,6 +38,7 @@ import {
   isFastModeUnsupportedError,
   isUnusableResponseError,
   isFatalProviderRejection,
+  isModelScopedRejection,
   isRateLimitError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
@@ -2016,5 +2017,100 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
       res = await gen.next();
     }
     expect(callIdsOf(out)).toEqual(["get_time#2"]);
+  });
+});
+
+describe("isModelScopedRejection (the provider named the model, not the request)", () => {
+  const err = (message: string, extra: Record<string, unknown> = {}): Error =>
+    Object.assign(new Error(message), extra);
+
+  it("recognizes what a provider says about itself", () => {
+    // Console Go wrapping a dead upstream hop.
+    expect(isModelScopedRejection(err("Upstream request failed: Model is unavailable."))).toBe(
+      true,
+    );
+    // A gateway with no channel left for this model.
+    expect(isModelScopedRejection(err("no available channel for model"))).toBe(true);
+    // An aggregator that tried its routes and came back empty.
+    expect(
+      isModelScopedRejection(err("All routed providers rejected the request as invalid.")),
+    ).toBe(true);
+    // A structured code, wherever it sits in the body.
+    expect(isModelScopedRejection(err("upstream failed", { code: "model_unavailable" }))).toBe(
+      true,
+    );
+    expect(
+      isModelScopedRejection(
+        err("upstream failed", { error: { error: { code: "no_available_channel" } } }),
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves a refusal of the request itself alone", () => {
+    // The request's own shape: the next model would refuse it the same way.
+    expect(
+      isModelScopedRejection(
+        err("No function call found for function call output with call_id 'call_x'"),
+      ),
+    ).toBe(false);
+    expect(isModelScopedRejection(err("Request body exceeds the 4.5 MiB limit."))).toBe(false);
+    expect(isModelScopedRejection(err("You have insufficient credits to make this request."))).toBe(
+      false,
+    );
+    expect(isModelScopedRejection(err("invalid api key", { status: 401 }))).toBe(false);
+    expect(isModelScopedRejection(err("socket hang up"))).toBe(false);
+  });
+
+  it("reads the whole cause chain, the way the other detectors do", () => {
+    const inner = err("Upstream request failed: Model is unavailable.");
+    const outer = Object.assign(new Error("request failed"), { cause: inner });
+    expect(isModelScopedRejection(outer)).toBe(true);
+  });
+});
+
+describe("GenerativeModel.streamGenerate — a model-scoped rejection", () => {
+  async function drain(
+    gen: AsyncGenerator<OmniMessage, LLMOutcome | void>,
+  ): Promise<{ messages: OmniMessage[]; outcome: LLMOutcome }> {
+    const messages: OmniMessage[] = [];
+    let res = await gen.next();
+    while (!res.done) {
+      messages.push(res.value);
+      res = await gen.next();
+    }
+    return { messages, outcome: res.value as LLMOutcome };
+  }
+
+  class SeamModel extends GenerativeModel {
+    constructor(private readonly source: () => AsyncIterable<UniEvent>) {
+      super({ modelId: "claude-sonnet-4-6", tools: [], requestTimeoutMs: 10000 });
+    }
+    protected override openStream(): AsyncIterable<UniEvent> {
+      return this.source();
+    }
+  }
+
+  it("ends the run with model_unavailable, so a host with a fallback chain can move it", async () => {
+    async function* modelUnavailable(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error("Upstream request failed: Model is unavailable."), {
+        status: 400,
+      });
+    }
+    const model = new SeamModel(() => modelUnavailable());
+    const { outcome } = await drain(model.streamGenerate({ newMessages: [userText("go")] }));
+    // Fatal for this model (the identical request here can never succeed) — and named, so
+    // the host can tell "this model is dead" from "this request is bad".
+    expect(outcome.status).toBe("fatal");
+    expect(outcome.errorCode).toBe("model_unavailable");
+  });
+
+  it("keeps a request-scoped 4xx on 'rejected'", async () => {
+    async function* paramError(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error("unknown parameter: max_output_tokens"), { status: 400 });
+    }
+    const model = new SeamModel(() => paramError());
+    const { outcome } = await drain(model.streamGenerate({ newMessages: [userText("go")] }));
+    expect(outcome.status).toBe("fatal");
+    expect(outcome.errorCode).toBe("rejected");
   });
 });
