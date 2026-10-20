@@ -26,13 +26,7 @@
 import { NAV_PAGE_KEYS, PAGES } from "./pages";
 
 export type NavGroupKey =
-  | "agents"
-  | "schedules"
-  | "plugins"
-  | "models"
-  | "machines"
-  | "usage"
-  | "benchmark";
+  "agents" | "schedules" | "archived" | "plugins" | "models" | "machines" | "usage" | "benchmark";
 /**
  * The manifest, derived from the app's own module.json (lib/pages.ts): every page whose
  * `nav` is "main", in manifest order. The literal key type above is the set the strings
@@ -83,11 +77,16 @@ export function navEntryKeysFor(isAdmin: boolean): readonly NavEntryKey[] {
   return ["newChat", ...navKeysFor(isAdmin)];
 }
 
-/** Entries pinned until the user says otherwise; every other entry, a page added later included, starts collapsible. */
+/**
+ * Entries pinned until the user says otherwise; every other entry, a page added later included, starts collapsible.
+ * Archived chats is pinned: a conversation filed away must be findable again without hunting
+ * through a fold.
+ */
 export const DEFAULT_PINNED_NAV_KEYS: ReadonlySet<NavEntryKey> = new Set<NavEntryKey>([
   "newChat",
   "agents",
   "schedules",
+  "archived",
   "models",
   "plugins",
 ]);

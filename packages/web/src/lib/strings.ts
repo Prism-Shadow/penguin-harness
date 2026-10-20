@@ -23,6 +23,7 @@ export const zh = {
     newChat: "新建对话",
     agents: "智能体",
     schedules: "定时任务",
+    archived: "已归档对话",
     models: "模型库",
     machines: "机器管理",
     plugins: "插件市场",
@@ -805,6 +806,16 @@ export const zh = {
       n === 1
         ? "确定删除这个对话？它的消息与 Trace 将被移除，且不可恢复。"
         : `确定删除这 ${n} 个对话？它们的消息与 Trace 将被移除，且不可恢复。`,
+  },
+
+  /**
+   * The top-level Archived chats page (/archived): the archive list one click from the nav, so
+   * a conversation that was filed away is never lost.
+   */
+  archivedPage: {
+    title: "已归档对话",
+    description: "归档的对话不在侧栏里；在这里找回来、恢复，或彻底删除。",
+    info: "「归档」只是把对话从侧栏收起来，消息与 Trace 都还在。这份清单默认只列你手动归档的对话；程序（接口、定时任务、命令行）打开的会话，换一个来源筛选就能看到。",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */
@@ -4326,6 +4337,18 @@ Benchmark：
     deleteDraftConfirm: (title: string) => `确定删除草稿「${title}」？未发送的内容将被丢弃。`,
     archiveSession: "归档",
     unarchiveSession: "取消归档",
+    /**
+     * The receipt that rises after a conversation is archived: what happened, and the two ways
+     * back (undo here, or the archive page).
+     */
+    archiveReceipt: {
+      archived: (title: string) => `已归档「${title}」`,
+      undo: "撤销",
+      undone: "已放回侧栏",
+      view: "查看已归档",
+      undoFailed: (reason: string) => `撤销没有完成：${reason}`,
+      archiveFailed: (reason: string) => `归档没有完成：${reason}`,
+    },
     /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
     pinSession: "置顶",
     unpinSession: "取消置顶",

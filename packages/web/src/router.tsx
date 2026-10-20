@@ -36,6 +36,7 @@ import { ChatPage } from "./features/chat/chat-page";
 import { AgentsPage } from "./features/agents/agents-page";
 import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { SchedulesPage } from "./features/schedules/schedules-page";
+import { ArchivedPage } from "./features/archived/archived-page";
 import { PluginsPage } from "./features/plugins/plugins-page";
 import { ModelsPage } from "./features/models/models-page";
 import { UsagePage } from "./features/usage/usage-page";
@@ -65,6 +66,7 @@ const BUILTIN_PAGES: Record<string, React.ComponentType> = {
   AgentsPage,
   AgentSettingsPage,
   SchedulesPage,
+  ArchivedPage,
   PluginsPage,
   ModelsPage,
   MachinesPage,

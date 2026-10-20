@@ -11,6 +11,8 @@ export const NAV_ICONS = {
   agents: ICONS.robot,
   /** Scheduled tasks: the same alarm clock the session list marks a task-bearing conversation with. */
   schedules: ICONS.alarmClock,
+  /** Archived chats: the same box the row's own archive action wears. */
+  archived: ICONS.archive,
   /** Plugin library (the puzzle piece). */
   plugins: ICONS.puzzle,
   /** Model library (a chip). */

@@ -16,6 +16,7 @@ export const en: Strings = {
     newChat: "New chat",
     agents: "Agents",
     schedules: "Scheduled tasks",
+    archived: "Archived chats",
     models: "Models",
     machines: "Machines",
     plugins: "Plugins",
@@ -682,6 +683,16 @@ export const en: Strings = {
       n === 1
         ? "Delete this chat? Its messages and Trace will be removed permanently."
         : `Delete these ${n} chats? Their messages and Traces will be removed permanently.`,
+  },
+
+  /**
+   * The top-level Archived chats page (/archived): the archive list one click from the nav, so
+   * a conversation that was filed away is never lost.
+   */
+  archivedPage: {
+    title: "Archived chats",
+    description: "Archived chats are not in the sidebar; find them here, bring them back, or delete them.",
+    info: "Archiving only files a conversation away from the sidebar — its messages and Trace are still there. This list shows the chats you archived by hand; the ones a program opened (the Agent API, a scheduled task, the CLI) are behind the source filter.",
   },
 
   tracePanel: {
@@ -4140,6 +4151,18 @@ Scenarios:
       `Delete draft "${title}"? Unsent content will be discarded.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
+    /**
+     * The receipt that rises after a conversation is archived: what happened, and the two ways
+     * back (undo here, or the archive page).
+     */
+    archiveReceipt: {
+      archived: (title: string) => `Archived "${title}"`,
+      undo: "Undo",
+      undone: "Back in the sidebar",
+      view: "View archived",
+      undoFailed: (reason: string) => `The undo did not finish: ${reason}`,
+      archiveFailed: (reason: string) => `The archive did not finish: ${reason}`,
+    },
     /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
     pinSession: "Pin",
     unpinSession: "Unpin",

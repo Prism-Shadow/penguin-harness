@@ -58,6 +58,7 @@ import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-laye
 import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
+import { ArchiveReceiptHost } from "../../features/archived/archive-receipt";
 
 /**
  * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
@@ -526,6 +527,10 @@ export function AppLayout() {
           reloads, so navigating the app must never re-parent one. */}
       <BuiltinBrowserLayer />
       <AppPalette />
+      {/* The receipt that rises after a conversation is archived: what happened, and the two
+          ways back (undo here, or the archive page). It is mounted here, inside the shell's
+          router and session context, so both its actions work from any page. */}
+      <ArchiveReceiptHost />
     </AppShell>
   );
 }

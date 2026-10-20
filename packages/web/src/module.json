@@ -50,6 +50,17 @@
         }
       },
       {
+        "id": "web.archived",
+        "key": "archived",
+        "path": "/archived",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "ArchivedPage"
+        }
+      },
+      {
         "id": "web.models",
         "key": "models",
         "path": "/models",

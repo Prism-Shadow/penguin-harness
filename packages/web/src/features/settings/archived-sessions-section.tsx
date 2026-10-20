@@ -75,14 +75,29 @@ interface PendingDelete {
   title?: string;
 }
 
-export function ArchivedSessionsSection() {
+export function ArchivedSessionsSection({
+  initialSource = null,
+  variant = "settings",
+}: {
+  /**
+   * The source filter's first value: `user` (the chats a person archived by hand) on the
+   * top-level page, where the thousands of program-opened sessions would bury them; null
+   * (every source) in the settings page, whose job is the whole archive.
+   */
+  initialSource?: ArchiveFilters["source"];
+  /**
+   * `settings` fills the dialog's pane and scrolls its own list inside it; `page` lets the
+   * page scroll, the way the other pages do.
+   */
+  variant?: "settings" | "page";
+}) {
   const { projects } = useProject();
   const [store] = useState<ArchiveStore>(() =>
     createArchiveStore((reason) => toastError(S.archivedSessions.actionFailed(reason))),
   );
   const state = useStore(store);
   const [q, setQ] = useState("");
-  const [source, setSource] = useState<ArchiveFilters["source"]>(null);
+  const [source, setSource] = useState<ArchiveFilters["source"]>(initialSource);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   // Focus the search on open where a keyboard is the likely way in; on a phone a focused box
@@ -131,7 +146,8 @@ export function ArchivedSessionsSection() {
   return (
     // The page fills the dialog's pane and scrolls its list itself, below the controls; the
     // list's 4px inset keeps the focus rings of its edge controls inside the box that clips it.
-    <section className="flex h-full min-h-0 flex-col gap-4">
+    // On the top-level page the page itself scrolls, so the list grows with it.
+    <section className={`flex flex-col gap-4 ${variant === "settings" ? "h-full min-h-0" : ""}`}>
       <div className="shrink-0 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <SearchInput
@@ -206,7 +222,13 @@ export function ArchivedSessionsSection() {
         )}
       </div>
 
-      <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-1">
+      <div
+        className={
+          variant === "settings"
+            ? "-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-1"
+            : "-mx-1 px-1 pb-1"
+        }
+      >
         {state.groups === null ? (
           <SkeletonList rows={4} />
         ) : state.groups.length === 0 ? (

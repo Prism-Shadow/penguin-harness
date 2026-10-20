@@ -213,6 +213,7 @@ import { isCurrentPath, renderRouterLink } from "./router-link";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useProjectSchedules } from "../../features/schedules/schedule-store";
+import { showArchiveReceipt } from "../../features/archived/archive-receipt";
 import { useCompany } from "../../state/company";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
 import { CompanyBetaBadge } from "../../features/company/company-beta";
@@ -1067,6 +1068,10 @@ export function Sidebar({
    * the next list refresh self-corrects). Archiving the conversation on screen leaves it for a
    * new chat, as the New chat button does — it is filed away, not something to read on; only
    * its URL, opened again later, shows the archived stub.
+   *
+   * The receipt that follows is what makes the action answerable: the row leaves, and a card
+   * at the corner of the screen says which conversation was filed away and offers the way back
+   * (undo, or the archive page). Without it, archiving was a silent disappearance.
    */
   const archiveSession = async (s: SessionInfo) => {
     try {
@@ -1074,8 +1079,12 @@ export function Sidebar({
       // Leave first, so the page never paints the stub for the row it is about to drop.
       if (activeSessionId === s.sessionId) newChat();
       replace(res.session);
-    } catch {
-      /* Ignore: non-critical operation */
+      showArchiveReceipt({
+        sessionId: s.sessionId,
+        title: res.session.title ?? s.title ?? S.chat.defaultSessionTitle,
+      });
+    } catch (e) {
+      toastError(S.chat.archiveReceipt.archiveFailed(apiErrorText(e)));
     }
   };
 
