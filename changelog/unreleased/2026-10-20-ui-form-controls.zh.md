@@ -3,6 +3,7 @@
 - **Date:** 2026-10-20
 - **Type:** feature
 - **Scope:** `ui`, `ui-gallery`
+- **PR:** [#1256](https://github.com/Prism-Shadow/penguin-harness/pull/1256)
 
 [English](2026-10-20-ui-form-controls.md)
 
