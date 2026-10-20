@@ -29,8 +29,8 @@
  *   (`knob-line` over the track) — and, for the theme's accent and every preset, the `knob-on`
  *   on the accent — 3:1, so the knob never vanishes on a near-white dark accent;
  * - the accent's tint, the fill under the person's own words (the user bubble, the steering
- *   chip), for the theme's accent and every preset: body text on it and the steering label (the
- *   muted ink) at the page's ink floors, the tint off the canvas at 1.08:1 so the bubble is
+ *   chip), for the theme's accent and every preset: body text on it, the steering label's
+ *   included, at the page's body-text floor, the tint off the canvas at 1.08:1 so the bubble is
  *   there at all — a tint below a floor is named in TINT_SHORTFALLS, as EXCEPTIONS names a pair
  *   — and the accent's wash laid on the canvas landing on the tint, so a bubble on an image the
  *   page's colour looks as it does on the page.
@@ -125,14 +125,15 @@ const INK_FLOORS: Readonly<Record<ThemeModeName, ReadonlyArray<readonly [TokenNa
 const INK_SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted"] as const;
 
 /**
- * The inks on the accent's tint, per mode: the page's floors for the bubble's body text and the
- * steering chip's label (the muted ink). The bubble holds no subtle ink.
+ * The ink on the accent's tint, per mode: the page's floor for body text. The bubble's text and
+ * the steering chip's label are both the body ink — the owner darkened the label from the muted
+ * ink so it reads on the tint (2026-10-19) — and the chip's glyph is a mark, not text.
  */
 const TINT_INK_FLOORS: Readonly<
   Record<ThemeModeName, ReadonlyArray<readonly [TokenName, number]>>
 > = {
-  light: INK_FLOORS.light.filter(([fg]) => fg !== "--ui-fg-subtle"),
-  dark: INK_FLOORS.dark.filter(([fg]) => fg !== "--ui-fg-subtle"),
+  light: INK_FLOORS.light.filter(([fg]) => fg === "--ui-fg"),
+  dark: INK_FLOORS.dark.filter(([fg]) => fg === "--ui-fg"),
 };
 
 /** How far the tint must stand off the canvas: Primer's gray-100 bubble on white is 1.10:1. */
@@ -151,47 +152,21 @@ interface TintShortfall {
 }
 
 /**
- * Where the tint is below its floor today. The strengths are the owner's (2026-10-19: 8 % of the
- * accent in light, 10 % in dark, 12 % for Primer's presets), and the neutral bubble the tint
- * replaced was already below the same floors in most of these. An entry no accent needs any more
- * fails the suite until it is removed.
+ * Where the tint is below its floor, kept by the owner's call (2026-10-19): the strengths stay
+ * 8 % of the accent in light, 10 % in dark and 12 % for Primer's presets, and body text on a dark
+ * tint holds about 10:1, above AAA's 7:1 — the neutral bubble the tint replaced was below the
+ * same floor too. An entry no accent needs any more fails the suite until it is removed.
  */
-const UNTIL_TINT_FLOORS = "the owner's call on the bubble's floors (2026-10-19)";
+const UNTIL_TINT_FLOORS = "kept by the owner's call on the tint's strengths (2026-10-19)";
 const NEAR_WHITE =
   "the theme's own dark accent is a near-white, so its 10 % tint is as light as the gray-800 bubble it replaced";
 const TINT_SHORTFALLS: readonly TintShortfall[] = [
-  {
-    theme: "github",
-    mode: "light",
-    pair: "--ui-fg-muted",
-    holds: 3.9,
-    reason:
-      "Primer's muted ink is 4.83:1 on white, so no fill keeps it at 4.5:1: the steering label read 4.39:1 on the gray-100 bubble and reads 3.93-4.11:1 on the tints",
-    until: UNTIL_TINT_FLOORS,
-  },
-  {
-    theme: "modern",
-    mode: "light",
-    pair: "--ui-fg-muted",
-    holds: 4.3,
-    reason:
-      "the own accent's and forest's tints (4.35, 4.49:1) are a step darker than the gray-100 bubble (4.80:1)",
-    until: UNTIL_TINT_FLOORS,
-  },
   {
     theme: "github",
     mode: "dark",
     pair: "--ui-fg",
     holds: 10,
     reason: `${NEAR_WHITE} (10.06:1; the bubble 10.41:1)`,
-    until: UNTIL_TINT_FLOORS,
-  },
-  {
-    theme: "github",
-    mode: "dark",
-    pair: "--ui-fg-muted",
-    holds: 5.6,
-    reason: `${NEAR_WHITE} (5.66:1; the bubble 5.86:1)`,
     until: UNTIL_TINT_FLOORS,
   },
   {
@@ -203,27 +178,11 @@ const TINT_SHORTFALLS: readonly TintShortfall[] = [
     until: UNTIL_TINT_FLOORS,
   },
   {
-    theme: "modern",
-    mode: "dark",
-    pair: "--ui-fg-muted",
-    holds: 5.75,
-    reason: `${NEAR_WHITE} (5.80:1; the bubble 5.94:1)`,
-    until: UNTIL_TINT_FLOORS,
-  },
-  {
     theme: "geek",
     mode: "dark",
     pair: "--ui-fg",
     holds: 10,
     reason: `${NEAR_WHITE} (10.15:1; the bubble 10.99:1); gold, phosphor and cyan lift the page a little too (10.75-10.96:1)`,
-    until: UNTIL_TINT_FLOORS,
-  },
-  {
-    theme: "geek",
-    mode: "dark",
-    pair: "--ui-fg-muted",
-    holds: 5.6,
-    reason: `${NEAR_WHITE} (5.63:1; the bubble 6.09:1); gold reads 5.96:1`,
     until: UNTIL_TINT_FLOORS,
   },
   {
@@ -627,9 +586,7 @@ describe("the accent's tint under the person's own words", () => {
         }
         const stale = shortfalls
           .filter((s) => !needed.has(s))
-          .map(
-            (s) => `${s.pair}: every accent clears the floor now — remove it from TINT_SHORTFALLS`,
-          );
+          .map((s) => `${s.pair}: no accent needs it any more — remove it from TINT_SHORTFALLS`);
         expect([...failures, ...stale], `\n${[...failures, ...stale].join("\n")}\n`).toEqual([]);
       });
 

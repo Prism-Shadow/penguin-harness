@@ -93,7 +93,7 @@ export function MessageBubble({
             <GlyphIcon d={ICONS.user} className="mt-1 shrink-0 text-fg-subtle" />
             <p className="wrap-anywhere font-sans whitespace-pre-wrap text-sm leading-relaxed text-fg">
               {label !== undefined && (
-                <span className="mr-1.5 text-xs font-semibold text-fg-muted">{label}</span>
+                <span className="mr-1.5 text-xs font-semibold text-fg">{label}</span>
               )}
               {children}
             </p>

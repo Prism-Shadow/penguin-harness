@@ -49,10 +49,14 @@ describe("MessageBubble", () => {
     expect(html).toContain(`d="${ICONS.user}"`);
     expect(html).toMatch(/>Steering<\/span>go on<\/p>/);
     expect(html.indexOf("go on")).toBeLessThan(html.indexOf("a.pdf"));
-    // The same voice as the prompt, with the neutral line a filled box takes.
+    // The same voice as the prompt, with the neutral line a filled box takes; the label is in the
+    // body ink, which reads on the tint where the muted ink did not.
     expect(classTokens(html)).toEqual(
       expect.arrayContaining(["bg-accent-tint", "border-line-emphasis"]),
     );
+    const label = /<span class="([^"]*)">Steering<\/span>/.exec(html)?.[1]?.split(" ") ?? [];
+    expect(label).toContain("text-fg");
+    expect(label).not.toContain("text-fg-muted");
   });
 
   it("draws a notice in the muted ink, a reconnect in the attention ink with its controls last", () => {
