@@ -19,7 +19,9 @@
  * The series (`series`) name what the segments are: series `i` paints in palette slot `i` unless
  * it names a paint, and with more than one a legend sits under the rows. Pointing at a legend item
  * or at a segment singles its series out (the others fade); pointing at a segment also opens a
- * bubble over it with the row's label, the series and the segment's value (`fmtValue`). A value or
+ * bubble over it (under it on the first row, so it stays inside the chart) with the row's label,
+ * the series and the segment's value (`fmtValue`). Segments meet square; the theme's radius
+ * rounds only a row's free ends. A value or
  * range row may say which series it belongs to (a grouped chart's rows), so it takes that series'
  * colour and fades with the others.
  *
@@ -32,6 +34,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { ToneName } from "../../../tokens";
 import type { ChartPaint } from "../marks/marks";
 import { TimelineBar } from "../marks/timeline-bar";
+import type { TimelineBarJoin } from "../marks/timeline-bar";
 import { isReading, seriesPaint } from "./cartesian-data";
 import { SegmentBubble, SeriesLegend } from "./series-readout";
 
@@ -133,6 +136,10 @@ export function hbarSegments(
   });
   return segments;
 }
+
+/** Which ends of segment `k` of `n` meet a neighbour. */
+const joinOf = (k: number, n: number): TimelineBarJoin | undefined =>
+  n < 2 ? undefined : k === 0 ? "end" : k === n - 1 ? "start" : "both";
 
 /** A place along the track as the bar's style takes it. */
 const percent = ({ left, width }: { left: number; width: number }) => ({
@@ -242,11 +249,12 @@ export function HBarChart({
                   className={`relative block h-1.5 w-full overflow-hidden rounded-full ${track ? "bg-tone-neutral-bg" : ""}`}
                 >
                   {row.stack !== undefined ? (
-                    segments.map((segment) => (
+                    segments.map((segment, k) => (
                       <TimelineBar
                         key={segment.series}
                         paint={paintOf(segment.series)}
                         place={percent(segment)}
+                        square={joinOf(k, segments.length)}
                         className={fade(segment.series)}
                       />
                     ))
@@ -276,6 +284,7 @@ export function HBarChart({
                     paint={paintOf(hovered.series)}
                     value={fmtValue(hovered.value)}
                     style={bubbleAnchor(hovered)}
+                    below={i === 0}
                   />
                 )}
               </span>
