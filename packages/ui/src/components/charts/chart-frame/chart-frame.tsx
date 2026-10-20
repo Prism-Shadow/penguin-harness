@@ -262,7 +262,7 @@ export function ChartFrame({
         ))}
 
         {/* Hover vertical indicator line (line-chart-only: the bar chart's bar itself is the x indicator, see hoverLine) */}
-        {hoverLine && hover !== null && dates[hover] && (
+        {hoverLine && hover !== null && dates[hover] !== undefined && (
           <ChartCursor x={x(hover)} y1={PAD_T} y2={PAD_T + innerH} />
         )}
 
@@ -305,7 +305,7 @@ export function ChartFrame({
           ))}
       </svg>
 
-      {bubble && hover !== null && dates[hover] && (
+      {bubble && hover !== null && dates[hover] !== undefined && (
         <div
           ref={bubbleRef}
           className="pointer-events-none absolute rounded border border-line bg-overlay px-2 py-1 text-xs whitespace-nowrap shadow-sm"

@@ -93,7 +93,8 @@ export function SeriesBubble({
 }
 
 /**
- * The bubble over one segment of a horizontal stack, hung above its row: the row's label, then the
+ * The bubble over one segment of a horizontal stack, hung above its row (below the first row, so
+ * it never leaves the chart's top edge): the row's label, then the
  * segment's series beside its swatch and its value, in the look of the plotted charts' bubble. The
  * row already reads its parts out in words, so the bubble is hidden from assistive technology.
  */
@@ -103,6 +104,7 @@ export function SegmentBubble({
   paint,
   value,
   style,
+  below = false,
 }: {
   /** The row's label. */
   title: ReactNode;
@@ -113,12 +115,14 @@ export function SegmentBubble({
   value: string;
   /** Where it hangs along the row (a `left` or a `right`). */
   style?: CSSProperties;
+  /** Hang under the row rather than over it. */
+  below?: boolean;
 }) {
   return (
     <span
       aria-hidden
       data-bubble=""
-      className="pointer-events-none absolute bottom-full z-10 mb-1 block rounded border border-line bg-overlay px-2 py-1 text-xs whitespace-nowrap shadow-sm"
+      className={`pointer-events-none absolute z-10 block rounded border border-line bg-overlay px-2 py-1 text-xs whitespace-nowrap shadow-sm ${below ? "top-full mt-1" : "bottom-full mb-1"}`}
       style={style}
     >
       <span className="block text-fg-muted">{title}</span>
