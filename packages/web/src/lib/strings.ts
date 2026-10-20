@@ -5834,6 +5834,12 @@ Benchmark：
       ceoCannotLeave: "CEO 不能离任",
       setThinkingLevel: "设思考等级",
       setModel: "设模型",
+      setMachine: "设运行机器",
+      machineTitle: (name: string): string => `调整 ${name} 的运行机器`,
+      machineLabel: "运行机器",
+      machineInfo: "该员工的会话在哪台机器上运行。本机是默认值；远程机器需要多机版，当前构建只读不选。",
+      machineLocal: (alias: string): string => `本机（${alias}，默认）`,
+      machineRemoteNote: "（需多机版）",
       /** An entry whose Agent no longer exists: the card's flag, and the chart's notice when it is the CEO. */
       agentMissing: "Agent 已删除",
       ceoMissing: (ceoId: string): string =>

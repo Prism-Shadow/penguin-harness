@@ -71,6 +71,8 @@ import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skil
 import { StdioDisclosure } from "../plugins/plugin-mcp";
 import { stdioServers } from "../plugins/plugin-status";
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
+import { machineDirty, machineOptions } from "./machine-options";
+import type { MachinePick } from "./machine-options";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
 import { EmployeeAvatar } from "./employee-avatar";
@@ -479,7 +481,15 @@ function HireForm({
 }
 
 /** Which single-field edit a dialog performs. */
-export type EmployeeEdit = "budget" | "reportsTo" | "thinkingLevel";
+export type EmployeeEdit = "budget" | "reportsTo" | "thinkingLevel" | "machine";
+
+/**
+ * LOCAL-ONLY mirror: the published server package in this tree predates the employee
+ * `machine` pin, so it rides beside the mirrored item type until the snapshot catches up.
+ */
+type EmployeeWithMachine = OrgEmployeeItem & { machine?: string };
+const employeeMachine = (e: OrgEmployeeItem): string | undefined =>
+  (e as EmployeeWithMachine).machine;
 
 /** What the thinking-level edit reads before it offers anything: the Agent's own level ("" = none), what that resolves to, and the desk's pin ("" = none). */
 interface ThinkingLevelReading {
@@ -521,11 +531,15 @@ export function EmployeeEditDialog({
   const managers = managerCandidates(employees, employee.agentId);
   /** The thinking-level edit's reading; null while it loads (or for the other edits). */
   const [levels, setLevels] = useState<ThinkingLevelReading | null>(null);
-  /** The thinking-level edit before its reading has landed: nothing to offer, edit or save yet. */
-  const reading = edit === "thinkingLevel" && levels === null;
+  /** The machine picker's options; null while they load (or for the other edits). */
+  const [machines, setMachines] = useState<MachinePick[] | null>(null);
+  /** An edit before its reading has landed: nothing to offer, edit or save yet. */
+  const reading =
+    (edit === "thinkingLevel" && levels === null) ||
+    (edit === "machine" && machines === null);
   /**
    * What the field opens with: the stored budget in the reader's currency, the current manager,
-   * or the level in effect once it has been read.
+   * the level in effect once it has been read, or the pinned machine ("" = this server).
    */
   const opening =
     edit === "budget"
@@ -534,7 +548,9 @@ export function EmployeeEditDialog({
         ? levels === null
           ? ""
           : menuLevel(levels.effective)
-        : (employee.reportsTo ?? managers[0]?.agentId ?? "");
+        : edit === "machine"
+          ? (employeeMachine(employee) ?? "")
+          : (employee.reportsTo ?? managers[0]?.agentId ?? "");
   const [value, setValue] = useState(opening);
   const [busy, setBusy] = useState(false);
 
@@ -581,8 +597,36 @@ export function EmployeeEditDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit, employee, projectId]);
 
+  // The machine list for the pin picker. Only the option set matters (the dialog sends
+  // just an id), so a listing failure closes with an explanation like the level read.
+  useEffect(() => {
+    if (edit !== "machine") return;
+    setMachines(null);
+    let cancelled = false;
+    api.getMachines(projectId).then(
+      (res) => {
+        if (cancelled) return;
+        setMachines(machineOptions(res.machines));
+      },
+      (e: unknown) => {
+        if (cancelled) return;
+        toastError(apiErrorText(e));
+        onClose();
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit, projectId]);
+
   /** The field holds an edit; a closed dialog, or a level still being read, holds none. */
-  const dirty = edit !== null && !reading && value.trim() !== opening.trim();
+  const dirty =
+    edit !== null &&
+    !reading &&
+    (edit === "machine"
+      ? machineDirty(employeeMachine(employee), value)
+      : value.trim() !== opening.trim());
   useUnsavedChanges(dirty, { scope: EMPLOYEE_EDIT_SCOPE, discard: () => setValue(opening) });
   const requestClose = useGuardedClose(onClose, EMPLOYEE_EDIT_SCOPE, { locked: busy });
   /** What is wrong with the value as it stands; said under the field once it has been edited. */
@@ -595,12 +639,20 @@ export function EmployeeEditDialog({
   const shownProblem = dirty ? problem : undefined;
 
   const managerName = (id: string) => employees.find((e) => e.agentId === id)?.name ?? id;
+  /** The pinned machine in words: this server by its alias, a remote by its alias, an unknown id raw. */
+  const machineName = (id: string | undefined): string => {
+    if (id === undefined || id === "" || id === "local")
+      return S.company.chart.machineLocal(machines?.[0]?.alias ?? "local");
+    return machines?.find((m) => m.value === id)?.alias ?? id;
+  };
   const title =
     edit === "budget"
       ? S.company.chart.budgetTitle(employee.name)
       : edit === "thinkingLevel"
         ? S.company.chart.thinkingLevelTitle(employee.name)
-        : S.company.chart.reportsToTitle(employee.name);
+        : edit === "machine"
+          ? S.company.chart.machineTitle(employee.name)
+          : S.company.chart.reportsToTitle(employee.name);
 
   const save = async () => {
     if (edit === null || reading || !dirty || problem !== undefined || busy) return;
@@ -613,11 +665,16 @@ export function EmployeeEditDialog({
         });
         toastSuccess(S.common.saved);
       } else {
+        // "Run here" unpins: the server stores nothing, like omitting the key.
         await api.patchOrgEmployee(
           projectId,
           orgId,
           employee.agentId,
-          edit === "budget" ? { budget: toStoredUsd(value, currency) } : { reportsTo: value },
+          edit === "budget"
+            ? { budget: toStoredUsd(value, currency) }
+            : edit === "machine"
+              ? { machine: value === "" ? null : value }
+              : { reportsTo: value },
         );
         toastSuccess(S.company.chart.saved);
       }
@@ -746,6 +803,36 @@ export function EmployeeEditDialog({
                 {S.company.chart.thinkingLevelPinned(levelName(levels.pinned))}
               </p>
             )}
+          </div>
+        )}
+        {edit === "machine" && (
+          <div className="space-y-3">
+            <CurrentValue value={machineName(employeeMachine(employee))} />
+            <div>
+              <InfoFieldLabel
+                label={S.company.chart.machineLabel}
+                info={S.company.chart.machineInfo}
+              />
+              <Select
+                size="sm"
+                aria-label={S.company.chart.machineLabel}
+                value={value}
+                disabled={machines === null}
+                onChange={(e) => setValue(e.target.value)}
+              >
+                {(machines ?? []).map((m) => (
+                  <option
+                    key={m.value === "" ? "local" : m.value}
+                    value={m.value}
+                    disabled={m.disabled}
+                  >
+                    {m.value === ""
+                      ? S.company.chart.machineLocal(m.alias)
+                      : `${m.alias}${S.company.chart.machineRemoteNote}`}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
         )}
       </Modal>

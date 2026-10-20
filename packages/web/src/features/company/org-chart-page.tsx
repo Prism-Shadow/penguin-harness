@@ -82,7 +82,7 @@ import {
 import type { EmployeeEdit } from "./employee-dialogs";
 import { EmployeeModelDialog } from "./employee-model-dialog";
 
-/** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, a chip for the model, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
+/** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, a chip for the model, a server rack for the machine, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
 const MENU_ICONS = {
   openDesk: DESK_ICON,
   hire: ICONS.userPlus,
@@ -90,6 +90,7 @@ const MENU_ICONS = {
   budget: ICONS.dollarCircle,
   thinkingLevel: ICONS.sparkle,
   model: ICONS.chip,
+  machine: ICONS.server,
   reportsTo: ICONS.letterMArrow,
   renewDesk: ICONS.rotateCw,
   leave: ICONS.signOut,
@@ -425,6 +426,9 @@ export function OrgChartPage() {
           )}
         {!missing &&
           menuRow(close, MENU_ICONS.model, S.company.chart.setModel, () => setModelFor(employee))}
+        {menuRow(close, MENU_ICONS.machine, S.company.chart.setMachine, () =>
+          setEditFor({ employee, edit: "machine" }),
+        )}
         {!isCeo &&
           menuRow(close, MENU_ICONS.reportsTo, S.company.chart.changeReportsTo, () =>
             setEditFor({ employee, edit: "reportsTo" }),

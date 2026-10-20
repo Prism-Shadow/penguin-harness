@@ -5644,6 +5644,12 @@ Scenarios:
       ceoCannotLeave: "The CEO cannot leave",
       setThinkingLevel: "Set thinking level",
       setModel: "Set model",
+      setMachine: "Set machine",
+      machineTitle: (name: string): string => `Change ${name}'s machine`,
+      machineLabel: "Machine",
+      machineInfo: "Which machine this employee's sessions run on. Local only in single-machine builds.",
+      machineLocal: (alias: string): string => `This server (${alias}, default)`,
+      machineRemoteNote: " (multi-machine builds only)",
       agentMissing: "Agent deleted",
       ceoMissing: (ceoId: string): string =>
         `The CEO's Agent was deleted, so the organization cannot run: create an Agent with the id ${ceoId} again to restore it.`,

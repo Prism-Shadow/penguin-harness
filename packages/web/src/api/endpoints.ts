@@ -2398,9 +2398,21 @@ export const patchOrgEmployee = (
   projectId: string,
   orgId: string,
   agentId: string,
-  body: OrgEmployeePatchRequest,
+  body: OrgEmployeePatchRequest & {
+    /**
+     * LOCAL-ONLY mirror: the published server package in this tree predates the
+     * employee `machine` pin, so the field rides beside the mirrored contract until
+     * the snapshot catches up. null (or "local", or "") runs here.
+     */
+    machine?: string | null;
+  },
 ) =>
-  apiFetch<OrgEmployeeItem>(
+  apiFetch<
+    OrgEmployeeItem & {
+      /** LOCAL-ONLY mirror, same reason: absent = this server. */
+      machine?: string;
+    }
+  >(
     `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}`,
     { method: "PATCH", body },
   );
