@@ -7,6 +7,8 @@
  *   below zero; a stack is scaled by its totals.
  * - Given a bound, it is kept exactly — unless a reading lies past it, which widens the axis
  *   rather than drawing a mark off the plot; a lower bound alone zooms in on the readings.
+ * - Given an axis not read from zero, it fits round numbers around the readings alone, so 900 to
+ *   1,000 fills the plot; a given bound still holds, and a single value keeps zero.
  * - Given no readings at all, the axis still has a span (no division by zero).
  * - Tick labels that would print the same text twice print it once, and the plot's left padding
  *   grows to fit the widest (never shrinking below the frame's own, never eating the plot).
@@ -87,6 +89,20 @@ describe("the value axis", () => {
     const domain = niceDomain([[120]], { max: 100 });
     expect(domain.max).toBeGreaterThanOrEqual(120);
     expect(niceDomain([[20, 40]], { min: 30 }).min).toBeLessThanOrEqual(20);
+  });
+
+  it("fits an axis not read from zero around the readings alone, a given bound still holding", () => {
+    expect(niceDomain([[912, 987]], { zero: false })).toEqual({
+      min: 900,
+      max: 1000,
+      ticks: [900, 925, 950, 975, 1000],
+    });
+    expect(niceDomain([[-48, -12]], { zero: false })).toMatchObject({ min: -50, max: -10 });
+    expect(niceDomain([[912, 987]], { zero: false, min: 0 }).min).toBe(0);
+    expect(niceDomain([[912, 987]], { zero: false, max: 1200 }).max).toBe(1200);
+    // A bar keeps zero; a lone value has no extent of its own and keeps it too.
+    expect(niceDomain([[912, 987]]).min).toBe(0);
+    expect(niceDomain([[950, 950]], { zero: false }).min).toBe(0);
   });
 
   it("still has a span with no readings at all", () => {

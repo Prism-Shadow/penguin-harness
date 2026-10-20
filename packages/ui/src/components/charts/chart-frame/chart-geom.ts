@@ -19,7 +19,7 @@
  */
 import { roundCoord as rnd } from "../marks/geom";
 
-/** Default canvas height and padding (carried over from the original TrendChart constants; width is measured from the container, see the file header; a chart may pass another height and left padding to makeRangeGeom). */
+/** Default canvas height and padding (carried over from the original TrendChart constants; width is measured from the container, see the file header; a chart may pass another height, left padding and bottom padding to makeRangeGeom). */
 export const CHART_H = 200;
 export const PAD_L = 46;
 export const PAD_R = 8;
@@ -67,8 +67,9 @@ export function makeGeom(n: number, max: number, w: number, padR = PAD_R): Chart
  * this to zoom into the observed values; zero-baseline usage charts keep
  * calling makeGeom above. Geoms sharing n / w / padR share x() exactly — that
  * is how a right-axis overlay (its own y range) stays aligned with the marks
- * under it. A chart may ask for another canvas height (`h`) or more room for
- * its tick labels (`padL`: a unit makes a label longer than a bare count).
+ * under it. A chart may ask for another canvas height (`h`), more room for
+ * its tick labels (`padL`: a unit makes a label longer than a bare count), or
+ * less room under the plot (`padB`: no x labels to print there).
  */
 export function makeRangeGeom(
   n: number,
@@ -76,10 +77,10 @@ export function makeRangeGeom(
   max: number,
   w: number,
   padR = PAD_R,
-  { h = CHART_H, padL = PAD_L }: { h?: number; padL?: number } = {},
+  { h = CHART_H, padL = PAD_L, padB = PAD_B }: { h?: number; padL?: number; padB?: number } = {},
 ): ChartGeom {
   const innerW = Math.max(0, w - padL - padR);
-  const innerH = Math.max(0, h - PAD_T - PAD_B);
+  const innerH = Math.max(0, h - PAD_T - padB);
   const step = n > 0 ? innerW / n : innerW;
   const range = max - min;
   return {
