@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** process
 - **Scope:** `landing`
+- **PR:** [#1239](https://github.com/Prism-Shadow/penguin-harness/pull/1239)
 
 [中文版](2026-10-19-blog-context-slope.zh.md)
 
