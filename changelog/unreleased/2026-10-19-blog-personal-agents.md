@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** process
 - **Scope:** `landing`
+- **PR:** [#1237](https://github.com/Prism-Shadow/penguin-harness/pull/1237)
 
 [中文版](2026-10-19-blog-personal-agents.zh.md)
 
