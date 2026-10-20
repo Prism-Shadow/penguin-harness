@@ -75,6 +75,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
+import { NAME_MAX_LENGTH } from "../../lib/name-limits";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "./company-state";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
@@ -308,6 +309,8 @@ export function CreateOrganizationDialog({
   const [missionError, setMissionError] = useState<string | undefined>(undefined);
   const [budgetError, setBudgetError] = useState<string | undefined>(undefined);
   const [formError, setFormError] = useState<ReactNode>(null);
+  /** The display name past the server's 100-character ceiling, said under the field on Create. */
+  const [nameError, setNameError] = useState<string | undefined>(undefined);
   /** A stored draft was put back into the fields: the notice above them says so and offers to drop it. */
   const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -337,6 +340,7 @@ export function CreateOrganizationDialog({
     setIdError(undefined);
     setMissionError(undefined);
     setBudgetError(undefined);
+    setNameError(undefined);
     setFormError(null);
   };
 
@@ -395,6 +399,13 @@ export function CreateOrganizationDialog({
       bad = true;
     } else if (!SEMANTIC_ID_PATTERN.test(id)) {
       setIdError(S.company.orgIdHint);
+      bad = true;
+    }
+    // The name's ceiling is named under the field here, on Create, the way this dialog names a
+    // bad id or mission — before anything is sent (the server refuses the same 100 in English,
+    // which the retry line would otherwise say for a name the person could have been told about).
+    if (name.trim().length > NAME_MAX_LENGTH) {
+      setNameError(S.company.displayNameTooLong(NAME_MAX_LENGTH));
       bad = true;
     }
     if (!mission.trim()) {
@@ -495,9 +506,13 @@ export function CreateOrganizationDialog({
           size="sm"
           value={name}
           info={S.company.displayNameHint}
+          error={nameError}
           autoFocus
           disabled={busy}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            setName(e.target.value);
+            setNameError(undefined);
+          }}
         />
         <SemanticIdField
           projectId={projectId}
