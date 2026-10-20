@@ -1,6 +1,7 @@
 /**
  * The A2UI widgets (src/components/content/a2ui): weather, clock, countdown and metrics, each on
- * the shared widget surface and registered as the built-in renderer of its type.
+ * the shared widget surface and registered as the built-in renderer of its type (the chart block
+ * and the resource board, the other two widgets, have their own file: a2ui-charts.test.ts).
  *
  * Static markup only, at an instant pinned with fake timers: the live widgets read the time as
  * they render, so the figures a test asserts are the ones that instant shows. Ticking, the
@@ -14,10 +15,12 @@ import type {
   A2uiMetric,
   A2uiWeather,
 } from "@prismshadow/penguin-core/a2ui";
+import { ChartBlock } from "../src/components/content/a2ui/chart-block";
 import { ClockBlock } from "../src/components/content/a2ui/clock-block";
 import { CountdownBlock } from "../src/components/content/a2ui/countdown-block";
 import { MetricsBlock } from "../src/components/content/a2ui/metrics-block";
 import { a2uiRendererFor } from "../src/components/content/a2ui/registry";
+import { ResourcesBlock } from "../src/components/content/a2ui/resources-block";
 import { WeatherBlock } from "../src/components/content/a2ui/weather-block";
 import { renderStatic } from "../src/testing";
 
@@ -30,11 +33,13 @@ afterEach(() => {
 });
 
 describe("the widgets' registry", () => {
-  it("draws the four widget types with their built-ins", () => {
+  it("draws the six widget types with their built-ins", () => {
     expect(a2uiRendererFor("weather")).toBe(WeatherBlock);
     expect(a2uiRendererFor("clock")).toBe(ClockBlock);
     expect(a2uiRendererFor("countdown")).toBe(CountdownBlock);
     expect(a2uiRendererFor("metrics")).toBe(MetricsBlock);
+    expect(a2uiRendererFor("chart")).toBe(ChartBlock);
+    expect(a2uiRendererFor("resources")).toBe(ResourcesBlock);
   });
 });
 

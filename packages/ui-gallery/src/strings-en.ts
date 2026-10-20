@@ -1273,7 +1273,7 @@ export const en: GalleryStrings = {
       patchLabel: "Changes to src/limits.ts",
       a2ui: "A2UI blocks",
       a2uiHint:
-        "Components a model writes into its reply: weather, clock, countdown and metrics widgets, then a choice, a form, steps, a callout and a Mermaid diagram. The widgets are snapshots the model supplies; only the clock and the countdown move. A pick or a submit here shows, as a toast, the text the app would put in the composer.",
+        "Components a model writes into its reply: weather, clock, countdown, metrics and system-resource widgets, a chart drawn from data, then a choice, a form, steps, a callout and a Mermaid diagram. The widgets are snapshots the model supplies; only the clock and the countdown move. A pick or a submit here shows, as a toast, the text the app would put in the composer.",
       a2uiReply: [
         {
           lead: "Here is the weather in Beijing right now:",
@@ -1380,6 +1380,43 @@ export const en: GalleryStrings = {
               },
               { label: "Upload", kind: "progress", value: 63, max: 100, unit: "%" },
             ],
+            asOf: "2026-10-04T14:05+08:00",
+          },
+        },
+        {
+          lead: "This week's API latency:",
+          spec: {
+            type: "chart",
+            kind: "bar",
+            title: "API latency",
+            categories: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+            series: [
+              { label: "p50", values: [120, 135, 118, 142, 128] },
+              { label: "p95", values: [310, 360, 295, 420, 330] },
+            ],
+            yLabel: "Latency",
+            yUnit: "ms",
+          },
+        },
+        {
+          lead: "The build machine, right now:",
+          spec: {
+            type: "resources",
+            host: "build-01",
+            cpu: { percent: 37, cores: 8, history: [22, 31, 28, 45, 52, 41, 37] },
+            memory: { used: 13.9, total: 16, history: [72, 75, 79, 82, 85, 86, 87] },
+            swap: { used: 0.4, total: 2 },
+            disks: [
+              { path: "/", used: 61, total: 100 },
+              { path: "/data", used: 431, total: 500 },
+            ],
+            network: {
+              unit: "KB/s",
+              rx: [120, 98, 140, 180, 160, 130, 150],
+              tx: [40, 35, 50, 62, 48, 44, 52],
+            },
+            load: { one: 1.2, five: 1, fifteen: 0.8, cores: 8 },
+            uptimeSec: 1071360,
             asOf: "2026-10-04T14:05+08:00",
           },
         },

@@ -1236,7 +1236,7 @@ export const zh = {
       patchLabel: "src/limits.ts 的改动",
       a2ui: "A2UI 组件",
       a2uiHint:
-        "模型写进回复的组件：天气、时钟、倒计时和指标小组件，以及选择、表单、步骤、提示框和 Mermaid 图。小组件是模型给出的快照，只有时钟和倒计时会走动；在这里点选或提交，要填入输入框的文字会以提示消息显示。",
+        "模型写进回复的组件：天气、时钟、倒计时、指标和系统资源小组件，从数据画出的统计图，以及选择、表单、步骤、提示框和 Mermaid 图。小组件是模型给出的快照，只有时钟和倒计时会走动；在这里点选或提交，要填入输入框的文字会以提示消息显示。",
       a2uiReply: [
         {
           lead: "北京现在的天气：",
@@ -1343,6 +1343,43 @@ export const zh = {
               },
               { label: "上传", kind: "progress", value: 63, max: 100, unit: "%" },
             ],
+            asOf: "2026-10-04T14:05+08:00",
+          },
+        },
+        {
+          lead: "这周接口的延迟：",
+          spec: {
+            type: "chart",
+            kind: "bar",
+            title: "接口延迟",
+            categories: ["周一", "周二", "周三", "周四", "周五"],
+            series: [
+              { label: "p50", values: [120, 135, 118, 142, 128] },
+              { label: "p95", values: [310, 360, 295, 420, 330] },
+            ],
+            yLabel: "延迟",
+            yUnit: "ms",
+          },
+        },
+        {
+          lead: "构建机现在的资源占用：",
+          spec: {
+            type: "resources",
+            host: "build-01",
+            cpu: { percent: 37, cores: 8, history: [22, 31, 28, 45, 52, 41, 37] },
+            memory: { used: 13.9, total: 16, history: [72, 75, 79, 82, 85, 86, 87] },
+            swap: { used: 0.4, total: 2 },
+            disks: [
+              { path: "/", used: 61, total: 100 },
+              { path: "/data", used: 431, total: 500 },
+            ],
+            network: {
+              unit: "KB/s",
+              rx: [120, 98, 140, 180, 160, 130, 150],
+              tx: [40, 35, 50, 62, 48, 44, 52],
+            },
+            load: { one: 1.2, five: 1, fifteen: 0.8, cores: 8 },
+            uptimeSec: 1071360,
             asOf: "2026-10-04T14:05+08:00",
           },
         },
