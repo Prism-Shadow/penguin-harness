@@ -3,6 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1236](https://github.com/Prism-Shadow/penguin-harness/pull/1236)
 
 [English](2026-10-19-machine-offline-chat.md)
 
