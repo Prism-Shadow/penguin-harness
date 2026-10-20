@@ -12,8 +12,11 @@
  *
  * A multiple-choice group holds any number of options and reports every change as the options
  * that are on, in the options' order whatever order they were pressed in. As chips, each is a
- * toggle button (`aria-pressed`) with its own tab stop, the way each checkbox has one; as cards,
- * each card is a real checkbox's `<label>`, so the browser keeps the keyboard and the state.
+ * toggle button (`aria-pressed`) with its own tab stop, the way each checkbox has one, led by the
+ * checkbox's box, ticked once pressed; as cards, each card is a real checkbox's `<label>`, so the
+ * browser keeps the keyboard and the state. The box on every option is what tells a multiple
+ * choice from a single one at a glance: a square to tick, where a single card has a disc and a
+ * single chip nothing.
  *
  * The group is a `role="group"` named by the caller (`aria-labelledby`, or `aria-label`), or left
  * unnamed inside a `<fieldset>` whose legend names it. Disabled, every option dims and takes no
@@ -23,7 +26,7 @@
  */
 import { useRef, useState } from "react";
 import type { KeyboardEvent, ReactElement, ReactNode } from "react";
-import { Checkbox } from "../checkbox/checkbox";
+import { Checkbox, CheckboxBox } from "../checkbox/checkbox";
 import { RadioDisc } from "../radio/radio";
 import { restingStop, rovingStop } from "./roving";
 
@@ -250,8 +253,9 @@ function MultipleChoiceGroup(
             disabled={closed}
             aria-pressed={on}
             onClick={() => press(option)}
-            className={`${CHIP[size]} ${pressLook(on)} ${ink(option)}`}
+            className={`${CHIP[size]} inline-flex items-center gap-1.5 ${pressLook(on)} ${ink(option)}`}
           >
+            <CheckboxBox on={on} />
             {option.label}
           </button>
         ) : (
