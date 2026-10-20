@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { describeArgumentError, stringArgument } from "../src/environment/tools/tool-arguments.js";
+import {
+  contaminatedPathDiagnosis,
+  describeArgumentError,
+  stringArgument,
+} from "../src/environment/tools/tool-arguments.js";
 import type { ToolDefinitionConfig } from "../src/interfaces/index.js";
 import { defaultSystemConfig } from "../src/state/default-config.js";
 
@@ -192,5 +196,32 @@ describe("describeArgumentError", () => {
     const tail = text.slice(-500);
     expect(tail).toContain("exec_command");
     expect(tail).toContain('"cmd"');
+  });
+});
+
+describe("contaminatedPathDiagnosis", () => {
+  it("says nothing about a path that looks like a path", () => {
+    expect(contaminatedPathDiagnosis("/root/project/src/app.tsx")).toBeUndefined();
+    expect(contaminatedPathDiagnosis("src/app.tsx")).toBeUndefined();
+    expect(contaminatedPathDiagnosis("")).toBeUndefined();
+  });
+
+  it("names the shape when the path carries another argument's text", () => {
+    // What a gateway produces when two arguments are serialized into one string: the
+    // path holds a line break and the seam where the next JSON key started.
+    const diagnosis = contaminatedPathDiagnosis(
+      '/root/penguin/penguin-harness-git/packages/web/src/features/company/tickets-page.tsx\nold_string">\n  const [quick, setQuick] = useState<BoardQuickFilter>(() => readQuick(params));',
+    );
+    expect(diagnosis).toBeDefined();
+    expect(diagnosis).toContain("not a path");
+    expect(diagnosis).toContain("old_string");
+    // The blob is not echoed back at the model in full.
+    expect(diagnosis!.length).toBeLessThan(600);
+  });
+
+  it("names a stray quote and colon", () => {
+    const diagnosis = contaminatedPathDiagnosis('/root/project/src/app.tsx":\n');
+    expect(diagnosis).toBeDefined();
+    expect(diagnosis).toContain("not a path");
   });
 });
