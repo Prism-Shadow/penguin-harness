@@ -3,6 +3,7 @@
 - **Date:** 2026-10-20
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#1231](https://github.com/Prism-Shadow/penguin-harness/pull/1231)
 
 [中文版](2026-10-20-landing-route-split.zh.md)
 
