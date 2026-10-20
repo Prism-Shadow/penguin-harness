@@ -1,7 +1,9 @@
 /**
  * The chart primitives (src/components/charts/marks): what each draws in the default theme — the
  * record the server snapshot of useChartStyle hands out — the chart inks they spell as tokens,
- * and a guard that the package's own charts draw every mark through them.
+ * and two guards on who draws what: the package's own charts draw every mark through the
+ * primitives, and the A2UI blocks composed of charts draw through the basic charts, never a
+ * picture of their own — so a composite and the chart it shows are one thing, called, not copied.
  *
  * The same guard over the Web App's charts is its `chart-marks.test.ts`.
  */
@@ -215,6 +217,57 @@ describe("every chart in the package", () => {
       );
       for (const pattern of [
         /<(?:rect|path|circle|line|polyline|polygon|ellipse|text)\b/,
+        /\b(?:fill|stroke|strokeWidth|strokeDasharray|fillOpacity|strokeOpacity)=/,
+        /backgroundColor/,
+        /useChartStyle\(/,
+      ]) {
+        const hit = code.match(pattern);
+        if (hit) found.push(`${rel}: ${hit[0]}`);
+      }
+    }
+    expect(found).toEqual([]);
+  });
+});
+
+describe("every A2UI block composed of charts", () => {
+  const COMPOSITES = ["components/content/a2ui/metrics-block.tsx"];
+  /** The basic charts (under src/components/charts/), one of which a composite must draw through. */
+  const BASIC_CHARTS = [
+    "cartesian/bar-chart",
+    "cartesian/hbar-chart",
+    "cartesian/line-chart",
+    "pie-chart/pie-chart",
+    "scatter-chart/scatter-chart",
+    "gauge/gauge",
+    "sparkline/sparkline",
+    "ring/ring",
+    "legend/legend",
+  ];
+  /**
+   * What else of the charts a composite may reach: the marks (a paint, a swatch), the frame's
+   * width measure, and the bare frame's columns (to set art under a line). Never the geometry,
+   * the data maths or the theme's chart style a chart keeps to itself.
+   */
+  const HELPERS = ["marks/marks", "chart-frame/chart-frame", "cartesian/plot-layout"];
+
+  it("draws through a basic chart, with no SVG, paint or geometry of its own", () => {
+    const found: string[] = [];
+    for (const rel of COMPOSITES) {
+      const code = readFileSync(join(SRC_DIR, rel), "utf8").replace(
+        /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
+        "",
+      );
+      const reached = [...code.matchAll(/from "(?:\.\.\/)+charts\/([^"]+)"/g)].map((m) => m[1]!);
+      if (!reached.some((module) => BASIC_CHARTS.includes(module))) {
+        found.push(`${rel}: draws through no basic chart`);
+      }
+      for (const module of reached) {
+        if (!BASIC_CHARTS.includes(module) && !HELPERS.includes(module)) {
+          found.push(`${rel}: reaches charts/${module}`);
+        }
+      }
+      for (const pattern of [
+        /<(?:svg|g|rect|path|circle|line|polyline|polygon|ellipse|text)\b/,
         /\b(?:fill|stroke|strokeWidth|strokeDasharray|fillOpacity|strokeOpacity)=/,
         /backgroundColor/,
         /useChartStyle\(/,

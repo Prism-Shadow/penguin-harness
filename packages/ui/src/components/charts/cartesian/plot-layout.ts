@@ -10,12 +10,13 @@
  * - The left padding grows to the widest tick label, so a unit ("1,240 ms") is never cut off.
  * - A category label longer than a column can hold is shortened with an ellipsis, and the labels
  *   thin to every few columns when they would touch; the hover bubble still names the category
- *   in full.
+ *   in full. Categories with no names at all (readings with no times) print no axis, and the plot
+ *   takes the band its labels would have had.
  * - The bare frame (a line with no grid or value axis: an hourly forecast) spreads its columns
  *   edge to edge with a margin for the end labels, and labels as many as fit.
  */
 import { roundCoord } from "../marks/geom";
-import { makeRangeGeom, PAD_L, PAD_R } from "../chart-frame/chart-geom";
+import { makeRangeGeom, PAD_B, PAD_L, PAD_R } from "../chart-frame/chart-geom";
 import type { ChartGeom } from "../chart-frame/chart-geom";
 import { tickLabels } from "./cartesian-data";
 import type { ValueDomain } from "./cartesian-data";
@@ -32,6 +33,8 @@ const MAX_PAD_L = 120;
 const LABEL_GAP = 8;
 /** The widest a category label may print before it is shortened, px. */
 const MAX_CATEGORY_LABEL = 96;
+/** The room under a plot with no category labels: the lowest tick label's descent, px. */
+const PAD_B_UNLABELLED = 6;
 
 /** A character set one em wide: CJK, Hangul, kana and the full-width forms. */
 const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u;
@@ -138,6 +141,7 @@ export interface ValuePlot {
 /**
  * The plot frame for `categories` (already in the words the axis prints) over `domain`, at
  * `width` × `height`: the left padding fits the tick labels, then the columns share what is left.
+ * When no category has a name, the plot reaches down into the label band.
  */
 export function valuePlot({
   categories,
@@ -153,9 +157,11 @@ export function valuePlot({
   fmtValue: (v: number) => string;
 }): ValuePlot {
   const labels = tickLabels(domain.ticks, fmtValue);
+  const unlabelled = categories.every((category) => category === "");
   const geom = makeRangeGeom(categories.length, domain.min, domain.max, width, PAD_R, {
     h: height,
     padL: plotPadLeft(labels),
+    padB: unlabelled ? PAD_B_UNLABELLED : PAD_B,
   });
   const byTick = new Map(domain.ticks.map((tick, i) => [tick, labels[i]!]));
   return {
