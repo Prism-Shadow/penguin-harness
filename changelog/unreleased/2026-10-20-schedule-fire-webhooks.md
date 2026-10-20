@@ -3,7 +3,7 @@
 - **Date:** 2026-10-20
 - **Type:** feature
 - **Scope:** `server`
-- **PR:** TBD
+- **PR:** [#1261](https://github.com/Prism-Shadow/penguin-harness/pull/1261)
 
 [中文版](2026-10-20-schedule-fire-webhooks.zh.md)
 
