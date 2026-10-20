@@ -31,6 +31,7 @@ import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
 import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
+import { installErrorBodyNormalizer } from "./net/error-body.js";
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
   const server = new PenguinServer();
   server.loadEnv();
   server.installProxy();
+  server.installErrorBodies();
   server.readConfig();
   await server.ensureSoleInstance();
   server.listen();
@@ -145,6 +147,18 @@ class PenguinServer {
    */
   installProxy(): void {
     installGlobalProxyDispatcher();
+  }
+
+  /**
+   * Make provider errors readable to the model SDK, which is installed at the same earliest
+   * point and for the same reason: the SDK captures `globalThis.fetch` when a client is
+   * constructed, and clients are built per session, long after startup. Without this a
+   * gateway answering `{ code, message }` (LiteLLM and its resellers) loses its text to
+   * `"400 status code (no body)"` — see net/error-body.ts for why that changes a vision
+   * probe's verdict, not just its wording.
+   */
+  installErrorBodies(): void {
+    installErrorBodyNormalizer();
   }
 
   /** Resolves the process configuration, which comes from the environment only (config.ts). */
