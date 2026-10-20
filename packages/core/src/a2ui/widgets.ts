@@ -134,7 +134,12 @@ export function formatNumber(value: number, lang: A2uiLang, decimals?: number): 
 /** A unit that hugs the number: "37%", "21°C", "5′". */
 const TIGHT_UNIT = /^[%°′″]/;
 
-function appendUnit(text: string, unit: string | undefined): string {
+/**
+ * A figure (or a range of figures) followed by its unit: "37%", "21°C", "320 GB", "1–10 pods".
+ * The one spacing rule for every value A2UI prints — a chart's ticks, a metric, a form's fill
+ * text and its fallback — in both languages.
+ */
+export function appendUnit(text: string, unit: string | undefined): string {
   if (unit === undefined || unit === "") return text;
   return TIGHT_UNIT.test(unit) ? `${text}${unit}` : `${text} ${unit}`;
 }
