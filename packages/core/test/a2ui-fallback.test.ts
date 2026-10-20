@@ -46,6 +46,7 @@ describe("toFallbackMarkdown", () => {
   });
 
   it("a form becomes one bullet per field: what its kind takes, its default and its hint", () => {
+    // A unit is spaced as every A2UI value is: "1–10 GB", but a percent hugs its range.
     const measured: A2uiForm = {
       type: "form",
       title: "Size",
@@ -61,6 +62,7 @@ describe("toFallbackMarkdown", () => {
           default: 3,
         },
         { id: "temp", label: "Temperature", kind: "slider", min: 0, max: 1, step: 0.1 },
+        { id: "cpu", label: "CPU target", kind: "slider", min: 50, max: 90, step: 5, unit: "%" },
         { id: "kind", label: "Kind", kind: "single", options: [{ label: "A" }, { label: "B" }] },
         {
           id: "notes",
@@ -106,6 +108,7 @@ describe("toFallbackMarkdown", () => {
         "",
         "- **Size** (required): 1–10 GB (default 3)",
         "- **Temperature**: 0–1 step 0.1",
+        "- **CPU target**: 50–90% step 5",
         "- **Kind**: A / B",
         "- **Notes**: Anything else — one per line",
         "",
@@ -137,6 +140,7 @@ describe("toFallbackMarkdown", () => {
         "",
         "- **Size**（必填）：1–10 GB（默认 3）",
         "- **Temperature**：0–1 步长 0.1",
+        "- **CPU target**：50–90% 步长 5",
         "- **Kind**：A / B",
         "- **Notes**：Anything else — one per line",
         "",
@@ -411,6 +415,7 @@ describe("fill texts", () => {
       fields: [
         { id: "n", label: "Pods", kind: "number", unit: "pods" },
         { id: "v", label: "Volume", kind: "slider", min: 0, max: 1, step: 0.1, unit: "dB" },
+        { id: "cpu", label: "CPU target", kind: "slider", min: 50, max: 90, step: 5, unit: "%" },
         {
           id: "k",
           label: "Kind",
@@ -430,16 +435,17 @@ describe("fill texts", () => {
     const answers = {
       n: "3",
       v: "0.7",
+      cpu: "70",
       k: ["A", "B"],
       s: "EU",
       c: false,
       notes: "first\n\nsecond  \n",
     };
     expect(formFillText(form, answers, "en")).toBe(
-      "Pods: 3 pods\nVolume: 0.7 dB\nKind: alpha, B\nRegion: eu-west-1\nCDN: No\nNotes:\n  first\n\n  second",
+      "Pods: 3 pods\nVolume: 0.7 dB\nCPU target: 70%\nKind: alpha, B\nRegion: eu-west-1\nCDN: No\nNotes:\n  first\n\n  second",
     );
     expect(formFillText(form, answers, "zh")).toBe(
-      "Pods：3 pods\nVolume：0.7 dB\nKind：alpha、B\nRegion：eu-west-1\nCDN：否\nNotes：\n  first\n\n  second",
+      "Pods：3 pods\nVolume：0.7 dB\nCPU target：70%\nKind：alpha、B\nRegion：eu-west-1\nCDN：否\nNotes：\n  first\n\n  second",
     );
     expect(formFillText(form, {}, "en")).toBe("");
   });
