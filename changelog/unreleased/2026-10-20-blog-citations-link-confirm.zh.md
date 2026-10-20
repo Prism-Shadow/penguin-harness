@@ -3,6 +3,7 @@
 - **Date:** 2026-10-20
 - **Type:** feature
 - **Scope:** `landing`, `ui`
+- **PR:** [#1252](https://github.com/Prism-Shadow/penguin-harness/pull/1252)
 
 [English](2026-10-20-blog-citations-link-confirm.md)
 
