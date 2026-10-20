@@ -25,8 +25,8 @@
  * sign-in or sign-out passing through the API client resets the identity, which closes the
  * socket; the next call opens the new user's.
  *
- * Without a socket — the browser cannot open one, or the handshake keeps failing — streams
- * fall back to EventSource (the caller supplies the fallback) and calls fall back to fetch.
+ * Without a socket — the browser cannot open one, or the handshake keeps failing — calls
+ * fall back to fetch, and streams wait in silence until one comes or the page reloads.
  */
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
@@ -37,7 +37,7 @@ const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 const backoffMs = (fails: number): number =>
   Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** fails);
-/** Consecutive handshakes that never opened before the page gives the socket up for EventSource and fetch. */
+/** Consecutive handshakes that never opened before the page gives the socket up: streams then wait in silence, calls go on over fetch. */
 const GIVE_UP_AFTER = 3;
 /** A handshake refused outright (a runtime without the socket) is retried this soon — the backoff is for connections that were up and dropped. */
 const REFUSED_RETRY_MS = 250;
@@ -90,7 +90,6 @@ interface PendingCall {
 interface StreamEntry {
   path: string;
   handlers: StreamHandlers;
-  fallback: () => StreamConnection;
   /** The call id while the stream is issued on the live socket; null between issues. */
   id: number | null;
   /** Fires when the server has not opened the issued stream in time. */
@@ -99,8 +98,6 @@ interface StreamEntry {
   retry: ReturnType<typeof setTimeout> | null;
   /** Issues in a row that did not open; the stream's own backoff, reset when it opens. */
   failures: number;
-  /** Set once the entry has been handed to EventSource; the socket never touches it again. */
-  fallen: StreamConnection | null;
   closed: boolean;
   /**
    * The cadence this stream is expected to speak at, in ms (the caller's `heartbeatMs`), or
@@ -186,7 +183,7 @@ export class ApiSocket {
    */
   /**
    * `available` false starts the socket as unavailable: there is nothing it could connect to,
-   * so callers go straight to HTTP and EventSource without settling an identity first.
+   * so callers go straight to HTTP without settling an identity first.
    */
   constructor(
     private readonly urlFor: (userId: string) => string,
@@ -211,7 +208,7 @@ export class ApiSocket {
     };
   }
 
-  /** The socket is not coming: callers use HTTP and EventSource. */
+  /** The socket is not coming: calls use HTTP, streams wait for a socket that never comes. */
   isUnavailable(): boolean {
     return this.#state === "unavailable";
   }
@@ -347,51 +344,41 @@ export class ApiSocket {
   }
 
   /**
-   * A streaming subscription that survives every interruption until `close()`. `fallback`
-   * builds the EventSource equivalent, used when the socket is not coming.
+   * A streaming subscription that survives every interruption until `close()`; without a
+   * socket it waits for one, in silence — there is no second transport for a stream.
    */
-  stream(
-    path: string,
-    handlers: StreamHandlers,
-    fallback: () => StreamConnection,
-    options: StreamOptions = {},
-  ): StreamConnection {
+  stream(path: string, handlers: StreamHandlers, options: StreamOptions = {}): StreamConnection {
     const entry: StreamEntry = {
       path,
       handlers,
-      fallback,
       id: null,
       openDeadline: null,
       lastEventId: null,
       retry: null,
       failures: 0,
-      fallen: null,
       closed: false,
       heartbeatMs: options.heartbeatMs ?? null,
       streamDeadline: null,
     };
-    if (this.isUnavailable()) {
-      entry.fallen = fallback();
-    } else {
-      this.#waiting.add(entry);
-      if (this.#state === "open") this.#issue(entry);
-      else void this.ready();
+    this.#waiting.add(entry);
+    if (this.isUnavailable()) return { close: () => this.#dropStream(entry) };
+    if (this.#state === "open") this.#issue(entry);
+    else void this.ready();
+    return { close: () => this.#dropStream(entry) };
+  }
+
+  /** Takes a stream out of every queue it may sit in and ends its call, if it has one. */
+  #dropStream(entry: StreamEntry): void {
+    entry.closed = true;
+    entry.retry = this.#clearTimer(entry.retry);
+    entry.openDeadline = this.#clearTimer(entry.openDeadline);
+    entry.streamDeadline = this.#clearTimer(entry.streamDeadline);
+    this.#waiting.delete(entry);
+    if (entry.id !== null) {
+      this.#streams.delete(entry.id);
+      this.#cancel(entry.id);
+      entry.id = null;
     }
-    return {
-      close: () => {
-        entry.closed = true;
-        entry.fallen?.close();
-        entry.retry = this.#clearTimer(entry.retry);
-        entry.openDeadline = this.#clearTimer(entry.openDeadline);
-        entry.streamDeadline = this.#clearTimer(entry.streamDeadline);
-        this.#waiting.delete(entry);
-        if (entry.id !== null) {
-          this.#streams.delete(entry.id);
-          this.#cancel(entry.id);
-          entry.id = null;
-        }
-      },
-    };
   }
 
   /** Opens the socket; streams and calls queue behind the handshake. Only from ready(). */
@@ -400,9 +387,8 @@ export class ApiSocket {
     if (typeof WebSocket === "undefined") {
       this.#state = "unavailable";
       console.warn(
-        "[api-socket] this browser has no WebSocket: streams run as EventSources, calls as fetches",
+        "[api-socket] this browser has no WebSocket: calls run as fetches, streams stay silent",
       );
-      this.#fallBackWaiting();
       this.#settleReady(false);
       return;
     }
@@ -490,20 +476,10 @@ export class ApiSocket {
     };
   }
 
-  /** The socket is not coming: every stream still waiting on it runs as its EventSource. */
-  #fallBackWaiting(): void {
-    for (const entry of this.#waiting) {
-      if (entry.closed) continue;
-      entry.retry = this.#clearTimer(entry.retry);
-      entry.fallen = entry.fallback();
-    }
-    this.#waiting.clear();
-  }
-
   #issue(entry: StreamEntry): void {
     // Whatever issues it — a reconnect or its own retry — the other must not issue it again.
     entry.retry = this.#clearTimer(entry.retry);
-    if (entry.closed || entry.fallen !== null || entry.id !== null) return;
+    if (entry.closed || entry.id !== null) return;
     if (this.#ws === null || this.#state !== "open") return;
     this.#waiting.delete(entry);
     const id = this.#next++;
@@ -595,7 +571,7 @@ export class ApiSocket {
         try {
           data = JSON.parse(frame.data as string);
         } catch {
-          return; // single-line JSON by protocol; anything else is skipped as EventSource would
+          return; // single-line JSON by protocol; anything else is skipped unread
         }
         // SSE names a frame by its `event:` line, and sse-text.ts defaults an absent one to
         // `message` — the OmniMessage shape. Everything else is named dispatch, with the
@@ -608,9 +584,8 @@ export class ApiSocket {
         } else if (name === "heartbeat" || name === "ping") {
           // Liveness only, and it has already been banked above: the beat is never an
           // application event, so it reaches no handler. `ping` is the session and user
-          // streams' own beat; the EventSource fallback listens for it by the same name
-          // (api/sse.ts) and it reaches no handler there either — over the socket it is a
-          // frame whose `{}` payload must not be read as an OmniMessage.
+          // streams' own beat; over HTTP the SSE reader drops it by the same name — and
+          // here it is a frame whose `{}` payload must not be read as an OmniMessage.
         } else if (stream.handlers.onEvent !== undefined) {
           stream.handlers.onEvent(name, data, eventId);
         } else {
@@ -681,10 +656,8 @@ export class ApiSocket {
       this.#state = "unavailable";
       console.error(
         `[api-socket] giving up on the API socket: ${GIVE_UP_AFTER} handshakes never opened (last: ${this.#lastClose}). ` +
-          `Every stream now runs as its own EventSource and every call as a fetch until this page reloads — ` +
-          `a browser holds about six such connections per origin, so requests may queue behind the streams.`,
+          `Calls run as fetches and streams stay silent until this page reloads — the server has no socket for this tab.`,
       );
-      this.#fallBackWaiting();
       return;
     }
     if (this.#waiting.size === 0) return; // nothing to carry: reopen lazily on the next ask
