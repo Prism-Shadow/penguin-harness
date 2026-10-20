@@ -225,7 +225,7 @@ The fork is a new Session with the same agent, model, Workspace and approval mod
 A reply can hold blocks that the chat draws as components instead of plain text:
 
 - **Choice**: a question with options. Select an option to put it in the composer. When several picks are allowed, tick them and select **Fill in**. **Other…** clears the composer and moves you there to write your own answer. The option the agent recommends is marked **Recommended**.
-- **Form**: several questions at once. Answer them and select the form's button; the answers go into the composer one per line.
+- **Form**: several questions at once, each with the control its answer needs: a line or a box of text, a number with − and + buttons, a slider, option buttons or checkboxes, a dropdown, an on/off switch, or a date and time picker. The form's button stays unavailable until every required question is answered and every answer is valid. While an answer breaks its question's rule (out of range, too long, in the wrong format), its control is marked and the line under it says what is expected. Select the button and the answers go into the composer one per line, a switch as Yes or No.
 - **Steps**: a numbered procedure. A warning or caution appears above the step it applies to.
 - **Callout**: a short note, tip, caution or warning on one line, its icon saying which (point at the icon to see the name). A step's warnings, cautions and notes look the same.
 - **Diagram**: a Mermaid diagram, such as a flowchart or a sequence diagram. **Show source** shows the text it is drawn from.
