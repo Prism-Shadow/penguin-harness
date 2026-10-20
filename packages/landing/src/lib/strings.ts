@@ -47,7 +47,7 @@ export const zh = {
     positioning: "统一、稳定的 Agent 自进化框架",
     /** The badge on the positioning line's top-right corner. */
     badge: "免费开源",
-    automation: "全自动优化模型 × Agent Harness",
+    automation: "全自动优化：任意模型 任意算法 任意 Benchmark",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [

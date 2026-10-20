@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>统一、稳定的 Agent 自进化框架</strong><br />全自动优化<strong>模型 × Agent Harness</strong></p>
+<p align="center"><strong>统一、稳定的 Agent 自进化框架</strong><br />全自动优化：<strong>任意模型 任意算法 任意 Benchmark</strong></p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">

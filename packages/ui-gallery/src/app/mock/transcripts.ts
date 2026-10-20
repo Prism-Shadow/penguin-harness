@@ -203,6 +203,15 @@ rank("How do I configure hooks?", index)[0].source;
 // => "corpus/claude-code-docs/hooks.md"
 \`\`\`
 
+Retrieval on the test questions, before and after:
+
+| Question | Top result | Before | After | Score | Recall@5 | What changed |
+| --- | --- | --- | --- | --- | --- | --- |
+| How do I configure hooks? | \`corpus/claude-code-docs/hooks.md\` | 7 | 1 | 0.92 | 100% | The file is indexed now, so it outranks the settings page that only mentions hooks |
+| Which events can a hook block? | \`corpus/claude-code-docs/hooks.md\` | — | 1 | 0.88 | 100% | Answered from the events table instead of the overview |
+| Where do MCP servers go? | \`corpus/claude-code-docs/mcp.md\` | 1 | 1 | 0.95 | 100% | Unchanged |
+| How are slash commands named? | \`corpus/claude-code-docs/slash-commands.md\` | 2 | 2 | 0.71 | 80% | Unchanged; the CLI reference still ranks first |
+
 Nothing else in the corpus changed, so the index rebuild took 12.4 ms [1].
 
 [1] corpus/claude-code-docs/hooks.md`,
@@ -335,6 +344,15 @@ To change what comes first, tune \`k1\` and \`b\` in \`src/rag.ts\`; the guard s
 rank("如何配置 hooks？", index)[0].source;
 // => "corpus/claude-code-docs/hooks.md"
 \`\`\`
+
+测试问题上的检索结果，改动前后对比：
+
+| 问题 | 首位结果 | 改动前 | 改动后 | 得分 | Recall@5 | 变化 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 如何配置 hooks？ | \`corpus/claude-code-docs/hooks.md\` | 7 | 1 | 0.92 | 100% | 文件已进入索引，排在只提到 hooks 的设置页之前 |
+| hook 能拦截哪些事件？ | \`corpus/claude-code-docs/hooks.md\` | — | 1 | 0.88 | 100% | 改由事件表作答，不再引用概览页 |
+| MCP 服务器配置在哪里？ | \`corpus/claude-code-docs/mcp.md\` | 1 | 1 | 0.95 | 100% | 无变化 |
+| 斜杠命令如何命名？ | \`corpus/claude-code-docs/slash-commands.md\` | 2 | 2 | 0.71 | 80% | 无变化；CLI 参考仍排第一 |
 
 语料库里其他文件没有变化，索引重建用时 12.4 ms [1]。
 

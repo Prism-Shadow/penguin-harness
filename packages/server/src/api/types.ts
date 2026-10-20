@@ -574,7 +574,11 @@ export interface ModelEffectiveConnection {
   baseUrlSource: ConnectionSourceDto;
   clientType?: string;
   clientTypeSource: ConnectionSourceDto;
-  /** `env` = no row or group key, and the environment lends one on the effective endpoint (modelEnvFallback). */
+  /**
+   * `env` = no key in the file, and MMSP's routed client reads its own variable for the row's
+   * endpoint (no base URL, or the client's default endpoint) — reported when that variable
+   * holds a value here (`envKeyMasked`), `none` otherwise.
+   */
   apiKeySource: "model" | "provider" | "env" | "none";
   /** Mask of the key the row would use, whichever source; absent when none. */
   apiKeyMasked?: string;
@@ -630,21 +634,18 @@ export interface ModelInfo {
   discount?: number;
   /**
    * Environment variable name the entry falls back to when api_key is empty (e.g.
-   * ANTHROPIC_API_KEY); unset when it gets no fallback — an id nothing routes, or an entry
-   * whose base URL is not the vendor's own official endpoint (a gateway preset, a custom /
-   * vLLM / user-created row with its own endpoint, a vendor row re-pointed at a proxy).
+   * ANTHROPIC_API_KEY): only for a row with no key in the file whose routed MMSP client reads
+   * that variable for its endpoint — no base URL on the row or its group, or the client's own
+   * default endpoint. Unset for a row with a key (its own or a group key that reaches it), a row
+   * sent to any other base URL (a gateway, Penguin Go, ModelScope, a vendor's second host or a
+   * proxy), or an id nothing routes.
    */
   envKey?: string;
   /**
    * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
-   * currently holds for `envKey` — the plaintext is never serialized. Reported only where the
-   * fallback may be presented as covering the entry (core's modelEnvPreviewKey): a row whose
-   * effective base URL is a vendor endpoint (or the Penguin Go relay), or a row with no base URL
-   * in a built-in group other than custom, on the client its id's family names. Gateway rows
-   * never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
-   * although those do fall back. Absent = the variable is unset or empty, or the entry is not
-   * previewable. Computed on the effective shape, and only when no row or group key reaches
-   * the row.
+   * currently holds for `envKey` — the plaintext is never serialized. Absent = the variable is
+   * unset or empty, or the entry gets no fallback. Reported only when no row or group key
+   * reaches the row.
    */
   envKeyMasked?: string;
   /** The row's OWN key (masked) and base URL — overrides of its group's; see `effective`. */
@@ -973,8 +974,8 @@ export interface ModelBalanceAmount {
 /**
  * Why a group's balance could not be read:
  * - `unsupported`: the group publishes no balance endpoint (no `balance` descriptor in the catalog);
- * - `no_key`: the group has no API key to ask with — none stored, and no environment variable
- *   the credential rule lends its rows for the balance endpoint's host;
+ * - `no_key`: the group has no API key to ask with — none stored, and no vendor variable that
+ *   MMSP's vendor client reads for the group's base URL;
  * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
  *   without a readable balance.
  */
@@ -982,9 +983,9 @@ export type ModelBalanceErrorCode = "unsupported" | "no_key" | "upstream_failed"
 
 /**
  * GET /api/projects/:p/models/balance?provider=<group>[&force=1] (Project member): the account
- * balance behind the group's API key — the stored one, or else the environment key its rows
- * fall back to under the credential rule (DeepSeek's DEEPSEEK_API_KEY) — read server-side from
- * the endpoint the catalog's `balance` descriptor names. The key never reaches the browser, and
+ * balance behind the group's API key — the stored one, or else the environment key MMSP's
+ * vendor client reads for the group's base URL (DeepSeek's DEEPSEEK_API_KEY) — read server-side
+ * from the endpoint the catalog's `balance` descriptor names. The key never reaches the browser, and
  * neither does the vendor's own text. Like the connectivity test, a balance that cannot be read is an answer
  * (`ok: false` with a code), not a failed request. Readings and vendor failures are cached for
  * 60 s per Project and group, for as long as the group's key is the same; `force=1` skips the

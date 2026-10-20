@@ -76,7 +76,7 @@ import { goalPluginGate } from "./goal-plugin-gate";
 import { discardUnstartedSession } from "./unstarted-session";
 import { APPROVAL_MODES } from "./approval-mode";
 import { adoptDockScope } from "../dock/dock-state";
-import { setDockCwd } from "../dock/dock-terminal";
+import { setDockConversation } from "../dock/dock-terminal";
 import { StartDashboard } from "./start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
@@ -216,11 +216,15 @@ export function DraftView({
     workspaceMachine === null
       ? null
       : machineLink(machines.state, machines.settled, workspaceMachine);
-  // A terminal opened while drafting starts in the Workspace chosen here; "" is the
-  // temporary Workspace, whose directory the server only creates with the Session, so
-  // that case falls back to home (setDockCwd's null).
+  // The draft's docks belong to no Session yet, so they offer no terminal; the Workspace
+  // chosen here is still theirs (the Files panel, the sidebar's "browse files"). "" is the
+  // temporary Workspace, whose directory the server only creates with the Session.
   useEffect(() => {
-    setDockCwd(workspace || null, workspaceMachine);
+    setDockConversation({
+      sessionId: null,
+      workspace: workspace || null,
+      machineId: workspaceMachine,
+    });
     onWorkspaceChange?.(workspace, workspaceMachine);
   }, [workspace, workspaceMachine, onWorkspaceChange]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(

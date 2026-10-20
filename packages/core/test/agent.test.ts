@@ -26,7 +26,6 @@ import {
   tracesDir,
 } from "../src/state/paths.js";
 import {
-  MODEL_CATALOG,
   addModel,
   createAgent,
   DEFAULT_AGENT_ID,
@@ -44,6 +43,7 @@ import { metaMaxTokens } from "../src/agent.js";
 import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { mapThinkingLevel } from "../src/llm/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 import type {
   EnvironmentConfig,
   EnvironmentServices,
@@ -91,6 +91,8 @@ beforeEach(async () => {
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-harness-"));
   process.env.PENGUIN_HOME = tmpRoot;
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(tmpRoot);
 });
 
 afterEach(async () => {
@@ -220,6 +222,7 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "myproxy",
       model_id: "claude-sonnet-4-6",
+      api_key: "proxy-key",
     });
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-ref-pair");
@@ -659,6 +662,7 @@ describe("Agent.createSession max output tokens (per-model cap wins over the Age
       model_id: "local-32k",
       client_type: "openai",
       context_window: 32768,
+      api_key: "sk-local",
       max_tokens: 8000,
     });
     const agent = await createAgent();
@@ -696,11 +700,13 @@ describe("Agent.createSession max output tokens (per-model cap wins over the Age
       model_id: "local-32k",
       client_type: "openai",
       max_tokens: 8000,
+      api_key: "sk-local",
     });
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "custom",
       model_id: "tiny-cap",
       client_type: "openai",
+      api_key: "sk-local",
       max_tokens: 128,
     });
     const agent = await createAgent();
@@ -750,6 +756,7 @@ describe("Agent.createSession fast mode (session requests only, never the meta o
       provider: "custom",
       model_id: "fast-on",
       client_type: "openai",
+      api_key: "sk-local",
       fast_mode: true,
     });
     const agent = await createAgent();
@@ -780,6 +787,7 @@ describe("Agent.createSession fast mode (session requests only, never the meta o
       provider: "custom",
       model_id: "fast-off",
       client_type: "openai",
+      api_key: "sk-local",
     });
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-fast-mode-off");
@@ -1499,8 +1507,8 @@ describe("Agent.createSession credential rule (a keyless gateway row never borro
   it("refuses a keyless gateway preset before any client exists, even with OPENAI_API_KEY set", async () => {
     // stubProviderKeys has set OPENAI_API_KEY and friends: the pre-rule behaviour was to hand
     // MMSP no key and let its generic client read the variable — sending the user's
-    // OpenAI key to the gateway. The preset carries the gateway's base URL and no key.
-    const preset = MODEL_CATALOG.find((m) => m.provider === "openrouter" && m.retired !== true)!;
+    // OpenAI key to the gateway. The row follows its gateway group's endpoint and holds no key.
+    const preset = { provider: "tokendance", modelId: "glm-5.3" };
     expect(process.env.OPENAI_API_KEY).toBeDefined();
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-gateway-keyless");

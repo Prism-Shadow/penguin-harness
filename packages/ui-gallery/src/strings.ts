@@ -999,7 +999,7 @@ export const zh = {
       articleHint:
         "博客文章与文档页共用的排版。标题带锚点，围栏代码块高亮，标签组与提示框是文档的 Markdown 扩展；本页右侧是它的目录。",
       articleBody:
-        '## 安装\n\n在终端运行一行命令即可安装：\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### 按平台\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- 首次启动被系统拦下\n>\n> 在系统设置里允许它运行即可。\n\n## 下一步\n\n- 运行 `penguin web` 打开 Web App\n- 回到[安装](#安装)\n\n| 命令 | 作用 |\n| --- | --- |\n| `penguin` | 在终端里对话 |\n| `penguin web` | 启动 Web App |',
+        '## 安装\n\n在终端运行一行命令即可安装：\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### 按平台\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- 首次启动被系统拦下\n>\n> 在系统设置里允许它运行即可。\n\n## 下一步\n\n- 运行 `penguin web` 打开 Web App\n- 回到[安装](#安装)\n\n| 命令 | 作用 |\n| --- | --- |\n| `penguin` | 在终端里对话 |\n| `penguin web` | 启动 Web App |\n\n## API\n\n| 方法 | 路径 | 说明 |\n| --- | --- | --- |\n| POST | `/api/auth/login` | 登录：`{userId, password}` → `{user}` |\n| GET | `/api/auth/claim?token=…` | 兑换登录链接：设置 Cookie 并重定向到 `/` |\n| PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并）；拒绝 `browserBackend`（`400`），它由内置浏览器自己的接口选择 |\n| GET | `/api/me/archived-sessions` | 一个分组中的已归档 Session：`?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |',
       toc: "本页目录",
       sidebar: "文档侧栏",
       sidebarHint: "分节列出页面，子页面缩进在父页面下，当前页以品牌色标出；顶部是搜索入口。",
@@ -1125,6 +1125,12 @@ export const zh = {
         "- `changelog/unreleased/` 里的条目中英成对",
         "- 没有待合并的破坏性改动",
         "",
+        "| 检查 | 命令 | 用时 |",
+        "| --- | --- | --- |",
+        "| 类型 | `pnpm typecheck` | 40 s |",
+        "| 测试 | `pnpm test` | 6 min |",
+        "| 格式 | `pnpm format:check` | 25 s |",
+        "",
         "### 版本号",
         "",
         "版本号遵循语义化版本。一个版本号打过 tag 就不能再用：发布失败时作废该号，改用下一个。",
@@ -1175,6 +1181,15 @@ export const zh = {
       ].join("\n"),
       compact: "紧凑：频道消息",
       compactSample: "已合并 **#897**，`feat/ui-w2` 可以删了。",
+      tables: "表格",
+      tablesHint:
+        "Markdown 表格占满正文列，放不下时在自己的盒内横向滚动。数字列右对齐，短格与行内代码不换行，长格换行；偶数行带斑马纹，指针所在行高亮。",
+      tableWide: "宽表：占满正文列，放不下时横向滚动",
+      tableWideSample:
+        "| 接口 | 路径 | 状态 | 请求数 | 错误率 | 费用 | 说明 | 更新于 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 登录 | `/api/auth/login` | 正常 | 12,480 | 0.3% | $0.42 | 同一地址一分钟内失败五次后限流，十分钟后自动解除 | 2026-10-18 |\n| 会话事件流 | `/api/projects/:projectId/sessions/:sessionId/events` | 正常 | 3,912 | 0.1% | $1.86 | 推送会话事件直到会话结束；断线重连后从最后一个事件 id 续传 | 2026-10-17 |\n| 导入快照 | `/api/projects/:projectId/import` | 降级 | 48 | 6.2% | — | 超过 200 MB 的归档会超时，上传正在改为分块 | 2026-10-16 |\n| 模型余额 | `/api/models/balance` | 正常 | 905 | 0% | $0.03 | 结果缓存一分钟 | 2026-10-12 |",
+      tableShort: "短表：键与值",
+      tableShortSample:
+        "| 设置 | 取值 |\n| --- | --- |\n| 模型 | `gpt-5.6-luna` |\n| 审批 | 写文件前询问 |\n| 沙箱 | 仅限工作区 |\n| 上下文窗口 | 400k Token |",
       code: "代码",
       surface: "代码面：行号，无外框",
       diff: "差异",

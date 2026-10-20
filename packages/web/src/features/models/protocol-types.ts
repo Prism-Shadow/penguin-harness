@@ -6,12 +6,9 @@
  * The probing itself is server-side (packages/server/src/services/protocol-detect.ts); these
  * only decide what the dialog shows and what is worth sending there.
  */
-import {
-  effectiveConnection,
-  modelEnvPreviewKey,
-  providerInfo,
-} from "@prismshadow/penguin-core/model-catalog";
-import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-catalog";
+import { modelEnvironment, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import type { ModelEnvironment } from "@prismshadow/penguin-server/model-catalog";
+import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
 
 /**
  * The protocols the in-field protocol menu offers, in its order: five of MMSP's compatible
@@ -186,56 +183,34 @@ export function needsProtocolDetectOnSave(
 }
 
 /**
- * The client type the dialog's API-key env hint should resolve against: the protocol the entry
- * will actually be used with (its own, else its group's — effectiveConnection), and for a
- * custom-like entry that resolves to none, the compatible client it will be saved on.
- *
- * `resolveModelEnv` falls back to routing by model id when no client type is given — right for
- * a vendor group, wrong for a custom one: typing `claude-sonnet-5` into a custom group would then
- * claim the entry reads ANTHROPIC_API_KEY, when nothing about that group routes by id. A group
- * that pins a protocol is the same argument again: nothing there routes by id, so the pin is
- * what the hint has to resolve against.
+ * The variables the dialog may promise for the entry as drafted: the catalog's
+ * modelEnvironment — what MMSP's routed client reads, the same function the server's GET /models
+ * preview reads, so the hint and the card's "read from environment variable" can never disagree
+ * — on the form's own protocol and base URL and its group's stored table. `apiKeyEnv` only with
+ * no key in the file and no base URL or the client's own default endpoint (PRN-021): a gateway
+ * row, or any row sent to another base URL, resolves to nothing. A custom, vLLM or user-group row
+ * with no base URL anywhere does resolve, to its protocol client's variables — the Session would
+ * use them — and the protocol is the one the row will be saved with (protocolForPersist), so a
+ * custom-like draft that names none reads the custom groups' default client, never the id's
+ * family. `baseUrlEnv` only with no base URL anywhere: where the requests then go.
  */
-export function envHintClientType(
-  provider: string,
-  clientType: string,
-  modelId = "",
-  group?: ProviderConnectionShape,
-): string | undefined {
-  const effective = effectiveConnection({ provider, modelId: modelId.trim(), clientType }, group);
-  return (
-    effective.clientType ?? (isCustomLikeGroup(provider) ? DEFAULT_CUSTOM_CLIENT_TYPE : undefined)
-  );
-}
-
-/**
- * The variable the dialog's API-key field may promise for the entry as drafted, or undefined
- * when nothing should be promised: core's modelEnvPreviewKey — the same function the server's
- * GET /models preview reads, so the hint and the card's "read from environment variable" can
- * never disagree — over the EFFECTIVE shape: the form's own protocol and base URL where it has
- * them, its group's where it does not. A gateway row follows its group's endpoint, so it resolves
- * to nothing — a hint reading "leave empty to use OPENAI_API_KEY" on a TokenDance or OpenRouter
- * row would promise the user's OpenAI key to a third party; a group pointed at a proxy resolves
- * to nothing either, and so does a vLLM or custom row with no base URL anywhere, so the field
- * never suggests running a self-hosted id against api.openai.com.
- */
-export function envHintKeyFor(
+export function envHintFor(
   provider: string,
   modelId: string,
   clientType: string,
   baseUrl: string,
   group?: ProviderConnectionShape,
-): string | undefined {
-  const effective = effectiveConnection(
-    { provider, modelId: modelId.trim(), clientType, baseUrl },
+): ModelEnvironment {
+  return modelEnvironment(
+    {
+      provider,
+      modelId: modelId.trim(),
+      clientType:
+        protocolForPersist(provider, clientType, { clientType: group?.clientType }) || undefined,
+      baseUrl: baseUrl.trim() || undefined,
+    },
     group,
   );
-  return modelEnvPreviewKey({
-    provider,
-    modelId: modelId.trim(),
-    clientType: envHintClientType(provider, clientType, modelId, group),
-    baseUrl: effective.baseUrl ?? "",
-  });
 }
 
 /*

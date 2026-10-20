@@ -379,18 +379,27 @@ describe("envSourced", () => {
     const found = envSourced(
       {
         models: [
-          // No key anywhere: the vendor's variable, set here.
+          // No key and no base URL anywhere: the routed client's variable, set here.
           { provider: "openai", model_id: "gpt-5" },
+          { provider: "myproxy", model_id: "gpt-5-proxy", client_type: "openai-chat" },
           // Its own key, and no OPENAI_BASE_URL here: nothing.
           { provider: "openai", model_id: "gpt-5-mini", api_key: "sk-own-0123456789" },
           // Its group's key, and no base URL: the routed client's ANTHROPIC_BASE_URL, set here.
           { provider: "anthropic", model_id: "claude-opus-5" },
           // No key, and DEEPSEEK_API_KEY is not set here: it does not run here either.
           { provider: "deepseek", model_id: "deepseek-v4-flash" },
-          // A gateway's endpoint is never lent a vendor's key.
+          // The client's own default endpoint from the file: its key variable, and its requests
+          // go there, not to `*_BASE_URL`.
+          { provider: "openai", model_id: "gpt-5-own", base_url: "https://api.openai.com/v1" },
+          // Any other base URL from the file — the row's own or its group's — reads nothing:
+          // MMSP refuses it keyless, and a key from the file goes there.
           { provider: "custom", model_id: "gpt-5", base_url: "https://gw.example.com/v1" },
+          { provider: "gateway", model_id: "claude-opus-5", api_key: "sk-gw-0123456789" },
         ],
-        providers: { anthropic: { api_key: "sk-ant-group-0123456789" } },
+        providers: {
+          anthropic: { api_key: "sk-ant-group-0123456789" },
+          gateway: { base_url: "https://gw.example.com/v1", client_type: "ant-messages" },
+        },
       },
       {
         OPENAI_API_KEY: "sk-env-0123456789",
@@ -401,7 +410,9 @@ describe("envSourced", () => {
     );
     expect(found).toEqual([
       { provider: "openai", modelId: "gpt-5", variable: "OPENAI_API_KEY" },
+      { provider: "myproxy", modelId: "gpt-5-proxy", variable: "OPENAI_API_KEY" },
       { provider: "anthropic", modelId: "claude-opus-5", variable: "ANTHROPIC_BASE_URL" },
+      { provider: "openai", modelId: "gpt-5-own", variable: "OPENAI_API_KEY" },
     ]);
   });
 });

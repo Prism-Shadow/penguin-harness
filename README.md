@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>Unified and Stable RSI Framework</strong><br />Automatically improve <strong>model × agent harness</strong></p>
+<p align="center"><strong>Unified and Stable RSI Framework</strong><br />Fully automatic optimization: <strong>any model, any algorithm, any benchmark</strong></p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">

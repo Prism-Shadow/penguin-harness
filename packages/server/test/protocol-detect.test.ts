@@ -15,9 +15,10 @@
  * - Auth headers mirror MMSP's clients (Bearer for the OpenAI protocols; x-api-key, Bearer
  *   and anthropic-version for ant-messages); a keyless probe sends no credential; the key never
  *   reaches a URL or the reported probes.
- * - With no key typed or stored, each probe of a vendor's own URL borrows that protocol's
- *   environment variable (ANTHROPIC_* for ant-messages, OPENAI_* for the others), never for any
- *   other URL; unset and blank are absent, and a typed key wins.
+ * - With no key typed or stored, each probe takes what MMSP's client for its protocol reads at
+ *   the probed URL: the protocol's variable (ANTHROPIC_* for ant-messages, OPENAI_* for the
+ *   others) only for that client's own default endpoint, never for any other URL, one
+ *   `*_BASE_URL` names included; unset and blank are absent, and a typed key wins.
  * - POST /api/projects/:p/models/detect validates the URL, falls back to the stored key of the
  *   paired reference unless clearApiKey says not to — the model's own key, else its group's —
  *   takes a group alone (the group settings dialog) and probes with the group's key unless
@@ -511,8 +512,8 @@ describe("envApiKeyForProtocol", () => {
     // A gateway, a private server: the user's vendor key must not be sent there.
     expect(envApiKeyForProtocol("openai-chat", "https://gw.example.com/v1", env)).toBeUndefined();
     expect(envApiKeyForProtocol("ant-messages", "http://127.0.0.1:8000", env)).toBeUndefined();
-    // Environment keys are for official endpoints only: naming the URL in OPENAI_BASE_URL
-    // does not make it one.
+    // Only the client's default endpoint takes the key when a URL is given: naming the URL in
+    // OPENAI_BASE_URL does not make it one.
     expect(
       envApiKeyForProtocol("openai-chat", "https://gw.example.com/v1", {
         ...env,
@@ -765,7 +766,7 @@ describe("POST /api/projects/:p/models/detect", () => {
         // Same request with the env var present — and even with ANTHROPIC_BASE_URL naming
         // this very server: the stored key stays suppressed, and the local server is not
         // Anthropic's endpoint, so the Anthropic key is NOT lent to it and the probe stays
-        // anonymous. Environment keys are for official endpoints only.
+        // anonymous. Only the client's own default endpoint takes the environment key.
         process.env.ANTHROPIC_API_KEY = "sk-env-anthropic";
         process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${port}`;
         seen.length = 0;
@@ -839,7 +840,7 @@ describe("POST /api/projects/:p/models/detect", () => {
     }
   });
 
-  it("a Penguin Go probe never sends vendor environment keys to the relay endpoint", async () => {
+  it("a Penguin Go probe sends no environment key to the relay endpoint, the retired relay variable included", async () => {
     const seen: Array<{ path: string; auth?: string; xApiKey?: string }> = [];
     const server = antOnlyServer(seen);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -851,7 +852,8 @@ describe("POST /api/projects/:p/models/detect", () => {
     };
     process.env.ANTHROPIC_API_KEY = "vendor-anthropic-must-not-cross";
     process.env.OPENAI_API_KEY = "vendor-openai-must-not-cross";
-    delete process.env.PENGUIN_GO_API_KEY;
+    // Penguin Go takes keys from the config alone: the variable it once read is ignored.
+    process.env.PENGUIN_GO_API_KEY = "relay-env-must-not-cross";
     try {
       const response = await api.post(detectUrl(), {
         baseUrl: `http://127.0.0.1:${port}`,

@@ -113,7 +113,7 @@ import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
-import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
+import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a

@@ -75,7 +75,7 @@ export interface GenerativeModelConfig {
   requestTimeoutMs?: number;
   /**
    * The Session's id, for endpoints whose attribution scheme identifies the conversation
-   * rather than the app (OpenCode's `x-opencode-session`; see state/model-catalog.ts
+   * rather than the app (OpenCode's `x-opencode-session`; see llm/app-attribution.ts
    * `attributionHeaders`). Unset — a request outside any Session: a connectivity test, a
    * vision probe, a one-off utility completion — attributionHeaders mints a fresh id, which
    * the instance then keeps for all of its requests, so they are a conversation of their own.

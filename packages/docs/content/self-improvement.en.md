@@ -219,6 +219,8 @@ Before the Optimizer changes a Reference State, it makes sure `<agent>/snapshots
 
 In the Web App, an agent's settings page offers **Export snapshot** to any member and **Import snapshot** to the Project owner. An import replaces the whole Agent State, takes the `version` inside the package, and keeps the current Vault; the current version is snapshotted first. Importing a version that is not newer than the current one asks for confirmation. The create dialog on the Agents page can also start a new agent from an exported package (**Initialize from a snapshot**): the agent starts with the package's state and version, with no confirmation.
 
+A package is accepted only if `agent_state/` is a real directory and every symbolic link inside it resolves within it; a link that leaves `agent_state/` or points at nothing is rejected, and so is a package whose `system_config.yaml` cannot be read. An import stops before touching the State if the current Vault cannot be read. Should the swap fail and the previous State not be restorable, that State and the Vault stay in the import's staging directory under the agent's folder, and the server log names it.
+
 ## Auditability
 
 - Every Evaluator run and every Test Session is an ordinary Session with a full Trace.
