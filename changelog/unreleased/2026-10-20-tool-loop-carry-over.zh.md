@@ -3,6 +3,7 @@
 - **Date:** 2026-10-20
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#1259](https://github.com/Prism-Shadow/penguin-harness/pull/1259)
 
 [English](2026-10-20-tool-loop-carry-over.md)
 
