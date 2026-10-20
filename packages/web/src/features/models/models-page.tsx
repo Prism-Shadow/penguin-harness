@@ -3059,10 +3059,10 @@ function ModelDialog({
           set({ vision: false });
           toastInfo(S.models.detectVisionNo);
         } else {
-          toastError(S.models.detectFailedBody);
+          toastError(S.models.detectVisionFailedBody);
         }
       } catch {
-        toastError(S.models.detectFailedBody);
+        toastError(S.models.detectVisionFailedBody);
       } finally {
         setVisionDetecting(false);
       }

@@ -29,10 +29,16 @@ export type VisionProbeOutcome = "supported" | "unsupported" | "failed";
 /**
  * A 1x1 transparent PNG as a data URL — the smallest input that still decodes as an image
  * for every provider. Inline rather than read from disk: it must not depend on packaging.
+ *
+ * It must actually DECODE, not merely carry a PNG signature: a strict decoder (LiteLLM and
+ * the gateways built on it) answers a truncated image with a 400 "unsupported image", and the
+ * probe then reports a failure that reads like a credential problem rather than a bad
+ * picture. This one is a 1x1 RGBA whose IDAT inflates to exactly the five bytes its IHDR
+ * declares (one filter byte plus four channels), so every decoder accepts it.
  */
 export const VISION_PROBE_IMAGE =
   "data:image/png;base64," +
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYGBgAAAABQABeqhXUAAAAABJRU5ErkJggg==";
 
 /**
  * Vision probe prompt: one word out, no reasoning. Mirrors the connectivity probe's
