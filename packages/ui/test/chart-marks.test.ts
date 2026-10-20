@@ -24,7 +24,7 @@ import {
   ChartSwatch,
   barPath,
 } from "../src/components/charts/marks/marks";
-import { TimelineBar } from "../src/components/charts/marks/timeline-bar";
+import { TimelineBar, timelineRadius } from "../src/components/charts/marks/timeline-bar";
 import { DEFAULT_CHART_STYLE } from "../src/components/charts/chart-style";
 import { renderStatic } from "../src/testing";
 import { SRC_DIR } from "./helpers/paths";
@@ -174,6 +174,13 @@ describe("the chart primitives, in the default theme", () => {
     expect(html).toContain('data-part="bar"');
     expect(html).not.toContain("box-shadow");
     expect(html).not.toContain("border-radius");
+  });
+
+  it("round only a timeline bar's free ends when a theme gives a radius, joined ends square", () => {
+    expect(timelineRadius(3)).toBe(3);
+    expect(timelineRadius(3, "end")).toBe("3px 0 0 3px");
+    expect(timelineRadius(3, "start")).toBe("0 3px 3px 0");
+    expect(timelineRadius(3, "both")).toBe(0);
   });
 
   it("paint a swatch the way its mark is painted", () => {
