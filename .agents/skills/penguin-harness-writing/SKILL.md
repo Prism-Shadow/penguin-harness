@@ -98,7 +98,7 @@ file name is how the script knows the language.
 | 12 | `pair` | script | section by section: markers, citations, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
 | 13 | Draw | agent | from the frozen figure blocks (section 9) |
 | 14 | `check --svg` | script | every drawn file against its block |
-| 15 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` |
+| 15 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` when its citations come in the same order (section 7) |
 | 16 | Visual check, verify, PR | agent | sections 9 and 12 |
 
 **The ordering rule.** The outline is frozen before the first section call; a section is final
@@ -169,12 +169,20 @@ through the post; opinions and private sources emit nothing. The post ends with 
 
 The post carries no references heading and no `**Sources**` line (the older form, now an error):
 the site labels the list from its own dictionary and renders the numbers as superscript `[n]`
-that jump to the list and back. The second language is stripped with `--numbering-from <the first
-language's post>`, so both posts number the same sources the same way; a source cited in only one
-of them is an error. `check` on a published post proves every `[^n]` is defined and every
-definition used, the numbers run 1 … N, every link is in `## SOURCES`, and no citation sits in a
-figure or a caption; `pair` proves the two lists are identical and each section cites the same
-sources.
+that jump to the list and back. The site numbers a footnote by its first use and builds its anchor
+from its label, so the labels must run 1, 2, 3 … in the order they first appear; `check` makes any
+other order an error.
+
+Each language is therefore numbered by its own first use. `strip --numbering-from <the first
+language's post>` keeps the first language's numbers when the second language cites the sources in
+the same order, and refuses with a clear message when it does not; strip that language without
+`--numbering-from` then. A source cited in only one of the two posts is an error either way
+(`strip --numbering-from` or `pair` reports it).
+
+`check` on a published post proves every `[^n]` is defined and every definition used, the labels
+run 1 … N in first-use order, every link is in `## SOURCES`, and no citation sits in a figure or a
+caption. `pair` proves both posts cite the same set of sources, and each section the same sources,
+whatever numbers each language gave them.
 
 ## 8. Source language and translation
 
@@ -288,7 +296,8 @@ Findings, from any reviewer, are numbered and quote the passage:
   section file is never the fallback.
 - **A post**: `strip --in <frozen draft> --out packages/landing/content/blog/<slug>.<lang>.md
   --facts facts.md --figures-dir <figures dir> [--assets <community>/blog-assets]`, the first
-  language first and the second with `--numbering-from` the first's post. It prints the model's
+  language first, then the second with `--numbering-from` the first's post (or without it when
+  its citations come in another order, see section 7). It prints the model's
   notes (`<!-- omitted: … -->`, `<!-- not applied: … -->`, `<!-- figure changed: … -->`) so they are
   read. Then `check --in <post> --draft <draft> --facts facts.md --pair <other post>`.
   `packages/landing/test/blog.test.ts` pins post order per category, so a new post edits that

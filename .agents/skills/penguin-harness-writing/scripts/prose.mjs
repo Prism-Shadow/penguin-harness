@@ -2647,19 +2647,28 @@ function pairDocs(a, b, o, r) {
       );
     }
   };
-  const refList = (d) =>
-    d.items
-      .filter((it) => it.type === "footnote")
-      .map((it) => it.line.trim().replace(/^\[\^(\d+)\]:\s*\[[\s\S]*\]\((\S+)\)$/, "$1 $2"));
-  const ra = refList(a);
-  const rb = refList(b);
-  if (ra.join("\n") !== rb.join("\n")) {
-    const at = ra.findIndex((x, i) => x !== rb[i]);
-    r.add(
-      "error",
-      null,
-      `reference lists differ (${ra.length} here, ${rb.length} in ${path.basename(b.file)}; first difference at [^${at === -1 ? Math.min(ra.length, rb.length) + 1 : at + 1}])`,
-    );
+  // Each language numbers its sources by its own first use, so the two lists are compared as
+  // sets of sources (URL, or title for a source without one), and citations by source.
+  const sourcesByLabel = (d) => {
+    const map = new Map();
+    for (const it of d.items.filter((x) => x.type === "footnote")) {
+      const m = /^\[\^([^\]]+)\]:\s*(.*)$/.exec(it.line.trim());
+      const link = /^\[[\s\S]*\]\((\S+)\)$/.exec(m[2].trim());
+      map.set(m[1], link ? link[1] : `nolink:${m[2].trim()}`);
+    }
+    return map;
+  };
+  const ka = sourcesByLabel(a);
+  const kb = sourcesByLabel(b);
+  {
+    const { onlyA, onlyB } = multisetDiff([...ka.values()], [...kb.values()]);
+    if (onlyA.length || onlyB.length) {
+      r.add(
+        "error",
+        null,
+        `the two posts cite different sources: only here [${onlyA.join(", ")}]; only in ${path.basename(b.file)} [${onlyB.join(", ")}]`,
+      );
+    }
   }
   const sa = splitSections(a.raw);
   const sb = splitSections(b.raw);
@@ -2677,9 +2686,11 @@ function pairDocs(a, b, o, r) {
     : undefined;
   const markersOf = (d) =>
     d.items.flatMap((it) => (it.type === "code" ? [] : (it.line.match(MARKER) ?? [])));
-  const refsOf = (d) =>
+  const refsOf = (d, labels) =>
     d.items.flatMap((it) =>
-      ["code", "footnote"].includes(it.type) ? [] : (it.line.match(/\[\^\d+\]/g) ?? []),
+      ["code", "footnote"].includes(it.type)
+        ? []
+        : [...it.line.matchAll(/\[\^([^\]\s]+)\]/g)].map((m) => labels.get(m[1]) ?? `[^${m[1]}]`),
     );
   for (let i = 0; i < Math.min(sa.length, sb.length); i++) {
     const da = parseText(sa[i].text, `${a.file}#s${i}`);
@@ -2688,7 +2699,7 @@ function pairDocs(a, b, o, r) {
     compare(`${where}: code spans`, codeSpans(da), codeSpans(db), "error");
     compare(`${where}: URLs`, urlsOf(da), urlsOf(db), "error");
     compare(`${where}: fact markers`, markersOf(da), markersOf(db), "error");
-    compare(`${where}: citations`, refsOf(da), refsOf(db), "error");
+    compare(`${where}: cited sources`, refsOf(da, ka), refsOf(db, kb), "error");
     compare(`${where}: numbers`, numbersOf(da), numbersOf(db), "warn");
     const fa2 = da.figures.map((f) => `${f.id}:${f.text.length}`);
     const fb2 = db.figures.map((f) => `${f.id}:${f.text.length}`);
@@ -2910,6 +2921,7 @@ function citations(facts, numberingFrom) {
   if (!facts.sources.size) fail("the facts file has no ## SOURCES section; citations need it", 1);
   const fixed = numberingFrom ? readNumbering(numberingFrom) : null;
   const numbers = new Map();
+  const order = [];
   const used = new Map();
   const problems = new Set();
   const sourcesOf = (ids) => {
@@ -2937,6 +2949,7 @@ function citations(facts, numberingFrom) {
       }
       numbers.set(key, n);
       used.set(n, s);
+      order.push(n);
     }
     return numbers.get(key);
   };
@@ -2955,6 +2968,15 @@ function citations(facts, numberingFrom) {
       for (const [key, n] of fixed) {
         if (!numbers.has(key))
           problems.add(`source [^${n}] of the --numbering-from post is never cited here`);
+      }
+      const at = order.findIndex((n, i) => i > 0 && n < order[i - 1]);
+      if (at !== -1) {
+        problems.add(
+          `this language first cites the sources in another order than the --numbering-from post ` +
+            `(it reaches [^${order[at - 1]}] before [^${order[at]}]); footnotes are numbered by ` +
+            `first use, so strip this language without --numbering-from — pair compares the two ` +
+            `reference sets, not their numbers`,
+        );
       }
     }
     return [...used.entries()]
@@ -3009,12 +3031,14 @@ function checkFootnotes(doc, o, r, facts) {
   const ns = [...defined.keys()].sort((a, b) => a - b);
   if (ns.some((n, i) => n !== i + 1))
     r.add("error", null, `footnotes are numbered ${ns.join(", ")}; they run 1 … N`);
+  // The site renders a footnote's number by first use and its anchor by its label, so a label
+  // out of first-use order would show one number and jump to another.
   const firstUse = [...new Set(refs.map((x) => x.n))];
   if (firstUse.some((n, i) => n !== i + 1)) {
     r.add(
-      "warn",
+      "error",
       null,
-      `footnotes first appear in the order ${firstUse.join(", ")} (fine for a post numbered from the other language)`,
+      `footnote labels first appear in the order ${firstUse.join(", ")}; they must run 1, 2, 3 … as they first appear (strip without --numbering-from renumbers them)`,
     );
   }
   const lastBody = doc.items
@@ -3419,7 +3443,7 @@ excerpt: "脚本自检用的样例。"
 规则写在 CLAUDE.md。{F1} Anthropic 也这样做（见文档）{F1}，代码 \`a。 b\` 保持原样。{O1}
 `;
 
-/** The zh post cites S2 before S1, so numbering from the en post keeps [^2] for S2. */
+/** The zh post cites S2 before S1: another first-use order than the en post's. */
 const FIXTURE_CITES_ZH = `---
 title: "自检文章"
 date: 2026-10-19
@@ -3429,6 +3453,53 @@ excerpt: "脚本自检用的样例。"
 
 Trace 记下标记，规则写在 CLAUDE.md。{F2} Anthropic 也这样做。{F1}
 `;
+
+/** The zh post cites S1 before S2, the en post's order. */
+const FIXTURE_CITES_ZH_SAME_ORDER = FIXTURE_CITES_ZH.replace(
+  "{F2} Anthropic 也这样做。{F1}",
+  "{F1} Anthropic 也这样做。{F2}",
+);
+
+/** Two published posts citing the same two sources, each numbered by its own first use. */
+const FIXTURE_ORDER_EN = `---
+title: "Order fixture"
+date: 2026-10-19
+category: perspectives
+excerpt: "Two sources."
+---
+
+The first claim.[^1] The second claim.[^2]
+
+## More
+
+The first claim again.[^1]
+
+[^1]: [One](https://example.com/one)
+[^2]: [Two](https://example.com/two)
+`;
+
+const FIXTURE_ORDER_ZH = `---
+title: "顺序样例"
+date: 2026-10-19
+category: perspectives
+excerpt: "两个来源。"
+---
+
+第二条说法。[^1]第一条说法。[^2]
+
+## 更多
+
+第一条说法再次出现。[^2]
+
+[^1]: [Two](https://example.com/two)
+[^2]: [One](https://example.com/one)
+`;
+
+/** Labels that do not run 1, 2, … in first-use order: the site would show one number and jump to another. */
+const FIXTURE_ORDER_BAD = FIXTURE_ORDER_EN.replace(
+  "claim.[^1] The second claim.[^2]",
+  "claim.[^2] The second claim.[^1]",
+);
 
 const FIXTURE_CITES_ZH_PARTIAL = FIXTURE_CITES_ZH.replace("CLAUDE.md。{F2} ", "CLAUDE.md。");
 
@@ -3565,6 +3636,12 @@ function runSelftest() {
   writeFileSync(at("draft.zh.v1.md"), FIXTURE_DRAFT_ZH);
   writeFileSync(at("cites.zh.v1.md"), FIXTURE_CITES_ZH);
   writeFileSync(at("partial.zh.v1.md"), FIXTURE_CITES_ZH_PARTIAL);
+  writeFileSync(at("same.zh.v1.md"), FIXTURE_CITES_ZH_SAME_ORDER);
+  const orderDir = path.join(root, "order");
+  mkdirSync(orderDir, { recursive: true });
+  writeFileSync(path.join(orderDir, "order.en.md"), FIXTURE_ORDER_EN);
+  writeFileSync(path.join(orderDir, "order.zh.md"), FIXTURE_ORDER_ZH);
+  writeFileSync(path.join(orderDir, "bad.en.md"), FIXTURE_ORDER_BAD);
   writeFileSync(at("outline.final.md"), FIXTURE_OUTLINE(100));
   writeFileSync(at("outline.over.md"), FIXTURE_OUTLINE(200));
   writeFileSync(at("findings.en.v1.md"), FIXTURE_FINDINGS);
@@ -3711,7 +3788,25 @@ function runSelftest() {
       file: [publishedZh, /CLAUDE\.md。Anthropic 也这样做（见文档），代码 `a。 b` 保持原样。\n/],
     },
     {
-      name: "--numbering-from reproduces the other language's numbers",
+      name: "--numbering-from reproduces the other language's numbers when the order matches",
+      args: [
+        "strip",
+        "--in",
+        at("same.zh.v1.md"),
+        "--out",
+        citedZh,
+        ...facts,
+        "--numbering-from",
+        published,
+      ],
+      code: 0,
+      file: [
+        citedZh,
+        /CLAUDE\.md。\[\^1\]Anthropic 也这样做。\[\^2\]\n\n\[\^1\]: \[PenguinHarness docs/,
+      ],
+    },
+    {
+      name: "--numbering-from refuses a language that first cites the sources in another order",
       args: [
         "strip",
         "--in",
@@ -3722,11 +3817,35 @@ function runSelftest() {
         "--numbering-from",
         published,
       ],
+      code: 1,
+      stderr:
+        /it reaches \[\^2\] before \[\^1\][\s\S]*strip this language without --numbering-from/,
+    },
+    {
+      name: "without --numbering-from the second language is numbered by its own first use",
+      args: ["strip", "--in", at("cites.zh.v1.md"), "--out", citedZh, ...facts],
       code: 0,
       file: [
         citedZh,
-        /CLAUDE\.md。\[\^2\]Anthropic 也这样做。\[\^1\]\n\n\[\^1\]: \[PenguinHarness docs/,
+        /CLAUDE\.md。\[\^1\]Anthropic 也这样做。\[\^2\]\n\n\[\^1\]: \[packages\/core\/src\/trace\/writer\.ts\]/,
       ],
+    },
+    {
+      name: "a published post whose labels are not in first-use order fails check",
+      args: ["check", "--in", path.join(orderDir, "bad.en.md")],
+      code: 1,
+      stdout: /ERROR [^\n]*footnote labels first appear in the order 2, 1/,
+    },
+    {
+      name: "pair accepts the same sources numbered in each language's own first-use order",
+      args: [
+        "pair",
+        "--in",
+        path.join(orderDir, "order.en.md"),
+        "--pair",
+        path.join(orderDir, "order.zh.md"),
+      ],
+      code: 0,
     },
     {
       name: "--numbering-from rejects a source the other language cites and this one does not",
@@ -3747,7 +3866,7 @@ function runSelftest() {
       name: "pair flags reference lists that differ",
       args: ["pair", "--in", published, "--pair", otherZh],
       code: 1,
-      stdout: /reference lists differ/,
+      stdout: /the two posts cite different sources/,
     },
     {
       name: "a plan over its budget fails plan and writes the feedback for one rerun",
