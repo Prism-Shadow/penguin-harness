@@ -93,8 +93,18 @@ export function ArchiveReceiptHost() {
 
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-[100] w-[min(22rem,calc(100vw-2rem))]">
-      <div className="pointer-events-auto flex items-start gap-2 rounded-lg border border-line bg-overlay p-3 shadow-lg">
-        <GlyphIcon d={ICONS.archive} size={ICON_SIZE.rowLead} className="mt-0.5 shrink-0 text-fg-muted" />
+      {/* A polite live region, like the toast stack: the receipt is a notice, and a reader
+          should hear that something was filed away (and that it can be undone). */}
+      <div
+        role="status"
+        aria-live="polite"
+        className="pointer-events-auto flex items-start gap-2 rounded-lg border border-line bg-overlay p-3 shadow-lg"
+      >
+        <GlyphIcon
+          d={ICONS.archive}
+          size={ICON_SIZE.rowLead}
+          className="mt-0.5 shrink-0 text-fg-muted"
+        />
         <div className="min-w-0 flex-1">
           <p className="break-words text-sm text-fg">{S.chat.archiveReceipt.archived(receipt.title)}</p>
           <div className="mt-2 flex items-center gap-1">
