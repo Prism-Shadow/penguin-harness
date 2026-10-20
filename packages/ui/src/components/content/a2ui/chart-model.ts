@@ -82,6 +82,9 @@ export type ChartModel =
   | {
       draw: "scatter";
       series: { label: string; points: [number, number][]; paint: ChartPaint }[];
+      /** The y axis' bounds. */
+      min?: number;
+      max?: number;
       fmtX: (v: number) => string;
       fmtY: (v: number) => string;
       captions?: ChartCaptions;
@@ -192,6 +195,7 @@ export function chartModel(spec: A2uiChart, lang: A2uiLang): ChartModel {
           points: s.points ?? [],
           paint: slot(i),
         })),
+        ...bounds,
         fmtX: (v) => formatValue(v, spec.xUnit, lang),
         fmtY: fmtValue,
         ...withCaptions,

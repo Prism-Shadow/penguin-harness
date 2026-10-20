@@ -36,8 +36,8 @@ function Plot({ model, label }: { model: PlotModel; label: string }) {
   const width = measured > 0 ? measured : FALLBACK_WIDTH;
   const captions = model.captions !== undefined ? { captions: model.captions } : {};
   const bounds = {
-    ...(model.draw !== "scatter" && model.min !== undefined ? { min: model.min } : {}),
-    ...(model.draw !== "scatter" && model.max !== undefined ? { max: model.max } : {}),
+    ...(model.min !== undefined ? { min: model.min } : {}),
+    ...(model.max !== undefined ? { max: model.max } : {}),
   };
   return (
     <div ref={frame} className="w-full min-w-0">
@@ -72,6 +72,7 @@ function Plot({ model, label }: { model: PlotModel; label: string }) {
           fmtX={model.fmtX}
           fmtY={model.fmtY}
           label={label}
+          {...bounds}
           {...captions}
         />
       )}

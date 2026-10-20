@@ -150,9 +150,12 @@ describe("ChartBlock", () => {
         ],
         xUnit: "KB",
         yUnit: "ms",
+        min: 0,
+        max: 120,
       },
       "Scatter plot. 2 series: small (x 1–3 KB, y 10–30 ms), large (x 10–30 KB, y 50–90 ms).",
-      'data-part="point"',
+      // The y axis runs to the model's bound, past the data's own round number.
+      ">120 ms<",
     ],
     [
       "a histogram",
