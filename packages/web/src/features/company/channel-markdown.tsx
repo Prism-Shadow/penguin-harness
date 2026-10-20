@@ -31,12 +31,14 @@ import {
   mentionNameHandles,
   mentionNote,
   mentionRuns,
+  mentionUrlToken,
 } from "./channel-mentions";
 
 /** The mdast shapes this pass touches, declared structurally rather than taking `@types/mdast` on. */
 interface MdNode {
   type: string;
   value?: string;
+  url?: string;
   children?: MdNode[];
   data?: {
     hName?: string;
@@ -89,11 +91,33 @@ function splitText(value: string, names: ReadonlyMap<string, string>): MdNode[] 
   return changed ? out : null;
 }
 
-/** Walks every parent, so a mention in a list item or a table cell is covered too. */
+/** The text a node holds, as one string: a link's label, say. */
+function textOf(node: MdNode): string {
+  if (node.type === "text" && typeof node.value === "string") return node.value;
+  if (!Array.isArray(node.children)) return "";
+  return node.children.map(textOf).join("");
+}
+
+/**
+ * Walks every parent, so a mention in a list item or a table cell is covered too.
+ *
+ * A mention in the exact grammar is a Markdown LINK: `[@Label](mention://agent/<id>)` parses as
+ * a link whose label is the text and whose destination is the principal. The text pass below
+ * never sees the span, so the link is turned into the chip here — otherwise it renders as a dead
+ * link (react-markdown strips the unknown scheme, leaving an empty href) and the reader never
+ * learns who was named.
+ */
 function walk(parent: MdParent, names: ReadonlyMap<string, string>): void {
   const children = parent.children;
   for (let i = 0; i < children.length; i += 1) {
     const node = children[i]!;
+    if (node.type === "link") {
+      const token = mentionUrlToken(node.url);
+      if (token !== null) {
+        children.splice(i, 1, mentionNode(textOf(node), token));
+        continue;
+      }
+    }
     if (node.type === "text" && typeof node.value === "string") {
       const split = splitText(node.value, names);
       if (split !== null) {

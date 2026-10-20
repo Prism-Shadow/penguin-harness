@@ -231,6 +231,26 @@ export function mentionRuns(
 const MENTION_MD_RUN =
   /\[(@[^\]\n]*)\]\(mention:\/\/(?:(agent|user|squad)\/([^)\s]+)|(all))\)/g;
 
+// The same grammar read from a URL alone: the mention's principal lives in the destination,
+// and a Markdown link's destination is what the renderer gets to see.
+const MENTION_URL = /^mention:\/\/(?:(agent|user|squad)\/([^)\s]+)|(all))$/;
+
+/**
+ * The mention token a URL carries (`agent:<id>`, `user:<id>`, `squad:<id>` or `all`), or null
+ * for any other URL.
+ *
+ * A mention written in the exact grammar is a Markdown LINK by the time the renderer sees it:
+ * `[@Label](mention://user/admin)` is parsed as a link whose text is the label and whose
+ * destination is the principal. So the text pass never sees the span — the principal has to be
+ * read from the link's destination, or the mention renders as a dead link instead of a chip.
+ */
+export function mentionUrlToken(url: string | null | undefined): string | null {
+  if (typeof url !== "string") return null;
+  const m = MENTION_URL.exec(url);
+  if (m === null) return null;
+  return m[3] === "all" ? "all" : `${m[1]}:${m[2]}`;
+}
+
 /** The pre-exact-grammar pass over one gap between markdown spans: bare handles chip, but page nobody. */
 function legacyRuns(text: string, names: ReadonlyMap<string, string>): TextRun[] {
   const byLength = [...names.keys()].sort((a, b) => b.length - a.length);

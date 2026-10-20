@@ -86,6 +86,46 @@ describe("mentions inside a message body", () => {
   });
 });
 
+describe("mentions in the exact grammar", () => {
+  // A mention in the exact grammar is a Markdown LINK by the time the renderer sees it, so the
+  // principal has to be read from the link's destination. Without that it renders as a dead link
+  // (an empty href) — the reader never sees who was named.
+  it("chips a mention written as a link to a principal", () => {
+    const html = render("[@CEO](mention://agent/ceo) 先看一下");
+    expect(html).toContain('data-tooltip="@agent:ceo"');
+    expect(html).toContain("@Ada CEO");
+    expect(html).not.toContain("<a ");
+    expect(html).not.toContain("mention://");
+  });
+
+  it("chips a member mention, showing the member's id", () => {
+    const html = render("[@董事会](mention://user/admin) 请批一下");
+    expect(html).toContain('data-tooltip="@user:admin"');
+    expect(html).toContain("@admin");
+    expect(html).not.toContain("<a ");
+  });
+
+  it("chips the everyone mention", () => {
+    const html = render("[@大家](mention://all) 同步一下");
+    expect(html).toContain('data-tooltip="@all"');
+    expect(html).toContain(`@${zh.company.principalAll}`);
+    expect(html).not.toContain("<a ");
+  });
+
+  it("chips a mention inside a list item and a heading", () => {
+    const html = render("# [@CEO](mention://agent/ceo)\n\n- ping [@CEO](mention://agent/ceo)");
+    expect(html).toContain("<h1>");
+    expect(html).toContain("<li>");
+    expect((html.match(/@Ada CEO/g) ?? []).length).toBe(2);
+  });
+
+  it("keeps an ordinary link a link", () => {
+    const html = render("see [docs](https://example.com)");
+    expect(html).toContain('href="https://example.com"');
+    expect(html).toContain('target="_blank"');
+  });
+});
+
 describe("typed line breaks", () => {
   it("keeps a single newline as a break rather than a space", () => {
     const html = render("first line\nsecond line");
