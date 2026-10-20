@@ -1,17 +1,32 @@
-# A blog post: inspecting harness performance automatically with a coding agent
+# A blog post: testing agent harnesses with scripted edges and invariants
 
-- **Date:** 2026-10-17
+- **Date:** 2026-10-19
 - **Type:** process
 - **Scope:** `landing`
 - **PR:** [#1186](https://github.com/Prism-Shadow/penguin-harness/pull/1186)
 
-[中文版](2026-10-17-blog-prompt-cache.zh.md)
+[中文版](2026-10-19-blog-testing-agent-harnesses.zh.md)
 
-The blog gained a technical post, in English and Chinese, on the test system that keeps every model request an extension of the previous one: the three `prompt-cache-*` suites in `packages/core`. Its figures are inline SVG in the post's Markdown, styled by new classes in the landing stylesheet.
+The blog gained a technical post, in English and Chinese, on how PenguinHarness checks its request
+assembly in CI. Its worked example is the `prompt-cache-*` suites in `packages/core`.
 
 ## Details
 
-- `keeping-the-prompt-cache-hot` is short and figure-led. It explains why a cache miss has to fail a test and the principle of the test system added in [#722](https://github.com/Prism-Shadow/penguin-harness/pull/722) (every request recorded, then read by a byte-level diagnostic and an Anthropic-shaped cache simulator), then compares four design choices by cache hit ratio and input cost: a timestamp in the system prompt, a tool edited mid-context, history rebuilt on resume, and the compaction-request regression fixed in [#700](https://github.com/Prism-Shadow/penguin-harness/pull/700). It closes with the command that runs the suites.
-- Seven drawn figures: request strips coloured by cache state, the test system as a flowchart, the request's block order with the diagnosis each change gets, and four before/after pairs that share one layout and scale. Each SVG carries its language's text, a title and a visually hidden text list with the same content. The charts and the failure report shown were generated from a run of the suites' own helpers and simulator, deterministic and without any model API call.
-- `packages/landing/src/styles.css` gained the `.post-figure` and `.fig-*` classes: one colour per cache state (read, written, written again) taken from the sites' palette, with `html.dark` variants, so a figure follows the theme.
-- The landing blog test lists the new post first in the practice category.
+- `testing-agent-harnesses` (category `practice`) starts from the regression that led to the
+  suites, the compaction request's thinking level fixed in
+  [#700](https://github.com/Prism-Shadow/penguin-harness/pull/700), and describes the test system
+  added in [#722](https://github.com/Prism-Shadow/penguin-harness/pull/722): the real Session and
+  model client over a scripted provider stream, every recorded request read by a byte diagnostic
+  and by a simulator of Anthropic's documented cache rules, and one invariant with a named
+  allow-list. It then compares the designs not taken (live API calls, a bytes-only check, pinned
+  token counts, re-baselining to green) and ends with the command that runs the suites.
+- The numbers in the post come from the suites' own helpers, run on the project's test machine
+  with no model API: the suites' run time, the token counts after a thinking-level move and after a
+  harmless prompt edit, and the estimated compaction-request cost with #700 reverted in two
+  scenarios.
+- Seven figures are drawn as inline SVG with the shared figure styles of
+  [#1217](https://github.com/Prism-Shadow/penguin-harness/pull/1217): the silent regression, the
+  request's blocks up to the cache breakpoint, the test pipeline, and four comparisons of a
+  rejected design with the chosen one, the last with its costs as bars on one scale. Every string
+  in a figure is the post's own text in that language.
+- The landing blog test lists the post first in the practice category.

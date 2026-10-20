@@ -1,17 +1,17 @@
-# 博客文章：用 Coding Agent 自动检查 Harness 的性能
+# 博客文章：用脚本化边界和不变量测试 agent harness
 
-- **Date:** 2026-10-17
+- **Date:** 2026-10-19
 - **Type:** process
 - **Scope:** `landing`
 - **PR:** [#1186](https://github.com/Prism-Shadow/penguin-harness/pull/1186)
 
-[English](2026-10-17-blog-prompt-cache.md)
+[English](2026-10-19-blog-testing-agent-harnesses.md)
 
-博客新增一篇中英文技术文章，介绍让每个模型请求都延续上一个请求的测试体系，即 `packages/core` 里的三个 `prompt-cache-*` 测试集。文中的图是直接写在 Markdown 里的内联 SVG，样式来自落地页样式表中新增的类。
+博客新增一篇中英文技术文章，讲 PenguinHarness 如何在 CI 中检查请求组装，以 `packages/core` 里的 `prompt-cache-*` 测试套件为例。
 
 ## 细节
 
-- `keeping-the-prompt-cache-hot` 篇幅短、以图为主。它讲为什么缓存未命中必须让测试失败，以及 [#722](https://github.com/Prism-Shadow/penguin-harness/pull/722) 加入的测试体系依据的原理（录下每个请求，再由字节级诊断器和按 Anthropic 规则构建的缓存模拟器各读一遍），然后按缓存命中率和输入成本对比四个设计选择：系统提示词里的时间戳、上下文中途改动工具、恢复时重建历史，以及 [#700](https://github.com/Prism-Shadow/penguin-harness/pull/700) 修复的压缩请求回归。结尾给出运行这些测试集的命令。
-- 文中有七张绘制的图：按缓存状态着色的请求条、测试体系的流程图、请求的块顺序及每种改动得到的诊断，以及四组布局和比例尺都相同的前后对照图。每个 SVG 都使用所在语言的文字，带有标题和一份内容相同、视觉上隐藏的文字列表。图表和文中的失败报告，都由测试集自带的辅助模块和模拟器的一次运行生成，结果确定，没有调用任何模型 API。
-- `packages/landing/src/styles.css` 新增了 `.post-figure` 和 `.fig-*` 类：每种缓存状态（读取、写入、重复写入）使用站点调色板里的一种颜色，并带有 `html.dark` 变体，图会跟随主题切换。
-- 落地页博客测试把新文章列在技术实践分类的首位。
+- `testing-agent-harnesses`（分类 `practice`）从促成这些套件的回归讲起，即 [#700](https://github.com/Prism-Shadow/penguin-harness/pull/700) 修复的压缩请求思考等级问题，然后介绍 [#722](https://github.com/Prism-Shadow/penguin-harness/pull/722) 加入的测试系统：真实的 Session 和模型客户端运行在脚本化的供应商流之上，每个录制下来的请求分别由字节诊断和按 Anthropic 公开缓存规则实现的模拟器读取，再由一条带命名豁免清单的不变量判定。随后对比没有采用的设计（调用线上 API、只校验字节、固定 Token 计数、改基线到变绿），结尾给出运行套件的命令。
+- 文中的数字都来自套件自带的辅助模块，在项目的测试机上运行，不调用任何模型 API：套件的运行耗时，思考等级调整后和一次无害提示编辑后的 Token 计数，以及在两个场景下回滚 #700 后压缩请求的估算成本。
+- 七张图以内联 SVG 绘制，使用 [#1217](https://github.com/Prism-Shadow/penguin-harness/pull/1217) 的共享图样式：静默回归、请求中直到缓存断点的各个块、测试流程，以及四组未采用方案与所选方案的对照，最后一组把成本画成同一比例尺上的条形。图中的每段文字都取自该语言版本的正文。
+- 落地页博客测试把这篇文章列在技术实践分类的首位。
