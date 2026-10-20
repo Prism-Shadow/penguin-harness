@@ -405,7 +405,12 @@ export const en: Strings = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
+    /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "New terminal",
+    /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
+    shellEntry: "Command-line terminal",
+    /** The terminal panel's strip of shells, for assistive technology. */
+    tabsLabel: "Terminal tabs",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
@@ -415,8 +420,6 @@ export const en: Strings = {
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
     noTerminalApi:
       "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
-    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
-    detach: "Open in new window",
     status: {
       connecting: "connecting",
       ready: "ready",
@@ -2320,10 +2323,12 @@ export const en: Strings = {
     },
     providerEnvNotes: {
       zhipu:
-        "Defaults to the Z.AI global endpoint (api.z.ai); keys from bigmodel.cn need base URL https://open.bigmodel.cn/api/paas/v4",
+        "Defaults to the Z.AI global endpoint (api.z.ai); for a bigmodel.cn key, set ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4 beside it, or enter the key here with that base URL",
       moonshot:
-        "Defaults to the China endpoint (api.moonshot.cn); keys from platform.kimi.com need base URL https://api.moonshot.ai/v1",
+        "Defaults to the China endpoint (api.moonshot.cn); for a platform.kimi.com key, set MOONSHOT_BASE_URL=https://api.moonshot.ai/v1 beside it, or enter the key here with that base URL",
     },
+    envBaseUrlNote: (envBaseUrlKey: string): string =>
+      `Requests go to the client's default endpoint, or to ${envBaseUrlKey} when it is set`,
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
       `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,

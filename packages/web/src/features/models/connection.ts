@@ -10,11 +10,11 @@
  * only source: a field neither the row nor its group sets is the client's default, and the
  * catalog is never consulted.
  */
-import { effectiveConnection, groupKeyReaches } from "@prismshadow/penguin-core/model-catalog";
+import { effectiveConnection, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
 import type {
   EffectiveConnection,
   ProviderConnectionShape,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-core/model-connection";
 import type {
   CredentialInfo,
   ProviderConnectionDto,
@@ -104,8 +104,7 @@ export interface RowKeyLike {
   credential?: CredentialInfo | undefined;
   /**
    * The environment's key, masked, as GET /models reports it: only for a variable that holds a
-   * value, on the row's effective endpoint, and only when neither the row nor its group holds a
-   * key.
+   * value, and only when neither the row nor its group holds a key and neither names a base URL.
    */
   envKeyMasked?: string | undefined;
 }

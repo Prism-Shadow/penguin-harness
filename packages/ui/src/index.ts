@@ -248,9 +248,10 @@ export * from "./components/navigation/breadcrumbs/crumb-fit";
 export * from "./components/navigation/breadcrumbs/breadcrumbs";
 export * from "./components/content/prose/frontmatter";
 
-// W7-C — the dock: its tab strip, its frame and header buttons, the picker of an empty dock, the
-// toolbar's dock toggles, and the floating launcher's ball and fan.
+// W7-C — the dock: its tab strip and the strip inside a panel, its frame and header buttons, the
+// picker of an empty dock, the toolbar's dock toggles, and the floating launcher's ball and fan.
 export * from "./components/navigation/dock-tabs/dock-tabs";
+export * from "./components/navigation/panel-tabs/panel-tabs";
 export * from "./components/shell/dock-frame/dock-frame";
 export * from "./components/shell/dock-picker/dock-picker";
 export * from "./components/shell/panels-toolbar/panels-toolbar";

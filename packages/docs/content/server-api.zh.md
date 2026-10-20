@@ -1182,13 +1182,15 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/terminals` | 列出调用者的终端：`{terminals}` |
-| POST | `/api/terminals` | 打开一个终端：`{cwd?, name?, shell?, cols?, rows?}` → 201，返回终端信息 |
+| POST | `/api/terminals` | 打开一个终端：`{cwd?, name?, shell?, cols?, rows?, sessionId?}` → 201，返回终端信息 |
 | GET | `/api/terminals/:id` | 单个终端的信息 |
+| PATCH | `/api/terminals/:id` | 把终端改记到另一个对话名下：`{sessionId}` → 终端信息 |
 | DELETE | `/api/terminals/:id` | 终止终端；204 |
 | GET | `/api/terminals/:id/capture?start=&end=` | 以纯文本返回屏幕内容 |
 | POST | `/api/terminals/:id/keys` | 发送输入：`{keys, literal?}` → `{ok: true}` |
 
 - `cwd` 默认为用户主目录，`shell` 默认为用户的登录 shell。
+- `sessionId` 指明终端是为哪个对话打开的。每个终端的信息都带这个字段，打开时没有给出则为 `null`；Web App 只列出对话自己的终端。它只是调用者自己终端之间的标记，不是权限；取值既不是非空字符串也不是 `null` 时返回 `400`。`PATCH` 必须带上它（`null` 表示不归任何对话）。
 - `keys` 是字面文本或按键名：`Enter`、`Tab`、`Escape`、`Backspace`、`Space`、`Up`、`Down`、`Left`、`Right`、`Home`、`End`、`PageUp`、`PageDown`、`Delete`，或 `C-c` 这样的组合键。设置 `literal: true` 时，文本按原样发送。shell 已退出的终端返回 `409` `terminal_exited`。
 - 字节流不走这些路由：它是一个 WebSocket，地址为 `GET /api/terminals/:id/stream`（一个 Upgrade 请求）。
 - 缺少有效会话或 token 的请求返回 `401` `unauthorized`。

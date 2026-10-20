@@ -465,7 +465,12 @@ export const zh = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",
+    /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "新建终端",
+    /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
+    shellEntry: "命令行终端",
+    /** The terminal panel's strip of shells, for assistive technology. */
+    tabsLabel: "终端标签页",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
@@ -473,8 +478,6 @@ export const zh = {
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
     noTerminalApi:
       "该服务端没有终端接口：运行中的 runtime 早于该功能。热更新只替换平台与前端，终端接口属于 runtime，需更新 runtime 本身（重启无效）",
-    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
-    detach: "在新窗口打开",
     status: {
       connecting: "连接中",
       ready: "已连接",
@@ -2499,10 +2502,12 @@ export const zh = {
     // wherever the env fallback hint appears.
     providerEnvNotes: {
       zhipu:
-        "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需填 base URL https://open.bigmodel.cn/api/paas/v4",
+        "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需在环境中同时设置 ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4，或在此填写 key 并填该 base URL",
       moonshot:
-        "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需填 base URL https://api.moonshot.ai/v1",
+        "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需在环境中同时设置 MOONSHOT_BASE_URL=https://api.moonshot.ai/v1，或在此填写 key 并填该 base URL",
     } as Record<string, string | undefined>,
+    envBaseUrlNote: (envBaseUrlKey: string): string =>
+      `请求发往该客户端的默认端点；设置了 ${envBaseUrlKey} 时发往该地址`,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,

@@ -256,7 +256,7 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
   family: PENGUIN_FAMILY,
   // A parked pty, as its adopters use it — EVERY member reached after adoption, not a
   // representative sample: the manager (id, seq, ownerUserId, alive, info, onExit, kill,
-  // dispose), the routes (capture, write, rename, exit) and the stream binding
+  // dispose), the routes (capture, write, rename, exit, setSession) and the stream binding
   // (onOutput, resize, releaseSize, restoreStream). A short list would let a predecessor
   // satisfy the descriptor and still TypeError on the first keystroke after a swap,
   // which is exactly what this check exists to prevent.
@@ -268,6 +268,7 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "exit",
     "info",
     "rename",
+    "setSession",
     "capture",
     "write",
     "resize",

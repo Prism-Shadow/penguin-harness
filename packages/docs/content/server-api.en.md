@@ -1182,13 +1182,15 @@ Interactive shells on the server host. The Web App's terminals use these routes,
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/terminals` | Lists the caller's terminals: `{terminals}` |
-| POST | `/api/terminals` | Opens a terminal: `{cwd?, name?, shell?, cols?, rows?}` → 201 with the terminal's info |
+| POST | `/api/terminals` | Opens a terminal: `{cwd?, name?, shell?, cols?, rows?, sessionId?}` → 201 with the terminal's info |
 | GET | `/api/terminals/:id` | One terminal's info |
+| PATCH | `/api/terminals/:id` | Files the terminal under another conversation: `{sessionId}` → the terminal's info |
 | DELETE | `/api/terminals/:id` | Kills the terminal; 204 |
 | GET | `/api/terminals/:id/capture?start=&end=` | The screen contents as plain text |
 | POST | `/api/terminals/:id/keys` | Sends input: `{keys, literal?}` → `{ok: true}` |
 
 - `cwd` defaults to the home directory, and `shell` to the user's login shell.
+- `sessionId` names the conversation the terminal is opened for. Every terminal's info carries it, `null` for one opened without it; the Web App lists a conversation's own terminals only. It is a label within the caller's own terminals, not a permission, and a value that is not a non-empty string or `null` returns `400`. `PATCH` requires it (`null` files the terminal under no conversation).
 - `keys` is literal text or a key token: `Enter`, `Tab`, `Escape`, `Backspace`, `Space`, `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`, `PageDown`, `Delete`, or a control chord such as `C-c`. With `literal: true`, the text is sent exactly as given. A terminal whose shell has exited returns `409` `terminal_exited`.
 - The byte stream does not use these routes: it is a WebSocket at `GET /api/terminals/:id/stream` (an Upgrade request).
 - A request without a valid session or token returns `401` `unauthorized`.
