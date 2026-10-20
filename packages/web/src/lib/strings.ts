@@ -4543,6 +4543,8 @@ Benchmark：
     sendingTestMessage: "发送中…",
     testMessageSent: "测试消息已发送",
     statusLabel: "连接状态",
+    /** The status label while the machine is out of reach: what follows is its last answer, not a live state. */
+    statusLastKnown: "最后已知状态",
     status: {
       disconnected: "未连接",
       connecting: "连接中",

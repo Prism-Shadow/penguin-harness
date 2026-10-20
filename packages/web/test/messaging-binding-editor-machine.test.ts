@@ -5,13 +5,14 @@
  *
  * - Given a conversation on a machine that is reconnecting, the editor asks the machine nothing:
  *   it shows what the machine last answered, read-only, under a notice naming the machine and
- *   the time of that answer; the switch and Save take no press.
+ *   the time of that answer, its connection state as the last known one rather than a live one;
+ *   the switch and Save take no press.
  * - Given nothing was ever read from that machine in this browser, the notice stands alone.
  * - When the machine is back, the editor reads it and says where the bot connects from, and the
  *   switch turns the bot on over there; the next time the machine is away, the editor shows the
  *   bot on, as it last was on screen.
  * - Given the machine drops while the editor is open, the form stays on what was read, turns
- *   read-only and says the machine's state.
+ *   read-only, says the machine's state, and reads the connection state as last known.
  * - Given the bot is already connected on another server, turning it on asks this server who
  *   holds it, refuses naming that server, and never asks the machine to turn it on.
  * - Given a machine that could not be asked, the enable goes through and the editor names that
@@ -109,6 +110,9 @@ function connectionSwitch(): HTMLButtonElement {
 
 const screenText = () => document.body.textContent ?? "";
 
+/** The row the connection switch sits on: the switch, then the connection state's label and word. */
+const statusRow = () => connectionSwitch().closest("label")?.parentElement?.textContent ?? "";
+
 /** The notice over the editor, read as a status by assistive technology. */
 const noticeText = () => document.querySelector('[role="status"]')?.textContent ?? "";
 
@@ -178,6 +182,9 @@ describe("the messaging editor of a conversation on a machine", () => {
     // The remembered state: the bot was on, with its masked token.
     expect(connectionSwitch().getAttribute("aria-checked")).toBe("true");
     expect(screenText()).toContain("1234…FAKE");
+    // "Connected" as the machine last said it, never as a live state.
+    expect(statusRow()).toContain(en.messaging.statusLastKnown);
+    expect(statusRow()).not.toContain(en.messaging.statusLabel);
     expect(connectionSwitch().disabled).toBe(true);
     expect(button(en.common.save).disabled).toBe(true);
     expect(button(en.messaging.test).disabled).toBe(true);
@@ -224,6 +231,7 @@ describe("the messaging editor of a conversation on a machine", () => {
     const server = await openPanel(SESSION);
     await waitFor(() => screenText().includes(en.messaging.runsOn(ALIAS)), 40);
     expect(connectionSwitch().disabled).toBe(false);
+    expect(statusRow()).toContain(en.messaging.statusLabel);
 
     server.setReconnecting(MACHINE, true);
     await run(() => publishMachinesChanged());
@@ -231,6 +239,8 @@ describe("the messaging editor of a conversation on a machine", () => {
     expect(screenText()).not.toContain(en.messaging.runsOn(ALIAS));
     expect(noticeText()).toContain(ALIAS);
     expect(screenText()).toContain("1234…FAKE");
+    expect(statusRow()).toContain(en.messaging.statusLastKnown);
+    expect(statusRow()).not.toContain(en.messaging.statusLabel);
   });
 
   it("refuses to turn on a bot held on another server, naming it, and never asks the machine", async () => {

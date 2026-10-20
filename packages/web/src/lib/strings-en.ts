@@ -4339,6 +4339,7 @@ Scenarios:
     sendingTestMessage: "Sending…",
     testMessageSent: "Test message sent",
     statusLabel: "Connection status",
+    statusLastKnown: "Last known status",
     status: {
       disconnected: "Not connected",
       connecting: "Connecting",
