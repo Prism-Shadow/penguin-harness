@@ -1,6 +1,6 @@
 Output contract for one section (the sections are assembled into the published file without edits):
 - Return only section {{SECTION_N}} of the piece: {{SECTION_SHAPE}}
-- The budget is binding: at most {{SECTION_BUDGET}} of body text; the plan asks for about {{SECTION_WORDS_PLANNED}}. Headings, frontmatter and figure blocks do not count. Count before you answer: a section over its budget is rejected and written again.
+- The budget is binding: at most {{SECTION_BUDGET}} of body text; the plan asks for about {{SECTION_WORDS_PLANNED}}. Headings, frontmatter and figure blocks do not count. Count before you answer: a section over its budget is rejected and written again.{{TLDR_NOTE}}
 - Figures: exactly the figure blocks this section owns ({{SECTION_FIGURE_IDS}}), each at the place the plan gives, written as a figure block. The picture is drawn from this block and from nothing else, so it must hold every word the figure shows:
   ```figure id=<stem>
   alt: <what is in the picture, one sentence, no "image of">

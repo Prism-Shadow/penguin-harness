@@ -658,7 +658,7 @@ function budgetsOf(prof, lang, o = {}) {
     lead: rangeOf(s[zh ? "zh-lead-chars" : "lead-words"]),
     section: rangeOf(s[zh ? "zh-section-chars" : "section-words"]),
     sections: rangeOf(s.sections),
-    tldr: rangeOf(s["tldr-words"]),
+    tldr: s.tldr === "yes" ? rangeOf(s[zh ? "zh-tldr-chars" : "tldr-words"]) : undefined,
   };
   if (o["word-budget"] !== undefined && rangeOf(o["word-budget"]))
     b.total = rangeOf(o["word-budget"]);
@@ -666,6 +666,31 @@ function budgetsOf(prof, lang, o = {}) {
     b.section = { floor: b.section?.floor ?? 0, cap: Number(o["section-cap"]) };
   }
   return b;
+}
+
+/**
+ * Section 0 as the lead and its TL;DR: the `**TL;DR**` line and the list under it belong to the
+ * TL;DR, which has its own budget; everything else in section 0 is the lead the plan's row 0 sizes.
+ */
+function splitTldr(text) {
+  const lines = text.split("\n");
+  const at = lines.findIndex((l) => TLDR.test(l.trim()));
+  if (at === -1) return { lead: text, tldr: undefined };
+  let end = at + 1;
+  while (end < lines.length && (lines[end].trim() === "" || LIST_ITEM.test(lines[end]))) end++;
+  return {
+    lead: [...lines.slice(0, at), ...lines.slice(end)].join("\n"),
+    tldr: lines.slice(at + 1, end).join("\n"),
+  };
+}
+
+/** Section 0's sizes: the lead and, when there is one, the TL;DR, counted apart. */
+function leadCounts(text, lang) {
+  const { lead, tldr } = splitTldr(text);
+  return {
+    lead: countBody(lead, lang),
+    tldr: tldr === undefined ? undefined : countBody(tldr, lang),
+  };
 }
 
 /** A row's hard limit: the smaller of the profile cap and the plan's number plus ten percent. */
@@ -929,6 +954,11 @@ function sectionParams(
   params.SECTION_WORDS_PLANNED =
     planned !== undefined ? `${planned} ${budgets.unitName}` : "the size the plan gives";
   params.SECTION_FIGURE_IDS = figureIds.length ? figureIds.join(", ") : "none";
+  params.TLDR_NOTE = "";
+  if (n === 0 && budgets.tldr) {
+    params.TLDR_NOTE = ` ${F["tldr-budget"]}`;
+    params.TLDR_RANGE = `${budgets.tldr.floor}–${budgets.tldr.cap} ${budgets.unitName}`;
+  }
   return params;
 }
 
@@ -975,6 +1005,8 @@ function buildMessages(step, o) {
       if (b.total) params.WORD_CAP = `${b.total.cap}`;
       if (b.section) params.SECTION_CAP = `${b.section.cap}`;
       if (b.lead) params.LEAD_RANGE = `${b.lead.floor}–${b.lead.cap}`;
+      params.TLDR_PLAN_NOTE = b.tldr ? ` ${F["tldr-plan"]}` : "";
+      if (b.tldr) params.TLDR_RANGE = `${b.tldr.floor}–${b.tldr.cap} ${b.unitName}`;
       params.SECTION_RANGE = b.sections
         ? `${b.sections.floor} to ${b.sections.cap}`
         : "the outline's number of";
@@ -1240,12 +1272,19 @@ function sectionAfter(out, { n, lang, row, budgets, cap, file }) {
   }
   if (/\[\^/.test(out)) problems.push("a footnote `[^…]` (citations are generated, not written)");
   if (/^\*\*(Sources|来源)/m.test(out)) problems.push("a Sources line");
-  const count = countBody(out, lang);
+  const sizes = n === 0 ? leadCounts(out, lang) : { lead: countBody(out, lang) };
+  const count = sizes.lead;
   process.stderr.write(
-    `section ${n}: ${count} ${budgets.unit}${cap !== undefined ? ` of at most ${cap}` : ""}${row.budget > 0 ? ` (plan ${row.budget})` : ""}\n`,
+    `section ${n}: ${count} ${budgets.unit}${cap !== undefined ? ` of at most ${cap}` : ""}${row.budget > 0 ? ` (plan ${row.budget})` : ""}` +
+      `${sizes.tldr !== undefined ? `; TL;DR ${sizes.tldr}${budgets.tldr ? ` of at most ${budgets.tldr.cap}` : ""}` : ""}\n`,
   );
   if (cap !== undefined && count > cap)
     problems.push(`over budget: ${count} ${budgets.unit} > ${cap}`);
+  if (sizes.tldr !== undefined && !budgets.tldr)
+    problems.push("a TL;DR, which this profile does not have");
+  if (sizes.tldr !== undefined && budgets.tldr && sizes.tldr > budgets.tldr.cap) {
+    problems.push(`TL;DR over budget: ${sizes.tldr} ${budgets.unit} > ${budgets.tldr.cap}`);
+  }
   for (const p of problems) note(p);
   note(
     problems.length
@@ -2672,8 +2711,9 @@ function pairDocs(a, b, o, r) {
         );
       }
       const cap = rowCap(zhBudgets, i, undefined);
-      if (cap !== undefined && zh > cap)
-        r.add("error", null, `${where}: ${zh} Chinese characters; the cap is ${cap}`);
+      const zhSized = i === 0 ? leadCounts(zhText, "zh").lead : zh;
+      if (cap !== undefined && zhSized > cap)
+        r.add("error", null, `${where}: ${zhSized} Chinese characters; the cap is ${cap}`);
     }
   }
 }
@@ -2762,8 +2802,9 @@ function runAssemble(o) {
   const budgets = budgetsOf(prof, lang, o);
   let total = 0;
   for (const s of chosen) {
-    const count = countBody(s.text, lang);
-    total += count;
+    const sizes = s.n === 0 ? leadCounts(s.text, lang) : { lead: countBody(s.text, lang) };
+    const count = sizes.lead;
+    total += count + (sizes.tldr ?? 0);
     const row = outline?.rows.find((r) => r.n === s.n);
     const planned = row && outline.unit === budgets.unit ? row.budget : undefined;
     const cap = rowCap(budgets, s.n, planned);
@@ -2772,6 +2813,7 @@ function runAssemble(o) {
     process.stdout.write(
       `  s${s.n}  v${s.v}  ${String(count).padStart(4)} ${budgets.unit}` +
         `${planned !== undefined ? ` / plan ${planned}` : ""}${cap !== undefined ? ` / cap ${cap}` : ""}` +
+        `${sizes.tldr !== undefined ? `  TL;DR ${sizes.tldr}${budgets.tldr ? ` / cap ${budgets.tldr.cap}` : ""}` : ""}` +
         `  figures: ${owned.join(", ") || "—"}${flag}\n`,
     );
     if (row && owned.join() !== row.figures.join()) {
@@ -3062,9 +3104,27 @@ function checkBudgets(doc, lang, prof, o, r, { section } = {}) {
     if (n > 0 && count === 0) r.add("error", line, `${what} has no body text`);
     return count;
   };
-  if (section !== undefined) return [judge(section, countBody(doc.raw, lang), null)];
+  const tldrJudge = (count) => {
+    if (count === undefined || !budgets.tldr) return count ?? 0;
+    if (count > budgets.tldr.cap) {
+      r.add("error", null, `the TL;DR is ${count} ${u}; its cap is ${budgets.tldr.cap}`);
+    } else if (count < budgets.tldr.floor) {
+      r.add(
+        "warn",
+        null,
+        `the TL;DR is ${count} ${u}, below the profile's floor of ${budgets.tldr.floor}`,
+      );
+    }
+    return count;
+  };
+  const sized = (n, text, line) => {
+    if (n !== 0) return judge(n, countBody(text, lang), line);
+    const { lead, tldr } = leadCounts(text, lang);
+    return judge(0, lead, line) + tldrJudge(tldr);
+  };
+  if (section !== undefined) return [sized(section, doc.raw, null)];
   const sections = splitSections(doc.raw);
-  const counts = sections.map((s) => judge(s.n, countBody(s.text, lang), s.n ? s.line : null));
+  const counts = sections.map((s) => sized(s.n, s.text, s.n ? s.line : null));
   const total = counts.reduce((a, b) => a + b, 0);
   if (budgets.total && total > budgets.total.cap) {
     r.add("error", null, `the body is ${total} ${u}; the cap is ${budgets.total.cap}`);
@@ -3416,6 +3476,58 @@ Developers who read Traces.
 | 4 | What to read next | ${rowBudget} | F1 F2 | — | — | a next step |
 `;
 
+/** A practice profile with a TL;DR, its budget apart from the lead's. */
+const FIXTURE_PRACTICE_PROFILE = `# Profile: practice (fixture)
+
+<!-- prompt -->
+A practice post shows how something was built.
+<!-- /prompt -->
+
+## Check settings
+
+- sections: 1-3
+- lead: yes
+- tldr: yes
+- words: 100-850
+- lead-words: 50-70
+- section-words: 20-140
+- tldr-words: 30-50
+- zh-tldr-chars: 70-120
+`;
+
+const PRACTICE_LEAD =
+  "Every change to request assembly runs the cache suites before it merges. The suites replay recorded requests and compare each one with the request before it. A miss names the tier that moved and the tokens it costs. The report reaches the agent that made the change. Nobody edits a number to make the suite pass again.";
+
+const FIXTURE_PRACTICE = (bullets) => `---
+title: "Practice fixture"
+date: 2026-10-19
+category: practice
+excerpt: "A fixture for the TL;DR budget."
+---
+
+${PRACTICE_LEAD}
+
+**TL;DR**
+
+${bullets.map((b) => `- ${b}`).join("\n")}
+
+## What the suite checks
+
+The suite asserts one invariant: every request reads back the whole prefix of the request before it, unless a miss is listed by design with its reason.
+`;
+
+const TLDR_IN_RANGE = [
+  "The suites run on three platforms for every core change.",
+  "A miss reports the tier that moved and its token cost.",
+  "A moved number goes to a person, never back into the test.",
+];
+
+const TLDR_OVER = [
+  "The suites run on three platforms for every core change, on Linux, on macOS and on Windows, in the core shard.",
+  "A miss reports the tier that moved, the request it moved in and the number of tokens it costs at the provider.",
+  "A moved number goes to a person who decides what to do, and it never goes back into the test as a new baseline.",
+];
+
 const FIXTURE_FINDINGS = `1. [The Trace keeps a short marker.] — repeats the lead — concision — the section must add what the marker holds
 2. [a sentence that is in no section] — vague — flow — the passage must be located first
 `;
@@ -3482,6 +3594,15 @@ function runSelftest() {
     path.join(long, "s3.en.v1.md"),
     `## A marker beats a gap\n\n${"We would rather keep a marker than leave a gap in the Trace. ".repeat(18).trim()} {O1}\n`,
   );
+  writeFileSync(at("profile-blog-practice.md"), FIXTURE_PRACTICE_PROFILE);
+  writeFileSync(at("practice.en.v1.md"), FIXTURE_PRACTICE(TLDR_IN_RANGE));
+  writeFileSync(at("practice-over.en.v1.md"), FIXTURE_PRACTICE(TLDR_OVER));
+  // A perspectives lead with no TL;DR, twice the size row 0 plans.
+  writeFileSync(
+    path.join(long, "s0.en.v1.md"),
+    `---\ntitle: "Self-test post"\ndate: 2026-10-19\ncategory: perspectives\nexcerpt: "A fixture."\n---\n\n${PRACTICE_LEAD} ${PRACTICE_LEAD}\n`,
+  );
+  const practice = ["--profile", at("profile-blog-practice.md"), "--category", "practice"];
   const published = path.join(root, "selftest-post.en.md");
   const publishedZh = path.join(root, "selftest-post.zh.md");
   const citedZh = path.join(root, "cites", "selftest-post.zh.md");
@@ -3668,6 +3789,43 @@ function runSelftest() {
       args: ["check", "--in", path.join(long, "s3.en.v1.md"), "--outline", at("outline.final.md")],
       code: 1,
       stdout: /section 3 is 234 words; its cap is 110 \(plan 100, profile cap 160\)/,
+    },
+    {
+      name: "a practice lead and its TL;DR are counted apart, each within its own budget",
+      args: ["check", "--in", at("practice.en.v1.md"), ...practice],
+      code: 0,
+      notStdout: /the lead is \d+ words; its cap/,
+    },
+    {
+      name: "a TL;DR over its own cap is an error, while the lead stays within its cap",
+      args: ["check", "--in", at("practice-over.en.v1.md"), ...practice],
+      code: 1,
+      stdout: /the TL;DR is 67 words; its cap is 50/,
+      notStdout: /the lead is \d+ words; its cap/,
+    },
+    {
+      name: "a perspectives lead with no TL;DR is still held to its row (plan × 1.1)",
+      args: ["check", "--in", path.join(long, "s0.en.v1.md"), "--outline", at("outline.final.md")],
+      code: 1,
+      stdout: /the lead is 114 words; its cap is 66 \(plan 60, profile cap 90\)/,
+    },
+    {
+      name: "the lead's section call states the TL;DR budget apart when the profile has one",
+      args: [
+        "section",
+        "--dry-run",
+        "--outline",
+        at("outline.final.md"),
+        "--section",
+        "0",
+        ...facts,
+        "--sections-dir",
+        sections,
+        ...practice,
+      ],
+      code: 0,
+      stdout:
+        /at most 66 English words of body text[\s\S]*has its own, 30–50 English words, and is counted apart/,
     },
     {
       name: "a section within its row passes check --section",

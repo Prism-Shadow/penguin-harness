@@ -59,7 +59,8 @@ replaces it for Chinese). The model receives it after the style guide, introduce
 the two differ. A profile does not repeat the style guide and states nothing about the product:
 facts come from FACTS only. Its `## Check settings` are what the script enforces —
 `sections`, `lead`, `tldr`, `exclamations`, and the budgets `words`, `lead-words`,
-`section-words`, `zh-chars`, `zh-lead-chars`, `zh-section-chars`, `tldr-words`, each `floor-cap`.
+`section-words`, `zh-chars`, `zh-lead-chars`, `zh-section-chars`, `tldr-words`, `zh-tldr-chars`, each
+`floor-cap`.
 A prompt rule with no matching setting is a rule `check` cannot see; change the two together.
 
 ## 3. Voice
@@ -118,6 +119,10 @@ Sizes are set three times, so a post cannot grow past them unnoticed:
 3. **`check`.** A section above `min(plan × 1.1, profile cap)` is an error; so is a lead above its
    cap and a whole post above the total cap. Without `--outline`, the profile caps apply. Below a
    floor is a warning: short is allowed, empty is not.
+
+A TL;DR, in a profile that has one (`tldr: yes`), is not part of the lead: the `**TL;DR**` line
+and its bullets are counted apart and held to `tldr-words` / `zh-tldr-chars`, the plan's row 0
+sizes the lead alone, and the lead's section call states the TL;DR budget separately.
 
 An over-budget section is rerun with `--feedback`; nobody trims it by hand. Counting is the same
 everywhere: English words are whitespace tokens holding a letter or digit, Chinese characters are

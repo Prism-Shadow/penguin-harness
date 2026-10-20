@@ -20,7 +20,7 @@ For each row of the plan, in order and starting with the lead as 0: `## <n>: <wo
 # Figures
 A table: id | after | position | kind (diagram, chart, flow, comparison or screenshot) | shows | working labels | facts | numbers | takeaway.
 # Plan
-One row per section, the lead as row 0. `{{BUDGET_UNIT}}` are {{BUDGET_UNIT_DESC}} of body text (figure blocks, headings and the title do not count). The rows sum to at most {{WORD_CAP}}; no row exceeds {{SECTION_CAP}}; row 0 stays within {{LEAD_RANGE}}. The plan has {{SECTION_RANGE}} sections after the lead. Every figure of the manifest appears in exactly one row. Every id you cite exists in FACTS / OPINIONS.
+One row per section, the lead as row 0. `{{BUDGET_UNIT}}` are {{BUDGET_UNIT_DESC}} of body text (figure blocks, headings and the title do not count). The rows sum to at most {{WORD_CAP}}; no row exceeds {{SECTION_CAP}}; row 0 stays within {{LEAD_RANGE}}.{{TLDR_PLAN_NOTE}} The plan has {{SECTION_RANGE}} sections after the lead. Every figure of the manifest appears in exactly one row. Every id you cite exists in FACTS / OPINIONS.
 
 | n | heading | {{BUDGET_UNIT}} | facts | opinions | figures | ends with |
 | --- | --- | --- | --- | --- | --- | --- |

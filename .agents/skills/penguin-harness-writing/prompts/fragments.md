@@ -77,6 +77,12 @@ You review one section of a longer piece. Its neighbours are given for context o
 <!-- fragment: review-scope-post -->
 Flow across sections is the main question of this review: a transition that does not follow, a point made in two sections, a gloss repeated, a section that re-opens what an earlier one settled, an ending that summarises.
 
+<!-- fragment: tldr-budget -->
+A TL;DR after the lead, when the plan asks for one, is not part of the lead's budget: it has its own, {{TLDR_RANGE}}, and is counted apart.
+
+<!-- fragment: tldr-plan -->
+Row 0 is the lead alone; a TL;DR, if the post has one, is not a row and has its own budget of {{TLDR_RANGE}}.
+
 <!-- fragment: title-rule-section -->
 Choose the title from the outline's title candidates, or improve its wording without changing its meaning.
 
