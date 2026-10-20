@@ -31,7 +31,7 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
   1.1 × its planned size or the profile's cap.
 - Posts cite like papers. Each fact in the facts file is tagged with its sources, and `strip` turns
   the writer's fact markers into numbered GFM footnotes with a linked reference list, numbered by
-  first use. The second language keeps the first one's numbers when it cites the sources in the
+  first use: at most two per fact, its primary sources, and three per sentence. The second language keeps the first one's numbers when it cites the sources in the
   same order, and `pair` checks that both cite the same sources. The `**Sources**` footer is gone.
 - Profiles in `reference/profile-<name>.md` hold what differs by kind of text: shape, reader,
   sizes and the rules `check` enforces. The profiles shipped are a perspective post, a docs page

@@ -2698,12 +2698,23 @@ function pairDocs(a, b, o, r) {
     : undefined;
   const markersOf = (d) =>
     d.items.flatMap((it) => (it.type === "code" ? [] : (it.line.match(MARKER) ?? [])));
-  const refsOf = (d, labels) =>
-    d.items.flatMap((it) =>
-      ["code", "footnote"].includes(it.type)
-        ? []
-        : [...it.line.matchAll(/\[\^([^\]\s]+)\]/g)].map((m) => labels.get(m[1]) ?? `[^${m[1]}]`),
-    );
+  const facts = o.facts ? loadFacts(o.facts) : null;
+  // The sources a section cites, as a set: from its footnotes once published, or, in a draft with
+  // --facts, from its marker groups under the rule strip applies.
+  const refsOf = (d, labels) => {
+    const keys = new Set();
+    for (const it of d.items) {
+      if (["code", "fence", "footnote", "figure"].includes(it.type)) continue;
+      for (const m of it.line.matchAll(/\[\^([^\]\s]+)\]/g))
+        keys.add(labels.get(m[1]) ?? `[^${m[1]}]`);
+      if (facts?.sources.size) {
+        for (const g of it.line.match(/(?:\{[FO]\d+\})+/g) ?? []) {
+          for (const s of groupSources(g.match(/[FO]\d+/g), facts)) keys.add(sourceKey(s));
+        }
+      }
+    }
+    return [...keys].sort();
+  };
   for (let i = 0; i < Math.min(sa.length, sb.length); i++) {
     const da = parseText(sa[i].text, `${a.file}#s${i}`);
     const db = parseText(sb[i].text, `${b.file}#s${i}`);
@@ -2911,6 +2922,39 @@ function runRoute(o) {
 // ---------------------------------------------------------------------------
 
 const sourceKey = (s) => (s.url ? s.url : `nolink:${s.title}`);
+/** A fact cites at most its first two public sources: the order of its [S…] tags is their priority. */
+const FACT_SOURCE_CAP = 2;
+/** A sentence carries at most three footnotes, however many facts it rests on. */
+const GROUP_SOURCE_CAP = 3;
+
+/**
+ * The sources one marker group (the markers closing one sentence) cites: each fact's first two
+ * public sources in tag order, de-duplicated, then the first three. strip numbers exactly these,
+ * and pair compares drafts by them, so both languages cite the same sources.
+ */
+function groupSources(ids, facts, problems = new Set()) {
+  const out = [];
+  const seen = new Set();
+  for (const id of ids) {
+    if (id.startsWith("O")) continue;
+    if (!facts.ids.has(id)) problems.add(`{${id}} is not an id in the facts file`);
+    const tags = facts.tags.get(id) ?? [];
+    if (facts.ids.has(id) && !tags.length) problems.add(`{${id}} has no [S…] source tag`);
+    const publicOnes = [];
+    for (const t of tags) {
+      const s = facts.sources.get(t);
+      if (!s) problems.add(`{${id}} names ${t}, which is not in ## SOURCES`);
+      else if (s.kind === "url" || s.kind === "nolink") publicOnes.push(s);
+    }
+    for (const s of publicOnes.slice(0, FACT_SOURCE_CAP)) {
+      if (!seen.has(sourceKey(s))) {
+        seen.add(sourceKey(s));
+        out.push(s);
+      }
+    }
+  }
+  return out.slice(0, GROUP_SOURCE_CAP);
+}
 
 /** The source → number map a published post's `[^n]: …` lines carry. */
 function readNumbering(file) {
@@ -2940,21 +2984,6 @@ function citations(facts, numberingFrom) {
   const order = [];
   const used = new Map();
   const problems = new Set();
-  const sourcesOf = (ids) => {
-    const out = [];
-    for (const id of ids) {
-      if (id.startsWith("O")) continue;
-      if (!facts.ids.has(id)) problems.add(`{${id}} is not an id in the facts file`);
-      const tags = facts.tags.get(id) ?? [];
-      if (facts.ids.has(id) && !tags.length) problems.add(`{${id}} has no [S…] source tag`);
-      for (const t of tags) {
-        const s = facts.sources.get(t);
-        if (!s) problems.add(`{${id}} names ${t}, which is not in ## SOURCES`);
-        else if (s.kind === "url" || s.kind === "nolink") out.push(s);
-      }
-    }
-    return out;
-  };
   const numberOf = (s) => {
     const key = sourceKey(s);
     if (!numbers.has(key)) {
@@ -2970,7 +2999,8 @@ function citations(facts, numberingFrom) {
     return numbers.get(key);
   };
   const refs = (group) => {
-    const ns = [...new Set(sourcesOf(group.match(/[FO]\d+/g)).map(numberOf))].sort((a, b) => a - b);
+    const cited = groupSources(group.match(/[FO]\d+/g), facts, problems);
+    const ns = [...new Set(cited.map(numberOf))].sort((a, b) => a - b);
     return ns.map((n) => `[^${n}]`).join("");
   };
   const render = (line) =>
@@ -3392,11 +3422,15 @@ const FIXTURE_FACTS = `## FACTS
 - F1: Archived tool output is written to a file under the Project root. [S1]
 - F2: The Trace keeps a marker where the output was. [S2]
 - F3: The archive format was settled in a design review. [S3]
+- F4: Seven write-ups describe the same archive. [S4 S5 S6 S7 S8 S9 S10]
+- F5: Two write-ups describe the marker. [S11 S12]
+- F6: Two write-ups describe the root. [S13 S14]
 
 ## SOURCES
 - S1: PenguinHarness docs: Agent loop · https://penguin.ooo/docs/agent-loop
 - S2: packages/core/src/trace/writer.ts · https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/packages/core/src/trace/writer.ts
 - S3: design notes (paraphrased) · private
+${Array.from({ length: 11 }, (_, i) => `- S${i + 4}: Write-up ${i + 4} · https://example.com/w${i + 4}`).join("\n")}
 
 ## OPINIONS
 - O1: A marker beats a gap.
@@ -3457,6 +3491,19 @@ excerpt: "脚本自检用的样例。"
 ---
 
 规则写在 CLAUDE.md。{F1} Anthropic 也这样做（见文档）{F1}，代码 \`a。 b\` 保持原样。{O1}
+`;
+
+/** One fact with seven sources, then one sentence resting on three multi-source facts. */
+const FIXTURE_CAPS = `---
+title: "Caps fixture"
+date: 2026-10-19
+category: perspectives
+excerpt: "Many sources."
+---
+
+One fact with seven sources. {F4}
+
+Three facts in one sentence. {F4}{F5}{F6}
 `;
 
 /** The zh post cites S2 before S1: another first-use order than the en post's. */
@@ -3654,6 +3701,9 @@ function runSelftest() {
   writeFileSync(at("cites.zh.v1.md"), FIXTURE_CITES_ZH);
   writeFileSync(at("partial.zh.v1.md"), FIXTURE_CITES_ZH_PARTIAL);
   writeFileSync(at("same.zh.v1.md"), FIXTURE_CITES_ZH_SAME_ORDER);
+  writeFileSync(at("caps.en.v1.md"), FIXTURE_CAPS);
+  const capped = path.join(root, "caps", "caps.en.md");
+  mkdirSync(path.dirname(capped), { recursive: true });
   const orderDir = path.join(root, "order");
   mkdirSync(orderDir, { recursive: true });
   writeFileSync(path.join(orderDir, "order.en.md"), FIXTURE_ORDER_EN);
@@ -3852,6 +3902,24 @@ function runSelftest() {
       file: [
         citedZh,
         /CLAUDE\.md。\[\^1\]Anthropic 也这样做。\[\^2\]\n\n\[\^1\]: \[packages\/core\/src\/trace\/writer\.ts\]/,
+      ],
+    },
+    {
+      name: "a fact with seven sources is cited by its first two",
+      args: ["strip", "--in", at("caps.en.v1.md"), "--out", capped, ...facts],
+      code: 0,
+      file: [
+        capped,
+        /One fact with seven sources\.\[\^1\]\[\^2\]\n[\s\S]*\n\[\^1\]: \[Write-up 4\][^\n]*\n\[\^2\]: \[Write-up 5\]/,
+      ],
+    },
+    {
+      name: "a sentence resting on three multi-source facts carries at most three footnotes",
+      args: ["strip", "--in", at("caps.en.v1.md"), "--out", capped, ...facts],
+      code: 0,
+      file: [
+        capped,
+        /Three facts in one sentence\.\[\^1\]\[\^2\]\[\^3\]\n\n\[\^1\][^\n]*\n\[\^2\][^\n]*\n\[\^3\]: \[Write-up 11\]\(https:\/\/example\.com\/w11\)\n$/,
       ],
     },
     {

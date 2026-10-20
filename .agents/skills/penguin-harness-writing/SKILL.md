@@ -134,8 +134,9 @@ blocks, markers and the references do not count. The numbers themselves live in 
 
 `facts.md` has these sections, each a `## ` heading:
 
-- `## FACTS` — atomic, numbered facts, each ending with its source tags:
-  `- F12: … [S3]` or `[S3 S4]`.
+- `## FACTS` — atomic, numbered facts, each ending with its source tags in priority order, the
+  primary source first: `- F12: … [S3]` or `[S3 S4]`. Only the first two public sources of a fact
+  are ever cited (section 7), so order the tags deliberately.
 - `## SOURCES` — one line per source: `- S3: <title> · <url>`, `· private` for a source that is
   never cited (the design repo), `· nolink` for a public source without a URL. A title is data:
   the page's own title, a repo file's path, `PR #N: <PR title>`, `PenguinHarness docs: <page>`,
@@ -159,8 +160,11 @@ source: a fact whose sources are all private may be used, with a warning, and ge
 
 The markers become paper-style citations when the post is published. `strip --facts facts.md`
 turns each marker group into GFM footnotes placed after the sentence's closing punctuation
-(`…was.[^1][^2]`, `……。[^1]`): one per distinct public source of its facts, numbered by first use
-through the post; opinions and private sources emit nothing. The post ends with the list:
+(`…was.[^1][^2]`, `……。[^1]`): each fact contributes its first two public sources in tag order,
+the sentence keeps the first three after de-duplication, and those are numbered by first use
+through the post; opinions and private sources emit nothing. A source only ever dropped by these
+caps is not cited and so not listed, which keeps the list and the numbers consistent; the cap keeps
+a sentence readable however many sources back it. The post ends with the list:
 
 ```markdown
 [^1]: [PenguinHarness docs: Agent loop](https://penguin.ooo/docs/agent-loop)
