@@ -20,7 +20,8 @@ export function BlogListPage() {
   const { locale } = useSiteLocale();
   const [filter, setFilter] = useState<Filter>("all");
   const posts = postsFor(locale, filter === "all" ? undefined : filter);
-  // The router loads the same module on demand; a failure here is left to that load.
+  // The same module the router loads on demand. A chunk that fails to load reloads the page
+  // (main.tsx), so the rejection needs no handling here.
   useEffect(() => void import("./blog-post").catch(() => undefined), []);
 
   const chip = (active: boolean) =>
