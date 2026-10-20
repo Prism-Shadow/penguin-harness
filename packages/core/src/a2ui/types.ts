@@ -11,7 +11,16 @@
  */
 
 export type A2uiType =
-  "choice" | "form" | "steps" | "callout" | "weather" | "clock" | "countdown" | "metrics";
+  | "choice"
+  | "form"
+  | "steps"
+  | "callout"
+  | "weather"
+  | "clock"
+  | "countdown"
+  | "metrics"
+  | "chart"
+  | "resources";
 
 export interface A2uiOption {
   label: string;
@@ -241,6 +250,141 @@ export interface A2uiMetrics {
   asOf?: string;
 }
 
+/*
+ * The basic charts: one `chart` type whose `kind` names the chart, drawn from the data the model
+ * gives. The composites above and below (`metrics`, `weather`, `resources`) are built from the
+ * same charts for data of a known shape; a `chart` serves data of any other shape.
+ */
+
+export type A2uiChartKind = "line" | "area" | "bar" | "pie" | "scatter" | "histogram" | "gauge";
+
+export interface A2uiChartSeries {
+  /** ≤ 40, unique in the block. */
+  label: string;
+  /** line/area/bar/pie/histogram: one per category (or bin); null = no reading (a gap). */
+  values?: (number | null)[];
+  /** scatter: 1–500 (warn > 200) finite [x, y] pairs. */
+  points?: [number, number][];
+}
+
+/** One basic chart. Which fields apply depends on `kind`; a field another kind uses is ignored with a warning. */
+export interface A2uiChart {
+  type: "chart";
+  kind: A2uiChartKind;
+  /** ≤ 60. */
+  title?: string;
+  /** line/area/bar: the x labels; pie: the slice names. 1–60 (warn > 24); pie 2–8 (warn > 6). */
+  categories?: string[];
+  /** histogram: n+1 strictly ascending bin edges, 3–61; the one series has n counts ≥ 0. */
+  edges?: number[];
+  /** 1–6 series (warn > 4); pie and histogram: exactly 1. Not for gauge. */
+  series?: A2uiChartSeries[];
+  /** Axis names, ≤ 24 ("Latency", "Day"). Not for pie. */
+  xLabel?: string;
+  yLabel?: string;
+  /**
+   * Units, ≤ 12, appended to tick labels and values ("ms", "%", "GB"). `yUnit` is the values'
+   * unit (pie: the slices'); `xUnit` is the numeric x axis' (scatter, histogram).
+   */
+  xUnit?: string;
+  yUnit?: string;
+  /** bar, area. */
+  stacked?: boolean;
+  /** bar only. */
+  horizontal?: boolean;
+  /** pie only. */
+  donut?: boolean;
+  /**
+   * Value-axis range; default 0..nice(max) (line/area/scatter: the data's range when `min` is
+   * given). Not for pie or gauge (a gauge's range is its `item`'s).
+   */
+  min?: number;
+  max?: number;
+  /** 0–3. Not for gauge (its `item` has its own). */
+  decimals?: number;
+  /** gauge only: ONE metrics item (label, value, max, kind, unit, warn/danger, delta, history…), parsed by parseMetric. */
+  item?: A2uiMetric;
+  /** ISO date-time; optional (data need not be a snapshot). */
+  asOf?: string;
+}
+
+/*
+ * The system-resource board: a snapshot of one machine, built from the basic charts — a gauge
+ * tile per reading (the metrics tile), a horizontal bar per disk, a line chart of the network.
+ * The model gives the readings; the thresholds that colour them are the renderer's (resources.ts).
+ */
+
+export interface A2uiResourcesCpu {
+  /** 0–100. */
+  percent: number;
+  /** 2–60 percents, oldest first. */
+  history?: number[];
+  /** A whole number ≥ 1. */
+  cores?: number;
+}
+
+export interface A2uiResourcesMemory {
+  /** ≥ 0, ≤ total. */
+  used: number;
+  /** > 0. */
+  total: number;
+  /** Default "GB". */
+  unit?: "GB" | "MB";
+  /** 2–60 percents of the total, oldest first. */
+  history?: number[];
+}
+
+export interface A2uiResourcesSwap {
+  used: number;
+  total: number;
+  /** Default "GB". */
+  unit?: "GB" | "MB";
+}
+
+export interface A2uiResourcesDisk {
+  /** The mount point or drive, ≤ 40, unique in the block. */
+  path: string;
+  used: number;
+  total: number;
+  /** Default "GB". */
+  unit?: "GB" | "TB";
+}
+
+export interface A2uiResourcesNetwork {
+  unit: "KB/s" | "MB/s" | "Mbps";
+  /** Received, 2–60 readings ≥ 0, oldest first. */
+  rx: number[];
+  /** Sent, as many readings as `rx`. */
+  tx: number[];
+}
+
+export interface A2uiResourcesLoad {
+  /** The 1-minute load average, ≥ 0. */
+  one: number;
+  five?: number;
+  fifteen?: number;
+  /** A whole number ≥ 1: the thresholds read the load per core. */
+  cores: number;
+}
+
+/** A snapshot of one machine: at least one section. */
+export interface A2uiResources {
+  type: "resources";
+  /** ≤ 40. */
+  host?: string;
+  cpu?: A2uiResourcesCpu;
+  memory?: A2uiResourcesMemory;
+  swap?: A2uiResourcesSwap;
+  /** 1–6. */
+  disks?: A2uiResourcesDisk[];
+  network?: A2uiResourcesNetwork;
+  load?: A2uiResourcesLoad;
+  /** ≥ 0. */
+  uptimeSec?: number;
+  /** When the data was read (ISO date-time). */
+  asOf?: string;
+}
+
 export type A2uiSpec =
   | A2uiChoice
   | A2uiForm
@@ -249,7 +393,9 @@ export type A2uiSpec =
   | A2uiWeather
   | A2uiClock
   | A2uiCountdown
-  | A2uiMetrics;
+  | A2uiMetrics
+  | A2uiChart
+  | A2uiResources;
 
 export type A2uiLevel = "error" | "warning";
 
@@ -349,6 +495,20 @@ export const A2UI_LIMITS = {
   prefix: 4,
   deltaLabel: 24,
   history: { min: 2, max: 60 },
+  // chart
+  chartTitle: 60,
+  seriesLabel: 40,
+  categoryLabel: 40,
+  axisLabel: 24,
+  chartCategories: { min: 1, max: 60, warn: 24 },
+  pieSlices: { min: 2, max: 8, warn: 6 },
+  chartSeries: { min: 1, max: 6, warn: 4 },
+  scatterPoints: { min: 1, max: 500, warn: 200 },
+  edges: { min: 3, max: 61 },
+  // resources
+  host: 40,
+  disks: { min: 1, max: 6 },
+  diskPath: 40,
 } as const;
 
 /**

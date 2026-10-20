@@ -32,7 +32,8 @@ export type A2uiSpecOf<T extends A2uiBlockType> = Extract<A2uiSpec, { type: T }>
 /** What draws a block: a component taking its validated spec. */
 export type A2uiRenderer<S = A2uiSpec> = ComponentType<{ spec: S }>;
 
-const BUILT_IN: { readonly [T in A2uiBlockType]: A2uiRenderer<A2uiSpecOf<T>> } = {
+// Partial until the chart and resources renderers land, which make the map exhaustive again.
+const BUILT_IN: Partial<{ readonly [T in A2uiBlockType]: A2uiRenderer<A2uiSpecOf<T>> }> = {
   choice: ChoiceBlock,
   form: FormBlock,
   steps: StepsBlock,
