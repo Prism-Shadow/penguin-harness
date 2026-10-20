@@ -2265,6 +2265,8 @@ export const zh = {
       `已检测为 ${protocol}，base URL 已整理为 ${url}`,
     /** The ONE failure toast: 所有失败情形共用，只讲用户能动手改的两件事。 */
     detectFailedBody: "无法检测接口协议，请检查 API Key 与 base URL。",
+    /** 视觉能力探测失败：不是协议问题，别把人引去查 API Key 与 base URL。 */
+    detectVisionFailedBody: "视觉能力检测失败：模型没有返回可判断的结果，开关保持原样。",
     /** 保存时检测无结果：按兼容协议继续保存。 */
     detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
