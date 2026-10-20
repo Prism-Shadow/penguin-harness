@@ -309,7 +309,7 @@ export interface SocketReading {
  */
 export function socketReading(machine: MachineInfo): SocketReading | null {
   const socket = machine.socket;
-  if (socket === null) return null;
+  if (!socket) return null;
   return {
     label: S.machines.socket[socket.state],
     tone: SOCKET_TONE[socket.state],

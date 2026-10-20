@@ -13,7 +13,6 @@
  */
 import type { TerminalInfo } from "./terminal-view";
 import { probeSession } from "../../api/session-probe";
-import { apiRequest } from "../../api/client";
 import { apiUrl } from "../../lib/server-context";
 import {
   machineForTerminal,
@@ -144,7 +143,9 @@ export function refreshTerminals(): Promise<void> {
       // a pane whose bytes cannot arrive is not a pane anyone can use.
       const answers = await Promise.all(
         terminalSources().map(async (source) => {
-          const res = await apiRequest(apiUrl("/api/terminals", source)).catch(() => null);
+          const res = await fetch(apiUrl("/api/terminals", source), {
+            credentials: "same-origin",
+          }).catch(() => null);
           return { source, res };
         }),
       );
@@ -269,8 +270,9 @@ export async function killTerminal(id: string): Promise<void> {
   pendingKills.set(id, Date.now() + 10_000);
   commit(raw.filter((t) => t.id !== id));
   try {
-    await apiRequest(terminalUrl(`/api/terminals/${encodeURIComponent(id)}`), {
+    await fetch(terminalUrl(`/api/terminals/${encodeURIComponent(id)}`), {
       method: "DELETE",
+      credentials: "same-origin",
     });
   } catch {
     // The delayed refreshes below still reconcile with whatever the server thinks.
