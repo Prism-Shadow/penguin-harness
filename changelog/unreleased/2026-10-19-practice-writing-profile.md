@@ -28,5 +28,7 @@ for Chinese text. The profile sets:
 - the voice on top of the English and Chinese style guides, with one rhetorical question allowed,
   at the turn.
 
-Its check settings allow 6 to 9 sections and require a lead; a TL;DR is allowed. The READMEs list
+Its check settings hold the practice budgets: 6 to 8 sections, a body of at most 850 English words
+(2,050 Chinese characters), a lead of 50 to 70 words, sections of 50 to 130 words capped at 140
+(340 characters), and an optional TL;DR of 30 to 50 words. The READMEs list
 `penguin-harness-writing` with the other development skills.
