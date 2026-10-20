@@ -260,7 +260,7 @@ export function PluginsPage() {
   const reloadDeployment = useCallback(() => {
     const request = ++deploymentRequest.current;
     if (projectId === null) return;
-    api.getInstalledPlugins(projectId).then(
+    api.getInstalledPlugins(projectId, null).then(
       (res) => {
         if (request === deploymentRequest.current && isCurrentVisit()) {
           setDeploymentRead({ projectId, generation: visit.generation, res });
@@ -425,7 +425,7 @@ export function PluginsPage() {
     let cancelled = false;
     setError(null);
     api
-      .getPluginLibrary()
+      .getPluginLibrary(null)
       .then((res) => {
         if (!cancelled) setGroups(res.groups);
       })
@@ -697,7 +697,8 @@ export function PluginsPage() {
     });
     const results = await Promise.allSettled(
       plan.perAgent.map(async ({ agentId, names }) => {
-        const res = await api.installAgentPlugins(projectId, agentId, names);
+        // The plan is built from this server's Agents, as the update badge counts them.
+        const res = await api.installAgentPlugins(projectId, agentId, names, null);
         setAgentInstalls(
           agentId,
           installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches),
