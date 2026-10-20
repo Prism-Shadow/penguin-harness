@@ -2,8 +2,10 @@
  * The scatter chart (src/components/charts/scatter-chart): points of each series on two value
  * axes.
  *
- * - Given points, each lands where its x and y fall on axes from zero to a round number above the
- *   data: the origin at the plot's bottom-left corner, the largest values at its top-right.
+ * - Given points, each lands where its x and y fall on the axes: the lowest values at the plot's
+ *   bottom-left corner, the largest at its top-right.
+ * - Given readings far from zero, each axis fits round numbers around the data alone, so the
+ *   points spread over the whole plot; a y bound the caller gives still holds.
  * - The ticks on both axes carry the caller's units; the y ticks have grid lines.
  * - Given many x ticks in little room, the x labels thin out so none touch; the last label keeps
  *   its room inside the canvas.
@@ -63,6 +65,34 @@ describe("ScatterChart", () => {
     expect(top!.x).toBeCloseTo(286);
     expect(top!.y).toBeCloseTo(10);
     expect(html).toContain('aria-label="Latency by duration"');
+  });
+
+  it("fits each axis around readings far from zero, a given y bound still holding", () => {
+    const series = [
+      {
+        label: "api",
+        points: [
+          [212, 912],
+          [236, 987],
+        ] as [number, number][],
+      },
+    ];
+    const plot = numericPlot({
+      xs: [212, 236],
+      ys: [912, 987],
+      width: 300,
+      height: 200,
+      fmtX: seconds,
+      fmtY: ms,
+    });
+    expect(plot.yTicks.map((tick) => tick.value)).toEqual([900, 925, 950, 975, 1000]);
+    expect(plot.xTicks[0]?.value).toBe(210);
+    // 912 ms sits low in the plot (y 10–178) and 987 ms high: the readings fill it.
+    const [low, high] = points(scatter({ series }));
+    expect(low!.y).toBeGreaterThan(150);
+    expect(high!.y).toBeLessThan(40);
+    expect(scatter({ series, min: 0 })).toContain(">0 ms<");
+    expect(scatter({ series })).not.toContain(">0 ms<");
   });
 
   it("prints the caller's units on both axes, with grid lines at the y ticks", () => {

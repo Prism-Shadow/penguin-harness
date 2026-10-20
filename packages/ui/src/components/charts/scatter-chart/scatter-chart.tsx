@@ -1,8 +1,8 @@
 /**
  * A scatter chart from data: each series a set of [x, y] points on two value axes, every point a
- * dot in its series' slot (or its own paint). Both axes run from zero to a round number above the
- * data (numeric-geom.ts), with grid lines at the y ticks and the caller's units on every label
- * (`fmtX`, `fmtY`); `min` / `max` bound the y axis. Drawn through the chart primitives at the
+ * dot in its series' slot (or its own paint). Each axis runs between round numbers around the
+ * data's own extent, not from zero (numeric-geom.ts), with grid lines at the y ticks and the
+ * caller's units on every label (`fmtX`, `fmtY`); `min` / `max` bound the y axis. Drawn through the chart primitives at the
  * width it is given, so every theme's points, grid and labels apply.
  *
  * With more than one series a legend sits under the plot; pointing at an item fades the other

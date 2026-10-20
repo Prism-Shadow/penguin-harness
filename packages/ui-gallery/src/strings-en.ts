@@ -1000,7 +1000,7 @@ export const en: GalleryStrings = {
         histogramHint: "Neighbouring bins fill their columns, with a one-pixel seam between them.",
         hbar: "Horizontal bars",
         hbarHint:
-          "Rows on one shared scale: a value drawn from zero (disk usage, turning to the attention or danger ink past a threshold), or a range (each day's low to high over a week).",
+          "Rows on one shared scale: a value drawn from zero (disk usage, turning to the attention or danger ink past a threshold), a range (each day's low to high over a week), or series stacked end to end in one row (each region's traffic; pointing at a segment opens its bubble).",
         line: "Line chart",
         lineHint:
           "Two series, one missing a reading: its line breaks at the gap, and the bubble shows a dash there.",
@@ -1021,6 +1021,9 @@ export const en: GalleryStrings = {
         histogramLabel: "Response time distribution",
         diskLabel: "Disk usage",
         temperatureLabel: "Temperature over the next five days",
+        read: "Read",
+        write: "Write",
+        trafficLabel: "Traffic by region, read and written",
         hour: "Hour",
         serviceLabel: "Hourly p95 latency of two services",
         memory: "Memory",
@@ -1028,7 +1031,7 @@ export const en: GalleryStrings = {
         forecastLabel: "Temperature over the next twelve hours",
         scatter: "Scatter chart",
         scatterHint:
-          "Two series of points on two value axes, with units on both; pointing at a legend item fades the other series.",
+          "Two series of points on two value axes, each fitted to the data's own range rather than run from zero, with units on both; pointing at a legend item fades the other series.",
         pie: "Pie and donut",
         pieHint:
           "Slices run clockwise from twelve o'clock, each its share of the whole; the list legend gives each amount and share, and pointing at a row fades the other slices.",

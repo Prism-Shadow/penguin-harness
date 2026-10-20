@@ -10,15 +10,23 @@
  * - Given a negative value, its bar hangs from zero.
  * - Given axis names, they print around the plot, and the tick labels carry the caller's unit.
  * - A legend shows only with more than one series, unless asked for.
- * - The hover bubble names the category and lists every series, a missing reading as a dash.
+ * - The hover bubble names the category and lists every series, a missing reading as a dash; a
+ *   category with no name is left out of it.
  * - Given a null, a line breaks into two; a reading with no neighbour is a lone dot.
  * - Given a stacked area, each band fills down to the band under it, not to the axis.
  * - Given draw-in, the lines (and only the lines) sit in the group the draw-in animates.
  * - In the bare frame there is no grid or value axis; a flat run draws level through the middle,
  *   with its values over the points and its categories under them.
+ * - Given categories with no names (readings with no times), the plot prints no category axis and
+ *   reaches down into the band its labels would have taken.
  * - A horizontal bar chart places each row's range (or value from the start) on the one shared
  *   scale, clamped to the track, in the row's tone when it has one; the bars are hidden from
  *   assistive technology and the list is named.
+ * - Given a stack row, its series sit end to end in one row from zero, each segment in its series'
+ *   slot and each a target for the pointer; a missing or zero reading takes no room; the parts are
+ *   read out in words after the row's label, and a legend names the series.
+ * - Given a one-bar row that names its series, the bar takes that series' colour.
+ * - A segment's bubble names the row, then the segment's series beside its swatch, with its value.
  * - A chart given no width yet draws nothing broken.
  */
 import { createElement, type ReactElement } from "react";
@@ -28,11 +36,12 @@ import type { BarChartProps } from "../src/components/charts/cartesian/bar-chart
 import { HBarChart } from "../src/components/charts/cartesian/hbar-chart";
 import { LineChart } from "../src/components/charts/cartesian/line-chart";
 import type { LineChartProps } from "../src/components/charts/cartesian/line-chart";
-import { SeriesBubble } from "../src/components/charts/cartesian/series-readout";
+import { SegmentBubble, SeriesBubble } from "../src/components/charts/cartesian/series-readout";
 import { DEFAULT_CHART_STYLE } from "../src/components/charts/chart-style";
 import { renderStatic } from "../src/testing";
 
 const ms = (v: number) => `${v} ms`;
+const gb = (v: number) => `${v} GB`;
 
 const bars = (props: Partial<BarChartProps> & Pick<BarChartProps, "categories" | "series">) =>
   renderStatic(createElement(BarChart, { width: 400, fmtValue: ms, label: "Latency", ...props }));
@@ -181,6 +190,34 @@ describe("the hover bubble", () => {
     expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[0]}`);
     expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[1]}`);
   });
+
+  it("leaves out a category with no name", () => {
+    const html = renderStatic(
+      createElement(SeriesBubble, {
+        title: "",
+        series: [{ label: "Received", values: [120] }],
+        index: 0,
+        mark: "line",
+        fmtValue: ms,
+      }),
+    );
+    expect(count(html, "<p")).toBe(1);
+    expect(html).toMatch(/>Received<[\s\S]*>120 ms</);
+  });
+
+  it("over a segment, names the row, then the segment's series and its value", () => {
+    const html = renderStatic(
+      createElement(SegmentBubble, {
+        title: "eu-west",
+        series: "Write",
+        paint: { series: 1 },
+        value: "120 GB",
+      }),
+    );
+    expect(html).toMatch(/>eu-west<[\s\S]*>Write<[\s\S]*>120 GB</);
+    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[1]}`);
+    expect(html).toContain('aria-hidden="true"');
+  });
 });
 
 describe("LineChart", () => {
@@ -245,6 +282,24 @@ describe("LineChart", () => {
   });
 });
 
+describe("a plot whose categories have no names", () => {
+  it("prints no category axis, and reaches down into the band its labels would take", () => {
+    /** The y of the lowest grid line. */
+    const floor = (html: string) =>
+      Math.max(
+        ...[...html.matchAll(/data-part="grid"[^>]* y1="([\d.]+)"/g)].map((m) => Number(m[1])),
+      );
+    const series = [{ label: "Received", values: [120, 98, 140] }];
+    const unnamed = lines({ categories: ["", "", ""], series, height: 120 });
+    const named = lines({ categories: ["1", "2", "3"], series, height: 120 });
+    // 120 px tall: the labelled plot stops 22 px above the foot for its labels, the other 6 px.
+    expect(floor(named)).toBe(98);
+    expect(floor(unnamed)).toBe(114);
+    expect(named).toMatch(/text-anchor="middle"[^>]*>1</);
+    expect(unnamed).not.toMatch(/text-anchor="middle"/);
+  });
+});
+
 describe("HBarChart", () => {
   it("places each row's range on the one shared scale", () => {
     const html = renderStatic(
@@ -280,5 +335,54 @@ describe("HBarChart", () => {
     expect(html).toContain("bg-tone-attention-emphasis");
     expect(html).toContain("left:0%;width:100%");
     expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[0]}`);
+  });
+
+  it("stacks a row's series end to end from zero, each segment a target in its series' slot", () => {
+    const html = renderStatic(
+      createElement(HBarChart, {
+        rows: [
+          { label: "eu-west", stack: [420, 120], value: "540 GB" },
+          { label: "ap-south", stack: [null, 60], value: "60 GB" },
+          { label: "us-east", stack: [0, 250], value: "250 GB" },
+        ],
+        max: 1000,
+        series: [{ label: "Read" }, { label: "Write" }],
+        fmtValue: gb,
+        label: "Traffic by region",
+      }),
+    );
+    expect(html).toContain("left:0%;width:42%");
+    expect(html).toContain("left:42%;width:12%");
+    // A missing or zero reading takes no room: the next series starts from zero.
+    expect(html).toContain("left:0%;width:6%");
+    expect(html).toContain("left:0%;width:25%");
+    expect(count(html, 'data-part="bar"')).toBe(4);
+    expect(count(html, "data-hit")).toBe(4);
+    expect(html).toMatch(/data-part="bar" data-series="1"[^>]*left:0%;width:42%/);
+    expect(html).toMatch(/data-part="bar" data-series="2"[^>]*left:42%;width:12%/);
+    // One row per region, its parts read out after its label and its total printed after the bar.
+    expect(count(html, "<li")).toBe(3 + 2);
+    expect(html).toMatch(/>eu-west<span class="sr-only"> · Read 420 GB · Write 120 GB</);
+    expect(html).toContain('<span class="sr-only"> · Write 60 GB</span>');
+    expect(html).toContain('<span class="sr-only"> · Read 0 GB · Write 250 GB</span>');
+    expect(html).toMatch(/>540 GB</);
+    expect(html).toMatch(/<ul[^>]*>[\s\S]*<\/ul><ul[\s\S]*>Read<[\s\S]*>Write</);
+  });
+
+  it("paints a one-bar row that names its series in that series' colour", () => {
+    const html = renderStatic(
+      createElement(HBarChart, {
+        rows: [
+          { label: "eu-west", to: 420, series: 0 },
+          { label: "", to: 120, series: 1 },
+        ],
+        max: 1000,
+        series: [{ label: "Read" }, { label: "Write" }],
+        label: "Traffic by region",
+      }),
+    );
+    expect(html).toMatch(/data-series="2"[^>]*left:0%;width:12%/);
+    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[1]}`);
+    expect(html).not.toContain("data-hit");
   });
 });
