@@ -7,18 +7,19 @@
  *
  *   node prose.mjs <step> [options]
  *
- *   API steps:   outline | section | write | translate | polish | fix | review
+ *   API steps:   outline | section | write | translate | polish | fix | trim | review
  *   local steps: plan | assemble | route | check | strip | pair | selftest
  *
  * A post is planned once (outline, then plan validates and freezes it), written one section per
  * call, assembled byte for byte, reviewed and fixed per section, and published by strip, which
- * turns the fact markers into numbered footnotes.
+ * turns the fact markers into numbered footnotes. A fix or trim answer that breaks what the step
+ * may not change is set aside as <out>.rejected.md, never written as the next version.
  *
  * Run with --help for the options. The key comes from TOKENDANCE_API_KEY or the file named by
  * TOKENDANCE_KEY_FILE, never from an argument, so it stays out of shell history; nothing here
  * prints it, and the saved raw JSON holds the request body and the response, not the headers.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -28,6 +29,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import http from "node:http";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
@@ -40,7 +42,7 @@ const REFERENCE = path.join(SKILL, "reference");
 
 const ENDPOINT = "https://tokendance.space/gateway/v1/chat/completions";
 const DEFAULT_MODEL = "seed-2.1-pro";
-const API_STEPS = ["outline", "section", "write", "translate", "polish", "fix", "review"];
+const API_STEPS = ["outline", "section", "write", "translate", "polish", "fix", "trim", "review"];
 const LOCAL_STEPS = ["plan", "assemble", "route", "check", "strip", "pair", "selftest"];
 const LANG_NAME = { en: "English", zh: "Chinese" };
 const BLOG_CATEGORIES = ["news", "practice", "perspectives", "changelog"];
@@ -59,11 +61,13 @@ const TEMPERATURE = { outline: 0.5, review: 0.2 };
 /** 429 is the key's concurrency cap; 5xx and dropped connections are the gateway's. */
 const MAX_ATTEMPTS = 6;
 const BACKOFF_S = [10, 20, 40, 60, 90];
+/** trim aims this far under the cap: the model counts loosely, and an answer over the cap is rejected. */
+const TRIM_AIM = 0.95;
 
 const HELP = `usage: node prose.mjs <step> [options]
 
 The flow for a post (one language; the second follows by translate per section):
-  outline → plan --freeze → section 0 … N (each: check --section) → assemble → check → review
+  outline → plan --freeze → section 0 … N (each: check --section; size alone: trim) → assemble → check → review
   + truth review → route → fix per section → assemble → … → strip (citations) → check --draft
 
 API steps (one gateway call each; --dry-run prints the messages instead and saves nothing):
@@ -83,7 +87,13 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
              section mode (an s<n>.<lang>.v<k>.md input, or --sections-dir): --outline <f>;
              [--reuse-figures <frozen target draft> --reuse-source <frozen source draft>]
   polish     --in <f>                       section mode: neighbours read-only
-  fix        --in <f> --findings <f> --facts <f>   section mode: returns the section only
+  fix        --in <f> --findings <f> --facts <f> [--outline <f>]   section mode: returns the
+               section only; an answer with a marker neither the input nor the findings name, or
+               a figure block changed that no finding names, goes to <out>.rejected.md (exit 1)
+  trim       --in <s<n>.<lang>.v<k>.md> [--outline <f> | --cap <n>]   cuts an over-budget section:
+               deletions and shorter wording only; an answer still over the cap, or with a marker,
+               footnote, figure block, heading or frontmatter changed, goes to <out>.rejected.md
+               (exit 1; retry once, then the author). --out defaults to the next version
   review     --in <f> [--facts <f>] [--tells]   numbered findings in the form fix reads; --out
              defaults to findings.<lang>.vN.api.md (findings.s<n>.<lang>.vK.api.md for a section)
 
@@ -174,6 +184,7 @@ const OPTIONS = new Set([
   "pin",
   "numbering-from",
   "section-cap",
+  "cap",
 ]);
 const FLAGS = new Set(["dry-run", "help", "tells", "facts-all", "freeze"]);
 const REPEATABLE = new Set(["research", "pin"]);
@@ -422,8 +433,11 @@ function versionNoteOf(doc) {
   return m ? m[1] : undefined;
 }
 
-/** What every step that sees the profile shares: the piece, the profile text, the contract. */
-function profileParams(F, prof, lang, { contract, markers, date, versionNote } = {}) {
+/**
+ * What every step that sees the profile shares: the piece, the profile text, the contract. With
+ * `budgets`, a whole-piece contract also states the caps check holds the piece to.
+ */
+function profileParams(F, prof, lang, { contract, markers, date, versionNote, budgets } = {}) {
   const params = {
     PIECE: F[`piece-${prof.kind}`],
     NOUN: NOUN[prof.kind],
@@ -447,6 +461,16 @@ function profileParams(F, prof, lang, { contract, markers, date, versionNote } =
     } else {
       params.VERSION_NOTE_RULE = F["no-version-note"];
       params.VERSION_NOTE_SENTENCE = "";
+    }
+    params.BUDGET_RULE = "";
+    if (budgets?.total) {
+      // A part without a cap of its own is bounded by the whole.
+      const capOf = (range) => `${(range ?? budgets.total).cap} ${budgets.unitName}`;
+      Object.assign(params, countRuleParams(F, lang));
+      params.BUDGET_RULE = `\n- ${F["budget-whole"]}`;
+      params.TOTAL_CAP = capOf(budgets.total);
+      params.LEAD_CAP = capOf(budgets.lead);
+      params.SECTION_CAP_TEXT = capOf(budgets.section);
     }
   }
   return params;
@@ -583,7 +607,8 @@ function bodyLines(text) {
 /**
  * Body size: English words (whitespace tokens holding a letter or digit) or Chinese characters
  * (non-whitespace after the Markdown syntax is removed). One counter for check, assemble and the
- * section step, so a budget means the same number everywhere.
+ * section step, so a budget means the same number everywhere. The `count-rule-<lang>` fragments
+ * tell the model this rule in words, with an example this function counts; change them together.
  */
 function countBody(text, lang) {
   let t = bodyLines(text)
@@ -695,6 +720,11 @@ function leadCounts(text, lang) {
     lead: countBody(lead, lang),
     tldr: tldr === undefined ? undefined : countBody(tldr, lang),
   };
+}
+
+/** A section's size as check judges it: the lead without its TL;DR, any other section whole. */
+function sectionSize(text, n, lang) {
+  return n === 0 ? leadCounts(text, lang).lead : countBody(text, lang);
 }
 
 /** A row's hard limit: the smaller of the profile cap and the plan's number plus ten percent. */
@@ -941,16 +971,33 @@ function figureIdsIn(text) {
   return [...figureBlockTexts(text).keys()];
 }
 
+/**
+ * The size check's counting rule for a budget-bound prompt, with an example sentence counted by
+ * countBody itself, so the number the model reads is the number check computes.
+ */
+function countRuleParams(F, lang) {
+  const example = F[`count-example-${lang}`];
+  return {
+    COUNT_RULE: F[`count-rule-${lang}`],
+    COUNT_EXAMPLE: `"${example}"`,
+    COUNT_EXAMPLE_N: `${countBody(example, lang)} ${lang === "zh" ? "characters" : "words"}`,
+  };
+}
+
 /** The contract and budget slots a call that returns one section needs. */
 function sectionParams(
   F,
   prof,
   lang,
   n,
-  { cap, planned, budgets, figureIds, markers, date, versionNote },
+  { cap, planned, now, budgets, figureIds, markers, date, versionNote },
 ) {
   const params = profileParams(F, prof, lang, { contract: true, markers, date, versionNote });
+  Object.assign(params, countRuleParams(F, lang));
   params.CONTRACT = read(path.join(PROMPTS, "contract-section.md")).trim();
+  // fix and polish see the section they change, so they are told its size by the same rule.
+  params.SECTION_NOW = now !== undefined ? ` ${F["section-now"]}` : "";
+  params.SECTION_NOW_COUNT = now !== undefined ? `${now} ${budgets.unitName}` : "";
   params.SECTION_N = String(n);
   params.SECTION_SHAPE = n === 0 ? F["section-shape-lead"] : F["section-shape-body"];
   params.SECTION_BUDGET =
@@ -980,7 +1027,7 @@ function buildMessages(step, o) {
   const input = o.in ? read(o.in, "--in") : undefined;
   const doc = input !== undefined ? splitFrontmatter(input) : { meta: {}, body: "" };
   const prof = resolveProfile(o, doc.meta);
-  const sec = ["translate", "polish", "fix", "review"].includes(step)
+  const sec = ["translate", "polish", "fix", "trim", "review"].includes(step)
     ? sectionModeOf(o)
     : undefined;
   // The plan, when one is given and counts in this language's unit, sizes a section call.
@@ -1006,6 +1053,7 @@ function buildMessages(step, o) {
       }
       params.BUDGET_UNIT = b.unit;
       params.BUDGET_UNIT_DESC = b.unitName;
+      Object.assign(params, countRuleParams(F, lang));
       if (b.total) params.WORD_CAP = `${b.total.cap}`;
       if (b.section) params.SECTION_CAP = `${b.section.cap}`;
       if (b.lead) params.LEAD_RANGE = `${b.lead.floor}–${b.lead.cap}`;
@@ -1035,6 +1083,7 @@ function buildMessages(step, o) {
         markers: "write",
         date: o.date ?? today(),
         versionNote: o["version-note"],
+        budgets: budgetsOf(prof, lang, o),
       });
       params.STYLE = stylePrompt(lang);
       params.TITLE_RULE = titleRule ?? "";
@@ -1101,7 +1150,9 @@ function buildMessages(step, o) {
       content.PREVIOUS_SECTIONS = previousSections(F, dir, n, lang);
       if (content.FACTS === undefined) fail("section needs --facts <facts.md>");
       content.FACTS_SUBSET = o["facts-all"] ? content.FACTS : factsSubset(F, content.FACTS, row);
-      hooks.after = (out) => sectionAfter(out, { n, lang, row, budgets, cap, file: o.out });
+      const kinds = figureKinds(o);
+      hooks.after = (out) =>
+        sectionAfter(out, { n, lang, row, budgets, cap, kinds, file: o.out, outline: o.outline });
       break;
     }
     case "translate": {
@@ -1142,7 +1193,11 @@ function buildMessages(step, o) {
         content.PREVIOUS_SECTIONS = previousSections(F, sec.dir, sec.n, lang);
         o.out ??= nextSectionFile(sec.dir, sec.n, lang);
       } else {
-        params = profileParams(F, prof, lang, { contract: true, ...shared });
+        params = profileParams(F, prof, lang, {
+          contract: true,
+          ...shared,
+          budgets: budgetsOf(prof, lang, o),
+        });
         params.SECTION_CONTEXT = "";
         params.SOURCE_LABEL = `Source ${NOUN[prof.kind]}`;
       }
@@ -1176,13 +1231,21 @@ function buildMessages(step, o) {
         date: o.date ?? doc.meta.date ?? today(),
         versionNote: o["version-note"] ?? versionNoteOf(doc),
       };
+      const budgets = budgetsOf(prof, lang, o);
       if (sec) {
-        const budgets = budgetsOf(prof, lang, o);
         const row = planRow(sec.n, lang);
+        const cap = rowCap(budgets, sec.n, row?.budget);
+        const now = sectionSize(input, sec.n, lang);
+        if (!o.outline && cap !== undefined) {
+          note(
+            `no --outline: the prompt states the profile's cap (${cap}); pass --outline so a section the plan sizes in ${budgets.unit} is held to its row, as check holds it`,
+          );
+        }
         params = sectionParams(F, prof, lang, sec.n, {
           ...shared,
-          cap: rowCap(budgets, sec.n, row?.budget),
-          planned: row?.budget ?? countBody(input, lang),
+          cap,
+          planned: row?.budget ?? now,
+          now,
           budgets,
           figureIds: figureIdsIn(input),
         });
@@ -1190,17 +1253,80 @@ function buildMessages(step, o) {
         content.NEIGHBOUR_TEXT = neighbourText(sec.dir, sec.n, lang);
         params.DRAFT_LABEL = `Section ${sec.n} (return this section only)`;
         params.DRAFT_HEADING = `## Section ${sec.n} (the one to edit; return it only)\n`;
-        if (step === "fix") o.out ??= nextSectionFile(sec.dir, sec.n, lang);
+        if (step === "fix") {
+          o.out ??= nextSectionFile(sec.dir, sec.n, lang);
+          hooks.after = (out) => {
+            const size = sectionSize(out, sec.n, lang);
+            if (cap !== undefined && size > cap) {
+              note(
+                `over budget after the fix: ${size} ${budgets.unit} > ${cap}; next: trim --in ${o.out}${o.outline ? ` --outline ${o.outline}` : ""}`,
+              );
+            }
+          };
+        }
       } else {
-        params = profileParams(F, prof, lang, { contract: true, ...shared });
+        params = profileParams(F, prof, lang, { contract: true, ...shared, budgets });
         params.NEIGHBOURS = "";
         params.DRAFT_LABEL = NOUN[prof.kind][0].toUpperCase() + NOUN[prof.kind].slice(1);
         params.DRAFT_HEADING = "";
       }
       params[step === "polish" ? "STYLE_TARGET" : "STYLE"] = stylePrompt(lang);
       if (step === "polish") Object.assign(params, tells(F, lang));
-      else if (o.findings) content.FINDINGS = read(o.findings, "--findings").trim();
+      else if (o.findings) {
+        content.FINDINGS = read(o.findings, "--findings").trim();
+        hooks.verify = (out) => fixProblems(input, out, content.FINDINGS);
+        hooks.retry =
+          "rerun fix once (a finding that names the id, or names the figure by its id or by quoting it, lets that change through); a second failure goes to the author";
+      }
       content.DRAFT = sec ? fenced(input) : input.trim();
+      break;
+    }
+    case "trim": {
+      if (input === undefined) fail("trim needs --in <s<n>.<lang>.v<k>.md>");
+      if (!sec) {
+        fail(
+          "trim cuts one section: pass an s<n>.<lang>.v<k>.md file, or --section <n> with --sections-dir",
+        );
+      }
+      lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
+      const budgets = budgetsOf(prof, lang, o);
+      const cap =
+        o.cap !== undefined ? Number(o.cap) : rowCap(budgets, sec.n, planRow(sec.n, lang)?.budget);
+      if (!(cap > 0)) {
+        fail(
+          "trim needs a cap: --cap <n>, or --outline <outline.final.md> and a profile with section caps",
+        );
+      }
+      const unit = (k) => `${k} ${budgets.unitName}`;
+      const now = sectionSize(input, sec.n, lang);
+      const tldrNow = sec.n === 0 ? leadCounts(input, lang).tldr : undefined;
+      const tldrCap = tldrNow !== undefined ? budgets.tldr?.cap : undefined;
+      const tldrOver = tldrCap !== undefined && tldrNow > tldrCap;
+      if (now <= cap && !tldrOver) {
+        hooks.skip = `section ${sec.n} is ${now} ${budgets.unit} of at most ${cap}: nothing to trim`;
+      }
+      params = { NOUN: NOUN[prof.kind], SECTION_N: String(sec.n), ...countRuleParams(F, lang) };
+      params.STYLE = stylePrompt(lang);
+      params.TRIM_BUDGET = now > cap ? F["trim-budget"] : F["trim-budget-within"];
+      params.TRIM_CAP = unit(cap);
+      params.TRIM_NOW = unit(now);
+      params.TRIM_EXCESS = unit(now - cap);
+      params.TRIM_AIM = unit(Math.floor(cap * TRIM_AIM));
+      params.TRIM_TLDR = tldrOver ? ` ${F["trim-tldr"]}` : "";
+      if (tldrOver) {
+        params.TLDR_CAP = unit(tldrCap);
+        params.TLDR_NOW = unit(tldrNow);
+      }
+      content.DRAFT = fenced(input);
+      o.out ??= nextSectionFile(sec.dir, sec.n, lang);
+      const limits = { n: sec.n, lang, cap, tldrCap, unit: budgets.unit };
+      hooks.verify = (out) => trimProblems(input, out, limits);
+      hooks.retry = "rerun trim once; a second failure goes to the author";
+      hooks.after = (out) => {
+        process.stderr.write(
+          `trim: section ${sec.n}, ${now} → ${sectionSize(out, sec.n, lang)} ${budgets.unit} of at most ${cap}; markers, footnotes and figure blocks unchanged\n`,
+        );
+      };
       break;
     }
     case "review": {
@@ -1235,6 +1361,128 @@ function buildMessages(step, o) {
   return { lang, prof, system, user, input, ...hooks };
 }
 
+/** The numbered items of a findings list, each with its [quoted passage] when it has one. */
+function findingItems(text) {
+  return text
+    .split(/^(?=\s*\d+\.\s)/m)
+    .map((s) => s.trim())
+    .filter((s) => /^\d+\.\s/.test(s))
+    .map((item) => ({ item, quote: /^\d+\.\s*\[([\s\S]+?)\]\s*[—–-]/.exec(item)?.[1] }));
+}
+
+/**
+ * Whether a finding names a figure: by its id, by a quote found inside its block, or by quoting a
+ * passage that holds one of its strings (the prose reuses them, and fix changes both together).
+ */
+function findingNamesFigure(items, fig, block) {
+  const inBlock = locatable(block);
+  const strings = [fig.alt, fig.caption, fig.title, ...fig.text.map((t) => t.value)]
+    .filter(Boolean)
+    .map(locatable)
+    .filter((x) => x.length >= 4);
+  return items.some(({ item, quote }) => {
+    if (item.includes(fig.id)) return true;
+    const q = quote ? locatable(quote) : "";
+    return q.length >= 3 && (inBlock.includes(q) || strings.some((x) => q.includes(x)));
+  });
+}
+
+/**
+ * What a fix may not do: bring in a fact or opinion id that neither the text it was given nor its
+ * findings name; add, drop or reorder a figure; turn a screenshot's block into a drawn one; or
+ * change a figure block no finding names.
+ */
+function fixProblems(before, after, findingsText) {
+  const problems = [];
+  const ids = (t) => new Set((t.match(MARKER) ?? []).map((m) => m.slice(1, -1)));
+  const had = ids(before);
+  const named = new Set(findingsText.match(/\b[FO]\d+\b/g) ?? []);
+  for (const id of ids(after)) {
+    if (!had.has(id) && !named.has(id)) {
+      problems.push(
+        `{${id}} is new: neither the text given to fix nor its findings name ${id}, so the fix added a fact no finding asked for`,
+      );
+    }
+  }
+  const was = figureBlockTexts(before);
+  const now = figureBlockTexts(after);
+  if ([...was.keys()].join() !== [...now.keys()].join()) {
+    problems.push(
+      `figure blocks [${[...now.keys()].join(", ")}]; the text given had [${[...was.keys()].join(", ")}] (a fix never adds, drops or reorders a figure)`,
+    );
+  }
+  const oldFigs = new Map(parseText(before).figures.map((f) => [f.id, f]));
+  const newFigs = new Map(parseText(after).figures.map((f) => [f.id, f]));
+  const items = findingItems(findingsText);
+  for (const [id, block] of now) {
+    const old = was.get(id);
+    if (old === undefined || old === block) continue;
+    const a = oldFigs.get(id);
+    const b = newFigs.get(id);
+    if (a && b && !isDrawn(a) && isDrawn(b)) {
+      problems.push(
+        `figure ${id} is a screenshot's block (alt and caption only), and the answer gave it ${b.text.length ? `${b.text.length} text: string(s)` : "a title"}`,
+      );
+    } else if (a && !findingNamesFigure(items, a, old)) {
+      problems.push(
+        `figure ${id} changed, and no finding names it by its id or by quoting its text`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * What a trim may not do: stay over its cap, or touch anything but the wording of the body text.
+ * Markers and footnote references keep their order; figure blocks, headings and frontmatter their
+ * bytes.
+ */
+function trimProblems(before, after, { n, lang, cap, tldrCap, unit }) {
+  const problems = [];
+  const size = sectionSize(after, n, lang);
+  if (size > cap) problems.push(`still over its cap: ${size} ${unit} > ${cap}`);
+  const tldr = n === 0 ? leadCounts(after, lang).tldr : undefined;
+  if (tldrCap !== undefined && tldr !== undefined && tldr > tldrCap) {
+    problems.push(`the TL;DR is still over its cap: ${tldr} ${unit} > ${tldrCap}`);
+  }
+  const marks = [
+    ["fact markers", MARKER],
+    ["footnote references", /\[\^[^\]\s]+\]/g],
+  ];
+  for (const [what, re] of marks) {
+    const a = before.match(re) ?? [];
+    const b = after.match(re) ?? [];
+    if (a.join() === b.join()) continue;
+    const { onlyA: dropped, onlyB: added } = multisetDiff(a, b);
+    problems.push(
+      dropped.length || added.length
+        ? `${what} changed: dropped [${dropped.join(" ")}], added [${added.join(" ")}]`
+        : `${what} are in another order: ${b.join(" ")} (was ${a.join(" ")})`,
+    );
+  }
+  const was = figureBlockTexts(before);
+  const now = figureBlockTexts(after);
+  for (const [id, block] of was) {
+    if (!now.has(id)) problems.push(`figure block ${id} was dropped`);
+    else if (now.get(id) !== block) problems.push(`figure block ${id} changed`);
+  }
+  for (const id of now.keys()) if (!was.has(id)) problems.push(`figure block ${id} was added`);
+  const sameSet = was.size === now.size && [...was.keys()].every((id) => now.has(id));
+  if (sameSet && [...was.keys()].join() !== [...now.keys()].join()) {
+    problems.push("the figure blocks are in another order");
+  }
+  if (splitFrontmatter(before).metaRaw !== splitFrontmatter(after).metaRaw) {
+    problems.push("the frontmatter changed");
+  }
+  const headings = (t) =>
+    parseText(t)
+      .items.filter((it) => it.type === "heading")
+      .map((it) => it.line);
+  if (headings(before).join("\n") !== headings(after).join("\n"))
+    problems.push("a heading changed");
+  return problems;
+}
+
 /**
  * A figure that did not change in the source keeps its frozen translation: when the source
  * section's block equals the frozen source draft's block byte for byte, the frozen target block
@@ -1256,7 +1504,7 @@ function reuseTranslatedFigures(out, source, frozenSource, frozenTarget) {
 }
 
 /** What the section call's answer must look like; printed, never silently fixed. */
-function sectionAfter(out, { n, lang, row, budgets, cap, file }) {
+function sectionAfter(out, { n, lang, row, budgets, cap, kinds, file, outline }) {
   const problems = [];
   const sections = splitSections(out);
   const h2 = sections.length - 1;
@@ -1274,6 +1522,9 @@ function sectionAfter(out, { n, lang, row, budgets, cap, file }) {
       `figure blocks [${ids.join(", ")}]; the plan gives this section [${want.join(", ")}]`,
     );
   }
+  for (const fig of parseText(out).figures) {
+    for (const p of screenshotProblems(fig, kinds)) problems.push(p.msg);
+  }
   if (/\[\^/.test(out)) problems.push("a footnote `[^…]` (citations are generated, not written)");
   if (/^\*\*(Sources|来源)/m.test(out)) problems.push("a Sources line");
   const sizes = n === 0 ? leadCounts(out, lang) : { lead: countBody(out, lang) };
@@ -1282,19 +1533,26 @@ function sectionAfter(out, { n, lang, row, budgets, cap, file }) {
     `section ${n}: ${count} ${budgets.unit}${cap !== undefined ? ` of at most ${cap}` : ""}${row.budget > 0 ? ` (plan ${row.budget})` : ""}` +
       `${sizes.tldr !== undefined ? `; TL;DR ${sizes.tldr}${budgets.tldr ? ` of at most ${budgets.tldr.cap}` : ""}` : ""}\n`,
   );
-  if (cap !== undefined && count > cap)
-    problems.push(`over budget: ${count} ${budgets.unit} > ${cap}`);
+  // Size alone goes to trim, which only cuts; anything else is written again.
+  const over = [];
+  if (cap !== undefined && count > cap) over.push(`over budget: ${count} ${budgets.unit} > ${cap}`);
   if (sizes.tldr !== undefined && !budgets.tldr)
     problems.push("a TL;DR, which this profile does not have");
   if (sizes.tldr !== undefined && budgets.tldr && sizes.tldr > budgets.tldr.cap) {
-    problems.push(`TL;DR over budget: ${sizes.tldr} ${budgets.unit} > ${budgets.tldr.cap}`);
+    over.push(`TL;DR over budget: ${sizes.tldr} ${budgets.unit} > ${budgets.tldr.cap}`);
   }
-  for (const p of problems) note(p);
-  note(
-    problems.length
-      ? `rerun this section with --feedback naming the problems; never trim it by hand (${file})`
-      : `next: check --in ${file} --section ${n} --outline <outline> --facts <facts> --figures <manifest>`,
-  );
+  for (const p of [...problems, ...over]) note(p);
+  if (problems.length) {
+    note(`rerun this section with --feedback naming the problems; never edit it by hand (${file})`);
+  } else if (over.length) {
+    note(
+      `size alone: trim --in ${file}${outline ? ` --outline ${outline}` : ""} cuts it without rewriting; never cut it by hand`,
+    );
+  } else {
+    note(
+      `next: check --in ${file} --section ${n} --outline <outline> --facts <facts> --figures <manifest>`,
+    );
+  }
 }
 
 /** After an outline call: the plan is validated, and a failure writes the feedback for one rerun. */
@@ -1338,11 +1596,25 @@ function readKey() {
   fail("no key: set TOKENDANCE_API_KEY or TOKENDANCE_KEY_FILE");
 }
 
+/**
+ * The gateway's URL. PROSE_TEST_GATEWAY points the selftest at its local stand-in and is refused
+ * for anything but a loopback address, so the key is never sent anywhere else.
+ */
+function gatewayUrl() {
+  const test = process.env.PROSE_TEST_GATEWAY;
+  if (!test) return ENDPOINT;
+  if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(test)) {
+    fail("PROSE_TEST_GATEWAY must be an http://127.0.0.1:<port>/… URL (the selftest's stand-in)");
+  }
+  return test;
+}
+
 /** node:https rather than fetch: fetch gives up after 300 s without headers, and a reasoning call can take longer. */
 function post(key, body, timeoutS) {
+  const url = gatewayUrl();
   return new Promise((resolve, reject) => {
-    const req = https.request(
-      ENDPOINT,
+    const req = (url.startsWith("http:") ? http : https).request(
+      url,
       {
         method: "POST",
         headers: {
@@ -1379,6 +1651,11 @@ const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
 function unwrapFence(text) {
   const m = /^(`{3,})(?:markdown|md)?\n([\s\S]*)\n\1$/.exec(text.trim());
   return m ? m[2] : text.trim();
+}
+
+/** Where an answer that breaks its step's rules is kept: beside --out, under a name assemble skips. */
+function rejectedPath(out) {
+  return out.endsWith(".md") ? out.replace(/\.md$/, ".rejected.md") : `${out}.rejected`;
 }
 
 /** A section given to a model fenced, so its own `## ` heading is not read as the prompt's. */
@@ -1487,6 +1764,17 @@ async function callApi(step, o, messages) {
   let out = `${unwrapFence(text)}\n`;
   if (messages.transform) out = messages.transform(out);
   mkdirSync(path.dirname(path.resolve(o.out)), { recursive: true });
+  // An answer that breaks what its step may not change never becomes the next version.
+  const broken = messages.verify ? messages.verify(out) : [];
+  if (broken.length) {
+    const kept = rejectedPath(o.out);
+    writeFileSync(kept, out);
+    for (const p of broken) process.stderr.write(`prose: ${step}: ${p}\n`);
+    fail(
+      `${step}: the answer breaks ${broken.length} rule(s); it is kept as ${kept} and ${o.out} was not written. Next: ${messages.retry}`,
+      1,
+    );
+  }
   writeFileSync(o.out, out);
   process.stderr.write(`wrote ${o.out}\n`);
   if (["translate", "polish", "fix"].includes(step) && messages.input !== undefined) {
@@ -1541,6 +1829,7 @@ function parseSpecLine(fig, line, n) {
   const kv = SPEC_KEY.exec(line);
   if (kv) {
     const [, key, value] = kv;
+    fig.keys.push({ key, n });
     fig.inText = key === "text";
     if (["alt", "caption", "title", "kind"].includes(key)) fig[key] = unquote(value);
     else if (key !== "text") fig.unknown.push({ key, n });
@@ -1553,6 +1842,53 @@ function parseSpecLine(fig, line, n) {
 /** A block with strings to draw is a drawn figure; one with alt and caption only is a screenshot. */
 function isDrawn(fig) {
   return fig.text.length > 0 || !!fig.title;
+}
+
+const SCREENSHOT_KIND = /screenshot|截图|截屏/i;
+
+/**
+ * Figure kinds by id, from the `kind` column of the outline's `# Figures` table and of the
+ * manifest (which wins). A block alone cannot say it is a screenshot: one that gained `text:`
+ * lines reads as drawn.
+ */
+function figureKinds(o) {
+  const kinds = new Map();
+  const take = (text) => {
+    let col = -1;
+    for (const line of text.split("\n")) {
+      // A table is a run of `|` lines; its header row names the kind column.
+      if (!/^\s*\|/.test(line)) col = -1;
+      if (!/^\s*\|/.test(line) || /^\s*\|\s*:?-{3,}/.test(line)) continue;
+      const cells = line
+        .trim()
+        .replace(/^\||\|$/g, "")
+        .split("|")
+        .map((c) => c.replace(/[`*]/g, "").trim());
+      const at = cells.findIndex((c) => /^(kind\b|类型|种类)/i.test(c));
+      if (!STEM.test(cells[0])) col = at !== -1 ? at : col;
+      else if (col !== -1 && cells[col]) kinds.set(cells[0], cells[col]);
+    }
+  };
+  if (o.outline) take(parseOutline(read(o.outline, "--outline")).parts.Figures ?? "");
+  if (o.figures) take(read(o.figures, "--figures"));
+  return kinds;
+}
+
+/** A figure whose kind is a screenshot: its block holds `alt` and `caption` and nothing else. */
+function screenshotProblems(fig, kinds) {
+  const kind = kinds?.get(fig.id);
+  if (!kind || !SCREENSHOT_KIND.test(kind)) return [];
+  const what = `figure ${fig.id} is a screenshot ("${kind}"), whose block holds alt and caption only`;
+  const out = [];
+  for (const k of fig.keys) {
+    if (k.key === "alt" || k.key === "caption") continue;
+    const items = k.key === "text" ? ` and ${fig.text.length} string(s) under it` : "";
+    out.push({ n: k.n, msg: `${what}; it has a ${k.key}: line${items}` });
+  }
+  for (const u of fig.unknown.filter((x) => x.key.startsWith("unparsed"))) {
+    out.push({ n: u.n, msg: `${what}; it has an ${u.key}` });
+  }
+  return out;
 }
 
 /** A document file, split into typed lines. */
@@ -1584,7 +1920,7 @@ function parseText(raw, file) {
     const figOpen = !fence && FIGURE_OPEN.exec(line.trim());
     if (figOpen) {
       const id = /\bid\s*=\s*"?([^\s"`]+)"?/.exec(figOpen[1])?.[1];
-      fig = { id, n, text: [], unknown: [], closed: false, inText: false };
+      fig = { id, n, keys: [], text: [], unknown: [], closed: false, inText: false };
       figures.push(fig);
       items.push({ type: "figure", line, n });
       continue;
@@ -2048,6 +2384,26 @@ function checkFigures(doc, lang, prof, o, r, secN) {
       );
     for (const t of fig.text)
       if (!t.value) r.add("error", t.n, `figure ${fig.id}: empty text item`);
+  }
+  // What a block cannot say about itself: whether the manifest or the outline calls it a screenshot.
+  const kinds = figureKinds(o);
+  for (const fig of doc.figures) {
+    for (const p of screenshotProblems(fig, kinds)) r.add("error", p.n, p.msg);
+    const kind = kinds.get(fig.id);
+    if (kind && !SCREENSHOT_KIND.test(kind) && !isDrawn(fig)) {
+      r.add(
+        "warn",
+        fig.n,
+        `figure ${fig.id} is "${kind}", and its block has no title or text: strings, so strip would publish it as a screenshot`,
+      );
+    }
+  }
+  if (o.figures && doc.figures.length && !figureKinds({ figures: o.figures }).size) {
+    r.add(
+      "warn",
+      null,
+      `${o.figures} has no kind column, so a screenshot's block cannot be told from a drawn one`,
+    );
   }
   for (const it of items.filter((x) => x.type === "figure")) {
     if (it.line.match(MARKER)) r.add("error", it.n, "fact marker inside a figure block");
@@ -2876,18 +3232,14 @@ function runRoute(o) {
   if (!dir) fail("route needs --sections-dir <dir>");
   const lang = checkLang(o.lang ?? langOf(o.findings) ?? "", "route: pass --lang en|zh");
   const version = /\.v(\d+)\b/.exec(path.basename(o.findings))?.[1] ?? "1";
-  const items = read(o.findings, "--findings")
-    .split(/^(?=\s*\d+\.\s)/m)
-    .map((s) => s.trim())
-    .filter((s) => /^\d+\.\s/.test(s));
+  const items = findingItems(read(o.findings, "--findings"));
   const sections = [...sectionFiles(dir, lang).entries()].map(([n, list]) => ({
     n,
     text: locatable(read(list[list.length - 1].file)),
   }));
   const routed = new Map();
   const unrouted = [];
-  for (const item of items) {
-    const quote = /^\d+\.\s*\[([\s\S]+?)\]\s*[—–-]/.exec(item)?.[1];
+  for (const { item, quote } of items) {
     const hits = quote ? sections.filter((s) => s.text.includes(locatable(quote))) : [];
     if (hits.length === 1) {
       if (!routed.has(hits[0].n)) routed.set(hits[0].n, []);
@@ -3681,7 +4033,36 @@ const FIXTURE_FIGURE = [
   "",
 ].join("\n");
 
-function runSelftest() {
+/**
+ * The selftest's stand-in for the gateway, run as its own process (the cases run synchronously):
+ * it answers a chat completion with the file its URL path names, and 404 for any other path. It
+ * exits when the selftest's end of its stdin closes, however the selftest ends.
+ */
+function standInGateway(http, fs, path, dir) {
+  process.stdin.on("end", () => process.exit(0)).resume();
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      const file = path.join(dir, path.basename(new URL(req.url, "http://127.0.0.1").pathname));
+      if (!fs.existsSync(file)) {
+        res.writeHead(404).end("no such answer");
+        return;
+      }
+      const content = fs.readFileSync(file, "utf8");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          model: "selftest",
+          choices: [{ message: { content }, finish_reason: "stop" }],
+          usage: {},
+        }),
+      );
+    });
+  });
+  server.listen(0, "127.0.0.1", () => process.stdout.write(`${server.address().port}\n`));
+}
+
+async function runSelftest() {
   const root = mkdtempSync(path.join(os.tmpdir(), "prose-selftest-"));
   const post = path.join(root, "selftest-post");
   const good = path.join(post, "figures");
@@ -3762,6 +4143,61 @@ function runSelftest() {
   mkdirSync(path.dirname(otherZh), { recursive: true });
   writeFileSync(otherZh, FIXTURE_PUBLISHED_ZH_OTHER);
   const assembled = at("draft.en.v2.md");
+  // trim and fix: one directory per case, and the answer the stand-in gateway returns for it.
+  const answers = path.join(root, "answers");
+  const caseDir = (name, files) => {
+    const dir = path.join(post, name);
+    mkdirSync(dir, { recursive: true });
+    for (const [file, text] of Object.entries(files)) writeFileSync(path.join(dir, file), text);
+    return dir;
+  };
+  mkdirSync(answers, { recursive: true });
+  const answer = (name, text) => writeFileSync(path.join(answers, name), text);
+  const longS3 = readFileSync(path.join(long, "s3.en.v1.md"), "utf8");
+  const gapSentence = "We would rather keep a marker than leave a gap in the Trace.";
+  const trimOk = caseDir("trim-ok", { "s3.en.v1.md": longS3 });
+  const trimOver = caseDir("trim-over", { "s3.en.v1.md": longS3 });
+  answer("trim-ok.md", `## A marker beats a gap\n\n${gapSentence} {O1}\n`);
+  answer("trim-over.md", `## A marker beats a gap\n\n${`${gapSentence} `.repeat(9).trim()} {O1}\n`);
+  const flowBlock = figureBlockTexts(FIXTURE_DRAFT).get("demo-flow");
+  const trimFigure = caseDir("trim-figure", {
+    "s1.en.v1.md": `## Where files go\n\n${"Files live under one root per Project, and each archived output gets a file of its own. ".repeat(8).trim()} {F1}\n\n${flowBlock}\n`,
+  });
+  answer(
+    "trim-figure.md",
+    `## Where files go\n\nFiles live under one root per Project.\n\n${flowBlock.replace("<root>/<project>/", "<root>/")}\n`,
+  );
+  const s1 = `${split[1].text.trim()}\n`;
+  const s2 = `${split[2].text.trim()}\n`;
+  const shortMarker = "The Trace keeps a short marker. {F2}";
+  const withF3 = s2.replace(
+    shortMarker,
+    "The Trace keeps a marker that names the archived file. {F2} The format was settled in a design review. {F3}",
+  );
+  const findingOnS2 =
+    "1. [The Trace keeps a short marker.] — repeats the lead — concision — the section must add what the marker holds\n";
+  const fixNew = caseDir("fix-new", { "s2.en.v1.md": s2, "findings.s2.en.v1.md": findingOnS2 });
+  answer("fix-new.md", withF3);
+  const fixNamed = caseDir("fix-named", {
+    "s2.en.v1.md": s2,
+    "findings.s2.en.v1.md":
+      "1. [The Trace keeps a short marker.] — vague — F3 — the sentence must say the format was settled in a design review\n",
+  });
+  const fixShot = caseDir("fix-shot", { "s2.en.v1.md": s2, "findings.s2.en.v1.md": findingOnS2 });
+  answer(
+    "fix-shot.md",
+    s2.replace(/(caption: The marker names[^\n]*)/, "$1\ntext:\n- note: archived"),
+  );
+  const fixFlow = caseDir("fix-flow", {
+    "s1.en.v1.md": s1,
+    "findings.s1.en.v1.md":
+      "1. [Files live under one root per Project.] — vague — concision — the sentence must name the root\n",
+  });
+  answer("fix-flow.md", s1.replace("[output archived: <path>]", "[archived: <path>]"));
+  // A fix's answer as check reads it: the screenshot's block with a string list.
+  const shotText = caseDir("shot-text", {
+    "s2.en.v1.md": s2.replace(/(caption: The marker names[^\n]*)/, "$1\ntext:\n- note: archived"),
+  });
 
   const self = fileURLToPath(import.meta.url);
   const facts = ["--facts", at("facts.md")];
@@ -4139,6 +4575,178 @@ function runSelftest() {
       file: [at("findings.s2.en.v1.md"), /^1\. \[The Trace keeps a short marker\.\]/],
     },
     {
+      name: "a Chinese section call states its cap and the size check's counting rule, with an example it counted",
+      args: [
+        "section",
+        "--dry-run",
+        "--outline",
+        at("outline.final.md"),
+        "--section",
+        "0",
+        ...facts,
+        "--sections-dir",
+        sections,
+        "--lang",
+        "zh",
+      ],
+      code: 0,
+      stdout:
+        /at most 220 Chinese characters of body text[\s\S]*every remaining character that is not whitespace as one[\s\S]*"用 `check --svg` 核对 v0\.2\.16 的 2 张图，Agent 才不会漏掉。\{F3\}" counts as 36 characters/,
+    },
+    {
+      name: "a fix call states the cap, the section's current size and the counting rule",
+      args: [
+        "fix",
+        "--dry-run",
+        "--in",
+        path.join(long, "s3.en.v1.md"),
+        "--findings",
+        at("findings.en.v1.md"),
+        ...facts,
+        "--outline",
+        at("outline.final.md"),
+      ],
+      code: 0,
+      stdout:
+        /at most 110 English words of body text; the plan asks for about 100 English words\. The section as given counts 234 English words\. The size check counts exactly this way[\s\S]*counts as 9 words/,
+    },
+    {
+      name: "a whole docs page's call states its caps and the counting rule",
+      args: [
+        "write",
+        "--dry-run",
+        "--profile",
+        "docs",
+        "--outline",
+        at("outline.final.md"),
+        ...facts,
+        "--lang",
+        "en",
+      ],
+      code: 0,
+      stdout:
+        /at most 500 English words of body text in all, the lead at most 60 English words, and each `## ` section, everything under its heading, at most 120 English words\. The size check counts exactly this way/,
+    },
+    {
+      name: "trim's prompt states the cap, the excess and what must stay byte for byte",
+      args: [
+        "trim",
+        "--dry-run",
+        "--in",
+        path.join(long, "s3.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      code: 0,
+      stdout:
+        /at most 110 English words of body text\. The section given here counts 234 English words, so cut at least 124 English words; aim for about 104 English words[\s\S]*every fact marker `\{F#\}`[\s\S]*every figure block/,
+    },
+    {
+      name: "trim writes a cut within the cap as the next version",
+      args: ["trim", "--in", path.join(trimOk, "s3.en.v1.md"), "--outline", at("outline.final.md")],
+      answer: "trim-ok.md",
+      code: 0,
+      stderr: /trim: section 3, 234 → 13 words of at most 110/,
+      file: [
+        path.join(trimOk, "s3.en.v2.md"),
+        /^## A marker beats a gap\n\nWe would rather[^\n]*\{O1\}\n$/,
+      ],
+    },
+    {
+      name: "trim refuses an answer still over the cap and keeps it aside, not as the next version",
+      args: [
+        "trim",
+        "--in",
+        path.join(trimOver, "s3.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      answer: "trim-over.md",
+      code: 1,
+      stderr: /still over its cap: 117 words > 110[\s\S]*kept as [^\n]*s3\.en\.v2\.rejected\.md/,
+      absent: path.join(trimOver, "s3.en.v2.md"),
+    },
+    {
+      name: "trim refuses an answer that drops a marker or changes a figure block",
+      args: [
+        "trim",
+        "--in",
+        path.join(trimFigure, "s1.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      answer: "trim-figure.md",
+      code: 1,
+      stderr:
+        /fact markers changed: dropped \[\{F1\}\], added \[\][\s\S]*figure block demo-flow changed/,
+      absent: path.join(trimFigure, "s1.en.v2.md"),
+    },
+    {
+      name: "fix refuses a marker that neither the section nor its findings name",
+      args: [
+        "fix",
+        "--in",
+        path.join(fixNew, "s2.en.v1.md"),
+        "--findings",
+        path.join(fixNew, "findings.s2.en.v1.md"),
+        ...facts,
+      ],
+      answer: "fix-new.md",
+      code: 1,
+      stderr: /\{F3\} is new: neither the text given to fix nor its findings name F3/,
+      absent: path.join(fixNew, "s2.en.v2.md"),
+    },
+    {
+      name: "fix accepts a new marker its finding names",
+      args: [
+        "fix",
+        "--in",
+        path.join(fixNamed, "s2.en.v1.md"),
+        "--findings",
+        path.join(fixNamed, "findings.s2.en.v1.md"),
+        ...facts,
+      ],
+      answer: "fix-new.md",
+      code: 0,
+      file: [path.join(fixNamed, "s2.en.v2.md"), /design review\. \{F3\}/],
+    },
+    {
+      name: "fix refuses text: lines added to a screenshot's block",
+      args: [
+        "fix",
+        "--in",
+        path.join(fixShot, "s2.en.v1.md"),
+        "--findings",
+        path.join(fixShot, "findings.s2.en.v1.md"),
+        ...facts,
+      ],
+      answer: "fix-shot.md",
+      code: 1,
+      stderr:
+        /figure demo-shot is a screenshot's block \(alt and caption only\), and the answer gave it 1 text: string/,
+    },
+    {
+      name: "fix refuses a changed figure block that no finding names",
+      args: [
+        "fix",
+        "--in",
+        path.join(fixFlow, "s1.en.v1.md"),
+        "--findings",
+        path.join(fixFlow, "findings.s1.en.v1.md"),
+        ...facts,
+      ],
+      answer: "fix-flow.md",
+      code: 1,
+      stderr: /figure demo-flow changed, and no finding names it by its id or by quoting its text/,
+    },
+    {
+      name: "check fails a string list in a block the manifest calls a screenshot",
+      args: ["check", "--in", path.join(shotText, "s2.en.v1.md"), "--figures", at("figures.md")],
+      code: 1,
+      stdout:
+        /ERROR [^\n]*figure demo-shot is a screenshot \("screenshot"\), whose block holds alt and caption only; it has a text: line and 1 string\(s\) under it/,
+    },
+    {
       name: "landing strings with a banned word and an exclamation mark fail",
       args: ["check", "--in", at("strings.en.txt"), "--profile", "landing"],
       code: 1,
@@ -4146,21 +4754,47 @@ function runSelftest() {
     },
   ];
 
+  // The API cases talk to a stand-in on a loopback port with a dummy key; a case without an
+  // answer gets a path the stand-in refuses, so no case can reach the gateway or read the key.
+  const gatewayFile = path.join(root, "gateway.mjs");
+  writeFileSync(
+    gatewayFile,
+    `import http from "node:http";\nimport fs from "node:fs";\nimport path from "node:path";\n(${standInGateway})(http, fs, path, process.argv[2]);\n`,
+  );
+  const gateway = spawn(process.execPath, [gatewayFile, answers], {
+    stdio: ["pipe", "pipe", "inherit"],
+  });
+  const port = await new Promise((resolve, reject) => {
+    gateway.stdout.once("data", (d) => resolve(Number(String(d).trim())));
+    gateway.once("exit", (code) => reject(new Error(`the stand-in gateway exited (${code})`)));
+  });
+  const env = { ...process.env, TOKENDANCE_API_KEY: "selftest" };
+  delete env.TOKENDANCE_KEY_FILE;
+  delete env.NODE_USE_ENV_PROXY;
+
   let failed = 0;
-  for (const c of cases) {
-    const res = spawnSync(process.execPath, [self, ...c.args], { encoding: "utf8" });
-    const why = [];
-    if (res.status !== c.code) why.push(`exit ${res.status}, expected ${c.code}`);
-    if (c.stdout && !c.stdout.test(res.stdout)) why.push(`stdout lacks ${c.stdout}`);
-    if (c.notStdout && c.notStdout.test(res.stdout)) why.push(`stdout has ${c.notStdout}`);
-    if (c.stderr && !c.stderr.test(res.stderr)) why.push(`stderr lacks ${c.stderr}`);
-    if (c.file && !(existsSync(c.file[0]) && c.file[1].test(readFileSync(c.file[0], "utf8")))) {
-      why.push(`${path.basename(c.file[0])} lacks ${c.file[1]}`);
+  try {
+    for (const c of cases) {
+      const res = spawnSync(process.execPath, [self, ...c.args], {
+        encoding: "utf8",
+        env: { ...env, PROSE_TEST_GATEWAY: `http://127.0.0.1:${port}/${c.answer ?? "none"}` },
+      });
+      const why = [];
+      if (res.status !== c.code) why.push(`exit ${res.status}, expected ${c.code}`);
+      if (c.stdout && !c.stdout.test(res.stdout)) why.push(`stdout lacks ${c.stdout}`);
+      if (c.notStdout && c.notStdout.test(res.stdout)) why.push(`stdout has ${c.notStdout}`);
+      if (c.stderr && !c.stderr.test(res.stderr)) why.push(`stderr lacks ${c.stderr}`);
+      if (c.file && !(existsSync(c.file[0]) && c.file[1].test(readFileSync(c.file[0], "utf8")))) {
+        why.push(`${path.basename(c.file[0])} lacks ${c.file[1]}`);
+      }
+      if (c.absent && existsSync(c.absent)) why.push(`${path.basename(c.absent)} was written`);
+      if (why.length) {
+        failed++;
+        process.stdout.write(`FAIL ${c.name}\n  ${why.join("\n  ")}\n${res.stdout}${res.stderr}`);
+      } else process.stdout.write(`ok   ${c.name}\n`);
     }
-    if (why.length) {
-      failed++;
-      process.stdout.write(`FAIL ${c.name}\n  ${why.join("\n  ")}\n${res.stdout}${res.stderr}`);
-    } else process.stdout.write(`ok   ${c.name}\n`);
+  } finally {
+    gateway.kill();
   }
   if (process.env.PROSE_SELFTEST_KEEP) process.stdout.write(`fixtures kept in ${root}\n`);
   else rmSync(root, { recursive: true, force: true });
@@ -4178,6 +4812,10 @@ if (!step || step === "--help" || opts.help) {
 if (API_STEPS.includes(step)) {
   const messages = buildMessages(step, opts);
   if (step === "review" && !opts.out && opts.in) opts.out = defaultReviewOut(opts.in);
+  if (messages.skip) {
+    process.stdout.write(`${messages.skip}\n`);
+    process.exit(0);
+  }
   if (opts["dry-run"]) {
     const temperature = opts.temperature ?? TEMPERATURE[step] ?? 0.3;
     process.stdout.write(
@@ -4195,7 +4833,7 @@ if (API_STEPS.includes(step)) {
   else if (step === "plan") runPlan(opts);
   else if (step === "assemble") runAssemble(opts);
   else if (step === "route") runRoute(opts);
-  else if (step === "selftest") runSelftest();
+  else if (step === "selftest") await runSelftest();
   else runStrip(opts);
 } else {
   fail(`unknown step "${step}"; steps: ${[...API_STEPS, ...LOCAL_STEPS].join(", ")}`);

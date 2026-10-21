@@ -28,7 +28,12 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
   - `translate`, `polish`, `fix` and `review` work section by section; `review` returns findings
     for `fix` and never rewrites.
 - Budgets are hard. The plan is held to the profile's caps, and `check` rejects a section above
-  1.1 × its planned size or the profile's cap.
+  1.1 × its planned size or the profile's cap. Every prompt written to a budget states the cap and
+  the counting rule `check` uses, and `trim` shortens a section that is only too long without
+  rewriting it.
+- `fix` and `trim` answers are checked before they are saved. A fact no finding named, a figure
+  block no finding named, a changed marker or a cut still over its cap sets the answer aside, and
+  the next version is not written.
 - Posts cite like papers. Each fact in the facts file is tagged with its sources, and `strip` turns
   the writer's fact markers into numbered GFM footnotes with a linked reference list, numbered by
   first use: at most two per fact, its primary sources, and three per sentence. The second language keeps the first one's numbers when it cites the sources in the

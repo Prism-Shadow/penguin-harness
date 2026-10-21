@@ -16,7 +16,7 @@ bilingual pair, frontmatter, where screenshots live).
 
 **The API model writes every word a reader sees**: the outline and its plan, every section, the
 title and excerpt, every string inside a figure, alt text and captions, the second language, every
-docs sentence and landing string, and every later fix. Each is its own API call through
+docs sentence and landing string, and every later fix or cut. Each is its own API call through
 `prose.mjs`.
 
 **Agents never type a sentence into the text.** They research, compile FACTS, write prompts and
@@ -88,11 +88,11 @@ file name is how the script knows the language.
 | 2 | `outline` | API | thesis, title candidates, section bullets, the figure plan, and the `# Plan` table: one row per section with its size, facts, opinions, figures and how it ends |
 | 3 | `plan` | script | checks the plan against the profile's budgets, the manifest and FACTS; a failure writes `outline-feedback.auto.md` for one rerun (`outline --feedback … --previous …`); a second failure goes to the author. `plan --freeze` writes `outline.final.md` |
 | 4 | `section` 0 … N | API | one call per section, in order, each seeing the plan, the sections already written and only its own facts → `sections/s<n>.<lang>.v<k>.md` |
-| 5 | `check --section` | script | after every section: size, shape, the figures its row owns, markers, style; an error → `section --feedback` (size, shape) or `fix` (wording) |
+| 5 | `check --section` | script | after every section: size, shape, the figures its row owns, markers, style; size alone → `trim`, shape → `section --feedback`, wording → `fix` |
 | 6 | `assemble` | script | joins the latest section files byte for byte → `draft.<lang>.vN.md` |
 | 7 | `check` | script | the whole: total size, section count against the plan, markers against FACTS, sources |
 | 8 | `review` + truth review | API + agent | the model's editor pass (flow across sections) and an agent reading against FACTS and the sources; merged and numbered |
-| 9 | `route` → `fix` per section | script + API | findings split by the section that quotes them; one `fix` per affected section; back to 6. Two rounds per section and two whole-post rounds, then the author |
+| 9 | `route` → `fix` per section | script + API | findings split by the section that quotes them; one `fix` per affected section, held to its findings (section 10); back to 6. Two rounds per section and two whole-post rounds, then the author |
 | 10 | `translate` per section | API | in order, each seeing the plan and the sections already translated; markers and figure blocks kept string for string |
 | 11 | `polish` per section, `assemble`, `review --tells` + native reader, `route`, `fix` | API + agent | the same loop in the second language |
 | 12 | `pair` | script | section by section: markers, citations, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
@@ -114,8 +114,12 @@ Sizes are set three times, so a post cannot grow past them unnoticed:
    Chinese characters (Chinese-first posts plan in characters). `plan` rejects a table whose rows
    exceed the profile's section cap, whose lead leaves the lead range, whose sum exceeds the total
    cap, or whose section count leaves the profile's range.
-2. **The section call.** The prompt states the section's planned size and its cap, and says a
-   section over its cap is written again.
+2. **The prompt.** Every call that writes or changes a section (`section`, `translate`, `polish`,
+   `fix`, `trim`) states its cap, and `polish`, `fix` and `trim` its current size; `outline` and a
+   whole-piece `write` state the profile's caps. Each also states the counting rule `check`
+   applies, in words and with an example sentence the script counts itself, so a cap is one number
+   for the model and for `check`. The wording is the `count-rule-<lang>` fragment; change it with
+   `countBody`.
 3. **`check`.** A section above `min(plan × 1.1, profile cap)` is an error; so is a lead above its
    cap and a whole post above the total cap. Without `--outline`, the profile caps apply. Below a
    floor is a warning: short is allowed, empty is not.
@@ -124,10 +128,18 @@ A TL;DR, in a profile that has one (`tldr: yes`), is not part of the lead: the `
 and its bullets are counted apart and held to `tldr-words` / `zh-tldr-chars`, the plan's row 0
 sizes the lead alone, and the lead's section call states the TL;DR budget separately.
 
-An over-budget section is rerun with `--feedback`; nobody trims it by hand. Counting is the same
-everywhere: English words are whitespace tokens holding a letter or digit, Chinese characters are
-non-whitespace characters once the Markdown syntax is removed; frontmatter, headings, figure
-blocks, markers and the references do not count. The numbers themselves live in each profile's
+**Over budget.** A section whose only problem is its size goes through `trim --in <section>
+--outline <outline>` (or `--cap <n>`), one call that may only delete words or put a shorter phrase
+in place of a longer one. The script refuses the answer when it is still over the cap, or when a
+marker, a footnote reference, a figure block, a heading or the frontmatter changed: the answer is
+kept as `<out>.rejected.md`, the next version is not written, and the step exits 1. Retry once,
+then hand it to the author. A section wrong in shape or content is rerun with `section --feedback`;
+rerunning it only to shorten it brings back errors already fixed. Nobody cuts a section by hand.
+
+Counting is the same everywhere: English words are whitespace tokens holding a letter or digit,
+Chinese characters are non-whitespace characters once the Markdown syntax is removed, so every
+punctuation mark and every letter of a Latin word counts; frontmatter, headings, figure blocks,
+markers and the references do not count. The numbers themselves live in each profile's
 `## Check settings`.
 
 ## 6. The FACTS file and the markers
@@ -223,6 +235,11 @@ text:
 drawer where the string goes. A block with `alt` and `caption` only is a screenshot. A string is
 data: a placeholder such as `<path>` in it is escaped by the drawer, never read as HTML.
 
+The manifest's `kind` column (or the outline's `# Figures` table) says which figures are
+screenshots, because a block cannot: one that gained `text:` lines reads as drawn. `check` with
+`--figures` or `--outline` makes any line but `alt` and `caption` in a screenshot's block an
+error.
+
 **Drawn figures are inline SVG in the post**, one file per figure and language,
 `<scratch>/articles/<slug>/figures/<id>.<lang>.html`, holding exactly one
 `<figure class="post-figure" data-figure="<id>">` with:
@@ -277,6 +294,12 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   `--draft`), screenshot paths and files (`--assets`), footnotes on a published post, no
   `**Sources**` line, no in-page anchors. Landing strings are checked as `key: text` lines.
   Warnings are for a person to judge.
+- **The step guards** run when an answer arrives, before it is written. `fix` refuses an answer
+  that brings in a fact or opinion id neither its input nor its findings name, adds, drops or
+  reorders a figure, gives a screenshot's block a `title` or `text:` lines, or changes a figure
+  block no finding names by its id or by quoting its text. `trim` refuses what section 5 lists.
+  A refused answer is kept as `<out>.rejected.md` and the step exits 1; a change the findings
+  should allow goes back with a finding that names it.
 - **The fact diff** (agent): every number, URL, code span, bold or 「」 label and proper noun
   resolves to a FACT or TERM; headings and figures match the outline.
 - **Review**: the API `review` step (an editor's findings on naturalness, flow, concision, reading
@@ -322,16 +345,16 @@ A post PR runs the landing tests, `format:check` and
 When the author asks for the suite on another machine, `penguin-harness-dev/reference/verification.md`
 has the remote runner and its traps. After changing the script, a contract, a profile's settings or
 the check patterns, run `node .agents/skills/penguin-harness-writing/scripts/prose.mjs selftest`
-(local, no network): it runs the local steps on built-in fixtures, and a case that guards a fixed
-bug goes there.
+(no network): it runs the local steps on built-in fixtures, and the API steps' guards against a
+stand-in gateway on a loopback port with a dummy key. A case that guards a fixed bug goes there.
 
 ## 13. Files
 
 | Path | What it holds |
 | --- | --- |
-| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
+| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
 | `prompts/contract-section.md`, `contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for one section, a whole post, a docs page, landing strings |
-| `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
+| `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the counting rules and budgets, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
 | `reference/en-style.md`, `reference/zh-style.md` | Voice and the full banned lists, for every kind of text. The block between the `prompt` markers is what the model receives; the check patterns below it are what `check` greps for; change both together |
 | `reference/profile-<name>.md` | One per kind of text (section 2) |
