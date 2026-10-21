@@ -14,8 +14,9 @@
  * CSRF: SameSite=Lax plus a Content-Type an HTML form cannot forge (see jsonOnlyWrites).
  * That guard stays for Bearer requests too — the CLI always sends application/json.
  */
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { AMSP_PREFIX } from "../amsp/cors.js";
 import { HttpError } from "../http/errors.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { SessionVia } from "./service.js";
@@ -238,6 +239,22 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const OWN_ORIGIN_RULE_PATHS = new Set(["/api/builtin-browser/extension/pair"]);
 
 /**
+ * The Agent API's writes are cross-origin by contract, and its own group is what judges them.
+ * `/api/amsp/v1` answers a preflight from any origin and sends `Access-Control-Allow-Origin: *`
+ * on a request that carries `Authorization` (amsp/cors.ts; the server-api page states it as the
+ * public contract), so a program outside PenguinHarness calls it from a page of its own. The
+ * credential there is the Agent's key as a Bearer, never this app's cookie: the group's gate
+ * checks the key and a cookie falls through to its 401 (amsp/gate.ts). Hence the one exception
+ * below — inside the exact prefix boundary and with a parseable Bearer — while a cookie-bearing
+ * or credential-less write is still held to the same-origin rule.
+ */
+function isAmspKeyedWrite(c: Context): boolean {
+  const path = c.req.path;
+  if (path !== AMSP_PREFIX && !path.startsWith(`${AMSP_PREFIX}/`)) return false;
+  return bearerToken(c.req.header("authorization")) !== null;
+}
+
+/**
  * CSRF defense, first line: a write a browser makes must come from a page of THIS origin. The
  * browser states the origin itself (`Origin` rides on every POST, PUT, PATCH and DELETE, and a
  * page cannot forge it), so this asks the question directly — where the content-type rule
@@ -248,6 +265,7 @@ export const sameOriginWrites: MiddlewareHandler = async (c, next) => {
   if (
     WRITE_METHODS.has(c.req.method) &&
     !OWN_ORIGIN_RULE_PATHS.has(c.req.path.replace(/\/+$/, "")) &&
+    !isAmspKeyedWrite(c) &&
     !isOwnOrigin(c.req.header("origin"), c.req.header("host"))
   ) {
     throw new HttpError(403, "cross_origin_write", "A write must come from this app's own pages.");

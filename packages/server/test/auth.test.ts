@@ -11,6 +11,8 @@
  * - Changing one's own password checks the old one and the policy, keeps the current session,
  *   clears the initial flag, and retires the old password.
  * - The Secure cookie flag follows x-forwarded-proto only when the proxy is trusted.
+ * - A write from another origin is refused — the Agent API's keyed request excepted: it reaches
+ *   that group's own key gate.
  * - A write with a non-JSON Content-Type is refused (CSRF defense).
  * - A seed password below the policy is refused before any account is created.
  * - Login failures back off per username, unknown usernames identically, and a success resets
@@ -23,7 +25,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { MeResponse, ProjectsResponse } from "../src/api/types.js";
+import type { AgentApiKeyCreateResponse, MeResponse, ProjectsResponse } from "../src/api/types.js";
 import { bootAppDeps } from "../src/app.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
@@ -40,6 +42,7 @@ import {
   replacementsFor,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 
 describe("auth", () => {
   let t: TestApp;
@@ -234,6 +237,65 @@ describe("auth", () => {
     expect(
       (await t.app.request("/api/auth/logout", { method: "POST", headers: { cookie } })).status,
     ).toBe(204);
+  });
+
+  it("lets a cross-origin Agent API write through to its key gate, and never takes a cookie there", async () => {
+    // The Agent API answers any origin's preflight and sends `Access-Control-Allow-Origin: *`
+    // to a request carrying `Authorization` (the server-api page states it): a page outside this
+    // app calls it with the Agent's key. The same-origin guard must not refuse that write before
+    // the group's own gate has read the key…
+    const admin = await loginAdmin(t.app);
+    const api = apiClient(t.app, admin.cookie);
+    const base = "/api/projects/default_project/agents/default_agent/api";
+    expect((await api.put(base, { enabled: true })).status).toBe(200);
+    const key = (
+      (await (
+        await api.post(`${base}/keys`, { name: "cross-origin suite" })
+      ).json()) as AgentApiKeyCreateResponse
+    ).secret;
+    const sessionId = uniqueSessionId();
+    adoptSession(t.deps, fakeSession(sessionId), {
+      projectId: "default_project",
+      agentId: "default_agent",
+      client: "api",
+    });
+    const abort = (headers: Record<string, string>) =>
+      t.app.request(`/api/amsp/v1/sessions/${sessionId}/abort`, {
+        method: "POST",
+        headers: { host: "localhost:7364", ...headers },
+      });
+
+    const keyed = await abort({
+      origin: "http://elsewhere.example",
+      authorization: `Bearer ${key}`,
+    });
+    expect(keyed.status).toBe(204);
+    expect(keyed.headers.get("access-control-allow-origin")).toBe("*");
+    // …and a wrong key is the gate's own 401, not the guard's 403: proof it reached the group.
+    const wrong = await abort({
+      origin: "http://elsewhere.example",
+      authorization: "Bearer no-key",
+    });
+    expect(wrong.status).toBe(401);
+    expect(((await wrong.json()) as { error: { code: string } }).error.code).toBe("unauthorized");
+    expect(wrong.headers.get("access-control-allow-origin")).toBe("*");
+
+    // A cookie is no credential at the Agent API: from another origin the guard refuses the
+    // write, and from this one the gate answers the 401 that a missing key earns.
+    const { cookie } = await provisionUser(t.app, "gina");
+    const withCookie = await abort({ origin: "http://elsewhere.example", cookie });
+    expect(withCookie.status).toBe(403);
+    expect(((await withCookie.json()) as { error: { code: string } }).error.code).toBe(
+      "cross_origin_write",
+    );
+    expect((await abort({ origin: "http://elsewhere.example" })).status).toBe(403);
+    expect((await abort({ origin: "http://localhost:7364", cookie })).status).toBe(401);
+
+    // A keyed call from this origin, and one from a client that is no browser, are as before.
+    expect(
+      (await abort({ origin: "http://localhost:7364", authorization: `Bearer ${key}` })).status,
+    ).toBe(204);
+    expect((await abort({ authorization: `Bearer ${key}` })).status).toBe(204);
   });
 
   it("self password change: old checked, new takes effect, initial flag cleared", async () => {
