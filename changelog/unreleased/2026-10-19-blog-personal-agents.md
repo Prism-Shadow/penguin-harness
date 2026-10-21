@@ -9,9 +9,9 @@
 
 The blog gained a perspectives post in English and Chinese, "Personal agents need an agent-native
 cloud computer" (`personal-agents-need-a-computer`). It splits a personal agent into a stronger
-model, an Agent Runtime and an agent-native cloud computer, compares how common sandbox hosts keep
-state across tasks, and sets PenguinHarness's runtime, Machines page and connection scopes against
-that split.
+model, an Agent Runtime and an agent-native cloud computer, sets out what today's sandboxes lack
+(durable state, software adapted for agents, one home for the user's connections), and sets
+PenguinHarness's runtime, Machines page and connection scopes against that split.
 
 ## Details
 
@@ -19,4 +19,6 @@ that split.
   agent, with the runtime loop inside a guards layer and the cloud computer column highlighted; and
   the layers of software an agent can reach, each performance callout with its own source.
 - The Machines page screenshot is served from the community repository's `blog-assets/`.
+- Sources are cited as numbered footnotes generated from the draft's fact markers; both languages
+  cite the same sources under the same numbers.
 - The blog test's perspectives order lists the new post first.
