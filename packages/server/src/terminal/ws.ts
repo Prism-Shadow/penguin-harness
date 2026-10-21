@@ -21,7 +21,7 @@ import { SESSION_COOKIE } from "../auth/middleware.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { API_SOCKET_PATH } from "../api/types.js";
-import { apiSocketSession } from "../socket/ref.js";
+import { apiSocketRef } from "../socket/ref.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
@@ -71,9 +71,9 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
       .then((platform) => {
         if (apiSocket) {
           // No terminal lookup: the socket carries the whole API as the cookie's user.
-          const session = apiSocketSession(authed.user.userId);
+          const ref = apiSocketRef(authed.user.userId);
           return wss.handleUpgrade(req, socket, head, (ws) => {
-            platform.api.attachStream?.(ws, session, url, deps.log);
+            platform.api.attachStream?.(ws, ref, url, deps.log);
           });
         }
         const manager = platform.api.terminals?.();
