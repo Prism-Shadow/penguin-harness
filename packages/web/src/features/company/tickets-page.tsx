@@ -26,6 +26,9 @@
  * scrolls the page as usual (ticket-press.ts, ticket-drag.ts). The dialog's move control is the
  * way to move a ticket without dragging. The create form's Create is live once a title is typed
  * and the slug, if any, keeps its rule; closing it with anything typed asks first.
+ * A blocked card hangs an unblock shortcut under it, outside the card's own button (which holds
+ * no control of its own), so one press plus a confirmation clears it without opening the detail;
+ * the bulk bar does the same for the blocked ones of a selection and says how many it skipped.
  * The priority rides on the title's line, one size under it. The owner line's far end carries
  * the session count with the run mark — live-corrected, so a ticket whose sessions all went
  * quiet reads quiet on the board (asked by the board on 2026-10-18; before that the card
@@ -52,6 +55,7 @@ import type {
 import {
   Button,
   Chevron,
+  ConfirmModal,
   Count,
   FieldLabel,
   GlyphIcon,
@@ -413,6 +417,10 @@ export function TicketsPage() {
   const [move, setMove] = useState<{ ticket: OrgTicketItem; to: OrgTicketStatus } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** The card whose unblock shortcut was pressed, waiting for its confirmation. */
+  const [unblockOne, setUnblockOne] = useState<OrgTicketItem | null>(null);
+  /** The bulk bar's unblock confirmation, open while the reader checks the list. */
+  const [bulkUnblockOpen, setBulkUnblockOpen] = useState(false);
   const highlightColumn = params.get("column");
   // The empty-board note goes away for good once read; the page's "?" carries the same
   // sentence. The key holds the organization, so switching to another one — which does not
@@ -565,6 +573,23 @@ export function TicketsPage() {
     }
   };
 
+  /** A card's unblock shortcut, once its confirmation is answered. */
+  const doUnblockOne = async () => {
+    if (unblockOne === null || busy) return;
+    const t = unblockOne;
+    setBusy(true);
+    try {
+      await api.unblockOrgTicket(projectId, orgId, t.ticketId);
+      toastSuccess(S.company.tickets.unblocked);
+      setUnblockOne(null);
+      company.ticketsChanged();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /** Bulk bar: one target, owner and note applied to every selected card, in order. */
   const applyBulk = async () => {
     if (selected.size === 0 || bulkBusy) return;
@@ -598,6 +623,45 @@ export function TicketsPage() {
     setBulkOwner("");
     setBulkNote("");
     if (failed === 0) toastSuccess(S.company.tickets.bulkDone(ok));
+    else toastError(S.company.tickets.bulkPartial(ok, failed));
+    company.ticketsChanged();
+  };
+
+  /** The selected cards as tickets, and the blocked ones of them the bulk unblock acts on. */
+  const selectedTickets =
+    board === null ? [] : allTickets(board).filter((t) => selected.has(t.ticketId));
+  const blockedSelected = selectedTickets.filter(isBlocked);
+
+  /**
+   * Bulk bar: unblock the blocked ones of the selection, in order. Cards that are not blocked
+   * are skipped, never failed — mixing them into a selection is the normal way to clear a
+   * blocked column, not a mistake. A note in the bar's field rides along as progress on each.
+   */
+  const applyBulkUnblock = async () => {
+    if (blockedSelected.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    const skipped = selected.size - blockedSelected.length;
+    const note = bulkNote.trim();
+    let ok = 0;
+    let failed = 0;
+    for (const t of blockedSelected) {
+      try {
+        if (note !== "") {
+          await api.progressOrgTicket(projectId, orgId, t.ticketId, { text: note });
+        }
+        await api.unblockOrgTicket(projectId, orgId, t.ticketId);
+        ok += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    setBulkUnblockOpen(false);
+    setSelected(new Set());
+    setBulkTarget("");
+    setBulkOwner("");
+    setBulkNote("");
+    if (failed === 0) toastSuccess(S.company.tickets.bulkUnblockDone(ok, skipped));
     else toastError(S.company.tickets.bulkPartial(ok, failed));
     company.ticketsChanged();
   };
@@ -785,6 +849,16 @@ export function TicketsPage() {
             </Button>
             <Button size="sm" onClick={() => setMove({ ticket: t, to: rejectTarget(t.status) })}>
               {S.company.tickets.reject}
+            </Button>
+          </span>
+        )}
+        {/* A blocked card's way out without opening the detail: one quiet shortcut under the
+            card — outside its button, like the approval row above — asking the same question
+            the dialog's own unblock asks. In select mode the face belongs to the checkbox. */}
+        {!selectMode && isBlocked(t) && (
+          <span className="mt-1 flex gap-1.5">
+            <Button size="sm" variant="ghost" onClick={() => setUnblockOne(t)}>
+              {S.company.tickets.unblock}
             </Button>
           </span>
         )}
@@ -1206,6 +1280,16 @@ export function TicketsPage() {
           />
           <Button
             size="sm"
+            title={
+              blockedSelected.length === 0 ? S.company.tickets.bulkUnblockNone : ""
+            }
+            disabled={bulkBusy || blockedSelected.length === 0}
+            onClick={() => setBulkUnblockOpen(true)}
+          >
+            {S.company.tickets.bulkUnblock(blockedSelected.length, selected.size)}
+          </Button>
+          <Button
+            size="sm"
             variant="primary"
             title={
               bulkTarget === "rejected" && bulkNote.trim() === ""
@@ -1305,6 +1389,71 @@ export function TicketsPage() {
         onClose={() => (busy ? undefined : setMove(null))}
         onConfirm={(reason) => void confirmMove(reason)}
       />
+
+      {/* A card's shortcut asks the same question the dialog's own unblock asks, with the
+          reason on screen so the press can still back out when it was the wrong card. */}
+      <ConfirmModal
+        open={unblockOne !== null}
+        title={S.company.tickets.unblock}
+        tone="primary"
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
+        busy={busy}
+        onClose={() => (busy ? undefined : setUnblockOne(null))}
+        onConfirm={() => void doUnblockOne()}
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {unblockOne !== null ? S.company.tickets.unblockConfirm(unblockOne.title) : ""}
+          </p>
+          {unblockOne?.blocked !== undefined && unblockOne.blocked !== "" && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {S.company.tickets.blockedReason}：{unblockOne.blocked}
+            </p>
+          )}
+        </div>
+      </ConfirmModal>
+
+      {/* Bulk unblock: the blocked ones by name (five, then a count), what is skipped, and
+          where the bar's note goes — everything the press changes is on screen first. */}
+      <ConfirmModal
+        open={bulkUnblockOpen}
+        title={S.company.tickets.bulkUnblockTitle}
+        tone="primary"
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
+        busy={bulkBusy}
+        onClose={() => (bulkBusy ? undefined : setBulkUnblockOpen(false))}
+        onConfirm={() => void applyBulkUnblock()}
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.company.tickets.bulkUnblockConfirm(blockedSelected.length)}
+          </p>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-gray-800 dark:text-gray-100">
+            {blockedSelected.slice(0, 5).map((t) => (
+              <li key={t.ticketId} className="truncate">
+                {t.title}
+              </li>
+            ))}
+            {blockedSelected.length > 5 && (
+              <li className="text-gray-500 dark:text-gray-400">
+                {S.company.tickets.bulkUnblockMore(blockedSelected.length - 5)}
+              </li>
+            )}
+          </ul>
+          {selected.size - blockedSelected.length > 0 && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {S.company.tickets.bulkUnblockSkip(selected.size - blockedSelected.length)}
+            </p>
+          )}
+          {bulkNote.trim() !== "" && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {S.company.tickets.bulkUnblockNoteHint}
+            </p>
+          )}
+        </div>
+      </ConfirmModal>
 
       <CreateTicketDialog
         open={createOpen}

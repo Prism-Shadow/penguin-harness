@@ -5865,6 +5865,7 @@ Scenarios:
       blockedTooltip: (reason: string, by: string): string =>
         `Blocked: ${reason} (waiting on ${by})`,
       unblock: "Unblock",
+      unblocked: "Unblocked",
       unblockConfirm: (title: string): string => `Unblock "${title}"?`,
       block: "Mark blocked",
       blockTitle: "Mark blocked",
@@ -5941,6 +5942,17 @@ Scenarios:
       bulkClear: "Clear selection",
       bulkDone: (n: number): string => `${n} tickets processed`,
       bulkPartial: (ok: number, failed: number): string => `${ok} processed, ${failed} failed`,
+      /** The bulk bar's unblock button: n blocked of m selected; disabled while n is 0. */
+      bulkUnblock: (n: number, m: number): string => `Unblock ${n}/${m}`,
+      bulkUnblockNone: "None of the selected tickets is blocked",
+      bulkUnblockTitle: "Unblock in bulk",
+      bulkUnblockConfirm: (n: number): string => `Unblock the following ${n} tickets?`,
+      bulkUnblockMore: (n: number): string => `and ${n} more`,
+      bulkUnblockSkip: (n: number): string =>
+        `${n} not blocked, will be skipped`,
+      bulkUnblockNoteHint: "A note above is recorded as progress on each ticket",
+      bulkUnblockDone: (ok: number, skipped: number): string =>
+        skipped > 0 ? `${ok} unblocked, ${skipped} skipped (not blocked)` : `${ok} unblocked`,
       moveNote: "Note",
       moveNoteHint: "Left blank, only moves",
       /** The board's quick filters, one at a time; the counts ride on the same chips. */
@@ -5972,7 +5984,7 @@ Scenarios:
       /** The keyboard: two plain keys while the board is on screen, no modifier. */
       keyboardHint: "/ to search, N for a new ticket",
       bulkRejectHint: "Moving into Rejected needs a note, used as the reason",
-      selectHint: "Selected cards move, get assigned or take a note together; press again to leave",
+      selectHint: "Selected cards move, get assigned, take a note or unblock together; press again to leave",
       summary: "Details",
       history: "History",
       historyEmpty: "No history yet",

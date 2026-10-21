@@ -6034,6 +6034,7 @@ Benchmark：
       blockedBy: "等谁",
       blockedTooltip: (reason: string, by: string): string => `被阻塞：${reason}（等 ${by}）`,
       unblock: "解除阻塞",
+      unblocked: "已解除阻塞",
       unblockConfirm: (title: string): string => `解除「${title}」的阻塞？`,
       block: "标记阻塞",
       blockTitle: "标记阻塞",
@@ -6113,6 +6114,16 @@ Benchmark：
       bulkClear: "清空选择",
       bulkDone: (n: number): string => `已处理 ${n} 张`,
       bulkPartial: (ok: number, failed: number): string => `已处理 ${ok} 张，${failed} 张失败`,
+      /** The bulk bar's unblock button: n blocked of m selected; disabled while n is 0. */
+      bulkUnblock: (n: number, m: number): string => `解除阻塞 ${n}/${m}`,
+      bulkUnblockNone: "选中的工单都没有被阻塞",
+      bulkUnblockTitle: "批量解除阻塞",
+      bulkUnblockConfirm: (n: number): string => `确定解除以下 ${n} 张工单的阻塞？`,
+      bulkUnblockMore: (n: number): string => `等 ${n} 张`,
+      bulkUnblockSkip: (n: number): string => `另有 ${n} 张未阻塞，将跳过`,
+      bulkUnblockNoteHint: "上方附言有字时，会逐张写入进度",
+      bulkUnblockDone: (ok: number, skipped: number): string =>
+        skipped > 0 ? `已解除 ${ok} 张阻塞，跳过 ${skipped} 张未阻塞` : `已解除 ${ok} 张阻塞`,
       moveNote: "附言",
       moveNoteHint: "留空则只移列",
       /** The board's quick filters, one at a time; the counts ride on the same chips. */
@@ -6144,7 +6155,7 @@ Benchmark：
       /** The keyboard: two plain keys while the board is on screen, no modifier. */
       keyboardHint: "按 / 搜索，按 N 新建工单",
       bulkRejectHint: "移入「已拒绝」需要填写附言作为原因",
-      selectHint: "选中后可批量移列、指派或附言；再按一次退出",
+      selectHint: "选中后可批量移列、指派、附言或解除阻塞；再按一次退出",
       summary: "基本信息",
       history: "操作历史",
       historyEmpty: "还没有操作记录",
