@@ -14,5 +14,5 @@
 - 文章在句末标点之后写 `…a sentence.[^1]` 引用来源，并在文末以 `[^1]: [Title](https://…)` 定义每个来源；没有 URL 的来源只写标题。列表标题取站点词典（References / 参考资料），文章不写。
 - 两种语言的 id 都是 ASCII：条目为 `fn-n`，引用处为 `fnref-n` 与 `fnref-n-k`。回跳链接向读屏软件说明它回到哪一处。
 - 站内页面指相对路径，以及 `penguin.ooo`、`www.penguin.ooo` 与页面当前所在主机上的地址；其他主机以及 `mailto:` 等协议都算离站。
-- `@prismshadow/penguin-ui/site` 的 `SiteMarkdown` 新增 `remarkRehypeOptions`；它的 `##` 与 `###` 标题保留渲染管线已经给出的 id（脚注列表的标题，即每处引用指向的元素），不再用 slug 覆盖。
+- `@prismshadow/penguin-ui/site` 的 `SiteMarkdown` 新增 `remarkRehypeOptions`；它的 `##` 与 `###` 标题保留渲染管线已经给出的 id（脚注列表的标题，即每处引用指向的元素），不再用 slug 覆盖。它还让引用标记与前文留在同一行：单个 `[n]` 不会独自换到下一行行首，`[3][4]` 这样连在一起的几个也不会被拆到两行。
 - `site-prose.css` 为引用与列表提供浅色与深色样式，跳转落点避开吸顶导航栏并以浅色底标出，打印时列表附带 URL。

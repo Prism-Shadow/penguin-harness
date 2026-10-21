@@ -11,6 +11,7 @@
  *   confirmation, and back-links return to every place that cites it, labelled for screen
  *   readers with the source and the place.
  * - Given a post in Chinese, the ids are still plain ASCII and carry no prefix.
+ * - Given a citation after a sentence or after another citation, no line can break before it.
  * - Given a body with a drawn figure and a citation, both render.
  * - Given a post without citations, no references list appears.
  */
@@ -96,6 +97,15 @@ describe("a post's citations", () => {
 
     const second = anchors(entry(html, "fn-2")).filter((a) => "data-footnote-backref" in a.attrs);
     expect(second.map((a) => a.attrs.href)).toEqual(["#fnref-2"]);
+  });
+
+  it("keeps each citation on the line of what it follows, a run of them included", () => {
+    const html = render(CITING);
+    expect(html).toContain("A sentence.\u2060<sup><a");
+    expect(html).toContain("Another one.\u2060<sup><a");
+    expect(html).toContain("</a></sup>\u2060<sup><a");
+    // Only citations: a back-link's raised number is not glued to anything.
+    expect(html.match(/\u2060/g)).toHaveLength(3);
   });
 
   it("keeps the ids plain ASCII, without a prefix, in a Chinese post", () => {
