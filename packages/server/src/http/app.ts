@@ -156,11 +156,11 @@ export class HttpModule {
       }
       return capped.mw(c, next);
     });
-    app.use("/api/*", sameOriginWrites);
+    app.use("/api/*", sameOriginWrites(this.config.trustProxy));
     // A machine's API is reached through this server (machines/proxy.ts), with this server's
     // cookie: the same question, asked here because the hop drops the Origin.
-    app.use("/server/*", sameOriginWrites);
-    app.use("/api/*", jsonOnlyWrites);
+    app.use("/server/*", sameOriginWrites(this.config.trustProxy));
+    app.use("/api/*", jsonOnlyWrites(this.config.trustProxy));
 
     // A group's own auth declaration applies to both HTTP and socket calls, independent of order.
     const authenticate = gate;

@@ -16,6 +16,7 @@
  */
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { parse } from "hono/utils/cookie";
 import { AMSP_PREFIX } from "../amsp/cors.js";
 import { HttpError } from "../http/errors.js";
 import type { UserRow } from "../db/repos/users.js";
@@ -28,117 +29,80 @@ import type { Auth } from "../mechanisms/identity.js";
  */
 export const SESSION_COOKIE = "penguin_session";
 
-/**
- * A host authority — a `Host` header's, or an `Origin` URL's — reduced to what every check on
- * this page reads: the host lowercased, since a domain name is case-insensitive, and the port
- * as written (null when it is not).
- */
-interface Authority {
-  host: string;
-  port: string | null;
+/** Parse an authority with the platform parser, rejecting URL components a Host cannot carry. */
+function hostUrl(host: string | undefined, scheme: string): URL | null {
+  if (!host || (scheme !== "http:" && scheme !== "https:")) return null;
+  try {
+    const url = new URL(`${scheme}//${host}`);
+    return url.username || url.password || url.pathname !== "/" || url.search || url.hash
+      ? null
+      : url;
+  } catch {
+    return null;
+  }
 }
 
-/** The port an http(s) scheme is reached on when a URL or a Host leaves it out. */
-const DEFAULT_PORTS: Record<string, string> = { "http:": "80", "https:": "443" };
-
-/** The authority a `Host` header names: `example.com:7364`, `[::1]:7364`, `example.com`. */
-function authorityOfHost(host: string | undefined): Authority | null {
-  const raw = (host ?? "").trim();
-  if (raw === "") return null;
-  const m = /^(\[[^\]]+\]|[^:]+)(?::(\d{1,5}))?$/.exec(raw);
-  if (m === null) return null;
-  return { host: m[1]!.toLowerCase(), port: m[2] ?? null };
+/** Keep an explicit Host port, including 80 and 443, independent of the transport scheme. */
+function explicitHostPort(host: string | undefined): string {
+  // Each parser drops only its own default; the other preserves that explicit port.
+  return hostUrl(host, "http:")?.port || hostUrl(host, "https:")?.port || "";
 }
 
-/**
- * The port a BROWSER's cookie name carries. Cookies are scoped to a host and ignore the port,
- * so two instances on one host — a release and a development one, two tunnels on a phone —
- * shared `penguin_session`, and signing in to either signed the other out. A port the scheme
- * uses by default (`:80`, `:443`) is the one a browser does not write down, so a Host that
- * spells it out still gets the plain name: the sign-in and the request that follows it must
- * look for the same cookie.
- */
-function cookieNamePort(host: string | undefined): string | null {
-  const port = authorityOfHost(host)?.port ?? null;
-  return port === "80" || port === "443" ? null : port;
-}
-
-/**
- * The name a BROWSER is given the cookie under: the port it reached this server on is part of
- * it (see {@link cookieNamePort}).
- *
- * Only a browser is given it. A non-browser client has a cookie jar of its own, and the CLI
- * reads the plain name off the login's Set-Cookie — an older CLI must keep finding it there.
- * The caller says which it is: a sign-in POST from a browser carries `Origin` and one from
- * anything else does not; the claim link is only ever followed by a browser. A Host without
- * a port keeps the plain name too.
- */
+/** Browsers share cookies across ports; non-browser jars retain the legacy plain name. */
 export function sessionCookieName(host: string | undefined, browser: boolean): string {
-  const port = browser ? cookieNamePort(host) : null;
-  return port === null ? SESSION_COOKIE : `${SESSION_COOKIE}_${port}`;
+  const port = browser ? explicitHostPort(host) : "";
+  return port ? `${SESSION_COOKIE}_${port}` : SESSION_COOKIE;
 }
 
-/**
- * The session cookies a request carries, this origin's own name first, then the plain one —
- * what a non-browser client sends, and what a browser still holds from a sign-in made before
- * the name carried the port. A token that is another instance's authenticates nobody.
- */
+/** Prefer this Host's cookie, retaining the legacy plain-cookie migration fallback. */
 export function sessionCookies(
   cookies: Record<string, string | undefined>,
   host: string | undefined,
 ): { name: string; token: string }[] {
-  const port = cookieNamePort(host);
-  const names = port === null ? [SESSION_COOKIE] : [`${SESSION_COOKIE}_${port}`, SESSION_COOKIE];
+  const own = sessionCookieName(host, true);
+  const names = own === SESSION_COOKIE ? [own] : [own, SESSION_COOKIE];
   return names.flatMap((name) => {
     const token = cookies[name];
     return token ? [{ name, token }] : [];
   });
 }
 
-/** A raw Cookie header as name → value; a malformed escape is an absent cookie, never a throw. */
+/** Use the same public parser as hono/cookie: first duplicate wins, bad escapes never throw. */
 export function parseCookieHeader(header: string | null | undefined): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const part of (header ?? "").split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    try {
-      out[part.slice(0, eq).trim()] = decodeURIComponent(part.slice(eq + 1).trim());
-    } catch {
-      // An invalid credential, not a server error.
-    }
-  }
-  return out;
+  return parse(header ?? "");
 }
 
-/**
- * Whether a request a browser labelled with `origin` was made by a page of the origin it is
- * addressed to: host AND port, normalized — a domain's case and a scheme's default port name
- * the same address, so `http://example.com` against `Host: example.com:80` is the same origin
- * and a domain spelled in another case is too. No Origin at all is a non-browser client, which
- * has no ambient cookie to abuse. Shared by the write guard below and the terminal's WebSocket
- * handshake.
- */
-export function isOwnOrigin(origin: string | undefined, host: string | undefined): boolean {
+/** Proxy deployments must preserve Host and overwrite this header, never append to it. */
+export function requestScheme(
+  protocol: string,
+  forwarded: string | undefined,
+  trustProxy: boolean,
+): string {
+  const scheme = trustProxy && forwarded !== undefined ? `${forwarded}:` : protocol;
+  return scheme === "http:" || scheme === "https:" ? scheme : "";
+}
+
+/** Scheme, host and port must agree; absent Origin retains the non-browser contract. */
+export function isOwnOrigin(
+  origin: string | undefined,
+  host: string | undefined,
+  scheme: string,
+): boolean {
   if (!origin) return true;
-  let parsed: URL;
+  const own = hostUrl(host, scheme);
+  if (!own) return false;
   try {
-    parsed = new URL(origin);
+    const source = new URL(origin);
+    return (
+      (source.protocol === "http:" || source.protocol === "https:") && source.origin === own.origin
+    );
   } catch {
     return false;
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  const own = authorityOfHost(host);
-  if (own === null) return false;
-  // `URL` drops the scheme's own default port from `port`, so a Host that writes it out is the
-  // same address. A Host with no port is the one a browser leaves implicit: it names the
-  // scheme's default and nothing else, so an Origin that spells a port is another origin — the
-  // question the raw host:port comparison asked before, which a default-port deployment must
-  // keep asking (`Host: example.com` does not admit `http://example.com:8443`).
-  const port = parsed.port === "" ? DEFAULT_PORTS[parsed.protocol]! : parsed.port;
-  return (
-    parsed.hostname.toLowerCase() === own.host &&
-    (own.port === null ? parsed.port === "" : own.port === port)
-  );
+}
+
+function contextScheme(c: Context, trustProxy: boolean): string {
+  return requestScheme(new URL(c.req.url).protocol, c.req.header("x-forwarded-proto"), trustProxy);
 }
 
 /**
@@ -307,17 +271,23 @@ function isAmspKeyedWrite(c: Context): boolean {
  * below only asks what a cross-site form is able to send. Host AND port: cookies ignore the
  * port, so `SameSite` lets a page served by any other local server ride the session.
  */
-export const sameOriginWrites: MiddlewareHandler = async (c, next) => {
-  if (
-    WRITE_METHODS.has(c.req.method) &&
-    !OWN_ORIGIN_RULE_PATHS.has(c.req.path.replace(/\/+$/, "")) &&
-    !isAmspKeyedWrite(c) &&
-    !isOwnOrigin(c.req.header("origin"), c.req.header("host"))
-  ) {
-    throw new HttpError(403, "cross_origin_write", "A write must come from this app's own pages.");
-  }
-  await next();
-};
+export const sameOriginWrites =
+  (trustProxy = false): MiddlewareHandler =>
+  async (c, next) => {
+    if (
+      WRITE_METHODS.has(c.req.method) &&
+      !OWN_ORIGIN_RULE_PATHS.has(c.req.path.replace(/\/+$/, "")) &&
+      !isAmspKeyedWrite(c) &&
+      !isOwnOrigin(c.req.header("origin"), c.req.header("host"), contextScheme(c, trustProxy))
+    ) {
+      throw new HttpError(
+        403,
+        "cross_origin_write",
+        "A write must come from this app's own pages.",
+      );
+    }
+    await next();
+  };
 
 /**
  * CSRF defense, second line: a write must carry one of these Content-Types, none of which an
@@ -344,10 +314,11 @@ const ALLOWED_WRITE_CONTENT_TYPES = [
  */
 const WORKBENCH_API = /^\/api\/projects\/[^/]+\/agents\/[^/]+\/workbenches\/[^/]+\/api(\/|$)/;
 
-function fromThisOrigin(header: (name: string) => string | undefined): boolean {
+function fromThisOrigin(c: Context, trustProxy: boolean): boolean {
+  const header = (name: string) => c.req.header(name);
   const site = header("sec-fetch-site");
   if (site !== undefined) return site === "same-origin";
-  return isOwnOrigin(header("origin"), header("host"));
+  return isOwnOrigin(header("origin"), header("host"), contextScheme(c, trustProxy));
 }
 
 const crossOrigin = () =>
@@ -357,34 +328,36 @@ const crossOrigin = () =>
     "A request to a workbench's handler must come from this app's own pages.",
   );
 
-export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
-  // A workbench's handler answers every method, so its GET is whatever the workbench made it
-  // — not the read every other route's GET is. A `SameSite=Lax` cookie rides along on a
-  // cross-site top-level navigation, so `window.open` on another site would otherwise run
-  // that handler as the signed-in user; the browser's own account of where the request came
-  // from is what settles it, on every method rather than only on writes.
-  if (!WRITE_METHODS.has(c.req.method) && WORKBENCH_API.test(c.req.path)) {
-    if (!fromThisOrigin((name) => c.req.header(name))) throw crossOrigin();
-  }
-  if (WRITE_METHODS.has(c.req.method)) {
-    const contentType = c.req.header("content-type")?.toLowerCase();
-    const forgeable =
-      contentType !== undefined &&
-      contentType !== "" &&
-      !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t));
-    const hasBody =
-      Number(c.req.header("content-length") ?? 0) > 0 ||
-      c.req.header("transfer-encoding") !== undefined;
-    // A workbench's own handler takes any body; the origin rule is its whole defense there.
-    if (WORKBENCH_API.test(c.req.path)) {
-      if (forgeable && !fromThisOrigin((name) => c.req.header(name))) throw crossOrigin();
-    } else if (contentType ? forgeable : hasBody) {
-      throw new HttpError(
-        415,
-        "unsupported_media_type",
-        "Write requests only accept application/json (or, for the hot-update web push, a gzip artifact).",
-      );
+export const jsonOnlyWrites =
+  (trustProxy = false): MiddlewareHandler =>
+  async (c, next) => {
+    // A workbench's handler answers every method, so its GET is whatever the workbench made it
+    // — not the read every other route's GET is. A `SameSite=Lax` cookie rides along on a
+    // cross-site top-level navigation, so `window.open` on another site would otherwise run
+    // that handler as the signed-in user; the browser's own account of where the request came
+    // from is what settles it, on every method rather than only on writes.
+    if (!WRITE_METHODS.has(c.req.method) && WORKBENCH_API.test(c.req.path)) {
+      if (!fromThisOrigin(c, trustProxy)) throw crossOrigin();
     }
-  }
-  await next();
-};
+    if (WRITE_METHODS.has(c.req.method)) {
+      const contentType = c.req.header("content-type")?.toLowerCase();
+      const forgeable =
+        contentType !== undefined &&
+        contentType !== "" &&
+        !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t));
+      const hasBody =
+        Number(c.req.header("content-length") ?? 0) > 0 ||
+        c.req.header("transfer-encoding") !== undefined;
+      // A workbench's own handler takes any body; the origin rule is its whole defense there.
+      if (WORKBENCH_API.test(c.req.path)) {
+        if (forgeable && !fromThisOrigin(c, trustProxy)) throw crossOrigin();
+      } else if (contentType ? forgeable : hasBody) {
+        throw new HttpError(
+          415,
+          "unsupported_media_type",
+          "Write requests only accept application/json (or, for the hot-update web push, a gzip artifact).",
+        );
+      }
+    }
+    await next();
+  };

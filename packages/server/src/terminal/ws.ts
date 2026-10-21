@@ -13,9 +13,15 @@
  * CORS, so without it any page the user visits could open a shell on this machine.
  */
 import type { IncomingMessage, Server as HttpServer } from "node:http";
+import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
-import { isOwnOrigin, parseCookieHeader, sessionCookies } from "../auth/middleware.js";
+import {
+  isOwnOrigin,
+  requestScheme,
+  parseCookieHeader,
+  sessionCookies,
+} from "../auth/middleware.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 
@@ -39,6 +45,7 @@ const BACKPRESSURE_POLL_MS = 250;
 export interface TerminalWebSocketDeps {
   /** The booted platform owns the terminals; the runtime asks it per upgrade. */
   hmr: ServerHmrHost;
+  trustProxy?: boolean;
   authService: Auth;
   log: (line: string) => void;
 }
@@ -53,7 +60,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     // "no handler -> destroy" behaviour) can deal with it.
     if (!match) return;
 
-    if (!isAllowedOrigin(req)) return refuse(socket, 403, "Forbidden");
+    if (!isAllowedOrigin(req, deps.trustProxy ?? false)) return refuse(socket, 403, "Forbidden");
 
     const authed =
       sessionCookies(parseCookieHeader(req.headers.cookie), req.headers.host)
@@ -87,8 +94,15 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
  * still rides along. Only a genuinely same-origin page may connect: host AND port must match
  * the Host the browser targeted — the same rule every write is held to (auth/middleware.ts).
  */
-function isAllowedOrigin(req: IncomingMessage): boolean {
-  return isOwnOrigin(req.headers.origin, req.headers.host);
+function isAllowedOrigin(req: IncomingMessage, trustProxy: boolean): boolean {
+  const protocol = req.socket instanceof TLSSocket && req.socket.encrypted ? "https:" : "http:";
+  const forwarded = req.headers["x-forwarded-proto"];
+  const scheme = requestScheme(
+    protocol,
+    Array.isArray(forwarded) ? forwarded.join(",") : forwarded,
+    trustProxy,
+  );
+  return isOwnOrigin(req.headers.origin, req.headers.host, scheme);
 }
 
 function refuse(socket: Duplex, status: number, text: string): void {

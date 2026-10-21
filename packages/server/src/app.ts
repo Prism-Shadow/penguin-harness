@@ -511,8 +511,8 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
-  app.use("/api/*", sameOriginWrites);
-  app.use("/api/*", jsonOnlyWrites);
+  app.use("/api/*", sameOriginWrites(deps.config.trustProxy));
+  app.use("/api/*", jsonOnlyWrites(deps.config.trustProxy));
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel
   // included, which the platform declares and contributes like any other group
