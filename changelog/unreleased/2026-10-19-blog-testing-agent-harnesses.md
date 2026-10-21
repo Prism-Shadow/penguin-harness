@@ -29,4 +29,6 @@ assembly in CI. Its worked example is the `prompt-cache-*` suites in `packages/c
   request's blocks up to the cache breakpoint, the test pipeline, and four comparisons of a
   rejected design with the chosen one, the last with its costs as bars on one scale. Every string
   in a figure is the post's own text in that language.
+- The post cites its sources as numbered footnotes (GFM `[^n]`) that jump to a linked reference
+  list, numbered the same way in both languages.
 - The landing blog test lists the post first in the practice category.

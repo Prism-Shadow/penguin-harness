@@ -2,90 +2,140 @@
 title: "用脚本化边界和不变量测试 agent harness"
 date: 2026-10-19
 category: practice
-excerpt: "一套面向 agent harness 请求组装的确定性 CI 检查，可捕获静默的提示词缓存成本回归，无需调用线上 API，也不依赖脆弱的固定快照。"
+excerpt: "Agent harness 中的提示词缓存静默回归会在 CI 全绿时上线，不触发功能故障。我们构建了无网确定性 CI 检查，无需调用线上 API 即可捕获这类问题。"
 ---
 
 > 本文基于 PenguinHarness 0.2.16 撰写，之后的版本在部分细节上可能有所不同。
 
-搭建 agent harness 时，多数故障会抛错、卡顿或者返回错误回复。有一类故障完全不会出现这些症状。代码正常运行，界面显示正常，CI 全绿，前缀发生偏移的请求会为供应商原本可以缓存的内容全额付费。本文以我们的提示词缓存测试套件为例，讲解 PenguinHarness 核心 CI 检查的设计思路。
+提示词缓存回归无报错、不改输出，过常规 CI，仅拉高账单。[^1][^2]
+
+文中 Token 计数、比值、成本，由离线模拟器按 Anthropic 公开缓存规则，用录制请求算出。[^3][^4]
+
+套件时长为 2026-10-19 我们测试机实测结果。[^5]
+
+本文讲 PenguinHarness 内置 CI 缓存检查的设计与权衡。
 
 **TL;DR**
-- 整套套件在我们的测试机上运行耗时 1.54 s，不需要密钥或网络，可在 CI 的三个操作系统上运行。
-- 回滚 #700 会触发不变量检查失败，在两个测量场景下，压缩请求的估算成本达到上线版本的 1.13 倍到 10.2 倍。
-- 我们从不改基线（改到变绿）来掩盖失败；成本变动必须交由人工判断。
+- 2026-10-19 跑 33 个缓存测试耗时 1.54 s，无网、无 API 密钥。[^5]
+- 回滚 #700（压缩请求改用当前思考等级），2 个测试失败，其成本为原 1.13-10.2 倍。[^5][^6]
+- 系统提示加 49 字符句，命中率 88.61% 变 88.62%，不变量仍成立。[^5]
 
-## 催生这项工作的提示词缓存回归
-请求组装逻辑的一行改动，就可能让请求开头的几个字节发生偏移，用户看到的回复完全不受影响。
+## 没有测试能捕获的静默回归
+
+供应商仅在连续请求从开头逐字节匹配时，才会返回提示词缓存的前缀。[^1][^7][^8]
+从最早分歧点开始的内容，会在该次请求中按全价重新计费；后续仍延续前序的请求会继续命中缓存。[^1]
+
+这类回归不会产生任何功能信号。[^1][^2]
+不会抛错，UI 输出保持不变，只要修改预期数值，标准 CI 检查就会通过。[^1][^2]
+没被抓到的话，这类问题就会上线。[^1]
+
+一次很小的请求组装改动，可能通过所有默认检查，同时拉高单次请求成本。[^1]
 
 <figure class="post-figure" data-figure="harness-ci-silent-regression"> <svg class="fig-svg" viewBox="0 0 560 324" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-silent-regression-zh-title"> <title id="testing-agent-harnesses-harness-ci-silent-regression-zh-title">从请求组装的小代码改动到前缀偏移的流程，展示无用户可见故障，但偏移字节丢失缓存匹配导致成本上升。</title> <rect x="206.1" y="8" width="147.9" height="32" rx="6" class="fig-terminal"/> <text x="280" y="28.2" class="fig-label" text-anchor="middle">请求组装的小代码改动</text> <path d="M280 40V59" class="fig-edge"/> <text x="280" y="64" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 64) rotate(90) scale(1.5) translate(-280 -64)">→</text> <rect x="188.1" y="72" width="183.9" height="32" rx="6" class="fig-box"/> <text x="280" y="92.2" class="fig-label" text-anchor="middle">请求前缀与历史请求发生偏移</text> <path d="M280 104V116M152.2 116H392" class="fig-edge"/> <path d="M152.2 116V131" class="fig-edge"/> <text x="152.2" y="136" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(152.2 136) rotate(90) scale(1.5) translate(-152.2 -136)">→</text> <path d="M264.3 116V131" class="fig-edge"/> <text x="264.3" y="136" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(264.3 136) rotate(90) scale(1.5) translate(-264.2 -136)">→</text> <path d="M392 116V131" class="fig-edge"/> <text x="392" y="136" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(392 136) rotate(90) scale(1.5) translate(-392 -136)">→</text> <rect x="108.2" y="144" width="88" height="32" rx="6" class="fig-box"/> <text x="152.2" y="164.2" class="fig-label" text-anchor="middle">无抛出错误</text> <rect x="212.2" y="144" width="104.1" height="32" rx="6" class="fig-box"/> <text x="264.3" y="164.2" class="fig-label" text-anchor="middle">UI 输出无变化</text> <rect x="332.3" y="144" width="119.5" height="32" rx="6" class="fig-box"/> <text x="392" y="164.2" class="fig-label" text-anchor="middle">标准 CI 检查通过</text> <path d="M152.2 176V188M264.3 176V188M392 176V188M152.2 188H392" class="fig-edge"/> <path d="M280 188V207" class="fig-edge"/> <text x="280" y="212" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 212) rotate(90) scale(1.5) translate(-280 -212)">→</text> <rect x="161.2" y="220" width="237.6" height="32" rx="6" class="fig-box"/> <text x="280" y="240.2" class="fig-label" text-anchor="middle">偏移的前缀 Token 按缓存写入费率计费</text> <path d="M280 252V271" class="fig-edge"/> <text x="280" y="276" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 276) rotate(90) scale(1.5) translate(-280 -276)">→</text> <rect x="212.1" y="284" width="135.9" height="32" rx="6" class="fig-terminal"/> <text x="280" y="304.2" class="fig-label" text-anchor="middle">单请求输入成本上升</text> </svg> <ol class="fig-steps"> <li>请求组装的小代码改动</li> <li>→</li> <li>请求前缀与历史请求发生偏移</li> <li>无抛出错误</li> <li>UI 输出无变化</li> <li>标准 CI 检查通过</li> <li>→</li> <li>偏移的前缀 Token 按缓存写入费率计费</li> <li>→</li> <li>单请求输入成本上升</li> </ol> <figcaption>请求组装的小改动引发的提示词缓存偏移，在默认检查下不会产生界面或测试失败信号，却会让不再匹配缓存前缀的字节带来成本上涨。</figcaption> </figure>
 
-PR #700 修正了之前一处刻意保留的设计行为。修复前，即使用户修改了 Session 绑定的思考等级，压缩请求仍然沿用上下文初始化时的思考等级。这类偏移会出现在上下文体量最大的节点。
+## 我们守住的不变量
+我们的检查只守一条不变量。同一个会话上下文里，每个后续请求都必须完整读回上一个请求的全部前缀。[^9]
 
-#700 合并次日，PR #722 上线了这套测试套件，直接把这类参数漂移列为测试目标。我们在当前代码库上刻意回滚 #700 时，两个测试失败。一个是最初断言旧契约的引擎测试，一个是不变量套件用例。生命周期套件全部通过，因为它自带的场景里没有任何一个会在调整思考等级后触发压缩。
+模拟器按固定顺序的层级块列表计算缓存命中。[^3]靠前的块一旦出现字节分歧，直到 harness 发送的唯一自动断点为止，后续块都无法计入缓存读取量。[^3][^7]
 
-## 缓存检查需要判断什么
-供应商只有在请求开头到缓存断点的每个字节都完全一致时才命中缓存。
+这些块从模型 ID 开始，按固定顺序逐层排列，依次经过工具定义、快速模式参数、系统提示、请求参数、对话消息，直到断点位置，顺序见下图。
 
-对 Anthropic 的 Claude 模型，这只是必要条件：Sonnet 4.6 的最小可缓存前缀 1,024 Token、20 个位置的回看窗口、默认 5 分钟 TTL，即使字节不变条目也可能过期。
+<figure class="post-figure" data-figure="harness-ci-request-tiers"> <svg class="fig-svg" viewBox="0 0 560 132" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-request-tiers-zh-title"> <title id="testing-agent-harnesses-harness-ci-request-tiers-zh-title">从左到右排列的供应商请求块，从模型 ID 开始经对话消息到供应商缓存断点，方括号标记用于缓存匹配的字节范围。</title> <path d="M16 40V34H526V40M271 34V28" class="fig-bracket"/> <text x="271" y="20" class="fig-label" text-anchor="middle">缓存匹配的字节范围</text> <rect x="16" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="101.7" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="187.3" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="273" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="358.7" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="444.3" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="528" y="22" width="2" height="58" rx="0" class="fig-marker"/> <path d="M524 16H534L529 23Z" class="fig-marker"/> <path d="M56.8 76V87" class="fig-axis"/> <text x="56.8" y="100" class="fig-label" text-anchor="middle">模型 ID</text> <path d="M142.5 76V109" class="fig-axis"/> <text x="142.5" y="122" class="fig-label" text-anchor="middle">工具定义</text> <path d="M228.2 76V87" class="fig-axis"/> <text x="228.2" y="100" class="fig-label" text-anchor="middle">快速模式参数</text> <path d="M313.8 76V109" class="fig-axis"/> <text x="313.8" y="122" class="fig-label" text-anchor="middle">系统提示</text> <path d="M399.5 76V87" class="fig-axis"/> <text x="399.5" y="100" class="fig-label" text-anchor="middle">请求参数</text> <path d="M485.2 76V109" class="fig-axis"/> <text x="485.2" y="122" class="fig-label" text-anchor="middle">对话消息</text> <text x="522" y="20" class="fig-label" text-anchor="end">供应商缓存断点</text> </svg> <ol class="fig-steps"> <li>模型 ID</li> <li>工具定义</li> <li>快速模式参数</li> <li>系统提示</li> <li>请求参数</li> <li>对话消息</li> <li>供应商缓存断点</li> <li>缓存匹配的字节范围</li> </ol> <figcaption>模拟器的有序缓存键栈中，靠前块的分歧会让从分歧点到 harness 发送的唯一自动断点之间的内容全部无法命中缓存。</figcaption> </figure>
 
-OpenAI 同样要求整个渲染前缀一致才能复用缓存。
+## 端到端测试流水线
+我们运行未修改的 Session、ContextEngine 与 GenerativeModel 生产代码。[^10]
 
-越靠前的层级发生偏移，后面的内容全部失效，例如工具或系统提示一变，后面的每条消息都要重新读取。
+我们只替换最外层供应商流，录制客户端待发字节。[^11]
 
-<figure class="post-figure" data-figure="harness-ci-request-tiers"> <svg class="fig-svg" viewBox="0 0 560 132" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-request-tiers-zh-title"> <title id="testing-agent-harnesses-harness-ci-request-tiers-zh-title">从左到右排列供应商请求的有序模块，从模型 ID 到对话消息，终止于供应商缓存断点，用括号标注用于缓存匹配的字节范围。</title> <path d="M16 40V34H526V40M271 34V28" class="fig-bracket"/> <text x="271" y="20" class="fig-label" text-anchor="middle">用于缓存匹配的字节</text> <rect x="16" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="101.7" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="187.3" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="273" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="358.7" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="444.3" y="46" width="81.7" height="30" rx="4" class="fig-terminal"/> <rect x="528" y="22" width="2" height="58" rx="0" class="fig-marker"/> <path d="M524 16H534L529 23Z" class="fig-marker"/> <path d="M56.8 76V87" class="fig-axis"/> <text x="56.8" y="100" class="fig-label" text-anchor="middle">模型 ID</text> <path d="M142.5 76V109" class="fig-axis"/> <text x="142.5" y="122" class="fig-label" text-anchor="middle">工具定义</text> <path d="M228.2 76V87" class="fig-axis"/> <text x="228.2" y="100" class="fig-label" text-anchor="middle">快速模式参数</text> <path d="M313.8 76V109" class="fig-axis"/> <text x="313.8" y="122" class="fig-label" text-anchor="middle">系统提示</text> <path d="M399.5 76V87" class="fig-axis"/> <text x="399.5" y="100" class="fig-label" text-anchor="middle">请求参数</text> <path d="M485.2 76V109" class="fig-axis"/> <text x="485.2" y="122" class="fig-label" text-anchor="middle">对话消息</text> <text x="522" y="20" class="fig-label" text-anchor="end">供应商缓存断点</text> </svg> <ol class="fig-steps"> <li>模型 ID</li> <li>工具定义</li> <li>快速模式参数</li> <li>系统提示</li> <li>请求参数</li> <li>对话消息</li> <li>供应商缓存断点</li> <li>用于缓存匹配的字节</li> </ol> <figcaption>harness 检查必须判断外部系统收到的精确字节，因为匹配前缀内任何位置的偏移都会改变成本，却不会留下用户可见的痕迹。</figcaption> </figure>
+脚本化供应商流统一返回 0 缓存读取 Token，不预设缓存命中，实际命中量交由离线模拟器计算。[^11]
 
-## 测试系统的完整流程
-我们直接运行未修改的生产环境 Session、ContextEngine 和 GenerativeModel 代码，只替换供应商侧的网络流为脚本。涉及形状校验的用例配套使用伪造的工具环境，不改动核心请求组装路径。两个读取器负责解析录制下来的请求。
+录制字节分两路，一路定位最早分歧点，一路按 Anthropic 公开缓存规则计算预期读取量。[^3][^12]
 
-<figure class="post-figure" data-figure="harness-ci-pipeline"> <svg class="fig-svg" viewBox="0 0 560 388" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-pipeline-zh-title"> <title id="testing-agent-harnesses-harness-ci-pipeline-zh-title">从上到下的流程：未修改的生产 Session 代码经过脚本化的供应商流，得到录制的线上字节，分流到字节诊断和缓存规则模拟器，合并为带命名豁免清单的不变量检查，最终输出失败报告。</title> <rect x="104.3" y="8" width="351.4" height="32" rx="6" class="fig-terminal"/> <text x="280" y="28.2" class="fig-label" text-anchor="middle">未修改的 Session + ContextEngine + GenerativeModel</text> <path d="M280 40V59" class="fig-edge"/> <text x="280" y="64" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 64) rotate(90) scale(1.5) translate(-280 -64)">→</text> <rect x="188.1" y="72" width="183.9" height="32" rx="6" class="fig-box"/> <text x="280" y="92.2" class="fig-label" text-anchor="middle">脚本化的供应商流（无网络）</text> <path d="M280 104V123" class="fig-edge"/> <text x="280" y="128" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 128) rotate(90) scale(1.5) translate(-280 -128)">→</text> <rect x="140.1" y="136" width="279.8" height="32" rx="6" class="fig-box"/> <text x="280" y="156.2" class="fig-label" text-anchor="middle">录制的线上字节（与供应商请求形状完全一致）</text> <path d="M280 168V180M178.1 180H376" class="fig-edge"/> <path d="M178.1 180V195" class="fig-edge"/> <text x="178.1" y="200" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(178.1 200) rotate(90) scale(1.5) translate(-178 -200)">→</text> <path d="M376 180V195" class="fig-edge"/> <text x="376" y="200" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(376 200) rotate(90) scale(1.5) translate(-375.9 -200)">→</text> <rect x="92.1" y="208" width="171.9" height="32" rx="6" class="fig-box"/> <text x="178.1" y="228.2" class="fig-label" text-anchor="middle">字节诊断（最早偏移位置）</text> <rect x="284" y="208" width="183.9" height="32" rx="6" class="fig-box"/> <text x="376" y="228.2" class="fig-label" text-anchor="middle">缓存规则模拟器（用量指标）</text> <path d="M178.1 240V252M376 240V252M178.1 252H376" class="fig-edge"/> <path d="M280 252V271" class="fig-edge"/> <text x="280" y="276" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 276) rotate(90) scale(1.5) translate(-280 -276)">→</text> <rect x="134.1" y="284" width="291.8" height="32" rx="6" class="fig-box"/> <text x="280" y="304.2" class="fig-label" text-anchor="middle">不变量检查：完整前缀回读，仅使用命名豁免清单</text> <path d="M280 316V335" class="fig-edge"/> <text x="280" y="340" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 340) rotate(90) scale(1.5) translate(-280 -340)">→</text> <rect x="145.1" y="348" width="269.9" height="32" rx="6" class="fig-terminal"/> <text x="280" y="368.2" class="fig-label" text-anchor="middle">失败报告：请求索引、偏移层级、Token 缺口</text> </svg> <ol class="fig-steps"> <li>未修改的 Session + ContextEngine + GenerativeModel</li> <li>→</li> <li>脚本化的供应商流（无网络）</li> <li>→</li> <li>录制的线上字节（与供应商请求形状完全一致）</li> <li>字节诊断（最早偏移位置）</li> <li>缓存规则模拟器（用量指标）</li> <li>→</li> <li>不变量检查：完整前缀回读，仅使用命名豁免清单</li> <li>→</li> <li>失败报告：请求索引、偏移层级、Token 缺口</li> </ol> <figcaption>录制得到的请求字节与供应商实际收到的载荷完全一致，检查不会因内部数据结构和线上格式的差异漏判偏移。</figcaption> </figure>
+下图展示流水线。
 
-脚本化回复始终上报零缓存读取，供应商侧的缓存命中判定与计费逻辑全部通过离线建模实现。
+<figure class="post-figure" data-figure="harness-ci-pipeline"> <svg class="fig-svg" viewBox="0 0 560 388" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-pipeline-zh-title"> <title id="testing-agent-harnesses-harness-ci-pipeline-zh-title">从上到下的流程，从未修改的生产 Session 代码出发，经脚本化供应商流得到录制的线形态请求字节，分流到字节诊断模块与缓存规则模拟器，汇合后执行带命名豁免清单的不变量检查，最终输出失败报告。</title> <rect x="104.3" y="8" width="351.4" height="32" rx="6" class="fig-terminal"/> <text x="280" y="28.2" class="fig-label" text-anchor="middle">未修改的 Session + ContextEngine + GenerativeModel</text> <path d="M280 40V59" class="fig-edge"/> <text x="280" y="64" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 64) rotate(90) scale(1.5) translate(-280 -64)">→</text> <rect x="128.4" y="72" width="303.3" height="32" rx="6" class="fig-box"/> <text x="280" y="92.2" class="fig-label" text-anchor="middle">脚本化供应商流（无网络，脚本返回缓存读取为 0）</text> <path d="M280 104V123" class="fig-edge"/> <text x="280" y="128" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 128) rotate(90) scale(1.5) translate(-280 -128)">→</text> <rect x="140.1" y="136" width="279.8" height="32" rx="6" class="fig-box"/> <text x="280" y="156.2" class="fig-label" text-anchor="middle">录制的线形态字节（客户端实际会发出的请求）</text> <path d="M280 168V180M166.1 180H382" class="fig-edge"/> <path d="M166.1 180V195" class="fig-edge"/> <text x="166.1" y="200" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(166.1 200) rotate(90) scale(1.5) translate(-166 -200)">→</text> <path d="M382 180V195" class="fig-edge"/> <text x="382" y="200" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(382 200) rotate(90) scale(1.5) translate(-381.9 -200)">→</text> <rect x="74.1" y="208" width="183.9" height="32" rx="6" class="fig-box"/> <text x="166.1" y="228.2" class="fig-label" text-anchor="middle">字节诊断（定位最早分歧点）</text> <rect x="278" y="208" width="207.9" height="32" rx="6" class="fig-box"/> <text x="382" y="228.2" class="fig-label" text-anchor="middle">缓存规则模拟器（计算用量指标）</text> <path d="M166.1 240V252M382 240V252M166.1 252H382" class="fig-edge"/> <path d="M280 252V271" class="fig-edge"/> <text x="280" y="276" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 276) rotate(90) scale(1.5) translate(-280 -276)">→</text> <rect x="122.1" y="284" width="315.8" height="32" rx="6" class="fig-box"/> <text x="280" y="304.2" class="fig-label" text-anchor="middle">不变量检查：完整前缀读回，仅允许命名豁免清单条目</text> <path d="M280 316V335" class="fig-edge"/> <text x="280" y="340" class="fig-note" text-anchor="middle" dominant-baseline="central" transform="translate(280 340) rotate(90) scale(1.5) translate(-280 -340)">→</text> <rect x="145.1" y="348" width="269.9" height="32" rx="6" class="fig-terminal"/> <text x="280" y="368.2" class="fig-label" text-anchor="middle">失败报告：请求序号、分歧层级、Token 缺口</text> </svg> <ol class="fig-steps"> <li>未修改的 Session + ContextEngine + GenerativeModel</li> <li>→</li> <li>脚本化供应商流（无网络，脚本返回缓存读取为 0）</li> <li>→</li> <li>录制的线形态字节（客户端实际会发出的请求）</li> <li>字节诊断（定位最早分歧点）</li> <li>缓存规则模拟器（计算用量指标）</li> <li>→</li> <li>不变量检查：完整前缀读回，仅允许命名豁免清单条目</li> <li>→</li> <li>失败报告：请求序号、分歧层级、Token 缺口</li> </ol> <figcaption>测试运行未修改的生产请求组装代码，仅替换供应商网络流，检查覆盖客户端实际发出的完整请求载荷。</figcaption> </figure>
 
-这套诊断的字段命名取自 Anthropic 公开的缓存诊断词汇表，针对供应商会上报为 `unavailable` 的参数类偏移，新增了 harness 专属的 `parameters_changed` 原因。
+检查失败时，输出给出请求序号、分歧层级与 Token 缺口。[^3]
 
-离线模拟器按 Anthropic 公开文档实现缓存规则，覆盖块顺序、断点位置、TTL 和 20 位回看窗口。它会为每个请求上报估算的缓存读取、缓存写入和输入 Token 数。
+## 只伪造边界，不替换系统
+最直观的缓存测试方案是直接调用线上供应商 API。
 
-我们用一条不变量关联两个读取器的结果。同一上下文内，第一个请求之后的所有请求，必须完整回读该上下文内上一个请求的前缀。设计允许的未命中会加入命名豁免清单。
+无缓存诊断时，只能看到 `cache_read_input_tokens` 掉到 0，找不到根因。[^2]CI 测试任务无 API 密钥，这类调用无法执行。[^13]
 
-每一条豁免都带自校验逻辑。如果命名的请求不再满足预期前缀长度要求，豁免就会直接失败，避免过时条目随时间削弱套件的校验能力。
+我们用 core 里的脚本化 MMSP 客户端。harness 生产代码一行不改，只替换最外层网络流。[^11][^14]录制内容直接保存线上传输的精确字节，不做内存对象转换。[^11]
 
-套件按关注点拆分职责。不变量套件检查字节级的请求组装，生命周期套件覆盖完整 Session 流程下的缓存规则应用，模拟器套件单独校验规则引擎与供应商公开文档的一致性。CI 选中核心包测试时会自动运行这些套件。我们要求开发者，只要修改请求组装逻辑，必须运行这些套件。
+CI 选中 core 时，套件在 Linux、macOS、Windows 运行。[^13][^15][^16]开发技能将请求组装改动路由到该检查。[^1]2026-10-19 测试机跑用例耗时 1.54 s，无网络。[^5]代价是模拟器只复现公开规则，无法确认线上实际行为。[^4]
 
-## 为什么这些检查不调用线上 API
-检查缓存行为最直观的方式，是向线上供应商发送请求，读取返回的用量指标。
+下图对比两种方案约束。
 
-我们对比了这种方式与脚本化流方案的差异，最终选择了后者。我们明确标注了这一限制。
+<figure class="post-figure" data-figure="harness-ci-obvious-designs"> <svg class="fig-svg" viewBox="0 0 560 272" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-obvious-designs-zh-title"> <title id="testing-agent-harnesses-harness-ci-obvious-designs-zh-title">上下排列的两个面板，对比线上 API 测试调用与我们选用的脚本化的供应商流方案，分别列出两种方式的测试特性。</title> <rect x="16" y="8" width="528" height="110" rx="8" class="fig-link"/> <text x="32" y="32" class="fig-title">未采用：线上 API 调用</text> <text x="32" y="58">需要 API 密钥 + 网络访问</text> <text x="32" y="80">缓存未命中时无法定位改动点</text> <text x="32" y="102">无法在无凭证的 CI 测试任务中运行</text> <rect x="16" y="130" width="528" height="110" rx="8" class="fig-box"/> <text x="32" y="154" class="fig-title">采用：脚本化的供应商流</text> <text x="32" y="180">无需密钥，无网络调用</text> <text x="32" y="202">进程内重复运行生成字节完全一致的请求</text> <text x="32" y="224">记录精确的线上传输字节，用于根因诊断</text> <text x="280" y="262" class="fig-note" text-anchor="middle">离线建模已公开的缓存规则；不验证线上部署行为</text> </svg> <ol class="fig-steps"> <li>未采用：线上 API 调用</li> <li>需要 API 密钥 + 网络访问</li> <li>缓存未命中时无法定位改动点</li> <li>无法在无凭证的 CI 测试任务中运行</li> <li>采用：脚本化的供应商流</li> <li>无需密钥，无网络调用</li> <li>进程内重复运行生成字节完全一致的请求</li> <li>记录精确的线上传输字节，用于根因诊断</li> <li>离线建模已公开的缓存规则；不验证线上部署行为</li> </ol> <figcaption>线上 API 调用需要密钥和网络，出现缓存未命中时无法定位根因；脚本化的供应商流方案无需密钥，进程内重复运行可得到字节完全一致的请求，还能记录精确传输字节用于根因诊断，代价是离线模拟供应商规则，无法验证线上部署的实际行为。</figcaption> </figure>
 
-<figure class="post-figure" data-figure="harness-ci-obvious-designs"> <svg class="fig-svg" viewBox="0 0 560 272" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-obvious-designs-zh-title"> <title id="testing-agent-harnesses-harness-ci-obvious-designs-zh-title">上下两栏对比线上 API 测试调用与我们选择的脚本化供应商流方案，列出各自的测试属性。</title> <rect x="16" y="8" width="528" height="110" rx="8" class="fig-link"/> <text x="32" y="32" class="fig-title">未采用：线上 API 调用</text> <text x="32" y="58">需要 API 密钥 + 网络访问</text> <text x="32" y="80">结果不确定（供应商侧缓存状态变化）</text> <text x="32" y="102">能标记用量下降，但无法给出参数变化的根因</text> <rect x="16" y="130" width="528" height="110" rx="8" class="fig-box"/> <text x="32" y="154" class="fig-title">采用：脚本化的供应商流</text> <text x="32" y="180">无密钥，无网络调用</text> <text x="32" y="202">跨运行、跨操作系统结果确定</text> <text x="32" y="224">记录精确的线上字节，用于根因诊断</text> <text x="280" y="262" class="fig-note" text-anchor="middle">离线建模公开的缓存规则；不确认线上部署行为</text> </svg> <ol class="fig-steps"> <li>未采用：线上 API 调用</li> <li>需要 API 密钥 + 网络访问</li> <li>结果不确定（供应商侧缓存状态变化）</li> <li>能标记用量下降，但无法给出参数变化的根因</li> <li>采用：脚本化的供应商流</li> <li>无密钥，无网络调用</li> <li>跨运行、跨操作系统结果确定</li> <li>记录精确的线上字节，用于根因诊断</li> <li>离线建模公开的缓存规则；不确认线上部署行为</li> </ol> <figcaption>线上 API 调用需要密钥和网络，结果不确定，也无法给出参数偏移的根因；脚本化流方案不需要密钥、无网络调用，跨运行和操作系统结果确定，代价是离线建模供应商规则，而非观测线上部署的实际行为。</figcaption> </figure>
+仅靠字节相等，无法预判供应商缓存行为。
 
-下文引用的所有 Token 计数、缓存命中率和成本数字，都来自 Anthropic 公开缓存规则的离线模拟器。测量运行于 2026-10-19，测试机环境为 Node v24.20.0、pnpm 11.18.0、vitest 3.2.7，基于 PenguinHarness 0.2.16 上 `claude-sonnet-4-6` 的录制 fixture 请求生成。我们基于套件自带的辅助函数编写了一次性回放测试，运行了超出发布测试用例覆盖范围的多轮场景。Token 按每 4 个字符折合 1 个 Token 估算，价格取自 harness 内置价目表，所有数字都不是线上供应商的实测值。模拟器只建模公开文档中的供应商规则，不代表线上部署的实际行为。
+## 单靠字节无法判定缓存行为
+仅字节校验无法判定缓存行为。
 
-## 仅靠字节校验无法建模供应商缓存行为
-在连续请求之间做朴素的字节相等校验，能抓到结构偏移，但无法把这些偏移换算成供应商实际计费的 Token 数。这类校验也检测不到字节完全不变时发生的缓存未命中，比如 TTL 过期导致的条目失效。
+两次请求空闲超过默认 5 分钟缓存 TTL 时，就算和前序请求逐字节匹配，模拟器仍判定为缓存未命中，返回 0 个缓存读取 Token，预计产生 2041 个缓存写入 Token。[^3][^5][^7]
 
-这一局限在 #700 修复的思考等级漂移这类参数变化场景中体现得非常明显。仅字节校验能标记出 `parameters_changed` 偏移，但无法算出供应商为这个请求实际读取或写入的 Token 数。
+调整思考等级时，工具定义和系统提示字节不变。harness 发送唯一自动断点时，模拟器算出 0 个读回 Token，预计写入 1719 个 Token。若在工具和系统提示后加断点（模拟器测算的假设场景），可读回 1656 个 Token 前缀。[^3][^5][^7]
 
-<figure class="post-figure" data-figure="harness-ci-bytes-vs-simulator"> <svg class="fig-svg" viewBox="0 0 560 272" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-bytes-vs-simulator-zh-title"> <title id="testing-agent-harnesses-harness-ci-bytes-vs-simulator-zh-title">上下两栏展示同一个参数变化分别由仅字节校验、字节加规则模拟器组合校验得到的结果，附带每个结果的估算 Token 数。</title> <rect x="16" y="8" width="528" height="110" rx="8" class="fig-link"/> <text x="32" y="32" class="fig-title">未采用：仅字节校验</text> <text x="32" y="58">标记偏移：parameters_changed [output_config]</text> <text x="32" y="80">无 Token 或缓存行为信号</text> <rect x="16" y="130" width="528" height="110" rx="8" class="fig-box"/> <text x="32" y="154" class="fig-title">采用：字节 + 规则模拟器</text> <text x="32" y="180">标记偏移：parameters_changed [output_config]</text> <text x="32" y="202">上线断点配置：0 个读取 Token（估算），1719 个写入 Token（估算）</text> <text x="32" y="224">额外断点（假设场景）：1656 个读取 Token（估算）</text> <text x="280" y="262" class="fig-note" text-anchor="middle">同一个字节变化，对应不同的估算 Token 数</text> </svg> <ol class="fig-steps"> <li>未采用：仅字节校验</li> <li>标记偏移：parameters_changed [output_config]</li> <li>无 Token 或缓存行为信号</li> <li>采用：字节 + 规则模拟器</li> <li>标记偏移：parameters_changed [output_config]</li> <li>上线断点配置：0 个读取 Token（估算），1719 个写入 Token（估算）</li> <li>额外断点（假设场景）：1656 个读取 Token（估算）</li> <li>同一个字节变化，对应不同的估算 Token 数</li> </ol> <figcaption>仅字节校验和组合校验一样能标记出 parameters_changed 偏移，但无法算出当前上线的断点会带来 0 个估算缓存读取 Token、1719 个估算缓存写入 Token，而显式添加工具和系统断点（一个测量过的假设场景）可以保留 1656 个估算缓存读取 Token。</figcaption> </figure>
+离线模拟器套用供应商公开缓存规则区分场景，输出标准用量字段。[^3]
 
-## 固定 Token 计数过于脆弱
-第二种朴素方案是把每个请求的精确 Token 数固定为快照。这能抓到严重的缓存故障，但也会在无害的编辑上失败。这类编辑保留了前缀匹配规则，只是让 Token 数发生了微小偏移。
+<figure class="post-figure" data-figure="harness-ci-bytes-vs-simulator"> <svg class="fig-svg" viewBox="0 0 560 272" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-bytes-vs-simulator-zh-title"> <title id="testing-agent-harnesses-harness-ci-bytes-vs-simulator-zh-title">上下两栏展示同一个参数变化分别由仅字节校验、字节加规则模拟器组合校验得到的结果，附带每个结果的估算 Token 数。</title> <rect x="16" y="8" width="528" height="110" rx="8" class="fig-link"/> <text x="32" y="32" class="fig-title">未采用：仅字节校验</text> <text x="32" y="58">标记偏移：parameters_changed [output_config]</text> <text x="32" y="80">无 Token 或缓存行为信号</text> <rect x="16" y="130" width="528" height="110" rx="8" class="fig-box"/> <text x="32" y="154" class="fig-title">采用：字节 + 规则模拟器</text> <text x="32" y="180">标记偏移：parameters_changed [output_config]</text> <text x="32" y="202">harness 发送的唯一自动断点：0 个读取 Token（估算），1719 个写入 Token（估算）</text> <text x="32" y="224">工具与系统后加断点（模拟器测算的假设场景）：1656 个读取 Token（估算）</text> <text x="280" y="262" class="fig-note" text-anchor="middle">同一个字节变化，对应不同的估算 Token 数</text> </svg> <ol class="fig-steps"> <li>未采用：仅字节校验</li> <li>标记偏移：parameters_changed [output_config]</li> <li>无 Token 或缓存行为信号</li> <li>采用：字节 + 规则模拟器</li> <li>标记偏移：parameters_changed [output_config]</li> <li>harness 发送的唯一自动断点：0 个读取 Token（估算），1719 个写入 Token（估算）</li> <li>工具与系统后加断点（模拟器测算的假设场景）：1656 个读取 Token（估算）</li> <li>同一个字节变化，对应不同的估算 Token 数</li> </ol> <figcaption>仅字节校验和组合校验一样能标记出 parameters_changed 偏移，但无法算出 harness 当前发送的唯一自动断点会带来 0 个估算缓存读取 Token、1719 个估算缓存写入 Token，而在工具与系统提示后显式加断点（模拟器测算的假设场景）可以保留 1656 个估算缓存读取 Token。</figcaption> </figure>
 
-在 fixture 的系统提示末尾追加一句 49 字符的无害句子，会让十轮对话里 20 个读写计数中的 10 个发生变化，但完整前缀回读的性质完全保留。我们对比了「固定精确 Token 计数」与「结构不变量 + 豁免清单」两种方案在这类无害编辑下的表现。模拟得到的缓存命中率从 88.61% 变为 88.62%，变化可以忽略，没有实际成本影响。
+这些计数结果需要明确的断言规则。
+
+## 断言不变量，不钉死数字
+
+钉死单次请求的精确 Token 计数，是最直观的断言方式，也最脆弱。
+
+一处无害的 49 字符系统提示改动，会让 20 个单请求 Token 计数中的 10 个偏移，前缀仍完整，缓存命中率几乎无变化。[^5]
 
 <figure class="post-figure" data-figure="harness-ci-pinned-vs-invariant"> <svg class="fig-svg" viewBox="0 0 560 272" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-pinned-vs-invariant-zh-title"> <title id="testing-agent-harnesses-harness-ci-pinned-vs-invariant-zh-title">上下两栏展示对系统提示做 49 字符的无害编辑后的测试结果，对比固定精确 Token 计数和结构不变量检查的表现。</title> <rect x="16" y="8" width="528" height="110" rx="8" class="fig-link"/> <text x="32" y="32" class="fig-title">未采用：固定精确 Token 计数</text> <text x="32" y="58">编辑改变了 20 个单请求 Token 计数中的 10 个</text> <text x="32" y="80">测试结果：失败</text> <text x="32" y="102">模拟命中率变化：88.61% → 88.62%</text> <rect x="16" y="130" width="528" height="110" rx="8" class="fig-box"/> <text x="32" y="154" class="fig-title">采用：结构不变量 + 豁免清单</text> <text x="32" y="180">编辑保留了完整前缀回读性质</text> <text x="32" y="202">测试结果：通过</text> <text x="32" y="224">模拟命中率变化：88.61% → 88.62%</text> <text x="280" y="262" class="fig-note" text-anchor="middle">同一个编辑，无实际估算成本变化</text> </svg> <ol class="fig-steps"> <li>未采用：固定精确 Token 计数</li> <li>编辑改变了 20 个单请求 Token 计数中的 10 个</li> <li>测试结果：失败</li> <li>模拟命中率变化：88.61% → 88.62%</li> <li>采用：结构不变量 + 豁免清单</li> <li>编辑保留了完整前缀回读性质</li> <li>测试结果：通过</li> <li>模拟命中率变化：88.61% → 88.62%</li> <li>同一个编辑，无实际估算成本变化</li> </ol> <figcaption>固定精确 Token 计数会在 49 字符的无害系统提示编辑上失败，这类编辑对模拟缓存行为几乎没有影响；结构不变量检查会通过，因为前缀匹配规则仍然成立。</figcaption> </figure>
 
-## 成本变动交人工判断，不进测试基线
-最后一个常见陷阱，是把失败的缓存检查当成可以调整基线直到通过的普通测试。修改预期 Token 数，或者往豁免清单里加新条目，本质是替用户承担额外成本，是需要用户确认的成本决策。这类操作直接影响用户的账单，必须明确披露偏移层级和对应估算成本，不能只埋在测试日志中。
+我们只断言完整前缀回读这条不变量。思考等级调整、重开上下文、切换模型等预期内的缓存未命中，归入豁免清单。[^4][^9][^17]
 
-我们在两个一次性回放场景里测量了回滚 #700 的压缩思考等级修复的影响，对比上线代码和回滚后的状态。调整思考等级之后，随着新增内容变多，旧条目会逐步掉出供应商的 20 位回看窗口，压缩请求的成本会随之上升。
+豁免条目对应场景若后续恢复缓存命中，检查直接判失败，避免过期条目削弱效力。[^9]
 
-面对这类成本漂移，常见的处理方式是「改基线到变绿」，我们选择的方案是「明确失败，升级处理」。不变量捕获漂移时，报告会标出请求索引、发生偏移的 `output_config` 参数、偏移所在的层级，以及不匹配位置之后的估算 Token 数。
+失败报告会标明请求序号、分歧层级和 Token 缺口，改出问题的 Agent 可直接读懂原因。[^1][^3][^12]
 
-<figure class="post-figure" data-figure="harness-ci-revert-cost"> <svg class="fig-svg" viewBox="0 0 560 416" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-revert-cost-zh-title"> <title id="testing-agent-harnesses-harness-ci-revert-cost-zh-title">上下两栏对比 #700 的思考等级漂移被允许（改基线到变绿）和被不变量检查捕获时的测试结果与估算压缩请求成本，覆盖思考等级调整到压缩之间间隔 1 个任务和 5 个任务两个场景。</title> <rect x="16" y="9" width="12" height="10" rx="2" class="fig-s3"/> <text x="34" y="18" class="fig-label">改基线后的漂移版本</text> <rect x="165.9" y="9" width="12" height="10" rx="2" class="fig-s1"/> <text x="183.9" y="18" class="fig-label">上线版本行为</text> <rect x="16" y="30" width="528" height="158" rx="8" class="fig-link"/> <text x="32" y="54" class="fig-title">未采用：改基线到变绿</text> <text x="32" y="76">测试结果：通过</text> <text x="32" y="98">间隔 1 个任务：压缩成本 $0.000753（估算，为上线版本的 1.13 倍）</text> <path d="M32 106H65.7A3 3 0 0 1 68.7 109V113A3 3 0 0 1 65.7 116H32Z" class="fig-s3"/> <text x="32" y="136">间隔 5 个任务：压缩成本 $0.008715（估算，为上线版本的 10.2 倍）</text> <path d="M32 144H454.3A3 3 0 0 1 457.3 147V151A3 3 0 0 1 454.3 154H32Z" class="fig-s3"/> <text x="32" y="176">成本变动对用户隐藏</text> <rect x="16" y="200" width="528" height="158" rx="8" class="fig-box"/> <text x="32" y="224" class="fig-title">采用：明确失败，升级处理</text> <text x="32" y="246">测试结果：失败</text> <text x="32" y="268">间隔 1 个任务：压缩成本 $0.0006657（估算）</text> <path d="M32 276H61.5A3 3 0 0 1 64.5 279V283A3 3 0 0 1 61.5 286H32Z" class="fig-s1"/> <text x="32" y="306">间隔 5 个任务：压缩成本 $0.000858（估算）</text> <path d="M32 314H70.9A3 3 0 0 1 73.9 317V321A3 3 0 0 1 70.9 324H32Z" class="fig-s1"/> <text x="32" y="346">暴露偏移层级和成本，供人工决策</text> <path d="M32 370H520M32 370V375M129.6 370V375M227.2 370V375M324.8 370V375M422.4 370V375M520 370V375" class="fig-axis"/> <text x="32" y="388" class="fig-tick" text-anchor="middle">$0</text> <text x="129.6" y="388" class="fig-tick" text-anchor="middle">$0.002</text> <text x="227.2" y="388" class="fig-tick" text-anchor="middle">$0.004</text> <text x="324.8" y="388" class="fig-tick" text-anchor="middle">$0.006</text> <text x="422.4" y="388" class="fig-tick" text-anchor="middle">$0.008</text> <text x="520" y="388" class="fig-tick" text-anchor="middle">$0.010</text> <text x="276" y="408" class="fig-label" text-anchor="middle">压缩请求成本（USD，估算）</text> </svg> <ol class="fig-steps"> <li>未采用：改基线到变绿</li> <li>测试结果：通过</li> <li>间隔 1 个任务：压缩成本 $0.000753（估算，为上线版本的 1.13 倍）</li> <li>间隔 5 个任务：压缩成本 $0.008715（估算，为上线版本的 10.2 倍）</li> <li>成本变动对用户隐藏</li> <li>采用：明确失败，升级处理</li> <li>测试结果：失败</li> <li>间隔 1 个任务：压缩成本 $0.0006657（估算）</li> <li>间隔 5 个任务：压缩成本 $0.000858（估算）</li> <li>暴露偏移层级和成本，供人工决策</li> <li>压缩请求成本（USD，估算）</li> <li>改基线后的漂移版本</li> <li>上线版本行为</li> </ol> <figcaption>如果把检查改基线到接受 #700 的漂移，会隐藏 1.13 倍（调整后 1 个任务压缩，上线版本成本 $0.0006657，回滚版本 $0.000753）和 10.2 倍（调整后 5 个任务压缩，上线版本成本 $0.000858，回滚版本 $0.008715）的估算压缩请求成本上涨；我们选择的方案会让检查失败，把偏移层级暴露出来供人工决策。</figcaption> </figure>
+这套断言只标出问题，不替人做决策。
 
-## 运行套件
-运行提示词缓存套件，执行 `pnpm --filter @prismshadow/penguin-core exec vitest run prompt-cache` 即可。套件强制校验的请求组装契约见[请求组装契约文档](https://penguin.ooo/docs/agent-loop)。
+## 绝不改基线到变绿
+测试失败时，改基线凑通过很容易。我们从不这么做。[^1]
 
----
+2026-09-14 合并的 #700 让压缩请求改用 Session 当前思考等级。此前压缩请求为保护提示词缓存，刻意沿用上下文初始等级，用户调等级后，它是唯一前缀对不上的请求。缓存测试套件次日合入，由这次修复触发。[^6][^18][^19]
 
-**Sources**: [PenguinHarness v0.2.16 提示词缓存测试辅助工具](https://github.com/Prism-Shadow/penguin-harness/tree/v0.2.16/packages/core/test/helpers/prompt-cache) · [请求组装契约](https://penguin.ooo/docs/agent-loop) · [Anthropic 提示词缓存文档](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) · [Anthropic 缓存诊断文档](https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics) · [OpenAI 提示词缓存指南](https://developers.openai.com/api/docs/guides/prompt-caching) · [PR #700：压缩思考等级修复](https://github.com/Prism-Shadow/penguin-harness/pull/700) · [PR #722：提示词缓存测试套件](https://github.com/Prism-Shadow/penguin-harness/pull/722)
+刻意回滚 #700 会触发两个核心测试失败：不变量套件的思考等级调整用例、#700 改断言的引擎测试，其余测试全过。[^5][^6]
+
+按 claude-sonnet-4-6 目录价计算，回滚 #700 后，调等级后间隔 1 个任务触发压缩的估算成本为合入版本的 1.13 倍，间隔 5 个任务时为 10.2 倍。[^5]
+
+<figure class="post-figure" data-figure="harness-ci-revert-cost"> <svg class="fig-svg" viewBox="0 0 560 416" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-revert-cost-zh-title"> <title id="testing-agent-harnesses-harness-ci-revert-cost-zh-title">上下两栏对比接受 #700 思考等级偏移（改基线到变绿）与被不变量检查捕获两种场景的测试结果，以及调整等级到压缩间隔不同任务数时的压缩请求估算成本。</title> <rect x="16" y="9" width="12" height="10" rx="2" class="fig-s3"/> <text x="34" y="18" class="fig-label">改基线后的偏移版本</text> <rect x="165.9" y="9" width="12" height="10" rx="2" class="fig-s1"/> <text x="183.9" y="18" class="fig-label">合入版本行为</text> <rect x="16" y="30" width="528" height="158" rx="8" class="fig-link"/> <text x="32" y="54" class="fig-title">未采用：改基线到变绿</text> <text x="32" y="76">测试结果：通过</text> <text x="32" y="98">间隔 1 个任务：压缩成本 $0.000753（估算，1.13× 合入版本）</text> <path d="M32 106H65.7A3 3 0 0 1 68.7 109V113A3 3 0 0 1 65.7 116H32Z" class="fig-s3"/> <text x="32" y="136">间隔 5 个任务：压缩成本 $0.008715（估算，10.2× 合入版本）</text> <path d="M32 144H454.3A3 3 0 0 1 457.3 147V151A3 3 0 0 1 454.3 154H32Z" class="fig-s3"/> <text x="32" y="176">成本变化被隐藏</text> <rect x="16" y="200" width="528" height="158" rx="8" class="fig-box"/> <text x="32" y="224" class="fig-title">采用：明确失败，升级处理</text> <text x="32" y="246">测试结果：失败</text> <text x="32" y="268">间隔 1 个任务：压缩成本 $0.0006657（估算）</text> <path d="M32 276H61.5A3 3 0 0 1 64.5 279V283A3 3 0 0 1 61.5 286H32Z" class="fig-s1"/> <text x="32" y="306">间隔 5 个任务：压缩成本 $0.000858（估算）</text> <path d="M32 314H70.9A3 3 0 0 1 73.9 317V321A3 3 0 0 1 70.9 324H32Z" class="fig-s1"/> <text x="32" y="346">展示分歧层级与成本估算，供人工决策</text> <path d="M32 370H520M32 370V375M129.6 370V375M227.2 370V375M324.8 370V375M422.4 370V375M520 370V375" class="fig-axis"/> <text x="32" y="388" class="fig-tick" text-anchor="middle">$0</text> <text x="129.6" y="388" class="fig-tick" text-anchor="middle">$0.002</text> <text x="227.2" y="388" class="fig-tick" text-anchor="middle">$0.004</text> <text x="324.8" y="388" class="fig-tick" text-anchor="middle">$0.006</text> <text x="422.4" y="388" class="fig-tick" text-anchor="middle">$0.008</text> <text x="520" y="388" class="fig-tick" text-anchor="middle">$0.010</text> <text x="276" y="408" class="fig-label" text-anchor="middle">压缩请求成本（USD，估算值）</text> </svg> <ol class="fig-steps"> <li>未采用：改基线到变绿</li> <li>测试结果：通过</li> <li>间隔 1 个任务：压缩成本 $0.000753（估算，1.13× 合入版本）</li> <li>间隔 5 个任务：压缩成本 $0.008715（估算，10.2× 合入版本）</li> <li>成本变化被隐藏</li> <li>采用：明确失败，升级处理</li> <li>测试结果：失败</li> <li>间隔 1 个任务：压缩成本 $0.0006657（估算）</li> <li>间隔 5 个任务：压缩成本 $0.000858（估算）</li> <li>展示分歧层级与成本估算，供人工决策</li> <li>压缩请求成本（USD，估算值）</li> <li>改基线后的偏移版本</li> <li>合入版本行为</li> </ol> <figcaption>改基线接受 #700 偏移会掩盖压缩成本上涨（以下成本均为模拟器按 claude-sonnet-4-6 目录价估算）：间隔 1 个任务时为合入版本的 1.13 倍（合入版本 $0.0006657，回滚版本 $0.000753），间隔 5 个任务时为 10.2 倍（合入版本 $0.000858，回滚版本 $0.008715）；我们的方案会直接判失败，标出分歧层级供人工决策。</figcaption> </figure>
+
+数字一旦变了，就连同分歧层级和成本估算交人决策，不改基线。[^1]
+
+## 运行测试套件
+你可以在仓库根目录执行 `pnpm --filter @prismshadow/penguin-core exec vitest run prompt-cache`，运行这套提示词缓存相关测试。[^5]
+这套测试对应的设计约定，可查阅公开的 Agent 循环文档 [https://penguin.ooo/docs/agent-loop](https://penguin.ooo/docs/agent-loop)。[^20][^21]
+
+[^1]: [.agents/skills/penguin-harness-dev/SKILL.md](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/.agents/skills/penguin-harness-dev/SKILL.md)
+[^2]: [Cache diagnostics - Claude Platform Docs](https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics)
+[^3]: [packages/core/test/helpers/prompt-cache/simulator.ts](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/packages/core/test/helpers/prompt-cache/simulator.ts)
+[^4]: [.agents/skills/penguin-harness-dev/reference/verification.md](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/.agents/skills/penguin-harness-dev/reference/verification.md)
+[^5]: our measurement on PenguinHarness 0.2.16 (method in the post)
+[^6]: [PR #700: A compaction request runs at the Session's thinking level](https://github.com/Prism-Shadow/penguin-harness/pull/700)
+[^7]: [Prompt caching - Claude Platform Docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+[^8]: [Prompt caching | OpenAI API](https://developers.openai.com/api/docs/guides/prompt-caching)
+[^9]: [packages/core/test/helpers/prompt-cache/fixtures.ts](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/packages/core/test/helpers/prompt-cache/fixtures.ts)
+[^10]: [packages/core/test/helpers/prompt-cache/index.ts](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/packages/core/test/helpers/prompt-cache/index.ts)
+[^11]: [packages/core/test/helpers/prompt-cache/recording.ts](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/packages/core/test/helpers/prompt-cache/recording.ts)
+[^12]: [packages/core/test/helpers/prompt-cache/diagnostics.ts](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/packages/core/test/helpers/prompt-cache/diagnostics.ts)
+[^13]: [.github/workflows/ci.yml](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/.github/workflows/ci.yml)
+[^14]: [.agents/skills/penguin-harness-dev/reference/testing.md](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/.agents/skills/penguin-harness-dev/reference/testing.md)
+[^15]: [scripts/ci-plan.mjs](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/scripts/ci-plan.mjs)
+[^16]: [packages/core/package.json](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/packages/core/package.json)
+[^17]: [packages/core/test/prompt-cache-lifecycle.test.ts](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/packages/core/test/prompt-cache-lifecycle.test.ts)
+[^18]: [changelog/0.2.13/2026-09-11-compaction-thinking-level.md](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/changelog/0.2.13/2026-09-11-compaction-thinking-level.md)
+[^19]: [PR #722: test(core): the prompt cache — assembly invariants, an Anthropic-rule simulator, and the Session lifecycle](https://github.com/Prism-Shadow/penguin-harness/pull/722)
+[^20]: [packages/core/test/helpers/prompt-cache/](https://github.com/Prism-Shadow/penguin-harness/tree/v0.2.16/packages/core/test/helpers/prompt-cache)
+[^21]: [PenguinHarness docs: The Agent Loop](https://penguin.ooo/docs/agent-loop)
