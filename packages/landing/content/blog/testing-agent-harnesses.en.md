@@ -74,18 +74,18 @@ These suites run on Linux, macOS and Windows when CI selects core.[^13][^15][^16
 Byte equality alone does not fully predict provider cache behavior.
 
 ## Bytes alone are not enough
-A raw byte-equality check cannot judge cache behavior.
+A byte-equality check cannot judge cache behavior.
 
-A request past the default 5-minute cache TTL can match its predecessor byte for byte.
-The simulator still estimates a full miss: 0 tokens read, 2,041 estimated written.[^3][^5][^7]
+A request after an idle gap longer than the default 5-minute cache TTL can match its predecessor byte for byte.
+The simulator estimates a full miss: 0 tokens read, 2,041 written.[^3][^5][^7]
 
 A thinking-level change leaves tools and system prompt bytes identical.
-With the harness's single automatic breakpoint, the simulator reads 0 tokens back and writes an estimated 1,719.
+With the harness's single automatic breakpoint, the simulator reads 0 tokens and writes an estimated 1,719.
 Extra tool and system breakpoints, a measured what-if, would recover the 1,656-token prefix.[^3][^5][^7]
 
 The offline simulator applies documented provider rules to separate these cases, reporting standard usage fields.[^3]
 
-The two checks differ on that thinking-level change.
+The checks differ on that thinking-level change.
 
 <figure class="post-figure" data-figure="harness-ci-bytes-vs-simulator"> <svg class="fig-svg" viewBox="0 0 560 272" role="img" aria-labelledby="testing-agent-harnesses-harness-ci-bytes-vs-simulator-en-title"> <title id="testing-agent-harnesses-harness-ci-bytes-vs-simulator-en-title">Two stacked panels (one above the other) showing the same parameter change evaluated by a bytes-only check versus a combined bytes plus rule simulator check, with estimated token counts for each outcome.</title> <rect x="16" y="8" width="528" height="110" rx="8" class="fig-link"/> <text x="32" y="32" class="fig-title">Rejected: bytes-only check</text> <text x="32" y="58">Divergence flagged: parameters_changed [output_config]</text> <text x="32" y="80">No token or cache behavior signal</text> <rect x="16" y="130" width="528" height="110" rx="8" class="fig-box"/> <text x="32" y="154" class="fig-title">Chosen: bytes + rule simulator</text> <text x="32" y="180">Divergence flagged: parameters_changed [output_config]</text> <text x="32" y="202">Shipped breakpoint: 0 tokens read (estimated), 1719 written (estimated)</text> <text x="32" y="224">Extra breakpoints (what-if): 1656 tokens read (estimated)</text> <text x="280" y="262" class="fig-note" text-anchor="middle">Same byte change, different estimated token counts</text> </svg> <ol class="fig-steps"> <li>Rejected: bytes-only check</li> <li>Divergence flagged: parameters_changed [output_config]</li> <li>No token or cache behavior signal</li> <li>Chosen: bytes + rule simulator</li> <li>Divergence flagged: parameters_changed [output_config]</li> <li>Shipped breakpoint: 0 tokens read (estimated), 1719 written (estimated)</li> <li>Extra breakpoints (what-if): 1656 tokens read (estimated)</li> <li>Same byte change, different estimated token counts</li> </ol> <figcaption>A bytes-only check flags the same parameters_changed divergence as the combined check, but cannot report that the shipped breakpoint leads to 0 estimated cache-read tokens and 1719 estimated cache-write tokens, while explicit tool and system breakpoints (a measured what-if) would retain 1656 estimated cache-read tokens.</figcaption> </figure>
 
