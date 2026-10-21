@@ -9,7 +9,7 @@
  * HTTP answers, and a pushed route needs nothing here.
  *
  * Identity is settled before this runs: the runtime authenticated the handshake cookie and
- * held the reserved id's owner to it, so the `fetch` handed in is already bound to that user
+ * handed over a reference naming that user, so the `fetch` handed in is already bound to them
  * (Http.fetchAs) — no credential travels with a frame, and there is nothing in a frame to
  * forge.
  *
@@ -24,7 +24,7 @@
  * declines: the client makes those calls over HTTP instead.
  */
 import type { WebSocket } from "ws";
-import { sessionKindPath } from "../api/types.js";
+import { API_SOCKET_PATH, sessionKindPath } from "../api/types.js";
 import { declined } from "../hmr/hono-seam.js";
 import { CALL_HEADERS, parseClientFrame } from "./frames.js";
 import type { CallFrame, ServerFrame } from "./frames.js";
@@ -57,9 +57,10 @@ const DECLINE: [string, string] = (() => {
 const isDeclined = (res: Response): boolean =>
   DECLINE[0] !== "" && res.headers.get(DECLINE[0]) === DECLINE[1];
 
-/** Prefixes a call may address. The terminal streams (the socket's own path among them) are upgrades, not calls. */
+/** Prefixes a call may address. Upgrade routes — a terminal stream, and this socket's own address — are not calls. */
 function callable(path: string): boolean {
   const pathname = path.split("?")[0] ?? path;
+  if (pathname === API_SOCKET_PATH) return false;
   if (/^\/api\/terminals\/[^/]+\/stream$/.test(pathname)) return false;
   return pathname.startsWith("/api/") || pathname.startsWith("/server/");
 }

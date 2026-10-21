@@ -1440,7 +1440,7 @@ export type ServerEvent =
 
 API 套接字是同一个 API 的第二种传输，供自带的 Web App 使用（PRFC-0011）：一个标签页一条套接字，每一帧是对既有端点的一次调用，每个长期的流是一次不结束的调用。上文没有任何东西是它特有的——HTTP 与套接字进入同一批路由，一次调用的授权、校验与应答与它的 HTTP 孪生完全一致。
 
-它在终端流的 upgrade 路径上打开，用一个以登录用户命名的保留 id：`GET /api/terminals/api-socket@<userId>/stream`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath(userId)` 负责拼写）。握手就是终端流的握手——会话 Cookie、同源的 `Origin`（或没有）、以及 id 的 owner 必须是登录用户本人，admin 的 Cookie 打不开 `api-socket@alice`——之后套接字以该用户的身份服务每次调用。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
+它有自己的 upgrade 路由：`GET /api/socket`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath()` 负责拼写）。握手沿用终端流的那一套——会话 Cookie 与同源的 `Origin`（或没有）——之后套接字以该 Cookie 命名的用户身份服务每次调用。它不创建、不列出、也不触碰任何终端，不涉及终端 id，因此也没有可伪造的 id。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
 
 帧是 JSON 文本帧，id 由客户端分配、在套接字生命周期内唯一：
 

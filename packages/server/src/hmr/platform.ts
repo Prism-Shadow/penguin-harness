@@ -661,11 +661,11 @@ async function createInner(
     http,
     terminals: () => terminals,
     attachStream: (ws, session, url, log) => {
-      // The runtime handed the socket over exactly as for a local pty, owner checked. Three
-      // things it can be: the API socket (its reserved id — served as the owner the runtime
-      // just held it to), a reference to a machine's pty (the relay takes it), or a local pty.
-      // The API socket is the shell's (platformImpl below): it outlives this App, so its
-      // calls must resolve the App of the moment, which only the shell knows.
+      // The runtime handed the socket over as a reference. Three things it can be: the API
+      // socket (served as the user its cookie named at the handshake), a reference to a
+      // machine's pty (the relay takes it), or a local pty. The API socket is the shell's
+      // (platformImpl below): it outlives this App, so its calls must resolve the App of the
+      // moment, which only the shell knows.
       if (isApiSocketRef(session)) return ws.close(1013, "served by the platform shell");
       if (remote?.attach(ws, session, url, log) === true) return;
       bindTerminalStream(ws, session, url, log);
