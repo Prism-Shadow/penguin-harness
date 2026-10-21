@@ -25,10 +25,37 @@ After every factual sentence write its fact id in braces, e.g. `{F3}`; after a s
 The fact markers (`{F3}`, `{O1}`) stay exactly as the input has them, at the end of the same sentences. Never add a marker to a sentence that has none, and never remove or renumber one. Headings, figure blocks and frontmatter carry no markers.
 
 <!-- fragment: markers-fix -->
-The fact markers (`{F3}`, `{O1}`) stay exactly as the input has them. Add a marker only to a factual sentence you write or change because of a finding, using an id from FACTS; never add one to a sentence you leave unchanged. Headings, figure blocks and frontmatter carry no markers.
+The fact markers (`{F3}`, `{O1}`) stay exactly as the input has them. Add a marker only to a factual sentence you write or change because of a finding, and only an id the input already carries or a finding names; never add one to a sentence you leave unchanged. An answer with any other new id is rejected. Headings, figure blocks and frontmatter carry no markers.
+
+<!-- fragment: count-rule-en -->
+The size check counts exactly this way: a word is any run of characters between spaces or line breaks that holds at least one letter or digit, so a lone dash or symbol is no word. Text in lists, tables, quotes, link text and code blocks counts; the frontmatter, headings, figure blocks, HTML comments, link targets, image and italic caption lines, and the markers `{F#}`/`{O#}` do not. For example, {{COUNT_EXAMPLE}} counts as {{COUNT_EXAMPLE_N}}.
+
+<!-- fragment: count-rule-zh -->
+The size check counts exactly this way: it removes the Markdown symbols (`*`, `_`, backticks, `|`, `#`, list bullets and numbers, the `>` of a quote, a table's `---` row), then counts every remaining character that is not whitespace as one: each Chinese character, each punctuation mark (，。、；：「」（） included), each Latin letter and each digit. A Latin word counts one per letter, and a code span counts every character inside it. Text in lists, tables, quotes, link text and code blocks counts; the frontmatter, headings, figure blocks, HTML comments, link targets, image and italic caption lines, and the markers `{F#}`/`{O#}` do not. For example, {{COUNT_EXAMPLE}} counts as {{COUNT_EXAMPLE_N}}.
+
+<!-- fragment: count-example-en -->
+Run `check --svg` on the v0.2.16 draft, e.g. twice. {F3}
+
+<!-- fragment: count-example-zh -->
+用 `check --svg` 核对 v0.2.16 的 2 张图，Agent 才不会漏掉。{F3}
+
+<!-- fragment: section-now -->
+The section as given counts {{SECTION_NOW_COUNT}}.
+
+<!-- fragment: budget-whole -->
+The size is binding: at most {{TOTAL_CAP}} of body text in all, the lead at most {{LEAD_CAP}}, and each `## ` section, everything under its heading, at most {{SECTION_CAP_TEXT}}. {{COUNT_RULE}} A text over a cap is rejected and written again.
+
+<!-- fragment: trim-budget -->
+at most {{TRIM_CAP}} of body text. The section given here counts {{TRIM_NOW}}, so cut at least {{TRIM_EXCESS}}; aim for about {{TRIM_AIM}}, so the count lands under the cap.
+
+<!-- fragment: trim-budget-within -->
+at most {{TRIM_CAP}} of body text outside the TL;DR, and that text is within it ({{TRIM_NOW}}); leave it as it is.
+
+<!-- fragment: trim-tldr -->
+The TL;DR after the lead is counted apart and holds at most {{TLDR_CAP}}; it counts {{TLDR_NOW}} now.
 
 <!-- fragment: section-shape-lead -->
-the frontmatter below, nothing before it, then {{VERSION_NOTE_RULE}} then the lead, one or two paragraphs with no heading:
+the frontmatter below, nothing before it, then the lead, one or two paragraphs with no heading.{{VERSION_NOTE_SENTENCE}}
   ---
   title: "<title>"
   date: {{DATE}}
@@ -77,6 +104,12 @@ You review one section of a longer piece. Its neighbours are given for context o
 <!-- fragment: review-scope-post -->
 Flow across sections is the main question of this review: a transition that does not follow, a point made in two sections, a gloss repeated, a section that re-opens what an earlier one settled, an ending that summarises.
 
+<!-- fragment: tldr-budget -->
+A TL;DR after the lead, when the plan asks for one, is not part of the lead's budget: it has its own, {{TLDR_RANGE}}, and is counted apart.
+
+<!-- fragment: tldr-plan -->
+Row 0 is the lead alone; a TL;DR, if the post has one, is not a row and has its own budget of {{TLDR_RANGE}}.
+
 <!-- fragment: title-rule-section -->
 Choose the title from the outline's title candidates, or improve its wording without changing its meaning.
 
@@ -87,7 +120,7 @@ The plan table in the previous outline breaks these limits. Return the whole out
 Directly after the frontmatter, reproduce this line verbatim and then a blank line: > {{VERSION_NOTE}}
 
 <!-- fragment: no-version-note -->
-No version note.
+Nothing goes between the frontmatter and the lead.
 
 <!-- fragment: meme-brief -->
 ## Meme brief
