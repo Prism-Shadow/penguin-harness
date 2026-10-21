@@ -22,6 +22,7 @@
  * ones it does not own. A pushed bundle therefore replaces the business wholesale:
  * adding or changing an endpoint or a service needs no runtime change.
  */
+import path from "node:path";
 import type { WebSocket } from "ws";
 import type {
   Impl,
@@ -97,7 +98,7 @@ import { migrate } from "../db/migrations/index.js";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
 import type { Telemetry } from "../mechanisms/telemetry.js";
-import { BootTimings } from "../telemetry/boot.js";
+import { BootTimings, timeAdmission } from "../telemetry/boot.js";
 
 /**
  * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms
@@ -334,6 +335,8 @@ async function createInner(
   reassemble: (change?: ReassemblyChange) => Promise<boolean>,
   /** The slip of the push this boot belongs to (push-plugins.ts); null for every other boot. */
   push: PushSlip | null = null,
+  /** True when a re-assembly (not a boot or a push) is creating this App. */
+  reassembling = false,
 ): Promise<PlatformApi> {
   // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
   // throw — what each outcome means and why lives on HmrClaim (capabilities.ts).
@@ -351,7 +354,7 @@ async function createInner(
   }
   const caps = claim.kind === "claimed" ? claim.caps : null;
   // Telemetry's boot timings and this App's generation number (telemetry/boot.ts).
-  const boot = new BootTimings(ctx.resources);
+  const boot = new BootTimings(ctx.resources, reassembling);
   // A pushed platform carries its own migrations, which is the only way the tables its
   // business needs can reach a runtime older than they are — that runtime will never grow
   // them by restarting, because it does not have them. swapPath: this boot can be rolled
@@ -443,6 +446,15 @@ async function createInner(
           // A Project may list a plugin for one machine only (`[plugins.<machineId>]`); this
           // server's own id says which of those tables are its own.
           new MachinesRepo(caps.db).ownId(),
+          // Telemetry's plugin.load, one per plugin imported — kept like the boot timings. A
+          // plugin named by a path (a dev checkout) goes unnamed: samples carry no paths.
+          (plugin, ms, ok) =>
+            boot.add({
+              probe: "plugin.load",
+              durMs: ms,
+              status: ok ? "ok" : "error",
+              ...(path.isAbsolute(plugin) ? {} : { attrs: { plugin } }),
+            }),
         );
   boot.since("boot.plugins", pluginsAt);
   // Plus whatever a test stood up in process, which no closure could name (see the id).
@@ -591,6 +603,7 @@ async function createInner(
   // a swap aborts none — so api.drained(), which the KERNEL awaits between dispose and the
   // successor's boot (kernel/upgrade.ts), has nothing to report.
   ctx.effect(() => {
+    const start = performance.now();
     // Held machine sessions are DELIVERED, not suspended: the machines module's own dispose
     // effect closes only its transient sessions and leaves the held ones in the registry.
     // Nothing is stopped here: whether the runs go on is the SUCCESSOR's call, made once it
@@ -598,6 +611,7 @@ async function createInner(
     manager?.detach();
     tree.dispose();
     if (business === null) terminals.quiesce();
+    boot.disposed(start);
   });
 
   // COMMIT: from here the App is built and nothing below throws, so the irreversible
@@ -640,15 +654,18 @@ async function createInner(
     fetch(request: Request): Promise<Response>;
     fetchAs(userId: string, request: Request): Promise<Response>;
   }>("HttpModule", "http");
-  const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
+  const served = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
   const logNode = business?.api<Log>("RuntimeModule", "Log") ?? null;
   const telemetry = business?.api<Telemetry>("TelemetryModule", "Telemetry") ?? null;
   boot.flush(telemetry);
+  const http = timeAdmission(served, telemetry);
 
   return {
     log: (line) => (logNode !== null ? logNode.line(line) : console.log(line)),
     park: () => {
+      const parkAt = performance.now();
       const modules = tree.park();
+      boot.parked(parkAt);
       // The top-level fields are written for every platform that reads them: a bare
       // kernel's own ptys, and the two parking modules' state in the form the first
       // platforms parked it — so a rollback to any of them keeps terminals and confinement.
@@ -731,6 +748,7 @@ async function resumeStopped(
  */
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
+    let reassembling = false;
     // Taken HERE, once: this create() is what a push boots, and only its first inner boot is
     // the push's. A re-assembly later boots the same inner impl with nobody waiting on it.
     let push = takePushSlip(ctx.resources);
@@ -738,7 +756,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       create: (innerCtx, innerContext) => {
         const slip = push;
         push = null;
-        return createInner(innerCtx, innerContext, reassemble, slip);
+        return createInner(innerCtx, innerContext, reassemble, slip, reassembling);
       },
     };
     let inner: Instance<PlatformApi>;
@@ -753,6 +771,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         // interleave, and each re-assembly reads exactly what was written for it.
         await change?.write();
         swapping = true;
+        reassembling = true;
         try {
           const result = await upgrade({
             current: inner,
@@ -780,6 +799,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
           return false;
         } finally {
           swapping = false;
+          reassembling = false;
         }
       });
       op = run.then(

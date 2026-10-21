@@ -113,6 +113,9 @@ import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
+import { spanIn } from "../telemetry/measure.js";
+import { estimateBytes } from "../telemetry/memory.js";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
 import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
 
@@ -187,6 +190,12 @@ export type RunOpts = {
 
 export interface RuntimeSession {
   readonly sessionId: string;
+  /**
+   * The history a resumed core Session was rebuilt with (core `Session.resumedHistory`);
+   * absent on a fresh Session and on test fakes. Read for its length only — telemetry's
+   * per-session report.
+   */
+  readonly resumedHistory?: readonly unknown[];
   run(newMessages: OmniMessage[], opts: RunOpts): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /**
@@ -468,6 +477,11 @@ export interface SessionManagerDeps {
    * the desk. Optional; unit tests that do not wire it get nothing.
    */
   onHumanInput?: (sessionId: string) => void;
+  /**
+   * Telemetry's task.accept and session.load (PRFC-0008). Optional; without it — or with its
+   * switch off — nothing is timed. A turn's own timings are in its Trace.
+   */
+  telemetry?: Telemetry;
 }
 
 /**
@@ -916,6 +930,43 @@ export class SessionManager {
     return this.liveTail.fragments(sessionId);
   }
 
+  /** Each loaded history's estimated size, by its array (a resumed history never changes). */
+  private readonly historyCost = new WeakMap<readonly unknown[], number>();
+
+  private historyBytes(history: readonly unknown[]): number {
+    let bytes = this.historyCost.get(history);
+    if (bytes === undefined) {
+      bytes = estimateBytes(history);
+      this.historyCost.set(history, bytes);
+    }
+    return bytes;
+  }
+
+  /**
+   * Telemetry's `session.memory`: one sample per loaded Session with its `memoryCost`, the bytes
+   * it holds in memory — its resumed history, the stream events its channel keeps for a page
+   * that reconnects, and the partial replies still streaming. Taken when the buffer is read.
+   * A channel or live tail an older runtime built may have no counter; that part counts zero.
+   * The history is estimated (telemetry/memory.ts) once per loaded Session: it does not
+   * change after the load, so a read never walks it again.
+   */
+  recordMemory(telemetry: Telemetry): void {
+    for (const entry of this.entries.values()) {
+      const channel = this.deps.channels.peek(entry.sessionId) as
+        { bufferedBytes?: number } | undefined;
+      const history = entry.session.resumedHistory;
+      // The channel and the live tail count UTF-16 units; two bytes each, as the estimate charges.
+      const memoryCost =
+        (history === undefined ? 0 : this.historyBytes(history)) +
+        2 * ((channel?.bufferedBytes ?? 0) + (this.liveTail.size?.(entry.sessionId).units ?? 0));
+      telemetry.record({
+        probe: "session.memory",
+        keys: { session: entry.sessionId },
+        attrs: { memoryCost },
+      });
+    }
+  }
+
   /**
    * The running Task's input messages as published at launch; empty when idle. The engine
    * writes these exact envelopes to the Trace only after the first run's bootstrap (MCP
@@ -1133,6 +1184,21 @@ export class SessionManager {
    * its content whichever path queued it.
    */
   async startTask(
+    sessionId: string,
+    input: OmniMessage[],
+    opts?: { queueIfBusy?: boolean; recall?: RecallStore },
+  ): Promise<{ sessionId: string; queued: boolean }> {
+    // task.accept: from the call to the answer, the wait for the session lock included.
+    return spanIn(
+      this.deps.telemetry,
+      "task.accept",
+      { session: sessionId },
+      () => this.acceptTask(sessionId, input, opts),
+      (r) => ({ attrs: { queued: r.queued } }),
+    );
+  }
+
+  private acceptTask(
     sessionId: string,
     input: OmniMessage[],
     opts?: { queueIfBusy?: boolean; recall?: RecallStore },
@@ -2140,7 +2206,13 @@ export class SessionManager {
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
-    const session = await this.deps.loader.load(row);
+    const session = await spanIn(
+      this.deps.telemetry,
+      "session.load",
+      { session: sessionId },
+      () => this.deps.loader.load(row),
+      (loaded) => ({ attrs: { messages: loaded.resumedHistory?.length ?? 0 } }),
+    );
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
@@ -2796,6 +2868,8 @@ export class SessionsModule {
   @Use() private readonly messagingRepo!: MessagingBindings;
   /** Company-mode caches: which organization owns a Session (read at every command spawn). */
   @Use() private readonly orgCache!: OrgCache;
+  /** Telemetry's task, session-load and session-list probes, and the session.memory snapshot (PRFC-0008); narrow trees omit it. */
+  @Use() private readonly telemetry?: Telemetry;
   @Provide() manager!: Sessions;
   @Provide() sessionService!: SessionServiceIface;
   @Provide() env!: SessionEnv;
@@ -2917,7 +2991,11 @@ export class SessionsModule {
         if (orgCache.ownerOfSession(sessionId) !== null) orgCache.setTriggerHop(sessionId, 0);
       },
       now: () => this.clock.now(),
+      telemetry: this.telemetry,
     });
+    // Taken only when the telemetry buffer is read (telemetry/routes.ts).
+    const telemetry = this.telemetry;
+    telemetry?.addSnapshot(() => manager.recordMemory(telemetry));
     const sessionService = new SessionService({
       root: config.root,
       sessions: sessionsRepo,
@@ -2952,6 +3030,7 @@ export class SessionsModule {
       sandboxDefaultApproval: () =>
         sandboxStartOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP))
           .approvalMode,
+      telemetry: this.telemetry,
     });
     this.manager = manager;
     this.sessionService = sessionService;
