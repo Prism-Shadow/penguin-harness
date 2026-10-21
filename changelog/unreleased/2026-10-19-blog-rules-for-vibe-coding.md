@@ -17,4 +17,6 @@ tests.
 - `rules-for-vibe-coding` carries five figures drawn as inline SVG with the shared figure styles:
   the three layers, a hard rule's path from numbered principle to test assertion, the Agent State
   directory tree, the boundaries around `context_engine`, and the reuse-first decision.
+- The post cites its sources as numbered footnotes, generated from the writing skill's fact
+  markers; both languages cite the same sources.
 - The landing blog test lists the post first among the perspectives.
