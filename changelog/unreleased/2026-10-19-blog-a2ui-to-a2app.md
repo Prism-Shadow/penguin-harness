@@ -16,4 +16,5 @@ the agent turn by turn.
 - Two figures are drawn as inline SVG with the shared figure styles: a comparison of the three
   approaches, and the workbench's two loops (using the app and changing it from chat).
 - The three screenshots are ones already published in the community repository's `blog-assets/`.
+- Sources are cited as numbered footnotes; both languages share one reference list in the same order.
 - The landing blog test lists the new post first among the perspectives posts.
