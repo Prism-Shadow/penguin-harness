@@ -30,7 +30,10 @@ import {
 import { resolveRootOption } from "../root-option.js";
 import type { Messages } from "../i18n.js";
 
-/** Must match the server's SESSION_COOKIE — it is the name a login's Set-Cookie carries. */
+/**
+ * Must match the server's SESSION_COOKIE — the name a login's Set-Cookie carries for a client
+ * that is not a browser (a browser's carries the port as well; see the server's auth/middleware).
+ */
 const SESSION_COOKIE = "penguin_session";
 
 /** The built-in account every server has; on a personal or desktop server it is the only one. */
