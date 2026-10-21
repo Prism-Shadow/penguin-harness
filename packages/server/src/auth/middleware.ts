@@ -130,9 +130,15 @@ export function isOwnOrigin(origin: string | undefined, host: string | undefined
   const own = authorityOfHost(host);
   if (own === null) return false;
   // `URL` drops the scheme's own default port from `port`, so a Host that writes it out is the
-  // same address; a Host with no port is the one a browser leaves implicit on that scheme.
+  // same address. A Host with no port is the one a browser leaves implicit: it names the
+  // scheme's default and nothing else, so an Origin that spells a port is another origin — the
+  // question the raw host:port comparison asked before, which a default-port deployment must
+  // keep asking (`Host: example.com` does not admit `http://example.com:8443`).
   const port = parsed.port === "" ? DEFAULT_PORTS[parsed.protocol]! : parsed.port;
-  return parsed.hostname.toLowerCase() === own.host && (own.port === null || own.port === port);
+  return (
+    parsed.hostname.toLowerCase() === own.host &&
+    (own.port === null ? parsed.port === "" : own.port === port)
+  );
 }
 
 /**

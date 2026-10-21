@@ -315,9 +315,12 @@ describe("auth", () => {
     expect((await write("EXAMPLE.com:7364", "http://Example.COM:7364", "hugo-four")).status).toBe(
       201,
     );
-    // Any other port is a different origin, whichever side spells it.
+    // Any other port is a different origin, whichever side spells it. A Host with no port means
+    // the scheme's default, so it does not admit an Origin that names a port at all.
     expect((await write("example.com:443", "http://example.com", "hugo-five")).status).toBe(403);
     expect((await write("example.com:81", "http://example.com:80", "hugo-six")).status).toBe(403);
+    expect((await write("example.com", "http://example.com:8443", "hugo-seven")).status).toBe(403);
+    expect((await write("example.com:8443", "http://example.com", "hugo-eight")).status).toBe(403);
   });
 
   it("names a browser's cookie after the port, and keeps the plain name for a default one", async () => {
