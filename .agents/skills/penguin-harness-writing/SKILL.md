@@ -115,14 +115,20 @@ Sizes are set three times, so a post cannot grow past them unnoticed:
    exceed the profile's section cap, whose lead leaves the lead range, whose sum exceeds the total
    cap, or whose section count leaves the profile's range.
 2. **The prompt.** Every call that writes or changes a section (`section`, `translate`, `polish`,
-   `fix`, `trim`) states its cap, and `polish`, `fix` and `trim` its current size; `outline` and a
-   whole-piece `write` state the profile's caps. Each also states the counting rule `check`
-   applies, in words and with an example sentence the script counts itself, so a cap is one number
-   for the model and for `check`. The wording is the `count-rule-<lang>` fragment; change it with
-   `countBody`.
+   `fix`, `trim`) asks for the lowest of three sizes: the section's planned size (from a plan in
+   the other language's unit, converted at the translation ratio), what the page has left once the
+   other sections take theirs (the latest version of each, or the planned size of one not yet
+   written), and the profile's cap. It never offers `check`'s 1.1 × tolerance, so a round of fixes
+   cannot walk every section up to it and the page over its cap. `polish`, `fix` and `trim` also
+   state the section's current size, and `outline` and a whole-piece `write` the profile's caps.
+   Each states the counting rule `check` applies, in words and with an example sentence the script
+   counts itself, so a cap is one number for the model and for `check`. The wording is the
+   `count-rule-<lang>` fragment; change it with `countBody`.
 3. **`check`.** A section above `min(plan × 1.1, profile cap)` is an error; so is a lead above its
    cap and a whole post above the total cap. Without `--outline`, the profile caps apply. Below a
-   floor is a warning: short is allowed, empty is not.
+   floor is a warning: short is allowed, empty is not. On a section file it also reports the page
+   total, counted the same way as the prompt's page budget, and warns when that is over the page
+   cap; every per-section API step prints the same line, so creep shows before assembly.
 
 A TL;DR, in a profile that has one (`tldr: yes`), is not part of the lead: the `**TL;DR**` line
 and its bullets are counted apart and held to `tldr-words` / `zh-tldr-chars`, the plan's row 0
@@ -131,7 +137,8 @@ sizes the lead alone, and the lead's section call states the TL;DR budget separa
 **Over budget.** A section whose only problem is its size goes through `trim --in <section>
 --outline <outline>` (or `--cap <n>`), one call that may only delete words or put a shorter phrase
 in place of a longer one. The script refuses the answer when it is still over the cap, or when a
-marker, a footnote reference, a figure block, a heading or the frontmatter changed: the answer is
+marker, a footnote reference, a figure block, a heading, the frontmatter or the version note
+changed: the answer is
 kept as `<out>.rejected.md`, the next version is not written, and the step exits 1. Retry once,
 then hand it to the author. A section wrong in shape or content is rerun with `section --feedback`;
 rerunning it only to shorten it brings back errors already fixed. Nobody cuts a section by hand.
@@ -182,6 +189,10 @@ a sentence readable however many sources back it. The post ends with the list:
 [^1]: [PenguinHarness docs: Agent loop](https://penguin.ooo/docs/agent-loop)
 [^2]: A title without a link
 ```
+
+A URL in the text is an autolink, `<https://…>`. A bare URL right before a citation is an error:
+strip writes the `[^n]` straight after it, and the site's renderer reads the reference as part of
+the link.
 
 The post carries no references heading and no `**Sources**` line (the older form, now an error):
 the site labels the list from its own dictionary and renders the numbers as superscript `[n]`
@@ -285,7 +296,8 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
 
 - **`check`** (local, no network) exits 1 on a hard hit. For every kind: frontmatter, the
   profile's budgets, section range and TL;DR rule, no numbered headings, no emoji, raw HTML or
-  leaked `{{SLOT}}`s, markers against FACTS and their sources (`--facts`), and the language rules
+  leaked `{{SLOT}}`s (an autolink, `<https://…>` or `<mailto:…>`, is a link, not HTML), markers
+  against FACTS and their sources (`--facts`), and the language rules
   — the patterns at the end of `reference/en-style.md` / `reference/zh-style.md` plus what the
   script counts (em dashes per section, exclamation marks against the profile, list and paragraph
   length, CJK–Latin spacing, `——`, ASCII quotes and colons in Chinese). For one section
@@ -298,6 +310,8 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   that brings in a fact or opinion id neither its input nor its findings name, adds, drops or
   reorders a figure, gives a screenshot's block a `title` or `text:` lines, or changes a figure
   block no finding names by its id or by quoting its text. `trim` refuses what section 5 lists.
+  `fix`, `polish`, `translate` and `trim` refuse an answer whose version note is not, byte for
+  byte, the one they were given.
   A refused answer is kept as `<out>.rejected.md` and the step exits 1; a change the findings
   should allow goes back with a finding that names it.
 - **The fact diff** (agent): every number, URL, code span, bold or 「」 label and proper noun

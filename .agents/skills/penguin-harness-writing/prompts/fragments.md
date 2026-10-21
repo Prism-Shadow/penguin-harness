@@ -39,11 +39,32 @@ Run `check --svg` on the v0.2.16 draft, e.g. twice. {F3}
 <!-- fragment: count-example-zh -->
 用 `check --svg` 核对 v0.2.16 的 2 张图，Agent 才不会漏掉。{F3}
 
-<!-- fragment: section-planned -->
-the plan asks for about {{SECTION_WORDS_PLANNED}}
-
 <!-- fragment: plan-other-unit -->
-The plan's numbers count {{PLAN_UNIT_NAME}} and do not apply to this {{LANG_NAME}} section; it is held to the cap above.
+The plan counts {{PLAN_UNIT_NAME}}: this section's planned size is its {{PLAN_ROW_SIZE}} at {{ZH_RATIO}} Chinese characters per English word.
+
+<!-- fragment: budget-why -->
+It is the lowest of: {{BUDGET_PARTS}}.
+
+<!-- fragment: budget-why-one -->
+It is {{BUDGET_PARTS}}.
+
+<!-- fragment: budget-part-planned -->
+this section's planned size, {{B_PLANNED}}
+
+<!-- fragment: budget-part-translated -->
+what the source section comes to in {{LANG_NAME}}, {{B_PLANNED}}
+
+<!-- fragment: budget-part-page -->
+what the page has left, {{B_LEFT}} (its cap of {{B_PAGE_CAP}} less the {{B_OTHERS}} the rest of the page takes)
+
+<!-- fragment: budget-part-lead-cap -->
+the profile's cap for the lead, {{B_CAP}}
+
+<!-- fragment: budget-part-section-cap -->
+the profile's cap for a section, {{B_CAP}}
+
+<!-- fragment: budget-part-margin -->
+{{B_MARGIN}}, a margin under the refusal cap
 
 <!-- fragment: section-now -->
 The section as given counts {{SECTION_NOW_COUNT}}.
@@ -52,10 +73,13 @@ The section as given counts {{SECTION_NOW_COUNT}}.
 The size is binding: at most {{TOTAL_CAP}} of body text in all, the lead at most {{LEAD_CAP}}, and each `## ` section, everything under its heading, at most {{SECTION_CAP_TEXT}}. {{COUNT_RULE}} A text over a cap is rejected and written again.
 
 <!-- fragment: trim-budget -->
-at most {{TRIM_CAP}} of body text. The section given here counts {{TRIM_NOW}}, so cut at least {{TRIM_EXCESS}}; aim for about {{TRIM_AIM}}, so the count lands under the cap.
+at most {{TRIM_CAP}} of body text, or the answer is refused. The section given here counts {{TRIM_NOW}}, so cut at least {{TRIM_EXCESS}}. Aim for at most {{TRIM_AIM}}.{{SECTION_BUDGET_WHY}}
 
 <!-- fragment: trim-budget-within -->
 at most {{TRIM_CAP}} of body text outside the TL;DR, and that text is within it ({{TRIM_NOW}}); leave it as it is.
+
+<!-- fragment: trim-keep-note -->
+the quoted version-note line right after it
 
 <!-- fragment: trim-tldr -->
 The TL;DR after the lead is counted apart and holds at most {{TLDR_CAP}}; it counts {{TLDR_NOW}} now.

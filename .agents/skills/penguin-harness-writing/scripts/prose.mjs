@@ -92,8 +92,11 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
                a figure block changed that no finding names, goes to <out>.rejected.md (exit 1)
   trim       --in <s<n>.<lang>.v<k>.md> [--outline <f> | --cap <n>]   cuts an over-budget section:
                deletions and shorter wording only; an answer still over the cap, or with a marker,
-               footnote, figure block, heading or frontmatter changed, goes to <out>.rejected.md
-               (exit 1; retry once, then the author). --out defaults to the next version
+               footnote, figure block, heading, frontmatter or version note changed, goes to
+               <out>.rejected.md (exit 1; retry once, then the author). --out defaults to the next
+               version. fix, polish and translate refuse a changed version note the same way.
+               Every per-section call aims at the lowest of the planned size, what the page has
+               left and the profile's cap, and prints the page total after it writes
   review     --in <f> [--facts <f>] [--tells]   numbered findings in the form fix reads; --out
              defaults to findings.<lang>.vN.api.md (findings.s<n>.<lang>.vK.api.md for a section)
 
@@ -127,7 +130,8 @@ local steps:
              [--figures <manifest>] [--svg <dir>] [--draft <f>] [--slug <slug>] [--pair <f>]
              [--assets <dir>] [--version-note <t>] [--lang en|zh]
                budgets are hard: a section above min(plan × 1.1, profile cap) is an error
-               --section (or an s<n>… file): one section — its shape and the figures its row owns
+               --section (or an s<n>… file): one section — its shape, the figures its row owns,
+                 and the page total with the other sections' latest versions (warned when over)
                --figures: every manifest stem has a figure block, in order, and no others
                --svg: on a draft, <dir>/<id>.<lang>.html must exist for every drawn figure block
                  and match it exactly (title = alt, figcaption = caption, fig-steps = text,
@@ -737,6 +741,123 @@ function rowCap(budgets, n, planned) {
   return caps.length ? Math.min(...caps) : undefined;
 }
 
+/** A row's planned size in this language: its number, converted when the plan counts the other unit. */
+function plannedSize(row, outline, budgets) {
+  if (!row || !(row.budget > 0)) return undefined;
+  if (outline.unit === budgets.unit) return row.budget;
+  return Math.round(budgets.unit === "chars" ? row.budget * ZH_PER_EN : row.budget / ZH_PER_EN);
+}
+
+/** A section's share of the page total as check sums it: the lead with its TL;DR, any other whole. */
+function pageShare(text, n, lang) {
+  if (n !== 0) return countBody(text, lang);
+  const { lead, tldr } = leadCounts(text, lang);
+  return lead + (tldr ?? 0);
+}
+
+/**
+ * The rest of the page around section n: each other section's latest version in the directory,
+ * or its planned size while it is unwritten.
+ */
+function pageAround(dir, lang, n, outline, budgets) {
+  const files = sectionFiles(dir, lang);
+  const ns = new Set([...files.keys(), ...(outline?.rows ?? []).map((r) => r.n)]);
+  let others = 0;
+  const planned = [];
+  for (const k of [...ns].sort((a, b) => a - b)) {
+    if (k === n || Number.isNaN(k)) continue;
+    const list = files.get(k);
+    if (list) {
+      others += pageShare(read(list[list.length - 1].file), k, lang);
+      continue;
+    }
+    const size = plannedSize(
+      outline?.rows.find((r) => r.n === k),
+      outline,
+      budgets,
+    );
+    if (size !== undefined) {
+      others += size;
+      planned.push(k);
+    }
+  }
+  return { others, planned };
+}
+
+/** The page total with `text` as section n, against the page cap; undefined without a cap. */
+function pageReport(dir, lang, n, text, outline, budgets) {
+  if (!budgets.total) return undefined;
+  const { others, planned } = pageAround(dir, lang, n, outline, budgets);
+  const total = others + pageShare(text, n, lang);
+  const cap = budgets.total.cap;
+  const rest = planned.length ? ` (s${planned.join(", s")} at their planned size)` : "";
+  return {
+    total,
+    cap,
+    unit: budgets.unit,
+    over: total > cap,
+    line: `the page is ${total} ${budgets.unit} with this section${rest}; its cap is ${cap}`,
+  };
+}
+
+/** What a per-section call needs to size section n: its planned size, check's cap, the rest of the page. */
+function sectionSizing({ n, lang, budgets, outline, dir }) {
+  const row = outline?.rows.find((r) => r.n === n);
+  const sameUnit = !!outline && outline.unit === budgets.unit;
+  const planned = plannedSize(row, outline, budgets);
+  return {
+    cap: rowCap(budgets, n, sameUnit ? row?.budget : undefined),
+    planned,
+    planRowSize:
+      planned !== undefined && !sameUnit ? `${row.budget} ${UNIT_NAME[outline.unit]}` : undefined,
+    others: pageAround(dir, lang, n, outline, budgets).others,
+  };
+}
+
+/**
+ * The size a per-section prompt asks for: the lowest of the section's planned size, what the page
+ * has left once the rest of it takes its share, and the profile's cap. Never check's 1.1 ×
+ * tolerance, so a round of fixes cannot walk every section up to it and the page over its cap. A
+ * page already full without this section adds no ceiling; the page report says so instead.
+ */
+function sectionTarget(
+  F,
+  budgets,
+  n,
+  { planned, plannedKind = "planned", others, extra = 0, margin },
+) {
+  const unit = (k) => `${k} ${budgets.unitName}`;
+  const limit = n === 0 ? budgets.lead : budgets.section;
+  const parts = [];
+  const params = {};
+  if (planned > 0) {
+    parts.push([planned, `budget-part-${plannedKind}`]);
+    params.B_PLANNED = unit(planned);
+  }
+  if (budgets.total && others !== undefined) {
+    const left = budgets.total.cap - others - extra;
+    if (left >= Math.max(limit?.floor ?? 0, 1)) {
+      parts.push([left, "budget-part-page"]);
+      params.B_LEFT = unit(left);
+      params.B_PAGE_CAP = String(budgets.total.cap);
+      params.B_OTHERS = unit(others + extra);
+    }
+  }
+  if (limit) {
+    parts.push([limit.cap, n === 0 ? "budget-part-lead-cap" : "budget-part-section-cap"]);
+    params.B_CAP = unit(limit.cap);
+  }
+  if (margin !== undefined) {
+    parts.push([margin, "budget-part-margin"]);
+    params.B_MARGIN = unit(margin);
+  }
+  params.SECTION_BUDGET_WHY = "";
+  if (!parts.length) return { target: undefined, params };
+  params.BUDGET_PARTS = parts.map(([, fragment]) => F[fragment]).join("; ");
+  params.SECTION_BUDGET_WHY = ` ${F[parts.length > 1 ? "budget-why" : "budget-why-one"]}`;
+  return { target: Math.min(...parts.map(([value]) => value)), params };
+}
+
 /** The outline's top-level `# ` parts, its plan rows and each section's bullets. */
 function parseOutline(text) {
   const parts = {};
@@ -991,7 +1112,20 @@ function sectionParams(
   prof,
   lang,
   n,
-  { cap, planned, planUnitName, now, budgets, figureIds, markers, date, versionNote },
+  {
+    cap,
+    planned,
+    plannedKind,
+    planRowSize,
+    others,
+    extra,
+    now,
+    budgets,
+    figureIds,
+    markers,
+    date,
+    versionNote,
+  },
 ) {
   const params = profileParams(F, prof, lang, { contract: true, markers, date, versionNote });
   Object.assign(params, countRuleParams(F, lang));
@@ -1001,13 +1135,16 @@ function sectionParams(
   params.SECTION_NOW_COUNT = now !== undefined ? `${now} ${budgets.unitName}` : "";
   params.SECTION_N = String(n);
   params.SECTION_SHAPE = n === 0 ? F["section-shape-lead"] : F["section-shape-body"];
+  const sized = sectionTarget(F, budgets, n, { planned, plannedKind, others, extra });
+  Object.assign(params, sized.params);
+  const budget = sized.target ?? cap;
   params.SECTION_BUDGET =
-    cap !== undefined ? `${cap} ${budgets.unitName}` : "the size the plan gives";
-  // A plan that counts in the other language's unit says nothing about this section's size.
-  params.SECTION_PLANNED = planned !== undefined ? `; ${F["section-planned"]}` : "";
-  params.SECTION_WORDS_PLANNED = planned !== undefined ? `${planned} ${budgets.unitName}` : "";
-  params.SECTION_PLAN_NOTE = planUnitName ? ` ${F["plan-other-unit"]}` : "";
-  params.PLAN_UNIT_NAME = planUnitName ?? "";
+    budget !== undefined ? `${budget} ${budgets.unitName}` : "the size the plan gives";
+  // A plan in the other language's unit sizes this section through the translation ratio.
+  params.SECTION_PLAN_NOTE = planRowSize ? ` ${F["plan-other-unit"]}` : "";
+  params.PLAN_UNIT_NAME = planRowSize ? planRowSize.replace(/^\d+ /, "") : "";
+  params.PLAN_ROW_SIZE = planRowSize ?? "";
+  params.ZH_RATIO = String(ZH_PER_EN);
   params.SECTION_FIGURE_IDS = figureIds.length ? figureIds.join(", ") : "none";
   params.TLDR_NOTE = "";
   if (n === 0 && budgets.tldr) {
@@ -1035,12 +1172,16 @@ function buildMessages(step, o) {
     ? sectionModeOf(o)
     : undefined;
   // The plan, when one is given and counts in this language's unit, sizes a section call.
-  const planRow = (n, l) => {
-    if (!o.outline) return undefined;
-    const outline = parseOutline(read(o.outline, "--outline"));
-    return outline.unit === budgetsOf(prof, l, o).unit
-      ? outline.rows.find((r) => r.n === n)
-      : undefined;
+  const outlineGiven = () => (o.outline ? parseOutline(read(o.outline, "--outline")) : undefined);
+  // After any per-section step: the page total with the new section, so creep shows early.
+  const pageNote = (ctx) => (out) => {
+    const page = pageReport(ctx.dir, ctx.lang, ctx.n, out, ctx.outline, ctx.budgets);
+    if (page)
+      note(`page: ${page.line}${page.over ? "; over, so trim a section before assembling" : ""}`);
+  };
+  const both = (a, b) => (out) => {
+    a?.(out);
+    b?.(out);
   };
 
   switch (step) {
@@ -1109,12 +1250,10 @@ function buildMessages(step, o) {
       const row = outline.rows.find((r) => r.n === n);
       if (!row) fail(`the outline's plan has no row ${n}`);
       const budgets = budgetsOf(prof, lang, o);
-      const planned = outline.unit === budgets.unit ? row.budget : undefined;
-      const cap = rowCap(budgets, n, planned);
+      const sizing = sectionSizing({ n, lang, budgets, outline, dir });
+      const cap = sizing.cap;
       params = sectionParams(F, prof, lang, n, {
-        cap,
-        planned,
-        planUnitName: planned === undefined ? UNIT_NAME[outline.unit] : undefined,
+        ...sizing,
         budgets,
         figureIds: row.figures,
         markers: "write",
@@ -1156,8 +1295,11 @@ function buildMessages(step, o) {
       if (content.FACTS === undefined) fail("section needs --facts <facts.md>");
       content.FACTS_SUBSET = o["facts-all"] ? content.FACTS : factsSubset(F, content.FACTS, row);
       const kinds = figureKinds(o);
-      hooks.after = (out) =>
-        sectionAfter(out, { n, lang, row, budgets, cap, kinds, file: o.out, outline: o.outline });
+      hooks.after = both(
+        (out) =>
+          sectionAfter(out, { n, lang, row, budgets, cap, kinds, file: o.out, outline: o.outline }),
+        pageNote({ dir, lang, n, outline, budgets }),
+      );
       break;
     }
     case "translate": {
@@ -1189,6 +1331,8 @@ function buildMessages(step, o) {
           ...shared,
           cap: rowCap(budgets, sec.n, undefined),
           planned,
+          plannedKind: "translated",
+          others: pageAround(sec.dir, lang, sec.n, outline, budgets).others,
           budgets,
           figureIds: figureIdsIn(input),
         });
@@ -1197,6 +1341,7 @@ function buildMessages(step, o) {
         content.PLAN_TABLE = outline.planTable;
         content.PREVIOUS_SECTIONS = previousSections(F, sec.dir, sec.n, lang);
         o.out ??= nextSectionFile(sec.dir, sec.n, lang);
+        hooks.after = pageNote({ dir: sec.dir, lang, n: sec.n, outline, budgets });
       } else {
         params = profileParams(F, prof, lang, {
           contract: true,
@@ -1225,6 +1370,9 @@ function buildMessages(step, o) {
         hooks.transform = (out) =>
           reuseTranslatedFigures(out, input, read(o["reuse-source"]), read(o["reuse-figures"]));
       }
+      const noteKept = sec && sec.n > 0 ? undefined : o["version-note"];
+      hooks.verify = (out) => versionNoteProblems(out, noteKept);
+      hooks.retry = "rerun translate once; a second failure goes to the author";
       break;
     }
     case "polish":
@@ -1237,20 +1385,23 @@ function buildMessages(step, o) {
         versionNote: o["version-note"] ?? versionNoteOf(doc),
       };
       const budgets = budgetsOf(prof, lang, o);
+      // The note the answer must carry: a section after the lead has none, whatever is passed.
+      const noteKept = sec && sec.n > 0 ? versionNoteOf(doc) : shared.versionNote;
       if (sec) {
-        const row = planRow(sec.n, lang);
-        const cap = rowCap(budgets, sec.n, row?.budget);
+        const outline = outlineGiven();
+        const sizing = sectionSizing({ n: sec.n, lang, budgets, outline, dir: sec.dir });
+        const cap = sizing.cap;
         const now = sectionSize(input, sec.n, lang);
-        if (!o.outline && cap !== undefined) {
+        if (!outline && cap !== undefined) {
           note(
-            `no --outline: the prompt states the profile's cap (${cap}); pass --outline so a section the plan sizes in ${budgets.unit} is held to its row, as check holds it`,
+            "no --outline: the prompt cannot state this section's planned size, only the profile's cap and what the page has left; pass --outline",
           );
         }
         params = sectionParams(F, prof, lang, sec.n, {
           ...shared,
-          cap,
-          planned: row?.budget ?? now,
+          ...sizing,
           now,
+          extra: sec.n === 0 ? (leadCounts(input, lang).tldr ?? 0) : 0,
           budgets,
           figureIds: figureIdsIn(input),
         });
@@ -1258,16 +1409,18 @@ function buildMessages(step, o) {
         content.NEIGHBOUR_TEXT = neighbourText(sec.dir, sec.n, lang);
         params.DRAFT_LABEL = `Section ${sec.n} (return this section only)`;
         params.DRAFT_HEADING = `## Section ${sec.n} (the one to edit; return it only)\n`;
+        const page = pageNote({ dir: sec.dir, lang, n: sec.n, outline, budgets });
+        hooks.after = page;
         if (step === "fix") {
           o.out ??= nextSectionFile(sec.dir, sec.n, lang);
-          hooks.after = (out) => {
+          hooks.after = both((out) => {
             const size = sectionSize(out, sec.n, lang);
             if (cap !== undefined && size > cap) {
               note(
                 `over budget after the fix: ${size} ${budgets.unit} > ${cap}; next: trim --in ${o.out}${o.outline ? ` --outline ${o.outline}` : ""}`,
               );
             }
-          };
+          }, page);
         }
       } else {
         params = profileParams(F, prof, lang, { contract: true, ...shared, budgets });
@@ -1276,10 +1429,15 @@ function buildMessages(step, o) {
         params.DRAFT_HEADING = "";
       }
       params[step === "polish" ? "STYLE_TARGET" : "STYLE"] = stylePrompt(lang);
+      hooks.verify = (out) => versionNoteProblems(out, noteKept);
+      hooks.retry = `rerun ${step} once; a second failure goes to the author`;
       if (step === "polish") Object.assign(params, tells(F, lang));
       else if (o.findings) {
         content.FINDINGS = read(o.findings, "--findings").trim();
-        hooks.verify = (out) => fixProblems(input, out, content.FINDINGS);
+        hooks.verify = (out) => [
+          ...fixProblems(input, out, content.FINDINGS),
+          ...versionNoteProblems(out, noteKept),
+        ];
         hooks.retry =
           "rerun fix once (a finding that names the id, or names the figure by its id or by quoting it, lets that change through); a second failure goes to the author";
       }
@@ -1295,8 +1453,9 @@ function buildMessages(step, o) {
       }
       lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
       const budgets = budgetsOf(prof, lang, o);
-      const cap =
-        o.cap !== undefined ? Number(o.cap) : rowCap(budgets, sec.n, planRow(sec.n, lang)?.budget);
+      const outline = outlineGiven();
+      const sizing = sectionSizing({ n: sec.n, lang, budgets, outline, dir: sec.dir });
+      const cap = o.cap !== undefined ? Number(o.cap) : sizing.cap;
       if (!(cap > 0)) {
         fail(
           "trim needs a cap: --cap <n>, or --outline <outline.final.md> and a profile with section caps",
@@ -1316,7 +1475,17 @@ function buildMessages(step, o) {
       params.TRIM_CAP = unit(cap);
       params.TRIM_NOW = unit(now);
       params.TRIM_EXCESS = unit(now - cap);
-      params.TRIM_AIM = unit(Math.floor(cap * TRIM_AIM));
+      // The aim is what a section prompt asks for, and never closer to the cap than the margin.
+      const aim = sectionTarget(F, budgets, sec.n, {
+        planned: sizing.planned,
+        others: sizing.others,
+        extra: tldrNow ?? 0,
+        margin: Math.floor(cap * TRIM_AIM),
+      });
+      Object.assign(params, aim.params);
+      params.TRIM_AIM = unit(aim.target);
+      const noteKept = versionNoteOf(doc);
+      params.TRIM_KEEP_NOTE = noteKept ? `, ${F["trim-keep-note"]},` : "";
       params.TRIM_TLDR = tldrOver ? ` ${F["trim-tldr"]}` : "";
       if (tldrOver) {
         params.TLDR_CAP = unit(tldrCap);
@@ -1325,13 +1494,19 @@ function buildMessages(step, o) {
       content.DRAFT = fenced(input);
       o.out ??= nextSectionFile(sec.dir, sec.n, lang);
       const limits = { n: sec.n, lang, cap, tldrCap, unit: budgets.unit };
-      hooks.verify = (out) => trimProblems(input, out, limits);
+      hooks.verify = (out) => [
+        ...trimProblems(input, out, limits),
+        ...versionNoteProblems(out, noteKept),
+      ];
       hooks.retry = "rerun trim once; a second failure goes to the author";
-      hooks.after = (out) => {
-        process.stderr.write(
-          `trim: section ${sec.n}, ${now} → ${sectionSize(out, sec.n, lang)} ${budgets.unit} of at most ${cap}; markers, footnotes and figure blocks unchanged\n`,
-        );
-      };
+      hooks.after = both(
+        (out) => {
+          process.stderr.write(
+            `trim: section ${sec.n}, ${now} → ${sectionSize(out, sec.n, lang)} ${budgets.unit} of at most ${cap}; markers, footnotes and figure blocks unchanged\n`,
+          );
+        },
+        pageNote({ dir: sec.dir, lang, n: sec.n, outline, budgets }),
+      );
       break;
     }
     case "review": {
@@ -1364,6 +1539,22 @@ function buildMessages(step, o) {
   const system = render(prompt(step, "system"), params, content, `${step}.system.md`);
   const user = render(prompt(step, "user"), params, content, `${step}.user.md`);
   return { lang, prof, system, user, input, ...hooks };
+}
+
+/**
+ * The version note is boilerplate copied verbatim, protected like a marker: an answer carries
+ * exactly the note it was given, or none when it was given none.
+ */
+function versionNoteProblems(after, expected) {
+  const want = expected && expected !== "none" ? expected : undefined;
+  const got = versionNoteOf(splitFrontmatter(after));
+  if (got === want) return [];
+  if (want === undefined) return [`a version note "> ${got}" that the text given does not carry`];
+  return [
+    got === undefined
+      ? `the version note "> ${want}" is gone`
+      : `the version note changed: "> ${got}" (it was "> ${want}")`,
+  ];
 }
 
 /** The numbered items of a findings list, each with its [quoted passage] when it has one. */
@@ -1812,6 +2003,15 @@ const STRAY_NOTE =
   /^(>\s*)?[(（]?\s*(no version note|without a version note|无版本说明|没有版本说明|无版本注释|不附版本说明|本文不含版本说明)\s*[.。)）]?\s*$/i;
 
 const FIGURE_OPEN = /^```figure\b(.*)$/;
+/** A CommonMark autolink: `<scheme:…>`, `<mailto:…>` among them, or `<name@host>`. A link, not HTML. */
+const AUTOLINK =
+  /<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>|<[A-Za-z0-9.!#$%&'*+/=?^_{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*>/g;
+/**
+ * A bare URL whose sentence ends in a citation, as a marker in a draft or a footnote in a post:
+ * strip writes the [^n] right after the URL, and the site's renderer reads it as part of the link.
+ */
+const BARE_URL_CITED =
+  /(?<![<(\w])https?:\/\/[^\s<>]*?[.,;:!?。，；：！？]*\s*(?:\{[FO]\d+\}|\[\^\d+\])/;
 const SPEC_KEY = /^\s*([a-z_]+)\s*:\s*(.*)$/;
 const SPEC_ITEM = /^\s*-\s+(.*)$/;
 const STEM = /^[a-z0-9]+(?:-[a-z0-9]+)+$/;
@@ -2015,7 +2215,7 @@ function sentences(text) {
   const masked = text
     .replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (m) => m.replace(/[.!?。！？]/g, "\u0001"))
     .replace(/\]\([^)]*\)/g, (m) => m.replace(/[.!?]/g, "\u0001"))
-    .replace(/https?:\/\/\S+/g, (m) => m.replace(/[.!?]/g, "\u0001"))
+    .replace(/https?:\/\/[^\s<>]+/g, (m) => m.replace(/[.!?]/g, "\u0001"))
     .replace(/(\w)\.(?=\w)/g, "$1\u0001")
     .replace(/\b(e\.g|i\.e|etc|vs|cf)\./gi, (m) => m.replace(/\./g, "\u0001"));
   return masked
@@ -2761,7 +2961,8 @@ function checkDoc(doc, lang, prof, o, r, facts) {
   }
 
   checkFigures(doc, lang, prof, o, r, secN);
-  if (prof.kind !== "landing") checkBudgets(doc, lang, prof, o, r, { section: secN });
+  const sizes =
+    prof.kind !== "landing" ? checkBudgets(doc, lang, prof, o, r, { section: secN }) : undefined;
 
   // The old Sources footer and its rule; citations are footnotes generated from the markers now.
   for (const it of items.filter((x) => x.type === "footer")) {
@@ -2801,8 +3002,15 @@ function checkDoc(doc, lang, prof, o, r, facts) {
     const t = it.line.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, "");
     if (!data && post && /\]\(#/.test(t)) r.add("error", it.n, "in-page anchor link ](#…)");
     if (!data && /^\s*:::/.test(t)) r.add("error", it.n, "callout syntax :::");
-    if (!data && /<\/?[a-zA-Z][^>]*>/.test(t))
+    if (!data && /<\/?[a-zA-Z][^>]*>/.test(t.replace(AUTOLINK, " ")))
       r.add("error", it.n, "raw HTML (the only HTML a post may hold is a one-line inline figure)");
+    if (!data && BARE_URL_CITED.test(t)) {
+      r.add(
+        "error",
+        it.n,
+        "a bare URL right before a citation: the site's renderer takes the citation into the link, so write the URL as an autolink, <https://…>",
+      );
+    }
     if (EMOJI.test(t)) r.add("error", it.n, "emoji");
     if (/\{\{[A-Z_]+\}\}/.test(t))
       r.add("error", it.n, "an unfilled template slot leaked into the text");
@@ -2899,7 +3107,7 @@ function checkDoc(doc, lang, prof, o, r, facts) {
     .filter((it) => ["text", "list", "quote", "heading", "caption", "table"].includes(it.type))
     .concat(figureLines(doc));
   languageRules(lang, proseItems, paras, sectionsOf(items), settings, r);
-  return { h2, used, footer };
+  return { h2, used, footer, page: sizes?.page };
 }
 
 /** Landing strings: one `key: text` line each; the language rules read the values. */
@@ -3549,7 +3757,15 @@ function checkBudgets(doc, lang, prof, o, r, { section } = {}) {
     const { lead, tldr } = leadCounts(text, lang);
     return judge(0, lead, line) + tldrJudge(tldr);
   };
-  if (section !== undefined) return [sized(section, doc.raw, null)];
+  if (section !== undefined) {
+    const counts = [sized(section, doc.raw, null)];
+    // A section file beside its siblings: the page total it makes, so creep shows before assembly.
+    const page = sectionOfFile(doc.file)
+      ? pageReport(path.dirname(doc.file), lang, section, doc.raw, outline, budgets)
+      : undefined;
+    if (page?.over) r.add("warn", null, page.line);
+    return { counts, page };
+  }
   const sections = splitSections(doc.raw);
   const counts = sections.map((s) => sized(s.n, s.text, s.n ? s.line : null));
   const total = counts.reduce((a, b) => a + b, 0);
@@ -3569,7 +3785,7 @@ function checkBudgets(doc, lang, prof, o, r, { section } = {}) {
       `${sections.length - 1} sections after the lead; the plan has ${plan.rows.length - 1}`,
     );
   }
-  return counts;
+  return { counts };
 }
 
 function runCheck(o) {
@@ -3595,7 +3811,8 @@ function runCheck(o) {
       `${info.h2.length} sections · ${doc.figures.length} figure blocks · ${inline} inline figures · ` +
       `${images(doc).length} images · ${doc.items.filter((it) => it.type === "fence").length} code fences · ` +
       `${doc.items.filter((it) => it.type === "footnote").length} references · ` +
-      `${info.used.size ? `${info.used.size} distinct markers (F ${f}, O ${info.used.size - f})` : "no markers"}`;
+      `${info.used.size ? `${info.used.size} distinct markers (F ${f}, O ${info.used.size - f})` : "no markers"}` +
+      `${info.page ? ` · page ${info.page.total} of at most ${info.page.cap} ${info.page.unit}` : ""}`;
   }
   process.stdout.write(`${doc.file} (${lang}, ${prof.name}): ${summary}\n`);
   const errors = r.print();
@@ -4199,6 +4416,30 @@ async function runSelftest() {
       "1. [Files live under one root per Project.] — vague — concision — the sentence must name the root\n",
   });
   answer("fix-flow.md", s1.replace("[output archived: <path>]", "[archived: <path>]"));
+  // A page whose every section sits just under its own cap and over the page's together.
+  const words = (k) => `${Array(k).fill("word").join(" ")}.`;
+  const creep = caseDir("creep", {
+    "s0.en.v1.md": `---\ntitle: "Creep"\ndate: 2026-10-19\ncategory: perspectives\nexcerpt: "A fixture."\n---\n\n${words(65)}\n`,
+    ...Object.fromEntries(
+      ["Alpha", "Beta", "Gamma", "Delta"].map((h, i) => [
+        `s${i + 1}.en.v1.md`,
+        `## ${h}\n\n${words(108)}\n`,
+      ]),
+    ),
+  });
+  // A lead with the version note, over its row, and two answers that rewrite or drop the note.
+  const note = "Written for PenguinHarness 0.2.16. Later releases may differ in some details.";
+  const front = `---\ntitle: "Self-test post"\ndate: 2026-10-19\ncategory: perspectives\nexcerpt: "A fixture."\n---\n\n`;
+  const noted = `${front}> ${note}\n\n${PRACTICE_LEAD} ${PRACTICE_LEAD}\n`;
+  const trimNote = caseDir("trim-note", { "s0.en.v1.md": noted });
+  answer("trim-note.md", `${front}> Written for PenguinHarness 0.2.16.\n\n${PRACTICE_LEAD}\n`);
+  const polishNote = caseDir("polish-note", { "s0.en.v1.md": noted });
+  answer("polish-note.md", `${front}${PRACTICE_LEAD} ${PRACTICE_LEAD}\n`);
+  // Autolinks are links; a span is HTML; a bare URL before a marker loses its citation on the site.
+  writeFileSync(
+    at("autolink.en.v1.md"),
+    `${front}The docs are at <https://penguin.ooo/docs/agent-loop>. {F1}\n\nWrite to <mailto:team@penguin.ooo> with questions.\n\nA <span>tag</span> is still HTML.\n\nOr read https://penguin.ooo/docs/agent-loop. {F1}\n`,
+  );
   // A fix's answer as check reads it: the screenshot's block with a string list.
   const shotText = caseDir("shot-text", {
     "s2.en.v1.md": s2.replace(/(caption: The marker names[^\n]*)/, "$1\ntext:\n- note: archived"),
@@ -4477,7 +4718,7 @@ async function runSelftest() {
       ],
       code: 0,
       stdout:
-        /at most 66 English words of body text[\s\S]*has its own, 30–50 English words, and is counted apart/,
+        /at most 60 English words of body text\. It is the lowest of: this section's planned size, 60 English words;[\s\S]*has its own, 30–50 English words, and is counted apart/,
     },
     {
       name: "a lead without a version note is told nothing about one",
@@ -4580,7 +4821,7 @@ async function runSelftest() {
       file: [at("findings.s2.en.v1.md"), /^1\. \[The Trace keeps a short marker\.\]/],
     },
     {
-      name: "a Chinese section on an English-word plan states its cap, not the plan's words, and the counting rule with an example it counted",
+      name: "a Chinese section on an English-word plan aims at the plan converted, not the plan's words, with the counting rule and an example it counted",
       args: [
         "section",
         "--dry-run",
@@ -4596,11 +4837,11 @@ async function runSelftest() {
       ],
       code: 0,
       stdout:
-        /at most 220 Chinese characters of body text\. The plan's numbers count English words and do not apply to this Chinese section; it is held to the cap above\. The size check counts exactly this way[\s\S]*every remaining character that is not whitespace as one[\s\S]*"用 `check --svg` 核对 v0\.2\.16 的 2 张图，Agent 才不会漏掉。\{F3\}" counts as 36 characters/,
+        /at most 144 Chinese characters of body text\. It is the lowest of: this section's planned size, 144 Chinese characters; what the page has left, 840 Chinese characters \(its cap of 1800 less the 960 Chinese characters the rest of the page takes\); the profile's cap for the lead, 220 Chinese characters\. The plan counts English words: this section's planned size is its 60 English words at 2\.4 Chinese characters per English word\. The size check counts exactly this way[\s\S]*every remaining character that is not whitespace as one[\s\S]*"用 `check --svg` 核对 v0\.2\.16 的 2 张图，Agent 才不会漏掉。\{F3\}" counts as 36 characters/,
       notStdout: /the size the plan gives/,
     },
     {
-      name: "a fix call states the cap, the section's current size and the counting rule",
+      name: "a fix call aims at the planned size, not check's 1.1 × tolerance, and states the section's current size and the counting rule",
       args: [
         "fix",
         "--dry-run",
@@ -4614,7 +4855,7 @@ async function runSelftest() {
       ],
       code: 0,
       stdout:
-        /at most 110 English words of body text; the plan asks for about 100 English words\. The section as given counts 234 English words\. The size check counts exactly this way[\s\S]*counts as 9 words/,
+        /at most 100 English words of body text\. It is the lowest of: this section's planned size, 100 English words; what the page has left, 336 English words \(its cap of 750 less the 414 English words the rest of the page takes\); the profile's cap for a section, 160 English words\. The section as given counts 234 English words\. The size check counts exactly this way[\s\S]*counts as 9 words/,
     },
     {
       name: "a whole docs page's call states its caps and the counting rule",
@@ -4645,7 +4886,7 @@ async function runSelftest() {
       ],
       code: 0,
       stdout:
-        /at most 110 English words of body text\. The section given here counts 234 English words, so cut at least 124 English words; aim for about 104 English words[\s\S]*every fact marker `\{F#\}`[\s\S]*every figure block/,
+        /at most 110 English words of body text, or the answer is refused\. The section given here counts 234 English words, so cut at least 124 English words\. Aim for at most 100 English words\. It is the lowest of: this section's planned size, 100 English words;[\s\S]*; 104 English words, a margin under the refusal cap\.[\s\S]*every fact marker `\{F#\}`[\s\S]*every figure block/,
     },
     {
       name: "trim writes a cut within the cap as the next version",
@@ -4751,6 +4992,82 @@ async function runSelftest() {
       code: 1,
       stdout:
         /ERROR [^\n]*figure demo-shot is a screenshot \("screenshot"\), whose block holds alt and caption only; it has a text: line and 1 string\(s\) under it/,
+    },
+    {
+      name: "a fix call takes what the page has left as a ceiling when it is below the planned size",
+      args: [
+        "fix",
+        "--dry-run",
+        "--in",
+        path.join(creep, "s4.en.v1.md"),
+        "--findings",
+        at("findings.en.v1.md"),
+        ...facts,
+        "--outline",
+        at("outline.final.md"),
+        "--word-budget",
+        "480",
+      ],
+      code: 0,
+      stdout:
+        /at most 91 English words of body text\. It is the lowest of: this section's planned size, 100 English words; what the page has left, 91 English words \(its cap of 480 less the 389 English words the rest of the page takes\)/,
+    },
+    {
+      name: "check --section warns when the sections, each within its own cap, put the page over its cap",
+      args: [
+        "check",
+        "--in",
+        path.join(creep, "s4.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+        "--word-budget",
+        "480",
+      ],
+      code: 0,
+      stdout:
+        /page 497 of at most 480 words\n[\s\S]*WARN [^\n]*the page is 497 words with this section; its cap is 480/,
+    },
+    {
+      name: "trim refuses an answer that rewrites the version note",
+      args: [
+        "trim",
+        "--in",
+        path.join(trimNote, "s0.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      answer: "trim-note.md",
+      code: 1,
+      stderr:
+        /the version note changed: "> Written for PenguinHarness 0\.2\.16\." \(it was "> Written for PenguinHarness 0\.2\.16\. Later releases may differ in some details\."\)/,
+      absent: path.join(trimNote, "s0.en.v2.md"),
+    },
+    {
+      name: "polish refuses an answer that drops the version note",
+      args: [
+        "polish",
+        "--in",
+        path.join(polishNote, "s0.en.v1.md"),
+        "--out",
+        path.join(polishNote, "s0.en.v2.md"),
+      ],
+      answer: "polish-note.md",
+      code: 1,
+      stderr: /the version note "> Written for PenguinHarness 0\.2\.16\. [^"]*" is gone/,
+      absent: path.join(polishNote, "s0.en.v2.md"),
+    },
+    {
+      name: "autolinks, <https://…> and <mailto:…>, are links and not raw HTML; a span still is",
+      args: ["check", "--in", at("autolink.en.v1.md")],
+      code: 1,
+      stdout: /autolink\.en\.v1\.md:12  raw HTML/,
+      notStdout: /autolink\.en\.v1\.md:(8|10)  raw HTML/,
+    },
+    {
+      name: "a bare URL right before a citation is an error",
+      args: ["check", "--in", at("autolink.en.v1.md")],
+      code: 1,
+      stdout: /autolink\.en\.v1\.md:14  a bare URL right before a citation/,
     },
     {
       name: "landing strings with a banned word and an exclamation mark fail",
