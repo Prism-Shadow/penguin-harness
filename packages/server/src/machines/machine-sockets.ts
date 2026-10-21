@@ -17,7 +17,6 @@
  */
 import type http from "node:http";
 import { WebSocket } from "ws";
-import { ADMIN_USER_ID } from "../auth/service.js";
 import type { MachineSocketFact } from "../api/types.js";
 import type { EventFrame, ServerFrame } from "../socket/frames.js";
 import { apiSocketPath } from "../socket/ref.js";
@@ -125,9 +124,9 @@ export class MachineSocket {
   static open(target: MachineSocketTarget, timeoutMs: number): Promise<MachineSocket> {
     return new Promise((resolve, reject) => {
       // No Origin: the machine's guard reads its absence as a non-browser client, which this is.
-      // The admin's reserved id: the session minted over there is the admin's, and the
-      // machine's runtime holds the id's owner to it.
-      const ws = new WebSocket(`ws://127.0.0.1:${target.port}${apiSocketPath(ADMIN_USER_ID)}`, {
+      // The socket's own route: the session minted over there is the admin's, and the
+      // machine's handshake serves the socket as the user that cookie names.
+      const ws = new WebSocket(`ws://127.0.0.1:${target.port}${apiSocketPath()}`, {
         agent: target.agent,
         headers: { host: `localhost:${target.port}`, cookie: target.cookie },
         perMessageDeflate: false,

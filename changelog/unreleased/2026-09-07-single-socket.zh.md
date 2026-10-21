@@ -12,7 +12,7 @@ Web App 标签页通过一条 WebSocket 承载 API 调用和长期订阅，不�
 ## API 传输与兼容
 
 - 套接字是既有 API 的第二种传输，而不是另一批端点。调用进入与 HTTP 相同的路由，保留授权、校验与错误正文。帧携带方法、路径、JSON 正文和允许的请求头（`last-event-id`、`accept`、`content-type`）；应答保留 `date`、`content-type`、`retry-after` 与 `etag`。
-- 握手使用 `GET /api/terminals/api-socket@<userId>/stream`，即登录用户的保留终端流 id。会话 Cookie 认证、同源检查与所有权检查照常生效；平台通过 `Http.fetchAs` 以该用户身份进入路由。传输实现位于平台层，使用既有 shell 接缝。
+- 握手使用 `GET /api/socket`，即套接字自己的 upgrade 路由：会话 Cookie 认证与同源检查照常生效，平台通过 `Http.fetchAs` 以该 Cookie 的用户身份进入路由。传输实现位于平台层，使用既有 shell 接缝。（它最初以一个保留的终端 id 打开；[它自己的路由](2026-10-20-api-socket-own-route.zh.md)取代了那个 id。）
 - 事件流响应转换为一帧 `stream`、事件帧及一帧 `end`，每个事件以它本来的对象直接交递——这条传输上不再写出 SSE 文本再解析回来。取消会中止端点请求并释放订阅。套接字心跳发现静默两拍的对端；读取方超过发送水位时以 `lagging` 结束，而不是积累无界队列。
 - `apiFetch` 在套接字可用时使用它，否则使用 HTTP。仅限 HTTP 或被平台拒绝承载的端点回 `421 not_on_socket`；不支持的响应正文回 `415 unsupported_transport`，客户端改经 HTTP 获取这些响应。认证与热更新请求保留在 HTTP 上。
 - 既有 SSE 端点与 `/server/<id>/api/…` 代理继续可用，CLI 继续经 HTTP 消费 SSE。浏览器套接字握手持续失败时，调用继续走 fetch，流则静默等待一个不会到来的套接字——没有 EventSource 孪生。新增聚合端点不要求迁移数据或配置；旧页面可以继续使用每台机器各自的流。
