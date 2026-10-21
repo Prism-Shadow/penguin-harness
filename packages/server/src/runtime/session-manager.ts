@@ -2117,11 +2117,14 @@ export class SessionManager {
       // Built before the last credential change: discard once idle and fall through to a
       // fresh load (resume re-reads the Project config). A busy entry is returned as-is — the
       // in-flight run keeps its values and assertIdle rejects the new Task anyway;
-      // it is rebuilt on the first access after it finishes.
+      // it is rebuilt on the first access after it finishes. The same holds for queued
+      // follow-ups (see sweepIdle): they live only on the entry, so discarding it would
+      // strand inputs the user was told were queued.
       if (
         existing.status !== "idle" ||
         existing.running !== null ||
-        existing.approvals.size !== 0
+        existing.approvals.size !== 0 ||
+        existing.followUps.length !== 0
       ) {
         return existing;
       }

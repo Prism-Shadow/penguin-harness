@@ -83,6 +83,8 @@ import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
 import { SessionManager, FOLLOW_UP_QUEUE_LIMIT } from "../src/runtime/session-manager.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
+import type { AgentState } from "../src/mechanisms/sessions.js";
+import { AgentStateStore } from "../src/runtime/agent-state.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
 import type { UsageContext } from "../src/runtime/usage-recorder.js";
@@ -179,6 +181,8 @@ describe("session-manager", () => {
     errors?: ErrorSink,
     /** Stubbed clock for persisted timestamps (see the last_active_at test). */
     now?: () => Date,
+    /** Explicit in-memory state: lets a test pin the auto-start hook (see the follow-ups test). */
+    state?: AgentState,
   ): SessionManager =>
     new SessionManager({
       sessions,
@@ -193,6 +197,7 @@ describe("session-manager", () => {
       },
       ...(errors ? { errors } : {}),
       ...(now ? { now } : {}),
+      ...(state ? { state } : {}),
       log: () => {},
     });
 
@@ -1489,6 +1494,70 @@ describe("session-manager", () => {
     // The p2 entry keeps its cached runtime.
     await manager.startTask("session-3", [userText("c")]);
     await waitFor(() => manager.statusOf("session-3") === "idle");
+    expect(loads).toBe(2);
+  });
+
+  it("invalidateAgentRuntimes: an idle entry with queued follow-ups is kept until the queue drains", async () => {
+    // Queued follow-ups live only on the runtime entry (sweepIdle already refuses to evict
+    // them for exactly this reason). An invalidation that lands while inputs sit queued
+    // leaves the next access holding an idle, stale entry with a non-empty queue — the
+    // discard-on-stale path must treat it like a busy entry, or every input the user was
+    // told was queued is silently dropped with the entry. The auto-start is pinned so the
+    // entry stays in exactly that state: in production the window is a concurrent access
+    // arriving between the run's end and the queued follow-up's start.
+    let loads = 0;
+    const state = new AgentStateStore();
+    const manager = makeManager(
+      {
+        load: async () => {
+          loads++;
+          return approvalFakeSession("session-1");
+        },
+      },
+      undefined,
+      undefined,
+      state,
+    );
+    const driveWired = state.current!;
+    state.current = {
+      startQueuedFollowUp: async () => {},
+      startBackgroundNoticeTask: async () => {},
+    };
+
+    const first = await manager.startTask("session-1", [userText("task 1")]);
+    expect(first.queued).toBe(false);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+
+    // A follow-up queues behind the running Task, and the Agent's credentials change while
+    // the Task waits on its approval.
+    const q = await manager.startTask("session-1", [userText("queued behind")], {
+      queueIfBusy: true,
+    });
+    expect(q.queued).toBe(true);
+    manager.invalidateAgentRuntimes("p1", "a1");
+
+    // The run ends: the entry goes idle with the queue intact — the queued input was not
+    // started through a rebuilt runtime (a reload here would have dropped it with the
+    // discarded entry).
+    manager.decideApproval("session-1", "tc-1", "allow");
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(1);
+    expect(manager.pendingFollowUpCount("session-1")).toBe(1);
+
+    // The next access takes the kept entry — no reload, queue still aboard — and the task
+    // runs to completion (allow-all), after which the queue drains through the real
+    // auto-start.
+    sessions.updateApprovalMode("session-1", "allow-all");
+    state.current = driveWired;
+    await manager.startTask("session-1", [userText("after the queue")]);
+    await waitFor(
+      () =>
+        manager.statusOf("session-1") === "idle" && manager.pendingFollowUpCount("session-1") === 0,
+    );
+    expect(loads).toBe(1);
+
+    // Once the queue has drained, the next access rebuilds the runtime as usual.
+    await manager.preload("session-1");
     expect(loads).toBe(2);
   });
 
