@@ -27,16 +27,24 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
     section they quote.
   - `translate`, `polish`, `fix` and `review` work section by section; `review` returns findings
     for `fix` and never rewrites.
-- Budgets are hard. The plan is held to the profile's caps. `check` rejects a section above 1.1 ×
+- Budgets are hard. Plans are held to their profile's caps. `check` rejects any section above 1.1 ×
   its planned size or the profile's cap. Every prompt written to a budget states the cap and the
-  counting rule `check` uses. `trim` shortens a section that is only too long, without rewriting it.
-- `fix` and `trim` answers are checked before they are saved. An answer that brings in a fact no
-  finding named, changes a figure block no finding named, changes a marker, or is still over its cap
-  after a cut is set aside. The next version is not written.
-- Posts cite like papers. Each fact in the facts file is tagged with its sources, and `strip` turns
-  the writer's fact markers into numbered GFM footnotes with a linked reference list, numbered by
-  first use: at most two per fact, its primary sources, and three per sentence. The second language keeps the first one's numbers when it cites the sources in the
-  same order, and `pair` checks that both cite the same sources. The `**Sources**` footer is gone.
+  counting rule `check` uses. A prompt for one section asks for its planned size, or for what the
+  page has left when that is less — never for the 1.1 × margin. After every section step, `check`
+  reports the page total against its cap. `trim` shortens sections that are only too long, without
+  rewriting them.
+- `fix` and `trim` answers are checked before they are saved. Such an answer is set aside if it
+  brings in a fact no finding named, changes a figure block no finding named, changes a marker, or
+  is still over its cap after a cut. `fix`, `polish`, `translate`, and `trim` also set aside an
+  answer that changes the version note. The next version is not written.
+- Posts cite like papers. Each fact in the facts file is tagged with its sources. The `strip`
+  command turns the writer's fact markers into numbered GFM footnotes with a linked reference list,
+  numbered by first use. Citation limits apply: at most two sources per fact — its primary sources —
+  and three per sentence. The second language keeps the first language's numbers when it cites the
+  sources in the same order. The `pair` command checks that both cite the same sources. The
+  `**Sources**` footer is gone. URLs in the text are autolinks, `<https://…>`. This is because the
+  site reads a footnote right after a bare URL as part of the link. The `check` command flags a bare
+  URL there.
 - Profiles in `reference/profile-<name>.md` hold what differs by kind of text: shape, reader,
   sizes and the rules `check` enforces. The profiles shipped are a perspective post, a docs page
   and landing strings, each with its own output contract.
