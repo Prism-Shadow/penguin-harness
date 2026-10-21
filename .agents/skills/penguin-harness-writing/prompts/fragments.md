@@ -39,6 +39,12 @@ Run `check --svg` on the v0.2.16 draft, e.g. twice. {F3}
 <!-- fragment: count-example-zh -->
 用 `check --svg` 核对 v0.2.16 的 2 张图，Agent 才不会漏掉。{F3}
 
+<!-- fragment: section-planned -->
+the plan asks for about {{SECTION_WORDS_PLANNED}}
+
+<!-- fragment: plan-other-unit -->
+The plan's numbers count {{PLAN_UNIT_NAME}} and do not apply to this {{LANG_NAME}} section; it is held to the cap above.
+
 <!-- fragment: section-now -->
 The section as given counts {{SECTION_NOW_COUNT}}.
 

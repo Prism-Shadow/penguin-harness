@@ -512,6 +512,7 @@ function defaultReviewOut(input) {
 // ---------------------------------------------------------------------------
 
 const SECTION_FILE = /^s(\d+)\.(en|zh)\.v(\d+)\.md$/;
+const UNIT_NAME = { words: "English words", chars: "Chinese characters" };
 /** Chinese characters per English word, measured on translated drafts; used to size a translation. */
 const ZH_PER_EN = 2.4;
 /** A translated section above this many characters per English word is flagged by `pair`. */
@@ -682,7 +683,7 @@ function budgetsOf(prof, lang, o = {}) {
   const zh = lang === "zh";
   const b = {
     unit: zh ? "chars" : "words",
-    unitName: zh ? "Chinese characters" : "English words",
+    unitName: UNIT_NAME[zh ? "chars" : "words"],
     total: rangeOf(s[zh ? "zh-chars" : "words"]),
     lead: rangeOf(s[zh ? "zh-lead-chars" : "lead-words"]),
     section: rangeOf(s[zh ? "zh-section-chars" : "section-words"]),
@@ -990,7 +991,7 @@ function sectionParams(
   prof,
   lang,
   n,
-  { cap, planned, now, budgets, figureIds, markers, date, versionNote },
+  { cap, planned, planUnitName, now, budgets, figureIds, markers, date, versionNote },
 ) {
   const params = profileParams(F, prof, lang, { contract: true, markers, date, versionNote });
   Object.assign(params, countRuleParams(F, lang));
@@ -1002,8 +1003,11 @@ function sectionParams(
   params.SECTION_SHAPE = n === 0 ? F["section-shape-lead"] : F["section-shape-body"];
   params.SECTION_BUDGET =
     cap !== undefined ? `${cap} ${budgets.unitName}` : "the size the plan gives";
-  params.SECTION_WORDS_PLANNED =
-    planned !== undefined ? `${planned} ${budgets.unitName}` : "the size the plan gives";
+  // A plan that counts in the other language's unit says nothing about this section's size.
+  params.SECTION_PLANNED = planned !== undefined ? `; ${F["section-planned"]}` : "";
+  params.SECTION_WORDS_PLANNED = planned !== undefined ? `${planned} ${budgets.unitName}` : "";
+  params.SECTION_PLAN_NOTE = planUnitName ? ` ${F["plan-other-unit"]}` : "";
+  params.PLAN_UNIT_NAME = planUnitName ?? "";
   params.SECTION_FIGURE_IDS = figureIds.length ? figureIds.join(", ") : "none";
   params.TLDR_NOTE = "";
   if (n === 0 && budgets.tldr) {
@@ -1110,6 +1114,7 @@ function buildMessages(step, o) {
       params = sectionParams(F, prof, lang, n, {
         cap,
         planned,
+        planUnitName: planned === undefined ? UNIT_NAME[outline.unit] : undefined,
         budgets,
         figureIds: row.figures,
         markers: "write",
@@ -4575,7 +4580,7 @@ async function runSelftest() {
       file: [at("findings.s2.en.v1.md"), /^1\. \[The Trace keeps a short marker\.\]/],
     },
     {
-      name: "a Chinese section call states its cap and the size check's counting rule, with an example it counted",
+      name: "a Chinese section on an English-word plan states its cap, not the plan's words, and the counting rule with an example it counted",
       args: [
         "section",
         "--dry-run",
@@ -4591,7 +4596,8 @@ async function runSelftest() {
       ],
       code: 0,
       stdout:
-        /at most 220 Chinese characters of body text[\s\S]*every remaining character that is not whitespace as one[\s\S]*"用 `check --svg` 核对 v0\.2\.16 的 2 张图，Agent 才不会漏掉。\{F3\}" counts as 36 characters/,
+        /at most 220 Chinese characters of body text\. The plan's numbers count English words and do not apply to this Chinese section; it is held to the cap above\. The size check counts exactly this way[\s\S]*every remaining character that is not whitespace as one[\s\S]*"用 `check --svg` 核对 v0\.2\.16 的 2 张图，Agent 才不会漏掉。\{F3\}" counts as 36 characters/,
+      notStdout: /the size the plan gives/,
     },
     {
       name: "a fix call states the cap, the section's current size and the counting rule",
