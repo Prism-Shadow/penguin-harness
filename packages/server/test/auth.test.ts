@@ -29,6 +29,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentApiKeyCreateResponse, MeResponse, ProjectsResponse } from "../src/api/types.js";
 import { bootAppDeps } from "../src/app.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
+import {
+  isOwnOrigin,
+  parseCookieHeader,
+  requestScheme,
+  sessionCookieName,
+  sameOriginWrites,
+} from "../src/auth/middleware.js";
+import { Hono } from "hono";
+import { handleError } from "../src/http/errors.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
 import {
   apiClient,
@@ -302,7 +311,7 @@ describe("auth", () => {
   it("reads an origin normalized: a domain's case and a scheme's default port name one origin", async () => {
     const { cookie } = await provisionUser(t.app, "hugo");
     const write = (host: string, origin: string, projectId: string) =>
-      t.app.request("/api/projects", {
+      t.app.request(`${new URL(origin).protocol}//${host}/api/projects`, {
         method: "POST",
         headers: { cookie, host, origin, "content-type": "application/json" },
         body: JSON.stringify({ projectId, name: "x" }),
@@ -323,7 +332,7 @@ describe("auth", () => {
     expect((await write("example.com:8443", "http://example.com", "hugo-eight")).status).toBe(403);
   });
 
-  it("names a browser's cookie after the port, and keeps the plain name for a default one", async () => {
+  it("names a browser's cookie after every explicit Host port", async () => {
     await provisionUser(t.app, "iris");
     const signIn = (host: string, origin: string) =>
       t.app.request("/api/auth/login", {
@@ -331,12 +340,11 @@ describe("auth", () => {
         headers: { "content-type": "application/json", host, origin },
         body: JSON.stringify({ userId: "iris", password: "password-123" }),
       });
-    // A Host that spells out http's default port still gets the plain name — the sign-in and
-    // the request after it must look for the same cookie.
+    // Explicit default ports remain in cookie names, on both issue and lookup.
     const plain = await signIn("example.com:80", "http://example.com");
     expect(plain.status).toBe(200);
     const plainCookie = (plain.headers.get("set-cookie") ?? "").split(";")[0]!;
-    expect(plainCookie.startsWith("penguin_session=")).toBe(true);
+    expect(plainCookie.startsWith("penguin_session_80=")).toBe(true);
     expect(
       (await t.app.request("/api/me", { headers: { cookie: plainCookie, host: "example.com:80" } }))
         .status,
@@ -353,6 +361,71 @@ describe("auth", () => {
         })
       ).status,
     ).toBe(200);
+  });
+
+  it("compares complete origins and preserves explicit cookie ports", () => {
+    expect(isOwnOrigin("http://example.com", "example.com", "https:")).toBe(false);
+    expect(isOwnOrigin("https://example.com", "example.com", "https:")).toBe(true);
+    expect(isOwnOrigin("http://[0:0:0:0:0:0:0:1]:7364", "[::1]:7364", "http:")).toBe(true);
+    expect(isOwnOrigin("http://[::1]:7365", "[::1]:7364", "http:")).toBe(false);
+    expect(isOwnOrigin("http://example.com:8443", "example.com", "http:")).toBe(false);
+    expect(isOwnOrigin("null", "example.com", "http:")).toBe(false);
+    expect(isOwnOrigin("http://example.com", "example.com/other", "http:")).toBe(false);
+    expect(isOwnOrigin(undefined, "example.com", "http:")).toBe(true);
+    for (const port of ["80", "443", "7364"]) {
+      expect(sessionCookieName(`example.com:${port}`, true)).toBe(`penguin_session_${port}`);
+      expect(sessionCookieName(`[::1]:${port}`, true)).toBe(`penguin_session_${port}`);
+    }
+    expect(sessionCookieName("example.com", true)).toBe("penguin_session");
+    expect(sessionCookieName("example.com:443", false)).toBe("penguin_session");
+  });
+
+  it("uses forwarded schemes only behind a trusted proxy and rejects malformed values", async () => {
+    expect(requestScheme("http:", "https", false)).toBe("http:");
+    expect(requestScheme("http:", "https", true)).toBe("https:");
+    for (const value of ["ftp", "https,http", "", "https:"]) {
+      expect(requestScheme("http:", value, true)).toBe("");
+    }
+    for (const trustProxy of [false, true]) {
+      const app = new Hono();
+      app.onError(handleError);
+      app.use("*", sameOriginWrites(trustProxy));
+      app.post("/", (c) => c.body(null, 204));
+      const write = (forwarded: string, origin = "https://example.com") =>
+        app.request("http://example.com/", {
+          method: "POST",
+          headers: {
+            host: "example.com",
+            origin,
+            "x-forwarded-proto": forwarded,
+            "content-type": "application/json",
+          },
+        });
+      expect((await write("https")).status).toBe(trustProxy ? 204 : 403);
+      expect((await write("https,http")).status).toBe(403);
+      expect((await write("http", "http://example.com:8443")).status).toBe(403);
+    }
+  });
+
+  it("uses Hono's first duplicate and tolerates malformed cookie escapes", async () => {
+    const { cookie } = await loginAdmin(t.app);
+    const token = cookie.slice(cookie.indexOf("=") + 1);
+    expect(parseCookieHeader(`penguin_session=bad; penguin_session=${token}`).penguin_session).toBe(
+      "bad",
+    );
+    expect(parseCookieHeader("penguin_session=%ZZ").penguin_session).toBe("%ZZ");
+    expect(parseCookieHeader('a="hello%20world"').a).toBe("hello world");
+    expect(
+      (await t.app.request("/api/me", { headers: { cookie: `penguin_session=bad; ${cookie}` } }))
+        .status,
+    ).toBe(401);
+    expect(
+      (await t.app.request("/api/me", { headers: { cookie: `${cookie}; penguin_session=bad` } }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await t.app.request("/api/me", { headers: { cookie: "penguin_session=%ZZ" } })).status,
+    ).toBe(401);
   });
 
   it("refuses a write that declares a chunked body with no Content-Type", async () => {
