@@ -116,7 +116,7 @@ Under the #700 revert, compaction costs an estimated 1.13× shipped one task pos
 Moved numbers go to a person with the diverged tier and cost estimate.[^1]
 
 ## Run the suites
-Run `pnpm --filter @prismshadow/penguin-core exec vitest run prompt-cache` from the repository root, or read the agent loop docs at [https://penguin.ooo/docs/agent-loop](https://penguin.ooo/docs/agent-loop).[^5][^20][^21]
+Run `pnpm --filter @prismshadow/penguin-core exec vitest run prompt-cache` from the repository root, or read the agent loop docs at <https://penguin.ooo/docs/agent-loop>.[^5][^20][^21]
 
 [^1]: [.agents/skills/penguin-harness-dev/SKILL.md](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/.agents/skills/penguin-harness-dev/SKILL.md)
 [^2]: [Cache diagnostics - Claude Platform Docs](https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics)

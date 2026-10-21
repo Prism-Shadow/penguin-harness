@@ -116,7 +116,7 @@ CI 选中 core 时，套件在 Linux、macOS、Windows 运行。[^13][^15][^16]�
 
 ## 运行测试套件
 你可以在仓库根目录执行 `pnpm --filter @prismshadow/penguin-core exec vitest run prompt-cache`，运行这套提示词缓存相关测试。[^5]
-这套测试对应的设计约定，可查阅公开的 Agent 循环文档 [https://penguin.ooo/docs/agent-loop](https://penguin.ooo/docs/agent-loop)。[^20][^21]
+这套测试对应的设计约定，可查阅公开的 Agent 循环文档 <https://penguin.ooo/docs/agent-loop>。[^20][^21]
 
 [^1]: [.agents/skills/penguin-harness-dev/SKILL.md](https://github.com/Prism-Shadow/penguin-harness/blob/v0.2.16/.agents/skills/penguin-harness-dev/SKILL.md)
 [^2]: [Cache diagnostics - Claude Platform Docs](https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics)
