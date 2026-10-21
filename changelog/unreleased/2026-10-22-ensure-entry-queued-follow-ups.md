@@ -3,7 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** [#1192](https://github.com/Prism-Shadow/penguin-harness/pull/1192)
+- **PR:** [#1269](https://github.com/Prism-Shadow/penguin-harness/pull/1269)
 
 [中文版](2026-10-22-ensure-entry-queued-follow-ups.zh.md)
 
