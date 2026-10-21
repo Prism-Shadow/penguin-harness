@@ -11,8 +11,9 @@
  * - Changing one's own password checks the old one and the policy, keeps the current session,
  *   clears the initial flag, and retires the old password.
  * - The Secure cookie flag follows x-forwarded-proto only when the proxy is trusted.
- * - A write from another origin is refused — the Agent API's keyed request excepted: it reaches
- *   that group's own key gate.
+ * - A write from another origin is refused — the Agent API's keyed request excepted — while a
+ *   domain's case and a scheme's default port name the same origin; a browser's cookie carries
+ *   the port it reached the server on.
  * - A write with a non-JSON Content-Type is refused (CSRF defense).
  * - A seed password below the policy is refused before any account is created.
  * - Login failures back off per username, unknown usernames identically, and a success resets
@@ -296,6 +297,76 @@ describe("auth", () => {
       (await abort({ origin: "http://localhost:7364", authorization: `Bearer ${key}` })).status,
     ).toBe(204);
     expect((await abort({ authorization: `Bearer ${key}` })).status).toBe(204);
+  });
+
+  it("reads an origin normalized: a domain's case and a scheme's default port name one origin", async () => {
+    const { cookie } = await provisionUser(t.app, "hugo");
+    const write = (host: string, origin: string, projectId: string) =>
+      t.app.request("/api/projects", {
+        method: "POST",
+        headers: { cookie, host, origin, "content-type": "application/json" },
+        body: JSON.stringify({ projectId, name: "x" }),
+      });
+    // A Host that spells out the scheme's default port, whichever side writes it.
+    expect((await write("example.com:80", "http://example.com", "hugo-one")).status).toBe(201);
+    expect((await write("example.com", "http://example.com:80", "hugo-two")).status).toBe(201);
+    expect((await write("example.com:443", "https://example.com", "hugo-three")).status).toBe(201);
+    // A domain name is case-insensitive.
+    expect((await write("EXAMPLE.com:7364", "http://Example.COM:7364", "hugo-four")).status).toBe(
+      201,
+    );
+    // Any other port is a different origin, whichever side spells it.
+    expect((await write("example.com:443", "http://example.com", "hugo-five")).status).toBe(403);
+    expect((await write("example.com:81", "http://example.com:80", "hugo-six")).status).toBe(403);
+  });
+
+  it("names a browser's cookie after the port, and keeps the plain name for a default one", async () => {
+    await provisionUser(t.app, "iris");
+    const signIn = (host: string, origin: string) =>
+      t.app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json", host, origin },
+        body: JSON.stringify({ userId: "iris", password: "password-123" }),
+      });
+    // A Host that spells out http's default port still gets the plain name — the sign-in and
+    // the request after it must look for the same cookie.
+    const plain = await signIn("example.com:80", "http://example.com");
+    expect(plain.status).toBe(200);
+    const plainCookie = (plain.headers.get("set-cookie") ?? "").split(";")[0]!;
+    expect(plainCookie.startsWith("penguin_session=")).toBe(true);
+    expect(
+      (await t.app.request("/api/me", { headers: { cookie: plainCookie, host: "example.com:80" } }))
+        .status,
+    ).toBe(200);
+    // Any other port keeps a name of its own, whatever case the browser spells the host in.
+    const keyed = await signIn("Example.COM:7364", "http://example.com:7364");
+    expect(keyed.status).toBe(200);
+    const keyedCookie = (keyed.headers.get("set-cookie") ?? "").split(";")[0]!;
+    expect(keyedCookie.startsWith("penguin_session_7364=")).toBe(true);
+    expect(
+      (
+        await t.app.request("/api/me", {
+          headers: { cookie: keyedCookie, host: "example.com:7364" },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it("refuses a write that declares a chunked body with no Content-Type", async () => {
+    // A page can send a body without a length (`fetch` with a stream), which no HTML form can:
+    // the content-type rule has to see the body, not just a content-length that is missing.
+    const { cookie } = await provisionUser(t.app, "jane");
+    const res = await t.app.request("/api/projects", {
+      method: "POST",
+      headers: {
+        cookie,
+        host: "localhost:7364",
+        origin: "http://localhost:7364",
+        "transfer-encoding": "chunked",
+      },
+      body: JSON.stringify({ projectId: "jane-one", name: "x" }),
+    });
+    expect(res.status).toBe(415);
   });
 
   it("self password change: old checked, new takes effect, initial flag cleared", async () => {

@@ -29,10 +29,43 @@ import type { Auth } from "../mechanisms/identity.js";
 export const SESSION_COOKIE = "penguin_session";
 
 /**
+ * A host authority — a `Host` header's, or an `Origin` URL's — reduced to what every check on
+ * this page reads: the host lowercased, since a domain name is case-insensitive, and the port
+ * as written (null when it is not).
+ */
+interface Authority {
+  host: string;
+  port: string | null;
+}
+
+/** The port an http(s) scheme is reached on when a URL or a Host leaves it out. */
+const DEFAULT_PORTS: Record<string, string> = { "http:": "80", "https:": "443" };
+
+/** The authority a `Host` header names: `example.com:7364`, `[::1]:7364`, `example.com`. */
+function authorityOfHost(host: string | undefined): Authority | null {
+  const raw = (host ?? "").trim();
+  if (raw === "") return null;
+  const m = /^(\[[^\]]+\]|[^:]+)(?::(\d{1,5}))?$/.exec(raw);
+  if (m === null) return null;
+  return { host: m[1]!.toLowerCase(), port: m[2] ?? null };
+}
+
+/**
+ * The port a BROWSER's cookie name carries. Cookies are scoped to a host and ignore the port,
+ * so two instances on one host — a release and a development one, two tunnels on a phone —
+ * shared `penguin_session`, and signing in to either signed the other out. A port the scheme
+ * uses by default (`:80`, `:443`) is the one a browser does not write down, so a Host that
+ * spells it out still gets the plain name: the sign-in and the request that follows it must
+ * look for the same cookie.
+ */
+function cookieNamePort(host: string | undefined): string | null {
+  const port = authorityOfHost(host)?.port ?? null;
+  return port === "80" || port === "443" ? null : port;
+}
+
+/**
  * The name a BROWSER is given the cookie under: the port it reached this server on is part of
- * it. Cookies are scoped to a host and ignore the port, so two instances on one host — a
- * release and a development one, two tunnels on a phone — shared `penguin_session`, and
- * signing in to either signed the other out.
+ * it (see {@link cookieNamePort}).
  *
  * Only a browser is given it. A non-browser client has a cookie jar of its own, and the CLI
  * reads the plain name off the login's Set-Cookie — an older CLI must keep finding it there.
@@ -41,8 +74,8 @@ export const SESSION_COOKIE = "penguin_session";
  * a port keeps the plain name too.
  */
 export function sessionCookieName(host: string | undefined, browser: boolean): string {
-  const port = browser ? /:(\d{1,5})$/.exec(host ?? "")?.[1] : undefined;
-  return port === undefined ? SESSION_COOKIE : `${SESSION_COOKIE}_${port}`;
+  const port = browser ? cookieNamePort(host) : null;
+  return port === null ? SESSION_COOKIE : `${SESSION_COOKIE}_${port}`;
 }
 
 /**
@@ -54,9 +87,8 @@ export function sessionCookies(
   cookies: Record<string, string | undefined>,
   host: string | undefined,
 ): { name: string; token: string }[] {
-  const port = /:(\d{1,5})$/.exec(host ?? "")?.[1];
-  const names =
-    port === undefined ? [SESSION_COOKIE] : [`${SESSION_COOKIE}_${port}`, SESSION_COOKIE];
+  const port = cookieNamePort(host);
+  const names = port === null ? [SESSION_COOKIE] : [`${SESSION_COOKIE}_${port}`, SESSION_COOKIE];
   return names.flatMap((name) => {
     const token = cookies[name];
     return token ? [{ name, token }] : [];
@@ -80,8 +112,11 @@ export function parseCookieHeader(header: string | null | undefined): Record<str
 
 /**
  * Whether a request a browser labelled with `origin` was made by a page of the origin it is
- * addressed to: host AND port. No Origin at all is a non-browser client, which has no ambient
- * cookie to abuse. Shared by the write guard below and the terminal's WebSocket handshake.
+ * addressed to: host AND port, normalized — a domain's case and a scheme's default port name
+ * the same address, so `http://example.com` against `Host: example.com:80` is the same origin
+ * and a domain spelled in another case is too. No Origin at all is a non-browser client, which
+ * has no ambient cookie to abuse. Shared by the write guard below and the terminal's WebSocket
+ * handshake.
  */
 export function isOwnOrigin(origin: string | undefined, host: string | undefined): boolean {
   if (!origin) return true;
@@ -92,7 +127,12 @@ export function isOwnOrigin(origin: string | undefined, host: string | undefined
     return false;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  return parsed.host === (host ?? "");
+  const own = authorityOfHost(host);
+  if (own === null) return false;
+  // `URL` drops the scheme's own default port from `port`, so a Host that writes it out is the
+  // same address; a Host with no port is the one a browser leaves implicit on that scheme.
+  const port = parsed.port === "" ? DEFAULT_PORTS[parsed.protocol]! : parsed.port;
+  return parsed.hostname.toLowerCase() === own.host && (own.port === null || own.port === port);
 }
 
 /**
@@ -301,13 +341,7 @@ const WORKBENCH_API = /^\/api\/projects\/[^/]+\/agents\/[^/]+\/workbenches\/[^/]
 function fromThisOrigin(header: (name: string) => string | undefined): boolean {
   const site = header("sec-fetch-site");
   if (site !== undefined) return site === "same-origin";
-  const origin = header("origin");
-  if (origin === undefined) return true;
-  try {
-    return new URL(origin).host === header("host");
-  } catch {
-    return false;
-  }
+  return isOwnOrigin(header("origin"), header("host"));
 }
 
 const crossOrigin = () =>
