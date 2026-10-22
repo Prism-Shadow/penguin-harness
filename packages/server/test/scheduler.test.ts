@@ -35,7 +35,7 @@ import { UsersRepo } from "../src/db/repos/users.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
 import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../src/runtime/scheduler.js";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import { Scheduler } from "../src/runtime/scheduler.js";
+import { Scheduler, ScheduleFireError } from "../src/runtime/scheduler.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ScheduleServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
@@ -669,5 +669,204 @@ describe("scheduler", () => {
     await scheduler.tickOnce();
     expect(errors.some((e) => e.code === "schedule_invalid_file")).toBe(true);
     expect(started).toHaveLength(1);
+  });
+});
+
+describe("fireNow", () => {
+  let root: string;
+  let db: ReturnType<typeof openDatabase>;
+  let repo: SchedulesRepo;
+  let sessions: SessionsRepo;
+  let nowMs: number;
+  let busy: Set<string>;
+  let started: Array<{ sessionId: string; text: string }>;
+  let events: Array<{ userId: string; event: ScheduleServerEvent }>;
+  let errors: ErrorRecordArgs[];
+  let scheduler: Scheduler;
+
+  beforeEach(async () => {
+    root = await makeTempRoot();
+    await saveProjectConfig(root, P, {
+      default_model: { provider: "custom", model_id: "m-bench" },
+      models: [{ provider: "custom", model_id: "m-bench" }],
+    });
+    db = openDatabase(":memory:");
+    const users = wire(UsersRepo, { db: db });
+    users.insert({
+      userId: "owner_a",
+      passwordHash: "x",
+      isAdmin: false,
+      passwordIsInitial: false,
+      displayName: null,
+      avatar: null,
+      createdAt: "2026-07-16T00:00:00Z",
+    });
+    const projects = wire(ProjectsRepo, { db: db });
+    projects.insert({ projectId: P, ownerUserId: "owner_a", createdAt: "2026-07-16T00:00:00Z" });
+    repo = wire(SchedulesRepo, { db: db });
+    sessions = wire(SessionsRepo, { db: db });
+    nowMs = T0;
+    busy = new Set();
+    started = [];
+    events = [];
+    errors = [];
+    let seq = 0;
+    const insertSession = (sessionId: string): void => {
+      sessions.insert({
+        sessionId,
+        projectId: P,
+        agentId: A,
+        modelId: "m1",
+        provider: "custom",
+        workspace: "/tmp/w",
+        approvalMode: "allow-all",
+        title: null,
+        createdAt: new Date(nowMs).toISOString(),
+        lastActiveAt: new Date(nowMs).toISOString(),
+      });
+    };
+    scheduler = wire(Scheduler, {
+      paths: { root },
+      repo,
+      projects,
+      sessions,
+      runner: {
+        statusOf: (id: string) => (busy.has(id) ? "running" : "idle"),
+        startTask: async (sessionId: string, input: OmniMessage[]) => {
+          started.push({ sessionId, text: JSON.stringify(input[0]?.payload ?? "") });
+          return { sessionId, queued: false };
+        },
+      } satisfies ScheduleTaskRunner,
+      sessionCreator: {
+        createSession: async (args: Parameters<ScheduleSessionCreator["createSession"]>[0]) => {
+          void args;
+          const sessionId = `session-new-${++seq}`;
+          insertSession(sessionId);
+          return { sessionId };
+        },
+      },
+      projectConfig: wire(ProjectConfigService, { paths: { root } }),
+      errors: { record: (args: ErrorRecordArgs) => void errors.push(args) },
+      notify: (userId: string, event: ScheduleServerEvent) => void events.push({ userId, event }),
+      now: () => nowMs,
+    });
+    await fs.mkdir(scheduleDir(root, P, A), { recursive: true });
+  });
+
+  afterEach(() => {
+    scheduler.stop();
+    db.close();
+  });
+
+  async function writeFile(name: string, lines: string[]): Promise<void> {
+    await fs.writeFile(
+      path.join(scheduleDir(root, P, A), `${name}.toml`),
+      lines.join("\n"),
+      "utf8",
+    );
+  }
+
+  function firings(): Array<{ session_id: string; manual: number }> {
+    return db
+      .prepare("SELECT session_id, manual FROM schedule_firings ORDER BY id")
+      .all() as Array<{
+      session_id: string;
+      manual: number;
+    }>;
+  }
+
+  it("fires a periodic task into a new session and records the firing", async () => {
+    await writeFile("report", [
+      `prompt = "report"`,
+      `enabled = true`,
+      `start_at = "${new Date(T0 + 60 * MIN).toISOString()}"`,
+      `period = "30m"`,
+    ]);
+    await scheduler.tickOnce();
+    const fired = await scheduler.fireNow(P, A, "report");
+    expect(fired).toEqual({ sessionId: "session-new-1", queued: false });
+    expect(started).toHaveLength(1);
+    expect(firings()).toEqual([{ session_id: "session-new-1", manual: 1 }]);
+    expect(events.map((e) => e.event.type)).toEqual(["schedule_fired"]);
+    // The slot tick afterwards is no extra run for the hand trigger: it fires scheduled.
+    nowMs = T0 + 61 * MIN;
+    await scheduler.tickOnce();
+    expect(firings()).toEqual([
+      { session_id: "session-new-1", manual: 1 },
+      { session_id: "session-new-2", manual: 0 },
+    ]);
+    expect(events.map((e) => e.event.type)).toEqual(["schedule_fired", "schedule_fired"]);
+  });
+
+  it("never consumes the schedule: a one-shot still fires on its slot afterwards", async () => {
+    await writeFile("once", [
+      `prompt = "once"`,
+      `enabled = true`,
+      `start_at = "${new Date(T0 + 60 * MIN).toISOString()}"`,
+    ]);
+    await scheduler.tickOnce();
+    const fired = await scheduler.fireNow(P, A, "once");
+    expect(fired.queued).toBe(false);
+    // The extra run is recorded as manual; the task itself is untouched and unarchived.
+    expect(firings()).toEqual([{ session_id: fired.sessionId, manual: 1 }]);
+    expect(repo.find(P, A, "once")).toMatchObject({ firedOnce: false });
+    expect(existsSync(path.join(scheduleDir(root, P, A), "once.toml"))).toBe(true);
+    nowMs = T0 + 61 * MIN;
+    await scheduler.tickOnce();
+    expect(started).toHaveLength(2);
+    expect(repo.find(P, A, "once")).toBeNull();
+  });
+
+  it("queues behind a busy bound session and answers queued", async () => {
+    sessions.insert({
+      sessionId: "session-1",
+      projectId: P,
+      agentId: A,
+      modelId: "m1",
+      provider: "custom",
+      workspace: "/tmp/w",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: new Date(nowMs).toISOString(),
+      lastActiveAt: new Date(nowMs).toISOString(),
+    });
+    busy.add("session-1");
+    await writeFile("bound", [
+      `prompt = "bound"`,
+      `enabled = true`,
+      `start_at = "${new Date(T0 + 60 * MIN).toISOString()}"`,
+      `period = "30m"`,
+      `session_id = "session-1"`,
+    ]);
+    await scheduler.tickOnce();
+    const fired = await scheduler.fireNow(P, A, "bound");
+    expect(fired).toEqual({ sessionId: "session-1", queued: true });
+    expect(started).toHaveLength(0);
+    expect(events.map((e) => e.event.type)).toEqual(["schedule_queued"]);
+  });
+
+  it("unknown names, invalid files and lost sessions throw coded errors; the lost one marks invalid", async () => {
+    await expect(scheduler.fireNow(P, A, "nope")).rejects.toMatchObject({
+      name: "ScheduleFireError",
+      code: "schedule_not_found",
+    });
+    await writeFile("broken", ["not = toml ="]);
+    await expect(scheduler.fireNow(P, A, "broken")).rejects.toMatchObject({
+      code: "schedule_invalid",
+    });
+    await writeFile("lost-bind", [
+      `prompt = "p"`,
+      `enabled = true`,
+      `start_at = "${new Date(T0 + 60 * MIN).toISOString()}"`,
+      `period = "30m"`,
+      `session_id = "session-nope"`,
+    ]);
+    await scheduler.tickOnce();
+    await expect(scheduler.fireNow(P, A, "lost-bind")).rejects.toMatchObject({
+      code: "schedule_session_missing",
+    });
+    expect(repo.find(P, A, "lost-bind")).toMatchObject({ invalidReason: "session_missing" });
+    expect(errors.some((e) => e.code === "schedule_session_missing")).toBe(true);
+    expect(firings()).toEqual([]);
   });
 });

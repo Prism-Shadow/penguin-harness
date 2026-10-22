@@ -3,6 +3,12 @@
  *   GET|POST   /api/projects/:p/agents/:a/schedules
  *   POST       /api/projects/:p/agents/:a/schedules/template-placeholder  # insert the {{SCHEDULES}} placeholder
  *   GET|PUT|DELETE /api/projects/:p/agents/:a/schedules/:name (name is the file name)
+ *   POST       /api/projects/:p/agents/:a/schedules/:name/fire  # fire once now (an extra run; never consumes the schedule)
+ *   POST|GET|PUT|DELETE /api/projects/:p/agents/:a/schedules/:name/webhook  # trigger mgmt
+ *   POST       /api/projects/:p/agents/:a/schedules/:name/webhook/rotate
+ *   GET        /api/projects/:p/agents/:a/schedules/:name/webhook/deliveries
+ *   POST       .../deliveries/:deliveryId/replay
+ * The public ingress lives in routes/webhooks.ts (POST /api/webhooks/schedules/:token).
  *   GET        /api/projects/:p/schedules  # every Agent's tasks in the Project, in one list
  * Any member can read; only the owner can modify. The file is declarative intent:
  * POST/PUT fully replace the file, validation always goes through parseScheduleFile
@@ -13,9 +19,18 @@
  * Settled tasks are archived by the scheduler, so no listing here ever shows one.
  */
 import { createHash } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type { ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "../../api/types.js";
+import type {
+  ProjectSchedulesResponse,
+  ScheduleItem,
+  SchedulesResponse,
+  ScheduleFireResponse,
+  ScheduleWebhookDeliveryListResponse,
+  ScheduleWebhookSecretView,
+  ScheduleWebhookView,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 
@@ -27,6 +42,7 @@ export interface SchedulesRouteDeps {
   access: Access;
   scheduler: Scheduling;
   schedulesRepo: Schedules;
+  webhooks: ScheduleWebhooksRepo;
 }
 import { HttpError } from "../errors.js";
 import {
@@ -51,9 +67,19 @@ import {
   validateScheduleModelRef,
   writeScheduleFile,
 } from "../../runtime/schedule-store.js";
-import { scheduleStatus } from "../../runtime/scheduler.js";
+import { scheduleStatus, ScheduleFireError } from "../../runtime/scheduler.js";
+import {
+  isWebhookProvider,
+  mintWebhookId,
+  mintWebhookToken,
+  replayWebhookDelivery,
+  secretHint,
+  webhookPath,
+} from "../../runtime/schedule-webhooks.js";
+import type { WebhookTriggerRow } from "../../db/repos/schedule-webhooks.js";
+import { ScheduleWebhooksRepo } from "../../db/repos/schedule-webhooks.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../../hmr/capabilities.js";
+import type { Config, Db } from "../../hmr/capabilities.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Schedules, Scheduling } from "../../mechanisms/sessions.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
@@ -145,6 +171,46 @@ function requireScheduleName(raw: string | undefined): string {
   return raw;
 }
 
+/**
+ * A webhook HMAC secret from the body: absent on create means bearer-only; null on
+ * update clears it back to bearer-only. Present secrets run 8..500 chars — shorter
+ * ones are typos, and the HMAC input is capped like every other request field.
+ */
+function readWebhookSecret(value: unknown, allowNull: boolean): string | null {
+  if (value === undefined) return null;
+  if (value === null && allowNull) return null;
+  if (typeof value !== "string" || value.length < 8 || value.length > 500) {
+    throw badRequest("secret must be a string 8..500 chars long.");
+  }
+  return value;
+}
+
+/** A bearer token no trigger holds: 192 bits of random per try, three tries. */
+function mintUniqueToken(deps: SchedulesRouteDeps, tries: number): string {
+  for (let i = 0; i < tries; i++) {
+    const token = mintWebhookToken();
+    if (deps.webhooks.getTriggerByToken(token) === null) return token;
+  }
+  throw new HttpError(500, "webhook_token_mint_failed", "Could not mint a unique webhook token.");
+}
+
+function toWebhookView(trigger: WebhookTriggerRow): ScheduleWebhookView {
+  return {
+    provider: trigger.provider,
+    enabled: trigger.enabled,
+    // Redacted: the path embeds the bearer token, so reading it would be reading
+    // the credential. Creation and rotation are the only answers that carry it.
+    path: "",
+    hasSecret: trigger.secret !== null,
+    secretHint: trigger.secret === null ? null : secretHint(trigger.secret),
+    lastFiredAt: trigger.lastFiredAt,
+  };
+}
+
+function toWebhookSecretView(trigger: WebhookTriggerRow, token: string): ScheduleWebhookSecretView {
+  return { ...toWebhookView(trigger), path: webhookPath(token), token };
+}
+
 export function scheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -223,6 +289,186 @@ export function scheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
       throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
     deps.scheduler.dropEntry(projectId, agentId, name);
     return c.body(null, 204);
+  });
+
+  // Fire once now (a hand trigger): the same dispatch as a due slot, but an extra run
+  // that never consumes the schedule — owner-only like every other write, member reads.
+  app.post("/:name/fire", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    await deps.agentConfigService.requireExists(projectId, agentId);
+    const name = requireScheduleName(c.req.param("name"));
+    try {
+      const fired = await deps.scheduler.fireNow(projectId, agentId, name);
+      const res: ScheduleFireResponse = { sessionId: fired.sessionId, queued: fired.queued };
+      return c.json(res);
+    } catch (err) {
+      if (err instanceof ScheduleFireError) {
+        if (err.code === "schedule_not_found") throw new HttpError(404, err.code, err.message);
+        if (err.code === "schedule_fire_failed") throw new HttpError(500, err.code, err.message);
+        throw new HttpError(400, err.code, err.message);
+      }
+      throw err;
+    }
+  });
+
+  // Webhook trigger for one schedule (Multica's "run from a webhook"): the POST below
+  // mints the bearer token (returned once — reads redact it), PUT rotates the shape,
+  // rotate mints a fresh token, deliveries lists the audit trail, replay re-fires one.
+  // Mutations are owner-only like every other write here; reads are member-level.
+  app.post("/:name/webhook", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    await deps.agentConfigService.requireExists(projectId, agentId);
+    const name = requireScheduleName(c.req.param("name"));
+    await readItem(deps, projectId, agentId, name);
+    const body = await readJson(c);
+    const provider = body.provider ?? "generic";
+    if (!isWebhookProvider(provider)) throw badRequest("provider must be generic or github.");
+    const secret = readWebhookSecret(body.secret, false);
+    if (deps.webhooks.getTrigger(projectId, agentId, name) !== null) {
+      throw new HttpError(409, "webhook_exists", `Schedule already has a webhook: ${name}`);
+    }
+    const now = new Date().toISOString();
+    const token = mintUniqueToken(deps, 3);
+    deps.webhooks.createTrigger({
+      id: mintWebhookId("wht"),
+      projectId,
+      agentId,
+      name,
+      token,
+      provider,
+      secret,
+      nowIso: now,
+    });
+    const created = deps.webhooks.getTrigger(projectId, agentId, name)!;
+    return c.json(toWebhookSecretView(created, token), 201);
+  });
+
+  app.get("/:name/webhook", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const name = requireScheduleName(c.req.param("name"));
+    const trigger = deps.webhooks.getTrigger(projectId, agentId, name);
+    if (trigger === null)
+      throw new HttpError(404, "webhook_not_found", "No webhook on this schedule.");
+    return c.json(toWebhookView(trigger));
+  });
+
+  app.put("/:name/webhook", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const name = requireScheduleName(c.req.param("name"));
+    const trigger = deps.webhooks.getTrigger(projectId, agentId, name);
+    if (trigger === null)
+      throw new HttpError(404, "webhook_not_found", "No webhook on this schedule.");
+    const body = await readJson(c);
+    const patch: { provider?: "generic" | "github"; secret?: string | null; enabled?: boolean } =
+      {};
+    if (body.provider !== undefined) {
+      if (!isWebhookProvider(body.provider))
+        throw badRequest("provider must be generic or github.");
+      patch.provider = body.provider;
+    }
+    if (body.secret !== undefined) patch.secret = readWebhookSecret(body.secret, true);
+    if (body.enabled !== undefined) {
+      if (typeof body.enabled !== "boolean") throw badRequest("enabled must be a boolean.");
+      patch.enabled = body.enabled;
+    }
+    deps.webhooks.updateTrigger(trigger.id, patch, new Date().toISOString());
+    return c.json(toWebhookView(deps.webhooks.getTrigger(projectId, agentId, name)!));
+  });
+
+  app.post("/:name/webhook/rotate", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const name = requireScheduleName(c.req.param("name"));
+    const trigger = deps.webhooks.getTrigger(projectId, agentId, name);
+    if (trigger === null)
+      throw new HttpError(404, "webhook_not_found", "No webhook on this schedule.");
+    const token = mintUniqueToken(deps, 3);
+    deps.webhooks.rotateToken(trigger.id, token, new Date().toISOString());
+    const rotated = deps.webhooks.getTrigger(projectId, agentId, name)!;
+    return c.json(toWebhookSecretView(rotated, token));
+  });
+
+  app.delete("/:name/webhook", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const name = requireScheduleName(c.req.param("name"));
+    const trigger = deps.webhooks.getTrigger(projectId, agentId, name);
+    if (trigger === null)
+      throw new HttpError(404, "webhook_not_found", "No webhook on this schedule.");
+    deps.webhooks.deleteTrigger(trigger.id);
+    return c.body(null, 204);
+  });
+
+  app.get("/:name/webhook/deliveries", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const name = requireScheduleName(c.req.param("name"));
+    const trigger = deps.webhooks.getTrigger(projectId, agentId, name);
+    if (trigger === null)
+      throw new HttpError(404, "webhook_not_found", "No webhook on this schedule.");
+    const rawLimit = c.req.query("limit") ?? "50";
+    if (!/^\d+$/.test(rawLimit)) throw badRequest("limit must be an integer 1..200.");
+    const res: ScheduleWebhookDeliveryListResponse = {
+      deliveries: deps.webhooks.listDeliveries(trigger.id, Number(rawLimit)).map((d) => ({
+        id: d.id,
+        dedupeKey: d.dedupeKey,
+        event: d.event,
+        signatureStatus: d.signatureStatus,
+        status: d.status,
+        firingId: d.firingId,
+        payload: d.payload,
+        createdAt: d.createdAt,
+        attemptCount: d.attemptCount,
+      })),
+    };
+    return c.json(res);
+  });
+
+  app.post("/:name/webhook/deliveries/:deliveryId/replay", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const name = requireScheduleName(c.req.param("name"));
+    const trigger = deps.webhooks.getTrigger(projectId, agentId, name);
+    if (trigger === null)
+      throw new HttpError(404, "webhook_not_found", "No webhook on this schedule.");
+    const delivery = deps.webhooks.getDelivery(requireValidId(c, "deliveryId"));
+    if (delivery === null || delivery.triggerId !== trigger.id) {
+      throw new HttpError(404, "delivery_not_found", "Delivery does not exist.");
+    }
+    try {
+      const replayed = await replayWebhookDelivery({
+        repo: deps.webhooks,
+        trigger,
+        delivery,
+        fire: (p, a, n) => deps.scheduler.fireNow(p, a, n),
+        nowIso: new Date().toISOString(),
+      });
+      return c.json({
+        status: "accepted",
+        delivery_id: replayed.deliveryId,
+        run_id: replayed.runId,
+        queued: replayed.queued,
+      });
+    } catch (err) {
+      if (err instanceof ScheduleFireError) {
+        if (err.code === "schedule_not_found") throw new HttpError(404, err.code, err.message);
+        if (err.code === "schedule_fire_failed") throw new HttpError(500, err.code, err.message);
+        throw new HttpError(400, err.code, err.message);
+      }
+      throw err;
+    }
   });
 
   return app;
@@ -335,6 +581,7 @@ export class SchedulerRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly scheduler!: Scheduling;
   @Use() private readonly schedulesRepo!: Schedules;
+  @Use() private readonly db!: Db;
   @Bind("SchedulerRoutes.routes") routes!: Hono<AppEnv>;
   @Bind("SchedulerRoutes.projectRoutes") projectRoutes!: Hono<AppEnv>;
   setup() {
@@ -345,6 +592,7 @@ export class SchedulerRoutes {
       access: this.access,
       scheduler: this.scheduler,
       schedulesRepo: this.schedulesRepo,
+      webhooks: new ScheduleWebhooksRepo(this.db as unknown as DatabaseSync),
     };
     this.routes = scheduleRoutes(deps);
     this.projectRoutes = projectScheduleRoutes(deps);

@@ -7,6 +7,8 @@
  *   past — is refused with 400 on POST and PUT, and nothing is written.
  * - Settled tasks are archived into schedule/expired/: absent from the agent and Project listings
  *   and from the agent card's scheduleCount.
+ * - POST /:name/fire is owner-only, answers the session it fired into, and maps
+ *   unknown names, invalid files and lost Sessions to coded 404/400s.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -388,5 +390,46 @@ describe("schedules api", () => {
 
     // Same access rule as the per-Agent list: an outsider is told the Project is not there.
     expect((await outsider.get(`/api/projects/${projectId}/schedules`)).status).toBe(404);
+  });
+
+  it("POST /:name/fire is owner-only; unknown names 404 with schedule_not_found", async () => {
+    expect((await member.post(`${base}/nope/fire`)).status).toBe(403);
+    const res = await owner.post(`${base}/nope/fire`);
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "schedule_not_found",
+    );
+  });
+
+  it("POST /:name/fire on an invalid file 400s with schedule_invalid", async () => {
+    const dir = scheduleDir(t.root, projectId, "default_agent");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "broken.toml"), "not = toml =", "utf8");
+    const res = await owner.post(`${base}/broken/fire`);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("schedule_invalid");
+  });
+
+  it("POST /:name/fire on a task bound to a missing Session 400s and marks it invalid", async () => {
+    expect(
+      (
+        await owner.post(base, {
+          name: "lost-bind",
+          prompt: "p",
+          enabled: true,
+          startAt: FUTURE,
+          period: "30m",
+          sessionId: "session-nope",
+        })
+      ).status,
+    ).toBe(201);
+    const res = await owner.post(`${base}/lost-bind/fire`);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "schedule_session_missing",
+    );
+    const item = (await (await owner.get(`${base}/lost-bind`)).json()) as ScheduleItem;
+    expect(item.status).toBe("invalid");
+    expect(item.invalidReason).toBe("session_missing");
   });
 });

@@ -111,6 +111,15 @@ export abstract class Schedules {
     firedAt: string,
     oneShot: boolean,
   ): void;
+  /** Links one firing to the session it went to (scheduled and manual alike). */
+  abstract recordFiring(
+    projectId: string,
+    agentId: string,
+    name: string,
+    sessionId: string,
+    firedAt: string,
+    manual: boolean,
+  ): void;
   abstract markMissed(projectId: string, agentId: string, name: string): void;
   abstract markInvalid(projectId: string, agentId: string, name: string, reason: string): void;
   abstract delete(projectId: string, agentId: string, name: string): void;
@@ -136,4 +145,10 @@ export abstract class Scheduling {
     invalid: Array<{ agentId: string; name: string; error: string }>;
   }>;
   abstract dropEntry(projectId: string, agentId: string, name: string): void;
+  /** Fires one task once now, outside its slots; unknown names throw like a missing task. */
+  abstract fireNow(
+    projectId: string,
+    agentId: string,
+    name: string,
+  ): Promise<{ sessionId: string; queued: boolean }>;
 }

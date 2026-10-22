@@ -66,6 +66,8 @@ import { sessionsKeptAt } from "./steps/2026-10-12-sessions-kept-at.js";
 import { agentApiConcurrency } from "./steps/2026-10-14-agent-api-concurrency.js";
 import { agentApiSessionSettings } from "./steps/2026-10-14-agent-api-session-settings.js";
 import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
+import { scheduleFirings } from "./steps/2026-10-20-schedule-firings.js";
+import { scheduleWebhooks } from "./steps/2026-10-20-schedule-webhooks.js";
 
 export type { Migration } from "./migration.js";
 export { IrreversibleMigrationError, UnknownMigrationError, appliedMigrations } from "./runner.js";
@@ -97,6 +99,8 @@ export const MIGRATIONS: readonly Migration[] = [
   agentApiSessionSettings,
   agentApiConcurrency,
   machinesAdoptedAt,
+  scheduleFirings,
+  scheduleWebhooks,
 ];
 
 /**
