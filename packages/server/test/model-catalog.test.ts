@@ -2,53 +2,58 @@
  * Built-in model catalog unit tests: unique ids, valid provider references, positive
  * three-bucket pricing, lookups, preset entry generation, and the price a model that was the
  * default of new Projects keeps for its usage after a Project drops its row.
- * Given a new Project, GPT-6 Luna assembles a Responses tool request with the installed
- * MMSP through OpenAI, OpenRouter and OpenCode Go without a dependency upgrade.
+ * Given a new Project, GPT-6 Luna sends a Responses tool request through core's GenerativeModel
+ * and the installed MMSP, through OpenAI, OpenRouter and OpenCode Go.
  * Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
  * Go's generateContent endpoint with the group key and conversation header, never Google's API.
  */
 import { describe, expect, it, vi } from "vitest";
-import { AutoLLMClient } from "@prismshadow/mmsp";
-import { CLIENT_CREDENTIALS, routedClientType } from "@prismshadow/mmsp/credentials";
+import { CLIENT_CREDENTIALS } from "@prismshadow/mmsp/credentials";
+import { stubFetch } from "./fixtures/fetch.js";
 import {
   APP_URL,
+  GenerativeModel,
+  attributionHeaders,
+  userText,
+  canonicalClientType,
+  effectiveConnection,
+  providerConnectionShape,
+  resolveEntryCredential,
+  sameEndpoint,
+} from "@prismshadow/penguin-core";
+import type { ModelEntry, ProviderConnection, ProviderTable } from "@prismshadow/penguin-core";
+import {
   CLIENT_PROTOCOLS,
+  DEEPSEEK_OFF_PEAK,
   MODEL_CATALOG,
   MODEL_PROVIDERS,
-  canonicalClientType,
-  modelHomepageUrl,
-  catalogEntryFor,
-  attributionHeaders,
-  effectivePricing,
-  offPeakAt,
-  offPeakScheduledRefs,
-  DEEPSEEK_OFF_PEAK,
+  PENGUIN_GO_BASE_URL,
+  PRESET_DEFAULT_MODEL,
   QWEN_OFF_PEAK,
+  catalogEntryFor,
   catalogGroupConnection,
   catalogModelEntries,
-  effectiveConnection,
-  presetModelEntries,
-  presetPromotions,
-  presetProviderTable,
-  defaultProjectConfig,
-  retainedCatalogPricing,
-  providerClientType,
-  providerConnectionShape,
-  providerInfo,
+  effectivePricing,
   fastModeProtocol,
   isAddableGroup,
   isVendorGroup,
-  PENGUIN_GO_BASE_URL,
   modelEnvPreviewKey,
   modelEnvironment,
+  modelHomepageUrl,
+  offPeakAt,
+  offPeakScheduledRefs,
+  presetModelEntries,
+  presetPromotions,
+  presetProviderTable,
+  providerClientType,
   providerEnvFallbackKey,
-  resolveEntryCredential,
-  sameEndpoint,
+  providerInfo,
+  retainedCatalogPricing,
+  routedClientType,
   unaddableModel,
   unroutableVendorModel,
   vendorClientType,
-} from "../src/state/index.js";
-import type { ModelEntry, ProviderConnection, ProviderTable } from "../src/state/index.js";
+} from "../src/model-catalog/index.js";
 
 /**
  * What a stored row is used with, the way a Session builds it: the row's own values, then its
@@ -271,64 +276,75 @@ describe("model-catalog", () => {
     });
   });
 
+  const GET_NUMBER = {
+    name: "get_number",
+    description: "Read a number.",
+    parameters: { type: "object", properties: {} },
+  };
+  /** Runs one request of `model` to its end, whatever the stubbed endpoint answers. */
+  async function runOnce(model: GenerativeModel): Promise<void> {
+    const stream = model.streamGenerate({ newMessages: [userText("Read a number.")] });
+    while (!(await stream.next()).done) {
+      // Drain: only the request the client sent matters here.
+    }
+  }
+
   it.each(["openai", "openrouter", "opencode-go"])(
-    "a new Project can assemble GPT-6 Luna tool requests through %s with the installed MMSP",
-    (provider) => {
+    "a new Project's GPT-6 Luna row sends a Responses tool request through %s with the installed MMSP",
+    async (provider) => {
       const modelId = provider === "openrouter" ? "openai/gpt-6-luna" : "gpt-6-luna";
       const entry = presetModelEntries().find(
         (row) => row.provider === provider && row.model_id === modelId,
       )!;
       expect(entry).toBeDefined();
       const connection = storedConnection(entry);
-      const client = new AutoLLMClient({
-        model: entry.model_id,
-        apiKey: "test-key",
-        clientType: connection.clientType,
-        baseUrl: connection.baseUrl,
-      });
-      const request = client.transformUniConfigToModelConfig({
-        tools: [
-          {
-            name: "get_number",
-            description: "Read a number.",
-            parameters: { type: "object", properties: {} },
-          },
-        ],
-        tool_choice: "required",
-      });
-      expect(request.model).toBe(modelId);
-      expect(request.tools).toEqual([
-        {
-          type: "function",
-          name: "get_number",
-          description: "Read a number.",
-          parameters: { type: "object", properties: {} },
-        },
-      ]);
-      expect(request.tool_choice).toBe("required");
-      expect(request.store).toBe(false);
+      const fake = stubFetch(
+        () =>
+          new Response(JSON.stringify({ error: { message: "test-reject" } }), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      try {
+        await runOnce(
+          new GenerativeModel({
+            modelId: entry.model_id,
+            apiKey: "test-key",
+            ...(connection.clientType ? { clientType: connection.clientType } : {}),
+            ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
+            tools: [GET_NUMBER],
+          }),
+        );
+        expect(fake.calls.length).toBeGreaterThan(0);
+        const request = JSON.parse(fake.calls[0]!.body) as Record<string, unknown>;
+        expect(fake.calls[0]!.url.endsWith("/responses")).toBe(true);
+        expect(request.model).toBe(modelId);
+        expect(request.tools).toEqual([
+          expect.objectContaining({ type: "function", ...GET_NUMBER }),
+        ]);
+        expect(request.store).toBe(false);
+      } finally {
+        vi.unstubAllGlobals();
+      }
     },
   );
 
   it("Go's Gemini preset streams tool calls with the group key and session through generateContent", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => {
-      const chunk = {
-        usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 4, totalTokenCount: 16 },
-        candidates: [
-          {
-            content: {
-              role: "model",
-              parts: [{ functionCall: { name: "get_number", args: {} } }],
-            },
-            finishReason: "STOP",
-          },
-        ],
-      };
-      return new Response(`data: ${JSON.stringify(chunk)}\n\n`, {
-        headers: { "content-type": "text/event-stream" },
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    const chunk = {
+      usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 4, totalTokenCount: 16 },
+      candidates: [
+        {
+          content: { role: "model", parts: [{ functionCall: { name: "get_number", args: {} } }] },
+          finishReason: "STOP",
+        },
+      ],
+    };
+    const fake = stubFetch(
+      () =>
+        new Response(`data: ${JSON.stringify(chunk)}\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
     try {
       const entry = presetModelEntries().find(
         (row) => row.provider === "opencode-go" && row.model_id === "gemini-4-argon-contributor",
@@ -337,46 +353,32 @@ describe("model-catalog", () => {
       const table = presetProviderTable();
       table[entry.provider]!.api_key = "sk-go-group";
       const connection = storedConnection(entry, table);
-      const client = new AutoLLMClient({
-        model: entry.model_id,
-        apiKey: connection.apiKey,
-        clientType: connection.clientType,
-        baseUrl: connection.baseUrl,
-        defaultHeaders: attributionHeaders(connection.baseUrl, "go-gemini-session"),
+      const model = new GenerativeModel({
+        modelId: entry.model_id,
+        apiKey: connection.apiKey!,
+        clientType: connection.clientType!,
+        baseUrl: connection.baseUrl!,
+        sessionId: "go-gemini-session",
+        tools: [GET_NUMBER],
       });
-      const events = [];
-      for await (const event of client.streamingResponse({
-        messages: [
-          { role: "user", content_items: [{ type: "text.done", text: "Read a number." }] },
-        ],
-        config: {
-          tools: [
-            {
-              name: "get_number",
-              description: "Read a number.",
-              parameters: { type: "object", properties: {} },
-            },
-          ],
-          tool_choice: "required",
-        },
-      })) {
-        events.push(event);
+      const stream = model.streamGenerate({ newMessages: [userText("Read a number.")] });
+      const produced = [];
+      for (let next = await stream.next(); !next.done; next = await stream.next()) {
+        produced.push(next.value);
       }
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      const request = new Request(...fetchMock.mock.calls[0]!);
-      expect(request.url).toBe(
+      expect(fake.calls).toHaveLength(1);
+      const call = fake.calls[0]!;
+      expect(call.url).toBe(
         "https://opencode.ai/inference/go/google/v1beta/models/gemini-4-argon-contributor:streamGenerateContent?alt=sse",
       );
-      expect(request.headers.get("x-goog-api-key")).toBe("sk-go-group");
-      expect(request.headers.get("x-opencode-session")).toBe("go-gemini-session");
-      expect(await request.json()).toMatchObject({
+      expect(call.headers.get("x-goog-api-key")).toBe("sk-go-group");
+      expect(call.headers.get("x-opencode-session")).toBe("go-gemini-session");
+      expect(JSON.parse(call.body)).toMatchObject({
         tools: [{ functionDeclarations: [{ name: "get_number" }] }],
-        toolConfig: { functionCallingConfig: { mode: "ANY" } },
       });
-      expect(events.flatMap((event) => event.content_items)).toContainEqual(
-        expect.objectContaining({ type: "tool_call.done", name: "get_number", arguments: {} }),
+      expect(produced.map((m) => m.payload)).toContainEqual(
+        expect.objectContaining({ type: "tool_call", name: "get_number" }),
       );
-      expect(events.at(-1)?.finish_reason).toBe("tool_call");
     } finally {
       vi.unstubAllGlobals();
     }
@@ -1670,6 +1672,19 @@ describe("MMSP's clients as the catalog reads them", () => {
     expect(Object.keys(CLIENT_PROTOCOLS).sort()).toEqual(Object.keys(CLIENT_CREDENTIALS).sort());
   });
 
+  it("a stored gemini-official, google-official's earlier name, is used exactly as google-official would be", () => {
+    // MMSP keeps the alias; the models page, the server and the CLI accept it alike, with
+    // google-official's variable and fast tier.
+    expect(unroutableVendorModel("google", "gemini-3.8-flash", "gemini-official")).toBe(false);
+    expect(
+      modelEnvPreviewKey(
+        { provider: "google", modelId: "gemini-3.8-flash", clientType: "gemini-official" },
+        undefined,
+      ),
+    ).toBe("GEMINI_API_KEY");
+    expect(fastModeProtocol("gemini-3.8-flash", "gemini-official")).toBe("openai");
+  });
+
   it("vendorClientType: a first-party vendor group's official client, and none for any other group", () => {
     expect(
       Object.fromEntries(
@@ -1987,78 +2002,7 @@ describe("fastModeProtocol (which models may be offered MMSP's fast_mode, and on
   });
 });
 
-describe("attributionHeaders (how the harness names itself to the gateways that read it)", () => {
-  it("OpenRouter gets its three attribution headers, on the preset base URL and on any custom one", () => {
-    const expected = {
-      "HTTP-Referer": "https://penguin.ooo/",
-      "X-OpenRouter-Title": "PenguinHarness",
-      "X-OpenRouter-Categories": "cli-agent,personal-agent",
-    };
-    expect(attributionHeaders(providerInfo("openrouter")!.gatewayBaseUrl)).toEqual(expected);
-    // The host decides, not the catalog: an entry filed under custom that points at the same
-    // gateway is the same app calling it.
-    expect(attributionHeaders("https://openrouter.ai/api/v1/")).toEqual(expected);
-    // `URL` keeps a fully-qualified trailing dot in `hostname`; it names the same server.
-    expect(attributionHeaders("https://openrouter.ai./api/v1")).toEqual(expected);
-    // OpenRouter accepts at most two categories per request and drops anything unrecognised.
-    expect(expected["X-OpenRouter-Categories"].split(",")).toHaveLength(2);
-  });
-
-  it("TokenDance gets the single X-App-URL header", () => {
-    expect(attributionHeaders(providerInfo("tokendance")!.gatewayBaseUrl)).toEqual({
-      "X-App-URL": "https://penguin.ooo/",
-    });
-  });
-
-  it("OpenCode always gets the session header: the Session's id, or a fresh random one", () => {
-    const sessionId = "session-2026-09-14-10-30-00-a1b2c3d4";
-    expect(attributionHeaders("https://opencode.ai/zen/v1", sessionId)).toEqual({
-      "x-opencode-session": sessionId,
-    });
-    // Same suffix-anchored host rule as the other two: a subdomain is the same gateway.
-    expect(attributionHeaders("https://api.opencode.ai/v1", sessionId)).toEqual({
-      "x-opencode-session": sessionId,
-    });
-    // No id — a connectivity test, a vision probe — still names a conversation, since the
-    // gateway refuses a request that names none: a fresh random id each time, never one
-    // constant that would file every such request under a single session.
-    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-    const first = attributionHeaders("https://opencode.ai/zen/v1")?.["x-opencode-session"];
-    const second = attributionHeaders("https://opencode.ai/zen/v1", "")?.["x-opencode-session"];
-    expect(first).toMatch(uuid);
-    expect(second).toMatch(uuid);
-    expect(first).not.toBe(second);
-    // A host outside the scheme gets nothing, whatever path it serves: third-party mirrors of
-    // a gateway are not part of the built-in attribution, and naming one here would put it in
-    // the repository just as surely as listing it would.
-    expect(attributionHeaders("https://gateway.example.com/zen/go", sessionId)).toBeUndefined();
-  });
-
-  it("a session id leaves the app-attribution gateways exactly as they were", () => {
-    const sessionId = "session-2026-09-14-10-30-00-a1b2c3d4";
-    expect(attributionHeaders("https://openrouter.ai/api/v1", sessionId)).toEqual({
-      "HTTP-Referer": "https://penguin.ooo/",
-      "X-OpenRouter-Title": "PenguinHarness",
-      "X-OpenRouter-Categories": "cli-agent,personal-agent",
-    });
-    expect(attributionHeaders("https://tokendance.space/gateway/v1", sessionId)).toEqual({
-      "X-App-URL": "https://penguin.ooo/",
-    });
-  });
-
-  it("every other endpoint gets no extra headers, and a blank or unparseable base URL is inert", () => {
-    expect(attributionHeaders("https://api.deepseek.com")).toBeUndefined();
-    expect(attributionHeaders("https://api.siliconflow.cn/v1")).toBeUndefined();
-    expect(attributionHeaders(undefined)).toBeUndefined();
-    expect(attributionHeaders("   ")).toBeUndefined();
-    expect(attributionHeaders("not a url")).toBeUndefined();
-    // Suffix-anchored host matching: a lookalike domain is not the gateway.
-    expect(attributionHeaders("https://notopenrouter.ai/api/v1")).toBeUndefined();
-    expect(attributionHeaders("https://tokendance.space.example.com/v1")).toBeUndefined();
-    // Stripping the trailing dot must not widen that anchoring.
-    expect(attributionHeaders("https://openrouter.ai.attacker.com./v1")).toBeUndefined();
-  });
-
+describe("attribution on the catalog's endpoints (core's attributionHeaders)", () => {
   it("catalog invariant: every gateway row whose host runs an attribution scheme carries it", () => {
     const sessionId = "session-2026-09-17-10-30-00-a1b2c3d4";
     for (const m of MODEL_CATALOG) {
@@ -2157,7 +2101,7 @@ describe("off-peak schedules", () => {
   });
 
   it("usage on the default model of new Projects keeps a price once a Project drops its row, and so does every former default; any other model's does not", () => {
-    const ref = defaultProjectConfig().default_model!;
+    const ref = PRESET_DEFAULT_MODEL;
     expect(retainedCatalogPricing(ref.provider, ref.model_id)).toEqual(
       catalogEntryFor(ref.provider, ref.model_id)!.pricing,
     );

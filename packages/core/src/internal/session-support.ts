@@ -52,6 +52,14 @@ export function formatSessionId(date: Date = new Date()): string {
 }
 
 /**
+ * Whether `id` can name a Session's Trace files: 1–128 letters, digits, `-` and `_`, so it can
+ * never reach outside the Trace directory. Every id {@link formatSessionId} mints qualifies.
+ */
+export function isSessionIdToken(id: string): boolean {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(id);
+}
+
+/**
  * Generate this Session's runtime environment fields (injected via specific
  * placeholders in the system prompt).
  * This is system-generated runtime context, not sourced from Agent State / Workspace files.

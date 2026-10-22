@@ -10,7 +10,7 @@
 import { randomBytes } from "node:crypto";
 import { userAgent } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import { PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
+import { PENGUIN_GO_PROVIDER_ID } from "../model-catalog/catalog.js";
 import { HttpError } from "../http/errors.js";
 import { normalizePenguinGoOrigin } from "../config.js";
 import { Config } from "../hmr/capabilities.js";

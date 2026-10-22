@@ -26,7 +26,7 @@ export interface ProjectBenchmarks {
  */
 export function useProjectBenchmarks(projectId: string): ProjectBenchmarks {
   const { value, failed } = useFreshRead(benchmarkLists, projectId, async () => {
-    const res = await api.listBenchmarks(projectId);
+    const res = await api.listBenchmarks(projectId, null);
     return res.benchmarks;
   });
   return { benchmarks: value, failed };

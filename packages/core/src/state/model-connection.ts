@@ -13,24 +13,14 @@
  * client, which calls an open server keyless. Core never reads an environment variable and
  * never decides who may use one.
  *
- * This file imports no Node built-ins (type-only imports only), so the Web App bundles it
+ * Its one runtime import is client-type.ts, which imports nothing, so the Web App bundles it
  * through the `@prismshadow/penguin-core/model-connection` subpath.
  */
+import { canonicalClientType } from "./client-type.js";
 import type { ModelEntry, ProviderConnection } from "./project-config.js";
 
-/**
- * Canonical spelling of an MMSP client-type string. The generic Chat Completions client was
- * renamed from `openai` to `openai-chat` (AgentHub 0.4.2); the bare `openai` spelling still
- * routes upstream as a deprecated alias, but the harness converges on the canonical name —
- * config reads/writes and API request handling all normalize through here, so configs saved
- * before the rename keep working while comparisons (legacy-protocol display, catalog sync)
- * see one spelling. Any other value (including `openai-responses` / `openai-embedding`,
- * which merely contain "openai") passes through unchanged.
- */
-export function canonicalClientType(clientType: string | undefined): string | undefined {
-  if (clientType === undefined) return undefined;
-  return clientType.trim().toLowerCase() === "openai" ? "openai-chat" : clientType;
-}
+// How a stored client type is spelled and compared travels with this browser-safe subpath.
+export { canonicalClientType, sameClientType } from "./client-type.js";
 
 /**
  * Endpoint equality: scheme and host compared case-insensitively (with the port), the path
@@ -47,12 +37,6 @@ export function sameEndpoint(a: string, b: string): boolean {
   };
   const na = norm(a);
   return na !== undefined && na === norm(b);
-}
-
-/** Client-type equality as routing sees it: canonical spelling (canonicalClientType), case and surrounding space ignored. */
-export function sameClientType(a: string, b: string): boolean {
-  const norm = (value: string): string => canonicalClientType(value.trim())!.toLowerCase();
-  return norm(a) === norm(b);
 }
 
 /** What the connection rules read off a model entry: the paired reference, the pinned protocol and the endpoint. */

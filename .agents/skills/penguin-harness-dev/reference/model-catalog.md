@@ -1,8 +1,12 @@
 # Changing the built-in model catalog
 
-Loaded on demand from `SKILL.md`. `packages/core/src/state/model-catalog.ts` is the single source
-of truth for presets, shared by core's defaults, the server's initial config, and web/CLI display.
-It is a *catalog*, not a routing table — MMSP owns routing.
+Loaded on demand from `SKILL.md`. `packages/server/src/model-catalog/catalog.ts` is the single
+source of truth for presets: the server seeds a new Project's config from it (`seed.ts`), and the
+Web App, the CLI and the gallery display it through the browser-safe subpath
+`@prismshadow/penguin-server/model-catalog` (`index.ts`). What the UI shows about MMSP's clients
+is `client-protocols.ts`, and the variable names the UI previews are `env-keys.ts`, both asked of
+MMSP's credentials module. Core never reads any of it (see the core rule in `SKILL.md`). It is a
+*catalog*, not a routing table — MMSP owns routing and the environment-key rule.
 
 ## Pricing
 
@@ -35,14 +39,14 @@ It is a *catalog*, not a routing table — MMSP owns routing.
 - A provider group is split only when the vendor genuinely has separate endpoints or billing paths
   (Qwen Token Plan vs Pay-As-You-Go). One endpoint serving several key types is one group.
 - MMSP owns routing and the environment-key rule, and exports both from its pure, browser-safe
-  `@prismshadow/mmsp/credentials`: which client an entry reaches (`routedClientType`, which the
-  catalog re-exports) and what that client does with no key (`environmentCredential`). Keep no
-  copy of either and no environment or refusal logic in the harness: core hands MMSP the file's
-  key, base URL and client type verbatim, and the previews (`modelEnvironment`,
-  `modelEnvPreviewKey`, `providerEnvFallbackKey`, `clientEnvKey`) ask MMSP's credentials module.
-  Only what MMSP exports nothing for lives here: each client's request path and fast-mode
-  protocol (`CLIENT_PROTOCOLS`, which a test holds to MMSP's client list, so a new MMSP client
-  needs a row).
+  `@prismshadow/mmsp/credentials`: which client an entry reaches (`routedClientType`, which
+  `client-protocols.ts` re-exports) and what that client does with no key
+  (`environmentCredential`). Keep no copy of either and no environment or refusal logic in the
+  harness: core hands MMSP the file's key, base URL and client type verbatim, and the previews in
+  `env-keys.ts` (`modelEnvironment`, `modelEnvPreviewKey`, `providerEnvFallbackKey`,
+  `clientEnvKey`) ask MMSP's credentials module. Only what MMSP exports nothing for lives here:
+  each client's request path and fast-mode protocol (`CLIENT_PROTOCOLS` in `client-protocols.ts`,
+  which a test holds to MMSP's client list, so a new MMSP client needs a row).
 
 ## What a change touches
 
@@ -54,8 +58,8 @@ Provider glyphs are one monochrome family: 24×24, `currentColor`, pure paths, n
 A vendor's own mark goes in with its colours flattened, the way Qwen's gradient wordmark already
 is — a single coloured glyph in that row reads as a mistake.
 
-**Moving the default reaches further than adding a model.** `defaultProjectConfig()` in
-`packages/core/src/state/project-config.ts` holds it, and six documented first-run commands pin it
+**Moving the default reaches further than adding a model.** `PRESET_DEFAULT_MODEL` in the catalog
+holds it (core's `defaultProjectConfig()` carries no model at all), and six documented first-run commands pin it
 by hand — `README.md`, `README.zh.md`, and `quickstart-cli` / `quickstart-sdk` in both languages —
 each ending `--set-default`, which writes `default_model`. Leave them on the old id and the
 documented first run silently undoes the change on every fresh install. The `models` and
@@ -66,6 +70,17 @@ default's catalog row `wasDefault: true` and leave the marker on the old one: "R
 deletes every row that is not a preset, and the marker is what keeps usage on a former default
 priced afterwards (`retainedCatalogPricing`). The old row therefore stays in the catalog, retired
 once it stops being a preset.
+
+## Who may use the environment
+
+Who may use an environment key is MMSP's rule (PRN-021), and the harness holds no copy of it: a
+row with no key in the file is handed no key, and MMSP's routed client reads its `*_API_KEY` only
+for no base URL or its own default endpoint, refusing any other base URL. So a first-party vendor
+group gets no table in the seed (`catalogGroupConnection` gives it none), and a new vendor group
+whose ids route by family needs nothing else to read its vendor's variable. The catalog only
+names the variable for the previews (`env-keys.ts`, which calls MMSP's `environmentCredential`);
+it decides nothing about who may use it. Gateways and the third-party adapters (Penguin Go,
+ModelScope) carry a base URL on their group, so their keys come from the config.
 
 Existing Projects never migrate automatically: presets are copied into `.project_config.toml` at
 creation and nothing rewrites them. Users pick changes up through the models page's explicit "sync

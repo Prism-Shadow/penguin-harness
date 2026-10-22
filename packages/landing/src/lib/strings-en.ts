@@ -46,9 +46,12 @@ export const en: Strings = {
   hero: {
     positioning: "Unified and Stable RSI Framework",
     badge: "for free",
-    /** No-break spaces keep each "any …" pair on one line when a phone wraps the tagline. */
+    /**
+     * No-break spaces keep each "any …" pair on one line, and each dot at the end of its line,
+     * when a phone wraps the tagline.
+     */
     automation:
-      "Fully automatic optimization: any\u00a0model, any\u00a0algorithm, any\u00a0benchmark",
+      "Fully automatic optimization: any\u00a0model\u00a0· any\u00a0algorithm\u00a0· any\u00a0benchmark",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [

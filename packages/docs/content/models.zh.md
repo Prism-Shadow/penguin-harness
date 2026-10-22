@@ -476,7 +476,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 ## 内置供应商分组
 
-下表列出了各个内置分组，以及新建 Project 不写 base URL 的七个一方厂商分组在模型和分组都没有 key、且没有厂商缺省端点以外的 base URL 时使用的环境变量；其余分组不使用任何环境变量（—）。模型目录的源码位于 `packages/core/src/state/model-catalog.ts`。每个变量还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。网关分组带 base URL，其条目因此**从不回退**：网关的协议客户端读取 `OPENAI_*`（或 `ANTHROPIC_*`），里面存的是你的厂商 key，这把 key 不会被发往网关（见[设置 API key](#设置-api-key)）。
+下表列出了各个内置分组，以及新建 Project 不写 base URL 的七个一方厂商分组在模型和分组都没有 key、且没有厂商缺省端点以外的 base URL 时使用的环境变量；其余分组不使用任何环境变量（—）。模型目录的源码位于 `packages/server/src/model-catalog/`。每个变量还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。网关分组带 base URL，其条目因此**从不回退**：网关的协议客户端读取 `OPENAI_*`（或 `ANTHROPIC_*`），里面存的是你的厂商 key，这把 key 不会被发往网关（见[设置 API key](#设置-api-key)）。
 
 | 供应商 | API key 环境变量 | 说明 |
 | --- | --- | --- |
@@ -645,7 +645,7 @@ api_key = "sk-..."
 
 有些网关会读取一个请求头，把调用记到发起调用的应用名下，用于自己的应用排行、用量报告或路由。
 
-模型目录按**端点主机**决定这些请求头，而不是按条目所属的供应商分组。归在 custom 下的条目，只要 base URL 指向这类网关，就会带上同样的请求头。只看条目自己的 `base_url`：通过 `OPENAI_BASE_URL` 提供的端点在 MMSP 内部解析，条目这一侧看不到，因此不会归因。
+core 按**端点主机**决定这些请求头（`packages/core/src/llm/app-attribution.ts`），而不是按条目所属的供应商分组。归在 custom 下的条目，只要 base URL 指向这类网关，就会带上同样的请求头。只看条目自己的 `base_url`：通过 `OPENAI_BASE_URL` 提供的端点在 MMSP 内部解析，条目这一侧看不到，因此不会归因。
 
 | 端点 | 请求头 | 值 |
 | --- | --- | --- |

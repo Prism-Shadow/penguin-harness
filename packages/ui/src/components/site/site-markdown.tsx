@@ -8,8 +8,14 @@
  * module-level constants: react-markdown uses each component as an element type and re-runs its
  * pipeline on a new plugin list, so a fresh object per render remounts the body.
  *
- * `variant` picks the heading and table rhythm: `post` for a blog post's flowing text, `doc` for
- * a reference page's ruled sections and plain tables.
+ * Tables are the one thing the renderer adds to the host's rehype stage rather than leaving to
+ * it: `rehypeMarkdownTables` runs after the host's own plugins (after the blog's `rehype-raw`, so
+ * a table written as raw HTML is shaped too), boxing every table and classifying its cells for
+ * markdown-table.css, exactly as a chat reply's are. The list is rebuilt only when the host's own
+ * list changes, so a host's module-level constant keeps one pipeline.
+ *
+ * `variant` picks the heading rhythm: `post` for a blog post's flowing text, `doc` for a
+ * reference page's ruled sections.
  */
 import { useMemo } from "react";
 import Markdown from "react-markdown";
@@ -17,7 +23,8 @@ import type { Components, Options } from "react-markdown";
 import { nodeText, parseTabLabels, readFencedCode, slugifyHeading } from "./markdown-text";
 import type { HastElement } from "./markdown-text";
 import type { CodeHighlighter } from "../content/code-block/highlight-options";
-import { SITE_REMARK_PLUGINS } from "../content/prose/markdown-plugins";
+import { SITE_REHYPE_PLUGINS, SITE_REMARK_PLUGINS } from "../content/prose/markdown-plugins";
+import { rehypeMarkdownTables } from "../content/prose/markdown-table";
 import { remarkCallout } from "./remark-callout";
 import { remarkTabs } from "./remark-tabs";
 import { SiteCodeBlock, SiteCodeHighlight, SiteCodeTabs } from "./site-code";
@@ -81,6 +88,7 @@ export function SiteMarkdown({
   children: string;
   variant: "post" | "doc";
   remarkPlugins?: Options["remarkPlugins"];
+  /** The host's own rehype stage; the table pass is appended after it. */
   rehypePlugins?: Options["rehypePlugins"];
   /** The host's element adapters (links, images), laid over the shared ones. */
   components?: Components;
@@ -90,10 +98,17 @@ export function SiteMarkdown({
   className?: string;
 }) {
   const merged = useMemo(() => ({ ...BASE_COMPONENTS, ...components }), [components]);
+  const rehype = useMemo(
+    () =>
+      rehypePlugins === undefined || rehypePlugins === null
+        ? SITE_REHYPE_PLUGINS
+        : [...rehypePlugins, rehypeMarkdownTables],
+    [rehypePlugins],
+  );
   return (
     <div className={`site-prose ${className}`} data-variant={variant}>
       <SiteCodeHighlight.Provider value={highlight ?? null}>
-        <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={merged}>
+        <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehype} components={merged}>
           {children}
         </Markdown>
       </SiteCodeHighlight.Provider>

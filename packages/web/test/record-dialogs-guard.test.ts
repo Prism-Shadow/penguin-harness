@@ -70,6 +70,7 @@ describe("record dialogs", () => {
       machineId: null,
       local: false,
       connection: null,
+      socket: null,
       api: null,
       status: null,
       root: "$HOME/.penguin/data",
