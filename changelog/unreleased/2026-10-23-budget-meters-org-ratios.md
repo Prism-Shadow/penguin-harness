@@ -3,7 +3,7 @@
 - **Date:** 2026-10-23
 - **Type:** fix
 - **Scope:** `server`, `web`
-- **PR:** [#1273](https://github.com/Prism-Shadow/penguin-harness/pull/1273)
+- **PR:** [#1280](https://github.com/Prism-Shadow/penguin-harness/pull/1280)
 
 [中文版](2026-10-23-budget-meters-org-ratios.zh.md)
 
