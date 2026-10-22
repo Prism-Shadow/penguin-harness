@@ -427,7 +427,7 @@ export function BenchmarkPage() {
     if (!projectId) return;
     let cancelled = false;
     api
-      .getModels(projectId)
+      .getModels(projectId, null)
       .then((res) => {
         if (!cancelled) setModels(res);
       })

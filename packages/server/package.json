@@ -18,6 +18,10 @@
       "types": "./dist/api/types.d.ts",
       "import": "./dist/api/types.js"
     },
+    "./model-catalog": {
+      "types": "./dist/model-catalog.d.ts",
+      "import": "./dist/model-catalog.js"
+    },
     "./machine-status": {
       "types": "./dist/machine-status.d.ts",
       "import": "./dist/machine-status.js"
@@ -72,6 +76,7 @@
     "@hono/node-server": "^2.0.5",
     "@larksuiteoapi/node-sdk": "^1.73.0",
     "@prismshadow/amsp": "workspace:*",
+    "@prismshadow/mmsp": "^0.5.4",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",
     "dotenv": "^17.0.0",

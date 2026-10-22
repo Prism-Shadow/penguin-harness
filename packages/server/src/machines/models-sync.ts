@@ -21,7 +21,7 @@
  */
 import type { MachineApi } from "./machine-api.js";
 import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
-import { modelEnvironment } from "@prismshadow/penguin-core/model-catalog";
+import { modelEnvironment } from "../model-catalog/env-keys.js";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,

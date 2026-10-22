@@ -14,7 +14,7 @@
  * pointer too, so the dialog returns focus to the gear when it closes.
  */
 import { useRef, useState } from "react";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import {
   Button,
   Dropdown,

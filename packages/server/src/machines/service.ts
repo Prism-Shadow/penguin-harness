@@ -48,6 +48,7 @@ import type {
   MachineReconnect,
   MachineServerStatus,
   MachineSshFailure,
+  MachineSocketFact,
   MachineUseRefusal,
   MachinesCheckoutImage,
   ServerEvent,
@@ -127,8 +128,8 @@ import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
 import type { ProxyTarget } from "./proxy.js";
-import { MachineEventRelay } from "./event-relay.js";
-import type { EventRelay, EventRelayDeps, RelayDial } from "./event-relay.js";
+import { MachineEventHub } from "./event-hub.js";
+import { MachineSockets } from "./machine-sockets.js";
 import { HttpError } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
@@ -139,6 +140,20 @@ import type { Users } from "../mechanisms/identity.js";
 import { userChannelKey } from "../http/routes/events.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
+
+/**
+ * What a dial to a machine's server returns: the connection to route requests over, the port
+ * its server is on over there, and a session there as its own cookie. The socket proxy path
+ * (proxyTarget) dials machines this way.
+ */
+interface RelayDial {
+  /** Dials the machine's server through the session held to it. */
+  agent: http.Agent;
+  /** The port its server is on over there. */
+  port: number;
+  /** A session on that machine, as its own cookie. */
+  cookie: string;
+}
 
 /** A job's narrator: a line for the log, and optionally the step of the pipeline it begins. */
 type Say = (line: string, phase?: MachinePhase) => void;
@@ -343,14 +358,16 @@ export interface MachinesEffects {
   now: () => Date;
   /** Tells this server's admins that the machines list changed (`machines_changed`). */
   announce: () => void;
-  /** One of a connected machine's own events, for this server's admins (`machine_event`). */
-  publishEvent: (machineId: string, event: ServerEvent) => void;
-  /** The subscriptions to connected machines' event streams (event-relay.ts). */
-  relay: (deps: EventRelayDeps) => EventRelay;
   /** Starts telling `listener` when a held connection comes up or goes down; returns the stop. */
   watchSessions: (listener: SessionListener) => () => void;
   /** Whether this computer's ssh can sign in with a stored password (transport/login.ts). */
   passwordSignIn: () => Promise<AskpassPlan>;
+  /**
+   * What the API socket to a machine is doing (machines/machine-sockets.ts), for `MachineInfo.socket`:
+   * connected, dialling, refused or failed, and since when. The sockets themselves are the
+   * proxy's, created beside it, so this is an injected reader rather than a field here.
+   */
+  socketFact: (machineId: string) => MachineSocketFact | null;
 }
 
 /** The id of the entry standing for the machine this server runs on. */
@@ -421,8 +438,6 @@ export class MachinesService {
   readonly #reconnects = new Map<string, Reconnecting>();
   /** The timer that runs a machine's next attempt when it is due. */
   readonly #retryTimers = new Map<string, NodeJS.Timeout>();
-  /** The subscriptions that carry each connected machine's own events to this server's admins. */
-  readonly #relay: EventRelay;
   /** The `machines_changed` window: open while one went out recently, and whether another is owed. */
   #announceTimer: NodeJS.Timeout | null = null;
   #announceOwed = false;
@@ -475,21 +490,13 @@ export class MachinesService {
       shippedImage: null,
       now: () => new Date(),
       announce: () => {},
-      publishEvent: () => {},
-      relay: (deps) => new MachineEventRelay(deps),
       watchSessions: onSessionChange,
       passwordSignIn,
       lateSweepMs: 20_000,
+      socketFact: () => null,
       ...effects,
     };
     this.#passwords = new SshPasswords(path.join(dataRoot, "machines"));
-    this.#relay = this.#effects.relay({
-      dial: (address) => this.#dial(address),
-      publish: (machineId, event) => this.#effects.publishEvent(machineId, event),
-      lost: (address) => this.#lost(address),
-      // A refused session is a stale one: the next dial mints another.
-      refused: (address) => this.#sessions.delete(address),
-    });
     // A held connection that drops is a machine to bring back; one that comes up is news.
     this.#unwatch = this.#effects.watchSessions((address, up) => {
       this.#changed();
@@ -628,6 +635,7 @@ export class MachinesService {
       },
       local: true,
       connection: null,
+      socket: null,
       api: null,
       root: this.dataRoot,
       status: {
@@ -658,6 +666,7 @@ export class MachinesService {
         ...(reconnect === undefined ? {} : { reconnect: this.#reconnectInfo(reconnect) }),
         ...(row?.sessionPid != null ? { keepConnected: true as const } : {}),
         ...(withPassword.has(alias) ? { passwordSaved: true as const } : {}),
+        socket: row?.machineId == null ? null : (this.#effects.socketFact(row.machineId) ?? null),
         api: this.#apiSeen.get(id) ?? null,
         ...(configSync === undefined ? {} : { configSync }),
         // The layout's own spelling, in the shell that machine speaks. Unknown platform
@@ -1016,9 +1025,10 @@ export class MachinesService {
    * its server was last bound to, with a session there. Null when it is not connected — or when
    * no session can be had, which leaves nothing to call it with either.
    */
-  async #dial(address: string): Promise<RelayDial | null> {
+  async #dial(address: string): Promise<(RelayDial & { session: number }) | null> {
     const row = this.repo.get(address);
-    if (row === null || row.remotePort === null || this.#liveSession(address) === null) return null;
+    const live = this.#liveSession(address);
+    if (row === null || row.remotePort === null || live === null) return null;
     const target = this.#targetOf(address.slice("ssh:".length));
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return null;
@@ -1026,6 +1036,8 @@ export class MachinesService {
       agent: this.#effects.agent(target, row.remotePort),
       port: row.remotePort,
       cookie: session.cookie,
+      // The socket relay reuses a socket only within one ssh session (socket-relay.ts).
+      session: live.pid,
     };
   }
 
@@ -1947,11 +1959,6 @@ export class MachinesService {
       this.#projectsUsing(address),
       lined.unasked,
     );
-    // Its own events, carried into this server's stream from here on (event-relay.ts). A
-    // machine whose server has minted no id yet cannot be named in them, and has none to send;
-    // a generation stopped meanwhile carries nothing — its successor subscribes for itself.
-    const machineId = this.repo.get(address)?.machineId ?? null;
-    if (machineId !== null && !this.#stopped) this.#relay.start(address, machineId);
     // Connected, by whichever way it came — a job or the supervision's own attempt: a streak of
     // reconnecting that was under way is over.
     this.#settle(address);
@@ -2080,7 +2087,6 @@ export class MachinesService {
       this.#record(address, { sessionPid: null });
     }
     this.#settle(address);
-    this.#relay.stop(address);
     closeConnectionTo(address);
     this.#sessions.delete(address);
     this.#changed();
@@ -2102,14 +2108,12 @@ export class MachinesService {
   }
 
   /**
-   * Whether a machine is connected as far as this server is concerned: the connection held, and
-   * its server's events coming in — a stream that ended is how a server that stopped or
-   * restarted is noticed. A machine whose server never minted an id has no events to send, so
-   * the connection alone counts.
+   * Whether a machine is connected as far as this server is concerned: the connection held.
+   * A server that stopped or restarted over there is no longer noticed from here — a machine
+   * with a hub (event-hub.ts) says so through it, and one without answers when next used.
    */
   #isUp(address: string): boolean {
-    if (this.#liveSession(address) === null) return false;
-    return this.repo.get(address)?.machineId == null || this.#relay.active(address);
+    return this.#liveSession(address) !== null;
   }
 
   /**
@@ -2401,7 +2405,6 @@ export class MachinesService {
     if (this.#announceTimer !== null) clearTimeout(this.#announceTimer);
     this.#announceTimer = null;
     this.#unwatch();
-    this.#relay.stopAll();
     if (this.#lateSweep !== null) clearTimeout(this.#lateSweep);
     this.#lateSweep = null;
     closeAllConnections();
@@ -2688,9 +2691,6 @@ export class MachinesService {
       return { ok: false, detail: "no server is running on that machine." };
     }
     const port = before.state.port;
-    // Its events end with it, and that ending is this restart's own: the stream is let go
-    // first, so it is not taken for a machine that was lost, and taken up again after.
-    this.#relay.stop(address);
     say(`Stopping its server on port ${port}…`, "restart");
     const stopped = await this.#effects.stopServer(target);
     if (!stopped.ok) return { ok: false, detail: `it would not stop — ${stopped.detail}` };
@@ -2706,10 +2706,6 @@ export class MachinesService {
     // moment ago: a machine mints its id when a server that mints one starts there.
     await this.#refreshStatus(address, target);
     this.#record(address, { remotePort: port });
-    const machineId = this.repo.get(address)?.machineId ?? null;
-    if (machineId !== null && this.#liveSession(address) !== null && !this.#stopped) {
-      this.#relay.start(address, machineId);
-    }
     return { ok: true, port };
   }
 
@@ -3164,6 +3160,11 @@ export class MachinesModule {
         // Best effort: a page reads the list again on its next change or visit.
       }
     };
+    // The generation's one socket cache and the event hub over it (PRFC-0011): the proxy's
+    // streams and the machines' aggregate event stream share both, so the hub holds ONE
+    // subscription per machine however many tabs read it.
+    const sockets = new MachineSockets((line) => console.log(line));
+    const events = new MachineEventHub(sockets, (line) => console.log(line));
     const machines = new MachinesService(
       this.paths.root,
       repo.ownId(),
@@ -3172,17 +3173,21 @@ export class MachinesModule {
         ...(checkout === null ? {} : { packCheckout: deployPacker(checkout) }),
         // An installed release installs the image its build shipped, unless it was pushed to.
         shippedImage: shippedImage(),
+        socketFact: (machineId) => sockets.fact(machineId),
         announce: () => toAdmins({ type: "machines_changed" }),
-        publishEvent: (machineId, event) => toAdmins({ type: "machine_event", machineId, event }),
       },
       () => this.hmr.assetsDir(),
     );
     this.machines = machines;
-    this.routes = machinesRoutes({ machines, access: this.access });
-    this.serverProxyRoutes = machinesServerProxyRoutes(machines);
+    this.routes = machinesRoutes({ machines, access: this.access, events });
+    this.serverProxyRoutes = machinesServerProxyRoutes(machines, { sockets, events });
     // Every transient ssh session THIS generation opened closes with it, and every held one is
     // left for the successor, whose start() re-holds each one the record says was held.
-    effect(() => machines.stop());
+    effect(() => {
+      machines.stop();
+      events.close();
+      sockets.close();
+    });
   }
 }
 
@@ -3192,11 +3197,16 @@ export class MachinesModule {
  * that machine's admin, with a session this server minted over the ssh access that installed
  * it, so this server's admin session is the one credential involved.
  */
-export function machinesServerProxyRoutes(machines: MachinesService): Hono<AppEnv> {
+export function machinesServerProxyRoutes(
+  machines: MachinesService,
+  shared: { sockets?: MachineSockets; events?: MachineEventHub } = {},
+): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const proxy = machinesProxy(
     (machineId) => machines.proxyTarget(machineId),
     (machineId, outcome) => machines.noteApiSeen(machineId, outcome),
+    (line) => console.log(line),
+    shared,
   );
   app.all("*", async (c) => {
     if (!c.var.user.isAdmin) {

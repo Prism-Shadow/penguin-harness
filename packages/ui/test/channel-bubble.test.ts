@@ -133,7 +133,7 @@ describe("the channel bubble stylesheet", () => {
       /\.channel-bubble :not\(pre\) > code \{\s*background-color: var\(--ui-line-emphasis\);/,
     );
     expect(rules).toMatch(
-      /\.channel-bubble :is\(th, td\) \{\s*border-color: var\(--ui-line-emphasis\);/,
+      /\.channel-bubble \.md-body \{\s*--md-table-rule: var\(--ui-line-emphasis\);\s*--md-table-rule-head: var\(--ui-line-emphasis\);/,
     );
   });
 });

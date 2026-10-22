@@ -52,8 +52,8 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-server/model-catalog";
+import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";

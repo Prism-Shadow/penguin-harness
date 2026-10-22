@@ -31,6 +31,7 @@ import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js"
 import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { agentsMdPath, tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 
 // The default project config ships with this model ((provider, model_id) pair reference; model_id is the upstream id).
 const MODEL = { provider: "anthropic", model_id: "claude-sonnet-4-6" };
@@ -46,6 +47,8 @@ beforeEach(async () => {
   workspace = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-resume-ws-"));
   process.env.PENGUIN_HOME = tmpRoot;
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(tmpRoot);
 });
 
 afterEach(async () => {

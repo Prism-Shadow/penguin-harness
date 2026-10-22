@@ -477,7 +477,7 @@ The per-request output limit and the compaction threshold both follow this windo
 
 ## Built-in provider groups
 
-The table below lists the built-in groups and, for the seven first-party groups, which a new Project gives no base URL, the environment variable their models use when neither the model nor the group has a key and no base URL other than the vendor's default endpoint is set; the other groups use none (—). The catalog source is `packages/core/src/state/model-catalog.ts`. Each variable also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create. The gateway groups carry a base URL, so their rows **never fall back**: a gateway's protocol client reads `OPENAI_*` (or `ANTHROPIC_*`), which holds your vendor key, and that key is not sent to it (see [Set API keys](#set-api-keys)).
+The table below lists the built-in groups and, for the seven first-party groups, which a new Project gives no base URL, the environment variable their models use when neither the model nor the group has a key and no base URL other than the vendor's default endpoint is set; the other groups use none (—). The catalog source is `packages/server/src/model-catalog/`. Each variable also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create. The gateway groups carry a base URL, so their rows **never fall back**: a gateway's protocol client reads `OPENAI_*` (or `ANTHROPIC_*`), which holds your vendor key, and that key is not sent to it (see [Set API keys](#set-api-keys)).
 
 | Provider | API key env var | Notes |
 | --- | --- | --- |
@@ -646,7 +646,7 @@ api_key = "sk-..."
 
 Some gateways read a request header that files a call under the app that made it, for their own app rankings, usage reports or routing.
 
-The catalog decides these headers by **endpoint host**, not by the entry's provider group. An entry filed under custom whose base URL points at such a gateway carries the same headers. Only the entry's own `base_url` counts: an endpoint supplied through `OPENAI_BASE_URL` is resolved inside MMSP, is not visible on this side, and is therefore not attributed.
+Core decides these headers by **endpoint host** (`packages/core/src/llm/app-attribution.ts`), not by the entry's provider group. An entry filed under custom whose base URL points at such a gateway carries the same headers. Only the entry's own `base_url` counts: an endpoint supplied through `OPENAI_BASE_URL` is resolved inside MMSP, is not visible on this side, and is therefore not attributed.
 
 | Endpoint | Header | Value |
 | --- | --- | --- |

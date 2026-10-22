@@ -14,7 +14,7 @@ import {
   parseScheduledMessage,
   parseSkillsMessage,
 } from "@prismshadow/penguin-core/markers";
-import { catalogEntryFor } from "../../core/dist/state/model-catalog.js";
+import { catalogEntryFor } from "../../server/dist/model-catalog.js";
 import { catalogDelta } from "../../web/src/features/models/catalog-sync";
 import { splitAttachments } from "../../web/src/lib/attachments";
 import {

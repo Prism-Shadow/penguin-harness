@@ -162,11 +162,12 @@ export function UseBenchmarkModal({
   // for the missing-skill hint. A failed fetch leaves the hint off: the send still goes through.
   // Each result is stored under the agent it was fetched for, so it stays wanted even when the
   // pick moved on meanwhile — dropping it would only make switching away and back refetch.
+  // The agents offered are this server's (the Project's list), so their Skills are read here.
   useEffect(() => {
     for (const id of [evaluatorId, optimizerId]) {
       if (id === null || skillsByAgent[id] !== undefined) continue;
       api
-        .getAgentSkills(projectId, id)
+        .getAgentSkills(projectId, id, null)
         .then((res) =>
           setSkillsByAgent((prev) => ({ ...prev, [id]: res.skills.map((s) => s.name) })),
         )

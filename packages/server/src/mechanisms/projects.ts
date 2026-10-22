@@ -119,6 +119,8 @@ export abstract class ProjectLifecycle {
 @Interface()
 export abstract class ProjectConfigStore {
   abstract readRaw(projectId: string): Promise<RawTable>;
+  /** Reads every Project's config once, so what the read path's one-time migrations write back (core's and the server's) is on disk before any Session opens one. */
+  abstract migrateStoredConfigs(): Promise<void>;
   abstract loadConfig(projectId: string): Promise<ProjectConfig>;
   abstract writeRaw(projectId: string, data: RawTable): Promise<void>;
   abstract writeInitialConfig(projectId: string, name: string): Promise<void>;

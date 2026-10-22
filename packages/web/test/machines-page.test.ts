@@ -90,6 +90,7 @@ const remote = (alias: string, extra: Partial<MachineInfo> = {}): MachineInfo =>
   machineId: `Id${alias.replace(/[^a-z0-9]/gi, "")}0000000000`.slice(0, 16),
   local: false,
   connection: null,
+  socket: null,
   api: null,
   status: { state: "stopped", checkedAt: CHECKED },
   root: "/home/ubuntu/.penguin/data",
