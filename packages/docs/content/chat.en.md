@@ -232,9 +232,11 @@ A reply can hold blocks that the chat draws as components instead of plain text:
 - **Weather**: the conditions and forecast at a place, with an illustration that moves (rain falls, clouds drift). It stays still when your system is set to reduce motion.
 - **Clock**: the time now in one to four time zones. It ticks live.
 - **Countdown**: the time left until a deadline or an event. It counts down live.
-- **Metrics**: tiles with gauges for a snapshot, such as system resources, a quota or budget left, or the progress of a job. A tile takes the warning or danger colour when its value crosses the thresholds the agent set.
+- **Metrics**: tiles with gauges for a snapshot, such as a quota or budget left, or the progress of a job. A tile takes the warning or danger colour when its value crosses the thresholds the agent set.
+- **System resources**: a snapshot of one machine, with CPU, memory and swap as gauges, the disks as bars and the network as a line. A reading takes the warning or danger colour past fixed thresholds: 80 % and 95 % for CPU, memory and swap, 85 % and 95 % for a disk, one and two per core for the load.
+- **Chart**: a line, area, bar, pie, scatter or histogram chart, or a single gauge, drawn from the data in the reply, with units on its axes and a legend when it has several series. Point at a bar, line, area or histogram chart to see the values at that point.
 
-Weather and metrics are snapshots the agent took at the time shown on the block; they do not update. Only the clock and the countdown change while you watch.
+Weather, metrics and system resources are snapshots the agent took at the time shown on the block; they do not update. Only the clock and the countdown change while you watch.
 
 Picking sends nothing. The composer gets ordinary text that you can edit, and you still select **Send**. If the composer holds text you typed, you are asked before it is replaced or cleared. A form's answers and a multi-select's picks are kept in this browser, so a reload or a visit to another conversation does not lose them; they expire after 7 days. Only the latest reply takes answers, and only until a message follows it; earlier replies, subagent conversations and the Trace show the same blocks read-only. A block that cannot be drawn shows its source under a one-line reason.
 

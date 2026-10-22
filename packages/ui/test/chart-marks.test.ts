@@ -213,6 +213,9 @@ describe("every chart in the package", () => {
     "components/charts/cartesian/bar-chart.tsx",
     "components/charts/cartesian/hbar-chart.tsx",
     "components/charts/cartesian/line-chart.tsx",
+    "components/charts/pie-chart/pie-chart.tsx",
+    "components/charts/scatter-chart/scatter-chart.tsx",
+    "components/charts/gauge/gauge.tsx",
   ];
 
   it("draws its marks through the primitives, never with its own shapes, paint or geometry", () => {
@@ -237,7 +240,13 @@ describe("every chart in the package", () => {
 });
 
 describe("every A2UI block composed of charts", () => {
-  const COMPOSITES = ["components/content/a2ui/metrics-block.tsx"];
+  const COMPOSITES = [
+    "components/content/a2ui/chart-block.tsx",
+    "components/content/a2ui/metrics-block.tsx",
+    "components/content/a2ui/resources-block.tsx",
+    "components/content/a2ui/weather-block.tsx",
+    "components/content/a2ui/weather-hourly.tsx",
+  ];
   /** The basic charts (under src/components/charts/), one of which a composite must draw through. */
   const BASIC_CHARTS = [
     "cartesian/bar-chart",

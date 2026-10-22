@@ -186,7 +186,99 @@ stateDiagram-v2
   Sent --> [*]
 ```
 
+## Chart data model
+
+The charts share one data model. Every kind but the gauge draws `series` over `categories`:
+
+- `categories`: the x labels (line, area, bar) or the slice names (pie), 1–60 non-empty strings of ≤ 40 characters (warn > 24). A pie has 2–8 slices (warn > 6), each named once.
+- `series`: 1–6 (warn > 4), each `{ "label", "values" }`. The `label` is ≤ 40 and unique. `values` holds ONE number per category, in order, and `null` for a missing reading (a gap in the line). A pie and a histogram take exactly one series, with no `null` and nothing below 0.
+- A histogram puts `edges` in place of `categories`: n + 1 bin edges, strictly ascending, 3–61 of them. Its one series holds the n counts.
+- A scatter puts `points` in place of `values`: `[x, y]` pairs, 1–500 per series (warn > 200).
+- Units go on the axes, never into the numbers. `yUnit` (≤ 12) follows every value: `"ms"`, `"%"`, `"GB"`; on a pie it is the slices' unit. `xUnit` belongs to a numeric x axis (scatter, histogram). `xLabel` and `yLabel` (≤ 24) name the axes: `"Day"`, `"Latency"`.
+- `min` and `max` fix the value axis (default: from 0 to a round number above the data). `decimals` is 0–3.
+
+## chart
+
+One basic chart drawn from data you have: a tool result, a file, or numbers the user gave. Pick the kind by the question:
+
+- `line`: how a value moved over time. `area` is the same, filled; with `stacked`, the parts of a total over time.
+- `bar`: values side by side. `stacked` shows the parts of each total; `horizontal` suits long names or a ranking.
+- `pie`: the shares of one whole, at most 6 slices. `donut` draws a ring.
+- `scatter`: how two measures relate, one point per observation.
+- `histogram`: how values spread over ranges.
+- `gauge`: one reading against its whole, with thresholds. Several readings are a `metrics` block.
+
+| Field | Type | Rule |
+| --- | --- | --- |
+| `type` | `"chart"` | required |
+| `kind` | `"line"` / `"area"` / `"bar"` / `"pie"` / `"scatter"` / `"histogram"` / `"gauge"` | required |
+| `title` | string | optional, ≤ 60 |
+| `categories` | array of string | required for line, area, bar and pie |
+| `edges` | array of number | required for histogram |
+| `series` | array of series | required for every kind but gauge |
+| `xLabel` / `yLabel` | string | optional, ≤ 24; not on a pie |
+| `xUnit` | string | optional, ≤ 12; scatter and histogram only |
+| `yUnit` | string | optional, ≤ 12 |
+| `stacked` | boolean | bar and area; the series add up, so no value is below 0 |
+| `horizontal` | boolean | bar only |
+| `donut` | boolean | pie only |
+| `min` / `max` | number | optional, `min < max`; not on a pie |
+| `decimals` | integer | optional, 0–3 |
+| `item` | metric | required for gauge: ONE `metrics` item, with the same fields and rules |
+| `asOf` | string | optional; a chart need not be a snapshot |
+
+A field the kind does not read is ignored with a warning (`ignored_field`), such as `stacked` on a line or `series` on a gauge.
+
+```a2ui
+{
+  "type": "chart",
+  "kind": "bar",
+  "title": "Build minutes per team",
+  "categories": ["Web", "Server", "CLI", "Desktop"],
+  "series": [
+    { "label": "September", "values": [380, 540, 120, 210] },
+    { "label": "October", "values": [420, 610, 95, 230] }
+  ],
+  "yLabel": "Build time",
+  "yUnit": "min"
+}
+```
+
+```a2ui
+{
+  "type": "chart",
+  "kind": "line",
+  "title": "p95 latency, last 6 hours",
+  "categories": ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00"],
+  "series": [{ "label": "p95", "values": [182, 190, 240, null, 205, 198] }],
+  "yLabel": "Latency",
+  "yUnit": "ms",
+  "asOf": "2026-10-06T14:05+08:00"
+}
+```
+
+```a2ui
+{
+  "type": "chart",
+  "kind": "pie",
+  "title": "Disk use by folder",
+  "categories": ["node_modules", "Traces", "Caches", "Other"],
+  "series": [{ "label": "Size", "values": [12.4, 6.1, 2.3, 1.2] }],
+  "yUnit": "GB",
+  "decimals": 1,
+  "donut": true
+}
+```
+
+The other kinds change a few fields. An `area` is a line with `"stacked": true` for the parts of a total. A `scatter` gives each series `"points": [[1.2, 120], [3.4, 180]]` in place of `values`. A `histogram` gives `"edges": [0, 100, 200, 500]` in place of `categories`, and one series of 3 counts. A `gauge` gives `"item": { "label": "Disk", "kind": "used", "value": 320, "max": 512, "unit": "GB", "warn": 435, "danger": 486 }` and no series.
+
+As text, a bar or line chart becomes one bullet per category with every series' value (`- Web: September 380 min · October 420 min`), or one line per series past 20 categories (`- p95: 182 → 198 ms (min 175, max 240, 30 points)`). A pie becomes one bullet per slice with its share (`- node_modules: 12.4 GB (56%)`), and a gauge its metrics line.
+
+Common mistakes: a series with one value too few (`length_mismatch`; write `null` where a reading is missing); a unit inside the numbers, `"120ms"` (`wrong_type`; write `120` and `"yUnit": "ms"`); nine slices (`count_out_of_range`; merge the small ones into "Other"); two series on a pie (`count_out_of_range`; compare them with a bar chart); a negative value in a stacked chart, or bin edges that do not go up (`range_invalid`); `stacked` on a line (`ignored_field`; use `area`); a gauge with `value` and `max` at the top instead of in `item` (`missing_field`).
+
 ## weather
+
+Built from: a line chart of the next hours and a range bar per day; the condition art and the details are its own.
 
 The conditions at one place now, optionally with the next hours and the coming days. A snapshot: it shows the time in `asOf` and never updates. The Web App draws a line illustration of the condition that moves (rain falls, clouds drift) and stays still under reduced motion. Take the data from `scripts/weather.mjs`, never from memory. The script reads Open-Meteo and falls back to wttr.in when Open-Meteo fails; `source` names the one that answered.
 
@@ -336,7 +428,9 @@ Common mistakes: `"to": "next Friday"` or `"2026/10/09"` (`invalid_datetime`); a
 
 ## metrics
 
-A snapshot of one to eight readings, one tile each. The same block serves a system snapshot, a quota or budget left and the progress of a job: `kind` says how to read each tile. Put the readings of one moment in one block, never one block per number.
+Built from: gauge tiles. Each item is exactly a `gauge` chart's `item`, with the same fields and rules.
+
+A dashboard of one to eight readings, one tile each: a quota or budget left, the progress of a job, figures with their change. `kind` says how to read each tile. Put the readings of one moment in one block, never one block per number. A machine snapshot is a `resources` block.
 
 | Field | Type | Rule |
 | --- | --- | --- |
@@ -372,24 +466,64 @@ Thresholds: past `warn` the tile takes the attention colour, past `danger` the d
 ```a2ui
 {
   "type": "metrics",
-  "title": "build-01",
+  "title": "Release 0.3",
   "items": [
-    { "label": "CPU", "value": 37, "max": 100, "unit": "%", "warn": 80, "danger": 95, "history": [22, 31, 45, 40, 37] },
-    { "label": "Memory", "kind": "used", "value": 13.9, "max": 16, "unit": "GB", "decimals": 1, "warn": 13.6, "danger": 15.2, "delta": 0.4, "deltaLabel": "vs. yesterday" },
     { "label": "API quota", "kind": "remaining", "value": 1240, "max": 5000, "warn": 1000, "danger": 250, "detail": "Resets in 3 days" },
-    { "label": "Upload", "kind": "progress", "value": 63, "max": 100, "unit": "%" }
+    { "label": "Budget", "kind": "remaining", "value": 180, "max": 1000, "prefix": "¥", "warn": 200, "danger": 50, "delta": -60, "deltaLabel": "today" },
+    { "label": "Test runs", "kind": "progress", "value": 7, "max": 12, "unit": "runs", "history": [2, 3, 5, 7] },
+    { "label": "p95 latency", "value": 182, "unit": "ms", "warn": 250, "danger": 400, "delta": -14, "deltaLabel": "vs. yesterday" }
   ],
   "asOf": "2026-10-06T14:05+08:00"
 }
 ```
 
-As text, the title, one bullet per tile and the `asOf` time. The memory tile reads `- Memory: 13.9 GB — 13.9 / 16 GB used (+0.4 GB vs. yesterday) — warning`: its value, the detail, the change, and a mark for the colour (warning, critical or done).
+As text, the title, one bullet per tile and the `asOf` time. The budget tile reads `- Budget: ¥180 — ¥180 / ¥1,000 left (−¥60 today) — warning`: its value, the detail, the change, and a mark for the colour (warning, critical or done).
 
 Common mistakes: `"kind": "remaining"` or `"gauge": "ring"` without `max` (`missing_field`); thresholds against `worse`, such as `warn: 250, danger: 1000` on a `remaining` tile (`range_invalid`; swap them, or set `worse`); `min` not below `max` (`range_invalid`); `"decimals": 5` (`range_invalid`); two tiles with one label (`duplicate_label`); `deltaLabel` without `delta` (`ignored_field`); seven tiles (`metrics_too_many`) or nine (`count_out_of_range`); numbers from memory or an estimate (the rubric's eighth question).
 
+## resources
+
+Built from: a gauge tile per reading (as in `metrics`), a horizontal bar chart for the disks, a line chart for the network.
+
+A snapshot of one machine. Take it from `scripts/sysinfo.mjs`, never from memory. You give the numbers; the app judges them by fixed thresholds. CPU, memory and swap take the attention colour from 80 % and the danger colour from 95 %, a disk from 85 % and 95 %, the load from one and two per core. A block needs at least one section.
+
+| Field | Type | Rule |
+| --- | --- | --- |
+| `type` | `"resources"` | required |
+| `host` | string | optional, ≤ 40 |
+| `cpu` | object | `percent` required, 0–100; `history` 2–60 percents, oldest first; `cores` a whole number ≥ 1 |
+| `memory` | object | `used` and `total` required, `0 ≤ used ≤ total`, `total > 0`; `unit` `"GB"` (default) or `"MB"`; `history` 2–60 percents of the total |
+| `swap` | object | as `memory`, without `history` |
+| `disks` | array of disk | 1–6, each with `path` (≤ 40, unique), `used`, `total` and `unit` `"GB"` (default) or `"TB"` |
+| `network` | object | `unit` required: `"KB/s"`, `"MB/s"` or `"Mbps"`; `rx` (received) and `tx` (sent) required, 2–60 readings ≥ 0 each, the same count, oldest first |
+| `load` | object | `one` and `cores` required, `five` and `fifteen` optional; all ≥ 0, `cores` a whole number ≥ 1 |
+| `uptimeSec` | number | optional, ≥ 0 |
+| `asOf` | string | optional, an ISO 8601 date-time; without it the checker warns (`no_as_of`) |
+
+```a2ui
+{
+  "type": "resources",
+  "host": "build-01",
+  "cpu": { "percent": 37, "history": [22, 31, 45, 40, 37], "cores": 8 },
+  "memory": { "used": 13.9, "total": 16, "unit": "GB", "history": [81, 84, 87] },
+  "disks": [
+    { "path": "/", "used": 120, "total": 500, "unit": "GB" },
+    { "path": "/data", "used": 1.9, "total": 2, "unit": "TB" }
+  ],
+  "network": { "unit": "KB/s", "rx": [80, 120, 96], "tx": [35, 40, 38] },
+  "load": { "one": 1.2, "five": 1, "fifteen": 0.8, "cores": 8 },
+  "uptimeSec": 1071360,
+  "asOf": "2026-10-06T14:05+08:00"
+}
+```
+
+As text, the host, one bullet per reading in the metrics voice and the `asOf` time: `- Memory: 13.9 GB — 13.9 / 16 GB used · 81–87% over 3 readings — warning`, `- Disk /data: 1.9 TB — 1.9 / 2 TB used — critical`, `- Network: ↓ 96 KB/s ↑ 38 KB/s`.
+
+Common mistakes: no section at all (`missing_field`); `used` above `total` (`range_invalid`); `rx` and `tx` of different lengths (`length_mismatch`); a CPU share written as 0.37 instead of 37 (it reads as 0.37 %; write percents); colours or thresholds in the block (`unknown_field`; the app judges); numbers from memory (the rubric's eighth question).
+
 ## What a surface without a renderer shows
 
-The CLI and the messaging channels replace each valid block with Markdown: a choice becomes the bold question, a numbered list (`1. label — description (recommended)`) and "Reply with a number or your own answer." / 「回复编号或直接写出你的答案。」; a form becomes its title and one bullet per field with the options inline; steps become a numbered list with **WARNING:** / **CAUTION:** lines above the step and **NOTE:** below it (「警告：」「注意：」「说明：」), code as a fence; a callout becomes a blockquote with a bold tone label. A widget becomes its readings as text: weather a bold headline over its details, hours and days; a clock one line per zone with the time when the text was made; a countdown the time left, or "reached" once past; metrics one bullet per tile. Weather and metrics end with their time, "As of 14:05" / 「数据时间 14:05」. A mermaid fence stays a fence. An invalid block stays as you wrote it, so write every block as if it will be read as text.
+The CLI and the messaging channels replace each valid block with Markdown: a choice becomes the bold question, a numbered list (`1. label — description (recommended)`) and "Reply with a number or your own answer." / 「回复编号或直接写出你的答案。」; a form becomes its title and one bullet per field with the options inline; steps become a numbered list with **WARNING:** / **CAUTION:** lines above the step and **NOTE:** below it (「警告：」「注意：」「说明：」), code as a fence; a callout becomes a blockquote with a bold tone label. A widget becomes its readings as text: weather a bold headline over its details, hours and days; a clock one line per zone with the time when the text was made; a countdown the time left, or "reached" once past; metrics one bullet per tile; resources one bullet per reading in the same voice. A chart becomes bullets too: a row per category or bin up to 20 (past that, one line per series with its first and last value, range and count), a slice with its share, a scatter series with its extents, a gauge its metrics line. Weather, metrics and resources end with their time, "As of 14:05" / 「数据时间 14:05」, and so does a chart with `asOf`. A mermaid fence stays a fence. An invalid block stays as you wrote it, so write every block as if it will be read as text.
 
 ## The checker's codes
 
@@ -404,7 +538,8 @@ Errors (L1 — the block does not render; total score 0):
 | `too_long`, `count_out_of_range` | a string over its limit; an array outside its range |
 | `duplicate_label`, `duplicate_id`, `multiple_recommended`, `duplicate_zone` | reference integrity inside the block |
 | `options_required`, `options_forbidden`, `number_only` | field rules of a form |
-| `range_invalid` | a number outside its range or two numbers in the wrong order: a form's `min` above `max`, `high` below `low`, a humidity over 100, metric thresholds against `worse` |
+| `length_mismatch` | a series with more or fewer values than its chart has categories (or bins), or `rx` and `tx` of different lengths |
+| `range_invalid` | a number outside its range or two numbers in the wrong order: a form's `min` above `max`, `high` below `low`, a humidity over 100, metric thresholds against `worse`, chart bin edges out of order, a pie of zeros, a negative value in a stacked chart, `used` above `total` |
 | `invalid_datetime`, `invalid_timezone` | an `asOf` or `to` that does not parse; a `zone` that is neither an IANA name nor `local` |
 | `mermaid_empty`, `mermaid_unknown_type`, `mermaid_directive`, `mermaid_forbidden`, `mermaid_unbalanced` | the mermaid rules above |
 
@@ -413,8 +548,8 @@ Warnings (L2 — 15 points each off the L2 score):
 | Code | Meaning |
 | --- | --- |
 | `unknown_field`, `ignored_field`, `json_trailing_comma` | tolerated, but not what the catalog says |
-| `too_many_options`, `form_too_many_fields`, `steps_too_many`, `option_label_long`, `weather_hourly_long`, `metrics_too_many`, `mermaid_too_big` | past the "warn" marks |
-| `no_as_of` | a weather or metrics block without `asOf` |
+| `too_many_options`, `form_too_many_fields`, `steps_too_many`, `option_label_long`, `weather_hourly_long`, `metrics_too_many`, `chart_many_series`, `chart_many_categories`, `pie_many_slices`, `scatter_many_points`, `mermaid_too_big` | past the "warn" marks |
+| `no_as_of` | a weather, metrics or resources block without `asOf` |
 | `ui_overuse` | more than 2 interactive blocks, or more than 4 blocks, in one reply |
 | `interactive_not_last` | something follows a choice or a form (a widget may be followed by prose) |
 | `ungrounded_block` | no sentence introduces the block |

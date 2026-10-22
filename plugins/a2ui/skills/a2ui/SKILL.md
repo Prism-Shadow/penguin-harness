@@ -1,12 +1,12 @@
 ---
 name: a2ui
-description: Make a reply easier to read and act on with rich blocks inside ordinary Markdown — a choice the user picks from, a form that collects several answers, a procedure as steps with warnings in place, a callout, a Mermaid diagram, a weather card, a live clock or countdown, and a dashboard of gauges for a system snapshot, a quota or a job's progress — written as fenced blocks the app renders with its own components; a pick comes back as the user's plain text. Use when a reply asks the user to decide, collects several inputs, gives a procedure, explains a structure or flow, or reports the weather, a time, a deadline or a few readings. Includes STE-style writing rules for Chinese and English, scripts that print real weather and system data as blocks, and a checker script to run on the draft before sending.
-version: 2026.10.19.1
+description: Make a reply easier to read and act on with rich blocks inside ordinary Markdown — a choice the user picks from, a form that collects several answers, a procedure as steps with warnings in place, a callout, a Mermaid diagram, a weather card, a live clock or countdown, a dashboard of gauges for a quota, a budget or a job's progress, a chart drawn from data (line, area, bar, pie, scatter, histogram, gauge) and a system-resource board — written as fenced blocks the app renders with its own components; a pick comes back as the user's plain text. Use when a reply asks the user to decide, collects several inputs, gives a procedure, explains a structure or flow, reports the weather, a time, a deadline or a few readings, or shows numbers with a shape. Includes STE-style writing rules for Chinese and English, scripts that print real weather and system data as blocks, and a checker script to run on the draft before sending.
+version: 2026.10.19.2
 ---
 
 # A2UI blocks
 
-A reply is Markdown. Where a decision, a set of inputs, a procedure, a structure or a few readings would read better as a component than as prose, write one as a fenced block: ```` ```a2ui ```` holding ONE JSON object, or ```` ```mermaid ```` holding a diagram. The Web App renders the block with its own components and theme; the CLI and the messaging channels show the same block as readable text; nothing is lost on a surface that cannot render it. You never write HTML, scripts or styles — you name a component from the catalog and fill its fields.
+A reply is Markdown. Where a decision, a set of inputs, a procedure, a structure, a few readings or a series of numbers would read better as a component than as prose, write one as a fenced block: ```` ```a2ui ```` holding ONE JSON object, or ```` ```mermaid ```` holding a diagram. The Web App renders the block with its own components and theme; the CLI and the messaging channels show the same block as readable text; nothing is lost on a surface that cannot render it. You never write HTML, scripts or styles — you name a component from the catalog and fill its fields.
 
 Before you send a reply that carries a block, run the checker (see "Check before you send"). It is the test suite for this skill: it rejects what would not render, warns about what would be hard to read, scores the draft and prints the questions a reviewer would ask.
 
@@ -26,7 +26,11 @@ Use a block when it saves the reader work:
 - **weather** — the user asks about the weather somewhere. Run `scripts/weather.mjs <place>` (see "Get real data"), paste the block it prints, and write one sentence before it.
 - **clock** — the user asks the time somewhere, or a meeting spans time zones: one to four zones.
 - **countdown** — a deadline or an event at a fixed instant.
-- **metrics** — a few readings at a glance: a system snapshot (`scripts/sysinfo.mjs`), a quota or budget left, the progress of a job, figures with their change. Put them in ONE `metrics` block, never one block per number. `kind` says how to read a tile: `reading`, `used`, `remaining` or `progress`. `worse` says which way is bad (default `low` for `remaining`, else `high`). `warn` and `danger` colour the tile once the value passes them.
+- **metrics** — a few readings at a glance: a quota or budget left, the progress of a job, figures with their change. Put them in ONE `metrics` block, never one block per number. `kind` says how to read a tile: `reading`, `used`, `remaining` or `progress`. `worse` says which way is bad (default `low` for `remaining`, else `high`). `warn` and `danger` colour the tile once the value passes them.
+- **resources** — a snapshot of a machine: CPU, memory, swap, disks, network, load and uptime. Run `scripts/sysinfo.mjs` and paste the block it prints. You give the numbers; the app colours them by its own thresholds.
+- **chart** — numbers with a shape: a trend over time (`line`, `area`), a comparison (`bar`), shares of a whole (`pie`), how two measures relate (`scatter`), how values spread (`histogram`), or one reading against its whole (`gauge`). The data comes from a tool, a file or the user.
+
+A `chart` draws one basic chart from the data you give. `metrics`, `weather` and `resources` are built from the same charts for data of a known shape. Use the composite when the data has its shape: it takes fewer fields and reads better. Use a `chart` when the data has no such shape. One reading is a `chart` of kind `gauge`, several readings are a `metrics` block, and a machine snapshot is a `resources` block.
 
 Do not use a block for:
 
@@ -34,7 +38,7 @@ Do not use a block for:
 - a conversational or emotional turn ("thanks", "sorry about that", "how was it?");
 - a decision you can take yourself from the context — take it and say so;
 - padding: a callout around an ordinary sentence, a diagram with two boxes, a form with one field (use a question);
-- data you do not have. A widget shows numbers from a script, a tool result or the user, with their `asOf` time. Never invent, estimate or round them into a guess.
+- data you do not have. A widget or a chart shows numbers from a script, a tool result or the user, a snapshot with its `asOf` time. Never invent, estimate or round them into a guess.
 
 Keep to one or two blocks per reply and at most two questions (choice/form). More than that is a questionnaire, not a conversation.
 
@@ -53,8 +57,10 @@ The full reference, every field and its limits, a valid example of each type and
 | `clock` | — | `title`, `zones[]` (`zone`: an IANA name or `local`; `label`), `style` (`digital`/`analog`/`both`), `hourCycle`, `seconds`, `date` | 1–4 zones, no zone twice |
 | `countdown` | `to` (ISO date-time or `YYYY-MM-DD`), `label` | `doneLabel`, `showTarget` | label ≤ 60 |
 | `metrics` | `items[]` (`label`, `value`) | `title`, `asOf`; per item `kind`, `max`/`min`, `gauge` (`ring`/`bar`/`none`), `unit`, `prefix`, `decimals`, `worse`, `warn`/`danger`, `detail`, `delta` + `deltaLabel`, `history[]` | 1–8 items (warn > 6), labels unique, `max` required for `used`/`remaining`/`progress` and for a gauge |
+| `resources` | at least one of `cpu` (`percent`), `memory` / `swap` (`used`, `total`), `disks[]` (`path`, `used`, `total`), `network` (`unit`, `rx[]`, `tx[]`), `load` (`one`, `cores`), `uptimeSec` | `host`, `asOf`; `cpu.history` / `cores`, `memory.history`, units, `load.five` / `fifteen` | percents 0–100, `used ≤ total`, 1–6 disks, `rx` and `tx` 2–60 readings of one length |
+| `chart` | `kind`; `categories[]` + `series[]` (`label`, `values[]`); scatter `series[].points[]`; histogram `edges[]`; gauge `item` (one metrics item) | `title`, `xLabel` / `yLabel`, `xUnit` / `yUnit`, `stacked` (bar, area), `horizontal` (bar), `donut` (pie), `min` / `max`, `decimals`, `asOf` | 1–60 categories (warn > 24), 1–6 series (warn > 4), one value per category (`null` for a gap); pie 2–8 slices (warn > 6) and one series; scatter ≤ 500 points per series (warn > 200); histogram 3–61 ascending edges |
 
-The fence is ```` ```a2ui ```` (or ```` ```a2ui json ````); one JSON object per fence; strict JSON (double quotes, no comments, no trailing commas). An unknown `type` or a missing required field is an error; an unknown field is ignored with a warning. `asOf` and `to` are ISO 8601 date-times (`2026-10-04T14:05+08:00`); a weather or metrics block without `asOf` is a warning.
+The fence is ```` ```a2ui ```` (or ```` ```a2ui json ````); one JSON object per fence; strict JSON (double quotes, no comments, no trailing commas). An unknown `type` or a missing required field is an error; an unknown field is ignored with a warning. `asOf` and `to` are ISO 8601 date-times (`2026-10-04T14:05+08:00`); a weather, metrics or resources block without `asOf` is a warning.
 
 ## Interaction
 
@@ -63,7 +69,7 @@ The fence is ```` ```a2ui ```` (or ```` ```a2ui json ````); one JSON object per 
 - The pick comes back as the **user's next message in plain text**: for a choice, the option's `value` (default: its `label`), several picks joined with 、 or ", "; for a form, one line per field, `label: answer`. The user can edit that text before sending, or ignore the block and type anything. Read it as you would read any user message; never expect a marker.
 - `allowOther: true` adds an "Other…" control that clears the composer and focuses it. Use it when your options may not cover the answer.
 - Blocks in older turns are read-only; only the latest reply is interactive. Do not refer to "the buttons above" in a later turn.
-- **Widgets** (weather, clock, countdown, metrics) are read-only and do not end the reply: prose may follow them. Nothing in them is clickable. The weather art moves, the clock ticks and the countdown counts down. Weather and metrics show the moment in `asOf` and never update: do not promise that they will.
+- **Widgets and charts** (weather, clock, countdown, metrics, resources, chart) are read-only and do not end the reply: prose may follow them. Nothing in them is clickable. The weather art moves, the clock ticks and the countdown counts down. Weather, metrics and resources show the moment in `asOf` and never update: do not promise that they will.
 
 ## Get real data
 
@@ -71,11 +77,11 @@ A widget shows data you have, never data you guess. Two scripts beside the check
 
 ```sh
 node <skill dir>/scripts/weather.mjs "Beijing" --days 3
-node <skill dir>/scripts/sysinfo.mjs --lang zh
+node <skill dir>/scripts/sysinfo.mjs
 ```
 
 - `weather.mjs <place>` reads Open-Meteo (no key): the current conditions, the next hours and the coming days, in the place's own time zone. If Open-Meteo fails, the script asks wttr.in (no key, 3 days in 3-hour steps); `--source open-meteo|wttr` forces one source. Options: `--days 0-7` (default 5), `--hours 0-24` (default 12), `--unit C|F`, `--lang zh|en|auto` (auto picks zh for a Chinese place name). On stderr it names the place it matched and the source that answered: check that it is the place the user meant.
-- `sysinfo.mjs` reads the machine the agent runs on: CPU, memory, disk, load and uptime. Options: `--disk <path>`, `--lang zh|en`. That machine may not be the user's own computer; say which machine the numbers describe.
+- `sysinfo.mjs` reads the machine the agent runs on and prints a `resources` block: CPU and memory with a short history, swap, disks, network, load and uptime (swap and network on Linux only). Options: `--disk <path>`, repeated for up to 6 disks. That machine may not be the user's own computer; say which machine the numbers describe.
 - Paste the printed fence as it is. Do not retype, round or extend the numbers. Then run the checker on the whole draft.
 - `--json` prints the bare object, for a block you assemble from several readings.
 - If a request fails behind a proxy, run the script again with `NODE_USE_ENV_PROXY=1` set.
@@ -125,12 +131,12 @@ The checker prints these with `--rubric`; they are the L2/L3 judgement no rule c
 
 1. Would plain text have served the reader as well? If yes, remove the block.
 2. Does a sentence before each block say what it is for?
-3. Is each component the right one: choice for one decision, form for several answers, steps for a procedure, callout for one warning or tip, mermaid for a structure or a flow, a widget for a reading taken in at a glance?
+3. Is each component the right one: choice for one decision, form for several answers, steps for a procedure, callout for one warning or tip, mermaid for a structure or a flow, a chart for numbers with a shape, a widget for a reading taken in at a glance?
 4. Do the options cover the realistic answers, with one recommended when you have a view, and is the question the last thing in the reply?
 5. Is the reply what a person would naturally say: short sentences, one instruction each, no filler?
 6. Can the reader take everything in at a glance: at most 5 options, 4 fields, 10 steps, one or two blocks?
 7. Did you keep UI out of a plain fact, a conversational turn or an emotional moment?
-8. Is every number in a widget real — read by a script, a tool or the user, with its `asOf` time — and never invented or rounded into a guess?
+8. Is every number in a widget or a chart real — read by a script, a tool or the user, with its `asOf` time when it is a snapshot — and never invented or rounded into a guess?
 
 ## Worked examples
 
@@ -250,6 +256,29 @@ Here is this month's plan, as the billing API reported it at 09:30.
 ```
 
 Both are above their warning marks, so nothing needs action before the reset.
+````
+
+A comparison, English. The numbers come from the CI logs; one value per category, `null` where there is no reading yet:
+
+````markdown
+The CI logs show that both branches built slower on Wednesday, when the cache was cold.
+
+```a2ui
+{
+  "type": "chart",
+  "kind": "bar",
+  "title": "Build time, this week",
+  "categories": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+  "series": [
+    { "label": "main", "values": [118, 121, 204, 125, 119] },
+    { "label": "dev", "values": [131, 128, 236, 140, null] }
+  ],
+  "yLabel": "Build time",
+  "yUnit": "s"
+}
+```
+
+Friday's dev build has not run yet.
 ````
 
 No block. The user asked what port the dev server uses: answer "The dev server listens on 7369." A callout, a choice or a diagram here would be noise.

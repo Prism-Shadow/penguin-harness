@@ -1,7 +1,8 @@
 /**
  * The charts page's basic charts: each chart drawn from data on fixed demo values, so the themes'
  * chart styles compare — bars grouped and stacked, a histogram, horizontal bars by value, by range
- * and stacked, a line with a gap, a stacked area, and a bare line that traces in.
+ * and stacked, a line with a gap, a stacked area, a bare line that traces in, a scatter of two
+ * series, a pie and a donut, and gauges at rest, past the attention mark and past the danger mark.
  *
  * Every chart is given the width its box measures, the way an A2UI block gives it; each input is
  * built once (module level, or memoized on the dictionary), since a chart keeps effects keyed on
@@ -9,8 +10,24 @@
  */
 import { useMemo } from "react";
 import type { ReactNode } from "react";
-import { BarChart, HBarChart, LineChart, niceDomain, useChartWidth } from "@prismshadow/penguin-ui";
-import type { CartesianSeries, HBarRow, HBarSeries } from "@prismshadow/penguin-ui";
+import {
+  BarChart,
+  Gauge,
+  HBarChart,
+  LineChart,
+  niceDomain,
+  PieChart,
+  ScatterChart,
+  useChartWidth,
+} from "@prismshadow/penguin-ui";
+import type {
+  CartesianSeries,
+  HBarRow,
+  HBarSeries,
+  PieSlice,
+  ScatterSeries,
+  ToneName,
+} from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
@@ -93,6 +110,50 @@ const FORECAST: CartesianSeries[] = [
   },
 ];
 
+/** Two services' responses: size (KB) against latency (ms), a fixed scatter of each. */
+const RESPONSES: readonly (readonly [number, number])[][] = [
+  [
+    [12, 110],
+    [18, 128],
+    [24, 142],
+    [31, 150],
+    [36, 171],
+    [44, 182],
+    [52, 205],
+    [58, 214],
+    [66, 238],
+    [72, 246],
+    [81, 262],
+    [90, 281],
+  ],
+  [
+    [8, 60],
+    [14, 74],
+    [20, 81],
+    [27, 98],
+    [33, 96],
+    [41, 118],
+    [47, 121],
+    [55, 139],
+    [63, 142],
+    [70, 160],
+    [78, 171],
+    [86, 188],
+  ],
+];
+const SERVICE_NAMES = ["api", "web"];
+const kb = (v: number) => `${v} KB`;
+
+/** What a storage volume holds, GB. */
+const STORAGE_GB = [412, 268, 96, 31];
+
+/** Three readings out of a whole: fine, past the attention mark, past the danger mark. */
+const GAUGES: readonly { value: number; tone?: ToneName }[] = [
+  { value: 37 },
+  { value: 86, tone: "attention" },
+  { value: 96, tone: "danger" },
+];
+
 /** A chart's box: it measures its width and hands it to the chart once known. */
 function Measured({ children }: { children: (width: number) => ReactNode }) {
   const [ref, width] = useChartWidth();
@@ -130,6 +191,14 @@ export function BasicCharts() {
         value: `${day.low}° / ${day.high}°`,
         paint: { ink: "text-fg-subtle", swatch: "bg-fg-subtle" },
       })),
+    [t],
+  );
+  const responses = useMemo<ScatterSeries[]>(
+    () => RESPONSES.map((points, i) => ({ label: SERVICE_NAMES[i] ?? "", points })),
+    [],
+  );
+  const storage = useMemo<PieSlice[]>(
+    () => STORAGE_GB.map((value, i) => ({ label: t.storage[i] ?? "", value })),
     [t],
   );
   const traffic = useMemo<HBarSeries[]>(() => [{ label: t.read }, { label: t.write }], [t]);
@@ -245,6 +314,47 @@ export function BasicCharts() {
             />
           )}
         </Measured>
+      </BoardGroup>
+      <BoardGroup title={t.scatter} aside={t.scatterHint}>
+        <Measured>
+          {(width) => (
+            <ScatterChart
+              series={responses}
+              width={width}
+              fmtX={kb}
+              fmtY={ms}
+              label={t.scatterLabel}
+              captions={{ x: t.payload, y: t.latency }}
+            />
+          )}
+        </Measured>
+      </BoardGroup>
+      <BoardGroup title={t.pie} aside={t.pieHint}>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="lib-box p-3">
+            <PieChart slices={storage} fmtValue={gb} label={t.storageLabel} />
+          </div>
+          <div className="lib-box p-3">
+            <PieChart slices={storage} donut fmtValue={gb} label={t.storageLabel} />
+          </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.gauge} aside={t.gaugeHint}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {GAUGES.map((reading, i) => (
+            <div key={i} className="lib-box flex flex-col gap-1 p-3">
+              <span className="text-xs text-fg-muted">{t.gauges[i]}</span>
+              <Gauge
+                value={reading.value}
+                max={100}
+                figure={String(reading.value)}
+                unit="%"
+                label={t.gauges[i] ?? ""}
+                {...(reading.tone !== undefined ? { tone: reading.tone } : {})}
+              />
+            </div>
+          ))}
+        </div>
       </BoardGroup>
     </>
   );
