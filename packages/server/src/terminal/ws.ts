@@ -13,12 +13,13 @@
  * CORS, so without it any page the user visits could open a shell on this machine.
  */
 import type { IncomingMessage, Server as HttpServer } from "node:http";
+import { format } from "node:url";
 import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import {
   isOwnOrigin,
-  requestScheme,
+  originTarget,
   parseCookieHeader,
   sessionCookies,
 } from "../auth/middleware.js";
@@ -60,10 +61,34 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     // "no handler -> destroy" behaviour) can deal with it.
     if (!match) return;
 
-    if (!isAllowedOrigin(req, deps.trustProxy ?? false)) return refuse(socket, 403, "Forbidden");
+    let target: URL;
+    try {
+      // IncomingMessage has no Fetch Request URL; Node formats its transport authority.
+      if (!req.headers.host) return refuse(socket, 403, "Forbidden");
+      const protocol = req.socket instanceof TLSSocket && req.socket.encrypted ? "https:" : "http:";
+      target = new URL(
+        format({ protocol, host: req.headers.host, pathname: url.pathname, slashes: true }),
+      );
+      const forwarded = req.headers["x-forwarded-proto"];
+      if (
+        req.headers.origin &&
+        !isOwnOrigin(
+          req.headers.origin,
+          originTarget(
+            target,
+            Array.isArray(forwarded) ? forwarded.join(",") : forwarded,
+            deps.trustProxy ?? false,
+          ),
+        )
+      ) {
+        return refuse(socket, 403, "Forbidden");
+      }
+    } catch {
+      return refuse(socket, 403, "Forbidden");
+    }
 
     const authed =
-      sessionCookies(parseCookieHeader(req.headers.cookie), req.headers.host)
+      sessionCookies(parseCookieHeader(req.headers.cookie), target)
         .map(({ token }) => deps.authService.authenticateWithMeta(token))
         .find((a) => a !== null) ?? null;
     if (!authed) return refuse(socket, 401, "Unauthorized");
@@ -87,22 +112,6 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         refuse(socket, 500, "Internal Server Error");
       });
   });
-}
-
-/**
- * A WebSocket handshake bypasses CORS entirely, so any origin may attempt one and the cookie
- * still rides along. Only a genuinely same-origin page may connect: host AND port must match
- * the Host the browser targeted — the same rule every write is held to (auth/middleware.ts).
- */
-function isAllowedOrigin(req: IncomingMessage, trustProxy: boolean): boolean {
-  const protocol = req.socket instanceof TLSSocket && req.socket.encrypted ? "https:" : "http:";
-  const forwarded = req.headers["x-forwarded-proto"];
-  const scheme = requestScheme(
-    protocol,
-    Array.isArray(forwarded) ? forwarded.join(",") : forwarded,
-    trustProxy,
-  );
-  return isOwnOrigin(req.headers.origin, req.headers.host, scheme);
 }
 
 function refuse(socket: Duplex, status: number, text: string): void {

@@ -168,7 +168,7 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
         const { token } = await deps.authService.login(c.var.user.userId, newPassword);
         setCookie(
           c,
-          sessionCookieName(c.req.header("host"), c.req.header("origin") !== undefined),
+          sessionCookieName(c.req.url, c.req.header("origin") !== undefined),
           token,
           cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
         );

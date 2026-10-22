@@ -25,6 +25,9 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { EventEmitter } from "node:events";
+import type { Server } from "node:http";
+import { attachTerminalWebSocket } from "../src/terminal/ws.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentApiKeyCreateResponse, MeResponse, ProjectsResponse } from "../src/api/types.js";
 import { bootAppDeps } from "../src/app.js";
@@ -38,6 +41,7 @@ import {
   jsonOnlyWrites,
 } from "../src/auth/middleware.js";
 import { Hono } from "hono";
+import { identityFrom } from "../src/terminal/identity.js";
 import { mediaType } from "../src/http/media-type.js";
 import { handleError } from "../src/http/errors.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
@@ -163,7 +167,7 @@ describe("auth", () => {
       await provisionUser(t.app, "dana");
       await provisionUser(other.app, "dana");
       const signIn = async (app: TestApp["app"], port: number) => {
-        const res = await app.request("/api/auth/login", {
+        const res = await app.request(`http://phone.example:${port}/api/auth/login`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -182,11 +186,13 @@ describe("auth", () => {
       // One jar, both cookies, sent to both — each server finds its own.
       const jar = `${a}; ${b}`;
       const me = (app: TestApp["app"], port: number) =>
-        app.request("/api/me", { headers: { cookie: jar, host: `phone.example:${port}` } });
+        app.request(`http://phone.example:${port}/api/me`, {
+          headers: { cookie: jar, host: `phone.example:${port}` },
+        });
       expect((await me(t.app, 53531)).status).toBe(200);
       expect((await me(other.app, 53899)).status).toBe(200);
       // Signing out of one leaves the other's cookie alone.
-      const out = await t.app.request("/api/auth/logout", {
+      const out = await t.app.request("http://phone.example:53531/api/auth/logout", {
         method: "POST",
         headers: { cookie: jar, host: "phone.example:53531", origin: "http://phone.example:53531" },
       });
@@ -221,7 +227,7 @@ describe("auth", () => {
       headers: Record<string, string>,
       body: string | Uint8Array = JSON.stringify({ projectId: "fay-one", name: "x" }),
     ) =>
-      t.app.request("/api/projects", {
+      t.app.request("http://localhost:7364/api/projects", {
         method: "POST",
         headers: { cookie, host: "localhost:7364", ...headers },
         body,
@@ -272,7 +278,7 @@ describe("auth", () => {
       client: "api",
     });
     const abort = (headers: Record<string, string>) =>
-      t.app.request(`/api/amsp/v1/sessions/${sessionId}/abort`, {
+      t.app.request(`http://localhost:7364/api/amsp/v1/sessions/${sessionId}/abort`, {
         method: "POST",
         headers: { host: "localhost:7364", ...headers },
       });
@@ -334,19 +340,19 @@ describe("auth", () => {
     expect((await write("example.com:8443", "http://example.com", "hugo-eight")).status).toBe(403);
   });
 
-  it("names a browser's cookie after every explicit Host port", async () => {
+  it("names a browser's cookie after the normalized request URL port", async () => {
     await provisionUser(t.app, "iris");
     const signIn = (host: string, origin: string) =>
-      t.app.request("/api/auth/login", {
+      t.app.request(`${origin}/api/auth/login`, {
         method: "POST",
         headers: { "content-type": "application/json", host, origin },
         body: JSON.stringify({ userId: "iris", password: "password-123" }),
       });
-    // Explicit default ports remain in cookie names, on both issue and lookup.
+    // Default ports normalize away on both issue and lookup.
     const plain = await signIn("example.com:80", "http://example.com");
     expect(plain.status).toBe(200);
     const plainCookie = (plain.headers.get("set-cookie") ?? "").split(";")[0]!;
-    expect(plainCookie.startsWith("penguin_session_80=")).toBe(true);
+    expect(plainCookie.startsWith("penguin_session=")).toBe(true);
     expect(
       (await t.app.request("/api/me", { headers: { cookie: plainCookie, host: "example.com:80" } }))
         .status,
@@ -358,28 +364,78 @@ describe("auth", () => {
     expect(keyedCookie.startsWith("penguin_session_7364=")).toBe(true);
     expect(
       (
-        await t.app.request("/api/me", {
+        await t.app.request("http://example.com:7364/api/me", {
           headers: { cookie: keyedCookie, host: "example.com:7364" },
         })
       ).status,
     ).toBe(200);
   });
 
-  it("compares complete origins and preserves explicit cookie ports", () => {
-    expect(isOwnOrigin("http://example.com", "example.com", "https:")).toBe(false);
-    expect(isOwnOrigin("https://example.com", "example.com", "https:")).toBe(true);
-    expect(isOwnOrigin("http://[0:0:0:0:0:0:0:1]:7364", "[::1]:7364", "http:")).toBe(true);
-    expect(isOwnOrigin("http://[::1]:7365", "[::1]:7364", "http:")).toBe(false);
-    expect(isOwnOrigin("http://example.com:8443", "example.com", "http:")).toBe(false);
-    expect(isOwnOrigin("null", "example.com", "http:")).toBe(false);
-    expect(isOwnOrigin("http://example.com", "example.com/other", "http:")).toBe(false);
-    expect(isOwnOrigin(undefined, "example.com", "http:")).toBe(true);
-    for (const port of ["80", "443", "7364"]) {
-      expect(sessionCookieName(`example.com:${port}`, true)).toBe(`penguin_session_${port}`);
-      expect(sessionCookieName(`[::1]:${port}`, true)).toBe(`penguin_session_${port}`);
+  it("uses normalized platform URLs for origin checks and terminal identity", async () => {
+    expect(isOwnOrigin("http://example.com", new URL("https://example.com"))).toBe(false);
+    expect(isOwnOrigin("https://example.com", new URL("https://example.com:443"))).toBe(true);
+    expect(isOwnOrigin("http://[0:0:0:0:0:0:0:1]:7364", new URL("http://[::1]:7364"))).toBe(true);
+    expect(isOwnOrigin("http://[::1]:7365", new URL("http://[::1]:7364"))).toBe(false);
+    expect(isOwnOrigin("http://example.com:8443", new URL("http://example.com"))).toBe(false);
+    expect(isOwnOrigin("null", new URL("http://example.com"))).toBe(false);
+    expect(isOwnOrigin(undefined, new URL("http://example.com"))).toBe(true);
+    for (const url of ["http://example.com:80", "https://example.com:443"]) {
+      expect(sessionCookieName(url, true)).toBe("penguin_session");
     }
-    expect(sessionCookieName("example.com", true)).toBe("penguin_session");
-    expect(sessionCookieName("example.com:443", false)).toBe("penguin_session");
+    for (const [url, port] of [
+      ["http://example.com:443", "443"],
+      ["https://example.com:80", "80"],
+      ["http://[::1]:7364", "7364"],
+    ]) {
+      expect(sessionCookieName(url!, true)).toBe(`penguin_session_${port}`);
+    }
+    const identity = identityFrom({
+      authenticateWithMeta: (token) => (token === "live" ? { user: { userId: "alice" } } : null),
+    });
+    for (const url of ["http://example.com:80", "https://example.com:443", "http://[::1]:7364"]) {
+      const name = sessionCookieName(url, true);
+      expect(await identity(new Request(url, { headers: { cookie: `${name}=live` } }))).toEqual({
+        userId: "alice",
+      });
+    }
+    // A conflicting Host no longer overrides the adapter's request URL.
+    expect(
+      await identity(
+        new Request("http://example.com:7364", {
+          headers: { host: "example.com:9999", cookie: "penguin_session_7364=live" },
+        }),
+      ),
+    ).toEqual({ userId: "alice" });
+  });
+
+  it("uses normalized URL cookie names in the Node upgrade path", async () => {
+    for (const [host, origin, name] of [
+      ["example.com:80", "http://example.com", "penguin_session"],
+      ["[::1]:7364", "http://[::1]:7364", "penguin_session_7364"],
+    ]) {
+      const server = new EventEmitter();
+      attachTerminalWebSocket(server as unknown as Server, {
+        hmr: t.deps.hmr,
+        authService: t.deps.authService,
+        log: () => {},
+      });
+      const { token } = await t.deps.authService.login("admin", TEST_ADMIN_PASSWORD);
+      const reply = await new Promise<string>((resolve) => {
+        const socket = { write: (value: string) => resolve(value), destroy: () => {} };
+        server.emit(
+          "upgrade",
+          {
+            url: "/api/terminals/missing/stream",
+            headers: { host, origin, cookie: `${name}=${token}` },
+            socket,
+          },
+          socket,
+          Buffer.alloc(0),
+        );
+      });
+      // 404 proves both the origin and the normalized cookie passed, without creating a pty.
+      expect(reply).toContain("404 Not Found");
+    }
   });
 
   it("uses forwarded schemes only behind a trusted proxy and rejects malformed values", async () => {
@@ -463,7 +519,7 @@ describe("auth", () => {
     // A page can send a body without a length (`fetch` with a stream), which no HTML form can:
     // the content-type rule has to see the body, not just a content-length that is missing.
     const { cookie } = await provisionUser(t.app, "jane");
-    const res = await t.app.request("/api/projects", {
+    const res = await t.app.request("http://localhost:7364/api/projects", {
       method: "POST",
       headers: {
         cookie,

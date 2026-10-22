@@ -89,7 +89,7 @@ export function streamRevocation(
   const cookies =
     bearerToken(c.req.header("authorization")) !== null
       ? []
-      : sessionCookies(getCookie(c), c.req.header("host"));
+      : sessionCookies(getCookie(c), c.req.url);
   const token =
     cookies.find((cookie) => deps.auth.sessionIsLive(cookie.token))?.token ??
     cookies[0]?.token ??

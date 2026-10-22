@@ -30,41 +30,18 @@ import type { Auth } from "../mechanisms/identity.js";
  */
 export const SESSION_COOKIE = "penguin_session";
 
-/**
- * Host is an authority, not a URL: supply the trusted scheme to the WHATWG parser.
- * This adapts the input; it is not a complete HTTP Host syntax validator.
- */
-function hostUrl(host: string | undefined, scheme: string): URL | null {
-  if (!host || (scheme !== "http:" && scheme !== "https:")) return null;
-  try {
-    const url = new URL(`${scheme}//${host}`);
-    return url.username || url.password || url.pathname !== "/" || url.search || url.hash
-      ? null
-      : url;
-  } catch {
-    return null;
-  }
-}
-
-/** Keep an explicit Host port, including 80 and 443, independent of the transport scheme. */
-function explicitHostPort(host: string | undefined): string {
-  // Request.url has already lost explicit default ports. Keep the raw Host contract:
-  // each platform parse drops only its own default; the other preserves it.
-  return hostUrl(host, "http:")?.port || hostUrl(host, "https:")?.port || "";
-}
-
 /** Browsers share cookies across ports; non-browser jars retain the legacy plain name. */
-export function sessionCookieName(host: string | undefined, browser: boolean): string {
-  const port = browser ? explicitHostPort(host) : "";
+export function sessionCookieName(requestUrl: string | URL, browser: boolean): string {
+  const port = browser ? new URL(requestUrl).port : "";
   return port ? `${SESSION_COOKIE}_${port}` : SESSION_COOKIE;
 }
 
-/** Prefer this Host's cookie, retaining the legacy plain-cookie migration fallback. */
+/** Prefer this request URL's port cookie, retaining the legacy plain-cookie fallback. */
 export function sessionCookies(
   cookies: Record<string, string | undefined>,
-  host: string | undefined,
+  requestUrl: string | URL,
 ): { name: string; token: string }[] {
-  const own = sessionCookieName(host, true);
+  const own = sessionCookieName(requestUrl, true);
   const names = own === SESSION_COOKIE ? [own] : [own, SESSION_COOKIE];
   return names.flatMap((name) => {
     const token = cookies[name];
@@ -88,26 +65,35 @@ export function requestScheme(
 }
 
 /** Scheme, host and port must agree; absent Origin retains the non-browser contract. */
-export function isOwnOrigin(
-  origin: string | undefined,
-  host: string | undefined,
-  scheme: string,
-): boolean {
+export function isOwnOrigin(origin: string | undefined, requestUrl: URL): boolean {
   if (!origin) return true;
-  const own = hostUrl(host, scheme);
-  if (!own) return false;
+  if (requestUrl.protocol !== "http:" && requestUrl.protocol !== "https:") return false;
   try {
     const source = new URL(origin);
     return (
-      (source.protocol === "http:" || source.protocol === "https:") && source.origin === own.origin
+      (source.protocol === "http:" || source.protocol === "https:") &&
+      source.origin === requestUrl.origin
     );
   } catch {
     return false;
   }
 }
 
-function contextScheme(c: Context, trustProxy: boolean): string {
-  return requestScheme(new URL(c.req.url).protocol, c.req.header("x-forwarded-proto"), trustProxy);
+/** Use the adapter-provided request URL; only trusted proxies may replace its protocol. */
+export function originTarget(
+  requestUrl: string | URL,
+  forwarded: string | undefined,
+  trustProxy: boolean,
+): URL {
+  const url = new URL(requestUrl);
+  const scheme = requestScheme(url.protocol, forwarded, trustProxy);
+  if (!scheme) throw new HttpError(403, "cross_origin_write", "Invalid forwarded protocol.");
+  url.protocol = scheme;
+  return url;
+}
+
+function contextTarget(c: Context, trustProxy: boolean): URL {
+  return originTarget(c.req.url, c.req.header("x-forwarded-proto"), trustProxy);
 }
 
 /**
@@ -169,7 +155,7 @@ export function authMiddleware(
       await next();
       return;
     }
-    const cookies = sessionCookies(getCookie(c), c.req.header("host"));
+    const cookies = sessionCookies(getCookie(c), c.req.url);
     // Classify a refused cookie without renewing its session or setting a response cookie.
     if (options.apiTokenOnly) {
       if (cookies.some((cookie) => auth.sessionIsLive(cookie.token))) {
@@ -283,7 +269,8 @@ export const sameOriginWrites =
       WRITE_METHODS.has(c.req.method) &&
       !OWN_ORIGIN_RULE_PATHS.has(c.req.path.replace(/\/+$/, "")) &&
       !isAmspKeyedWrite(c) &&
-      !isOwnOrigin(c.req.header("origin"), c.req.header("host"), contextScheme(c, trustProxy))
+      c.req.header("origin") &&
+      !isOwnOrigin(c.req.header("origin"), contextTarget(c, trustProxy))
     ) {
       throw new HttpError(
         403,
@@ -323,7 +310,7 @@ function fromThisOrigin(c: Context, trustProxy: boolean): boolean {
   const header = (name: string) => c.req.header(name);
   const site = header("sec-fetch-site");
   if (site !== undefined) return site === "same-origin";
-  return isOwnOrigin(header("origin"), header("host"), contextScheme(c, trustProxy));
+  return !header("origin") || isOwnOrigin(header("origin"), contextTarget(c, trustProxy));
 }
 
 const crossOrigin = () =>

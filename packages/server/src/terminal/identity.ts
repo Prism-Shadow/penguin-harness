@@ -32,7 +32,7 @@ export function identityFrom(auth: AuthenticatesSessions | null): Identity {
   if (auth === null) return async () => null;
   return async (request) => {
     const cookies = parseCookieHeader(request.headers.get("cookie"));
-    for (const { token } of sessionCookies(cookies, request.headers.get("host") ?? undefined)) {
+    for (const { token } of sessionCookies(cookies, request.url)) {
       const authed = auth.authenticateWithMeta(token);
       if (authed !== null) return { userId: authed.user.userId };
     }
