@@ -114,8 +114,11 @@ export function inspectWrapperTarget(target: string, desired: string): TargetSta
 
 /**
  * Creates `target` as a symlink to `desired`, replacing whatever is there. Throws on failure.
- * A symlink is unlinked, not removed with `rmSync` (broken on Node 24.0.0–24.13.0); other
- * entries keep `rmSync`, which still refuses a directory with `ERR_FS_EISDIR`.
+ * An existing symlink is removed with `unlinkSync`, which never follows it; `rmSync` did on
+ * Node 24.0.0–24.13.0 (nodejs/node#61020: a dangling link survived and a link to a directory
+ * threw ERR_FS_EISDIR). Anything else still goes through `rmSync`, which refuses a directory
+ * with ERR_FS_EISDIR — on macOS `unlinkSync` would say EPERM, which the caller takes for a
+ * permission problem and answers with an administrator prompt.
  */
 export function writeSymlink(target: string, desired: string): void {
   fs.mkdirSync(path.dirname(target), { recursive: true });
