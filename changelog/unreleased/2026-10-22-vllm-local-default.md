@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** fix
 - **Scope:** `model-catalog`, `server`, `web`, `docs`
+- **PR:** [#1288](https://github.com/Prism-Shadow/penguin-harness/pull/1288)
 - **Breaking:** yes — a vLLM model with no base URL anywhere goes to `VLLM_BASE_URL` or `http://127.0.0.1:8000/v1` instead of `OPENAI_BASE_URL` or OpenAI, and reads `VLLM_API_KEY` instead of `OPENAI_API_KEY`
 
 [中文版](2026-10-22-vllm-local-default.zh.md)
