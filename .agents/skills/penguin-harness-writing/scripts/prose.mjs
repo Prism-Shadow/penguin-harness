@@ -7,7 +7,7 @@
  *
  *   node prose.mjs <step> [options]
  *
- *   API steps:   outline | section | write | translate | polish | fix | trim | review
+ *   API steps:   outline | section | write | translate | polish | fix | trim | emphasize | review
  *   local steps: plan | assemble | route | check | strip | pair | selftest
  *
  * A post is planned once (outline, then plan validates and freezes it), written one section per
@@ -42,7 +42,17 @@ const REFERENCE = path.join(SKILL, "reference");
 
 const ENDPOINT = "https://tokendance.space/gateway/v1/chat/completions";
 const DEFAULT_MODEL = "seed-2.1-pro";
-const API_STEPS = ["outline", "section", "write", "translate", "polish", "fix", "trim", "review"];
+const API_STEPS = [
+  "outline",
+  "section",
+  "write",
+  "translate",
+  "polish",
+  "fix",
+  "trim",
+  "emphasize",
+  "review",
+];
 const LOCAL_STEPS = ["plan", "assemble", "route", "check", "strip", "pair", "selftest"];
 const LANG_NAME = { en: "English", zh: "Chinese" };
 const BLOG_CATEGORIES = ["news", "practice", "perspectives", "changelog"];
@@ -96,7 +106,13 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
                <out>.rejected.md (exit 1; retry once, then the author). --out defaults to the next
                version. fix, polish and translate refuse a changed version note the same way.
                Every per-section call aims at the lowest of the planned size, what the page has
-               left and the profile's cap, and prints the page total after it writes
+               left and the profile's cap, and prints the page total after it writes. The other
+               sections count as --page <assembled draft> holds them, else as their newest files
+  emphasize  --in <draft.<lang>.vN.md> [--mirror <the other language's emphasized draft>]
+               marks one key sentence per section (and in the lead) with ** and changes nothing
+               else; an answer that differs once ** are removed, or has a section with no span or
+               two, or a span too long or in the wrong place, goes to <out>.rejected.md (exit 1).
+               --out defaults to the next draft version
   review     --in <f> [--facts <f>] [--tells]   numbered findings in the form fix reads; --out
              defaults to findings.<lang>.vN.api.md (findings.s<n>.<lang>.vK.api.md for a section)
 
@@ -126,7 +142,7 @@ local steps:
   route      --findings <findings.<lang>.vN.md> --sections-dir <dir>
                splits findings into findings.s<n>.<lang>.vN.md by the section quoting each
                passage; the rest go to findings.unrouted.<lang>.vN.md
-  check      --in <f> [--profile <name|f>] [--facts <f>] [--outline <f>] [--section <n>]
+  check      --in <f> [--profile <name|f>] [--facts <f>] [--outline <f>] [--section <n>] [--page <f>]
              [--figures <manifest>] [--svg <dir>] [--draft <f>] [--slug <slug>] [--pair <f>]
              [--assets <dir>] [--version-note <t>] [--lang en|zh]
                budgets are hard: a section above min(plan × 1.1, profile cap) is an error
@@ -189,6 +205,8 @@ const OPTIONS = new Set([
   "numbering-from",
   "section-cap",
   "cap",
+  "mirror",
+  "page",
 ]);
 const FLAGS = new Set(["dry-run", "help", "tells", "facts-all", "freeze"]);
 const REPEATABLE = new Set(["research", "pin"]);
@@ -693,6 +711,11 @@ function budgetsOf(prof, lang, o = {}) {
     section: rangeOf(s[zh ? "zh-section-chars" : "section-words"]),
     sections: rangeOf(s.sections),
     tldr: s.tldr === "yes" ? rangeOf(s[zh ? "zh-tldr-chars" : "tldr-words"]) : undefined,
+    // One marked key sentence per section, at most this long; set by `emphasis: yes`.
+    emphasis:
+      s.emphasis === "yes"
+        ? { cap: Number(s[zh ? "zh-emphasis-chars" : "emphasis-words"]) || undefined }
+        : undefined,
   };
   if (o["word-budget"] !== undefined && rangeOf(o["word-budget"]))
     b.total = rangeOf(o["word-budget"]);
@@ -756,16 +779,28 @@ function pageShare(text, n, lang) {
 }
 
 /**
- * The rest of the page around section n: each other section's latest version in the directory,
- * or its planned size while it is unwritten.
+ * The rest of the page around section n: each other section as the assembled draft holds it
+ * (`--page`), or else its newest version in the directory, or its planned size while it is
+ * unwritten. A draft names the versions actually in the page: a newer file beside it may be one
+ * the author set aside and pinned an older version over.
  */
-function pageAround(dir, lang, n, outline, budgets) {
-  const files = sectionFiles(dir, lang);
-  const ns = new Set([...files.keys(), ...(outline?.rows ?? []).map((r) => r.n)]);
+function pageAround(dir, lang, n, outline, budgets, pageFile) {
+  const drafted = pageFile ? splitSections(read(pageFile, "--page")) : undefined;
+  const files = drafted ? new Map() : sectionFiles(dir, lang);
+  const ns = new Set([
+    ...files.keys(),
+    ...(drafted ?? []).map((x) => x.n),
+    ...(outline?.rows ?? []).map((r) => r.n),
+  ]);
   let others = 0;
   const planned = [];
+  const source = pageFile ? path.basename(pageFile) : "the newest section files";
   for (const k of [...ns].sort((a, b) => a - b)) {
     if (k === n || Number.isNaN(k)) continue;
+    if (drafted?.[k]) {
+      others += pageShare(drafted[k].text, k, lang);
+      continue;
+    }
     const list = files.get(k);
     if (list) {
       others += pageShare(read(list[list.length - 1].file), k, lang);
@@ -781,13 +816,13 @@ function pageAround(dir, lang, n, outline, budgets) {
       planned.push(k);
     }
   }
-  return { others, planned };
+  return { others, planned, source };
 }
 
 /** The page total with `text` as section n, against the page cap; undefined without a cap. */
-function pageReport(dir, lang, n, text, outline, budgets) {
+function pageReport(dir, lang, n, text, outline, budgets, pageFile) {
   if (!budgets.total) return undefined;
-  const { others, planned } = pageAround(dir, lang, n, outline, budgets);
+  const { others, planned, source } = pageAround(dir, lang, n, outline, budgets, pageFile);
   const total = others + pageShare(text, n, lang);
   const cap = budgets.total.cap;
   const rest = planned.length ? ` (s${planned.join(", s")} at their planned size)` : "";
@@ -796,12 +831,12 @@ function pageReport(dir, lang, n, text, outline, budgets) {
     cap,
     unit: budgets.unit,
     over: total > cap,
-    line: `the page is ${total} ${budgets.unit} with this section${rest}; its cap is ${cap}`,
+    line: `the page is ${total} ${budgets.unit} with this section${rest}; its cap is ${cap} (the other sections from ${source})`,
   };
 }
 
 /** What a per-section call needs to size section n: its planned size, check's cap, the rest of the page. */
-function sectionSizing({ n, lang, budgets, outline, dir }) {
+function sectionSizing({ n, lang, budgets, outline, dir, page }) {
   const row = outline?.rows.find((r) => r.n === n);
   const sameUnit = !!outline && outline.unit === budgets.unit;
   const planned = plannedSize(row, outline, budgets);
@@ -810,7 +845,7 @@ function sectionSizing({ n, lang, budgets, outline, dir }) {
     planned,
     planRowSize:
       planned !== undefined && !sameUnit ? `${row.budget} ${UNIT_NAME[outline.unit]}` : undefined,
-    others: pageAround(dir, lang, n, outline, budgets).others,
+    others: pageAround(dir, lang, n, outline, budgets, page).others,
   };
 }
 
@@ -1175,7 +1210,7 @@ function buildMessages(step, o) {
   const outlineGiven = () => (o.outline ? parseOutline(read(o.outline, "--outline")) : undefined);
   // After any per-section step: the page total with the new section, so creep shows early.
   const pageNote = (ctx) => (out) => {
-    const page = pageReport(ctx.dir, ctx.lang, ctx.n, out, ctx.outline, ctx.budgets);
+    const page = pageReport(ctx.dir, ctx.lang, ctx.n, out, ctx.outline, ctx.budgets, o.page);
     if (page)
       note(`page: ${page.line}${page.over ? "; over, so trim a section before assembling" : ""}`);
   };
@@ -1250,7 +1285,7 @@ function buildMessages(step, o) {
       const row = outline.rows.find((r) => r.n === n);
       if (!row) fail(`the outline's plan has no row ${n}`);
       const budgets = budgetsOf(prof, lang, o);
-      const sizing = sectionSizing({ n, lang, budgets, outline, dir });
+      const sizing = sectionSizing({ n, lang, budgets, outline, dir, page: o.page });
       const cap = sizing.cap;
       params = sectionParams(F, prof, lang, n, {
         ...sizing,
@@ -1332,7 +1367,7 @@ function buildMessages(step, o) {
           cap: rowCap(budgets, sec.n, undefined),
           planned,
           plannedKind: "translated",
-          others: pageAround(sec.dir, lang, sec.n, outline, budgets).others,
+          others: pageAround(sec.dir, lang, sec.n, outline, budgets, o.page).others,
           budgets,
           figureIds: figureIdsIn(input),
         });
@@ -1389,7 +1424,14 @@ function buildMessages(step, o) {
       const noteKept = sec && sec.n > 0 ? versionNoteOf(doc) : shared.versionNote;
       if (sec) {
         const outline = outlineGiven();
-        const sizing = sectionSizing({ n: sec.n, lang, budgets, outline, dir: sec.dir });
+        const sizing = sectionSizing({
+          n: sec.n,
+          lang,
+          budgets,
+          outline,
+          dir: sec.dir,
+          page: o.page,
+        });
         const cap = sizing.cap;
         const now = sectionSize(input, sec.n, lang);
         if (!outline && cap !== undefined) {
@@ -1454,7 +1496,14 @@ function buildMessages(step, o) {
       lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
       const budgets = budgetsOf(prof, lang, o);
       const outline = outlineGiven();
-      const sizing = sectionSizing({ n: sec.n, lang, budgets, outline, dir: sec.dir });
+      const sizing = sectionSizing({
+        n: sec.n,
+        lang,
+        budgets,
+        outline,
+        dir: sec.dir,
+        page: o.page,
+      });
       const cap = o.cap !== undefined ? Number(o.cap) : sizing.cap;
       if (!(cap > 0)) {
         fail(
@@ -1509,6 +1558,48 @@ function buildMessages(step, o) {
       );
       break;
     }
+    case "emphasize": {
+      if (input === undefined) fail("emphasize needs --in <draft>");
+      if (sectionOfFile(o.in)) fail("emphasize marks a whole draft: assemble the sections first");
+      lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
+      const budgets = budgetsOf(prof, lang, o);
+      if (!budgets.emphasis) fail(`profile ${prof.name} has no \`emphasis: yes\` setting`);
+      params = profileParams(F, prof, lang);
+      Object.assign(params, countRuleParams(F, lang));
+      params.EMPHASIS_CAP = `${budgets.emphasis.cap} ${budgets.unitName}`;
+      params.MIRROR_RULE = "";
+      params.MIRROR_SECTION = "";
+      let mirror;
+      if (o.mirror) {
+        mirror = read(o.mirror, "--mirror");
+        if (!emphasisCheck(mirror, langOf(o.mirror) ?? "en", {}).spans.some((x) => x.length)) {
+          fail(`--mirror ${o.mirror} has no emphasized span; emphasize that language first`);
+        }
+        params.MIRROR_LANG_NAME = LANG_NAME[langOf(o.mirror) ?? (lang === "zh" ? "en" : "zh")];
+        params.MIRROR_RULE = F["emphasis-mirror-rule"];
+        params.MIRROR_SECTION = `${F["emphasis-mirror-section"]}\n\n`;
+        content.MIRROR = fenced(mirror);
+      }
+      content.DRAFT = fenced(input);
+      o.out ??= nextDraftFile(o.in);
+      hooks.verify = (out) => emphasizeProblems(input, out, lang, budgets);
+      hooks.retry = "rerun emphasize once; a second failure goes to the author";
+      if (mirror) {
+        hooks.after = (out) => {
+          const mine = emphasisCheck(out, lang, {}).spans;
+          const theirs = emphasisCheck(mirror, langOf(o.mirror) ?? "en", {}).spans;
+          mine.forEach((spans, i) => {
+            const nums = (xs) => xs.flatMap((x) => x.text.match(/\d+(?:[.,]\d+)*/g) ?? []).join();
+            if (nums(spans) !== nums(theirs[i] ?? [])) {
+              note(
+                `section ${i}: the emphasized span holds other numbers than the mirror's; pair will warn`,
+              );
+            }
+          });
+        };
+      }
+      break;
+    }
     case "review": {
       if (input === undefined) fail("review needs --in <draft>");
       lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
@@ -1555,6 +1646,47 @@ function versionNoteProblems(after, expected) {
       ? `the version note "> ${want}" is gone`
       : `the version note changed: "> ${got}" (it was "> ${want}")`,
   ];
+}
+
+/**
+ * What emphasize may not do: change any character but `**` pairs, or leave the spans breaking the
+ * emphasis rule (one per section and in the lead, within the cap, in running text only).
+ */
+function emphasizeProblems(before, after, lang, budgets) {
+  const problems = [];
+  const bare = (t) => t.replace(/\*\*/g, "").replace(/\s+$/, "").split("\n");
+  const a = bare(before);
+  const b = bare(after);
+  const at = a.findIndex((line, i) => line !== b[i]);
+  if (at !== -1 || a.length !== b.length) {
+    const i = at !== -1 ? at : Math.min(a.length, b.length);
+    problems.push(
+      `line ${i + 1} differs once the ** are removed: "${(a[i] ?? "(none)").slice(0, 60)}" became "${(b[i] ?? "(none)").slice(0, 60)}"`,
+    );
+  }
+  const { problems: rules } = emphasisCheck(after, lang, {
+    cap: budgets.emphasis.cap,
+    requireAll: true,
+    strict: true,
+  });
+  for (const p of rules) problems.push(p.n ? `line ${p.n}: ${p.msg}` : p.msg);
+  for (const it of parseText(after).items) {
+    if (!["text", "list", "quote", "table", "heading"].includes(it.type)) continue;
+    for (const msg of flankingProblems(it.line)) problems.push(`line ${it.n}: ${msg}`);
+  }
+  return problems;
+}
+
+/** `draft.en.v3.md` → the next free `draft.en.v<k>.md` beside it; any other name needs --out. */
+function nextDraftFile(input) {
+  const m = /^draft\.(en|zh)\.v\d+\.md$/.exec(path.basename(input));
+  if (!m) fail("emphasize needs --out <file> for an input not named draft.<lang>.vN.md");
+  const dir = path.dirname(input);
+  const versions = readdirSync(dir)
+    .map((name) => new RegExp(`^draft\\.${m[1]}\\.v(\\d+)\\.md$`).exec(name)?.[1])
+    .filter(Boolean)
+    .map(Number);
+  return path.join(dir, `draft.${m[1]}.v${Math.max(...versions) + 1}.md`);
 }
 
 /** The numbered items of a findings list, each with its [quoted passage] when it has one. */
@@ -2262,7 +2394,13 @@ function loadFacts(file) {
     const t = /\[((?:S\d+[\s,]*)+)\]\s*$/.exec(entry.trim());
     tags.set(id, t ? t[1].match(/S\d+/g) : []);
   }
-  return { text, ids, urls, terms, sources, tags };
+  // Facts whose sources are background: the writer still marks them, and they cite nothing.
+  const nocite = new Set();
+  for (const line of (factsSection(text, "NOCITE") ?? "").split("\n")) {
+    const m = /^\s*[-*]\s*((?:\{?F\d+\}?[\s,]*)+)/.exec(line);
+    if (m) for (const id of m[1].match(/F\d+/g)) nocite.add(id);
+  }
+  return { text, ids, urls, terms, sources, tags, nocite };
 }
 
 function codeSpans(doc) {
@@ -2763,6 +2901,170 @@ function checkFigures(doc, lang, prof, o, r, secN) {
   }
 }
 
+/**
+ * Each `**` in a line that CommonMark cannot read as emphasis, so the page shows the asterisks. A
+ * closing run needs no whitespace before it, and after punctuation it needs whitespace or
+ * punctuation after it (`**关键句。**后文` fails, `**关键句**。后文` renders); an opening run is the
+ * mirror image (`a**(note)**` fails). Runs alternate open and close; code spans are skipped.
+ */
+function flankingProblems(line) {
+  const code = [...line.matchAll(/(`+)[\s\S]*?[^`]\1(?!`)/g)].map((m) => [
+    m.index,
+    m.index + m[0].length,
+  ]);
+  const space = (c) => c === undefined || /\s/u.test(c);
+  const punct = (c) => c !== undefined && /[\p{P}\p{S}]/u.test(c);
+  const out = [];
+  let opening = true;
+  for (const m of line.matchAll(/\*\*/g)) {
+    if (code.some(([a, b]) => m.index >= a && m.index < b)) continue;
+    const prev = line[m.index - 1];
+    const next = line[m.index + 2];
+    const around = line.slice(Math.max(0, m.index - 8), m.index + 10);
+    if (opening && (space(next) || (punct(next) && !space(prev) && !punct(prev)))) {
+      out.push(`a ** that cannot open emphasis, so the page shows it: "${around}"`);
+    } else if (!opening && (space(prev) || (punct(prev) && !space(next) && !punct(next)))) {
+      out.push(
+        `a ** that cannot close emphasis, so the page shows it: "${around}" (close it before the punctuation: **句子**。)`,
+      );
+    }
+    opening = !opening;
+  }
+  return out;
+}
+
+/** A sentence longer than this is flagged: English words, Chinese characters. */
+const SENTENCE_CAP = { en: 35, zh: 60 };
+/** Citations per 100 English words or Chinese characters above which check warns. */
+const CITE_DENSITY = { en: 3.5, zh: 1.5 };
+const EMPHASIS = /\*\*([^*\n]+?)\*\*/g;
+
+/**
+ * The `**…**` spans of a text by section (0 is the lead), and every rule they break: at most one
+ * per section (exactly one with `requireAll`), at most `cap` words or characters, never in a
+ * heading, figure block, caption, version note, TL;DR, code span or link, and no marker inside;
+ * the closing `**` before the sentence's punctuation, so its citation can stand there too.
+ */
+function emphasisCheck(text, lang, { cap, requireAll = false, strict = false }) {
+  const doc = parseText(text);
+  const problems = [];
+  const add = (n, msg, level = "error") => problems.push({ n, msg, level });
+  const spans = [[]];
+  const unit = lang === "zh" ? "characters" : "words";
+  const first = doc.items.find((it) => it.type !== "blank");
+  let inTldr = false;
+  for (const it of doc.items) {
+    if (it.type === "heading" && /^## /.test(it.line)) spans.push([]);
+    if (TLDR.test(it.line.trim())) {
+      inTldr = true;
+      continue;
+    }
+    const has = it.line.includes("**");
+    if (inTldr && (it.type === "blank" || it.type === "list")) {
+      if (has) add(it.n, "emphasis inside the TL;DR");
+      continue;
+    }
+    inTldr = false;
+    if (!has || ["code", "fence", "comment"].includes(it.type)) continue;
+    if (it.type === "heading") add(it.n, "emphasis in a heading");
+    else if (["figure", "htmlfigure"].includes(it.type)) add(it.n, "emphasis in a figure");
+    else if (["caption", "image"].includes(it.type)) add(it.n, "emphasis in a caption");
+    else if (it === first && VERSION_NOTE_LINE.test(it.line.trim()))
+      add(it.n, "emphasis in the version note");
+    if (
+      !["text", "list", "quote", "table"].includes(it.type) ||
+      (it === first && VERSION_NOTE_LINE.test(it.line.trim()))
+    )
+      continue;
+    // Code spans keep their length, so a span's offsets read the original line.
+    const masked = it.line.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (m) => " ".repeat(m.length));
+    if ((masked.match(/\*\*/g)?.length ?? 0) % 2) add(it.n, "an unclosed **");
+    if (/\[[^\]]*\*\*[^\]]*\]\(/.test(masked)) add(it.n, "emphasis inside a link");
+    for (const m of masked.matchAll(EMPHASIS)) {
+      const inner = it.line.slice(m.index + 2, m.index + m[0].length - 2);
+      spans[spans.length - 1].push({ n: it.n, text: inner });
+      if (/\{[FO]\d+\}|\[\^/.test(inner))
+        add(it.n, "a fact marker inside the emphasis (it goes after the closing **)");
+      if (/\]\(|<https?:/.test(inner)) add(it.n, "a link inside the emphasis");
+      const size = countBody(inner, lang);
+      if (cap && size > cap) add(it.n, `an emphasized span of ${size} ${unit} (at most ${cap})`);
+      const after = it.line.slice(m.index + m[0].length);
+      // emphasize closes every span before the sentence's punctuation (**句子**。, **claim**.):
+      // after Chinese punctuation a closing ** often cannot close, and a citation lands outside.
+      if (/[.!?。！？]$/.test(inner) && (strict || /^\s*\{[FO]\d+\}/.test(after))) {
+        add(
+          it.n,
+          "the closing ** follows the sentence's punctuation; close the span before it (**sentence**. / **句子**。)",
+          strict ? "error" : "warn",
+        );
+      }
+    }
+  }
+  spans.forEach((list, i) => {
+    const where = i === 0 ? "the lead" : `section ${i}`;
+    if (list.length > 1)
+      add(list[1].n, `${list.length} emphasized spans in ${where} (exactly one)`);
+    else if (!list.length && requireAll)
+      add(null, `no emphasized sentence in ${where} (exactly one)`);
+  });
+  return { spans, problems };
+}
+
+/**
+ * Citation density and placement, read in the published form: a post's own lines, or a draft's
+ * lines rendered the way strip's citer will render them (with --facts).
+ */
+function checkCitations(doc, lang, r, facts) {
+  const draft = !!doc.raw.match(MARKER);
+  if (draft && !facts?.sources.size) return;
+  const cite = draft ? citations(facts) : undefined;
+  const lines = [];
+  for (const it of doc.items) {
+    if (cite && it.type === "heading" && /^## /.test(it.line)) cite.section();
+    if (["text", "list", "quote", "table"].includes(it.type)) {
+      lines.push({ ...it, line: cite ? cite.render(it.line) : it.line });
+    }
+  }
+  const refs = lines.reduce((sum, it) => sum + (it.line.match(/\[\^\d+\]/g)?.length ?? 0), 0);
+  const size = countBody(doc.raw, lang);
+  const per100 = size ? (refs * 100) / size : 0;
+  if (per100 > CITE_DENSITY[lang]) {
+    r.add(
+      "warn",
+      null,
+      `${refs} citations in ${size} ${lang === "zh" ? "characters" : "words"}: ${per100.toFixed(1)} per 100 (at most ${CITE_DENSITY[lang]}); cite the key facts and list the rest under ## NOCITE`,
+    );
+  }
+  for (const p of paragraphs(lines)) {
+    for (const s of sentences(p.text)) {
+      const k = s.match(/\[\^\d+\]/g)?.length ?? 0;
+      if (k > 1)
+        r.add(
+          "warn",
+          p.n,
+          `a sentence with ${k} citations (one key citation per sentence): "${s.slice(0, 60)}…"`,
+        );
+    }
+  }
+  const after = new RegExp(`[${TERMINATOR}]\\[\\^\\d+\\]`);
+  const outside = new RegExp(`[.!?。！？](?:[)）"”’」』\\]_]|\\*{1,2})+\\[\\^\\d+\\]`);
+  for (const it of lines) {
+    if (after.test(it.line)) {
+      r.add(
+        "error",
+        it.n,
+        "a citation after the punctuation: it goes before it (text[^1]. / 文字[^1]。); strip the draft again",
+      );
+    } else if (outside.test(it.line)) {
+      r.add(
+        "warn",
+        it.n,
+        "a citation after a closing quote, bracket or bold that holds the sentence's punctuation: put the punctuation outside it, so the citation can stand before it",
+      );
+    }
+  }
+}
+
 /** The language rules: the style file's patterns, then the counted ones. */
 function languageRules(lang, proseItems, paras, sections, settings, r) {
   const pats = loadPatterns(lang);
@@ -2816,6 +3118,13 @@ function languageRules(lang, proseItems, paras, sections, settings, r) {
         const words = maskProse(s).replace(MARKER, "").split(/\s+/).filter(Boolean).length;
         shortRun = words <= 3 ? shortRun + 1 : 0;
         if (shortRun === 3) r.add("warn", p.n, "three very short sentences in a row");
+        if (words > SENTENCE_CAP.en) {
+          r.add(
+            "warn",
+            p.n,
+            `a sentence of ${words} words (at most ${SENTENCE_CAP.en}): "${s.slice(0, 60)}…"`,
+          );
+        }
       }
     }
     for (const sec of sections) {
@@ -2859,6 +3168,16 @@ function languageRules(lang, proseItems, paras, sections, settings, r) {
   for (const p of paras) {
     const ss = sentences(p.text);
     if (ss.length > 4) r.add("warn", p.n, `一段 ${ss.length} 句（最多四句）`);
+    for (const s of ss) {
+      const chars = countBody(s, "zh");
+      if (chars > SENTENCE_CAP.zh) {
+        r.add(
+          "warn",
+          p.n,
+          `一句 ${chars} 字（最多 ${SENTENCE_CAP.zh} 字）：「${s.slice(0, 30)}…」`,
+        );
+      }
+    }
     if (ss.filter((s) => /^它/.test(s)).length > 1) r.add("warn", p.n, "「它」开头的句子连用");
     const zhe = ss.filter((s) => /^这/.test(s)).length;
     if (zhe > 1) r.add("warn", p.n, `${zhe} 个句子以「这」开头`);
@@ -2991,6 +3310,7 @@ function checkDoc(doc, lang, prof, o, r, facts) {
     }
   }
   checkFootnotes(doc, o, r, facts);
+  if (post) checkCitations(doc, lang, r, facts);
   if (facts && doc.raw.match(MARKER)) checkSources(doc, r, facts);
   const footer = undefined;
 
@@ -3011,6 +3331,7 @@ function checkDoc(doc, lang, prof, o, r, facts) {
         "a bare URL right before a citation: the site's renderer takes the citation into the link, so write the URL as an autolink, <https://…>",
       );
     }
+    if (!data) for (const msg of flankingProblems(it.line)) r.add("error", it.n, msg);
     if (EMOJI.test(t)) r.add("error", it.n, "emoji");
     if (/\{\{[A-Z_]+\}\}/.test(t))
       r.add("error", it.n, "an unfilled template slot leaked into the text");
@@ -3040,15 +3361,28 @@ function checkDoc(doc, lang, prof, o, r, facts) {
       else if (it.type !== "blank" || run.length === 0) flush();
     }
     flush();
-    const bolds = items
-      .filter((it) => ["text", "list", "quote"].includes(it.type) && !TLDR.test(it.line.trim()))
-      .reduce((sum, it) => sum + (it.line.match(/\*\*[^*]+\*\*/g)?.length ?? 0), 0);
-    if (bolds > 4)
-      r.add(
-        "warn",
-        null,
-        `${bolds} bold spans (bold only UI labels and product names on first mention)`,
-      );
+    const budgets = budgetsOf(prof, lang, o);
+    if (budgets.emphasis) {
+      // A draft before emphasize has no span at all; a published post, or a draft that has some,
+      // has one in every section. A section file is never emphasized on its own.
+      const found = emphasisCheck(doc.raw, lang, { cap: budgets.emphasis.cap });
+      const requireAll =
+        secN === undefined && (!doc.raw.match(MARKER) || found.spans.some((x) => x.length));
+      const { problems } = requireAll
+        ? emphasisCheck(doc.raw, lang, { cap: budgets.emphasis.cap, requireAll })
+        : found;
+      for (const p of problems) r.add(p.level, p.n, p.msg);
+    } else {
+      const bolds = items
+        .filter((it) => ["text", "list", "quote"].includes(it.type) && !TLDR.test(it.line.trim()))
+        .reduce((sum, it) => sum + (it.line.match(/\*\*[^*]+\*\*/g)?.length ?? 0), 0);
+      if (bolds > 4)
+        r.add(
+          "warn",
+          null,
+          `${bolds} bold spans (bold only UI labels and product names on first mention)`,
+        );
+    }
   }
 
   // Markers
@@ -3126,6 +3460,7 @@ function checkLanding(doc, lang, prof, r) {
     if (m[2].match(MARKER)) r.add("error", it.n, `${m[1]}: fact marker`);
     if (/[*_`#[\]]/.test(m[2].replace(/\[[^\]]*\]/g, "")))
       r.add("warn", it.n, `${m[1]}: Markdown in a plain string`);
+    for (const msg of flankingProblems(m[2])) r.add("error", it.n, `${m[1]}: ${msg}`);
     values.push({ type: "text", line: m[2], n: it.n });
   }
   languageRules(lang, values, [], [{ n: null, items: values }], profileSettings(prof), r);
@@ -3268,22 +3603,40 @@ function pairDocs(a, b, o, r) {
   const markersOf = (d) =>
     d.items.flatMap((it) => (it.type === "code" ? [] : (it.line.match(MARKER) ?? [])));
   const facts = o.facts ? loadFacts(o.facts) : null;
-  // The sources a section cites, as a set: from its footnotes once published, or, in a draft with
-  // --facts, from its marker groups under the rule strip applies.
-  const refsOf = (d, labels) => {
-    const keys = new Set();
+  // The sources each section cites, as sets: from its footnotes once published, or, in a draft
+  // with --facts, from its marker groups as strip's citer will pick them. The walk covers the whole
+  // post, since our own sources are cited once per post.
+  const citedBySection = (d, labels) => {
+    const out = [new Set()];
+    const pick = facts?.sources.size ? citer(facts) : undefined;
     for (const it of d.items) {
+      if (it.type === "heading" && /^## /.test(it.line)) {
+        out.push(new Set());
+        pick?.section();
+        continue;
+      }
       if (["code", "fence", "footnote", "figure"].includes(it.type)) continue;
+      const keys = out[out.length - 1];
       for (const m of it.line.matchAll(/\[\^([^\]\s]+)\]/g))
         keys.add(labels.get(m[1]) ?? `[^${m[1]}]`);
-      if (facts?.sources.size) {
-        for (const g of it.line.match(/(?:\{[FO]\d+\})+/g) ?? []) {
-          for (const s of groupSources(g.match(/[FO]\d+/g), facts)) keys.add(sourceKey(s));
-        }
+      for (const g of pick ? (it.line.match(/(?:\{[FO]\d+\})+/g) ?? []) : []) {
+        const s = pick.pick(g.match(/[FO]\d+/g));
+        if (s) keys.add(sourceKey(s));
       }
     }
-    return [...keys].sort();
+    return out.map((keys) => [...keys].sort());
   };
+  const citedA = citedBySection(a, ka);
+  const citedB = citedBySection(b, kb);
+  // Both languages stress the same sentence in each section; a number in one and not the other
+  // means they stress different ones.
+  const stressA = emphasisCheck(a.raw, langA ?? "en", {}).spans;
+  const stressB = emphasisCheck(b.raw, langB ?? "en", {}).spans;
+  const digits = (spans) =>
+    spans
+      .flatMap((x) => x.text.match(/\d+(?:[.,]\d+)*/g) ?? [])
+      .sort()
+      .join();
   for (let i = 0; i < Math.min(sa.length, sb.length); i++) {
     const da = parseText(sa[i].text, `${a.file}#s${i}`);
     const db = parseText(sb[i].text, `${b.file}#s${i}`);
@@ -3291,7 +3644,22 @@ function pairDocs(a, b, o, r) {
     compare(`${where}: code spans`, codeSpans(da), codeSpans(db), "error");
     compare(`${where}: URLs`, urlsOf(da), urlsOf(db), "error");
     compare(`${where}: fact markers`, markersOf(da), markersOf(db), "error");
-    compare(`${where}: cited sources`, refsOf(da, ka), refsOf(db, kb), "error");
+    compare(`${where}: cited sources`, citedA[i] ?? [], citedB[i] ?? [], "error");
+    const ea = stressA[i] ?? [];
+    const eb = stressB[i] ?? [];
+    if (ea.length !== eb.length) {
+      r.add(
+        "error",
+        null,
+        `${where}: ${ea.length} emphasized span(s) here, ${eb.length} in ${path.basename(b.file)}`,
+      );
+    } else if (digits(ea) !== digits(eb)) {
+      r.add(
+        "warn",
+        null,
+        `${where}: the emphasized spans hold different numbers ([${digits(ea)}] here, [${digits(eb)}] in ${path.basename(b.file)})`,
+      );
+    }
     compare(`${where}: numbers`, numbersOf(da), numbersOf(db), "warn");
     const fa2 = da.figures.map((f) => `${f.id}:${f.text.length}`);
     const fb2 = db.figures.map((f) => `${f.id}:${f.text.length}`);
@@ -3487,38 +3855,87 @@ function runRoute(o) {
 // ---------------------------------------------------------------------------
 
 const sourceKey = (s) => (s.url ? s.url : `nolink:${s.title}`);
-/** A fact cites at most its first two public sources: the order of its [S…] tags is their priority. */
-const FACT_SOURCE_CAP = 2;
-/** A sentence carries at most three footnotes, however many facts it rests on. */
-const GROUP_SOURCE_CAP = 3;
+
+/** Our own pages and repositories, and a link-less "Our …" source: cited once per post. */
+function isInternalSource(s) {
+  if (s.kind === "nolink") return /^our\b/i.test(s.title);
+  if (!s.url) return false;
+  let url;
+  try {
+    url = new URL(s.url);
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  if (host === "penguin.ooo" || host.endsWith(".penguin.ooo")) return true;
+  return (
+    (host === "github.com" || host === "raw.githubusercontent.com") &&
+    /^\/Prism-Shadow\//i.test(url.pathname)
+  );
+}
 
 /**
- * The sources one marker group (the markers closing one sentence) cites: each fact's first two
- * public sources in tag order, de-duplicated, then the first three. strip numbers exactly these,
- * and pair compares drafts by them, so both languages cite the same sources.
+ * The citer for one post. A marker group (the markers closing one sentence) cites at most one
+ * source: of its facts, in the writer's order, the first whose first public source (tag order is
+ * priority) is not yet cited in its scope. Our own sources are cited once per post, any other once
+ * per `##` section; opinions, private sources and facts listed under ## NOCITE cite nothing. strip
+ * numbers what it picks, and check and pair walk a draft with the same citer, so all three agree.
  */
-function groupSources(ids, facts, problems = new Set()) {
-  const out = [];
-  const seen = new Set();
-  for (const id of ids) {
-    if (id.startsWith("O")) continue;
-    if (!facts.ids.has(id)) problems.add(`{${id}} is not an id in the facts file`);
-    const tags = facts.tags.get(id) ?? [];
-    if (facts.ids.has(id) && !tags.length) problems.add(`{${id}} has no [S…] source tag`);
-    const publicOnes = [];
-    for (const t of tags) {
-      const s = facts.sources.get(t);
-      if (!s) problems.add(`{${id}} names ${t}, which is not in ## SOURCES`);
-      else if (s.kind === "url" || s.kind === "nolink") publicOnes.push(s);
-    }
-    for (const s of publicOnes.slice(0, FACT_SOURCE_CAP)) {
-      if (!seen.has(sourceKey(s))) {
-        seen.add(sourceKey(s));
-        out.push(s);
+function citer(facts, problems = new Set()) {
+  const inPost = new Set();
+  let inSection = new Set();
+  return {
+    section() {
+      inSection = new Set();
+    },
+    pick(ids) {
+      const candidates = [];
+      for (const id of ids) {
+        if (id.startsWith("O")) continue;
+        if (!facts.ids.has(id)) {
+          problems.add(`{${id}} is not an id in the facts file`);
+          continue;
+        }
+        const tags = facts.tags.get(id) ?? [];
+        if (!tags.length) problems.add(`{${id}} has no [S…] source tag`);
+        let first;
+        for (const t of tags) {
+          const s = facts.sources.get(t);
+          if (!s) problems.add(`{${id}} names ${t}, which is not in ## SOURCES`);
+          else if (!first && (s.kind === "url" || s.kind === "nolink")) first = s;
+        }
+        if (first && !facts.nocite.has(id)) candidates.push(first);
       }
-    }
-  }
-  return out.slice(0, GROUP_SOURCE_CAP);
+      for (const s of candidates) {
+        const scope = isInternalSource(s) ? inPost : inSection;
+        if (scope.has(sourceKey(s))) continue;
+        scope.add(sourceKey(s));
+        return s;
+      }
+      return undefined;
+    },
+  };
+}
+
+const TERMINATOR = ".!?,;:。！？，；：、";
+/** The punctuation and closing marks before a marker group, the group, and punctuation after it. */
+const CITE_RUN = new RegExp(
+  `((?:[${TERMINATOR})）"”’」』\\]_]|\\*{1,2})*)[ \\t]*((?:\\{[FO]\\d+\\})+)([${TERMINATOR}]*)`,
+  "g",
+);
+
+/**
+ * Where a citation goes: before the punctuation that ends its clause (`text[^1].`, `文字[^1]。`),
+ * and outside a closing quotation mark, bracket or emphasis (`"slope"[^1].`). When the
+ * punctuation sits inside the closing mark (`slope."`), the citation follows the whole run, and
+ * check warns.
+ */
+function placeCitation(run, ref, after) {
+  if (!ref) return run + after;
+  const tail = new RegExp(`[${TERMINATOR}]*$`).exec(run)[0];
+  const head = run.slice(0, run.length - tail.length);
+  if (new RegExp(`[${TERMINATOR}]`).test(head)) return run + ref + after;
+  return head + ref + tail + after;
 }
 
 /** The source → number map a published post's `[^n]: …` lines carry. */
@@ -3538,9 +3955,9 @@ function readNumbering(file) {
 }
 
 /**
- * The citation renderer for one post: each marker group becomes `[^n]` after the sentence's
- * closing punctuation, one per distinct public source of its facts, numbered by first use (or by
- * the other language's map); opinions and private sources emit nothing.
+ * The citation renderer for one post: each marker group becomes at most one `[^n]`, the source
+ * the citer picks, before the punctuation that ends its clause, numbered by first use (or by the
+ * other language's map). `section()` is called at every `##` heading.
  */
 function citations(facts, numberingFrom) {
   if (!facts.sources.size) fail("the facts file has no ## SOURCES section; citations need it", 1);
@@ -3563,17 +3980,13 @@ function citations(facts, numberingFrom) {
     }
     return numbers.get(key);
   };
+  const picker = citer(facts, problems);
   const refs = (group) => {
-    const cited = groupSources(group.match(/[FO]\d+/g), facts, problems);
-    const ns = [...new Set(cited.map(numberOf))].sort((a, b) => a - b);
-    return ns.map((n) => `[^${n}]`).join("");
+    const s = picker.pick(group.match(/[FO]\d+/g));
+    return s ? `[^${numberOf(s)}]` : "";
   };
   const render = (line) =>
-    line.replace(
-      /([.!?。！？)）"”’」』]+)[ \t]*((?:\{[FO]\d+\})+)|[ \t]*((?:\{[FO]\d+\})+)([.!?。！？,，;；:：]+)?/g,
-      (m, punct, after, group, punctAfter) =>
-        after !== undefined ? punct + refs(after) : (punctAfter ?? "") + refs(group),
-    );
+    line.replace(CITE_RUN, (m, run, group, after) => placeCitation(run, refs(group), after));
   const definitions = () => {
     if (fixed) {
       for (const [key, n] of fixed) {
@@ -3598,7 +4011,7 @@ function citations(facts, numberingFrom) {
           : `[^${n}]: ${escapeInline(s.title)}`,
       );
   };
-  return { render, definitions, problems };
+  return { render, definitions, problems, section: () => picker.section() };
 }
 
 /** The footnotes of a stripped post: defined, used, numbered 1 … N, linked to SOURCES. */
@@ -3761,7 +4174,7 @@ function checkBudgets(doc, lang, prof, o, r, { section } = {}) {
     const counts = [sized(section, doc.raw, null)];
     // A section file beside its siblings: the page total it makes, so creep shows before assembly.
     const page = sectionOfFile(doc.file)
-      ? pageReport(path.dirname(doc.file), lang, section, doc.raw, outline, budgets)
+      ? pageReport(path.dirname(doc.file), lang, section, doc.raw, outline, budgets, o.page)
       : undefined;
     if (page?.over) r.add("warn", null, page.line);
     return { counts, page };
@@ -3966,6 +4379,8 @@ function runStrip(o) {
       inComment = !line.includes("-->");
       continue;
     }
+    // Sources other than ours are cited again in a new section.
+    if (cite && /^## /.test(line)) cite.section();
     const cited = cite
       ? cite.render(line)
       : line.replace(/^(?:\{[FO]\d+\})+[ \t]*/, "").replace(/[ \t]*\{[FO]\d+\}/g, "");
@@ -4016,6 +4431,9 @@ ${Array.from({ length: 11 }, (_, i) => `- S${i + 4}: Write-up ${i + 4} · https:
 
 ## NOT-FACTS
 - Do not claim the archive is compressed.
+
+## NOCITE
+- F6: background that a docs link in the same post already covers
 `;
 
 const FIXTURE_DRAFT = `---
@@ -4025,11 +4443,11 @@ category: perspectives
 excerpt: "A fixture for the script's own checks."
 ---
 
-Archived output keeps its place in the Trace. {F1}
+Archived output **keeps its place in the Trace**. {F1}
 
 ## Where files go
 
-Files live under one root per Project. {F1}
+Files live under **one root per Project**. {F1}
 
 \`\`\`figure id=demo-flow
 alt: Archived tool output moving to a path under the Project root.
@@ -4041,7 +4459,7 @@ text:
 
 ## What the Trace keeps
 
-The Trace keeps a short marker. {F2} The writer’s “marker” is kept, and \`it’s\` stays in code. {F2}
+The Trace keeps a short marker. {F2} The writer’s “marker” is kept, and \`it’s\` **stays in code**. {F2}
 
 \`\`\`figure id=demo-shot
 alt: The Trace view showing an archived output.
@@ -4050,11 +4468,11 @@ caption: The marker names the file as <path> and the id as \`<id>\`.
 
 ## A marker beats a gap
 
-We would rather keep a marker than leave a gap. {O1} The format was settled early {F3}.
+We would rather **keep a marker than leave a gap**. {O1} The format was settled early {F3}.
 
 ## What to read next
 
-The docs describe the archive in full. {F1}{F2}
+The docs describe **the archive in full**. {F1}{F2}
 `;
 
 const FIXTURE_DRAFT_ZH = `---
@@ -4105,11 +4523,11 @@ category: perspectives
 excerpt: "Two sources."
 ---
 
-The first claim.[^1] The second claim.[^2]
+The first claim[^1]. The second claim[^2].
 
 ## More
 
-The first claim again.[^1]
+The first claim again[^1].
 
 [^1]: [One](https://example.com/one)
 [^2]: [Two](https://example.com/two)
@@ -4122,11 +4540,11 @@ category: perspectives
 excerpt: "两个来源。"
 ---
 
-第二条说法。[^1]第一条说法。[^2]
+第二条说法[^1]。第一条说法[^2]。
 
 ## 更多
 
-第一条说法再次出现。[^2]
+第一条说法再次出现[^2]。
 
 [^1]: [Two](https://example.com/two)
 [^2]: [One](https://example.com/one)
@@ -4134,8 +4552,8 @@ excerpt: "两个来源。"
 
 /** Labels that do not run 1, 2, … in first-use order: the site would show one number and jump to another. */
 const FIXTURE_ORDER_BAD = FIXTURE_ORDER_EN.replace(
-  "claim.[^1] The second claim.[^2]",
-  "claim.[^2] The second claim.[^1]",
+  "claim[^1]. The second claim[^2].",
+  "claim[^2]. The second claim[^1].",
 );
 
 const FIXTURE_CITES_ZH_PARTIAL = FIXTURE_CITES_ZH.replace("CLAUDE.md。{F2} ", "CLAUDE.md。");
@@ -4148,7 +4566,7 @@ category: perspectives
 excerpt: "脚本自检用的样例。"
 ---
 
-规则写在别处。[^1]
+规则写在别处[^1]。
 
 [^1]: [Other](https://example.com/other)
 `;
@@ -4444,6 +4862,116 @@ async function runSelftest() {
   const shotText = caseDir("shot-text", {
     "s2.en.v1.md": s2.replace(/(caption: The marker names[^\n]*)/, "$1\ntext:\n- note: archived"),
   });
+  // Citation scopes and placement: an outside source again in a new section but not twice in
+  // one, ours once per post, a NOCITE fact never; outside a closing quote, or after it when the
+  // quote holds the period.
+  writeFileSync(
+    at("scopes.en.v1.md"),
+    `${front}The archive has a format. {F4}\nIt has a marker too. {F4}\n\n## One\n\nThe format again, in a new section. {F4}\nOur docs say so. {F1}\nBackground only. {F6}\n\n## Two\n\nOur docs again. {F1}\nThey call it "the slope". {F5}\nIt "works." {F4}\n`,
+  );
+  const scoped = path.join(root, "scopes", "scopes.en.md");
+  mkdirSync(path.dirname(scoped), { recursive: true });
+  const stripScopes = [
+    "strip",
+    "--in",
+    at("scopes.en.v1.md"),
+    "--out",
+    scoped,
+    "--facts",
+    at("facts.md"),
+  ];
+  // Published posts: a citation after the period; three citations in seven words, two in one sentence.
+  const defs = (k) =>
+    Array.from(
+      { length: k },
+      (_, i) => `[^${i + 1}]: [Source ${i + 1}](https://example.com/s${i + 1})`,
+    ).join("\n");
+  writeFileSync(at("after-punct.en.md"), `${front}The first claim.[^1]\n\n${defs(1)}\n`);
+  writeFileSync(
+    at("dense.en.md"),
+    `${front}Short[^1]. This has two[^2] and more[^3].\n\n${defs(3)}\n`,
+  );
+  // Sentences over the cap, in a section file each, so no page-level rule fires.
+  const longEn = caseDir("long-sentence", { "s1.en.v1.md": `## Long\n\n${words(40)}\n` });
+  const longZh = caseDir("long-sentence-zh", {
+    "s1.zh.v1.md": `## 长句\n\n${"字".repeat(70)}。\n`,
+  });
+  const glossary = caseDir("glossary", {
+    "s1.zh.v1.md": "## 术语\n\n我们的合成夹具测试跑在 agent harness 上，线形态不变。\n",
+  });
+  // emphasize: the plain draft in, and answers that keep the text, change it, miscount or misplace.
+  const plain = FIXTURE_DRAFT.replace(/\*\*/g, "");
+  const emphOk = caseDir("emph-ok", { "draft.en.v1.md": plain });
+  answer("emph-ok.md", FIXTURE_DRAFT);
+  const emphText = caseDir("emph-text", { "draft.en.v1.md": plain });
+  answer("emph-text.md", FIXTURE_DRAFT.replace("keeps its place", "holds its place"));
+  const twoAndNone = FIXTURE_DRAFT.replace(
+    "Files live under **one root per Project**.",
+    "**Files live** under **one root per Project**.",
+  ).replace("The docs describe **the archive in full**.", "The docs describe the archive in full.");
+  const emphCount = caseDir("emph-count", { "draft.en.v1.md": plain });
+  answer("emph-count.md", twoAndNone);
+  const longClaim =
+    "We keep every archived output on disk under the Project root and keep a short marker in the Trace so that a reader can find the full output again later";
+  const emphCap = caseDir("emph-cap", {
+    "draft.en.v1.md": `${front}The archive keeps its place. {F1}\n\n## Long\n\n${longClaim}. {F2}\n`,
+  });
+  answer(
+    "emph-cap.md",
+    `${front}**The archive keeps its place. {F1}**\n\n## Long\n\n**${longClaim}**. {F2}\n`,
+  );
+  writeFileSync(
+    at("emph-rules.en.v1.md"),
+    twoAndNone.replace(
+      "We would rather **keep a marker than leave a gap**. {O1}",
+      "We would rather **keep a marker than leave a gap. {O1}**",
+    ),
+  );
+  // pair: the lead stresses other numbers, and section 1 is stressed in one language only.
+  const zhFront = `---\ntitle: "自检文章"\ndate: 2026-10-19\ncategory: perspectives\nexcerpt: "样例。"\n---\n\n`;
+  writeFileSync(
+    at("stress.en.v1.md"),
+    `${front}**3 claims** hold here.\n\n## More\n\n**The second point** stands.\n`,
+  );
+  writeFileSync(
+    at("stress.zh.v1.md"),
+    `${zhFront}**4 个结论**在这里成立。\n\n## 更多\n\n第二点成立。\n`,
+  );
+  const tldrPerspectives = caseDir("tldr-perspectives", {
+    "s0.en.v1.md": `${front}${PRACTICE_LEAD}\n\n**TL;DR**\n\n${TLDR_IN_RANGE.map((b) => `- ${b}`).join("\n")}\n`,
+  });
+  // The page as assembled, with s1 pinned at v1 while a longer s1 v2 sits beside it.
+  const creepFiles = Object.fromEntries(
+    readdirSync(creep).map((name) => [name, readFileSync(path.join(creep, name), "utf8")]),
+  );
+  const pinned = caseDir("pinned", {
+    ...creepFiles,
+    "s1.en.v2.md": `## Beta\n\n${words(300)}\n`,
+    "draft.en.v1.md": `${[0, 1, 2, 3, 4].map((k) => creepFiles[`s${k}.en.v1.md`].trim()).join("\n\n")}\n`,
+  });
+  // The closing ** before the sentence's punctuation, in both languages; and ** CommonMark cannot read.
+  const emphEnOrder = caseDir("emph-en-order", {
+    "draft.en.v1.md": `${front}Our view is simple. The rest follows from it. {O1}\n\n## Next\n\nOne more point stands here. {O1}\n`,
+  });
+  answer(
+    "emph-en-order.md",
+    `${front}**Our view is simple.** The rest follows from it. {O1}\n\n## Next\n\n**One more point stands here**. {O1}\n`,
+  );
+  const plainZh = `${zhFront}缓存命中靠前缀稳定。{F1}\n\n## 斜率\n\n每次请求都会把上下文变长。后面的请求更长。{F2}\n`;
+  const markedZh = `${zhFront}**缓存命中靠前缀稳定**。{F1}\n\n## 斜率\n\n**每次请求都会把上下文变长**。后面的请求更长。{F2}\n`;
+  const emphZhOk = caseDir("emph-zh-ok", { "draft.zh.v1.md": plainZh });
+  answer("emph-zh-ok.md", markedZh);
+  const emphZhOrder = caseDir("emph-zh-order", { "draft.zh.v1.md": plainZh });
+  answer(
+    "emph-zh-order.md",
+    markedZh.replace("**每次请求都会把上下文变长**。", "**每次请求都会把上下文变长。**"),
+  );
+  const flankZh = caseDir("flank-zh", {
+    "s1.zh.v1.md": "## 标题\n\n**关键句。**后文接着说。\n\n**关键句**。后文接着说。\n",
+  });
+  const flankEn = caseDir("flank-en", {
+    "s1.en.v1.md": "## Title\n\nA word**(aside)** here.\n\nA word **(aside)** here.\n",
+  });
 
   const self = fileURLToPath(import.meta.url);
   const facts = ["--facts", at("facts.md")];
@@ -4482,7 +5010,7 @@ async function runSelftest() {
       stdout: /0 errors/,
     },
     {
-      name: "strip turns tagged facts into numbered footnotes after the punctuation, private sources into none",
+      name: "strip cites before the punctuation and outside the bold, our own sources once per post, private sources and opinions never",
       args: [
         "strip",
         "--in",
@@ -4496,7 +5024,7 @@ async function runSelftest() {
       code: 0,
       file: [
         published,
-        /keeps its place in the Trace\.\[\^1\]\n[\s\S]*The Trace keeps a short marker\.\[\^2\][\s\S]*The format was settled early\.\n[\s\S]*in full\.\[\^1\]\[\^2\]\n\n\[\^1\]: \[PenguinHarness docs: Agent loop\]\(https:\/\/penguin\.ooo\/docs\/agent-loop\)\n\[\^2\]: \[packages\/core\/src\/trace\/writer\.ts\]\(https:\/\/github\.com\/Prism-Shadow\/penguin-harness\/blob\/v0\.2\.16\/packages\/core\/src\/trace\/writer\.ts\)\n$/,
+        /keeps its place in the Trace\*\*\[\^1\]\.\n[\s\S]*Files live under \*\*one root per Project\*\*\.\n[\s\S]*The Trace keeps a short marker\[\^2\]\.[\s\S]*The format was settled early\.\n[\s\S]*\*\*the archive in full\*\*\.\n\n\[\^1\]: \[PenguinHarness docs: Agent loop\]\(https:\/\/penguin\.ooo\/docs\/agent-loop\)\n\[\^2\]: \[packages\/core\/src\/trace\/writer\.ts\]\(https:\/\/github\.com\/Prism-Shadow\/penguin-harness\/blob\/v0\.2\.16\/packages\/core\/src\/trace\/writer\.ts\)\n$/,
       ],
     },
     {
@@ -4530,7 +5058,7 @@ async function runSelftest() {
         ...facts,
       ],
       code: 0,
-      file: [published, /The writer's "marker" is kept, and `it’s` stays in code\.\[\^2\]/],
+      file: [published, /The writer's "marker" is kept, and `it’s` \*\*stays in code\*\*\.\n/],
     },
     {
       name: "the stripped post passes, its figure and its footnotes checked against the draft and SOURCES",
@@ -4558,7 +5086,7 @@ async function runSelftest() {
       code: 0,
       file: [
         citedZh,
-        /CLAUDE\.md。\[\^1\]Anthropic 也这样做。\[\^2\]\n\n\[\^1\]: \[PenguinHarness docs/,
+        /CLAUDE\.md\[\^1\]。Anthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[PenguinHarness docs/,
       ],
     },
     {
@@ -4583,25 +5111,25 @@ async function runSelftest() {
       code: 0,
       file: [
         citedZh,
-        /CLAUDE\.md。\[\^1\]Anthropic 也这样做。\[\^2\]\n\n\[\^1\]: \[packages\/core\/src\/trace\/writer\.ts\]/,
+        /CLAUDE\.md\[\^1\]。Anthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[packages\/core\/src\/trace\/writer\.ts\]/,
       ],
     },
     {
-      name: "a fact with seven sources is cited by its first two",
+      name: "a marker group cites one source, its fact's first public source",
       args: ["strip", "--in", at("caps.en.v1.md"), "--out", capped, ...facts],
       code: 0,
       file: [
         capped,
-        /One fact with seven sources\.\[\^1\]\[\^2\]\n[\s\S]*\n\[\^1\]: \[Write-up 4\][^\n]*\n\[\^2\]: \[Write-up 5\]/,
+        /One fact with seven sources\[\^1\]\.\n[\s\S]*\n\[\^1\]: \[Write-up 4\][^\n]*\n\[\^2\]: \[Write-up 11\]/,
       ],
     },
     {
-      name: "a sentence resting on three multi-source facts carries at most three footnotes",
+      name: "a sentence resting on three facts cites the first source not yet cited in its section",
       args: ["strip", "--in", at("caps.en.v1.md"), "--out", capped, ...facts],
       code: 0,
       file: [
         capped,
-        /Three facts in one sentence\.\[\^1\]\[\^2\]\[\^3\]\n\n\[\^1\][^\n]*\n\[\^2\][^\n]*\n\[\^3\]: \[Write-up 11\]\(https:\/\/example\.com\/w11\)\n$/,
+        /Three facts in one sentence\[\^2\]\.\n\n\[\^1\][^\n]*\n\[\^2\]: \[Write-up 11\]\(https:\/\/example\.com\/w11\)\n$/,
       ],
     },
     {
@@ -4794,7 +5322,7 @@ async function runSelftest() {
       ],
       code: 0,
       stdout:
-        /Sections already written[\s\S]*Files live under one root per Project\.[\s\S]*- F2: The Trace keeps a marker/,
+        /Sections already written[\s\S]*Files live under \*\*one root per Project\*\*\.[\s\S]*- F2: The Trace keeps a marker/,
       notStdout: /- F1: Archived tool output|- F3: The archive format/,
     },
     {
@@ -5068,6 +5596,200 @@ async function runSelftest() {
       args: ["check", "--in", at("autolink.en.v1.md")],
       code: 1,
       stdout: /autolink\.en\.v1\.md:14  a bare URL right before a citation/,
+    },
+    {
+      name: "an outside source is cited again in a new section, but not twice in one",
+      args: stripScopes,
+      code: 0,
+      file: [
+        scoped,
+        /The archive has a format\[\^1\]\.\nIt has a marker too\.\n\n## One\n\nThe format again, in a new section\[\^1\]\./,
+      ],
+    },
+    {
+      name: "our own sources are cited once per post",
+      args: stripScopes,
+      code: 0,
+      file: [scoped, /Our docs say so\[\^2\]\.[\s\S]*Our docs again\.\n/],
+    },
+    {
+      name: "a fact under ## NOCITE cites nothing",
+      args: stripScopes,
+      code: 0,
+      file: [scoped, /Background only\.\n/],
+    },
+    {
+      name: "a citation stands before the punctuation and outside a closing quote, after it when the quote holds the period",
+      args: stripScopes,
+      code: 0,
+      file: [scoped, /They call it "the slope"\[\^3\]\.\nIt "works\."\[\^1\]\n/],
+    },
+    {
+      name: "check reads a draft through the citer and warns where a quote holds the period",
+      args: ["check", "--in", at("scopes.en.v1.md"), ...facts],
+      code: 1,
+      stdout: /WARN [^\n]*:21  a citation after a closing quote, bracket or bold/,
+    },
+    {
+      name: "a published citation after the punctuation is an error",
+      args: ["check", "--in", at("after-punct.en.md")],
+      code: 1,
+      stdout: /ERROR [^\n]*a citation after the punctuation: it goes before it/,
+    },
+    {
+      name: "check warns when citations are too dense",
+      args: ["check", "--in", at("dense.en.md")],
+      code: 1,
+      stdout: /WARN [^\n]*3 citations in 6 words: 50\.0 per 100 \(at most 3\.5\)/,
+    },
+    {
+      name: "check warns on a sentence with two citations",
+      args: ["check", "--in", at("dense.en.md")],
+      code: 1,
+      stdout: /WARN [^\n]*a sentence with 2 citations \(one key citation per sentence\)/,
+    },
+    {
+      name: "check warns on an English sentence over 35 words",
+      args: ["check", "--in", path.join(longEn, "s1.en.v1.md")],
+      code: 0,
+      stdout: /WARN [^\n]*a sentence of 40 words \(at most 35\)/,
+    },
+    {
+      name: "check warns on a Chinese sentence over 60 characters",
+      args: ["check", "--in", path.join(longZh, "s1.zh.v1.md")],
+      code: 0,
+      stdout: /WARN [^\n]*一句 71 字（最多 60 字）/,
+    },
+    {
+      name: "zh: Harness is never 夹具, a lowercase harness is flagged, wire shape is not 线形态",
+      args: ["check", "--in", path.join(glossary, "s1.zh.v1.md")],
+      code: 1,
+      stdout:
+        /^(?=[\s\S]*ERROR [^\n]*译名：Harness 保持英文)(?=[\s\S]*WARN [^\n]*大小写：写作 Harness 或 Agent Harness)(?=[\s\S]*WARN [^\n]*译名：wire shape)/,
+    },
+    {
+      name: "emphasize writes a draft that differs from its input only by one ** span per section",
+      args: ["emphasize", "--in", path.join(emphOk, "draft.en.v1.md")],
+      answer: "emph-ok.md",
+      code: 0,
+      file: [
+        path.join(emphOk, "draft.en.v2.md"),
+        /Archived output \*\*keeps its place in the Trace\*\*\. \{F1\}/,
+      ],
+    },
+    {
+      name: "emphasize refuses an answer that changes the text",
+      args: ["emphasize", "--in", path.join(emphText, "draft.en.v1.md")],
+      answer: "emph-text.md",
+      code: 1,
+      stderr: /line 8 differs once the \*\* are removed: "Archived output keeps its place/,
+      absent: path.join(emphText, "draft.en.v2.md"),
+    },
+    {
+      name: "emphasize refuses two spans in a section and none in another",
+      args: ["emphasize", "--in", path.join(emphCount, "draft.en.v1.md")],
+      answer: "emph-count.md",
+      code: 1,
+      stderr:
+        /2 emphasized spans in section 1 \(exactly one\)[\s\S]*no emphasized sentence in section 4/,
+      absent: path.join(emphCount, "draft.en.v2.md"),
+    },
+    {
+      name: "emphasize refuses a marker inside a span and a span over the cap",
+      args: ["emphasize", "--in", path.join(emphCap, "draft.en.v1.md")],
+      answer: "emph-cap.md",
+      code: 1,
+      stderr:
+        /a fact marker inside the emphasis[\s\S]*an emphasized span of 30 words \(at most 25\)/,
+      absent: path.join(emphCap, "draft.en.v2.md"),
+    },
+    {
+      name: "emphasize --mirror shows the other language's marked draft and this language's cap",
+      args: [
+        "emphasize",
+        "--dry-run",
+        "--in",
+        at("draft.zh.v1.md"),
+        "--mirror",
+        at("draft.en.v1.md"),
+      ],
+      code: 0,
+      stdout:
+        /at most 40 Chinese characters[\s\S]*The English edition of the same text is already marked[\s\S]*## The English edition, already marked \(read-only\)[\s\S]*\*\*keeps its place in the Trace\*\*/,
+    },
+    {
+      name: "check holds an emphasized draft to one span per section, with no marker inside",
+      args: ["check", "--in", at("emph-rules.en.v1.md")],
+      code: 1,
+      stdout:
+        /^(?=[\s\S]*2 emphasized spans in section 1)(?=[\s\S]*no emphasized sentence in section 4)(?=[\s\S]*a fact marker inside the emphasis)/,
+    },
+    {
+      name: "pair wants the same sections stressed in both languages, and warns on other numbers",
+      args: ["pair", "--in", at("stress.en.v1.md"), "--pair", at("stress.zh.v1.md")],
+      code: 1,
+      stdout:
+        /the lead: the emphasized spans hold different numbers[\s\S]*section 1: 1 emphasized span\(s\) here, 0 in stress\.zh\.v1\.md/,
+    },
+    {
+      name: "a perspectives lead may carry a TL;DR, counted apart",
+      args: ["check", "--in", path.join(tldrPerspectives, "s0.en.v1.md")],
+      code: 0,
+      notStdout: /TL;DR/,
+    },
+    {
+      name: "--page counts the other sections as the assembled draft holds them, not their newest files",
+      args: [
+        "check",
+        "--in",
+        path.join(pinned, "s4.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+        "--word-budget",
+        "480",
+        "--page",
+        path.join(pinned, "draft.en.v1.md"),
+      ],
+      code: 0,
+      stdout: /page 497 of at most 480 words[\s\S]*the other sections from draft\.en\.v1\.md/,
+    },
+    {
+      name: "emphasize refuses an English span closed after the sentence's period",
+      args: ["emphasize", "--in", path.join(emphEnOrder, "draft.en.v1.md")],
+      answer: "emph-en-order.md",
+      code: 1,
+      stderr: /line 8: the closing \*\* follows the sentence's punctuation/,
+      absent: path.join(emphEnOrder, "draft.en.v2.md"),
+    },
+    {
+      name: "emphasize accepts a Chinese span closed before the punctuation",
+      args: ["emphasize", "--in", path.join(emphZhOk, "draft.zh.v1.md")],
+      answer: "emph-zh-ok.md",
+      code: 0,
+      file: [path.join(emphZhOk, "draft.zh.v2.md"), /\*\*每次请求都会把上下文变长\*\*。后面/],
+    },
+    {
+      name: "emphasize refuses a Chinese span closed after 。, which CommonMark cannot close",
+      args: ["emphasize", "--in", path.join(emphZhOrder, "draft.zh.v1.md")],
+      answer: "emph-zh-order.md",
+      code: 1,
+      stderr:
+        /the closing \*\* follows the sentence's punctuation[\s\S]*a \*\* that cannot close emphasis/,
+      absent: path.join(emphZhOrder, "draft.zh.v2.md"),
+    },
+    {
+      name: "check: a ** after Chinese punctuation and before a character cannot close; before the punctuation it can",
+      args: ["check", "--in", path.join(flankZh, "s1.zh.v1.md")],
+      code: 1,
+      stdout: /:3  a \*\* that cannot close emphasis/,
+      notStdout: /:5  a \*\* that cannot/,
+    },
+    {
+      name: "check: a ** after a letter and before punctuation cannot open; after a space it can",
+      args: ["check", "--in", path.join(flankEn, "s1.en.v1.md")],
+      code: 1,
+      stdout: /:3  a \*\* that cannot open emphasis/,
+      notStdout: /:5  a \*\* that cannot/,
     },
     {
       name: "landing strings with a banned word and an exclamation mark fail",

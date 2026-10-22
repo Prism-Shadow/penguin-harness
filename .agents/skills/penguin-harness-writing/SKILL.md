@@ -45,7 +45,7 @@ What differs by kind of text lives in one profile, `reference/profile-<name>.md`
 
 | Profile | For | Contract |
 | --- | --- | --- |
-| `blog-perspectives` | a perspective post: one thesis, a lead, a few short sections | `prompts/contract-section.md` (per section), `contract-post.md` |
+| `blog-perspectives` | a perspective post: one thesis, a lead, a TL;DR, a few short sections | `prompts/contract-section.md` (per section), `contract-post.md` |
 | `blog-practice` | a technical post: the system-post shape, numbers rules, TL;DR | the same |
 | `docs` | a page of `packages/docs/content/`, Obsidian-Help style | `prompts/contract-docs.md` |
 | `landing` | strings for the landing page's dictionaries | `prompts/contract-landing.md` |
@@ -60,7 +60,7 @@ the two differ. A profile does not repeat the style guide and states nothing abo
 facts come from FACTS only. Its `## Check settings` are what the script enforces —
 `sections`, `lead`, `tldr`, `exclamations`, and the budgets `words`, `lead-words`,
 `section-words`, `zh-chars`, `zh-lead-chars`, `zh-section-chars`, `tldr-words`, `zh-tldr-chars`, each
-`floor-cap`.
+`floor-cap`, and `emphasis` with its caps `emphasis-words` / `zh-emphasis-chars` (section 4).
 A prompt rule with no matching setting is a rule `check` cannot see; change the two together.
 
 ## 3. Voice
@@ -68,12 +68,18 @@ A prompt rule with no matching setting is a rule `check` cannot see; change the 
 `reference/en-style.md` and `reference/zh-style.md` hold the voice and the banned lists for every
 kind of text; the outline, section, translate, polish, fix and review calls all receive them.
 
-One rule there asks the model to write for a reader with dyslexia, a person who reads with
-effort: the point first, short sentences with one idea each, common words, no asides or "by the
+One rule there asks the model to write for a reader with dyslexia or ADHD, a person who reads
+with effort and loses the thread easily: the point first, short sentences with one idea each, common words, no asides or "by the
 way" detours, no defensive hedging, no padding. Stating the reader that way measurably shortens
 the model's output and keeps it on its point. The one habit it does not remove is the
 "Yes, but…" / 「是的，但是……」 concession pivot, so that pivot is banned by name next to the
-"not X but Y" pivot, and `check` and `review` look for it.
+"not X but Y" pivot, and `check` and `review` look for it. For the same reader a post opens with a
+TL;DR of its key points, and one sentence per section is marked in bold by `emphasize`; the writer
+bolds nothing else.
+
+The zh style guide keeps Harness and Agent Harness in English with that capitalisation, never
+「夹具」「线束」「挽具」; a test fixture is 合成测试, 测试数据 or 测试配置; `check` makes 夹具 an error and a
+lowercase "harness" a warning.
 
 ## 4. The pipeline
 
@@ -98,8 +104,20 @@ file name is how the script knows the language.
 | 12 | `pair` | script | section by section: markers, citations, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
 | 13 | Draw | agent | from the frozen figure blocks (section 9) |
 | 14 | `check --svg` | script | every drawn file against its block |
-| 15 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` when its citations come in the same order (section 7) |
-| 16 | Visual check, verify, PR | agent | sections 9 and 12 |
+| 15 | `emphasize` | API | on each language's frozen draft, the first language first, then the second with `--mirror <the first's emphasized draft>`: one `**` span per section and in the lead, nothing else changed; then `pair` the two emphasized drafts |
+| 16 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` when its citations come in the same order (section 7) |
+| 17 | Visual check, verify, PR | agent | sections 9 and 12 |
+
+**Emphasis.** A profile with `emphasis: yes` gets one marked key sentence, or clause, per `##`
+section and one in the lead: the claim a reader skimming the section must not miss. `emphasize`
+adds the `**` pairs to a frozen draft and changes nothing else. The script refuses an answer that
+differs from its input once the `**` are removed, has no span or two in a section, holds a span
+over `emphasis-words` / `zh-emphasis-chars`, or puts one in a heading, figure block, caption,
+version note, TL;DR, code span or link, or around a marker. The closing `**` goes before the
+sentence's punctuation and markers, so the citation follows it there (`**claim**[^1].`,
+`**句子**[^1]。`), and the script refuses the other order: after Chinese punctuation a closing `**`
+is not read as bold (`**关键句。**后文` shows its asterisks). A text that changes after
+`emphasize` is assembled and emphasized again.
 
 **The ordering rule.** The outline is frozen before the first section call; a section is final
 before the next one starts; the text of a language is frozen before any figure of it is drawn; and
@@ -117,8 +135,9 @@ Sizes are set three times, so a post cannot grow past them unnoticed:
 2. **The prompt.** Every call that writes or changes a section (`section`, `translate`, `polish`,
    `fix`, `trim`) asks for the lowest of three sizes: the section's planned size (from a plan in
    the other language's unit, converted at the translation ratio), what the page has left once the
-   other sections take theirs (the latest version of each, or the planned size of one not yet
-   written), and the profile's cap. It never offers `check`'s 1.1 × tolerance, so a round of fixes
+   other sections take theirs, and the profile's cap. The other sections count as `--page
+   <assembled draft>` holds them, so a pinned older version counts and a newer file set aside does
+   not; without `--page`, the newest file of each, or the planned size of one not yet written. It never offers `check`'s 1.1 × tolerance, so a round of fixes
    cannot walk every section up to it and the page over its cap. `polish`, `fix` and `trim` also
    state the section's current size, and `outline` and a whole-piece `write` the profile's caps.
    Each states the counting rule `check` applies, in words and with an example sentence the script
@@ -127,8 +146,9 @@ Sizes are set three times, so a post cannot grow past them unnoticed:
 3. **`check`.** A section above `min(plan × 1.1, profile cap)` is an error; so is a lead above its
    cap and a whole post above the total cap. Without `--outline`, the profile caps apply. Below a
    floor is a warning: short is allowed, empty is not. On a section file it also reports the page
-   total, counted the same way as the prompt's page budget, and warns when that is over the page
-   cap; every per-section API step prints the same line, so creep shows before assembly.
+   total, counted the same way as the prompt's page budget (with `--page` too), names where the
+   other sections' sizes came from, and warns when the total is over the page cap; every
+   per-section API step prints the same line, so creep shows before assembly.
 
 A TL;DR, in a profile that has one (`tldr: yes`), is not part of the lead: the `**TL;DR**` line
 and its bullets are counted apart and held to `tldr-words` / `zh-tldr-chars`, the plan's row 0
@@ -154,8 +174,8 @@ markers and the references do not count. The numbers themselves live in each pro
 `facts.md` has these sections, each a `## ` heading:
 
 - `## FACTS` — atomic, numbered facts, each ending with its source tags in priority order, the
-  primary source first: `- F12: … [S3]` or `[S3 S4]`. Only the first two public sources of a fact
-  are ever cited (section 7), so order the tags deliberately.
+  primary source first: `- F12: … [S3]` or `[S3 S4]`. Only the first public source of a fact is
+  ever cited (section 7), so order the tags deliberately.
 - `## SOURCES` — one line per source: `- S3: <title> · <url>`, `· private` for a source that is
   never cited (the design repo), `· nolink` for a public source without a URL. A title is data:
   the page's own title, a repo file's path, `PR #N: <PR title>`, `PenguinHarness docs: <page>`,
@@ -167,6 +187,11 @@ markers and the references do not count. The numbers themselves live in each pro
   term; a docs page's TERMS carries the labels exactly as the product's dictionaries spell them.
 - `## NOT-FACTS` — claims the model must not make.
 - `## EXISTING-FIGURES` — published screenshots the outline may reuse, by stem.
+- `## NOCITE` (optional) — facts the writer still marks but that cite nothing: `- F12: <why>`.
+  Cite what a reader may want to check: numbers and measurements, verbatim quotes, named
+  third-party claims, research results, the first mention of a product behaviour. List general
+  background, a restatement under another source, and a product detail a docs link in the same
+  post already covers. Record the choices in the PR body.
 
 The writer makes a factual claim only when FACTS holds it. A section call ends every factual
 sentence with its id (`{F3}`, several as `{F3}{F7}`) and every position with an OPINIONS id
@@ -177,13 +202,17 @@ source: a fact whose sources are all private may be used, with a warning, and ge
 
 ## 7. Citations
 
-The markers become paper-style citations when the post is published. `strip --facts facts.md`
-turns each marker group into GFM footnotes placed after the sentence's closing punctuation
-(`…was.[^1][^2]`, `……。[^1]`): each fact contributes its first two public sources in tag order,
-the sentence keeps the first three after de-duplication, and those are numbered by first use
-through the post; opinions and private sources emit nothing. A source only ever dropped by these
-caps is not cited and so not listed, which keeps the list and the numbers consistent; the cap keeps
-a sentence readable however many sources back it. The post ends with the list:
+The markers become paper-style citations when the post is published, one key citation per
+sentence at most. `strip --facts facts.md` turns each marker group (the markers closing one
+sentence) into at most one GFM footnote: of its facts, in the writer's order, the first whose
+first public source is not yet cited in its scope. Our own sources (`penguin.ooo`, the
+Prism-Shadow repositories on GitHub, a link-less source titled "Our …") are cited once per post;
+any other source once per `##` section. Opinions, private sources and facts under `## NOCITE`
+cite nothing, and a sentence whose sources are all cited already gets no footnote. The footnote
+goes before the punctuation that ends its clause, outside a closing quotation mark, bracket or
+bold (`text[^1].`, `文字[^1]。`, `"the slope"[^1].`, `**claim**[^1].`); when the punctuation sits
+inside the closing mark (`slope."`), it follows the whole run and `check` warns. Footnotes are
+numbered by first use. The post ends with the list:
 
 ```markdown
 [^1]: [PenguinHarness docs: Agent loop](https://penguin.ooo/docs/agent-loop)
@@ -208,8 +237,10 @@ the same order, and refuses with a clear message when it does not; strip that la
 
 `check` on a published post proves every `[^n]` is defined and every definition used, the labels
 run 1 … N in first-use order, every link is in `## SOURCES`, and no citation sits in a figure or a
-caption. `pair` proves both posts cite the same set of sources, and each section the same sources,
-whatever numbers each language gave them.
+caption; a citation after the punctuation is an error. On a published post, and on a draft read
+through the same citer with `--facts`, it warns above 3.5 citations per 100 English words or 1.5
+per 100 Chinese characters, and on a sentence with two citations. `pair` proves both posts cite the
+same set of sources, and each section the same sources, whatever numbers each language gave them.
 
 ## 8. Source language and translation
 
@@ -304,14 +335,18 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   (`--section`, or an `s<n>.…` file): its shape and the figures its plan row owns. For posts also:
   `## ` only, figure blocks complete and in manifest order (`--figures`), drawn figures (`--svg`,
   `--draft`), screenshot paths and files (`--assets`), footnotes on a published post, no
-  `**Sources**` line, no in-page anchors. Landing strings are checked as `key: text` lines.
-  Warnings are for a person to judge.
+  `**Sources**` line, no in-page anchors, the emphasis rule where the profile has one (section 4;
+  a draft before `emphasize` has no span, and one with any span needs one in every section), and
+  the citation rules of section 7. In every profile, a `**` that CommonMark cannot read as
+  emphasis is an error: a closing run after punctuation and before a letter, an opening run after a
+  letter and before punctuation. Sentences over 35 English words or 60 Chinese characters are
+  warnings. Landing strings are checked as `key: text` lines. Warnings are for a person to judge.
 - **The step guards** run when an answer arrives, before it is written. `fix` refuses an answer
   that brings in a fact or opinion id neither its input nor its findings name, adds, drops or
   reorders a figure, gives a screenshot's block a `title` or `text:` lines, or changes a figure
   block no finding names by its id or by quoting its text. `trim` refuses what section 5 lists.
   `fix`, `polish`, `translate` and `trim` refuse an answer whose version note is not, byte for
-  byte, the one they were given.
+  byte, the one they were given. `emphasize` refuses what section 4 lists.
   A refused answer is kept as `<out>.rejected.md` and the step exits 1; a change the findings
   should allow goes back with a finding that names it.
 - **The fact diff** (agent): every number, URL, code span, bold or 「」 label and proper noun
@@ -366,7 +401,7 @@ stand-in gateway on a loopback port with a dummy key. A case that guards a fixed
 
 | Path | What it holds |
 | --- | --- |
-| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
+| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `emphasize`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
 | `prompts/contract-section.md`, `contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for one section, a whole post, a docs page, landing strings |
 | `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the counting rules and budgets, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
