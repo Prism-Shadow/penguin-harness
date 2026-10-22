@@ -1,17 +1,18 @@
 /**
  * Numbered citations in a post, through the page's whole pipeline (`PostBody`, react-dom/server
- * static markup, node env). Posts cite with GFM footnotes: `…a sentence.[^1]` in the text and
+ * static markup, node env). Posts cite with GFM footnotes: `…a sentence[^1].` in the text and
  * `[^1]: [Title](https://…)` at the end.
  *
  * - Given a post citing source 1 twice and source 2 once, each citation is a raised number linking
  *   to its source's entry, numbered by the source, each place with an id of its own.
+ * - Given citations before or after a sentence's punctuation, each run of them reads as one
+ *   bracketed group, `[2, 1]`, with real bracket and comma text, and no line can break before it.
  * - Given either language, the list after the body is headed in that language, by the element
  *   every citation names as its description.
  * - Given the list, each source appears once: its title links to the source through the external
  *   confirmation, and back-links return to every place that cites it, labelled for screen
  *   readers with the source and the place.
  * - Given a post in Chinese, the ids are still plain ASCII and carry no prefix.
- * - Given a citation after a sentence or after another citation, no line can break before it.
  * - Given a body with a drawn figure and a citation, both render.
  * - Given a post without citations, no references list appears.
  */
@@ -45,12 +46,12 @@ const anchors = (html: string): Anchor[] =>
 const entry = (html: string, id: string) =>
   new RegExp(`<li id="${id}">(.*?)</li>`, "s").exec(html)?.[1] ?? "";
 
-const CITING = [
-  "A sentence.[^1] Another one.[^2][^1]",
-  "",
+const SOURCES = [
   "[^1]: [First source](https://example.com/one)",
   "[^2]: [Second source](https://example.org/two)",
 ].join("\n");
+
+const CITING = `A sentence[^1]. Another one[^2][^1].\n\n${SOURCES}`;
 
 afterEach(() => setActiveStrings(zh));
 
@@ -64,8 +65,26 @@ describe("a post's citations", () => {
       ["#fn-1", "fnref-1-2", "1"],
     ]);
     for (const ref of refs) expect(ref.attrs["aria-describedby"]).toBe("footnote-label");
-    expect(html.match(/<sup><a\b[^>]*data-footnote-ref/g)).toHaveLength(3);
   });
+
+  it.each([
+    ["before", CITING, "one\u2060<sup"],
+    ["after", `A sentence.[^1] Another one.[^2][^1]\n\n${SOURCES}`, "one.\u2060<sup"],
+  ])(
+    "sets each run as one bracketed group with the citations %s the punctuation",
+    (_place, body, glued) => {
+      const html = render(body);
+      const groups = [...html.matchAll(/(.)<sup class="site-cite">(.*?)<\/sup>/gs)];
+      // The group's text, links and all, is what a reader sees and what a copy of the page carries.
+      expect(groups.map(([, , inner = ""]) => inner.replace(/<[^>]*>/g, ""))).toEqual([
+        "[1]",
+        "[2,\u00a01]",
+      ]);
+      // A word joiner ties each group to the text before it.
+      for (const [, before] of groups) expect(before).toBe("\u2060");
+      expect(html).toContain(glued);
+    },
+  );
 
   it.each([
     ["zh", zh],
@@ -97,15 +116,6 @@ describe("a post's citations", () => {
 
     const second = anchors(entry(html, "fn-2")).filter((a) => "data-footnote-backref" in a.attrs);
     expect(second.map((a) => a.attrs.href)).toEqual(["#fnref-2"]);
-  });
-
-  it("keeps each citation on the line of what it follows, a run of them included", () => {
-    const html = render(CITING);
-    expect(html).toContain("A sentence.\u2060<sup><a");
-    expect(html).toContain("Another one.\u2060<sup><a");
-    expect(html).toContain("</a></sup>\u2060<sup><a");
-    // Only citations: a back-link's raised number is not glued to anything.
-    expect(html.match(/\u2060/g)).toHaveLength(3);
   });
 
   it("keeps the ids plain ASCII, without a prefix, in a Chinese post", () => {

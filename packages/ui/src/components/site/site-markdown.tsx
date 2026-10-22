@@ -2,13 +2,13 @@
  * A public-site article body: Markdown rendered in the sites' prose (site-prose.css), the same
  * for blog posts and doc pages. The renderer owns what both share — ## and ### headings carry
  * the ids `extractToc` lists, fenced blocks render as `SiteCodeBlock` (highlighted by the
- * `highlight` it is handed), a tab group from `remarkTabs` renders as `SiteCodeTabs`, and a
- * citation stays on the line of the text it follows. The host owns the rest: its plugin list
- * (which Markdown it accepts, raw HTML included or not), its link and image adapters (where a
- * link opens, where an image is hosted), and its footnote options (their ids and the list's
- * label). Pass all of them as module-level constants: react-markdown uses each component as an
- * element type and re-runs its pipeline on a new plugin list, so a fresh object per render
- * remounts the body.
+ * `highlight` it is handed), a tab group from `remarkTabs` renders as `SiteCodeTabs`, and a run
+ * of citations reads as one bracketed group (`rehypeCitations`, after the host's own rehype
+ * plugins). The host owns the rest: its plugin list (which Markdown it accepts, raw HTML included
+ * or not), its link and image adapters (where a link opens, where an image is hosted), and its
+ * footnote options (their ids and the list's label). Pass all of them as module-level constants:
+ * react-markdown uses each component as an element type and re-runs its pipeline on a new plugin
+ * list, so a fresh object per render remounts the body.
  *
  * `variant` picks the heading and table rhythm: `post` for a blog post's flowing text, `doc` for
  * a reference page's ruled sections and plain tables.
@@ -21,6 +21,7 @@ import { nodeText, parseTabLabels, readFencedCode, slugifyHeading } from "./mark
 import type { HastElement } from "./markdown-text";
 import type { CodeHighlighter } from "../content/code-block/highlight-options";
 import { SITE_REMARK_PLUGINS } from "../content/prose/markdown-plugins";
+import { rehypeCitations } from "./rehype-citations";
 import { remarkCallout } from "./remark-callout";
 import { remarkTabs } from "./remark-tabs";
 import { SiteCodeBlock, SiteCodeHighlight, SiteCodeTabs } from "./site-code";
@@ -39,20 +40,6 @@ const headingProps = (
   className: className ? `scroll-mt-20 ${className}` : "scroll-mt-20",
 });
 
-/**
- * A citation (a GFM footnote reference: a `sup` around the link carrying `data-footnote-ref`)
- * stays on the line of what it follows. Its brackets are generated, and a line may break before
- * an opening bracket, so `replies.[1]` could leave the `[1]` alone at the start of the next line,
- * and a run `[3][4]` could split. A word joiner before each citation forbids both breaks; it sits
- * outside the link, so the link's text and accessible name stay the number alone.
- */
-const WORD_JOINER = "\u2060";
-
-const isCitation = (node: HastElement | undefined) =>
-  node?.children?.some(
-    (child) => child.tagName === "a" && child.properties?.dataFootnoteRef != null,
-  ) ?? false;
-
 const BASE_COMPONENTS: Components = {
   h2: ({ id, className, children }) => (
     <h2 {...headingProps(id, className, children)}>{children}</h2>
@@ -60,16 +47,6 @@ const BASE_COMPONENTS: Components = {
   h3: ({ id, className, children }) => (
     <h3 {...headingProps(id, className, children)}>{children}</h3>
   ),
-  sup: ({ node, children, ...props }) => {
-    const sup = <sup {...props}>{children}</sup>;
-    if (!isCitation(node as HastElement | undefined)) return sup;
-    return (
-      <>
-        {WORD_JOINER}
-        {sup}
-      </>
-    );
-  },
   pre: ({ node, children }) => {
     const { code, language } = readFencedCode(node as HastElement | undefined);
     // Not a fenced block (no text to show as code): leave it alone.
@@ -132,12 +109,13 @@ export function SiteMarkdown({
   className?: string;
 }) {
   const merged = useMemo(() => ({ ...BASE_COMPONENTS, ...components }), [components]);
+  const rehype = useMemo(() => [...(rehypePlugins ?? []), rehypeCitations], [rehypePlugins]);
   return (
     <div className={`site-prose ${className}`} data-variant={variant}>
       <SiteCodeHighlight.Provider value={highlight ?? null}>
         <Markdown
           remarkPlugins={remarkPlugins}
-          rehypePlugins={rehypePlugins}
+          rehypePlugins={rehype}
           remarkRehypeOptions={remarkRehypeOptions}
           components={merged}
         >

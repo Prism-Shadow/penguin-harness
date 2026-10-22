@@ -157,8 +157,10 @@ export const REMARK_PLUGINS: SiteRemarkPlugins = SITE_REMARK_PLUGINS;
 export const REHYPE_PLUGINS = [rehypeRaw];
 
 /**
- * Citations are GFM footnotes (`…a sentence.[^1]` in the text, `[^1]: [Title](https://…)` at the
- * end), rendered as numbered references with a labelled list after the body:
+ * Citations are GFM footnotes (`…a sentence[^1].` in the text, before the sentence's punctuation,
+ * and `[^1]: [Title](https://…)` at the end), rendered as numbered references with a labelled list
+ * after the body. The shared renderer sets each run of them as one bracketed group, `[1, 2]`, with
+ * every number its own link; the options below decide the rest:
  *
  * - No id prefix, so the ids are `fn-1` (the entry) and `fnref-1`, `fnref-1-2`, … (each place that
  *   cites it): plain ASCII whatever the post's language, and nothing for a hash to decode.

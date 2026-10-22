@@ -6,7 +6,8 @@
  *   of `tab="…"` fences becomes one tab strip showing only the first panel, and a `[!INFO]-`
  *   quote becomes a collapsed box with its title; a host's link adapter replaces the links
  *   while the headings stay the shared ones; a host's footnote options name the citations and
- *   label their list, and the label keeps the id every citation is described by.
+ *   label their list, and the label keeps the id every citation is described by; a run of
+ *   citations reads as one bracketed group, each number its own link, tied to the text before it.
  * - The highlighter a site hands its articles colours a PowerShell and a JSON Lines fence with
  *   both themes baked in, and answers nothing for a language it does not carry.
  * - The footer: an external link opens a new tab and a route link renders through the host's
@@ -90,6 +91,17 @@ describe("an article", () => {
     expect(html).toContain('href="#fn-1" id="fnref-1"');
     expect(html).toContain('aria-describedby="footnote-label"');
     expect(html).toMatch(/<h2 id="footnote-label" class="[^"]*\brefs\b[^"]*">References<\/h2>/);
+  });
+
+  it("sets a run of citations as one bracketed group, each number its own link", () => {
+    const html = article("A claim[^1][^2]. Another[^2].\n\n[^1]: One.\n[^2]: Two.");
+    const ref = (n: number) => `<a [^>]*data-footnote-ref[^>]*>${n}</a>`;
+    expect(html).toMatch(
+      new RegExp(`A claim\u2060<sup class="site-cite">\\[${ref(1)},\u00a0${ref(2)}\\]</sup>\\.`),
+    );
+    expect(html).toMatch(
+      new RegExp(`Another\u2060<sup class="site-cite">\\[${ref(2)}\\]</sup>\\.`),
+    );
   });
 });
 
