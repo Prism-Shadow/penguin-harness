@@ -19,7 +19,10 @@
  * gallery's demo does; one being brought back answers nothing, as a real one has nothing to answer.
  * A machine lists its own Sessions to the sidebar ({@link FakeMachine.sessions}), and a test can
  * take it out of reach or bring it back mid-test ({@link AgentServer.setReconnecting}; the page
- * hears of it through `publishMachinesChanged`, as the server's event would tell it).
+ * hears of it through `publishMachinesChanged`, as the server's event would tell it). It can be
+ * made slow — every answer held until released ({@link AgentServer.hold} with its id) — or have
+ * one read fail as an unreachable server does ({@link AgentServer.failNext}); what was answered
+ * so far reads back through {@link AgentServer.requests}.
  *
  * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
  * answers them masked, and the state switch turns one on or off. This server answers which
@@ -194,7 +197,13 @@ export interface AgentServer {
   refuseNext(status: number, code: string, message?: string): void;
   /** Writes wait until {@link AgentServer.release} is called (to see a write in flight). */
   hold(): void;
+  /** Holds every answer of the machine until `release()`: a slow machine. */
+  hold(machineId: string): { release(): void };
   release(): void;
+  /** The next read matching `path` on that server (null: this one) answers 502 server_unreachable. */
+  failNext(machineId: string | null, path: RegExp): void;
+  /** Every request answered so far. */
+  requests(): ReadonlyArray<{ method: string; path: string; machine: string | null }>;
   /** How the MCP connection test answers an entry (by default: connected, no tools). */
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
   /** Takes a machine out of reach (being brought back), or brings it back. */
@@ -269,6 +278,11 @@ export function agentServer(
   );
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
+  /** Per held machine, the answers waiting for its release. */
+  const machineHolds = new Map<string, Array<() => void>>();
+  /** Reads to fail once each, oldest first: the server they are on and the path they match. */
+  let failures: Array<{ machine: string | null; path: RegExp }> = [];
+  const answered: Array<{ method: string; path: string; machine: string | null }> = [];
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
     ok: true,
     tools: [],
@@ -605,12 +619,45 @@ export function agentServer(
     return apiError(404, "not_found");
   };
 
+  /** The failure a read meets, if one was asked for its server and path (it answers one read only). */
+  const failed = (request: FetchRequest): Response | null => {
+    if (!isRead(request)) return null;
+    const match = failures.find((f) => f.machine === request.machine && f.path.test(request.path));
+    if (match === undefined) return null;
+    failures = failures.filter((f) => f !== match);
+    return apiError(
+      502,
+      "server_unreachable",
+      `${request.machine ?? "this server"} did not answer`,
+    );
+  };
+
   const fetch = stubFetch(async (request) => {
     if (held !== null && !isRead(request)) {
       await new Promise<void>((resolve) => held!.push(resolve));
     }
-    return answer(request);
+    const machineHold = request.machine === null ? undefined : machineHolds.get(request.machine);
+    if (machineHold !== undefined) await new Promise<void>((resolve) => machineHold.push(resolve));
+    const response = failed(request) ?? answer(request);
+    answered.push({ method: request.method, path: request.path, machine: request.machine });
+    return response;
   });
+  function hold(): void;
+  function hold(machineId: string): { release(): void };
+  function hold(machineId?: string): { release(): void } | void {
+    if (machineId === undefined) {
+      held = [];
+      return;
+    }
+    const waiting = machineHolds.get(machineId) ?? [];
+    machineHolds.set(machineId, waiting);
+    return {
+      release: () => {
+        if (machineHolds.get(machineId) === waiting) machineHolds.delete(machineId);
+        for (const resume of waiting.splice(0)) resume();
+      },
+    };
+  }
   return {
     fetch,
     machineAgents: (machineId) => machines.find((m) => m.machineId === machineId)?.agents ?? [],
@@ -629,9 +676,11 @@ export function agentServer(
     refuseNext: (status, code, message = code) => {
       refusal = { status, code, message };
     },
-    hold: () => {
-      held = [];
+    hold,
+    failNext: (machine, path) => {
+      failures.push({ machine, path });
     },
+    requests: () => [...answered],
     release: () => {
       const waiting = held ?? [];
       held = null;

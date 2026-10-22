@@ -220,3 +220,50 @@ export function switchNamed(label: string): HTMLButtonElement {
 export function dialogs(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>('[role="dialog"]')];
 }
+
+/** What {@link watchText} has seen. */
+export interface TextWatch {
+  /** Every text the node has shown, in order, each differing from the one before it. */
+  texts(): string[];
+  stop(): void;
+}
+
+/**
+ * A status-sequence probe: records the text of the first node matching `selector` each time it
+ * changes, from the first moment one is there. A test then asserts the whole sequence — a
+ * status that went "Installed" → "Available" → "Installed" reads as three entries, where a check
+ * of the final state alone would pass. A node that goes away after it was there reads as an
+ * empty text (a placeholder took its place), and one put back as a new entry.
+ *
+ * The node is read once per batch of DOM changes (a MutationObserver), which is what a browser
+ * could paint: two changes within one task that undo each other were never on screen.
+ */
+export function watchText(selector: string): TextWatch {
+  const seen: string[] = [];
+  let present = false;
+  const look = () => {
+    const node = document.querySelector(selector);
+    if (node === null && !present) return;
+    present = true;
+    const text = node?.textContent ?? "";
+    if (seen.at(-1) !== text) seen.push(text);
+  };
+  const observer = new MutationObserver(look);
+  observer.observe(document.body, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+  });
+  look();
+  return {
+    texts: () => {
+      if (observer.takeRecords().length > 0) look();
+      return [...seen];
+    },
+    stop: () => {
+      if (observer.takeRecords().length > 0) look();
+      observer.disconnect();
+    },
+  };
+}
