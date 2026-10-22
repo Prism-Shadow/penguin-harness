@@ -1,10 +1,10 @@
 /**
  * 图表: the chart foundation's page — first the primitives every chart draws through, then the
- * current theme's chart tokens, live, then every chart kind the app draws, on fixed demo data
- * so the themes' chart styles compare: the token donut, the ring gauge, the legend in both
- * layouts, the cost trend line, the stacked token bars with their cache-hit curve and legend,
- * the requests-and-success-rate stack, the sparkline at both scales, and the Trace timeline's
- * lanes.
+ * current theme's chart tokens, live, then the basic charts drawn from data (basic-charts.tsx),
+ * then every chart kind the app draws, on fixed demo data so the themes' chart styles compare:
+ * the token donut, the ring gauge, the legend in both layouts, the cost trend line, the stacked
+ * token bars with their cache-hit curve and legend, the requests-and-success-rate stack, the
+ * sparkline at both scales, and the Trace timeline's lanes.
  *
  * Every input a chart receives is built once, at module level or memoized: a chart keeps
  * effects keyed on its data (the timeline re-measures its scroller whenever its groups change),
@@ -33,6 +33,7 @@ import type { TokenLegendKey } from "../../../../web/src/features/usage/usage-ch
 import type { EntityCounts } from "../../../../web/src/features/usage/usage-controls";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
+import { BasicCharts } from "./basic-charts";
 import { ChartPrimitives } from "./chart-primitives";
 import { ChartTokenTable } from "./chart-tokens";
 
@@ -238,6 +239,9 @@ export function ChartsBoard() {
       </Part>
       <Part title={t.parts.tokens} hint={t.parts.tokensHint}>
         <ChartTokenTable />
+      </Part>
+      <Part title={t.basic.part} hint={t.basic.partHint}>
+        <BasicCharts />
       </Part>
       <Part title={t.parts.charts} hint={t.parts.chartsHint}>
         <BoardGroup title={t.donut} aside={t.donutHint}>

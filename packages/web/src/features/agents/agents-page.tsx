@@ -224,8 +224,9 @@ export function AgentsPage() {
     if (!createOpen || library !== null || libraryPending.current) return;
     libraryPending.current = true;
     setLibraryError(null);
+    // This server's library: the dialog's default location. A machine picked there reads its own.
     api
-      .getPluginLibrary()
+      .getPluginLibrary(null)
       .then((res) => setLibrary(pluginPickItems(res.groups.flatMap((g) => g.plugins))))
       .catch((e: unknown) => {
         // Leave `library` unset and release the guard, so the next open tries again.
@@ -387,8 +388,10 @@ export function AgentsPage() {
       const agent = agents.find((a) => a.agentId === agentId);
       return agent ? agentDisplayName(agent) : agentId;
     });
+    // The notice counts this server's Agents only; a machine's Agent is updated from its own
+    // settings page.
     const results = await Promise.allSettled(
-      targets.map((agentId) => api.kernelUpdateAgentConfig(projectId, agentId)),
+      targets.map((agentId) => api.kernelUpdateAgentConfig(projectId, agentId, null)),
     );
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
