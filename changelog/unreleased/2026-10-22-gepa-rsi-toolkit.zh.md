@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** feature
 - **Scope:** `plugins`, `core`, `docs`, `landing`, `ui-gallery`
+- **PR:** [#1277](https://github.com/Prism-Shadow/penguin-harness/pull/1277)
 
 [English](2026-10-22-gepa-rsi-toolkit.md)
 
