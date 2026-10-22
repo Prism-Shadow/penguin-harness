@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1283](https://github.com/Prism-Shadow/penguin-harness/pull/1283)
 
 [English](2026-10-22-copy-plain-text.md)
 
