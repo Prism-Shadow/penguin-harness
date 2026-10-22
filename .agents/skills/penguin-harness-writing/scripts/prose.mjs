@@ -207,6 +207,9 @@ const OPTIONS = new Set([
   "cap",
   "mirror",
   "page",
+  "title",
+  "notes",
+  "plan-rows",
 ]);
 const FLAGS = new Set(["dry-run", "help", "tells", "facts-all", "freeze"]);
 const REPEATABLE = new Set(["research", "pin"]);
@@ -502,6 +505,10 @@ function profileParams(F, prof, lang, { contract, markers, date, versionNote, bu
       params.TOTAL_CAP = capOf(budgets.total);
       params.LEAD_CAP = capOf(budgets.lead);
       params.SECTION_CAP_TEXT = capOf(budgets.section);
+      params.TLDR_NOTE = budgets.tldr ? ` ${F["tldr-budget"]}` : "";
+      if (budgets.tldr) {
+        params.TLDR_RANGE = `${budgets.tldr.floor}–${budgets.tldr.cap} ${budgets.unitName}`;
+      }
     }
   }
   return params;
@@ -1209,6 +1216,13 @@ function buildMessages(step, o) {
 
   const meme = o.meme ? F["meme-brief"] : "";
   if (o.meme) content.MEME_BRIEF = read(o.meme, "--meme").trim();
+  // The author's notes go to every step that writes or judges the text, as a binding list.
+  const notes = o.notes ? notesOf(o.notes) : undefined;
+  if (o.notes) content.NOTES = read(o.notes, "--notes").trim();
+  const notesSlots = () => ({
+    NOTES_SECTION: notes ? `${F["notes-section"]}\n\n` : "",
+    NOTES_RULE: notes ? ` ${F["notes-rule-write"]}` : "",
+  });
   if (o.facts) content.FACTS = read(o.facts, "--facts").trim();
   const titleRule = o["title-rule"] !== undefined ? textOrFile(o["title-rule"]) : undefined;
   const input = o.in ? read(o.in, "--in") : undefined;
@@ -1269,19 +1283,60 @@ function buildMessages(step, o) {
     }
     case "write": {
       lang = checkLang(o.lang ?? langOf(o.out) ?? "en", "--lang");
+      const budgets = budgetsOf(prof, lang, o);
+      const post = prof.kind === "post";
       params = profileParams(F, prof, lang, {
         contract: true,
         markers: "write",
         date: o.date ?? today(),
         versionNote: o["version-note"],
-        budgets: budgetsOf(prof, lang, o),
+        budgets,
       });
+      Object.assign(params, notesSlots());
       params.STYLE = stylePrompt(lang);
-      params.TITLE_RULE = titleRule ?? "";
+      params.TITLE_RULE = [
+        o.title !== undefined ? F["title-fixed"] : F["title-rule-write"],
+        titleRule,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      params.TITLE_FIXED = o.title ?? "";
       params.MEME_BRIEF_SECTION = meme;
+      // A post is one argument written in one sitting; its plan sizes are targets, its caps limits.
+      params.FLOW_RULE = post ? F["flow-rule-post"] : "";
+      params.PLAN_TARGETS = post && o.outline ? ` ${F["plan-targets"]}` : "";
+      params.FIGURE_REUSE_RULE = "";
+      params.EXISTING_FIGURE_BLOCKS = "";
+      if (o["reuse-figures"]) {
+        const blocks = figureBlockTexts(read(o["reuse-figures"], "--reuse-figures"));
+        if (blocks.size) {
+          params.FIGURE_REUSE_RULE = F["figure-reuse"];
+          params.EXISTING_FIGURE_BLOCKS = F["existing-figure-blocks"];
+          content.EXISTING_BLOCKS = [...blocks.values()].join("\n\n");
+        }
+      }
+      if (o.feedback) {
+        if (!o.previous) fail("write --feedback needs --previous <the attempt it is about>");
+        params.FEEDBACK = F["write-feedback"];
+        content.FEEDBACK_NOTES = feedbackText(o.feedback);
+        content.PREVIOUS_PIECE = read(o.previous, "--previous").trim();
+      } else {
+        if (o.previous) fail("--previous only goes with --feedback");
+        params.FEEDBACK = "";
+      }
       if (o.outline) content.OUTLINE = read(o.outline, "--outline").trim();
       if (o.figures) content.FIGURES = read(o.figures, "--figures").trim();
-      else if (prof.kind !== "post") content.FIGURES = "(none: this text has no figures)";
+      else if (!post) content.FIGURES = "(none: this text has no figures)";
+      if (!o.out && o.outline && post) o.out = nextDraftIn(path.dirname(o.outline), lang);
+      hooks.verify = (out) => [
+        ...versionNoteProblems(out, o["version-note"]),
+        ...titleProblems(out, o.title),
+        ...notesProblems(out, notes, lang),
+        ...(post ? writeHardProblems(out, budgets) : []),
+      ];
+      hooks.retry =
+        "rerun write once with --feedback naming what was wrong and --previous the rejected answer; a second failure goes to the author";
+      if (post) hooks.after = (out) => writeAfter(out, { o, lang, budgets, prof });
       break;
     }
     case "section": {
@@ -1401,7 +1456,10 @@ function buildMessages(step, o) {
       params.TARGET_LANG_NAME = LANG_NAME[lang];
       params.SOURCE_LANG_NAME = LANG_NAME[sourceLang];
       params.SOURCE_LANG = sourceLang;
-      params.TITLE_RULE = titleRule ?? F[`title-rule-translate-${lang}`];
+      params.TITLE_RULE =
+        o.title !== undefined ? F["title-fixed"] : (titleRule ?? F[`title-rule-translate-${lang}`]);
+      params.TITLE_FIXED = o.title ?? "";
+      Object.assign(params, notesSlots());
       content.SOURCE = input.trim();
       if (content.FACTS !== undefined) {
         const terms = factsSection(content.FACTS, "TERMS");
@@ -1417,8 +1475,16 @@ function buildMessages(step, o) {
           reuseTranslatedFigures(out, input, read(o["reuse-source"]), read(o["reuse-figures"]));
       }
       const noteKept = sec && sec.n > 0 ? undefined : o["version-note"];
-      hooks.verify = (out) => versionNoteProblems(out, noteKept);
+      const title = sec && sec.n > 0 ? undefined : o.title;
+      hooks.verify = (out) => [
+        ...versionNoteProblems(out, noteKept),
+        ...titleProblems(out, title),
+        ...notesProblems(out, notes, lang),
+      ];
       hooks.retry = "rerun translate once; a second failure goes to the author";
+      if (!sec && prof.kind === "post") {
+        hooks.after = (out) => docReport(out, lang, budgetsOf(prof, lang, o), outlineGiven());
+      }
       break;
     }
     case "polish":
@@ -1480,7 +1546,19 @@ function buildMessages(step, o) {
         params.NEIGHBOURS = "";
         params.DRAFT_LABEL = NOUN[prof.kind][0].toUpperCase() + NOUN[prof.kind].slice(1);
         params.DRAFT_HEADING = "";
+        // A whole post: its sizes against the caps after the edit, so creep shows at once.
+        if (prof.kind === "post") {
+          hooks.after = (out) => {
+            const sizes = docReport(out, lang, budgets, outlineGiven());
+            if (sizes.over.length || sizes.pageOver) {
+              note(
+                `over a cap after the ${step}: trim --in ${o.out}${o.outline ? ` --outline ${o.outline}` : ""}`,
+              );
+            }
+          };
+        }
       }
+      Object.assign(params, notesSlots());
       params[step === "polish" ? "STYLE_TARGET" : "STYLE"] = stylePrompt(lang);
       hooks.verify = (out) => versionNoteProblems(out, noteKept);
       hooks.retry = `rerun ${step} once; a second failure goes to the author`;
@@ -1488,8 +1566,9 @@ function buildMessages(step, o) {
       else if (o.findings) {
         content.FINDINGS = read(o.findings, "--findings").trim();
         hooks.verify = (out) => [
-          ...fixProblems(input, out, content.FINDINGS),
+          ...fixProblems(input, out, content.FINDINGS, { whole: !sec }),
           ...versionNoteProblems(out, noteKept),
+          ...notesProblems(out, notes, lang),
         ];
         hooks.retry =
           "rerun fix once (a finding that names the id, or names the figure by its id or by quoting it, lets that change through); a second failure goes to the author";
@@ -1498,11 +1577,53 @@ function buildMessages(step, o) {
       break;
     }
     case "trim": {
-      if (input === undefined) fail("trim needs --in <s<n>.<lang>.v<k>.md>");
+      if (input === undefined) fail("trim needs --in <s<n>.<lang>.v<k>.md or draft.<lang>.vN.md>");
       if (!sec) {
-        fail(
-          "trim cuts one section: pass an s<n>.<lang>.v<k>.md file, or --section <n> with --sections-dir",
-        );
+        if (!/^draft\.(en|zh)\.v\d+\.md$/.test(path.basename(o.in))) {
+          fail(
+            "trim cuts one section (s<n>.<lang>.v<k>.md, or --section <n> with --sections-dir) or a whole draft (draft.<lang>.vN.md)",
+          );
+        }
+        lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
+        const budgets = budgetsOf(prof, lang, o);
+        const outline = outlineGiven();
+        const plan = trimPlan(input, lang, budgets, outline);
+        if (!plan.named.size) {
+          hooks.skip = `every section is within its cap and the page is ${plan.total} ${budgets.unit}${plan.pageCap !== undefined ? ` of at most ${plan.pageCap}` : ""}: nothing to trim`;
+        }
+        const unit = (k) => `${k} ${budgets.unitName}`;
+        const where = (n) => (n === 0 ? "the lead" : `section ${n} ("${plan.headings[n]}")`);
+        params = { NOUN: NOUN[prof.kind], ...countRuleParams(F, lang) };
+        params.STYLE = stylePrompt(lang);
+        params.TRIM_SCOPE = F["trim-scope-doc"];
+        params.TRIM_WHAT = NOUN[prof.kind];
+        params.TRIM_NAMED = [...plan.named.keys()].map(where).join(", ");
+        params.TRIM_BUDGET = F["trim-budget-doc"];
+        params.TRIM_PAGE_CAP =
+          plan.pageCap !== undefined ? unit(plan.pageCap) : "the profile's size";
+        params.TRIM_PAGE_NOW = unit(plan.total);
+        params.TRIM_SECTIONS = [...plan.named]
+          .map(([n, x]) =>
+            F["trim-section-line"]
+              .replace("{{TRIM_WHERE}}", where(n))
+              .replace("{{TRIM_LINE_NOW}}", unit(x.now))
+              .replace("{{TRIM_LINE_CAP}}", unit(x.cap))
+              .replace("{{TRIM_LINE_AIM}}", unit(x.aim)),
+          )
+          .join("\n");
+        params.TRIM_TLDR = "";
+        const noteKept = versionNoteOf(doc);
+        params.TRIM_KEEP_NOTE = noteKept ? `, ${F["trim-keep-note"]},` : "";
+        params.DRAFT_LABEL = `The ${NOUN[prof.kind]} (cut only the sections named; return it whole)`;
+        content.DRAFT = fenced(input);
+        o.out ??= nextDraftFile(o.in);
+        hooks.verify = (out) => [
+          ...trimDocProblems(input, out, { plan, lang, budgets, where }),
+          ...versionNoteProblems(out, noteKept),
+        ];
+        hooks.retry = "rerun trim once; a second failure goes to the author";
+        hooks.after = (out) => docReport(out, lang, budgets, outline);
+        break;
       }
       lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
       const budgets = budgetsOf(prof, lang, o);
@@ -1548,6 +1669,9 @@ function buildMessages(step, o) {
       }
       params = { NOUN: NOUN[prof.kind], SECTION_N: String(sec.n), ...countRuleParams(F, lang) };
       params.STYLE = stylePrompt(lang);
+      params.TRIM_SCOPE = F["trim-scope-section"];
+      params.TRIM_WHAT = "section";
+      params.DRAFT_LABEL = `Section ${sec.n} (the one to cut; return it whole)`;
       params.TRIM_BUDGET = now > cap ? F["trim-budget"] : F["trim-budget-within"];
       params.TRIM_CAP = unit(cap);
       params.TRIM_NOW = unit(now);
@@ -1638,6 +1762,8 @@ function buildMessages(step, o) {
       // Fragments are trimmed; the rule follows a sentence and the section precedes a heading.
       params.FACTS_RULE = content.FACTS !== undefined ? ` ${F["review-facts-rule"]}` : "";
       params.FACTS_SECTION = content.FACTS !== undefined ? `${F["review-facts-section"]}\n\n` : "";
+      Object.assign(params, notesSlots());
+      params.NOTES_RULE = notes ? ` ${F["notes-rule-review"]}` : "";
       if (sec) {
         params.SCOPE = F["review-scope-section"];
         params.NEIGHBOURS = `${F.neighbours}\n\n`;
@@ -1646,6 +1772,17 @@ function buildMessages(step, o) {
       } else {
         params.SCOPE = F["review-scope-post"];
         params.NEIGHBOURS = "";
+        // The joins are scored in one closing line, kept apart so route and fix never read it.
+        hooks.after = (out) => {
+          const flow = /^\s*transitions:.*$/im.exec(out);
+          if (!flow) {
+            note("the review gave no `transitions:` line");
+            return;
+          }
+          writeFileSync(o.out, `${out.replace(flow[0], "").trimEnd()}\n`);
+          writeFileSync(`${o.out}.flow.txt`, `${flow[0].trim()}\n`);
+          process.stderr.write(`${flow[0].trim()} (in ${o.out}.flow.txt)\n`);
+        };
         params.DRAFT_LABEL = NOUN[prof.kind][0].toUpperCase() + NOUN[prof.kind].slice(1);
       }
       content.DRAFT = sec ? fenced(input) : input.trim();
@@ -1709,13 +1846,114 @@ function emphasizeProblems(before, after, lang, budgets) {
 /** `draft.en.v3.md` → the next free `draft.en.v<k>.md` beside it; any other name needs --out. */
 function nextDraftFile(input) {
   const m = /^draft\.(en|zh)\.v\d+\.md$/.exec(path.basename(input));
-  if (!m) fail("emphasize needs --out <file> for an input not named draft.<lang>.vN.md");
-  const dir = path.dirname(input);
-  const versions = readdirSync(dir)
-    .map((name) => new RegExp(`^draft\\.${m[1]}\\.v(\\d+)\\.md$`).exec(name)?.[1])
-    .filter(Boolean)
-    .map(Number);
-  return path.join(dir, `draft.${m[1]}.v${Math.max(...versions) + 1}.md`);
+  if (!m) fail("this step needs --out <file> for an input not named draft.<lang>.vN.md");
+  return nextDraftIn(path.dirname(input), m[1]);
+}
+
+/** The next free `draft.<lang>.v<k>.md` in a directory. */
+function nextDraftIn(dir, lang) {
+  const versions = existsSync(dir)
+    ? readdirSync(dir)
+        .map((name) => new RegExp(`^draft\\.${lang}\\.v(\\d+)\\.md$`).exec(name)?.[1])
+        .filter(Boolean)
+        .map(Number)
+    : [];
+  return path.join(dir, `draft.${lang}.v${Math.max(0, ...versions) + 1}.md`);
+}
+
+/**
+ * An author's notes for one piece, one per line: `keep[ en|zh]: <exact string>` (an answer without
+ * it is refused), `avoid[ en|zh]: <string>` (an answer with it is refused) and `note: <text>`
+ * (prompt only). A line tagged with a language applies to that language alone.
+ */
+function notesOf(file) {
+  const out = { keep: [], avoid: [], note: [] };
+  for (const line of read(file, "--notes").split("\n")) {
+    const m = /^\s*(?:[-*]\s+)?(keep|avoid|note)(?:\s+(en|zh))?\s*:\s*(.+?)\s*$/.exec(line);
+    if (m) out[m[1]].push({ lang: m[2], text: m[3] });
+  }
+  return out;
+}
+
+/** The notes an answer in this language breaks: a `keep:` string missing, an `avoid:` string present. */
+function notesProblems(out, notes, lang) {
+  if (!notes) return [];
+  const bare = out.replace(MARKER, "").replace(/\*\*/g, "");
+  const has = (text) => out.includes(text) || bare.includes(text);
+  const mine = (x) => !x.lang || x.lang === lang;
+  return [
+    ...notes.keep
+      .filter((k) => mine(k) && !has(k.text))
+      .map((k) => `keep: "${k.text}" is missing; the author's notes ask for it verbatim`),
+    ...notes.avoid
+      .filter((a) => mine(a) && has(a.text))
+      .map((a) => `avoid: "${a.text}" is in the answer; the author's notes rule it out`),
+  ];
+}
+
+/** A pinned title is written as given, byte for byte. */
+function titleProblems(out, title) {
+  if (title === undefined) return [];
+  const got = splitFrontmatter(out).meta.title;
+  return got === title ? [] : [`the title is "${got ?? "(none)"}"; it must be "${title}"`];
+}
+
+/**
+ * What a whole-piece writer never writes: a footnote (strip makes them), a Sources line, and, where
+ * bold is the emphasis, any bold beyond the `**TL;DR**` line (emphasize adds the bold later).
+ */
+function writeHardProblems(out, budgets) {
+  const problems = [];
+  const doc = parseText(out);
+  for (const it of doc.items) {
+    if (["code", "fence", "figure"].includes(it.type)) continue;
+    const t = it.line.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, "");
+    if (/\[\^/.test(t)) problems.push(`line ${it.n}: a footnote [^…] (strip writes the citations)`);
+    if (FOOTER.test(t.trim())) problems.push(`line ${it.n}: a Sources line`);
+    if (budgets.quotedLabels && !TLDR.test(t.trim()) && /\*\*/.test(t)) {
+      problems.push(
+        `line ${it.n}: bold outside the **TL;DR** line (emphasize adds the bold later; a UI label goes in quotes)`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * A whole draft's sizes section by section, against the profile's caps (limits) and the plan's
+ * rows (targets), and the page against its cap. Printed after a whole-piece step; returns the
+ * sections over a cap and whether the page is over.
+ */
+function docReport(text, lang, budgets, outline) {
+  const lines = [];
+  const over = [];
+  let total = 0;
+  for (const part of splitSections(text)) {
+    const sizes = part.n === 0 ? leadCounts(part.text, lang) : { lead: countBody(part.text, lang) };
+    total += sizes.lead + (sizes.tldr ?? 0);
+    const limit = part.n === 0 ? budgets.lead : budgets.section;
+    const planned = plannedSize(
+      outline?.rows.find((r) => r.n === part.n),
+      outline,
+      budgets,
+    );
+    const isOver = limit && sizes.lead > limit.cap;
+    const tldrOver = budgets.tldr && sizes.tldr > budgets.tldr.cap;
+    if (isOver || tldrOver) over.push(part.n);
+    lines.push(
+      `  s${part.n}  ${String(sizes.lead).padStart(4)} ${budgets.unit}` +
+        `${planned !== undefined ? ` / plan ${planned}` : ""}${limit ? ` / cap ${limit.cap}` : ""}` +
+        `${sizes.tldr !== undefined ? `  TL;DR ${sizes.tldr}${budgets.tldr ? ` / cap ${budgets.tldr.cap}` : ""}` : ""}` +
+        `${isOver || tldrOver ? "  OVER" : planned !== undefined && sizes.lead > planned * 1.1 ? "  above plan" : ""}`,
+    );
+  }
+  const cap = budgets.total?.cap;
+  const pageOver = cap !== undefined && total > cap;
+  lines.push(
+    `  page ${total} ${budgets.unit}${cap !== undefined ? ` of at most ${cap}` : ""}${pageOver ? "  OVER" : ""}`,
+  );
+  process.stderr.write(`${lines.join("\n")}\n`);
+  return { over, pageOver, total };
 }
 
 /** The numbered items of a findings list, each with its [quoted passage] when it has one. */
@@ -1749,8 +1987,40 @@ function findingNamesFigure(items, fig, block) {
  * findings name; add, drop or reorder a figure; turn a screenshot's block into a drawn one; or
  * change a figure block no finding names.
  */
-function fixProblems(before, after, findingsText) {
+function fixProblems(before, after, findingsText, { whole = false } = {}) {
   const problems = [];
+  const findings = findingItems(findingsText);
+  // A whole post keeps its sections, its headings and its title unless a finding names them.
+  if (whole) {
+    const heads = (t) =>
+      parseText(t)
+        .items.filter((it) => it.type === "heading" && /^## /.test(it.line))
+        .map((it) => it.line.slice(3).trim());
+    const a = heads(before);
+    const b = heads(after);
+    if (a.length !== b.length) {
+      problems.push(
+        `${b.length} sections; the text given had ${a.length} (a fix never adds or drops a section)`,
+      );
+    } else {
+      a.forEach((h, i) => {
+        const named = findings.some(
+          ({ item, quote }) =>
+            /\bheadings?\b/i.test(item) || (quote && locatable(h).includes(locatable(quote))),
+        );
+        if (h !== b[i] && !named) {
+          problems.push(
+            `the heading "${h}" became "${b[i]}", and no finding quotes it or names a heading`,
+          );
+        }
+      });
+    }
+    const ta = splitFrontmatter(before).meta.title;
+    const tb = splitFrontmatter(after).meta.title;
+    if (ta !== tb && !findings.some(({ item }) => /\btitle\b/i.test(item))) {
+      problems.push(`the title became "${tb}", and no finding names the title`);
+    }
+  }
   const ids = (t) => new Set((t.match(MARKER) ?? []).map((m) => m.slice(1, -1)));
   const had = ids(before);
   const named = new Set(findingsText.match(/\b[FO]\d+\b/g) ?? []);
@@ -1790,18 +2060,90 @@ function fixProblems(before, after, findingsText) {
 }
 
 /**
- * What a trim may not do: stay over its cap, or touch anything but the wording of the body text.
- * Markers and footnote references keep their order; figure blocks, headings and frontmatter their
- * bytes.
+ * Which sections a whole-draft trim cuts, and to what: every section over its profile cap, then,
+ * while the page is over its cap, the sections furthest above their plan row, and with no plan to
+ * go by the largest ones, until the cuts cover the excess.
  */
-function trimProblems(before, after, { n, lang, cap, tldrCap, unit }) {
-  const problems = [];
-  const size = sectionSize(after, n, lang);
-  if (size > cap) problems.push(`still over its cap: ${size} ${unit} > ${cap}`);
-  const tldr = n === 0 ? leadCounts(after, lang).tldr : undefined;
-  if (tldrCap !== undefined && tldr !== undefined && tldr > tldrCap) {
-    problems.push(`the TL;DR is still over its cap: ${tldr} ${unit} > ${tldrCap}`);
+function trimPlan(text, lang, budgets, outline) {
+  const parts = splitSections(text).map((part) => {
+    const limit = part.n === 0 ? budgets.lead : budgets.section;
+    const sizes = part.n === 0 ? leadCounts(part.text, lang) : { lead: countBody(part.text, lang) };
+    const planned = plannedSize(
+      outline?.rows.find((r) => r.n === part.n),
+      outline,
+      budgets,
+    );
+    return {
+      n: part.n,
+      heading: part.heading,
+      now: sizes.lead,
+      tldr: sizes.tldr ?? 0,
+      limit,
+      planned,
+    };
+  });
+  const named = new Map();
+  const add = (p, aim) => named.set(p.n, { now: p.now, cap: p.limit?.cap ?? p.now, aim });
+  for (const p of parts) {
+    if (p.limit && p.now > p.limit.cap) add(p, Math.min(p.limit.cap, p.planned ?? p.limit.cap));
   }
+  const total = parts.reduce((sum, p) => sum + p.now + p.tldr, 0);
+  const pageCap = budgets.total?.cap;
+  const excess = pageCap !== undefined ? total - pageCap : 0;
+  let cut = [...named.values()].reduce((sum, x) => sum + x.now - x.aim, 0);
+  const rest = () => parts.filter((p) => !named.has(p.n));
+  for (const p of rest()
+    .filter((p) => p.planned !== undefined && p.now > p.planned)
+    .sort((a, b) => b.now - b.planned - (a.now - a.planned))) {
+    if (cut >= excess) break;
+    add(p, p.planned);
+    cut += p.now - p.planned;
+  }
+  for (const p of rest().sort((a, b) => b.now - a.now)) {
+    if (cut >= excess) break;
+    const share = Math.min(excess - cut, Math.ceil(p.now / 5));
+    add(p, p.now - share);
+    cut += share;
+  }
+  return { named, total, pageCap, headings: parts.map((p) => p.heading) };
+}
+
+/**
+ * What a whole-draft trim may not do: change a section it was not asked to cut, leave a named
+ * section over its cap or the page over its cap, or change what trim keeps everywhere (markers,
+ * footnote references, figure blocks, headings, frontmatter).
+ */
+function trimDocProblems(before, after, { plan, lang, budgets, where }) {
+  const problems = preservedProblems(before, after);
+  const a = splitSections(before);
+  const b = splitSections(after);
+  const named = [...plan.named.keys()].map(where).join(", ");
+  if (a.length !== b.length) {
+    problems.push(`${b.length - 1} sections after the lead; the draft had ${a.length - 1}`);
+    return problems;
+  }
+  a.forEach((part, i) => {
+    if (!plan.named.has(i) && part.text.trimEnd() !== b[i].text.trimEnd()) {
+      problems.push(`${where(i)} changed, but trim cuts only ${named}`);
+    }
+  });
+  let total = 0;
+  b.forEach((part, i) => {
+    const sizes = i === 0 ? leadCounts(part.text, lang) : { lead: countBody(part.text, lang) };
+    total += sizes.lead + (sizes.tldr ?? 0);
+    const x = plan.named.get(i);
+    if (x && sizes.lead > x.cap)
+      problems.push(`${where(i)} is still over its cap: ${sizes.lead} > ${x.cap}`);
+  });
+  if (plan.pageCap !== undefined && total > plan.pageCap) {
+    problems.push(`the page is still over its cap: ${total} ${budgets.unit} > ${plan.pageCap}`);
+  }
+  return problems;
+}
+
+/** What trim keeps byte for byte: markers and footnote references in order, figure blocks, headings, frontmatter. */
+function preservedProblems(before, after) {
+  const problems = [];
   const marks = [
     ["fact markers", MARKER],
     ["footnote references", /\[\^[^\]\s]+\]/g],
@@ -1838,6 +2180,21 @@ function trimProblems(before, after, { n, lang, cap, tldrCap, unit }) {
   if (headings(before).join("\n") !== headings(after).join("\n"))
     problems.push("a heading changed");
   return problems;
+}
+
+/**
+ * What a section trim may not do: stay over its cap, or touch anything but the wording of the body
+ * text (preservedProblems).
+ */
+function trimProblems(before, after, { n, lang, cap, tldrCap, unit }) {
+  const problems = [];
+  const size = sectionSize(after, n, lang);
+  if (size > cap) problems.push(`still over its cap: ${size} ${unit} > ${cap}`);
+  const tldr = n === 0 ? leadCounts(after, lang).tldr : undefined;
+  if (tldrCap !== undefined && tldr !== undefined && tldr > tldrCap) {
+    problems.push(`the TL;DR is still over its cap: ${tldr} ${unit} > ${tldrCap}`);
+  }
+  return [...problems, ...preservedProblems(before, after)];
 }
 
 /**
@@ -1908,6 +2265,77 @@ function sectionAfter(out, { n, lang, row, budgets, cap, kinds, file, outline })
   } else {
     note(
       `next: check --in ${file} --section ${n} --outline <outline> --facts <facts> --figures <manifest>`,
+    );
+  }
+}
+
+/**
+ * What a whole-post answer must look like, and the next step; printed, never silently fixed. A
+ * wrong shape is written again with --feedback; size alone goes to trim.
+ */
+function writeAfter(out, { o, lang, budgets, prof }) {
+  const problems = [];
+  const doc = parseText(out);
+  if (doc.metaRaw === null) problems.push("no frontmatter at the top");
+  const outline = o.outline ? parseOutline(read(o.outline, "--outline")) : undefined;
+  const parts = splitSections(out);
+  const h2 = parts.length - 1;
+  if (outline?.rows.length && h2 !== outline.rows.length - 1) {
+    problems.push(`${h2} sections after the lead; the plan has ${outline.rows.length - 1}`);
+  }
+  const range = rangeOf(profileSettings(prof).sections);
+  if (range && (h2 < range.floor || h2 > range.cap)) {
+    problems.push(
+      `${h2} sections after the lead; the profile asks for ${range.floor} to ${range.cap}`,
+    );
+  }
+  const ids = figureIdsIn(out);
+  if (o.figures) {
+    const want = manifestStems(read(o.figures, "--figures"));
+    if (ids.join() !== want.join()) {
+      problems.push(
+        `figure blocks [${ids.join(", ")}]; the manifest gives [${want.join(", ")}], in that order`,
+      );
+    }
+  }
+  for (const row of outline?.rows ?? []) {
+    const here = parts[row.n] ? figureIdsIn(parts[row.n].text) : [];
+    for (const id of row.figures) {
+      if (ids.includes(id) && !here.includes(id))
+        note(`figure ${id} sits outside section ${row.n}, where its plan row puts it`);
+    }
+  }
+  const kinds = figureKinds(o);
+  for (const fig of doc.figures)
+    for (const p of screenshotProblems(fig, kinds)) problems.push(p.msg);
+  const tldr = doc.items.find((it) => TLDR.test(it.line.trim()));
+  if (tldr && !budgets.tldr) problems.push("a TL;DR, which this profile does not have");
+  if (!tldr && budgets.tldr) note("no TL;DR after the lead");
+  if (tldr) {
+    const bullets = [...tldrLines(doc.items)].filter(
+      (n) => doc.items.find((it) => it.n === n)?.type === "list",
+    );
+    if (bullets.length < 3 || bullets.length > 4)
+      problems.push(`the TL;DR has ${bullets.length} bullets (three or four)`);
+  }
+  const sizes = docReport(out, lang, budgets, outline);
+  if (o["reuse-figures"]) {
+    const was = figureBlockTexts(read(o["reuse-figures"], "--reuse-figures"));
+    for (const [id, block] of figureBlockTexts(out)) {
+      note(was.get(id) === block ? `figure unchanged: ${id}` : `figure changed: ${id} (redraw it)`);
+    }
+  }
+  for (const p of problems) note(p);
+  const plan = o.outline ? ` --outline ${o.outline}` : "";
+  if (problems.length) {
+    note(
+      `shape: rerun write --feedback <these problems> --previous ${o.out}; never edit it by hand`,
+    );
+  } else if (sizes.over.length || sizes.pageOver) {
+    note(`size alone: trim --in ${o.out}${plan} cuts it without rewriting`);
+  } else {
+    note(
+      `next: check --in ${o.out}${plan} --facts <facts> --figures <manifest> --plan-rows advisory`,
     );
   }
 }
@@ -4204,17 +4632,25 @@ function checkBudgets(doc, lang, prof, o, r, { section } = {}) {
   const outline = o.outline ? parseOutline(read(o.outline, "--outline")) : undefined;
   const plan = outline && outline.unit === budgets.unit ? outline : undefined;
   const u = budgets.unit;
+  // A whole post written in one call holds its plan rows as targets: above the row is a warning,
+  // above the profile's cap still an error.
+  const advisory = o["plan-rows"] === "advisory";
+  if (o["plan-rows"] !== undefined && !["hard", "advisory"].includes(o["plan-rows"])) {
+    fail("--plan-rows is hard or advisory");
+  }
   const judge = (n, count, line) => {
     const row = plan?.rows.find((x) => x.n === n);
     const limit = n === 0 ? budgets.lead : budgets.section;
-    const cap = rowCap(budgets, n, row?.budget);
+    const cap = advisory ? limit?.cap : rowCap(budgets, n, row?.budget);
     const what = n === 0 ? "the lead" : `section ${n}`;
     if (cap !== undefined && count > cap) {
       r.add(
         "error",
         line,
-        `${what} is ${count} ${u}; its cap is ${cap}${row ? ` (plan ${row.budget}, profile cap ${limit?.cap ?? "none"})` : ""}`,
+        `${what} is ${count} ${u}; its cap is ${cap}${advisory ? " (the profile's)" : row ? ` (plan ${row.budget}, profile cap ${limit?.cap ?? "none"})` : ""}`,
       );
+    } else if (advisory && row && count > Math.round(row.budget * 1.1)) {
+      r.add("warn", line, `${what} is ${count} ${u}; its plan row is ${row.budget}`);
     } else if (limit && count < limit.floor) {
       r.add("warn", line, `${what} is ${count} ${u}, below the profile's floor of ${limit.floor}`);
     }
@@ -5064,6 +5500,79 @@ async function runSelftest() {
     ),
   );
   writeFileSync(at("profile-practice.md"), FIXTURE_PRACTICE_PROFILE);
+  // Whole-post mode: write's guards and after-report, trim and fix on a whole draft, review's
+  // transitions line, translate's pinned title.
+  const writeArgs = (dir, extra = []) => [
+    "write",
+    "--outline",
+    at("outline.final.md"),
+    "--figures",
+    at("figures.md"),
+    ...facts,
+    "--out",
+    path.join(dir, "draft.en.v1.md"),
+    ...extra,
+  ];
+  const writeOk = caseDir("write-ok", {
+    "notes.md": "keep: keeps its place in the Trace\nnote: the archive is not compressed\n",
+  });
+  answer("write-ok.md", plain);
+  const writeNote = caseDir("write-note", {});
+  const writeNotes = caseDir("write-notes", {
+    "notes.md": "keep: a sentence that is not there\navoid en: short marker\navoid zh: 短标记\n",
+  });
+  const writeHard = caseDir("write-hard", {});
+  answer(
+    "write-hard.md",
+    FIXTURE_DRAFT.replace(
+      "Archived output **keeps its place in the Trace**. {F1}",
+      "Archived output **keeps its place in the Trace**[^1]. {F1}",
+    ),
+  );
+  const flowBlock2 = figureBlockTexts(plain).get("demo-flow");
+  const filler = "We keep a marker in the Trace so the reader can find the output again later. ";
+  const longGap = `We would rather keep a marker than leave a gap. {O1} ${filler.repeat(14).trim()} The format was settled early {F3}.`;
+  const shortGap =
+    "We would rather keep a marker than leave a gap. {O1} The format was settled early {F3}.";
+  const writeAfterDir = caseDir("write-after", {});
+  answer(
+    "write-after.md",
+    plain
+      .replace(`${flowBlock2}\n\n`, "")
+      .replace(
+        "caption: The marker names the file as <path> and the id as `<id>`.\n```",
+        `caption: The marker names the file as <path> and the id as \`<id>\`.\n\`\`\`\n\n${flowBlock2}`,
+      )
+      .replace(shortGap, longGap),
+  );
+  const trimDocOk = caseDir("trim-doc-ok", { "draft.en.v1.md": plain.replace(shortGap, longGap) });
+  const trimDocBad = caseDir("trim-doc-bad", {
+    "draft.en.v1.md": plain.replace(shortGap, longGap),
+  });
+  answer("trim-doc-ok.md", plain);
+  answer(
+    "trim-doc-bad.md",
+    plain.replace("Files live under one root per Project.", "Files live under a root."),
+  );
+  const fixDoc = caseDir("fix-doc", { "draft.en.v1.md": plain, "findings.en.v1.md": findingOnS2 });
+  answer("fix-doc.md", plain.replace("## Where files go", "## Where the files live"));
+  const advisory = caseDir("advisory", {
+    "s3.en.v1.md": `## A marker beats a gap\n\n${words(130)}\n`,
+  });
+  const signEn = caseDir("signpost-en", {
+    "s1.en.v1.md": "## The intercept\n\nNext, we cut the intercept.\n",
+  });
+  const signZh = caseDir("signpost-zh", { "s1.zh.v1.md": "## 截距\n\n接下来我们看斜率。\n" });
+  const reviewFlow = caseDir("review-flow", { "draft.en.v1.md": plain });
+  answer(
+    "review-flow.md",
+    "1. [The Trace keeps a short marker.] — repeats the lead — concision — the section must add what the marker holds\ntransitions: 3 of 4\n",
+  );
+  const trTitle = caseDir("tr-title", { "draft.zh.v1.md": FIXTURE_DRAFT_ZH });
+  answer(
+    "tr-title.md",
+    `${front}The rules live in CLAUDE.md. {F1} Anthropic does the same {F1}, and the code \`a。 b\` stays. {O1}\n`,
+  );
 
   const self = fileURLToPath(import.meta.url);
   const facts = ["--facts", at("facts.md")];
@@ -5935,6 +6444,180 @@ async function runSelftest() {
       stdout: /at most 91 English words of body text, or the answer is refused/,
     },
     {
+      name: "write writes a whole post that keeps its pinned title and the author's keep: line, and reports its sizes",
+      args: writeArgs(writeOk, [
+        "--title",
+        "Self-test post",
+        "--notes",
+        path.join(writeOk, "notes.md"),
+      ]),
+      answer: "write-ok.md",
+      code: 0,
+      stderr: /page \d+ words of at most 750[\s\S]*next: check --in/,
+      file: [path.join(writeOk, "draft.en.v1.md"), /^---\ntitle: "Self-test post"/],
+    },
+    {
+      name: "write refuses an answer without its version note or with another title than the pinned one",
+      args: writeArgs(writeNote, [
+        "--version-note",
+        "Written for PenguinHarness 0.2.16. Later releases may differ in some details.",
+        "--title",
+        "Another title",
+      ]),
+      answer: "write-ok.md",
+      code: 1,
+      stderr:
+        /the version note "> Written for PenguinHarness 0\.2\.16\.[^"]*" is gone[\s\S]*the title is "Self-test post"; it must be "Another title"/,
+      absent: path.join(writeNote, "draft.en.v1.md"),
+    },
+    {
+      name: "write refuses an answer that lacks a keep: string or holds an avoid: string",
+      args: writeArgs(writeNotes, ["--notes", path.join(writeNotes, "notes.md")]),
+      answer: "write-ok.md",
+      code: 1,
+      stderr:
+        /keep: "a sentence that is not there" is missing[\s\S]*avoid: "short marker" is in the answer/,
+      absent: path.join(writeNotes, "draft.en.v1.md"),
+    },
+    {
+      name: "write refuses a footnote and bold beyond the TL;DR line",
+      args: writeArgs(writeHard),
+      answer: "write-hard.md",
+      code: 1,
+      stderr: /a footnote \[\^…\][\s\S]*bold outside the \*\*TL;DR\*\* line/,
+      absent: path.join(writeHard, "draft.en.v1.md"),
+    },
+    {
+      name: "write's report names a figure out of manifest order and a section over its cap",
+      args: writeArgs(writeAfterDir),
+      answer: "write-after.md",
+      code: 0,
+      stderr:
+        /figure demo-flow sits outside section 1[\s\S]*s3 +2\d\d words \/ plan 100 \/ cap 160  OVER[\s\S]*figure blocks \[demo-shot, demo-flow\]; the manifest gives \[demo-flow, demo-shot\]/,
+    },
+    {
+      name: "trim on a whole draft cuts the section over its cap",
+      args: [
+        "trim",
+        "--in",
+        path.join(trimDocOk, "draft.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      answer: "trim-doc-ok.md",
+      code: 0,
+      file: [
+        path.join(trimDocOk, "draft.en.v2.md"),
+        /We would rather keep a marker than leave a gap\. \{O1\} The format/,
+      ],
+    },
+    {
+      name: "trim on a whole draft refuses an answer that changes a section it was not asked to cut",
+      args: [
+        "trim",
+        "--in",
+        path.join(trimDocBad, "draft.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      answer: "trim-doc-bad.md",
+      code: 1,
+      stderr:
+        /section 1 \("Where files go"\) changed, but trim cuts only section 3 \("A marker beats a gap"\)/,
+      absent: path.join(trimDocBad, "draft.en.v2.md"),
+    },
+    {
+      name: "fix on a whole post refuses a changed heading that no finding quotes",
+      args: [
+        "fix",
+        "--in",
+        path.join(fixDoc, "draft.en.v1.md"),
+        "--findings",
+        path.join(fixDoc, "findings.en.v1.md"),
+        ...facts,
+        "--out",
+        path.join(fixDoc, "draft.en.v2.md"),
+      ],
+      answer: "fix-doc.md",
+      code: 1,
+      stderr:
+        /the heading "Where files go" became "Where the files live", and no finding quotes it or names a heading/,
+      absent: path.join(fixDoc, "draft.en.v2.md"),
+    },
+    {
+      name: "check --plan-rows advisory warns above plan × 1.1 within the profile's cap",
+      args: [
+        "check",
+        "--in",
+        path.join(advisory, "s3.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+        "--plan-rows",
+        "advisory",
+      ],
+      code: 0,
+      stdout: /WARN [^\n]*section 3 is 130 words; its plan row is 100/,
+    },
+    {
+      name: "check --plan-rows advisory still errors above the profile's cap",
+      args: [
+        "check",
+        "--in",
+        path.join(long, "s3.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+        "--plan-rows",
+        "advisory",
+      ],
+      code: 1,
+      stdout: /ERROR [^\n]*section 3 is 234 words; its cap is 160 \(the profile's\)/,
+    },
+    {
+      name: "check warns on an English signpost",
+      args: ["check", "--in", path.join(signEn, "s1.en.v1.md")],
+      code: 0,
+      stdout: /WARN [^\n]*signpost: a sentence that announces instead of continuing/,
+    },
+    {
+      name: "check warns on a Chinese signpost",
+      args: ["check", "--in", path.join(signZh, "s1.zh.v1.md")],
+      code: 0,
+      stdout: /WARN [^\n]*路标句/,
+    },
+    {
+      name: "review keeps the transitions line out of the findings, in a .flow.txt beside them",
+      args: ["review", "--in", path.join(reviewFlow, "draft.en.v1.md")],
+      answer: "review-flow.md",
+      code: 0,
+      stderr: /transitions: 3 of 4/,
+      files: [
+        [
+          path.join(reviewFlow, "findings.en.v1.api.md"),
+          /^1\. \[The Trace keeps a short marker\.\][^\n]*\n$/,
+        ],
+        [path.join(reviewFlow, "findings.en.v1.api.md.flow.txt"), /^transitions: 3 of 4\n$/],
+      ],
+    },
+    {
+      name: "translate refuses another title than the pinned one",
+      args: [
+        "translate",
+        "--in",
+        path.join(trTitle, "draft.zh.v1.md"),
+        "--to",
+        "en",
+        ...facts,
+        "--title",
+        "Pinned title",
+        "--out",
+        path.join(trTitle, "draft.en.v1.md"),
+      ],
+      answer: "tr-title.md",
+      code: 1,
+      stderr: /the title is "Self-test post"; it must be "Pinned title"/,
+      absent: path.join(trTitle, "draft.en.v1.md"),
+    },
+    {
       name: "landing strings with a banned word and an exclamation mark fail",
       args: ["check", "--in", at("strings.en.txt"), "--profile", "landing"],
       code: 1,
@@ -5972,8 +6655,10 @@ async function runSelftest() {
       if (c.stdout && !c.stdout.test(res.stdout)) why.push(`stdout lacks ${c.stdout}`);
       if (c.notStdout && c.notStdout.test(res.stdout)) why.push(`stdout has ${c.notStdout}`);
       if (c.stderr && !c.stderr.test(res.stderr)) why.push(`stderr lacks ${c.stderr}`);
-      if (c.file && !(existsSync(c.file[0]) && c.file[1].test(readFileSync(c.file[0], "utf8")))) {
-        why.push(`${path.basename(c.file[0])} lacks ${c.file[1]}`);
+      for (const [file, re] of c.files ?? (c.file ? [c.file] : [])) {
+        if (!(existsSync(file) && re.test(readFileSync(file, "utf8")))) {
+          why.push(`${path.basename(file)} lacks ${re}`);
+        }
       }
       if (c.absent && existsSync(c.absent)) why.push(`${path.basename(c.absent)} was written`);
       if (why.length) {

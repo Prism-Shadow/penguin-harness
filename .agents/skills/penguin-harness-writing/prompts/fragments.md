@@ -70,7 +70,7 @@ the profile's cap for a section, {{B_CAP}}
 The section as given counts {{SECTION_NOW_COUNT}}.
 
 <!-- fragment: budget-whole -->
-The size is binding: at most {{TOTAL_CAP}} of body text in all, the lead at most {{LEAD_CAP}}, and each `## ` section, everything under its heading, at most {{SECTION_CAP_TEXT}}. {{COUNT_RULE}} A text over a cap is rejected and written again.
+The size is binding: at most {{TOTAL_CAP}} of body text in all, the lead at most {{LEAD_CAP}}, and each `## ` section, everything under its heading, at most {{SECTION_CAP_TEXT}}.{{TLDR_NOTE}} {{COUNT_RULE}} A text over a cap is rejected and written again.
 
 <!-- fragment: trim-budget -->
 at most {{TRIM_CAP}} of body text, or the answer is refused. The section given here counts {{TRIM_NOW}}, so cut at least {{TRIM_EXCESS}}. Aim for at most {{TRIM_AIM}}.{{SECTION_BUDGET_WHY}}
@@ -97,7 +97,7 @@ the frontmatter below, nothing before it, then the lead, one or two paragraphs w
 one `## ` heading (the plan's working heading, improved without changing its meaning; no numbering, no `###`), then the body. No other heading of any level, no frontmatter.
 
 <!-- fragment: figure-reuse -->
-Existing figure blocks for this section are given below. Reuse a block verbatim when its strings still say what the new text needs; change a string only when the new text makes it wrong, keep the block's id, keys and order, and list each changed block at the very end as <!-- figure changed: <id> -->.
+Existing figure blocks are given below. Reuse a block verbatim when its strings still say what the new text needs; change a string only when the new text makes it wrong, keep the block's id, keys and order, and list each changed block at the very end as <!-- figure changed: <id> -->.
 
 <!-- fragment: existing-figure-blocks -->
 ## Existing figure blocks (from the frozen draft; reuse them per the rule above)
@@ -132,7 +132,7 @@ Existing figure blocks for this section are given below. Reuse a block verbatim 
 You review one section of a longer piece. Its neighbours are given for context only; flag nothing in them.
 
 <!-- fragment: review-scope-post -->
-Flow across sections is the main question of this review: a transition that does not follow, a point made in two sections, a gloss repeated, a section that re-opens what an earlier one settled, an ending that summarises.
+Flow across sections is the main question of this review: a transition that does not follow, a point made in two sections, a gloss repeated, a section that re-opens what an earlier one settled, an ending that summarises. For every `## ` heading judge the join: does the first sentence after it follow from the last sentence before it, read without the heading? Report each join that does not as a finding that quotes that first sentence, with the rule `transition`. Report a sentence whose only job is to announce the next heading with the rule `signpost`. After the list, add one line and nothing after it: `transitions: <joins that connect> of <joins>`.
 
 <!-- fragment: tldr-budget -->
 A TL;DR after the lead, when the profile or the plan asks for one, is not part of the lead's budget: it has its own, {{TLDR_RANGE}}, and is counted apart.
@@ -194,3 +194,48 @@ Translate the title; plain, under 70 characters, no colon-teaser.
 
 <!-- fragment: tells-en -->
 Chinese-to-English tells: parallel triplets, 'not X but Y' pivots, aphoristic sentence-final flourishes, 'we can see that', 'it is worth noting', noun stacks ('the abstraction layer design principle'), missing articles, 'the' before plural generics, 'make the code not burn the heart' style literalisms (say what the idiom means), sentence-initial 'And'/'But' more than twice per section.
+
+<!-- fragment: flow-rule-post -->
+This {{NOUN}} is one argument written in one sitting. The first sentence after every `## ` heading continues the last sentence before it, reusing a noun or a claim from it, so the reader crosses the heading without a jump. No section opens with a signpost ("In this section", "Next,", "Now that we have", "As mentioned above"; 「本节」「接下来」「下面我们」「上一节」「如上所述」), and no section ends with a sentence whose only job is to announce the next heading: the plan's `ends with` column names the point a section lands on, not a sentence to write. Gloss each term once in the whole {{NOUN}}.
+
+<!-- fragment: plan-targets -->
+The plan's size for each section is a target; the profile's caps are limits, and the whole stays under its total cap.
+
+<!-- fragment: title-rule-write -->
+Choose the title from the candidates listed as chosen, or improve its wording without changing its meaning.
+
+<!-- fragment: title-fixed -->
+The title is fixed: write it in the frontmatter exactly as given, byte for byte: {{TITLE_FIXED}}
+
+<!-- fragment: write-feedback -->
+## Feedback on the previous attempt (write the whole {{NOUN}} again, fixing what this names)
+{{FEEDBACK_NOTES}}
+
+````markdown
+{{PREVIOUS_PIECE}}
+````
+
+<!-- fragment: notes-section -->
+## The author's notes (binding)
+A `keep:` line is a string the text carries verbatim, an `avoid:` line a string it never contains, a `note:` line a point to respect; a line tagged `en` or `zh` applies to that language only. An answer that lacks a `keep:` string or holds an `avoid:` string is rejected.
+
+{{NOTES}}
+
+<!-- fragment: notes-rule-write -->
+The author's notes given with the outline are binding.
+
+<!-- fragment: notes-rule-review -->
+Flag a sentence that breaks one of the author's notes, with the rule `note`.
+
+<!-- fragment: trim-scope-section -->
+You cut one section of a {{NOUN}} down to its size budget.
+
+<!-- fragment: trim-scope-doc -->
+You cut a whole {{NOUN}} down to its size budget, in {{TRIM_NAMED}} and nowhere else: every other section, the frontmatter, the TL;DR and every heading come back byte for byte.
+
+<!-- fragment: trim-budget-doc -->
+the page holds at most {{TRIM_PAGE_CAP}} of body text and counts {{TRIM_PAGE_NOW}} now. Cut these sections, and only these:
+{{TRIM_SECTIONS}}
+
+<!-- fragment: trim-section-line -->
+- {{TRIM_WHERE}}: now {{TRIM_LINE_NOW}}; at most {{TRIM_LINE_CAP}}; aim for about {{TRIM_LINE_AIM}}

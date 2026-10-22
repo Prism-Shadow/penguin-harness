@@ -4,8 +4,12 @@
 ## Figure manifest (final file stems and what each picture shows; the words inside each picture are yours, in its figure block)
 {{FIGURES}}
 
+{{EXISTING_FIGURE_BLOCKS}}
+
 {{FACTS}}
 
-{{MEME_BRIEF_SECTION}}
+{{NOTES_SECTION}}{{MEME_BRIEF_SECTION}}
+
+{{FEEDBACK}}
 
 Write the full {{NOUN}} now in {{LANG_NAME}}.
