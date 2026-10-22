@@ -283,6 +283,7 @@ export const zh = {
     themeAccent: "主题",
     sampleSend: "发送",
     selectedRow: "选中",
+    sampleBubble: "我的消息",
     sampleLink: "打开文档",
     linkHover: "悬停",
     tones: "语义色调",

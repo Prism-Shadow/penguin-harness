@@ -104,13 +104,13 @@ describe("ChannelBubble", () => {
     expect(tokens(true, true)).toEqual(expect.arrayContaining(["rounded-br-sm", "rounded-bl-2xl"]));
   });
 
-  it("tints the reader's own bubble with the link ink's wash over the canvas, not a tone", () => {
+  it("sets the reader's own bubble on the accent's tint, like their prompt in a chat, never a tone", () => {
     const html = bubble({ own: true });
     expect(html).toContain('data-side="own"');
-    expect(classTokens(html)).toContain(
-      "bg-[color-mix(in_srgb,var(--ui-fg-link)_12%,var(--ui-canvas))]",
-    );
-    expect(classTokens(html).some((t) => t.startsWith("bg-tone-"))).toBe(false);
+    const tokens = classTokens(html);
+    expect(tokens).toContain("bg-accent-tint");
+    expect(tokens).not.toContain("bg-fill-neutral");
+    expect(tokens.some((t) => t.startsWith("bg-tone-"))).toBe(false);
   });
 });
 
