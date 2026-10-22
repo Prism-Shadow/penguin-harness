@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1289](https://github.com/Prism-Shadow/penguin-harness/pull/1289)
 
 [English](2026-10-22-plugin-market-install-status.md)
 
