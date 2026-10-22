@@ -1,7 +1,8 @@
 /**
  * A form's answers as the reader gives them, the two questions the fill button asks of them —
- * may the form be filled yet, and what goes into the composer — and the draft they are kept as
- * across a reload (draft.ts). Pure, so the gate and the draft's check are testable without a DOM.
+ * may the form be filled yet, and what goes into the composer — the draft they are kept as
+ * across a reload (draft.ts), and what an answered form shows. Pure, so the gate and the draft's
+ * check are testable without a DOM.
  *
  * Whether one answer is acceptable, and what a field starts with, are the grammar's questions
  * (`fieldProblem`, `initialAnswer`): the rule the grammar holds a `default` to is the rule the
@@ -14,7 +15,7 @@
  * answer; it never rewrites one.
  */
 import { fieldProblem, initialAnswer } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiForm, A2uiFormAnswer } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiForm, A2uiFormAnswer, A2uiFormAnswers } from "@prismshadow/penguin-core/a2ui";
 
 /** Every field's answer as it stands, by field id; a field with none is absent. */
 export type A2uiFormState = Readonly<Record<string, A2uiFormAnswer | undefined>>;
@@ -112,6 +113,24 @@ export function restoreAnswers(spec: A2uiForm, saved: unknown): A2uiFormState {
     const value = record[field.id] as A2uiFormAnswer;
     if (fieldProblem(field, value) !== null) continue;
     out[field.id] = value;
+  }
+  return out;
+}
+
+/**
+ * What an answered form shows: the answers read back out of the message that answered it (core's
+ * `parseFormFill`), and a field with none unanswered — an empty box, nothing picked. A slider and
+ * a switch cannot show no answer (a slider always stands somewhere, a switch off reads as "No"),
+ * so one with none stands at its starting answer, the form as asked; the fill text always holds
+ * a line for them, so only a message the reader edited lacks one.
+ */
+export function answeredState(spec: A2uiForm, recovered: A2uiFormAnswers): A2uiFormState {
+  const out: Record<string, A2uiFormAnswer> = {};
+  for (const field of spec.fields) {
+    const answer =
+      recovered[field.id] ??
+      (field.kind === "slider" || field.kind === "switch" ? initialAnswer(field) : undefined);
+    if (answer !== undefined) out[field.id] = answer;
   }
   return out;
 }
