@@ -1667,8 +1667,13 @@ function emphasizeProblems(before, after, lang, budgets) {
   const { problems: rules } = emphasisCheck(after, lang, {
     cap: budgets.emphasis.cap,
     requireAll: true,
+    strict: true,
   });
   for (const p of rules) problems.push(p.n ? `line ${p.n}: ${p.msg}` : p.msg);
+  for (const it of parseText(after).items) {
+    if (!["text", "list", "quote", "table", "heading"].includes(it.type)) continue;
+    for (const msg of flankingProblems(it.line)) problems.push(`line ${it.n}: ${msg}`);
+  }
   return problems;
 }
 
@@ -2896,6 +2901,38 @@ function checkFigures(doc, lang, prof, o, r, secN) {
   }
 }
 
+/**
+ * Each `**` in a line that CommonMark cannot read as emphasis, so the page shows the asterisks. A
+ * closing run needs no whitespace before it, and after punctuation it needs whitespace or
+ * punctuation after it (`**关键句。**后文` fails, `**关键句**。后文` renders); an opening run is the
+ * mirror image (`a**(note)**` fails). Runs alternate open and close; code spans are skipped.
+ */
+function flankingProblems(line) {
+  const code = [...line.matchAll(/(`+)[\s\S]*?[^`]\1(?!`)/g)].map((m) => [
+    m.index,
+    m.index + m[0].length,
+  ]);
+  const space = (c) => c === undefined || /\s/u.test(c);
+  const punct = (c) => c !== undefined && /[\p{P}\p{S}]/u.test(c);
+  const out = [];
+  let opening = true;
+  for (const m of line.matchAll(/\*\*/g)) {
+    if (code.some(([a, b]) => m.index >= a && m.index < b)) continue;
+    const prev = line[m.index - 1];
+    const next = line[m.index + 2];
+    const around = line.slice(Math.max(0, m.index - 8), m.index + 10);
+    if (opening && (space(next) || (punct(next) && !space(prev) && !punct(prev)))) {
+      out.push(`a ** that cannot open emphasis, so the page shows it: "${around}"`);
+    } else if (!opening && (space(prev) || (punct(prev) && !space(next) && !punct(next)))) {
+      out.push(
+        `a ** that cannot close emphasis, so the page shows it: "${around}" (close it before the punctuation: **句子**。)`,
+      );
+    }
+    opening = !opening;
+  }
+  return out;
+}
+
 /** A sentence longer than this is flagged: English words, Chinese characters. */
 const SENTENCE_CAP = { en: 35, zh: 60 };
 /** Citations per 100 English words or Chinese characters above which check warns. */
@@ -2908,7 +2945,7 @@ const EMPHASIS = /\*\*([^*\n]+?)\*\*/g;
  * heading, figure block, caption, version note, TL;DR, code span or link, and no marker inside;
  * the closing `**` before the sentence's punctuation, so its citation can stand there too.
  */
-function emphasisCheck(text, lang, { cap, requireAll = false }) {
+function emphasisCheck(text, lang, { cap, requireAll = false, strict = false }) {
   const doc = parseText(text);
   const problems = [];
   const add = (n, msg, level = "error") => problems.push({ n, msg, level });
@@ -2952,11 +2989,13 @@ function emphasisCheck(text, lang, { cap, requireAll = false }) {
       const size = countBody(inner, lang);
       if (cap && size > cap) add(it.n, `an emphasized span of ${size} ${unit} (at most ${cap})`);
       const after = it.line.slice(m.index + m[0].length);
-      if (/[.!?。！？]$/.test(inner) && /^\s*\{[FO]\d+\}/.test(after)) {
+      // emphasize closes every span before the sentence's punctuation (**句子**。, **claim**.):
+      // after Chinese punctuation a closing ** often cannot close, and a citation lands outside.
+      if (/[.!?。！？]$/.test(inner) && (strict || /^\s*\{[FO]\d+\}/.test(after))) {
         add(
           it.n,
-          "the closing ** follows the sentence's punctuation, so its citation would land after the bold; close the span before the punctuation",
-          "warn",
+          "the closing ** follows the sentence's punctuation; close the span before it (**sentence**. / **句子**。)",
+          strict ? "error" : "warn",
         );
       }
     }
@@ -3292,6 +3331,7 @@ function checkDoc(doc, lang, prof, o, r, facts) {
         "a bare URL right before a citation: the site's renderer takes the citation into the link, so write the URL as an autolink, <https://…>",
       );
     }
+    if (!data) for (const msg of flankingProblems(it.line)) r.add("error", it.n, msg);
     if (EMOJI.test(t)) r.add("error", it.n, "emoji");
     if (/\{\{[A-Z_]+\}\}/.test(t))
       r.add("error", it.n, "an unfilled template slot leaked into the text");
@@ -3420,6 +3460,7 @@ function checkLanding(doc, lang, prof, r) {
     if (m[2].match(MARKER)) r.add("error", it.n, `${m[1]}: fact marker`);
     if (/[*_`#[\]]/.test(m[2].replace(/\[[^\]]*\]/g, "")))
       r.add("warn", it.n, `${m[1]}: Markdown in a plain string`);
+    for (const msg of flankingProblems(m[2])) r.add("error", it.n, `${m[1]}: ${msg}`);
     values.push({ type: "text", line: m[2], n: it.n });
   }
   languageRules(lang, values, [], [{ n: null, items: values }], profileSettings(prof), r);
@@ -4908,6 +4949,29 @@ async function runSelftest() {
     "s1.en.v2.md": `## Beta\n\n${words(300)}\n`,
     "draft.en.v1.md": `${[0, 1, 2, 3, 4].map((k) => creepFiles[`s${k}.en.v1.md`].trim()).join("\n\n")}\n`,
   });
+  // The closing ** before the sentence's punctuation, in both languages; and ** CommonMark cannot read.
+  const emphEnOrder = caseDir("emph-en-order", {
+    "draft.en.v1.md": `${front}Our view is simple. The rest follows from it. {O1}\n\n## Next\n\nOne more point stands here. {O1}\n`,
+  });
+  answer(
+    "emph-en-order.md",
+    `${front}**Our view is simple.** The rest follows from it. {O1}\n\n## Next\n\n**One more point stands here**. {O1}\n`,
+  );
+  const plainZh = `${zhFront}缓存命中靠前缀稳定。{F1}\n\n## 斜率\n\n每次请求都会把上下文变长。后面的请求更长。{F2}\n`;
+  const markedZh = `${zhFront}**缓存命中靠前缀稳定**。{F1}\n\n## 斜率\n\n**每次请求都会把上下文变长**。后面的请求更长。{F2}\n`;
+  const emphZhOk = caseDir("emph-zh-ok", { "draft.zh.v1.md": plainZh });
+  answer("emph-zh-ok.md", markedZh);
+  const emphZhOrder = caseDir("emph-zh-order", { "draft.zh.v1.md": plainZh });
+  answer(
+    "emph-zh-order.md",
+    markedZh.replace("**每次请求都会把上下文变长**。", "**每次请求都会把上下文变长。**"),
+  );
+  const flankZh = caseDir("flank-zh", {
+    "s1.zh.v1.md": "## 标题\n\n**关键句。**后文接着说。\n\n**关键句**。后文接着说。\n",
+  });
+  const flankEn = caseDir("flank-en", {
+    "s1.en.v1.md": "## Title\n\nA word**(aside)** here.\n\nA word **(aside)** here.\n",
+  });
 
   const self = fileURLToPath(import.meta.url);
   const facts = ["--facts", at("facts.md")];
@@ -5688,6 +5752,44 @@ async function runSelftest() {
       ],
       code: 0,
       stdout: /page 497 of at most 480 words[\s\S]*the other sections from draft\.en\.v1\.md/,
+    },
+    {
+      name: "emphasize refuses an English span closed after the sentence's period",
+      args: ["emphasize", "--in", path.join(emphEnOrder, "draft.en.v1.md")],
+      answer: "emph-en-order.md",
+      code: 1,
+      stderr: /line 8: the closing \*\* follows the sentence's punctuation/,
+      absent: path.join(emphEnOrder, "draft.en.v2.md"),
+    },
+    {
+      name: "emphasize accepts a Chinese span closed before the punctuation",
+      args: ["emphasize", "--in", path.join(emphZhOk, "draft.zh.v1.md")],
+      answer: "emph-zh-ok.md",
+      code: 0,
+      file: [path.join(emphZhOk, "draft.zh.v2.md"), /\*\*每次请求都会把上下文变长\*\*。后面/],
+    },
+    {
+      name: "emphasize refuses a Chinese span closed after 。, which CommonMark cannot close",
+      args: ["emphasize", "--in", path.join(emphZhOrder, "draft.zh.v1.md")],
+      answer: "emph-zh-order.md",
+      code: 1,
+      stderr:
+        /the closing \*\* follows the sentence's punctuation[\s\S]*a \*\* that cannot close emphasis/,
+      absent: path.join(emphZhOrder, "draft.zh.v2.md"),
+    },
+    {
+      name: "check: a ** after Chinese punctuation and before a character cannot close; before the punctuation it can",
+      args: ["check", "--in", path.join(flankZh, "s1.zh.v1.md")],
+      code: 1,
+      stdout: /:3  a \*\* that cannot close emphasis/,
+      notStdout: /:5  a \*\* that cannot/,
+    },
+    {
+      name: "check: a ** after a letter and before punctuation cannot open; after a space it can",
+      args: ["check", "--in", path.join(flankEn, "s1.en.v1.md")],
+      code: 1,
+      stdout: /:3  a \*\* that cannot open emphasis/,
+      notStdout: /:5  a \*\* that cannot/,
     },
     {
       name: "landing strings with a banned word and an exclamation mark fail",

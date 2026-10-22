@@ -4,7 +4,7 @@ Mark exactly one sentence, or one clause of a sentence, in the lead and in each 
 
 Rules:
 - Put `**` before the span and `**` after it. The answer, with every `**` removed, must equal the text you were given byte for byte: no word, space, line break or punctuation mark changes.
-- The closing `**` goes before the sentence's final punctuation and before its fact markers: `**the claim**. {F3}`, `**结论**。{F3}`.
+- The closing `**` goes before the sentence's final punctuation and before its fact markers, never after them: `**the claim**. {F3}`, `**结论**。{F3}`. After Chinese punctuation a closing `**` is not read as bold at all.
 - Never mark inside the frontmatter, a heading, a figure block, the quoted line right after the frontmatter, the TL;DR or its bullets, a code span or a link, and never put a fact marker `{F#}`/`{O#}` inside a span.
 - Keep every `**` already in the text, such as the `**TL;DR**` line, and add no other.
 {{MIRROR_RULE}}

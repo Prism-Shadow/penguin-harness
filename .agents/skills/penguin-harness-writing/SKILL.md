@@ -114,8 +114,10 @@ adds the `**` pairs to a frozen draft and changes nothing else. The script refus
 differs from its input once the `**` are removed, has no span or two in a section, holds a span
 over `emphasis-words` / `zh-emphasis-chars`, or puts one in a heading, figure block, caption,
 version note, TL;DR, code span or link, or around a marker. The closing `**` goes before the
-sentence's punctuation and markers, so the citation follows it there (`**claim**[^1].`). A text
-that changes after `emphasize` is assembled and emphasized again.
+sentence's punctuation and markers, so the citation follows it there (`**claim**[^1].`,
+`**句子**[^1]。`), and the script refuses the other order: after Chinese punctuation a closing `**`
+is not read as bold (`**关键句。**后文` shows its asterisks). A text that changes after
+`emphasize` is assembled and emphasized again.
 
 **The ordering rule.** The outline is frozen before the first section call; a section is final
 before the next one starts; the text of a language is frozen before any figure of it is drawn; and
@@ -335,7 +337,9 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   `--draft`), screenshot paths and files (`--assets`), footnotes on a published post, no
   `**Sources**` line, no in-page anchors, the emphasis rule where the profile has one (section 4;
   a draft before `emphasize` has no span, and one with any span needs one in every section), and
-  the citation rules of section 7. Sentences over 35 English words or 60 Chinese characters are
+  the citation rules of section 7. In every profile, a `**` that CommonMark cannot read as
+  emphasis is an error: a closing run after punctuation and before a letter, an opening run after a
+  letter and before punctuation. Sentences over 35 English words or 60 Chinese characters are
   warnings. Landing strings are checked as `key: text` lines. Warnings are for a person to judge.
 - **The step guards** run when an answer arrives, before it is written. `fix` refuses an answer
   that brings in a fact or opinion id neither its input nor its findings name, adds, drops or
