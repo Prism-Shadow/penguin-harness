@@ -32,8 +32,8 @@ import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import { MODEL_PROVIDERS, providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import { MODEL_PROVIDERS, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import {
   connectedMenuItems,
   connectionStatus,

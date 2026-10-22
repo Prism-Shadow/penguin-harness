@@ -49,13 +49,16 @@ export * from "./components/actions/hidden-file-input/hidden-file-input";
 export * from "./components/overlays/menu-panel/menu-panel";
 
 // W2-A — forms: the field scaffolding, the text controls and their search box, checkboxes and
-// radios.
+// radios, the choice group of chips or cards, the number input with its stepper, and the slider.
 export * from "./components/forms/field/field";
 export * from "./components/forms/input/input";
 export * from "./components/forms/password-input/password-input";
 export * from "./components/forms/search-input/search-input";
 export * from "./components/forms/checkbox/checkbox";
 export * from "./components/forms/radio/radio";
+export * from "./components/forms/choice-group/choice-group";
+export * from "./components/forms/number-input/number-input";
+export * from "./components/forms/slider/slider";
 
 // W2-B — pickers, switches and settings rows, with the portal panel and the "?" disclosure they
 // open (moved up from W3).

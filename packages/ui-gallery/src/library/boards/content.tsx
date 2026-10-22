@@ -1,13 +1,13 @@
 /**
  * 内容: the type roles (every heading rung, the display title, the text roles, inline code),
- * Markdown as reading text in its two densities, the Markdown reader over a long document under
- * a title row that holds its outline and find buttons, as the app's hosts place them (wide, with
- * the outline as a rail, and narrow, with the outline behind its button; the find opens from the
- * button or with Mod+F inside the reader, in the title row's place), a code block and a bare code
- * surface with its
- * gutter, the diff viewer unified, side by side and read from a patch, and a reply carrying A2UI
- * blocks — all from the package. Code is highlighted by the highlighter the frame provides, as in
- * the app.
+ * Markdown as reading text in its two densities, Markdown tables (a wide one that scrolls in its
+ * box, with figure columns, code paths and a long prose column, and a short key/value one), the
+ * Markdown reader over a long document under a title row that holds its outline and find buttons,
+ * as the app's hosts place them (wide, with the outline as a rail, and narrow, with the outline
+ * behind its button; the find opens from the button or with Mod+F inside the reader, in the title
+ * row's place), a code block and a bare code surface with its gutter, the diff viewer unified,
+ * side by side and read from a patch, and a reply carrying A2UI blocks — all from the package.
+ * Code is highlighted by the highlighter the frame provides, as in the app.
  *
  * The A2UI reply carries every block the catalog has, in each of its layouts: the four widgets
  * (weather, clock, countdown, metrics), a choice as cards, as chips and as a multi-select, a form
@@ -183,6 +183,15 @@ export function ContentBoard() {
           <Prose text={t.proseSample} className="text-base leading-relaxed text-fg" />
           <span className="lib-caption">{t.compact}</span>
           <Prose variant="compact" text={t.compactSample} className="text-sm text-fg" />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.tables} aside={t.tablesHint}>
+        <div className="lib-stack lib-stack-wide">
+          <span className="lib-caption">{t.tableWide}</span>
+          {/* min-w-0: the stack's grid column would otherwise grow to the wide table. */}
+          <Prose text={t.tableWideSample} className="min-w-0 text-base leading-relaxed text-fg" />
+          <span className="lib-caption">{t.tableShort}</span>
+          <Prose text={t.tableShortSample} className="min-w-0 text-base leading-relaxed text-fg" />
         </div>
       </BoardGroup>
       <BoardGroup title={t.reader} aside={t.readerHint}>

@@ -1,7 +1,9 @@
 /**
  * SSE endpoint adapter:
  * writes the runtime/channel event stream as an SSE response, shared by both the Session
- * channel and the user channel.
+ * channel and the user channel — over HTTP. When the socket transported the call, the same
+ * stream is answered as the frames it already are (socket/stream-answer.ts): no SSE text is
+ * written or parsed on that transport.
  *
  * - Response headers: text/event-stream, no-cache, `X-Accel-Buffering: no` (disables
  *   buffering on reverse proxies);
@@ -10,6 +12,7 @@
  *   event lets it tell a quiet stream from a dead one (web api/sse.ts); without an id it
  *   moves neither Last-Event-ID nor the replay cursor. A peer that stops reading is cut off
  *   by the host's idle timeout ({@link STREAM_IDLE_MS}, app.ts);
+ *   User and machine-aggregate streams also send a `heartbeat` server event.
  * - Replay protocol: a fresh subscription without Last-Event-ID does not replay the buffer
  *   (history is served by the messages endpoint) — it only sends the initial events the
  *   caller supplied (pending approvals / hello). With a Last-Event-ID that hits the buffer,
@@ -29,8 +32,11 @@ import type { Channel, ChannelEvent, ChannelListener } from "../runtime/channel.
 import type { LiveStreams } from "../auth/live-streams.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { SESSION_COOKIE, bearerToken } from "../auth/middleware.js";
+import { answerOf } from "../socket/stream-answer.js";
+import type { StreamAnswer } from "../socket/stream-answer.js";
 
-const HEARTBEAT_MS = 20_000;
+/** The beat both the named ping and the `heartbeat` server event are written on (machines/event-hub.ts times the hub's silence by it). */
+export const HEARTBEAT_MS = 20_000;
 
 /** An event stream's socket that sends nothing for this long is destroyed (app.ts): two missed beats. */
 export const STREAM_IDLE_MS = 2 * HEARTBEAT_MS;
@@ -53,6 +59,13 @@ export interface SseEndpointOptions {
   initialEvents?: ServerEvent[];
   /** Omitted only where there is no authenticated session to revoke. */
   revocation?: SseRevocation;
+  /**
+   * Also write a `heartbeat` server event every beat, not only the id-less `ping` event. Set on
+   * the user channel, whose readers (a browser tab, and the hub reading a machine's events)
+   * must be able to tell a live stream from a silent one — the socket's ping and the comment
+   * line both being invisible to a stream's consumer.
+   */
+  heartbeatEvent?: boolean;
 }
 
 /**
@@ -83,6 +96,10 @@ export function streamRevocation(
 
 /** Stream out a Channel as an SSE response. */
 export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptions = {}): Response {
+  // A stream the socket transported is answered directly, as the frames it already are
+  // (socket/stream-answer.ts); an HTTP reader gets the SSE text below, as ever.
+  const answered = answerOf(c.req.raw);
+  if (answered !== null) return channelAnswered(c, channel, opts, answered);
   // The header wins: the browser sets it on its own reconnects, and it is newer than the id
   // the page wrote into the URL when it opened this EventSource.
   const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("lastEventId");
@@ -162,6 +179,12 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
           return;
         }
         enqueue(() => stream.writeSSE(PING));
+        if (opts.heartbeatEvent === true) {
+          // Unicast: the beat is this subscriber's own liveness, so it consumes a seq (as any
+          // event does) but is neither buffered nor broadcast to the channel's other readers.
+          const beat: ServerEvent = { type: "heartbeat" };
+          channel.sendTo(listener, beat, "server_event");
+        }
       }, HEARTBEAT_MS);
 
       stream.onAbort(() => finish());
@@ -172,4 +195,103 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
       release();
     }
   });
+}
+
+/**
+ * The same stream as {@link sseEndpoint}'s, answered on the socket directly
+ * (socket/stream-answer.ts): the events go out as the frames they already are, in the same
+ * order — buffered replay (or resync_required), initial events, ping, live stream — with no
+ * SSE text written. What the HTTP stream gets from its host — its abort, its finally — this
+ * stream gets from the call's own Request signal, which is the one release path on that
+ * transport; the route's Response carries nothing, and serve.ts drops it.
+ */
+function channelAnswered(
+  c: Context,
+  channel: Channel,
+  opts: SseEndpointOptions,
+  answer: StreamAnswer,
+): Response {
+  const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("lastEventId");
+  const revocation = opts.revocation;
+  let closed = false;
+  let unsubscribe: (() => void) | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let finish: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    finish = () => {
+      if (closed) return;
+      closed = true;
+      if (heartbeat !== null) clearInterval(heartbeat);
+      unsubscribe?.();
+      resolve();
+    };
+  });
+
+  // Claimed before anything that can throw and released when the stream ends — a finally
+  // could not do it, for this stream outlives the return: the registry holds an entry for
+  // exactly as long as the connection lives, and one left behind would name a stream
+  // nobody could close again.
+  const release = revocation?.streams.add(revocation.userId, finish) ?? (() => {});
+  void done.then(() => {
+    release();
+    answer.end("closed");
+  });
+  try {
+    answer.start(200, { "content-type": "text/event-stream" });
+    const listener: ChannelListener = (evt: ChannelEvent) => {
+      answer.event(
+        // Event id is an opaque string generated by the channel (`<epoch>-<seq>`), passed through as-is.
+        evt.event ?? "message",
+        evt.id,
+        evt.data,
+      );
+    };
+
+    unsubscribe = channel.subscribe(listener);
+    // Subscribe first (to avoid dropping events in a race with broadcasts), then replay
+    // synchronously — event order as above: the answer has begun, so nothing is dropped.
+    if (lastEventId !== undefined) {
+      const replay = channel.replayAfter(lastEventId);
+      if (!replay.hit) {
+        const resync: ServerEvent = { type: "resync_required" };
+        channel.sendTo(listener, resync, "server_event");
+      } else {
+        for (const evt of replay.events) listener(evt);
+      }
+    }
+    for (const event of opts.initialEvents ?? []) {
+      channel.sendTo(listener, event, "server_event");
+    }
+    // The first beat goes out at once, so a client knows from the first second that this
+    // stream pings — not only after the first interval has passed.
+    answer.event(PING.event, null, PING.data);
+
+    heartbeat = setInterval(() => {
+      // The same re-check as the HTTP heartbeat: one beat bounds how long a window whose
+      // session was revoked keeps streaming, and the check must not renew the session.
+      if (revocation !== undefined && !revocation.sessionIsLive()) {
+        finish();
+        return;
+      }
+      answer.event(PING.event, null, PING.data);
+      if (opts.heartbeatEvent === true) {
+        // Unicast: the beat is this subscriber's own liveness, so it consumes a seq (as any
+        // event does) but is neither buffered nor broadcast to the channel's other readers.
+        const beat: ServerEvent = { type: "heartbeat" };
+        channel.sendTo(listener, beat, "server_event");
+      }
+    }, HEARTBEAT_MS);
+
+    // The one release path (socket/serve.ts): a cancel frame, the socket closing, the
+    // client lagging past the watermark — the call's Request is aborted, and this stream
+    // ends exactly as the aborted hono stream ends the HTTP one.
+    answer.signal.addEventListener("abort", finish, { once: true });
+    if (answer.signal.aborted) finish();
+  } catch (err) {
+    // What the HTTP stream answers with a dropped connection, this answers with a clean
+    // end: the client re-issues, and the route's own error handling answers that.
+    finish();
+    throw err;
+  }
+  return new Response(null, { status: 200 });
 }

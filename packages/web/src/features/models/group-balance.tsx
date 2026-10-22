@@ -10,8 +10,8 @@
  * an account, not an error the user made on this page.
  */
 import { useEffect, useState } from "react";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { ChevronDown, Dropdown, Menu, MenuItem, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatDateTime } from "../../lib/format";

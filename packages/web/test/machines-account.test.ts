@@ -41,6 +41,7 @@ function machineList(alias: string): MachinesResponse {
     machineId: `${alias}-id`,
     local: false,
     connection: { pid: 1 },
+    socket: null,
     api: null,
     status: null,
     root: "~/.penguin/data",

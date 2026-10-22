@@ -31,7 +31,7 @@
  *   environment and refuses new Tasks, and a run parked on an approval is denied, winds down,
  *   and is disposed only after it has, even once the database has closed under it.
  * - Idle entries are evicted (running ones, pending approvals, working subagents and a kept
- *   Session pin them); a preload loads without running, and leaves a Session with no Trace;
+ *   Session pin them); a preload loads without running, a Session with no Trace included;
  *   invalidating an Agent's or a Project's runtimes rebuilds them at next access, never
  *   mid-run, and publishes a discarded runtime's background count as cleared.
  *
@@ -1337,10 +1337,7 @@ describe("session-manager", () => {
       },
     };
     const manager = makeManager(loader);
-    // No Trace yet: the load would be a self-heal rebuild under a new id, so preload leaves it.
-    await manager.preload("session-1");
-    expect(loads).toBe(0);
-    sessions.markHasTrace("session-1");
+    // No Trace yet, and loaded all the same: the rebuild keeps the Session's id.
     await manager.preload("session-1");
     expect(loads).toBe(1);
     // Only the load: no run started, nothing published.
