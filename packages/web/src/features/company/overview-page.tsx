@@ -72,6 +72,7 @@ import {
   principalLabel,
 } from "./shared";
 import { agentPrincipal } from "./principals";
+import { budgetTone } from "./finance-tree";
 import { liveEmployeeStates } from "./org-sessions";
 import { timeLabel } from "./calendar-geom";
 import {
@@ -667,6 +668,14 @@ export function OverviewPage() {
                   size={40}
                   cost={spend.cost}
                   currency={currency}
+                  // The organization's own ratios, not the built-in 80/100: enforcement
+                  // reads the same values, so the meter must agree with a pause already
+                  // applied.
+                  tone={budgetTone(
+                    spend.ratio ?? undefined,
+                    detail.settings.budgetWarnRatio,
+                    detail.settings.budgetPauseRatio,
+                  )}
                   {...(spend.budget !== null ? { budget: spend.budget } : {})}
                   {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
                 />
@@ -681,6 +690,11 @@ export function OverviewPage() {
                   cost={spend.cost}
                   currency={currency}
                   compact
+                  tone={budgetTone(
+                    spend.ratio ?? undefined,
+                    detail.settings.budgetWarnRatio,
+                    detail.settings.budgetPauseRatio,
+                  )}
                   {...(spend.budget !== null ? { budget: spend.budget } : {})}
                   {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
                 />

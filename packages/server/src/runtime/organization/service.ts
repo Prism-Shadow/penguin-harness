@@ -763,6 +763,15 @@ export class OrganizationService {
 
   private async employeeItems(org: LoadedOrg, spend: OrgSpend): Promise<OrgEmployeeItem[]> {
     const paused = pausedEmployees(this.deps, org, spend.period);
+    // The budget warnings the period's marks remember: which employee the organization's own
+    // warn ratio has fired for. The chart's `state` already says `paused`; this is the
+    // warning that precedes one, which no other chart field carries.
+    const warned = new Set(
+      this.deps.cache
+        .listBudgetStates(org.projectId, org.orgId, spend.period)
+        .filter((s) => s.warnedAt !== null)
+        .map((s) => s.agentId),
+    );
     const out: OrgEmployeeItem[] = [];
     const shared = sharedWorkspace(org);
     const names = await orgEmployeeNames(this.deps, org);
@@ -825,6 +834,7 @@ export class OrganizationService {
           cumulative,
           ...(e.budget !== undefined ? { ratio: budgetRatio(cumulative, e.budget) } : {}),
         },
+        ...(warned.has(e.agentId) ? { warned: true as const } : {}),
         ...(invalid !== undefined ? { invalid } : {}),
         ...(!exists ? { agentMissing: true as const } : {}),
       });

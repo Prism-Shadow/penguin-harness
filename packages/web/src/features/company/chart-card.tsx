@@ -56,7 +56,7 @@ import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
 import { EmployeeAvatar } from "./employee-avatar";
-import { budgetTone } from "./finance-tree";
+import { markedSpendTone } from "./finance-tree";
 import { INVALID_ICON } from "./shared";
 import { CHART_NODE_H, CHART_NODE_W, workspaceTail } from "./org-chart-tree";
 import { employeeStateTone } from "./chart-view";
@@ -142,7 +142,13 @@ export function ChartCard({
   useEffect(() => {
     close();
   }, [viewEpoch, close]);
-  const tone = budgetTone(employee.spend.ratio);
+  // The server's enforcement marks, not a ratio read by the built-in thresholds: a pause
+  // can sit below 100% (`state` says so), and the chart's `warned` is the organization's
+  // own warn ratio already applied. The ratio fallback only colors what has no mark.
+  const tone = markedSpendTone(
+    { paused: employee.state === "paused", warned: employee.warned === true },
+    employee.spend.ratio,
+  );
   const spent = formatMoney(employee.spend.cumulative, currency);
   const spend =
     employee.budget === undefined

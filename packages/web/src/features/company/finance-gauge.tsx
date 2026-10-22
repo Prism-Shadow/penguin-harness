@@ -1,7 +1,8 @@
 /**
  * The finance page's two spend-against-budget pictures. Both ink themselves in the budget tone
- * — success below 80%, attention from 80%, danger from 100% — and both leave the amounts to
- * the text beside them, carrying the full statement in the accessible name and the tooltip.
+ * — success below the warn threshold, attention from it, danger from the pause one — and both
+ * leave the amounts to the text beside them, carrying the full statement in the accessible name
+ * and the tooltip.
  *
  * `FinanceGauge` is the KPI row's ring (the package's `Ring`): one arc from 12 o'clock, filled to
  * the ratio and capped at a full circle when spend is over the budget; without a budget the track
@@ -13,6 +14,7 @@ import { formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { budgetTone } from "./finance-tree";
+import type { BudgetTone } from "./finance-tree";
 
 /** The budget tones in the ring's words (a gauge without a budget draws no arc to ink). */
 const RING_TONE: Record<Tone, ToneName> = {
@@ -28,13 +30,17 @@ export function FinanceGauge({
   ratio,
   label,
   size = 64,
+  tone: toneOverride,
 }: {
   /** cost / budget; absent without a budget. */
   ratio?: number;
   /** The full statement ("$6.20 / $10 · 62%"), for the tooltip and screen readers. */
   label: string;
   size?: number;
+  /** Overrides the tone the ratio picks by the built-in thresholds — the surface's own reading of the organization's configured ratios (see `budgetTone`). */
+  tone?: BudgetTone;
 }) {
+  const tone = toneOverride ?? budgetTone(ratio);
   const fraction = ratio === undefined ? 0 : Math.min(1, Math.max(0, ratio));
   return (
     <Ring
@@ -42,7 +48,7 @@ export function FinanceGauge({
       max={1}
       size={size}
       width={Math.max(3, Math.round(size * 0.11))}
-      tone={RING_TONE[budgetTone(ratio)]}
+      tone={RING_TONE[tone]}
       label={label}
     />
   );
@@ -69,13 +75,16 @@ const PERCENT_INSIDE_MIN = 50;
 export function SpendMeter({
   ratio,
   label,
+  tone: toneOverride,
 }: {
   /** cost / budget; absent without a budget. */
   ratio?: number;
   /** The full statement ("$41.00 / $100.00 · 41%"), for the tooltip and screen readers. */
   label: string;
+  /** Overrides the tone the ratio picks by the built-in thresholds — the surface's own reading of the organization's configured ratios (see `budgetTone`). */
+  tone?: BudgetTone;
 }) {
-  const tone = budgetTone(ratio);
+  const tone = toneOverride ?? budgetTone(ratio);
   const width = ratio === undefined ? 0 : Math.min(100, Math.max(0, ratio * 100));
   const inside = width >= PERCENT_INSIDE_MIN;
   return (

@@ -5853,6 +5853,13 @@ export interface OrgEmployeeItem {
   desk?: { sessionId: string; workspace: string; openedAt: string };
   /** Period spend: own sessions, and cumulative (own + every subordinate). */
   spend: { own: number; cumulative: number; ratio?: number };
+  /**
+   * The period's budget warning has fired for this employee (spend at or above the
+   * organization's configured warn ratio, the pause not yet). Absent otherwise. A pause is
+   * said by `state`; this is the warning that precedes one, and it reads the organization's
+   * own ratios — not the built-in 80% / 100% the raw ratio might suggest.
+   */
+  warned?: true;
   /** Why the entry cannot be triggered (missing Agent, missing workspace directory). */
   invalid?: string;
   /**

@@ -164,12 +164,33 @@ export function shiftPeriod(period: string, delta: number): string | null {
  */
 export type BudgetTone = Extract<Tone, "muted" | "success" | "attention" | "danger">;
 
-/** The tone a spend-against-budget ratio takes: attention from 80%, danger from 100%, success below; muted without a budget. */
-export function budgetTone(ratio: number | undefined): BudgetTone {
+/** The tone a spend-against-budget ratio takes: attention from the warn threshold, danger from the pause one, success below; muted without a budget. The thresholds are the organization's configured `budgetWarnRatio`/`budgetPauseRatio` where the surface holds them — enforcement reads the same values, so a meter that fell back to the built-in 80% / 100% would contradict a pause the server has already applied. */
+export function budgetTone(
+  ratio: number | undefined,
+  warn: number = 0.8,
+  pause: number = 1,
+): BudgetTone {
   if (ratio === undefined || !Number.isFinite(ratio)) return "muted";
-  if (ratio >= 1) return "danger";
-  if (ratio >= 0.8) return "attention";
+  if (ratio >= pause) return "danger";
+  if (ratio >= warn) return "attention";
   return "success";
+}
+
+/**
+ * The tone a budget meter takes when the server's enforcement marks are at hand: a pause is
+ * danger whatever the raw ratio says (the organization can pause below 100%), a warning is
+ * attention, and an explicitly false warning means the organization's own warn line has not
+ * been reached — the mark would have fired otherwise — so success. Only what carries no
+ * marks at all falls back to the built-in thresholds.
+ */
+export function markedSpendTone(
+  marks: { paused?: boolean; warned?: boolean },
+  ratio: number | undefined,
+): BudgetTone {
+  if (marks.paused === true) return "danger";
+  if (marks.warned === true) return "attention";
+  if (marks.warned === false && ratio !== undefined && Number.isFinite(ratio)) return "success";
+  return budgetTone(ratio);
 }
 
 /** What a mark in the spend tree's state column says; the caller spells each one's label. */

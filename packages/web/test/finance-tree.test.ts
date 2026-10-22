@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 import type { OrgFinanceEmployee, OrgFinanceTicket } from "@prismshadow/penguin-server/api";
 import {
   budgetTone,
+  markedSpendTone,
   dailyBreaks,
   financeKpis,
   financeSeries,
@@ -150,6 +151,36 @@ describe("budgetTone", () => {
     expect(budgetTone(1)).toBe("danger");
     expect(budgetTone(undefined)).toBe("muted");
     expect(budgetTone(Number.NaN)).toBe("muted");
+  });
+
+  it("reads the organization's own thresholds when given, so a pause below 100% is still danger and a ratio past 100% under a higher pause is not", () => {
+    // An organization that pauses at 50%: 60% of budget is already past the pause line —
+    // the built-in defaults would paint the meter green while the server has paused it.
+    expect(budgetTone(0.6, 0.4, 0.5)).toBe("danger");
+    expect(budgetTone(0.45, 0.4, 0.5)).toBe("attention");
+    expect(budgetTone(0.2, 0.4, 0.5)).toBe("success");
+    // A pause above 100%: over budget is not over the pause line, so not danger.
+    expect(budgetTone(1.2, 0.8, 1.5)).toBe("attention");
+    expect(budgetTone(1.6, 0.8, 1.5)).toBe("danger");
+    // A warn ratio of its own moves the attention line with it.
+    expect(budgetTone(0.3, 0.4, 0.5)).toBe("success");
+  });
+});
+
+describe("markedSpendTone", () => {
+  it("lets the server's enforcement marks outrank what the raw ratio reads by the built-in thresholds", () => {
+    // Paused at 60% of budget: danger, where the defaults would read success.
+    expect(markedSpendTone({ paused: true, warned: true }, 0.6)).toBe("danger");
+    // Warned under the built-in 80% line: attention all the same.
+    expect(markedSpendTone({ paused: false, warned: true }, 0.6)).toBe("attention");
+    // An explicitly false warning means the organization's own warn line has not been
+    // reached — success, even over 100% under a pause ratio parked above it.
+    expect(markedSpendTone({ paused: false, warned: false }, 1.2)).toBe("success");
+    expect(markedSpendTone({ warned: false }, 0.6)).toBe("success");
+    // No marks at all: the ratio decides by the built-in thresholds, muted without a budget.
+    expect(markedSpendTone({}, 0.5)).toBe("success");
+    expect(markedSpendTone({}, 1.2)).toBe("danger");
+    expect(markedSpendTone({}, undefined)).toBe("muted");
   });
 });
 

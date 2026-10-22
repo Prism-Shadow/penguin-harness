@@ -202,7 +202,8 @@ export function ErrorLine({
 
 /**
  * Spend against a budget as a ring (the package's `Ring`): the used share drawn clockwise from
- * the top in the budget's tone (attention from 80%, danger from 100%, the ring full when over)
+ * the top in the budget's tone (attention from the warn threshold, danger from the pause one,
+ * the ring full when over)
  * over a track of that tone faded, the percent inside; a muted, empty ring with a dash when there
  * is no budget. The exact amounts ride in the accessible name and tooltip.
  */
@@ -212,14 +213,17 @@ export function SpendRing({
   ratio,
   currency,
   size = 64,
+  tone: toneOverride,
 }: {
   cost: number;
   budget?: number;
   ratio?: number;
   currency: Currency;
   size?: number;
+  /** Overrides the tone the ratio picks by the built-in thresholds — the surface's own reading of the organization's configured ratios (see `budgetTone`). */
+  tone?: BudgetTone;
 }) {
-  const tone = budgetTone(ratio);
+  const tone = toneOverride ?? budgetTone(ratio);
   const share = ratio === undefined ? 0 : Math.min(1, Math.max(0, ratio));
   const label =
     budget === undefined
@@ -259,21 +263,24 @@ const BUDGET_FILL: Record<BudgetTone, ToneName> = {
   danger: "danger",
 };
 
-/** Spend against a budget as a bar: attention from 80%, danger from 100%; an empty bar when there is no budget. */
+/** Spend against a budget as a bar: attention from the warn threshold, danger from the pause one; an empty bar when there is no budget. */
 export function BudgetBar({
   cost,
   budget,
   ratio,
   currency,
   compact = false,
+  tone: toneOverride,
 }: {
   cost: number;
   budget?: number;
   ratio?: number;
   currency: Currency;
   compact?: boolean;
+  /** Overrides the tone the ratio picks by the built-in thresholds — the surface's own reading of the organization's configured ratios (see `budgetTone`). */
+  tone?: BudgetTone;
 }) {
-  const tone = budgetTone(ratio);
+  const tone = toneOverride ?? budgetTone(ratio);
   const width = ratio === undefined ? 0 : Math.min(100, Math.max(0, ratio * 100));
   const label =
     budget === undefined

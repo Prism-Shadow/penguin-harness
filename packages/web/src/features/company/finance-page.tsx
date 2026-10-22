@@ -88,11 +88,11 @@ import {
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { FinanceGauge, SpendMeter } from "./finance-gauge";
 import {
-  budgetTone,
   dailyBreaks,
   financeKpis,
   financeSeries,
   groupAlerts,
+  markedSpendTone,
   shiftPeriod,
   spendRowTooltip,
   spendStateMarks,
@@ -428,7 +428,12 @@ export function FinancePage() {
   }
 
   const kpis = financeKpis(data);
-  const ratioTone = budgetTone(kpis.ratio);
+  // The org meter follows the server's enforcement marks, not a ratio read by the built-in
+  // thresholds: `OrgFinanceResponse` carries no ratios, but the root row's `warned`/`paused`
+  // are the organization's own thresholds already applied — the only reading that agrees
+  // with a pause configured away from 100%.
+  const orgRoot = data.employees.find((e) => e.reportsTo === null) ?? data.employees[0];
+  const ratioTone = markedSpendTone(orgRoot ?? {}, kpis.ratio);
   /** Spend against a budget as one sentence — what the ring and every meter carry as their name. */
   const spendLabel = (
     cost: number,
@@ -481,7 +486,12 @@ export function FinancePage() {
               >
                 {/* Small: the tile is a quarter of the KPI panel, and the ring is the
                     picture of a number that is already spelled out beside it. */}
-                <FinanceGauge ratio={kpis.ratio} label={gaugeLabel} size={40} />
+                <FinanceGauge
+                  ratio={kpis.ratio}
+                  label={gaugeLabel}
+                  size={40}
+                  {...(ratioTone !== "muted" ? { tone: ratioTone } : {})}
+                />
               </StatTile>
               <StatTile
                 icon={ICONS.percent}
@@ -626,6 +636,10 @@ export function FinancePage() {
                                   employee.ratio,
                                 )}
                                 {...(employee.ratio !== undefined ? { ratio: employee.ratio } : {})}
+                                // The row's own enforcement marks, not the built-in
+                                // thresholds: a pause can sit below 100%, and a warning
+                                // only ever comes from the organization's own warn ratio.
+                                tone={markedSpendTone(employee, employee.ratio)}
                               />
                             </span>
                             <span className="flex-1 text-right">
