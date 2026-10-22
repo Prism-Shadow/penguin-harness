@@ -22,7 +22,7 @@
  * - A user-defined group named like an Object method keeps its own choice.
  */
 import { describe, expect, it } from "vitest";
-import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
+import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
 import { groupModelRows } from "../src/features/models/model-grouping";
 import type { ModelRowLike, PricingBucketsLike } from "../src/features/models/model-grouping";
 import {

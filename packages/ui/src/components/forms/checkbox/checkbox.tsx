@@ -10,6 +10,9 @@
  * With a `label` the box and its text sit in one `<label>`, so the whole row toggles and the text
  * names the control; a `hint` under the label is tied to the box by `aria-describedby`. Without a
  * label the caller names the box (`aria-label`).
+ *
+ * `CheckboxBox` is the same box as a drawing, for a pressable option that is not a native checkbox
+ * but toggles like one (a chip of a multiple-choice group).
  */
 import { useCallback, useId } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
@@ -32,14 +35,21 @@ export interface CheckboxProps extends Omit<
   size?: ControlSize;
 }
 
-const BOX =
-  "size-3.5 shrink-0 appearance-none rounded-sm border transition-colors duration-150 " +
-  "disabled:cursor-not-allowed " +
+/**
+ * The box, one drawing for the native checkbox and for {@link CheckboxBox}. Its corner is the
+ * theme's small radius but never more than a quarter of its side, so it stays a square — never a
+ * disc that reads as a radio — in a theme whose small radius is half the box (Frost's).
+ */
+const BOX_SHAPE =
+  "size-3.5 shrink-0 rounded-[min(var(--ui-radius-sm),25%)] border transition-colors duration-150";
+const BOX_OFF = "border-line-emphasis bg-surface";
+const BOX_ON = "border-accent bg-accent";
+
+/** What only the native checkbox adds: no browser widget, the closed state, its own focus ring. */
+const NATIVE =
+  "appearance-none disabled:cursor-not-allowed " +
   "focus-visible:[outline:var(--ui-focus-ring)] " +
   "focus-visible:[outline-offset:var(--ui-focus-ring-offset)]";
-
-const BOX_OFF = "border-line-emphasis bg-surface hover:border-fg-subtle";
-const BOX_ON = "border-accent bg-accent";
 
 /**
  * The check and the dash, drawn at 12px on a 12px grid of their own inside the 14px box: like the
@@ -61,6 +71,22 @@ function BoxMark({ mixed }: { mixed: boolean }) {
     >
       <path d={mixed ? "M3 6h6" : "M2.6 6.2l2.2 2.2 4.6-4.8"} />
     </svg>
+  );
+}
+
+/**
+ * The checkbox's box as a drawing: decorative, so whatever holds it says the state (a button's
+ * `aria-pressed`). Ticked when `on`; it has no hover of its own, the control around it takes the
+ * hover.
+ */
+export function CheckboxBox({ on, className = "" }: { on: boolean; className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={`relative inline-block ${BOX_SHAPE} ${on ? BOX_ON : BOX_OFF} ${className}`}
+    >
+      {on && <BoxMark mixed={false} />}
+    </span>
   );
 }
 
@@ -102,7 +128,7 @@ export function Checkbox({
         disabled={disabled}
         aria-describedby={describedByIds}
         onChange={(event) => onChange(event.target.checked)}
-        className={`${BOX} ${on ? BOX_ON : BOX_OFF}`}
+        className={`${BOX_SHAPE} ${NATIVE} ${on ? BOX_ON : `${BOX_OFF} hover:border-fg-subtle`}`}
         {...rest}
       />
       {on && <BoxMark mixed={indeterminate} />}

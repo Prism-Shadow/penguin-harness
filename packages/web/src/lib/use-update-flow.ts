@@ -66,6 +66,8 @@ interface FlowState extends FlowLocal {
   modalOpen: boolean;
   /** The server's self-update job as last polled (release mode). */
   job: UpdateJobStatus | null;
+  /** Snapshot at a client install click; identity also fences late HTTP failures. */
+  clientInstallRequest: { seq: number | null } | null;
 }
 
 const store = createStore<FlowState>(() => ({
@@ -76,6 +78,7 @@ const store = createStore<FlowState>(() => ({
   downloadRequested: false,
   restart: "none",
   job: null,
+  clientInstallRequest: null,
 }));
 
 /** The flow for the current caches and local state — the one computation every surface renders. */
@@ -138,7 +141,7 @@ export async function checkForUpdates(): Promise<void> {
 export async function downloadUpdate(): Promise<void> {
   const s = store.getState();
   if (s.downloadRequested) return;
-  store.setState({ downloadRequested: true, restart: "none" });
+  store.setState({ downloadRequested: true, restart: "none", clientInstallRequest: null });
   try {
     if (s.mode === "client") {
       await requestClientDownload();
@@ -161,12 +164,21 @@ export async function downloadUpdate(): Promise<void> {
 /** The user's "restart and update". */
 export async function installUpdate(): Promise<void> {
   const s = store.getState();
-  try {
-    if (s.mode === "client") {
+  if (s.mode === "client") {
+    if (s.clientInstallRequest !== null) return;
+    const request = { seq: getDesktopUpdateStatus()?.seq ?? null };
+    // Arm before POST: a verification error can arrive before its acknowledgement.
+    store.setState({ restart: "requested", clientInstallRequest: request });
+    try {
       await requestClientInstall();
-      store.setState({ restart: "requested" });
-      return;
+    } catch (e) {
+      if (store.getState().clientInstallRequest !== request) return;
+      store.setState({ restart: "none", clientInstallRequest: null });
+      toastError(S.update.requestFailed(apiErrorText(e)));
     }
+    return;
+  }
+  try {
     const res = await api.restartServer();
     store.setState({ restart: res.restarting ? "requested" : "manual" });
   } catch (e) {
@@ -236,10 +248,28 @@ export function useUpdateFlowOwner(): void {
   // download moves (use-desktop-update's own rule), so a download that outlives the dialog
   // still reports through the row. One passive refresh on load raises a badge for a release
   // offered or downloaded before this page opened.
-  const { status } = useDesktopUpdate(mode === "client", state.modalOpen);
+  const { status } = useDesktopUpdate(
+    mode === "client",
+    state.modalOpen || state.clientInstallRequest !== null,
+  );
   useEffect(() => {
     if (mode === "client") refreshDesktopUpdate();
   }, [mode]);
+
+  // An acknowledged install can still fail its final trust check. A fresh failure
+  // ends the restart wait; stale snapshots from before the click do not.
+  useEffect(() => {
+    const request = state.clientInstallRequest;
+    if (mode !== "client" || request === null || status?.state !== "error") return;
+    if (request.seq !== null && status.seq !== undefined && status.seq <= request.seq) return;
+    if (store.getState().clientInstallRequest !== request) return;
+    store.setState({ restart: "none", clientInstallRequest: null });
+    if (!quiet()) {
+      toastError(
+        status.message ? S.update.clientUpdateFailed(status.message) : S.update.checkFailed,
+      );
+    }
+  }, [mode, state.clientInstallRequest, status]);
 
   // A settled client check reports in the dialog when it is open, as a toast otherwise.
   useEffect(() => {
@@ -373,7 +403,7 @@ export function useUpdateFlowOwner(): void {
   useEffect(() => {
     if (!clientRestarting) return;
     const timer = setTimeout(() => {
-      store.setState({ restart: "manual" });
+      store.setState({ restart: "manual", clientInstallRequest: null });
       toastError(S.update.restartTimedOutClient);
     }, RESTART_TIMEOUT_MS);
     return () => clearTimeout(timer);

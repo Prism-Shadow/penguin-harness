@@ -26,7 +26,7 @@ import type {
   ModelsUpdateRequest,
   ProjectSummary,
 } from "@prismshadow/penguin-server/api";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";

@@ -220,14 +220,16 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/machines` | 本机以及服务器自身 `~/.ssh/config` 中的主机别名，连同本 Project 的安装记录、最近状态和每台机器的任务：`{machines: [{id, alias, machineId, installed, elsewhere?, member?, local, connection, keepConnected?, reconnect?, api, configSync?, status}], imageVersion, job, jobs}` |
+| GET | `/api/projects/:projectId/machines` | 本机以及服务器自身 `~/.ssh/config` 中的主机别名，连同本 Project 的安装记录、最近状态和每台机器的任务：`{machines: [{id, alias, machineId, installed, elsewhere?, member?, local, connection, socket, keepConnected?, reconnect?, api, configSync?, status}], imageVersion, job, jobs}` |
 | GET | `/api/projects/:projectId/machines/ssh-hosts` | ssh 配置（包括 Include 的文件）中的每台主机，以及它自己的配置段原样写明的 `user`、`hostName` 与 `port`：`{hosts: [{alias, hostName?, user?, port?}]}` |
 | POST | `/api/projects/:projectId/machines/add` | 把 `{machines: [id…]}` 加入本 Project 的列表，不安装任何东西；返回列表，以及按 id 列出的 `refused` |
+| GET | `/api/projects/:projectId/machines/events` | 本 Project 已连接机器的一条 SSE 流：每台机器自己的事件，各自带上来源机器的标记，由 hub 每台机器唯一的那次订阅合并而来——见 **socket hub 内每台机器一条事件流** |
 | POST | `/api/projects/:projectId/machines/probe` | 逐台询问本 Project 已安装机器正在做什么（每台一次 ssh 往返，最多 5 台并发），返回携带最新状态的列表 |
 | POST | `/api/projects/:projectId/machines/use` | 把 `{machines: [id…]}` 作为一批启用——按需安装或更新、启动、连接并下发 Project 配置——并加入本 Project 的列表；返回 `202`、列表，以及按 id 列出的 `refused` |
 | POST | `/api/projects/:projectId/machines/stop-using` | 把 `{machines: [id…]}` 从本 Project 删除：断开各自的连接，不再保持连接；那台机器上的程序与数据都保留，ssh 配置里的主机也不变 |
 | POST | `/api/projects/:projectId/machines/:machineId/install` | 开始在这台主机上安装当前构建，并将这台主机分配给本 Project；任务运行期间返回 `202`，响应体相同 |
 | POST | `/api/projects/:projectId/machines/:machineId/connect` | 启动那台机器的服务器，并维持那条唯一的连接，此后保持连接；connect 任务运行期间返回 `202`，响应体相同 |
+| POST | `/api/projects/:projectId/machines/:machineId/reconnect` | 重试连回本服务端保持连接的机器：跳过下次尝试前剩余的等待（次数不变），或在自动重连停止后（连续失败 8 次，或重试也不会好转的 ssh 失败）重新开始一轮；正在尝试或已连接时什么都不做。返回 `200` 与列表，或 `409`（`job_running`、`password_refused`、`not_kept_connected`） |
 | POST | `/api/projects/:projectId/machines/:machineId/disconnect` | 断开连接、不再保持连接，远端服务器继续运行 |
 | POST | `/api/projects/:projectId/machines/:machineId/restart` | 停止那台机器的服务器，并在同一端口重新启动；返回 `202`，那台机器有任务在运行时返回 `409` |
 | POST | `/api/projects/:projectId/machines/:machineId/stop` | 停止那台机器的服务器，不再保持连接，安装保留；返回 `202` 或 `409` |
@@ -242,7 +244,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `POST …/install` 可以携带请求体 `{replaceProgram: true}`，用来回应任务过程中提出的这个要求：即使版本已经一致，服务器也会重新安装程序并重启它。
 - 主机可以用密码代替密钥登录。`POST …/ssh-hosts` 与 `PUT …/ssh-hosts/:alias` 接受 `password`：字符串即保存；`PUT` 时 `null` 删除已保存的密码，不带则保持不变。对手写的配置段，`PUT` 可以只设置密码，其余字段原样传回该段的内容。`GET …/ssh-hosts/:alias` 与机器列表在保存了密码时答 `passwordSaved: true`，从不返回密码本身。密码存放在 `<root>/machines/ssh-passwords/` 下权限为 0600 的文件里，不写进 ssh 配置、数据库或日志，只经 `SSH_ASKPASS` 出现在那一个 ssh 进程的环境变量里；这样的机器不提供密钥，每种方式只问一次。ssh 拒绝了的密码不再重试，直到为这台机器重新保存或删除密码：任务立即以 `sshReason: "password-rejected"` 失败（主机不接受密码时为 `"password-not-offered"`），保持连接的机器带上 `reconnect.waitsForPassword` 并停止重试。把机器从最后一个使用它的 Project 中删除时，它的密码一并删除。密码为空或不止一行时返回 `400` `ssh_password_invalid`；本机的 OpenSSH 无法接收密码时（Windows 上低于 8.4）返回 `409` `ssh_password_unsupported`，`details.ssh` 为 `ssh -V` 的输出。
 - `POST …/connect` 维持一条 `ssh -T -D` 会话，空闲时永不超时。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
-- 连接过的机器会被**保持连接**（`keepConnected`），直到被停止（`POST …/stop`）、删除（`POST …/stop-using`）或断开：它的 ssh 会话断开、服务停止或重启、本服务器自身重启时，服务器都会自己把它连回来——探测它，服务没在运行就启动它，重新持有连接并下发 Project 配置。每次失败后的等待是上一次的两倍，从 5 秒起、封顶 5 分钟；其间这台机器带 `reconnect`，连续失败 3 次后自动运行下文的连接检查，结果保存在其中。有任务在处理这台机器时不重连。
+- 连接过的机器会被**保持连接**（`keepConnected`），直到被停止（`POST …/stop`）、删除（`POST …/stop-using`）或断开：它的 ssh 会话断开、服务停止或重启、本服务器自身重启时，服务器都会自己把它连回来——探测它，服务没在运行就启动它，重新持有连接并下发 Project 配置。每次失败后的等待是上一次的两倍，从 5 秒起、封顶 5 分钟，连续失败 8 次（约 15 分钟）后停止自动重连；重试也不会好转的 ssh 失败——主机密钥未知或已变、私钥文件不可用、密钥被拒、ssh 配置有误——第一次失败即停止。`POST …/reconnect` 重试：立即尝试，停止后则从第 1 次重新开始。其间这台机器带 `reconnect`，连续失败 3 次后自动运行下文的连接检查，结果保存在其中。有任务在处理这台机器时不重连；本服务器重启后每一轮都重新开始。
 - 下发给一台机器的，是使用它的每个 Project 的配置：模型及各分组的连接、默认模型与视觉模型、Project 名称，沙箱命令策略（对端的 `PUT …/command-policy`），新对话默认值（对端的 `PUT …/chat-defaults`；工作区是本服务器上的目录，保留那台机器自己的，那台机器没有的默认 Agent 也保留它自己的），以及插件列表。某个 Project 的某一部分被拒绝时写进日志，其余照常下发。对端按名拒绝的模型条目（`model_not_addable`、`model_not_routable`，见 `PUT /models`）被跳过，表中其余条目照常写入；指向它的默认模型或视觉模型不下发。本服务器取自环境变量的值（模型条目自己没有的 Key 或 base URL）不在配置里，从不随同下发。每次连接、`POST …/sync`，以及本服务器上每次写入 Project 配置之后（模型、默认模型、命令策略、新对话默认值、重命名、插件列表），都会下发给运行本服务器镜像的已连接机器。
 - 向一台机器下发 Project 配置之前（连接、启用，或服务器自己把它连回来时），服务器先问那台机器的服务在运行什么（`GET /api/version`）。服务没有在运行那里安装的构建（例如在那个数据目录上启动的正式版自带的服务），就把它重启到这个构建上。服务运行的构建与本服务器的镜像不同，就先通过它的更新通道把镜像交给它。两样都做不到时，任务停在 `sync`，说明那台机器在运行什么、需要先更新，什么都不下发。问不到的机器照常连接，但不下发，日志里写明原因。修改配置时，只有运行本服务器镜像的已连接机器会收到。
 - `POST …/sync` 是带 `check`、`sync` 两步的任务。`check` 像连接时一样问那台机器在运行什么，但不做任何改动：运行其他构建的机器以同样的话失败于 `check`，要靠更新把它带到本服务器的构建。没有连接的机器返回 `409` `not_connected`。
@@ -258,7 +260,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `elsewhere`：这台主机已由其他 Project 安装，可以直接接管，而不必重新安装。
 - `keepConnected`：本服务器保持这台机器连接期间为 `true`（见上文）；只添加过、已停止、已删除或已断开的机器没有这个字段。
 - `configSync`：最近一次向这台机器下发配置的结果，只存在内存中，本服务器启动后第一次下发之前没有这个字段：`{at, ok, detail?, envOnly, skipped}`。`detail` 逐行列出没有下发成功的部分。`envOnly` 为模型条目取自本服务器环境变量、因而无法下发的每个值列出 `{projectId, provider, modelId, variable}`；`skipped` 为对端拒绝的每个模型条目列出 `{projectId, provider, modelId, code, reason}`。两者都只含本 Project 的条目。
-- `reconnect`：服务器正在把一台保持连接的机器连回来时出现：`{since, attempts, nextAt, lastError, sshReason?, diagnosis, waitsForPassword?}`——这一轮从何时开始、已失败几次、下次何时尝试（正在尝试时为 `null`）、最近一次失败的对端原话、ssh 拒绝时的原因、连续失败 3 次后运行的连接检查（此前为 `null`），以及保存的密码被拒后的 `waitsForPassword: true`——此后在密码改变之前不再尝试。
+- `reconnect`：服务器正在把一台保持连接的机器连回来时出现：`{since, attempts, maxAttempts, nextAt, gaveUp?, lastError, sshReason?, diagnosis, waitsForPassword?}`——这一轮从何时开始、已失败几次与失败几次即停止、下次何时尝试（正在尝试时与停止后为 `null`）、停止的原因（`attempts` 或 `ssh`，重试后清除）、最近一次失败的对端原话、ssh 拒绝时的原因、连续失败 3 次后运行的连接检查（此前为 `null`），以及保存的密码被拒后的 `waitsForPassword: true`——此后在密码改变之前不再尝试。
 - `passwordSaved`：本服务器用自己保存的密码登录这台机器时为 `true`（见上文）。
 - `member`：机器在本 Project 的列表中时为 `true`，机器管理页为它显示一张卡片。`POST …/add` 只把它加入列表而不安装；`POST …/use` 在被要求时就把它加入列表，因此首次安装失败的机器连同它的任务留在列表中，直到被删除。
 - `checkoutImage`：仅当本服务器从源码检出运行（`pnpm dev`、`pnpm desktop`）时出现。这样的服务器在每次安装或启用机器时，用与热推送相同的打包器（`scripts/deploy.mjs --out`）从检出构建安装镜像，存放在 `<root>/machines/checkout-image/` 下，从不写进自己的 `hmr/`。字段为 `{state}`：`unbuilt`、`building`、`built`，或 `failed` 并在 `detail` 中带上构建输出的最后几行。构建失败时，该任务停在 `build the install image` 这一步。
@@ -266,6 +268,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `installed`：本服务器最近一次在那台机器上执行的安装，格式为 `{version, at}`；从未安装过则为 `null`。它保存在数据根目录下，因此重启、热推送和其他机器上的安装都不会使它丢失。它记录的是实际执行过的操作，并不核对远端状态，所以手动清空过的机器仍会显示为已安装，直到下一次安装把它纠正过来。安装失败不会留下任何记录。
 - `machineId`：机器自身的 id，由运行在那台机器上的服务器生成（记录在它的 `machine` 表中），共 16 个 base64url 字符。重命名、修改别名和重新安装都不会改变它，持久化引用应指向它。在那台机器上启动过服务器之前，它为 `null`，因为还没有任何东西生成过它。本服务器在与 `status` 同一次往返中获知它，并把它与安装记录存放在一起。同一主机的两个别名报告相同的 `machineId`。
 - `local`：标记本服务器所在的机器。由于应答请求的正是它，这条记录始终在列表中，始终显示为已安装且正在运行；它也永远不会成为安装目标：对它调用 `POST …/install` 返回 `409` `self_install`。
+- `socket`：本服务器对那台机器持有的 API 套接字，形如 `{state, since, detail?}`——握手完成后为 `connected`，拨号尚未结束时为 `dialling`，机器对握手回了状态码时为 `refused`，拨号本身失败时为 `failed`——`since` 是进入该状态的时刻，`detail` 在有话可说时携带传输层自己的原话。本地这条记录为 `null`；在有任何流索要过套接字之前同样为 `null`。它与 `connection` 一样，是关于本侧某个进程的事实；Machines 页读它，卡住的流就不必再去浏览器控制台里找。
 - `status`：`{state, checkedAt, port?, detail?}`，其中 `state` 为 `running`、`stopped` 或 `unreachable`；从未探测过的机器为 `null`。没有单独的 ssh 状态。ssh 就是传输通道，连不上的机器即为 `unreachable`，`detail` 携带 OpenSSH 自己的报错信息。`GET` 从不主动探测，只报告最近一次的结果，因为每探测一台机器都要花费一次 ssh 往返，而列表本身只是配置文本。只有 `POST …/machines/probe` 会付出这些往返开销，而且只针对已安装的机器。
 
 ### 已连接机器的 API
@@ -276,7 +279,34 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 该代理仅限管理员，且只使用单一身份：请求在对端以那台机器的管理员身份执行，所用会话由本服务器凭借自身的 ssh 访问能力签发（在那台机器上执行 `penguin auth token`）。浏览器的 Cookie 不会传到对端，机器上的 Cookie 也不会带回本地。只有 `/api` 会转发，前端仍在本地运行。
 
-已连接机器自己的用户级事件经由本服务器而不是代理送到页面：服务器经各机器的 ssh 会话订阅它的 `GET /api/events`，把每个服务端事件包成 `machine_event`（`{machineId, event}`）重新发布到自己的用户事件流上，只发给管理员。因此无论连了多少台机器，页面都只持有一条事件流——浏览器对同一来源只允许 6 条 HTTP/1.1 连接，每台机器一条流的做法连上 5 台就会把它们占满。订阅断开后按上次的事件 id 续订，机器自己的 `resync_required` 同其他事件一样转发。
+启用机器人之前，本服务器还会询问 Project 的每台已连接机器启用了哪些机器人账号（`GET /api/messaging/accounts`），见[跨服务器的机器人账号](#跨服务器的机器人账号)。
+
+已连接机器自己的用户级事件经由 Project 的机器聚合流（`GET /api/projects/:projectId/machines/events`，**socket hub 内每台机器一条事件流**）而不是代理送到页面：hub 经它的套接字对每台机器的 `/api/events` 只持有唯一的一次订阅，给每个服务端事件标上来源机器，只发给管理员。因此无论连了多少台机器，页面都只持有一条事件流——浏览器对同一来源只允许 6 条 HTTP/1.1 连接，每台机器一条流的做法连上 5 台就会把它们占满。订阅断开后按上次的事件 id 续订；缓存无法满足的重放以 `resync_required` 作答，页面据此重新拉取列表。运行着不带 socket hub 版本的机器会对聚合流的拨号回以拒绝，它的事件因此不会实时到达页面；它的行数据仍可经 HTTP 读取，更新该机器后即恢复。
+
+**流只走套接字。** `accept` 要求 `text/event-stream` 的请求，经本服务器对该机器持有的那条套接字转发；若把流经 HTTP 转发，每条流都要占住一条永不结束的响应——即 ssh 会话内的一条通道——每台机器、每条流各一条，正是套接字本应消除的那堆被占住的连接。因此当没有套接字能承载一条流时，代理自己作答，形状即上文的错误形状，浏览器随后按该流自己的退避（1 s 起倍增到 30 s，流打开后归零）重新发起它，而不是去要一个 HTTP 孪生：
+
+- `502` `machine_socket_refused`——机器对套接字握手回了状态码。这正是构建早于套接字的程序，或拒绝了本服务器的程序；该拒绝会被记住一分钟，这一分钟内的流直接作答而不再拨号，旧程序需要 API socket 能力才能使用这些 socket 代理流。
+- `502` `machine_socket_unavailable`——拨号失败。既未打开、也未在 10 s 内失败的拨号会被拆掉而不是继续等待，因此一次卡住的握手永远不能把它之后该机器的所有流堵在后面。此回答不被记忆：下一条流会重新拨号。
+- `504` `machine_stream_not_opened`——套接字在，但机器 8 s 内未打开该流。那是热推把这条套接字留在了已 dispose 的 App 上：心跳让它看起来还活着，实则什么都不答。此时套接字在这里被拆掉，其上每一条流随之结束、由浏览器重新发起，下一条流拨向机器当前的程序。
+
+套接字属于拨出它的那条 ssh 会话，而不只属于机器 id：传输层重开会话时——掉线、重连——旧套接字被关闭，下一条流重新拨号，因此没有哪条套接字能比它所在的连接活得更久。机器自己的非流式回答（`403`、`404`）原样透传；只有上述三个码是代理自己的。
+
+### socket hub 内每台机器一条事件流
+
+Web App 本身就是聚合读取方：它从 Project 聚合流消费远端机器事件，聚合流由 socket hub 供给，因此对一台被关注的机器，唯一的那次订阅同时覆盖 Web App 与每个显式读取方。这里现在是单上游保证——可能另持第二条上游订阅的 HTTP 用户事件 relay 已退役，随它一起退役的还有它不问一声就对每台机器开出的那条服务端订阅。
+
+盯住 N 台机器，过去要花掉标签页 N 条流：它对每台机器各调用一次 `/server/<machineId>/api/events`，于是有 T 个标签页的 hub 就持有 T × N 条上游订阅，一台机器静默下来，其重发风暴还要乘以标签页数。现在 hub 对一台机器的 `/api/events` 只持有唯一的那一次订阅，走的就是它对该机器持有的那条套接字，由它供给 aggregate 与 proxy 读取方。机器事件的每个读取方都由这唯一的一次订阅供给：
+
+- `GET /api/projects/:projectId/machines/events` 是聚合流（与上文路由一样仅限管理员，且调用方须是该 Project 的成员）：无论机器多少，每个标签页只有一条流，承载每台已连接机器的事件，各自带上来源机器的标记。它的帧是 `event: machine_event`，`data: {"machineId": "…", "event": {…ServerEvent}}`，另有按 SSE 节奏发出的 `event: heartbeat`——标签页凭帧判断聚合流是活着还是停住了，与它在 `/api/events` 上的判断方式完全一致。
+- `/server/<machineId>/api/events` 仍然回答单台机器的那条流，取自同一次订阅、用的仍是机器自己的说法：同样的事件、同样的 id、同样按缓冲区尚能覆盖的边界用 `last-event-id` 重放。
+
+每次订阅都按机器带自己的重放缓冲区——最近 10,000 个事件或 8MB，先到者为准，与通道相同。读取方带回的 `last-event-id` 由它作答：仍在缓冲区内的 id 从其后重放；缓冲区从未持有过（或已被挤出）的 id 先得到 `resync_required`；不带 id 的新读取方先得到 `hello`，与 `/api/events` 一致。缓冲区按**机器**有界，绝不按读取方有界：不再消费的读取方，其流被结束，而不是无界地替它缓存，之后它带着自己的 last event id 重新发起。
+
+**静默下来的流会被发现。** 机器的 `/api/events` 每 20 秒写入一个 `heartbeat` 服务器事件，节奏与套接字自身的心跳相同——但它在流上，而套接字的心跳是看不见的。这正是董事会那份控制台报告里第二种情形得以显形的原因：热推送把某台机器的 App dispose 掉之后，套接字心跳照旧，流上却什么都不来。hub 在漏掉两拍后结束这条上游订阅，并用机器给出的 last event id 重新订阅；浏览器按同样的规则结束自己那条流，并带着 `last-event-id` 重新发起。两拍是对"还在"最省也最诚实的读法：没话可说的机器也照样打拍。
+
+**一次拨号失败不会结束标签页的盯守。** 标签页从不为某一台机器重新发起——无论背后的机器怎样，它的聚合流都靠 hub 自己的心跳保持打开——所以只要标签页还连着，hub 就替它聚合流盯着的每台机器持续拨号。拨号失败时（10 秒内没有套接字握手、当前没有持有到该机器的 ssh 会话、机器始终没有打开流），hub 按浏览器同样的退避再拨：1 秒起、逐次翻倍、最长 30 秒。每次重拨前它都重新读取一次该机器的连接，因为失败那次拨号所走的 ssh 会话可能已被替换。此期间，Machines 页上该机器的 `socket` 在 `dialling` 与 `failed` 之间切换，一次拨号成功后读作 `connected`。随后流从机器给出的最后一个 event id 续上，与静默之后的重订相同：机器自己的缓冲还留着时，标签页补收错过的事件，否则收到 `resync_required`。同一个失败反复出现时，每一轮只写一次日志、只记一行错误表，而不是每次拨号都记。`/server/<machineId>/api/events` 的读取方照旧立刻收到失败并按自己的退避重新发起；没有标签页再盯着这台机器时，hub 停止拨号。
+
+**后来连上的机器会加入已打开的标签页流。** 标签页聚合流承载哪些机器，并不在开流那一刻定死。聚合流每打一次心跳，就重新读取一次本 Project 的机器里本服务器持有连接的有哪些，把还没接上的接进来：从这个标签页启用的机器、重启或热推送之后重新持有的机器、标签页打开时 ssh 会话正在重开的机器，都属此列。这样的机器在它的连接可读之后一次心跳（20 秒）之内，加入标签页已持有的那条流，此后与上文其他机器一样被盯守。已经接上的机器不会在每次心跳时再读一遍。
 
 ### 任务
 
@@ -615,6 +645,8 @@ interface AgentApiKeyInfo {
 | GET / PUT / DELETE | `/agents/:agentId/schedules/:name` | 读取 / 更新 / 删除单个任务 |
 
 定时任务的写操作仅限所有者。新建 Session 模式的任务，`modelId` 和 `provider` 要么同时携带，要么都不带。保存任务时会对照 Project 的模型表校验这对值；调度器核对任务时还会再校验一次。
+
+一次性任务的 `startAt` 已过，或任何任务的 `endAt` 已过时，`POST` 和 `PUT` 返回 400。列表从不包含已完成、已错过或已过期的任务：调度器会把其文件归档到 `agent_state/schedule/expired/`（见[结束的任务会归档](/schedules#结束的任务会归档)），所以这类任务只在仍有排队待发的触发、或移动失败时才会出现。
 
 ## Benchmark
 
@@ -1079,6 +1111,21 @@ Session 可以连接消息机器人。目前支持的渠道是飞书、Telegram�
 - 飞书、Telegram 和 QQ 的 test 路由用请求中的草稿值探测，缺少的值回退到已存储的配置；微信的 test 不接受请求体（见下文）。凭据未通过验证时返回 `ok: false`，而不是 HTTP 错误。
 - test-message 路由在有人在对应应用里给机器人发过消息之前，返回 409 `feishu_no_chat`、`telegram_no_chat`、`qq_no_chat` 或 `wechat_no_chat`。微信的 test-message 路由在微信暂不接受机器人发消息、需要用户先给机器人发一条消息时，另外返回 409 `wechat_needs_recent_message`。测试消息从不暂存。
 
+### 跨服务器的机器人账号
+
+绑定归运行其 Session 的服务器所有。机器上的 Session 把配置存在那台机器的数据库里，从那台机器建立连接，本服务器不在时也照常收发；Web App 通过 `/server/<machineId>/api/sessions/:sessionId/messaging…` 编辑它。上面的按账号规则只在单个服务器内生效。下面两个路由把它扩展到本服务器及其连接的机器，使同一个机器人同一时刻只在一个服务器上启用。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/messaging/accounts` | 仅限管理员：本服务器已启用的全部机器人账号，跨所有 Project → `{accounts: [{channel, accountId}]}` |
+| GET | `/api/projects/:projectId/messaging/account-holders?channel=&accountId=` | 哪些服务器启用了该账号 → `{holders: [{machineId, alias}], unreachable: [{machineId, alias, reason}]}` |
+
+- `accounts` 不含 Session id，也不含密钥。Session 已不存在的绑定不计入，与 `state` 路由的检查一致。
+- `holders` 中 `machineId: null` 且 `alias: null` 表示本服务器；某台机器回答它启用了该账号时才会列出。不会指明任何 Session。
+- `unreachable` 列出 Project 中无法询问的机器：`not_connected`（本服务器没有与它保持连接）、`older_build`（它返回 404，即该路由出现之前的版本，下次连接时会升级）或 `failed`（其他失败的回答）。
+- 任何 Project 成员都可以询问（否则返回 404 `project_not_found`）。只有管理员询问时才会去问各台机器，其他人只得到本服务器的回答。缺少 `channel` 或渠道未知，或 `accountId` 为空，返回 400。
+- 客户端在 `POST …/state` 传入 `{enabled: true}` 之前先询问，另一台服务器持有该机器人时不予启用。持有它的服务器仍会执行自己的 `account_enabled_elsewhere` 检查。
+
 ### 各渠道细节
 
 - 飞书：`baseDomain` 默认为 `https://open.feishu.cn`。
@@ -1179,13 +1226,15 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/terminals` | 列出调用者的终端：`{terminals}` |
-| POST | `/api/terminals` | 打开一个终端：`{cwd?, name?, shell?, cols?, rows?}` → 201，返回终端信息 |
+| POST | `/api/terminals` | 打开一个终端：`{cwd?, name?, shell?, cols?, rows?, sessionId?}` → 201，返回终端信息 |
 | GET | `/api/terminals/:id` | 单个终端的信息 |
+| PATCH | `/api/terminals/:id` | 把终端改记到另一个对话名下：`{sessionId}` → 终端信息 |
 | DELETE | `/api/terminals/:id` | 终止终端；204 |
 | GET | `/api/terminals/:id/capture?start=&end=` | 以纯文本返回屏幕内容 |
 | POST | `/api/terminals/:id/keys` | 发送输入：`{keys, literal?}` → `{ok: true}` |
 
 - `cwd` 默认为用户主目录，`shell` 默认为用户的登录 shell。
+- `sessionId` 指明终端是为哪个对话打开的。每个终端的信息都带这个字段，打开时没有给出则为 `null`；Web App 只列出对话自己的终端。它只是调用者自己终端之间的标记，不是权限；取值既不是非空字符串也不是 `null` 时返回 `400`。`PATCH` 必须带上它（`null` 表示不归任何对话）。
 - `keys` 是字面文本或按键名：`Enter`、`Tab`、`Escape`、`Backspace`、`Space`、`Up`、`Down`、`Left`、`Right`、`Home`、`End`、`PageUp`、`PageDown`、`Delete`，或 `C-c` 这样的组合键。设置 `literal: true` 时，文本按原样发送。shell 已退出的终端返回 `409` `terminal_exited`。
 - 字节流不走这些路由：它是一个 WebSocket，地址为 `GET /api/terminals/:id/stream`（一个 Upgrade 请求）。
 - 缺少有效会话或 token 的请求返回 `401` `unauthorized`。
@@ -1269,7 +1318,8 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
-| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_archived`、`session_deleted`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated`、公司模式的 `org_*` 事件，以及只发给管理员的 `machines_changed` 与 `machine_event` |
+| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_archived`、`session_deleted`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated`、公司模式的 `org_*` 事件，以及只发给管理员的 `machines_changed` |
+| 每个 Project 的机器 | `GET /api/projects/:projectId/machines/events` | 每台已连接机器自己的事件，各自带上来源机器的标记，由 hub 每台机器唯一的那次订阅合并而来（**socket hub 内每台机器一条事件流**） |
 
 ### 传输格式
 
@@ -1294,6 +1344,7 @@ export type ServerEvent =
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
+  | { type: "heartbeat" }
   | { type: "web_updated"; rev: string }
   | { type: "machines_changed" }
   | { type: "machine_event"; machineId: string; event: ServerEvent }
@@ -1322,6 +1373,7 @@ export type ServerEvent =
 | `resync_required` | `Last-Event-ID` 已被挤出缓冲区；客户端必须重新拉取历史 |
 | `credentials_updated` | Project 的模型凭据发生变化 |
 | `hello` | 用户通道上的握手 |
+| `heartbeat` | 流自身的拍子，每 20 秒一次：出现在 `/api/events` 和机器的聚合流上，读取方据此分辨流是活着还是停住了 |
 | `web_updated` | 热更新替换了对外提供的 web 资源；客户端需重新加载 |
 | `session_created` | 一个 Session 现在存在了：由 Web App、CLI、定时任务或 Agent 派生子 Session 创建 |
 | `session_archived` | Session 被归档或取消归档 |
@@ -1343,6 +1395,7 @@ export type ServerEvent =
 - 以下情况会触发 `session_background`：命令超过让出窗口转入后台，或以 `run_in_background` 启动；进程退出或停止；后台子 Agent 开始一轮、结束一轮或释放。事件携带 `SessionInfo.backgroundTasks` 的当前值（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转入后台、正处于一轮中的子 Agent Session 数），归零时同样发送，列表无需重新拉取就能撤下标记。两个计数都为零时，列表行和单个 Session 的 GET 会省略这个字段。受众与 `session_state` 相同。
 - 以下情况会触发 `session_approvals`：工具调用升级给人审批（`always-ask` 下的每个调用，`read-only` 下读写或权限未知的调用）；某个审批得到回答；中断拒绝了所有等待中的审批（只发一个事件）。`count` 是 Session 当前的 `pendingApprovalCount`，归零时同样发送。调用本身以 `approval_request` 出现在该 Session 自己的流上，订阅时会重放。受众与 `session_state` 相同。
 - `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
+- `heartbeat` 由端点自己的 SSE 写入方每 20 秒写出一次——出现在 `/api/events` 上和机器的聚合流上（**socket hub 内每台机器一条事件流**）。读取方以它为尺衡量自己的静默：套接字的 ping 和 SSE 注释行对流的使用者都是不可见的，若没有它，一条套接字仍健康、流却停住的连接会永远看起来像活着。
 - `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。
 - `session_created` 在每次创建时发送到 Project 所有者和成员的用户通道；子 Agent Session 还会同时发送到父 Session 的通道。`source` 是新 Session 的 `session_meta` 所记录的来源。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告。
 - `session_archived` 在 Session 被归档或取消归档时发送：来自 `PATCH /api/sessions/:id` 设置 `archived`，或已归档对话页的批量取消归档，每个 Session 一个事件。`archived` 是新的状态，列表据此移除已归档的行，或按 id 取回取消归档的行。它发送到 Project 所有者和成员的用户通道。
@@ -1359,6 +1412,7 @@ export type ServerEvent =
 - 初始事件之后立即发送一个 `ping` 事件（`data: {}`，没有 `id:` 行），之后每 20 秒一次。与注释行不同，浏览器会把它交给页面，所以收到过它的客户端可以把长时间的静默判定为连接已死。它不带 id，既不改变客户端的 `Last-Event-ID`，也不改变重放位置。同一次心跳会复查连接背后的会话，会话已删除或已过期时结束该流，因此登录被吊销的客户端会立即停止接收，而不必等到下一次请求失败才发现。直接吊销会话的操作——管理员重置密码或删除账号——会当场结束该用户所有打开中的流，心跳是兜底。以本地 API token 鉴权的流没有对应的会话记录，不受影响。
 - socket 连续 40 秒没有发出任何数据的流会被关闭（有写入挂起时最长 80 秒）。`ping` 每 20 秒一次，只有对端已不再读取时（半开的连接、卡住的代理），流才会安静这么久。仍然在线的客户端会发现流已结束，随即重连，并从最后一个事件 id 续传。
 - 事件顺序：携带 `Last-Event-ID`（或 `lastEventId`）重连时，先到达重放的缺失部分（或 `resync_required`），然后是初始事件（权威的 `task_state` 快照和所有仍待处理的 `approval_request`），再是一个 `ping`，最后是实时流。两者都不带的新连接跳过重放，第一个事件就是 `task_state` 快照。
+- 用户流与机器聚合流还每 20 秒发送一个 `heartbeat` 服务器事件，供各流自己的 watchdog 使用。
 
 ### 推荐的客户端模式
 
@@ -1370,6 +1424,33 @@ export type ServerEvent =
 4. 重放缓存的事件，去掉重叠部分。
 5. 之后继续处理实时流。
 6. 流发送过 `ping` 之后，50 秒内没有收到任何事件即判定连接已死：关闭它，并以查询参数 `?lastEventId=` 带上最后收到的 id 重新连接。页面重新可见时立即检查一次，因为后台的定时器会延迟执行。从不发送 `ping` 的流来自早于心跳事件的服务器，交给浏览器自带的重连处理。
+
+## API 套接字（WebSocket）
+
+API 套接字是同一个 API 的第二种传输，供自带的 Web App 使用（PRFC-0011）：一个标签页一条套接字，每一帧是对既有端点的一次调用，每个长期的流是一次不结束的调用。上文没有任何东西是它特有的——HTTP 与套接字进入同一批路由，一次调用的授权、校验与应答与它的 HTTP 孪生完全一致。
+
+它在终端流的 upgrade 路径上打开，用一个以登录用户命名的保留 id：`GET /api/terminals/api-socket@<userId>/stream`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath(userId)` 负责拼写）。握手就是终端流的握手——会话 Cookie、同源的 `Origin`（或没有）、以及 id 的 owner 必须是登录用户本人，admin 的 Cookie 打不开 `api-socket@alice`——之后套接字以该用户的身份服务每次调用。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
+
+帧是 JSON 文本帧，id 由客户端分配、在套接字生命周期内唯一：
+
+```jsonc
+// 客户端 -> 服务端
+{ "id": 1, "call": { "method": "GET", "path": "/api/projects" } }
+{ "id": 2, "call": { "method": "GET", "path": "/api/sessions/session-…/stream", "headers": { "last-event-id": "3-41" } } }
+{ "id": 3, "call": { "method": "GET", "path": "/server/<machineId>/api/events" } }   // 机器的端点，路径与代理相同
+{ "id": 4, "call": { "method": "GET", "path": "/api/projects/<projectId>/machines/events" } }   // 所有机器的事件，只有一条流
+{ "id": 2, "cancel": true }                                                          // 结束一次流式调用
+
+// 服务端 -> 客户端
+{ "id": 1, "status": 200, "headers": { "date": "…" }, "body": { "projects": [] } }   // 一次性响应：一帧
+{ "id": 2, "status": 200, "stream": true, "headers": { "content-type": "text/event-stream" } }
+{ "id": 2, "event": "server_event", "eventId": "3-42", "data": "{\"type\":\"task_state\"}" }   // 即 SSE 的 event / id / data
+{ "id": 2, "end": true, "reason": "closed" }                                        // "lagging"：带 last-event-id 重新发起
+```
+
+`call.headers` 只接受 `last-event-id`、`accept` 与 `content-type`；凭据来自握手。JSON 正文以 `application/json` 发送；多部分正文与二进制响应（下载）不经套接字——后者回 `415 unsupported_transport`，客户端改用 fetch。服务端按 SSE 心跳的节奏 ping，两拍无应答即断开；发送积压超过水位的客户端，其流以 `reason: "lagging"` 结束——上文的投递保证对重新发起的调用与对一次重连完全相同。
+
+显式 Project aggregate 与 socket proxy 读取方的上游传输只走套接字。对于单机器 socket proxy 流，当没有通往该机器的套接字能承载这条流时，proxy 以 `502`/`504` 作答，原因见上文 **已连接机器的 API**，绝不改走 HTTP 转发，由该 proxy 读取方按自身退避重新发起。Project aggregate 对被关注机器的 dial/open 失败采用不同处理：聚合流自身保持打开，由 hub 在后台重试该机器，读取方不会因该机器失败而重开聚合流；只有聚合流自身结束、静默或因背压被结束时，才由读取方重开聚合流。显式聚合读取方只开一次调用——`GET /api/projects/<projectId>/machines/events`——而不是每台机器各开一次 proxy 调用；hub 把每台机器一次订阅扇入其中，并给事件标上来源机器（**socket hub 内每台机器一条事件流**）。该聚合读取方的流数量与机器数无关；socket hub 每台机器只持有一条上游流，不是每个读取方每台机器各一条。这描述的既是显式 aggregate/proxy 路径，也是默认的 Web App：它像任何显式读取方一样读取聚合流，每台机器一次订阅的保证同样覆盖它。
 
 ## 类型导入
 

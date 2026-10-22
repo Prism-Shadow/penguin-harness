@@ -155,7 +155,6 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
 import { tabKey } from "../dock/dock-state";
-import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { WorkspaceTreeView } from "./workspace-tree-view";
 
 /**
@@ -2620,7 +2619,7 @@ export function WorkspaceBrowser({
         {drag.active && (
           <DropOverlay
             variant="frame"
-            glyph={PAPERCLIP_ICON}
+            glyph={ICONS.paperclip}
             title={S.files.dropToUpload(dirLabel(drag.targetDir))}
           />
         )}

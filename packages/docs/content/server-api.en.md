@@ -220,14 +220,16 @@ Installs this server's build on other hosts over ssh and manages the connections
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/machines` | This machine and the host aliases in the server's own `~/.ssh/config`, with this Project's installs, the last statuses and every machine's job: `{machines: [{id, alias, machineId, installed, elsewhere?, member?, local, connection, keepConnected?, reconnect?, api, configSync?, status}], imageVersion, job, jobs}` |
+| GET | `/api/projects/:projectId/machines` | This machine and the host aliases in the server's own `~/.ssh/config`, with this Project's installs, the last statuses and every machine's job: `{machines: [{id, alias, machineId, installed, elsewhere?, member?, local, connection, socket, keepConnected?, reconnect?, api, configSync?, status}], imageVersion, job, jobs}` |
 | GET | `/api/projects/:projectId/machines/ssh-hosts` | Every host in the ssh config (included files too) with the `user`, `hostName` and `port` its own block names, literally: `{hosts: [{alias, hostName?, user?, port?}]}` |
 | POST | `/api/projects/:projectId/machines/add` | Puts `{machines: [id…]}` on this Project's list without installing anything; answers the list and `refused` by id |
+| GET | `/api/projects/:projectId/machines/events` | One SSE stream for this Project's connected machines: every machine's own events, each tagged with the machine it came from, on the hub's one subscription per machine — see **One event stream per machine within the socket hub** |
 | POST | `/api/projects/:projectId/machines/probe` | Asks this Project's installed machines what they are doing (one ssh round trip each, five at a time) and returns the list with fresh statuses |
 | POST | `/api/projects/:projectId/machines/use` | Brings `{machines: [id…]}` into use as one batch — install or update where needed, start, connect, hand over the Project config — and puts them on this Project's list; `202` with the list and `refused` by id |
 | POST | `/api/projects/:projectId/machines/stop-using` | Deletes `{machines: [id…]}` from this Project: drops each connection and stops keeping it connected; the program and its data stay on the machine, its host in the ssh config |
 | POST | `/api/projects/:projectId/machines/:machineId/install` | Starts installing this build on that host and assigns the host to this Project; `202` with the same body while the job runs |
 | POST | `/api/projects/:projectId/machines/:machineId/connect` | Starts that machine's server and holds the one connection to it, keeping it connected from then on; `202` with the same body while the connect job runs |
+| POST | `/api/projects/:projectId/machines/:machineId/reconnect` | Retries bringing back a machine this server keeps connected: skips the rest of the wait before its next attempt (the count stays), or starts a new round of attempts after the automatic ones stopped (eight failures in a row, or an ssh failure no retry fixes); nothing while an attempt runs or the machine is connected. `200` with the list, or `409` (`job_running`, `password_refused`, `not_kept_connected`) |
 | POST | `/api/projects/:projectId/machines/:machineId/disconnect` | Drops the connection, stops keeping it connected, and leaves the remote server running |
 | POST | `/api/projects/:projectId/machines/:machineId/restart` | Stops that machine's server and starts it again on the same port; `202`, or `409` while a job runs on it |
 | POST | `/api/projects/:projectId/machines/:machineId/stop` | Stops that machine's server and stops keeping it connected; the install stays. `202`, or `409` |
@@ -242,7 +244,7 @@ These routes are admin only on a personal server as much as on a multi-user one:
 - `POST …/install` accepts the body `{replaceProgram: true}` to answer a job that came back asking for it: the server installs the program even though its version already matches, and restarts it.
 - A host can sign in with a password instead of a key. `POST …/ssh-hosts` and `PUT …/ssh-hosts/:alias` take `password`: a string stores it, and on a `PUT` `null` deletes it and leaving it out keeps it. A `PUT` on a block written by hand may set the password alone, sending the block's own fields unchanged. `GET …/ssh-hosts/:alias` and the list answer `passwordSaved: true` while one is stored, and never the password. It is kept in a 0600 file under `<root>/machines/ssh-passwords/`, never in the ssh config, the database or a log, and reaches ssh only through `SSH_ASKPASS`, in the environment of that one ssh process; such a machine is offered no key and asked once per method. A password ssh refuses is not tried again until a password is saved for the machine again or removed: a job fails at once with `sshReason: "password-rejected"` (`"password-not-offered"` when the host takes no password), and a machine kept connected stops retrying with `reconnect.waitsForPassword`. Deleting the machine from the last Project using it deletes its password. `400` `ssh_password_invalid` for an empty or multi-line password; `409` `ssh_password_unsupported` when this computer's OpenSSH cannot be handed one (on Windows, before 8.4), with what `ssh -V` said in `details.ssh`.
 - `POST …/connect` holds an `ssh -T -D` session that never times out when idle. A Windows machine returns `409` `connect_unsupported`, because there is no shell to hold a session on.
-- A machine once connected is **kept connected** (`keepConnected`) until it is stopped (`POST …/stop`), deleted (`POST …/stop-using`) or disconnected: when its ssh session drops, its server stops or restarts, or this server itself restarts, the server brings it back on its own — probing it, starting its server if it is not running, holding the connection again and handing over the Project config. A failed attempt waits twice as long as the one before, from 5 seconds up to 5 minutes; while it lasts the machine carries `reconnect`, and after three failures in a row the connection check below runs on its own and its answer is kept there. Nothing is retried while a job works on the machine.
+- A machine once connected is **kept connected** (`keepConnected`) until it is stopped (`POST …/stop`), deleted (`POST …/stop-using`) or disconnected: when its ssh session drops, its server stops or restarts, or this server itself restarts, the server brings it back on its own — probing it, starting its server if it is not running, holding the connection again and handing over the Project config. A failed attempt waits twice as long as the one before, from 5 seconds up to 5 minutes, and after eight failures in a row (about fifteen minutes) the automatic attempts stop; an ssh failure no retry fixes — a host key unknown or changed, an unusable key file, a refused key, a broken ssh config — stops them at the first. `POST …/reconnect` retries: at once, and after a stop from the first attempt again. While it lasts the machine carries `reconnect`, and after three failures in a row the connection check below runs on its own and its answer is kept there. Nothing is retried while a job works on the machine; a restart of this server begins every streak again.
 - What a machine is handed is the config of every Project using it: the models with their groups' connections, the default and vision model and the Project's name, the sandbox command policy (`PUT …/command-policy` over there), the new-chat defaults (`PUT …/chat-defaults`; the workspace, a directory on this server, stays the machine's own, and a default Agent the machine lacks leaves its own in place), and the plugin list. A part the machine refuses for one Project is logged and the rest still go. A model entry the machine refuses by name (`model_not_addable`, `model_not_routable`, see `PUT /models`) is left out and the rest of the table is written; a default or vision model pointing at it is not sent. A value this server takes from its environment variables (a key or a base URL a model entry does not hold) is not in the config and never travels. The config goes over at every connect, at `POST …/sync`, and on its own, to the connected machines on this server's image, after every write to a Project's config here: the models, the default model, the command policy, the new-chat defaults, a rename, and the plugin list.
 - Before the Project config is handed to a machine — by a connect, a use, or a machine brought back on its own — the server asks the machine's server what it runs (`GET /api/version`). A server that is not running the build installed there, such as a release's own server started on that data root, is restarted onto that build. A server on a build other than this server's image is given the image through its update channel first. When neither works, the job stops at `sync` with what the machine runs and that it must be updated, and nothing is handed over. A machine whose server cannot be asked is connected without the hand-over, and the log says why. A config edit reaches only the connected machines that run this server's image.
 - `POST …/sync` is a job with the steps `check` and `sync`. Its check asks the machine what it runs, as a connect does, but changes nothing: a machine on another build fails at `check` with the same sentence, and is brought in line by an update. A machine that is not connected returns `409` `not_connected`.
@@ -258,7 +260,7 @@ These routes are admin only on a personal server as much as on a multi-user one:
 - `elsewhere`: the host was installed by another Project, so it can be adopted instead of installed.
 - `keepConnected`: `true` while this server keeps the machine connected (see above); absent for a machine only added, stopped, deleted or disconnected.
 - `configSync`: what the last config sync to the machine came to, kept in memory and absent until the first one since this server started: `{at, ok, detail?, envOnly, skipped}`. `detail` holds the parts that did not go through, one per line. `envOnly` lists `{projectId, provider, modelId, variable}` for each value a model entry takes from this server's environment, which the sync cannot carry; `skipped` lists `{projectId, provider, modelId, code, reason}` for each model entry the machine refused. Both hold this Project's rows only.
-- `reconnect`: present while the server brings a machine it keeps connected back: `{since, attempts, nextAt, lastError, sshReason?, diagnosis, waitsForPassword?}` — when the streak began, the attempts that failed, when the next one runs (`null` while one runs), the last failure in the far side's words, why ssh refused when it did, the connection check run after three failures (`null` until then), and `waitsForPassword: true` once the stored password was refused, after which nothing is tried until it changes.
+- `reconnect`: present while the server brings a machine it keeps connected back: `{since, attempts, maxAttempts, nextAt, gaveUp?, lastError, sshReason?, diagnosis, waitsForPassword?}` — when the streak began, the attempts that failed and how many failures stop it, when the next one runs (`null` while one runs, and once it stopped), why it stopped (`attempts` or `ssh`, until a retry), the last failure in the far side's words, why ssh refused when it did, the connection check run after three failures (`null` until then), and `waitsForPassword: true` once the stored password was refused, after which nothing is tried until it changes.
 - `passwordSaved`: `true` when this server signs in to the machine with a password it stores (see above).
 - `member`: `true` when the machine is on this Project's list, its Machines page showing a card for it. `POST …/add` puts it there without installing; `POST …/use` puts it there as soon as it is asked for, so a first install that fails stays on the list with its job until it is deleted (stop-using).
 - `checkoutImage`: present only when this server runs from a source checkout (`pnpm dev`, `pnpm desktop`). Such a server builds its install image from the checkout at every install or use, with the hot push's own packer (`scripts/deploy.mjs --out`), and keeps it under `<root>/machines/checkout-image/`, never in its own `hmr/`. The field is `{state}`: `unbuilt`, `building`, `built`, or `failed` with the build's last lines in `detail`. A failed build ends its job at the step `build the install image`.
@@ -266,6 +268,7 @@ These routes are admin only on a personal server as much as on a multi-user one:
 - `installed`: the last install this server carried out on that machine, as `{version, at}`, or `null` if there was none. It is stored under the data root, so it survives a restart, a hot push and installs on other machines. It records what was done rather than checking the far side, so a machine wiped by hand still shows as installed until the next install corrects it. A failed install records nothing.
 - `machineId`: the machine's own id, 16 base64url characters minted by the server running there (in its `machine` table). It stays the same across renames, alias changes and reinstalls, and stored references should point at it. It is `null` until a server has started on that machine, since nothing has minted it yet. The server learns it on the same round trip as `status` and stores it beside the install record. Two aliases for one host report the same `machineId`.
 - `local`: marks the machine this server runs on. It is always listed, always installed and always running, since it is the one answering, and it is never an install target: `POST …/install` on it returns `409` `self_install`.
+- `socket`: the API socket this server holds to that machine, as `{state, since, detail?}` — `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused` when the machine answered the handshake with a status, `failed` when the dial itself failed — with `since` the instant that state was entered and `detail` the transport's own words where there are any. It is `null` for the local entry, and until a stream has asked for a socket at all. It is a fact about one process on this side, exactly like `connection`, and the Machines page reads it so a stuck stream does not have to be found in the browser console.
 - `status`: `{state, checkedAt, port?, detail?}`, where `state` is `running`, `stopped` or `unreachable`; `null` when the machine has never been probed. There is no separate ssh status. Because ssh is the transport, a machine ssh cannot reach is `unreachable`, and `detail` carries OpenSSH's own message. `GET` never probes and reports the last answer, because a probe costs one ssh round trip per machine while the list itself is only the config's text. Only `POST …/machines/probe` spends those round trips, and only on machines that have an install.
 
 ### Connected machine API
@@ -276,7 +279,34 @@ The URL uses the machine's own id rather than the ssh alias it was reached throu
 
 This proxy is admin only and uses one identity: the request runs on the far side as that machine's admin, with a session this server mints through its own ssh access (`penguin auth token` on the machine). The browser's cookies never go across, and the machine's cookies never come back. Only `/api` is forwarded; the frontend stays local.
 
-A connected machine's own user-level events reach a page through this server rather than through the proxy: the server subscribes to each machine's `GET /api/events` over its ssh session and republishes every server event as `machine_event` (`{machineId, event}`) on its own user stream, to admins. A page therefore holds one event stream however many machines are connected — a browser allows six HTTP/1.1 connections to one origin, and a stream per machine used them all up with five. A subscription that ends is resumed from the last event id, and the machine's own `resync_required` is relayed like any other event.
+Before a bot is turned on, this server also asks each connected machine of the Project which bot accounts it has enabled (`GET /api/messaging/accounts`); see [Bot accounts across servers](#bot-accounts-across-servers).
+
+A connected machine's own user-level events reach a page through the Project's machines aggregate (`GET /api/projects/:projectId/machines/events`, **One event stream per machine within the socket hub**) rather than through the proxy: the hub holds ONE subscription to each machine's `/api/events` over its socket and tags every server event with the machine it came from, to admins. A page therefore holds one event stream however many machines are connected — a browser allows six HTTP/1.1 connections to one origin, and a stream per machine used them all up with five. A subscription that ends is resumed from the last event id, and a replay the buffer could not honour is answered with `resync_required`, which refetches the page's lists. A machine running a build without the socket hub answers the aggregate's dial with a refusal, so its events do not reach the page live; its rows are still read over HTTP, and updating that machine restores them.
+
+**Streams ride the socket, and only it.** A request whose `accept` asks for `text/event-stream` is relayed over the socket this server holds to that machine; a stream forwarded over HTTP would be a never-ending response — one channel inside the ssh session — held per stream per machine, which is the pile of held connections the socket exists to remove. So when no socket can carry a stream, the proxy answers the request itself, in the error shape above, and the browser re-issues that stream on its own backoff (1 s doubling to 30 s, reset once the stream opens) rather than asking for an HTTP twin:
+
+- `502` `machine_socket_refused` — the machine answered the socket handshake with a status. That is a program predating the socket, or one that turned this server away; the refusal is remembered for a minute, so the streams of that minute are answered at once instead of dialling again, and an older program needs API socket support to use these socket proxy streams.
+- `502` `machine_socket_unavailable` — the dial to the machine failed. A dial that has neither opened nor failed within 10 s is torn down rather than awaited, so one stuck handshake can never hold every later stream of that machine behind it. This answer is not remembered: the next stream dials again.
+- `504` `machine_stream_not_opened` — the socket is up, but the machine has not opened the stream within 8 s. That is a socket left bound to an App a hot push disposed: the heartbeat keeps it looking alive while nothing is answered. It is torn down here, which ends every stream on it so the browser re-issues each, and the next stream dials the machine's current program.
+
+The socket belongs to the ssh session it was dialled through, not to the machine id alone: when the transport reopens the session — a drop, a reconnect — the socket dialled over the old one is closed and the next stream dials anew, so none outlives the connection it was made on. A machine's own non-streaming answer (a `403`, a `404`) is passed through as it is; only these three codes are the proxy's own.
+
+### One event stream per machine within the socket hub
+
+The Web App is an aggregate reader: it consumes remote machine events from the Project aggregate, which the socket hub serves, so a watched machine's one subscription covers the Web App and every explicit reader alike. This is now a single-upstream guarantee — the HTTP user-event relay that could hold a second upstream subscription is gone, along with the server-side subscription it opened to every machine without asking.
+
+Watching N machines used to cost a tab N streams: it called `/server/<machineId>/api/events` once per machine, so a hub with T tabs held T × N upstream subscriptions, and one machine going quiet multiplied its re-issue storm by the number of tabs. The hub now holds ONE subscription to a machine's `/api/events`, over the same socket it holds to that machine, and serves its aggregate and proxy readers from it. Every reader of a machine's events is served from this one subscription:
+
+- `GET /api/projects/:projectId/machines/events` is the aggregate (admin only, on a Project this caller is a member of, like the routes above): one stream per tab whatever the machine count, carrying every connected machine's events, each tagged with the machine it came from. Its frames are `event: machine_event` with `data: {"machineId": "…", "event": {…ServerEvent}}`, and `event: heartbeat` on the SSE cadence — a tab tells a live aggregate from a stalled one by its frames, exactly as it does on `/api/events`.
+- `/server/<machineId>/api/events` keeps answering one machine's stream, out of that same subscription and in the machine's own words: the same events, the same ids, the same replay by `last-event-id` at the boundary the buffer still holds.
+
+A subscription carries its own replay buffer per machine — the most recent 10,000 events or 8MB, whichever comes first, like a channel's. That buffer is what answers a `last-event-id` a reader brings back: an id still in it is replayed from, an id the buffer never held (or has already evicted) is answered with `resync_required` first, and a fresh reader without one is answered with `hello`, as on `/api/events`. The buffer is bounded per MACHINE, never per reader: a reader that stops consuming has its own stream ended rather than buffered without limit, and re-issues it with its last event id.
+
+**A stream that goes silent is detected.** A machine's `/api/events` writes a `heartbeat` server event every 20 seconds, the same cadence as the socket's own ping — on the stream, where the socket's ping cannot be seen. That is what makes the second case of the board's console report visible: a machine whose App an earlier hot push disposed keeps the socket heartbeat while nothing arrives on the stream. The hub ends such an upstream subscription after two missed beats and re-subscribes it with the last event id the machine gave it; the browser ends its own stream on the same rule and re-issues it with its `last-event-id`. Two beats is the cheapest honest reading of "still there": a machine with nothing to say still beats.
+
+**A failed dial does not end a tab's watch.** A tab never re-issues for one machine — its aggregate stays open on the hub's own beat whatever the machines behind it do — so the hub keeps dialling each machine a tab's aggregate watches while that tab is attached. When a dial fails (no socket handshake in 10 seconds, no ssh session held to the machine, a stream the machine never opens), the hub dials again on the browser's backoff: 1 second, doubling to at most 30. Before each new attempt it re-reads the machine's connection, because the ssh session the failed dial rode may have been replaced. On the Machines page the machine's `socket` moves between `dialling` and `failed` while this goes on, and reads `connected` once a dial succeeds. The stream then resumes from the machine's last event id, as after a silence, so a tab hears what it missed if the machine's own buffer still holds it, or `resync_required` if it does not. The same failure repeated is logged and filed in the error table once per run, not once per dial. A reader of `/server/<machineId>/api/events` is still answered the failure at once and re-issues on its own backoff, and the hub stops dialling once no tab watches the machine.
+
+**A machine connected later joins an open tab's stream.** The set of machines a tab's aggregate carries is not fixed when the stream opens. On each of its heartbeats the aggregate reads again which of the Project's machines this server holds a connection to, and attaches any it does not carry yet: a machine brought into use from that tab, one re-held after a restart or a hot push, or one whose ssh session was being reopened when the tab opened. Such a machine joins within one heartbeat (20 seconds) of its connection being readable, on the stream the tab already holds, and from then on it is watched like the others above. A machine already attached is not read again on each beat.
 
 ### Jobs
 
@@ -615,6 +645,8 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET / PUT / DELETE | `/agents/:agentId/schedules/:name` | Reads / updates / deletes a single task |
 
 Schedule writes are owner only. A task in new-Session mode carries `modelId` and `provider` together or not at all. The pair is checked against the Project's model table when the task is saved, and again when the scheduler reconciles it.
+
+A `POST` or `PUT` is refused with 400 when `startAt` has passed on a one-shot task, or `endAt` has passed on any task. The listings never include a task that is done, missed or expired: the scheduler archives its file into `agent_state/schedule/expired/` (see [Finished tasks are archived](/schedules#finished-tasks-are-archived)), so such a task only shows while a queued fire is still to be sent, or if the move failed.
 
 ## Benchmarks
 
@@ -1079,6 +1111,21 @@ A Session can be connected to a messaging bot. The channels today are Feishu, Te
 - The Feishu, Telegram and QQ test routes probe with the draft values in the request, each falling back to the stored config; the WeChat test takes no body (see below). A rejected credential is `ok: false`, not an HTTP error.
 - The test-message routes return 409 `feishu_no_chat`, `telegram_no_chat`, `qq_no_chat` or `wechat_no_chat` until someone has messaged the bot once in that app. On WeChat the route also returns 409 `wechat_needs_recent_message` when WeChat will not take a bot message until the user messages the bot again. The test message is never held.
 
+### Bot accounts across servers
+
+A binding belongs to the server that runs its Session. A Session on a machine keeps its configs in that machine's database and connects from that machine, and it keeps relaying while this server is away; the Web App edits it through `/server/<machineId>/api/sessions/:sessionId/messaging…`. The per-account rule above holds within one server. These two routes extend it to a server and the machines it connects, so that a bot is enabled on one server at a time.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/messaging/accounts` | Admin only: every bot account this server has enabled, across Projects → `{accounts: [{channel, accountId}]}` |
+| GET | `/api/projects/:projectId/messaging/account-holders?channel=&accountId=` | Which servers have that account enabled → `{holders: [{machineId, alias}], unreachable: [{machineId, alias, reason}]}` |
+
+- `accounts` carries no Session ids and no secrets. A binding whose Session no longer exists does not count, as in the `state` route's check.
+- In `holders`, `machineId: null` with `alias: null` is this server; a machine is listed when it answers that it has the account enabled. No Session is named.
+- `unreachable` lists the Project's machines that could not be asked: `not_connected` (no connection is held to it), `older_build` (it answered 404, a build from before this route; the next connect upgrades it) or `failed` (any other failed answer).
+- Any Project member may ask (404 `project_not_found` otherwise). Machines are asked for an admin only; anyone else is answered for this server alone. A missing or unknown `channel`, or an empty `accountId`, returns 400.
+- A client asks before `POST …/state` with `{enabled: true}` and does not turn the bot on while another server holds it. The server that holds it still applies its own `account_enabled_elsewhere` check.
+
 ### Per-channel details
 
 - Feishu: `baseDomain` defaults to `https://open.feishu.cn`.
@@ -1179,13 +1226,15 @@ Interactive shells on the server host. The Web App's terminals use these routes,
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/terminals` | Lists the caller's terminals: `{terminals}` |
-| POST | `/api/terminals` | Opens a terminal: `{cwd?, name?, shell?, cols?, rows?}` → 201 with the terminal's info |
+| POST | `/api/terminals` | Opens a terminal: `{cwd?, name?, shell?, cols?, rows?, sessionId?}` → 201 with the terminal's info |
 | GET | `/api/terminals/:id` | One terminal's info |
+| PATCH | `/api/terminals/:id` | Files the terminal under another conversation: `{sessionId}` → the terminal's info |
 | DELETE | `/api/terminals/:id` | Kills the terminal; 204 |
 | GET | `/api/terminals/:id/capture?start=&end=` | The screen contents as plain text |
 | POST | `/api/terminals/:id/keys` | Sends input: `{keys, literal?}` → `{ok: true}` |
 
 - `cwd` defaults to the home directory, and `shell` to the user's login shell.
+- `sessionId` names the conversation the terminal is opened for. Every terminal's info carries it, `null` for one opened without it; the Web App lists a conversation's own terminals only. It is a label within the caller's own terminals, not a permission, and a value that is not a non-empty string or `null` returns `400`. `PATCH` requires it (`null` files the terminal under no conversation).
 - `keys` is literal text or a key token: `Enter`, `Tab`, `Escape`, `Backspace`, `Space`, `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`, `PageDown`, `Delete`, or a control chord such as `C-c`. With `literal: true`, the text is sent exactly as given. A terminal whose shell has exited returns `409` `terminal_exited`.
 - The byte stream does not use these routes: it is a WebSocket at `GET /api/terminals/:id/stream` (an Upgrade request).
 - A request without a valid session or token returns `401` `unauthorized`.
@@ -1269,7 +1318,8 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | `GET /api/sessions/:sessionId/stream` | The Session's message stream and run events, including `session_created` for its subagent Sessions and the goal-mode events |
-| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_archived`, `session_deleted`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated`, company mode's `org_*` events, and for admins `machines_changed` and `machine_event` |
+| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_archived`, `session_deleted`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated`, company mode's `org_*` events, and for admins `machines_changed` |
+| Per Project's machines | `GET /api/projects/:projectId/machines/events` | Every connected machine's own events, each tagged with the machine it came from, merged from the hub's one subscription per machine (**One event stream per machine within the socket hub**) |
 
 ### Wire Format
 
@@ -1294,6 +1344,7 @@ export type ServerEvent =
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
+  | { type: "heartbeat" }
   | { type: "web_updated"; rev: string }
   | { type: "machines_changed" }
   | { type: "machine_event"; machineId: string; event: ServerEvent }
@@ -1322,6 +1373,7 @@ export type ServerEvent =
 | `resync_required` | The `Last-Event-ID` was evicted from the buffer; the client must refetch history |
 | `credentials_updated` | The Project's model credentials changed |
 | `hello` | Handshake on the user channel |
+| `heartbeat` | The stream's own beat, every 20 s: on `/api/events` and on the machines' aggregate, so a reader can tell a live stream from a silent one |
 | `web_updated` | A hot update replaced the served web assets; clients reload |
 | `session_created` | A Session now exists: created by the Web App, the CLI, a schedule, or an agent spawning a child |
 | `session_archived` | A Session was archived or unarchived |
@@ -1343,6 +1395,7 @@ export type ServerEvent =
 - `session_background` fires when a command moves to the background past its yield window or starts with `run_in_background`, when a process exits or is stopped, and when a background subagent starts, settles or is released. It carries `SessionInfo.backgroundTasks` as it now stands (`processes` = background command sessions still running, `subagents` = subagent Sessions moved to the background and mid-round), zeros included, so a list can clear its mark without refetching. The list rows and the single-Session GET omit the field when both counts are zero. Its audience is the same as for `session_state`.
 - `session_approvals` fires when a tool call is escalated to a person (every call under `always-ask`, read-write or unknown-permission calls under `read-only`), when one is answered, and when an interrupt denies the waiting ones (one event for all of them). `count` is the Session's `pendingApprovalCount` as it now stands, zeros included. The calls themselves arrive on the Session's own stream as `approval_request` and are replayed on subscribe. Its audience is the same as for `session_state`.
 - `credentials_updated` follows `PUT /models` or a completed key-minting flow. Cached runtimes were invalidated, so the client clears any composer state disabled by an auth failure.
+- `heartbeat` is written by the endpoint's own SSE writer every 20 seconds — on `/api/events` and on a machine's aggregate stream (**One event stream per machine within the socket hub**). It is what a reader times its own silence by: the socket's ping and the SSE comment line are invisible to a stream consumer, so a stream that stops while the socket stays healthy would otherwise look alive forever.
 - `web_updated` carries the new web revision as `rev` and is sent to every user channel.
 - `session_created` is sent for every creation to the user channels of the Project's owner and members, and for a subagent also on the parent Session's channel. `source` is what the new Session's `session_meta` records. A title set through `PATCH /api/sessions/:id` is announced as `session_title` the same way.
 - `session_archived` is sent when a Session is archived or unarchived: by `PATCH /api/sessions/:id` with `archived`, or by the archive page's batch unarchive, one event per Session. `archived` is the new state, so a list drops an archived row and fetches an unarchived one by id. It goes to the user channels of the Project's owner and members.
@@ -1359,6 +1412,7 @@ export type ServerEvent =
 - A `ping` event (`data: {}`, no `id:` line) is sent right after the initial events and then every 20 seconds. A browser hands it to the page, unlike a comment line, so a client that has received one can treat a long silence as a dead connection. Without an id it moves neither the client's `Last-Event-ID` nor the replay position. The same beat re-checks the session behind the connection and ends the stream when that session is gone or has expired, so a client whose sign-in was revoked stops streaming instead of waiting for its next request to fail. Revoking sessions directly — an admin resetting a password or deleting an account — ends that user's open streams at once; the heartbeat is the catch-all. A stream authenticated by the local API token has no session row and is left alone.
 - A stream whose socket sends nothing for 40 seconds (up to 80 while a write is pending) is closed. With a `ping` every 20 seconds, only a peer that stopped reading, as behind a half-open connection or a stuck proxy, lets a stream go that quiet. A client that is still there finds the stream ended, reconnects and resumes from its last event id.
 - Event order: on a reconnect that carries `Last-Event-ID` (or `lastEventId`), the replayed gap (or `resync_required`) arrives first, then the initial events (the authoritative `task_state` snapshot and any still-pending `approval_request`s), then a `ping`, then the live stream. A fresh connection without either skips the replay, so its first event is the `task_state` snapshot.
+- User and machine-aggregate streams also carry a `heartbeat` server event every 20 seconds for their per-stream watchdog.
 
 ### Recommended Client Pattern
 
@@ -1370,6 +1424,33 @@ The bundled Web App connects in this order:
 4. Replay the buffer, removing the overlap.
 5. Continue with the live stream.
 6. Once the stream has sent a `ping`, treat 50 seconds without any event as a dead connection: close it and reconnect with `?lastEventId=` set to the last id received. Check at once when the page becomes visible, since background timers run late. A stream that never sends `ping` comes from a server older than the heartbeat event; leave it to the browser's own reconnection.
+
+## The API socket (WebSocket)
+
+The API socket is a second transport of the same API, for the bundled Web App (PRFC-0011): one socket per tab, every frame a call to an existing endpoint, every long-lived stream a call that does not end. Nothing above is specific to it — HTTP and the socket enter the same routes, so a call is authorized, validated and answered exactly as its HTTP twin.
+
+It is opened on the terminal-stream upgrade path under a reserved id naming the signed-in user: `GET /api/terminals/api-socket@<userId>/stream` (Upgrade; `apiSocketPath(userId)` in `@prismshadow/penguin-server/api` spells it). The handshake is the terminal stream's — the session cookie, a same-origin `Origin` (or none), and the id's owner held to the signed-in user, so admin's cookie cannot open `api-socket@alice` — and the socket then serves calls as that user. The runtime-owned prefixes (`/api/auth`, `/api/hmr`, `/api/desktop`) answer `421 not_on_socket`; a client makes those over HTTP.
+
+Frames are JSON text frames, ids are the client's and unique for the socket's life:
+
+```jsonc
+// client -> server
+{ "id": 1, "call": { "method": "GET", "path": "/api/projects" } }
+{ "id": 2, "call": { "method": "GET", "path": "/api/sessions/session-…/stream", "headers": { "last-event-id": "3-41" } } }
+{ "id": 3, "call": { "method": "GET", "path": "/server/<machineId>/api/events" } }   // a machine's endpoint, as the proxy names it
+{ "id": 4, "call": { "method": "GET", "path": "/api/projects/<projectId>/machines/events" } }   // every machine's events, one stream
+{ "id": 2, "cancel": true }                                                          // end a streaming call
+
+// server -> client
+{ "id": 1, "status": 200, "headers": { "date": "…" }, "body": { "projects": [] } }   // one-shot: one frame
+{ "id": 2, "status": 200, "stream": true, "headers": { "content-type": "text/event-stream" } }
+{ "id": 2, "event": "server_event", "eventId": "3-42", "data": "{\"type\":\"task_state\"}" }   // SSE's event / id / data
+{ "id": 2, "end": true, "reason": "closed" }                                        // "lagging": re-issue with last-event-id
+```
+
+Only `last-event-id`, `accept` and `content-type` are honoured in `call.headers`; credentials come from the handshake. A JSON body is sent as `application/json`; multipart bodies and binary responses (downloads) do not ride the socket — the latter answer `415 unsupported_transport`, and the client fetches instead. The server pings on the SSE heartbeat's cadence and terminates a peer silent for two beats; a client lagging past the send watermark has its stream ended with `reason: "lagging"` — the delivery guarantees above then apply to the re-issued call exactly as to a reconnect.
+
+Explicit Project aggregate and socket proxy readers use socket-only upstream transport. For a single-machine socket proxy stream, when no socket to that machine can carry the stream, the proxy answers `502`/`504` with the reason **Connected machine API** spells out, never by an HTTP forward, and that proxy reader re-issues on its own backoff. The Project aggregate handles a watched machine's dial/open failure differently: its aggregate stream stays open while the hub retries that machine in the background; the reader does not reopen the aggregate for that machine's failure. The reader reopens the aggregate only when the aggregate itself ends, goes silent or is ended by backpressure. An explicit aggregate reader opens ONE call — `GET /api/projects/<projectId>/machines/events` — instead of one proxy call per machine, and the hub fans its one-subscription-per-machine into it, tagging each event with the machine it came from (**One event stream per machine within the socket hub**). That aggregate reader's stream count is constant whatever the machine count; the socket hub holds one upstream stream per machine, not one per reader per machine. This describes the explicit aggregate/proxy paths, and the default Web App too: it reads the aggregate like any explicit reader, so the one-subscription-per-machine guarantee covers it as well.
 
 ## Type Imports
 

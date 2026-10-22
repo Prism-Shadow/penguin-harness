@@ -81,7 +81,6 @@ const TOKENS_ONLY: readonly string[] = [
   "features/builtin-browser/chrome-surface.tsx",
   "features/builtin-browser/new-tab-page.tsx",
   "features/builtin-browser/pairing-dialog.tsx",
-  "features/chat/attached-files-banner.tsx",
   "features/chat/background-done-banner.tsx",
   "features/chat/compaction-banner.tsx",
   "features/chat/goal-banner.tsx",

@@ -207,7 +207,7 @@ import { PinnedBalanceBadge } from "../../features/models/group-balance";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
-import { useProjectSchedules } from "../../features/schedules/schedule-store";
+import { useSchedulesAcross } from "../../features/schedules/schedule-store";
 import { useCompany } from "../../state/company";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
 import { CompanyBetaBadge } from "../../features/company/company-beta";
@@ -333,6 +333,7 @@ export function Sidebar({
     workspaceCountsByAgent,
     workspaceLatestActiveByAgent,
     machineLabels,
+    machineIds,
     isLoadedFor,
     hasMoreFor,
     activityWatermarkFor,
@@ -384,8 +385,10 @@ export function Sidebar({
   // row wears the mark must not depend on which Agent is current — the chat page moves that to
   // whatever conversation is open, and with a per-Agent list every other Agent's rows lost their
   // marks until the user came back to them. Re-read on every navigation: opening a conversation
-  // is the moment a task may just have been created or switched off.
-  const { items: projectSchedules } = useProjectSchedules(currentProjectId, activeSessionId ?? "");
+  // is the moment a task may just have been created or switched off. Read on every server whose
+  // Sessions this list draws: a task bound to a conversation on a machine is that machine's file,
+  // and only that machine lists it.
+  const projectSchedules = useSchedulesAcross(currentProjectId, machineIds, activeSessionId ?? "");
   // The Sessions wearing the alarm clock: one bound task with a next fire time is enough. The
   // store re-renders these rows on every refresh (a navigation, a schedule event, a turn ending,
   // the panel's poll), and the server recomputes `nextFireAt` on each listing, so a task that
@@ -512,8 +515,19 @@ export function Sidebar({
   /** Group header being dragged (its key) and the current group drop hint (target group + which edge). */
   const [dragGroup, setDragGroup] = useState<string | null>(null);
   const [groupDropHint, setGroupDropHint] = useState<{ key: string; after: boolean } | null>(null);
-  // Project resolved on first load / switched: swap in that Project's persisted collapse/pin sets.
-  useEffect(() => {
+  /** Reveal rows with a fetch in flight, keyed by list key (a group, or time mode's whole list) — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
+  const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
+  /** Per-list display cap (keyed by group key, or TIME_LIST_KEY for time mode's whole list; absent = SIDEBAR_PAGE_SIZE). The list's reveal row raises it a page at a time. */
+  const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
+  /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
+  const [groupPage, setGroupPage] = useState(0);
+  // Project resolved on first load / switched: swap in that Project's persisted collapse/pin
+  // sets, row and group orders and registered Workspaces — in the render that sees the switch
+  // (React re-renders before committing), not in an effect: an effect runs a commit late, and
+  // that commit would draw the new Project's list with the previous Project's groups.
+  const [setsFor, setSetsFor] = useState(currentProjectId);
+  if (setsFor !== currentProjectId) {
+    setSetsFor(currentProjectId);
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
     setPinnedSessions(loadPinnedSessions(currentProjectId));
@@ -523,14 +537,7 @@ export function Sidebar({
     setGroupPage(0);
     // The other Project's groups are gone, and so is any meaning their reveal state had.
     setGroupCaps(new Map());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapseStoreKey, pinStoreKey, currentProjectId]);
-  /** Reveal rows with a fetch in flight, keyed by list key (a group, or time mode's whole list) — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
-  const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
-  /** Per-list display cap (keyed by group key, or TIME_LIST_KEY for time mode's whole list; absent = SIDEBAR_PAGE_SIZE). The list's reveal row raises it a page at a time. */
-  const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
-  /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
-  const [groupPage, setGroupPage] = useState(0);
+  }
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);

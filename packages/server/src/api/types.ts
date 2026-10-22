@@ -574,7 +574,11 @@ export interface ModelEffectiveConnection {
   baseUrlSource: ConnectionSourceDto;
   clientType?: string;
   clientTypeSource: ConnectionSourceDto;
-  /** `env` = no row or group key, and the environment lends one on the effective endpoint (modelEnvFallback). */
+  /**
+   * `env` = no key in the file, and MMSP's routed client reads its own variable for the row's
+   * endpoint (no base URL, or the client's default endpoint) — reported when that variable
+   * holds a value here (`envKeyMasked`), `none` otherwise.
+   */
   apiKeySource: "model" | "provider" | "env" | "none";
   /** Mask of the key the row would use, whichever source; absent when none. */
   apiKeyMasked?: string;
@@ -630,21 +634,18 @@ export interface ModelInfo {
   discount?: number;
   /**
    * Environment variable name the entry falls back to when api_key is empty (e.g.
-   * ANTHROPIC_API_KEY); unset when it gets no fallback — an id nothing routes, or an entry
-   * whose base URL is not the vendor's own official endpoint (a gateway preset, a custom /
-   * vLLM / user-created row with its own endpoint, a vendor row re-pointed at a proxy).
+   * ANTHROPIC_API_KEY): only for a row with no key in the file whose routed MMSP client reads
+   * that variable for its endpoint — no base URL on the row or its group, or the client's own
+   * default endpoint. Unset for a row with a key (its own or a group key that reaches it), a row
+   * sent to any other base URL (a gateway, Penguin Go, ModelScope, a vendor's second host or a
+   * proxy), or an id nothing routes.
    */
   envKey?: string;
   /**
    * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
-   * currently holds for `envKey` — the plaintext is never serialized. Reported only where the
-   * fallback may be presented as covering the entry (core's modelEnvPreviewKey): a row whose
-   * effective base URL is a vendor endpoint (or the Penguin Go relay), or a row with no base URL
-   * in a built-in group other than custom, on the client its id's family names. Gateway rows
-   * never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
-   * although those do fall back. Absent = the variable is unset or empty, or the entry is not
-   * previewable. Computed on the effective shape, and only when no row or group key reaches
-   * the row.
+   * currently holds for `envKey` — the plaintext is never serialized. Absent = the variable is
+   * unset or empty, or the entry gets no fallback. Reported only when no row or group key
+   * reaches the row.
    */
   envKeyMasked?: string;
   /** The row's OWN key (masked) and base URL — overrides of its group's; see `effective`. */
@@ -973,8 +974,8 @@ export interface ModelBalanceAmount {
 /**
  * Why a group's balance could not be read:
  * - `unsupported`: the group publishes no balance endpoint (no `balance` descriptor in the catalog);
- * - `no_key`: the group has no API key to ask with — none stored, and no environment variable
- *   the credential rule lends its rows for the balance endpoint's host;
+ * - `no_key`: the group has no API key to ask with — none stored, and no vendor variable that
+ *   MMSP's vendor client reads for the group's base URL;
  * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
  *   without a readable balance.
  */
@@ -982,9 +983,9 @@ export type ModelBalanceErrorCode = "unsupported" | "no_key" | "upstream_failed"
 
 /**
  * GET /api/projects/:p/models/balance?provider=<group>[&force=1] (Project member): the account
- * balance behind the group's API key — the stored one, or else the environment key its rows
- * fall back to under the credential rule (DeepSeek's DEEPSEEK_API_KEY) — read server-side from
- * the endpoint the catalog's `balance` descriptor names. The key never reaches the browser, and
+ * balance behind the group's API key — the stored one, or else the environment key MMSP's
+ * vendor client reads for the group's base URL (DeepSeek's DEEPSEEK_API_KEY) — read server-side
+ * from the endpoint the catalog's `balance` descriptor names. The key never reaches the browser, and
  * neither does the vendor's own text. Like the connectivity test, a balance that cannot be read is an answer
  * (`ok: false` with a code), not a failed request. Readings and vendor failures are cached for
  * 60 s per Project and group, for as long as the group's key is the same; `force=1` skips the
@@ -1260,7 +1261,7 @@ export interface AgentSummary {
   kernelOutdated: boolean;
   /** Vault key count (number of keys in agent_state/.vault.toml). */
   vaultKeyCount: number;
-  /** Schedule count (number of .toml files under agent_state/schedule/, including invalid ones). */
+  /** Schedule count (number of .toml files directly under agent_state/schedule/, including invalid ones; archived files under schedule/expired/ are not counted). */
   scheduleCount: number;
   /** Workbench folders with a manifest, including ones with a load error. */
   workbenchCount: number;
@@ -2644,7 +2645,8 @@ export interface SessionProcessesResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Messaging bindings (/api/sessions/:sessionId/messaging/*)
+// Messaging bindings (/api/sessions/:sessionId/messaging/*) and enabled bot accounts
+// (/api/messaging/accounts, /api/projects/:projectId/messaging/account-holders)
 // ---------------------------------------------------------------------------
 
 /** Messaging channels a Session can bind to. */
@@ -3197,6 +3199,56 @@ export interface MessagingTestMessageResponse {
   ok: true;
 }
 
+/**
+ * One bot account a server has enabled: the channel and its account id (Feishu `app_id`,
+ * Telegram bot id, QQ App ID, WeChat bot id), which is public by design. Never a Session,
+ * never a secret.
+ */
+export interface MessagingAccount {
+  channel: MessagingChannel;
+  accountId: string;
+}
+
+/**
+ * GET /api/messaging/accounts (admin only) — every bot account this server has enabled,
+ * across all its Projects. A server that connects machines asks each of them this when a
+ * bot is about to be turned on, so that one account is enabled on one server at a time.
+ */
+export interface MessagingAccountsResponse {
+  accounts: MessagingAccount[];
+}
+
+/** A server that has the asked-about bot enabled: a machine by id and alias, or this server (both null). */
+export interface MessagingAccountHolder {
+  machineId: string | null;
+  alias: string | null;
+}
+
+/**
+ * Why a machine could not be asked: no connection to it, a build without the accounts
+ * route (it answered 404), or any other failed answer.
+ */
+export type MessagingUnreachableReason = "not_connected" | "older_build" | "failed";
+
+/** A machine of the Project that could not be asked whether it holds the bot. */
+export interface MessagingUnreachableMachine {
+  machineId: string;
+  alias: string;
+  reason: MessagingUnreachableReason;
+}
+
+/**
+ * GET /api/projects/:projectId/messaging/account-holders?channel=&accountId= — which servers
+ * have this bot enabled: this server, and each machine the Project uses that could be asked.
+ * Machines that could not be asked are listed apart; the caller decides what to do about
+ * them. Never names a Session. A caller who is not an admin is answered for this server
+ * only, because machines are admins' (both lists then hold no machine).
+ */
+export interface MessagingAccountHoldersResponse {
+  holders: MessagingAccountHolder[];
+  unreachable: MessagingUnreachableMachine[];
+}
+
 // ---------------------------------------------------------------------------
 // SSE server events (OmniMessage uses the default event, only server_event here)
 // ---------------------------------------------------------------------------
@@ -3294,6 +3346,15 @@ export type ServerEvent =
   | { type: "credentials_updated" }
   /** Placeholder handshake on the user channel (reserved for automated task notifications). */
   | { type: "hello" }
+  /**
+   * The stream's own beat, written by the endpoint's SSE writer every 20 seconds (http/sse.ts)
+   * on `/api/events`, and by the hub on a machine's aggregate stream. The socket's ping and the
+   * `: ping` comment line are invisible to a stream's consumer, so without this a stream that
+   * stopped while its socket stayed healthy would look alive forever: the hub
+   * (machines/event-hub.ts) and the browser (web api/socket.ts) each end a stream that misses
+   * two beats and re-issue it with its last event id.
+   */
+  | { type: "heartbeat" }
   /** The served web assets were hot-swapped by a platform upgrade: clients reload to pick them up. */
   | { type: "web_updated"; rev: string }
   /**
@@ -3333,7 +3394,7 @@ export type ServerEvent =
   | MachineServerEvent;
 
 /**
- * The machines' two events on the user channel, published to admins only — the Machines page,
+ * The machines' events on the user channel, published to admins only — the Machines page,
  * and the `/server/<id>` proxy everything else about a machine goes through, are admin-only.
  */
 export type MachineServerEvent =
@@ -3346,11 +3407,13 @@ export type MachineServerEvent =
    */
   | { type: "machines_changed" }
   /**
-   * One of a connected machine's own user-channel events, relayed by this server from that
-   * machine's `GET /api/events` (machines/event-relay.ts). The page holds one event stream to
-   * this server whatever the number of machines: a stream per machine made five connected
-   * machines take the browser's whole HTTP/1.1 allowance of six connections to one origin, and
-   * every other request of the page then waited behind them for good.
+   * One of a connected machine's own user-channel events, tagged with the machine it came
+   * from. They ride the machines aggregate (event-hub.ts, `GET …/machines/events`) — ONE
+   * stream for every connected machine, whose per-machine frames have this same shape; the
+   * page that re-publishes them on its own channel wraps them this way too. One stream, not
+   * a stream per machine: five of those once took the browser's whole HTTP/1.1 allowance of
+   * six connections to one origin, and every other request of the page then waited behind
+   * them for good.
    */
   | { type: "machine_event"; machineId: string; event: ServerEvent };
 
@@ -4153,7 +4216,11 @@ export interface UsageResponse {
 // Schedule
 // ---------------------------------------------------------------------------
 
-/** Display-facing schedule status: the file's `enabled` only expresses intent; the rest is derived from runtime state. */
+/**
+ * Display-facing schedule status: the file's `enabled` only expresses intent; the rest is derived from runtime state.
+ * The scheduler archives an agent's settled tasks (done / missed / expired) into `schedule/expired/`, so the agent
+ * listings show those three only while a queued fire is still to be sent or when the move failed.
+ */
 export type ScheduleStatus = "active" | "disabled" | "expired" | "done" | "missed" | "invalid";
 
 export interface ScheduleItem {
@@ -4978,6 +5045,35 @@ export interface DesktopTrayCommandMessage {
   locale?: DesktopTrayLocale;
 }
 
+/**
+ * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
+ * endpoint. It is opened on the terminal-stream upgrade path under a reserved id naming the
+ * signed-in user — `api-socket@<userId>` — which the server's terminal lookup answers with a
+ * reference the socket protocol is served for (server: socket/ref.ts). Shared here so the
+ * Web App and the machine relay spell the address the same way.
+ */
+export const API_SOCKET_ID_PREFIX = "api-socket@";
+
+/**
+ * Paths whose answer depends on the KIND of session behind the request — the desktop shell's
+ * own window (`sessionVia === "desktop"`: its update, tray and privacy relays, folder access,
+ * revealing a file) or a first-login link (a password change without the old password). The
+ * socket's handshake does not say how the cookie behind it was minted, so these are made over
+ * HTTP: the socket answers them 421 `not_on_socket` and the Web App never sends them there.
+ */
+export function sessionKindPath(pathname: string): boolean {
+  return (
+    pathname === "/api/me/password" ||
+    pathname === "/api/desktop" ||
+    pathname.startsWith("/api/desktop/") ||
+    /^\/api\/projects\/[^/]+\/dirs\/access$/.test(pathname) ||
+    (pathname.startsWith("/api/") && pathname.endsWith("/reveal"))
+  );
+}
+export function apiSocketPath(userId: string): string {
+  return `/api/terminals/${encodeURIComponent(`${API_SOCKET_ID_PREFIX}${userId}`)}/stream`;
+}
+
 // Desktop folder access (desktop mode, macOS)
 //
 // macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
@@ -5090,6 +5186,36 @@ export interface RestartResponse {
   reason?: "no_supervisor";
 }
 
+/**
+ * What the API socket this server holds to one machine is doing (machines/machine-sockets.ts) —
+ * the fact behind `MachineInfo.socket`. `since` is the instant the state was entered, so the
+ * Machines page can say how long a machine has been dialling, failing or connected instead of
+ * sending someone to the browser console for it.
+ */
+export interface MachineSocketFact {
+  /**
+   * `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused`
+   * when the machine answered the handshake with a status (a program predating the socket), and
+   * `failed` when the dial did not complete or a socket that was up closed.
+   */
+  state: "connected" | "dialling" | "refused" | "failed";
+  /** When that state was entered (ISO). */
+  since: string;
+  /** The transport's own words where there are any: a refusal's status, a dial's error. */
+  detail?: string;
+}
+
+/**
+ * One machine's event, as the machines aggregate stream carries it
+ * (`GET /api/projects/:projectId/machines/events`): the machine's own `ServerEvent`, with the
+ * machine it came from — one stream carries many machines, and the tag is what keeps their
+ * events apart (docs: /docs/server-api § "One event stream per machine").
+ */
+export interface MachineEvent {
+  machineId: string;
+  event: ServerEvent;
+}
+
 /** One `Host` entry of the server's `~/.ssh/config`, as the Machines page lists it. */
 export interface MachineInfo {
   /** `ssh:<alias>` — the id the install route is asked for. */
@@ -5168,6 +5294,15 @@ export interface MachineInfo {
    */
   keepConnected?: true;
   /**
+   * The API socket this server holds to that machine — connected, dialling, refused or failed,
+   * and since when (machines/machine-sockets.ts). Null for `local`, and until a stream has
+   * asked for a socket at all. A fact about one process on THIS side, like `connection` and
+   * for the same reason: it says the socket exists and what it is doing, never that the far
+   * side is answering. The Machines page reads it so a stuck stream does not have to be found
+   * in the browser console.
+   */
+  socket: MachineSocketFact | null;
+  /**
    * The machine's API as last seen by this server's proxy — stamped by traffic passing
    * through, never by a probe of its own. `answeredAt` when the last forwarded request got
    * an HTTP answer (any status: a server that refuses is still answering); `failedAt` and
@@ -5245,17 +5380,28 @@ export interface MachineEnvOnly {
 
 /**
  * A machine this server keeps connected, while it is being brought back. Attempts back off
- * from 5 s, doubling to a 5-minute cap, so a machine that is down for a day costs a probe every
- * five minutes; after three failures in a row the connection check runs on its own, and its
- * answer is what the page shows as the explanation.
+ * from 5 s, doubling to a 5-minute cap, and stop after `maxAttempts` failures in a row (about a
+ * quarter of an hour) — or after the first, when ssh refused in a way no retry fixes — until a
+ * person asks for a Retry (`POST …/machines/:machineId/reconnect`). After three failures in a
+ * row the connection check runs on its own, and its answer is what the page shows as the
+ * explanation.
  */
 export interface MachineReconnect {
-  /** When this streak began: the moment the machine was found not connected. */
+  /** When this streak began: the moment the machine was found not connected, or the Retry that began it again. */
   since: string;
   /** Attempts that failed in this streak; 0 while the first is still to run or running. */
   attempts: number;
-  /** When the next attempt runs; null while one is running. */
+  /** How many failures in a row end the streak: the page says "attempt n of this". */
+  maxAttempts: number;
+  /** When the next attempt runs; null while one is running, and once the streak stopped. */
   nextAt: string | null;
+  /**
+   * The streak stopped, and nothing runs until a person asks for a Retry, which begins a new
+   * one: `attempts` — `maxAttempts` failed in a row; `ssh` — ssh refused in a way retrying
+   * cannot fix (a host key unknown or changed, an unusable key file, a key refused, a broken
+   * ssh config), said by `sshReason`.
+   */
+  gaveUp?: "attempts" | "ssh";
   /** The last attempt's failure in the far side's words; null before the first one fails. */
   lastError: string | null;
   /** Why ssh refused, when the last failure was ssh's own — for the page to say in its language. */

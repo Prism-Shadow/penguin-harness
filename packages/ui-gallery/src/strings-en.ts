@@ -25,7 +25,7 @@ export const en: GalleryStrings = {
     },
     lang: {
       label: "Language",
-      zh: "ä¸­æ",
+      zh: "中文",
       en: "English",
       system: "System",
     },
@@ -42,12 +42,12 @@ export const en: GalleryStrings = {
     nav: "Surfaces",
     onThisPage: "On this page",
     settings: "View settings",
-    notFound: (id) => `There is no page named â${id}â.`,
+    notFound: (id) => `There is no page named “${id}”.`,
     allSurfaces: "All surfaces",
     feedbackTitle: "Feedback",
     feedbackBody:
       "Quote the breadcrumb at the end of a frame's toolbar, or copy the page's address with the link button.",
-    feedbackExample: "Frost âº Chat Â· dark",
+    feedbackExample: "Frost › Chat · dark",
   },
   surfaceGroups: {
     conversation: "Conversation",
@@ -61,120 +61,120 @@ export const en: GalleryStrings = {
       title: "Chat",
       description:
         "A finished Task: thinking, three tool calls, a diff, and a Markdown answer with a table and code.",
-      how: "Sidebar âº any row of the session list.",
+      how: "Sidebar › any row of the session list.",
     },
     "chat-running": {
-      title: "Chat Â· tool running",
+      title: "Chat · tool running",
       description:
         "A Task mid-run: a command is executing, and the tool row shows the running state and its timer.",
-      how: "Sidebar âº a session row with the running mark.",
+      how: "Sidebar › a session row with the running mark.",
     },
     "chat-thinking": {
-      title: "Chat Â· thinking",
+      title: "Chat · thinking",
       description:
         "A Task mid-run: the model is thinking; the thinking row shows the running state and the text keeps growing.",
-      how: "Sidebar âº a session row with the running mark.",
+      how: "Sidebar › a session row with the running mark.",
     },
     "chat-streaming": {
-      title: "Chat Â· streaming",
+      title: "Chat · streaming",
       description:
         "A Task mid-run: the answer is streaming in and reveals the way the current theme does it; once done it holds for a moment and streams again, on a loop.",
-      how: "Sidebar âº a session row with the running mark.",
+      how: "Sidebar › a session row with the running mark.",
     },
     "chat-approval": {
-      title: "Chat Â· awaiting approval",
+      title: "Chat · awaiting approval",
       description:
         "A Task waiting on a human: a command needs approval; allow or deny it and the Task carries on and ends.",
-      how: "Sidebar âº a session row with the approval mark.",
+      how: "Sidebar › a session row with the approval mark.",
     },
     "chat-harness": {
-      title: "Chat Â· harness rows",
+      title: "Chat · harness rows",
       description:
         "Every row neither a person nor the model wrote: a handoff origin, Skills and an attached file, the MCP connect row, background-task notices, a scheduled trigger, a reconnect, an abort, a provider error, a compaction and a model switch, the rounds and steering of a goal run, each Task's stats line and the goal banner.",
-      how: "Sidebar âº âFix the hooks doc citationsâ, the oldest row of the session list.",
+      how: "Sidebar › “Fix the hooks doc citations”, the oldest row of the session list.",
     },
     "chat-org": {
-      title: "Chat Â· organization trigger",
+      title: "Chat · organization trigger",
       description:
         "A desk Session an organization's scheduler opened: the first message's trigger block folds into a one-line origin notice.",
-      how: "Company mode âº an employee's desk.",
+      how: "Company mode › an employee's desk.",
     },
     "chat-rsi": {
-      title: "Chat Â· self-evolution round",
+      title: "Chat · self-evolution round",
       description:
         "The General Agent improves the docs Agent with the Default RSI Toolkit: it reads the Reference score and the weakest case's Trace, snapshots the Agent State and edits it, evaluates every case through parallel evaluator subagents, and keeps the new version because it scores higher.",
-      how: "Sidebar âº General Agent âº âImprove Docs Expert on Docs QA v1â. A round starts from Evaluation Center âº a Benchmark âº Use âº Optimize.",
+      how: "Sidebar › General Agent › “Improve Docs Expert on Docs QA v1”. A round starts from Evaluation Center › a Benchmark › Use › Optimize.",
     },
     "chat-new": {
       title: "New chat",
       description:
         "The draft page: pick the Agent, Workspace, approval mode and model, then type and send the first message.",
-      how: "Sidebar âº New chat.",
+      how: "Sidebar › New chat.",
     },
     agents: {
       title: "Agents",
       description:
         "The Agent list: each Agent's activity curve and its session, tool, Skill and schedule counts.",
-      how: "Sidebar âº Agents.",
+      how: "Sidebar › Agents.",
     },
     "agent-settings": {
       title: "Agent settings",
       description:
         "One Agent's settings page: overview, prompt, memory, runtime, tools, Skills, hooks, Vault and schedule tabs.",
-      how: "Agents âº any Agent.",
+      how: "Agents › any Agent.",
     },
     schedules: {
       title: "Schedules",
       description:
         "The Agent settings' schedule tab: periods, next fire time, the bound Session and model.",
-      how: "Agents âº Agent settings âº the Schedules tab.",
+      how: "Agents › Agent settings › the Schedules tab.",
     },
     plugins: {
       title: "Plugins",
       description: "Every plugin by category, to regroup or search; a card opens its details.",
-      how: "Sidebar âº Plugins.",
+      how: "Sidebar › Plugins.",
     },
     models: {
       title: "Models",
       description:
         "The model table by provider: the default model, credentials, prices, context windows and usage.",
-      how: "Sidebar âº Models.",
+      how: "Sidebar › Models.",
     },
     machines: {
       title: "Machines",
       description:
         "This machine and remote ones: install state, connections, probe results, and adding an ssh host.",
-      how: "Sidebar âº Machines (admins only).",
+      how: "Sidebar › Machines (admins only).",
     },
     usage: {
       title: "Cost center",
       description:
         "Thirty days of usage: Tokens, cost, requests and success rate, grouped by date, Agent, model or Session, with the error panel.",
-      how: "Sidebar âº Cost center.",
+      how: "Sidebar › Cost center.",
     },
     benchmark: {
       title: "Evaluation center",
       description:
         "The Benchmark list: published and draft status, case counts, and the score trend across evaluations.",
-      how: "Sidebar âº Evaluation center.",
+      how: "Sidebar › Evaluation center.",
     },
     "benchmark-detail": {
       title: "Benchmark detail",
       description:
         "One Benchmark: the score curve, each evaluation's case scores, and the cases' statement and rubric files.",
-      how: "Evaluation center âº any Benchmark.",
+      how: "Evaluation center › any Benchmark.",
     },
     settings: {
       title: "Settings",
       description:
         "The settings dialog: profile, general, appearance (theme, mode, accent, text size, fonts), account, and the server settings.",
-      how: "The account menu at the bottom of the sidebar âº Settings.",
+      how: "The account menu at the bottom of the sidebar › Settings.",
     },
     "settings-appearance": {
       title: "Appearance settings",
       description:
-        "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing â where theme switching lives.",
-      how: "The account menu at the bottom of the sidebar âº Settings âº Appearance.",
+        "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing — where theme switching lives.",
+      how: "The account menu at the bottom of the sidebar › Settings › Appearance.",
     },
     login: {
       title: "Login",
@@ -186,7 +186,7 @@ export const en: GalleryStrings = {
   home: {
     eyebrow: "Surface gallery",
     title: "Penguin UI",
-    lead: "The real Web App, running in three themes, two modes, five text sizes, the font pairings and two languages â on an in-browser demo API, fully clickable.",
+    lead: "The real Web App, running in three themes, two modes, five text sizes, the font pairings and two languages — on an in-browser demo API, fully clickable.",
     app: "The app",
     appLead:
       "This is the app itself: the sidebar, every center, the chat and the settings all open. The theme and size controls drive the app in the frame; sending a message streams a scripted reply.",
@@ -195,7 +195,7 @@ export const en: GalleryStrings = {
       "One page per surface: the app opened on it, under whatever theme, size and fonts you set.",
     library: "Component library",
     libraryLead:
-      "The real Web components, one page per kind, rendered under the theme, mode, size and fonts you set â and interactive.",
+      "The real Web components, one page per kind, rendered under the theme, mode, size and fonts you set — and interactive.",
     fonts: "Fonts",
     fontsLead: "Each theme's default faces, the current choice, specimens and licences.",
   },
@@ -206,14 +206,14 @@ export const en: GalleryStrings = {
     accentTheme: "Theme's own",
     size: "Size",
     sizeNames: { xs: "XS", s: "S", m: "M", l: "L", xl: "XL" },
-    sizeTitle: (name, px) => `${name} Â· ${px}px root`,
+    sizeTitle: (name, px) => `${name} · ${px}px root`,
     fontLatin: "Latin font",
     fontCjk: "CJK font",
     fontTheme: "Theme default",
     fontSystem: "System",
     viewport: "Viewport",
     viewports: { desktop: "Desktop", phone: "Phone" },
-    langNames: { en: "EN", zh: "ä¸­æ" },
+    langNames: { en: "EN", zh: "中文" },
   },
   readout: {
     label: "Fonts in use",
@@ -221,14 +221,14 @@ export const en: GalleryStrings = {
     cjk: "CJK",
     mono: "Mono",
     system: "System",
-    pending: "Readingâ¦",
+    pending: "Reading…",
   },
   crumb: {
     modes: { light: "light", dark: "dark" },
     phone: "phone",
   },
   intro: {
-    resolving: "Resolving tokensâ¦",
+    resolving: "Resolving tokens…",
   },
   frame: {
     open: "Open standalone",
@@ -254,6 +254,7 @@ export const en: GalleryStrings = {
     themeAccent: "theme",
     sampleSend: "Send",
     selectedRow: "Selected",
+    sampleBubble: "My message",
     sampleLink: "Open the docs",
     linkHover: "hover",
     tones: "Tones",
@@ -280,14 +281,14 @@ export const en: GalleryStrings = {
     scene: {
       pageTier: "page",
       cardTitle: "Docs Expert",
-      cardMeta: "3 sessions Â· $0.0231",
-      nested: "Inner radius = outer radius â padding",
+      cardMeta: "3 sessions · $0.0231",
+      nested: "Inner radius = outer radius − padding",
       primary: "Save",
       secondary: "Cancel",
       input: "Search sessions",
       badge: "Running",
       menuTier: "z-[60] menu",
-      menuItems: ["Pin", "Rename", "Move toâ¦"],
+      menuItems: ["Pin", "Rename", "Move to…"],
       backdropTier: "z-50 dialog",
       dialogTitle: "Delete this session?",
       dialogBody: "Its transcript and Trace files are deleted with it.",
@@ -307,7 +308,7 @@ export const en: GalleryStrings = {
       sizeOptions: ["XS", "S", "M", "L", "XL"],
       general: "General",
       language: "Language",
-      languageOptions: ["ä¸­æ", "English"],
+      languageOptions: ["中文", "English"],
       notifications: "Notify when done",
     },
     stack0Note: "stack-0: the narrow bars between a glyph and its label",
@@ -316,7 +317,7 @@ export const en: GalleryStrings = {
     iconRegistry: (icons, files) => `${icons} icons from ${files} files`,
     duplicateNames: "One path, several names",
     iconMarks: "Marks drawn as components",
-    durations: "Durations Ã easings",
+    durations: "Durations × easings",
     reducedNote: "Reduced motion: every change shows its end state at once.",
     liveSignal: "Live signals",
     loading: "Loading",
@@ -331,7 +332,7 @@ export const en: GalleryStrings = {
       "The app window through .ui-shell: the field, the navigation column and the main column, related as each theme decides.",
     presence: "Presence",
     presenceNote:
-      "A menu from the top, a dialog from the centre, a toast from the bottom â each on the active theme's enter and exit tokens.",
+      "A menu from the top, a dialog from the centre, a toast from the bottom — each on the active theme's enter and exit tokens.",
     reveal: "Reveal",
     revealNote:
       "New rows appear inside a settled list; each moves once, on the reveal tokens, as it appears.",
@@ -405,11 +406,11 @@ export const en: GalleryStrings = {
     pages: { defaults: "Defaults", specimens: "Specimens", licences: "Licences" },
     defaultsTitle: "Default faces",
     defaultsHint:
-      "Each theme's default face per role: Latin (reading and interface), CJK and mono. âSystemâ leaves the role to the platform.",
+      "Each theme's default face per role: Latin (reading and interface), CJK and mono. “System” leaves the role to the platform.",
     system: "System",
     current: "Current choice",
     currentHint:
-      "The pairing picked in View settings; âtheme defaultâ is the active theme's row above. What actually renders is on the next line.",
+      "The pairing picked in View settings; “theme default” is the active theme's row above. What actually renders is on the next line.",
     followsTheme: (theme) => `Theme default (${theme})`,
     specimensTitle: "Specimens",
     licencesTitle: "Licences",
@@ -440,12 +441,12 @@ export const en: GalleryStrings = {
       inputs: {
         title: "Inputs and forms",
         description:
-          "Input, textarea, password, search, checkbox and radio on the field scaffolding: label, hint, info and error.",
+          "Input, textarea, password, number and date, search, checkbox and radio on the field scaffolding: label, hint, info and error.",
       },
       pickers: {
         title: "Pickers",
         description:
-          "Select, segmented control, switch and toggle rows, swatches, option menu, dropdown and menu rows.",
+          "Select, control sizes, segmented control, slider and choice group, switch and toggle rows, swatches, option menu, dropdown and menu rows.",
       },
       toasts: {
         title: "Toasts",
@@ -489,7 +490,7 @@ export const en: GalleryStrings = {
       charts: {
         title: "Charts",
         description:
-          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them â the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline.",
+          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline.",
       },
       avatars: {
         title: "Avatars",
@@ -524,6 +525,16 @@ export const en: GalleryStrings = {
         description:
           "The Machines page's parts: the status pill in every state, the machine card and its list, the dialog toolbar and the add dialog.",
       },
+      retry: {
+        title: "Retry",
+        description:
+          "The status line every retry and reconnect shares: trying, waiting for the next attempt (a countdown and Retry now), gave up (Retry), not worth retrying — and how it sits in a machine card, a dialog and a chat notice.",
+      },
+      attachments: {
+        title: "Attachments",
+        description:
+          "Images and files attached in a conversation: staged in the composer, in the message once sent, in a steer's chip, at phone width, with long names and when an image fails to load.",
+      },
       colour: {
         title: "Colour",
         description: "Surfaces, inks, lines, the accent, the tones, chart series and code colours.",
@@ -557,7 +568,7 @@ export const en: GalleryStrings = {
       edit: "Edit",
       states: "States",
       disabled: "Disabled",
-      busy: "Savingâ¦",
+      busy: "Saving…",
       links: "Links",
       linksHint:
         "A link in a sentence is always underlined; a standalone one shows the underline on hover. An external link opens in a new tab and carries the external mark.",
@@ -583,7 +594,7 @@ export const en: GalleryStrings = {
       base: "Base size",
       small: "Form size",
       textarea: "Textarea",
-      textareaPlaceholder: "Write a system promptâ¦",
+      textareaPlaceholder: "Write a system prompt…",
       mono: "Monospace",
       monoValue: "temperature: 0.2\nmax_tokens: 4096",
       password: "Password",
@@ -613,10 +624,29 @@ export const en: GalleryStrings = {
       radioReplace: "Replace everything",
       radioReplaceHint: "Remove what the import does not contain.",
       radioInline: "On one line",
+      number: "Number",
+      numberReplicas: "Replicas",
+      numberPods: "pods",
+      numberRetries: "Retries",
+      numberTimeout: "Timeout",
+      numberSeconds: "s",
+      numberBudget: "Daily budget",
+      numberCurrency: "USD",
+      numberBudgetError: "Between 1 and 50.",
+      stepUp: "Increase",
+      stepDown: "Decrease",
+      dateTime: "Date and time",
+      date: "Start date",
+      time: "Daily reminder at",
+      dateTimeLocal: "Next run",
     },
     pickers: {
       select: "Select",
       selectLabel: "Model",
+      sizes: "Control sizes",
+      sizeRow: (size: string) => `${size}: a select, an input and a button of one height`,
+      sizeSearch: "Search plugins",
+      sizeButton: "Import plugin",
       options: ["DeepSeek V4.1 Flash", "Claude Sonnet 4.5", "GLM-5.3"],
       segmented: "Segmented",
       segments: ["Light", "Dark", "System"],
@@ -658,7 +688,7 @@ export const en: GalleryStrings = {
       menu: "More actions",
       menuPin: "Pin",
       menuRename: "Rename",
-      menuMove: "Move toâ¦",
+      menuMove: "Move to…",
       menuDelete: "Delete",
       menuRows: "Menu rows",
       menuRowsHint:
@@ -673,6 +703,38 @@ export const en: GalleryStrings = {
       menuSortBy: "Sort by",
       menuRecent: "Recently active",
       menuManual: "Manual order",
+      slider: "Slider",
+      sliderShare: "Context share",
+      sliderUnit: "%",
+      sliderTemperature: "Temperature",
+      sliderTemperatureHint: "Lower is steadier, higher is more varied.",
+      sliderTopP: "Top P",
+      sliderTopPHint: "Fixed by the model.",
+      choiceGroup: "Choice group",
+      choiceMerge: "Merge it now?",
+      mergeOptions: ["Now", "After review", "Not yet"],
+      recommended: "Recommended",
+      choiceFeatures: "Features to enable",
+      features: [
+        { value: "cdn", label: "CDN" },
+        { value: "waf", label: "WAF" },
+        { value: "backups", label: "Backups" },
+        { value: "logs", label: "Logs" },
+      ],
+      choiceDatabase: "Which database should the service use?",
+      databases: [
+        { value: "pg", label: "PostgreSQL", description: "Relational; the team runs it already." },
+        { value: "sqlite", label: "SQLite", description: "One file beside the service." },
+        { value: "mongo", label: "MongoDB", description: "Documents, with no fixed schema." },
+      ],
+      other: "Other…",
+      choiceRegions: "Which regions should it deploy to?",
+      regions: [
+        { value: "eu-west", label: "eu-west", description: "Ireland" },
+        { value: "us-east", label: "us-east", description: "Virginia" },
+        { value: "ap-east", label: "ap-east", description: "Hong Kong" },
+      ],
+      choiceAnswered: "Answered: merge it now?",
     },
     toasts: {
       fire: "Fire a toast",
@@ -730,11 +792,11 @@ export const en: GalleryStrings = {
       save: "Save",
       cancel: "Cancel",
       confirm: "Confirmation",
-      openConfirm: "Delete sessionâ¦",
+      openConfirm: "Delete session…",
       confirmTitle: "Delete this session?",
       confirmBody: "The transcript and the Trace files go with it; this cannot be undone.",
       confirmLabel: "Delete",
-      openSaveConfirm: "Save changesâ¦",
+      openSaveConfirm: "Save changes…",
       saveConfirmTitle: "Save these changes?",
       saveConfirmBody: "The agent uses the new settings from its next task.",
       paged: "Paged dialog",
@@ -758,9 +820,9 @@ export const en: GalleryStrings = {
       palette: "Command palette",
       paletteAside: "Type to filter; each action opens another dialog on this board.",
       openPalette: "Open the command palette",
-      palettePlaceholder: "Type to filter commandsâ¦",
+      palettePlaceholder: "Type to filter commands…",
       paletteEmpty: "No matching commands",
-      paletteHint: "ââ to select Â· Enter to run Â· Esc to close",
+      paletteHint: "↑↓ to select · Enter to run · Esc to close",
     },
     tooltips: {
       attribute: "The data-tooltip attribute",
@@ -783,7 +845,7 @@ export const en: GalleryStrings = {
       badged: "With an update badge",
       items: ["Overview", "Trace", "Files", "Settings"],
       badgeText: "3 skills can be updated",
-      body: (tab) => `The â${tab}â tab's content.`,
+      body: (tab) => `The “${tab}” tab's content.`,
     },
     badges: {
       pills: "Label pills",
@@ -859,11 +921,11 @@ export const en: GalleryStrings = {
     streaming: {
       reply: "Assistant reply",
       output: "Tool output",
-      receiving: "Receivingâ¦",
+      receiving: "Receiving…",
       received: "All received",
       modes: {
         instant: "shows text the moment it arrives, with no motion",
-        fade: "fades in word by word, the newest line and a half rising out of a soft veil",
+        fade: "reveals word by word, each new run fading in, the newest line and a half rising out of a soft veil",
         typewriter: "types out character by character behind a solid block caret",
       },
       unset: "treated as instant",
@@ -909,29 +971,29 @@ export const en: GalleryStrings = {
       palette: "Palette",
       geometry: "Geometry",
       tokenMeaning: {
-        "--ui-chart-1": "slot 1 Â· violet",
-        "--ui-chart-2": "slot 2 Â· amber",
-        "--ui-chart-3": "slot 3 Â· sky",
-        "--ui-chart-4": "slot 4 Â· rose",
-        "--ui-chart-5": "slot 5 Â· emerald",
-        "--ui-chart-6": "slot 6 Â· fuchsia",
-        "--ui-chart-7": "slot 7 Â· spare",
-        "--ui-chart-8": "slot 8 Â· spare",
+        "--ui-chart-1": "slot 1 · violet",
+        "--ui-chart-2": "slot 2 · amber",
+        "--ui-chart-3": "slot 3 · sky",
+        "--ui-chart-4": "slot 4 · rose",
+        "--ui-chart-5": "slot 5 · emerald",
+        "--ui-chart-6": "slot 6 · fuchsia",
+        "--ui-chart-7": "slot 7 · spare",
+        "--ui-chart-8": "slot 8 · spare",
         "--ui-chart-ref": "reference line",
         "--ui-chart-cache-read": "cache read",
         "--ui-chart-cache-write": "cache write",
         "--ui-chart-output": "output",
         "--ui-chart-grid": "grid",
         "--ui-chart-axis": "axis",
-        "--ui-chart-bar-fill": "share of its band a bar fills (0â1)",
+        "--ui-chart-bar-fill": "share of its band a bar fills (0–1)",
         "--ui-chart-bar-radius": "bar top radius",
         "--ui-chart-bar-stroke": "bar outline width",
         "--ui-chart-bar-stroke-color": "bar outline colour (series = the series colour)",
-        "--ui-chart-bar-opacity": "bar fill opacity (0â1)",
+        "--ui-chart-bar-opacity": "bar fill opacity (0–1)",
         "--ui-chart-line-width": "line width",
         "--ui-chart-point-radius": "data point radius",
         "--ui-chart-curve": "curve (linear / smooth / step)",
-        "--ui-chart-area-opacity": "area fill opacity (0â1)",
+        "--ui-chart-area-opacity": "area fill opacity (0–1)",
       },
       donut: "Token donut",
       donutHint:
@@ -972,6 +1034,64 @@ export const en: GalleryStrings = {
       timeline: "Trace timeline",
       timelineHint:
         "One Task's model segments and tool calls: thinking, reply, tool-call generation, approval wait and execution, each in its lane.",
+      basic: {
+        part: "Basic charts",
+        partHint:
+          "The basic charts drawn from data, with units on their axes; the caller passes the width and the words. An A2UI chart block draws one of them, and the composites (system resources, weather) are built on them.",
+        bar: "Bar chart · grouped",
+        barHint:
+          "A group of bars per category, one per series, each on its slot; pointing at a column opens a bubble with every series' value.",
+        stacked: "Bar chart · stacked",
+        stackedHint:
+          "A category's series stack into one bar, its top the total; pointing at a legend item fades the other series.",
+        histogram: "Histogram",
+        histogramHint: "Neighbouring bins fill their columns, with a one-pixel seam between them.",
+        hbar: "Horizontal bars",
+        hbarHint:
+          "Rows on one shared scale: a value drawn from zero (disk usage, turning to the attention or danger ink past a threshold), a range (each day's low to high over a week), or series stacked end to end in one row (each region's traffic; pointing at a segment opens its bubble).",
+        line: "Line chart",
+        lineHint:
+          "Two series, one missing a reading: its line breaks at the gap, and the bubble shows a dash there.",
+        area: "Area chart · stacked",
+        areaHint: "The series pile into bands, each filled down to the one under it.",
+        bare: "Line chart · bare",
+        bareHint:
+          "No grid and no value axis: the readings sit over their points on their own range, and the line traces in once as it appears.",
+        days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        weeks: ["W38", "W39", "W40", "W41", "W42"],
+        minutes: (v: number) => `${v} min`,
+        latency: "Latency",
+        latencyLabel: "p50 and p95 latency for each day of the week",
+        buildTime: "Build time",
+        buildLabel: "Build time per runner, by week",
+        responseTime: "Response time (ms)",
+        requests: "Requests",
+        histogramLabel: "Response time distribution",
+        diskLabel: "Disk usage",
+        temperatureLabel: "Temperature over the next five days",
+        read: "Read",
+        write: "Write",
+        trafficLabel: "Traffic by region, read and written",
+        hour: "Hour",
+        serviceLabel: "Hourly p95 latency of two services",
+        memory: "Memory",
+        memoryLabel: "Memory use by process",
+        forecastLabel: "Temperature over the next twelve hours",
+        scatter: "Scatter chart",
+        scatterHint:
+          "Two series of points on two value axes, each fitted to the data's own range rather than run from zero, with units on both; pointing at a legend item fades the other series.",
+        pie: "Pie and donut",
+        pieHint:
+          "Slices run clockwise from twelve o'clock, each its share of the whole; the list legend gives each amount and share, and pointing at a row fades the other slices.",
+        gauge: "Gauge",
+        gaugeHint:
+          "One reading against a whole: the ring takes the accent while the reading is fine, and the figure and ring turn to the attention or danger ink past a threshold.",
+        payload: "Response size (KB)",
+        scatterLabel: "Response size against latency for two services",
+        storage: ["Images", "Video", "Documents", "Other"],
+        storageLabel: "What the storage holds",
+        gauges: ["CPU", "Memory", "Disk"],
+      },
     },
     avatars: {
       user: "User avatar",
@@ -1015,7 +1135,7 @@ export const en: GalleryStrings = {
       articleHint:
         "The prose blog posts and doc pages share. Headings carry anchors, fenced code is highlighted, and tab groups and callouts are the docs' Markdown extensions; its contents sit on the right.",
       articleBody:
-        '## Install\n\nOne command in a terminal installs it:\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### By platform\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- Blocked on first launch\n>\n> Allow it in the system settings.\n\n## Next steps\n\n- Run `penguin web` to open the Web App\n- Back to [Install](#install)\n\n| Command | What it does |\n| --- | --- |\n| `penguin` | Chat in the terminal |\n| `penguin web` | Start the Web App |',
+        '## Install\n\nOne command in a terminal installs it:\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### By platform\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- Blocked on first launch\n>\n> Allow it in the system settings.\n\n## Next steps\n\n- Run `penguin web` to open the Web App\n- Back to [Install](#install)\n\n| Command | What it does |\n| --- | --- |\n| `penguin` | Chat in the terminal |\n| `penguin web` | Start the Web App |\n\n## API\n\n| Method | Path | Description |\n| --- | --- | --- |\n| POST | `/api/auth/login` | Logs in: `{userId, password}` → `{user}` |\n| GET | `/api/auth/claim?token=…` | Redeems a sign-in link: sets the cookie and redirects to `/` |\n| PUT | `/api/me/prefs` | Writes UI preferences (shallow merge); `browserBackend` is refused (`400`), since the built-in browser chooses it through its own endpoint |\n| GET | `/api/me/archived-sessions` | One group\'s archived Sessions: `?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |',
       toc: "On this page",
       sidebar: "Docs sidebar",
       sidebarHint:
@@ -1077,7 +1197,7 @@ export const en: GalleryStrings = {
       emptyDir: "Empty directory",
       root: ".",
       readme:
-        "# Docs Expert\n\nBuilds a BM25 index over `corpus/` and answers questions about the Claude Code docs.\n\n- `src/rag.ts` â retrieval\n- `test/` â cases",
+        "# Docs Expert\n\nBuilds a BM25 index over `corpus/` and answers questions about the Claude Code docs.\n\n- `src/rag.ts` — retrieval\n- `test/` — cases",
       truncated: "File too large; preview truncated, download for the full file",
       unsupported: "Preview not supported for this type; download instead",
       download: "Download",
@@ -1090,7 +1210,7 @@ export const en: GalleryStrings = {
       wrap: "Wrap lines",
       crumbs: "Path strip",
       crumbsHint:
-        "When the path does not fit, its leading parts fold into one ââ¦â; the file name gives way last",
+        "When the path does not fit, its leading parts fold into one “…”; the file name gives way last",
       menu: "File menu",
       menuFile: "File",
       menuFolder: "Folder",
@@ -1120,7 +1240,7 @@ export const en: GalleryStrings = {
         small: "Small: secondary information and metadata.",
         caption: "Caption: a note under a chart or a control.",
         eyebrow: "Group label",
-        mono: "sess_7f3a Â· ~/work/penguin",
+        mono: "sess_7f3a · ~/work/penguin",
         label: "Field label",
       },
       inline: { before: "Run ", code: "pnpm install", after: " to install the dependencies." },
@@ -1143,6 +1263,12 @@ export const en: GalleryStrings = {
         "- Type checks and tests pass: `pnpm typecheck && pnpm test`",
         "- Every entry in `changelog/unreleased/` has its English and Chinese pair",
         "- No breaking change is waiting to merge",
+        "",
+        "| Check | Command | Takes |",
+        "| --- | --- | --- |",
+        "| Types | `pnpm typecheck` | 40 s |",
+        "| Tests | `pnpm test` | 6 min |",
+        "| Format | `pnpm format:check` | 25 s |",
         "",
         "### Version numbers",
         "",
@@ -1193,7 +1319,16 @@ export const en: GalleryStrings = {
         "",
       ].join("\n"),
       compact: "Compact: a channel message",
-      compactSample: "Merged **#897** â `feat/ui-w2` can go.",
+      compactSample: "Merged **#897** — `feat/ui-w2` can go.",
+      tables: "Tables",
+      tablesHint:
+        "Markdown tables fill the text column and scroll sideways in their own box when they do not fit. Figure columns align right, short cells and inline code stay on one line, long cells wrap; even rows are striped and the row under the pointer is lit.",
+      tableWide: "Wide: fills the column, scrolls when it does not fit",
+      tableWideSample:
+        "| Endpoint | Route | Status | Requests | Errors | Cost | Notes | Updated |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| Sign in | `/api/auth/login` | Healthy | 12,480 | 0.3% | $0.42 | Rate-limited per address after five failures in a minute; the limit lifts after ten minutes | 2026-10-18 |\n| Session events | `/api/projects/:projectId/sessions/:sessionId/events` | Healthy | 3,912 | 0.1% | $1.86 | Streams the Session's events until it settles; a reconnect resumes from the last event id | 2026-10-17 |\n| Import a snapshot | `/api/projects/:projectId/import` | Degraded | 48 | 6.2% | — | Archives over 200 MB time out; uploads are moving to chunks | 2026-10-16 |\n| Model balance | `/api/models/balance` | Healthy | 905 | 0% | $0.03 | Cached for a minute | 2026-10-12 |",
+      tableShort: "Short: key and value",
+      tableShortSample:
+        "| Setting | Value |\n| --- | --- |\n| Model | `gpt-5.6-luna` |\n| Approval | Ask before writing files |\n| Sandbox | Workspace only |\n| Context window | 400k tokens |",
       code: "Code",
       surface: "Code surface: line numbers, no frame",
       diff: "Diff",
@@ -1204,7 +1339,7 @@ export const en: GalleryStrings = {
       patchLabel: "Changes to src/limits.ts",
       a2ui: "A2UI blocks",
       a2uiHint:
-        "Components a model writes into its reply: weather, clock, countdown and metrics widgets, then a choice, a form, steps, a callout and a Mermaid diagram. The widgets are snapshots the model supplies; only the clock and the countdown move. A pick or a submit here shows, as a toast, the text the app would put in the composer.",
+        "Components a model writes into its reply: weather, clock, countdown, metrics and system-resource widgets, a chart drawn from data, then a choice, a form, steps, a callout and a Mermaid diagram. The widgets are snapshots the model supplies; only the clock and the countdown move. A pick or a submit here shows, as a toast, the text the app would put in the composer.",
       a2uiReply: [
         {
           lead: "Here is the weather in Beijing right now:",
@@ -1263,34 +1398,11 @@ export const en: GalleryStrings = {
           },
         },
         {
-          lead: "The service status, as just read:",
+          lead: "Release 0.3 at a glance, as just read:",
           spec: {
             type: "metrics",
-            title: "Service status",
+            title: "Release 0.3",
             items: [
-              {
-                label: "CPU",
-                value: 37,
-                max: 100,
-                unit: "%",
-                gauge: "ring",
-                warn: 80,
-                danger: 95,
-                history: [22, 31, 28, 45, 52, 41, 37],
-              },
-              {
-                label: "Memory",
-                kind: "used",
-                value: 15.3,
-                max: 16,
-                unit: "GB",
-                decimals: 1,
-                gauge: "bar",
-                warn: 13.6,
-                danger: 15.2,
-                delta: 0.4,
-                deltaLabel: "vs. yesterday",
-              },
               {
                 label: "API quota",
                 kind: "remaining",
@@ -1298,19 +1410,74 @@ export const en: GalleryStrings = {
                 max: 5000,
                 warn: 1000,
                 danger: 250,
-                detail: "resets in 3 days",
+                detail: "Resets in 3 days",
               },
               {
-                label: "Monthly budget",
+                label: "Budget",
                 kind: "remaining",
                 value: 180,
                 max: 1000,
-                prefix: "Â¥",
-                warn: 300,
-                danger: 100,
+                prefix: "¥",
+                warn: 200,
+                danger: 50,
+                delta: -60,
+                deltaLabel: "today",
               },
-              { label: "Upload", kind: "progress", value: 63, max: 100, unit: "%" },
+              {
+                label: "Test runs",
+                kind: "progress",
+                value: 7,
+                max: 12,
+                unit: "runs",
+                history: [2, 3, 5, 7],
+              },
+              {
+                label: "p95 latency",
+                value: 182,
+                unit: "ms",
+                warn: 250,
+                danger: 400,
+                delta: -14,
+                deltaLabel: "vs. yesterday",
+              },
             ],
+            asOf: "2026-10-04T14:05+08:00",
+          },
+        },
+        {
+          lead: "This week's API latency:",
+          spec: {
+            type: "chart",
+            kind: "bar",
+            title: "API latency",
+            categories: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+            series: [
+              { label: "p50", values: [120, 135, 118, 142, 128] },
+              { label: "p95", values: [310, 360, 295, 420, 330] },
+            ],
+            yLabel: "Latency",
+            yUnit: "ms",
+          },
+        },
+        {
+          lead: "The build machine, right now:",
+          spec: {
+            type: "resources",
+            host: "build-01",
+            cpu: { percent: 37, cores: 8, history: [22, 31, 28, 45, 52, 41, 37] },
+            memory: { used: 13.9, total: 16, history: [72, 75, 79, 82, 85, 86, 87] },
+            swap: { used: 0.4, total: 2 },
+            disks: [
+              { path: "/", used: 61, total: 100 },
+              { path: "/data", used: 431, total: 500 },
+            ],
+            network: {
+              unit: "KB/s",
+              rx: [120, 98, 140, 180, 160, 130, 150],
+              tx: [40, 35, 50, 62, 48, 44, 52],
+            },
+            load: { one: 1.2, five: 1, fifteen: 0.8, cores: 8 },
+            uptimeSec: 1071360,
             asOf: "2026-10-04T14:05+08:00",
           },
         },
@@ -1367,6 +1534,15 @@ export const en: GalleryStrings = {
             title: "Deployment",
             fields: [
               {
+                id: "service",
+                label: "Service name",
+                kind: "text",
+                placeholder: "billing-api",
+                pattern: "^[a-z][a-z0-9-]*$",
+                hint: "Lowercase letters, digits and hyphens",
+                required: true,
+              },
+              {
                 id: "region",
                 label: "Region",
                 kind: "single",
@@ -1377,7 +1553,7 @@ export const en: GalleryStrings = {
                 id: "addons",
                 label: "Add-ons",
                 kind: "multiple",
-                options: [{ label: "CDN" }, { label: "WAF" }],
+                options: [{ label: "CDN" }, { label: "WAF" }, { label: "Backups" }],
               },
               {
                 id: "replicas",
@@ -1387,10 +1563,59 @@ export const en: GalleryStrings = {
                 max: 10,
                 step: 1,
                 unit: "pods",
+                default: 2,
               },
-              { id: "notes", label: "Notes", kind: "text", placeholder: "Anything else" },
+              {
+                id: "scale",
+                label: "Scale out at",
+                kind: "slider",
+                min: 50,
+                max: 90,
+                step: 5,
+                unit: "%",
+                default: 70,
+              },
+              {
+                id: "notes",
+                label: "Notes",
+                kind: "textarea",
+                placeholder: "Anything else",
+                hint: "One request per line",
+              },
             ],
             submitLabel: "Fill in answers",
+          },
+        },
+        {
+          lead: "Then pick when it goes out:",
+          spec: {
+            type: "form",
+            title: "Release window",
+            fields: [
+              {
+                id: "channel",
+                label: "Release channel",
+                kind: "select",
+                options: [
+                  { label: "Stable" },
+                  { label: "Beta" },
+                  { label: "Nightly" },
+                  { label: "Canary" },
+                  { label: "Internal" },
+                  { label: "Hotfix" },
+                ],
+              },
+              { id: "day", label: "Release day", kind: "date", required: true },
+              { id: "start", label: "Start at", kind: "time", default: "09:30" },
+              { id: "freeze", label: "Code freeze", kind: "datetime" },
+              {
+                id: "notify",
+                label: "Notify the on-call engineer",
+                kind: "switch",
+                hint: "A message when the release starts",
+                default: true,
+              },
+            ],
           },
         },
         {
@@ -1399,7 +1624,7 @@ export const en: GalleryStrings = {
             type: "steps",
             title: "Rotate the API key",
             steps: [
-              { text: "Open Settings âº Keys." },
+              { text: "Open Settings › Keys." },
               { text: "Create a new key and copy it.", note: "The new key works at once." },
               {
                 text: "Delete the old key.",
@@ -1559,6 +1784,7 @@ export const en: GalleryStrings = {
         queued: "Queued",
         working: "Working",
         reconnecting: "Reconnecting",
+        reconnectStopped: "Reconnect stopped",
         failed: "Failed",
         signInRefused: "Sign-in refused",
         installedOnly: "Installed",
@@ -1572,8 +1798,10 @@ export const en: GalleryStrings = {
       reasons: {
         failed: "Failed at Restart the server: no answer on port 7364 within 30 s.",
         unreachable: "ssh: connect to host 10.0.0.12 port 22: Connection timed out",
-        working: "Downloading penguin-harness 0.2.16â¦",
-        reconnecting: "Attempt 4",
+        working: "Downloading penguin-harness 0.2.16…",
+        reconnecting: "Reconnect 3 of 8 failed",
+        reconnectStopped:
+          "lab-2 refused the connection: no ssh server listens at that address and port.",
         behind: "Version 0.2.16 is available",
       },
       cards: "Machine cards",
@@ -1592,12 +1820,9 @@ export const en: GalleryStrings = {
         installing: "Installing the program",
       },
       waits: {
-        reconnecting: "Reconnectingâ¦",
         stopped: "Its server is stopped",
         notConnected: "Not connected yet",
         failed: "The last job failed",
-        signInRefused:
-          "That machine refused the saved password â enter it again in the machine's SSH settings.",
         notInstalled: "Not installed yet",
         windows: "Installed; start its server by hand on this Windows machine",
       },
@@ -1628,6 +1853,75 @@ export const en: GalleryStrings = {
       submitCount: (count: number) => `Add ${count}`,
       exhaustedCaption: "Nothing left in the ssh config to add",
       noHosts: "Every host in the ssh config is on this page already.",
+    },
+    retry: {
+      phases: "Four phases",
+      phasesHint:
+        "A card's middle line: trying (a spinner), waiting for the next attempt (an hourglass, a countdown by the second and Retry now), gave up (a pause, the reason and Retry), not worth retrying (a cross in the danger tone and the fix; only the mark is coloured).",
+      blocks: "As a block",
+      blocksHint:
+        "In a dialog section: body type, the reason under the sentence, the buttons under that on the form rung.",
+      inCard: "In a machine card",
+      inCardHint:
+        "The card's middle while no job runs; a press disables the buttons and spins until the next attempt begins.",
+      inChat: "In a chat notice",
+      inChatHint:
+        "The chat's reconnect notice takes the same pair: Retry now as secondary, Give up as ghost.",
+      narrow: "Narrow",
+      narrowHint: "At phone width the line wraps under the name; the buttons are never cut.",
+      trying: (n: number, m: number) => `Trying to reconnect (${n} of ${m})…`,
+      failed: (n: number, m: number) => `Reconnect ${n} of ${m} failed`,
+      countdown: (s: number) => `next try in ${s} s`,
+      gaveUp: (m: number) => `Stopped retrying after ${m} failed reconnects`,
+      stoppedSsh: "Stopped reconnecting",
+      stoppedPassword: "Sign-in refused; stopped reconnecting",
+      retryNow: "Retry now",
+      retry: "Retry",
+      lasting: "For 16 minutes",
+      refused: (alias: string) =>
+        `${alias} refused the connection: no ssh server listens at that address and port.`,
+      hostKey:
+        "mini presented a different host key from the one remembered, so ssh refuses to connect. If that machine was reinstalled, remove the old key with ssh-keygen -R and connect once.",
+      password: "That machine refused the saved password. Enter it again in its SSH settings.",
+      states: {
+        ready: "Running",
+        reconnecting: "Reconnecting",
+        reconnectStopped: "Reconnect stopped",
+      },
+      card: { checked: "4 min", use: "Use", settings: "Settings", remove: "Delete" },
+      chatRetryNow: "Retry now",
+      chatGiveUp: "Give up",
+      chatLine: (n: number) => `[Retry] Connection timed out or dropped; retry #${n} shortly…`,
+    },
+    attachments: {
+      composer: "Composer",
+      composerHint:
+        "Staged images and files share one row at the top of the composer: images at one height and their own ratio, files with their kind's glyph, name and size; the remove button always shows.",
+      sent: "Sent message",
+      sentHint:
+        "The same tiles as the composer, above the text bubble: a row of images, a row of files, one time footer.",
+      steer: "Steer",
+      steerHint: "A steer's images and files inside its chip, at the composer's size.",
+      narrow: "Phone width",
+      narrowHint:
+        "At phone width the tiles wrap, a long file name truncates first, and the remove button stays in view.",
+      shapes: "Ratios and sizes",
+      shapesHint:
+        "Landscape, portrait, square, tiny and very wide images keep their own ratio; past a bound or smaller than the tile, the whole picture is fitted inside it — never stretched, cropped or enlarged.",
+      failed: "Failed to load",
+      failedHint:
+        "An image that cannot load keeps a square tile with the image glyph, and says why on hover.",
+      reset: "Restore every attachment",
+      imageAlt: "Image uploaded by user",
+      removeImage: "Remove image",
+      removeFile: "Remove file",
+      unavailable: "This image could not be loaded",
+      prompt: "Here are the screenshots and the logs from yesterday's build. Why did it fail?",
+      steerText: "Also look at these two",
+      steerLabel: "Steer",
+      time: "14:05",
+      copy: "Copy message",
+      placeholder: "Type a message…",
     },
   },
 };

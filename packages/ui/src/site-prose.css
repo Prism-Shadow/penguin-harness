@@ -1,7 +1,8 @@
 /* Public-site article prose (`SiteMarkdown`): blog posts and doc pages read in one voice. Two
    variants keep the rhythm each surface has always had — `post` for a blog post's flowing text,
-   `doc` for a reference page's ruled sections and plain tables. Unlayered, like the per-site
-   copies it replaces, so it outranks utilities on the Markdown's own elements. The palette is
+   `doc` for a reference page's ruled sections. Tables are markdown-table.css's, the same as in
+   the app, mapped onto the sites' palette below. Unlayered, like the per-site copies it
+   replaces, so it outranks utilities on the Markdown's own elements. The palette is
    site-content.css's. */
 
 .site-prose {
@@ -12,7 +13,7 @@
 :root.dark .site-prose {
   color: var(--site-gray-200);
 }
-.site-prose :is(p, ul, ol, pre, blockquote, table, details) {
+.site-prose :is(p, ul, ol, pre, blockquote, .md-table, details) {
   margin: 0.625rem 0;
 }
 .site-prose li {
@@ -359,65 +360,28 @@ html.dark .site-prose .shiki span {
   color: var(--site-gray-400);
 }
 
-/* Tables scroll inside the prose column instead of widening the page. A post's table keeps its
-   own width up to the column (`max-content`, so no empty strip past the last cell), lets a cell
-   take a second line above a 9rem floor and only then scrolls, and lays translucent header and
-   zebra fills over the page; a reference page keeps a plain collapsed grid. */
-.site-prose table {
-  display: block;
-  overflow-x: auto;
+/* Tables: the shape is markdown-table.css's, the same in a blog post, a doc page and a chat reply;
+   the prose maps its custom properties onto the sites' palette — a light rule under each row, a
+   stronger one under the header, the header in muted ink at medium weight — and sets the cells a
+   size down. The stripes and the hover keep the sheet's ink-derived tints. */
+.site-prose {
+  --md-table-pad-y: 0.375rem;
+  --md-table-pad-x: 0.625rem;
+  --md-table-rule: var(--site-gray-200);
+  --md-table-rule-head: var(--site-gray-300);
+  --md-table-head-fg: var(--site-gray-600);
+  --md-table-head-weight: 500;
+  --md-table-dur: 150ms;
+  --md-table-ease: var(--site-ease);
+}
+:root.dark .site-prose {
+  --md-table-rule: var(--site-gray-800);
+  --md-table-rule-head: var(--site-gray-700);
+  --md-table-head-fg: var(--site-gray-400);
 }
 .site-prose :is(th, td) {
-  padding: 0.375rem 0.625rem;
   font-size: var(--site-text-sm);
   line-height: var(--site-text-sm-lh);
-}
-.site-prose[data-variant="post"] table {
-  border-collapse: separate;
-  border-spacing: 0;
-  width: max-content;
-  max-width: 100%;
-  scrollbar-width: thin;
-}
-.site-prose[data-variant="post"] :is(th, td) {
-  border-style: solid;
-  border-color: var(--site-gray-200);
-  border-width: 0 1px 1px 0;
-  min-width: 9rem;
-}
-.site-prose[data-variant="post"] :is(th, td):first-child {
-  border-left-width: 1px;
-}
-.site-prose[data-variant="post"] thead :is(th, td) {
-  border-top-width: 1px;
-  background: color-mix(in oklab, var(--site-gray-200) 50%, transparent);
-  text-align: left;
-  font-weight: 600;
-}
-.site-prose[data-variant="post"] tbody tr:nth-child(even) {
-  background: color-mix(in oklab, var(--site-gray-100) 70%, transparent);
-}
-.site-prose[data-variant="doc"] table {
-  border-collapse: collapse;
-}
-.site-prose[data-variant="doc"] :is(th, td) {
-  border: 1px solid var(--site-gray-200);
-}
-.site-prose[data-variant="doc"] th {
-  background: var(--site-gray-50);
-  text-align: left;
-}
-:root.dark .site-prose :is(th, td) {
-  border-color: var(--site-gray-800);
-}
-:root.dark .site-prose[data-variant="post"] thead :is(th, td) {
-  background: color-mix(in oklab, var(--site-gray-800) 60%, transparent);
-}
-:root.dark .site-prose[data-variant="post"] tbody tr:nth-child(even) {
-  background: color-mix(in oklab, var(--site-gray-800) 35%, transparent);
-}
-:root.dark .site-prose[data-variant="doc"] th {
-  background: var(--site-gray-900);
 }
 .site-prose hr {
   margin: 1rem 0;

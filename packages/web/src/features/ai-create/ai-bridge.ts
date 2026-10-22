@@ -32,12 +32,20 @@ export interface AiChatRequest {
   skills?: string[];
   /** Pins the new conversation's model (a paired reference); absent, the draft keeps its cached carry-over. */
   modelRef?: ModelRefDto;
+  /**
+   * The machine `agentId` lives on (lib/agent-location.ts): the conversation opens on that
+   * machine — in `workspace` there, or its temporary Workspace — since its Agent can only run
+   * there. Absent or null for an agent of this server.
+   */
+  machineId?: string | null;
 }
 
 /** What the draft page finds in `location.state` after openAiChat. */
 export interface AiChatRouteState {
   agentId: string;
   workspace?: string;
+  /** Travels with `workspace`, never alone: the draft applies a machine only with its path. */
+  machineId?: string;
 }
 
 /**
@@ -55,7 +63,16 @@ export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCac
     skills: req.skills ?? [],
     aiPrefill: true,
   };
-  if (req.workspace !== undefined) draft.workspace = req.workspace;
+  if (req.machineId !== undefined && req.machineId !== null) {
+    // A machine's agent runs there: the Workspace is one on that machine, recorded with it.
+    draft.workspace = req.workspace ?? "";
+    draft.machineId = req.machineId;
+  } else if (req.workspace !== undefined) {
+    // A path pinned here is a path on this server: a machine left from the cached draft would
+    // create the Session over there.
+    draft.workspace = req.workspace;
+    delete draft.machineId;
+  }
   if (req.modelRef !== undefined) draft.modelRef = req.modelRef;
   delete draft.handoffAgentId;
   return draft;
@@ -63,6 +80,9 @@ export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCac
 
 /** The route state carried to the draft page: only what was asked for, so a request that pins no Workspace leaves no `workspace` key behind. */
 export function aiChatRouteState(req: AiChatRequest): AiChatRouteState {
+  if (req.machineId !== undefined && req.machineId !== null) {
+    return { agentId: req.agentId, workspace: req.workspace ?? "", machineId: req.machineId };
+  }
   return {
     agentId: req.agentId,
     ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
@@ -83,7 +103,8 @@ export function useAiBridge(): { openAiChat: (req: AiChatRequest) => void } {
         const key = draftKey(userId, projectId);
         saveDraft(key, buildAiDraft(loadDraft(key), req));
       }
-      setCurrentAgentId(req.agentId);
+      // The current Agent is one of this server's: a machine's agent is named by the route alone.
+      if (req.machineId === undefined || req.machineId === null) setCurrentAgentId(req.agentId);
       navigate(`/chat/${DRAFT_SESSION_ID}`, { state: aiChatRouteState(req) });
     },
     [userId, projectId, setCurrentAgentId, navigate],

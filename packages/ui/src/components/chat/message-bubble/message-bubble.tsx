@@ -5,18 +5,20 @@
  * - `MessageRow` is a message the person sent: a column on the right, with its footer under it.
  *   A prompt that starts a Task takes a turn's room; a steer delivered inside a running Task is
  *   tighter, since it starts nothing.
- * - `MessageBubble` is the chrome, in four variants: `user`, the prompt's text in a tinted
- *   bubble; `image`, an image sent with it, in the same bubble with a thin inset; `steering`,
- *   a lighter bordered chip for a steer, marked by the person glyph and a short label, with the
- *   images and files it carried inside it; and `notice`, a quiet mono line — an abort, a failed
- *   request, a reconnect with its controls — in the muted ink or, for a reconnect, the attention
- *   ink.
+ * - `MessageBubble` is the chrome, in three variants: `user`, the prompt's text in a bubble
+ *   tinted by the accent; `steering`, a smaller bordered chip on the same tint for a steer, marked
+ *   by the person glyph and a short label, with the images and files it carried inside it; and
+ *   `notice`, a quiet mono line — an abort, a failed request, a reconnect with its controls — in
+ *   the muted ink or, for a reconnect, the attention ink. The person's own words sit on the
+ *   accent's tint, so they follow the accent the person chose; with the theme's own accent that
+ *   tint is a gray.
+ * - `MessageAttachments` holds what a prompt carried, above its text: the images and the files,
+ *   each an `AttachmentList` row (attachments.tsx), in the order the composer showed them.
  * - `MessageMeta` is the footer: the time and a copy button. From `sm` up it is invisible but
  *   takes its room (`opacity-0`, not `hidden`), and surfaces while the pointer is over the row or
  *   focus is inside it — hover alone would leave a keyboard user a copy button that is focusable
  *   but never shown, and `hidden` would shove everything below down each time it appeared. Below
  *   `sm` it is always shown: touch has no hover.
- * - `MessageImage` is an image in a bubble or a chip: it opens large on a click.
  *
  * Wrapping: a message is `wrap-anywhere` — long unbroken strings (attachment paths, long URLs)
  * wrap inside the bubble on a narrow screen instead of overflowing, and unlike `break-words` it
@@ -27,7 +29,6 @@ import type { ReactNode } from "react";
 import { CopyButton } from "../../actions/copy-button/copy-button";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
-import { ZoomableImage } from "../../overlays/lightbox/lightbox";
 
 /** How far a bubble may reach across the transcript. */
 const WIDTH = "max-w-[88%] md:max-w-[75%]";
@@ -50,17 +51,15 @@ export function MessageRow({
   );
 }
 
-export type MessageBubbleVariant = "user" | "image" | "steering" | "notice";
+export type MessageBubbleVariant = "user" | "steering" | "notice";
 
 export interface MessageBubbleProps {
   variant: MessageBubbleVariant;
-  /** The message: its text (`user`, `steering`, `notice`) or its image (`image`). */
+  /** The message's text. */
   children?: ReactNode;
   /** `steering`: the word that marks the chip as a steer, set before its text. */
   label?: string;
-  /** `steering`: the images it carried, laid out in a wrapping row under the text. */
-  media?: ReactNode;
-  /** `steering`: the files it carried (a files notice), under the images. */
+  /** `steering`: the images and files it carried (an `AttachmentList`), under its text. */
   attachments?: ReactNode;
   /** `notice`: `neutral` for an abort or a failed request, `attention` for a reconnect. */
   tone?: "neutral" | "attention";
@@ -72,7 +71,6 @@ export function MessageBubble({
   variant,
   children,
   label,
-  media,
   attachments,
   tone = "neutral",
   actions,
@@ -80,30 +78,27 @@ export function MessageBubble({
   switch (variant) {
     case "user":
       return (
-        <div className={`${WIDTH} rounded-lg bg-fill-neutral px-4 py-2.5`}>
+        <div className={`${WIDTH} rounded-lg bg-accent-tint px-4 py-2.5`}>
           <p className="wrap-anywhere font-sans whitespace-pre-wrap text-base leading-relaxed text-fg">
             {children}
           </p>
         </div>
       );
-    case "image":
-      return <div className={`${WIDTH} rounded-lg bg-fill-neutral p-1.5`}>{children}</div>;
     case "steering":
       return (
         <div
-          className={`flex ${WIDTH} flex-col gap-1.5 rounded-md border border-line-emphasis bg-fill-neutral px-3 py-1.5`}
+          className={`flex ${WIDTH} flex-col gap-1.5 rounded-md border border-line-emphasis bg-accent-tint px-3 py-1.5`}
         >
           <div className="flex items-start gap-1.5">
             <GlyphIcon d={ICONS.user} className="mt-1 shrink-0 text-fg-subtle" />
             <p className="wrap-anywhere font-sans whitespace-pre-wrap text-sm leading-relaxed text-fg">
               {label !== undefined && (
-                <span className="mr-1.5 text-xs font-semibold text-fg-muted">{label}</span>
+                <span className="mr-1.5 text-xs font-semibold text-fg">{label}</span>
               )}
               {children}
             </p>
           </div>
-          {media !== undefined && <div className="flex flex-wrap justify-end gap-1.5">{media}</div>}
-          {attachments !== undefined && <div className="flex justify-end">{attachments}</div>}
+          {attachments}
         </div>
       );
     case "notice":
@@ -123,31 +118,11 @@ export function MessageBubble({
 }
 
 /**
- * An image the person sent, in its bubble (`bubble`) or among a steer's (`chip`, smaller). It
- * loads lazily: a transcript's images can be fetched by reference, one request each, and only
- * the ones scrolled near need to arrive.
+ * What a prompt carried, above its text bubble: the caller's attachment rows (images, then
+ * files), on the bubble's width and its edge.
  */
-export function MessageImage({
-  src,
-  alt,
-  size = "bubble",
-}: {
-  src: string;
-  alt: string;
-  size?: "bubble" | "chip";
-}) {
-  return (
-    <ZoomableImage
-      src={src}
-      alt={alt}
-      lazy
-      className={
-        size === "bubble"
-          ? "max-h-48 max-w-full rounded-control"
-          : "max-h-28 max-w-full rounded-control"
-      }
-    />
-  );
+export function MessageAttachments({ children }: { children?: ReactNode }) {
+  return <div className={`${WIDTH} mb-1.5 flex flex-col items-end gap-2`}>{children}</div>;
 }
 
 /** A message's footer: its time, and a copy button when there is text to copy. */

@@ -77,6 +77,7 @@ import type {
 import {
   createTempWorkspace,
   formatSessionId,
+  isSessionIdToken,
   mcpConnectOutcome,
   sessionEnvironment,
 } from "./internal/session-support.js";
@@ -242,10 +243,9 @@ export interface CreateSessionOptions {
   thinkingLevel?: ThinkingLevelName | null;
   /**
    * Explicit credentials; if unspecified, falls back to the credentials in the Project config,
-   * then — only when the entry's requests go to the vendor's own endpoint (no base URL, or a
-   * vendor endpoint) — to the vendor's environment variable, read by MMSP. A keyless entry
-   * pointed anywhere else (a gateway, a self-hosted server) is refused with a
-   * ModelCredentialError; see resolveModelCredential.
+   * then to what MMSP's routed client does with no key: it reads its vendor's `*_API_KEY` for
+   * its own default endpoint, and refuses any other base URL, which reaches the caller as a
+   * ModelCredentialError at creation; see resolveEntryCredential.
    */
   apiKey?: string;
   baseUrl?: string;
@@ -258,6 +258,15 @@ export interface CreateSessionOptions {
    * `company` for company mode's desk and ticket Sessions).
    */
   source?: SessionSource;
+  /**
+   * The id to create the Session under; absent, a new one is minted. For a host that recorded a
+   * Session before its first run and has lost the runtime object since (a process restart): such
+   * a Session has no Trace to resume from, and recreating it under a new id would orphan
+   * everything the host keyed by the old one. The id must consist of letters, digits, `-` and
+   * `_` (every minted id does), and must have no Trace under this Agent yet: one that has is
+   * resumed with `resumeSession`, never created again.
+   */
+  sessionId?: string;
 }
 
 export interface ResumeSessionOptions {
@@ -397,11 +406,8 @@ function resolveCompaction(
  * The credential and protocol a Session's (or a describer's) client is built with for a model
  * entry: the explicit override, else the entry's own fields, else its group's
  * `[providers.<id>]` table — the file's values only, never the catalog's
- * (resolveEntryCredential) — and for the key, only where the rule allows it, nothing, so the
- * routed client reads its own environment variable.
- * A keyless entry whose effective endpoint is not the vendor's own throws its
- * ModelCredentialError here, which hosts file with the SDKs' missing-credential errors (the
- * server's `isMissingCredential`).
+ * (resolveEntryCredential) — and nothing for a field none of them sets, which MMSP's routed
+ * client then fills in by its own rule.
  */
 function entryCredential(
   entry: ModelEntry,
@@ -413,6 +419,25 @@ function entryCredential(
     providerConnectionShape(config.providers?.[entry.provider]),
     opts,
   );
+}
+
+/**
+ * Builds, and discards, the client a Session on this entry would get, so that whatever its
+ * construction refuses surfaces before the Session leaves anything on disk: MMSP's refusal of a
+ * keyless base URL (a ModelCredentialError) or a provider SDK's own missing credential — both of
+ * which hosts file as a missing credential (the server's `isMissingCredential`). Nothing is
+ * sent.
+ */
+function checkEntryClient(
+  entry: ModelEntry,
+  config: ProjectConfig,
+  opts: { apiKey?: string | undefined; baseUrl?: string | undefined },
+): void {
+  void new GenerativeModel({
+    modelId: entry.model_id,
+    ...entryCredential(entry, config, opts),
+    tools: [],
+  });
 }
 
 /** The message for a model reference that names no entry in the Project config. */
@@ -704,12 +729,15 @@ export class Agent {
     const modelEntry = getModel(this.projectConfig, ref);
     if (!modelEntry) throw new Error(modelNotConfigured(ref));
     // Credentials are inlined on the model entry (single config file); an explicit
-    // argument takes priority. With neither, the entry may lean on the environment only
-    // where the rule in resolveModelCredential allows (the vendor's own endpoint): a keyless
-    // row pointed elsewhere is refused here, before any client exists. Called for that
-    // refusal alone: each context's clients resolve the credential of the entry the context
-    // runs on (see buildRuntime's `credentialsFor`).
-    entryCredential(modelEntry, this.projectConfig, opts);
+    // argument takes priority. With neither, MMSP's routed client decides what a missing key
+    // means, at construction: a client built here refuses a keyless base URL its environment
+    // key may not go to before the Workspace or the Trace exists. Built for that refusal alone:
+    // each context's clients resolve the credential of the entry the context runs on (see
+    // buildRuntime's `credentialsFor`).
+    checkEntryClient(modelEntry, this.projectConfig, opts);
+    // A given id is checked before the Workspace for the same reason as the model: a refusal
+    // must leave no temporary workspace behind.
+    if (opts.sessionId !== undefined) await this.checkRecreatedSessionId(opts.sessionId);
 
     // An explicit Workspace must already exist as a directory: if it
     // doesn't, throw rather than auto-create (to avoid a typo silently working in
@@ -735,7 +763,7 @@ export class Agent {
         this.state.agentId,
       );
     }
-    const sessionId = formatSessionId();
+    const sessionId = opts.sessionId ?? formatSessionId();
     const spec: SessionSpec = {
       sessionId,
       workspaceDir,
@@ -757,6 +785,25 @@ export class Agent {
     });
 
     return this.newSession(spec, context, rt, trace);
+  }
+
+  /**
+   * The id a host recreates a Session under (CreateSessionOptions.sessionId) must name Trace
+   * files inside the Trace directory, and must have none yet: a second Writer under the id of a
+   * Session that has a Trace would write a new opening into a history it never read.
+   */
+  private async checkRecreatedSessionId(sessionId: string): Promise<void> {
+    if (!isSessionIdToken(sessionId)) {
+      throw new Error(
+        `Cannot create a Session under the id ${JSON.stringify(sessionId)}: an id may contain only letters, digits, "-" and "_".`,
+      );
+    }
+    const dir = tracesDir(this.state.root, this.state.projectId, this.state.agentId);
+    if ((await findLatestTraceFile(dir, sessionId)) !== null) {
+      throw new Error(
+        `Session ${sessionId} already has a Trace, so it cannot be created again; resume it instead.`,
+      );
+    }
   }
 
   /**
@@ -823,9 +870,9 @@ export class Agent {
         `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`,
       );
     }
-    // Same credential rule as createSession (see entryCredential): a key deleted since the
-    // Session was created surfaces here, at resume.
-    entryCredential(modelEntry, this.projectConfig, opts);
+    // Same check as createSession (see checkEntryClient): a key deleted since the Session was
+    // created surfaces here, at resume.
+    checkEntryClient(modelEntry, this.projectConfig, opts);
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
@@ -1057,9 +1104,9 @@ export class Agent {
         : {};
     // The credentials and protocol a context's LLM objects run on: the caller's explicit
     // override for the entry it was given for (the creation model), every other entry's own
-    // configured connection, else its group's table — the file's, never the catalog's — under
-    // the one credential rule (see entryCredential), so a keyless entry pointed away from its
-    // vendor is refused here too — plus the host's resolver for that entry.
+    // configured connection, else its group's table — the file's, never the catalog's (see
+    // entryCredential) — plus the host's resolver for that entry. A keyless base URL MMSP
+    // refuses throws when the context's client is built.
     const credentialsFor = (
       entry: ModelEntry,
     ): Pick<GenerativeModelConfig, "apiKey" | "baseUrl" | "clientType" | "resolveApiKey"> => ({

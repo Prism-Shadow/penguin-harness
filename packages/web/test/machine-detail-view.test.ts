@@ -5,8 +5,9 @@
  *   wears, with a spinner only while the machine is working or being brought back; the reason
  *   behind the word is there exactly when there is one — a failure's words after its step by the
  *   name the steps list gives it, ssh's diagnostic, the line a working job is on, the attempt a
- *   reconnect is on, the version a machine on another build would get (none when this server has
- *   no build of its own). This server's own entry is running.
+ *   reconnect failed at, the failure a stopped reconnect ended on, the version a machine on another
+ *   build would get (none when this server has no build of its own). This server's own entry is
+ *   running.
  * - The toolbar: one row, no verb twice. A machine with nothing installed is enabled; one on
  *   another build is updated, and only then — in sync, there is no update to offer, hidden rather
  *   than greyed; then its server is stopped while it is kept connected, started once it is not;
@@ -23,9 +24,10 @@
  *   phase is marked failed at the step its failure names, and says why in the page's language with
  *   ssh's own words under it. What the server's connection check found after a failure comes with
  *   it, check by check, or that it is still checking.
- * - A machine being brought back says for how long, which attempt and when the next — or that one
- *   is running — the last failure in the page's language when ssh refused, and what the automatic
- *   check found once it ran.
+ * - A machine being brought back says where the streak stands as the card's retry status does —
+ *   an attempt running, a wait with Retry now, a stop with Retry, a refused password with none —
+ *   for how long, the last failure in the page's language when ssh refused, and what the
+ *   automatic check found once it ran.
  * - The installed version says whether it is the one this server would install, and is bare when
  *   there is nothing to compare it against or it is this server's own.
  * - The facts: a remote machine is reached over ssh, with the address its alias names once the
@@ -84,6 +86,16 @@ const reconnecting: Extract<MachineReading, { kind: "reconnecting" }> = {
   kind: "reconnecting",
   since: "2026-10-10T07:50:00.000Z",
   attempts: 2,
+  maxAttempts: 8,
+  nextAt: "2026-10-10T07:51:00.000Z",
+};
+const reconnectStopped: Extract<MachineReading, { kind: "reconnectStopped" }> = {
+  kind: "reconnectStopped",
+  why: "attempts",
+  since: "2026-10-10T07:50:00.000Z",
+  attempts: 8,
+  maxAttempts: 8,
+  message: "nas refused the connection.",
 };
 const ready: MachineReading = { kind: "ready", port: 7364 };
 
@@ -92,6 +104,7 @@ const READINGS: MachineReading[] = [
   { kind: "queued" },
   working,
   reconnecting,
+  reconnectStopped,
   failed,
   ready,
   { kind: "installedOnly" },
@@ -113,7 +126,9 @@ describe("the status chip", () => {
       expect(chip.word).toBe(S.machines.state[kind]);
       expect(chip.tone).toBe(readingTone(reading));
       expect(chip.reason !== null).toBe(
-        ["failed", "unreachable", "working", "reconnecting", "behind"].includes(kind),
+        ["failed", "unreachable", "working", "reconnecting", "reconnectStopped", "behind"].includes(
+          kind,
+        ),
       );
     },
   );
@@ -146,6 +161,7 @@ const machine = (over: Partial<MachineInfo> = {}): MachineInfo => ({
   machineId: "NASmachineID0000",
   local: false,
   connection: { pid: 4242 },
+  socket: null,
   keepConnected: true,
   api: null,
   status: { state: "running", checkedAt: "2026-10-10T07:59:00.000Z", port: 7364 },
@@ -167,6 +183,7 @@ const job = (over: Partial<MachineJob>): MachineJob => ({
 const lost: MachineReconnect = {
   since: "2026-10-10T07:50:00.000Z",
   attempts: 3,
+  maxAttempts: 8,
   nextAt: "2026-10-10T08:01:20.000Z",
   lastError: "the connection to this machine ended",
   diagnosis: null,
@@ -389,19 +406,29 @@ describe("a job's steps", () => {
 describe("a machine being brought back", () => {
   const NOW = Date.parse("2026-10-10T08:00:00.000Z");
 
-  it("says for how long, which attempt and when the next", () => {
+  it("says where the streak stands as the card does, and for how long", () => {
     expect(reconnectView(machine({ reconnect: lost }), "en", NOW)).toMatchObject({
+      status: {
+        phase: "waiting",
+        label: S.machines.retry.failed(3, 8),
+        nextAtMs: Date.parse(lost.nextAt!),
+        canRetry: true,
+      },
       lasting: "10 minutes",
-      attempt: 4,
-      next: "1 minute",
       lastError: lost.lastError,
       detail: null,
       check: null,
     });
-    // An attempt under way has no next one yet.
-    expect(
-      reconnectView(machine({ reconnect: { ...lost, nextAt: null } }), "zh", NOW)?.next,
-    ).toBeNull();
+    const view = (over: Partial<MachineReconnect>) =>
+      reconnectView(machine({ reconnect: { ...lost, nextAt: null, ...over } }), "en", NOW)?.status;
+    // An attempt under way: nothing to press.
+    expect(view({})).toMatchObject({ phase: "trying", canRetry: false });
+    // Stopped: the Retry starts again; a refused password offers none, the fix is its SSH settings.
+    expect(view({ gaveUp: "attempts" })).toMatchObject({ phase: "gaveUp", canRetry: true });
+    expect(view({ waitsForPassword: true, sshReason: "password-rejected" })).toMatchObject({
+      phase: "blocked",
+      canRetry: false,
+    });
   });
 
   it("says an ssh refusal in the page's language with ssh's own words under it, and what the automatic check found", () => {
@@ -479,6 +506,7 @@ describe("the facts", () => {
     machineId: "Ed5tN1qRz8Kc3VwY",
     local: false,
     connection: null,
+    socket: null,
     api: null,
     status: {
       state: "unreachable",

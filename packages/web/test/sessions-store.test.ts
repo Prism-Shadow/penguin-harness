@@ -57,6 +57,9 @@
  *   about again once it is unarchived.
  * - A deleted Session (session_deleted) is dropped and tombstoned, held or not, and a batch of
  *   them is one update.
+ * - A Session deleted while a reload or a next page that read it is on its way is not listed
+ *   by that answer; a reload in flight is dropped and asked again, so its totals do not count
+ *   the Session either.
  *
  * Property (seeded, 100 runs): after any sequence of loads, live flips and reloads, every list
  * the sidebar draws — time mode's, each Agent group's, each Workspace group's — is a prefix of
@@ -461,17 +464,56 @@ describe("the list across machines", () => {
     expect(store.getState().countsByAgent.get("a1")?.active).toBe(1);
   });
 
-  it("this server not answering abandons the reload: the rows stand and loading is left alone", async () => {
-    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
-    const store = boot();
-    await store.getState().reload();
-    expect(ids(store)).toEqual(["here"]);
-    expect(store.getState().loading).toBe(false);
+  describe("this server answering nothing", () => {
+    // The store asks again on a timer; fake timers keep that retry inside the case that
+    // started it instead of reloading against a later case's fetch.
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
 
-    answers.delete(key(null, "a1")); // mid-swap: nothing answers here
-    await store.getState().reload();
-    expect(ids(store)).toEqual(["here"]);
-    expect(store.getState().loading).toBe(false);
+    it("abandons the reload: the rows stand and loading is left alone", async () => {
+      answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+      const store = boot();
+      await store.getState().reload();
+      expect(ids(store)).toEqual(["here"]);
+      expect(store.getState().loading).toBe(false);
+
+      answers.delete(key(null, "a1")); // mid-swap: nothing answers here
+      await store.getState().reload();
+      expect(ids(store)).toEqual(["here"]);
+      expect(store.getState().loading).toBe(false);
+    });
+
+    it("asks again on a doubling backoff, and starts over once it answers", async () => {
+      const warn = vi.mocked(console.warn);
+      const retryIn = () => /asked again in (\d+) ms/.exec(String(warn.mock.lastCall?.[0]))?.[1];
+      const store = boot();
+
+      await store.getState().reload(); // nothing answers
+      const perReload = fetch.requests.length;
+      expect(retryIn()).toBe("2000");
+
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(fetch.requests).toHaveLength(perReload);
+      await vi.advanceTimersByTimeAsync(1); // the retry, still unanswered
+      expect(fetch.requests).toHaveLength(2 * perReload);
+      expect(retryIn()).toBe("4000");
+
+      answers.set(key(null, "a1"), page([row("back", "2026-01-03T00:00:00Z")], 1));
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(fetch.requests).toHaveLength(3 * perReload);
+      expect(ids(store)).toEqual(["back"]);
+
+      answers.delete(key(null, "a1"));
+      await store.getState().reload();
+      expect(retryIn()).toBe("2000");
+    });
   });
 
   it("keeps two machines' counts for one path apart — a badge is about a directory, not a string", async () => {
@@ -1002,6 +1044,68 @@ describe("archive, unarchive and delete", () => {
       expect(store.getState().deletedSessionIds.has(id), id).toBe(true);
     }
     expect(fetch.requests).toEqual([]);
+  });
+
+  /** Holds the next sidebar fetch's answer — read from the server now, delivered on release. */
+  function holdNextBatch(): { release: () => void } {
+    let release = () => {};
+    let held = false;
+    fetch.answer((request) => {
+      if (held || !request.path.endsWith("/sessions/batch")) return serve(request);
+      held = true;
+      const answer = serve(request);
+      return new Promise<Response>((resolve) => {
+        release = () => resolve(answer);
+      });
+    });
+    return { release: () => release() };
+  }
+  const withoutRow = (sessionId: string) =>
+    served.set(
+      key(null, "a1"),
+      served.get(key(null, "a1"))!.filter((s) => s.sessionId !== sessionId),
+    );
+
+  it("keeps out a Session deleted while a reload that read it was on its way, and asks again", async () => {
+    vi.useFakeTimers();
+    const store = await onScreen();
+    // A new conversation is announced and the list reloads; the server reads it...
+    served
+      .get(key(null, "a1"))!
+      .push(session("fresh", { lastActiveAt: "2026-09-16T11:00:00.000Z" }));
+    const hold = holdNextBatch();
+    const reload = store.getState().reload();
+    // ...then its first Task is refused and it is deleted, before that reload answers.
+    withoutRow("fresh");
+    applyUserEvent(store, deletedEvent("fresh"), () => undefined);
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    hold.release();
+    await reload;
+    await vi.runAllTimersAsync();
+    expect(ids(store)).not.toContain("fresh");
+    expect(store.getState().deletedSessionIds.has("fresh")).toBe(true);
+    // Asked once more: the late answer's totals counted the Session too.
+    expect(fetch.requests.filter((r) => r.path.endsWith("/sessions/batch"))).toHaveLength(2);
+    expect(active(store)).toBe(2);
+  });
+
+  it("keeps out a Session deleted while a next page that read it was on its way", async () => {
+    vi.useFakeTimers();
+    const rows = activeRun("r", 15);
+    served.set(key(null, "a1"), rows);
+    const store = boot();
+    await store.getState().reload();
+    // Below the first page: no held row stands for it.
+    const victim = rows[12]!.sessionId;
+    const hold = holdNextBatch();
+    const more = store.getState().loadMoreFor(["a1"]);
+    withoutRow(victim);
+    applyUserEvent(store, deletedEvent(victim), () => undefined);
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    hold.release();
+    await more;
+    expect(ids(store)).not.toContain(victim);
+    expect(ids(store)).toHaveLength(14);
   });
 });
 

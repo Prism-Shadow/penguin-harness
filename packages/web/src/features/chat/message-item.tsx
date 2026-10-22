@@ -1,27 +1,33 @@
 /**
- * Rendering dispatch for a single view-model item: user prompts are right-aligned bubbles
- * (including image thumbnails), thinking collapsible blocks, text streamed as Markdown, tool
- * cards, subagent cards, compaction banners, abort markers, and Task stats lines. Items have a
- * light entrance animation.
+ * Rendering dispatch for a single view-model item: user prompts are right-aligned bubbles with
+ * the images and files they carried above them, thinking collapsible blocks, text streamed as
+ * Markdown, tool cards, subagent cards, compaction banners, abort markers, and Task stats lines.
+ * Items have a light entrance animation.
  *
- * The drawing is the UI package's (MessageRow / MessageBubble / MessageMeta for what the person
- * sent and the run's notice lines, AssistantText for a reply); what stays here is which item
- * becomes what, the text parsing that collapses harness blocks into banners, the reconnect
- * line's countdown and controls, and the Retry a failed or stopped run's last line offers.
+ * The drawing is the UI package's (MessageRow / MessageBubble / MessageAttachments / MessageMeta
+ * and the attachment tiles for what the person sent and the run's notice lines, AssistantText for
+ * a reply); what stays here is which item becomes what, the text parsing that collapses harness
+ * blocks into banners, the reconnect line's countdown and controls, and the Retry a failed or
+ * stopped run's last line offers.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AssistantText,
+  AttachmentFile,
+  AttachmentImage,
+  AttachmentList,
   Button,
+  MessageAttachments,
   MessageBubble,
-  MessageImage,
   MessageMeta,
   MessageRow,
+  RetryActions,
+  useCountdown,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
-import { splitAttachments } from "../../lib/attachments";
+import { attachmentFileName, splitAttachments } from "../../lib/attachments";
 import { routedUrl } from "../../lib/session-machines";
 import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
 import { MessageFilesCard } from "./message-files-card";
@@ -36,7 +42,6 @@ import { ScheduledBanner } from "./scheduled-banner";
 import { OrgTriggerBanner } from "./org-trigger-banner";
 import { parseOrgTriggerMessage } from "./org-trigger";
 import { SkillsBanner } from "./skills-banner";
-import { AttachedFilesBanner } from "./attached-files-banner";
 import { BackgroundDoneBanner } from "./background-done-banner";
 import { HarnessInjectedBanner } from "./harness-banner";
 import {
@@ -62,6 +67,50 @@ function SentMessageMeta({ atMs, copyText }: { atMs: number | undefined; copyTex
       {...(atMs !== undefined ? { time: formatMessageTime(atMs, locale) } : {})}
       {...(copyText !== undefined ? { copy: { text: copyText, label: S.chat.copyMessage } } : {})}
     />
+  );
+}
+
+/**
+ * The images and files a message carried, as the composer showed them: the images as tiles in
+ * one row, the files as tiles in the next. `size` is the images' — `md` above a prompt's text,
+ * `sm` inside a steer's chip, where both share one row as they did in the composer. A sent file
+ * is named by its scratchpad file name; its bytes stay there for the model to open by path.
+ */
+function SentAttachments({
+  images,
+  files,
+  size,
+}: {
+  images: readonly string[];
+  files: readonly string[];
+  size: "sm" | "md";
+}) {
+  const imageTiles = images.map((src, i) => (
+    <AttachmentImage
+      key={`image-${i}`}
+      src={src}
+      alt={S.chat.imageAlt}
+      size={size}
+      lazy
+      unavailableLabel={S.chat.imageUnavailable}
+    />
+  ));
+  const fileTiles = files.map((path, i) => (
+    <AttachmentFile key={`file-${i}`} name={attachmentFileName(path)} />
+  ));
+  if (size === "sm") {
+    return (
+      <AttachmentList>
+        {imageTiles}
+        {fileTiles}
+      </AttachmentList>
+    );
+  }
+  return (
+    <MessageAttachments>
+      {imageTiles.length > 0 && <AttachmentList align="end">{imageTiles}</AttachmentList>}
+      {fileTiles.length > 0 && <AttachmentList align="end">{fileTiles}</AttachmentList>}
+    </MessageAttachments>
   );
 }
 
@@ -109,14 +158,18 @@ function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
  * plus two inline controls: "retry now" (skips the remaining backoff server-side; the line
  * flips to "retrying" when the request_begin arrives — no optimistic state beyond
  * disabling the buttons) and "give up" (the ordinary session abort; the engine's
- * abort-during-backoff path ends the turn and re-enables the composer). Anchored on the
- * CLIENT arrival time of the event (skew-free), ticking every 250ms with ceil'd whole
- * seconds; at zero it falls back to the plain waiting text, so a stale item can never tick
- * forever. History safety: replay delivers the following request_begin/abort immediately,
- * flipping the state, so neither the countdown nor the buttons render for replayed items;
- * the buttons are additionally main-session-only (a subagent's backoff belongs to the
- * child session, which the retry-now route does not target). A line that gave up ended the
- * run, and as the stream's last item it offers Retry instead (see retryOffer).
+ * abort-during-backoff path ends the turn and re-enables the composer). The countdown and the
+ * buttons are the UI package's shared ones (`useCountdown`, `RetryActions`): anchored on the
+ * CLIENT arrival time of the event (skew-free), whole seconds on the page's one second-aligned
+ * clock; at zero it falls back to the plain waiting text, so a stale item can never tick
+ * forever. The buttons belong to ONE attempt: a ladder reuses this component across all of
+ * them (the item keeps its id through the collapse, see stream-model's continuedLadder), and the
+ * attempt number is the key that re-arms them, so one click never leaves a later attempt with
+ * dead controls. History safety: replay delivers the following request_begin/abort immediately,
+ * flipping the state, so neither the countdown nor the buttons render for replayed items; the
+ * buttons are additionally main-session-only (a subagent's backoff belongs to the child session,
+ * which the retry-now route does not target). A line that gave up ended the run, and as the
+ * stream's last item it offers Retry instead (see retryOffer).
  */
 function ReconnectLine({
   item,
@@ -135,33 +188,12 @@ function ReconnectLine({
     item.arrivedAtMs !== undefined
       ? item.arrivedAtMs + item.plannedDelayMs
       : null;
-  const [now, setNow] = useState(() => Date.now());
-  const [acted, setActed] = useState(false);
-  // Both pieces of state belong to ONE attempt, and a ladder now reuses this component across
-  // all of them: the item keeps its id through the collapse (see stream-model's continuedLadder),
-  // so React keeps the instance rather than remounting it. Without this reset, one click on
-  // "retry now" would leave both controls disabled for every later attempt of the same ladder,
-  // and the first paint of each new countdown would render against the previous attempt's `now`.
-  useEffect(() => {
-    setActed(false);
-    setNow(Date.now());
-  }, [item.attempt]);
-  useEffect(() => {
-    if (target === null || Date.now() >= target) return;
-    const timer = setInterval(() => {
-      setNow(Date.now());
-      if (Date.now() >= target) clearInterval(timer); // stop ticking once the wait has elapsed
-    }, 250);
-    return () => clearInterval(timer);
-  }, [target]);
-  // Clamped to the wait the engine actually announced. The reset above runs after the commit,
-  // so the frame that first paints a superseded attempt still holds the previous one's `now` —
-  // unclamped that renders a countdown longer than any backoff this ladder can plan.
-  const remainingMs = target !== null ? Math.min(target - now, item.plannedDelayMs ?? 0) : 0;
-  const live = target !== null && remainingMs > 0;
-  const seconds = live ? Math.ceil(remainingMs / 1000) : undefined;
+  const left = useCountdown(target);
+  const seconds = left !== null && left > 0 ? left : undefined;
   const showControls =
-    live && ctx.origin.length === 0 && (ctx.onRetryNow !== undefined || ctx.onGiveUp !== undefined);
+    seconds !== undefined &&
+    ctx.origin.length === 0 &&
+    (ctx.onRetryNow !== undefined || ctx.onGiveUp !== undefined);
   const retry = state === "gaveUp" ? retryOffer(ctx, last) : undefined;
   return (
     <MessageBubble
@@ -169,36 +201,17 @@ function ReconnectLine({
       tone="attention"
       actions={
         showControls ? (
-          <>
-            {/* The line's two controls on the button rungs: the retry is the one it offers, the
-                bordered secondary; giving up is the quieter ghost beside it. */}
-            {ctx.onRetryNow && (
-              <Button
-                variant="secondary"
-                size="xs"
-                disabled={acted}
-                onClick={() => {
-                  setActed(true);
-                  ctx.onRetryNow!();
-                }}
-              >
-                {S.chat.reconnectRetryNow}
-              </Button>
-            )}
-            {ctx.onGiveUp && (
-              <Button
-                variant="ghost"
-                size="xs"
-                disabled={acted}
-                onClick={() => {
-                  setActed(true);
-                  ctx.onGiveUp!();
-                }}
-              >
-                {S.chat.reconnectGiveUp}
-              </Button>
-            )}
-          </>
+          // The line's two controls on the button rungs: the retry is the one it offers, the
+          // bordered secondary; giving up is the quieter ghost beside it.
+          <RetryActions
+            attemptKey={item.attempt}
+            retry={
+              ctx.onRetryNow ? { label: S.chat.reconnectRetryNow, onClick: ctx.onRetryNow } : null
+            }
+            secondary={
+              ctx.onGiveUp ? { label: S.chat.reconnectGiveUp, onClick: ctx.onGiveUp } : null
+            }
+          />
         ) : retry ? (
           <RetryRunButton onRetry={retry} />
         ) : undefined
@@ -222,6 +235,7 @@ export function MessageItem({
   item,
   ctx,
   last = false,
+  images: followingImages = [],
 }: {
   item: ChatItem;
   ctx: StreamRenderContext;
@@ -230,6 +244,12 @@ export function MessageItem({
    * line a run ended on offers Retry only then.
    */
   last?: boolean;
+  /**
+   * A prompt's images that arrived as image items right behind it (`user_text` / `user_image`):
+   * drawn with it, in one row above its text. Inline bytes live, or a windowed history page's
+   * reference to the Trace record, fetched from the machine the Session lives on.
+   */
+  images?: readonly string[];
 }) {
   switch (item.kind) {
     case "user_text": {
@@ -264,40 +284,27 @@ export function MessageItem({
       const skills = parseSkillsMessage(afterScheduled);
       // Attachment row restoration (last in the chain — these lines trail the body rather than
       // prefixing it): for models that don't support images, input images are written to disk
-      // as a path row; this pulls that out at render time and shows the actual image. Mirrors
-      // the vision-model path (user_text + user_image as separate messages) in shape: one
-      // bubble for the text, one bubble per image, styled the same as user_image. Uploaded
-      // files come out of the same pass and collapse into one banner naming them.
+      // as a path row; this pulls that out at render time and shows the actual image. The
+      // vision-model path delivers them as image items behind the text instead (`images`); both
+      // draw the same row of tiles above the text, and uploaded files, which come out of the
+      // same pass, the row of file tiles under it — the pieces the composer showed. The files'
+      // bytes live in the session scratchpad, where the model opens them by path (goal mode
+      // never gets here: it takes text and images only).
       const { text, images, files } = splitAttachments(skills ? skills.rest : afterScheduled);
+      const shown = [...images, ...followingImages.map(routedUrl)];
+      const carried = shown.length > 0 || files.length > 0;
       return (
         <>
           {orgTrigger && <OrgTriggerBanner origin={orgTrigger.origin} />}
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
-          {text && (
+          {(text || carried) && (
             <MessageRow>
-              <MessageBubble variant="user">{text}</MessageBubble>
-              <SentMessageMeta atMs={item.atMs} copyText={text} />
+              {carried && <SentAttachments images={shown} files={files} size="md" />}
+              {text && <MessageBubble variant="user">{text}</MessageBubble>}
+              <SentMessageMeta atMs={item.atMs} {...(text ? { copyText: text } : {})} />
             </MessageRow>
           )}
-          {/* Files uploaded with this message: shown below the text in the same user-side
-              container and with the same timestamp footer as uploaded images. The bytes live in
-              the session scratchpad, where the model opens them by path (goal mode never gets
-              here: it takes text and images only). */}
-          {files.length > 0 && (
-            <MessageRow>
-              <AttachedFilesBanner files={files} />
-              <SentMessageMeta atMs={item.atMs} />
-            </MessageRow>
-          )}
-          {images.map((src, i) => (
-            <MessageRow key={i}>
-              <MessageBubble variant="image">
-                <MessageImage src={src} alt={S.chat.imageAlt} />
-              </MessageBubble>
-              <SentMessageMeta atMs={item.atMs} />
-            </MessageRow>
-          ))}
         </>
       );
     }
@@ -319,9 +326,9 @@ export function MessageItem({
       // model (delivered as image messages right behind the text), or restored from the
       // [attached image: …] path lines without one — the same two shapes a user_text bubble
       // handles, so both render identically here. Files ride steering only as
-      // [attached file: …] rows (there is no item.files channel) and collapse into the same
-      // banner a full prompt uses, kept inside the chip — a files-only steering would
-      // otherwise render as an empty chip with the filenames lost.
+      // [attached file: …] rows (there is no item.files channel) and become the same file tiles
+      // a full prompt shows, in the chip's one row after the images — a files-only steering
+      // would otherwise render as an empty chip with the filenames lost.
       const {
         text: steerText,
         images: steerImages,
@@ -335,15 +342,8 @@ export function MessageItem({
           <MessageBubble
             variant="steering"
             label={S.chat.userSteering}
-            {...(shown.length > 0
-              ? {
-                  media: shown.map((src, i) => (
-                    <MessageImage key={i} src={src} alt={S.chat.imageAlt} size="chip" />
-                  )),
-                }
-              : {})}
-            {...(steerFiles.length > 0
-              ? { attachments: <AttachedFilesBanner files={steerFiles} /> }
+            {...(shown.length > 0 || steerFiles.length > 0
+              ? { attachments: <SentAttachments images={shown} files={steerFiles} size="sm" /> }
               : {})}
           >
             {steerText}
@@ -353,14 +353,17 @@ export function MessageItem({
       );
     }
     case "user_image":
-      // Inline bytes live, or a windowed history page's reference to the Trace record
-      // (`/api/sessions/<id>/trace-image?…`), which the browser must fetch from the machine
-      // the Session lives on.
+      // A prompt with no text: its first image, with the ones behind it. Inline bytes live, or
+      // a windowed history page's reference to the Trace record
+      // (`/api/sessions/<id>/trace-image?…`), which the browser must fetch from the machine the
+      // Session lives on.
       return (
         <MessageRow>
-          <MessageBubble variant="image">
-            <MessageImage src={routedUrl(item.imageUrl)} alt={S.chat.imageAlt} />
-          </MessageBubble>
+          <SentAttachments
+            images={[item.imageUrl, ...followingImages].map(routedUrl)}
+            files={[]}
+            size="md"
+          />
           <SentMessageMeta atMs={item.atMs} />
         </MessageRow>
       );

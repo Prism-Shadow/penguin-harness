@@ -142,7 +142,7 @@ Agent 读到的是同一个目录。
 ```bash
 npx playwright install chromium                      # 一次即可
 pnpm --filter @prismshadow/penguin-web test:e2e      # 针对 mock LLM 的浏览器 e2e
-pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs  # 仅 CI smoke
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs  # CI 所跑的部分
 pnpm test:e2e                                        # core 的真实模型 e2e，需要 DEEPSEEK_API_KEY
 ```
 

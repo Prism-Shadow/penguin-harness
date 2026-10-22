@@ -25,7 +25,7 @@
  * of them is what keeps an entity's history from sliding onto the wrong
  * intervals. Each chart marks the skipped intervals on its own axis.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -46,7 +46,9 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
 import { formatMoney, humanizeTokens } from "../../lib/format";
-import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
+import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
+import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
+import { useOpenedInProject } from "../../lib/use-opened-in-project";
 import { useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { TrendChart } from "./trend-chart";
@@ -147,6 +149,16 @@ interface LoadedRange {
   toTs?: string;
 }
 
+/** The `?agentId=` deep link as a filter of the Project the page was opened in; none without either. */
+function linkedAgentFilter(
+  agentId: string | null,
+  projectId: string | null,
+): Scoped<string> | null {
+  return agentId === null || agentId === "" || projectId === null
+    ? null
+    : scoped(projectId, agentId);
+}
+
 export function UsagePage() {
   useDocumentTitle(S.usage.title);
   const { currency } = useTheme();
@@ -163,14 +175,28 @@ export function UsagePage() {
   // / date filters likewise don't enter the URL — the effect never overrides a manual selection when the parameter is unchanged).
   const [searchParams] = useSearchParams();
   const paramAgentId = searchParams.get("agentId");
-  const [agentFilter, setAgentFilter] = useState<string>(paramAgentId ?? "");
+  // The filter names an Agent of the Project it was chosen in — the deep link's belongs to the
+  // Project the page was opened in — and is read only under that Project (lib/project-scope.ts):
+  // after a Project switch the page is unfiltered, rather than asking the new Project about an
+  // Agent of the old one.
+  const openedIn = useOpenedInProject(projectId);
+  const [agentFilterRead, setAgentFilterRead] = useState<Scoped<string> | null>(() =>
+    linkedAgentFilter(paramAgentId, openedIn),
+  );
+  // The deep link is applied again when it changes, and once the Project it belongs to is known
+  // — in the render that sees the change, so no read goes out with the filter it replaces.
+  const [linkSeen, setLinkSeen] = useState({ paramAgentId, openedIn });
+  if (linkSeen.paramAgentId !== paramAgentId || linkSeen.openedIn !== openedIn) {
+    setLinkSeen({ paramAgentId, openedIn });
+    setAgentFilterRead(linkedAgentFilter(paramAgentId, openedIn));
+  }
+  const agentFilter = scopedValue(agentFilterRead, projectId) ?? "";
+  const setAgentFilter = (agentId: string) =>
+    setAgentFilterRead(agentId === "" || projectId === null ? null : scoped(projectId, agentId));
   // Model filtering is a **paired reference** (the same model_id can coexist
   // under multiple providers); the dropdown's option value uses the
   // candidate's index rather than a concatenated string — the reference is always passed as a pair, never concatenated into an id.
   const [modelFilter, setModelFilter] = useState<ModelRefDto | null>(null);
-  useEffect(() => {
-    setAgentFilter(paramAgentId ?? "");
-  }, [paramAgentId]);
   // Date range: a trailing window (last hour / last 24 hours), a calendar
   // preset (7/30/90 days), or a custom from/to pair — plus the time-series
   // precision. A range change keeps the precision when the new preset still
@@ -183,7 +209,9 @@ export function UsagePage() {
     setFrom(nextFrom);
     setTo(nextTo);
   };
-  const [data, setData] = useState<UsageResponse | null>(null);
+  /** The dashboard's answer, tagged with the Project it was read for. */
+  const [dataRead, setData] = useState<Scoped<UsageResponse> | null>(null);
+  const data = scopedValue(dataRead, projectId);
   /**
    * The range the dashboard actually READ, which is not always the one the picker holds. A
    * trailing preset computes its window at load time and deliberately leaves `from`/`to` on
@@ -199,8 +227,11 @@ export function UsagePage() {
   // extra) while the marks live inside the cards, lifted to this level.
   const [tokenBucket, setTokenBucket] = useState<TokenLegendKey | null>(null);
 
+  /** Dashboard reads so far: only the newest one's answer is applied. */
+  const asked = useRef(0);
   const load = useCallback(async () => {
     if (!projectId) return;
+    const ask = ++asked.current;
     // The notice must acknowledge the errors fetched for this visit, not the timestamp
     // cached when the app started; otherwise those errors return as unread after a reload.
     refreshProjectTodos(projectId);
@@ -220,10 +251,12 @@ export function UsagePage() {
         ...(agentFilter ? { agentId: agentFilter } : {}),
         ...(modelFilter ? { provider: modelFilter.provider, modelId: modelFilter.modelId } : {}),
       });
-      setData(res);
+      // A late answer — for the Project just left, or for filters changed since — is dropped.
+      if (ask !== asked.current) return;
+      setData(scoped(projectId, res));
       setLoaded({ preset, ...range });
     } catch (e) {
-      setError(apiErrorText(e));
+      if (ask === asked.current) setError(apiErrorText(e));
     }
   }, [projectId, preset, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
 

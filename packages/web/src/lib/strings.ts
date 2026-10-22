@@ -144,6 +144,8 @@ export const zh = {
       working: "处理中",
       ready: "运行中",
       reconnecting: "重新连接中",
+      /** The automatic attempts stopped (eight failures, or an ssh failure no retry mends): Retry is the way on. */
+      reconnectStopped: "重连已停止",
       failed: "失败",
       installedOnly: "已安装",
       behind: "有新版本",
@@ -196,12 +198,22 @@ export const zh = {
      */
     composer: {
       reconnecting: "那台机器正在重新连接…",
+      reconnectStopped: "那台机器的自动重连已停止——请在「机器管理」页面重试",
       stopped: "那台机器的服务已停止——请在「机器管理」页面启动它",
       notConnected: "那台机器尚未连接——请在「机器管理」页面启用它",
       missing: "那台机器不在本 Project 的机器列表里",
       signInRefused: "那台机器拒绝了本服务端的登录——请在「机器管理」页面修改它的 SSH 设置",
       failed: (message: string) => `那台机器没有答复：${message}`,
     },
+    /** The API socket this server holds to the machine (machines-view's socketReading). */
+    detailSocket: "API 套接字",
+    socket: {
+      connected: "已连接",
+      dialling: "拨号中",
+      refused: "被拒绝",
+      failed: "失败",
+    },
+    agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
     updateNotice: (count: number) => `${count} 台机器待更新`,
@@ -222,8 +234,6 @@ export const zh = {
       localUndeletable: "本服务端不能删除",
       /** Why Use waits, in the card's middle while no job moves there. */
       why: {
-        reconnecting: "重新连接中…",
-        reconnectingFor: (span: string) => `重新连接中… · 已 ${span}`,
         stopped: "服务已停止",
         notConnected: "未连接",
         notInstalled: "尚未安装",
@@ -305,19 +315,31 @@ export const zh = {
         stopped: "服务已停止。",
         noImage: "本服务端没有可安装的版本。",
       },
-      /** The section while the server brings a machine it keeps connected back. */
+      /** The section while the server brings a machine it keeps connected back, or stopped trying. */
       reconnect: {
         title: "重新连接",
-        trying: "重新连接中…",
         lasting: (span: string) => `已持续 ${span}`,
-        attempt: (n: number) => `第 ${n} 次尝试`,
-        next: (span: string) => `下次尝试在 ${span}后`,
-        now: "正在尝试",
         lastError: "上次失败：",
         checked: "自动检查的结果：",
-        /** The stored password was refused: no attempt runs until it is saved again. */
-        stopped: "已停止重试",
       },
+    },
+    /**
+     * The retry status while the server brings a machine back (the card's middle, the dialog's
+     * Reconnecting section): `n` is the attempt, `m` the failures in a row that stop the streak.
+     */
+    retry: {
+      trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连…`,
+      /** Waiting for the first attempt: nothing has failed yet. */
+      lost: "连接已断开",
+      failed: (n: number, m: number) => `第 ${n}/${m} 次重连失败`,
+      countdown: (seconds: number) => `${seconds} 秒后重连`,
+      gaveUp: (m: number) => `${m} 次重连都没连上，已停止自动重试`,
+      /** ssh refused in a way no retry mends; the reason under it says the fix. */
+      stoppedSsh: "已停止自动重连",
+      /** The stored password was refused: no Retry, the fix is in the machine's SSH settings. */
+      stoppedPassword: "登录被拒，已停止重连",
+      retryNow: "立即重试",
+      retry: "重试",
     },
     /** The confirmations the page asks before a verb that stops or removes something. */
     confirm: {
@@ -452,7 +474,12 @@ export const zh = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",
+    /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "新建终端",
+    /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
+    shellEntry: "命令行终端",
+    /** The terminal panel's strip of shells, for assistive technology. */
+    tabsLabel: "终端标签页",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
@@ -460,8 +487,6 @@ export const zh = {
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
     noTerminalApi:
       "该服务端没有终端接口：运行中的 runtime 早于该功能。热更新只替换平台与前端，终端接口属于 runtime，需更新 runtime 本身（重启无效）",
-    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
-    detach: "在新窗口打开",
     status: {
       connecting: "连接中",
       ready: "已连接",
@@ -1681,6 +1706,11 @@ export const zh = {
     createPluginsHint:
       "创建时安装到该 Agent（技能、钩子包与 MCP 服务器），之后可在其「技能」「钩子」「工具」标签页增删",
     createPluginsEmpty: "插件库暂无可安装的插件",
+    /** Where the new Agent is created (shown once a machine is connected), and its "?". */
+    createLocation: "位置",
+    createLocationHere: "本机",
+    createLocationInfo:
+      "新 Agent 建在哪台服务端上。建在机器上的 Agent 归那台机器所有：插件取那台机器的插件库，之后的设置、对话与删除也都在那台机器上进行。",
     /** The confirmation a picked plugin's stdio MCP server asks for before the Agent is created: the question; the commands follow it. */
     createStdioQuestion: (agent: string): string => `创建 ${agent}？`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
@@ -1920,8 +1950,14 @@ export const zh = {
       `它由插件 ${plugin} 安装，可在插件页的「管理安装」中重新装回。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
-    /** An Agent whose state directory is on a machine: what this server cannot act on, and where it can be. */
-    livesOnMachine: (machine: string) => `该 Agent 在 ${machine} 上，请到那台机器上管理`,
+    /** The hint on a machine Agent's `[SSH: …]` tag: whose Agent this is, and where its actions go. */
+    onMachineHint: (machine: string) =>
+      `这个 Agent 在 ${machine} 上：设置、对话与删除都在那台机器上进行，和本服务端同 id 的 Agent 互不相干。`,
+    /** The disabled Usage button on a machine's Agent: what the usage center counts. */
+    usageThisServerOnly: "成本中心只统计本服务端的 Agent",
+    /** Delete's confirmation for a machine's Agent: the machine it is deleted on. */
+    deleteConfirmOnMachine: (name: string, machine: string): string =>
+      `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     /** The Agents page's section of organization employees, and its "?" (what an employee is here). */
@@ -2000,6 +2036,8 @@ export const zh = {
       "应用于之后新建的 API 会话；需要确认时，确认请求会发给调用方，也可在 Web App 中回答。",
     apiConnection: "连接",
     apiBaseUrl: "Base URL",
+    /** A machine's Agent: its API is that machine's server, at this address over there. */
+    apiBaseUrlOnMachine: (machine: string): string => `Base URL（在 ${machine} 上）`,
     apiAgentId: "Agent ID",
     /** A copy button beside a connection value, named for what it copies. */
     apiCopy: (what: string): string => `复制 ${what}`,
@@ -2474,10 +2512,12 @@ export const zh = {
     // wherever the env fallback hint appears.
     providerEnvNotes: {
       zhipu:
-        "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需填 base URL https://open.bigmodel.cn/api/paas/v4",
+        "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需在环境中同时设置 ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4，或在此填写 key 并填该 base URL",
       moonshot:
-        "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需填 base URL https://api.moonshot.ai/v1",
+        "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需在环境中同时设置 MOONSHOT_BASE_URL=https://api.moonshot.ai/v1，或在此填写 key 并填该 base URL",
     } as Record<string, string | undefined>,
+    envBaseUrlNote: (envBaseUrlKey: string): string =>
+      `请求发往该客户端的默认端点；设置了 ${envBaseUrlKey} 时发往该地址`,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
@@ -2740,7 +2780,6 @@ export const zh = {
     filterAll: "全部",
     filterActive: "生效中",
     filterPaused: "已暂停",
-    filterCompleted: "已完成",
     panelEmpty: "这段对话还没有定时任务",
     panelNoMatch: "没有匹配的定时任务",
     /** The panel's body on the draft page, where no Session exists yet. */
@@ -2785,7 +2824,7 @@ export const zh = {
      * the file branch, so they are never read as flags of the command beside them.
      */
     aiCreateTail: (agentId: string): string =>
-      `请为 Agent「${agentId}」创建这个定时任务。可以执行 \`penguin schedule add <名称> --agent-id ${agentId} --prompt "<请求内容>" --start-at <ISO 8601 或 now>\`，需要重复执行时加 \`--period <30m | 12h | 7d>\`，请求有自然终点时加 \`--end-at <ISO 8601>\`——不写 \`--agent-id\` 时任务会落到运行本对话的那个 Agent 上，而不是它；也可以直接在该 Agent 的 agent_state/schedule/ 下写 TOML 文件，文件名取有意义的英文名，用 \`start_at\`、\`period\`、\`end_at\` 这几个键。除非用户指定了 Session，否则采用每次新建 Session 的模式。创建后用一行确认你设定的时间安排。`,
+      `请为 Agent「${agentId}」创建这个定时任务。可以执行 \`penguin schedule add <名称> --agent-id ${agentId} --prompt "<请求内容>" --start-at <未来的 ISO 8601 时刻，带 --period 时也可用 now>\`，需要重复执行时加 \`--period <30m | 12h | 7d>\`，请求有自然终点时加 \`--end-at <ISO 8601>\`——不写 \`--agent-id\` 时任务会落到运行本对话的那个 Agent 上，而不是它；也可以直接在该 Agent 的 agent_state/schedule/ 下写 TOML 文件，文件名取有意义的英文名，用 \`start_at\`、\`period\`、\`end_at\` 这几个键。除非用户指定了 Session，否则采用每次新建 Session 的模式。创建后用一行确认你设定的时间安排。`,
     /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
     suggestionsTitle: "建议",
     suggestions: {
@@ -3079,8 +3118,9 @@ export const zh = {
     mcpRunsCommand: (command: string): string => `Agent 会话开始时在本服务器上运行 ${command}`,
     /** The confirm before installing a plugin with a stdio server (any member): the command the server will run. */
     installStdioTitle: (plugin: string, agent: string): string => `将 ${plugin} 安装到 ${agent}？`,
-    installStdioBody: (server: string, command: string): string =>
-      `它的 MCP 服务器 ${server} 会在该 Agent 每次开始会话时，在本服务器上运行 ${command}。`,
+    /** `machine`: the machine the Agent lives on, where the command runs; omitted, this server. */
+    installStdioBody: (server: string, command: string, machine?: string): string =>
+      `它的 MCP 服务器 ${server} 会在该 Agent 每次开始会话时，在${machine === undefined ? "本服务器" : ` ${machine} `}上运行 ${command}。`,
     /** The Set up form (Project owner): the vault values a plugin's MCP servers wait for. */
     setUp: "设置",
     setUpTitle: (plugin: string, agent: string): string => `为 ${agent} 设置 ${plugin}`,
@@ -3873,6 +3913,8 @@ Benchmark：
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
     retryNothing: "没有可重试的内容：那一轮的输入已随后续消息发出。",
     imageAlt: "用户上传的图片",
+    /** The hint on a sent image that did not load (its file was removed, or its machine is out of reach). */
+    imageUnavailable: "图片无法加载",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:
       "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 read_file 查看）",
@@ -3934,6 +3976,21 @@ Benchmark：
     sessionNotFoundHint: "这个链接指向的会话已经不在了，或者你没有访问它的权限。",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",
+    /**
+     * A conversation on a machine the server cannot reach: its history lives there. The headline
+     * names the machine by its alias and says its link state; the transport's own error is folded
+     * under the details row.
+     */
+    machineAway: {
+      reconnecting: (alias: string) => `${alias} 当前连不上，正在重连`,
+      reconnectStopped: (alias: string) => `${alias} 当前连不上，已停止自动重连`,
+      signInRefused: (alias: string) => `${alias} 当前连不上：保存的登录密码被拒绝`,
+      stopped: (alias: string) => `${alias} 上的服务已停止`,
+      notConnected: (alias: string) => `${alias} 尚未连接`,
+      missing: "这个对话所在的机器不在当前 Project 的机器列表中",
+      hint: "对话保存在那台机器上，连接恢复后会自动加载。",
+      details: "技术细节",
+    },
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openAgents: "智能体面板",
@@ -4126,10 +4183,11 @@ Benchmark：
     copyCode: "复制代码",
     copyReply: "复制回复",
     /**
-     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram, and
-     * the weather, clock, countdown and metrics widgets), handed to the UI package that draws
-     * them (lib/ui-strings.ts). Of the four tone names, a warning is about loss or harm and a
-     * caution about something recoverable breaking, so the two must not read as the same level.
+     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram, a
+     * chart, and the weather, clock, countdown, metrics and resources widgets), handed to the UI
+     * package that draws them (lib/ui-strings.ts). Of the four tone names, a warning is about
+     * loss or harm and a caution about something recoverable breaking, so the two must not read
+     * as the same level.
      */
     a2ui: {
       /** The language these words are in: widgets format numbers, dates and weekdays in it. */
@@ -4155,6 +4213,10 @@ Benchmark：
       /** A form's number stepper: add or subtract one step. */
       stepUp: "增加",
       stepDown: "减少",
+      /** A form field's error line when the model gave no hint and the rule has no symbols. */
+      invalid: "值无效",
+      /** A form dropdown's empty first row, when the model wrote no placeholder. */
+      choose: "请选择…",
       /** The weather conditions, by the catalog's key (the same words as core's fallback). */
       conditions: {
         clear: "晴",
@@ -4199,6 +4261,33 @@ Benchmark：
       /** Which way a reading moved, read out before its change. */
       deltaUp: "上升",
       deltaDown: "下降",
+      /** A chart's kind: its name when the model gave no title, and the lead of its summary. */
+      chartKind: {
+        line: "折线图",
+        area: "面积图",
+        bar: "柱状图",
+        pie: "饼图",
+        scatter: "散点图",
+        histogram: "直方图",
+        gauge: "仪表",
+      },
+      /** A chart summary's counts: the categories (slices, bins) and the series. */
+      categories: (n: number) => `${n} 个类别`,
+      seriesCount: (n: number) => `${n} 个系列`,
+      /** The system-resource board's name when the model named no host, and its sections. */
+      resources: "系统资源",
+      cpu: "CPU",
+      memory: "内存",
+      swap: "交换",
+      disk: "磁盘",
+      network: "网络",
+      load: "负载",
+      uptime: "运行时间",
+      /** The network chart's two series. */
+      received: "接收",
+      sent: "发送",
+      /** The network chart's caption: its readings carry no times, only their count and order. */
+      lastReadings: (n: number) => `近 ${n} 次读数`,
     },
     forkSession: "从这里分叉对话",
     forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",
@@ -4245,9 +4334,7 @@ Benchmark：
     },
     /** The skills note's fixed phrase (the count picks the en plural); the skill names follow it as `nameList`. */
     skillsLabel: (_count: number): string => "使用技能",
-    /** Attached-file notice above a user message: this fixed phrase, then the file names (only the names; the paths stay in the Trace) as `nameList`. */
-    attachedFilesLabel: (_count: number): string => "附加文件",
-    /** Names listed after a note's fixed phrase (skills, files). */
+    /** Names listed after a note's fixed phrase (the skills). */
     nameList: (names: string[]): string => names.join("、"),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "更多输入方式",
@@ -4279,6 +4366,9 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
+    /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
+    goalPluginMissing: "目标模式需要 goal 插件：安装到此 Agent 后即可发起目标。",
+    goalPluginInstall: "安装到此 Agent",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "由 harness 注入",
     /** The goal line's fixed phrase; the objective follows it as the line's subject. */
@@ -4515,6 +4605,8 @@ Benchmark：
     sendingTestMessage: "发送中…",
     testMessageSent: "测试消息已发送",
     statusLabel: "连接状态",
+    /** The status label while the machine is out of reach: what follows is its last answer, not a live state. */
+    statusLastKnown: "最后已知状态",
     status: {
       disconnected: "未连接",
       connecting: "连接中",
@@ -4620,6 +4712,60 @@ Benchmark：
       "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
     troubleNoGroupInbound:
       "在群里发消息，面板却一直显示「本次连接建立以来还没有收到过消息」？这一行只能作为你读到它之后再发的那条消息的证据：它只覆盖当前这条连接，停用再启用连接、或者再保存一次凭证，都会开启一条新连接并把它清零。所以先重新发一条。如果这一行仍然显示没有收到过，那就是 Telegram 没有把它投递过来，本机再怎么查也无济于事：确认机器人确实还在这个群里；如果刚在 @BotFather 关掉 Group Privacy，必须把机器人移出该群再重新拉入，已有的群不会自动生效；并确认没有别的程序（包括你自己手动跑的 getUpdates，见上一条）在用同一个 Token 轮询。另外，Telegram 频道（channel）的贴文不受支持——本连接只处理群聊与私聊。",
+    /**
+     * A conversation that lives on a machine: its bot connects from that machine, not from this
+     * server. The dock panel and the dialog say where, above the channels.
+     */
+    runsOn: (alias: string) => `连接自 ${alias}`,
+    /**
+     * In the "what binding does" fold, for a conversation on a machine: what running there means
+     * for the connection, for a QR login, and for this app being away.
+     */
+    machineHelp: (alias: string) =>
+      `这个对话位于 ${alias}，它的机器人也在那里运行。连接由 ${alias} 主动向平台发起：那台机器需要能访问该平台，不需要公网地址。扫码登录的是 ${alias}，而不是这台电脑。即使本应用关闭或与 ${alias} 断开，只要那台机器的服务在运行，机器人就会继续回复。`,
+    /**
+     * The notice over a machine conversation's editor while the machine is out of reach: why, in
+     * the Machines page's terms; whether the bot still answers; and how old the state shown under
+     * it is (null: nothing was ever read from it in this browser). The editor is read-only then.
+     */
+    machineUnreachable: (
+      alias: string,
+      state: "reconnecting" | "reconnectStopped" | "signInRefused" | "stopped" | "notConnected",
+      asOf: string | null,
+    ): string => {
+      const why = {
+        reconnecting: `${alias} 正在重新连接。`,
+        reconnectStopped: `${alias} 的自动重连已停止，请在「机器管理」页面重试。`,
+        signInRefused: `${alias} 拒绝了本服务端的登录，请在「机器管理」页面修改它的 SSH 设置。`,
+        stopped: `${alias} 的服务已停止，请在「机器管理」页面启动它。`,
+        notConnected: `${alias} 尚未连接，请在「机器管理」页面启用它。`,
+      }[state];
+      const bot =
+        state === "stopped" || state === "notConnected"
+          ? "服务启动之前，机器人不会回复。"
+          : `机器人从 ${alias} 连接而不是从这里，只要那台机器的服务在运行，它就会继续回复。`;
+      const shown =
+        asOf === null
+          ? "机器恢复连接后，这里会显示它的设置。"
+          : `以下是 ${asOf} 时的状态；机器恢复连接后才能修改。`;
+      return `${why}${bot}${shown}`;
+    },
+    /** The same notice when the conversation's machine is not on this Project's list at all. */
+    machineMissing: "这个对话所在的机器不在本 Project 的机器列表里，无法在这里查看或修改它的连接。",
+    /** Enabling refused: the bot is connected on another server this one can see (null: this server). */
+    accountHeldOn: (where: string | null) =>
+      `${where === null ? "该机器人已在本服务端上连接。" : `该机器人已在 ${where} 上连接。`}先在那里停用，再在这里启用。`,
+    /** After enabling: the machines that could not be asked whether they hold the bot, and why not. */
+    holdersUnchecked: (
+      machines: ReadonlyArray<{
+        alias: string;
+        reason: "not_connected" | "older_build" | "failed";
+      }>,
+    ) => {
+      const reason = { not_connected: "未连接", older_build: "需要更新", failed: "没有答复" };
+      const list = machines.map((m) => `${m.alias}（${reason[m.reason]}）`).join("、");
+      return `已启用，但未能询问 ${list}。如果同一个机器人在那里也已连接，请在那里停用：一个机器人同一时刻只能在一处运行。`;
+    },
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -6113,6 +6259,10 @@ Benchmark：
       not_found: "资源不存在，或你没有访问权限。",
       internal: "服务器内部错误，请稍后重试。",
       agent_not_found: "该 Agent 已不存在。",
+      job_running: "这台机器上有任务在执行，请等它完成。",
+      password_refused:
+        "那台机器拒绝了保存的密码——请在机器的 SSH 设置里重新填写，保存后会自动重试。",
+      not_kept_connected: "本服务端没有保持这台机器的连接，无需重连——请用「启动服务」启动它。",
       unknown_agent: "该 Agent 不存在于本 Project。",
       agent_exists: "该 Agent id 已被占用。",
       agent_deleting: "该 Agent 正在删除中。",

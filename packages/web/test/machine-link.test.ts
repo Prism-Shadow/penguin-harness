@@ -3,14 +3,16 @@
  * the composer asks a machine's Agents only while it is connected, and says why otherwise.
  *
  * - Given the machine list, a connected machine is connected; one the server is bringing back is
- *   reconnecting even while its ssh connection is still up; an installed one not connected is
- *   stopped; one on the list with nothing installed is not connected.
+ *   reconnecting even while its ssh connection is still up, and one it stopped bringing back says
+ *   so; an installed one not connected is stopped; one on the list with nothing installed is not
+ *   connected.
  * - Given an id the list does not hold, it is missing — once the list has answered; before that
  *   the answer is unknown, not a verdict.
  * - This server's own entry never stands for a machine id.
  * - The composer's Agent picker says why it has nothing to offer in those words: a machine coming
- *   back, stopped, not set up or not on the list — never "not connected" for a machine that is
- *   connected and answered with a failure, whose own words it gives instead.
+ *   back, no longer coming back on its own (the Machines page retries it), stopped, not set up or
+ *   not on the list — never "not connected" for a machine that is connected and answered with a
+ *   failure, whose own words it gives instead.
  */
 import { describe, expect, it } from "vitest";
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
@@ -24,6 +26,7 @@ const machine = (machineId: string, over: Partial<MachineInfo> = {}): MachineInf
   installed: { version: "0.2.13", at: "2026-10-01T08:00:00.000Z" },
   local: false,
   connection: null,
+  socket: null,
   api: null,
   status: null,
   root: "$HOME/.penguin/data",
@@ -43,18 +46,23 @@ describe("a machine as other surfaces read it", () => {
     );
   });
 
-  it("is reconnecting while the server brings it back, even with its ssh connection still up", () => {
+  it("is reconnecting while the server brings it back, even with its ssh connection still up, and says when it stopped", () => {
     const back = machine("a", {
       connection: { pid: 1 },
       reconnect: {
         since: "2026-10-10T08:00:00.000Z",
         attempts: 1,
+        maxAttempts: 8,
         nextAt: null,
         lastError: null,
         diagnosis: null,
       },
     });
     expect(machineLink(list(back), true, "a")).toBe("reconnecting");
+    const stopped = machine("a", {
+      reconnect: { ...back.reconnect!, attempts: 8, gaveUp: "attempts" },
+    });
+    expect(machineLink(list(stopped), true, "a")).toBe("reconnectStopped");
   });
 
   it("is stopped when installed and not connected, and not connected with nothing installed", () => {
@@ -79,6 +87,7 @@ describe("the composer's Agent picker with nothing to offer", () => {
 
   it("says the machine's own state, the one the Machines page shows", () => {
     expect(remoteAgentsEmpty("reconnecting", null)).toBe(c.reconnecting);
+    expect(remoteAgentsEmpty("reconnectStopped", null)).toBe(c.reconnectStopped);
     expect(remoteAgentsEmpty("stopped", null)).toBe(c.stopped);
     expect(remoteAgentsEmpty("notConnected", null)).toBe(c.notConnected);
     expect(remoteAgentsEmpty("missing", null)).toBe(c.missing);

@@ -53,12 +53,12 @@ import type {
 // server uses.
 import {
   catalogEntryFor,
-  effectiveConnection,
   PENGUIN_GO_PROVIDER_ID,
   presetModelEntries,
   presetPromotions,
   presetProviderTable,
-} from "../../../../core/dist/state/model-catalog.js";
+} from "../../../../server/dist/model-catalog.js";
+import { effectiveConnection } from "../../../../core/dist/state/model-connection.js";
 // The built-in Benchmarks as core writes them into a new Project: their cards and their cases.
 import {
   BENCHMARK_REPO,
@@ -116,14 +116,15 @@ export function effectiveOf(
     },
     group && { baseUrl: group.baseUrl, clientType: group.clientType, apiKey: group.apiKeyMasked },
   );
-  // The resolver was handed masks for keys, so the key it picked is already masked.
+  // The resolver was handed masks for keys, so the key it picked is already masked. A row with
+  // no key in the file reads as `env` only where the server reported the variable's mask.
   const masked = e.apiKeySource === "none" ? m.envKeyMasked : e.apiKey;
   return {
     ...(e.baseUrl !== undefined ? { baseUrl: e.baseUrl } : {}),
     baseUrlSource: e.baseUrlSource,
     ...(e.clientType !== undefined ? { clientType: e.clientType } : {}),
     clientTypeSource: e.clientTypeSource,
-    apiKeySource: e.apiKeySource === "none" && m.envKeyMasked ? "env" : e.apiKeySource,
+    apiKeySource: e.apiKeySource !== "none" ? e.apiKeySource : m.envKeyMasked ? "env" : "none",
     ...(masked !== undefined ? { apiKeyMasked: masked } : {}),
   };
 }
@@ -1383,6 +1384,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         machineId: "demo-machine-0001",
         local: true,
         connection: null,
+        socket: null,
         api: null,
         status: { state: "running", checkedAt: iso(ago(0, 1)), port: 7364 },
         root: "/home/demo/.penguin/data",
@@ -1394,6 +1396,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         machineId: "gpu-box-a8f3c2",
         local: false,
         connection: { pid: 41_226 },
+        socket: null,
         api: { answeredAt: iso(ago(0, 3)) },
         status: { state: "running", checkedAt: iso(ago(0, 3)), port: 7364 },
         root: "/home/ubuntu/.penguin/data",
@@ -1428,6 +1431,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         machineId: null,
         local: false,
         connection: null,
+        socket: null,
         api: null,
         status: null,
         root: "~/.penguin/data",

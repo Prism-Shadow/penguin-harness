@@ -2,8 +2,9 @@
  * The pieces every A2UI block shares: the four tones and how each is drawn, the note a callout and
  * a step's notices are drawn as, the placeholder a block shows while its reply is still streaming,
  * the source-plus-notice a block falls back to when it cannot be drawn, the inline text renderer
- * for the strings a model writes, an option's label, the arrow-key walk of an option group, and
- * the looks the blocks share so they read as one family: the title, the chip, the card.
+ * for the strings a model writes, an option's label and the measures that decide whether options
+ * fit one row, and the title every block shares. The option controls themselves are the
+ * package's (`ChoiceGroup`, `Segmented`, `RadioGroup`, `Checkbox`).
  */
 import type { ReactNode } from "react";
 import type { A2uiOption } from "@prismshadow/penguin-core/a2ui";
@@ -109,51 +110,6 @@ export function InlineText({ text }: { text: string }): ReactNode {
  */
 export const A2UI_TITLE = "mb-2 text-sm font-medium text-fg";
 
-/** The keyboard ring a block's pressable parts draw, the theme's own. */
-const FOCUS_RING =
-  "focus-visible:[outline:var(--ui-focus-ring)] " +
-  "focus-visible:[outline-offset:var(--ui-focus-ring-offset)]";
-
-/**
- * A pressable option's state: pressed takes the accent's line and a wash of it, the selected look
- * every block shares; at rest the hover darkens the line and fills the box. Chosen where the state
- * is known rather than through an `aria-pressed:` variant, because an `enabled:hover:` rule
- * outranks an `aria-pressed:` one on specificity and a pressed option under the pointer would
- * lose its accent line.
- */
-export function pressLook(pressed: boolean): string {
-  return pressed
-    ? "border-accent bg-accent-muted"
-    : "border-line bg-surface enabled:hover:border-line-emphasis enabled:hover:bg-surface-muted";
-}
-
-/**
- * Shared by the chip and the card: the line, the colour-only motion, focus, and the closed state,
- * which dims the way a disabled checkbox dims, so an older reply's question reads as answered.
- */
-const PRESSABLE =
-  "border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60 " +
-  FOCUS_RING;
-
-/**
- * A chip: one short option in a wrapping row, the control's shape. Two rungs, as the controls
- * have: `base` for a choice in the reply's text, `sm` for a form, whose other controls are on the
- * small rung. The padding never falls under the radius, so a label clears a pill's curve.
- */
-export const A2UI_CHIP: Readonly<Record<"base" | "sm", string>> = {
-  base: `rounded-control px-3 py-1.5 text-sm ${PRESSABLE}`,
-  sm: `rounded-control px-3 py-1 text-xs ${PRESSABLE}`,
-};
-
-/**
- * A card: one option with room for a sentence — a leading mark in the first column (the radio's
- * disc, or a checkbox), the label and its description in the second. The box's radius is the md
- * rung and its side padding at least that, so the text clears the corners in every theme.
- */
-export const A2UI_CARD =
-  "grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 rounded-md px-3 py-2 " +
-  `text-left text-base ${PRESSABLE}`;
-
 /**
  * Whether a set of options is short enough to sit in one row: at most `count` of them, none with
  * a description, and every label at most `label` characters (code points, as the grammar counts).
@@ -252,28 +208,6 @@ export function A2uiInvalid({
       <CodeBlock language={language} code={source} />
     </div>
   );
-}
-
-/**
- * Where an arrow key moves the tab stop of a group of `count` controls, from `current`; null for
- * a key the group leaves alone. Both axes move, and the ends wrap, as in a radio group.
- */
-export function rovingTarget(current: number, key: string, count: number): number | null {
-  if (count <= 0) return null;
-  switch (key) {
-    case "ArrowDown":
-    case "ArrowRight":
-      return (current + 1) % count;
-    case "ArrowUp":
-    case "ArrowLeft":
-      return (current - 1 + count) % count;
-    case "Home":
-      return 0;
-    case "End":
-      return count - 1;
-    default:
-      return null;
-  }
 }
 
 /** A reason in one line: the first line of a message, cut to a length a notice can hold. */

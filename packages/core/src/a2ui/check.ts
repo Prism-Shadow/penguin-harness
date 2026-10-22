@@ -1,14 +1,15 @@
 /**
  * The whole-reply check the skill's script runs: L1 per block (parseA2ui / checkMermaid), the L2
  * heuristics across blocks (too many blocks, a question that does not end the turn, a block no
- * sentence introduces, a snapshot that does not say when it was taken), the prose lint, and one
- * score. The L3 questions — would text have done, is this what a person would say — are not
- * detectable and live in A2UI_RUBRIC instead.
+ * sentence introduces, a snapshot that does not say when it was taken), and one score. The text
+ * outside the blocks is not checked: how a reply reads is the writing rules' advice and the
+ * rubric's question, not a rule a script can hold. The L3 questions — would text have done, is
+ * this what a person would say — live in A2UI_RUBRIC.
  */
 import { parseA2ui } from "./catalog.js";
 import { blocksFromFences, fenceLineSet, scanFences, splitLines } from "./fences.js";
+import { resolveLang } from "./lang.js";
 import { checkMermaid } from "./mermaid.js";
-import { lintProse, resolveLang } from "./prose.js";
 import {
   A2UI_SCORING,
   type A2uiIssue,
@@ -21,7 +22,7 @@ const HEADING = /^\s{0,3}#{1,6}(\s|$)/;
 const TABLE_ROW = /^\s*\|/;
 const THEMATIC_BREAK = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 
-/** Checks a reply: L1 per block, L2 across blocks, the prose lint, and the score. */
+/** Checks a reply: L1 per block, L2 across blocks, and the score; `lang` is the rubric's. */
 export function checkReply(markdown: string, opts: { lang?: A2uiLangOption } = {}): A2uiReport {
   const lang = resolveLang(markdown, opts.lang);
   const lines = splitLines(markdown);
@@ -103,7 +104,11 @@ export function checkReply(markdown: string, opts: { lang?: A2uiLangOption } = {
   for (const b of blocks) {
     const spec = specOf.get(b.index);
     if (spec === undefined) continue;
-    if ((spec.type === "weather" || spec.type === "metrics") && spec.asOf === undefined) {
+    // A chart need not be a snapshot (a month of sales has no reading time), so it is not asked.
+    if (
+      (spec.type === "weather" || spec.type === "metrics" || spec.type === "resources") &&
+      spec.asOf === undefined
+    ) {
       l2(
         "no_as_of",
         `The ${spec.type} block on line ${b.startLine} has no \`asOf\`; a snapshot says when it was taken — add the time the data was read (a script prints it).`,
@@ -133,25 +138,15 @@ export function checkReply(markdown: string, opts: { lang?: A2uiLangOption } = {
     }
   }
 
-  for (const issue of lintProse(markdown, { lang })) issues.push({ ...issue, scope: "prose" });
-
   const errors = issues.filter((issue) => issue.level === "error").length;
-  const l2Warnings = issues.filter(
-    (issue) => issue.level === "warning" && issue.scope === "l2",
-  ).length;
-  const proseWarnings = issues.filter((issue) => issue.scope === "prose").length;
+  const warnings = issues.filter((issue) => issue.level === "warning").length;
   const l1Score = errors === 0 ? 100 : 0;
-  const l2Score = Math.max(0, 100 - A2UI_SCORING.l2PerWarning * l2Warnings);
-  const proseScore = Math.max(0, 100 - A2UI_SCORING.prosePerWarning * proseWarnings);
-  const total =
-    errors > 0
-      ? 0
-      : Math.round(A2UI_SCORING.l2Weight * l2Score + A2UI_SCORING.proseWeight * proseScore);
+  const l2Score = Math.max(0, 100 - A2UI_SCORING.l2PerWarning * warnings);
   return {
     ok: errors === 0,
     blocks: summary,
     issues,
-    score: { l1: l1Score, l2: l2Score, prose: proseScore, total },
+    score: { l1: l1Score, l2: l2Score, total: errors > 0 ? 0 : l2Score },
     lang,
   };
 }

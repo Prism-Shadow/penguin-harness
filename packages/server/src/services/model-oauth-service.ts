@@ -24,9 +24,9 @@
  * minutes anyway, and no key exists until the exchange runs).
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { userAgent } from "@prismshadow/penguin-core";
-import { APP_URL, providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderOAuth } from "@prismshadow/penguin-core/model-catalog";
+import { APP_URL, userAgent } from "@prismshadow/penguin-core";
+import { providerInfo } from "../model-catalog/catalog.js";
+import type { ModelProviderOAuth } from "../model-catalog/catalog.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
