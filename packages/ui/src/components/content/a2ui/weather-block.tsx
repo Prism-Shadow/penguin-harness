@@ -1,8 +1,10 @@
 /**
  * A weather widget: the conditions at a place as the model read them — the condition drawn and
  * named, the temperature large, the day's high and low, how it feels, the humidity and the wind —
- * and, when it has them, the next hours as a line and the coming days as rows, each day's range
- * drawn as a bar on the week's scale so the warm and the cold days read at a glance.
+ * and, when it has them, the next hours as a line chart (weather-hourly.tsx) and the coming days
+ * as a horizontal range chart, each day's low to high a bar on the week's scale so the warm and
+ * the cold days read at a glance. The charts are the basic ones; the drawings, the figure and the
+ * detail rows are the widget's own.
  *
  * A snapshot: the head says when it was read and the foot where from. Nothing here fetches or
  * updates; only the drawing moves.
@@ -12,6 +14,9 @@ import { formatNumber, formatTemp, weekdayOf } from "@prismshadow/penguin-core/a
 import type { A2uiLang, A2uiWeather, A2uiWeatherDay } from "@prismshadow/penguin-core/a2ui";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
+import { HBarChart } from "../../charts/cartesian/hbar-chart";
+import type { HBarRow } from "../../charts/cartesian/hbar-chart";
+import type { ChartPaint } from "../../charts/marks/marks";
 import { localDay } from "./time-format";
 import { useNow } from "./use-now";
 import { WeatherArt } from "./weather-art";
@@ -52,9 +57,12 @@ function details(
   return rows;
 }
 
+/** The day's range bar: the quiet ink, so the week reads as one scale, not as series. */
+const RANGE_INK: ChartPaint = { ink: "text-fg-subtle", swatch: "bg-fg-subtle" };
+
 /**
- * The coming days, one row each on shared columns: the weekday, the condition and its chance of
- * rain, the day's range as a bar on the week's scale, and the low and the high.
+ * The coming days as a range chart: one row each — the weekday, the condition and its chance of
+ * rain, the day's low to high as a bar on the week's scale, and the low and the high in words.
  */
 function Days({
   days,
@@ -68,44 +76,38 @@ function Days({
   strings: A2uiStrings;
 }) {
   const today = localDay(useNow(false));
-  const lowest = Math.min(...days.map((d) => d.low));
-  const highest = Math.max(...days.map((d) => d.high));
-  const range = highest - lowest;
   const temp = (t: number) => formatTemp(t, unit, false, lang);
+  const rows: HBarRow[] = days.map((day) => ({
+    label: day.date.slice(0, 10) === today ? strings.today : weekdayOf(day.date, lang),
+    aside: (
+      <>
+        <WeatherArt condition={day.condition} size={18} animated={false} />
+        <span className="sr-only">{strings.conditions[day.condition]}</span>
+        {day.precip !== undefined && (
+          <span className="text-xs text-fg-muted tabular-nums">
+            <span className="sr-only">{`${strings.precipitation} `}</span>
+            {`${formatNumber(day.precip, lang)}%`}
+          </span>
+        )}
+      </>
+    ),
+    from: day.low,
+    to: day.high,
+    value: (
+      <>
+        <span className="text-fg-muted">{temp(day.low)}</span>
+        {` / ${temp(day.high)}`}
+      </>
+    ),
+    paint: RANGE_INK,
+  }));
   return (
-    <div className="grid grid-cols-[3.5rem_auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 text-sm">
-      {days.map((day, i) => {
-        const left = range > 0 ? ((day.low - lowest) / range) * 100 : 0;
-        const width = range > 0 ? ((day.high - day.low) / range) * 100 : 100;
-        return (
-          <div key={i} className="col-span-4 grid grid-cols-subgrid items-center">
-            <span className="truncate text-fg-muted">
-              {day.date.slice(0, 10) === today ? strings.today : weekdayOf(day.date, lang)}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <WeatherArt condition={day.condition} size={18} animated={false} />
-              <span className="sr-only">{strings.conditions[day.condition]}</span>
-              {day.precip !== undefined && (
-                <span className="text-xs text-fg-muted tabular-nums">
-                  <span className="sr-only">{`${strings.precipitation} `}</span>
-                  {`${formatNumber(day.precip, lang)}%`}
-                </span>
-              )}
-            </span>
-            <span aria-hidden className="relative h-1 rounded-full bg-tone-neutral-bg">
-              <span
-                className="absolute inset-y-0 min-w-1 rounded-full bg-fg-subtle"
-                style={{ left: `${left}%`, width: `${width}%` }}
-              />
-            </span>
-            <span className="text-right tabular-nums">
-              <span className="text-fg-muted">{temp(day.low)}</span>
-              {` / ${temp(day.high)}`}
-            </span>
-          </div>
-        );
-      })}
-    </div>
+    <HBarChart
+      rows={rows}
+      min={Math.min(...days.map((d) => d.low))}
+      max={Math.max(...days.map((d) => d.high))}
+      label={strings.daily}
+    />
   );
 }
 
