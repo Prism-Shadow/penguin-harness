@@ -2938,6 +2938,8 @@ export const zh = {
     sharedTag: "所有机器共用",
     sharedHint: "在 Project 配置中对所有机器统一管理，不能在这里移除。",
     machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
+    /** A manage-installs row whose machine has not answered yet: its button waits for it. */
+    waitingFor: (machine: string) => `等待 ${machine} 答复`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "设置",
     pageDesc:
@@ -2982,6 +2984,8 @@ export const zh = {
       failed: (reason: string) => `加载失败：${reason}`,
       elsewhere: (machines: string) => `只在 ${machines} 上运行，本机不运行`,
       unsynced: "已安装，尚未同步到该机器",
+      /** Appended to a library status counted with Agents on a machine out of reach. */
+      lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
     noMatch: "没有匹配的插件。",
     /** The description of a shipped package the registry has no entry for. */

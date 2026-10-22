@@ -2774,6 +2774,8 @@ export const en: Strings = {
     sharedHint: "Managed in the Project config for every machine; it cannot be removed here.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
+    /** A manage-installs row whose machine has not answered yet: its button waits for it. */
+    waitingFor: (machine: string) => `Waiting for ${machine} to answer`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "Settings",
     pageDesc:
@@ -2821,6 +2823,11 @@ export const en: Strings = {
       failed: (reason: string) => `Failed to load: ${reason}`,
       elsewhere: (machines: string) => `Runs only on ${machines}, not on this server`,
       unsynced: "Installed, not on that machine yet",
+      /** Appended to a library status counted with Agents on a machine out of reach. */
+      lastSeenOn: (n: number) =>
+        n === 1
+          ? " (incl. 1 agent on a machine out of reach, as last seen)"
+          : ` (incl. ${n} agents on machines out of reach, as last seen)`,
     },
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */
