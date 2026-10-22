@@ -19,8 +19,8 @@ import { resetStore } from "../src/app/mock/store";
 async function noticesUp(): Promise<{ banner: boolean; contextWindow: boolean }> {
   const me = await api.getMe();
   const { prefs } = await api.getPrefs();
-  const config = await api.getAgentConfig(IDS.project, IDS.agents.docs);
-  const { models } = await api.getModels(IDS.project);
+  const config = await api.getAgentConfig(IDS.project, IDS.agents.docs, null);
+  const { models } = await api.getModels(IDS.project, null);
   const model = models.find((m) => m.isDefault);
   return {
     banner: me.user.passwordIsInitial === true && prefs.initialPasswordBannerDismissed !== true,
