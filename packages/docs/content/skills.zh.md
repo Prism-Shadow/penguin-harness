@@ -246,6 +246,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `skillopt-rsi-toolkit` | [SkillOpt](https://arxiv.org/abs/2605.23904)：限制文本编辑幅度，按评分筛选候选，并在训练轮次之间总结经验 |
 | | `openskill-rsi-toolkit` | 通过检索和独立虚拟验证构建技能库，冻结后进行 baseline／final Benchmark 评测。 |
 | | `trace-rsi-toolkit` | TRACE，出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：按技能汇总成功与失败轨迹，修订模块化技能库并测量重复运行的一致性。通过指令选择技能，自带 Benchmark、初始化、训练、评测与源码运行包参考，并说明上下文保留等适配 |
+| | `gepa-rsi-toolkit` | GEPA，出自 [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457)（Agrawal 等，2025）：反思 Trace 与分数来改写指令，父代按逐题 Pareto 前沿抽取，保留平均分最高者。自成一体：自带初始化与评测参考，另附一个负责随机抽取的脚本 |
 | 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图、由数据绘制的统计图（折线、面积、柱状、饼图、散点、直方图或仪表），以及天气、时钟、倒计时、指标和系统资源小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |

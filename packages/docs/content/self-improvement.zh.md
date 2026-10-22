@@ -110,7 +110,7 @@ Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和
 
 ## RSI 工具包
 
-RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：模型固定不动，Agent 依据自己实测的结果改进自己的 Harness——提示词、Skill、工具与钩子。每一种自进化算法都以一个 **RSI 工具包**发布，也就是插件库 **Agent 自进化**分类里的一个插件。上文的循环就是 **Default RSI Toolkit**（`default-rsi-toolkit`）；另外八个工具包各实现一种已发表的算法，并声明适配差异，各带一个与插件同名的 Skill：
+RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：模型固定不动，Agent 依据自己实测的结果改进自己的 Harness——提示词、Skill、工具与钩子。每一种自进化算法都以一个 **RSI 工具包**发布，也就是插件库 **Agent 自进化**分类里的一个插件。上文的循环就是 **Default RSI Toolkit**（`default-rsi-toolkit`）；另外九个工具包各实现一种已发表的算法，并声明适配差异，各带一个与插件同名的 Skill：
 
 - **OPRO**（`opro-rsi-toolkit`），出自 [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409)（Yang 等，2023）：优化器依据历史指令与分数提出新指令，每个候选都在冻结的 Benchmark 上测量，保留得分最高的指令。
 - **APE**（`ape-rsi-toolkit`），出自 [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910)（Zhou 等，2022）：不迭代、一次完成，提议者从输入 / 输出示例归纳候选指令，每个候选都测量一遍，保留最优者。
@@ -120,10 +120,11 @@ RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：
 - **[SkillOpt](https://arxiv.org/abs/2605.23904)**（`skillopt-rsi-toolkit`）：限制文本编辑幅度，按评分筛选候选，并在训练轮次之间总结经验。无独立验证集时，复用全部或指定部分 Train 筛选候选，仍保留全部 Train 参与学习。
 - **[OpenSkill](https://arxiv.org/abs/2606.06741)**（`openskill-rsi-toolkit`）：先通过外部检索与独立虚拟验证构建技能，再评测冻结的 State。
 - **TRACE** （`trace-rsi-toolkit`），出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：入口 Skill 负责外层实验组织，训练参考文件作为独立的 Curator Skill 安装到容器内。外层 Agent 通过 Harbor 启动训练，每个 Curator 从新 Actor 子会话的轨迹初始化、修订模块化技能库。默认每题每批两次、演化两轮；训练完成后，每个 Group 按完整训练均分选择一版有效技能库，平分选更早阶段，冻结后与无 Skill 基线各进行三次完整测试。这是实验采用的版本选择规则，测试反馈不参与选版。评测遵循已发布的连续训练契约，按完整测试重复的均分计算平均数与样本标准差；做题时的技能选择依赖指令执行，已读取的正文保留在历史中，不宣称复现论文的逐轮上下文替换。
+- **GEPA**（`gepa-rsi-toolkit`），出自 [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457)（Agrawal 等，2025）：反思模型阅读 Agent 在一个小批量题目上的 Trace 与分数并改写指令；在该小批量上胜过父代的子代进入候选池、在 Benchmark 上测量，父代从至少在一道题上领先的候选（Pareto 前沿）中抽取，保留平均分最高者。
 
 OPRO 与 APE 各自带一个小型演示任务：只要提出来，Skill 会先新建一个 Agent 和一套 6 题的 Benchmark 再开始。每个 Skill 都写明论文的默认参数和一档更小的冒烟预算；除非你要求，它从不按论文的完整预算运行。
 
-工具包之间互不依赖，也不依赖 `default-rsi-toolkit`，任何一个单独安装即可运行。OPRO、APE、ACE 和 AWM 在被测 Agent 里自行初始化学习槽：一个 Agent 自有的 Skill，存放方法学到的内容（指令、规则手册、工作流或模块化技能库），再在它的 `AGENTS.md` 里加一行固定指令，要求它开始任务前先读这个 Skill。方法的循环只改这个 Skill 存放的内容。最终 Benchmark 评测遵循工具包自带的 `references/evaluation.md`，写入现有记分板格式。OPRO、APE、ACE 和 AWM 共用通用单格评测协议；连续训练工具包分别说明训练启动、产物交接与独立测试流程。内置 Benchmark 的题目按题干的 **How this case is run** 一节运行，与 `agent-evaluation` 一致。
+工具包之间互不依赖，也不依赖 `default-rsi-toolkit`，任何一个单独安装即可运行。OPRO、APE、ACE、AWM 和 GEPA 在被测 Agent 里自行初始化学习槽：一个 Agent 自有的 Skill，存放方法学到的内容（指令、规则手册、工作流或模块化技能库），再在它的 `AGENTS.md` 里加一行固定指令，要求它开始任务前先读这个 Skill。方法的循环只改这个 Skill 存放的内容。最终 Benchmark 评测遵循工具包自带的 `references/evaluation.md`，写入现有记分板格式。OPRO、APE、ACE、AWM 和 GEPA 共用通用单格评测协议；连续训练工具包分别说明训练启动、产物交接与独立测试流程。内置 Benchmark 的题目按题干的 **How this case is run** 一节运行，与 `agent-evaluation` 一致。
 
 OPRO、APE、ACE 和 AWM 测量的每个候选都取一个新的 Agent State `version`。与默认循环相同，每个版本在被改动之前先打快照；运行结束时停在方法选定的版本上。这些评估照常写入 `scoreboard.yaml`，标签规则不变，因此同一个 Agent 在同一模型与思考等级下的默认循环与 OPRO 共用图表上的一条线：各点的版本号区分它们，每条评估的摘要标题写明所用的方法。在 Web App 中，用评估中心**优化**标签页的**方法**字段选择工具包，见[评估中心](/evaluation-center#优化-agent)。
 
@@ -249,5 +250,6 @@ Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的
 | `skillopt-rsi-toolkit` | `skillopt-rsi-toolkit` | SkillOpt RSI 工具包：限制编辑幅度，按评分选择技能。 |
 | `openskill-rsi-toolkit` | `openskill-rsi-toolkit` | OpenSkill RSI 工具包：通过检索与虚拟测试学习技能。 |
 | `trace-rsi-toolkit` | `trace-rsi-toolkit` | 运行 TRACE：对比轨迹演化技能库，评测冻结后的技能 |
+| `gepa-rsi-toolkit` | `gepa-rsi-toolkit` | 运行 GEPA：反思 Trace 进化指令，按 Pareto 前沿选父代 |
 
 Skill 如何组织和安装，见[技能与插件](/skills)。
