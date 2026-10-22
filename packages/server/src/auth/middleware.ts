@@ -54,16 +54,6 @@ export function parseCookieHeader(header: string | null | undefined): Record<str
   return parse(header ?? "");
 }
 
-/** Proxy deployments must preserve Host and overwrite this header, never append to it. */
-export function requestScheme(
-  protocol: string,
-  forwarded: string | undefined,
-  trustProxy: boolean,
-): string {
-  const scheme = trustProxy && forwarded !== undefined ? `${forwarded}:` : protocol;
-  return scheme === "http:" || scheme === "https:" ? scheme : "";
-}
-
 /** Scheme, host and port must agree; absent Origin retains the non-browser contract. */
 export function isOwnOrigin(origin: string | undefined, requestUrl: URL): boolean {
   if (!origin) return true;
@@ -79,16 +69,19 @@ export function isOwnOrigin(origin: string | undefined, requestUrl: URL): boolea
   }
 }
 
-/** Use the adapter-provided request URL; only trusted proxies may replace its protocol. */
+/** TLS-terminating proxies must preserve Host and overwrite, never append, the protocol header. */
 export function originTarget(
   requestUrl: string | URL,
   forwarded: string | undefined,
   trustProxy: boolean,
 ): URL {
   const url = new URL(requestUrl);
-  const scheme = requestScheme(url.protocol, forwarded, trustProxy);
-  if (!scheme) throw new HttpError(403, "cross_origin_write", "Invalid forwarded protocol.");
-  url.protocol = scheme;
+  if (trustProxy && forwarded !== undefined) {
+    if (forwarded !== "http" && forwarded !== "https") {
+      throw new HttpError(403, "cross_origin_write", "Invalid forwarded protocol.");
+    }
+    url.protocol = `${forwarded}:`;
+  }
   return url;
 }
 

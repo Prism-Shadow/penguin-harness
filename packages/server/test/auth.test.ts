@@ -35,7 +35,6 @@ import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import {
   isOwnOrigin,
   parseCookieHeader,
-  requestScheme,
   sessionCookieName,
   sameOriginWrites,
   jsonOnlyWrites,
@@ -439,11 +438,6 @@ describe("auth", () => {
   });
 
   it("uses forwarded schemes only behind a trusted proxy and rejects malformed values", async () => {
-    expect(requestScheme("http:", "https", false)).toBe("http:");
-    expect(requestScheme("http:", "https", true)).toBe("https:");
-    for (const value of ["ftp", "https,http", "", "https:"]) {
-      expect(requestScheme("http:", value, true)).toBe("");
-    }
     for (const trustProxy of [false, true]) {
       const app = new Hono();
       app.onError(handleError);
@@ -459,8 +453,11 @@ describe("auth", () => {
             "content-type": "application/json",
           },
         });
+      // Node sees the HTTP proxy hop; its sanitized external scheme is authoritative only
+      // when the deployment explicitly trusts that proxy.
       expect((await write("https")).status).toBe(trustProxy ? 204 : 403);
       expect((await write("https,http")).status).toBe(403);
+      expect((await write("ftp")).status).toBe(403);
       expect((await write("http", "http://example.com:8443")).status).toBe(403);
     }
   });
