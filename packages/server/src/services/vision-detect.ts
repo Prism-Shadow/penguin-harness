@@ -7,7 +7,7 @@
  * image and see what comes back. So this probe **is a real, billed completion** on the
  * user's credential. Everything here exists to make it the cheapest honest one:
  *
- *   - a 1x1 PNG (67 bytes) — the smallest thing that is still a decodable image;
+ *   - a 1x1 PNG (70 bytes) — the smallest thing that is still a decodable image;
  *   - a prompt asking for one word, with the same anti-thinking hint the connectivity
  *     probe uses, so reasoning models do not burn the budget before answering;
  *   - `maxTokens` in the single digits and no tools, so the completion cannot run long.
@@ -30,11 +30,10 @@ export type VisionProbeOutcome = "supported" | "unsupported" | "failed";
  * A 1x1 transparent PNG as a data URL — the smallest input that still decodes as an image
  * for every provider. Inline rather than read from disk: it must not depend on packaging.
  *
- * It must actually DECODE, not merely carry a PNG signature: a strict decoder (LiteLLM and
- * the gateways built on it) answers a truncated image with a 400 "unsupported image", and the
- * probe then reports a failure that reads like a credential problem rather than a bad
- * picture. This one is a 1x1 RGBA whose IDAT inflates to exactly the five bytes its IHDR
- * declares (one filter byte plus four channels), so every decoder accepts it.
+ * It must DECODE, not merely carry a PNG signature: a strict decoder (LiteLLM and the gateways
+ * built on it) answers a short image with a 400 "unsupported image", which isImageRejection then
+ * reads as the model refusing images. This 1x1 RGBA's IDAT inflates to exactly the five bytes its
+ * IHDR declares (one filter byte plus four channels).
  */
 export const VISION_PROBE_IMAGE =
   "data:image/png;base64," +

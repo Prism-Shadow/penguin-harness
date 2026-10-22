@@ -2124,9 +2124,8 @@ export const en: Strings = {
       `Detected ${protocol}; base URL normalized to ${url}`,
     /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
     detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
-    /** The vision probe failed: not a protocol problem, so it must not point at the key or the URL. */
-    detectVisionFailedBody:
-      "Vision check failed: the model gave nothing to judge on; the switch is left as it was.",
+    /** The vision probe learned nothing: not a protocol problem, so it must not send the reader to the key or the URL. */
+    detectVisionFailed: "Could not tell whether this model accepts images; vision left as it was",
     /** Save-time detection came back empty: the save proceeds on the compatible client. */
     detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
     addProtocolHintDetect:

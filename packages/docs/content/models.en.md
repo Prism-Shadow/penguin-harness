@@ -201,7 +201,7 @@ Detection never blocks a save. If you select **Confirm** while neither the model
 
 - If the model answers, the switch turns on: "This model accepts images; vision turned on".
 - If the model says it does not take images, the switch turns off. That is a real answer, not an error.
-- If the probe fails on authentication or the network, the switch stays as it was, and the message asks you to check the API key and the base URL.
+- If the probe fails on authentication or the network, the switch stays as it was: "Could not tell whether this model accepts images; vision left as it was".
 
 > [!NOTE]
 > Unlike protocol detection, this probe is a real, billed request: an image request cannot be made free the way the protocol probes are. It runs only when you select **Detect**, never on its own and never on save.

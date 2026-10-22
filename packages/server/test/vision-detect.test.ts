@@ -21,35 +21,24 @@ import {
 const failed = (errorMessage: string): LLMOutcome => ({ status: "fatal", errorMessage });
 
 describe("VISION_PROBE_IMAGE", () => {
+  const bytes = Buffer.from(VISION_PROBE_IMAGE.slice("data:image/png;base64,".length), "base64");
+
   it("is a tiny inline PNG data URL, so the probe sends the least it can", () => {
     expect(VISION_PROBE_IMAGE.startsWith("data:image/png;base64,")).toBe(true);
-    const b64 = VISION_PROBE_IMAGE.slice("data:image/png;base64,".length);
-    const bytes = Buffer.from(b64, "base64");
-    // A real PNG signature, and well under 200 bytes.
     expect([...bytes.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
     expect(bytes.length).toBeLessThan(200);
-    // Round-trips, i.e. it is valid base64 rather than a truncated paste.
-    expect(bytes.toString("base64")).toBe(b64);
   });
 
-  it("is a PNG that DECODES, not one that merely carries the signature", () => {
-    // A strict decoder (LiteLLM, and the gateways built on it) answers a truncated image with
-    // a 400 "unsupported image" — and the probe then reports a failure that reads like a
-    // credential problem instead of a bad picture. So the bytes are checked against what the
-    // header declares: every chunk's CRC must match, and the IDAT must inflate to exactly
-    // one filter byte plus one byte per channel of the declared colour type.
-    const b64 = VISION_PROBE_IMAGE.slice("data:image/png;base64,".length);
-    const bytes = Buffer.from(b64, "base64");
-    const width = bytes.readUInt32BE(16);
-    const height = bytes.readUInt32BE(20);
-    const colorType = bytes[25]!;
+  it("decodes: every chunk's CRC holds and the IDAT inflates to the pixel bytes the IHDR declares", () => {
+    // A strict decoder (LiteLLM and the gateways built on it) answers a short image with a 400
+    // "unsupported image", which isImageRejection reads as the model refusing images.
     const channels: Record<number, number> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
-    expect(width).toBe(1);
-    expect(height).toBe(1);
+    expect(bytes.readUInt32BE(16)).toBe(1);
+    expect(bytes.readUInt32BE(20)).toBe(1);
+    const colorType = bytes[25]!;
     expect(channels[colorType]).toBeDefined();
-    let offset = 8;
     let inflated = Buffer.alloc(0);
-    while (offset < bytes.length) {
+    for (let offset = 8; offset < bytes.length;) {
       const length = bytes.readUInt32BE(offset);
       const type = bytes.toString("ascii", offset + 4, offset + 8);
       const data = bytes.subarray(offset + 8, offset + 8 + length);
