@@ -3,7 +3,7 @@
   "version": "0.2.16",
   "private": true,
   "type": "module",
-  "description": "PenguinHarness \u2014 Unified and Stable RSI Framework: automatically improve model \u00d7 agent harness (TypeScript SDK, CLI, server and Web App).",
+  "description": "PenguinHarness \u2014 Unified and Stable RSI Framework (TypeScript SDK, CLI, server and Web App). Fully automatic optimization: any model, any algorithm, any benchmark.",
   "engines": {
     "node": ">=24"
   },

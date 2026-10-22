@@ -1,8 +1,8 @@
 /**
  * 机器: the Machines page's presentation from the package — the status pill in every state, the
  * machine card in each state a machine can stand in (this server, running, a job under way or
- * queued, coming back, failed, refused, on another build, stopped, out of reach, nothing
- * installed), the list loading, the Machine dialog's toolbar with a held verb, and the add
+ * queued, coming back with its retry line, stopped coming back, failed, refused, on another build,
+ * stopped, out of reach, nothing installed), the list loading, the Machine dialog's toolbar with a held verb, and the add
  * dialog's shell with its host rows and footer.
  */
 import { useState } from "react";
@@ -59,6 +59,9 @@ const HOSTS = [
 export function MachinesBoard() {
   const { S } = useGallery();
   const t = S.library.machines;
+  const r = S.library.retry;
+  // The coming-back card's next attempt, fixed when the board mounts so its countdown runs down.
+  const [nextAt] = useState(() => Date.now() + 80_000);
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(["gpu-a100"]));
   const [query, setQuery] = useState("");
   const [installNow, setInstallNow] = useState(true);
@@ -121,7 +124,23 @@ export function MachinesBoard() {
       progress: { steps: STEPS_QUEUED, caption: t.states.queued, running: false },
       remove: { label: t.card.remove, disabled: true, onClick: noop },
     }),
-    card("mini", "reconnecting", { waits: t.waits.reconnecting }),
+    card("mini", "reconnecting", {
+      retry: {
+        phase: "waiting",
+        label: r.failed(3, 8),
+        nextAt,
+        countdown: r.countdown,
+        retry: { label: r.retryNow, onClick: noop },
+      },
+    }),
+    card("lab-2", "reconnectStopped", {
+      retry: {
+        phase: "gaveUp",
+        label: r.gaveUp(8),
+        reason: r.refused("lab-2"),
+        retry: { label: r.retry, onClick: noop },
+      },
+    }),
     card("edge-1", "unreachable", {
       status: { state: "unreachable", label: t.states.unreachable, reason: SSH_SAID },
       waits: t.waits.stopped,
@@ -140,7 +159,9 @@ export function MachinesBoard() {
       status: { state: "failed", label: t.states.failed, reason: reasonOf("failed") },
       waits: t.waits.failed,
     }),
-    card("vault", "signInRefused", { waits: t.waits.signInRefused }),
+    card("vault", "signInRefused", {
+      retry: { phase: "blocked", label: r.stoppedPassword, reason: r.password },
+    }),
     card("spare", "notInstalled", {
       facts: facts(false, { version: null }),
       waits: t.waits.notInstalled,

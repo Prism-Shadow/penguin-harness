@@ -7,6 +7,13 @@
  * - Given README and core edits together, when planning CI, then core covers the catalog once.
  * - Given a core edit, when planning CI, then its transitive consumers and native OS tests run.
  * - Given a web edit, when planning CI, then the gallery, landing and desktop are checked too.
+ * - Given a web edit, when planning CI, then the web suite runs in two Linux jobs that each run
+ *   half of every package's files and build what the web imports, not the web's own bundle;
+ *   without the web among them, ui and cli run whole in one job.
+ * - Given any typecheck, when planning CI, then its build selects the checked packages'
+ *   dependencies and never a site bundle.
+ * - Given the gallery among the tested packages, when planning CI, then the one Linux job that
+ *   tests it also runs its browser layout checks; without it, no job does.
  * - Given the web's inline boot script changes, when planning CI, then UI's copy guard runs.
  * - Given a plugin without declared consumers changes, when planning CI, then catalog readers run.
  * - Given a file moves between packages, when planning CI, then both owners are checked.
@@ -17,7 +24,8 @@
  * - Given no changes or only changelog text, when planning CI, then no package jobs are needed.
  * - Given a new package, when planning CI, then it receives tests without editing a shard list.
  * - Given a release requests full validation, when planning CI, then every package and OS runs,
- *   macOS and Windows with the browser and site packages in a shard of their own.
+ *   macOS and Windows with the browser and site packages in a shard of their own (on Windows,
+ *   two halves of it), and the Windows server suite in shards that together cover it once.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -81,6 +89,24 @@ describe("affected CI", { concurrency: false }, () => {
     commit();
     return planCI({ cwd, base });
   };
+  /** The packages a job's `build` input selects, resolved by pnpm as the setup action passes it. */
+  const built = (filters) =>
+    new Set(
+      JSON.parse(
+        execFileSync(
+          "pnpm",
+          [
+            ...filters.split(",").flatMap((filter) => ["--filter", filter]),
+            "list",
+            "--recursive",
+            "--depth",
+            "-1",
+            "--json",
+          ],
+          { cwd, encoding: "utf8" },
+        ),
+      ).map((project) => project.name),
+    );
 
   before(() => {
     cwd = realpathSync(mkdtempSync(join(tmpdir(), "penguin-ci-plan-")));
@@ -240,6 +266,58 @@ describe("affected CI", { concurrency: false }, () => {
     assert.ok(desktopBuild.build.includes(`${name("web")}...`));
   });
 
+  it("a web edit runs the web suite in two halves that build what it imports, not its bundle", () => {
+    const plan = changed("packages/web/src/index.js");
+    const halves = plan.linux.include.filter((shard) => shard.packages.includes(name("web")));
+    assert.deepEqual(
+      halves.map((shard) => shard.shard),
+      ["web-1", "web-2"],
+    );
+    assert.deepEqual(halves[0].packages, halves[1].packages);
+    assert.ok(halves[0].tests.includes("--shard=1/2"));
+    assert.equal(halves[0].tests.replaceAll("--shard=1/2", "--shard=2/2"), halves[1].tests);
+    for (const half of halves) {
+      const selected = built(half.build);
+      assert.ok(selected.has(name("server")), `${half.shard} builds what the web imports`);
+      assert.ok(!selected.has(name("web")), `${half.shard} does not build the web bundle`);
+    }
+    // Desktop's shard still carries the web bundle it packs.
+    const desktop = plan.linux.include.find((shard) => shard.packages.includes(name("desktop")));
+    assert.ok(built(desktop.build).has(name("web")));
+  });
+
+  it("runs the gallery's layout checks in the one Linux job that tests the gallery", () => {
+    const withGallery = changed("packages/web/src/index.js");
+    assert.deepEqual(
+      withGallery.linux.include.filter((shard) => shard.gallery).map((shard) => shard.packages),
+      withGallery.linux.include
+        .filter((shard) => shard.packages.includes(name("ui-gallery")))
+        .map((shard) => shard.packages),
+    );
+    assert.equal(withGallery.linux.include.filter((shard) => shard.gallery).length, 1);
+    git("reset", "--hard", "--quiet", base);
+    const withoutGallery = changed("packages/landing/src/index.js");
+    assert.ok(!withoutGallery.linux.include.some((shard) => shard.gallery));
+  });
+
+  it("without the web among them, ui and cli run whole in one Linux job", () => {
+    const plan = changed("packages/cli/src/index.js");
+    const shard = plan.linux.include.find((entry) => entry.packages.includes(name("cli")));
+    assert.equal(shard.shard, "web-cli");
+    assert.ok(!shard.tests.includes("--shard"));
+  });
+
+  it("typecheck builds what the checked packages import, never a site bundle", () => {
+    const plan = changed("packages/web/src/index.js");
+    const selected = built(plan.typecheck_build);
+    for (const dependency of ["core", "server", "ui", "cli"]) {
+      assert.ok(selected.has(name(dependency)), `${dependency} is imported by a checked package`);
+    }
+    for (const leaf of ["web", "ui-gallery", "docs", "landing", "desktop"]) {
+      assert.ok(!selected.has(name(leaf)), `${leaf} is never built for a typecheck`);
+    }
+  });
+
   it("changing the inline web boot script selects the UI suite that checks its copy", () => {
     const plan = changed("packages/web/index.html");
     assert.ok(members(plan.linux).has(name("ui")));
@@ -362,15 +440,37 @@ describe("affected CI", { concurrency: false }, () => {
     for (const matrix of [plan.linux, plan.macos, plan.windows]) {
       assert.deepEqual(members(matrix), expected);
     }
-    for (const matrix of [plan.macos, plan.windows]) {
-      const sites = matrix.include.find((shard) => shard.shard === "sites");
+    for (const [matrix, siteShards] of [
+      [plan.macos, ["sites"]],
+      [plan.windows, ["sites-1", "sites-2"]],
+    ]) {
+      const sites = matrix.include.filter((shard) => shard.shard.startsWith("sites"));
       assert.deepEqual(
-        new Set(sites.packages),
-        names("ui", "web", "ui-gallery", "docs", "landing"),
+        sites.map((shard) => shard.shard),
+        siteShards,
       );
+      for (const shard of sites) {
+        assert.deepEqual(
+          new Set(shard.packages),
+          names("ui", "web", "ui-gallery", "docs", "landing"),
+        );
+      }
       const rest = matrix.include.find((shard) => shard.shard === "rest");
-      assert.ok(!rest.packages.some((pkg) => sites.packages.includes(pkg)), "each site runs once");
+      assert.ok(
+        !rest.packages.some((pkg) => sites[0].packages.includes(pkg)),
+        "each site runs once",
+      );
     }
+    // Every Windows server shard names the same count, and the shards are exactly 1..count.
+    const serverShards = plan.windows.include
+      .filter((shard) => shard.shard.startsWith("server-"))
+      .map((shard) => /--shard=(\d+)\/(\d+)/.exec(shard.tests).slice(1).map(Number));
+    const count = serverShards[0][1];
+    assert.ok(count > 1);
+    assert.deepEqual(
+      serverShards,
+      Array.from({ length: count }, (_, i) => [i + 1, count]),
+    );
     for (const job of [
       "tests",
       "macos_tests",

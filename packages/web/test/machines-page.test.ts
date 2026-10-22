@@ -8,6 +8,10 @@
  * - starts a conversation in the machine's temporary workspace with Use, opening nothing, while
  *   the machine is connected; otherwise Use waits and the card says why in words, not on a hover —
  *   and while a job moves there, its stepper says what is happening instead;
+ * - while the server brings the machine back, says in its middle where that stands — the failed
+ *   attempt of how many, the countdown, Retry now — and after the automatic attempts stopped,
+ *   where they stopped with Retry; a press asks the page to retry; a refused password says the
+ *   fix and offers no Retry;
  * - asks to delete the machine with its trash button, never while a job is on its way;
  * - holds Use and Delete while a request is in flight;
  * - offers Sync config only on a connected machine on this server's build;
@@ -22,8 +26,9 @@
  *   hover; holds every verb while a request is in flight, the sentence unchanged;
  * - explains a failure: the step it stopped at, in the far side's own words, what the server's
  *   connection check found, then Retry — and Force install only when the failure offers it;
- * - says, while the server brings a machine back, for how long and which attempt, the last
- *   failure, and what the automatic check found;
+ * - says, while the server brings a machine back, where that stands with its Retry (which asks
+ *   the page to reconnect; none for a refused password), for how long, the last failure, and what
+ *   the automatic check found;
  * - folds a job that finished well into one line with its log closed, opens a running job's log,
  *   and copies the whole log from a button beside it;
  * - says in Details, as text, ssh's own words for a machine out of reach and the time of the last
@@ -85,6 +90,7 @@ const remote = (alias: string, extra: Partial<MachineInfo> = {}): MachineInfo =>
   machineId: `Id${alias.replace(/[^a-z0-9]/gi, "")}0000000000`.slice(0, 16),
   local: false,
   connection: null,
+  socket: null,
   api: null,
   status: { state: "stopped", checkedAt: CHECKED },
   root: "/home/ubuntu/.penguin/data",
@@ -121,6 +127,7 @@ const comingBack = remote("mini", {
   reconnect: {
     since: new Date(Date.now() - 6 * 60_000).toISOString(),
     attempts: 3,
+    maxAttempts: 8,
     nextAt: new Date(Date.now() + 80_000).toISOString(),
     lastError: "mini refused. (ssh: connect to host mini port 22: Connection refused)",
     sshReason: "refused",
@@ -137,6 +144,37 @@ const comingBack = remote("mini", {
         { id: "platform", state: "skip" },
       ],
     },
+  },
+});
+/** Kept connected, and the server stopped bringing it back after eight failures in a row. */
+const gaveUp = remote("lab-2", {
+  connection: null,
+  keepConnected: true,
+  reconnect: {
+    since: new Date(Date.now() - 16 * 60_000).toISOString(),
+    attempts: 8,
+    maxAttempts: 8,
+    nextAt: null,
+    gaveUp: "attempts",
+    lastError: "lab-2 refused. (ssh: connect to host lab-2 port 22: Connection refused)",
+    sshReason: "refused",
+    diagnosis: null,
+  },
+});
+/** Kept connected, and its stored password refused: nothing is tried until it is saved again. */
+const locked = remote("vault", {
+  connection: null,
+  keepConnected: true,
+  reconnect: {
+    since: new Date(Date.now() - 2 * 60_000).toISOString(),
+    attempts: 1,
+    maxAttempts: 8,
+    nextAt: null,
+    lastError:
+      "vault rejected the password saved for it. Enter it again in this machine's SSH settings.",
+    sshReason: "password-rejected",
+    diagnosis: null,
+    waitsForPassword: true,
   },
 });
 const winBox = remote("win-box");
@@ -308,6 +346,7 @@ function card(machine: MachineInfo, job: MachineJob | null = null, busy = false)
     onUse: vi.fn(),
     onSyncConfig: vi.fn(),
     onDelete: vi.fn(),
+    onRetry: vi.fn(async () => {}),
   };
   // The card hands its data to the shared view; the view's own band is what a browser shows.
   const view = MachineCard(props) as AnyElement;
@@ -327,8 +366,11 @@ function card(machine: MachineInfo, job: MachineJob | null = null, busy = false)
     element,
     tree,
     buttons,
+    html,
     main: main!,
     waits: waits === undefined ? null : seenText(waits).trim(),
+    /** The retry status in the card's middle, as the card hands it to the shared view. */
+    retry: tree.find((el) => el.type === ui.RetryStatus)?.props as ui.RetryStatusProps | undefined,
   };
 }
 
@@ -395,13 +437,41 @@ describe("a machine's card", () => {
       [stopped, null, why.stopped],
       [added, null, why.notInstalled],
       [stopped, failedJob(stopped, true), why.failed],
-      [comingBack, null, why.reconnectingFor("6 minutes")],
     ];
     for (const [machine, job, line] of cases) {
       const shown = card(machine, job);
       expect(shown.buttons.get("use")!.props.disabled, machine.alias).toBe(true);
       expect(shown.waits, machine.alias).toBe(line);
     }
+  });
+
+  it("while the server brings the machine back, says in its middle which attempt failed and when the next runs, and Retry now asks the page to retry", () => {
+    const shown = card(comingBack);
+    expect(shown.retry).toMatchObject({ phase: "waiting", label: S.machines.retry.failed(3, 8) });
+    expect(shown.html).toContain("data-retry-countdown");
+    expect(shown.waits).toBeNull();
+    expect(shown.buttons.get("use")!.props.disabled).toBe(true);
+    expect(shown.retry?.retry?.label).toBe(S.machines.retry.retryNow);
+    void shown.retry!.retry!.onClick();
+    expect(shown.props.onRetry).toHaveBeenCalledOnce();
+    // A request from the page in flight holds it, as it holds Use and Delete.
+    expect(card(comingBack, null, true).retry?.retry?.disabled).toBe(true);
+  });
+
+  it("after the automatic attempts stopped, says where with Retry; a refused password says the fix and offers none", () => {
+    expect(card(gaveUp).retry).toMatchObject({
+      phase: "gaveUp",
+      label: S.machines.retry.gaveUp(8),
+      reason: S.machines.check.ssh.refused("lab-2"),
+      retry: { label: S.machines.retry.retry },
+    });
+    const refused = card(locked);
+    expect(refused.retry).toMatchObject({
+      phase: "blocked",
+      reason: S.machines.check.ssh["password-rejected"]("vault"),
+    });
+    expect(refused.retry?.retry).toBeNull();
+    expect(refused.html).not.toContain("data-retry-action");
   });
 
   it("while a job moves there, shows its stepper in place of a reason, and holds Use and Delete", () => {
@@ -587,19 +657,37 @@ describe("the Machine dialog", () => {
     expect(seenText(rows[0]!)).toContain(S.machines.check.ssh.auth("lab-mac"));
   });
 
-  it("says, while the server brings the machine back, for how long, which attempt, the last failure and what the check found", () => {
+  it("says, while the server brings the machine back, where that stands, for how long, the last failure and what the check found", () => {
     const { html, tree } = dialog(comingBack, null);
     const section_ = section(tree, S.machines.detail.reconnect.title);
     expect(section_).not.toBeNull();
     const seen = seenText(readMarkup(html));
-    expect(seen).toContain(S.machines.detail.reconnect.trying);
+    expect(seen).toContain(S.machines.retry.failed(3, 8));
     expect(seen).toContain(S.machines.detail.reconnect.lasting("6 minutes"));
-    expect(seen).toContain(S.machines.detail.reconnect.attempt(4));
     expect(seen).toContain(S.machines.check.ssh.refused("mini"));
     const rows = elementsOf(readMarkup(html)).filter((el) => "data-check" in el.attrs);
     expect(rows.map((el) => el.attrs["data-check"])).toEqual(["ssh", "platform"]);
     // Not coming back, nothing of it.
     expect(section(dialog(ready, null).tree, S.machines.detail.reconnect.title)).toBeNull();
+  });
+
+  it("offers a Retry under where the streak stands, which asks the page to reconnect; a refused password offers none", () => {
+    const retryIn = (machine: MachineInfo) => {
+      const shown = dialog(machine, null);
+      const found = section(shown.tree, S.machines.detail.reconnect.title)?.find(
+        (el) => el.type === ui.RetryStatus,
+      );
+      return { status: found?.props as ui.RetryStatusProps | undefined, onAct: shown.onAct };
+    };
+    const back = retryIn(comingBack);
+    expect(back.status?.layout).toBe("block");
+    void back.status!.retry!.onClick();
+    expect(back.onAct).toHaveBeenCalledWith("reconnect");
+    expect(retryIn(gaveUp).status).toMatchObject({
+      phase: "gaveUp",
+      retry: { label: S.machines.retry.retry },
+    });
+    expect(retryIn(locked).status).toMatchObject({ phase: "blocked", retry: null });
   });
 
   it("folds a job that finished well into one line with its log closed, opens a running job's log, and offers to copy it", () => {
@@ -656,6 +744,8 @@ describe("every state", () => {
     ["working", behind, runningJob(behind)],
     ["queued", stopped, queuedJob(stopped)],
     ["being brought back", comingBack, null],
+    ["stopped being brought back", gaveUp, null],
+    ["its password refused", locked, null],
     ["installed as far as it goes", winBox, installedJob(winBox)],
     ["never probed", fresh, null],
     ["added, nothing installed", added, null],

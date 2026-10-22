@@ -2,8 +2,9 @@
  * The floating launcher for the workbench — an AssistiveTouch-style ball floating clear of
  * the chat body's right edge while no dock surface is up, so the dock's panels stay
  * discoverable for a user who never notices the toolbar's toggle. The ball carries a short
- * caption, and a click fans out one round button per panel the registry offers here (plus the
- * terminal) onto a tight ring centred on it and opening leftward. The entries are glyphs alone; the caption
+ * caption, and a click fans out one round button per panel the registry offers here (the
+ * terminal among them) onto a tight ring centred on it and opening leftward. The entries are
+ * glyphs alone; the caption
  * under the ball is where their names are read — it shows the hovered or focused entry's
  * name — because seven name pills floating around the ball is what pushed the ring far
  * enough out to stop reading as one object. The ball is that readout's other half: it draws
@@ -53,10 +54,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { SpringDriver } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { NAV_ICONS } from "../../lib/nav-icons";
 import { toneInk } from "../../lib/tone";
-import { subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
-import { openTerminalInDock } from "./dock-terminal";
 import { useDockPanels } from "./panel-registry";
 import { dockVersion, isDockVisible, isNarrow, openPanel, subscribeDock } from "./dock-state";
 import {
@@ -99,7 +97,6 @@ export interface DockLauncherProps {
 export function DockLauncher({ agentsPending }: DockLauncherProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
   useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
-  const terminalSupported = useSyncExternalStore(subscribeTerminals, terminalApiSupported);
   const narrow = isNarrow();
   const visible = shouldShowLauncher({
     rightDockVisible: isDockVisible("right"),
@@ -108,13 +105,7 @@ export function DockLauncher({ agentsPending }: DockLauncherProps) {
     hidden: readLauncherHidden(),
   });
   if (!visible) return null;
-  return (
-    <FloatingLauncher
-      agentsPending={agentsPending}
-      terminalSupported={terminalSupported}
-      narrow={narrow}
-    />
-  );
+  return <FloatingLauncher agentsPending={agentsPending} narrow={narrow} />;
 }
 
 interface FanState {
@@ -137,11 +128,9 @@ interface FanEntry {
 
 function FloatingLauncher({
   agentsPending,
-  terminalSupported,
   narrow,
 }: {
   agentsPending: boolean;
-  terminalSupported: boolean;
   /** Below the breakpoint the docks merge, so an entry names no dock and lets the store pick. */
   narrow: boolean;
 }) {
@@ -411,23 +400,8 @@ function FloatingLauncher({
     badge: definition.id === "agents" && agentsPending,
     testId: `dock-launcher-open-${definition.id}`,
     // The dock becomes visible with the tab, and the launcher unmounts with it.
-    choose: () => openPanel(definition.id, target),
+    choose: () => openPanel(definition.id, target, definition.defaultPosition),
   }));
-  if (terminalSupported) {
-    entries.push({
-      key: "terminal",
-      label: S.terminal.title,
-      glyphAt: (size) => <GlyphIcon d={NAV_ICONS.terminal} size={size} />,
-      badge: false,
-      testId: "dock-launcher-open-terminal",
-      // The dock picker's terminal action: adopt a live shell no conversation holds, or
-      // start one. Async, so the fan folds first.
-      choose: () => {
-        closeFan(false);
-        void openTerminalInDock(target);
-      },
-    });
-  }
   entries.push({
     key: "hide",
     label: S.dock.launcherHide,

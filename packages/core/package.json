@@ -37,9 +37,9 @@
       "types": "./dist/llm/context-limits.d.ts",
       "import": "./dist/llm/context-limits.js"
     },
-    "./model-catalog": {
-      "types": "./dist/state/model-catalog.d.ts",
-      "import": "./dist/state/model-catalog.js"
+    "./model-connection": {
+      "types": "./dist/state/model-connection.d.ts",
+      "import": "./dist/state/model-connection.js"
     },
     "./a2ui": {
       "types": "./dist/a2ui/index.d.ts",
@@ -82,7 +82,7 @@
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.3",
+    "@prismshadow/mmsp": "^0.5.4",
     "arktype": "^2.2.3",
     "smol-toml": "^1.3.0",
     "yaml": "^2.5.0"

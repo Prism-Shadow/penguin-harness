@@ -20,6 +20,7 @@ import { parse as parseToml } from "smol-toml";
 import { DEFAULT_PROJECT_ID, projectConfigPath } from "@prismshadow/penguin-core";
 import { registerConfigCommand } from "../src/commands/config.js";
 import { getMessages } from "../src/i18n.js";
+import { seedProject } from "./seeded-project.js";
 
 let tmpHome: string;
 let tmpRoot: string;
@@ -29,6 +30,8 @@ beforeEach(async () => {
   prevHome = process.env.PENGUIN_HOME;
   tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-home-"));
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-root-"));
+  // A Project as the server seeds one: core's own default carries no models.
+  await seedProject(tmpRoot);
   process.env.PENGUIN_HOME = tmpHome;
 });
 
@@ -714,6 +717,7 @@ describe("model add/default/vision: --provider is required, (provider, model_id)
   });
 
   it("add without --provider is a usage error too: the group is never inferred, so no config is written", async () => {
+    const seeded = await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8");
     const bad = await runModel([
       "add",
       "--model-id",
@@ -726,7 +730,7 @@ describe("model add/default/vision: --provider is required, (provider, model_id)
     expect(bad.code).not.toBe(0);
     expect(bad.err).toContain("--provider");
     // The credential must not have landed on a guessed vendor: nothing was persisted at all.
-    await expect(fs.access(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID))).rejects.toThrow();
+    expect(await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8")).toBe(seeded);
   });
 
   it("dangling reference: the pair is not in models; the error carries the pair reference and a model list hint", async () => {

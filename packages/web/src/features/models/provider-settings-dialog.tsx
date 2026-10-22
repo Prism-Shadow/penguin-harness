@@ -52,8 +52,8 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-server/model-catalog";
+import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
@@ -275,11 +275,12 @@ export async function saveGroupSettings(
 }
 
 /**
- * The environment variable a blank group key would be covered by, or undefined: core's
- * providerEnvFallbackKey on the group as drafted (a first-party vendor group left on the
- * vendor's own endpoint and client, or a provider-scoped variable on the group's endpoint —
- * never a gateway, custom, vLLM or user-defined group), and a variable the server reported a
- * value for. Knowing a variable's name is not knowing it is set, so `detected` is what decides.
+ * The environment variable a blank group key would be covered by, or undefined: the catalog's
+ * providerEnvFallbackKey on the group as drafted — what MMSP's client for the group reads when
+ * handed no key (PRN-021: only with no base URL or the client's own default endpoint), on its
+ * protocol's client or, for a first-party vendor group with none, the vendor's — and a variable
+ * the server reported a value for. Knowing a variable's name is not knowing it is set, so
+ * `detected` is what decides.
  */
 export function groupEnvKey(
   providerId: string,
@@ -287,7 +288,7 @@ export function groupEnvKey(
   detected: ReadonlySet<string>,
 ): string | undefined {
   const envKey = providerEnvFallbackKey(providerId, {
-    baseUrl: draft.baseUrl,
+    baseUrl: draft.baseUrl.trim() || undefined,
     clientType: draft.clientType ?? undefined,
   });
   return envKey !== undefined && detected.has(envKey) ? envKey : undefined;

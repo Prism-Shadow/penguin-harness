@@ -4,7 +4,6 @@ import { defineConfig } from "tsup";
 import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
 
 export default defineConfig({
-  // model-catalog gets its own entry point: pure data, no Node dependency, so web can bundle it directly via subpath import.
   entry: [
     "src/index.ts",
     "src/omnimessage/index.ts",
@@ -15,7 +14,9 @@ export default defineConfig({
     // The plugin contract: types only, so a plugin package compiles against the SDK
     // without depending on whatever embeds it.
     "src/plugin/index.ts",
-    "src/state/model-catalog.ts",
+    // A row's effective connection and credential rule: no Node dependency and no catalog
+    // data, so the Web App bundles the same answers the server and the CLI compute.
+    "src/state/model-connection.ts",
     // The built-in Benchmarks as data: no Node dependency, so the component gallery's demo
     // Project lists them as a new Project gets them.
     "src/state/builtin-benchmarks-data.ts",

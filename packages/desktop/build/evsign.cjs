@@ -1,9 +1,10 @@
 "use strict";
 
-const { spawn } = require("node:child_process");
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { verifyWindowsSignature } = require("./verify-windows-signature.cjs");
 
 const SIGNED_BASENAMES = new Set([
   "PenguinHarness.exe",
@@ -22,7 +23,7 @@ function shouldSign(file) {
 
 function runEvsign(client, file, key) {
   return new Promise((resolve, reject) => {
-    const child = spawn(client, [file, "-key", key, "-sha256"], {
+    const child = childProcess.spawn(client, [file, "-key", key, "-sha256"], {
       stdio: ["ignore", "inherit", "inherit"],
       windowsHide: true,
     });
@@ -55,7 +56,7 @@ async function evsign(configuration) {
     return;
   }
 
-  if (!key) {
+  if (!key || !key.trim()) {
     if (requireSigning) {
       throw new Error("EVSIGN_KEY is required for Windows release signing.");
     }
@@ -70,6 +71,9 @@ async function evsign(configuration) {
 
   console.log(`[evsign] signing ${path.basename(file)}`);
   await runEvsign(client, file, key);
+  // Every signed file is verified here, including NSIS's temporary uninstaller: it does not
+  // survive packaging, so this is the only place an unsigned or untimestamped one shows.
+  verifyWindowsSignature(file);
 }
 
 module.exports = evsign;

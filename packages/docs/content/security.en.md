@@ -166,6 +166,12 @@ The design is built around the worst case: **a full backup of the data root leak
 
 The one usable credential a backup can hold is the local API token of the server start it was taken from, and a restart replaces it. After that, nothing copied out of the backup can be presented to the live server.
 
+## Windows desktop updates
+
+Windows updates keep electron-updater's SHA-512 check against the update feed and require a valid Authenticode signature. The client pins no signer name, certificate fingerprint or certificate authority, so a certificate rotation at the signing service does not block an update. A cached installer is verified before it is offered and again right before installation; a failed or unavailable check refuses the update, discards the installer and offers a retry. Updates never install on exit.
+
+Trust therefore rests on the GitHub and OSS publishing channels and the accounts that control them. PenguinHarness does not sign the update metadata, so someone able to replace both the metadata and the installer can ship a different, validly signed executable with a matching hash. Clients installed from 0.2.16 or earlier still check the old publisher name and need one manual installation of a newer release.
+
 ## How it works
 
 ### Sessions

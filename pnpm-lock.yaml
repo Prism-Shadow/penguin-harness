@@ -151,8 +151,8 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
       '@prismshadow/mmsp':
-        specifier: ^0.5.3
-        version: 0.5.3(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.5.4
+        version: 0.5.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -260,8 +260,8 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
       '@prismshadow/mmsp':
-        specifier: ^0.5.3
-        version: 0.5.3(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.5.4
+        version: 0.5.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -396,6 +396,9 @@ importers:
       vitest:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@30.1.2(@noble/hashes@1.8.0))(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
 
   packages/docs:
     dependencies:
@@ -519,9 +522,12 @@ importers:
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
+      '@prismshadow/mmsp':
+        specifier: ^0.5.4
+        version: 0.5.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+        version: link:../core
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -567,7 +573,7 @@ importers:
     devDependencies:
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
-        version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)
+        version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
@@ -1922,8 +1928,8 @@ packages:
     resolution: {directory: packages/amsp, type: directory}
     engines: {node: '>=24'}
 
-  '@prismshadow/mmsp@0.5.3':
-    resolution: {integrity: sha512-5Mp0LCYstltljWlRlGY7KAtTrg5N4MVFoLmDY33AgBFb8ILNXrlzKIecgsKUtAiSquMEU7m5ySxwMGLh6g+HMw==}
+  '@prismshadow/mmsp@0.5.4':
+    resolution: {integrity: sha512-nuphggmADK8NIhYwCKpyWgD9WIHuH7FPx8UXpIzeNqvx6/9QiMdl604BQpPeyKFMxb/vR+lnH0PHqikUdcOPNg==}
 
   '@prismshadow/penguin-cli@file:packages/cli':
     resolution: {directory: packages/cli, type: directory}
@@ -6491,7 +6497,7 @@ snapshots:
 
   '@prismshadow/amsp@file:packages/amsp': {}
 
-  '@prismshadow/mmsp@0.5.3(supports-color@10.2.2)(ws@8.21.0)':
+  '@prismshadow/mmsp@0.5.4(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -6506,7 +6512,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/mmsp@0.5.3(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/mmsp@0.5.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -6545,7 +6551,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/mmsp': 0.5.3(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.4(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
       commander: 13.1.0
@@ -6586,7 +6592,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/mmsp': 0.5.3(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.4(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
@@ -6622,7 +6628,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/mmsp': 0.5.3(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/mmsp': 0.5.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
@@ -6634,9 +6640,9 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)':
+  '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -6650,6 +6656,7 @@ snapshots:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/mmsp': 0.5.4(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
@@ -6678,6 +6685,7 @@ snapshots:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/mmsp': 0.5.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2

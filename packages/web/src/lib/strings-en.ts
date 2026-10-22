@@ -116,6 +116,7 @@ export const en: Strings = {
       working: "Working",
       ready: "Running",
       reconnecting: "Reconnecting",
+      reconnectStopped: "Reconnect stopped",
       failed: "Failed",
       installedOnly: "Installed",
       behind: "Update available",
@@ -159,6 +160,7 @@ export const en: Strings = {
     refusedUnknown: (alias: string) => `${alias} is not in this server's ssh config.`,
     composer: {
       reconnecting: "That machine is reconnecting…",
+      reconnectStopped: "That machine stopped reconnecting — retry it from the Machines page",
       stopped: "That machine's server is stopped — start it from the Machines page",
       notConnected: "That machine is not connected — enable it from the Machines page",
       missing: "That machine is not on this Project's machine list",
@@ -166,6 +168,15 @@ export const en: Strings = {
         "That machine refused this server's sign-in — change its SSH settings on the Machines page",
       failed: (message: string) => `That machine did not answer: ${message}`,
     },
+    /** The API socket this server holds to the machine (machines-view's socketReading). */
+    detailSocket: "API socket",
+    socket: {
+      connected: "Connected",
+      dialling: "Dialling",
+      refused: "Refused",
+      failed: "Failed",
+    },
+    agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
       count === 1 ? "1 machine to update" : `${count} machines to update`,
@@ -179,8 +190,6 @@ export const en: Strings = {
       delete: "Delete",
       localUndeletable: "This server cannot be deleted",
       why: {
-        reconnecting: "Reconnecting…",
-        reconnectingFor: (span: string) => `Reconnecting… · for ${span}`,
         stopped: "Server stopped",
         notConnected: "Not connected",
         notInstalled: "Not installed yet",
@@ -249,15 +258,21 @@ export const en: Strings = {
       },
       reconnect: {
         title: "Reconnecting",
-        trying: "Reconnecting…",
-        lasting: (span: string) => `for ${span}`,
-        attempt: (n: number) => `attempt ${n}`,
-        next: (span: string) => `next try in ${span}`,
-        now: "trying now",
+        lasting: (span: string) => `For ${span}`,
         lastError: "Last failure:",
         checked: "What the automatic check found:",
-        stopped: "Stopped retrying",
       },
+    },
+    retry: {
+      trying: (n: number, m: number) => `Trying to reconnect (${n} of ${m})…`,
+      lost: "Connection lost",
+      failed: (n: number, m: number) => `Reconnect ${n} of ${m} failed`,
+      countdown: (seconds: number) => `next try in ${seconds} s`,
+      gaveUp: (m: number) => `Stopped retrying after ${m} failed reconnects`,
+      stoppedSsh: "Stopped reconnecting",
+      stoppedPassword: "Sign-in refused; stopped reconnecting",
+      retryNow: "Retry now",
+      retry: "Retry",
     },
     confirm: {
       deleteTitle: (alias: string) => `Delete ${alias}?`,
@@ -399,7 +414,12 @@ export const en: Strings = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
+    /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "New terminal",
+    /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
+    shellEntry: "Command-line terminal",
+    /** The terminal panel's strip of shells, for assistive technology. */
+    tabsLabel: "Terminal tabs",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
@@ -409,8 +429,6 @@ export const en: Strings = {
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
     noTerminalApi:
       "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
-    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
-    detach: "Open in new window",
     status: {
       connecting: "connecting",
       ready: "ready",
@@ -2314,10 +2332,12 @@ export const en: Strings = {
     },
     providerEnvNotes: {
       zhipu:
-        "Defaults to the Z.AI global endpoint (api.z.ai); keys from bigmodel.cn need base URL https://open.bigmodel.cn/api/paas/v4",
+        "Defaults to the Z.AI global endpoint (api.z.ai); for a bigmodel.cn key, set ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4 beside it, or enter the key here with that base URL",
       moonshot:
-        "Defaults to the China endpoint (api.moonshot.cn); keys from platform.kimi.com need base URL https://api.moonshot.ai/v1",
+        "Defaults to the China endpoint (api.moonshot.cn); for a platform.kimi.com key, set MOONSHOT_BASE_URL=https://api.moonshot.ai/v1 beside it, or enter the key here with that base URL",
     },
+    envBaseUrlNote: (envBaseUrlKey: string): string =>
+      `Requests go to the client's default endpoint, or to ${envBaseUrlKey} when it is set`,
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
       `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
@@ -3779,6 +3799,16 @@ Scenarios:
       "The conversation this link points to is gone, or you do not have access to it.",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",
+    machineAway: {
+      reconnecting: (alias: string) => `${alias} is reconnecting`,
+      reconnectStopped: (alias: string) => `${alias} is out of reach and stopped reconnecting`,
+      signInRefused: (alias: string) => `${alias} is out of reach: its stored password was refused`,
+      stopped: (alias: string) => `${alias}'s server is stopped`,
+      notConnected: (alias: string) => `${alias} is not connected`,
+      missing: "This conversation's machine is not on this Project's machine list",
+      hint: "The conversation is kept on that machine and loads as soon as the connection is back.",
+      details: "Technical details",
+    },
     statsLabel: "Stats",
     removeImage: "Remove image",
     openAgents: "Agents panel",
@@ -3978,6 +4008,8 @@ Scenarios:
       showSource: "Show source",
       stepUp: "Increase",
       stepDown: "Decrease",
+      invalid: "Not a valid value",
+      choose: "Choose…",
       conditions: {
         clear: "Clear",
         "partly-cloudy": "Partly cloudy",
@@ -4015,6 +4047,28 @@ Scenarios:
       done: "Done",
       deltaUp: "up",
       deltaDown: "down",
+      chartKind: {
+        line: "Line chart",
+        area: "Area chart",
+        bar: "Bar chart",
+        pie: "Pie chart",
+        scatter: "Scatter plot",
+        histogram: "Histogram",
+        gauge: "Gauge",
+      },
+      categories: (n: number) => `${n} ${n === 1 ? "category" : "categories"}`,
+      seriesCount: (n: number) => `${n} series`,
+      resources: "System resources",
+      cpu: "CPU",
+      memory: "Memory",
+      swap: "Swap",
+      disk: "Disks",
+      network: "Network",
+      load: "Load",
+      uptime: "Uptime",
+      received: "Received",
+      sent: "Sent",
+      lastReadings: (n: number) => `Last ${n} readings`,
     },
     forkSession: "Fork chat from here",
     forkSessionConfirmBody:
@@ -4087,6 +4141,9 @@ Scenarios:
       "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
     goalBudgetSave: "Save budget",
     goalRemove: "Exit goal mode",
+    /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
+    goalPluginMissing: "Goal mode needs the goal plugin: install it on this Agent to start a goal.",
+    goalPluginInstall: "Install on this Agent",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "Injected by the harness",
     /** The goal line's fixed phrase; the objective follows it as the line's subject. */
@@ -4330,6 +4387,7 @@ Scenarios:
     sendingTestMessage: "Sending…",
     testMessageSent: "Test message sent",
     statusLabel: "Connection status",
+    statusLastKnown: "Last known status",
     status: {
       disconnected: "Not connected",
       connecting: "Connecting",
@@ -4439,6 +4497,65 @@ Scenarios:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
     troubleNoGroupInbound:
       "Sending in a group but the panel still says no message has arrived? Read that line as evidence only about a message sent after it: it covers the current connection alone, and disabling and re-enabling the connection — or saving the credential again — opens a new one and starts it over. So send a fresh one now. If the line still reports nothing, Telegram is not delivering it and nothing on this machine can change that: confirm the bot is still in that group; if you have just turned Group Privacy off in @BotFather, remove the bot from the group and add it back, because an existing group does not pick up the change; and confirm nothing else is polling the same token — including a getUpdates you ran yourself (see above). Telegram channel posts are not supported either — this connection handles groups and direct chats only.",
+    /**
+     * A conversation that lives on a machine: its bot connects from that machine, not from this
+     * server. The dock panel and the dialog say where, above the channels.
+     */
+    runsOn: (alias: string) => `Connects from ${alias}`,
+    /**
+     * In the "what binding does" fold, for a conversation on a machine: what running there means
+     * for the connection, for a QR login, and for this app being away.
+     */
+    machineHelp: (alias: string) =>
+      `This conversation lives on ${alias}, so its bot runs there. ${alias} opens the connection to the platform itself: it needs outbound access to the platform, and no public URL. A QR login signs in ${alias}, not this computer. The bot keeps answering while this app is closed or cut off from ${alias}, for as long as that machine's server runs.`,
+    /**
+     * The notice over a machine conversation's editor while the machine is out of reach: why, in
+     * the Machines page's terms; whether the bot still answers; and how old the state shown under
+     * it is (null: nothing was ever read from it in this browser). The editor is read-only then.
+     */
+    machineUnreachable: (
+      alias: string,
+      state: "reconnecting" | "reconnectStopped" | "signInRefused" | "stopped" | "notConnected",
+      asOf: string | null,
+    ): string => {
+      const why = {
+        reconnecting: `${alias} is reconnecting.`,
+        reconnectStopped: `${alias} stopped reconnecting; retry it from the Machines page.`,
+        signInRefused: `${alias} refused this server's sign-in; change its SSH settings on the Machines page.`,
+        stopped: `${alias}'s server is stopped; start it from the Machines page.`,
+        notConnected: `${alias} is not connected; enable it from the Machines page.`,
+      }[state];
+      const bot =
+        state === "stopped" || state === "notConnected"
+          ? "The bot does not answer until that server runs."
+          : `The bot connects from ${alias}, not from here, so it keeps answering while that machine's server runs.`;
+      const shown =
+        asOf === null
+          ? "Its settings show here once the machine is back."
+          : `Showing its state as of ${asOf}; changes wait until the machine is back.`;
+      return `${why} ${bot} ${shown}`;
+    },
+    /** The same notice when the conversation's machine is not on this Project's list at all. */
+    machineMissing:
+      "This conversation's machine is not on this Project's machine list, so its connection cannot be read or changed from here.",
+    /** Enabling refused: the bot is connected on another server this one can see (null: this server). */
+    accountHeldOn: (where: string | null) =>
+      `This bot is already connected on ${where ?? "this server"}. Turn it off there first, then enable it here.`,
+    /** After enabling: the machines that could not be asked whether they hold the bot, and why not. */
+    holdersUnchecked: (
+      machines: ReadonlyArray<{
+        alias: string;
+        reason: "not_connected" | "older_build" | "failed";
+      }>,
+    ) => {
+      const reason = {
+        not_connected: "not connected",
+        older_build: "needs an update",
+        failed: "did not answer",
+      };
+      const list = machines.map((m) => `${m.alias} (${reason[m.reason]})`).join(", ");
+      return `Enabled without asking ${list}. If the same bot is connected there too, turn it off there: a bot runs in one place at a time.`;
+    },
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -5920,6 +6037,11 @@ Scenarios:
       not_found: "This resource does not exist, or you do not have access.",
       internal: "The server hit an internal error. Please try again shortly.",
       agent_not_found: "This agent no longer exists.",
+      job_running: "A job is running on that machine; wait for it to finish.",
+      password_refused:
+        "That machine refused the saved password. Enter it again in its SSH settings; saving it retries.",
+      not_kept_connected:
+        "This server does not keep that machine connected, so there is nothing to reconnect. Start it instead.",
       unknown_agent: "That agent does not exist in this Project.",
       agent_exists: "This agent id is already taken.",
       agent_deleting: "This agent is being deleted.",

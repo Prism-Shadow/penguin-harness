@@ -13,9 +13,10 @@
  * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and an
  *   attention notice listing what it could not carry: models keyed from this server's
  *   environment, and models the machine would not take.
- * - Reconnecting, while the server brings a machine it keeps connected back: for how long, which
- *   attempt and when the next, the last failure — and what the connection check found, once the
- *   server ran it after failures in a row.
+ * - Reconnecting, while the server brings a machine it keeps connected back or has stopped trying:
+ *   the shared retry status (the attempt of how many, the countdown to the next with Retry now,
+ *   where it stopped with Retry — none for a refused password), for how long, the last failure —
+ *   and what the connection check found, once the server ran it after failures in a row.
  * - Progress, while a job is queued or running and after one: its own steps one per line, each
  *   marked done, current, failed or still to come; a job that finished well is a single quiet
  *   line. The log is folded underneath, open while the job runs, with a copy button for the whole
@@ -56,11 +57,13 @@ import {
   Notice,
   NoticeStrip,
   Pill,
+  RetryStatus,
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { dismissNotice, envOnlyNoticeId, useNoticeDismissed } from "../../lib/notice-dismissals";
+import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import {
@@ -82,13 +85,16 @@ import type {
   ToolbarItem,
   ToolbarVerb,
 } from "./machine-detail-view";
-import { outOfDate, readMachine } from "./machines-view";
+import { outOfDate, readMachine, socketReading } from "./machines-view";
+import { retryStatus } from "./machine-card";
 
 /**
  * Everything the dialog can ask its page to do for the machine. `use` is the whole pipeline —
- * what Enable, Update and Retry each run; `replaceProgram` the forced install a failure offers.
+ * what Enable, Update and a failed job's Retry each run; `replaceProgram` the forced install a
+ * failure offers; `reconnect` the Retry while the server brings the machine back.
  */
-export type MachineVerb = Exclude<ToolbarVerb, "enable" | "update"> | "use" | "replaceProgram";
+export type MachineVerb =
+  Exclude<ToolbarVerb, "enable" | "update"> | "use" | "replaceProgram" | "reconnect";
 
 /** The page verb a toolbar button asks for. */
 const VERB_OF: Record<ToolbarVerb, MachineVerb> = {
@@ -126,7 +132,11 @@ export interface MachineDetailBodyProps {
   envOnlyDismissed?: boolean | null;
   /** Closes that notice; without it the notice has no close cross. */
   onDismissEnvOnly?: () => void;
-  onAct: (verb: MachineVerb) => void;
+  /**
+   * Asks the page for a verb. The page may answer with the request's promise (the reconnect's
+   * Retry does), which rejects when the server refused it.
+   */
+  onAct: (verb: MachineVerb) => void | Promise<void>;
 }
 
 /** The header tile's box and glyph, in px: the plugin dialog's header tile, so the two match. */
@@ -540,33 +550,17 @@ export function MachineDetailBody({
 
       {reconnect !== null && (
         <RuledSection level={3} title={d.reconnect.title}>
-          {/* A refused password stops the retries: the line says so instead of counting down. */}
-          {reconnect.stopped ? (
-            <p
-              data-reconnect="stopped"
-              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
-            >
-              <GlyphIcon
-                d={ICONS.xCircle}
-                size={ICON_SIZE.inlineGlyph}
-                className={toneInk.danger}
-              />
-              <span className="font-semibold">{d.reconnect.stopped}</span>
-              <span className="text-fg-muted">{d.reconnect.lasting(reconnect.lasting)}</span>
-            </p>
-          ) : (
-            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
-              <Spinner size="xs" tone="success" label={d.reconnect.trying} />
-              <span className="font-semibold">{d.reconnect.trying}</span>
-              <span className="text-fg-muted">
-                {[
-                  d.reconnect.lasting(reconnect.lasting),
-                  d.reconnect.attempt(reconnect.attempt),
-                  reconnect.next === null ? d.reconnect.now : d.reconnect.next(reconnect.next),
-                ].join(" · ")}
-              </span>
-            </p>
-          )}
+          {/* The card's retry status, at the dialog's size: the Retry sits under where the streak
+              stands, and the last failure, in full, under that. A job moving on the machine
+              decides first, so the Retry waits for it. */}
+          <RetryStatus
+            {...retryStatus(reconnect.status, {
+              onRetry: () => onAct("reconnect"),
+              held: busy || (job !== null && (job.queued || job.running)),
+              layout: "block",
+              reason: d.reconnect.lasting(reconnect.lasting),
+            })}
+          />
           {reconnect.lastError !== null && (
             <p className="mt-2 text-sm break-words whitespace-pre-line">
               <span className="text-fg-muted">{d.reconnect.lastError}</span> {reconnect.lastError}
@@ -679,6 +673,8 @@ export function MachineDetailBody({
         </div>
         {/* The machine's own id is a detail you go looking for: it closes the section, quiet,
             with its copy button. */}
+        <MachineSocketDetails machine={machine} locale={locale} />
+
         {facts.id !== null && (
           <KeyValue size="sm" className="mt-2">
             <FactRow
@@ -748,5 +744,29 @@ export function MachineDetailDialog({
         onDismissEnvOnly={() => dismissNotice(envOnlyId, envOnly)}
       />
     </Modal>
+  );
+}
+
+/** The socket held to this machine, independent of its server/process status. */
+export function MachineSocketDetails({
+  machine,
+  locale,
+}: {
+  machine: MachineInfo;
+  locale: "zh" | "en";
+}) {
+  const socket = socketReading(machine);
+  if (socket === null) return null;
+  const ink =
+    socket.tone === "attention" || socket.tone === "danger" ? toneInk[socket.tone] : undefined;
+  return (
+    <KeyValue size="sm" className="mt-2">
+      <KeyValueRow label={S.machines.detailSocket}>
+        <span className={ink} data-tooltip={formatDateTime(socket.since)}>
+          {`${socket.label} · ${formatRelativeShort(socket.since, locale)}`}
+          {socket.detail === null ? null : ` · ${socket.detail}`}
+        </span>
+      </KeyValueRow>
+    </KeyValue>
   );
 }

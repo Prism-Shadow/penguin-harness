@@ -31,11 +31,7 @@ import type {
   UsageSeriesPoint,
 } from "../api/types.js";
 import type { ErrorFilter } from "../db/repos/errors.js";
-import {
-  catalogEntryFor,
-  offPeakAt,
-  offPeakScheduledRefs,
-} from "@prismshadow/penguin-core/model-catalog";
+import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
 import type {
   UsageModelSums,
   UsageGroupModelSums,

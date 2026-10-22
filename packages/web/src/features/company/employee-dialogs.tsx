@@ -131,7 +131,7 @@ export function HireDialog({ open, ...props }: HireDialogProps) {
     if (!open || library !== null) return;
     let cancelled = false;
     void api
-      .getPluginLibrary()
+      .getPluginLibrary(null)
       .then((res) => {
         if (cancelled) return;
         setLibrary(
@@ -546,15 +546,16 @@ export function EmployeeEditDialog({
 
   // The thinking level lives in the Agent's config, the Project default stands in for an Agent
   // without one, and the desk Session may carry a pin of its own: all three are read before
-  // anything is offered. Only the config is required; the other two degrade to "unknown".
+  // anything is offered. Only the config is required; the other two degrade to "unknown". An
+  // organization's employees are this server's Agents, so all three are read here.
   useEffect(() => {
     if (edit !== "thinkingLevel") return;
     setLevels(null);
     let cancelled = false;
     const deskId = employee.desk?.sessionId;
     Promise.all([
-      api.getAgentConfig(projectId, employee.agentId),
-      api.getChatDefaults(projectId).catch(() => null),
+      api.getAgentConfig(projectId, employee.agentId, null),
+      api.getChatDefaults(projectId, null).catch(() => null),
       deskId === undefined ? null : api.getSession(deskId).catch(() => null),
     ]).then(
       ([config, defaults, desk]) => {
@@ -608,9 +609,12 @@ export function EmployeeEditDialog({
     try {
       if (edit === "thinkingLevel") {
         // The PUT carries only this key: the server merges it into the YAML, nothing else moves.
-        await api.putAgentConfig(projectId, employee.agentId, {
-          config: { model: { thinkingLevel: value as AgentModelConfigDto["thinkingLevel"] } },
-        });
+        await api.putAgentConfig(
+          projectId,
+          employee.agentId,
+          { config: { model: { thinkingLevel: value as AgentModelConfigDto["thinkingLevel"] } } },
+          null,
+        );
         toastSuccess(S.common.saved);
       } else {
         await api.patchOrgEmployee(

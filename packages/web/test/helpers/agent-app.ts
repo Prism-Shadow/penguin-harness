@@ -17,6 +17,13 @@
  * (`/server/<id>/api/…`) with an Agent list of their own — created and deleted there, never
  * here — and every other Agent request with the same one server's worth of state, the way the
  * gallery's demo does; one being brought back answers nothing, as a real one has nothing to answer.
+ * A machine lists its own Sessions to the sidebar ({@link FakeMachine.sessions}), and a test can
+ * take it out of reach or bring it back mid-test ({@link AgentServer.setReconnecting}; the page
+ * hears of it through `publishMachinesChanged`, as the server's event would tell it).
+ *
+ * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
+ * answers them masked, and the state switch turns one on or off. This server answers which
+ * servers hold a bot (`accountHolders`), the way it would after asking its machines.
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
@@ -36,6 +43,9 @@ import type {
   AgentSummary,
   ChatDefaultsDto,
   MachineInfo,
+  MessagingAccountHoldersResponse,
+  MessagingChannel,
+  MessagingChannelState,
   PluginItem,
   AgentApiSettings,
   ModelsResponse,
@@ -43,6 +53,7 @@ import type {
   AgentConfigUpdateRequest,
   McpServerTestResponse,
   ScheduleItem,
+  SessionInfo,
   SessionsBatchRequest,
   WorkbenchInfo,
   WorkbenchVersion,
@@ -155,12 +166,16 @@ export interface FakeMachine {
   agents: string[];
   /** Its own plugin library (by default empty): what an Agent created there can start with. */
   library?: PluginItem[];
+  /** The Sessions it lists to the sidebar (by default none), per Agent as its batch read asks. */
+  sessions?: SessionInfo[];
 }
 
 export interface AgentServer {
   fetch: FakeFetch;
   /** The ids of a machine's own Agents now. */
   machineAgents(machineId: string): string[];
+  /** The scheduled tasks of the Agent on a machine now (a machine's tasks are its own files). */
+  machineSchedules(machineId: string): ScheduleItem[];
   /** The Skills installed on an Agent of this server (null) or of a machine. */
   skillsOn(machineId: string | null, agentId: string): string[];
   /** The Agent's config as the server holds it now. */
@@ -182,6 +197,10 @@ export interface AgentServer {
   release(): void;
   /** How the MCP connection test answers an entry (by default: connected, no tools). */
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
+  /** Takes a machine out of reach (being brought back), or brings it back. */
+  setReconnecting(machineId: string, reconnecting: boolean): void;
+  /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
+  messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
 }
 
 export function agentServer(
@@ -195,8 +214,14 @@ export function agentServer(
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
+    /** Scheduled tasks the Agent already has, on a machine when one is named (this server's otherwise). */
+    schedules?: Array<{ machineId?: string; item: ScheduleItem }>;
     /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
     otherProject?: boolean;
+    /** Saved messaging bindings, per conversation, on a machine when one is named. */
+    messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
+    /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
+    accountHolders?: MessagingAccountHoldersResponse;
   } = {},
 ): AgentServer {
   /** Installed Skill names by `<machine or "">/<agent>`. */
@@ -216,7 +241,32 @@ export function agentServer(
   let stored = initial;
   let workbenches = [...(options.workbenches ?? [])];
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
-  let schedules: ScheduleItem[] = [];
+  let schedules: ScheduleItem[] = (options.schedules ?? [])
+    .filter((s) => s.machineId === undefined)
+    .map((s) => s.item);
+  /** Each machine's tasks, by machine id: a request through a machine reads and writes these. */
+  const machineSchedules = new Map<string, ScheduleItem[]>();
+  for (const { machineId, item } of options.schedules ?? []) {
+    if (machineId !== undefined) {
+      machineSchedules.set(machineId, [...(machineSchedules.get(machineId) ?? []), item]);
+    }
+  }
+  /** The tasks on the server a request reached, and their replacement. */
+  const schedulesOn = (machine: string | null) =>
+    machine === null ? schedules : (machineSchedules.get(machine) ?? []);
+  const setSchedulesOn = (machine: string | null, next: ScheduleItem[]) => {
+    if (machine === null) schedules = next;
+    else machineSchedules.set(machine, next);
+  };
+  /** Bindings by `<machine or "">/<session>`: each server keeps its own conversations'. */
+  const messagingKey = (machineId: string | null, sessionId: string) =>
+    `${machineId ?? ""}/${sessionId}`;
+  const messaging = new Map<string, MessagingChannelState[]>(
+    (options.messaging ?? []).map((entry) => [
+      messagingKey(entry.machineId ?? null, entry.sessionId),
+      entry.bindings,
+    ]),
+  );
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
@@ -261,6 +311,7 @@ export function agentServer(
       machineId: "local-machine",
       local: true,
       connection: null,
+      socket: null,
       api: null,
       status: null,
       root: "/data",
@@ -273,11 +324,13 @@ export function agentServer(
       machineId: m.machineId,
       local: false,
       connection: m.reconnecting === true ? null : { pid: 4242 },
+      socket: null,
       ...(m.reconnecting === true
         ? {
             reconnect: {
               since: "2026-10-15T00:00:00Z",
               attempts: 2,
+              maxAttempts: 8,
               nextAt: null,
               lastError: null,
               diagnosis: null,
@@ -315,6 +368,16 @@ export function agentServer(
     }
     if (request.path === "/api/plugins") {
       return json({ groups: [{ id: "all", title: "All", plugins: machine.library ?? [] }] });
+    }
+    if (request.path === SESSIONS_BATCH_PATH && request.method === "POST") {
+      const { requests } = request.body as SessionsBatchRequest;
+      return json({
+        results: requests.map((r) => ({
+          agentId: r.agentId,
+          ok: true,
+          sessions: (machine.sessions ?? []).filter((s) => s.agentId === r.agentId),
+        })),
+      });
     }
     if (request.path.startsWith(`${agentsPath}/`) && request.method === "DELETE") {
       const agentId = decodeURIComponent(request.path.slice(agentsPath.length + 1));
@@ -408,6 +471,28 @@ export function agentServer(
     if (path === `/api/projects/${PROJECT_ID}/machines`) {
       return json({ machines: machinesList(), imageVersion: "0.2.16", job: null, jobs: [] });
     }
+    if (path === `/api/projects/${PROJECT_ID}/messaging/account-holders` && method === "GET") {
+      return json(options.accountHolders ?? { holders: [], unreachable: [] });
+    }
+    const messagingPath = /^\/api\/sessions\/([^/]+)\/messaging(?:\/([^/]+)\/state)?$/.exec(path);
+    if (messagingPath !== null) {
+      const key = messagingKey(request.machine, decodeURIComponent(messagingPath[1]!));
+      const bindings = messaging.get(key) ?? [];
+      if (messagingPath[2] === undefined) return json({ bindings });
+      const channel = messagingPath[2] as MessagingChannel;
+      const entry = bindings.find((b) => b.binding.channel === channel);
+      if (entry === undefined || method !== "POST") return apiError(404, "not_found");
+      const { enabled } = request.body as { enabled: boolean };
+      const next: MessagingChannelState = {
+        binding: { ...entry.binding, enabled },
+        status: { state: enabled ? "connected" : "disconnected" },
+      };
+      messaging.set(
+        key,
+        bindings.map((b) => (b === entry ? next : b)),
+      );
+      return json(next);
+    }
     if (/^\/api\/projects\/[^/]+\/agents\/[^/]+\/sessions$/.test(path) && method === "GET") {
       return json({ sessions: [] });
     }
@@ -459,14 +544,21 @@ export function agentServer(
       }
       return json({ entries: vault });
     }
+    if (path === `/api/projects/${PROJECT_ID}/schedules` && method === "GET") {
+      // The Project-wide listing: every task stamped with the Agent whose directory holds it.
+      return json({
+        schedules: schedulesOn(request.machine).map((s) => ({ ...s, agentId: AGENT_ID })),
+        invalidFiles: [],
+      });
+    }
     if (path === `${AGENT_PATH}/schedules`) {
       if (method === "POST") {
         const body = request.body as ScheduleItem;
         const item: ScheduleItem = { ...body, status: "active", queued: false };
-        schedules = [...schedules, item];
+        setSchedulesOn(request.machine, [...schedulesOn(request.machine), item]);
         return json(item);
       }
-      return json({ schedules, invalidFiles: [] });
+      return json({ schedules: schedulesOn(request.machine), invalidFiles: [] });
     }
     if (path.startsWith(`${AGENT_PATH}/schedules/`) && method === "PUT") {
       const name = decodeURIComponent(path.slice(`${AGENT_PATH}/schedules/`.length));
@@ -476,8 +568,19 @@ export function agentServer(
         status: "active",
         queued: false,
       };
-      schedules = schedules.map((s) => (s.name === name ? item : s));
+      setSchedulesOn(
+        request.machine,
+        schedulesOn(request.machine).map((s) => (s.name === name ? item : s)),
+      );
       return json(item);
+    }
+    if (path.startsWith(`${AGENT_PATH}/schedules/`) && method === "DELETE") {
+      const name = decodeURIComponent(path.slice(`${AGENT_PATH}/schedules/`.length));
+      setSchedulesOn(
+        request.machine,
+        schedulesOn(request.machine).filter((s) => s.name !== name),
+      );
+      return new Response(null, { status: 204 });
     }
     if (path === `${AGENT_PATH}/skills`) return json({ skills: [] });
     if (path === `${AGENT_PATH}/hooks`) return json({ hooks: [] });
@@ -515,6 +618,7 @@ export function agentServer(
     config: () => stored,
     vaultKeys: () => vault.map((v) => v.key),
     schedules: () => schedules,
+    machineSchedules: (machineId) => machineSchedules.get(machineId) ?? [],
     writes: (path) =>
       fetch.requests.filter(
         (r) =>
@@ -536,6 +640,11 @@ export function agentServer(
     answerMcpTest: (answer) => {
       mcpTest = answer;
     },
+    setReconnecting: (machineId, reconnecting) => {
+      const machine = machines.find((m) => m.machineId === machineId);
+      if (machine !== undefined) machine.reconnecting = reconnecting;
+    },
+    messagingOn: (machineId, sessionId) => messaging.get(messagingKey(machineId, sessionId)) ?? [],
   };
 }
 

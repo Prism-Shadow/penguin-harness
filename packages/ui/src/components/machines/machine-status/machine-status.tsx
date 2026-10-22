@@ -21,6 +21,7 @@ export const MACHINE_STATES = [
   "queued",
   "working",
   "reconnecting",
+  "reconnectStopped",
   "failed",
   "signInRefused",
   "installedOnly",
@@ -39,6 +40,8 @@ export const MACHINE_STATE_TONE: Readonly<Record<MachineState, ToneName>> = {
   queued: "success",
   working: "success",
   reconnecting: "success",
+  // The automatic attempts stopped: it waits on a person's Retry, not on time.
+  reconnectStopped: "attention",
   failed: "danger",
   signInRefused: "danger",
   installedOnly: "neutral",

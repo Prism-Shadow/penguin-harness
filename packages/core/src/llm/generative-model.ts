@@ -28,8 +28,9 @@
  * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
  */
-import { AutoLLMClient, ThinkingLevel, UnsupportedParameterError } from "@prismshadow/mmsp";
+import { ThinkingLevel, UnsupportedParameterError } from "@prismshadow/mmsp";
 import type {
+  AutoLLMClient,
   ContentItem,
   TextDoneItem,
   ThinkingDoneItem,
@@ -69,7 +70,9 @@ import type {
   ToolDefinition,
 } from "../interfaces/index.js";
 import { userAgent } from "../index.js";
-import { attributionHeaders } from "../state/model-catalog.js";
+import { attributionHeaders } from "./app-attribution.js";
+import { newAutoLLMClient } from "./model-client.js";
+import type { AutoLLMClientOptions } from "./model-client.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 import {
   approximateMessagesTokens,
@@ -661,7 +664,7 @@ export function isFatalProviderRejection(error: unknown): boolean {
  */
 export class GenerativeModel implements LLMInterface {
   private client: AutoLLMClient;
-  private readonly clientOptions: Omit<ConstructorParameters<typeof AutoLLMClient>[0], "apiKey">;
+  private readonly clientOptions: Omit<AutoLLMClientOptions, "apiKey">;
   private currentApiKey: string | undefined;
   private readonly resolveApiKey: (() => Promise<string | undefined>) | undefined;
   private readonly uniConfig: UniConfig;
@@ -731,10 +734,15 @@ export class GenerativeModel implements LLMInterface {
     };
     this.currentApiKey = config.apiKey;
     this.resolveApiKey = config.resolveApiKey;
-    this.client = new AutoLLMClient({
-      ...this.clientOptions,
-      ...(this.currentApiKey !== undefined ? { apiKey: this.currentApiKey } : {}),
-    });
+    // MMSP refuses a keyless base URL its client's environment key may not go to here, at
+    // construction; newAutoLLMClient words that refusal as a ModelCredentialError.
+    this.client = newAutoLLMClient(
+      {
+        ...this.clientOptions,
+        ...(this.currentApiKey !== undefined ? { apiKey: this.currentApiKey } : {}),
+      },
+      config.modelId,
+    );
 
     this.uniConfig = buildUniConfig(config);
     this.defaultThinkingLevel = config.thinkingLevel;
@@ -754,7 +762,10 @@ export class GenerativeModel implements LLMInterface {
     const nextApiKey = await this.resolveApiKey();
     if (nextApiKey === undefined || nextApiKey === this.currentApiKey) return;
     const history = this.client.getHistory();
-    const next = new AutoLLMClient({ ...this.clientOptions, apiKey: nextApiKey });
+    const next = newAutoLLMClient(
+      { ...this.clientOptions, apiKey: nextApiKey },
+      this.clientOptions.model,
+    );
     if (history.length > 0) next.setHistory(history);
     this.client = next;
     this.currentApiKey = nextApiKey;
