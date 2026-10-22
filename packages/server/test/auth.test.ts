@@ -35,8 +35,10 @@ import {
   requestScheme,
   sessionCookieName,
   sameOriginWrites,
+  jsonOnlyWrites,
 } from "../src/auth/middleware.js";
 import { Hono } from "hono";
+import { mediaType } from "../src/http/media-type.js";
 import { handleError } from "../src/http/errors.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
 import {
@@ -405,6 +407,35 @@ describe("auth", () => {
       expect((await write("https,http")).status).toBe(403);
       expect((await write("http", "http://example.com:8443")).status).toBe(403);
     }
+  });
+
+  it("parses media types rather than accepting JSON-looking prefixes", async () => {
+    const app = new Hono();
+    app.onError(handleError);
+    app.use("*", jsonOnlyWrites());
+    app.post("/", (c) => c.body(null, 204));
+    for (const type of [
+      "Application/JSON; charset=utf-8",
+      "application/gzip",
+      "application/octet-stream",
+    ]) {
+      expect(
+        (await app.request("/", { method: "POST", headers: { "content-type": type } })).status,
+      ).toBe(204);
+    }
+    for (const type of [
+      "application/jsonp",
+      "application/json-extra",
+      "application/gzipfoo",
+      "not a media type",
+    ]) {
+      expect(
+        (await app.request("/", { method: "POST", headers: { "content-type": type } })).status,
+      ).toBe(415);
+    }
+    expect(mediaType('Application/Problem+JSON; profile="a;b"')?.subtype).toBe("problem+json");
+    expect(mediaType(undefined)).toBeNull();
+    expect(mediaType("invalid")).toBeNull();
   });
 
   it("uses Hono's first duplicate and tolerates malformed cookie escapes", async () => {

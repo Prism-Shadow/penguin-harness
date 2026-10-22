@@ -19,6 +19,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { parse } from "hono/utils/cookie";
 import { AMSP_PREFIX } from "../amsp/cors.js";
 import { HttpError } from "../http/errors.js";
+import { mediaType } from "../http/media-type.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { SessionVia } from "./service.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -29,7 +30,10 @@ import type { Auth } from "../mechanisms/identity.js";
  */
 export const SESSION_COOKIE = "penguin_session";
 
-/** Parse an authority with the platform parser, rejecting URL components a Host cannot carry. */
+/**
+ * Host is an authority, not a URL: supply the trusted scheme to the WHATWG parser.
+ * This adapts the input; it is not a complete HTTP Host syntax validator.
+ */
 function hostUrl(host: string | undefined, scheme: string): URL | null {
   if (!host || (scheme !== "http:" && scheme !== "https:")) return null;
   try {
@@ -44,7 +48,8 @@ function hostUrl(host: string | undefined, scheme: string): URL | null {
 
 /** Keep an explicit Host port, including 80 and 443, independent of the transport scheme. */
 function explicitHostPort(host: string | undefined): string {
-  // Each parser drops only its own default; the other preserves that explicit port.
+  // Request.url has already lost explicit default ports. Keep the raw Host contract:
+  // each platform parse drops only its own default; the other preserves it.
   return hostUrl(host, "http:")?.port || hostUrl(host, "https:")?.port || "";
 }
 
@@ -340,11 +345,12 @@ export const jsonOnlyWrites =
       if (!fromThisOrigin(c, trustProxy)) throw crossOrigin();
     }
     if (WRITE_METHODS.has(c.req.method)) {
-      const contentType = c.req.header("content-type")?.toLowerCase();
+      const contentType = c.req.header("content-type");
+      const type = mediaType(contentType);
       const forgeable =
         contentType !== undefined &&
         contentType !== "" &&
-        !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t));
+        !ALLOWED_WRITE_CONTENT_TYPES.includes(type?.essence ?? "");
       const hasBody =
         Number(c.req.header("content-length") ?? 0) > 0 ||
         c.req.header("transfer-encoding") !== undefined;
