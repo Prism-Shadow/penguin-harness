@@ -26,6 +26,7 @@ const machine = (machineId: string, over: Partial<MachineInfo> = {}): MachineInf
   installed: { version: "0.2.13", at: "2026-10-01T08:00:00.000Z" },
   local: false,
   connection: null,
+  socket: null,
   api: null,
   status: null,
   root: "$HOME/.penguin/data",

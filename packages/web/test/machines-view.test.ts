@@ -26,9 +26,17 @@
  * - Given a source checkout that has not built its image yet, nothing stops the page.
  * - Given a checkout whose last build failed, the page shows the build's own words, and still
  *   lets a person try again.
+ * `socketReading` is the detail list's other fact, and tested here for the same reason: it is
+ * a derivation, not a render — which state reads as which word and which tone, and that there
+ * is no reading at all where the server reported no socket.
  */
 import { describe, expect, it } from "vitest";
-import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import type {
+  MachineInfo,
+  MachineJob,
+  MachineSocketFact,
+  MachinesResponse,
+} from "@prismshadow/penguin-server/api";
 import {
   anyJobPending,
   behindMachines,
@@ -42,6 +50,7 @@ import {
   retryReading,
   canUse,
   useWaitsBecause,
+  socketReading,
 } from "../src/features/machines/machines-view";
 import type { MachineReading } from "../src/features/machines/machines-view";
 import { S } from "../src/lib/strings";
@@ -55,6 +64,7 @@ const fresh = (alias: string): MachineInfo => ({
   installed: null,
   local: false,
   connection: null,
+  socket: null,
   api: null,
   root: "$HOME/.penguin/data",
   status: null,
@@ -68,6 +78,7 @@ const here = (): MachineInfo => ({
   installed: INSTALLED,
   local: true,
   connection: null,
+  socket: null,
   api: null,
   root: "/home/someone/.penguin/data",
   status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
@@ -538,5 +549,65 @@ describe("the image notice", () => {
       kind: "buildFailed",
       detail: "[deploy] spawnSync pnpm ENOENT",
     });
+  });
+});
+
+describe("socketReading", () => {
+  /** A machine this server holds a connected socket to, in the given state. */
+  const withSocket = (socket: MachineSocketFact): MachineInfo => ({
+    ...carrying("nas"),
+    connection: { pid: 1 },
+    socket,
+  });
+
+  it("reads the state in a word, since when, and the transport's own words", () => {
+    expect(
+      socketReading(
+        withSocket({
+          state: "failed",
+          since: "2026-08-24T12:03:00.000Z",
+          detail: "connect ECONNREFUSED 10.0.0.7:7364",
+        }),
+      ),
+    ).toEqual({
+      label: "失败",
+      tone: "danger",
+      since: "2026-08-24T12:03:00.000Z",
+      detail: "connect ECONNREFUSED 10.0.0.7:7364",
+    });
+  });
+
+  it("has no detail when the transport said nothing", () => {
+    expect(socketReading(withSocket({ state: "connected", since: INSTALLED.at }))).toMatchObject({
+      detail: null,
+    });
+  });
+
+  it("is null where there is no socket: this machine, and any machine no stream has asked for", () => {
+    // `local` needs no socket, and every other machine reports null until a stream asks —
+    // the fact is a process on THIS side, honest about not existing rather than "connected".
+    expect(socketReading(here())).toBeNull();
+    expect(socketReading(fresh("nas"))).toBeNull();
+    expect(socketReading(carrying("nas"))).toBeNull();
+  });
+
+  it("tones follow meaning: a live handshake is a link, a dial in flight is work, refusal and failure want a person", () => {
+    const tone = (state: MachineSocketFact["state"]): string | undefined =>
+      socketReading(withSocket({ state, since: INSTALLED.at }))?.tone;
+    expect(tone("connected")).toBe("link");
+    expect(tone("dialling")).toBe("busy");
+    expect(tone("refused")).toBe("attention");
+    expect(tone("failed")).toBe("danger");
+  });
+
+  it("names each state, so the four are told apart on the page and not only by tone", () => {
+    const label = (state: MachineSocketFact["state"]): string | undefined =>
+      socketReading(withSocket({ state, since: INSTALLED.at }))?.label;
+    expect([label("connected"), label("dialling"), label("refused"), label("failed")]).toEqual([
+      "已连接",
+      "拨号中",
+      "被拒绝",
+      "失败",
+    ]);
   });
 });

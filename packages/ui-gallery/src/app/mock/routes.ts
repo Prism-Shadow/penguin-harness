@@ -69,6 +69,7 @@ import type {
   MeResponse,
   LanguageIndexResponse,
   MessagesResponse,
+  MessagingAccountHoldersResponse,
   MessagingBindingsResponse,
   ModelBalanceResponse,
   ModelProtocolDetectResponse,
@@ -134,7 +135,7 @@ import type {
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 // The catalog decides which groups publish a balance, as it does on the server.
-import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
+import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 import type { UsageDay } from "./fixtures";
@@ -1277,6 +1278,11 @@ router
   .post("/api/sessions/:sessionId/messaging/wechat/scan/poll", () => readOnly("poll a WeChat scan"))
   .post("/api/sessions/:sessionId/messaging/wechat/scan/verify", () => empty())
   .post("/api/sessions/:sessionId/messaging/wechat/scan/cancel", () => empty());
+// Nothing in the demo holds a bot, and the demo's machines have nothing to be asked.
+router.get(
+  "/api/projects/:projectId/messaging/account-holders",
+  (): MessagingAccountHoldersResponse => ({ holders: [], unreachable: [] }),
+);
 
 // ---------------------------------------------------------------------------------------------
 // Messages, tasks, approvals, the run
@@ -2392,6 +2398,7 @@ router
       machineId: null,
       local: false,
       connection: null,
+      socket: null,
       api: null,
       status: null,
       root: `~/.penguin/data`,

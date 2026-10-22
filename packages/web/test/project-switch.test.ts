@@ -64,7 +64,6 @@ import type { FakeMachine } from "./helpers/agent-app";
 import { button, click, mount, run, settle, unmountAll, waitFor } from "./helpers/dom";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import type { FetchRequest } from "./helpers/fetch";
-import { stubEventSource } from "./helpers/event-source";
 
 const A = "proj-a";
 const B = "proj-b";
@@ -265,7 +264,6 @@ interface Seen {
 /** Mounts the providers with a page that records what it is handed, under the Project A. */
 async function mountShell() {
   localStorage.setItem("penguin.lastProjectId", A);
-  stubEventSource();
   const seen: Seen[] = [];
   function Page() {
     const { currentProject, agents, setCurrentProjectId, reloadProjects } = useProject();
@@ -509,7 +507,6 @@ describe("pages over a Project switch", () => {
   it("a Benchmark's page asks the next Project nothing about that Benchmark and leaves for the Benchmarks list", async () => {
     const server = twoProjectServer();
     localStorage.setItem("penguin.lastProjectId", A);
-    stubEventSource();
     const router = createMemoryRouter(
       [
         {

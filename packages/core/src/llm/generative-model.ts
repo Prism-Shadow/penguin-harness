@@ -70,7 +70,7 @@ import type {
   ToolDefinition,
 } from "../interfaces/index.js";
 import { userAgent } from "../index.js";
-import { attributionHeaders } from "../state/model-catalog.js";
+import { attributionHeaders } from "./app-attribution.js";
 import { newAutoLLMClient } from "./model-client.js";
 import type { AutoLLMClientOptions } from "./model-client.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";

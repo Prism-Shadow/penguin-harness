@@ -49,7 +49,6 @@ import {
 import { ensureCliShim } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
-import { migrate } from "./db/migrations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
