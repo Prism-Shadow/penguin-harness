@@ -102,10 +102,7 @@ export function isOwnOrigin(
 }
 
 function contextScheme(c: Context, trustProxy: boolean): string {
-  // Request URLs are already absolute; extracting the scheme needs no second URL parse.
-  const url = c.req.url;
-  const protocol = url.slice(0, url.indexOf(":") + 1).toLowerCase();
-  return requestScheme(protocol, c.req.header("x-forwarded-proto"), trustProxy);
+  return requestScheme(new URL(c.req.url).protocol, c.req.header("x-forwarded-proto"), trustProxy);
 }
 
 /**
