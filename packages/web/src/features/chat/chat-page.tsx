@@ -29,7 +29,6 @@ import type {
   SessionPatchRequest,
   SessionProcessInfo,
   SessionStatus,
-  SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import {
@@ -120,6 +119,7 @@ import {
 } from "./session-project";
 import { RouteProbe } from "./route-probe";
 import { machineForSession } from "../../lib/session-machines";
+import { HistoryLoadFailed } from "./history-load-failed";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
@@ -136,6 +136,7 @@ import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
+import { useAgentSkills } from "./use-agent-skills";
 import { useMachineModels } from "../../lib/machine-models";
 import { agentSettingsPath } from "../../lib/agent-location";
 import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
@@ -748,26 +749,9 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, taskCount, liveSpawn]);
 
-  // Skills installed on the session's Agent (candidates for the input area's skill dropdown):
-  // fetched keyed on the session's Agent; on switch, cleared first (which also clears the input
-  // area's selection) before refetching; a failed fetch is silently treated as no skills.
-  // Clearing preserves reference identity (an already-empty array isn't replaced), matching
-  // draft-view's convention.
-  const [agentSkills, setAgentSkills] = useState<SkillMetadataItem[]>([]);
-  useEffect(() => {
-    setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
-    if (!projectId || !selectedAgentId) return;
-    let cancelled = false;
-    api
-      .getAgentSkills(projectId, selectedAgentId)
-      .then((res) => {
-        if (!cancelled) setAgentSkills(res.skills);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, selectedAgentId]);
+  // Skills installed on the session's Agent, on its machine (candidates for the input area's
+  // skill dropdown); a switch clears them, which also clears the input area's selection.
+  const { skills: agentSkills } = useAgentSkills(projectId, selectedAgentId, selectedAgentMachine);
 
   // Two readouts come off the session Agent's config, via the same agent-config endpoint the
   // draft picker uses. The configured thinking level ("" = unset/loading) is what the in-session
@@ -1297,7 +1281,7 @@ export function ChatPage() {
     setLocalModels(null);
     void (async () => {
       try {
-        const res = await api.getModels(projectId);
+        const res = await api.getModels(projectId, null);
         if (cancelled) return;
         setLocalModels(scoped(projectId, res));
         const { prefs } = await api.getPrefs();
@@ -1331,7 +1315,7 @@ export function ChatPage() {
       if (!detail || detail.defaultModel === undefined) return;
       setLocalModels(null);
       api
-        .getModels(projectId)
+        .getModels(projectId, null)
         .then((res) => {
           if (!cancelled) setLocalModels(scoped(projectId, res));
         })
@@ -1505,10 +1489,14 @@ export function ChatPage() {
       };
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, target.agentId, {
-          approvalMode: selected.approvalMode,
-          sandbox: selected.sandbox,
-        });
+        // This server's Agent list is what the /agent picker offers, so the new chat is created
+        // here, whichever machine the conversation handed off from is on.
+        const created = await api.createSession(
+          projectId,
+          target.agentId,
+          { approvalMode: selected.approvalMode, sandbox: selected.sandbox },
+          null,
+        );
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);
@@ -2693,13 +2681,15 @@ export function ChatPage() {
                     />
                   ) : selected ? (
                     stream.error ? (
-                      // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
-                      <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
-                        <p className="text-sm text-red-600 dark:text-red-400">
-                          {S.chat.historyLoadFailed}：{stream.error}
-                        </p>
-                        <Button onClick={stream.retry}>{S.common.retry}</Button>
-                      </div>
+                      // History failed to load: say why and offer the way on, instead of staying on
+                      // a misleading empty state — for a conversation on a machine out of reach,
+                      // the machine's state rather than the transport's error.
+                      <HistoryLoadFailed
+                        projectId={projectId}
+                        sessionId={selected.sessionId}
+                        error={stream.error}
+                        onRetry={stream.retry}
+                      />
                     ) : stream.loading ? (
                       <div className="space-y-3 p-6">
                         <Skeleton className="h-5 w-1/3" />

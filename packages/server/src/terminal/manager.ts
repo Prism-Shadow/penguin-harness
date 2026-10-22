@@ -37,6 +37,7 @@ import { terminalRoutes } from "./routes.js";
 import { identityFrom } from "./identity.js";
 import type { Auth } from "../mechanisms/identity.js";
 import type { RemoteTerminals } from "../machines/terminal-relay.js";
+import { apiSocketSession } from "../socket/ref.js";
 
 /** How long an exited session stays listable/attachable before it is disposed. */
 export const EXITED_SESSION_GRACE_MS = 5 * 60 * 1000;
@@ -378,7 +379,7 @@ export class TerminalModule {
     const terminals = new TerminalManager(resources, {
       // A pushed bundle's node-pty binaries live where the host materialized them.
       assets: () => this.hmr.assetsDir() ?? null,
-      beyond: (id) => this.remote.get(id),
+      beyond: (id) => this.remote.get(id) ?? apiSocketSession(id),
       // `penguin` in a terminal is the one the Agent's commands get: this harness's own.
       pathFirst: () => {
         const dirs = this.sessionEnv.pathPrepend();

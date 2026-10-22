@@ -103,7 +103,11 @@ export function checkReply(markdown: string, opts: { lang?: A2uiLangOption } = {
   for (const b of blocks) {
     const spec = specOf.get(b.index);
     if (spec === undefined) continue;
-    if ((spec.type === "weather" || spec.type === "metrics") && spec.asOf === undefined) {
+    // A chart need not be a snapshot (a month of sales has no reading time), so it is not asked.
+    if (
+      (spec.type === "weather" || spec.type === "metrics" || spec.type === "resources") &&
+      spec.asOf === undefined
+    ) {
       l2(
         "no_as_of",
         `The ${spec.type} block on line ${b.startLine} has no \`asOf\`; a snapshot says when it was taken — add the time the data was read (a script prints it).`,
