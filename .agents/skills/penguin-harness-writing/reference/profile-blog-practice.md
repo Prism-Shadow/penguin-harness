@@ -193,6 +193,7 @@ the visual check. The file pair, frontmatter and screenshot hosting are in `peng
 - zh-chars: 1550-2050
 - zh-lead-chars: 120-170
 - zh-section-chars: 120-340
+- ui-labels: quoted
 - emphasis: yes
 - emphasis-words: 25
 - zh-emphasis-chars: 40
