@@ -309,16 +309,25 @@ function resolveProfile(o, meta = {}, { announce = true } = {}) {
   if (!name && o.category) {
     name = o.category === "docs" || o.category === "landing" ? o.category : `blog-${o.category}`;
   }
+  // A profile file names its profile: `profile-<name>.md`, `profile-<category>.md`, or the
+  // `--profile <name>` its header says it is loaded for.
   if (!name && isFile) {
     const m = /^profile-(.+)\.md$/.exec(path.basename(o.profile));
     if (m && knownProfileName(m[1])) name = m[1];
+    else if (m && BLOG_CATEGORIES.includes(m[1])) name = `blog-${m[1]}`;
+    else if (existsSync(o.profile)) {
+      const said = /--profile ([a-z]+(?:-[a-z]+)?)\b/.exec(read(o.profile))?.[1];
+      if (said && knownProfileName(said)) name = said;
+    }
   }
   if (!name && meta.category) name = `blog-${meta.category}`;
   if (!name && meta.description !== undefined) name = "docs";
   if (!name) {
     name = "blog-perspectives";
-    if (announce) note("profile blog-perspectives (the default; pass --profile to choose)");
+    if (announce && !isFile)
+      note("profile blog-perspectives (the default; pass --profile to choose)");
   }
+  if (announce && isFile) note(`profile ${name} from ${o.profile}`);
   if (!knownProfileName(name)) fail(`profile "${name}": use blog-<category>, docs or landing`);
   const kind = name === "docs" || name === "landing" ? name : "post";
   const category = kind === "post" ? name.slice("blog-".length) : kind;
@@ -711,6 +720,8 @@ function budgetsOf(prof, lang, o = {}) {
     section: rangeOf(s[zh ? "zh-section-chars" : "section-words"]),
     sections: rangeOf(s.sections),
     tldr: s.tldr === "yes" ? rangeOf(s[zh ? "zh-tldr-chars" : "tldr-words"]) : undefined,
+    // `ui-labels: quoted` reserves bold for the emphasis: a UI label is written in quotes.
+    quotedLabels: s["ui-labels"] === "quoted",
     // One marked key sentence per section, at most this long; set by `emphasis: yes`.
     emphasis:
       s.emphasis === "yes"
@@ -1504,8 +1515,8 @@ function buildMessages(step, o) {
         dir: sec.dir,
         page: o.page,
       });
-      const cap = o.cap !== undefined ? Number(o.cap) : sizing.cap;
-      if (!(cap > 0)) {
+      const sectionCap = o.cap !== undefined ? Number(o.cap) : sizing.cap;
+      if (!(sectionCap > 0)) {
         fail(
           "trim needs a cap: --cap <n>, or --outline <outline.final.md> and a profile with section caps",
         );
@@ -1513,6 +1524,23 @@ function buildMessages(step, o) {
       const unit = (k) => `${k} ${budgets.unitName}`;
       const now = sectionSize(input, sec.n, lang);
       const tldrNow = sec.n === 0 ? leadCounts(input, lang).tldr : undefined;
+      // With --page, what the assembled page has left is a cap as well, so a page over its cap is
+      // cut here even when this section is within its own. The newest files are only a guess at
+      // the page, so without --page they produce a note and no cut.
+      const limit = sec.n === 0 ? budgets.lead : budgets.section;
+      const left = budgets.total ? budgets.total.cap - sizing.others - (tldrNow ?? 0) : undefined;
+      const usable = left !== undefined && left >= Math.max(limit?.floor ?? 0, 1);
+      const cap = o.cap === undefined && o.page && usable && left < sectionCap ? left : sectionCap;
+      if (o.cap === undefined && !o.page && usable && left < now && now <= sectionCap) {
+        note(
+          `the newest section files put the page over its cap; pass --page <assembled draft> to cut this section to what the page has left (${left})`,
+        );
+      }
+      if (o.page && left !== undefined && !usable) {
+        note(
+          `the page is over its cap by more than this section can give (${left} left); trim the other sections`,
+        );
+      }
       const tldrCap = tldrNow !== undefined ? budgets.tldr?.cap : undefined;
       const tldrOver = tldrCap !== undefined && tldrNow > tldrCap;
       if (now <= cap && !tldrOver) {
@@ -1668,6 +1696,7 @@ function emphasizeProblems(before, after, lang, budgets) {
     cap: budgets.emphasis.cap,
     requireAll: true,
     strict: true,
+    quoted: budgets.quotedLabels,
   });
   for (const p of rules) problems.push(p.n ? `line ${p.n}: ${p.msg}` : p.msg);
   for (const it of parseText(after).items) {
@@ -2933,6 +2962,18 @@ function flankingProblems(line) {
   return out;
 }
 
+/** The line numbers of a text's TL;DR: the `**TL;DR**` line and the list under it. */
+function tldrLines(items) {
+  const out = new Set();
+  let inside = false;
+  for (const it of items) {
+    if (TLDR.test(it.line.trim())) inside = true;
+    else if (inside && it.type !== "blank" && it.type !== "list") inside = false;
+    if (inside) out.add(it.n);
+  }
+  return out;
+}
+
 /** A sentence longer than this is flagged: English words, Chinese characters. */
 const SENTENCE_CAP = { en: 35, zh: 60 };
 /** Citations per 100 English words or Chinese characters above which check warns. */
@@ -2945,7 +2986,7 @@ const EMPHASIS = /\*\*([^*\n]+?)\*\*/g;
  * heading, figure block, caption, version note, TL;DR, code span or link, and no marker inside;
  * the closing `**` before the sentence's punctuation, so its citation can stand there too.
  */
-function emphasisCheck(text, lang, { cap, requireAll = false, strict = false }) {
+function emphasisCheck(text, lang, { cap, requireAll = false, strict = false, quoted = false }) {
   const doc = parseText(text);
   const problems = [];
   const add = (n, msg, level = "error") => problems.push({ n, msg, level });
@@ -3002,9 +3043,14 @@ function emphasisCheck(text, lang, { cap, requireAll = false, strict = false }) 
   }
   spans.forEach((list, i) => {
     const where = i === 0 ? "the lead" : `section ${i}`;
-    if (list.length > 1)
+    if (list.length > 1 && quoted) {
+      add(
+        list[1].n,
+        `${list.length} bold spans in ${where}: bold marks the one key sentence, so write a UI label in quotes ("…" / 「…」)`,
+      );
+    } else if (list.length > 1) {
       add(list[1].n, `${list.length} emphasized spans in ${where} (exactly one)`);
-    else if (!list.length && requireAll)
+    } else if (!list.length && requireAll)
       add(null, `no emphasized sentence in ${where} (exactly one)`);
   });
   return { spans, problems };
@@ -3018,12 +3064,22 @@ function checkCitations(doc, lang, r, facts) {
   const draft = !!doc.raw.match(MARKER);
   if (draft && !facts?.sources.size) return;
   const cite = draft ? citations(facts) : undefined;
+  const summary = tldrLines(doc.items);
   const lines = [];
   for (const it of doc.items) {
     if (cite && it.type === "heading" && /^## /.test(it.line)) cite.section();
-    if (["text", "list", "quote", "table"].includes(it.type)) {
-      lines.push({ ...it, line: cite ? cite.render(it.line) : it.line });
+    if (!["text", "list", "quote", "table"].includes(it.type)) continue;
+    if (summary.has(it.n)) {
+      if (!draft && /\[\^\d+\]/.test(it.line)) {
+        r.add(
+          "error",
+          it.n,
+          "a citation in the TL;DR: it sums up the body, which carries the citations",
+        );
+      }
+      continue;
     }
+    lines.push({ ...it, line: cite ? cite.render(it.line) : it.line });
   }
   const refs = lines.reduce((sum, it) => sum + (it.line.match(/\[\^\d+\]/g)?.length ?? 0), 0);
   const size = countBody(doc.raw, lang);
@@ -3365,13 +3421,24 @@ function checkDoc(doc, lang, prof, o, r, facts) {
     if (budgets.emphasis) {
       // A draft before emphasize has no span at all; a published post, or a draft that has some,
       // has one in every section. A section file is never emphasized on its own.
-      const found = emphasisCheck(doc.raw, lang, { cap: budgets.emphasis.cap });
+      const rule = { cap: budgets.emphasis.cap, quoted: budgets.quotedLabels };
+      const found = emphasisCheck(doc.raw, lang, rule);
       const requireAll =
         secN === undefined && (!doc.raw.match(MARKER) || found.spans.some((x) => x.length));
       const { problems } = requireAll
-        ? emphasisCheck(doc.raw, lang, { cap: budgets.emphasis.cap, requireAll })
+        ? emphasisCheck(doc.raw, lang, { ...rule, requireAll })
         : found;
       for (const p of problems) r.add(p.level, p.n, p.msg);
+    } else if (budgets.quotedLabels) {
+      for (const it of items.filter((x) => ["text", "list", "quote"].includes(x.type))) {
+        if (!TLDR.test(it.line.trim()) && /\*\*[^*]+\*\*/.test(it.line)) {
+          r.add(
+            "error",
+            it.n,
+            'bold in a post that quotes UI labels: write the label in quotes ("…" / 「…」)',
+          );
+        }
+      }
     } else {
       const bolds = items
         .filter((it) => ["text", "list", "quote"].includes(it.type) && !TLDR.test(it.line.trim()))
@@ -3609,7 +3676,9 @@ function pairDocs(a, b, o, r) {
   const citedBySection = (d, labels) => {
     const out = [new Set()];
     const pick = facts?.sources.size ? citer(facts) : undefined;
+    const summary = tldrLines(d.items);
     for (const it of d.items) {
+      if (summary.has(it.n)) continue;
       if (it.type === "heading" && /^## /.test(it.line)) {
         out.push(new Set());
         pick?.section();
@@ -4339,6 +4408,7 @@ function runStrip(o) {
       );
   }
   const kept = [];
+  const summary = tldrLines(doc.items);
   const notes = [];
   let inComment = false;
   let fence = null;
@@ -4379,11 +4449,13 @@ function runStrip(o) {
       inComment = !line.includes("-->");
       continue;
     }
-    // Sources other than ours are cited again in a new section.
+    // Sources other than ours are cited again in a new section. The TL;DR sums up the body, so
+    // its markers stay in the draft as anchors and cite nothing.
     if (cite && /^## /.test(line)) cite.section();
-    const cited = cite
-      ? cite.render(line)
-      : line.replace(/^(?:\{[FO]\d+\})+[ \t]*/, "").replace(/[ \t]*\{[FO]\d+\}/g, "");
+    const cited =
+      cite && !summary.has(n)
+        ? cite.render(line)
+        : line.replace(/^(?:\{[FO]\d+\})+[ \t]*/, "").replace(/[ \t]*\{[FO]\d+\}/g, "");
     kept.push(prose(cited));
   }
   if (cite) {
@@ -4972,6 +5044,26 @@ async function runSelftest() {
   const flankEn = caseDir("flank-en", {
     "s1.en.v1.md": "## Title\n\nA word**(aside)** here.\n\nA word **(aside)** here.\n",
   });
+  // The TL;DR sums up the body: its markers cite nothing, so the body's first use sets the numbers.
+  writeFileSync(
+    at("tldr-cite.en.v1.md"),
+    `${front}Our view comes first. {O1}\n\n**TL;DR**\n\n- Point one. {F5}\n- Point two. {F4}\n- Point three. {O1}\n\n## One\n\nBody four. {F4} Body five. {F5}\n`,
+  );
+  const tldrCited = path.join(root, "tldr", "tldr-cite.en.md");
+  mkdirSync(path.dirname(tldrCited), { recursive: true });
+  writeFileSync(
+    at("tldr-post.en.md"),
+    `${front}Lead text here.\n\n**TL;DR**\n\n- Point one[^1].\n- Point two.\n- Point three.\n\n${defs(1)}\n`,
+  );
+  // A UI label in bold beside the section's emphasized sentence; a profile file named by category.
+  writeFileSync(
+    at("bold-label.en.v1.md"),
+    FIXTURE_DRAFT.replace(
+      "The Trace keeps a short marker. {F2}",
+      "Open **Trace view** to see a short marker. {F2}",
+    ),
+  );
+  writeFileSync(at("profile-practice.md"), FIXTURE_PRACTICE_PROFILE);
 
   const self = fileURLToPath(import.meta.url);
   const facts = ["--facts", at("facts.md")];
@@ -5691,7 +5783,7 @@ async function runSelftest() {
       answer: "emph-count.md",
       code: 1,
       stderr:
-        /2 emphasized spans in section 1 \(exactly one\)[\s\S]*no emphasized sentence in section 4/,
+        /2 bold spans in section 1: bold marks the one key sentence, so write a UI label in quotes[\s\S]*no emphasized sentence in section 4/,
       absent: path.join(emphCount, "draft.en.v2.md"),
     },
     {
@@ -5722,7 +5814,7 @@ async function runSelftest() {
       args: ["check", "--in", at("emph-rules.en.v1.md")],
       code: 1,
       stdout:
-        /^(?=[\s\S]*2 emphasized spans in section 1)(?=[\s\S]*no emphasized sentence in section 4)(?=[\s\S]*a fact marker inside the emphasis)/,
+        /^(?=[\s\S]*2 bold spans in section 1: bold marks the one key sentence)(?=[\s\S]*no emphasized sentence in section 4)(?=[\s\S]*a fact marker inside the emphasis)/,
     },
     {
       name: "pair wants the same sections stressed in both languages, and warns on other numbers",
@@ -5790,6 +5882,57 @@ async function runSelftest() {
       code: 1,
       stdout: /:3  a \*\* that cannot open emphasis/,
       notStdout: /:5  a \*\* that cannot/,
+    },
+    {
+      name: "the TL;DR cites nothing, so the body's first use sets the numbers",
+      args: ["strip", "--in", at("tldr-cite.en.v1.md"), "--out", tldrCited, ...facts],
+      code: 0,
+      file: [
+        tldrCited,
+        /- Point one\.\n- Point two\.\n- Point three\.\n\n## One\n\nBody four\[\^1\]\. Body five\[\^2\]\.\n\n\[\^1\]: \[Write-up 4\]/,
+      ],
+    },
+    {
+      name: "a citation in a published TL;DR is an error",
+      args: ["check", "--in", at("tldr-post.en.md")],
+      code: 1,
+      stdout: /ERROR [^\n]*a citation in the TL;DR/,
+    },
+    {
+      name: "bold is the one emphasized sentence: a bold UI label beside it is an error that says to quote it",
+      args: ["check", "--in", at("bold-label.en.v1.md")],
+      code: 1,
+      stdout:
+        /ERROR [^\n]*2 bold spans in section 2: bold marks the one key sentence, so write a UI label in quotes/,
+    },
+    {
+      name: "--profile <path> loads the profile its file name gives, not the default",
+      args: [
+        "check",
+        "--in",
+        path.join(long, "s3.en.v1.md"),
+        "--profile",
+        at("profile-practice.md"),
+      ],
+      code: 1,
+      stdout: /\(en, blog-practice\)/,
+    },
+    {
+      name: "trim with --page cuts a section within its own cap to what the page has left",
+      args: [
+        "trim",
+        "--dry-run",
+        "--in",
+        path.join(pinned, "s4.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+        "--word-budget",
+        "480",
+        "--page",
+        path.join(pinned, "draft.en.v1.md"),
+      ],
+      code: 0,
+      stdout: /at most 91 English words of body text, or the answer is refused/,
     },
     {
       name: "landing strings with a banned word and an exclamation mark fail",

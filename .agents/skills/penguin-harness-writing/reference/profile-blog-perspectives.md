@@ -40,6 +40,7 @@ A perspective post argues one thesis.
 - tldr: yes
 - tldr-words: 30-50
 - zh-tldr-chars: 70-120
+- ui-labels: quoted
 - emphasis: yes
 - emphasis-words: 25
 - zh-emphasis-chars: 40

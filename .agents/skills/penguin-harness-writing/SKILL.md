@@ -51,7 +51,9 @@ What differs by kind of text lives in one profile, `reference/profile-<name>.md`
 | `landing` | strings for the landing page's dictionaries | `prompts/contract-landing.md` |
 
 A blog category without a profile file needs `--profile <file>` until one is written;
-`--profile <file>` also tries a profile before it lands.
+`--profile <file>` also tries a profile before it lands. The file names its profile by its name
+(`profile-blog-practice.md`, or `profile-practice.md` for a blog category) or by the `--profile
+<name>` its header says it is loaded for, and the script says which profile it loaded.
 
 A profile holds the reader, the shape, the sizes and any rule that overrides the style guide for
 that kind of text, inside `<!-- prompt -->` markers (a `<!-- prompt zh -->` block, when present,
@@ -60,7 +62,9 @@ the two differ. A profile does not repeat the style guide and states nothing abo
 facts come from FACTS only. Its `## Check settings` are what the script enforces —
 `sections`, `lead`, `tldr`, `exclamations`, and the budgets `words`, `lead-words`,
 `section-words`, `zh-chars`, `zh-lead-chars`, `zh-section-chars`, `tldr-words`, `zh-tldr-chars`, each
-`floor-cap`, and `emphasis` with its caps `emphasis-words` / `zh-emphasis-chars` (section 4).
+`floor-cap`, `emphasis` with its caps `emphasis-words` / `zh-emphasis-chars` (section 4), and
+`ui-labels`: `quoted` in a post, where bold is only the emphasized sentence and a UI label goes in
+quotes ("…" / 「…」), `bold` in a docs page.
 A prompt rule with no matching setting is a rule `check` cannot see; change the two together.
 
 ## 3. Voice
@@ -116,8 +120,9 @@ over `emphasis-words` / `zh-emphasis-chars`, or puts one in a heading, figure bl
 version note, TL;DR, code span or link, or around a marker. The closing `**` goes before the
 sentence's punctuation and markers, so the citation follows it there (`**claim**[^1].`,
 `**句子**[^1]。`), and the script refuses the other order: after Chinese punctuation a closing `**`
-is not read as bold (`**关键句。**后文` shows its asterisks). A text that changes after
-`emphasize` is assembled and emphasized again.
+is not read as bold (`**关键句。**后文` shows its asterisks). Bold in a post is only that sentence:
+the writing prompts put a UI label in quotes, and `check` makes any other bold an error. A text
+that changes after `emphasize` is assembled and emphasized again.
 
 **The ordering rule.** The outline is frozen before the first section call; a section is final
 before the next one starts; the text of a language is frozen before any figure of it is drawn; and
@@ -160,7 +165,9 @@ in place of a longer one. The script refuses the answer when it is still over th
 marker, a footnote reference, a figure block, a heading, the frontmatter or the version note
 changed: the answer is
 kept as `<out>.rejected.md`, the next version is not written, and the step exits 1. Retry once,
-then hand it to the author. A section wrong in shape or content is rerun with `section --feedback`;
+then hand it to the author. With `--page <assembled draft>`, `trim` also cuts a section that is
+within its own cap to what the page has left when the page is over its cap; without it, the newest
+section files only produce a note. A section wrong in shape or content is rerun with `section --feedback`;
 rerunning it only to shorten it brings back errors already fixed. Nobody cuts a section by hand.
 
 Counting is the same everywhere: English words are whitespace tokens holding a letter or digit,
@@ -208,7 +215,9 @@ sentence) into at most one GFM footnote: of its facts, in the writer's order, th
 first public source is not yet cited in its scope. Our own sources (`penguin.ooo`, the
 Prism-Shadow repositories on GitHub, a link-less source titled "Our …") are cited once per post;
 any other source once per `##` section. Opinions, private sources and facts under `## NOCITE`
-cite nothing, and a sentence whose sources are all cited already gets no footnote. The footnote
+cite nothing, and a sentence whose sources are all cited already gets no footnote. The TL;DR
+sums up the body, so its markers stay in the draft as anchors and cite nothing; the body's first
+use sets the numbers, and a citation in a published TL;DR is an error. The footnote
 goes before the punctuation that ends its clause, outside a closing quotation mark, bracket or
 bold (`text[^1].`, `文字[^1]。`, `"the slope"[^1].`, `**claim**[^1].`); when the punctuation sits
 inside the closing mark (`slope."`), it follows the whole run and `check` warns. Footnotes are
