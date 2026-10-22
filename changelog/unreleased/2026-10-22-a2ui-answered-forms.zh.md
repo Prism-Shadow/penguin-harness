@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** feature
 - **Scope:** `core`, `ui`, `web`, `ui-gallery`, `skills`
+- **PR:** [#1287](https://github.com/Prism-Shadow/penguin-harness/pull/1287)
 
 [English](2026-10-22-a2ui-answered-forms.md)
 
