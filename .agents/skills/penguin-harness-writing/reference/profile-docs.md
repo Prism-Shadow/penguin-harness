@@ -26,3 +26,4 @@ A docs page helps a reader get one kind of task done in the product, in the mann
 - zh-chars: 1-1200
 - zh-lead-chars: 1-150
 - zh-section-chars: 1-300
+- ui-labels: bold
