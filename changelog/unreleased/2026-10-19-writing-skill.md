@@ -16,17 +16,22 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
 
 ## Details
 
-- A post is written the way a person writes one, by `scripts/prose.mjs`:
+- `scripts/prose.mjs` writes posts the way a person writes one:
   - `outline` plans the post. Its `# Plan` table gives every section a size, its facts and its
     figures.
-  - `plan` checks that table against the profile's budgets, the figure manifest and the facts,
-    then freezes it.
-  - `section` writes one section per call, in order, from the frozen plan and the sections
-    already written.
-  - `assemble` joins the sections byte for byte, and `route` splits review findings by the
-    section they quote.
-  - `translate`, `polish`, `fix` and `review` work section by section; `review` returns findings
-    for `fix` and never rewrites.
+  - `plan` checks that table against the profile's budgets, the figure manifest and the facts, then
+    freezes it.
+  - `write` writes the whole post in one call from the frozen plan, so each section continues the
+    one before it. It keeps a pinned title, the author's notes and the figure blocks already drawn,
+    and it reports every section's size against its cap and its plan.
+  - `check --plan-rows advisory` treats the plan's sizes as targets and the profile's caps as
+    limits.
+  - `review` reads the whole post and scores every join between sections. `fix`, `trim` and
+    `translate` work on the whole post too, and refuse an answer that changes what they were not
+    asked to change.
+  - Section mode remains for long posts and docs pages: `section` writes one section per call,
+    `assemble` joins the sections byte for byte, and `route` splits review findings by the section
+    they quote.
 - Budgets are hard. Plans are held to their profile's caps. `check` rejects any section above 1.1 ×
   its planned size or the profile's cap. Every prompt written to a budget states the cap and the
   counting rule `check` uses. A prompt for one section asks for its planned size, or for what the

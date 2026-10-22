@@ -10,9 +10,10 @@
  *   API steps:   outline | section | write | translate | polish | fix | trim | emphasize | review
  *   local steps: plan | assemble | route | check | strip | pair | selftest
  *
- * A post is planned once (outline, then plan validates and freezes it), written one section per
- * call, assembled byte for byte, reviewed and fixed per section, and published by strip, which
- * turns the fact markers into numbered footnotes. A fix or trim answer that breaks what the step
+ * A post is planned once (outline, then plan validates and freezes it), written in one call as a
+ * whole, reviewed, fixed, cut and translated as a whole, and published by strip, which turns the
+ * fact markers into numbered footnotes. Section mode (one section per call, assembled byte for
+ * byte) stays for long posts and docs pages. A fix or trim answer that breaks what the step
  * may not change is set aside as <out>.rejected.md, never written as the next version.
  *
  * Run with --help for the options. The key comes from TOKENDANCE_API_KEY or the file named by
@@ -76,9 +77,11 @@ const TRIM_AIM = 0.95;
 
 const HELP = `usage: node prose.mjs <step> [options]
 
-The flow for a post (one language; the second follows by translate per section):
-  outline → plan --freeze → section 0 … N (each: check --section; size alone: trim) → assemble → check → review
-  + truth review → route → fix per section → assemble → … → strip (citations) → check --draft
+The flow for a post (one language; the second follows by one translate call):
+  outline → plan --freeze → write (the whole post) → check --plan-rows advisory → trim if over
+  → review + truth review → fix (≤ 2 rounds) → translate → … → emphasize → pair → strip → check
+Section mode (long posts, docs written task by task): section 0 … N, each followed by
+  check --section → assemble → review → route → fix per section → assemble → … (SKILL.md section 4)
 
 API steps (one gateway call each; --dry-run prints the messages instead and saves nothing):
   outline    --brief <f> --facts <f> --figure-count <text> [--figures <manifest>]
@@ -86,35 +89,47 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
              [--feedback <text|@f> --previous <f>] [--meme <f>] [--title-rule <text|@f>]
                the answer's # Plan table is validated against the profile's budgets, the
                manifest and FACTS; a failure writes outline-feedback.auto.md beside --out
+  write      --outline <f> --facts <f> [--figures <manifest>] [--reuse-figures <frozen draft>]
+             [--feedback <text|@f> --previous <f>] [--notes <f>] [--title <t>]
+             [--version-note <t>] [--date YYYY-MM-DD] [--meme <f>] [--title-rule <text|@f>]
+               a whole post, docs page or set of landing strings in one call; a post needs
+               --figures, and --out defaults to the next draft.<lang>.vN.md beside --outline.
+               An answer with another version note or title than given, a notes keep: string
+               missing or avoid: string present, a footnote, or bold beyond the TL;DR line goes
+               to <out>.rejected.md (exit 1); the report lists sizes, figures and the next step
   section    --outline <outline.final.md> --section <n> --facts <f> [--figures <manifest>]
              [--sections-dir <dir>] [--out <dir>/s<n>.<lang>.v<k>.md] [--reuse-figures <frozen draft>]
              [--feedback <text|@f> [--previous <f>]] [--facts-all] [--title-rule …] [--meme <f>]
              [--version-note <t>] [--date YYYY-MM-DD]
-               writes one section from the frozen plan; --out defaults to the next version
-  write      --outline <f> --figures <f> --facts <f> [--meme <f>] [--title-rule <text|@f>]
-               a whole piece in one call (docs pages, landing strings; posts use section)
-  translate  --in <f> --facts <f> --to en|zh [--title-rule <text|@f>]
-             section mode (an s<n>.<lang>.v<k>.md input, or --sections-dir): --outline <f>;
+               section mode: one section from the frozen plan; --out defaults to the next version
+  translate  --in <f> --facts <f> --to en|zh [--title <t>] [--notes <f>] [--title-rule <text|@f>]
              [--reuse-figures <frozen target draft> --reuse-source <frozen source draft>]
+             section mode (an s<n>.<lang>.v<k>.md input, or --sections-dir): --outline <f>
   polish     --in <f>                       section mode: neighbours read-only
-  fix        --in <f> --findings <f> --facts <f> [--outline <f>]   section mode: returns the
-               section only; an answer with a marker neither the input nor the findings name, or
-               a figure block changed that no finding names, goes to <out>.rejected.md (exit 1)
-  trim       --in <s<n>.<lang>.v<k>.md> [--outline <f> | --cap <n>]   cuts an over-budget section:
-               deletions and shorter wording only; an answer still over the cap, or with a marker,
-               footnote, figure block, heading, frontmatter or version note changed, goes to
-               <out>.rejected.md (exit 1; retry once, then the author). --out defaults to the next
-               version. fix, polish and translate refuse a changed version note the same way.
-               Every per-section call aims at the lowest of the planned size, what the page has
-               left and the profile's cap, and prints the page total after it writes. The other
-               sections count as --page <assembled draft> holds them, else as their newest files
+  fix        --in <f> --findings <f> --facts <f> [--outline <f>] [--notes <f>]   section mode
+               returns the section only; an answer with a marker neither the input nor the
+               findings name, a figure block changed that no finding names, or on a whole post a
+               heading, title or section count changed that no finding names, goes to
+               <out>.rejected.md (exit 1)
+  trim       --in <draft.<lang>.vN.md | s<n>.<lang>.v<k>.md> [--outline <f> | --cap <n>]
+               cuts deletions and shorter wording only. A whole draft: the sections over a
+               profile cap, then those furthest above their plan row while the page is over; an
+               answer that changes another section goes to <out>.rejected.md. A section: an answer
+               still over the cap, or with a marker, footnote, figure block, heading, frontmatter
+               or version note changed, goes there too (exit 1; retry once, then the author).
+               --out defaults to the next version. fix, polish and translate refuse a changed
+               version note the same way. In section mode every call aims at the lowest of the
+               planned size, what the page has left and the profile's cap; the other sections
+               count as --page <assembled draft> holds them, else as their newest files
   emphasize  --in <draft.<lang>.vN.md> [--mirror <the other language's emphasized draft>]
                marks one key sentence per section (and in the lead) with ** and changes nothing
                else; an answer that differs once ** are removed, or has a section with no span or
                two, or a span too long or in the wrong place, goes to <out>.rejected.md (exit 1).
                --out defaults to the next draft version
-  review     --in <f> [--facts <f>] [--tells]   numbered findings in the form fix reads; --out
-             defaults to findings.<lang>.vN.api.md (findings.s<n>.<lang>.vK.api.md for a section)
+  review     --in <f> [--facts <f>] [--notes <f>] [--tells]   numbered findings in the form fix
+             reads; --out defaults to findings.<lang>.vN.api.md (findings.s<n>.<lang>.vK.api.md
+             for a section). On a whole post it scores every join, and its closing
+             "transitions: n of m" line goes to <out>.flow.txt
 
   common:    --profile <name|f>   blog-perspectives | blog-practice | blog-news | blog-changelog |
                                   docs | landing, or a profile file; loads reference/profile-<name>.md
@@ -143,9 +158,12 @@ local steps:
                splits findings into findings.s<n>.<lang>.vN.md by the section quoting each
                passage; the rest go to findings.unrouted.<lang>.vN.md
   check      --in <f> [--profile <name|f>] [--facts <f>] [--outline <f>] [--section <n>] [--page <f>]
+             [--plan-rows hard|advisory]
              [--figures <manifest>] [--svg <dir>] [--draft <f>] [--slug <slug>] [--pair <f>]
              [--assets <dir>] [--version-note <t>] [--lang en|zh]
-               budgets are hard: a section above min(plan × 1.1, profile cap) is an error
+               budgets are hard: a section above min(plan × 1.1, profile cap) is an error;
+               --plan-rows advisory (a post written whole): above the plan row a warning, above
+               the profile cap an error
                --section (or an s<n>… file): one section — its shape, the figures its row owns,
                  and the page total with the other sections' latest versions (warned when over)
                --figures: every manifest stem has a figure block, in order, and no others
@@ -1497,6 +1515,8 @@ function buildMessages(step, o) {
         versionNote: o["version-note"] ?? versionNoteOf(doc),
       };
       const budgets = budgetsOf(prof, lang, o);
+      const outlineInput =
+        !sec && (/^outline/.test(path.basename(o.in)) || /^# (Plan|Sections)\s*$/m.test(input));
       // The note the answer must carry: a section after the lead has none, whatever is passed.
       const noteKept = sec && sec.n > 0 ? versionNoteOf(doc) : shared.versionNote;
       if (sec) {
@@ -1546,8 +1566,19 @@ function buildMessages(step, o) {
         params.NEIGHBOURS = "";
         params.DRAFT_LABEL = NOUN[prof.kind][0].toUpperCase() + NOUN[prof.kind].slice(1);
         params.DRAFT_HEADING = "";
-        // A whole post: its sizes against the caps after the edit, so creep shows at once.
-        if (prof.kind === "post") {
+        // A whole post: its sizes against the caps after the edit, so creep shows at once. An
+        // outline is no post: its plan is validated instead.
+        if (outlineInput) {
+          hooks.after = (out) => {
+            const problems = planProblems(parseOutline(out), budgets, {
+              facts: o.facts ? loadFacts(o.facts) : undefined,
+              manifest: o.figures ? manifestStems(read(o.figures, "--figures")) : undefined,
+            });
+            for (const p of problems) note(`plan: ${p}`);
+            if (!problems.length)
+              note("plan: within budget, every figure placed once, every id in FACTS");
+          };
+        } else if (prof.kind === "post") {
           hooks.after = (out) => {
             const sizes = docReport(out, lang, budgets, outlineGiven());
             if (sizes.over.length || sizes.pageOver) {
@@ -1566,7 +1597,7 @@ function buildMessages(step, o) {
       else if (o.findings) {
         content.FINDINGS = read(o.findings, "--findings").trim();
         hooks.verify = (out) => [
-          ...fixProblems(input, out, content.FINDINGS, { whole: !sec }),
+          ...fixProblems(input, out, content.FINDINGS, { whole: !sec && !outlineInput }),
           ...versionNoteProblems(out, noteKept),
           ...notesProblems(out, notes, lang),
         ];
@@ -5568,6 +5599,15 @@ async function runSelftest() {
     "review-flow.md",
     "1. [The Trace keeps a short marker.] — repeats the lead — concision — the section must add what the marker holds\ntransitions: 3 of 4\n",
   );
+  const fixOutline = caseDir("fix-outline", {
+    "outline.final.md": FIXTURE_OUTLINE(100),
+    "findings.md":
+      "1. [Where files go] — vague — concision — the heading must say where the files live\n",
+  });
+  answer(
+    "fix-outline.md",
+    FIXTURE_OUTLINE(100).replace("| 1 | Where files go |", "| 1 | Where the files live |"),
+  );
   const trTitle = caseDir("tr-title", { "draft.zh.v1.md": FIXTURE_DRAFT_ZH });
   answer(
     "tr-title.md",
@@ -6599,6 +6639,23 @@ async function runSelftest() {
       ],
     },
     {
+      name: "fix on an outline validates its plan instead of reporting it as a post",
+      args: [
+        "fix",
+        "--in",
+        path.join(fixOutline, "outline.final.md"),
+        "--findings",
+        path.join(fixOutline, "findings.md"),
+        ...facts,
+        "--out",
+        path.join(fixOutline, "outline.v2.md"),
+      ],
+      answer: "fix-outline.md",
+      code: 0,
+      stderr: /plan: within budget/,
+      notStderr: /page \d+ words|over a cap/,
+    },
+    {
       name: "translate refuses another title than the pinned one",
       args: [
         "translate",
@@ -6654,6 +6711,7 @@ async function runSelftest() {
       if (res.status !== c.code) why.push(`exit ${res.status}, expected ${c.code}`);
       if (c.stdout && !c.stdout.test(res.stdout)) why.push(`stdout lacks ${c.stdout}`);
       if (c.notStdout && c.notStdout.test(res.stdout)) why.push(`stdout has ${c.notStdout}`);
+      if (c.notStderr && c.notStderr.test(res.stderr)) why.push(`stderr has ${c.notStderr}`);
       if (c.stderr && !c.stderr.test(res.stderr)) why.push(`stderr lacks ${c.stderr}`);
       for (const [file, re] of c.files ?? (c.file ? [c.file] : [])) {
         if (!(existsSync(file) && re.test(readFileSync(file, "utf8")))) {
