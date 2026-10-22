@@ -1,13 +1,14 @@
 ---
 name: penguin-harness-writing
-description: "Use when writing or revising reader-facing prose for penguin.ooo — a blog post of any category, a docs page, or landing-page copy: the division of labour (a gateway model writes every reader-facing word, agents research, prompt, assemble, draw, check and ship), the outline-then-sections flow with budgets, the FACTS guard and footnote citations, the profiles, inline SVG figures drawn from the model's figure blocks, the checks, and how it is verified."
+description: "Use when writing or revising reader-facing prose for penguin.ooo — a blog post of any category, a docs page, or landing-page copy: the division of labour (a gateway model writes every reader-facing word, agents research, prompt, assemble, draw, check and ship), the outline-then-whole-draft flow with budgets (section mode as the fallback), the FACTS guard and footnote citations, the profiles, inline SVG figures drawn from the model's figure blocks, the checks, and how it is verified."
 ---
 
 # Writing for penguin.ooo
 
 Posts, docs pages and landing copy are written by a model on the TokenDance gateway and shipped
-by agents. A post is written the way a person writes one: an outline first, then one section at a
-time, each within the size the outline gave it. This page is the contract; `scripts/prose.mjs` is
+by agents. A post is written the way a person writes one: an outline first, then the whole post in
+one call, so its sections join; the review, the fixes, the cuts and the translation work on the
+whole post too. A long post or a docs page can fall back to section mode. This page is the contract; `scripts/prose.mjs` is
 the only way text reaches a draft, and `prompts/` plus `reference/` hold every word sent to the
 model. `penguin-harness-dev/reference/authoring.md` covers what is true of every post (the
 bilingual pair, frontmatter, where screenshots live).
@@ -20,10 +21,10 @@ docs sentence and landing string, and every later fix or cut. Each is its own AP
 `prose.mjs`.
 
 **Agents never type a sentence into the text.** They research, compile FACTS, write prompts and
-findings, put the model's sections together, draw figures from the model's figure blocks, take
+findings, put the model's text together, draw figures from the model's figure blocks, take
 screenshots, run the checks, review blind and ship. Putting the text into the manuscript is also
-the agent's job, and it is mechanical: `assemble` joins the section files byte for byte and
-`strip` publishes them. A wrong sentence goes back through a `fix` call with a numbered finding,
+the agent's job, and it is mechanical: `write` saves the draft, `assemble` joins section files in
+section mode, and `strip` publishes them. A wrong sentence goes back through a `fix` call with a numbered finding,
 never through an editor. The only hand edits are mechanical: frontmatter `date` / `category`,
 screenshot paths and their `-en` / `-zh` suffixes, whitespace, the boilerplate version note copied
 verbatim from an existing post, and copying landing strings into the dictionaries verbatim.
@@ -88,29 +89,33 @@ lowercase "harness" a warning.
 ## 4. The pipeline
 
 All work happens in a scratch directory, one folder per post: `<scratch>/articles/<slug>/` for
-inputs, the outline, `sections/` and drafts, `<scratch>/articles/raw/` for raw responses
+inputs, the outline, the notes and the drafts, `<scratch>/articles/raw/` for raw responses
 (`--raw-dir`). The folder name is the slug the figure ids carry; the `.en.` / `.zh.` token in a
-file name is how the script knows the language.
+file name is how the script knows the language. A post is written as one document:
 
 | # | Step | Who | Notes |
 | --- | --- | --- | --- |
-| 1 | Research, FACTS | agents | `facts.md` (section 6), each fact tagged with its sources |
-| 2 | `outline` | API | thesis, title candidates, section bullets, the figure plan, and the `# Plan` table: one row per section with its size, facts, opinions, figures and how it ends |
+| 1 | Research, FACTS, notes | agents | `facts.md` (section 6), each fact tagged with its sources; `notes.md`, the author's settled wording |
+| 2 | `outline` | API | thesis, title candidates, section bullets, the figure plan, and the `# Plan` table: one row per section with its size, facts, opinions, figures and the point it lands on |
 | 3 | `plan` | script | checks the plan against the profile's budgets, the manifest and FACTS; a failure writes `outline-feedback.auto.md` for one rerun (`outline --feedback … --previous …`); a second failure goes to the author. `plan --freeze` writes `outline.final.md` |
-| 4 | `section` 0 … N | API | one call per section, in order, each seeing the plan, the sections already written and only its own facts → `sections/s<n>.<lang>.v<k>.md` |
-| 5 | `check --section` | script | after every section: size, shape, the figures its row owns, markers, style; size alone → `trim`, shape → `section --feedback`, wording → `fix` |
-| 6 | `assemble` | script | joins the latest section files byte for byte → `draft.<lang>.vN.md` |
-| 7 | `check` | script | the whole: total size, section count against the plan, markers against FACTS, sources |
-| 8 | `review` + truth review | API + agent | the model's editor pass (flow across sections) and an agent reading against FACTS and the sources; merged and numbered |
-| 9 | `route` → `fix` per section | script + API | findings split by the section that quotes them; one `fix` per affected section, held to its findings (section 10); back to 6. Two rounds per section and two whole-post rounds, then the author |
-| 10 | `translate` per section | API | in order, each seeing the plan and the sections already translated; markers and figure blocks kept string for string |
-| 11 | `polish` per section, `assemble`, `review --tells` + native reader, `route`, `fix` | API + agent | the same loop in the second language |
-| 12 | `pair` | script | section by section: markers, citations, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
-| 13 | Draw | agent | from the frozen figure blocks (section 9) |
-| 14 | `check --svg` | script | every drawn file against its block |
-| 15 | `emphasize` | API | on each language's frozen draft, the first language first, then the second with `--mirror <the first's emphasized draft>`: one `**` span per section and in the lead, nothing else changed; then `pair` the two emphasized drafts |
-| 16 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` when its citations come in the same order (section 7) |
-| 17 | Visual check, verify, PR | agent | sections 9 and 12 |
+| 4 | `write` | API | the whole post in one call from the frozen outline: frontmatter, lead, TL;DR, every section and its join to the next, the figure blocks. `--title` pins the title, `--notes` passes the notes, `--reuse-figures <frozen draft>` the blocks already drawn; its report names the next step. A wrong shape is written again with `--feedback … --previous <the attempt>` |
+| 5 | `check --plan-rows advisory` | script | the page cap and the profile's caps are hard, the plan's rows are targets; over a cap → `trim` on the whole draft |
+| 6 | `review` + truth review | API + agent | the whole post, flow first: every join after a heading is scored (`transition`, `signpost`), and `<out>.flow.txt` holds `transitions: n of m`; the agent reads against FACTS, the sources and the notes; merged and numbered |
+| 7 | `fix` | API | the whole post, held to its findings (section 10). At most two rounds, the second only when the first had `transition`, `flow` or truth findings, then the author; `trim` if a cap breaks |
+| 8 | `translate` | API | the whole post in one call (section 8) |
+| 9 | `check`, `review --tells` + native reader, `fix` | script + API + agent | the same loop in the second language, at most two rounds; `trim` if over |
+| 10 | `emphasize` | API | on each language's frozen draft, the first language first, then the second with `--mirror <the first's emphasized draft>`: one `**` span per section and in the lead, nothing else changed |
+| 11 | `pair` | script | section by section: markers, citations, emphasis, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
+| 12 | Draw | agent | from the frozen figure blocks (section 9); a block `write` or `translate` changed is redrawn |
+| 13 | `check --svg` | script | every drawn file against its block |
+| 14 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` when its citations come in the same order (section 7) |
+| 15 | Visual check, verify, PR | agent | sections 9 and 12 |
+
+**Flow.** The post is one argument written in one sitting. The first sentence after every `## `
+heading continues the last sentence before it; no section opens with a signpost ("In this
+section", "Next,", 「接下来」) or ends on a sentence that only announces the next heading. The plan's
+`ends with` column names the point a section lands on, not a sentence to write. `write` states
+this, `review` scores every join, and `check` warns on the signposts the style guides list.
 
 **Emphasis.** A profile with `emphasis: yes` gets one marked key sentence, or clause, per `##`
 section and one in the lead: the claim a reader skimming the section must not miss. `emphasize`
@@ -124,10 +129,23 @@ is not read as bold (`**关键句。**后文` shows its asterisks). Bold in a po
 the writing prompts put a UI label in quotes, and `check` makes any other bold an error. A text
 that changes after `emphasize` is assembled and emphasized again.
 
-**The ordering rule.** The outline is frozen before the first section call; a section is final
-before the next one starts; the text of a language is frozen before any figure of it is drawn; and
-no string inside a figure is ours. A figure that needs a string its block lacks goes back through a
-`fix` finding.
+**The ordering rule.** The outline is frozen before the text is written; the text of a language is
+frozen before any figure of it is drawn; and no string inside a figure is ours. A figure that
+needs a string its block lacks goes back through a `fix` finding.
+
+### Section mode
+
+A post well over a thousand words, or a docs page written task by task, can be written one section
+per call instead. `section` writes plan row n from the frozen outline, seeing the plan, the
+sections already written and only that row's facts, into `sections/s<n>.<lang>.v<k>.md`, and
+`check --section` follows every call (size alone → `trim`, shape → `section --feedback`, wording →
+`fix`). `assemble` joins the latest section files byte for byte, or the versions `--pin
+s<n>=v<k>` names. `route` splits merged findings by the section that quotes each one, and `fix`,
+`translate`, `polish`, `review` and `trim` then run per section, with the neighbours read-only.
+Their prompts aim at the lowest of the planned size, what the page has left and the profile's cap
+(section 5), and `--page <assembled draft>` tells them which version of each other section the
+page holds. From `emphasize` on, the flow is the same. Section mode trades the joins for control,
+so a post written this way needs its transitions checked by `review` on the assembled draft.
 
 ## 5. Budgets
 
@@ -137,8 +155,11 @@ Sizes are set three times, so a post cannot grow past them unnoticed:
    Chinese characters (Chinese-first posts plan in characters). `plan` rejects a table whose rows
    exceed the profile's section cap, whose lead leaves the lead range, whose sum exceeds the total
    cap, or whose section count leaves the profile's range.
-2. **The prompt.** Every call that writes or changes a section (`section`, `translate`, `polish`,
-   `fix`, `trim`) asks for the lowest of three sizes: the section's planned size (from a plan in
+2. **The prompt.** A whole-post `write`, `translate`, `fix` or `polish` states the profile's caps
+   for the whole, the lead, each section and the TL;DR, and `write` takes the plan's row sizes as
+   targets; each prints, after its call, every section against its cap and plan and the page
+   against its cap. In section mode, every call that writes or changes a section (`section`,
+   `translate`, `polish`, `fix`, `trim`) asks for the lowest of three sizes: the section's planned size (from a plan in
    the other language's unit, converted at the translation ratio), what the page has left once the
    other sections take theirs, and the profile's cap. The other sections count as `--page
    <assembled draft>` holds them, so a pinned older version counts and a newer file set aside does
@@ -148,8 +169,10 @@ Sizes are set three times, so a post cannot grow past them unnoticed:
    Each states the counting rule `check` applies, in words and with an example sentence the script
    counts itself, so a cap is one number for the model and for `check`. The wording is the
    `count-rule-<lang>` fragment; change it with `countBody`.
-3. **`check`.** A section above `min(plan × 1.1, profile cap)` is an error; so is a lead above its
-   cap and a whole post above the total cap. Without `--outline`, the profile caps apply. Below a
+3. **`check`.** A section above `min(plan × 1.1, profile cap)` is an error; with `--plan-rows
+   advisory`, the mode for a post written as one document, a section above its plan row is a
+   warning and only the profile's cap an error. A lead above its cap and a whole post above the
+   total cap are errors either way. Without `--outline`, the profile caps apply. Below a
    floor is a warning: short is allowed, empty is not. On a section file it also reports the page
    total, counted the same way as the prompt's page budget (with `--page` too), names where the
    other sections' sizes came from, and warns when the total is over the page cap; every
@@ -159,16 +182,20 @@ A TL;DR, in a profile that has one (`tldr: yes`), is not part of the lead: the `
 and its bullets are counted apart and held to `tldr-words` / `zh-tldr-chars`, the plan's row 0
 sizes the lead alone, and the lead's section call states the TL;DR budget separately.
 
-**Over budget.** A section whose only problem is its size goes through `trim --in <section>
---outline <outline>` (or `--cap <n>`), one call that may only delete words or put a shorter phrase
-in place of a longer one. The script refuses the answer when it is still over the cap, or when a
+**Over budget.** A whole draft over a cap goes through `trim --in draft.<lang>.vN.md --outline
+<outline>`, which names the sections to cut: each one over its profile cap, then, while the page is
+over its cap, the ones furthest above their plan row. It refuses an answer that changes any other
+section, or leaves a named section or the page over its cap. In section mode, a section whose
+only problem is its size goes through `trim --in <section> --outline <outline>` (or `--cap <n>`).
+Either way the call may only delete words or put a shorter phrase in place of a longer one. The script refuses the answer when it is still over the cap, or when a
 marker, a footnote reference, a figure block, a heading, the frontmatter or the version note
 changed: the answer is
 kept as `<out>.rejected.md`, the next version is not written, and the step exits 1. Retry once,
 then hand it to the author. With `--page <assembled draft>`, `trim` also cuts a section that is
 within its own cap to what the page has left when the page is over its cap; without it, the newest
 section files only produce a note. A section wrong in shape or content is rerun with `section --feedback`;
-rerunning it only to shorten it brings back errors already fixed. Nobody cuts a section by hand.
+rerunning it only to shorten it brings back errors already fixed, and so does writing a whole post
+again only to shorten it. Nobody cuts a section by hand.
 
 Counting is the same everywhere: English words are whitespace tokens holding a letter or digit,
 Chinese characters are non-whitespace characters once the Markdown syntax is removed, so every
@@ -199,6 +226,14 @@ markers and the references do not count. The numbers themselves live in each pro
   third-party claims, research results, the first mention of a product behaviour. List general
   background, a restatement under another source, and a product detail a docs link in the same
   post already covers. Record the choices in the PR body.
+
+**The author's notes.** A post may keep a `notes.md` beside `facts.md` for wording settled with the
+author, one line each: `keep[ en|zh]: <exact string>` (the answer must carry it verbatim),
+`avoid[ en|zh]: <string>` (the answer must never hold it) and `note: <text>` (a point the prompt
+states). A line tagged with a language applies to that language alone. `write`, `translate`,
+`review` and `fix` take the file with `--notes`; `write`, `translate` and `fix` refuse an answer
+that breaks a `keep:` or `avoid:` line, and `review` flags a sentence that breaks a note. Keep
+`keep:` lines to the few clauses the author settled; everything else is a `note:`.
 
 The writer makes a factual claim only when FACTS holds it. A section call ends every factual
 sentence with its id (`{F3}`, several as `{F3}{F7}`) and every position with an OPINIONS id
@@ -254,13 +289,15 @@ same set of sources, and each section the same sources, whatever numbers each la
 ## 8. Source language and translation
 
 English first by default. Write Chinese first when the title, a meme or the sources are Chinese:
-`outline --lang zh` plans in characters, and the English follows by translation. Translation runs
-per section, in order: each call sees the plan and the sections already translated, keeps the
-markers at the ends of the same sentences, and translates figure blocks string for string. With
-`--reuse-figures <frozen target draft> --reuse-source <frozen source draft>`, a figure whose source
-block did not change keeps its frozen translation, so it needs no redraw. If a polished section
-still reads translated after one fix round, write that language's section afresh from the outline
-(`section --lang <tgt>`) instead of iterating on the translation.
+`outline --lang zh` plans in characters, and the English follows by translation. `translate`
+takes the whole post in one call, with TERMS, the notes (`--notes`) and the pinned title of the
+target language (`--title`); it keeps the markers at the ends of the same sentences and translates
+figure blocks string for string. With `--reuse-figures <frozen target draft> --reuse-source <frozen
+source draft>`, a figure whose source block did not change keeps its frozen translation, so it needs
+no redraw. If the translation still reads translated after one fix round, write that language
+afresh from the outline (`write --lang <tgt>`) instead of iterating on it. In section mode,
+translation runs per section, in order, each call seeing the plan and the sections already
+translated.
 
 ## 9. Figures
 
@@ -350,10 +387,18 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   emphasis is an error: a closing run after punctuation and before a letter, an opening run after a
   letter and before punctuation. Sentences over 35 English words or 60 Chinese characters are
   warnings. Landing strings are checked as `key: text` lines. Warnings are for a person to judge.
-- **The step guards** run when an answer arrives, before it is written. `fix` refuses an answer
+- **The step guards** run when an answer arrives, before it is written. `write` refuses an answer
+  whose version note or pinned title differs from the one given, that breaks a `keep:` or `avoid:`
+  line of the notes, or that carries a footnote or, where bold is the emphasis, bold beyond the
+  `**TL;DR**` line; its report lists the shape, the figures against the manifest and the frozen
+  blocks, and the sizes. On a whole post, `fix` also refuses a changed heading no finding quotes, a
+  changed title no finding names, and a section added or dropped; on an outline (`outline*.md`,
+  or a text with `# Plan`) it validates the plan after the call instead. `translate` refuses another
+  title than `--title` and a broken note. `fix` refuses an answer
   that brings in a fact or opinion id neither its input nor its findings name, adds, drops or
   reorders a figure, gives a screenshot's block a `title` or `text:` lines, or changes a figure
-  block no finding names by its id or by quoting its text. `trim` refuses what section 5 lists.
+  block no finding names by its id or by quoting its text. `trim`, on a section or a whole draft,
+  refuses what section 5 lists.
   `fix`, `polish`, `translate` and `trim` refuse an answer whose version note is not, byte for
   byte, the one they were given. `emphasize` refuses what section 4 lists.
   A refused answer is kept as `<out>.rejected.md` and the step exits 1; a change the findings
@@ -361,18 +406,20 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
 - **The fact diff** (agent): every number, URL, code span, bold or 「」 label and proper noun
   resolves to a FACT or TERM; headings and figures match the outline.
 - **Review**: the API `review` step (an editor's findings on naturalness, flow, concision, reading
-  effort and figures, in the form `fix` consumes, never a rewrite; per section, or the whole post
-  with flow across sections as its main question) and the agents' blind reviews — a truth reviewer
+  effort and figures, in the form `fix` consumes, never a rewrite; on the whole post, flow across
+  sections is its main question, every join after a heading is scored, and the closing
+  `transitions: n of m` line goes to `<out>.flow.txt`; per section in section mode) and the
+  agents' blind reviews — a truth reviewer
   with FACTS and the sources, a native reader for the second language.
 
 Findings, from any reviewer, are numbered and quote the passage:
 `N. [passage quoted verbatim] — problem — the fact (F#) or rule it violates — what the fix must achieve (not the wording)`.
-`route` relies on that quote to find the section; a passage it finds nowhere or twice goes to
-`findings.unrouted.<lang>.vN.md` for the orchestrator.
+In section mode `route` relies on that quote to find the section; a passage it finds nowhere or
+twice goes to `findings.unrouted.<lang>.vN.md` for the orchestrator.
 
 ## 11. Assembly and publishing
 
-- **`assemble`** picks the latest version of each `s<n>.<lang>.v<k>.md` (or `--pin s<n>=v<k>`),
+- **`assemble`** (section mode) picks the latest version of each `s<n>.<lang>.v<k>.md` (or `--pin s<n>=v<k>`),
   requires sections 0 … N with frontmatter in section 0, refuses a figure owned by two sections,
   and prints each section's size against its plan and cap.
 - **Manual-paste fallback.** When `assemble` cannot run, concatenate the latest section files in
@@ -412,7 +459,8 @@ stand-in gateway on a loopback port with a dummy key. A case that guards a fixed
 | --- | --- |
 | `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `emphasize`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
-| `prompts/contract-section.md`, `contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for one section, a whole post, a docs page, landing strings |
-| `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the counting rules and budgets, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
+| `prompts/contract-section.md`, `contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for one section (section mode), a whole post, a docs page, landing strings |
+| `<scratch>/articles/<slug>/notes.md` | Per post, outside the repo: the author's `keep:` / `avoid:` / `note:` lines (section 6) |
+| `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the counting rules and budgets, the flow rule, the notes and fixed-title blocks, the trim scopes, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
 | `reference/en-style.md`, `reference/zh-style.md` | Voice and the full banned lists, for every kind of text. The block between the `prompt` markers is what the model receives; the check patterns below it are what `check` greps for; change both together |
 | `reference/profile-<name>.md` | One per kind of text (section 2) |

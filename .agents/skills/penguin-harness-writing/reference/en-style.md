@@ -15,6 +15,7 @@ Voice: an engineer who builds what they write about, writing for developers: pla
 Shape:
 - Short paragraphs, one idea each, at most four sentences. Vary sentence length; average under 20 words.
 - Concrete over abstract: name the product, the file, the command, the number, and let it carry the point. An example beats an adjective.
+- A piece is one argument: the first sentence after a heading continues the last one before it, and no sentence only announces what comes next ("In this section", "Next,", "As mentioned above").
 - Figures carry part of the argument. Introduce each figure in the sentence before it, with the same nouns the figure's labels use, and do not describe in prose what the figure already shows.
 - State our position as ours: "we think", "our bet is", "in PenguinHarness we chose". Attribute others' claims to them by name. Mark uncertainty plainly ("we do not know whether…").
 - Write for a reader with dyslexia or ADHD, a person who reads with effort and loses the thread easily: the point first, short sentences with one idea each, common words over rare ones. No asides or "by the way" detours, no defensive hedging or pre-emptive caveats, no padding.
@@ -78,3 +79,4 @@ paragraph and sentence length, a question that opens a section) are counted in t
 - `/\bwe can see that\b|\bit is worth noting\b|\bit'?s worth noting\b/i` — filler signpost
 - `/\bby the way\b|\bincidentally\b|\bas an aside\b/i` — aside: a "by the way" detour
 - `/\b(that said|having said that|to be fair|of course,)/i` — possible defensive hedge or concession
+- `/(^|[.!?]\s+)(In this section|In the next section|Next, |Now that we|As (mentioned|noted|shown|discussed) (above|earlier)|The (next|first|second|third) (lever|step|section|rule) is\b)/i` — signpost: a sentence that announces instead of continuing

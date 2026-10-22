@@ -1,4 +1,4 @@
-## Section {{SECTION_N}} (the one to cut; return it whole)
+## {{DRAFT_LABEL}}
 {{DRAFT}}
 
 Cut it within its budget now.

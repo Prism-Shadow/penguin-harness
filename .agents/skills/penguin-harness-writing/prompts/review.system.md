@@ -15,7 +15,7 @@ Read the {{NOUN}} once as its reader would: a developer with ten minutes, who st
 - Tells: every phrase and shape the style guide above bans, and, when the {{NOUN}} was produced from another language, these:
 {{TELLS}}
 
-Do not flag facts, numbers, URLs, code spans or the markers `{F#}`/`{O#}` for being there; they are checked elsewhere. Do not ask for new claims or new examples. Do not propose wording.{{FACTS_RULE}}
+Do not flag facts, numbers, URLs, code spans or the markers `{F#}`/`{O#}` for being there; they are checked elsewhere. Do not ask for new claims or new examples. Do not propose wording.{{FACTS_RULE}}{{NOTES_RULE}}
 
 Output a numbered list and nothing else, one finding per item:
 N. [the passage quoted verbatim, as short as identifies it] — the problem — the rule it violates (name the style line, or "flow", "concision", "figure") — what the fix must achieve, not the wording
