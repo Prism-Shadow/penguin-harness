@@ -170,7 +170,9 @@ sections, a lead, a `**TL;DR**` line with three or four bullets after the lead, 
 character ranges. The Chinese ranges are about 2.4 times the English ones. The close is shorter
 than the section floor on purpose, so `check`'s floor warning on it is expected. The turn's
 question needs no setting: `check` only warns about a question that opens a section. Exclamation
-marks keep the script's default of none. Change this file and the script together.
+marks keep the script's default of none. `emphasis` turns on the one marked key sentence per
+section that `emphasize` adds, at most 25 words or 40 characters. Change this file and the script
+together.
 
 **What this profile leaves to others.** Drawing a figure (inline SVG, classes, the hidden text
 list, ids, both themes at 390 px) is the skill's figures section and `check --svg`. Polishing is
@@ -191,3 +193,6 @@ the visual check. The file pair, frontmatter and screenshot hosting are in `peng
 - zh-chars: 1550-2050
 - zh-lead-chars: 120-170
 - zh-section-chars: 120-340
+- emphasis: yes
+- emphasis-words: 25
+- zh-emphasis-chars: 40
