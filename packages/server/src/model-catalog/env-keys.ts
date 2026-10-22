@@ -1,5 +1,6 @@
 /**
- * The environment variables a model reads, as the UI presents them (PRN-021). The rule is MMSP's
+ * The environment variables a model reads, and where its requests go while no base URL is set, as
+ * the UI presents them (PRN-021). The rule is MMSP's
  * alone: its credentials module (`environmentCredential`) says what a client handed no key does
  * with the base URL it is handed, and the harness keeps no copy of it. This names the variables
  * for the server's `GET /models` preview, the machine sync's report, the web dialogs' hints, the
@@ -86,17 +87,42 @@ export function modelEnvPreviewKey(
 }
 
 /**
+ * MMSP's client for a group as a whole: the group protocol's when it names one, else, for a
+ * first-party vendor group, the vendor's (vendorClientType). Undefined for a gateway, custom,
+ * vLLM or user-defined group with no protocol, whose rows route by id.
+ */
+function groupClientType(
+  providerId: string,
+  group: Pick<ProviderConnectionShape, "clientType"> | undefined,
+): string | undefined {
+  const pinned = group?.clientType?.trim() ? group.clientType : undefined;
+  return pinned ?? vendorClientType(providerId);
+}
+
+/**
  * The variable a group's settings may present as covering a blank group key, or undefined —
- * the group dialog's hint: what MMSP's client for the group reads when handed no key at the
- * group's base URL (clientEnvKey). That client is the group protocol's when it names one, else,
- * for a first-party vendor group, the vendor's (vendorClientType); a gateway, custom, vLLM or
- * user-defined group with no protocol names nothing, since its rows route by id.
+ * the group dialog's hint: what MMSP's client for the group (groupClientType) reads when handed
+ * no key at the group's base URL (clientEnvKey). A group with no one client names nothing.
  */
 export function providerEnvFallbackKey(
   providerId: string,
   group: Pick<ProviderConnectionShape, "baseUrl" | "clientType"> | undefined,
 ): string | undefined {
-  const pinned = group?.clientType?.trim() ? group.clientType : undefined;
-  const clientType = pinned ?? vendorClientType(providerId);
+  const clientType = groupClientType(providerId, group);
   return clientType === undefined ? undefined : clientEnvKey(clientType, group?.baseUrl);
+}
+
+/**
+ * Where a group's requests go while its settings name no base URL, or undefined — the group
+ * dialog's base URL hint: the default endpoint of MMSP's client for the group (groupClientType),
+ * as MMSP's credentials table records it. A group with no one client names none.
+ */
+export function providerDefaultBaseUrl(
+  providerId: string,
+  group: Pick<ProviderConnectionShape, "clientType"> | undefined,
+): string | undefined {
+  const clientType = groupClientType(providerId, group);
+  // routedClientType spells a client type the way the table is keyed (an earlier name accepted).
+  const routed = clientType === undefined ? null : routedClientType("", clientType);
+  return routed === null ? undefined : CLIENT_CREDENTIALS[routed]?.defaultBaseUrl;
 }

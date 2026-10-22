@@ -767,12 +767,21 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *   group key that does NOT reach the model — its own base URL is on another origin — is said
  *   outright, since the card will read "not configured"; otherwise nothing truthful can be said.
  * - Base URL: the group's setting where it has one; else the shape a required one takes; else
- *   what an empty one means — the client's default endpoint.
+ *   what an empty one means — the endpoint the requests go to (`defaultBaseUrl`, the routed
+ *   client's default, where MMSP routes the model), else the client's default endpoint.
  */
 export function connectionPlaceholders(
   draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
   group: ProviderConnectionDto | undefined,
-  { envKey, baseUrlRequired }: { envKey?: string | undefined; baseUrlRequired: boolean },
+  {
+    envKey,
+    baseUrlRequired,
+    defaultBaseUrl,
+  }: {
+    envKey?: string | undefined;
+    baseUrlRequired: boolean;
+    defaultBaseUrl?: string | undefined;
+  },
 ): { apiKey: string | undefined; baseUrl: string } {
   const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
   const apiKey = draft.credential?.apiKeyMasked
@@ -789,7 +798,9 @@ export function connectionPlaceholders(
       ? S.models.inheritFromGroup
       : baseUrlRequired
         ? "https://…"
-        : S.models.baseUrlNone;
+        : defaultBaseUrl !== undefined
+          ? S.models.baseUrlDefault(defaultBaseUrl)
+          : S.models.baseUrlNone;
   return { apiKey, baseUrl };
 }
 
@@ -3448,6 +3459,7 @@ function ModelDialog({
   const { apiKey: apiKeyHint, baseUrl: baseUrlHint } = connectionPlaceholders(form, group, {
     envKey: envHintKey,
     baseUrlRequired,
+    defaultBaseUrl: liveEnv.defaultBaseUrl,
   });
   // Where a blank key's requests go, shown only beside the env fallback hint (hence keyed off
   // the same envHintKey). A vendor group whose client defaults to one of two hosts (zhipu /

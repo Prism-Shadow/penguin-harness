@@ -15,6 +15,7 @@ vLLM 分组不再读取 OpenAI 的环境变量。MMSP 的 vLLM 客户端改用�
 - vllm 分组的变量改为 `VLLM_API_KEY` 与 `VLLM_BASE_URL`，即 MMSP 的 `openai-chat-vllm-adapter` 客户端读取的变量。任何一层都不带 base URL 时，缺省端点为 `http://127.0.0.1:8000/v1`，即 `vllm serve` 默认端口上的地址。带 base URL 而没有 key 时，客户端不带 key 调用服务端（发送 vLLM 的占位 key `EMPTY`），不再拒绝。
 - 每条 vLLM 预置都以 `http://127.0.0.1:8000/v1` 为 base URL。新建 Project 只存一次，写进 `[providers.vllm]` 的 `base_url`，与协议放在一起；预置模型和手动添加的模型因此无需任何设置，就能连上同一台机器上启动的 vLLM 服务。对没有 vllm 分组表的 Project 执行「添加新模型」，以及「恢复默认」，都写入同一张表；恢复默认会把指向别处的 vLLM 分组改回这个本地地址。
 - 模型弹窗里给任何一层都不带 base URL 的模型的说明，改为写明请求发往的端点，端点取自 MMSP 的凭据表。文案为「请求发往 https://api.openai.com/v1；环境里设置了 OPENAI_BASE_URL 时改发往该地址」（en："Requests go to https://api.openai.com/v1, or to OPENAI_BASE_URL when it is set"）。目录的 `modelEnvironment` 在 `baseUrlEnv` 旁以 `defaultBaseUrl` 报告这个端点。
+- 留空的 base URL 输入框也写明端点，分组设置与模型弹窗都是如此：「未设置：默认发往 https://api.deepseek.com」（en："Not set: requests go to https://api.deepseek.com by default"），端点为分组或模型所用客户端的缺省端点，取自 MMSP 的凭据表。组内模型按 id 路由的分组（未设置协议的网关、custom 与自建分组）仍显示「未设置：使用客户端默认端点」。目录的 `providerDefaultBaseUrl(providerId, group)` 给出分组的端点。
 - 配置、模型、CLI 与桌面端快速上手文档写明了 vllm 分组的变量、本地 base URL 与不带 key 的调用。
 
 ## 兼容性

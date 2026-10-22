@@ -2393,6 +2393,8 @@ export const zh = {
     clearGroupKey: "清除分组密钥",
     /** A blank base URL that nothing fills: the group settings' placeholder, and a model's where its group sets none. */
     baseUrlNone: "未设置：使用客户端默认端点",
+    /** The blank base URL field where the client is known: the endpoint its requests go to. */
+    baseUrlDefault: (url: string): string => `未设置：默认发往 ${url}`,
     /** The group settings' Detect while neither the field nor the group holds a base URL. */
     detectNeedsBaseUrl: "先填写 base URL",
     /** The protocol menu's first row in the group settings: the group sets none. */

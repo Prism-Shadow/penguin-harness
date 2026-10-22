@@ -46,6 +46,7 @@ import {
   presetPromotions,
   presetProviderTable,
   providerClientType,
+  providerDefaultBaseUrl,
   providerEnvFallbackKey,
   providerInfo,
   retainedCatalogPricing,
@@ -2290,6 +2291,23 @@ describe("environment variable names (what MMSP's routed client reads)", () => {
     expect(hint("zhipu", { client_type: "zai-official" })).toBe("ZAI_API_KEY");
     // A user group with neither names nothing: its rows route by id, which a group cannot know.
     expect(hint("my-group", undefined)).toBeUndefined();
+  });
+
+  it("the group dialog's base URL hint names its client's default endpoint, and nothing for a group with no one client", () => {
+    // A first-party vendor group: its vendor's client, as MMSP's table records the endpoint.
+    expect(providerDefaultBaseUrl("deepseek", undefined)).toBe("https://api.deepseek.com");
+    expect(providerDefaultBaseUrl("minimax", undefined)).toBe("https://api.minimax.io/v1");
+    // A group's protocol, whoever the group is, an earlier spelling of it included.
+    expect(providerDefaultBaseUrl("my-group", { clientType: "ant-messages" })).toBe(
+      "https://api.anthropic.com",
+    );
+    expect(providerDefaultBaseUrl("custom", { clientType: "openai" })).toBe(
+      "https://api.openai.com/v1",
+    );
+    // A gateway, custom or user-defined group with no protocol: its rows route by id.
+    for (const id of ["tokendance", "custom", "my-group"]) {
+      expect(providerDefaultBaseUrl(id, undefined), id).toBeUndefined();
+    }
   });
 
   it("the row preview names exactly the variable a Session's client would read, and nothing where MMSP refuses", () => {
