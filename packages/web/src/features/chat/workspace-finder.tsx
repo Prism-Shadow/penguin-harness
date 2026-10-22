@@ -391,14 +391,17 @@ export function WorkspaceFinder({
   /**
    * The `agent_state` directory of the Agent a temporary Workspace would belong to, from that
    * Agent's config on this server: the footer button's path is built from it. Kept per Agent,
-   * the way the home listing is kept per machine.
+   * the way the home listing is kept per machine. Read only while this server is browsed: the
+   * hint names no folder on another machine, and the Agent of that id over there is not this
+   * one.
    */
   const [agentState, setAgentState] = useState<{ agentId: string; dir: string } | null>(null);
   useEffect(() => {
-    if (!open || agentId === undefined || agentState?.agentId === agentId) return;
+    if (!open || machine !== null || agentId === undefined || agentState?.agentId === agentId)
+      return;
     let cancelled = false;
     void api
-      .getAgentConfig(projectId, agentId)
+      .getAgentConfig(projectId, agentId, null)
       .then((res) => {
         if (!cancelled) setAgentState({ agentId, dir: res.stateDir });
       })
@@ -407,7 +410,7 @@ export function WorkspaceFinder({
       cancelled = true;
     };
     // Not keyed on `agentState`, which is what this fills in.
-  }, [open, agentId, projectId]);
+  }, [open, machine, agentId, projectId]);
 
   const { workspaceLatestByAgent } = useSessions();
   const recents = useMemo(

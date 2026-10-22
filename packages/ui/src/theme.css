@@ -84,7 +84,9 @@
   --color-canvas: var(--ui-canvas);
   --color-surface: var(--ui-surface);
   --color-surface-muted: var(--ui-surface-muted);
-  --color-fill-neutral: var(--ui-fill-neutral);
+  /* The neutral fill under a bubble or a chip: on a custom background it gives way to the image
+     as a light wash of the ink (wallpaper.css); the surfaces around it keep the theme's. */
+  --color-fill-neutral: var(--wallpaper-neutral-fill, var(--ui-fill-neutral));
   --color-surface-inset: var(--ui-inset);
   --color-overlay: var(--ui-overlay);
 
@@ -567,6 +569,26 @@
   }
   .ui-notice[data-tone="neutral"] {
     --_tone-fg: var(--ui-tone-neutral-fg);
+  }
+
+  /* The tint a tone surface keeps on a custom background, which wallpaper.css thins: the tone
+     tokens under the same five names, keyed on the surface role rather than the hook, so a strip
+     that is not a notice can name its tone the same way and an a2ui callout's own `data-tone` is
+     left alone. `--_tone-bg` is private to the recipes (not a token). */
+  [data-wallpaper-surface="tone"][data-tone="info"] {
+    --_tone-bg: var(--ui-tone-info-bg);
+  }
+  [data-wallpaper-surface="tone"][data-tone="success"] {
+    --_tone-bg: var(--ui-tone-success-bg);
+  }
+  [data-wallpaper-surface="tone"][data-tone="warning"] {
+    --_tone-bg: var(--ui-tone-attention-bg);
+  }
+  [data-wallpaper-surface="tone"][data-tone="danger"] {
+    --_tone-bg: var(--ui-tone-danger-bg);
+  }
+  [data-wallpaper-surface="tone"][data-tone="neutral"] {
+    --_tone-bg: var(--ui-tone-neutral-bg);
   }
 
   /* Where a tree's levels start. A tree with roots (a file tree) indents from the tree inset;

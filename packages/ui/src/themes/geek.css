@@ -878,26 +878,27 @@
 
   /* A notice is a status line, the way a console prints one: a bracketed tone tag in the tone's
      ink — `[ OK ]`, `[WARN]`, `[FAIL]` — in the mono face at the start, the message beside it
-     in the reading face, nothing round it, painted in the page's own colour (quiet on the page,
-     opaque where a toast floats over content). The tag stands out of the flow — absolutely at
-     the row's inset, the host padded for it — because a host lays its body and actions out as a
-     flex row, and a tag in the flow would be a third item pushing the body to the middle. Every
-     tag is six characters, so in the mono face all five are one width, and the fixed 4rem
-     column holds each of them with room to spare. A toast is the same line inside one hairline,
-     so it has an edge where it floats. (Two earlier passes — a coloured left rule, then a solid
-     tone block — were decoration and went.) */
+     in the reading face, nothing round it and nothing painted under it (the tone tints are
+     clear here), so it lies on the page or on a custom background alike; a toast takes the
+     page's own colour where it floats over content. The tag stands out of the flow —
+     absolutely at the row's inset, the host padded for it — because a host lays its body and
+     actions out as a flex row, and a tag in the flow would be a third item pushing the body to
+     the middle. Every tag is six characters, so in the mono face all five are one width, and
+     the fixed 4rem column holds each of them with room to spare. A toast is the same line inside
+     one hairline, so it has an edge where it floats. (Two earlier passes — a coloured left rule,
+     then a solid tone block — were decoration and went.) */
   :root[data-theme="geek"] .ui-notice {
     position: relative;
     padding-inline-start: calc(4rem + var(--ui-row-px));
     border: 0;
     border-radius: 0;
-    background-color: var(--ui-canvas);
     box-shadow: none;
     color: var(--ui-fg);
     font-family: var(--ui-font-sans);
   }
   :root[data-theme="geek"] button.ui-notice {
     border: var(--ui-border-w) solid var(--ui-line-emphasis);
+    background-color: var(--ui-canvas);
   }
   /* The host's own leading mark gives way to the tag: two marks would say the same thing. */
   :root[data-theme="geek"] .ui-notice [data-slot="icon"] {

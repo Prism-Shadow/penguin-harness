@@ -168,6 +168,15 @@ export const en: Strings = {
         "That machine refused this server's sign-in — change its SSH settings on the Machines page",
       failed: (message: string) => `That machine did not answer: ${message}`,
     },
+    /** The API socket this server holds to the machine (machines-view's socketReading). */
+    detailSocket: "API socket",
+    socket: {
+      connected: "Connected",
+      dialling: "Dialling",
+      refused: "Refused",
+      failed: "Failed",
+    },
+    agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
       count === 1 ? "1 machine to update" : `${count} machines to update`,

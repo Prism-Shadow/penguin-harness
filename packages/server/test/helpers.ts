@@ -82,6 +82,8 @@ import type { WeChatScanTransport } from "../src/runtime/messaging/wechat-scan.j
 import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/service.js";
 import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
+import { MachineEventHub } from "../src/machines/event-hub.js";
+import { MachineSockets } from "../src/machines/machine-sockets.js";
 import type { Access } from "../src/mechanisms/projects.js";
 import { ProcessShellPort } from "../src/builtin-browser/module.js";
 import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
@@ -431,12 +433,16 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   }
   if (o.machines) {
     const machines = o.machines;
+    // The generation's socket cache and event hub, as the module's own setup builds them
+    // (machines/service.ts): the proxy's streams and the aggregate event stream share both.
+    const sockets = new MachineSockets(() => undefined);
+    const events = new MachineEventHub(sockets, () => undefined);
     out.push([
       MachinesModule,
       {
         machines,
-        routes: machinesRoutes({ machines, access: accessDouble() }),
-        serverProxyRoutes: machinesServerProxyRoutes(machines),
+        routes: machinesRoutes({ machines, access: accessDouble(), events }),
+        serverProxyRoutes: machinesServerProxyRoutes(machines, { sockets, events }),
       },
     ]);
   }
