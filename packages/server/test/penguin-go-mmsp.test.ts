@@ -240,7 +240,7 @@ describe("Penguin Go stored projects", () => {
       ).toBe(true);
     },
   );
-  it("sync changes routes and removes an ended promotion while retaining keys, selections and custom settings", async () => {
+  it("sync changes routes, refreshes prices and removes an ended promotion while retaining keys, selections and custom settings", async () => {
     const id = await project();
     const deliveredBase = "https://token.penguin.ooo/api/v1";
     const original = oldConfig("saved-device-key");

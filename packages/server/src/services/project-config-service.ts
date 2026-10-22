@@ -2157,8 +2157,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    * `[providers.penguin-go]` table in the file (the built-in catalog is not consulted): a field
    * the table holds is followed, the row storing only where it differs from the platform's
    * group value (the relay URL every model shares); a field the table lacks is written on the
-   * row in full. Existing advertised rows receive the platform's list price and promotion;
-   * all other metadata and rows absent from the response are kept. Go-managed routes switch to
+   * row in full. Existing advertised rows receive the platform's list price and promotion (an
+   * ended promotion is cleared); all other metadata and rows absent from the response are kept. Go-managed routes switch to
    * MMSP, including model overrides; user-redirected endpoints retain their configuration.
    *
    * Authorization (`applyKeyToExisting`) also writes the delivered key once, as the group's
