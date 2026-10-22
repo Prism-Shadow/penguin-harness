@@ -68,9 +68,9 @@
  * alone says where a request goes (effectiveConnection reads no catalog).
  * Five groups pin at GROUP level as well (ModelProviderInfo.clientType, read
  * through providerClientType), so that a model the user adds there speaks the same protocol
- * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
- * OpenRouter, TokenDance, SiliconFlow and Atlas Cloud, whose do — see each group's own block
- * comment.
+ * as the presets: vLLM, whose added models inherit the local server's address its table is
+ * seeded with, and OpenRouter, TokenDance, SiliconFlow and Atlas Cloud, whose inherit the
+ * gateway's — see each group's own block comment.
  * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
  * the family its spelling begins with and never looks at base_url (MMSP's routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
@@ -185,7 +185,7 @@ export interface ModelProviderInfo {
    * a new Project writes as the group's `[providers.<id>]` base URL (catalogGroupConnection),
    * so every row of the group — a model added by hand included — follows it without storing
    * the address itself. A reference value: nothing reads it when a request is built. Left
-   * blank for direct vendors and custom.
+   * blank for direct vendors, custom and vLLM (whose rows name the local server's address).
    */
   gatewayBaseUrl?: string;
   /**
@@ -319,6 +319,13 @@ export interface ModelCatalogEntry {
  * family, so `openai-chat` would silently lose that mapping.
  */
 const VLLM_CLIENT_TYPE = "openai-chat-vllm-adapter";
+
+/**
+ * Where `vllm serve` answers when it runs on this machine with its default port (8000): every
+ * vLLM row's preset base URL, so a new Project stores it once, on the group's table
+ * (catalogGroupConnection), and the models added to the group by hand follow it too.
+ */
+const VLLM_LOCAL_BASE_URL = "http://127.0.0.1:8000/v1";
 
 /** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -615,8 +622,10 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   },
   {
     // Self-hosted: the user runs the server, so there is no console to mint a key at
-    // (apiKeyUrl) and no endpoint to preset (gatewayBaseUrl). modelsUrl points at the recipe
-    // index, which is where the served ids in this group are documented.
+    // (apiKeyUrl) and no endpoint every user shares (gatewayBaseUrl). The group's rows name the
+    // address a server started on this machine answers on, which a new Project stores as the
+    // group's base URL. modelsUrl points at the recipe index, which is where the served ids in
+    // this group are documented.
     id: "vllm",
     label: "vLLM",
     envKey: "OPENAI_API_KEY",
@@ -3357,7 +3366,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   //   the same genuine $0 tier the `:free` gateway rows carry, so these models show the free
   //   badge and contribute 0 to the cost center rather than the "unpriced" mark — which is the
   //   truthful reading of a self-hosted endpoint that bills nobody.
-  // - **no base URL**. Every deployment has its own; the user supplies it, as in `custom`.
+  // - **the local server's base URL** (VLLM_LOCAL_BASE_URL), where `vllm serve` answers when
+  //   it runs on the same machine with its default port. A new Project stores it once, on the
+  //   group's table; a deployment elsewhere changes the group's base URL.
   // - **no auto-routing**. Each row pins openai-chat-vllm-adapter explicitly, and the pin is
   //   load-bearing twice over: `Qwen/*` begins with no family AutoLLMClient knows and would
   //   be rejected outright, while `deepseek-ai/DeepSeek-V4-*` begins with "deepseek-" and
@@ -3378,6 +3389,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: false,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     // The experimental vision revision: DeepSeek's first multimodal V4, a ViT tower on the
@@ -3391,6 +3403,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "deepseek-ai/DeepSeek-V4-Pro",
@@ -3400,6 +3413,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: false,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.5-0.8B",
@@ -3409,6 +3423,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.5-9B",
@@ -3418,6 +3433,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.6-35B-A3B",
@@ -3427,6 +3443,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.8-27B",
@@ -3436,6 +3453,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.8-Flash-Next",
@@ -3445,6 +3463,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   // -- Custom (the group that otherwise holds only user-defined models). A preset may live
   // here only as a complete row — its own base URL and a pinned generic protocol — because the

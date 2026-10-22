@@ -478,7 +478,7 @@ describe("model-catalog", () => {
     expect(modelHomepageUrl("custom", "Atria-Dawn")).toBeUndefined();
   });
 
-  it("vLLM (self-hosted): the group pins openai-chat-vllm-adapter, prices at zero and carries no endpoint", () => {
+  it("vLLM (self-hosted): the group pins openai-chat-vllm-adapter, prices at zero and points at the local vLLM server", () => {
     const vllm = MODEL_CATALOG.filter((m) => m.provider === "vllm");
     // Dictionary order by upstream id, case-insensitive (as in siliconflow): deepseek-ai/
     // before Qwen/, and the flash revision before the vision revision it prefixes.
@@ -497,13 +497,12 @@ describe("model-catalog", () => {
       // knows and would be rejected, and deepseek-ai/DeepSeek-V4-* begins with "deepseek-",
       // which would reach DeepSeek's official Responses client pointed at a vLLM server.
       expect(m.clientType, m.modelId).toBe("openai-chat-vllm-adapter");
-      // Nobody bills per token and there is no shared endpoint: the user runs the server and
-      // supplies its URL. Zero is a real rate here, not a missing one — see the pricing test.
+      // Nobody bills per token: the user runs the server. Zero is a real rate here, not a
+      // missing one — see the pricing test.
       expect([m.pricing?.cache_read, m.pricing?.cache_write, m.pricing?.output], m.modelId).toEqual(
         [0, 0, 0],
       );
       expect(m.pricing!.unit, m.modelId).toBe("usd_per_mtok");
-      expect(m.baseUrl, m.modelId).toBeUndefined();
       // Chat Completions on the wire, so the credential fallback is the OPENAI_* pair.
       expect(rowEnvKey(m), m.modelId).toBe("OPENAI_API_KEY");
     }
@@ -522,19 +521,22 @@ describe("model-catalog", () => {
     // A model added by hand stores no protocol and follows its group's table, so in a new
     // Project every built-in group that takes such models — custom aside, which leaves the
     // protocol to detection — resolves one for an id its catalog does not list, and on an
-    // endpoint: the group's own (vLLM's is the user's, typed on the row).
+    // endpoint: the gateway's, or for vLLM the address a local `vllm serve` answers on.
     for (const group of MODEL_PROVIDERS.filter((p) => p.addable && p.id !== "custom")) {
       const added = storedConnection({ provider: group.id, model_id: "someone/added-by-hand" });
       expect(added.clientType, group.id).toBe(providerClientType(group.id));
       expect(added.clientType, group.id).toBeDefined();
-      expect(added.baseUrl, group.id).toBe(group.gatewayBaseUrl);
+      expect(added.baseUrl, group.id).toBe(
+        group.id === "vllm" ? "http://127.0.0.1:8000/v1" : group.gatewayBaseUrl,
+      );
     }
     expect(providerClientType("openrouter")).toBe("openai-responses");
     expect(providerClientType("custom")).toBeUndefined();
     expect(providerClientType("my-own-group")).toBeUndefined();
-    // Presets reach a Project with the pin (on the group's table) and the zero rate, and
-    // without an endpoint: what a self-hosted deployment bills per token is nothing, and the
-    // Project stores that as a rate rather than as a gap (see the pricing test).
+    // Presets reach a Project with the pin and the local server's address, both on the group's
+    // table, and the zero rate: what a self-hosted deployment bills per token is nothing, and
+    // the Project stores that as a rate rather than as a gap (see the pricing test). The rows
+    // store neither connection field, so a server elsewhere is one change on the group.
     const preset = presetModelEntries().filter((e) => e.provider === "vllm");
     expect(preset).toHaveLength(8);
     for (const e of preset) {
@@ -544,7 +546,8 @@ describe("model-catalog", () => {
         [e.pricing?.cache_read, e.pricing?.cache_write, e.pricing?.output],
         e.model_id,
       ).toEqual([0, 0, 0]);
-      expect(effective.baseUrl, e.model_id).toBeUndefined();
+      expect(effective.baseUrl, e.model_id).toBe("http://127.0.0.1:8000/v1");
+      expect([e.client_type, e.base_url], e.model_id).toEqual([undefined, undefined]);
     }
     // Each preset id has a recipe page; an id the user serves themselves has none, so it
     // falls back to the recipe index.
@@ -687,11 +690,12 @@ describe("model-catalog", () => {
       "qwen-pay-as-you-go": BOTH,
       "qwen-token-plan": BOTH,
       modelscope: BOTH,
-      // The user's own server: the protocol, and no endpoint to preset.
-      vllm: ["client_type"],
+      // The user's own server: the protocol, and the address a local `vllm serve` answers on.
+      vllm: BOTH,
     });
-    // A group with no gateway endpoint or group pin takes the one its rows all carry.
+    // A group with no gateway endpoint takes the one its rows all carry.
     expect(table["penguin-go"]!.base_url).toBe(PENGUIN_GO_BASE_URL);
+    expect(table.vllm!.base_url).toBe("http://127.0.0.1:8000/v1");
     expect(table.fireworks!.client_type).toBe("openai-chat");
     expect(table.modelscope!.client_type).toBe("openai-responses");
     // First-party vendors route by id to their official clients' own endpoints: no table.
@@ -1248,8 +1252,9 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("openrouter", "google/gemini-3.5-flash")!.contextWindow).toBe(1048576);
     expect(catalogEntryFor("google", "gemini-3.5-flash")!.contextWindow).toBe(1048576);
 
-    // In a new Project every gateway preset resolves to a base URL, and so does the custom
-    // group's preset, whose group implies no endpoint at all; direct rows never do.
+    // In a new Project every gateway preset resolves to a base URL, and so do the vLLM presets
+    // (the local server's address) and the custom group's preset, whose group implies no
+    // endpoint at all; direct rows never do.
     const vendors = ["deepseek", "google", "openai", "anthropic", "zhipu", "moonshot", "minimax"];
     expect(MODEL_CATALOG.filter((m) => vendors.includes(m.provider) && m.baseUrl)).toEqual([]);
     const customPresets = MODEL_CATALOG.filter((m) => m.provider === "custom");
@@ -1262,6 +1267,7 @@ describe("model-catalog", () => {
         ...customPresets,
         ...MODEL_CATALOG.filter((m) => m.provider === "penguin-go"),
         ...MODEL_CATALOG.filter((m) => m.provider === "opencode-go"),
+        ...MODEL_CATALOG.filter((m) => m.provider === "vllm"),
       ]
         // A retired gateway row keeps its pin in the catalog but is not a preset.
         .filter((m) => m.retired !== true)
@@ -2276,9 +2282,10 @@ describe("environment variable names (what MMSP's routed client reads)", () => {
     for (const id of ["tokendance", "openrouter", "penguin-go", "modelscope", "custom"]) {
       expect(hint(id, table[id]), id).toBeUndefined();
     }
-    // A group with a protocol and no base URL: the protocol's variable, whoever the group is —
-    // vLLM's preset table included, whose rows the client sends to its own default endpoint.
-    expect(hint("vllm", table.vllm)).toBe("OPENAI_API_KEY");
+    // vLLM's preset table names the local server, whose client takes no key from the
+    // environment for it.
+    expect(hint("vllm", table.vllm)).toBeUndefined();
+    // A group with a protocol and no base URL: the protocol's variable, whoever the group is.
     expect(hint("my-group", { client_type: "ant-messages" })).toBe("ANTHROPIC_API_KEY");
     expect(hint("zhipu", { client_type: "zai-official" })).toBe("ZAI_API_KEY");
     // A user group with neither names nothing: its rows route by id, which a group cannot know.
@@ -2300,10 +2307,9 @@ describe("environment variable names (what MMSP's routed client reads)", () => {
       const ref = `${entry.provider}/${entry.model_id}`;
       if (VENDORS.includes(entry.provider)) {
         expect(preview(entry), ref).toBe(providerInfo(entry.provider)!.envKey);
-      } else if (entry.provider === "vllm") {
-        // No base URL anywhere: the vLLM client reads OPENAI_*, as a Session on it would.
-        expect(preview(entry), ref).toBe("OPENAI_API_KEY");
       } else {
+        // A gateway, a third-party adapter, custom's preset, or vLLM's local server on its
+        // group's table: no variable.
         expect(preview(entry), ref).toBeUndefined();
       }
     }
@@ -2338,12 +2344,15 @@ describe("environment variable names (what MMSP's routed client reads)", () => {
 
   it("the endpoint's variable is named only where no base URL is set, key or not", () => {
     const row = { provider: "deepseek", modelId: "deepseek-flash" };
+    // With no base URL, the endpoint the requests go to while the variable is unset as well.
     expect(modelEnvironment(row, undefined)).toEqual({
       apiKeyEnv: "DEEPSEEK_API_KEY",
       baseUrlEnv: "DEEPSEEK_BASE_URL",
+      defaultBaseUrl: "https://api.deepseek.com",
     });
     expect(modelEnvironment({ ...row, apiKey: "sk-row" }, undefined)).toEqual({
       baseUrlEnv: "DEEPSEEK_BASE_URL",
+      defaultBaseUrl: "https://api.deepseek.com",
     });
     expect(modelEnvironment(row, { baseUrl: "https://api.deepseek.com" })).toEqual({
       apiKeyEnv: "DEEPSEEK_API_KEY",

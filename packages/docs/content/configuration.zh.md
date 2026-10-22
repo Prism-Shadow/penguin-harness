@@ -82,7 +82,7 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-新建 Project 不给这七个一方厂商分组写 `base_url`，组内没有 key 的模型因此读取上表的变量；base URL 是厂商缺省端点的分组或模型同样读取。网关分组（openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope）的分组带网关的 base URL，组内模型须在文件里有 key：它们的 OpenAI 兼容客户端会读取 `OPENAI_*`（opencode-go 中走 Anthropic Messages 的模型读取 `ANTHROPIC_*`），里面存的是你的 OpenAI 或 Anthropic key。custom、vLLM 或自建分组的模型若在任何一层都不带 base URL，则读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（api.openai.com），设置了 `OPENAI_BASE_URL` 时发往它。Penguin Go 与 ModelScope 只从分组的连接信息取 key：在分组标题栏连接，或在分组设置里粘贴 key。`PENGUIN_GO_API_KEY` 与 `PENGUIN_GO_BASE_URL` 不再读取；只设置过这两个变量的用户，请在 Penguin Go 的分组标题栏重新连接，或粘贴 key。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）的模型有 `base_url` 而没有 `api_key` 时不发送任何 key，开放的 MMSP 服务器正是这样接受请求。供应商分组和内置模型目录见[模型与供应商](/models)。
+新建 Project 不给这七个一方厂商分组写 `base_url`，组内没有 key 的模型因此读取上表的变量；base URL 是厂商缺省端点的分组或模型同样读取。网关分组（openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope）的分组带网关的 base URL，组内模型须在文件里有 key：它们的 OpenAI 兼容客户端会读取 `OPENAI_*`（opencode-go 中走 Anthropic Messages 的模型读取 `ANTHROPIC_*`），里面存的是你的 OpenAI 或 Anthropic key。custom 或自建分组的模型若在任何一层都不带 base URL，则读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（`https://api.openai.com/v1`），设置了 `OPENAI_BASE_URL` 时发往它。vllm 分组的客户端读取 vLLM 自己的那对变量 `VLLM_API_KEY` 与 `VLLM_BASE_URL`，从不读取 `OPENAI_*`：新建 Project 把 `vllm serve` 默认监听的 `http://127.0.0.1:8000/v1` 写为该分组的 base URL；任何一层都不带 base URL 的 vllm 模型发往 `VLLM_BASE_URL`，未设置时同样发往该地址。Penguin Go 与 ModelScope 只从分组的连接信息取 key：在分组标题栏连接，或在分组设置里粘贴 key。`PENGUIN_GO_API_KEY` 与 `PENGUIN_GO_BASE_URL` 不再读取；只设置过这两个变量的用户，请在 Penguin Go 的分组标题栏重新连接，或粘贴 key。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）或 `openai-chat-vllm-adapter` 客户端（vLLM 服务器）的模型有 `base_url` 而没有 `api_key` 时不发送任何 key，未设置 key 启动的服务器正是这样接受请求；vLLM 客户端发送 vLLM 的占位 key `EMPTY`。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
@@ -166,7 +166,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 
 ### 分组连接信息
 
-`[providers.<id>]` 存一个分组的连接信息，以 provider id 为键：内置分组或你创建的分组。新建 Project 的文件为目录给出端点或协议的每个内置分组写好这张表：网关的 base URL 与协议、Penguin Go 的中转 base URL、vLLM 的协议。一方厂商分组与 custom 没有。模型库页面的分组设置与连接分组时都会写入它，不带 `--model-id` 的 `penguin config model add --provider <分组>` 同样写入。自建分组的这张表随该分组最后一个模型一并删除。
+`[providers.<id>]` 存一个分组的连接信息，以 provider id 为键：内置分组或你创建的分组。新建 Project 的文件为目录给出端点或协议的每个内置分组写好这张表：网关的 base URL 与协议、Penguin Go 的中转 base URL、vLLM 的协议与本地 base URL `http://127.0.0.1:8000/v1`。一方厂商分组与 custom 没有。模型库页面的分组设置与连接分组时都会写入它，不带 `--model-id` 的 `penguin config model add --provider <分组>` 同样写入。自建分组的这张表随该分组最后一个模型一并删除。
 
 | 键 | 类型 | 说明 |
 | --- | --- | --- |

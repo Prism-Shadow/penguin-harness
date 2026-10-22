@@ -217,7 +217,7 @@ describe("models preset & catalog enrichment", () => {
     expect(body.models.map(pairKey).filter((key) => retired.includes(key))).toEqual([]);
 
     // The catalog's group connections are written into the file once, as `[providers.<id>]`
-    // tables: the gateways', vLLM's protocol, Penguin Go's relay. The first-party vendors and
+    // tables: the gateways', vLLM's protocol and local server, Penguin Go's relay. The first-party vendors and
     // custom get none — their rows run on the client's defaults, or carry their own.
     const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
     for (const id of Object.keys(presetProviderTable())) {
@@ -377,9 +377,10 @@ describe("models preset & catalog enrichment", () => {
             clientType: "openai-chat",
             baseUrl: "https://openrouter.ai/api/v1",
           },
-          // Custom and vLLM rows with no base URL anywhere: their protocol client's variable,
-          // which a Session on them would use (the client's default endpoint, api.openai.com,
-          // unless OPENAI_BASE_URL is set); a custom row on a private server: nothing.
+          // A custom row with no base URL anywhere: its protocol client's variable, which a
+          // Session on it would use (the client's default endpoint, api.openai.com, unless
+          // OPENAI_BASE_URL is set); a custom row on a private server, and a vLLM row on its
+          // group's local server: nothing.
           { provider: "custom", modelId: "my-model", clientType: "openai" },
           {
             provider: "custom",
@@ -424,7 +425,6 @@ describe("models preset & catalog enrichment", () => {
       for (const [provider, modelId] of [
         ["anthropic", "claude-via-gateway"],
         ["custom", "my-model"],
-        ["vllm", "Qwen/Qwen3.8-27B"],
       ] as const) {
         expect(pick(body, provider, modelId), `${provider}/${modelId}`).toMatchObject({
           envKey: "OPENAI_API_KEY",
@@ -436,6 +436,7 @@ describe("models preset & catalog enrichment", () => {
         ["anthropic", "claude-on-proxy"],
         ["openrouter", "xiaomi/mimo-v2.5"],
         ["custom", "my-local"],
+        ["vllm", "Qwen/Qwen3.8-27B"],
         ["penguin-go", "gemini-3.8-flash"],
       ] as const) {
         const row = pick(body, provider, modelId);
@@ -2588,7 +2589,8 @@ describe("preset sync: add new models / restore defaults", () => {
     expect(body.visionModel).toBeUndefined();
 
     // Every key a built-in group or a preset held is where it was; a group's settings
-    // otherwise are the catalog's, custom's and vLLM's base URLs included.
+    // otherwise are the catalog's: custom's base URL goes, and vLLM's returns from the user's
+    // GPU box to the local server's address.
     expect(body.providers.deepseek).toEqual({
       apiKeyMasked: "sk-d…0020",
       createdAt: expect.any(String) as string,
@@ -2603,6 +2605,7 @@ describe("preset sync: add new models / restore defaults", () => {
       createdAt: expect.any(String) as string,
     });
     expect(body.providers.vllm).toEqual({
+      baseUrl: "http://127.0.0.1:8000/v1",
       clientType: catalogGroupConnection("vllm")!.client_type,
       apiKeyMasked: "vllm…0015",
       createdAt: expect.any(String) as string,

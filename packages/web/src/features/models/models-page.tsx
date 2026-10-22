@@ -3453,16 +3453,19 @@ function ModelDialog({
   // the same envHintKey). A vendor group whose client defaults to one of two hosts (zhipu /
   // moonshot) says how to reach the other one, when this entry goes through the provider's
   // own client (the resolved envKey matches the provider). Any other group's row on a protocol
-  // client with no base URL anywhere — custom, vLLM, a user group — says that its requests go
-  // to that client's default endpoint (api.openai.com for OPENAI_API_KEY) unless the matching
-  // `*_BASE_URL` is set, so a self-hosted id is never sent there unannounced.
+  // client with no base URL anywhere — custom, vLLM, a user group — names the endpoint its
+  // requests go to, the client's default as MMSP records it (https://api.openai.com/v1 for the
+  // OpenAI protocols), unless the matching `*_BASE_URL` is set, so a self-hosted id is never
+  // sent there unannounced.
   const envNote =
     envHintKey === undefined
       ? undefined
       : envHintKey === dialogProvider?.envKey && S.models.providerEnvNotes[form.provider]
         ? S.models.providerEnvNotes[form.provider]
-        : !isVendorGroup(form.provider) && liveEnv.baseUrlEnv !== undefined
-          ? S.models.envBaseUrlNote(liveEnv.baseUrlEnv)
+        : !isVendorGroup(form.provider) &&
+            liveEnv.baseUrlEnv !== undefined &&
+            liveEnv.defaultBaseUrl !== undefined
+          ? S.models.envBaseUrlNote(liveEnv.defaultBaseUrl, liveEnv.baseUrlEnv)
           : undefined;
   // The add dialog's note on the protocol a new model will speak, inside its Details: the
   // group's (with blank fields following the group where it also names the endpoint, the user's

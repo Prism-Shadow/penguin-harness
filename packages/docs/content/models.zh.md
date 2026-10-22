@@ -215,7 +215,7 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 - **整个分组。** 在[分组设置](#分组设置)（分组标题栏上的齿轮）里填写，或由[连接账户](#连接账户)写入。两种方式写的都是分组密钥；单个模型上设置的 key 不受影响。
 - **单个模型。** 在**模型配置**里，把 key 填入 **API key**。保存后 key 会打码显示；输入框留空即保留原 key，点击**清除已存 API key** 可删除它，此后该模型重新使用分组密钥。使用分组密钥的模型同样打码显示这把 key。
 - **其他端点。** key 属于签发它的端点：分组密钥只借给没有自己 base URL 的模型，或自己的 base URL 与分组 base URL 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 模型位于分组主机的另一条路径上，照样使用分组密钥。指向别的主机的模型取不到分组密钥，需要自己的 key，例如经代理访问的某个 OpenRouter 模型，或 **Custom** 里自带端点的预置模型 Atria Dawn——**Custom** 的 key 因此不会发往它的主机。这样的模型卡片显示**未配置 key**，**模型配置**的 key 输入框会说明分组密钥不适用。
-- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只有模型与分组都不带 base URL，或带的就是其客户端自己的缺省端点**时才使用服务端的环境变量（见[供应商凭证变量](/configuration#供应商凭证变量)）：它路由到的 MMSP 客户端自行读取 `*_API_KEY`，不带 base URL 时连 `*_BASE_URL` 一起读取，key 与端点都来自服务端环境。新建 Project 不给七个一方厂商分组写 base URL：DeepSeek、Google、OpenAI、Anthropic、Z.AI、Moonshot 与 MiniMax。要用环境 key 访问厂商的第二个主机（bigmodel.cn、moonshot.ai）、代理或 Bedrock，就让 base URL 留空，在 key 旁一并设置厂商的 `*_BASE_URL`；一旦在分组或模型设置里填了其他 base URL，组内模型就必须在文件里有 key。**Custom**、**vLLM** 或你创建的分组里任何一层都不带 base URL 的模型，读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（api.openai.com），设置了 `OPENAI_BASE_URL` 时发往它；弹窗会在 key 字段旁说明这一点。其余带 base URL 的模型都必须有自己的 key 或分组密钥：网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、Atlas Cloud、OpenCode Go、两个 Qwen 网关）、Penguin Go、ModelScope，以及任何被你指向某个端点的模型或分组。在这些情况下对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。协议为 `mmsp`、有 base URL 而没有 key 的模型不带 key 发出请求，开放的 MMSP 服务器就是这样调用的。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
+- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只有模型与分组都不带 base URL，或带的就是其客户端自己的缺省端点**时才使用服务端的环境变量（见[供应商凭证变量](/configuration#供应商凭证变量)）：它路由到的 MMSP 客户端自行读取 `*_API_KEY`，不带 base URL 时连 `*_BASE_URL` 一起读取，key 与端点都来自服务端环境。新建 Project 不给七个一方厂商分组写 base URL：DeepSeek、Google、OpenAI、Anthropic、Z.AI、Moonshot 与 MiniMax。要用环境 key 访问厂商的第二个主机（bigmodel.cn、moonshot.ai）、代理或 Bedrock，就让 base URL 留空，在 key 旁一并设置厂商的 `*_BASE_URL`；一旦在分组或模型设置里填了其他 base URL，组内模型就必须在文件里有 key。**Custom** 或你创建的分组里任何一层都不带 base URL 的模型，读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（`https://api.openai.com/v1`），设置了 `OPENAI_BASE_URL` 时发往它；弹窗会在 key 字段旁写明这个端点。**vLLM** 模型读取 vLLM 自己的那对变量 `VLLM_API_KEY` 与 `VLLM_BASE_URL`，从不读取 `OPENAI_*`（见[连接本地或自托管端点](#连接本地或自托管端点)）。其余带 base URL 的模型都必须有自己的 key 或分组密钥：网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、Atlas Cloud、OpenCode Go、两个 Qwen 网关）、Penguin Go、ModelScope，以及任何被你指向某个端点的模型或分组。在这些情况下对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。协议为 `mmsp` 或 `openai-chat-vllm-adapter`、有 base URL 而没有 key 的模型不带 key 发出请求，未设置 key 启动的服务器就是这样调用的；vLLM 客户端发送 vLLM 的占位 key `EMPTY`。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
 
 你填写的 key 存在 Project 的隐藏配置文件里，文件权限为 0600。Web App 里它始终打码显示。
 
@@ -348,7 +348,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 - 模型恢复为目录的预置模型，按目录顺序排列，上下文窗口、价格、视觉标志、协议与端点都回到目录值。你设置的显示名、**最大输出长度**和快速模式清除，删掉的预置模型补回。
 - 不属于预置的模型一律删除：你在任何分组里添加的模型，以及旧版本添加、后来被目录撤下的模型，退役条目也在内。你新建的分组连同其设置和 key 一并删除。
-- 内置分组的设置回到目录的 base URL 与协议，**Custom** 和 **vLLM** 的 base URL 也一样。
+- 内置分组的设置回到目录的 base URL 与协议：**Custom** 的 base URL 被清空，**vLLM** 的回到 `http://127.0.0.1:8000/v1`。
 - 促销折扣回到目录值。
 - 与新建 Project 一样，默认模型改为目录默认，不设视觉代理模型。
 - 内置分组和预置模型上的 API key 原样保留。内置分组没有分组密钥、组内带 key 的模型（包括要删除的）都用同一把 key，且这把 key 放到分组上仍能借给它们全部时，它移到分组上，模型上的副本随之删除。被删除模型上的其他 key 随模型一起删除。
@@ -436,7 +436,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 ### 把模型添加到 vLLM 分组
 
-把模型添加到 **vLLM** 分组。分组设置里存着协议 `openai-chat-vllm-adapter`，没有 base URL，所以要设置你的服务器地址：在分组的[设置](#分组设置)里填一次，组内所有模型共用，或者填在模型上。API key 同样如此：服务器的 key，服务器不校验 key 时随便填一个占位值也行。自带 base URL 的条目不会由服务端的 `OPENAI_API_KEY` 覆盖，没有 key 的条目会被拒绝。**恢复默认**会保留分组的 base URL。
+把模型添加到 **vLLM** 分组。新建 Project 的分组设置里存着协议 `openai-chat-vllm-adapter` 和 base URL `http://127.0.0.1:8000/v1`，即 `vllm serve` 在同一台机器上以默认端口运行时的地址。服务器在别处时，在分组的[设置](#分组设置)里改一次 base URL，组内所有模型共用，或者填在模型上。未用 `--api-key` 启动的服务器不需要 key：没有 key 的模型发送 vLLM 的占位 key `EMPTY`。用 key 启动的服务器，同样在分组或模型上填它的 key。该分组从不读取 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`；任何一层都不带 base URL 的模型改为读取 `VLLM_API_KEY` 与 `VLLM_BASE_URL`。**恢复默认**会把分组的 base URL 改回 `http://127.0.0.1:8000/v1`。
 
 分组自带八个预置模型，价格均为 0：
 
@@ -497,10 +497,10 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | qwen-pay-as-you-go | — | Qwen 按量付费（DashScope 的 OpenAI 兼容端点），预置 base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`；转售的第三方模型保留供应商前缀 id（如 `kimi/kimi-k3`） |
 | qwen-token-plan | — | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；价格取自各模型页面的官方牌价（预览模型只有配额倍率优惠，没有牌价） |
 | modelscope | — | 魔搭的 OpenAI 兼容 api-inference 网关，预置 base URL `https://api-inference.modelscope.cn/v1`；id 就是上游仓库名（如 `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）；分组标题栏可以经授权中转层为你自动授权一把 token，也可以手动设置。见 [ModelScope 分组](#modelscope-分组) |
-| vllm | — | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，无预置 base URL，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
+| vllm | — | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，新建 Project 的 base URL 为 `http://127.0.0.1:8000/v1`，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
 | custom | — | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn（Anthropic Messages API，地址 `api.atria-asi.ai`，需要自己的 key，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组里自身或分组带 base URL 的条目同样如此，除非那正是其协议客户端自己的缺省端点；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
+OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom 和自建分组里自身或分组带 base URL 的条目同样如此，除非那正是其协议客户端自己的缺省端点；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。vLLM 条目带 base URL 而没有 key 时则不带 key 发出请求，因为 vLLM 服务器只有用 key 启动时才校验 key。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。

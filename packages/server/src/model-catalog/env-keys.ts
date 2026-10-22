@@ -6,7 +6,11 @@
  * CLI's list, protocol detection and the balance query, so none of them can disagree with what a
  * Session's client does.
  */
-import { environmentCredential, routedClientType } from "@prismshadow/mmsp/credentials";
+import {
+  CLIENT_CREDENTIALS,
+  environmentCredential,
+  routedClientType,
+} from "@prismshadow/mmsp/credentials";
 import { effectiveConnection } from "@prismshadow/penguin-core/model-connection";
 import type {
   ModelCredentialShape,
@@ -30,6 +34,11 @@ export interface ModelEnvironment {
   apiKeyEnv?: string;
   /** The endpoint's variable: only for a row with no base URL in the file. */
   baseUrlEnv?: string;
+  /**
+   * Where that row's requests go while `baseUrlEnv` is unset: the routed client's default
+   * endpoint, as MMSP's credentials table records it. Present exactly when `baseUrlEnv` is.
+   */
+  defaultBaseUrl?: string;
 }
 
 /**
@@ -39,8 +48,9 @@ export interface ModelEnvironment {
  * reads. With no key in the file it reads its `*_API_KEY` only for no base URL or its own default
  * endpoint, and with no base URL in the file it goes where its `*_BASE_URL` points, key or not.
  * A row MMSP refuses (no key and another base URL), an open MMSP server and a row nothing routes
- * read nothing. `entry` is the row's OWN values, key included, and `group` its
- * `[providers.<id>]` table.
+ * read nothing. With no base URL in the file the row also names the endpoint its requests go to
+ * while that variable is unset (`defaultBaseUrl`). `entry` is the row's OWN values, key
+ * included, and `group` its `[providers.<id>]` table.
  */
 export function modelEnvironment(
   entry: ModelCredentialShape & { apiKey?: string | undefined },
@@ -48,11 +58,18 @@ export function modelEnvironment(
 ): ModelEnvironment {
   const effective = effectiveConnection(entry, group);
   const routed = routedClientType(entry.modelId, effective.clientType ?? null);
-  const credential = routed === null ? null : environmentCredential(routed, effective.baseUrl);
+  if (routed === null) return {};
+  const credential = environmentCredential(routed, effective.baseUrl);
   if (credential?.kind !== "env") return {};
+  const defaultBaseUrl = CLIENT_CREDENTIALS[routed]?.defaultBaseUrl;
   return {
     ...(effective.apiKey === undefined ? { apiKeyEnv: credential.apiKeyEnv } : {}),
-    ...(credential.baseUrlEnv !== null ? { baseUrlEnv: credential.baseUrlEnv } : {}),
+    ...(credential.baseUrlEnv !== null
+      ? {
+          baseUrlEnv: credential.baseUrlEnv,
+          ...(defaultBaseUrl !== undefined ? { defaultBaseUrl } : {}),
+        }
+      : {}),
   };
 }
 
