@@ -120,6 +120,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/gepa-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -229,6 +232,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/gepa-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -335,6 +341,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/gepa-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -824,6 +833,8 @@ importers:
   plugins/data-analysis: {}
 
   plugins/default-rsi-toolkit: {}
+
+  plugins/gepa-rsi-toolkit: {}
 
   plugins/goal: {}
 
@@ -1884,6 +1895,9 @@ packages:
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit':
     resolution: {directory: plugins/default-rsi-toolkit, type: directory}
+
+  '@penguinharness/gepa-rsi-toolkit@file:plugins/gepa-rsi-toolkit':
+    resolution: {directory: plugins/gepa-rsi-toolkit, type: directory}
 
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
@@ -6468,6 +6482,8 @@ snapshots:
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
 
+  '@penguinharness/gepa-rsi-toolkit@file:plugins/gepa-rsi-toolkit': {}
+
   '@penguinharness/goal@file:plugins/goal': {}
 
   '@penguinharness/humanizer@file:plugins/humanizer': {}
@@ -6541,6 +6557,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit': file:plugins/gepa-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -6582,6 +6599,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit': file:plugins/gepa-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -6618,6 +6636,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit': file:plugins/gepa-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
