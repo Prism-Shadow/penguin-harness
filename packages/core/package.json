@@ -72,6 +72,7 @@
     "@penguinharness/continual-learning": "workspace:*",
     "@penguinharness/data-analysis": "workspace:*",
     "@penguinharness/default-rsi-toolkit": "workspace:*",
+    "@penguinharness/gepa-rsi-toolkit": "workspace:*",
     "@penguinharness/goal": "workspace:*",
     "@penguinharness/humanizer": "workspace:*",
     "@penguinharness/model-development": "workspace:*",
