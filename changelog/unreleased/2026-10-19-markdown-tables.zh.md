@@ -3,7 +3,7 @@
 - **Date:** 2026-10-19
 - **Type:** feature
 - **Scope:** `ui`, `web`, `docs`, `landing`, `ui-gallery`
-- **PR:** [#1222](https://github.com/Prism-Shadow/penguin-harness/pull/1222)
+- **PR:** [#1222](https://github.com/Prism-Shadow/penguin-harness/pull/1222), [#1224](https://github.com/Prism-Shadow/penguin-harness/pull/1224)
 
 [English](2026-10-19-markdown-tables.md)
 
