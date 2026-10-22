@@ -1,11 +1,11 @@
 /**
  * The API socket (socket/serve.ts), over a real listening server — an Upgrade is nothing
- * app.request() can exercise. It arrives through the runtime's terminal-stream seam under
- * its reserved id (socket/ref.ts), so the seam is attached exactly as index.ts attaches it.
- * What is pinned: the handshake's gate (cookie, origin, the id's owner), that a call answers
- * exactly as its HTTP twin, which paths never ride the socket, that a stream endpoint arrives
- * as frames and a cancel releases it, and that a malformed frame closes the socket rather
- * than being guessed at.
+ * app.request() can exercise. It arrives through the runtime's websocket seam at its own
+ * route, `apiSocketPath()` (terminal/ws.ts, socket/ref.ts), so the seam is attached exactly
+ * as index.ts attaches it. What is pinned: the handshake's gate (cookie, origin), that a call
+ * answers exactly as its HTTP twin, which paths never ride the socket, that a stream endpoint
+ * arrives as frames and a cancel releases it, and that a malformed frame closes the socket
+ * rather than being guessed at.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
@@ -48,7 +48,7 @@ type Frame = Record<string, unknown>;
 /** An open socket with a frame queue, or the HTTP status the handshake was refused with. */
 async function open(
   headers: Record<string, string>,
-  path: string = apiSocketPath("admin"),
+  path: string = apiSocketPath(),
 ): Promise<
   | {
       ws: WebSocket;
@@ -122,11 +122,12 @@ describe("handshake", () => {
     if ("ws" in s) s.ws.close();
   });
 
-  it("holds the reserved id's owner to the signed-in user", async () => {
-    // The runtime's owner check: admin's cookie cannot open someone else's socket.
-    expect(await open({ cookie }, apiSocketPath("someone-else"))).toEqual({ refused: 404 });
-    // And an id that is not the reserved form names no terminal either.
-    expect(await open({ cookie }, "/api/terminals/api-socket/stream")).toEqual({ refused: 404 });
+  it("is its own route: no terminal id opens it", async () => {
+    // The socket answers as whoever the cookie is, so there is no id to forge — and the
+    // terminal namespace does not reach it any more.
+    expect(await open({ cookie }, "/api/terminals/api-socket@admin/stream")).toEqual({
+      refused: 404,
+    });
   });
 });
 
@@ -164,7 +165,7 @@ describe("calls", () => {
     expect((hmr.body as { error: { code: string } }).error.code).toBe("not_on_socket");
     send(s.ws, { id: 2, call: { method: "POST", path: "/api/auth/logout", body: {} } });
     expect((await s.next()).status).toBe(421);
-    send(s.ws, { id: 3, call: { method: "GET", path: apiSocketPath("admin") } });
+    send(s.ws, { id: 3, call: { method: "GET", path: apiSocketPath() } });
     expect((await s.next()).status).toBe(404);
     send(s.ws, { id: 4, call: { method: "GET", path: "/penguin-logo.svg" } });
     expect((await s.next()).status).toBe(404);
