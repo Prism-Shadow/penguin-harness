@@ -131,8 +131,8 @@ describe("theme files", () => {
         ).toEqual([]);
       });
 
-      it("declares the accent presets tokens.ts lists for it, each setting the six accent names", () => {
-        // A preset is the one rule outside the canonical two that may set a token: the six accent
+      it("declares the accent presets tokens.ts lists for it, each setting accent names only", () => {
+        // A preset is the one rule outside the canonical two that may set a token: the accent
         // names, on the theme's own root, in `@layer ui-accent`; a dark rule lifts what dark
         // changes. The ids and their order are the picker's, so tokens.ts and the file agree.
         expect(accentProblems(analysis, ACCENT_PRESETS[theme.id])).toEqual([]);
@@ -146,7 +146,9 @@ describe("the accent presets, per theme (2026-09-19)", () => {
   // the Web App has always had, so it moves no pixel; Frost its former forest green and warm,
   // muted hues; Console its former orange and terminal hues. A theme's rules match only its own
   // root, so a stored preset another theme lists paints nothing under it and comes back when
-  // that theme returns.
+  // that theme returns. Each Primer preset's tint (2026-10-19) is the one mixed value: its own
+  // accent into the page at its wash's 12 %, which a dark lift carries along.
+  const PRIMER_PRESET_TINT = "color-mix(in srgb, var(--ui-accent) 12%, var(--ui-canvas))";
   const PRIMER_TODAY: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     blue: {
       "--ui-accent": "#2563eb",
@@ -154,6 +156,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
       "--ui-accent-active": "#1e40af",
       "--ui-accent-fg": "#ffffff",
       "--ui-accent-muted": "rgb(37 99 235 / 0.12)",
+      "--ui-accent-tint": PRIMER_PRESET_TINT,
       "--ui-accent-line": "rgb(37 99 235 / 0.5)",
     },
     green: {
@@ -162,6 +165,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
       "--ui-accent-active": "#14532d",
       "--ui-accent-fg": "#ffffff",
       "--ui-accent-muted": "rgb(21 128 61 / 0.12)",
+      "--ui-accent-tint": PRIMER_PRESET_TINT,
       "--ui-accent-line": "rgb(21 128 61 / 0.5)",
     },
     violet: {
@@ -170,6 +174,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
       "--ui-accent-active": "#5b21b6",
       "--ui-accent-fg": "#ffffff",
       "--ui-accent-muted": "rgb(124 58 237 / 0.12)",
+      "--ui-accent-tint": PRIMER_PRESET_TINT,
       "--ui-accent-line": "rgb(124 58 237 / 0.5)",
     },
     rose: {
@@ -178,6 +183,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
       "--ui-accent-active": "#881337",
       "--ui-accent-fg": "#ffffff",
       "--ui-accent-muted": "rgb(190 18 60 / 0.12)",
+      "--ui-accent-tint": PRIMER_PRESET_TINT,
       "--ui-accent-line": "rgb(190 18 60 / 0.5)",
     },
     amber: {
@@ -186,6 +192,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
       "--ui-accent-active": "#78350f",
       "--ui-accent-fg": "#ffffff",
       "--ui-accent-muted": "rgb(180 83 9 / 0.12)",
+      "--ui-accent-tint": PRIMER_PRESET_TINT,
       "--ui-accent-line": "rgb(180 83 9 / 0.5)",
     },
   };
@@ -340,8 +347,8 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     // fill of bubbles and chips (W6, the same day), plus the icon sets' duotone opacity and
     // nine glyph hues and Console's one-tag badge trio (ring, weight, md padding; 2026-10-01),
     // plus the badge's size and line-height (2026-10-02), less the field's two washes
-    // (2026-10-11).
-    expect(TOKEN_NAMES.length).toBe(249);
+    // (2026-10-11), plus the accent's tint under the person's own words (2026-10-19).
+    expect(TOKEN_NAMES.length).toBe(250);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {

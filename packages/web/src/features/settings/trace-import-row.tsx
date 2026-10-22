@@ -88,7 +88,7 @@ export function TraceImportRow() {
     if (projectId === "") return;
     let cancelled = false;
     void api
-      .listAgents(projectId)
+      .listAgents(projectId, null)
       .then((res) => {
         if (!cancelled) setAgents(res.agents);
       })

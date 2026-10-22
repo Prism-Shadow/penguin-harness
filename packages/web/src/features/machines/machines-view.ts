@@ -13,6 +13,7 @@ import type {
   MachineJob,
   MachinePhase,
   MachineSshFailure,
+  MachineSocketFact,
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import type { RetryPhase } from "@prismshadow/penguin-ui";
@@ -267,6 +268,54 @@ export function canUse(machine: MachineInfo, job: MachineJob | null): boolean {
   if (machine.local) return true;
   if (job !== null && (job.queued || job.running)) return false;
   return machine.reconnect === undefined && machine.connection !== null;
+}
+
+/** The tone each socket state's mark carries — see `socketReading`, which is where it is read. */
+const SOCKET_TONE: Record<MachineSocketFact["state"], Tone> = {
+  // A completed handshake is a live connection held right now: blue, never green — the same
+  // reading `ready` gets, and for the same reason, it is contact rather than a verdict.
+  connected: "link",
+  // A dial in flight is work under way.
+  dialling: "busy",
+  // The machine answered the handshake with a status (a program predating the socket): not
+  // broken, but nothing will stream until it is brought forward.
+  refused: "attention",
+  // The dial did not complete, or a socket that was up closed: the far side's words are there
+  // when there are any, and this is what needs a person.
+  failed: "danger",
+};
+
+/** `machine.socket` as the detail list reads it: the word, its mark's tone, since when, and the transport's words. */
+export interface SocketReading {
+  /** The state in a word, localized like the rest of the detail list. */
+  label: string;
+  tone: Tone;
+  /** The instant that state was entered (ISO) — shown with the same format as `status.checkedAt`. */
+  since: string;
+  /** The transport's own words where there are any: a refusal's status, a dial's error. */
+  detail: string | null;
+}
+
+/**
+ * The API socket this server holds to the machine (machines/machine-sockets.ts), for the detail
+ * list — or null when there is none: the local entry, which needs no socket, and every machine
+ * until a stream has asked for one at all.
+ *
+ * A fact about one process on THIS side, exactly like `connection`, and read for the same
+ * reason it is not the card's own reading: it says a socket exists and what it is doing, never
+ * that the far side is answering. What makes it worth a line of its own is the case the card
+ * cannot show — a socket that stays connected while the machine's stream has gone quiet — and
+ * `since`, which turns "dialling" into "dialling for two minutes".
+ */
+export function socketReading(machine: MachineInfo): SocketReading | null {
+  const socket = machine.socket;
+  if (!socket) return null;
+  return {
+    label: S.machines.socket[socket.state],
+    tone: SOCKET_TONE[socket.state],
+    since: socket.since,
+    detail: socket.detail ?? null,
+  };
 }
 
 /**

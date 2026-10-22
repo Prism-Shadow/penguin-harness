@@ -168,6 +168,15 @@ export const en: Strings = {
         "That machine refused this server's sign-in — change its SSH settings on the Machines page",
       failed: (message: string) => `That machine did not answer: ${message}`,
     },
+    /** The API socket this server holds to the machine (machines-view's socketReading). */
+    detailSocket: "API socket",
+    socket: {
+      connected: "Connected",
+      dialling: "Dialling",
+      refused: "Refused",
+      failed: "Failed",
+    },
+    agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
       count === 1 ? "1 machine to update" : `${count} machines to update`,
@@ -3790,6 +3799,16 @@ Scenarios:
       "The conversation this link points to is gone, or you do not have access to it.",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",
+    machineAway: {
+      reconnecting: (alias: string) => `${alias} is reconnecting`,
+      reconnectStopped: (alias: string) => `${alias} is out of reach and stopped reconnecting`,
+      signInRefused: (alias: string) => `${alias} is out of reach: its stored password was refused`,
+      stopped: (alias: string) => `${alias}'s server is stopped`,
+      notConnected: (alias: string) => `${alias} is not connected`,
+      missing: "This conversation's machine is not on this Project's machine list",
+      hint: "The conversation is kept on that machine and loads as soon as the connection is back.",
+      details: "Technical details",
+    },
     statsLabel: "Stats",
     removeImage: "Remove image",
     openAgents: "Agents panel",
@@ -4366,6 +4385,7 @@ Scenarios:
     sendingTestMessage: "Sending…",
     testMessageSent: "Test message sent",
     statusLabel: "Connection status",
+    statusLastKnown: "Last known status",
     status: {
       disconnected: "Not connected",
       connecting: "Connecting",
@@ -4475,6 +4495,65 @@ Scenarios:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
     troubleNoGroupInbound:
       "Sending in a group but the panel still says no message has arrived? Read that line as evidence only about a message sent after it: it covers the current connection alone, and disabling and re-enabling the connection — or saving the credential again — opens a new one and starts it over. So send a fresh one now. If the line still reports nothing, Telegram is not delivering it and nothing on this machine can change that: confirm the bot is still in that group; if you have just turned Group Privacy off in @BotFather, remove the bot from the group and add it back, because an existing group does not pick up the change; and confirm nothing else is polling the same token — including a getUpdates you ran yourself (see above). Telegram channel posts are not supported either — this connection handles groups and direct chats only.",
+    /**
+     * A conversation that lives on a machine: its bot connects from that machine, not from this
+     * server. The dock panel and the dialog say where, above the channels.
+     */
+    runsOn: (alias: string) => `Connects from ${alias}`,
+    /**
+     * In the "what binding does" fold, for a conversation on a machine: what running there means
+     * for the connection, for a QR login, and for this app being away.
+     */
+    machineHelp: (alias: string) =>
+      `This conversation lives on ${alias}, so its bot runs there. ${alias} opens the connection to the platform itself: it needs outbound access to the platform, and no public URL. A QR login signs in ${alias}, not this computer. The bot keeps answering while this app is closed or cut off from ${alias}, for as long as that machine's server runs.`,
+    /**
+     * The notice over a machine conversation's editor while the machine is out of reach: why, in
+     * the Machines page's terms; whether the bot still answers; and how old the state shown under
+     * it is (null: nothing was ever read from it in this browser). The editor is read-only then.
+     */
+    machineUnreachable: (
+      alias: string,
+      state: "reconnecting" | "reconnectStopped" | "signInRefused" | "stopped" | "notConnected",
+      asOf: string | null,
+    ): string => {
+      const why = {
+        reconnecting: `${alias} is reconnecting.`,
+        reconnectStopped: `${alias} stopped reconnecting; retry it from the Machines page.`,
+        signInRefused: `${alias} refused this server's sign-in; change its SSH settings on the Machines page.`,
+        stopped: `${alias}'s server is stopped; start it from the Machines page.`,
+        notConnected: `${alias} is not connected; enable it from the Machines page.`,
+      }[state];
+      const bot =
+        state === "stopped" || state === "notConnected"
+          ? "The bot does not answer until that server runs."
+          : `The bot connects from ${alias}, not from here, so it keeps answering while that machine's server runs.`;
+      const shown =
+        asOf === null
+          ? "Its settings show here once the machine is back."
+          : `Showing its state as of ${asOf}; changes wait until the machine is back.`;
+      return `${why} ${bot} ${shown}`;
+    },
+    /** The same notice when the conversation's machine is not on this Project's list at all. */
+    machineMissing:
+      "This conversation's machine is not on this Project's machine list, so its connection cannot be read or changed from here.",
+    /** Enabling refused: the bot is connected on another server this one can see (null: this server). */
+    accountHeldOn: (where: string | null) =>
+      `This bot is already connected on ${where ?? "this server"}. Turn it off there first, then enable it here.`,
+    /** After enabling: the machines that could not be asked whether they hold the bot, and why not. */
+    holdersUnchecked: (
+      machines: ReadonlyArray<{
+        alias: string;
+        reason: "not_connected" | "older_build" | "failed";
+      }>,
+    ) => {
+      const reason = {
+        not_connected: "not connected",
+        older_build: "needs an update",
+        failed: "did not answer",
+      };
+      const list = machines.map((m) => `${m.alias} (${reason[m.reason]})`).join(", ");
+      return `Enabled without asking ${list}. If the same bot is connected there too, turn it off there: a bot runs in one place at a time.`;
+    },
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

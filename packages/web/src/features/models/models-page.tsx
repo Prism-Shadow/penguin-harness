@@ -1028,7 +1028,7 @@ export function ModelsPage() {
     // drop them along with the rows they annotate whenever the active Project changes.
     setSpeedResults(new Map());
     try {
-      adopt(await api.getModels(projectId));
+      adopt(await api.getModels(projectId, null));
     } catch (e) {
       setLoadError(apiErrorText(e));
     }
