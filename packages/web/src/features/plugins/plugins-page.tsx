@@ -138,6 +138,9 @@ export const INDEX_RECHECK_MS = 3_000;
 /** This server's reads are read again on every visit, however recent the last answer. */
 const EVERY_VISIT = { minAgeMs: 0 };
 
+/** The picker's value for this server until its id is read: no machine id is empty. */
+const SELF_PENDING = "";
+
 /**
  * What updating EVERY outdated plugin on this page would write, grouped the way it is sent.
  *
@@ -168,8 +171,6 @@ export function pluginUpdatePlan(
   }
   return { perAgent, plugins: [...plugins].sort() };
 }
-
-/** The picker's value for all machines: a machine id is never this short. */
 
 export function PluginsPage() {
   useDocumentTitle(S.nav.plugins);
@@ -258,6 +259,8 @@ export function PluginsPage() {
     });
 
   const { machineIds, machineLabels } = useSessions();
+  /** Every machine of the Project with its Agents, reachable or not (lib/machine-agent-lists.ts). */
+  const { lists: machineLists, reload: reloadMachineAgents } = useMachineAgents(projectId);
   /** The machine picked in the header; null until one is, which views this server. */
   const [pickedMachine, setPickedMachine] = useState<string | null>(null);
   /** Installs written on an Agent and not answered yet, by target key: what the dialog shows meanwhile. */
@@ -269,22 +272,48 @@ export function PluginsPage() {
     setWriting((m) => (m.size === 0 ? m : new Map()));
   }, [visit]);
   const selfId = deployment?.machineId;
+  /** The Project's machines as the machine list has them: alias, and whether each can be asked now. */
+  const listedMachine = (machineId: string) =>
+    machineLists.find((list) => list.machine.machineId === machineId)?.machine;
   const nameOf = (machineId: string) =>
-    machineId === selfId ? S.plugins.thisServer : (machineLabels.get(machineId) ?? machineId);
-  // The picker offers this server, then the machines this Project reaches and any a table
-  // names; a deployment with neither has one machine, and no picker.
+    machineId === selfId
+      ? S.plugins.thisServer
+      : (listedMachine(machineId)?.label ?? machineLabels.get(machineId) ?? machineId);
+  /** A machine of the list that cannot be asked right now (one only a table names is not known to be). */
+  const outOfReach = (machineId: string) => {
+    const link = listedMachine(machineId)?.link;
+    return link !== undefined && link !== "connected";
+  };
+  // The picker offers this server, then every machine of the Project — reachable or not — and
+  // any a table names; a deployment with none has one machine, and no picker. A machine that
+  // drops out of reach keeps its place in the list, so the picker never leaves the header.
   const otherMachines = [
-    ...new Set([...machineIds, ...(deployment?.plugins ?? []).flatMap((p) => p.machines ?? [])]),
+    ...new Set([
+      ...machineLists.map((list) => list.machine.machineId),
+      ...machineIds,
+      ...(deployment?.plugins ?? []).flatMap((p) => p.machines ?? []),
+    ]),
   ].filter((id) => id !== selfId);
-  const machineChoices: MachineChoice[] = (
-    selfId === undefined ? [] : [selfId, ...otherMachines]
-  ).map((id) => ({ value: id, label: nameOf(id) }));
   /** The machine the page shows and edits — undefined only until this server's id is read. */
   const viewMachine = viewedMachine(
     pickedMachine,
-    machineChoices.map((c) => c.value),
+    [selfId ?? SELF_PENDING, ...otherMachines],
     selfId,
   );
+  /**
+   * The header's choices: this server first — standing in under {@link SELF_PENDING} until its id
+   * is read, so the picker takes its place at once — then the other machines. One out of reach
+   * says so in its entry; the one in view keeps its plain name, so the picker's own text and
+   * width never move with a machine's link.
+   */
+  const machineChoices: MachineChoice[] = [
+    { value: selfId ?? SELF_PENDING, label: S.plugins.thisServer },
+    ...otherMachines.map((id) => ({
+      value: id,
+      label:
+        id !== viewMachine && outOfReach(id) ? S.plugins.machineOutOfReach(nameOf(id)) : nameOf(id),
+    })),
+  ];
   /**
    * What the viewed machine answered itself — or why it could not — when it is not this server.
    * Its last answer stands while it is asked again, so a row reads "not on that machine" only
@@ -401,7 +430,6 @@ export function PluginsPage() {
    * its rows held, its installs counted as last seen — so a machine that blinks changes no row
    * and no count.
    */
-  const { lists: machineLists, reload: reloadMachineAgents } = useMachineAgents(projectId);
   const placed = mixAgents(agents, machineLists);
   const targets: InstallTarget[] = placed.map(({ agent, on }) =>
     on === null
@@ -839,12 +867,14 @@ export function PluginsPage() {
             onGroupBy={chooseGroupBy}
             isAdmin={isAdmin}
             machinePicker={
-              machineChoices.length > 1 && viewMachine !== undefined ? (
+              otherMachines.length > 0 ? (
                 <MachinePicker
                   aria-label={S.plugins.viewMachine}
                   choices={machineChoices}
-                  value={viewMachine}
-                  onChange={setPickedMachine}
+                  value={viewMachine ?? SELF_PENDING}
+                  onChange={(id) => {
+                    if (id !== SELF_PENDING) setPickedMachine(id);
+                  }}
                 />
               ) : null
             }

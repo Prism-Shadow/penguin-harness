@@ -2774,6 +2774,8 @@ export const en: Strings = {
     sharedHint: "Managed in the Project config for every machine; it cannot be removed here.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
+    /** A machine out of reach, as the header's machine picker lists it. */
+    machineOutOfReach: (machine: string) => `${machine} (out of reach)`,
     /** A manage-installs row whose machine has not answered yet: its button waits for it. */
     waitingFor: (machine: string) => `Waiting for ${machine} to answer`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */

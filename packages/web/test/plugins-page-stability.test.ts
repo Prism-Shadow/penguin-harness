@@ -19,6 +19,9 @@
  *   a re-read answering the same changes no text.
  * - Given a machine leaves the Project's list, its Agents stop counting and what was remembered
  *   of their installs is forgotten; this server's stays.
+ * - Given a machine in the Project, the header's machine picker is there from the first paint and
+ *   stays in its place, reading "This server", while the machine drops out of reach and comes
+ *   back; meanwhile the machine's entry says it is out of reach.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -35,7 +38,16 @@ import { publishMachinesChanged } from "../src/state/machines";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, topDialog } from "./helpers/agent-app";
 import type { AgentServer, FakeMachine } from "./helpers/agent-app";
-import { button, click, run, settle, unmountAll, waitFor, watchText } from "./helpers/dom";
+import {
+  button,
+  click,
+  hasButton,
+  run,
+  settle,
+  unmountAll,
+  waitFor,
+  watchText,
+} from "./helpers/dom";
 import { json } from "./helpers/fetch";
 import { forgetPluginReads } from "./helpers/plugin-reads";
 
@@ -86,6 +98,23 @@ const USED_BY = '[data-plugin="charts"] [data-testid="plugin-used-by"]';
 const textOf = (selector: string) => document.querySelector(selector)?.textContent ?? null;
 const hintOf = (selector: string) =>
   document.querySelector(selector)?.getAttribute("data-tooltip") ?? "";
+
+const PICKER = `button[aria-label="${en.plugins.viewMachine}"]`;
+/** The page header's controls, in the order they sit. */
+const headerControls = () =>
+  [...document.querySelectorAll("button")]
+    .map((b) => b.getAttribute("aria-label") ?? b.textContent?.trim() ?? "")
+    .filter((name) =>
+      [
+        en.plugins.groupByLabel,
+        en.plugins.viewMachine,
+        en.plugins.importPlugin,
+        en.plugins.openSettings,
+      ].includes(name),
+    );
+/** The entries of the open machine picker. */
+const pickerEntries = () =>
+  [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent?.trim() ?? "");
 
 const INSTALLED = en.plugins.status.installed;
 const USED_BY_1 = en.plugins.usedByAgents(1);
@@ -254,5 +283,35 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     await waitFor(() => textOf(USED_BY) === USED_BY_1, 40);
     expect(cachedAgentInstalls(PROJECT_ID, "gpu1", AGENT_ID)).toBeNull();
     expect(cachedAgentInstalls(PROJECT_ID, null, AGENT_ID)).not.toBeNull();
+  });
+
+  it("keeps the machine picker in its place while the machine drops out of reach and comes back", async () => {
+    const { server } = await serverWithCharts(false);
+    const picker = watchText(PICKER);
+    await openPage();
+    await waitFor(() => hasButton(en.plugins.viewMachine) && textOf(STATUS) !== null, 40);
+    const controls = headerControls();
+    expect(controls).toEqual([
+      en.plugins.groupByLabel,
+      en.plugins.viewMachine,
+      en.plugins.importPlugin,
+      en.plugins.openSettings,
+    ]);
+
+    await setReachable(server, false);
+    expect(headerControls()).toEqual(controls);
+    await click(button(en.plugins.viewMachine));
+    expect(pickerEntries()).toEqual([
+      en.plugins.thisServer,
+      en.plugins.machineOutOfReach("gpu-box"),
+    ]);
+    await click(button(en.plugins.viewMachine));
+
+    await setReachable(server, true);
+    await click(button(en.plugins.viewMachine));
+    expect(pickerEntries()).toEqual([en.plugins.thisServer, "gpu-box"]);
+    await click(button(en.plugins.viewMachine));
+    expect(headerControls()).toEqual(controls);
+    expect(picker.texts()).toEqual([en.plugins.thisServer]);
   });
 });

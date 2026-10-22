@@ -2938,6 +2938,8 @@ export const zh = {
     sharedTag: "所有机器共用",
     sharedHint: "在 Project 配置中对所有机器统一管理，不能在这里移除。",
     machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
+    /** A machine out of reach, as the header's machine picker lists it. */
+    machineOutOfReach: (machine: string) => `${machine}（不可达）`,
     /** A manage-installs row whose machine has not answered yet: its button waits for it. */
     waitingFor: (machine: string) => `等待 ${machine} 答复`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
