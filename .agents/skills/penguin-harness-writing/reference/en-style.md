@@ -17,12 +17,12 @@ Shape:
 - Concrete over abstract: name the product, the file, the command, the number, and let it carry the point. An example beats an adjective.
 - Figures carry part of the argument. Introduce each figure in the sentence before it, with the same nouns the figure's labels use, and do not describe in prose what the figure already shows.
 - State our position as ours: "we think", "our bet is", "in PenguinHarness we chose". Attribute others' claims to them by name. Mark uncertainty plainly ("we do not know whether…").
-- Write for a reader with dyslexia, a person who reads with effort: the point first, short sentences with one idea each, common words over rare ones. No asides or "by the way" detours, no defensive hedging or pre-emptive caveats, no padding.
+- Write for a reader with dyslexia or ADHD, a person who reads with effort and loses the thread easily: the point first, short sentences with one idea each, common words over rare ones. No asides or "by the way" detours, no defensive hedging or pre-emptive caveats, no padding.
 
 Banned (do not use, do not paraphrase around):
 - Marketing register: powerful, seamless, effortless, game-changer, next-level, revolutionary, unlock, empower, supercharge, leverage (verb), robust, transform/transformative, "the future of", "imagine a world", "say goodbye to", "in seconds, not", "meet your new".
 - Essay tics: "it's not just X, it's Y" and every "not X but Y" pivot; every "Yes, but…" concession pivot (state the claim and its limit plainly instead); "Here's the thing"; "Let's be honest"; "In today's fast-paced"; "delve"; "landscape"; "paradigm"; "journey"; "at the end of the day"; "In conclusion"; rhetorical questions as openers; sentences of three words in a row for effect; triads where two items would do.
-- Punctuation: em dashes at most once per section, spaced ` — `; no exclamation marks; no bold on scattered words (bold only for UI labels and product names on first mention, if at all).
+- Punctuation: em dashes at most once per section, spaced ` — `; no exclamation marks; no bold of your own beyond what the profile asks for (a post's key sentence per section is marked in a later step; a docs page bolds UI labels as its profile says).
 - Structure: no "Challenges and future outlook" section; no bullet list longer than five items; no list where a paragraph works.
 - Theatre framing: never dismiss something as "X theater".
 

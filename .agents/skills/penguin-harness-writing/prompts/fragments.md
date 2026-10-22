@@ -135,7 +135,14 @@ You review one section of a longer piece. Its neighbours are given for context o
 Flow across sections is the main question of this review: a transition that does not follow, a point made in two sections, a gloss repeated, a section that re-opens what an earlier one settled, an ending that summarises.
 
 <!-- fragment: tldr-budget -->
-A TL;DR after the lead, when the plan asks for one, is not part of the lead's budget: it has its own, {{TLDR_RANGE}}, and is counted apart.
+A TL;DR after the lead, when the profile or the plan asks for one, is not part of the lead's budget: it has its own, {{TLDR_RANGE}}, and is counted apart.
+
+<!-- fragment: emphasis-mirror-rule -->
+The {{MIRROR_LANG_NAME}} edition of the same text is already marked; it is given before the text. In each section, mark the span that says what its marked span says, so both editions stress the same point.
+
+<!-- fragment: emphasis-mirror-section -->
+## The {{MIRROR_LANG_NAME}} edition, already marked (read-only)
+{{MIRROR}}
 
 <!-- fragment: tldr-plan -->
 Row 0 is the lead alone; a TL;DR, if the post has one, is not a row and has its own budget of {{TLDR_RANGE}}.
