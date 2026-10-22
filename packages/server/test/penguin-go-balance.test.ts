@@ -15,7 +15,7 @@
  *   regardless of the platform's display currency; missing or malformed units fail.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { MODEL_CATALOG } from "@prismshadow/penguin-core";
+import { MODEL_CATALOG } from "../src/model-catalog/index.js";
 import { ModelBalances, readBalance } from "../src/services/model-balance.js";
 import type { ModelBalanceDeps } from "../src/services/model-balance.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";

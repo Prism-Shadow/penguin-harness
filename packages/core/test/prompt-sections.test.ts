@@ -37,6 +37,7 @@ import {
   type SystemConfig,
 } from "../src/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 
 let root: string;
 let restoreKeys: () => void;
@@ -44,6 +45,8 @@ let restoreKeys: () => void;
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-sections-"));
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(root);
 });
 
 afterEach(async () => {

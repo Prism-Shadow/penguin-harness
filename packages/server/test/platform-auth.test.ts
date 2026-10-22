@@ -27,7 +27,7 @@
  * - A flow the user cancels while a poll is in flight applies nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { catalogEntryFor } from "@prismshadow/penguin-core";
+import { catalogEntryFor } from "../src/model-catalog/index.js";
 import type {
   ModelsResponse,
   PlatformAuthFlowStatusResponse,

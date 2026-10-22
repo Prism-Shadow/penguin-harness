@@ -55,7 +55,7 @@
  * and the user's vendor key never goes to a URL they typed.
  */
 import { userAgent } from "@prismshadow/penguin-core";
-import { clientEnvKey } from "@prismshadow/penguin-core/model-catalog";
+import { clientEnvKey } from "../model-catalog/env-keys.js";
 import type {
   ModelProtocolDetectResponse,
   ModelProtocolProbeDto,

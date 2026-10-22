@@ -1,8 +1,8 @@
 /**
  * Foundations › Colour: the palette as it is used, not as a list. The four surfaces stacked with
  * the three inks and the three lines drawn on each; the accent — the theme's own and the five
- * presets the active theme lists, in the mode under review — as a filled button and a selected
- * row, and the link; the six tones as a dot, a word and the soft / outline / solid badge; the
+ * presets the active theme lists, in the mode under review — as a filled button, a selected row
+ * and a message bubble on its tint, and the link; the six tones as a dot, a word and the soft / outline / solid badge; the
  * chart series as bars; the code and diff colours on a hunk. Every value, with its contrast
  * ratios, is in the tokens drawer.
  */
@@ -27,24 +27,33 @@ const THEME_CSS: Readonly<Record<ThemeId, string>> = {
 };
 
 /**
- * The six accent tokens a preset sets under a theme in a mode, as inline custom properties: the
- * `[data-accent="<id>"] { … }` rule of the theme's file, overlaid in dark with the
- * `[data-accent="<id>"].dark { … }` rule when the theme lifts the preset. A specimen carrying them
- * paints the preset without touching the root, which stays on the reader's own choice.
+ * The accent tokens a preset paints under a theme in a mode, as inline custom properties. First
+ * the theme's own accent values that derive from `--ui-accent` (Frost's and Console's hover,
+ * wash, tint and line; Primer's tint): a value computed on the root has already read the root's
+ * accent, so a specimen declares them again to follow the accent it sets. Then the preset's
+ * `[data-accent="<id>"] { … }` rule, overlaid in dark with its `.dark` rule when the theme lifts
+ * the preset. A specimen carrying them paints the preset without touching the root, which stays
+ * on the reader's own choice.
  */
 function presetStyle(theme: ThemeId, preset: string, mode: ThemeModeName): CSSProperties {
   const css = THEME_CSS[theme];
   const style: Record<string, string> = {};
-  const overlay = (dark: boolean) => {
-    const tail = dark ? String.raw`\.dark` : "";
-    const block =
-      new RegExp(String.raw`\[data-accent="${preset}"\]${tail}\s*\{([^}]*)\}`).exec(css)?.[1] ?? "";
+  const take = (block: string, derivedOnly: boolean) => {
     for (const match of block.matchAll(/(--ui-accent[\w-]*):\s*([^;]+);/g)) {
-      style[match[1]!] = match[2]!.trim();
+      const value = match[2]!.trim();
+      if (!derivedOnly || /var\(--ui-accent\)/.test(value)) style[match[1]!] = value;
     }
   };
-  overlay(false);
-  if (mode === "dark") overlay(true);
+  const tails = mode === "dark" ? ["", String.raw`\.dark`] : [""];
+  for (const tail of tails) {
+    // The theme's base rule, then its dark rule: each closes on its own line inside the layer.
+    const rule = new RegExp(String.raw`:root\[data-theme="${theme}"\]${tail}\s*\{([\s\S]*?)\n  \}`);
+    take(rule.exec(css)?.[1] ?? "", true);
+  }
+  for (const tail of tails) {
+    const rule = new RegExp(String.raw`\[data-accent="${preset}"\]${tail}\s*\{([^}]*)\}`);
+    take(rule.exec(css)?.[1] ?? "", false);
+  }
   return style as CSSProperties;
 }
 
@@ -107,6 +116,7 @@ function Accents() {
             <span className="gf-caption gf-mono">{column.label}</span>
             <span className="gf-accent-button">{S.foundations.sampleSend}</span>
             <span className="gf-accent-row">{S.foundations.selectedRow}</span>
+            <span className="gf-accent-bubble">{S.foundations.sampleBubble}</span>
           </div>
         ))}
       </div>

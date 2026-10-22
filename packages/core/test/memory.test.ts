@@ -36,6 +36,7 @@ import {
   type SystemConfig,
 } from "../src/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 
 let root: string;
 let workspace: string;
@@ -46,6 +47,8 @@ beforeEach(async () => {
   workspace = path.join(root, "projects", "my-app");
   await fs.mkdir(workspace, { recursive: true });
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(root);
 });
 
 afterEach(async () => {

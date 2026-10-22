@@ -131,13 +131,13 @@ import {
   modelHomepageUrl,
   providerInfo,
   unroutableVendorModel,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
 import type {
   FastModeProtocol,
   ModelProviderBridgeAuth,
   ModelProviderInfo,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import {
   allGroupKeys,
   discountedPrice,
@@ -1028,7 +1028,7 @@ export function ModelsPage() {
     // drop them along with the rows they annotate whenever the active Project changes.
     setSpeedResults(new Map());
     try {
-      adopt(await api.getModels(projectId));
+      adopt(await api.getModels(projectId, null));
     } catch (e) {
       setLoadError(apiErrorText(e));
     }

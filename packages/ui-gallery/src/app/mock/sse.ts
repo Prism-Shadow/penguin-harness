@@ -5,12 +5,24 @@
  * does on connect, and a running Session's script then streams on it.
  */
 import type { StreamHandlers as AppStreamHandlers } from "./types";
+import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import { getStore } from "./store";
 
 export type StreamHandlers = AppStreamHandlers;
 
 export interface StreamConnection {
   close: () => void;
+}
+
+/** The app's beat on its streams; the demo's channels never go silent, so nothing reads it. */
+export const STREAM_HEARTBEAT_MS = 20_000;
+
+/** The machines aggregate's handlers, as the app declares them. */
+export interface MachineStreamHandlers {
+  onMachineEvent: (machineId: string, event: ServerEvent, eventId: string | null) => void;
+  onHubEvent?: (event: ServerEvent, eventId: string | null) => void;
+  onOpen?: () => void;
+  onError?: (closed: boolean) => void;
 }
 
 /** Subscribes to a Session's output stream (GET /api/sessions/:sessionId/stream). */
@@ -54,6 +66,28 @@ export function openUserEvents(
     close: () => {
       open = false;
       unsubscribe();
+    },
+  };
+}
+/**
+ * Subscribes to the Project's machines aggregate (GET /api/projects/:projectId/machines/events).
+ * The demo has no remote machine to stream from: the stream opens and says hello, as the hub
+ * does on a fresh subscribe, and stays quiet.
+ */
+export function openMachineEvents(
+  projectId: string,
+  handlers: MachineStreamHandlers,
+): StreamConnection {
+  void projectId;
+  let open = true;
+  setTimeout(() => {
+    if (!open) return;
+    handlers.onOpen?.();
+    handlers.onHubEvent?.({ type: "hello" }, null);
+  }, 0);
+  return {
+    close: () => {
+      open = false;
     },
   };
 }

@@ -39,6 +39,12 @@
  * The GET is re-polled while the host shows the editor (the hook's `poll` flag) so
  * connect/error flips show up live.
  *
+ * A binding lives on the server that runs its Session, and for a Session on a machine that is
+ * the machine (`messaging-binding-location.ts`): the editor says where the bot connects from,
+ * asks the machine only while it can be asked, and otherwise shows what it last answered
+ * (`messaging-binding-cache.ts`) read-only under a notice naming the machine's state. Turning a
+ * bot on asks this server first which servers already hold it, and refuses when another one does.
+ *
  * Under the settings commit model the credentials and the delivery switches are one record per
  * channel: they wait for Save, which is live once the selected channel's form differs from what
  * is stored and nothing in it is wrong (a malformed value is said under its field as it is
@@ -54,6 +60,7 @@ import type {
   MessagingBindingsResponse,
   MessagingChannel,
   MessagingRuntimeStatus,
+  MessagingUnreachableMachine,
   TelegramTestResponse,
 } from "@prismshadow/penguin-server/api";
 import {
@@ -63,6 +70,7 @@ import {
   HelpFold,
   InfoPopover,
   Input,
+  Notice,
   PasswordInput,
   Segmented,
   Switch,
@@ -74,7 +82,18 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
+import { machineLink } from "../../lib/machine-link";
 import { toneInk, type Tone } from "../../lib/tone";
+import { useMachines } from "../../state/machines";
+import { useProject } from "../../state/project";
+import { cachedBinding, rememberBinding } from "./messaging-binding-cache";
+import {
+  accountIdOf,
+  bindingLocation,
+  editorAccess,
+  holderConflict,
+  holdersNote,
+} from "./messaging-binding-location";
 import { QQScanConnect } from "./qq-scan-connect";
 import { WeChatScanConnect } from "./wechat-scan-connect";
 import {
@@ -168,6 +187,8 @@ export interface MessagingChannelFacts {
   enabled: boolean;
   status: MessagingRuntimeStatus;
   lastChatKnown: boolean;
+  /** The bot the saved config signs in as (`accountIdOf`); null with nothing saved. */
+  accountId: string | null;
 }
 
 const EMPTY_FACTS: MessagingChannelFacts = {
@@ -176,6 +197,7 @@ const EMPTY_FACTS: MessagingChannelFacts = {
   enabled: false,
   status: { state: "disconnected" },
   lastChatKnown: false,
+  accountId: null,
 };
 
 type ChannelFactsMap = Record<MessagingChannel, MessagingChannelFacts>;
@@ -198,6 +220,7 @@ function factsOf(
     enabled: binding.enabled,
     status,
     lastChatKnown: binding.lastChatKnown,
+    accountId: accountIdOf(binding),
   };
 }
 
@@ -218,6 +241,16 @@ function factsFromList(res: MessagingBindingsResponse): ChannelFactsMap {
 export interface MessagingBindingEditorState {
   /** The Session being edited (flows that talk to the API from inside the body need it). */
   sessionId: string;
+  /** The machine the binding runs on, named by its ssh alias; null for this server's Session. */
+  location: { machineId: string; alias: string } | null;
+  /**
+   * Whether the binding's server may be asked anything now. Not live, the editor sends nothing:
+   * every control is disabled and `reason` says why over what the machine last answered, read
+   * at `asOf` (null: never, in this browser).
+   */
+  access: { live: boolean; reason: string | null; asOf: string | null };
+  /** After an enable: which machines could not be asked whether they hold the bot (null: none). */
+  holdersNote: { channel: MessagingChannel; text: string } | null;
   /** null until the stored bindings have been loaded (hosts show nothing until then). */
   form: MessagingFormState | null;
   patchForm(patch: Partial<MessagingFormState>): void;
@@ -362,6 +395,22 @@ export function useMessagingBinding(
   },
 ): MessagingBindingEditorState {
   const { poll, onChanged, onLoadFailed } = opts;
+  const projectId = useProject().currentProject?.projectId ?? null;
+  const machines = useMachines();
+  const { machineId } = bindingLocation(sessionId);
+  const link = machineId === null ? null : machineLink(machines.state, machines.settled, machineId);
+  /** The machine's ssh alias, its id until the list has named it. */
+  const alias =
+    machineId === null
+      ? null
+      : (machines.state?.machines.find((m) => !m.local && m.machineId === machineId)?.alias ??
+        machineId);
+  /** When the state on screen was last read from the machine, tagged with its Session. */
+  const [readAt, setReadAt] = useState<{ sessionId: string; at: string } | null>(null);
+  const asOf = readAt?.sessionId === sessionId ? readAt.at : null;
+  const access = editorAccess(link, alias ?? "", asOf);
+  const live = access.live;
+  const [note, setNote] = useState<{ channel: MessagingChannel; text: string } | null>(null);
   const [form, setForm] = useState<MessagingFormState | null>(null);
   /** What the form last loaded/saved — the dirty check compares against it. */
   const [baseline, setBaseline] = useState<MessagingFormState | null>(null);
@@ -377,25 +426,80 @@ export function useMessagingBinding(
   const [sendingTest, setSendingTest] = useState(false);
   const saveButtonId = useId();
 
-  /** Which session the form was loaded for (the initial load runs once per session, not per poll flip). */
-  const loadedFor = useRef<string | null>(null);
+  /**
+   * Which session the form was filled for, on which server, and from what: a live read, or the
+   * machine's last answer remembered in this browser (the initial load runs once per session,
+   * not per poll flip). The server is part of it: the same id read from another server is
+   * another binding.
+   */
+  const loadedFor = useRef<{
+    sessionId: string;
+    machineId: string | null;
+    live: boolean;
+  } | null>(null);
+  /**
+   * The whole binding as last answered — a read, or a read amended by each write's answer — and
+   * written down for a Session on a machine (`messaging-binding-cache.ts`), so what shows while
+   * the machine is away is what was last on screen, a switch flipped a moment before included.
+   */
+  const known = useRef<MessagingBindingsResponse | null>(null);
+  const remember = (res: MessagingBindingsResponse): void => {
+    known.current = res;
+    if (machineId === null) return;
+    const at = new Date().toISOString();
+    setReadAt({ sessionId, at });
+    if (projectId !== null) rememberBinding(projectId, machineId, sessionId, res, at);
+  };
 
   // Initial load fills the form; the poll afterwards refreshes ONLY the per-channel
   // facts (stored / secret / enabled / status / chat-known), never the fields being
   // edited. A re-shown editor (the dock keeps hidden tabs mounted, `poll` flips back on)
   // only resumes that refresh: the form survives hide/show untouched.
+  //
+  // A Session on a machine out of reach is asked nothing (nor while the machines list has not
+  // answered): the form shows what the machine last answered, read-only, and the first read
+  // runs the moment it is back. A form already filled by a live read stays as it is when the
+  // machine drops — it is newer than anything remembered — and only its poll stops.
   useEffect(() => {
     let cancelled = false;
-    let initialDone = loadedFor.current === sessionId;
+    const current = loadedFor.current;
+    const same =
+      current !== null && current.sessionId === sessionId && current.machineId === machineId;
+    const fresh = !same;
+    const fill = (res: MessagingBindingsResponse) => {
+      setChannels(factsFromList(res));
+      const initialForm = bindingsToForm(res.bindings.map((b) => b.binding));
+      setForm(initialForm);
+      setBaseline(initialForm);
+    };
+    if (!live) {
+      if (!fresh) return;
+      // A swapped session must never show the previous one's fields.
+      setForm(null);
+      setBaseline(null);
+      known.current = null;
+      if (link === "unknown") return; // the list will say where it stands; this runs again then
+      loadedFor.current = { sessionId, machineId, live: false };
+      const remembered =
+        machineId !== null && projectId !== null
+          ? cachedBinding(projectId, machineId, sessionId)
+          : null;
+      if (remembered !== null) {
+        known.current = remembered.res;
+        fill(remembered.res);
+        setReadAt({ sessionId, at: remembered.at });
+      }
+      return;
+    }
+    let initialDone = same && current.live;
     const refresh = async (initial: boolean) => {
       try {
         const res = await api.getMessagingBinding(sessionId);
         if (cancelled) return;
         setChannels(factsFromList(res));
+        remember(res);
         if (initial) {
-          const initialForm = bindingsToForm(res.bindings.map((b) => b.binding));
-          setForm(initialForm);
-          setBaseline(initialForm);
+          fill(res);
           initialDone = true;
         }
       } catch (e) {
@@ -407,25 +511,29 @@ export function useMessagingBinding(
         }
       }
     };
-    if (loadedFor.current !== sessionId) {
-      loadedFor.current = sessionId;
-      // A swapped session must never show the previous one's fields while its load runs.
-      setForm(null);
-      setBaseline(null);
+    if (!initialDone) {
+      if (fresh) {
+        // A swapped session must never show the previous one's fields while its load runs. A
+        // remembered answer of the same one stays on screen until the live one replaces it.
+        setForm(null);
+        setBaseline(null);
+        known.current = null;
+      }
+      loadedFor.current = { sessionId, machineId, live: true };
       void refresh(true);
     }
     const timer = poll ? setInterval(() => void refresh(false), STATUS_POLL_MS) : null;
     return () => {
       cancelled = true;
       if (timer !== null) clearInterval(timer);
-      // An initial load cancelled mid-flight (poll flipped, host unmounted) must retry on
-      // the next run instead of leaving the form permanently unloaded.
-      if (!initialDone && loadedFor.current === sessionId) loadedFor.current = null;
+      // An initial load cancelled mid-flight (poll flipped, the machine dropped, host unmounted)
+      // must retry on the next run instead of leaving the form permanently unloaded.
+      if (!initialDone && loadedFor.current?.sessionId === sessionId) loadedFor.current = null;
     };
-    // Only sessionId/poll may restart the effect: onLoadFailed's identity would
-    // otherwise re-run it every render.
+    // Only the session, the poll flag and where the binding can be read from may restart the
+    // effect: onLoadFailed's identity would otherwise re-run it every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, poll]);
+  }, [sessionId, poll, live, link, machineId, projectId]);
 
   const patchForm = (patch: Partial<MessagingFormState>) => {
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -475,6 +583,10 @@ export function useMessagingBinding(
     status: MessagingRuntimeStatus,
   ): void => {
     setChannels((prev) => ({ ...prev, [channel]: factsOf(binding, status) }));
+    if (known.current !== null) {
+      const others = known.current.bindings.filter((entry) => entry.binding.channel !== channel);
+      remember({ bindings: binding === null ? others : [...others, { binding, status }] });
+    }
     if (binding !== null) {
       const fresh = bindingsToForm([binding]);
       const sub =
@@ -557,12 +669,31 @@ export function useMessagingBinding(
     }
   };
 
-  /** The Switch: connect/disconnect the SELECTED channel with its stored credentials. */
+  /**
+   * The Switch: connect/disconnect the SELECTED channel with its stored credentials. Turning it
+   * on asks this server first which servers already hold that bot: one other than the binding's
+   * own refuses here, before anything is sent to it, and machines that could not be asked are
+   * named once the enable has gone through.
+   */
   const toggleEnabled = async (next: boolean) => {
     setToggling(true);
+    setNote(null);
     try {
+      let unasked: MessagingUnreachableMachine[] = [];
+      const accountId = facts.accountId;
+      if (next && accountId !== null && projectId !== null) {
+        const found = await api.getMessagingAccountHolders(projectId, selected, accountId);
+        const conflict = holderConflict(found.holders, machineId);
+        if (conflict !== null) {
+          toastError(S.messaging.accountHeldOn(conflict.alias));
+          return;
+        }
+        unasked = found.unreachable;
+      }
       const res = await api.setMessagingBindingState(sessionId, selected, next);
       applyChannel(selected, res.binding, res.status);
+      const unchecked = res.binding?.enabled === true ? holdersNote(unasked, machineId) : null;
+      if (unchecked !== null) setNote({ channel: selected, text: unchecked });
       onChanged?.(sessionId, next && res.binding?.enabled === true ? selected : null);
     } catch (e) {
       toastError(apiErrorText(e));
@@ -572,11 +703,16 @@ export function useMessagingBinding(
   };
 
   // Enabling needs a saved credential, no unsaved edits, and the other channels dark;
-  // disabling is always allowed.
-  const enableGate = enablePrerequisite({ channel: selected, facts, enabledChannel, dirty });
+  // disabling is always allowed. Nothing gates a switch that cannot be pressed at all.
+  const enableGate = live
+    ? enablePrerequisite({ channel: selected, facts, enabledChannel, dirty })
+    : null;
 
   return {
     sessionId,
+    location: machineId === null ? null : { machineId, alias: alias ?? machineId },
+    access: { live, reason: access.reason, asOf },
+    holdersNote: note,
     form,
     patchForm,
     selectChannel,
@@ -657,6 +793,7 @@ function StoredSecretRow({
   clearLabel,
   checked,
   enabled,
+  readOnly,
   onChange,
 }: {
   masked: string;
@@ -665,12 +802,19 @@ function StoredSecretRow({
   checked: boolean;
   /** The channel's connection is enabled: clearing is gated until it is turned off. */
   enabled: boolean;
+  /** The binding's machine is out of reach: nothing can be saved, so nothing can be cleared. */
+  readOnly: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
       <span className="font-mono">{masked}</span>
-      <Checkbox checked={checked} disabled={enabled} onChange={onChange} label={clearLabel} />
+      <Checkbox
+        checked={checked}
+        disabled={enabled || readOnly}
+        onChange={onChange}
+        label={clearLabel}
+      />
       {/* A disabled checkbox does not reliably fire hover, so the reason is on screen rather
           than in a title: a gated control that never says why is the bug this avoids. */}
       {enabled && (
@@ -692,6 +836,7 @@ function DeliveryOptionRow({
   label,
   help,
   checked,
+  disabled,
   onChange,
 }: {
   label: string;
@@ -702,6 +847,8 @@ function DeliveryOptionRow({
    */
   help: ReactNode;
   checked: boolean;
+  /** The binding's machine is out of reach: the row shows what was saved and takes no change. */
+  disabled: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
@@ -710,13 +857,35 @@ function DeliveryOptionRow({
         <FieldLabel block={false}>{label}</FieldLabel>
         <InfoPopover label={label}>{help}</InfoPopover>
       </span>
-      <Switch aria-label={label} checked={checked} onChange={onChange} />
+      <Switch aria-label={label} checked={checked} disabled={disabled} onChange={onChange} />
     </div>
   );
 }
 
 /**
- * The editor's body, top to bottom: the channel selector, the connection controls (enable
+ * Where the binding runs, above everything else: the machine its bot connects from while that
+ * machine answers, or the notice saying why it cannot be asked and how old the state under it
+ * is. Nothing for this server's own conversations. Channel-independent in height, like
+ * everything above the fields.
+ */
+function BindingWhere({ b }: { b: MessagingBindingEditorState }) {
+  if (b.access.reason !== null) {
+    return (
+      <Notice tone="attention" role="status">
+        {b.access.reason}
+      </Notice>
+    );
+  }
+  if (b.location === null || !b.access.live) return null;
+  return (
+    <p className="text-xs text-gray-500 dark:text-gray-400">
+      {S.messaging.runsOn(b.location.alias)}
+    </p>
+  );
+}
+
+/**
+ * The editor's body, top to bottom: where it runs (for a conversation on a machine), the channel selector, the connection controls (enable
  * toggle + live status, then the two probes, then the hint naming what gates the switch),
  * then the selected channel's credential fields (credential-source link at the credential
  * field's corner, models-style stored-secret row), and last the saved fields that are not
@@ -738,10 +907,14 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
     };
   }, []);
   const { form } = b;
-  if (!form) return null;
+  // Nothing loaded: the notice alone when the machine is out of reach with nothing remembered.
+  if (!form) return <BindingWhere b={b} />;
   const channel = form.channel;
   const facts = b.channels[channel];
   const gate = b.enableGate;
+  /** The binding's machine is out of reach: every control shows what was saved and takes nothing. */
+  const readOnly = !b.access.live;
+  const note = b.holdersNote?.channel === channel ? b.holdersNote.text : null;
   const hintInk = hintEmphasized ? toneInk.attention : "text-gray-400 dark:text-gray-500";
   const ids = {
     hint: `${idBase}-enable-hint`,
@@ -806,8 +979,10 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
     );
   return (
     <div className="space-y-3">
+      <BindingWhere b={b} />
       {/* Channel first — each channel's config is saved independently, so the selector
-          switches forms rather than locking (the mcp transport idiom). */}
+          switches forms rather than locking (the mcp transport idiom). It stays live while the
+          rest is read-only: what each channel was last saved as is worth reading. */}
       <div role="group" aria-label={S.messaging.channelLabel}>
         <Segmented
           cols={4}
@@ -847,7 +1022,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
                 control that ignores a click never says what it is waiting for. */}
             <Switch
               checked={facts.enabled}
-              disabled={b.toggleBusy}
+              disabled={b.toggleBusy || readOnly}
               {...(gate !== null
                 ? {
                     "aria-disabled": true,
@@ -862,8 +1037,14 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             />
             {S.messaging.enabled}
           </label>
-          <span className="ml-2 text-gray-500 dark:text-gray-400">{S.messaging.statusLabel}</span>
-          <span className={`font-medium ${toneInk[STATUS_TONE[facts.status.state]]}`}>
+          {/* Read-only, the state is the machine's last answer, not a live one: it says so,
+              and takes the muted ink, so a cached "connected" never reads in the live green. */}
+          <span className="ml-2 text-gray-500 dark:text-gray-400">
+            {readOnly ? S.messaging.statusLastKnown : S.messaging.statusLabel}
+          </span>
+          <span
+            className={`font-medium ${toneInk[readOnly ? "muted" : STATUS_TONE[facts.status.state]]}`}
+          >
             {S.messaging.status[facts.status.state]}
           </span>
         </div>
@@ -952,7 +1133,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          disabled={b.testing || b.busy || !b.testable}
+          disabled={b.testing || b.busy || !b.testable || readOnly}
           onClick={() => void b.testConnection()}
         >
           {b.testing ? S.messaging.testing : S.messaging.test}
@@ -960,7 +1141,11 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         <Button
           size="sm"
           disabled={
-            b.sendingTest || b.busy || facts.status.state !== "connected" || !facts.lastChatKnown
+            b.sendingTest ||
+            b.busy ||
+            facts.status.state !== "connected" ||
+            !facts.lastChatKnown ||
+            readOnly
           }
           {...(!facts.lastChatKnown
             ? {
@@ -987,6 +1172,10 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           {gate.hint}
         </p>
       )}
+      {/* The enable went through without some machine being asked whether it holds this bot:
+          named here until the next toggle, since a bot running in two places shows up only as
+          a flapping status much later. */}
+      {note !== null && <p className="text-xs text-gray-500 dark:text-gray-400">{note}</p>}
       {/* The credential fields trail the controls above; explanations live in the FAQ folds
           below the save area. */}
       {channel === "telegram" ? (
@@ -1009,6 +1198,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             <PasswordInput
               size="sm"
               id={ids.botToken}
+              disabled={readOnly}
               aria-label={S.telegram.botToken}
               {...(facts.secretConfigured ? { placeholder: S.telegram.botTokenKeepHint } : {})}
               error={errorText(b.fieldErrors.botToken)}
@@ -1027,6 +1217,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               clearLabel={S.telegram.clearToken}
               checked={form.telegram.clearToken}
               enabled={facts.enabled}
+              readOnly={readOnly}
               onChange={(checked) =>
                 b.patchForm({ telegram: { ...form.telegram, clearToken: checked } })
               }
@@ -1039,11 +1230,15 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               are the fallback for a bot the scan cannot reach. Both are inside this channel's
               branch, so nothing above the fields moves when the QR opens. */}
           <div id={ids.scan}>
-            <QQScanConnect
-              sessionId={b.sessionId}
-              enabled={facts.enabled}
-              onBound={(binding) => b.adoptBinding(binding)}
-            />
+            {/* A disabled fieldset takes every control of the scan with it: a scan starts a
+                login on the machine, which cannot be asked. */}
+            <fieldset disabled={readOnly} className="min-w-0">
+              <QQScanConnect
+                sessionId={b.sessionId}
+                enabled={facts.enabled}
+                onBound={(binding) => b.adoptBinding(binding)}
+              />
+            </fieldset>
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-500">{S.qq.scanOrManual}</p>
           <CornerLinkedField
@@ -1055,6 +1250,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           >
             <Input
               size="sm"
+              disabled={readOnly}
               aria-label={S.qq.appId}
               error={errorText(b.fieldErrors.appId)}
               value={form.qq.appId}
@@ -1066,6 +1262,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           </CornerLinkedField>
           <PasswordInput
             size="sm"
+            disabled={readOnly}
             label={S.qq.appSecret}
             {...(facts.secretConfigured
               ? { placeholder: S.qq.appSecretKeepHint }
@@ -1083,6 +1280,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               clearLabel={S.qq.clearSecret}
               checked={form.qq.clearSecret}
               enabled={facts.enabled}
+              readOnly={readOnly}
               onChange={(checked) => b.patchForm({ qq: { ...form.qq, clearSecret: checked } })}
             />
           )}
@@ -1098,12 +1296,14 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           {/* The whole credential form: there is nothing to type on this channel, so the QR
               is not the easy path but the only one. */}
           <div id={ids.scan}>
-            <WeChatScanConnect
-              sessionId={b.sessionId}
-              enabled={facts.enabled}
-              bound={facts.secretConfigured}
-              onBound={(binding) => b.adoptBinding(binding)}
-            />
+            <fieldset disabled={readOnly} className="min-w-0">
+              <WeChatScanConnect
+                sessionId={b.sessionId}
+                enabled={facts.enabled}
+                bound={facts.secretConfigured}
+                onBound={(binding) => b.adoptBinding(binding)}
+              />
+            </fieldset>
           </div>
           {facts.secretMasked !== null && (
             <StoredSecretRow
@@ -1111,6 +1311,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               clearLabel={S.wechat.clearToken}
               checked={form.wechat.clearToken}
               enabled={facts.enabled}
+              readOnly={readOnly}
               onChange={(checked) =>
                 b.patchForm({ wechat: { ...form.wechat, clearToken: checked } })
               }
@@ -1136,6 +1337,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             <Input
               size="sm"
               id={ids.appId}
+              disabled={readOnly}
               aria-label={S.feishu.appId}
               error={errorText(b.fieldErrors.appId)}
               value={form.feishu.appId}
@@ -1148,6 +1350,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           <PasswordInput
             size="sm"
             id={ids.appSecret}
+            disabled={readOnly}
             label={S.feishu.appSecret}
             {...(facts.secretConfigured
               ? { placeholder: S.feishu.appSecretKeepHint }
@@ -1167,6 +1370,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               clearLabel={S.feishu.clearSecret}
               checked={form.feishu.clearSecret}
               enabled={facts.enabled}
+              readOnly={readOnly}
               onChange={(checked) =>
                 b.patchForm({ feishu: { ...form.feishu, clearSecret: checked } })
               }
@@ -1174,6 +1378,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           )}
           <Input
             size="sm"
+            disabled={readOnly}
             label={S.feishu.baseDomain}
             hint={S.feishu.baseDomainHint}
             error={errorText(b.fieldErrors.baseDomain)}
@@ -1216,12 +1421,14 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           )
         }
         checked={delivery.finalReplyOnly}
+        disabled={readOnly}
         onChange={(v) => patchDelivery({ finalReplyOnly: v })}
       />
       <DeliveryOptionRow
         label={S.messaging.linePerMessage}
         help={S.messaging.linePerMessageHelp}
         checked={delivery.linePerMessage}
+        disabled={readOnly}
         onChange={(v) => patchDelivery({ linePerMessage: v })}
       />
       <DeliveryOptionRow
@@ -1236,6 +1443,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
                 : S.messaging.renderMarkdownHelpFeishu
         }
         checked={delivery.renderMarkdown}
+        disabled={readOnly}
         onChange={(v) => patchDelivery({ renderMarkdown: v })}
       />
     </div>
@@ -1248,7 +1456,14 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
  * troubleshooting. Hosts place it below their Save controls, which is what keeps the
  * form itself opening on the channel selector and the connection controls.
  */
-export function MessagingBindingHelp({ channel }: { channel: MessagingChannel }) {
+export function MessagingBindingHelp({
+  channel,
+  machineAlias = null,
+}: {
+  channel: MessagingChannel;
+  /** The machine a conversation on one connects from; null for this server's own. */
+  machineAlias?: string | null;
+}) {
   const per =
     channel === "telegram"
       ? S.telegram
@@ -1291,6 +1506,10 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
             is the question its users ask first. */}
         {channel === "wechat" && <p className="mt-1.5">{S.wechat.media}</p>}
         <p className="mt-1.5">{S.messaging.faqWhatBinding}</p>
+        {/* Where the bot runs, for a conversation on a machine: what that means for the
+            connection, for a QR login and for this app being away. The visible "Connects
+            from" line above the form names the machine; this is what the name implies. */}
+        {machineAlias !== null && <p className="mt-1.5">{S.messaging.machineHelp(machineAlias)}</p>}
       </HelpFold>
       <HelpFold title={S.messaging.faqTroubleTitle}>
         <ul className="list-disc space-y-1 pl-4">

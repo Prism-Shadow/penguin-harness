@@ -2645,7 +2645,8 @@ export interface SessionProcessesResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Messaging bindings (/api/sessions/:sessionId/messaging/*)
+// Messaging bindings (/api/sessions/:sessionId/messaging/*) and enabled bot accounts
+// (/api/messaging/accounts, /api/projects/:projectId/messaging/account-holders)
 // ---------------------------------------------------------------------------
 
 /** Messaging channels a Session can bind to. */
@@ -3198,6 +3199,56 @@ export interface MessagingTestMessageResponse {
   ok: true;
 }
 
+/**
+ * One bot account a server has enabled: the channel and its account id (Feishu `app_id`,
+ * Telegram bot id, QQ App ID, WeChat bot id), which is public by design. Never a Session,
+ * never a secret.
+ */
+export interface MessagingAccount {
+  channel: MessagingChannel;
+  accountId: string;
+}
+
+/**
+ * GET /api/messaging/accounts (admin only) — every bot account this server has enabled,
+ * across all its Projects. A server that connects machines asks each of them this when a
+ * bot is about to be turned on, so that one account is enabled on one server at a time.
+ */
+export interface MessagingAccountsResponse {
+  accounts: MessagingAccount[];
+}
+
+/** A server that has the asked-about bot enabled: a machine by id and alias, or this server (both null). */
+export interface MessagingAccountHolder {
+  machineId: string | null;
+  alias: string | null;
+}
+
+/**
+ * Why a machine could not be asked: no connection to it, a build without the accounts
+ * route (it answered 404), or any other failed answer.
+ */
+export type MessagingUnreachableReason = "not_connected" | "older_build" | "failed";
+
+/** A machine of the Project that could not be asked whether it holds the bot. */
+export interface MessagingUnreachableMachine {
+  machineId: string;
+  alias: string;
+  reason: MessagingUnreachableReason;
+}
+
+/**
+ * GET /api/projects/:projectId/messaging/account-holders?channel=&accountId= — which servers
+ * have this bot enabled: this server, and each machine the Project uses that could be asked.
+ * Machines that could not be asked are listed apart; the caller decides what to do about
+ * them. Never names a Session. A caller who is not an admin is answered for this server
+ * only, because machines are admins' (both lists then hold no machine).
+ */
+export interface MessagingAccountHoldersResponse {
+  holders: MessagingAccountHolder[];
+  unreachable: MessagingUnreachableMachine[];
+}
+
 // ---------------------------------------------------------------------------
 // SSE server events (OmniMessage uses the default event, only server_event here)
 // ---------------------------------------------------------------------------
@@ -3295,6 +3346,15 @@ export type ServerEvent =
   | { type: "credentials_updated" }
   /** Placeholder handshake on the user channel (reserved for automated task notifications). */
   | { type: "hello" }
+  /**
+   * The stream's own beat, written by the endpoint's SSE writer every 20 seconds (http/sse.ts)
+   * on `/api/events`, and by the hub on a machine's aggregate stream. The socket's ping and the
+   * `: ping` comment line are invisible to a stream's consumer, so without this a stream that
+   * stopped while its socket stayed healthy would look alive forever: the hub
+   * (machines/event-hub.ts) and the browser (web api/socket.ts) each end a stream that misses
+   * two beats and re-issue it with its last event id.
+   */
+  | { type: "heartbeat" }
   /** The served web assets were hot-swapped by a platform upgrade: clients reload to pick them up. */
   | { type: "web_updated"; rev: string }
   /**
@@ -3334,7 +3394,7 @@ export type ServerEvent =
   | MachineServerEvent;
 
 /**
- * The machines' two events on the user channel, published to admins only — the Machines page,
+ * The machines' events on the user channel, published to admins only — the Machines page,
  * and the `/server/<id>` proxy everything else about a machine goes through, are admin-only.
  */
 export type MachineServerEvent =
@@ -3347,11 +3407,13 @@ export type MachineServerEvent =
    */
   | { type: "machines_changed" }
   /**
-   * One of a connected machine's own user-channel events, relayed by this server from that
-   * machine's `GET /api/events` (machines/event-relay.ts). The page holds one event stream to
-   * this server whatever the number of machines: a stream per machine made five connected
-   * machines take the browser's whole HTTP/1.1 allowance of six connections to one origin, and
-   * every other request of the page then waited behind them for good.
+   * One of a connected machine's own user-channel events, tagged with the machine it came
+   * from. They ride the machines aggregate (event-hub.ts, `GET …/machines/events`) — ONE
+   * stream for every connected machine, whose per-machine frames have this same shape; the
+   * page that re-publishes them on its own channel wraps them this way too. One stream, not
+   * a stream per machine: five of those once took the browser's whole HTTP/1.1 allowance of
+   * six connections to one origin, and every other request of the page then waited behind
+   * them for good.
    */
   | { type: "machine_event"; machineId: string; event: ServerEvent };
 
@@ -4983,6 +5045,35 @@ export interface DesktopTrayCommandMessage {
   locale?: DesktopTrayLocale;
 }
 
+/**
+ * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
+ * endpoint. It is opened on the terminal-stream upgrade path under a reserved id naming the
+ * signed-in user — `api-socket@<userId>` — which the server's terminal lookup answers with a
+ * reference the socket protocol is served for (server: socket/ref.ts). Shared here so the
+ * Web App and the machine relay spell the address the same way.
+ */
+export const API_SOCKET_ID_PREFIX = "api-socket@";
+
+/**
+ * Paths whose answer depends on the KIND of session behind the request — the desktop shell's
+ * own window (`sessionVia === "desktop"`: its update, tray and privacy relays, folder access,
+ * revealing a file) or a first-login link (a password change without the old password). The
+ * socket's handshake does not say how the cookie behind it was minted, so these are made over
+ * HTTP: the socket answers them 421 `not_on_socket` and the Web App never sends them there.
+ */
+export function sessionKindPath(pathname: string): boolean {
+  return (
+    pathname === "/api/me/password" ||
+    pathname === "/api/desktop" ||
+    pathname.startsWith("/api/desktop/") ||
+    /^\/api\/projects\/[^/]+\/dirs\/access$/.test(pathname) ||
+    (pathname.startsWith("/api/") && pathname.endsWith("/reveal"))
+  );
+}
+export function apiSocketPath(userId: string): string {
+  return `/api/terminals/${encodeURIComponent(`${API_SOCKET_ID_PREFIX}${userId}`)}/stream`;
+}
+
 // Desktop folder access (desktop mode, macOS)
 //
 // macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
@@ -5095,6 +5186,36 @@ export interface RestartResponse {
   reason?: "no_supervisor";
 }
 
+/**
+ * What the API socket this server holds to one machine is doing (machines/machine-sockets.ts) —
+ * the fact behind `MachineInfo.socket`. `since` is the instant the state was entered, so the
+ * Machines page can say how long a machine has been dialling, failing or connected instead of
+ * sending someone to the browser console for it.
+ */
+export interface MachineSocketFact {
+  /**
+   * `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused`
+   * when the machine answered the handshake with a status (a program predating the socket), and
+   * `failed` when the dial did not complete or a socket that was up closed.
+   */
+  state: "connected" | "dialling" | "refused" | "failed";
+  /** When that state was entered (ISO). */
+  since: string;
+  /** The transport's own words where there are any: a refusal's status, a dial's error. */
+  detail?: string;
+}
+
+/**
+ * One machine's event, as the machines aggregate stream carries it
+ * (`GET /api/projects/:projectId/machines/events`): the machine's own `ServerEvent`, with the
+ * machine it came from — one stream carries many machines, and the tag is what keeps their
+ * events apart (docs: /docs/server-api § "One event stream per machine").
+ */
+export interface MachineEvent {
+  machineId: string;
+  event: ServerEvent;
+}
+
 /** One `Host` entry of the server's `~/.ssh/config`, as the Machines page lists it. */
 export interface MachineInfo {
   /** `ssh:<alias>` — the id the install route is asked for. */
@@ -5172,6 +5293,15 @@ export interface MachineInfo {
    * here, one that never got as far as a connection.
    */
   keepConnected?: true;
+  /**
+   * The API socket this server holds to that machine — connected, dialling, refused or failed,
+   * and since when (machines/machine-sockets.ts). Null for `local`, and until a stream has
+   * asked for a socket at all. A fact about one process on THIS side, like `connection` and
+   * for the same reason: it says the socket exists and what it is doing, never that the far
+   * side is answering. The Machines page reads it so a stuck stream does not have to be found
+   * in the browser console.
+   */
+  socket: MachineSocketFact | null;
   /**
    * The machine's API as last seen by this server's proxy — stamped by traffic passing
    * through, never by a probe of its own. `answeredAt` when the last forwarded request got

@@ -2,6 +2,10 @@
  * Agent.createSession's Workspace handling and vault injection (no network needed; only
  * constructs the Session, never sends a request).
  *
+ * A host recreating a Session that never ran passes its id: the Session keeps it until its
+ * first record lands in a Trace, after which the id refuses a second creation; an id that
+ * could name a path outside the Trace directory is refused before any workspace is created.
+ *
  * Regression: an explicitly given Workspace must be an existing directory. When it
  * does not exist, a clear error must be thrown rather than auto-creating it, and bash must not
  * be started with an invalid cwd after Session creation, which would throw a misleading
@@ -24,9 +28,9 @@ import {
   skillsDir,
   systemConfigPath,
   tracesDir,
+  workspacesDir,
 } from "../src/state/paths.js";
 import {
-  MODEL_CATALOG,
   addModel,
   createAgent,
   DEFAULT_AGENT_ID,
@@ -44,6 +48,7 @@ import { metaMaxTokens } from "../src/agent.js";
 import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { mapThinkingLevel } from "../src/llm/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 import type {
   EnvironmentConfig,
   EnvironmentServices,
@@ -91,6 +96,8 @@ beforeEach(async () => {
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-harness-"));
   process.env.PENGUIN_HOME = tmpRoot;
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(tmpRoot);
 });
 
 afterEach(async () => {
@@ -191,6 +198,39 @@ describe("Agent.createSession workspace handling", () => {
     const llm = (session as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
 
     expect((llm as { requestTimeoutMs?: number }).requestTimeoutMs).toBe(3456);
+  });
+});
+
+describe("Agent.createSession under a given id (a host recreating a Session that never ran)", () => {
+  const ID = "session-2026-07-06-11-00-00-abcd0001";
+
+  it("keeps the given id until the Session's first record lands, and refuses it from then on", async () => {
+    const agent = await createAgent();
+    const first = await agent.createSession({ sessionId: ID });
+    expect(first.sessionId).toBe(ID);
+    // Never ran: nothing is on disk under the id, so a host that lost the object recreates it.
+    const again = await agent.createSession({ sessionId: ID });
+    expect(again.sessionId).toBe(ID);
+
+    await bootstrapped(again);
+    const located = await findLatestTraceFile(
+      tracesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      ID,
+    );
+    const head = (await readTrace(located!.path))[0]!;
+    expect((head.payload as { session_id?: string }).session_id).toBe(ID);
+    // A Trace exists now: only a resume may continue it.
+    await expect(agent.createSession({ sessionId: ID })).rejects.toThrow(/already has a Trace/);
+  });
+
+  it("refuses an id that could name a path outside the Trace directory, creating no workspace", async () => {
+    const agent = await createAgent();
+    const workspaces = workspacesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    const before = await fs.readdir(workspaces).catch(() => []);
+    await expect(agent.createSession({ sessionId: "../elsewhere" })).rejects.toThrow(
+      /may contain only letters, digits/,
+    );
+    expect(await fs.readdir(workspaces).catch(() => [])).toEqual(before);
   });
 });
 
@@ -1505,8 +1545,8 @@ describe("Agent.createSession credential rule (a keyless gateway row never borro
   it("refuses a keyless gateway preset before any client exists, even with OPENAI_API_KEY set", async () => {
     // stubProviderKeys has set OPENAI_API_KEY and friends: the pre-rule behaviour was to hand
     // MMSP no key and let its generic client read the variable — sending the user's
-    // OpenAI key to the gateway. The preset carries the gateway's base URL and no key.
-    const preset = MODEL_CATALOG.find((m) => m.provider === "openrouter" && m.retired !== true)!;
+    // OpenAI key to the gateway. The row follows its gateway group's endpoint and holds no key.
+    const preset = { provider: "tokendance", modelId: "glm-5.3" };
     expect(process.env.OPENAI_API_KEY).toBeDefined();
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-gateway-keyless");
