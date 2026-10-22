@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** feature
 - **Scope:** `server`, `docs`
+- **PR:** [#1284](https://github.com/Prism-Shadow/penguin-harness/pull/1284)
 
 [English](2026-10-22-session-routing-by-id.md)
 
