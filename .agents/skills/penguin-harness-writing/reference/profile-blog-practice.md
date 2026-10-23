@@ -7,12 +7,14 @@ Chinese text. `## Notes` is for agents and `## Check settings` is read by `prose
 sent. The settings' ranges are `floor-cap`, English in words and Chinese in characters of body text
 (figure blocks, headings, frontmatter and the references list do not count). The outline's plan is
 held to the caps, and `check` makes a section above its cap (or above 1.1 × its planned size) an
-error and one below its floor a warning.
+error and one below its floor a warning. `sources` counts the entries of the reference list
+(`[^n]:`) a published post ends with, or the sources strip would cite from a draft read with
+`--facts`: above the cap is an error, below the floor a warning.
 
 <!-- prompt -->
 This is a technical post: one engineering story about something the PenguinHarness team built, why it was built that way, and what was measured. It is not a release note, a news item, or a tutorial that walks the reader through clicks. The reader is a developer who builds or runs agent systems and has ten minutes; they came for the mechanism and the measurement. The rules below add to the style guide, and a rule that overrides it says so.
 
-Length: few words, many figures. The body runs 650 to 850 English words and never more than 850; figure blocks, headings and the references do not count. The lead takes 50 to 70 words, a TL;DR 30 to 50, and each section 50 to 130, never more than 140. The plan gives every section its number, and a section's budget is binding. Explain why the system exists and the principle it works on. Leave out every parameter, option and rule the reader does not need to see the idea, and link the reference docs for them (a URL from FACTS). Wherever a figure can say it, the figure replaces the paragraph: each section is a figure with a few sentences around it.
+Length: few words, many figures. The body runs 550 to 750 English words and never more than 750; figure blocks, headings and the references do not count. The lead takes 50 to 70 words, a TL;DR 30 to 50, and each section 50 to 130, never more than 140. The plan gives every section its number, and a section's budget is binding. Explain why the system exists and the principle it works on. Leave out every parameter, option and rule the reader does not need to see the idea, and link the reference docs for them (a URL from FACTS). Wherever a figure can say it, the figure replaces the paragraph: each section is a figure with a few sentences around it.
 
 Shape: choose one of the two shapes below and keep its order. The outline names the shape it uses in the last line of `# Reader and takeaway` ("Shape A" or "Shape B"), so every section call sees it. Either shape has 6 to 8 `## ` sections; the lead and a TL;DR are not sections.
 
@@ -58,6 +60,7 @@ Numbers:
 - The baseline is the naive design or the previous system, as FACTS gives it, never a design nobody would ship.
 - One method sentence says how the numbers were produced: the count, the machine and version, and whether they come from a simulator or a recording or from a live provider. It sits in the first paragraph of the first section that argues from a measured number (Results in shape A, the first comparison in shape B), or in the lead if the lead already quotes one. When the numbers are not live, that sentence says so there, not in a later aside.
 - A relative word ("faster", "most", "over 6×") agrees with the numbers it summarizes and with the figure it points to.
+- Most sentences carry no citation; the facts that need one are third-party numbers, quotes and our own measurement. Keep writing every fact id the marker rule asks for: the citations are chosen from those markers later.
 
 Figures:
 - A technical post is drawn. Plan at least one diagram of the mechanism, and a chart for each measurement the post argues from. A table alone is not a figure.
@@ -82,7 +85,7 @@ Voice:
 <!-- prompt zh -->
 这是一篇技术文章：讲 PenguinHarness 团队做出的一样东西，为什么这样做，测到了什么。它不是发布说明，不是新闻，也不是带读者一步步点界面的教程。读者是搭建或运行 Agent 系统的开发者，有十分钟，想看的是机制和测量结果。下面的规则是对文风指南的补充，凡是覆盖指南的条目都会写明。
 
-篇幅：字少图多。正文 1550 到 2050 字，最多 2050 字；图块、标题和参考文献不计。导语 120 到 170 字，TL;DR 70 到 120 字，每节 120 到 310 字，最多 340 字。大纲为每一节定好字数，每一节的预算都必须遵守。讲清这套系统为什么存在、按什么原理工作。读者理解思路用不到的参数、选项和规则一概不讲，改为链接参考文档（链接取自 FACTS）。图能说清的地方就用图代替段落，每一节就是一张图加几句话。
+篇幅：字少图多。正文 1300 到 1800 字，最多 1800 字；图块、标题和参考文献不计。导语 120 到 170 字，TL;DR 70 到 120 字，每节 120 到 310 字，最多 340 字。大纲为每一节定好字数，每一节的预算都必须遵守。讲清这套系统为什么存在、按什么原理工作。读者理解思路用不到的参数、选项和规则一概不讲，改为链接参考文档（链接取自 FACTS）。图能说清的地方就用图代替段落，每一节就是一张图加几句话。
 
 结构：从下面两种结构中选一种，并保持它的顺序。大纲在 `# Reader and takeaway` 的最后一行写明所用的结构（「Shape A」或「Shape B」），这样写每一节时都能看到。两种结构都是 6 到 8 节，每节用 `## ` 标题；导语和 TL;DR 不算节。
 
@@ -128,6 +131,7 @@ TL;DR：只在大纲要求、而且 FACTS 里至少有三个核心数字时才�
 - 基线是 FACTS 给出的朴素设计或旧系统，不能是一个没人会上线的设计。
 - 用一句话交代数字从哪里来：次数、机器与版本，以及数字来自模拟器或录制，还是来自线上服务商。这句话放在第一个拿测量数字论证的节的第一段（结构 A 是「结果」，结构 B 是第一组对比）；导语已经引用测量数字时，放在导语里。数字不是线上实测的，就在这句话里说明，不要留到后面补一句。
 - 「更快」「最多」「6 倍以上」这类相对说法，要和它概括的数字、和它所指的图对得上。
+- 多数句子不带引用；需要引用的是第三方的数字、原话引述和我们自己的测量。事实编号仍按标记规则逐句写上，引用之后再从这些标记里挑选。
 
 图：
 - 技术文章要画图。至少规划一张讲机制的框图，文章据以论证的每一项测量各配一张图表。只有表格不算图。
@@ -165,6 +169,11 @@ numbers come from a run made for the post; its command, and the location of a th
 go in the PR description. Live measurements against paid model APIs need the user's go-ahead and
 a key they authorize for that purpose.
 
+**Length.** 750 English words and 1,800 Chinese characters at most: the owner's v2 budget for
+every post (2026-10-23), which replaced this profile's earlier 850 / 2,050. The shape tables fit it
+as they stand: shape A's ranges add up to at most 750 words and 1,800 characters with the lead,
+shape B's to less.
+
 **What `check` must agree with.** The settings below are the budgets the prompt states: 6 to 8
 sections, a lead, a `**TL;DR**` line with three or four bullets after the lead, and the word and
 character ranges. The Chinese ranges are about 2.4 times the English ones. The close is shorter
@@ -185,15 +194,16 @@ the visual check. The file pair, frontmatter and screenshot hosting are in `peng
 - sections: 6-8
 - lead: yes
 - tldr: yes
-- words: 650-850
+- words: 550-750
 - lead-words: 50-70
 - section-words: 50-140
 - tldr-words: 30-50
 - zh-tldr-chars: 70-120
-- zh-chars: 1550-2050
+- zh-chars: 1300-1800
 - zh-lead-chars: 120-170
 - zh-section-chars: 120-340
 - ui-labels: quoted
 - emphasis: yes
 - emphasis-words: 25
 - zh-emphasis-chars: 40
+- sources: 8-13

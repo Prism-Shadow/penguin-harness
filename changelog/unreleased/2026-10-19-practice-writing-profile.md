@@ -26,9 +26,12 @@ for Chinese text. The profile sets:
   measurement, mirror pairs on one layout and scale, and captions that state the finding with its
   numbers;
 - the voice on top of the English and Chinese style guides, with one rhetorical question allowed,
-  at the turn.
+  at the turn;
+- citations: most sentences carry none, and the facts that need one are third-party numbers,
+  quotes and our own measurements.
 
-Its check settings hold the practice budgets: 6 to 8 sections, a body of at most 850 English words
-(2,050 Chinese characters), a lead of 50 to 70 words, sections of 50 to 130 words capped at 140
-(340 characters), and an optional TL;DR of 30 to 50 words. The READMEs list
+Its check settings hold the practice budgets: 6 to 8 sections, a body of at most 750 English words
+(1,800 Chinese characters), a lead of 50 to 70 words, sections of 50 to 130 words capped at 140
+(340 characters), and an optional TL;DR of 30 to 50 words. A published practice post cites 8 to
+13 sources. The READMEs list
 `penguin-harness-writing` with the other development skills.
