@@ -24,7 +24,6 @@ import { rememberMachineAgents } from "../src/lib/machine-cache";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, topDialog } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
 import { button, click, unmountAll, waitFor } from "./helpers/dom";
-import { forgetPluginReads } from "./helpers/plugin-reads";
 
 const CHARTS = {
   name: "charts",
@@ -86,7 +85,6 @@ describe("installing a library plugin on a machine's Agent", () => {
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {
     await unmountAll();
-    forgetPluginReads([PROJECT_ID]);
     localStorage.clear();
   });
 

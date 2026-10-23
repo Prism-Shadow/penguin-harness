@@ -49,7 +49,6 @@ import {
   watchText,
 } from "./helpers/dom";
 import { json } from "./helpers/fetch";
-import { forgetPluginReads } from "./helpers/plugin-reads";
 
 const CHARTS = {
   name: "charts",
@@ -171,7 +170,6 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {
     await unmountAll();
-    forgetPluginReads([PROJECT_ID]);
     localStorage.clear();
     vi.useRealTimers();
   });

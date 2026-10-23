@@ -17,7 +17,6 @@ import { act, createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InstalledPluginsResponse } from "@prismshadow/penguin-server/api";
 import { mount, click, run, unmountAll, watchText } from "./helpers/dom";
-import { forgetPluginReads } from "./helpers/plugin-reads";
 import { en } from "../src/lib/strings-en";
 import { setActiveStrings } from "../src/lib/strings";
 
@@ -138,10 +137,7 @@ beforeEach(() => {
   vi.mocked(api.getPluginLibrary).mockResolvedValue({ groups: [] });
   vi.mocked(api.getPluginIndex).mockResolvedValue({ plugins: [], failures: [], pending: [] });
 });
-afterEach(async () => {
-  await unmountAll();
-  forgetPluginReads(["A", "B"]);
-});
+afterEach(unmountAll);
 
 describe("the Plugins page's response lifecycle", () => {
   for (const readFirst of [true, false]) {
