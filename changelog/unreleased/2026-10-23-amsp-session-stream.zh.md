@@ -3,6 +3,7 @@
 - **Date:** 2026-10-23
 - **Type:** feature
 - **Scope:** `amsp`, `server`, `core`, `web`, `docs`
+- **PR:** [#1301](https://github.com/Prism-Shadow/penguin-harness/pull/1301)
 - **Breaking:** `/api/amsp/v1` 路径不变，流的形状改变：`run.*`、`K.delta` 与 `K.done` 事件让位于 Session 的 OmniMessage 记录，`@prismshadow/amsp` 0.2.x 读不懂新的流。
 
 [English](2026-10-23-amsp-session-stream.md)

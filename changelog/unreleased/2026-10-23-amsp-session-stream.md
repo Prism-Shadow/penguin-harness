@@ -3,6 +3,7 @@
 - **Date:** 2026-10-23
 - **Type:** feature
 - **Scope:** `amsp`, `server`, `core`, `web`, `docs`
+- **PR:** [#1301](https://github.com/Prism-Shadow/penguin-harness/pull/1301)
 - **Breaking:** `/api/amsp/v1` keeps its path, but its stream changes shape: `run.*`, `K.delta` and `K.done` events give way to the Session's OmniMessage records, and `@prismshadow/amsp` 0.2.x cannot read it.
 
 [中文版](2026-10-23-amsp-session-stream.zh.md)
