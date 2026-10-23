@@ -40,5 +40,7 @@ close of 60 to 100 (a section cap of 170 words, 400 characters), and an optional
 words. A published practice post cites 8 to 13 sources, and `body-lists: none` and
 `body-tables: none` make a list or a table in its body an error. The skill's `review` reads a
 practice post by the same form: it expects the key sentences and an objection stated and
-answered, and never asks for a list in the body. The READMEs list
+answered, and never asks for a list in the body. Its `trim` cuts a practice post's over-cap
+sections to just under the 170-word section cap (400 characters), never to the plan rows. The
+READMEs list
 `penguin-harness-writing` with the other development skills.
