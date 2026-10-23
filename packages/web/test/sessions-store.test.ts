@@ -6,6 +6,8 @@
  * Loading:
  * - A fresh store is loading, and a reload with no Agent set does not claim to be done.
  * - A refresh over rows already on screen does not raise loading.
+ * - An empty list, once listed, stays listed: re-reads as a machine connects and names its own
+ *   Agents never raise loading again (the sidebar's skeleton would stand in for "no Sessions yet").
  *
  * Several machines:
  * - A reload asks each server once: every Agent's first page and every open Workspace group's,
@@ -347,6 +349,27 @@ describe("loading", () => {
     await store.getState().reload();
     unsubscribe();
     expect(raised).toBe(false);
+  });
+
+  it("an empty list once listed never raises loading again as a machine connects and names its Agents", async () => {
+    answers.set(key(null, "a1"), page([], 0));
+    answers.set(key("M1", "a1"), page([], 0));
+    answers.set(key("M1", "trainer"), page([], 0));
+    const store = boot();
+    const seen = [store.getState().loading];
+    const unsubscribe = store.subscribe((state) => {
+      if (state.loading !== seen.at(-1)) seen.push(state.loading);
+    });
+    await store.getState().reload();
+    // The machine connects: both servers are asked.
+    store.setState({ machineIds: ["M1"] });
+    await store.getState().reload();
+    // It names an Agent of its own: asked again, about that one too.
+    store.setState({ agentIdsByMachine: { M1: ["trainer"] } });
+    await store.getState().reload();
+    unsubscribe();
+    expect(seen).toEqual([true, false]);
+    expect(fetch.requests.some((r) => r.machine === "M1")).toBe(true);
   });
 });
 

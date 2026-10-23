@@ -1955,6 +1955,8 @@ export const zh = {
       `这个 Agent 在 ${machine} 上：设置、对话与删除都在那台机器上进行，和本服务端同 id 的 Agent 互不相干。`,
     /** The disabled Usage button on a machine's Agent: what the usage center counts. */
     usageThisServerOnly: "成本中心只统计本服务端的 Agent",
+    /** Why a connected machine's Agent cards wait: its list has not answered in this page load yet. */
+    readingMachineAgents: (machine: string): string => `正在读取 ${machine} 的 Agent…`,
     /** Delete's confirmation for a machine's Agent: the machine it is deleted on. */
     deleteConfirmOnMachine: (name: string, machine: string): string =>
       `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,

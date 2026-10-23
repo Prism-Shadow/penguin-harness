@@ -81,6 +81,19 @@ export function readKey(projectId: string, machineId: string | null, ...parts: s
 
 const jsonEqual = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+/** Every store's way to drop what it holds in memory (see {@link resetReadStores}). */
+const resets = new Set<() => void>();
+
+/**
+ * Drops what every store holds in memory, as a page reload would; storage is left alone, and a
+ * read still in flight lands nowhere. The stores live as long as the module graph, and a test
+ * file runs many page loads in one: its teardown calls this so no test starts from what the
+ * previous one read.
+ */
+export function resetReadStores(): void {
+  for (const reset of resets) reset();
+}
+
 interface Entry<T> {
   state: ReadState<T>;
   /** Asks so far: only the newest one's answer applies. */
@@ -101,6 +114,7 @@ export function createReadStore<T>(
   const { storage, equal = jsonEqual } = options;
   const entries = new Map<string, Entry<T>>();
   const listeners = new Map<string, Set<() => void>>();
+  resets.add(() => entries.clear());
 
   const load = (key: string): T | null => {
     if (storage === undefined) return null;

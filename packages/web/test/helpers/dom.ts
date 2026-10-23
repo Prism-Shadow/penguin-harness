@@ -13,6 +13,7 @@ import { act } from "react";
 import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
+import { resetReadStores } from "../../src/lib/read-store";
 
 // React only flushes effects inside `act` when told it is running under a test.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -83,7 +84,10 @@ export async function mount(element: ReactElement): Promise<Mounted> {
   };
 }
 
-/** Unmounts every tree a test mounted; call it from `afterEach`. */
+/**
+ * Unmounts every tree a test mounted, and drops what the read stores hold in memory, so the next
+ * test starts as a fresh page load (storage is the test's to clear); call it from `afterEach`.
+ */
 export async function unmountAll(): Promise<void> {
   for (const { root, container } of [...roots]) {
     await act(async () => {
@@ -93,6 +97,7 @@ export async function unmountAll(): Promise<void> {
   }
   roots.clear();
   document.body.innerHTML = "";
+  resetReadStores();
 }
 
 /** Lets pending promises (a request's answer, an awaited prompt) settle and React commit. */
