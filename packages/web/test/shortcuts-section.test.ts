@@ -70,7 +70,7 @@ describe("ShortcutsSection", () => {
     setPlatformForTests("mac");
     configureKeybindingsStoreForTests({});
     const mac = render();
-    expect(mac).toContain("⌥⌘P");
+    expect(mac).toContain("⇧⌘P");
     expect(mac).toContain("⌃⌥`");
     expect(mac).toContain("⌘S");
     expect(mac).not.toContain("Ctrl");
@@ -105,9 +105,8 @@ describe("ShortcutsSection", () => {
   });
 
   it("notes a chord the browser also uses, muted, and names the desktop menu's claim first in the desktop app", () => {
-    // Save's and find's defaults take over the browser's Save Page and find; no other default
-    // touches the browser.
-    expect(count(render(), S.shortcuts.browserCommon)).toBe(2);
+    // Save, main Find, and the palette each share a browser chord.
+    expect(count(render(), S.shortcuts.browserCommon)).toBe(3);
     configureKeybindingsStoreForTests({
       storage: keybindings({ v: 1, linux: { "palette.toggle": "Mod+KeyR" } }),
     });

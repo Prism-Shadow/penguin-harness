@@ -24,7 +24,12 @@ import { ThemeProvider } from "./state/theme";
 import { BackgroundProvider } from "./state/background";
 import { AuthProvider } from "./state/auth";
 import { AppRouter } from "./router";
+import type { ComponentType } from "react";
 import { UnsavedPrompt } from "./lib/unsaved/unsaved-prompt";
+import { SafeModeMarker } from "./rescue/safe-mode-marker";
+import { AppPalette } from "./features/palette/app-palette";
+import { ErrorBoundary } from "./rescue/error-boundary";
+import { RescuePanel } from "./rescue/rescue-panel";
 import { writeClipboard } from "./lib/clipboard";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 import { highlightCode } from "./features/chat/code-highlight";
@@ -33,7 +38,10 @@ import { highlightCode } from "./features/chat/code-highlight";
  * `initialPath`: mount the app on an in-memory router opened at that path instead of the
  * browser's address bar (see AppRouter) — for a host document that frames the app.
  */
-export function App({ initialPath }: { initialPath?: string } = {}) {
+export function App({
+  initialPath,
+  Root = AppRouter,
+}: { initialPath?: string; Root?: ComponentType<{ initialPath?: string }> } = {}) {
   // The guard reads `defaultPrevented` rather than assuming it runs last: the chat area's
   // drop zone is a window listener too, so the two fire in registration order. Both orders
   // converge — whichever runs second either finds the drag already claimed and bails, or
@@ -54,7 +62,15 @@ export function App({ initialPath }: { initialPath?: string } = {}) {
             <BackgroundProvider>
               <AuthProvider>
                 <LocaleScope>
-                  <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
+                  <ErrorBoundary fallback={(error) => <RescuePanel error={error} />}>
+                    <Root {...(initialPath === undefined ? {} : { initialPath })} />
+                  </ErrorBoundary>
+                  <ErrorBoundary fallback={() => null}>
+                    <AppPalette />
+                  </ErrorBoundary>
+                  <ErrorBoundary fallback={() => null}>
+                    <SafeModeMarker />
+                  </ErrorBoundary>
                   {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
                   <Toaster />
                   {/* The one "discard unsaved changes?" prompt every leave asks through, and the
