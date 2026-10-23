@@ -569,6 +569,65 @@ function providerSignals(level: object): string[] {
 }
 
 /**
+ * Provider error codes that name the model or the route to it as the reason.
+ *
+ * A code in this set says the request was fine and the **model** could not serve it —
+ * the case where another model on the host's fallback chain can (unlike a refusal of
+ * the request's own shape, which every model would repeat).
+ */
+const MODEL_SCOPED_CODES: ReadonlySet<string> = new Set([
+  "model_unavailable",
+  "model_not_found",
+  "no_available_channel",
+  "no_available_workers",
+  "overloaded_error",
+]);
+
+/**
+ * The provider's own wording for "this model (or the route to it) cannot serve the
+ * request", read off the message and the parsed body.
+ *
+ * Kept to what a provider says about **itself**: "Model is unavailable" (Console Go
+ * wrapping a dead upstream), "no available channel" (a gateway with no channel left for
+ * the model), "all routed providers rejected the request" (an aggregator that tried its
+ * routes and came back empty). A refusal of the request's own content is deliberately
+ * absent — a body limit, a tool-call pairing, a missing parameter, an exhausted quota:
+ * those fail the same way on every model, so moving the Session would only burn the
+ * chain.
+ */
+const MODEL_SCOPED_TEXT: readonly RegExp[] = [
+  /model is unavailable/i,
+  /model[_ -]?unavailable/i,
+  /no available channel/i,
+  /no available workers/i,
+  /all routed providers rejected/i,
+  /model not found/i,
+  /invalid model/i,
+  /model does not exist/i,
+  /(?:model|service) (?:is )?overloaded/i,
+];
+
+/**
+ * Whether the provider's own payload says the MODEL (or the route to it) is what
+ * failed, rather than the request.
+ *
+ * The distinction decides where the Session goes next: a model-scoped rejection is
+ * fatal for this model — the identical request here can never succeed — but another
+ * model can serve it, so the host that has a fallback chain moves the Session there
+ * (the same path a rate limit takes). A request-scoped rejection ("rejected") is fatal
+ * everywhere: the next model would refuse it the same way.
+ */
+export function isModelScopedRejection(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    if (providerSignals(level).some((code) => MODEL_SCOPED_CODES.has(code.toLowerCase())))
+      return true;
+    const err = level as { message?: unknown; error?: unknown };
+    const texts = [err.message, err.error].filter((v): v is string => typeof v === "string");
+    return texts.some((text) => MODEL_SCOPED_TEXT.some((pattern) => pattern.test(text)));
+  });
+}
+
+/**
  * Determines whether an error is a credentials/authentication failure — the one class an
  * in-run retry can never fix: the request keeps going out with the same dead credential.
  * Only the model REFERENCE is fixed at Session creation; the credential is read from the
@@ -1026,6 +1085,19 @@ export class GenerativeModel implements LLMInterface {
           status: "fatal",
           errorCode: "unsupported",
           errorMessage: `${describeError(error)} ${FAST_MODE_UNSUPPORTED_GUIDANCE}`,
+        };
+      } else if (isModelScopedRejection(error)) {
+        // The provider named **this model or its route** as what failed ("Model is
+        // unavailable", "no available channel", "all routed providers rejected"): the
+        // request itself is fine, and the identical request on this model can never
+        // succeed — but another model on the host's fallback chain can serve it. Fatal
+        // for the engine (nothing on this model to retry), and the code says what went
+        // wrong, so a host that has another model to run the Session on can move it
+        // there — the same path a rate limit takes.
+        outcome = {
+          status: "fatal",
+          errorCode: "model_unavailable",
+          errorMessage: describeError(error),
         };
       } else if (isFatalProviderRejection(error)) {
         // A definitive provider 4xx rejection (408/429 excluded): the identical request
