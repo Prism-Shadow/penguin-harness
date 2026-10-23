@@ -206,7 +206,9 @@ left alone. Each named section has a floor at 90 % of its target. The prompt ask
 inside complete sentences and keeps every fact: numbers with their units, approximations
 ("about", 约), attributions, and qualifiers as strong as they are ("many" never becomes "most").
 `trim` refuses an answer that changes any other section, leaves a named section or the page over
-its cap, or cuts a named section below its floor, so a telegraphic cut is rerun, not shipped. In section mode, a section whose
+its cap, cuts a named section below its floor, or loses a number the text stated, so a telegraphic
+cut is rerun, not shipped. Figure blocks are not the model's to cut: a block the answer changed is
+put back from the draft before the guard runs. In section mode, a section whose
 only problem is its size goes through `trim --in <section> --outline <outline>` (or `--cap <n>`).
 Either way the call may only delete words or put a shorter phrase in place of a longer one. The script refuses the answer when it is still over the cap, or when a
 marker, a footnote reference, a figure block, a heading, the frontmatter or the version note
@@ -430,7 +432,10 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   block no finding names by its id or by quoting its text. `trim`, on a section or a whole draft,
   refuses what section 5 lists.
   `fix`, `polish`, `translate` and `trim` refuse an answer whose version note is not, byte for
-  byte, the one they were given. `emphasize` refuses what section 4 lists. `transition` compares
+  byte, the one they were given. Before any guard, an answer loses a lone fence line it echoed
+  from the prompt (the steps send the text inside a four-backtick fence), and `trim`,
+  `transition` and `emphasize` put back, by id, any figure block the answer changed; a dropped
+  block is still refused. `emphasize` refuses what section 4 lists. `transition` compares
   the two texts block by block (paragraphs, headings, the TL;DR, figure and code blocks): it
   refuses an answer that adds, drops, splits or merges a block, changes any block but the paragraph
   right after a `## ` heading and the paragraph right before one, changes a sentence of those but
