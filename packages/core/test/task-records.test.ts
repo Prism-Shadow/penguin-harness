@@ -2,9 +2,10 @@
  * Task records: the `task_begin` / `task_end` pair a Session writes around each Task, to the
  * Trace and to its output stream.
  *
- * - Given a plain Task, the Trace holds session_meta, task_begin, the input, the Task's records
- *   and then task_end; the stream carries the same records in the same order, minus the
- *   session_meta and the input (which a host echoes).
+ * - Given a Session's first message, the Trace holds session_meta, task_begin, the input, the
+ *   Task's records and then task_end; the stream carries the same records in the same order,
+ *   minus the session_meta (written, not streamed, for a first context) and the input (which a
+ *   host echoes).
  * - Given a stop hook that continues once, the run writes two pairs: the hook's record inside the
  *   first, and the continued input right after the second task_begin, on the stream and on disk.
  * - Given a Task whose final request triggers a completed compaction, its task_end and the next
@@ -196,7 +197,7 @@ describe("Task records", () => {
     return { session, trace, written };
   }
 
-  it("a plain Task: task_begin follows session_meta and precedes the input, task_end closes it, and the stream carries the same records in the same order", async () => {
+  it("a Session's first message: task_begin follows session_meta and precedes the input, task_end closes it, and the stream carries the same records in the same order", async () => {
     const llm = new ScriptedLLM([{ messages: [assistantText("hi"), usage(10, 10)] }]);
     const { session, trace } = makeSession({ llms: [llm] });
 

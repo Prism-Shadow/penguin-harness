@@ -3,12 +3,13 @@
  * server because core never yields a run's own input (only a stop hook's later injections).
  *
  * It goes out right behind the run's first `task_begin`, so the stream carries a Task's records
- * in the order its Trace has them — `task_begin`, then the input, then the rest. A stream that
- * opens with anything else (a RuntimeSession that writes no Task records) gets the echo ahead of
- * that first record, and one that ends without yielding anything gets it at the end: whatever the
- * stream, the echo is published exactly once.
+ * in the order its Trace has them — on a Session's first message `session_meta`, `task_begin`,
+ * then the input, then the rest. A `session_meta` the run opens with therefore stays ahead of the
+ * echo too. A stream that opens with anything else (a RuntimeSession that writes no Task records)
+ * gets the echo ahead of that first record, and one that ends without yielding anything gets it at
+ * the end: whatever the stream, the echo is published exactly once.
  */
-import { isTaskBegin } from "@prismshadow/penguin-core";
+import { isSessionMeta, isTaskBegin } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 
 export class InputEcho {
@@ -21,9 +22,10 @@ export class InputEcho {
     this.pending = [...input];
   }
 
-  /** Call with each streamed message before it is published: anything but the opening `task_begin` takes the echo out first. */
+  /** Call with each streamed message before it is published: anything but the opening `session_meta` / `task_begin` takes the echo out first. */
   before(msg: OmniMessage): void {
-    if (this.pending.length > 0 && !isMainTaskBegin(msg)) this.flush();
+    const opening = isMain(msg) && (isTaskBegin(msg) || isSessionMeta(msg));
+    if (!opening) this.flush();
   }
 
   /** Call with each streamed message after it is published: the opening `task_begin` takes the echo out behind it. */
@@ -39,6 +41,10 @@ export class InputEcho {
   }
 }
 
+function isMain(msg: OmniMessage): boolean {
+  return msg.origin === undefined || msg.origin.length === 0;
+}
+
 function isMainTaskBegin(msg: OmniMessage): boolean {
-  return (msg.origin === undefined || msg.origin.length === 0) && isTaskBegin(msg);
+  return isMain(msg) && isTaskBegin(msg);
 }

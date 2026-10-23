@@ -14,7 +14,8 @@
  * - A run aborted mid-bootstrap keeps its holds, so a reload still sees the message; the next
  *   run appends its own input and drops the stale connect pair.
  * - The Session stream carries a run's task_begin first, then the input's echo, then what the
- *   run streams next: the order the Trace has them in.
+ *   run streams next: the order the Trace has them in. On a Session's first message whose run
+ *   streams its session_meta, that record leads: session_meta, task_begin, then the echo.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -169,6 +170,50 @@ describe("GET /messages serves the running task's pending inputs", () => {
       await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
       // Echoed exactly once over the whole run.
       expect(seen.filter((x) => x === "text:in order")).toHaveLength(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("on a first message whose run streams its session_meta: session_meta, task_begin, then the echo", async () => {
+    const FIRST = uniqueSessionId();
+    adoptSession(
+      t.deps,
+      fakeSession(FIRST, {
+        async *run() {
+          yield sessionMeta({
+            session_id: FIRST,
+            provider: "custom",
+            model_id: "m1",
+            model_context_window: 10_000,
+            system_prompt: "test",
+            agent_state: "/tmp/agent-state",
+            workspace: "/tmp/w",
+            source: "user",
+          });
+          yield taskBegin();
+          yield requestBegin();
+        },
+      }),
+      { projectId: PROJECT, approvalMode: "always-ask" },
+    );
+    const seen: string[] = [];
+    const unsubscribe = t.deps.channels.get(FIRST).subscribe((evt) => {
+      if (evt.event !== undefined) return;
+      const msg = JSON.parse(evt.data) as OmniMessage;
+      const p = msg.payload as { type?: string; text?: string };
+      seen.push(
+        msg.type === "session_meta"
+          ? "session_meta"
+          : p.type === "text"
+            ? `text:${p.text}`
+            : p.type!,
+      );
+    });
+    try {
+      await api.post(`/api/sessions/${FIRST}/tasks`, { input: [{ type: "text", text: "first" }] });
+      await waitFor(() => t.deps.manager.statusOf(FIRST) === "idle");
+      expect(seen).toEqual(["session_meta", "task_begin", "text:first", "request_begin"]);
     } finally {
       unsubscribe();
     }
