@@ -86,8 +86,9 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
   one key sentence per section in bold. It does not change any other character. Bold in a post is
   reserved for that sentence. UI labels go in quotes. `check` makes any other bold an error. The
   step's answer is refused if it changes the text, marks no span in a section, marks two spans in a
-  section, or closes a span after the sentence's punctuation. Chinese text does not render spans
-  closed in this position as bold. `check` flags any `**` that CommonMark cannot read as bold.
+  section, marks only part of a sentence, or closes a span after the sentence's punctuation. Chinese
+  text does not render spans closed in this position as bold. The author's notes (`--notes`) can say
+  which sentence to mark. `check` flags any `**` that CommonMark cannot read as bold.
 - Every word inside a figure comes from the model, in a figure block. Drawn figures are inline SVG
   that `check` compares string by string against their blocks.
 - The script's local steps check text without the network: structure, budgets, figures, fact
