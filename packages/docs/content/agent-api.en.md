@@ -208,7 +208,7 @@ Once the stream has started, an error is never a separate frame: the records say
 
 `@prismshadow/amsp` is the TypeScript client of the Agent API and the package that defines AMSP: the OmniMessage records and their guards, the control frames, and the requests and answers around them; `@prismshadow/amsp/markers` holds the message markers. It has no dependencies and runs in Node 24 and in current browsers.
 
-Version 0.3.0 reads the stream described on [AMSP](/amsp). It cannot read the events of a server from before that change, and 0.2.x cannot read this stream; see [Upgrading from 0.2.x](#upgrading-from-02x).
+The package is versioned with PenguinHarness. The versions after 0.2.16 read the stream described on [AMSP](/amsp); they cannot read the events of a server from 0.2.16 or earlier, and a client from 0.2.16 or earlier cannot read this stream. An install that allows `^0.2.16` picks up the new client on its next install or update; see [Upgrading an older client](#upgrading-an-older-client).
 
 ```bash
 npm install @prismshadow/amsp
@@ -439,9 +439,11 @@ const result = collector.result();
 
 A host with a channel of its own implements `Transport`; `deliver(frames, handlers)` hands a stream's frames to its handlers when it reads an SSE body itself.
 
-### Upgrading from 0.2.x
+### Upgrading an older client
 
-| 0.2.x | 0.3.0 |
+A program written against the client of 0.2.16 or earlier changes as follows. Pin `@prismshadow/amsp@0.2.16` to keep the old client against an old server until the program has moved.
+
+| 0.2.16 and earlier | After 0.2.16 |
 | --- | --- |
 | `client.stream(opts)` | `client.run(opts)` |
 | `client.run(opts)` | `client.ask(opts)` |

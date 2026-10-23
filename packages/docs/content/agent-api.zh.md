@@ -208,7 +208,7 @@ type InputItem =
 
 `@prismshadow/amsp` 是 Agent API 的 TypeScript 客户端，也是定义 AMSP 的包：OmniMessage 记录及其判别函数、控制帧，以及围绕它们的请求与响应；消息标记在 `@prismshadow/amsp/markers` 中。它没有任何依赖，可在 Node 24 和当前的浏览器中运行。
 
-0.3.0 版读取 [AMSP](/amsp) 页描述的流。它读不懂这次改动之前的服务器的事件，0.2.x 也读不懂这条流，见[从 0.2.x 升级](#从-02x-升级)。
+这个包的版本号与 PenguinHarness 一致。0.2.16 之后的版本读取 [AMSP](/amsp) 页描述的流，读不懂 0.2.16 及更早的服务器的事件；0.2.16 及更早的客户端也读不懂这条流。允许 `^0.2.16` 的安装在下一次安装或更新时会取到新的客户端，见[升级旧客户端](#升级旧客户端)。
 
 ```bash
 npm install @prismshadow/amsp
@@ -439,9 +439,11 @@ const result = collector.result();
 
 有自己通道的宿主可以实现 `Transport`；自行读取 SSE 响应体时，`deliver(frames, handlers)` 把流的帧逐个交给对应的处理函数。
 
-### 从 0.2.x 升级
+### 升级旧客户端
 
-| 0.2.x | 0.3.0 |
+按 0.2.16 及更早的客户端编写的程序，按下表修改。程序改完之前，可固定 `@prismshadow/amsp@0.2.16`，让旧客户端继续对接旧服务器。
+
+| 0.2.16 及更早 | 0.2.16 之后 |
 | --- | --- |
 | `client.stream(opts)` | `client.run(opts)` |
 | `client.run(opts)` | `client.ask(opts)` |

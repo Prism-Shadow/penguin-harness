@@ -1,10 +1,10 @@
-# AMSP v1 carries the Session's own records; SDK 0.3.0
+# AMSP v1 carries the Session's own records, and the SDK reads them
 
 - **Date:** 2026-10-23
 - **Type:** feature
 - **Scope:** `amsp`, `server`, `core`, `web`, `docs`
 - **PR:** [#1301](https://github.com/Prism-Shadow/penguin-harness/pull/1301)
-- **Breaking:** `/api/amsp/v1` keeps its path, but its stream changes shape: `run.*`, `K.delta` and `K.done` events give way to the Session's OmniMessage records, and `@prismshadow/amsp` 0.2.x cannot read it.
+- **Breaking:** `/api/amsp/v1` keeps its path, but its stream changes shape: `run.*`, `K.delta` and `K.done` events give way to the Session's OmniMessage records, and the `@prismshadow/amsp` client of 0.2.16 and earlier cannot read it. The SDK of this release, which a `^0.2.16` dependency picks up, cannot read an older server's stream.
 
 [中文版](2026-10-23-amsp-session-stream.zh.md)
 
@@ -28,9 +28,9 @@ The Agent API streams a Session as its Trace holds it. Every record is the OmniM
 - `Session.contextOpenPending()` says when the next Task opens a new file; the server holds a run's input echo behind that `session_meta`.
 - The parent's stream still carries a subagent's `session_meta` once.
 
-## SDK `@prismshadow/amsp` 0.3.0
+## SDK `@prismshadow/amsp`
 
-- `AgentClient.run()` returns the run to iterate (what 0.2.x `stream()` did) and `ask()` the result alone. `RunResult` is read from the records: `status` and `error`, `text`, `usage`, `sessionUsage` and `requests`.
+- The SDK ships in this release at the harness version, as every package does. `AgentClient.run()` returns the run to iterate (what `stream()` did up to 0.2.16) and `ask()` the result alone. `RunResult` is read from the records: `status` and `error`, `text`, `usage`, `sessionUsage` and `requests`.
 - The approval loop long-polls the approvals resource while a `tool_call` waits on its decision, and hands each call to `onApproval(toolCall, origin)`; with no callback the answer is `deny`.
 - New: `messages()`, `approvals()`, `SessionReader` (history, then the live tail, deduplicated, resynced, and reconnected after 50 s of silence), `HttpTransport` and the `Transport` interface, `readSse` with event names and ids, `readAmsp`, and a browser bundle at `dist/browser/amsp.js`.
 
@@ -41,6 +41,8 @@ The Agent API streams a Session as its Trace holds it. Every record is the OmniM
 
 ## Compatibility
 
-- `/api/amsp/v1` keeps its path but its stream changes shape in this release. `@prismshadow/amsp` 0.2.x, and any program that parses the `run.*` / `K.delta` / `K.done` events, must move to 0.3.0 or read the records. A 0.3.0 client cannot read an older server's stream either.
+- `/api/amsp/v1` keeps its path but its stream changes shape in this release, which keeps the 0.2 line (user decision 2026-10-23). The `@prismshadow/amsp` client of 0.2.16 and earlier, and any program that parses the `run.*` / `K.delta` / `K.done` events, must move to this release's SDK or read the records.
+- The SDK is versioned with the harness, so a dependency on `^0.2.16` picks up the breaking client on its next install or update. A program that has not moved yet pins `@prismshadow/amsp@0.2.16`, which keeps working against a server of 0.2.16 or earlier.
+- This release's SDK cannot read an older server's stream either: upgrade the server and the client together.
 - The amsp docs page maps every v1 event to the record that replaces it.
 - No compatibility layer is kept (user decision 2026-10-23).

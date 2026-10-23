@@ -64,7 +64,7 @@ To run the program yourself, you need the key in your environment. Ask the user 
 npm install @prismshadow/amsp
 ```
 
-Use version 0.3.0 or later, which reads the current stream; 0.2.x cannot. The client has no dependencies and runs in Node 24 and in current browsers. If your registry does not have the package, call the API over HTTP as in section 4.
+Use a version after 0.2.16, which reads the current stream; 0.2.16 and earlier read the old events and cannot. The package is versioned with PenguinHarness, so match it to the server: a server of 0.2.16 or earlier needs the client of the same version. The client has no dependencies and runs in Node 24 and in current browsers. If your registry does not have the package, call the API over HTTP as in section 4.
 
 ```ts
 import { AgentClient, isModelMessage, parseArguments } from "@prismshadow/amsp";

@@ -2,7 +2,7 @@
 
 AMSP (Agent Message Stream Protocol) is the stream of one PenguinHarness Session: its OmniMessage records exactly as the Trace holds them, the `partial_*` fragments streamed while a message is produced, and four control frames. This package defines it — the record types and their guards, the message markers, the control frames, the shapes of the Agent API's requests and answers — and carries the client: `AgentClient` to run an agent, `SessionReader` to follow a conversation. No runtime dependencies; runs in Node 24 and in current browsers on `fetch`, `ReadableStream`, `TextDecoder` and `AbortController`.
 
-Version 0.3.0 reads the stream PenguinHarness serves at `/api/amsp/v1` since the protocol was redefined around these records. It cannot read the events an older server sends, and 0.2.x cannot read this stream.
+The package is versioned with PenguinHarness. The versions after 0.2.16 read the stream PenguinHarness serves at `/api/amsp/v1` since the protocol was redefined around these records: they cannot read the events a server of 0.2.16 or earlier sends, and a client of 0.2.16 or earlier cannot read this stream. A dependency on `^0.2.16` picks up the new client on its next install; pin `0.2.16` to keep the old one.
 
 ## The stream
 
@@ -111,7 +111,7 @@ for await (const frame of readAmsp(response.body!)) {
 const result = collector.result(); // a stream that ended without [DONE] broke: check for it first
 ```
 
-## From 0.2.x and the earlier v1 events
+## From the client of 0.2.16 and the earlier v1 events
 
 | Earlier | Now |
 | --- | --- |

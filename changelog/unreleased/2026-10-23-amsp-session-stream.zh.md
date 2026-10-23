@@ -1,10 +1,10 @@
-# AMSP v1 改为传送 Session 自己的记录；SDK 0.3.0
+# AMSP v1 改为传送 Session 自己的记录，SDK 随之改为读取记录
 
 - **Date:** 2026-10-23
 - **Type:** feature
 - **Scope:** `amsp`, `server`, `core`, `web`, `docs`
 - **PR:** [#1301](https://github.com/Prism-Shadow/penguin-harness/pull/1301)
-- **Breaking:** `/api/amsp/v1` 路径不变，流的形状改变：`run.*`、`K.delta` 与 `K.done` 事件让位于 Session 的 OmniMessage 记录，`@prismshadow/amsp` 0.2.x 读不懂新的流。
+- **Breaking:** `/api/amsp/v1` 路径不变，流的形状改变：`run.*`、`K.delta` 与 `K.done` 事件让位于 Session 的 OmniMessage 记录，0.2.16 及更早的 `@prismshadow/amsp` 客户端读不懂新的流。本版本的 SDK（`^0.2.16` 的依赖会取到它）也读不懂旧服务端的流。
 
 [English](2026-10-23-amsp-session-stream.md)
 
@@ -32,9 +32,9 @@ Agent API 按 Trace 的样子传送一个 Session：每条记录都是 OmniMessa
 - `Session.contextOpenPending()` 表示下一个 Task 会开出新文件；服务端据此把运行的输入回显排在那条 `session_meta` 之后。
 - 父会话的流仍只带一次子会话的 `session_meta`。
 
-## SDK `@prismshadow/amsp` 0.3.0
+## SDK `@prismshadow/amsp`
 
-- `AgentClient.run()` 返回可迭代的运行（即 0.2.x 的 `stream()`），`ask()` 只返回结果。`RunResult` 由记录读出：`status` 与 `error`、`text`、`usage`、`sessionUsage` 与 `requests`。
+- SDK 与其他包一样，以本版本的版本号随本版本发布。`AgentClient.run()` 返回可迭代的运行（即 0.2.16 及之前的 `stream()`），`ask()` 只返回结果。`RunResult` 由记录读出：`status` 与 `error`、`text`、`usage`、`sessionUsage` 与 `requests`。
 - 审批循环在有 `tool_call` 等待决定时长轮询待决审批资源，把每个调用交给 `onApproval(toolCall, origin)`；没有回调时答 `deny`。
 - 新增 `messages()`、`approvals()`、`SessionReader`（先读历史、再接实时尾部，去重、重建，静默 50 秒后重连）、`HttpTransport` 与 `Transport` 接口、带事件名与 id 的 `readSse`、`readAmsp`，以及浏览器构建 `dist/browser/amsp.js`。
 
@@ -45,6 +45,8 @@ Agent API 按 Trace 的样子传送一个 Session：每条记录都是 OmniMessa
 
 ## 兼容性
 
-- `/api/amsp/v1` 路径不变，但本版本起流的形状改变。`@prismshadow/amsp` 0.2.x 以及解析 `run.*` / `K.delta` / `K.done` 事件的程序，须改用 0.3.0 或直接读记录。0.3.0 客户端同样读不懂旧服务端的流。
+- `/api/amsp/v1` 路径不变，但本版本起流的形状改变；本版本仍在 0.2 系列内（用户 2026-10-23 决定）。0.2.16 及更早的 `@prismshadow/amsp` 客户端以及解析 `run.*` / `K.delta` / `K.done` 事件的程序，须改用本版本的 SDK 或直接读记录。
+- SDK 的版本号与 harness 一致，因此依赖 `^0.2.16` 的程序在下一次安装或更新时会取到这个不兼容的客户端。尚未改完的程序应固定 `@prismshadow/amsp@0.2.16`，它仍可对接 0.2.16 及更早的服务端。
+- 本版本的 SDK 同样读不懂旧服务端的流：服务端与客户端须一起升级。
 - 文档站 amsp 页列出每个 v1 事件对应的新记录。
 - 不保留兼容层（用户 2026-10-23 决定）。

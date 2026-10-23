@@ -280,7 +280,7 @@ data: [DONE]
 
 ## From the earlier v1 events
 
-Before `@prismshadow/amsp` 0.3.0, `/api/amsp/v1` served a translation of these records as `<subject>.<phase>` events, each a bare `data:` line with `type` and `at`. The path stayed and the events were replaced, so a program that parses them, or uses the 0.2.x client, needs the table below. The 0.3.0 client cannot read an older server's events either.
+Up to PenguinHarness 0.2.16, `/api/amsp/v1` served a translation of these records as `<subject>.<phase>` events, each a bare `data:` line with `type` and `at`. The path stayed and the events were replaced, so a program that parses them, or uses the `@prismshadow/amsp` client of 0.2.16 or earlier, needs the table below. The client of later versions cannot read an older server's events either.
 
 | Earlier event | Now |
 | --- | --- |
