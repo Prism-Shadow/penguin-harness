@@ -28,7 +28,7 @@ import type {
   ToolCallPayload,
 } from "./types.js";
 
-/** A finished run, as `Run.result()` and `AgentClient.ask()` return it. */
+/** A finished run, as `Run.result()` and `AgentClient.run()` return it. */
 export interface RunResult {
   /** `completed`, or how the run stopped. */
   status: StopReason;

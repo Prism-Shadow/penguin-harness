@@ -223,7 +223,7 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.run({ input: "Summarize README.md" });
+const run = client.stream({ input: "Summarize README.md" });
 for await (const record of run) {
   // Records without `origin` are the main conversation's; a subagent's carry one.
   if (record.origin || !isModelMessage(record)) continue;
@@ -231,7 +231,7 @@ for await (const record of run) {
 }
 const first = await run.result();
 
-const second = await client.ask({
+const second = await client.run({
   sessionId: first.sessionId,
   input: "Now list its headings",
   onApproval: () => "allow",
@@ -239,9 +239,9 @@ const second = await client.ask({
 console.log(second.text, second.usage.total);
 ```
 
-- `client.run()` 立即开始运行并返回它。迭代它即可按到达顺序取得记录，只能迭代一次；记录在被读取之前一直保留。`hello` 一到，`run.session` 就以 Session id 兑现，早于任何记录。
+- `client.stream()` 立即开始运行并返回它。迭代它即可按到达顺序取得记录，只能迭代一次；记录在被读取之前一直保留。`hello` 一到，`run.session` 就以 Session id 兑现，早于任何记录。
 - 流读到 `[DONE]` 时 `run.result()` 兑现，内容为 `status`、`error`、`sessionId`、`text`、`usage`、`sessionUsage` 和 `requests`，各项如何从记录读出见[运行的结果](/amsp#运行的结果)。`text` 是主会话中助手的回答，以空行连接；子 Agent 的文本、用户消息和压缩摘要都不计入。
-- `client.ask()` 运行到结束并返回同样的结果，不为迭代保留任何记录。
+- `client.run()` 运行到结束并返回同样的结果，不为迭代保留任何记录。
 - 提前退出循环只停止迭代，不停止运行：审批照常回答，`result()` 照常兑现。要停止运行，见[中止](#中止)。
 - 客户端不认识 `payload.type` 的记录会照常传出，所以对它分支时要留一个缺省分支。
 - `client.agent()`、`client.session(sessionId)` 和 `client.messages(sessionId, page?)` 分别读取 Agent、会话的状态与模型，以及会话的历史。
@@ -253,7 +253,7 @@ console.log(second.text, second.usage.total);
 ```ts
 import { parseArguments } from "@prismshadow/amsp";
 
-const result = await client.ask({
+const result = await client.run({
   input: "Clean up the build output",
   onApproval: (toolCall, origin) => {
     const args = parseArguments(toolCall);
@@ -269,7 +269,7 @@ const result = await client.ask({
 
 ### 中止
 
-- 中止传给 `run()` 或 `ask()` 的 `signal` 会断开连接：服务器中止运行，运行以该 signal 的 reason（缺省为 `AbortError`）拒绝。尚未读取的记录被丢弃。
+- 中止传给 `stream()` 或 `run()` 的 `signal` 会断开连接：服务器中止运行，运行以该 signal 的 reason（缺省为 `AbortError`）拒绝。尚未读取的记录被丢弃。
 - `run.abort()` 请服务器中止运行，并保持连接：记录以 `abort` 和 `task_end` 结束，流以 `[DONE]` 结束，`result()` 以 `status: "aborted"` 兑现。
 - `client.abort(sessionId)` 按 id 对某个会话做同样的事，并返回是否中断了运行。
 
@@ -316,7 +316,7 @@ const client = new AgentClient({
 });
 
 const answer = document.querySelector("#answer")!;
-for await (const record of client.run({ input: "What changed today?" })) {
+for await (const record of client.stream({ input: "What changed today?" })) {
   if (record.origin || !isModelMessage(record)) continue;
   if (record.payload.type === "partial_text") answer.textContent += record.payload.text;
 }
@@ -347,8 +347,8 @@ class AgentClient {
     headers?: Record<string, string>;
     transport?: Transport;             // in place of the HTTP transport the options above build
   });
-  run(opts: RunOptions): Run;
-  ask(opts: RunOptions): Promise<RunResult>;
+  stream(opts: RunOptions): Run;
+  run(opts: RunOptions): Promise<RunResult>;
   agent(): Promise<AgentInfo>;
   session(sessionId: string): Promise<SessionInfo>;
   messages(sessionId: string, page?: { tailLimit: number } | { before: string; limit?: number }): Promise<MessagesResponse>;
@@ -445,8 +445,6 @@ const result = collector.result();
 
 | 0.2.16 及更早 | 0.2.16 之后 |
 | --- | --- |
-| `client.stream(opts)` | `client.run(opts)` |
-| `client.run(opts)` | `client.ask(opts)` |
 | `onApproval(request, ctx)`，读取 `request.tool_call` | `onApproval(toolCall, origin, ctx)` |
 | 事件：`run.started`、`text.delta`、`run.done` 等 | 记录与控制帧，见[从 v1 旧事件到记录](/amsp#从-v1-旧事件到记录) |
 | `RunResult.items` | 已移除：迭代这次运行，或读取历史 |

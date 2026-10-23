@@ -334,7 +334,7 @@ describe("AMSP on the wire", () => {
         "Read it.",
       );
       const asked: string[] = [];
-      const run1 = client(A).run({
+      const run1 = client(A).stream({
         input: "Read notes.txt",
         onApproval: (call) => {
           asked.push(call.name);
@@ -355,7 +355,7 @@ describe("AMSP on the wire", () => {
         { toolUse: { id: "toolu_read_2", name: "read_file", input: { file_path: "notes.txt" } } },
         "Denied.",
       );
-      const run2 = client(A).run({ input: "Read it again", sessionId: result.sessionId });
+      const run2 = client(A).stream({ input: "Read it again", sessionId: result.sessionId });
       const again: AmspRecord[] = [];
       for await (const r of run2) again.push(r);
       expect(again.find((r) => kindOf(r) === "approval_decision")?.payload).toMatchObject({
@@ -372,7 +372,7 @@ describe("AMSP on the wire", () => {
     const held = new Promise<void>((resolve) => (release = resolve));
     holds.set(mock.requests.length + 1, held);
     const sdk = client(A);
-    const running = sdk.run({ input: "Take your time" });
+    const running = sdk.stream({ input: "Take your time" });
     const sessionId = await running.session;
     await waitFor(() => t.deps.manager.statusOf(sessionId) === "running");
     expect(await sdk.abort(sessionId)).toBe(true);
@@ -383,7 +383,7 @@ describe("AMSP on the wire", () => {
     let release2!: () => void;
     holds.set(mock.requests.length + 1, new Promise<void>((resolve) => (release2 = resolve)));
     const controller = new AbortController();
-    const leaving = sdk.run({ input: "And leave", sessionId, signal: controller.signal });
+    const leaving = sdk.stream({ input: "And leave", sessionId, signal: controller.signal });
     await waitFor(() => t.deps.manager.statusOf(sessionId) === "running");
     controller.abort(new Error("gone"));
     await expect(leaving.result()).rejects.toThrow("gone");

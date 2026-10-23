@@ -34,14 +34,14 @@ Agent API 按 Trace 的样子传送一个 Session：每条记录都是 OmniMessa
 
 ## SDK `@prismshadow/amsp`
 
-- SDK 与其他包一样，以本版本的版本号随本版本发布。`AgentClient.run()` 返回可迭代的运行（即 0.2.16 及之前的 `stream()`），`ask()` 只返回结果。`RunResult` 由记录读出：`status` 与 `error`、`text`、`usage`、`sessionUsage` 与 `requests`。
+- SDK 与其他包一样，以本版本的版本号随本版本发布。`AgentClient.stream()` 与 `AgentClient.run()` 保持 0.2.16 的含义：`stream()` 返回可迭代的运行，`run()` 只返回结果。`RunResult` 由记录读出：`status` 与 `error`、`text`、`usage`、`sessionUsage` 与 `requests`。
 - 审批循环在有 `tool_call` 等待决定时长轮询待决审批资源，把每个调用交给 `onApproval(toolCall, origin)`；没有回调时答 `deny`。
 - 新增 `messages()`、`approvals()`、`SessionReader`（先读历史、再接实时尾部，去重、重建，静默 50 秒后重连）、`HttpTransport` 与 `Transport` 接口、带事件名与 id 的 `readSse`、`readAmsp`，以及浏览器构建 `dist/browser/amsp.js`。
 
 ## Web App
 
 - API 标签的「试一试」经 SDK 运行。每行以记录的 `payload.type` 为标签，同一条消息的片段与完整记录合为一行，不列出 `hello` 与 `ping`。「允许」/「拒绝」位于等待中的 `tool_call` 行。结果栏即本次运行的 `RunResult`，或写明事件流在 `[DONE]` 之前结束、运行没有走到终点。
-- 标签页的 SDK 示例改为迭代 `run()`。
+- 标签页的 SDK 示例改为迭代 `stream()`。
 
 ## 兼容性
 

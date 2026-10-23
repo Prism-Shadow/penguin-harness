@@ -223,7 +223,7 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.run({ input: "Summarize README.md" });
+const run = client.stream({ input: "Summarize README.md" });
 for await (const record of run) {
   // Records without `origin` are the main conversation's; a subagent's carry one.
   if (record.origin || !isModelMessage(record)) continue;
@@ -231,7 +231,7 @@ for await (const record of run) {
 }
 const first = await run.result();
 
-const second = await client.ask({
+const second = await client.run({
   sessionId: first.sessionId,
   input: "Now list its headings",
   onApproval: () => "allow",
@@ -239,9 +239,9 @@ const second = await client.ask({
 console.log(second.text, second.usage.total);
 ```
 
-- `client.run()` starts the run at once and returns it. Iterate it for the records as they arrive — once; records are kept until read. `run.session` resolves with the Session id as soon as `hello` arrives, before any record.
+- `client.stream()` starts the run at once and returns it. Iterate it for the records as they arrive — once; records are kept until read. `run.session` resolves with the Session id as soon as `hello` arrives, before any record.
 - `run.result()` resolves when the stream reaches `[DONE]`, with `status`, `error`, `sessionId`, `text`, `usage`, `sessionUsage` and `requests`; how each is read from the records is on [A run's result](/amsp#a-runs-result). `text` is the main conversation's assistant answers joined with a blank line; a subagent's texts, user messages and compaction summaries stay out of it.
-- `client.ask()` runs to the end and returns the same result, keeping nothing for iteration.
+- `client.run()` runs to the end and returns the same result, keeping nothing for iteration.
 - Leaving the loop early stops the iteration, not the run: approvals are still answered and `result()` still resolves. To stop the run, see [Aborting](#aborting).
 - A record whose `payload.type` the client does not know is passed through like any other, so give a switch on it a default branch.
 - `client.agent()`, `client.session(sessionId)` and `client.messages(sessionId, page?)` read the agent, a conversation's status and model, and its history.
@@ -253,7 +253,7 @@ When the approval mode makes a call wait, the client answers it for you, whether
 ```ts
 import { parseArguments } from "@prismshadow/amsp";
 
-const result = await client.ask({
+const result = await client.run({
   input: "Clean up the build output",
   onApproval: (toolCall, origin) => {
     const args = parseArguments(toolCall);
@@ -269,7 +269,7 @@ const result = await client.ask({
 
 ### Aborting
 
-- Abort the `signal` passed to `run()` or `ask()` to drop the connection: the server aborts the run, and the run rejects with the signal's reason, an `AbortError` by default. Records not yet read are dropped.
+- Abort the `signal` passed to `stream()` or `run()` to drop the connection: the server aborts the run, and the run rejects with the signal's reason, an `AbortError` by default. Records not yet read are dropped.
 - `run.abort()` asks the server to abort and keeps the connection: the records end with `abort` and `task_end`, the stream with `[DONE]`, and `result()` resolves with `status: "aborted"`.
 - `client.abort(sessionId)` does the same for a conversation by id, and returns whether a run was interrupted.
 
@@ -316,7 +316,7 @@ const client = new AgentClient({
 });
 
 const answer = document.querySelector("#answer")!;
-for await (const record of client.run({ input: "What changed today?" })) {
+for await (const record of client.stream({ input: "What changed today?" })) {
   if (record.origin || !isModelMessage(record)) continue;
   if (record.payload.type === "partial_text") answer.textContent += record.payload.text;
 }
@@ -347,8 +347,8 @@ class AgentClient {
     headers?: Record<string, string>;
     transport?: Transport;             // in place of the HTTP transport the options above build
   });
-  run(opts: RunOptions): Run;
-  ask(opts: RunOptions): Promise<RunResult>;
+  stream(opts: RunOptions): Run;
+  run(opts: RunOptions): Promise<RunResult>;
   agent(): Promise<AgentInfo>;
   session(sessionId: string): Promise<SessionInfo>;
   messages(sessionId: string, page?: { tailLimit: number } | { before: string; limit?: number }): Promise<MessagesResponse>;
@@ -445,8 +445,6 @@ A program written against the client of 0.2.16 or earlier changes as follows. Pi
 
 | 0.2.16 and earlier | After 0.2.16 |
 | --- | --- |
-| `client.stream(opts)` | `client.run(opts)` |
-| `client.run(opts)` | `client.ask(opts)` |
 | `onApproval(request, ctx)`, reading `request.tool_call` | `onApproval(toolCall, origin, ctx)` |
 | Events: `run.started`, `text.delta`, `run.done`, … | Records and control frames; see [From the earlier v1 events](/amsp#from-the-earlier-v1-events) |
 | `RunResult.items` | Removed: iterate the run, or read the history |

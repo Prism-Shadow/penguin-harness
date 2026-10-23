@@ -30,14 +30,14 @@ The Agent API streams a Session as its Trace holds it. Every record is the OmniM
 
 ## SDK `@prismshadow/amsp`
 
-- The SDK ships in this release at the harness version, as every package does. `AgentClient.run()` returns the run to iterate (what `stream()` did up to 0.2.16) and `ask()` the result alone. `RunResult` is read from the records: `status` and `error`, `text`, `usage`, `sessionUsage` and `requests`.
+- The SDK ships in this release at the harness version, as every package does. `AgentClient.stream()` and `AgentClient.run()` keep their 0.2.16 meaning: `stream()` returns the run to iterate, `run()` the result alone. `RunResult` is read from the records: `status` and `error`, `text`, `usage`, `sessionUsage` and `requests`.
 - The approval loop long-polls the approvals resource while a `tool_call` waits on its decision, and hands each call to `onApproval(toolCall, origin)`; with no callback the answer is `deny`.
 - New: `messages()`, `approvals()`, `SessionReader` (history, then the live tail, deduplicated, resynced, and reconnected after 50 s of silence), `HttpTransport` and the `Transport` interface, `readSse` with event names and ids, `readAmsp`, and a browser bundle at `dist/browser/amsp.js`.
 
 ## Web App
 
 - The API tab's Try it runs through the SDK. Rows are labelled by the record's `payload.type`, a message's fragments and its complete record are one row, and `hello` and `ping` are not listed. Allow and Deny sit on the waiting `tool_call`'s row. The outcome strip is the run's `RunResult`, or says that the stream ended before `[DONE]` or that the run did not reach its end.
-- The tab's SDK example iterates `run()`.
+- The tab's SDK example iterates `stream()`.
 
 ## Compatibility
 
