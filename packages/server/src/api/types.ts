@@ -3563,6 +3563,11 @@ export interface RequestSpan {
   approvalWaitMs?: number;
   /** LLM generation duration = durationMs − approvalWaitMs (≥ 0): only this can be used as the TPS denominator, not durationMs. */
   activeMs?: number;
+  /**
+   * The thinking level this request went out at, as its `request_begin` records it. Absent
+   * when no level was sent, and on Traces written before the field — unknown, not a level.
+   */
+  thinkingLevel?: string;
 }
 
 /**
@@ -3593,6 +3598,14 @@ export interface TraceTaskStats {
    * mode; treat an absent value as `summarize`, which is what the badge said before the split.
    */
   compactionMode?: CompactionMode;
+  /**
+   * A short label for the round navigator: the first non-empty line of the user text that
+   * started this turn, with harness marker blocks and attachment lines removed, whitespace
+   * collapsed, at most 120 characters (the view truncates it further to fit). Absent when no
+   * user text started the turn — a summarize compaction turn, an image-only send — or none of
+   * its lines is left (only attachment lines).
+   */
+  prompt?: string;
   /**
    * This turn's message index range within the **entire file** (inclusive). A single
    * sequential scan on the server tells which turn each message belongs to; the frontend

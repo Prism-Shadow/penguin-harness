@@ -130,6 +130,8 @@ import { machinesProxy } from "./proxy.js";
 import type { ProxyTarget } from "./proxy.js";
 import { MachineEventHub } from "./event-hub.js";
 import { MachineSockets } from "./machine-sockets.js";
+import { machineSessionForward } from "./session-forward.js";
+import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
@@ -3131,6 +3133,8 @@ export class MachinesModule {
   @Use() private readonly users!: Users;
   @Use() private readonly resourceGroups!: ResourceGroups;
   @Provide() machines!: Machines;
+  /** Session-level requests for a machine's Session, routed by its id (session-forward.ts). */
+  @Provide() sessionForward!: MachineSessionForward;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
   setup({ effect }: ClassCtx) {
@@ -3181,6 +3185,9 @@ export class MachinesModule {
     this.machines = machines;
     this.routes = machinesRoutes({ machines, access: this.access, events });
     this.serverProxyRoutes = machinesServerProxyRoutes(machines, { sockets, events });
+    this.sessionForward = machineSessionForward(machines, { sockets, events }, (line) =>
+      console.log(line),
+    );
     // Every transient ssh session THIS generation opened closes with it, and every held one is
     // left for the successor, whose start() re-holds each one the record says was held.
     effect(() => {

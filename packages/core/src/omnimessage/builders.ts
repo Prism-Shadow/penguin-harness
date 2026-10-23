@@ -37,6 +37,8 @@ import type {
   StopReason,
   StreamEventType,
   SubagentPayload,
+  TaskBeginPayload,
+  TaskEndPayload,
   TextPayload,
   TextSender,
   ThinkingPayload,
@@ -47,6 +49,7 @@ import type {
   ToolCallPayload,
   ToolDefinition,
 } from "./types.js";
+import type { ThinkingLevelName } from "../interfaces/shared.js";
 
 /** The current moment's ISO 8601 UTC timestamp. */
 function nowIso(): string {
@@ -279,9 +282,25 @@ export function abortEvent(
   return event({ type: "abort", error_code: errorCode });
 }
 
-/** request begin event: marks the start of one LLM Request. */
-export function requestBegin(): OmniMessage<RequestBeginPayload> {
-  return event({ type: "request_begin" });
+/** Task begin event: opens one Task's pair (produced by the Session; see TaskBeginPayload). */
+export function taskBegin(): OmniMessage<TaskBeginPayload> {
+  return event({ type: "task_begin" });
+}
+
+/** Task end event: closes the Task the last `task_begin` opened (see TaskBeginPayload). */
+export function taskEnd(): OmniMessage<TaskEndPayload> {
+  return event({ type: "task_end" });
+}
+
+/**
+ * request begin event: marks the start of one LLM Request, stamped with the effective thinking
+ * level the request goes out at (omitted when none is sent).
+ */
+export function requestBegin(thinkingLevel?: ThinkingLevelName): OmniMessage<RequestBeginPayload> {
+  return event({
+    type: "request_begin",
+    ...(thinkingLevel !== undefined ? { thinking_level: thinkingLevel } : {}),
+  });
 }
 
 /**

@@ -10,8 +10,15 @@
  * - A collapsed round draws no rows, even when its events are held from an earlier opening.
  * - An open round whose read is still out draws a placeholder and no rows; one whose read
  *   failed says so in place of its rows.
+ * - A round head carries exactly four readings — tool calls, hit rate, cost, elapsed, in that
+ *   order — and names all four in the hint a cut-off line shows; the input, output, TPS and the
+ *   context ring are not on it. An open round's first line carries those four instead.
  * - Each round's context ring is bounded by the file's context window, and by 128k when the
  *   analysis (from an older server) carries none.
+ * - A file of two or more rounds lists every round in the navigator however few cards are drawn,
+ *   and each head carries a control back to it; a one-round file has neither.
+ * - Where the thinking level changes, the round's navigator row and its request_begin row wear
+ *   the new level; other rows wear nothing, and a Trace written before the field wears none.
  * - The global summary's cost and elapsed time each put their breakdown behind a "?"; no round
  *   card carries one.
  * - Opening a file asks once to scroll its newest round into view — the open round drawn last —
@@ -22,7 +29,11 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
-import type { TraceAnalysisResponse, TraceTaskStats } from "@prismshadow/penguin-server/api";
+import type {
+  RequestSpan,
+  TraceAnalysisResponse,
+  TraceTaskStats,
+} from "@prismshadow/penguin-server/api";
 import { DEFAULT_UI_STRINGS } from "@prismshadow/penguin-ui";
 import {
   EMPTY_FILE,
@@ -121,6 +132,13 @@ function render(opts: {
       onToggle: () => {},
       onShowEarlier: () => {},
       onJump: () => {},
+      navOpen: true,
+      navCurrent: null,
+      navActive: null,
+      onToggleNav: () => {},
+      onNavActive: () => {},
+      onJumpToRound: () => {},
+      onBackToNav: () => {},
     }),
   );
 }
@@ -133,6 +151,28 @@ const rowGroups = (html: string): number[] => [
   ...new Set([...html.matchAll(/data-trace-row="(\d+)-\d+"/g)].map((m) => Number(m[1]))),
 ];
 const rows = (html: string): number => count(html, /data-trace-row="/g);
+/** The markup of the round cards, past the summary and the navigator. */
+const cards = (html: string): string => html.slice(html.indexOf("data-round="));
+/** One round's card: from its `data-round` to the next card's. */
+function cardOf(html: string, k: number): string {
+  const start = html.indexOf(`data-round="${k}"`);
+  const next = html.indexOf("data-round=", start + 1);
+  return html.slice(start, next < 0 ? undefined : next);
+}
+/** A round card's head: the card up to its body. */
+function headOf(html: string, k: number): string {
+  const card = cardOf(html, k);
+  const body = card.indexOf('data-slot="body"');
+  return body < 0 ? card : card.slice(0, body);
+}
+/** The accessible names in a piece of markup, in order. */
+const names = (html: string): string[] =>
+  [...html.matchAll(/aria-label="([^"]*)"/g)].map((m) => m[1]!);
+/** The navigator row of round `k`. */
+function navRowOf(html: string, k: number): string {
+  const start = html.indexOf(`data-nav-round="${k}"`);
+  return html.slice(start, html.indexOf("</li>", start));
+}
 
 describe("a long Trace file", () => {
   const analysis = analysisOf(1200);
@@ -171,7 +211,15 @@ describe("a long Trace file", () => {
     const html = render({ analysis, expanded: [], rounds: [readRound(newest)] });
 
     expect(rows(html)).toBe(0);
-    expect(html).not.toContain('aria-expanded="true"');
+    expect(cards(html)).not.toContain('aria-expanded="true"');
+  });
+
+  it("lists every round in the navigator while 50 cards are drawn, each head with a way back", () => {
+    const html = render({ analysis, expanded: [1199], rounds: [readRound(newest)] });
+
+    expect(count(html, /data-nav-round="/g)).toBe(1200);
+    expect(heads(html)).toBe(50);
+    expect(count(cards(html), new RegExp(`aria-label="${S.traces.backToNav}"`, "g"))).toBe(50);
   });
 
   it("an open round still being read draws a placeholder and no rows", () => {
@@ -197,6 +245,103 @@ describe("a long Trace file", () => {
   });
 });
 
+describe("a round's readings", () => {
+  const html = render({ analysis: analysisOf(3, { cost: 0.0036 }), expanded: [2] });
+
+  it("the head carries exactly tool calls, hit rate, cost and elapsed, in that order", () => {
+    const facts = headOf(html, 0);
+    expect(names(facts)).toEqual([
+      S.traces.toolCalls,
+      S.traces.hitRate,
+      `${S.common.cost}（USD）`,
+      S.chat.statElapsed,
+      S.traces.backToNav,
+    ]);
+    for (const absent of [S.traces.taskInput, S.traces.taskOutput, S.chat.statTps]) {
+      expect(facts).not.toContain(absent);
+    }
+    expect(facts).not.toContain(`aria-label="${S.chat.contextUsage}`);
+  });
+
+  it("a cut-off head names all four readings in its hint", () => {
+    const hint = /data-slot="facts" data-tooltip="([^"]*)"/.exec(headOf(html, 0))?.[1] ?? "";
+    for (const label of [S.traces.toolCalls, S.traces.hitRate, S.common.cost, S.chat.statElapsed]) {
+      expect(hint).toContain(label);
+    }
+    expect(hint).toContain("94%");
+  });
+
+  it("an open round's first line carries the input, the output, the TPS and the context ring", () => {
+    const card = cardOf(html, 2);
+    const line = card.slice(card.indexOf('data-slot="readings"'));
+    const labels = names(line.slice(0, line.indexOf(S.traces.timeline)));
+    expect(labels.some((l) => l.startsWith(S.traces.taskInput))).toBe(true);
+    expect(labels).toContain(S.traces.taskOutput);
+    expect(labels).toContain(S.chat.statTps);
+    expect(labels.some((l) => l.startsWith(S.chat.contextUsage))).toBe(true);
+  });
+});
+
+describe("the round navigator", () => {
+  it("a one-round file has no navigator and no way back to one", () => {
+    const html = render({ analysis: analysisOf(1), expanded: [0] });
+    expect(html).not.toContain('data-slot="round-nav"');
+    expect(html).not.toContain(S.traces.backToNav);
+  });
+
+  /** A round whose read rows include its request_begin, at the time its span begins. */
+  function readWithRequest(r: TraceTaskStats, beginTs: string): RoundEntry {
+    const entry = readRound(r);
+    if (entry.status !== "loaded") throw new Error("unreachable");
+    entry.rows[1] = { timestamp: beginTs, type: "event_msg", payload: { type: "request_begin" } };
+    return entry;
+  }
+  const beginOf = (k: number): string => iso(k * 60_000 + 1000);
+  const span = (k: number, level?: string): RequestSpan => ({
+    beginTs: beginOf(k),
+    taskIndex: k,
+    ...(level !== undefined ? { thinkingLevel: level } : {}),
+  });
+  const levelNames = S.chat.thinkingLevelNames;
+  /** How every level pill's hint opens, before the level's name: present means a pill. */
+  const anyLevelHint = S.traces.levelFirst("").trimEnd();
+
+  it("marks the rounds where the level changes, on their navigator row and their request row", () => {
+    const analysis = analysisOf(3, {
+      requests: [span(0, "medium"), span(1, "medium"), span(2, "high")],
+    });
+    const html = render({
+      analysis,
+      expanded: [1, 2],
+      rounds: [
+        readWithRequest(analysis.tasks[1]!, beginOf(1)),
+        readWithRequest(analysis.tasks[2]!, beginOf(2)),
+      ],
+    });
+    const first = S.traces.levelFirst(levelNames.medium!);
+    const switched = S.traces.levelChanged(levelNames.medium!, levelNames.high!);
+
+    expect(navRowOf(html, 0)).toContain(first);
+    expect(navRowOf(html, 1)).not.toContain(anyLevelHint);
+    expect(navRowOf(html, 2)).toContain(switched);
+    // The request row of the round that switched wears it; the unchanged round's does not.
+    expect(cardOf(html, 2)).toContain(switched);
+    expect(cardOf(html, 1)).not.toContain(anyLevelHint);
+    // Never on a head.
+    expect(headOf(html, 2)).not.toContain(switched);
+  });
+
+  it("a Trace written before the field marks no level anywhere", () => {
+    const analysis = analysisOf(3, { requests: [span(0), span(1), span(2)] });
+    const html = render({
+      analysis,
+      expanded: [2],
+      rounds: [readWithRequest(analysis.tasks[2]!, beginOf(2))],
+    });
+    expect(html).not.toContain(anyLevelHint);
+  });
+});
+
 describe("the context ring", () => {
   const used = humanizeTokens(30_000 + 2_000 + 1_000);
   /** The first round's ring, read by its accessible name. */
@@ -206,12 +351,15 @@ describe("the context ring", () => {
   };
 
   it("is bounded by the file's context window", () => {
-    const html = render({ analysis: analysisOf(3, { modelContextWindow: 200_000 }), expanded: [] });
+    const html = render({
+      analysis: analysisOf(3, { modelContextWindow: 200_000 }),
+      expanded: [0],
+    });
     expect(ringOf(html)).toContain(`${used}/${humanizeTokens(200_000)}`);
   });
 
   it("falls back to 128k when the analysis carries no window", () => {
-    const html = render({ analysis: analysisOf(3), expanded: [] });
+    const html = render({ analysis: analysisOf(3), expanded: [0] });
     expect(ringOf(html)).toContain(`${used}/${humanizeTokens(128_000)}`);
   });
 });
@@ -265,7 +413,7 @@ describe("opening a file", () => {
     expect(drawn.at(-1)).toBe(opened!.reveal);
     const lastCard = html.slice(html.lastIndexOf("data-round="));
     expect(lastCard).toContain('aria-expanded="true"');
-    expect(count(html, /aria-expanded="true"/g)).toBe(1);
+    expect(count(cards(html), /aria-expanded="true"/g)).toBe(1);
   });
 
   it("a file with no round yet scrolls nowhere until its first round appears", () => {

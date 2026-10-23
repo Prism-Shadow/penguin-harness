@@ -672,9 +672,11 @@ export class GenerativeModel implements LLMInterface {
    * Construction-time default thinking level. Kept **out of the frozen uniConfig**: the
    * effective level is resolved per request (`params.thinkingLevel ?? default`), so a turn can
    * override it without rebuilding the model object — the thinking level is a per-turn
-   * parameter, not a Session invariant.
+   * parameter, not a Session invariant. Public through `LLMInterface`: the engine reads it to
+   * resolve, send and record each request's effective level itself; the fallback in
+   * `requestConfig` still serves callers outside the engine (titles, the vision describer).
    */
-  private readonly defaultThinkingLevel: ThinkingLevelName | undefined;
+  readonly defaultThinkingLevel: ThinkingLevelName | undefined;
   /** Streaming idle timeout (milliseconds); <= 0 disables it. A timeout is treated as needing reconnection. */
   private readonly requestTimeoutMs: number;
   /**

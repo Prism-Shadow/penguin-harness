@@ -5000,6 +5000,17 @@ Benchmark：
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
+    /** The round navigator under the global summary: its title, and how many rounds it lists. */
+    roundNav: "轮次导航",
+    roundCount: (n: number) => `${n} 轮`,
+    /** A round head's control that returns to the navigator, on that round's row. */
+    backToNav: "回到导航",
+    /** The navigator's number box: its accessible name and its placeholder. */
+    jumpToRound: "跳转到轮次",
+    jumpToRoundPlaceholder: "轮次",
+    /** A level pill's hint where a Trace first states a thinking level, and where it changes. */
+    levelFirst: (level: string) => `思考等级 ${level}`,
+    levelChanged: (from: string, to: string) => `思考等级 ${from} → ${to}`,
   },
 
   benchmark: {

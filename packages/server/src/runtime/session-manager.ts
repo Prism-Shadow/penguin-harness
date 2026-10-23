@@ -82,6 +82,7 @@ import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/
 import type { SessionRow } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
+import { InputEcho } from "./input-echo.js";
 import { goalPluginNotInstalled, hasGoalHookPackage } from "./goal-plugin.js";
 import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
@@ -1256,16 +1257,14 @@ export class SessionManager {
       entry.status = "running";
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
-      // Round-1 input: same publish + pendingInputs hold as launchTask. Core never yields
-      // a run's own initial input (only the stop hook's later injections), so without this
-      // publish the round-1 messages reach only the Trace — a page already subscribed (a
+      // Round-1 input: same echo + pendingInputs hold as launchTask. Core never yields
+      // a run's own initial input (only the stop hook's later injections), so without the
+      // echo the round-1 messages reach only the Trace — a page already subscribed (a
       // second goal on the session) would not see the user's message or the protocol
       // message until a reload. Append + bootstrap reset for the same abort-mid-bootstrap
       // reasons as launchTask.
       entry.pendingInputs = [...entry.pendingInputs, ...input];
       entry.pendingBootstrap = [];
-      const channel = this.deps.channels.get(entry.sessionId);
-      for (const msg of input) channel.publish(msg);
       this.publishState(entry, "running");
       const approve = this.entryApprove(entry);
       this.publishEvent(entry, {
@@ -1281,7 +1280,7 @@ export class SessionManager {
         signal: ac.signal,
       });
       // The objective doubles as the title material (same role as a task's input text).
-      entry.running = this.drive(entry, gen, { userExcerpt: objective });
+      entry.running = this.drive(entry, gen, { userExcerpt: objective, echo: input });
       return { sessionId: entry.sessionId };
     });
   }
@@ -1289,7 +1288,7 @@ export class SessionManager {
   /**
    * Taps a goal run's stream for `drive`: round boundaries become goal_round events —
    * round 1 from the seeded input (core never yields a run's initial input, so it is
-   * counted here, where startGoal published it), later rounds from the stop-hook continues
+   * counted here, from what startGoal echoes), later rounds from the stop-hook continues
    * core yields, each announced by the hook's `continue` event; a harness-stamped input
    * nothing announced is another package's user_prompt context riding behind the
    * objective, not a round — and the goal hook's `stop` event becomes the
@@ -1380,20 +1379,19 @@ export class SessionManager {
   }
 
   /**
-   * Shared task launch (fresh tasks, auto-started follow-ups and retries): flips to running,
-   * publishes the input, and drives the run. Caller holds the session lock and has verified
-   * idle. A retry's input is empty: nothing is published or held, and drive gets no title
+   * Shared task launch (fresh tasks, auto-started follow-ups and retries): flips to running
+   * and drives the run, which echoes the input. Caller holds the session lock and has verified
+   * idle. A retry's input is empty: nothing is echoed or held, and drive gets no title
    * material — the turn it resends already offered its text when it was first sent.
    */
   private launchTask(entry: RuntimeEntry, input: OmniMessage[]): void {
-    const channel = this.deps.channels.get(entry.sessionId);
     const ac = new AbortController();
     entry.status = "running";
     entry.abort = ac;
     entry.lastActivityMs = Date.now();
-    // Publish the input messages first (visible to other subscribers; the Trace is
-    // persisted by the SDK), then flip the running status. The same envelopes are held as
-    // pendingInputs so GET /messages can serve them before the engine's Trace write
+    // The input messages are echoed by drive, right behind the run's first task_begin (see
+    // InputEcho; the Trace is persisted by the SDK, in that order). The same envelopes are
+    // held as pendingInputs so GET /messages can serve them before the engine's Trace write
     // catches up (delayed by the first run's MCP connect). APPEND, don't replace: inputs
     // of a run aborted mid-bootstrap are still held (nothing reached the Trace; core
     // carries them into this run) and must stay served until this run persists them.
@@ -1401,7 +1399,6 @@ export class SessionManager {
     // its own connect phase, and a stale aborted pair would render as an extra row.
     entry.pendingInputs = [...entry.pendingInputs, ...input];
     entry.pendingBootstrap = [];
-    for (const msg of input) channel.publish(msg);
     this.publishState(entry, "running");
 
     const approve = this.entryApprove(entry);
@@ -1416,7 +1413,7 @@ export class SessionManager {
       .filter(isPlainText("user"))
       .map((m) => m.payload.text)
       .join("\n");
-    entry.running = this.drive(entry, gen, { userExcerpt });
+    entry.running = this.drive(entry, gen, { userExcerpt, echo: input });
   }
 
   /**
@@ -2232,12 +2229,13 @@ export class SessionManager {
    * Drive the output stream in the background: publish each message + persist usage +
    * persist LLM/tool errors; on completion (including errors) resets to idle and pushes
    * the status. `titleSource` is passed only for Task runs (compaction doesn't generate
-   * a title): its user text drives automatic title generation at run start.
+   * a title): its user text drives automatic title generation at run start, and its `echo`
+   * is the run's input, published right behind the run's first `task_begin` (see InputEcho).
    */
   private async drive(
     entry: RuntimeEntry,
     gen: AsyncGenerator<OmniMessage>,
-    titleSource?: { userExcerpt: string },
+    titleSource?: { userExcerpt: string; echo?: readonly OmniMessage[] },
   ): Promise<void> {
     const ctx: UsageContext = {
       projectId: entry.projectId,
@@ -2299,8 +2297,13 @@ export class SessionManager {
     // exist) — the latter is cleaned up when the parent-level tool_call_output settles;
     // if the call is still in the queue at that point, it never produced a session_meta.
     const subagentPrompts = new Map<string, string>();
+    // Re-fetches the channel per publish, like the loop below (see the comment there).
+    const echo = new InputEcho(titleSource?.echo ?? [], (m) =>
+      this.deps.channels.get(entry.sessionId).publish(m),
+    );
     try {
       for await (const msg of gen) {
+        echo.before(msg);
         // A parent-level (no origin) run_subagent call: record its prompt for the child
         // session_meta that arrives later to use as its title.
         if (!msg.origin || msg.origin.length === 0) {
@@ -2397,6 +2400,7 @@ export class SessionManager {
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
         this.deps.channels.get(entry.sessionId).publish(msg);
+        echo.after(msg);
         watcher?.observe(msg);
         try {
           await this.deps.recorder.record(ctx, msg);
@@ -2413,6 +2417,8 @@ export class SessionManager {
       );
       this.deps.errors?.record({ source: "session", err, ctx, code: "session_run_failed" });
     } finally {
+      // A stream that yielded nothing still echoes its input, ahead of the idle flip.
+      echo.flush();
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
       // The run is over: no fragment will ever continue, so drop the live tail before the

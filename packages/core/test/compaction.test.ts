@@ -20,6 +20,9 @@
  *   only the paired compaction events are emitted; the dialogue is written to the old trace, and
  *   on success the trace rotates into a new file (index+1, the new file starts with session_meta;
  *   rotation is deferred until the new context has its first message to write).
+ * - Thinking level: the compaction request goes out at the Session's live level like a turn, and
+ *   its Trace-only `request_begin` records that level; with no pin and no default nothing is sent
+ *   and nothing is recorded.
  */
 import { mkdtemp, rm, access, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -83,6 +86,7 @@ class ScriptedLLM implements LLMInterface {
   constructor(
     private readonly responses: ScriptedResponse[],
     readonly label = "llm",
+    readonly defaultThinkingLevel?: ThinkingLevelName,
   ) {}
 
   async *streamGenerate(
@@ -286,9 +290,9 @@ describe("context compaction", () => {
 
   it("carries no thinking level when the Session has no pin, on a turn or a compaction", async () => {
     // The pinned half of the rule is engine.test.ts's "applies setThinkingLevel to every
-    // request of the Session". This is the other half: with no pin the request says nothing at
-    // all and the LLM object's construction default — the level the context was opened with —
-    // stands. The engine must not start inventing one for either kind of request.
+    // request of the Session". This is the other half: with no pin and no construction default
+    // on the LLM object the request says nothing at all, so the provider default stands. The
+    // engine must not invent one for either kind of request — on the wire or in the Trace.
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(150, 150)] },
@@ -297,18 +301,59 @@ describe("context compaction", () => {
       "llm1",
     );
     const llm2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 330)] }]);
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_compact_nolevel" });
     const engine = new ContextEngine({
       llm: llm1,
       environment: fakeEnvironment,
-      trace: new Writer({ tracesDir: traces, sessionId: "sess_compact_nolevel" }),
+      trace,
       sessionMeta: metaMessage,
       compaction: settings(),
       openNextContext: () => ({ llm: llm2 }),
     });
+    const oldPath = trace.currentPath();
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
 
     expect(llm1.levels).toEqual([undefined, undefined]);
+    const begins = (await readTrace(oldPath)).filter(
+      (m) => (m.payload as { type?: string }).type === "request_begin",
+    );
+    expect(begins).toHaveLength(2);
+    expect(begins.every((m) => !("thinking_level" in m.payload))).toBe(true);
+  });
+
+  it("the compaction request's Trace-only request_begin records the pinned level it went out at", async () => {
+    // The LLM object's default is medium; the Session pins high before the run. The turn and
+    // the compaction request both go out at high, and the old file says so for both.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]the distilled summary[/summary]"), usage(160, 310)] },
+      ],
+      "llm1",
+      "medium",
+    );
+    const llm2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 330)] }]);
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_compact_pinned" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => ({ llm: llm2 }),
+    });
+    const oldPath = trace.currentPath();
+    engine.setThinkingLevel("high");
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(compactionEvents(out).at(-1)).toMatchObject({ status: "completed" });
+    expect(llm1.levels).toEqual(["high", "high"]);
+    const levels = (await readTrace(oldPath))
+      .filter((m) => (m.payload as { type?: string }).type === "request_begin")
+      .map((m) => (m.payload as { thinking_level?: string }).thinking_level);
+    expect(levels).toEqual(["high", "high"]);
   });
 
   it("the rotated Trace file opens with the meta the new context was opened with, and a later context without one keeps it", async () => {
