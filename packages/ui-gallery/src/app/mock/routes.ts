@@ -1437,6 +1437,20 @@ router
 // ---------------------------------------------------------------------------------------------
 
 /** What the server derives from a Trace file, derived here from the transcript the same way. */
+/**
+ * A round's navigator label, as the server derives it: the first non-empty line of the text that
+ * started it, whitespace collapsed, at most 120 characters (the demo's prompts carry no markers).
+ */
+function promptLabel(text: string): string | undefined {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l !== "");
+  return line === undefined
+    ? undefined
+    : Array.from(line.replace(/\s+/g, " ")).slice(0, 120).join("");
+}
+
 function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
   const ms = (m: OmniMessage) => Date.parse(m.timestamp);
   const requests: TraceAnalysisResponse["requests"] = [];
@@ -1458,6 +1472,7 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
     }
     if (p.type === "text" && p.role === "user") {
       taskIndex += 1;
+      const prompt = promptLabel(p.text);
       tasks.push({
         taskIndex,
         messageFrom: i,
@@ -1467,6 +1482,7 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
         tokens: { cacheRead: 0, cacheWrite: 0, output: 0 },
         llmMs: 0,
         toolMs: 0,
+        ...(prompt !== undefined ? { prompt } : {}),
       });
     }
     const task = tasks[tasks.length - 1];
@@ -1475,7 +1491,11 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       task.endTs = message.timestamp;
     }
     if (p.type === "request_begin") {
-      openRequest = { beginTs: message.timestamp, taskIndex: Math.max(taskIndex, 0) };
+      openRequest = {
+        beginTs: message.timestamp,
+        taskIndex: Math.max(taskIndex, 0),
+        ...(p.thinking_level !== undefined ? { thinkingLevel: p.thinking_level } : {}),
+      };
       requests.push(openRequest);
       if (task && task.startTs === "") task.startTs = message.timestamp;
     } else if (p.type === "request_end" && openRequest) {

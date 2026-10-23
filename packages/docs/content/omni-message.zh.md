@@ -210,7 +210,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 | `tool_list_ready` | 发送给模型的完整工具 schema |
 | `mcp_connect_begin` | 正在连接的 MCP Server |
 | `mcp_connect_end` | 总体连接状态与逐个 Server 的结果 |
-| `request_begin` | 一次模型请求的开始 |
+| `request_begin` | 一次模型请求的开始，带上该请求发出时的思考等级 |
 | `request_end` | 请求的终态，以及重试详情块（`error_code`、`error_message`、`attempt`、`retry_in_ms`） |
 | `approval_decision` | 一次审批决策，与对应的 `tool_call_id` 配对 |
 | `token_usage` | Session 累计与本次请求的 Token 计数 |
@@ -291,6 +291,9 @@ interface McpServerConnectResult {
 
 interface RequestBeginPayload {
   type: "request_begin";
+  thinking_level?: ThinkingLevelName; // the level sent: the Session's pin, else the context's
+                                      // default; absent when none was sent, and on Traces
+                                      // written before the field
 }
 
 interface RequestEndPayload {

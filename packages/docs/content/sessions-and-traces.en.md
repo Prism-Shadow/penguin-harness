@@ -58,7 +58,7 @@ A Trace is an append-only JSON Lines file. Each line is one OmniMessage envelope
 - Not recorded:
   - Streaming `partial_*` fragments. The producer appends the complete message once the segment ends.
   - Nested messages tagged with `origin`. A subagent's messages go to the child Session's own Trace. The parent Trace keeps a single `subagent` pointer event at the spawn site, recording the child Session id.
-- `request_begin` and `request_end(status)` come in pairs and delimit one Request. Replay uses `request_end.status === "completed"` as the commit criterion for that turn.
+- `request_begin` and `request_end(status)` come in pairs and delimit one Request. Replay uses `request_end.status === "completed"` as the commit criterion for that turn. `request_begin` also records the thinking level the Request went out at (`thinking_level`), which is how the Trace view finds where the level changed; replay does not read it.
 - Appends are serialized inside the writer. Records from concurrent producers (the model stream, parallel tool executions) land strictly one after another, each as a single uninterrupted line. A multi-megabyte record, such as a base64 image Data URL, can never be torn apart by a concurrent append. File rotation never splits a record.
 - Each record is appended with a single `write(2)`, not `fs.appendFile`, which splits payloads larger than 512 KiB into several underlying writes. An abnormal process exit can therefore at most truncate the last record; it can never tear one apart in the middle.
 - Before Session resumption continues an existing file, the writer probes the file tail. If a previous crash left a torn line (no trailing newline), the next record is preceded by a newline, so the torn line never swallows the records appended after it.
@@ -77,7 +77,7 @@ An illustrative Trace head follows, one OmniMessage envelope per line. Note the 
 {"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Create hello.txt"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"tool_list_ready","tools":[…]}}
-{"timestamp":"…","type":"event_msg","payload":{"type":"request_begin"}}
+{"timestamp":"…","type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0","stop_reason":"completed"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"approval_decision","decision":"allow","tool_call_id":"call_0"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"token_usage","session":{…},"request":{…}}}

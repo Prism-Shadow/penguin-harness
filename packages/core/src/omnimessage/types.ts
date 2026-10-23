@@ -18,10 +18,14 @@
  * lives in `session_meta`; a context's boundaries in the compaction pair and the file split)
  * and that readers cannot derive it. The PR description says why the existing records could
  * not carry it. The rule itself is stated in the architecture spec's message-format section.
+ * One stated exception, asked for by the owner: `request_begin.thinking_level` (each request's
+ * effective level — `session_meta` deliberately omits the level and it can change mid-context,
+ * so no existing record carries it).
  *
  * Docs: packages/docs/content/omni-message.{zh,en}.md (site path /docs/omni-message) documents
  * this protocol payload-for-payload — keep the page in sync when changing types here.
  */
+import type { ThinkingLevelName } from "../interfaces/shared.js";
 
 /** The outer message category. */
 export type OmniMessageType = "session_meta" | "model_msg" | "event_msg";
@@ -120,7 +124,7 @@ export interface ToolDefinition {
  * and the model its context actually ran with; the context's toolset follows as the
  * `tool_list_ready` record. Everything that shapes the request prefix — model, prompt,
  * toolset — holds from a context's open to its close; the thinking level is not part of it (a
- * per-request parameter, deliberately not recorded — see the note in the body).
+ * per-request parameter, recorded on each `request_begin` instead — see the note in the body).
  */
 export interface SessionMetaPayload {
   session_id: string;
@@ -134,7 +138,8 @@ export interface SessionMetaPayload {
   system_prompt: string;
   // The thinking level is deliberately NOT here: it is a per-request parameter (the Session
   // pin, else the Agent config default read at context open), not part of the recorded
-  // prefix. Legacy Traces may carry a `thinking_level` field; it is displayed, never read.
+  // prefix; each request's effective level is on its `request_begin`. Legacy Traces may carry
+  // a `thinking_level` field here; it is displayed, never read.
   // The tool definitions were embedded here (`tools`) before the tool_list_ready split (see
   // ToolListReadyPayload): the toolset is only known after MCP servers connect, and meta
   // must not wait for that. Pre-split Traces still carry the field on disk; it is
@@ -400,6 +405,14 @@ export interface TokenUsagePayload {
  */
 export interface RequestBeginPayload {
   type: "request_begin";
+  /**
+   * The effective thinking level this request went out at: the Session's pin, else the level
+   * the context opened with — the same value the engine handed the LLM. Absent when no level
+   * was sent (the provider default applies), and on Traces written before the field; readers
+   * treat absent as unknown. Observation only: replay never reads it. The stated exception to
+   * the closed-vocabulary rule above.
+   */
+  thinking_level?: ThinkingLevelName;
 }
 
 /**

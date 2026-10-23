@@ -30,6 +30,7 @@ import {
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type { CompactionMode, OmniMessage } from "@prismshadow/penguin-core";
+import { promptLabel } from "./trace-prompt-label.js";
 import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,
@@ -1177,6 +1178,8 @@ export class TraceService implements Traces {
     const msgTask: number[] = new Array<number>(messages.length).fill(-1);
     /** The pending new turn's starting point (message index); settled once request_begin determines the taskIndex. */
     let pendingFrom: number | null = null;
+    /** The navigator label of the pending turn: from its first user text that leaves one (see promptLabel). */
+    let pendingPrompt: string | null = null;
 
     for (let mi = 0; mi < messages.length; mi++) {
       const msg = messages[mi]!;
@@ -1243,6 +1246,9 @@ export class TraceService implements Traces {
         !hasOrigin && msg.type === "event_msg" && p.type === "compaction_begin";
       if (startsUserTurn || startsCompactionTurn) {
         if (pendingFrom === null) pendingFrom = mi;
+        if (startsUserTurn && p.type === "text" && pendingPrompt === null) {
+          pendingPrompt = promptLabel(p.text as string);
+        }
         // A user Prompt **always starts a new turn**: judging continuation solely
         // by "did the previous turn call a tool" isn't enough — if the previous
         // turn ended in a retryable status (given up after exhausting retries),
@@ -1266,6 +1272,8 @@ export class TraceService implements Traces {
           // never closed (process exited mid-run), the span is left open.
           openRequest = { beginTs: msg.timestamp, taskIndex };
           if (compactionActive) openRequest.compaction = true;
+          // The level the request went out at; absent on Traces written before the field.
+          if (typeof p.thinking_level === "string") openRequest.thinkingLevel = p.thinking_level;
           requests.push(openRequest);
           if (!hasOrigin) {
             const t = ensureTask(taskIndex);
@@ -1291,6 +1299,8 @@ export class TraceService implements Traces {
                 if (messages[k]!.origin === undefined) msgTask[k] = taskIndex;
               }
               pendingFrom = null;
+              if (pendingPrompt !== null) t.prompt = pendingPrompt;
+              pendingPrompt = null;
             }
             msgTask[mi] = taskIndex;
           }
@@ -1530,7 +1540,8 @@ export class TraceService implements Traces {
       for (let k = pendingFrom; k < messages.length; k++) {
         if (messages[k]!.origin === undefined) msgTask[k] = taskIndex;
       }
-      ensureTask(taskIndex);
+      const t = ensureTask(taskIndex);
+      if (pendingPrompt !== null) t.prompt = pendingPrompt;
     }
 
     // Each turn's message index range and end-of-turn time are always derived from

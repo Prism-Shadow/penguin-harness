@@ -1119,7 +1119,8 @@ export class Session {
    * The Session's thinking level — the SOFT-limited runtime parameter as plain state: an
    * assignment rides the very next LLM request (mid-context, even mid-Task), unlike the
    * prompt, toolset and model, which never change between a context's open and its close —
-   * and nothing records it in the Trace. The live value is engine state
+   * and `session_meta` does not record it (each request's `request_begin` records the level
+   * that request went out at). The live value is engine state
    * (`ContextEngine.setThinkingLevel`), buffered on the Session until the engine exists;
    * contexts keep their opening base (the creation option, else the Agent config) for
    * compaction requests and as the fallback while nothing was ever assigned. The cost of

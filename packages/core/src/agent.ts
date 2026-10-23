@@ -638,7 +638,8 @@ export class Agent {
     // the config fallback entirely; only `undefined` (no pin) reads the config chain,
     // against this context's State (Agent explicit > Project default_chat > built-in
     // "medium", see configuredThinkingLevel). A per-request parameter, not part of the
-    // prefix: this is only the base the Session's live pin overrides, and nothing records it.
+    // prefix: this is only the base the Session's live pin overrides; `session_meta` does not
+    // record it (each request's `request_begin` records the level it went out at).
     const pin = spec.thinkingLevel;
     const thinkingLevel =
       pin === null ? undefined : (pin ?? this.configuredThinkingLevel(state, projectConfig));

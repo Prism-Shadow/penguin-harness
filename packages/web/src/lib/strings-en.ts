@@ -4798,6 +4798,17 @@ Scenarios:
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
     exportFile: "Export",
+    /** The round navigator under the global summary: its title, and how many rounds it lists. */
+    roundNav: "Turn index",
+    roundCount: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
+    /** A round head's control that returns to the navigator, on that round's row. */
+    backToNav: "Back to the turn index",
+    /** The navigator's number box: its accessible name and its placeholder. */
+    jumpToRound: "Jump to turn",
+    jumpToRoundPlaceholder: "Turn",
+    /** A level pill's hint where a Trace first states a thinking level, and where it changes. */
+    levelFirst: (level: string) => `Thinking level ${level}`,
+    levelChanged: (from: string, to: string) => `Thinking level ${from} → ${to}`,
   },
 
   benchmark: {

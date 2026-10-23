@@ -58,7 +58,7 @@ Trace 是只追加的 JSON Lines 文件，每行是一个 OmniMessage 信封，�
 - 不记录的内容：
   - 流式的 `partial_*` 片段。片段结束后，由生产方追加完整消息。
   - 带 `origin` 标记的嵌套消息。子 Agent 的消息写入子 Session 自己的 Trace。父 Trace 只在派生子 Agent 的位置保留一条 `subagent` 指针事件，记录子 Session 的 id。
-- `request_begin` 与 `request_end(status)` 成对出现，界定一个 Request。重放时以 `request_end.status === "completed"` 判定该轮是否已提交。
+- `request_begin` 与 `request_end(status)` 成对出现，界定一个 Request。重放时以 `request_end.status === "completed"` 判定该轮是否已提交。`request_begin` 还记录该 Request 发出时的思考等级（`thinking_level`），轨迹观测据此定位等级切换的位置；重放不读取它。
 - 追加在写入器内部串行执行。并发生产者（模型流、并行的工具执行）写出的记录严格一条接一条落盘，每条都是一整行、中间不断开。数 MB 的记录（比如 base64 图片的 Data URL）绝不会因并发追加而撕裂；文件轮转也绝不会把一条记录切成两半。
 - 每条记录都用一次 `write(2)` 追加，不用 `fs.appendFile`：后者会把超过 512 KiB 的负载拆成多次底层写入。因此进程异常退出最多截断最后一条记录，绝不会从中间撕开一条。
 - Session 恢复继续写入已有文件之前，写入器会先探测文件尾部。如果上一次崩溃留下了断行（结尾没有换行符），下一条记录前会先补一个换行符，断行就不会吞掉之后追加的记录。
@@ -77,7 +77,7 @@ Trace 是只追加的 JSON Lines 文件，每行是一个 OmniMessage 信封，�
 {"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Create hello.txt"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"tool_list_ready","tools":[…]}}
-{"timestamp":"…","type":"event_msg","payload":{"type":"request_begin"}}
+{"timestamp":"…","type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0","stop_reason":"completed"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"approval_decision","decision":"allow","tool_call_id":"call_0"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"token_usage","session":{…},"request":{…}}}

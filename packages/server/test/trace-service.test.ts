@@ -2,6 +2,14 @@
  * Unit tests for the Trace service: multi-file history concatenation, file
  * listing, pagination (following a growing file), performance-analysis derivation
  * (including the head's context window), and Agent-level drill-down browsing.
+ *
+ * Round navigator data, as the Trace view reads it from the analysis:
+ * - Each request carries the thinking level its request_begin records; one written before the
+ *   field carries none (unknown, not a level).
+ * - A round's label is the first line of the user text that started it, marker blocks and
+ *   attachment lines left out, whitespace collapsed, cut at 120 characters.
+ * - A round no user text started (an image-only send, a summarize compaction) has no label; a
+ *   send that never got a request keeps its own.
  */
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,7 +17,9 @@ import {
   abortEvent,
   approvalDecision,
   assistantText,
+  attachedFileLine,
   buildBackgroundTaskDoneMessage,
+  buildSkillsMessage,
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
@@ -1386,5 +1396,80 @@ describe("trace-service", () => {
     expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t2"]);
     // But the duration list still records t1 (flagged with the interrupted status).
     expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.stopReason).toBe("retryable");
+  });
+
+  it("each request carries the thinking level its request_begin records; a request written before the field carries none", async () => {
+    const T = (sec: string) => `2026-07-05T10:03:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 11, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), userText("one")),
+      at(T("01.000"), requestBegin("medium")),
+      at(T("02.000"), requestEnd("completed")),
+      at(T("03.000"), userText("two")),
+      at(T("04.000"), requestBegin("high")),
+      at(T("05.000"), requestEnd("completed")),
+      // Written by a core that predates the field.
+      at(T("06.000"), userText("three")),
+      at(T("07.000"), requestBegin()),
+      at(T("08.000"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 11);
+    expect(a.requests.map((r) => r.thinkingLevel)).toEqual(["medium", "high", undefined]);
+    expect("thinkingLevel" in a.requests[2]!).toBe(false);
+  });
+
+  it("a round's navigator label is the first line of the text that started it, markers and attachment lines left out, cut at 120 characters", async () => {
+    const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
+    const long = "x".repeat(200);
+    await writeTraceFile(root, P, A, "2026-07-05", S, 12, [
+      sessionMeta(metaPayload()),
+      // A skill invocation prepends a [use_skills] block; the label is the user's own line.
+      at(
+        T("00.000"),
+        userText(buildSkillsMessage(["pdf"], "\n  Fix   the login\tpage  \nand then the tests")),
+      ),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), requestEnd("completed")),
+      // An attachment sent with no typed text leaves no line to label.
+      at(T("03.000"), userText(attachedFileLine("/home/u/report.pdf"))),
+      at(T("04.000"), requestBegin()),
+      at(T("05.000"), requestEnd("completed")),
+      at(T("06.000"), userText(long)),
+      at(T("07.000"), requestBegin()),
+      at(T("08.000"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 12);
+    expect(a.tasks.map((t) => t.prompt)).toEqual([
+      "Fix the login page",
+      undefined,
+      "x".repeat(120),
+    ]);
+  });
+
+  it("rounds no user text started carry no label — an image-only send, a summarize compaction — and a send that never got a request keeps its own", async () => {
+    const T = (sec: string) => `2026-07-05T10:05:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 13, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), imageUrlMessage("data:image/png;base64,AAAA")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), requestEnd("completed")),
+      at(
+        T("03.000"),
+        compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }),
+      ),
+      at(T("03.500"), userText("COMPACT NOW")),
+      at(T("04.000"), requestBegin()),
+      at(T("04.500"), assistantText("[summary]s[/summary]")),
+      at(T("05.000"), requestEnd("completed")),
+      at(T("05.500"), compactionEnd({ reason: "context", mode: "summarize", status: "completed" })),
+      // Interrupted right after sending: no request_begin ever settles this round.
+      at(T("06.000"), userText("are you there?")),
+    ]);
+    const a = await service.analyze(P, A, S, 13);
+    expect(a.tasks.map((t) => [t.compaction ?? false, t.prompt])).toEqual([
+      [false, undefined],
+      [true, undefined],
+      [false, "are you there?"],
+    ]);
   });
 });

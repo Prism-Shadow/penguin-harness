@@ -210,7 +210,7 @@ Twelve event payloads record the runtime events outside the model context:
 | `tool_list_ready` | The complete tool schema sent to the model |
 | `mcp_connect_begin` | The MCP Servers being contacted |
 | `mcp_connect_end` | The overall connect status and the per-server results |
-| `request_begin` | The start of a model request |
+| `request_begin` | The start of a model request, with the thinking level it went out at |
 | `request_end` | The request's terminal status, plus the retry detail block (`error_code`, `error_message`, `attempt`, `retry_in_ms`) |
 | `approval_decision` | An approval decision, paired with its `tool_call_id` |
 | `token_usage` | Session-cumulative and per-request Token counts |
@@ -291,6 +291,9 @@ interface McpServerConnectResult {
 
 interface RequestBeginPayload {
   type: "request_begin";
+  thinking_level?: ThinkingLevelName; // the level sent: the Session's pin, else the context's
+                                      // default; absent when none was sent, and on Traces
+                                      // written before the field
 }
 
 interface RequestEndPayload {
