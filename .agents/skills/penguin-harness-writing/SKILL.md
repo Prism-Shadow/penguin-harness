@@ -435,6 +435,17 @@ twice goes to `findings.unrouted.<lang>.vN.md` for the orchestrator.
   `packages/landing/test/blog.test.ts` pins post order per category, so a new post edits that
   list. Add a changelog pair (`Type: process`, `Scope: landing`) per
   `penguin-harness-dev/reference/changelog.md`.
+- **A published post back into a draft**: `unstrip --in packages/landing/content/blog/<slug>.<lang>.md
+  --out-dir <scratch>/articles/<slug>/` writes `recovered.<lang>.md` (each inline figure and each
+  screenshot back as its figure block, each `[^n]` back as a fact marker after its punctuation),
+  `figures/<id>.<lang>.html` (each inline figure as published, so `check --svg` and `strip
+  --figures-dir` work without a redraw) and `facts.<lang>.seed.md` (`## SOURCES` from the reference
+  list, verbatim; `## FACTS` one line per citation, the sentence that carried it). The second
+  language takes `--pair <the first's recovered draft> --facts <its seed>`, so both drafts carry the
+  same source and fact ids section by section. Its guard proves every figure against its block and
+  strips the draft with the seed: figure and image lines must come back byte for byte, every other
+  line once citations are removed; it then reports how many citations the current citer keeps.
+  The seed is a starting point: merge it into `facts.md` and verify each fact again.
 - **A docs page**: `write` (one call) to a draft, `strip` to
   `packages/docs/content/<slug>.<lang>.md`; a new page is also added to `src/lib/nav.ts`, which the
   docs package's content test keeps in sync.
@@ -457,7 +468,7 @@ stand-in gateway on a loopback port with a dummy key. A case that guards a fixed
 
 | Path | What it holds |
 | --- | --- |
-| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `emphasize`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
+| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `emphasize`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `unstrip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
 | `prompts/contract-section.md`, `contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for one section (section mode), a whole post, a docs page, landing strings |
 | `<scratch>/articles/<slug>/notes.md` | Per post, outside the repo: the author's `keep:` / `avoid:` / `note:` lines (section 6) |
