@@ -33,7 +33,7 @@ import { describeFsError, errorCode, localFsPort } from "./fs-port.js";
 import type { FsPort } from "./fs-port.js";
 import { buildReplacementHunks, renderHunk } from "./diff.js";
 import { missingPathHint } from "./path-hint.js";
-import { describeArgumentError } from "./tool-arguments.js";
+import { describeArgumentError, contaminatedPathDiagnosis } from "./tool-arguments.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
 export const EDIT_FILE_NAME = "edit_file";
@@ -97,12 +97,18 @@ async function applyEdit(params: {
     // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
     // so it gets the same diagnosis instead of a raw errno message.
     if (code === "ENOENT" || code === "ENOTDIR") {
+      // A path carrying another argument's text never existed as a path: say so, instead
+      // of reporting a missing file the model never meant to name.
+      const contamination = contaminatedPathDiagnosis(filePath);
+      if (contamination !== undefined) return { kind: "fatal", text: contamination };
       const hint = await missingPathHint(resolved, fs);
       return {
         kind: "fatal",
         text: `File not found: "${filePath}". edit_file only edits existing files — check the path (absolute paths are supported), or use write_file to create it.${hint}`,
       };
     }
+    const contamination = contaminatedPathDiagnosis(filePath);
+    if (contamination !== undefined) return { kind: "fatal", text: contamination };
     return {
       kind: "fatal",
       text: `Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`,

@@ -909,3 +909,33 @@ describe("edit_file / write_file — one file, concurrent writers", () => {
     expect(await readFile(path.join(tmp, "real.conf"), "utf8")).toBe("ONE\nTWO\n");
   });
 });
+
+describe("file tools — a path carrying another argument's text", () => {
+  const tool = () => createEditFileTool(def(EDIT_FILE_NAME, "rw"));
+
+  it("tells the model the path is not a path, instead of reporting a missing file", async () => {
+    // What a gateway produced when two arguments were serialized into one string.
+    const contaminated = `${path.join(tmp, "src.ts")}\nold_string">\n  const a = 1;`;
+    const { result, text } = await run(
+      tool(),
+      { file_path: contaminated, old_string: "const a = 1;", new_string: "const a = 2;" },
+      tmp,
+    );
+    expect(result?.stopReason).toBe("fatal");
+    expect(text).toContain("not a path");
+    expect(text).toContain("old_string");
+    // The old wording pointed at a file that never existed.
+    expect(text).not.toContain("File not found");
+  });
+
+  it("leaves a plain wrong path with the usual missing-file diagnosis", async () => {
+    const { result, text } = await run(
+      tool(),
+      { file_path: "nope.ts", old_string: "x", new_string: "y" },
+      tmp,
+    );
+    expect(result?.stopReason).toBe("fatal");
+    expect(text).toContain("File not found");
+    expect(text).not.toContain("not a path");
+  });
+});

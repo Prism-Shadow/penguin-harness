@@ -63,7 +63,7 @@ import type {
 } from "../../interfaces/index.js";
 import { formatSize, isHttpUrl, loadImage, looksLikeImageFile } from "./image-source.js";
 import { missingPathHint } from "./path-hint.js";
-import { describeArgumentError } from "./tool-arguments.js";
+import { describeArgumentError, contaminatedPathDiagnosis } from "./tool-arguments.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
@@ -468,7 +468,12 @@ export function createReadFileTool(
         const code = errorCode(err);
         // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
         // so it gets the same diagnosis instead of a raw errno message.
-        if (code === "ENOENT" || code === "ENOTDIR") {
+        // A path carrying another argument's text never existed as a path: say so, instead
+        // of reporting a missing file the model never meant to name.
+        const contamination = contaminatedPathDiagnosis(filePath);
+        if (contamination !== undefined) {
+          yield delta(contamination);
+        } else if (code === "ENOENT" || code === "ENOTDIR") {
           const hint = await missingPathHint(resolved, fs);
           yield delta(
             `File not found: "${filePath}". Absolute paths are supported; relative paths resolve against the workspace (${modelVisiblePath(ctx.workspaceDir)}).${hint}`,
@@ -494,7 +499,10 @@ export function createReadFileTool(
         scan = await scanWindow(resolved, offset, limit, fs, signal);
       } catch (err) {
         if (signal?.aborted) return { stopReason: "aborted" };
-        yield delta(`Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`);
+        const contamination = contaminatedPathDiagnosis(filePath);
+        yield delta(
+          contamination ?? `Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`,
+        );
         return { stopReason: "fatal" };
       }
       if (scan.aborted || signal?.aborted) return { stopReason: "aborted" };

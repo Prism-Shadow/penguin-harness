@@ -263,3 +263,40 @@ export function describeArgumentError(
   lines.push(closingLine(tool, fault, parameters));
   return lines.join("\n");
 }
+
+/**
+ * The explanation for a file path that carries another argument's text.
+ *
+ * A gateway or a model sometimes serializes two arguments into one string: the path
+ * arrives holding a line break and a stray `">` where the next key should have started.
+ * Read as a path it simply does not exist, and "File not found: <the whole blob>" sends
+ * the model hunting for a file that never existed — it re-issues the same malformed call,
+ * and a run that repeats one call is cut off (the tool_loop cutoff). Naming the shape
+ * tells the model what to fix in one turn.
+ *
+ * Returns undefined for a path that looks like a path: the diagnosis is only ever a
+ * better wording of a failure, never a new way to fail.
+ */
+export function contaminatedPathDiagnosis(filePath: string): string | undefined {
+  const smell = describePathContamination(filePath);
+  if (smell === undefined) return undefined;
+  const shown = filePath.length > 80 ? `${filePath.slice(0, 80)}…` : filePath;
+  return (
+    `The path you sent is not a path — it carries ${smell} ("${shown}"). ` +
+    `Two arguments were serialized into one string. Send the file path alone in "file_path" ` +
+    `(e.g. "/root/project/src/app.tsx") and the text to match in its own "old_string" argument; ` +
+    `never paste code into the path.`
+  );
+}
+
+/**
+ * What the path carries that a path does not: a line break, a stray quote-and-colon (the
+ * seam where the next JSON key started), or far more text than any path holds.
+ */
+function describePathContamination(filePath: string): string | undefined {
+  if (filePath.length === 0) return undefined;
+  if (filePath.includes("\n") || filePath.includes("\r")) return "a line break";
+  if (/"\s*:/.test(filePath)) return "a stray quote and colon";
+  if (filePath.length > 4096) return "far more text than a path holds";
+  return undefined;
+}
