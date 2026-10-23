@@ -6257,6 +6257,13 @@ async function runSelftest() {
   const roundAgain = path.join(root, "roundtrip", "again", "selftest-post.en.md");
   mkdirSync(path.dirname(roundAgain), { recursive: true });
   const orderOut = path.join(root, "recovered", "order");
+  // A hand edit strip would not make: curly quotes in English prose, which strip straightens.
+  const curly = path.join(root, "curly", "selftest-post.en.md");
+  mkdirSync(path.dirname(curly), { recursive: true });
+  writeFileSync(
+    curly,
+    `${front}He said “hi” to the archive[^1].\n\n[^1]: [Source 1](https://example.com/s1)\n`,
+  );
   const twoTitles = path.join(root, "two-titles", "selftest-post.en.md");
   mkdirSync(path.dirname(twoTitles), { recursive: true });
   const inlineFigure = FIXTURE_FIGURE.split("\n")
@@ -7472,6 +7479,12 @@ async function runSelftest() {
       args: ["unstrip", "--in", twoTitles, "--out-dir", path.join(root, "recovered", "two")],
       code: 1,
       stdout: /drawn text that is no step and not the one title: "Two"/,
+    },
+    {
+      name: "unstrip's guard refuses a post strip would not give back, such as a hand-typed curly quote",
+      args: ["unstrip", "--in", curly, "--out-dir", path.join(root, "recovered", "curly")],
+      code: 1,
+      stdout: /ERROR line 8: strip gives back "He said "hi" to the archive\[\^1\]\."/,
     },
     {
       name: "unstrip: the first language of a pair, numbered by its own first use",
