@@ -4004,6 +4004,31 @@ function checkDoc(doc, lang, prof, o, r, facts) {
       r.add("error", tldr.n, `the TL;DR has ${bullets.length} bullets (three or four)`);
   }
 
+  // An essay's body is prose: `body-lists: none` makes a list outside the TL;DR an error, and
+  // `body-tables: none` a Markdown table. Figure blocks and code are not body text.
+  const summary = tldrLines(items);
+  let prevType = null;
+  for (const it of items) {
+    if (it.type === "blank") continue;
+    const opens = it.type !== prevType;
+    prevType = it.type;
+    if (!opens) continue;
+    if (it.type === "list" && settings["body-lists"] === "none" && !summary.has(it.n)) {
+      r.add(
+        "error",
+        it.n,
+        `a list in the body: profile ${prof.name} writes the body in paragraphs, and the TL;DR is its only list`,
+      );
+    }
+    if (it.type === "table" && settings["body-tables"] === "none") {
+      r.add(
+        "error",
+        it.n,
+        `a table in the body: profile ${prof.name} puts numbers in sentences, with a figure confirming them`,
+      );
+    }
+  }
+
   // Headings
   const h2 = items.filter((it) => it.type === "heading" && it.line.startsWith("## "));
   for (const it of items.filter((x) => x.type === "heading")) {
@@ -5790,6 +5815,8 @@ A practice post shows how something was built.
 - section-words: 20-140
 - tldr-words: 30-50
 - zh-tldr-chars: 70-120
+- body-lists: none
+- body-tables: none
 `;
 
 const PRACTICE_LEAD =
@@ -6257,6 +6284,11 @@ async function runSelftest() {
   const roundAgain = path.join(root, "roundtrip", "again", "selftest-post.en.md");
   mkdirSync(path.dirname(roundAgain), { recursive: true });
   const orderOut = path.join(root, "recovered", "order");
+  // An essay's body is prose: a list after the TL;DR's own list, and a table.
+  writeFileSync(
+    at("body-list.en.v1.md"),
+    `${front}Lead text. {O1}\n\n**TL;DR**\n\n- One. {O1}\n- Two. {O1}\n- Three. {O1}\n\n## One\n\nA paragraph. {O1}\n\n- a body item\n- another item\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n`,
+  );
   // A hand edit strip would not make: curly quotes in English prose, which strip straightens.
   const curly = path.join(root, "curly", "selftest-post.en.md");
   mkdirSync(path.dirname(curly), { recursive: true });
@@ -7479,6 +7511,21 @@ async function runSelftest() {
       args: ["unstrip", "--in", twoTitles, "--out-dir", path.join(root, "recovered", "two")],
       code: 1,
       stdout: /drawn text that is no step and not the one title: "Two"/,
+    },
+    {
+      name: "body-lists: none makes a list in the body an error and leaves the TL;DR alone",
+      args: ["check", "--in", at("body-list.en.v1.md")],
+      code: 1,
+      stdout:
+        /ERROR [^\n]*:20  a list in the body: profile blog-perspectives writes the body in paragraphs/,
+      notStdout: /:1[2-4]  a list in the body|a table in the body/,
+    },
+    {
+      name: "body-tables: none makes a table in the body an error",
+      args: ["check", "--in", at("body-list.en.v1.md"), ...practice],
+      code: 1,
+      stdout:
+        /ERROR [^\n]*:20  a list in the body[\s\S]*ERROR [^\n]*:23  a table in the body: profile blog-practice puts numbers in sentences/,
     },
     {
       name: "unstrip's guard refuses a post strip would not give back, such as a hand-typed curly quote",
