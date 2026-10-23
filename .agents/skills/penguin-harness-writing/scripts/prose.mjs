@@ -120,8 +120,9 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
                cuts deletions and shorter wording only. A whole draft: each section over its
                profile cap, aimed at 95 % of that cap (never at its plan row), and, while the page
                is over its cap, a proportional share of the rest from every other section; an
-               answer that changes another section, or cuts a named section below 90 % of its
-               target, goes to <out>.rejected.md. A section: an answer
+               answer that changes another section, cuts a named section below 90 % of its
+               target, or loses a number the text stated, goes to <out>.rejected.md; a figure
+               block the answer changed is put back first. A section: an answer
                still over the cap, or with a marker, footnote, figure block, heading, frontmatter
                or version note changed, goes there too (exit 1; retry once, then the author).
                --out defaults to the next version. fix, polish and translate refuse a changed
@@ -1677,6 +1678,7 @@ function buildMessages(step, o) {
         params.DRAFT_LABEL = `The ${NOUN[prof.kind]} (cut only the sections named; return it whole)`;
         content.DRAFT = fenced(input);
         o.out ??= nextDraftFile(o.in);
+        hooks.transform = (out) => restoreFigureBlocks(out, input);
         hooks.verify = (out) => [
           ...trimDocProblems(input, out, { plan, lang, budgets, where }),
           ...versionNoteProblems(out, noteKept),
@@ -1755,6 +1757,7 @@ function buildMessages(step, o) {
       content.DRAFT = fenced(input);
       o.out ??= nextSectionFile(sec.dir, sec.n, lang);
       const limits = { n: sec.n, lang, cap, tldrCap, unit: budgets.unit };
+      hooks.transform = (out) => restoreFigureBlocks(out, input);
       hooks.verify = (out) => [
         ...trimProblems(input, out, limits),
         ...versionNoteProblems(out, noteKept),
@@ -1794,6 +1797,7 @@ function buildMessages(step, o) {
       }
       content.DRAFT = fenced(input);
       o.out ??= nextDraftFile(o.in);
+      hooks.transform = (out) => restoreFigureBlocks(out, input);
       hooks.verify = (out) => emphasizeProblems(input, out, lang, budgets);
       hooks.retry = "rerun emphasize once; a second failure goes to the author";
       if (mirror) {
@@ -1841,6 +1845,7 @@ function buildMessages(step, o) {
       if (!joinsOf(blocksOf(input).blocks).some((j) => j.after !== undefined)) {
         hooks.skip = "no `## ` heading is followed by a paragraph: no join to edit";
       }
+      hooks.transform = (out) => restoreFigureBlocks(out, input);
       hooks.verify = (out) => [
         ...transitionProblems(input, out),
         ...notesProblems(out, notes, lang),
@@ -2422,6 +2427,24 @@ function trimDocProblems(before, after, { plan, lang, budgets, where }) {
   return problems;
 }
 
+/**
+ * Figure blocks a step may not change, copied back from the text it was given: a block the answer
+ * rewrote (a screenshot that gained `text:` lines, a string cut short) is replaced by the given
+ * block with the same id before the guard runs. A block the answer dropped stays dropped, so the
+ * guard still refuses that.
+ */
+function restoreFigureBlocks(out, input) {
+  const given = figureBlockTexts(input);
+  let text = out;
+  for (const [id, block] of figureBlockTexts(out)) {
+    const was = given.get(id);
+    if (was === undefined || was === block) continue;
+    text = text.replace(block, () => was);
+    note(`figure ${id}: the answer changed its block; the block given is kept`);
+  }
+  return text;
+}
+
 /** What trim keeps byte for byte: markers and footnote references in order, figure blocks, headings, frontmatter. */
 function preservedProblems(before, after) {
   const problems = [];
@@ -2460,6 +2483,10 @@ function preservedProblems(before, after) {
       .map((it) => it.line);
   if (headings(before).join("\n") !== headings(after).join("\n"))
     problems.push("a heading changed");
+  // A number the text stated anywhere must still be there: a cut that loses one loses a fact.
+  const kept = new Set(numbersOf(parseText(after)));
+  const lost = [...new Set(numbersOf(parseText(before)))].filter((x) => !kept.has(x));
+  if (lost.length) problems.push(`a number the text stated is gone: ${lost.join(", ")}`);
   return problems;
 }
 
@@ -2719,6 +2746,22 @@ function unwrapFence(text) {
   return m ? m[2] : text.trim();
 }
 
+/**
+ * The steps send a text inside a four-backtick fence, and a model sometimes echoes one line of it:
+ * a lone opening line at the top or a lone closing line at the bottom. With an odd number of such
+ * lines in the answer, the stray one is dropped; a nested fence the text holds itself comes in
+ * pairs and stays.
+ */
+function stripStrayFence(text) {
+  const lines = text.split("\n");
+  if (lines.filter((l) => /^`{4,}/.test(l)).length % 2 === 0) return text;
+  if (/^`{4,}\s*$/.test(lines[lines.length - 1])) lines.pop();
+  else if (/^`{4,}(markdown|md)?\s*$/.test(lines[0])) lines.shift();
+  else return text;
+  note("dropped a stray fence line the answer echoed from the prompt");
+  return lines.join("\n").trim();
+}
+
 /** Where an answer that breaks its step's rules is kept: beside --out, under a name assemble skips. */
 function rejectedPath(out) {
   return out.endsWith(".md") ? out.replace(/\.md$/, ".rejected.md") : `${out}.rejected`;
@@ -2827,7 +2870,7 @@ async function callApi(step, o, messages) {
   const text = choice?.message?.content ?? "";
   if (!text.trim()) fail("empty completion; nothing written", 1);
 
-  let out = `${unwrapFence(text)}\n`;
+  let out = `${stripStrayFence(unwrapFence(text))}\n`;
   if (messages.transform) out = messages.transform(out);
   mkdirSync(path.dirname(path.resolve(o.out)), { recursive: true });
   // An answer that breaks what its step may not change never becomes the next version.
@@ -6273,6 +6316,22 @@ async function runSelftest() {
     "draft.en.v1.md": plain.replace(shortGap, longGap),
   });
   answer("trim-doc-over.md", plain.replace(shortGap, gapOf(7)));
+  const trimDocShot = caseDir("trim-doc-shot", {
+    "draft.en.v1.md": plain.replace(shortGap, longGap),
+  });
+  answer(
+    "trim-doc-shot.md",
+    plain
+      .replace(shortGap, gapOf(9))
+      .replace(/(caption: The marker names[^\n]*)/, "$1\ntext:\n- note: archived"),
+  );
+  const trimNumber = caseDir("trim-number", {
+    "s3.en.v1.md": `## A marker beats a gap\n\n${"We would rather keep a marker than leave a gap in the Trace. ".repeat(18).trim()} The archive holds 42 files. {O1}\n`,
+  });
+  answer(
+    "trim-number.md",
+    "## A marker beats a gap\n\nWe would rather keep a marker than leave a gap in the Trace. The archive holds many files. {O1}\n",
+  );
   // Every section within its cap and the page over its own: a share of the cut for each section.
   const trimPage = caseDir("trim-page", {
     "draft.en.v1.md": `${front}${words(70)}\n${["Alpha", "Beta", "Gamma", "Delta", "Epsilon"].map((h) => `\n## ${h}\n\n${words(150)}\n`).join("")}`,
@@ -6349,15 +6408,17 @@ async function runSelftest() {
     if (answerText !== undefined) answer(`${name}.md`, answerText);
     return dir;
   };
-  const joinOk = joinCase(
-    "join-ok",
-    joinDraft
-      .replace("First opens here. {F1}", "The points start with where the archive lives. {F1}")
-      .replace(
-        "The last sentence of first. {F2}",
-        "The last sentence of first hands the marker to second. {F2}",
-      ),
-  );
+  const joinOkText = joinDraft
+    .replace("First opens here. {F1}", "The points start with where the archive lives. {F1}")
+    .replace(
+      "The last sentence of first. {F2}",
+      "The last sentence of first hands the marker to second. {F2}",
+    );
+  const joinOk = joinCase("join-ok", joinOkText);
+  // The fence the prompt put around the text, echoed as a lone closing line.
+  const joinFence = joinCase("join-fence", `${joinOkText}\`\`\`\`\n`);
+  const emphFence = caseDir("emph-fence", { "draft.en.v1.md": plain });
+  answer("emph-fence.md", `\`\`\`\`markdown\n${FIXTURE_DRAFT}`);
   const joinMiddle = joinCase(
     "join-middle",
     joinDraft.replace("A middle paragraph. {F2}", "A middle paragraph, reworded. {F2}"),
@@ -6849,7 +6910,7 @@ async function runSelftest() {
       absent: path.join(trimOver, "s3.en.v2.md"),
     },
     {
-      name: "trim refuses an answer that drops a marker or changes a figure block",
+      name: "trim puts back a figure block the answer changed, and still refuses a dropped marker",
       args: [
         "trim",
         "--in",
@@ -6860,7 +6921,7 @@ async function runSelftest() {
       answer: "trim-figure.md",
       code: 1,
       stderr:
-        /fact markers changed: dropped \[\{F1\}\], added \[\][\s\S]*figure block demo-flow changed/,
+        /figure demo-flow: the answer changed its block; the block given is kept[\s\S]*fact markers changed: dropped \[\{F1\}\], added \[\]/,
       absent: path.join(trimFigure, "s1.en.v2.md"),
     },
     {
@@ -7377,6 +7438,52 @@ async function runSelftest() {
       absent: path.join(trimDocOver, "draft.en.v2.md"),
     },
     {
+      name: "trim keeps a screenshot block as given when the answer adds text: lines to it",
+      args: [
+        "trim",
+        "--in",
+        path.join(trimDocShot, "draft.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      answer: "trim-doc-shot.md",
+      code: 0,
+      stderr: /figure demo-shot: the answer changed its block; the block given is kept/,
+      file: [
+        path.join(trimDocShot, "draft.en.v2.md"),
+        /caption: The marker names the file as <path> and the id as `<id>`\.\n```\n/,
+      ],
+    },
+    {
+      name: "trim refuses an answer that loses a number the text stated",
+      args: [
+        "trim",
+        "--in",
+        path.join(trimNumber, "s3.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      answer: "trim-number.md",
+      code: 1,
+      stderr: /a number the text stated is gone: 42/,
+      absent: path.join(trimNumber, "s3.en.v2.md"),
+    },
+    {
+      name: "transition drops the lone fence line an answer echoes from the prompt",
+      args: ["transition", "--in", path.join(joinFence, "draft.en.v1.md")],
+      answer: "join-fence.md",
+      code: 0,
+      stderr: /dropped a stray fence line/,
+      file: [path.join(joinFence, "draft.en.v2.md"), /Rest of second\. \{O1\}\n$/],
+    },
+    {
+      name: "emphasize drops a lone opening fence line before its guard compares the text",
+      args: ["emphasize", "--in", path.join(emphFence, "draft.en.v1.md")],
+      answer: "emph-fence.md",
+      code: 0,
+      file: [path.join(emphFence, "draft.en.v2.md"), /^---\ntitle: "Self-test post"/],
+    },
+    {
       name: "a page over its cap shares the cut among the sections, down to a little under the page cap, and leaves the lead alone",
       args: ["trim", "--dry-run", "--in", path.join(trimPage, "draft.en.v1.md")],
       code: 0,
@@ -7723,12 +7830,15 @@ async function runSelftest() {
       absent: path.join(joinHeading, "draft.en.v2.md"),
     },
     {
-      name: "transition refuses a changed figure string, even beside an allowed edit",
+      name: "transition puts back a figure string the answer changed and keeps the allowed edit beside it",
       args: ["transition", "--in", path.join(joinFigure, "draft.en.v1.md")],
       answer: "join-figure.md",
-      code: 1,
-      stderr: /figure block demo-flow changed/,
-      absent: path.join(joinFigure, "draft.en.v2.md"),
+      code: 0,
+      stderr: /figure demo-flow: the answer changed its block; the block given is kept/,
+      file: [
+        path.join(joinFigure, "draft.en.v2.md"),
+        /First opens\. \{F1\}[\s\S]*- step1: <root>\/<project>\//,
+      ],
     },
     {
       name: "transition refuses an edit to the TL;DR before a heading",

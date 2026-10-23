@@ -50,7 +50,9 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
   without rewriting them. On a whole draft it cuts each section over its cap to just under that cap,
   never down to its plan row. When the page is over its cap, it shares the cut among the sections
   instead. It asks for complete sentences that keep every number, unit, approximation, attribution
-  and qualifier, and it refuses an answer that cuts a section more than 10% below its target.
+  and qualifier, and it refuses an answer that cuts a section more than 10% below its target or
+  loses a number. `trim`, `transition` and `emphasize` put back any figure block an answer changed,
+  and every step drops a lone fence line the model echoed from the prompt before its guard runs.
 - `fix` and `trim` answers are checked before they are saved. Such an answer is set aside if it
   brings in a fact no finding named, changes a figure block no finding named, changes a marker, or
   is still over its cap after a cut. `fix`, `polish`, `translate`, and `trim` also set aside an
