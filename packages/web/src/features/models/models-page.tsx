@@ -767,12 +767,21 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *   group key that does NOT reach the model — its own base URL is on another origin — is said
  *   outright, since the card will read "not configured"; otherwise nothing truthful can be said.
  * - Base URL: the group's setting where it has one; else the shape a required one takes; else
- *   what an empty one means — the client's default endpoint.
+ *   what an empty one means — the endpoint the requests go to (`defaultBaseUrl`, the routed
+ *   client's default, where MMSP routes the model), else the client's default endpoint.
  */
 export function connectionPlaceholders(
   draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
   group: ProviderConnectionDto | undefined,
-  { envKey, baseUrlRequired }: { envKey?: string | undefined; baseUrlRequired: boolean },
+  {
+    envKey,
+    baseUrlRequired,
+    defaultBaseUrl,
+  }: {
+    envKey?: string | undefined;
+    baseUrlRequired: boolean;
+    defaultBaseUrl?: string | undefined;
+  },
 ): { apiKey: string | undefined; baseUrl: string } {
   const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
   const apiKey = draft.credential?.apiKeyMasked
@@ -789,7 +798,9 @@ export function connectionPlaceholders(
       ? S.models.inheritFromGroup
       : baseUrlRequired
         ? "https://…"
-        : S.models.baseUrlNone;
+        : defaultBaseUrl !== undefined
+          ? S.models.baseUrlDefault(defaultBaseUrl)
+          : S.models.baseUrlNone;
   return { apiKey, baseUrl };
 }
 
@@ -3448,21 +3459,25 @@ function ModelDialog({
   const { apiKey: apiKeyHint, baseUrl: baseUrlHint } = connectionPlaceholders(form, group, {
     envKey: envHintKey,
     baseUrlRequired,
+    defaultBaseUrl: liveEnv.defaultBaseUrl,
   });
   // Where a blank key's requests go, shown only beside the env fallback hint (hence keyed off
   // the same envHintKey). A vendor group whose client defaults to one of two hosts (zhipu /
   // moonshot) says how to reach the other one, when this entry goes through the provider's
   // own client (the resolved envKey matches the provider). Any other group's row on a protocol
-  // client with no base URL anywhere — custom, vLLM, a user group — says that its requests go
-  // to that client's default endpoint (api.openai.com for OPENAI_API_KEY) unless the matching
-  // `*_BASE_URL` is set, so a self-hosted id is never sent there unannounced.
+  // client with no base URL anywhere — custom, vLLM, a user group — names the endpoint its
+  // requests go to, the client's default as MMSP records it (https://api.openai.com/v1 for the
+  // OpenAI protocols), unless the matching `*_BASE_URL` is set, so a self-hosted id is never
+  // sent there unannounced.
   const envNote =
     envHintKey === undefined
       ? undefined
       : envHintKey === dialogProvider?.envKey && S.models.providerEnvNotes[form.provider]
         ? S.models.providerEnvNotes[form.provider]
-        : !isVendorGroup(form.provider) && liveEnv.baseUrlEnv !== undefined
-          ? S.models.envBaseUrlNote(liveEnv.baseUrlEnv)
+        : !isVendorGroup(form.provider) &&
+            liveEnv.baseUrlEnv !== undefined &&
+            liveEnv.defaultBaseUrl !== undefined
+          ? S.models.envBaseUrlNote(liveEnv.defaultBaseUrl, liveEnv.baseUrlEnv)
           : undefined;
   // The add dialog's note on the protocol a new model will speak, inside its Details: the
   // group's (with blank fields following the group where it also names the endpoint, the user's

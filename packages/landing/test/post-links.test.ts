@@ -8,10 +8,14 @@
  *   that leaves the site (`mailto:`), it is external.
  * - Given the host the page is running on (a preview deployment), its addresses are internal.
  * - Given an href no browser would parse as a URL, it is internal: it renders as before.
+ * - Given an address of the page the reader is on with a fragment (a path or one of the site's
+ *   hosts, with or without the trailing slash Pages adds), it is a jump within the page, named by
+ *   its bare fragment; another post, the same page without a fragment, or another host's page
+ *   with the same path is not.
  */
 import { describe, expect, it } from "vitest";
 import { SITE_HOSTS } from "../src/lib/links";
-import { classifyPostHref } from "../src/lib/post-links";
+import { classifyPostHref, inPageHash } from "../src/lib/post-links";
 
 describe("a post link's destination", () => {
   it.each(["#fn-1", "#fnref-1-2", "#%E5%8D%87%E7%BA%A7%E9%A1%BB%E7%9F%A5"])(
@@ -47,5 +51,24 @@ describe("a post link's destination", () => {
 
   it("leaves an href that is not a URL an ordinary link", () => {
     expect(classifyPostHref("http://[not-a-host", SITE_HOSTS)).toBe("internal");
+  });
+
+  it.each([
+    ["#fn-1", "/blog/context-slope", "#fn-1"],
+    ["/blog/context-slope#fn-1", "/blog/context-slope", "#fn-1"],
+    ["/blog/context-slope#fn-1", "/blog/context-slope/", "#fn-1"],
+    ["https://penguin.ooo/blog/context-slope/#intercept", "/blog/context-slope", "#intercept"],
+    ["https://www.penguin.ooo/blog/context-slope#fnref-2-3", "/blog/context-slope", "#fnref-2-3"],
+  ])("%s on %s is a jump within the page to %s", (href, here, hash) => {
+    expect(inPageHash(href, SITE_HOSTS, here)).toBe(hash);
+  });
+
+  it.each([
+    ["/blog/another-post#fn-1", "/blog/context-slope"],
+    ["/blog/context-slope", "/blog/context-slope"],
+    ["https://example.com/blog/context-slope#fn-1", "/blog/context-slope"],
+    ["mailto:a@b.example#x", "/blog/context-slope"],
+  ])("%s on %s leads elsewhere", (href, here) => {
+    expect(inPageHash(href, SITE_HOSTS, here)).toBeNull();
   });
 });

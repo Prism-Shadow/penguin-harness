@@ -217,7 +217,7 @@ describe("models preset & catalog enrichment", () => {
     expect(body.models.map(pairKey).filter((key) => retired.includes(key))).toEqual([]);
 
     // The catalog's group connections are written into the file once, as `[providers.<id>]`
-    // tables: the gateways', vLLM's protocol, Penguin Go's relay. The first-party vendors and
+    // tables: the gateways', vLLM's protocol and local server, Penguin Go's relay. The first-party vendors and
     // custom get none — their rows run on the client's defaults, or carry their own.
     const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
     for (const id of Object.keys(presetProviderTable())) {
@@ -377,9 +377,10 @@ describe("models preset & catalog enrichment", () => {
             clientType: "openai-chat",
             baseUrl: "https://openrouter.ai/api/v1",
           },
-          // Custom and vLLM rows with no base URL anywhere: their protocol client's variable,
-          // which a Session on them would use (the client's default endpoint, api.openai.com,
-          // unless OPENAI_BASE_URL is set); a custom row on a private server: nothing.
+          // A custom row with no base URL anywhere: its protocol client's variable, which a
+          // Session on it would use (the client's default endpoint, api.openai.com, unless
+          // OPENAI_BASE_URL is set); a custom row on a private server, and a vLLM row on its
+          // group's local server: nothing.
           { provider: "custom", modelId: "my-model", clientType: "openai" },
           {
             provider: "custom",
@@ -424,7 +425,6 @@ describe("models preset & catalog enrichment", () => {
       for (const [provider, modelId] of [
         ["anthropic", "claude-via-gateway"],
         ["custom", "my-model"],
-        ["vllm", "Qwen/Qwen3.8-27B"],
       ] as const) {
         expect(pick(body, provider, modelId), `${provider}/${modelId}`).toMatchObject({
           envKey: "OPENAI_API_KEY",
@@ -436,6 +436,7 @@ describe("models preset & catalog enrichment", () => {
         ["anthropic", "claude-on-proxy"],
         ["openrouter", "xiaomi/mimo-v2.5"],
         ["custom", "my-local"],
+        ["vllm", "Qwen/Qwen3.8-27B"],
         ["penguin-go", "gemini-3.8-flash"],
       ] as const) {
         const row = pick(body, provider, modelId);
@@ -2150,6 +2151,34 @@ describe("group connections ([providers.<id>])", () => {
     });
   });
 
+  it("a vLLM group cleared of its base URL previews VLLM_API_KEY and never the OpenAI key; on a base URL it previews no variable", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-openai-test-secret-value-789");
+    vi.stubEnv("VLLM_API_KEY", "vllm-test-secret-value-321");
+    try {
+      const models = [{ provider: "vllm", modelId: "qwen3.8-27b-local" }];
+      expect((await api.put(url(), { models })).status).toBe(200);
+      // A new Project's group points at the local server: called keyless, no variable.
+      const seeded = (await (await api.get(url())).json()) as ModelsResponse;
+      expect(seeded.providers.vllm?.baseUrl).toBe("http://127.0.0.1:8000/v1");
+      const onServer = pick(seeded, "vllm", "qwen3.8-27b-local");
+      expect(onServer.envKey).toBeUndefined();
+      expect(onServer.effective.apiKeySource).toBe("none");
+      // Cleared, the row goes where VLLM_BASE_URL points and reads VLLM_API_KEY.
+      const cleared = await api.put(groupUrl("vllm"), { baseUrl: "" });
+      expect(cleared.status).toBe(200);
+      const text = await cleared.text();
+      expect(text).not.toContain("sk-openai-test-secret-value-789");
+      expect(text).not.toContain("vllm-test-secret-value-321");
+      expect(pick(JSON.parse(text) as ModelsResponse, "vllm", "qwen3.8-27b-local")).toMatchObject({
+        envKey: "VLLM_API_KEY",
+        envKeyMasked: "vllm…-321",
+        effective: { apiKeySource: "env", apiKeyMasked: "vllm…-321" },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("a group base URL that is not an absolute http(s) URL is a 400 on both write routes and writes nothing; a valid one is stored and a blank one clears it", async () => {
     const models = [{ provider: "vllm", modelId: "qwen3.8-27b-local" }];
     expect((await api.put(url(), { models })).status).toBe(200);
@@ -2588,7 +2617,8 @@ describe("preset sync: add new models / restore defaults", () => {
     expect(body.visionModel).toBeUndefined();
 
     // Every key a built-in group or a preset held is where it was; a group's settings
-    // otherwise are the catalog's, custom's and vLLM's base URLs included.
+    // otherwise are the catalog's: custom's base URL goes, and vLLM's returns from the user's
+    // GPU box to the local server's address.
     expect(body.providers.deepseek).toEqual({
       apiKeyMasked: "sk-d…0020",
       createdAt: expect.any(String) as string,
@@ -2603,6 +2633,7 @@ describe("preset sync: add new models / restore defaults", () => {
       createdAt: expect.any(String) as string,
     });
     expect(body.providers.vllm).toEqual({
+      baseUrl: "http://127.0.0.1:8000/v1",
       clientType: catalogGroupConnection("vllm")!.client_type,
       apiKeyMasked: "vllm…0015",
       createdAt: expect.any(String) as string,

@@ -52,7 +52,11 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-server/model-catalog";
+import {
+  fixedClientType,
+  providerDefaultBaseUrl,
+  providerEnvFallbackKey,
+} from "@prismshadow/penguin-server/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
@@ -282,6 +286,21 @@ export async function saveGroupSettings(
  * the server reported a value for. Knowing a variable's name is not knowing it is set, so
  * `detected` is what decides.
  */
+/**
+ * What the group's blank base URL field says: the endpoint its requests go to, the default of
+ * MMSP's client for the group as drafted (the catalog's providerDefaultBaseUrl), or — a group
+ * with no one client, whose rows route by id — that the client's default applies.
+ */
+export function groupBaseUrlHint(
+  providerId: string,
+  draft: Pick<ProviderSettingsDraft, "clientType">,
+): string {
+  const endpoint = providerDefaultBaseUrl(providerId, {
+    clientType: draft.clientType ?? undefined,
+  });
+  return endpoint !== undefined ? S.models.baseUrlDefault(endpoint) : S.models.baseUrlNone;
+}
+
 export function groupEnvKey(
   providerId: string,
   draft: Pick<ProviderSettingsDraft, "baseUrl" | "clientType">,
@@ -562,7 +581,7 @@ export function ProviderSettingsDialog({
                 paddingRight: `calc(${displayWidthCh(suffix)}ch + ${fixed === undefined ? "2.25rem" : "1.25rem"})`,
               }}
               title={S.models.baseUrlSuffixTitle}
-              placeholder={S.models.baseUrlNone}
+              placeholder={groupBaseUrlHint(id, draft)}
             />
             {fixed === undefined ? (
               <div className="absolute inset-y-0 right-1 flex items-center">

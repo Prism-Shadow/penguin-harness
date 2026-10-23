@@ -24,3 +24,28 @@ export function classifyPostHref(href: string, ownHosts: readonly string[]): Pos
   if (url.protocol !== "http:" && url.protocol !== "https:") return "external";
   return ownHosts.includes(url.hostname) ? "internal" : "external";
 }
+
+/** A path without the trailing slash GitHub Pages adds when it serves a post's folder. */
+const pathKey = (path: string) => path.replace(/\/+$/, "");
+
+/**
+ * The `#fragment` a link names on the page the reader is on, or `null` when it leads anywhere
+ * else. A plain `#…` href is one; so is an address of this very page with a fragment, written as
+ * a path (`/blog/<post>#fn-1`) or on one of the site's hosts (`https://penguin.ooo/blog/<post>#…`),
+ * with or without the trailing slash. Rendered as the bare fragment, such a link is a jump within
+ * the page: written as an address, it would count as a page of this site and open a new tab, or,
+ * from the post's slash-ended address, load the page again.
+ */
+export function inPageHash(href: string, ownHosts: readonly string[], here: string): string | null {
+  if (href.startsWith("#")) return href;
+  if (!here) return null;
+  let url: URL;
+  try {
+    url = new URL(href, `https://${ownHosts[0] ?? "invalid.example"}${here}`);
+  } catch {
+    return null;
+  }
+  if (url.hash.length < 2 || (url.protocol !== "http:" && url.protocol !== "https:")) return null;
+  if (ABSOLUTE.test(href) && !ownHosts.includes(url.hostname)) return null;
+  return pathKey(url.pathname) === pathKey(here) ? url.hash : null;
+}

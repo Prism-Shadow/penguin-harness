@@ -1843,6 +1843,7 @@ export const en: Strings = {
     onMachineHint: (machine: string) =>
       `This agent lives on ${machine}: its settings, chats and deletion all happen on that machine, apart from this server's agents of the same id.`,
     usageThisServerOnly: "The usage center counts this server's agents only",
+    readingMachineAgents: (machine: string): string => `Reading the agents on ${machine}…`,
     deleteConfirmOnMachine: (name: string, machine: string): string =>
       `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
@@ -2229,6 +2230,7 @@ export const en: Strings = {
     groupSettingsTitle: (label: string): string => `${label} group settings`,
     clearGroupKey: "Clear the group key",
     baseUrlNone: "Not set: the client's default endpoint",
+    baseUrlDefault: (url: string): string => `Not set: requests go to ${url} by default`,
     detectNeedsBaseUrl: "Enter a base URL first",
     protocolNone: "Not set",
     protocolRoutedById: "Routed by model ID",
@@ -2343,8 +2345,8 @@ export const en: Strings = {
       moonshot:
         "Defaults to the China endpoint (api.moonshot.cn); for a platform.kimi.com key, set MOONSHOT_BASE_URL=https://api.moonshot.ai/v1 beside it, or enter the key here with that base URL",
     },
-    envBaseUrlNote: (envBaseUrlKey: string): string =>
-      `Requests go to the client's default endpoint, or to ${envBaseUrlKey} when it is set`,
+    envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
+      `Requests go to ${defaultBaseUrl}, or to ${envBaseUrlKey} when it is set`,
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
       `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
@@ -2774,6 +2776,10 @@ export const en: Strings = {
     sharedHint: "Managed in the Project config for every machine; it cannot be removed here.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
+    /** A machine out of reach, as the header's machine picker lists it. */
+    machineOutOfReach: (machine: string) => `${machine} (out of reach)`,
+    /** A manage-installs row whose machine has not answered yet: its button waits for it. */
+    waitingFor: (machine: string) => `Waiting for ${machine} to answer`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "Settings",
     pageDesc:
@@ -2821,6 +2827,11 @@ export const en: Strings = {
       failed: (reason: string) => `Failed to load: ${reason}`,
       elsewhere: (machines: string) => `Runs only on ${machines}, not on this server`,
       unsynced: "Installed, not on that machine yet",
+      /** Appended to a library status counted with Agents on a machine out of reach. */
+      lastSeenOn: (n: number) =>
+        n === 1
+          ? " (incl. 1 agent on a machine out of reach, as last seen)"
+          : ` (incl. ${n} agents on machines out of reach, as last seen)`,
     },
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */

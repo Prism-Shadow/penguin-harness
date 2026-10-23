@@ -26,6 +26,8 @@
  * - Given a Benchmark's page under A: a switch to B asks B nothing about that Benchmark and
  *   leaves for the Benchmarks list.
  * - Given A's organization Sessions answering after B's: B's stay.
+ * - Given a switch to B with B's Session list held: every render under B before that list says
+ *   loading, with no rows; the list clears it, and it never rises again under B.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Fragment, createElement as h, useEffect } from "react";
@@ -259,6 +261,8 @@ interface Seen {
   projectId: string | null;
   agentIds: string[];
   rowAgentIds: string[];
+  /** The Session list's flag: no list of this context yet (the sidebar's skeleton). */
+  loading: boolean;
 }
 
 /** Mounts the providers with a page that records what it is handed, under the Project A. */
@@ -267,11 +271,12 @@ async function mountShell() {
   const seen: Seen[] = [];
   function Page() {
     const { currentProject, agents, setCurrentProjectId, reloadProjects } = useProject();
-    const { sessions } = useSessions();
+    const { sessions, loading } = useSessions();
     const now = {
       projectId: currentProject?.projectId ?? null,
       agentIds: agents.map((a) => a.agentId),
       rowAgentIds: sessions.map((s) => s.agentId),
+      loading,
     };
     seen.push({ phase: "render", ...now });
     useEffect(() => {
@@ -344,6 +349,25 @@ describe("switching Projects in the shell", () => {
     await waitFor(() => shell.text() === `${B}: default_agent,beta | default_agent,beta`);
     expect(shell.strays()).toEqual([]);
     expect(strayRequests(server.fetch.requests)).toEqual([]);
+  });
+
+  it("a switch says loading with no rows until the new Project's first list, and never again after it", async () => {
+    const server = twoProjectServer();
+    const shell = await mountShell();
+    await waitFor(() => shell.text() === `${A}: default_agent,alpha | default_agent,alpha`);
+    const releaseSessionsB = server.hold(sessionsOf(B));
+
+    await click(button("switch to B"));
+    await waitFor(() => server.fetch.requests.some(sessionsOf(B)));
+    const underB = () => shell.seen.filter((s) => s.phase === "render" && s.projectId === B);
+    expect(underB().every((s) => s.loading && s.rowAgentIds.length === 0)).toBe(true);
+
+    await releaseSessionsB();
+    await waitFor(() => shell.text() === `${B}: default_agent,beta | default_agent,beta`);
+    const renders = underB();
+    const cleared = renders.findIndex((s) => !s.loading);
+    expect(renders[cleared]?.rowAgentIds).toEqual(["default_agent", "beta"]);
+    expect(renders.slice(cleared).some((s) => s.loading)).toBe(false);
   });
 
   it("a late Session list of the Project just left never lands under the new one", async () => {

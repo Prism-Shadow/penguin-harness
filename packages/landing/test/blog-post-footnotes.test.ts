@@ -7,6 +7,9 @@
  *   to its source's entry, numbered by the source, each place with an id of its own.
  * - Given citations before or after a sentence's punctuation, each run of them reads as one
  *   bracketed group, `[2, 1]`, with real bracket and comma text, and no line can break before it.
+ * - Given a citation wherever a post may put one (alone, opening a paragraph, inside bold or
+ *   emphasis, before Chinese punctuation, in a list, a quote or a table, under a label that is not
+ *   a number), it still reads `[n]`, numbered by first use.
  * - Given either language, the list after the body is headed in that language, by the element
  *   every citation names as its description.
  * - Given the list, each source appears once: its title links to the source through the external
@@ -85,6 +88,34 @@ describe("a post's citations", () => {
       expect(html).toContain(glued);
     },
   );
+
+  it.each([
+    ["alone", "One claim[^1].", ["[1]"]],
+    ["opening a paragraph", "[^1] opens this paragraph.", ["[1]"]],
+    ["inside bold and emphasis", "**A key sentence[^1]**. And *a hedge[^2]*.", ["[1]", "[2]"]],
+    [
+      "before Chinese punctuation",
+      "**关键句[^1]**。又一句[^2][^1]，然后[^2]！",
+      ["[1]", "[2,\u00a01]", "[2]"],
+    ],
+    ["in a list and a quote", "- an item[^1]\n\n> a quote[^2]", ["[1]", "[2]"]],
+    ["in a table", "| a | b |\n| - | - |\n| cell[^1] | x |", ["[1]"]],
+    ["under a word label", "A claim[^paper]. Another[^2].", ["[1]", "[2]"]],
+  ])("brackets a citation %s", (_place, text, groups) => {
+    const html = render(`${text}\n\n[^1]: One\n[^2]: Two\n[^paper]: A paper`);
+    const read = [...html.matchAll(/<sup class="site-cite">(.*?)<\/sup>/gs)].map(([, inner = ""]) =>
+      inner.replace(/<[^>]*>/g, ""),
+    );
+    expect(read).toEqual(groups);
+    // No citation is left outside a group, as a bare raised number.
+    expect(html.match(/data-footnote-ref/g)).toHaveLength(
+      groups
+        .join("")
+        .replace(/[^\d]+/g, " ")
+        .trim()
+        .split(" ").length,
+    );
+  });
 
   it.each([
     ["zh", zh],

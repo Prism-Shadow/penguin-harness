@@ -339,6 +339,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.agentInstalls.",
+    scope: "install",
+    why: "What each Agent — of this server or of a machine — was last seen having installed, shown by the plugin market until it answers again. Project, machine and Agent ids in the key — a new root knows none of them.",
+  },
+  {
+    kind: "family",
     key: "penguin.machineMessaging.",
     scope: "install",
     why: "The messaging binding each machine conversation last answered, shown read-only while that machine is out of reach. Project, machine and Session ids in the key — a new root knows none of them.",
