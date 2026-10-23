@@ -8,15 +8,14 @@
  * This module and each post's body are chunks of their own (see the router and lib/blog.ts),
  * so the Markdown renderer and the post text reach a reader only when a post is opened.
  */
-import { useEffect, useLayoutEffect, useMemo, useReducer } from "react";
-import type { ComponentPropsWithoutRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
+import type { ComponentPropsWithoutRef, RefObject } from "react";
 import type { ExtraProps } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import { Link, useLocation, useParams } from "react-router";
 import {
   ArrowRightIcon,
   extractToc,
-  hashTargetId,
   highlightSiteCode,
   SiteCopyButton,
   SiteMarkdown,
@@ -34,6 +33,8 @@ import { S } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { blogAssetUrl, SITE_HOSTS } from "../lib/links";
 import { classifyPostHref } from "../lib/post-links";
+import { landOnHash } from "../lib/hash-arrival";
+import { holdPostJumps } from "../lib/jump-hold";
 import { formatAuthors, formatPostDate, getPost, loadPostBody, loadedPostBody } from "../lib/blog";
 import type { BlogPost } from "../lib/blog";
 import { CategoryBadge } from "../components/category-badge";
@@ -253,23 +254,45 @@ function usePostBody(post: BlogPost | undefined): string | undefined {
 }
 
 /**
- * The navigation whose hash target this page last scrolled to. Module state, like
- * useRouteScroll's, so the remount a language switch causes does not jump again.
+ * The navigation whose anchor this page last landed on. Module state, like useRouteScroll's, so
+ * the remount a language switch causes does not jump again.
  */
-let scrolledFor = "";
+let landedFor = "";
 
 /**
- * Scroll to the hash target (a TOC entry, a shared `#heading` link) once the body is in the
- * DOM. The layout's own route scroll runs when the route commits, which for a body still on
- * its way is before the heading exists.
+ * Jumps within a post. Once the body is in the DOM, land on the address's anchor (a shared `#fn-3`
+ * or `#heading` link) as the browser would have at load had the body been there
+ * (lib/hash-arrival.ts): the target is marked and washed, and scrolled clear of the sticky header
+ * once the page has finished rising. The layout's own route scroll runs when the route commits,
+ * which for a body still on its way is before the target exists. And hold the target of that
+ * landing, and of every link followed inside the page, while the pictures above it arrive
+ * (lib/jump-hold.ts), so a scroll still on its way does not stop short of it.
  */
-function useHashTarget(ready: boolean) {
-  const { key, hash } = useLocation();
+function usePostJumps(body: RefObject<HTMLElement | null>, ready: boolean) {
+  const { key } = useLocation();
+  const hold = useRef<ReturnType<typeof holdPostJumps> | null>(null);
+  // A layout effect declared first, so the hold is in place before the landing below asks for it.
   useLayoutEffect(() => {
-    if (!ready || key === scrolledFor) return;
-    scrolledFor = key;
-    if (hash) document.getElementById(hashTargetId(hash))?.scrollIntoView();
-  }, [ready, key, hash]);
+    if (!ready || !body.current) return;
+    const jumps = holdPostJumps(body.current);
+    hold.current = jumps;
+    return () => {
+      jumps.dispose();
+      hold.current = null;
+    };
+  }, [ready, body]);
+  useLayoutEffect(() => {
+    if (!ready || key === landedFor) return;
+    let live = true;
+    void landOnHash(window, () => live).then((jumped) => {
+      if (!live) return;
+      landedFor = key;
+      if (jumped) hold.current?.holdHash();
+    });
+    return () => {
+      live = false;
+    };
+  }, [ready, key]);
 }
 
 export function BlogPostPage() {
@@ -279,7 +302,8 @@ export function BlogPostPage() {
   const body = usePostBody(post);
   const toc = useMemo(() => (body === undefined ? [] : extractToc(body)), [body]);
   const { activeId, pinTo } = useActiveTocEntry(toc);
-  useHashTarget(body !== undefined);
+  const article = useRef<HTMLElement>(null);
+  usePostJumps(article, body !== undefined);
 
   if (!post) {
     return (
@@ -307,7 +331,7 @@ export function BlogPostPage() {
         showToc ? "max-w-5xl xl:grid xl:grid-cols-[minmax(0,1fr)_13rem] xl:gap-12" : "max-w-3xl"
       }`}
     >
-      <article className={showToc ? "mx-auto w-full max-w-3xl xl:mx-0" : ""}>
+      <article ref={article} className={showToc ? "mx-auto w-full max-w-3xl xl:mx-0" : ""}>
         <Link
           to="/blog"
           className="inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
