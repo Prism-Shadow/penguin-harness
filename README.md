@@ -269,7 +269,7 @@ pnpm install && pnpm build   # build first: core's exports point at dist/
 pnpm dev                     # backend + web app together (prefixed logs, deps built once)
 ```
 
-Working on this repository with a coding agent: its development Skills are in `.agents/skills/` (`penguin-harness-dev`, `penguin-harness-frontend`, `penguin-harness-manual-test`). Claude Code loads them with no install, through the `.claude` → `.agents` symlink; for another agent, link or copy `.agents/skills/*` into the directory it reads Skills from.
+Working on this repository with a coding agent: its development Skills are in `.agents/skills/` (`penguin-harness-dev`, `penguin-harness-frontend`, `penguin-harness-manual-test`, `penguin-harness-writing`). Claude Code loads them with no install, through the `.claude` → `.agents` symlink; for another agent, link or copy `.agents/skills/*` into the directory it reads Skills from.
 
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the full workspace guide: dev commands, quality gates, repo layout, and the changelog rule.
 
