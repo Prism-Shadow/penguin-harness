@@ -56,14 +56,20 @@ import type {
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
+import { answerOf } from "../../socket/stream-answer.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { MachinesService } from "../../machines/service.js";
+import type { MachineEventHub } from "../../machines/event-hub.js";
+import { machineEventsStream } from "../../machines/aggregate-stream.js";
+import type { WatchedMachine } from "../../machines/aggregate-stream.js";
 import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MachinesRouteDeps {
   machines: MachinesService;
   access: Access;
+  /** The generation's event hub, which holds one `/api/events` subscription per machine (machines/event-hub.ts). */
+  events: MachineEventHub;
 }
 
 export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
@@ -90,6 +96,39 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       jobs: deps.machines.jobs(),
     };
   };
+
+  /**
+   * Every connected machine's own events, on ONE stream per tab — the aggregation the hub's
+   * one-subscription-per-machine makes possible (machines/event-hub.ts, and docs § "One event
+   * stream per machine"). Each event carries the machine it came from; `last-event-id` is
+   * answered from the aggregate's own bounded buffer. The stream opens at once and the machines
+   * attach as their targets resolve, so a slow machine cannot hold the tab's stream up; the
+   * machines are read again on each of the stream's beats, so one connected after the tab opened
+   * joins the stream the tab already holds (machines/aggregate-stream.ts).
+   */
+  app.get("/events", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    // The machines this Project holds a connection to: the tab watches these, and a machine it
+    // does not hold has no socket for the hub to subscribe over (its row says so already).
+    const watched = (): WatchedMachine[] =>
+      deps.machines.list(projectId).flatMap((machine) => {
+        const machineId = machine.machineId;
+        if (machine.local || machineId === null || machine.connection === null) return [];
+        // Also what the hub re-reads when it dials this machine again after a failed dial.
+        return [
+          { machineId, target: () => deps.machines.proxyTarget(machineId).catch(() => null) },
+        ];
+      });
+    return machineEventsStream(
+      deps.events,
+      watched,
+      c.req.header("Last-Event-ID") ?? null,
+      (line) => console.log(line),
+      // The socket transport's answer, when the socket carried this call
+      // (socket/stream-answer.ts): the events answer it directly.
+      { answer: answerOf(c.req.raw) },
+    );
+  });
 
   /**
    * Bring machines into use — the one verb a person needs. Each is queued for the whole

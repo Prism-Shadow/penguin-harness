@@ -123,12 +123,13 @@ Human ──run(newMessages)──► engine
 
 | 情形 | 流上可见的顺序 |
 | --- | --- |
-| 用户中断 | （已产出的消息）→ `abort` 事件，这是本次运行中 engine 的最后一条消息（其后只可能出现 stop 钩子的 `hook` 事件）；补发内容只进模型上下文，不上流、不进 Trace |
+| 用户中断 | （已产出的消息）→ `abort` 事件，这是本次运行中 engine 的最后一条消息（其后只可能出现 stop 钩子的 `hook` 事件与该 Task 的 `task_end`）；补发内容只进模型上下文，不上流、不进 Trace |
 | 自动重连 | 携带 `retry_in_ms` 的 `request_end(retryable)` → 新的 `request_begin`（最多连续 5 次无进展的重试，指数退避、上限 30 秒）；`[turn_retried]` 块仅模型可见 |
-| LLM 失败导致运行结束 | `request_end(fatal)`，或重试耗尽后不带 `retry_in_ms` 的 `request_end(retryable)`，是本次运行中 engine 的最后一条消息（其后只可能出现 stop 钩子的 `hook` 事件）；不会再有 `abort` 事件，因为 `abort` 只标记用户中断 |
+| LLM 失败导致运行结束 | `request_end(fatal)`，或重试耗尽后不带 `retry_in_ms` 的 `request_end(retryable)`，是本次运行中 engine 的最后一条消息（其后只可能出现 stop 钩子的 `hook` 事件与该 Task 的 `task_end`）；不会再有 `abort` 事件，因为 `abort` 只标记用户中断 |
 | 上下文压缩 | `compaction_begin` → 压缩请求在旧上下文中执行（压缩请求的原始消息只写 Trace，例外是每次尝试的 `token_usage`，以及正在生成的思考与摘要，它们以普通的 `partial_thinking`/`partial_text` 或 `thinking`/`text` 在区间内转发）→ `compaction_end(status)` |
 | 达到 max_turns | 长度提示（`[reached max turns (N); stopping]`）→ 运行结束；未提交的输入按补发保留 |
-| Prompt 本身 | 写入 Trace，但不回流（调用方已经有了） |
+| Task 边界 | `task_begin` 是一个 Task 的第一条消息，先于其输入；`task_end` 是最后一条，位于 stop 钩子的 `hook` 事件之后。goal 的每一轮是一个自带一对记录的 Task，注入的输入跟在它的 `task_begin` 之后。抛出异常的 Task 没有 `task_end` |
+| Prompt 本身 | 写入 Trace，但不回流（调用方已经有了）。服务器在本次运行的第一个 `task_begin` 之后把它回显到 SSE 通道上，与 Trace 中的顺序相同 |
 | `session_meta` | 主 Session 的输出流只在会话内切换模型时产出它，作为切换的最后一条：新上下文的 meta，记录 Session 此后所用的模型。其余时候它在 Trace 与历史接口中。子 Agent 子流的第一条消息是子 Session 的 `session_meta` |
 
 ## 跨 Session：origin 链

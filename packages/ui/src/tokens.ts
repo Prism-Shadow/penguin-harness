@@ -228,6 +228,9 @@ export const TOKEN_GROUPS = [
       "--ui-accent-active",
       "--ui-accent-fg",
       "--ui-accent-muted",
+      // The accent's wash laid on the canvas: the opaque twin of `accent-muted`, at the same
+      // strength, which a surface holding the person's own words sits on (the user bubble).
+      "--ui-accent-tint",
       "--ui-accent-line",
     ],
   },

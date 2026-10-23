@@ -39,6 +39,7 @@ import {
   MessagingModule,
   QQScan,
 } from "./runtime/messaging/bridge.js";
+import { MessagingAccountsModule } from "./runtime/messaging/accounts-module.js";
 import { FeishuSdkProvider } from "./runtime/messaging/feishu-connector.js";
 import { TelegramTransportProvider } from "./runtime/messaging/telegram-connector.js";
 import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
@@ -120,6 +121,7 @@ import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organiza
 import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
 import { TerminalRelay } from "./machines/terminal-relay.js";
+import { SessionForwardRoutes } from "./machines/session-forward.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -206,8 +208,17 @@ export class Startup {
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly machines!: Machines;
   @Use() private readonly errors!: Errors;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
 
   async setup() {
+    // Every Project's config through the server's read path once, before anything opens one:
+    // its one-time migrations (core's, and the server's own that need the catalog) write back
+    // there, and a Session the schedulers resume reads its file with core's loader, which runs
+    // only core's. A failure must not block the boot; each file is read again, and written
+    // back, at its next read through the server. Goes with the migrations at 0.3.0.
+    await this.projectConfig.migrateStoredConfigs().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "config_migration_failed" });
+    });
     // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan.
     await this.scheduler.start();
     // Company mode's scheduler: same lifetime and the same startup rule (reconcile once,
@@ -429,6 +440,7 @@ export class WorkspaceModule {}
     MessagingBindingsRepo,
     MessagingConversationsRepo,
     MessagingModule,
+    MessagingAccountsModule,
   ],
   exports: [Messaging, QQScan, MessagingBindings],
 })
@@ -499,6 +511,7 @@ export class WorkbenchesModule {}
     TerminalModule,
     MachinesModule,
     TerminalRelay,
+    SessionForwardRoutes,
     WorkbenchesModule,
     BuiltinBrowserModule,
     AgentApiModule,

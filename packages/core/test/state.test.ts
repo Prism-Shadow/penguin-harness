@@ -22,8 +22,6 @@ import {
   DATE_PLACEHOLDER,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
-  MMSP_CLIENTS,
-  MODEL_CATALOG,
   OS_VERSION_PLACEHOLDER,
   PLATFORM_PLACEHOLDER,
   PROJECT_DIR_PLACEHOLDER,
@@ -41,7 +39,6 @@ import {
   selectBuiltinToolsForModel,
   defaultProjectConfig,
   effectiveConnection,
-  fastModeProtocol,
   effectivePluginTable,
   parsePluginTables,
   defaultSystemConfig,
@@ -54,16 +51,12 @@ import {
   scratchpadDir,
   projectConfigFromTable,
   projectConfigPath,
-  presetModelEntries,
-  presetProviderTable,
   providerConnectionShape,
   removeVaultEntry,
   renderProjectConfigToml,
   resolveEntryCredential,
-  resolveModelEnv,
   resolveModelRef,
   resolveRoot,
-  routedClientType,
   saveProjectConfig,
   setDefaultModel,
   setProviderConnection,
@@ -71,14 +64,13 @@ import {
   skillsDir,
   systemConfigPath,
   toolsDir,
-  unroutableVendorModel,
   type ModelRef,
   type ProjectConfig,
   type SystemConfig,
 } from "../src/state/index.js";
 import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces/index.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
-import { catalogModelEntries } from "../src/state/model-catalog.js";
+import { seedProject, seededProjectConfig } from "./seeded-project.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
 let tmpRoot: string;
@@ -976,9 +968,13 @@ describe("resetSystemConfigToDefaults", () => {
 });
 
 describe("project-config round trip", () => {
-  it("returns default config when file is absent (without writing)", async () => {
+  it("returns default config when file is absent (without writing): no providers, models or default model", async () => {
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(cfg).toEqual(defaultProjectConfig());
+    // Core carries no model knowledge: the server seeds a new Project's models from its catalog.
+    expect(cfg.models).toEqual([]);
+    expect(cfg.providers).toBeUndefined();
+    expect(cfg.default_model).toBeUndefined();
     // loadProjectConfig must not write to disk.
     expect(await exists(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID))).toBe(false);
   });
@@ -1085,36 +1081,28 @@ describe("project-config round trip", () => {
       'model_id = "gemini-direct"',
       'client_type = "gemini-official"',
       'base_url = "https://generativelanguage.googleapis.com"',
+      'api_key = "sk-row"',
       "",
     ].join("\n");
     await fs.writeFile(file, text, "utf8");
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(await fs.readFile(file, "utf8")).toBe(text);
-    const env = { GEMINI_API_KEY: "sk-gemini-env" };
 
     // The group's protocol reaches its keyless row, which the client then serves from the
     // GEMINI_* pair it reads itself.
     const grouped = getModel(loaded, { provider: "google", model_id: "gemini-3.8-flash" })!;
     expect(
-      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google), {}, env),
+      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google)),
     ).toEqual({ clientType: "gemini-official" });
-    // A row naming Google's own endpoint is lent GEMINI_API_KEY, as google-official's would be.
+    // A row naming Google's own endpoint with its own key goes there on the alias, as written.
     const pinned = getModel(loaded, { provider: "custom", model_id: "gemini-direct" })!;
-    expect(pinned.client_type).toBe("gemini-official");
-    expect(resolveEntryCredential(pinned, undefined, {}, env)).toEqual({
-      apiKey: "sk-gemini-env",
+    expect(resolveEntryCredential(pinned, undefined)).toEqual({
+      apiKey: "sk-row",
       baseUrl: "https://generativelanguage.googleapis.com",
       clientType: "gemini-official",
     });
-
-    // Routed, and so accepted by the models page, the server and the CLI alike.
-    expect(unroutableVendorModel("google", "gemini-3.8-flash", "gemini-official")).toBe(false);
-    const routed = routedClientType("gemini-3.8-flash", "gemini-official")!;
-    expect(MMSP_CLIENTS[routed]).toEqual(MMSP_CLIENTS["google-official"]);
-    expect(resolveModelEnv("gemini-3.8-flash", "gemini-official")).toEqual(
-      resolveModelEnv("gemini-3.8-flash"),
-    );
-    expect(fastModeProtocol("gemini-3.8-flash", "gemini-official")).toBe("openai");
+    // Which client the stored alias reaches, and with what variable, is MMSP's to say (the
+    // server catalog's tests hold the previews and the fast tier for it).
   });
 
   it("rewrites the client types of AgentHub 0.4 to MMSP's once, on load, keeping the rest of the file", async () => {
@@ -1501,91 +1489,12 @@ describe("project-config round trip", () => {
     // With nothing of its own left, the row runs on its group's table.
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(
-      resolveEntryCredential(bare, providerConnectionShape(cfg.providers?.openrouter), {}, {}),
+      resolveEntryCredential(bare, providerConnectionShape(cfg.providers?.openrouter)),
     ).toEqual({
       apiKey: "or-group",
       baseUrl: "https://openrouter.ai/api/v1",
       clientType: "openai-responses",
     });
-  });
-
-  it("default config carries the anthropic claude-sonnet-4-6 pricing (three buckets)", () => {
-    const entry = getModel(defaultProjectConfig(), {
-      provider: "anthropic",
-      model_id: "claude-sonnet-4-6",
-    });
-    expect(entry?.context_window).toBe(1000000);
-    expect(entry?.pricing).toEqual({
-      unit: "usd_per_mtok",
-      cache_read: 0.3,
-      cache_write: 3.75,
-      output: 15,
-    });
-    // A preset model that supports vision does not persist a vision field (default = supported).
-    expect(entry?.vision).toBeUndefined();
-  });
-
-  it("default config presets the full model catalog (default = deepseek deepseek-flash)", () => {
-    const cfg = defaultProjectConfig();
-    expect(cfg.default_model).toEqual({
-      provider: "deepseek",
-      model_id: "deepseek-flash",
-    });
-    // The default has to be a model that can actually read an image: a new Project's first
-    // pasted screenshot goes to it, and a text-only model would decline one for a reason
-    // nothing on screen explains.
-    const chosen = MODEL_CATALOG.find(
-      (m) =>
-        m.provider === cfg.default_model!.provider && m.modelId === cfg.default_model!.model_id,
-    );
-    expect(chosen?.supportsVision).toBe(true);
-    // And it has to be routable as written: `deepseek-flash` begins with the family MMSP
-    // routes to its DeepSeek client, so the preset entry for the default pins nothing — a
-    // default that resolved to no client would fail every first request.
-    const defaultEntry = cfg.models.find(
-      (m) =>
-        m.provider === cfg.default_model!.provider && m.model_id === cfg.default_model!.model_id,
-    );
-    expect(defaultEntry).toBeDefined();
-    expect(defaultEntry?.client_type).toBeUndefined();
-    expect(defaultEntry?.base_url).toBeUndefined();
-    // The catalog is presented in full, retired rows aside (they are kept only for Projects
-    // that already carry them): provider and model_id are separate columns, model_id being the
-    // plain upstream id (vision is only persisted as false for models that don't support images).
-    expect(cfg.models.map((m) => [m.provider, m.model_id])).toEqual(
-      MODEL_CATALOG.filter((m) => m.retired !== true).map((m) => [m.provider, m.modelId]),
-    );
-    for (const entry of cfg.models) {
-      const cat = MODEL_CATALOG.find(
-        (c) => c.provider === entry.provider && c.modelId === entry.model_id,
-      )!;
-      expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
-      // A catalog entry without a list price would preset no pricing (none currently);
-      // every priced catalog entry stores USD pricing.
-      if (cat.pricing === undefined) expect(entry.pricing).toBeUndefined();
-      else expect(entry.pricing?.unit).toBe("usd_per_mtok");
-      // No key on any row. The protocol and endpoint come from the file alone — the row's own
-      // where it differs from its group, else the group's table the config carries beside the
-      // rows: a model that auto-routes resolves to no client_type, a gateway model to its pin
-      // (OpenRouter openai-responses, the other gateways openai-chat) and its preset base URL.
-      expect(entry.api_key).toBeUndefined();
-      const effective = effectiveConnection(
-        {
-          provider: entry.provider,
-          modelId: entry.model_id,
-          clientType: entry.client_type,
-          baseUrl: entry.base_url,
-        },
-        providerConnectionShape(cfg.providers?.[entry.provider]),
-      );
-      expect(effective.clientType).toBe(cat.clientType);
-      expect(effective.baseUrl).toBe(cat.baseUrl);
-    }
-    // The group tables are the catalog's, written once: a gateway's endpoint lives there, a
-    // first-party vendor has none (its client's own endpoint).
-    expect(cfg.providers).toEqual(presetProviderTable());
-    expect(cfg.providers?.openrouter?.base_url).toBe("https://openrouter.ai/api/v1");
-    expect(cfg.providers?.deepseek).toBeUndefined();
   });
 
   it("persists pricing and field-merges buckets on upsert", async () => {
@@ -1814,15 +1723,10 @@ describe("providers (group-level connections)", () => {
   /** The credential and protocol each row's client is built with, the way a Session builds it. */
   const connections = (cfg: Pick<ProjectConfig, "models" | "providers">) =>
     Object.fromEntries(
-      cfg.models.map((m) => {
-        const key = `${m.provider}/${m.model_id}`;
-        try {
-          const group = providerConnectionShape(cfg.providers?.[m.provider]);
-          return [key, resolveEntryCredential(m, group, {}, {})];
-        } catch (err) {
-          return [key, (err as Error).name];
-        }
-      }),
+      cfg.models.map((m) => [
+        `${m.provider}/${m.model_id}`,
+        resolveEntryCredential(m, providerConnectionShape(cfg.providers?.[m.provider])),
+      ]),
     );
   /** One `[[models]]` row of an old file. */
   const row = (fields: Record<string, string>): string[] => [
@@ -1840,6 +1744,7 @@ describe("providers (group-level connections)", () => {
   }
 
   it("a group's table round-trips, sits above [[models]], and reads leniently", async () => {
+    await seedProject(tmpRoot);
     await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", {
       base_url: "https://proxy.example/td/v1",
       client_type: "openai",
@@ -1849,9 +1754,9 @@ describe("providers (group-level connections)", () => {
     expect(text.indexOf("[providers.tokendance]")).toBeGreaterThan(-1);
     expect(text.indexOf("[providers.tokendance]")).toBeLessThan(text.indexOf("[[models]]"));
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    // A new Project's tables, TokenDance's as the patch left it.
+    // The seeded tables, TokenDance's as the patch left it.
     expect(loaded.providers).toEqual({
-      ...presetProviderTable(),
+      ...seededProjectConfig().providers,
       tokendance: {
         base_url: "https://proxy.example/td/v1",
         client_type: "openai-chat",
@@ -1883,6 +1788,7 @@ describe("providers (group-level connections)", () => {
   });
 
   it("setProviderConnection sets and clears per field and never touches a model's own key; a cleared table leaves its rows on the client's defaults", async () => {
+    await seedProject(tmpRoot);
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "tokendance",
       model_id: "kimi-k3",
@@ -1927,30 +1833,6 @@ describe("providers (group-level connections)", () => {
         providerConnectionShape(cfg.providers?.tokendance),
       ),
     ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
-  });
-
-  it("Go-owned routes switch to MMSP while OpenCode Go rows keep their own protocols", async () => {
-    for (const provider of ["penguin-go", "opencode-go"]) {
-      await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, provider, {
-        client_type: "openai-chat",
-        api_key: "go-key",
-      });
-    }
-    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    expect(cfg.providers?.["penguin-go"]).toMatchObject({ client_type: "mmsp" });
-    expect(cfg.providers?.["opencode-go"]).toMatchObject({ client_type: "openai-chat" });
-    const all = connections(cfg);
-    expect(all["penguin-go/gemini-3.8-flash"]).toMatchObject({
-      apiKey: "go-key",
-      clientType: "mmsp",
-    });
-    expect(all["penguin-go/deepseek-flash"]).toMatchObject({ clientType: "mmsp" });
-    // A Messages row on its own base, on the group's host: the group key reaches it.
-    expect(all["opencode-go/minimax-m3"]).toEqual({
-      apiKey: "go-key",
-      baseUrl: "https://opencode.ai/zen/go",
-      clientType: "ant-messages",
-    });
   });
 
   it("a file from before group tables moves what every row of a group shares onto the group, once, and every model runs on what it ran on", async () => {
@@ -2044,7 +1926,7 @@ describe("providers (group-level connections)", () => {
       model_id: "qwen-local",
     });
     // Every model runs on what it ran on; the keyless TokenDance model now has the group key.
-    expect(before["tokendance/seed-2.1-pro"]).toBe("ModelCredentialError");
+    expect(before["tokendance/seed-2.1-pro"]).not.toHaveProperty("apiKey");
     expect(after["tokendance/seed-2.1-pro"]).toEqual(after["tokendance/glm-5.3"]);
     expect({ ...after, "tokendance/seed-2.1-pro": "-" }).toEqual({
       ...before,
@@ -2075,13 +1957,27 @@ describe("providers (group-level connections)", () => {
       "qwen3.8-max",
     ];
     const relay = ["gemini-3.8-flash", "deepseek-flash"];
+    // Each row's catalog connection as those releases copied it.
+    const GO_CHAT = "https://opencode.ai/zen/go/v1";
+    const GO_MESSAGES = "https://opencode.ai/zen/go";
+    const RELAY = "https://go.penguin.ooo/api/v1";
+    const copied: Record<string, readonly [clientType: string, baseUrl: string]> = {
+      "opencode-go/glm-5.3": ["openai-chat", GO_CHAT],
+      "opencode-go/kimi-k3": ["openai-chat", GO_CHAT],
+      "opencode-go/deepseek-v4-pro": ["openai-chat", GO_CHAT],
+      "opencode-go/gpt-5.6-luna": ["openai-responses", GO_CHAT],
+      "opencode-go/minimax-m3": ["ant-messages", GO_MESSAGES],
+      "opencode-go/qwen3.8-max": ["ant-messages", GO_MESSAGES],
+      "penguin-go/gemini-3.8-flash": ["mmsp", RELAY],
+      "penguin-go/deepseek-flash": ["mmsp", RELAY],
+    };
     const oldRow = (provider: string, modelId: string, key: string): string[] => {
-      const cat = MODEL_CATALOG.find((m) => m.provider === provider && m.modelId === modelId)!;
+      const [clientType, baseUrl] = copied[`${provider}/${modelId}`]!;
       return row({
         provider,
         model_id: modelId,
-        client_type: cat.clientType!,
-        base_url: cat.baseUrl!,
+        client_type: clientType,
+        base_url: baseUrl,
         api_key: key,
         created_at: "2026-09-20T00:00:00.000Z",
       });
@@ -2090,33 +1986,31 @@ describe("providers (group-level connections)", () => {
       ...go.flatMap((id) => oldRow("opencode-go", id, "go-key")),
       ...relay.flatMap((id) => oldRow("penguin-go", id, "pg-key")),
     ]);
-    const fresh = presetProviderTable();
     expect(loaded.providers).toEqual({
       "opencode-go": {
-        base_url: fresh["opencode-go"]!.base_url,
+        base_url: GO_CHAT,
         api_key: "go-key",
         created_at: "2026-09-20T00:00:00.000Z",
       },
       "penguin-go": {
-        base_url: fresh["penguin-go"]!.base_url,
+        base_url: RELAY,
         client_type: "mmsp",
         api_key: "pg-key",
         created_at: "2026-09-20T00:00:00.000Z",
       },
     });
-    // Retired models remain in saved Projects. Their connection shape still follows the
-    // catalog even though a new Project no longer seeds them (for example GPT-5.6 Luna).
-    const catalog = catalogModelEntries();
+    // Each row keeps exactly what differs from its group: OpenCode Go's protocols (three of
+    // them, so none moved) and its Messages rows' base; Penguin Go's rows keep nothing.
     for (const [provider, ids] of [
       ["opencode-go", go],
       ["penguin-go", relay],
     ] as const) {
       for (const id of ids) {
         const own = stored(provider, id);
-        const expected = catalog.find((e) => e.provider === provider && e.model_id === id)!;
+        const [clientType, baseUrl] = copied[`${provider}/${id}`]!;
         expect([own.client_type, own.base_url], id).toEqual([
-          expected.client_type,
-          expected.base_url,
+          provider === "opencode-go" ? clientType : undefined,
+          baseUrl === GO_MESSAGES ? baseUrl : undefined,
         ]);
         expect(own.api_key, id).toBeUndefined();
       }
@@ -2427,6 +2321,7 @@ describe("single hidden config file (.project_config.toml, credentials inlined)"
   );
 
   it("writes provider and model_id as separate fields; refs are TOML inline tables", async () => {
+    await seedProject(tmpRoot);
     await addModel(
       tmpRoot,
       DEFAULT_PROJECT_ID,

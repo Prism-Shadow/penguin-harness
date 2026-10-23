@@ -1045,6 +1045,97 @@ describe("ContextEngine live thinking level (the soft-limited runtime parameter)
   });
 });
 
+/**
+ * Each request's `request_begin` records the effective thinking level it went out at.
+ *
+ * - Given an LLM whose default is `medium` and no pin, when a run's first attempt drops and the
+ *   reconnect retry completes, then both `request_begin` records say `medium` and the LLM was
+ *   handed `medium` both times.
+ * - Given the pin moves to `high` between two runs, then the first run's `request_begin` says
+ *   `medium` and the second's `high` — a mid-session switch is visible in the Trace — and the
+ *   wire moved with it.
+ * (No pin and no default: compaction.test.ts, "carries no thinking level when the Session has
+ * no pin" — nothing is sent and nothing is recorded.)
+ */
+describe("ContextEngine records each request's effective thinking level", () => {
+  let traces: string;
+  beforeEach(async () => {
+    traces = await mkdtemp(join(tmpdir(), "penguin-tr-level-"));
+  });
+  afterEach(async () => {
+    await rm(traces, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  });
+
+  const quietEnvironment: EnvironmentInterface = {
+    async listTools() {
+      return [];
+    },
+    async *executeTool() {
+      // No tool ever runs in these tests.
+    },
+    toolPermission() {
+      return "rw";
+    },
+  };
+
+  /** The `thinking_level` of every request_begin in the file, in order (`null` = no field). */
+  async function recordedLevels(path: string): Promise<(string | null)[]> {
+    return (await readTrace(path))
+      .filter((m) => (m.payload as { type?: string }).type === "request_begin")
+      .map((m) => (m.payload as { thinking_level?: string }).thinking_level ?? null);
+  }
+
+  it("with no pin, every request — the reconnect retry included — records and sends the LLM's default", async () => {
+    const sent: (string | undefined)[] = [];
+    const llm: LLMInterface = {
+      defaultThinkingLevel: "medium",
+      async *streamGenerate(params) {
+        sent.push(params.thinkingLevel);
+        if (sent.length === 1) {
+          yield assistantText("half", "retryable");
+          return { status: "retryable" };
+        }
+        yield assistantText("done");
+        return { status: "completed" };
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_level_default" });
+    const engine = new ContextEngine({
+      llm,
+      environment: quietEnvironment,
+      trace,
+      maxReconnects: 1,
+      reconnectBackoffMs: 1,
+    });
+
+    await collectRun(engine, [userText("go")], allowAll);
+
+    expect(sent).toEqual(["medium", "medium"]);
+    expect(await recordedLevels(trace.currentPath())).toEqual(["medium", "medium"]);
+  });
+
+  it("a pin set between two runs moves both the record and the wire from the default to the pin", async () => {
+    const sent: (string | undefined)[] = [];
+    const llm: LLMInterface = {
+      defaultThinkingLevel: "medium",
+      async *streamGenerate(params) {
+        sent.push(params.thinkingLevel);
+        yield assistantText("ok");
+        return { status: "completed" };
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_level_switch" });
+    const engine = new ContextEngine({ llm, environment: quietEnvironment, trace });
+
+    await collectRun(engine, [userText("first")], allowAll);
+    engine.setThinkingLevel("high");
+    await collectRun(engine, [userText("second")], allowAll);
+
+    expect(sent).toEqual(["medium", "high"]);
+    expect(await recordedLevels(trace.currentPath())).toEqual(["medium", "high"]);
+  });
+});
+
 describe("ContextEngine async/incremental tool calls (overlapping execution)", () => {
   let workspace: string;
   beforeEach(async () => {

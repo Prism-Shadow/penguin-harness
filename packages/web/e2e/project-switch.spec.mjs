@@ -264,11 +264,23 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await page.keyboard.press("Escape");
 });
 
+/**
+ * These tests observe HTTP requests (`page.route`, `waitForResponse`/`waitForRequest`); the API
+ * socket would carry those calls as frames, invisible to Playwright. Leave the page on the HTTP
+ * transport the assertions are written for.
+ */
+async function useHttpTransport(page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "WebSocket", { value: undefined, configurable: true });
+  });
+}
+
 test("a late Agent list of the Project just left never shows under the new one", async ({
   page,
 }) => {
   const { a, agentsOf } = await twoProjects(page.request, userFor("projlate"));
   const bad = watchProjectAgentPairs(page, agentsOf);
+  await useHttpTransport(page);
   await page.addInitScript((projectId) => {
     localStorage.setItem("penguin.lastProjectId", projectId);
   }, a);
@@ -309,6 +321,7 @@ test("on a slow machine, quick Project switches keep each Project's Agents and c
   const user = userFor("projslow");
   const { a, b, sessions, agentsOf } = await twoProjects(page.request, user);
   const bad = watchProjectAgentPairs(page, agentsOf);
+  await useHttpTransport(page);
   await page.addInitScript(
     ({ a, b, user }) => {
       localStorage.setItem("penguin.lastProjectId", a);

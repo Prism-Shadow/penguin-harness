@@ -168,6 +168,15 @@ export const en: Strings = {
         "That machine refused this server's sign-in — change its SSH settings on the Machines page",
       failed: (message: string) => `That machine did not answer: ${message}`,
     },
+    /** The API socket this server holds to the machine (machines-view's socketReading). */
+    detailSocket: "API socket",
+    socket: {
+      connected: "Connected",
+      dialling: "Dialling",
+      refused: "Refused",
+      failed: "Failed",
+    },
+    agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
       count === 1 ? "1 machine to update" : `${count} machines to update`,
@@ -405,7 +414,12 @@ export const en: Strings = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
+    /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "New terminal",
+    /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
+    shellEntry: "Command-line terminal",
+    /** The terminal panel's strip of shells, for assistive technology. */
+    tabsLabel: "Terminal tabs",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
@@ -415,8 +429,6 @@ export const en: Strings = {
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
     noTerminalApi:
       "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
-    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
-    detach: "Open in new window",
     status: {
       connecting: "connecting",
       ready: "ready",
@@ -1831,6 +1843,7 @@ export const en: Strings = {
     onMachineHint: (machine: string) =>
       `This agent lives on ${machine}: its settings, chats and deletion all happen on that machine, apart from this server's agents of the same id.`,
     usageThisServerOnly: "The usage center counts this server's agents only",
+    readingMachineAgents: (machine: string): string => `Reading the agents on ${machine}…`,
     deleteConfirmOnMachine: (name: string, machine: string): string =>
       `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
@@ -2062,7 +2075,12 @@ export const en: Strings = {
         "- Never read or edit .project_config.toml; configuration goes through penguin commands only.",
         `- Finish with \`penguin config model list --project-id ${projectId} --root <data root>\` and show me the result.`,
       ].join("\n"),
-    platformSyncAdded: (n: number): string => (n === 1 ? "Added 1 model" : `Added ${n} models`),
+    platformSyncResult: (added: number, updated: number): string => {
+      const models = (n: number): string => (n === 1 ? "1 model" : `${n} models`);
+      if (added === 0) return `Updated ${models(updated)}`;
+      if (updated === 0) return `Added ${models(added)}`;
+      return `Added ${models(added)}, updated ${models(updated)}`;
+    },
     platformUpToDate: "Already up to date",
     homepage: "Model page",
     speedTest: "Speed test",
@@ -2112,6 +2130,8 @@ export const en: Strings = {
       `Detected ${protocol}; base URL normalized to ${url}`,
     /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
     detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
+    /** The vision probe learned nothing: not a protocol problem, so it must not send the reader to the key or the URL. */
+    detectVisionFailed: "Could not tell whether this model accepts images; vision left as it was",
     /** Save-time detection came back empty: the save proceeds on the compatible client. */
     detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
     addProtocolHintDetect:
@@ -2210,6 +2230,7 @@ export const en: Strings = {
     groupSettingsTitle: (label: string): string => `${label} group settings`,
     clearGroupKey: "Clear the group key",
     baseUrlNone: "Not set: the client's default endpoint",
+    baseUrlDefault: (url: string): string => `Not set: requests go to ${url} by default`,
     detectNeedsBaseUrl: "Enter a base URL first",
     protocolNone: "Not set",
     protocolRoutedById: "Routed by model ID",
@@ -2320,10 +2341,12 @@ export const en: Strings = {
     },
     providerEnvNotes: {
       zhipu:
-        "Defaults to the Z.AI global endpoint (api.z.ai); keys from bigmodel.cn need base URL https://open.bigmodel.cn/api/paas/v4",
+        "Defaults to the Z.AI global endpoint (api.z.ai); for a bigmodel.cn key, set ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4 beside it, or enter the key here with that base URL",
       moonshot:
-        "Defaults to the China endpoint (api.moonshot.cn); keys from platform.kimi.com need base URL https://api.moonshot.ai/v1",
+        "Defaults to the China endpoint (api.moonshot.cn); for a platform.kimi.com key, set MOONSHOT_BASE_URL=https://api.moonshot.ai/v1 beside it, or enter the key here with that base URL",
     },
+    envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
+      `Requests go to ${defaultBaseUrl}, or to ${envBaseUrlKey} when it is set`,
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
       `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
@@ -2753,6 +2776,10 @@ export const en: Strings = {
     sharedHint: "Managed in the Project config for every machine; it cannot be removed here.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
+    /** A machine out of reach, as the header's machine picker lists it. */
+    machineOutOfReach: (machine: string) => `${machine} (out of reach)`,
+    /** A manage-installs row whose machine has not answered yet: its button waits for it. */
+    waitingFor: (machine: string) => `Waiting for ${machine} to answer`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "Settings",
     pageDesc:
@@ -2800,6 +2827,11 @@ export const en: Strings = {
       failed: (reason: string) => `Failed to load: ${reason}`,
       elsewhere: (machines: string) => `Runs only on ${machines}, not on this server`,
       unsynced: "Installed, not on that machine yet",
+      /** Appended to a library status counted with Agents on a machine out of reach. */
+      lastSeenOn: (n: number) =>
+        n === 1
+          ? " (incl. 1 agent on a machine out of reach, as last seen)"
+          : ` (incl. ${n} agents on machines out of reach, as last seen)`,
     },
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */
@@ -3785,6 +3817,16 @@ Scenarios:
       "The conversation this link points to is gone, or you do not have access to it.",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",
+    machineAway: {
+      reconnecting: (alias: string) => `${alias} is reconnecting`,
+      reconnectStopped: (alias: string) => `${alias} is out of reach and stopped reconnecting`,
+      signInRefused: (alias: string) => `${alias} is out of reach: its stored password was refused`,
+      stopped: (alias: string) => `${alias}'s server is stopped`,
+      notConnected: (alias: string) => `${alias} is not connected`,
+      missing: "This conversation's machine is not on this Project's machine list",
+      hint: "The conversation is kept on that machine and loads as soon as the connection is back.",
+      details: "Technical details",
+    },
     statsLabel: "Stats",
     removeImage: "Remove image",
     openAgents: "Agents panel",
@@ -3984,6 +4026,8 @@ Scenarios:
       showSource: "Show source",
       stepUp: "Increase",
       stepDown: "Decrease",
+      invalid: "Not a valid value",
+      choose: "Choose…",
       conditions: {
         clear: "Clear",
         "partly-cloudy": "Partly cloudy",
@@ -4021,6 +4065,28 @@ Scenarios:
       done: "Done",
       deltaUp: "up",
       deltaDown: "down",
+      chartKind: {
+        line: "Line chart",
+        area: "Area chart",
+        bar: "Bar chart",
+        pie: "Pie chart",
+        scatter: "Scatter plot",
+        histogram: "Histogram",
+        gauge: "Gauge",
+      },
+      categories: (n: number) => `${n} ${n === 1 ? "category" : "categories"}`,
+      seriesCount: (n: number) => `${n} series`,
+      resources: "System resources",
+      cpu: "CPU",
+      memory: "Memory",
+      swap: "Swap",
+      disk: "Disks",
+      network: "Network",
+      load: "Load",
+      uptime: "Uptime",
+      received: "Received",
+      sent: "Sent",
+      lastReadings: (n: number) => `Last ${n} readings`,
     },
     forkSession: "Fork chat from here",
     forkSessionConfirmBody:
@@ -4339,6 +4405,7 @@ Scenarios:
     sendingTestMessage: "Sending…",
     testMessageSent: "Test message sent",
     statusLabel: "Connection status",
+    statusLastKnown: "Last known status",
     status: {
       disconnected: "Not connected",
       connecting: "Connecting",
@@ -4448,6 +4515,65 @@ Scenarios:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
     troubleNoGroupInbound:
       "Sending in a group but the panel still says no message has arrived? Read that line as evidence only about a message sent after it: it covers the current connection alone, and disabling and re-enabling the connection — or saving the credential again — opens a new one and starts it over. So send a fresh one now. If the line still reports nothing, Telegram is not delivering it and nothing on this machine can change that: confirm the bot is still in that group; if you have just turned Group Privacy off in @BotFather, remove the bot from the group and add it back, because an existing group does not pick up the change; and confirm nothing else is polling the same token — including a getUpdates you ran yourself (see above). Telegram channel posts are not supported either — this connection handles groups and direct chats only.",
+    /**
+     * A conversation that lives on a machine: its bot connects from that machine, not from this
+     * server. The dock panel and the dialog say where, above the channels.
+     */
+    runsOn: (alias: string) => `Connects from ${alias}`,
+    /**
+     * In the "what binding does" fold, for a conversation on a machine: what running there means
+     * for the connection, for a QR login, and for this app being away.
+     */
+    machineHelp: (alias: string) =>
+      `This conversation lives on ${alias}, so its bot runs there. ${alias} opens the connection to the platform itself: it needs outbound access to the platform, and no public URL. A QR login signs in ${alias}, not this computer. The bot keeps answering while this app is closed or cut off from ${alias}, for as long as that machine's server runs.`,
+    /**
+     * The notice over a machine conversation's editor while the machine is out of reach: why, in
+     * the Machines page's terms; whether the bot still answers; and how old the state shown under
+     * it is (null: nothing was ever read from it in this browser). The editor is read-only then.
+     */
+    machineUnreachable: (
+      alias: string,
+      state: "reconnecting" | "reconnectStopped" | "signInRefused" | "stopped" | "notConnected",
+      asOf: string | null,
+    ): string => {
+      const why = {
+        reconnecting: `${alias} is reconnecting.`,
+        reconnectStopped: `${alias} stopped reconnecting; retry it from the Machines page.`,
+        signInRefused: `${alias} refused this server's sign-in; change its SSH settings on the Machines page.`,
+        stopped: `${alias}'s server is stopped; start it from the Machines page.`,
+        notConnected: `${alias} is not connected; enable it from the Machines page.`,
+      }[state];
+      const bot =
+        state === "stopped" || state === "notConnected"
+          ? "The bot does not answer until that server runs."
+          : `The bot connects from ${alias}, not from here, so it keeps answering while that machine's server runs.`;
+      const shown =
+        asOf === null
+          ? "Its settings show here once the machine is back."
+          : `Showing its state as of ${asOf}; changes wait until the machine is back.`;
+      return `${why} ${bot} ${shown}`;
+    },
+    /** The same notice when the conversation's machine is not on this Project's list at all. */
+    machineMissing:
+      "This conversation's machine is not on this Project's machine list, so its connection cannot be read or changed from here.",
+    /** Enabling refused: the bot is connected on another server this one can see (null: this server). */
+    accountHeldOn: (where: string | null) =>
+      `This bot is already connected on ${where ?? "this server"}. Turn it off there first, then enable it here.`,
+    /** After enabling: the machines that could not be asked whether they hold the bot, and why not. */
+    holdersUnchecked: (
+      machines: ReadonlyArray<{
+        alias: string;
+        reason: "not_connected" | "older_build" | "failed";
+      }>,
+    ) => {
+      const reason = {
+        not_connected: "not connected",
+        older_build: "needs an update",
+        failed: "did not answer",
+      };
+      const list = machines.map((m) => `${m.alias} (${reason[m.reason]})`).join(", ");
+      return `Enabled without asking ${list}. If the same bot is connected there too, turn it off there: a bot runs in one place at a time.`;
+    },
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -4683,6 +4809,17 @@ Scenarios:
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
     exportFile: "Export",
+    /** The round navigator under the global summary: its title, and how many rounds it lists. */
+    roundNav: "Turn index",
+    roundCount: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
+    /** A round head's control that returns to the navigator, on that round's row. */
+    backToNav: "Back to the turn index",
+    /** The navigator's number box: its accessible name and its placeholder. */
+    jumpToRound: "Jump to turn",
+    jumpToRoundPlaceholder: "Turn",
+    /** A level pill's hint where a Trace first states a thinking level, and where it changes. */
+    levelFirst: (level: string) => `Thinking level ${level}`,
+    levelChanged: (from: string, to: string) => `Thinking level ${from} → ${to}`,
   },
 
   benchmark: {

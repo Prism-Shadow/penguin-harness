@@ -110,7 +110,7 @@ function useProjectModels(projectId: string, open: boolean) {
     setModels(null);
     setError(null);
     api
-      .getModels(projectId)
+      .getModels(projectId, null)
       .then((res) => {
         if (!cancelled) setModels(res);
       })

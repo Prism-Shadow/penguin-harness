@@ -5,24 +5,23 @@
  * bottom — or a single merged bottom surface below the desktop breakpoint.
  *
  * The drawing is the UI package's (`DockFrame`, `DockTabs`, `DockPicker`); this container
- * binds it to the dock store, the terminal list and the panel registry.
+ * binds it to the dock store and the panel registry.
  *
  * Panel tabs' bodies are the registry's (panel-registry.ts: the page registers one definition
  * per panel, body included, and this surface never names a panel itself), each wrapped in the
  * provider that tells it about its own tab (panel-context.tsx). A tab whose id has no definition
  * registered — a plugin's panel before the plugin loads — shows a placeholder saying so and keeps
- * its × until the definition arrives. Terminal tabs' bodies are the pooled xterm views
- * (terminal-view-pool.tsx), adopted by DOM handoff so tab churn never reconnects a shell.
+ * its × until the definition arrives. The terminal is one of these panels: its body lists the
+ * conversation's shells as tabs of its own (terminal-panel.tsx), as the browser's lists its pages.
  * Every tab's body stays mounted while its tab is in the strip — switching tabs hides and
  * shows, and so does hiding the whole dock (which renders at zero size rather than
- * unmounting), so a panel keeps its scroll, its drill-down and its unsaved text — except
- * terminal views, which the pool keeps only for shown terminals (an off-screen shell
- * reattaches on return).
+ * unmounting), so a panel keeps its scroll, its drill-down and its unsaved text.
  *
- * The header carries the strip, a "+" menu (panels, a fresh shell, and any live shell no
- * conversation holds), a detach button while a terminal is shown, a move-to-other-edge
- * button, a fullscreen toggle, and the dock's × (hide — tabs and everything their bodies hold
- * stay; each tab's own always-visible × is what removes). Tabs drag sideways to reorder;
+ * The header carries the strip, a "+" menu (the panels the registry offers here), a
+ * move-to-other-edge button, a fullscreen toggle, and the dock's × (hide — tabs and everything
+ * their bodies hold stay; each tab's own always-visible × is what removes). A terminal has no way
+ * out of its conversation's dock: no window of its own, no background form — it is a tab of the
+ * terminal panel, and fullscreen is how it gets large. Tabs drag sideways to reorder;
  * dragging a tab out of the strip brings up the edge overlay (dock-drag.tsx) and dropping on
  * the other edge moves that tab there. Dragging the header itself moves the whole dock the same
  * way. The boundary with the chat content resizes the dock — the right dock through the shared
@@ -33,7 +32,7 @@
  * showing below — and the bottom dock (or the narrow merged view) climbs to the toolbar, over the
  * row and the right dock in it (the store says which surface, if any; the frame draws it, keeping
  * the dock's own box in the flow so nothing underneath reflows, and animates the flip with the
- * theme's layout motion). The strip, the "+" menu and the detach button keep working; what has no
+ * theme's layout motion). The strip and the "+" menu keep working; what has no
  * meaning for a surface grown past its edge is put away — the move button, the header drag,
  * dragging a tab out to the other edge. The boundary drag is how the flip happens by gesture:
  * pulled past the dock's maximum size by a small slack, the dock snaps to fullscreen and the drag
@@ -55,7 +54,6 @@ import {
 import { flushSync } from "react-dom";
 import {
   CloseIcon,
-  ConfirmModal,
   DockFrame,
   DockHeaderButton,
   DockPicker,
@@ -67,33 +65,17 @@ import {
   ICON_SIZE,
   Menu,
   MenuItem,
-  MenuSeparator,
   ResizeHandle,
   usePointerDrag,
 } from "@prismshadow/penguin-ui";
 import type { DockPickerChoice, DockTabItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { NAV_ICONS } from "../../lib/nav-icons";
 import { chordKeys } from "../../components/ui/chord-kbd";
-import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
+import { displayedBinding, useKeymap } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
-import { useTerminalChrome } from "../terminal/terminal-appearance";
-import {
-  displayTitle,
-  killTerminal,
-  liveTerminals,
-  subscribeTerminals,
-} from "../terminal/terminal-list";
-import {
-  subscribeTerminalViewStates,
-  terminalViewContainer,
-  terminalViewState,
-  subscribeTerminalCloseRequests,
-} from "../terminal/terminal-view-pool";
-import type { TerminalInfo } from "../terminal/terminal-view";
 import { invalidateSlotClips } from "../builtin-browser/slot-registry";
 import { confirmClose } from "./close-guard";
-import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
+import { TERMINAL_PANEL } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
 import { DockPanelProvider } from "./panel-context";
 import type { DockPanelHandle } from "./panel-context";
@@ -104,7 +86,6 @@ import {
   DOCK_MIN_HEIGHT_PX,
   DOCK_RATIO_MAX,
   activateTab,
-  addTerminalTab,
   bottomRatio,
   dockVersion,
   fullscreenDock,
@@ -120,7 +101,6 @@ import {
   subscribeDock,
   tabHome,
   tabKey,
-  unownedTerminals,
   type DockPosition,
   type DockTab,
   type DockView,
@@ -134,11 +114,11 @@ import {
 } from "../chat/use-panel-width";
 
 /**
- * The picker's leading rows, each shown only where the registry offers it: the agents, then the
- * terminal between them, then the built-in browser — what a conversation most often opens. Every
- * other offered panel follows in registry order, which is where a plugin's panel lands.
+ * The picker's leading rows, each shown only where the registry offers it: the agents, the
+ * terminal, then the built-in browser — what a conversation most often opens. Every other offered
+ * panel follows in registry order, which is where a plugin's panel lands.
  */
-const PICKER_LEAD: readonly PanelId[] = ["agents", "builtin-browser"];
+const PICKER_LEAD: readonly PanelId[] = ["agents", TERMINAL_PANEL, "builtin-browser"];
 
 /**
  * How far past the dock's maximum size a boundary drag pulls before the dock snaps to fullscreen,
@@ -148,41 +128,6 @@ const PICKER_LEAD: readonly PanelId[] = ["agents", "builtin-browser"];
  * notch rather than a separate journey.
  */
 const FULLSCREEN_SNAP_PX = 40;
-
-/**
- * A terminal tab's body: adopts the shown terminal's pooled container. Only while shown —
- * the pool keeps views for shown terminals alone, so adopting an inactive tab's container
- * would hold an empty node. A hidden dock is not shown either: the pool disposes the view
- * with the dock and builds a FRESH container on the way back, which the effect re-adopts
- * because `active` fell to false meanwhile (the shell keeps running server-side and its
- * screen is restored on reattach; xterm refits once the container has real size again).
- */
-function TerminalBody({ id, active }: { id: string; active: boolean }) {
-  const chrome = useTerminalChrome();
-  // Machine-readable connection state on the body root, for tests and tooling — the
-  // screen itself is the visible status.
-  const viewState = useSyncExternalStore(subscribeTerminalViewStates, () =>
-    terminalViewState(active ? id : null),
-  );
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const body = bodyRef.current;
-    if (!body || !active) return;
-    const container = terminalViewContainer(id);
-    body.appendChild(container);
-    return () => {
-      if (container.parentElement === body) body.removeChild(container);
-    };
-  }, [id, active]);
-  return (
-    <div
-      ref={bodyRef}
-      data-testid="dock-terminal-body"
-      data-status={viewState.status}
-      className={`flex min-h-0 flex-1 flex-col overflow-hidden px-2 py-1 ${chrome.surface}`}
-    />
-  );
-}
 
 /**
  * A panel tab's body: the registry's component for its id, inside the provider that tells the
@@ -240,18 +185,10 @@ function PanelBody({
   );
 }
 
-/** The strip label of a terminal tab: stable seq + live title, like a tmux status line. */
-function terminalLabel(info: TerminalInfo | undefined, id: string, ordinal: number): string {
-  if (!info) return `${ordinal}: ${id.slice(0, 6)}`;
-  return `${info.seq ?? ordinal}: ${displayTitle(info.title) || info.name}`;
-}
-
 export interface DockPanelProps {
   view: DockView;
   /** Attention dots per panel id (the agents tab's pending-approval amber dot). */
   panelBadges?: Partial<Record<PanelId, boolean>>;
-  /** Whether the server serves the terminal API at all (an older runtime does not). */
-  terminalSupported: boolean;
   /** False only while the dock collapses on its way out (use-dock-mount keeps it mounted). */
   open?: boolean;
   /** Whether mounting plays the expand transition (false for instant changes — scope switches, moves). */
@@ -261,24 +198,19 @@ export interface DockPanelProps {
 export function DockPanel({
   view,
   panelBadges,
-  terminalSupported,
   open = true,
   animateEntrance = true,
 }: DockPanelProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
-  const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
-  const closeShortcut = useShortcutLabel("terminal.close");
-  const toggleChord = useDisplayedBinding("terminal.toggle");
+  // The picker names a panel's keys (the terminal's toggle) and redraws when they are rebound.
+  useKeymap();
   // The panels offered here, in registry order: what the "+" menu and the picker list, and
   // what re-renders the strip when a definition arrives for a tab it already shows.
   const offered = useDockPanels();
-  const terminalById = new Map(terminals.map((t) => [t.id, t]));
   const { position, merged, tabs, activeKey } = view;
   const horizontal = position === "bottom";
   const other: DockPosition = position === "right" ? "bottom" : "right";
   const [addOpen, setAddOpen] = useState(false);
-
-  const activeTab = tabs.find((tab) => tabKey(tab) === activeKey) ?? null;
 
   // The store decides which surface (if any) is fullscreen; this one is it while it is open and
   // the store names its position (the merged view's is "bottom", like the bottom dock's).
@@ -286,16 +218,11 @@ export function DockPanel({
 
   // ---------------------------------------------------------------------------- selection
 
-  // A terminal tab's × ends the shell itself (server-side) — an easy mis-click next to
-  // the tab, so it confirms first. A panel tab closes directly unless its body registered
-  // a close guard (the Files panel's editor holding unsaved text), which asks first: the
-  // tab's × is the one gesture here that really unmounts a body.
-  const [confirmKill, setConfirmKill] = useState<{ id: string; label: string } | null>(null);
-  const closeTab = useCallback((tab: DockTab, label: string) => {
-    if (tab.kind === "terminal") {
-      setConfirmKill({ id: tab.terminalId, label });
-      return;
-    }
+  // A panel tab closes directly unless its body registered a close guard (the Files panel's
+  // editor holding unsaved text), which asks first: the tab's × is the one gesture here that
+  // really unmounts a body. Closing the terminal panel's tab leaves its shells running — its
+  // own strip's × is what ends one.
+  const closeTab = useCallback((tab: DockTab) => {
     const key = tabKey(tab);
     void confirmClose([key]).then((ok) => {
       if (ok) removeTab(key);
@@ -304,23 +231,6 @@ export function DockPanel({
   // Hiding puts the surface away and nothing else — every body stays mounted at zero size —
   // so there is nothing to ask about, however much unsaved work a tab is holding.
   const hide = useCallback(() => hideView(view), [view]);
-  const killConfirmed = useCallback(() => {
-    if (!confirmKill) return;
-    void killTerminal(confirmKill.id);
-    removeTab(`terminal:${confirmKill.id}`);
-    setConfirmKill(null);
-  }, [confirmKill]);
-
-  /**
-   * Detach the shown terminal to its own /terminal window. The shell stays live (and
-   * listed — multi-client attach); its tab leaves the strip, and closing the window puts
-   * it back where it was (dock-terminal.ts owns the round trip).
-   */
-  const detach = useCallback(() => {
-    if (activeTab?.kind !== "terminal") return;
-    const home = merged ? (tabHome(tabKey(activeTab)) ?? "bottom") : position;
-    detachTerminal(activeTab.terminalId, home);
-  }, [activeTab, merged, position]);
 
   // The strip's node: the drag below hit-tests its tabs (the strip itself keeps the shown
   // tab in view and scrolls sideways under the wheel).
@@ -561,17 +471,13 @@ export function DockPanel({
 
   // ------------------------------------------------------------------------------ add menu
 
-  const openPanelHere = (id: PanelId): void => {
+  const openPanelHere = (definition: DockPanelDefinition): void => {
     setAddOpen(false);
     // The merged view has no edge of its own to insist on — the panel's existing tab (or
-    // the right-dock default) decides, which is also where it lands when the window
-    // widens back out.
-    openPanel(id, merged ? undefined : position);
+    // its own default edge) decides, which is also where it lands when the window widens
+    // back out.
+    openPanel(definition.id, merged ? undefined : position, definition.defaultPosition);
   };
-
-  /** Live shells no conversation holds: offer to pull them into this dock. */
-  const adoptableIds = new Set(unownedTerminals(terminals.map((t) => t.id)));
-  const adoptable = terminals.filter((t) => adoptableIds.has(t.id));
 
   const addMenu = (
     <Dropdown
@@ -597,38 +503,9 @@ export function DockPanel({
             data-testid={`dock-add-${definition.id}`}
             glyph={definition.glyph}
             label={definition.label()}
-            onSelect={() => openPanelHere(definition.id)}
+            onSelect={() => openPanelHere(definition)}
           />
         ))}
-        {terminalSupported && (
-          <>
-            <MenuSeparator />
-            <MenuItem
-              data-testid="dock-add-terminal"
-              glyph={ICONS.plus}
-              label={S.terminal.newShell}
-              onSelect={() => {
-                setAddOpen(false);
-                void createShellInDock(merged ? undefined : position);
-              }}
-            />
-            {/* Live shells no conversation holds, on the small rung: they are entries of the
-                row above rather than panels of their own. */}
-            {adoptable.map((terminal, index) => (
-              <MenuItem
-                key={terminal.id}
-                density="sm"
-                data-testid="dock-add-shell"
-                data-terminal-id={terminal.id}
-                label={terminalLabel(terminal, terminal.id, index + 1)}
-                onSelect={() => {
-                  setAddOpen(false);
-                  addTerminalTab(terminal.id, merged ? undefined : position);
-                }}
-              />
-            ))}
-          </>
-        )}
       </Menu>
     </Dropdown>
   );
@@ -679,86 +556,39 @@ export function DockPanel({
   const overlayActive = headerDrag.active || tabDrag.active;
   const overlayCandidate = headerDrag.active ? headerDrag.candidate : tabDrag.candidate;
 
-  const terminalOrdinals = new Map<string, number>();
-  tabs.forEach((tab) => {
-    if (tab.kind === "terminal") terminalOrdinals.set(tab.terminalId, terminalOrdinals.size + 1);
-  });
-
-  // The terminal.close shortcut (⌃⌥` / Ctrl+Alt+` by default) inside a shown terminal asks for its
-  // tab to close, and takes the × path above,
-  // confirmation included. Only the dock holding that tab answers — and not while it is
-  // collapsing out, when the merged view may list the same tab — so no request is answered
-  // twice. The ref keeps one subscription per mount while the handler reads the current tabs.
-  const closeRequest = useRef<(id: string) => void>(() => {});
-  closeRequest.current = (id) => {
-    if (!open) return;
-    const tab = tabs.find((t) => t.kind === "terminal" && t.terminalId === id);
-    if (!tab) return;
-    closeTab(tab, terminalLabel(terminalById.get(id), id, terminalOrdinals.get(id) ?? 1));
-  };
-  useEffect(() => subscribeTerminalCloseRequests((id) => closeRequest.current(id)), []);
-
   // The strip's items: panel tabs by their panel's name and mark (the registry's, or the id and
-  // the puzzle piece while no definition is registered), terminal tabs by their shell's seq and
-  // title, closed by killing the shell.
-  const stripTabs: DockTabItem[] = tabs.map((tab) => {
-    const key = tabKey(tab);
-    if (tab.kind === "panel") {
-      return {
-        key,
-        label: panelLabel(tab.panel),
-        glyph: panelGlyph(tab.panel, ICON_SIZE.inlineGlyph),
-        badge: panelBadges?.[tab.panel] === true,
-        closeLabel: S.dock.closeTab,
-      };
-    }
-    const info = terminalById.get(tab.terminalId);
-    const label = terminalLabel(info, tab.terminalId, terminalOrdinals.get(tab.terminalId) ?? 1);
-    return {
-      key,
-      label,
-      title: info ? `${info.name} — ${info.cwd}` : label,
-      glyph: <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.inlineGlyph} />,
-      closeLabel: S.terminal.killShell,
-      closeShortcut: closeShortcut ?? undefined,
-      terminalId: tab.terminalId,
-    };
-  });
+  // the puzzle piece while no definition is registered).
+  const stripTabs: DockTabItem[] = tabs.map((tab) => ({
+    key: tabKey(tab),
+    label: panelLabel(tab.panel),
+    glyph: panelGlyph(tab.panel, ICON_SIZE.inlineGlyph),
+    badge: panelBadges?.[tab.panel] === true,
+    closeLabel: S.dock.closeTab,
+  }));
   const closeByKey = (key: string): void => {
     const tab = tabs.find((t) => tabKey(t) === key);
-    const item = stripTabs.find((t) => t.key === key);
-    if (tab && item) closeTab(tab, item.label);
+    if (tab) closeTab(tab);
   };
 
-  // An open dock with nothing in it yet: the picker chooses what this dock opens. The
-  // terminal row adopts the newest shell no conversation holds, or starts a fresh one, and
-  // names its hotkey while one is bound; every panel row is one the registry offers here (the
-  // built-in browser only where it can be shown: the desktop app's own window).
-  const pickPanel = (definition: DockPanelDefinition): DockPickerChoice => ({
-    key: definition.id,
-    label: definition.label(),
-    glyph: <GlyphIcon d={definition.glyph} size={ICON_SIZE.iconButton} />,
-    onChoose: () => openPanel(definition.id, merged ? undefined : position),
-  });
-  const leading = (id: PanelId) => offered.find((definition) => definition.id === id);
-  const agents = leading("agents");
-  const browser = leading("builtin-browser");
+  // An open dock with nothing in it yet: the picker chooses what this dock opens. Every row is a
+  // panel the registry offers here (the terminal only with a Session to own its shells, the
+  // built-in browser only where it can be shown: the desktop app's own window), and a row whose
+  // panel names a command shows that command's keys while they are bound.
+  const pickPanel = (definition: DockPanelDefinition): DockPickerChoice => {
+    const chord = definition.shortcut === undefined ? null : displayedBinding(definition.shortcut);
+    return {
+      key: definition.id,
+      label: definition.label(),
+      glyph: <GlyphIcon d={definition.glyph} size={ICON_SIZE.iconButton} />,
+      ...(chord !== null ? { keys: chordKeys(chord) } : {}),
+      onChoose: () =>
+        openPanel(definition.id, merged ? undefined : position, definition.defaultPosition),
+    };
+  };
   const pickerChoices: DockPickerChoice[] = [
-    ...(agents !== undefined ? [pickPanel(agents)] : []),
-    ...(terminalSupported
-      ? [
-          {
-            key: "terminal",
-            label: S.terminal.title,
-            glyph: <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.iconButton} />,
-            ...(toggleChord !== null ? { keys: chordKeys(toggleChord) } : {}),
-            onChoose: () => void openTerminalInDock(merged ? undefined : position),
-          },
-        ]
-      : []),
-    ...(browser !== undefined ? [pickPanel(browser)] : []),
-    ...offered.filter((definition) => !PICKER_LEAD.includes(definition.id)).map(pickPanel),
-  ];
+    ...PICKER_LEAD.flatMap((id) => offered.filter((definition) => definition.id === id)),
+    ...offered.filter((definition) => !PICKER_LEAD.includes(definition.id)),
+  ].map(pickPanel);
 
   const bodies =
     tabs.length === 0 ? (
@@ -773,39 +603,18 @@ export function DockPanel({
               {/* A hidden dock's shown tab is no more on screen than a covered one: the
                   bodies gate their polling and their reload-on-return on this, and a
                   collapsed dock should cost nothing while it is away. */}
-              {tab.kind === "panel" ? (
-                <PanelBody
-                  id={tab.panel}
-                  position={position}
-                  merged={merged}
-                  active={active && open}
-                  fullscreen={fullscreen}
-                />
-              ) : (
-                <TerminalBody id={tab.terminalId} active={active && open} />
-              )}
+              <PanelBody
+                id={tab.panel}
+                position={position}
+                merged={merged}
+                active={active && open}
+                fullscreen={fullscreen}
+              />
             </div>
           );
         })}
       </div>
     );
-
-  const killConfirm = (
-    <ConfirmModal
-      open={confirmKill !== null}
-      title={S.dock.killConfirmTitle}
-      onClose={() => setConfirmKill(null)}
-      onConfirm={killConfirmed}
-      confirmLabel={S.terminal.killShell}
-      cancelLabel={S.common.cancel}
-    >
-      {confirmKill !== null && (
-        <p className="break-words text-sm text-gray-600 dark:text-gray-300">
-          {S.dock.killConfirmBody(confirmKill.label)}
-        </p>
-      )}
-    </ConfirmModal>
-  );
 
   // The boundary handle: on the bottom dock an overlay straddling the top edge (it costs no
   // height), on the right dock a layout sibling (it must cost real width); the frame seats it,
@@ -855,16 +664,6 @@ export function DockPanel({
       }
       actions={
         <>
-          {activeTab?.kind === "terminal" && (
-            <DockHeaderButton
-              label={S.terminal.detach}
-              coarse={coarsePointer}
-              data-testid="dock-detach"
-              onClick={detach}
-            >
-              <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.rowLead} />
-            </DockHeaderButton>
-          )}
           {addMenu}
           {!merged && !fullscreen && tabs.length > 0 && (
             <DockHeaderButton
@@ -905,12 +704,7 @@ export function DockPanel({
         </>
       }
       handle={handle}
-      overlays={
-        <>
-          {overlayActive && <DockDragOverlay candidate={overlayCandidate} />}
-          {killConfirm}
-        </>
-      }
+      overlays={overlayActive && <DockDragOverlay candidate={overlayCandidate} />}
     >
       {bodies}
     </DockFrame>

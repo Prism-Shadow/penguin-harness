@@ -36,6 +36,7 @@ import { UsageService } from "../src/services/usage-service.js";
 import type { PricingRates } from "../src/services/usage-service.js";
 import { openDatabase } from "../src/db/database.js";
 import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
+import { switchTimeZone } from "./helpers/time-zone.js";
 import type { DatabaseSync } from "node:sqlite";
 import { wire } from "@prismshadow/penguin-core/kernel";
 
@@ -690,14 +691,11 @@ describe("bucket enumeration across a DST transition", () => {
   // The zero-fill skeleton and SQLite's `strftime(..., 'localtime')` must agree key for key.
   // A fall-back replays a whole local hour, so two instants an hour apart share one key;
   // the enumeration has to emit that key once, or one of the two points it feeds stays empty.
-  const realTz = process.env.TZ;
+  let restoreZone: () => void;
   beforeEach(() => {
-    process.env.TZ = "America/New_York";
+    restoreZone = switchTimeZone("America/New_York");
   });
-  afterEach(() => {
-    if (realTz === undefined) delete process.env.TZ;
-    else process.env.TZ = realTz;
-  });
+  afterEach(() => restoreZone());
 
   /** 2026-11-01 01:00 EDT (UTC-4) — the hour after this one is replayed as EST (UTC-5). */
   const foldStart = new Date(Date.UTC(2026, 10, 1, 5, 0));

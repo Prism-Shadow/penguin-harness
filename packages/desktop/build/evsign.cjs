@@ -61,7 +61,7 @@ async function evsign(configuration) {
       throw new Error("EVSIGN_KEY is required for Windows release signing.");
     }
 
-    console.log(`[evsign] skip ${path.basename(file)} because EVSIGN_KEY is not configured.`);
+    console.log(`[evsign] skip ${path.basename(file)} because no EVSIGN_KEY was given.`);
     return;
   }
 

@@ -79,13 +79,15 @@
     /* Colour — accent: the ink itself under a white label — black and white by default (user
        decision, 2026-10-02; the forest green became the preset `forest`). The rest of the family
        derives from it: hover and active are the accent shaded toward black (the label is white,
-       so a darker fill only gains contrast), the wash and the line are the accent at an alpha. A
-       preset therefore sets `--ui-accent` alone; its label ink is the theme's for the mode. */
+       so a darker fill only gains contrast), the wash and the line are the accent at an alpha,
+       and the tint is the wash's strength mixed into the page. A preset therefore sets
+       `--ui-accent` alone; its label ink is the theme's for the mode. */
     --ui-accent: #232527;
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #000000);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 74%, #000000);
     --ui-accent-fg: #ffffff;
-    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 14%, transparent);
+    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 8%, transparent);
+    --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 8%, var(--ui-canvas));
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 35%, transparent);
 
     /* Colour — semantic tones: a soft tint with its ink and no edge — a tone's line is its tint,
@@ -438,7 +440,8 @@
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #ffffff);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 90%, #000000);
     --ui-accent-fg: #111214;
-    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 18%, transparent);
+    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 10%, transparent);
+    --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 10%, var(--ui-canvas));
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 45%, transparent);
 
     /* Colour — semantic tones: the tints lifted; a tone's line stays its tint */
@@ -991,13 +994,15 @@
      absolutely at the row's inset with the host padded to make room, because a host lays its
      body and actions out as a flex row — a dot in the flow would be a third item and push the
      body to the middle. A toast that also carries `ui-glass` frosts like every other floating
-     layer. */
+     layer. On a custom background a notice in the page is a card like any other there: the
+     panel's light glass (wallpaper.css), shadow and dot kept, never a tinted slab; a toast, or
+     a notice in a dialog, keeps the overlay. */
   :root[data-theme="modern"] .ui-notice {
     position: relative;
     padding-inline-start: calc(var(--ui-row-px) + 1.125em);
     border-color: transparent;
     border-radius: var(--ui-radius-lg);
-    background-color: var(--ui-overlay);
+    background-color: var(--wallpaper-panel-fill, var(--ui-overlay));
     box-shadow: var(--ui-shadow-overlay);
     color: var(--ui-fg);
   }
@@ -1092,9 +1097,9 @@
  * The user's accent presets (tokens.ts, `ACCENT_PRESETS.modern`), six: the forest green the
  * theme shipped with (first, as Console lists its orange) and five warm, muted hues, each deep
  * enough in light for the theme's white label and lifted in dark for its dark ink, the way the
- * theme's own accent flips. A preset sets `--ui-accent` and nothing else — hover, active, wash
- * and line derive from it in the theme's rules above, and the label ink is the theme's for the
- * mode — so each preset is one value per mode. The selectors match only Frost's root, so a
+ * theme's own accent flips. A preset sets `--ui-accent` and nothing else — hover, active, wash,
+ * tint and line derive from it in the theme's rules above, and the label ink is the theme's for
+ * the mode — so each preset is one value per mode. The selectors match only Frost's root, so a
  * preset another theme lists paints nothing here.
  */
 @layer ui-accent {

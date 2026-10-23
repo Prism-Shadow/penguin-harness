@@ -27,7 +27,13 @@
  *   both;
  * - the switch: its knob on the off track — 3:1, the knob itself or its hairline edge
  *   (`knob-line` over the track) — and, for the theme's accent and every preset, the `knob-on`
- *   on the accent — 3:1, so the knob never vanishes on a near-white dark accent.
+ *   on the accent — 3:1, so the knob never vanishes on a near-white dark accent;
+ * - the accent's tint, the fill under the person's own words (the user bubble, the steering
+ *   chip), for the theme's accent and every preset: body text on it, the steering label's
+ *   included, at the page's body-text floor, the tint off the canvas at 1.08:1 so the bubble is
+ *   there at all — a tint below a floor is named in TINT_SHORTFALLS, as EXCEPTIONS names a pair
+ *   — and the accent's wash laid on the canvas landing on the tint, so a bubble on an image the
+ *   page's colour looks as it does on the page.
  *
  * `fg-subtle` has no floor in light — placeholder and disabled ink, which WCAG exempts, and
  * Primer's is the app's — and holds 4.5:1 in dark, where timestamps and meta text read from it.
@@ -117,6 +123,78 @@ const INK_FLOORS: Readonly<Record<ThemeModeName, ReadonlyArray<readonly [TokenNa
   ],
 };
 const INK_SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted"] as const;
+
+/**
+ * The ink on the accent's tint, per mode: the page's floor for body text. The bubble's text and
+ * the steering chip's label are both the body ink — the owner darkened the label from the muted
+ * ink so it reads on the tint (2026-10-19) — and the chip's glyph is a mark, not text.
+ */
+const TINT_INK_FLOORS: Readonly<
+  Record<ThemeModeName, ReadonlyArray<readonly [TokenName, number]>>
+> = {
+  light: INK_FLOORS.light.filter(([fg]) => fg === "--ui-fg"),
+  dark: INK_FLOORS.dark.filter(([fg]) => fg === "--ui-fg"),
+};
+
+/** How far the tint must stand off the canvas: Primer's gray-100 bubble on white is 1.10:1. */
+const TINT_STANDS_OFF = 1.08;
+
+interface TintShortfall {
+  readonly theme: ThemeId;
+  readonly mode: ThemeModeName;
+  /** The ink on the tint, or `--ui-canvas` for the tint's stand-off from the page. */
+  readonly pair: TokenName;
+  /** The least ratio held in the floor's place, on every accent the theme lists. */
+  readonly holds: number;
+  /** Why the tint is below the floor, with the neutral bubble's ratio it replaced. */
+  readonly reason: string;
+  readonly until: string;
+}
+
+/**
+ * Where the tint is below its floor, kept by the owner's call (2026-10-19): the strengths stay
+ * 8 % of the accent in light, 10 % in dark and 12 % for Primer's presets, and body text on a dark
+ * tint holds about 10:1, above AAA's 7:1 — the neutral bubble the tint replaced was below the
+ * same floor too. An entry no accent needs any more fails the suite until it is removed.
+ */
+const UNTIL_TINT_FLOORS = "kept by the owner's call on the tint's strengths (2026-10-19)";
+const NEAR_WHITE =
+  "the theme's own dark accent is a near-white, so its 10 % tint is as light as the gray-800 bubble it replaced";
+const TINT_SHORTFALLS: readonly TintShortfall[] = [
+  {
+    theme: "github",
+    mode: "dark",
+    pair: "--ui-fg",
+    holds: 10,
+    reason: `${NEAR_WHITE} (10.06:1; the bubble 10.41:1)`,
+    until: UNTIL_TINT_FLOORS,
+  },
+  {
+    theme: "modern",
+    mode: "dark",
+    pair: "--ui-fg",
+    holds: 10,
+    reason: `${NEAR_WHITE} (10.14:1; the bubble 10.39:1)`,
+    until: UNTIL_TINT_FLOORS,
+  },
+  {
+    theme: "geek",
+    mode: "dark",
+    pair: "--ui-fg",
+    holds: 10,
+    reason: `${NEAR_WHITE} (10.15:1; the bubble 10.99:1); gold, phosphor and cyan lift the page a little too (10.75-10.96:1)`,
+    until: UNTIL_TINT_FLOORS,
+  },
+  {
+    theme: "geek",
+    mode: "dark",
+    pair: "--ui-canvas",
+    holds: 1.06,
+    reason:
+      "orange, a saturated red-orange kept unlifted in dark, tints the near-black page by hue more than by lightness (1.07:1, a dark brick)",
+    until: UNTIL_TINT_FLOORS,
+  },
+];
 
 const pairsFor = (mode: ThemeModeName): readonly Pair[] => [
   ...[...PAGE_SURFACES, "--ui-overlay" as const].map((bg) => ({
@@ -400,7 +478,7 @@ describe("chart series marks", () => {
 });
 
 describe("accent presets, per theme", () => {
-  // A preset replaces the six accent tokens under its theme, in both modes (a dark rule lifts it
+  // A preset replaces the accent tokens under its theme, in both modes (a dark rule lifts it
   // where the theme says so), and everything else stays the theme's: so each preset is measured
   // on its own theme's surfaces for that mode, exactly as the theme's own accent is above.
   for (const id of THEME_IDS) {
@@ -439,6 +517,107 @@ describe("accent presets, per theme", () => {
           expect(failures, `\n${failures.join("\n")}\n`).toEqual([]);
         });
       }
+    }
+  }
+});
+
+describe("the accent's tint under the person's own words", () => {
+  // The user bubble and the steering chip sit on `--ui-accent-tint`, the accent mixed into the
+  // canvas; on a custom background they take `--ui-accent-muted`, the same wash with the canvas
+  // taken away. Measured for the theme's own accent and every preset, on the theme's values for
+  // the mode, the way the presets are measured above.
+  for (const id of THEME_IDS) {
+    const theme = themeAnalysis(id);
+    if (theme === null) {
+      it.skip(`src/themes/${id}.css — PENDING, the tint not checked: no tokens declared yet`, () => {});
+      continue;
+    }
+    const accents: readonly (string | null)[] = [null, ...THEME_ACCENT_PRESETS[id]];
+    for (const mode of THEME_MODES) {
+      /** Resolves each accent's tokens; a string names what could not be read. */
+      const resolverFor = (accent: string | null): Resolve => {
+        const preset = accent === null ? null : (theme.accents.get(accent) ?? null);
+        return (name) => {
+          const value = resolveThemeValue(name, mode, theme, defaultTheme, preset);
+          if (value === null) return `${name} does not resolve to a value`;
+          return parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`;
+        };
+      };
+      const label = (accent: string | null) => accent ?? "the theme's own accent";
+
+      it(`${id} ${mode}: body text and the steering label read on every accent's tint, which stands off the canvas`, () => {
+        const shortfalls = TINT_SHORTFALLS.filter((s) => s.theme === id && s.mode === mode);
+        const floors: ReadonlyArray<readonly [TokenName, number]> = [
+          ...TINT_INK_FLOORS[mode],
+          ["--ui-canvas", TINT_STANDS_OFF],
+        ];
+        const failures: string[] = [];
+        const needed = new Set<TintShortfall>();
+        for (const accent of accents) {
+          const resolve = resolverFor(accent);
+          const tint = resolve("--ui-accent-tint");
+          if (typeof tint === "string") {
+            failures.push(`${label(accent)}: ${tint}`);
+            continue;
+          }
+          // A surface text sits on: a translucent tint would take whatever happens to be under it.
+          if (tint.a < 1) {
+            failures.push(`${label(accent)}: the tint ${formatColor(tint)} is translucent`);
+            continue;
+          }
+          for (const [other, floor] of floors) {
+            const color =
+              other === "--ui-canvas" ? opaqueBackground(other, mode, resolve) : resolve(other);
+            if (typeof color === "string") {
+              failures.push(`${label(accent)}: ${color}`);
+              continue;
+            }
+            const ratio = contrastRatio(color, tint);
+            if (ratio >= floor) continue;
+            const shortfall = shortfalls.find((s) => s.pair === other);
+            if (shortfall !== undefined) needed.add(shortfall);
+            const held = shortfall?.holds ?? floor;
+            if (ratio < held) {
+              failures.push(
+                `${label(accent)}: ${other} and the tint ${ratio.toFixed(2)}:1 < ${held}:1 (${formatColor(composite(color, tint))} / ${formatColor(tint)})`,
+              );
+            }
+          }
+        }
+        const stale = shortfalls
+          .filter((s) => !needed.has(s))
+          .map((s) => `${s.pair}: no accent needs it any more — remove it from TINT_SHORTFALLS`);
+        expect([...failures, ...stale], `\n${[...failures, ...stale].join("\n")}\n`).toEqual([]);
+      });
+
+      it(`${id} ${mode}: every accent's wash laid on the page colour is its tint`, () => {
+        const failures: string[] = [];
+        for (const accent of accents) {
+          const resolve = resolverFor(accent);
+          const wash = resolve("--ui-accent-muted");
+          const tint = resolve("--ui-accent-tint");
+          const canvas = opaqueBackground("--ui-canvas", mode, resolve);
+          if (typeof wash === "string" || typeof tint === "string" || typeof canvas === "string") {
+            failures.push(
+              `${label(accent)}: ${[wash, tint, canvas].find((c) => typeof c === "string")}`,
+            );
+            continue;
+          }
+          const laid = composite(wash, canvas);
+          const apart = Math.max(
+            Math.abs(laid.r - tint.r),
+            Math.abs(laid.g - tint.g),
+            Math.abs(laid.b - tint.b),
+            Math.abs(laid.a - tint.a) * 255,
+          );
+          if (apart > 1) {
+            failures.push(
+              `${label(accent)}: the wash on the canvas is ${formatColor(laid)}, the tint ${formatColor(tint)}`,
+            );
+          }
+        }
+        expect(failures, `\n${failures.join("\n")}\n`).toEqual([]);
+      });
     }
   }
 });
