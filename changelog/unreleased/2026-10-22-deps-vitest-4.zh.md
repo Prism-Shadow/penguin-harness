@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** fix
 - **Scope:** `tooling`
+- **PR:** [#1294](https://github.com/Prism-Shadow/penguin-harness/pull/1294)
 
 [English](2026-10-22-deps-vitest-4.md)
 
