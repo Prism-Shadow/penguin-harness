@@ -41,6 +41,7 @@ words. A published practice post cites 8 to 13 sources, and `body-lists: none` a
 `body-tables: none` make a list or a table in its body an error. The skill's `review` reads a
 practice post by the same form: it expects the key sentences and an objection stated and
 answered, and never asks for a list in the body. Its `trim` cuts a practice post's over-cap
-sections to just under the 170-word section cap (400 characters), never to the plan rows. The
+sections to just under the 170-word section cap (400 characters), never to the plan rows, keeps
+every number and puts back any figure block the model touched. The
 READMEs list
 `penguin-harness-writing` with the other development skills.
