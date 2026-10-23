@@ -53,10 +53,9 @@ import { WeightedShards } from "./test/setup/weighted-shards";
  * third on Windows nearly doubled every file's time for no shorter shard. `availableParallelism`
  * counts threads, not cores, which is why it is consulted only where the two are the same.
  *
- * `minWorkers` equals `maxWorkers` because with `isolate: false` a worker above the minimum is
- * terminated while idle, and that termination can reject inside tinypool after every file has
- * passed ("Terminating worker thread"), failing the run with no failing test. Three workers over
- * a minimum of one did so on every run on a four-core machine; equal counts were not seen to.
+ * `maxWorkers` is the only worker knob: vitest 4 replaced tinypool with its own pool and dropped
+ * `minWorkers`, which under vitest 3 kept tinypool from terminating an idle worker and failing a
+ * run after every file had passed.
  */
 const WORKERS =
   process.platform === "darwin" ? Math.max(1, Math.min(4, availableParallelism())) : 2;
@@ -65,7 +64,6 @@ export default defineConfig({
   test: {
     environment: "node",
     maxWorkers: WORKERS,
-    minWorkers: WORKERS,
     sequence: { sequencer: WeightedShards },
     isolate: false,
     restoreMocks: true,

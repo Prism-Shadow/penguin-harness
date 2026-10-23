@@ -390,3 +390,78 @@ html.dark .site-prose .shiki span {
 :root.dark .site-prose hr {
   border-color: var(--site-gray-800);
 }
+
+/* Citations (GFM footnotes, grouped by rehypeCitations). A run of citations reads `[3, 4]`,
+   raised off the line without raising the line: the brackets and the comma are muted text, and
+   each number is a link to its entry in the list at the end, whose back-links return to each
+   place that cites it. Both ends stop clear of the sticky navigation bar, as headings do, and the
+   end a jump landed on is washed in the accent until the next one. The list's heading is an
+   ordinary section heading; the entries are set a size down. The `sup` itself is the
+   preflight's: three-quarter size, no line height. */
+.site-prose sup.site-cite {
+  white-space: nowrap;
+  color: var(--site-gray-500);
+}
+.site-prose a[data-footnote-ref] {
+  border-radius: 0.25rem;
+  text-decoration-line: none;
+  scroll-margin-top: 5rem;
+}
+.site-prose [data-footnotes] {
+  margin-top: 2rem;
+  font-size: var(--site-text-sm);
+}
+.site-prose [data-footnotes] li {
+  margin: 0.375rem 0;
+  border-radius: 0.25rem;
+  scroll-margin-top: 5rem;
+}
+.site-prose [data-footnotes] li::marker {
+  color: var(--site-gray-500);
+}
+.site-prose [data-footnotes] li > p {
+  margin: 0;
+  line-height: 1.6;
+}
+.site-prose .data-footnote-backref {
+  color: var(--site-gray-500);
+  text-decoration-line: none;
+}
+/* A citation's wash stays inside its box: spread past it, it would paint over the citation beside
+   it. An entry has the gap between entries to spread into. */
+.site-prose a[data-footnote-ref]:target {
+  background: var(--site-brand-50);
+}
+.site-prose [data-footnotes] li:target {
+  background: var(--site-brand-50);
+  box-shadow: 0 0 0 0.25rem var(--site-brand-50);
+}
+:root.dark .site-prose sup.site-cite,
+:root.dark .site-prose .data-footnote-backref {
+  color: var(--site-gray-400);
+}
+:root.dark .site-prose a[data-footnote-ref]:target {
+  background: color-mix(in oklab, var(--site-brand-950) 60%, transparent);
+}
+:root.dark .site-prose [data-footnotes] li:target {
+  background: color-mix(in oklab, var(--site-brand-950) 60%, transparent);
+  box-shadow: 0 0 0 0.25rem color-mix(in oklab, var(--site-brand-950) 60%, transparent);
+}
+/* A post marks its key sentence in bold: heavier and a step darker than the text around it, with
+   no colour or fill of its own. */
+.site-prose[data-variant="post"] strong {
+  font-weight: 600;
+  color: var(--site-gray-900);
+}
+:root.dark .site-prose[data-variant="post"] strong {
+  color: var(--site-gray-50);
+}
+/* On paper a link cannot be followed and a back-link goes nowhere: print the addresses instead. */
+@media print {
+  .site-prose [data-footnotes] a[href^="http"]::after {
+    content: " " attr(href);
+  }
+  .site-prose .data-footnote-backref {
+    display: none;
+  }
+}
