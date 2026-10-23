@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `ui`
+- **PR:** [#1295](https://github.com/Prism-Shadow/penguin-harness/pull/1295)
 
 [中文版](2026-10-22-trace-view.zh.md)
 
