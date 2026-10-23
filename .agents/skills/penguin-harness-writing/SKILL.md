@@ -132,11 +132,13 @@ else, and `check` warns on the signposts the style guides list. A post's joins g
 their own because a fix round aimed at the whole text leaves them broken: the author's rule is to
 write the whole post, revise it as a whole, then edit only the sentences at the headings.
 
-**Emphasis.** A profile with `emphasis: yes` gets one marked key sentence, or clause, per `##`
+**Emphasis.** A profile with `emphasis: yes` gets one marked key sentence, a whole one, per `##`
 section and one in the lead: the claim a reader skimming the section must not miss. `emphasize`
-adds the `**` pairs to a frozen draft and changes nothing else. The script refuses an answer that
+adds the `**` pairs to a frozen draft and changes nothing else; `--notes` passes the author's
+notes as guidance on which sentence to mark. The script refuses an answer that
 differs from its input once the `**` are removed, has no span or two in a section, holds a span
-over `emphasis-words` / `zh-emphasis-chars`, or puts one in a heading, figure block, caption,
+over `emphasis-words` / `zh-emphasis-chars` or over part of a sentence (a span opens where its
+sentence opens and closes right before its final punctuation), or puts one in a heading, figure block, caption,
 version note, TL;DR, code span or link, or around a marker. The closing `**` goes before the
 sentence's punctuation and markers, so the citation follows it there (`**claim**[^1].`,
 `**句子**[^1]。`), and the script refuses the other order: after Chinese punctuation a closing `**`

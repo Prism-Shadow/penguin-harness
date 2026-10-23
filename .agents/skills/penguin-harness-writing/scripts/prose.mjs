@@ -130,9 +130,11 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
                planned size, what the page has left and the profile's cap; the other sections
                count as --page <assembled draft> holds them, else as their newest files
   emphasize  --in <draft.<lang>.vN.md> [--mirror <the other language's emphasized draft>]
+             [--notes <f>]   the notes say which sentence to mark where the author has a view
                marks one key sentence per section (and in the lead) with ** and changes nothing
                else; an answer that differs once ** are removed, or has a section with no span or
-               two, or a span too long or in the wrong place, goes to <out>.rejected.md (exit 1).
+               two, or a span too long, in the wrong place or over part of a sentence, goes to
+               <out>.rejected.md (exit 1).
                --out defaults to the next draft version
   transition --in <draft.<lang>.vN.md> [--findings <review findings>] [--notes <f>]
                mends the joins: for each ## heading, the first sentence of the paragraph after it
@@ -1782,6 +1784,9 @@ function buildMessages(step, o) {
       params = profileParams(F, prof, lang);
       Object.assign(params, countRuleParams(F, lang));
       params.EMPHASIS_CAP = `${budgets.emphasis.cap} ${budgets.unitName}`;
+      // The author's notes say which sentence a section's span belongs on; the text stays as it is.
+      Object.assign(params, notesSlots());
+      params.NOTES_RULE = notes ? ` ${F["notes-rule-emphasize"]}` : "";
       params.MIRROR_RULE = "";
       params.MIRROR_SECTION = "";
       let mirror;
@@ -1951,6 +1956,46 @@ function emphasizeProblems(before, after, lang, budgets) {
   for (const it of parseText(after).items) {
     if (!["text", "list", "quote", "table", "heading"].includes(it.type)) continue;
     for (const msg of flankingProblems(it.line)) problems.push(`line ${it.n}: ${msg}`);
+  }
+  return [...problems, ...wholeSentenceProblems(after)];
+}
+
+/**
+ * Each `**` span must hold one whole sentence: it opens where its sentence opens (the paragraph's
+ * start, or right after the previous sentence's end punctuation and any markers or closing marks
+ * after it) and closes right before the sentence's end punctuation, or at the paragraph's end.
+ * Markers and citations may sit between the closing `**` and that punctuation.
+ */
+function wholeSentenceProblems(text) {
+  const doc = parseText(text);
+  const tldr = tldrLines(doc.items);
+  const problems = [];
+  const trailing = /(?:\s|\{[FO]\d+\}|\[\^\d+\])+$/;
+  const leading = /^(?:\s|\{[FO]\d+\}|\[\^\d+\])+/;
+  for (const p of paragraphs(doc.items.filter((it) => !tldr.has(it.n)))) {
+    const masked = p.text.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (m) => " ".repeat(m.length));
+    for (const m of masked.matchAll(EMPHASIS)) {
+      const inner = p.text.slice(m.index + 2, m.index + m[0].length - 2);
+      const show = `"${inner.slice(0, 40)}${inner.length > 40 ? "…" : ""}"`;
+      const before = p.text
+        .slice(0, m.index)
+        .replace(trailing, "")
+        .replace(/[)）"”’」』\]]+$/, "");
+      if (before && !/[.!?。！？]$/.test(before)) {
+        problems.push(
+          `line ${p.n}: the span ${show} starts in the middle of its sentence; mark the whole sentence, from its first word`,
+        );
+      }
+      const after = p.text.slice(m.index + m[0].length).replace(leading, "");
+      if (after && !/^[.!?。！？]/.test(after)) {
+        problems.push(
+          `line ${p.n}: the span ${show} ends before its sentence does; mark the whole sentence, up to its final punctuation`,
+        );
+      }
+      if (sentences(inner).length > 1) {
+        problems.push(`line ${p.n}: the span ${show} holds more than one sentence`);
+      }
+    }
   }
   return problems;
 }
@@ -6168,8 +6213,24 @@ async function runSelftest() {
   });
   // emphasize: the plain draft in, and answers that keep the text, change it, miscount or misplace.
   const plain = FIXTURE_DRAFT.replace(/\*\*/g, "");
+  // The fixture's spans mark parts of sentences; an answer marks whole ones.
+  const wholeEmph = plain
+    .replace("Archived output keeps", "**Archived output keeps")
+    .replace("in the Trace. {F1}", "in the Trace**. {F1}")
+    .replace("Files live under one root per Project.", "**Files live under one root per Project**.")
+    .replace("The Trace keeps a short marker.", "**The Trace keeps a short marker**.")
+    .replace(
+      "We would rather keep a marker than leave a gap.",
+      "**We would rather keep a marker than leave a gap**.",
+    )
+    .replace(
+      "The docs describe the archive in full.",
+      "**The docs describe the archive in full**.",
+    );
   const emphOk = caseDir("emph-ok", { "draft.en.v1.md": plain });
-  answer("emph-ok.md", FIXTURE_DRAFT);
+  answer("emph-ok.md", wholeEmph);
+  const emphClause = caseDir("emph-clause", { "draft.en.v1.md": plain });
+  answer("emph-clause.md", FIXTURE_DRAFT);
   const emphText = caseDir("emph-text", { "draft.en.v1.md": plain });
   answer("emph-text.md", FIXTURE_DRAFT.replace("keeps its place", "holds its place"));
   const twoAndNone = FIXTURE_DRAFT.replace(
@@ -6228,6 +6289,14 @@ async function runSelftest() {
   const markedZh = `${zhFront}**缓存命中靠前缀稳定**。{F1}\n\n## 斜率\n\n**每次请求都会把上下文变长**。后面的请求更长。{F2}\n`;
   const emphZhOk = caseDir("emph-zh-ok", { "draft.zh.v1.md": plainZh });
   answer("emph-zh-ok.md", markedZh);
+  const emphZhMid = caseDir("emph-zh-mid", {
+    "draft.zh.v1.md": plainZh,
+    "notes.md": "note: in the lead, mark the sentence on what makes cache hits\n",
+  });
+  answer(
+    "emph-zh-mid.md",
+    markedZh.replace("**缓存命中靠前缀稳定**。", "缓存命中靠**前缀稳定**。"),
+  );
   const emphZhOrder = caseDir("emph-zh-order", { "draft.zh.v1.md": plainZh });
   answer(
     "emph-zh-order.md",
@@ -6418,7 +6487,7 @@ async function runSelftest() {
   // The fence the prompt put around the text, echoed as a lone closing line.
   const joinFence = joinCase("join-fence", `${joinOkText}\`\`\`\`\n`);
   const emphFence = caseDir("emph-fence", { "draft.en.v1.md": plain });
-  answer("emph-fence.md", `\`\`\`\`markdown\n${FIXTURE_DRAFT}`);
+  answer("emph-fence.md", `\`\`\`\`markdown\n${wholeEmph}`);
   const joinMiddle = joinCase(
     "join-middle",
     joinDraft.replace("A middle paragraph. {F2}", "A middle paragraph, reworded. {F2}"),
@@ -7171,7 +7240,7 @@ async function runSelftest() {
       code: 0,
       file: [
         path.join(emphOk, "draft.en.v2.md"),
-        /Archived output \*\*keeps its place in the Trace\*\*\. \{F1\}/,
+        /\*\*Archived output keeps its place in the Trace\*\*\. \{F1\}/,
       ],
     },
     {
@@ -7249,6 +7318,44 @@ async function runSelftest() {
       ],
       code: 0,
       stdout: /page 497 of at most 480 words[\s\S]*the other sections from draft\.en\.v1\.md/,
+    },
+    {
+      name: "emphasize refuses spans over part of a sentence",
+      args: ["emphasize", "--in", path.join(emphClause, "draft.en.v1.md")],
+      answer: "emph-clause.md",
+      code: 1,
+      stderr:
+        /the span "keeps its place in the Trace" starts in the middle of its sentence; mark the whole sentence, from its first word/,
+      absent: path.join(emphClause, "draft.en.v2.md"),
+    },
+    {
+      name: "emphasize refuses a Chinese span that starts in the middle of its sentence",
+      args: [
+        "emphasize",
+        "--in",
+        path.join(emphZhMid, "draft.zh.v1.md"),
+        "--notes",
+        path.join(emphZhMid, "notes.md"),
+      ],
+      answer: "emph-zh-mid.md",
+      code: 1,
+      stderr: /the span "前缀稳定" starts in the middle of its sentence/,
+      notStderr: /每次请求都会把上下文变长" (starts|ends)/,
+      absent: path.join(emphZhMid, "draft.zh.v2.md"),
+    },
+    {
+      name: "emphasize passes the author's notes as guidance on which sentence to mark",
+      args: [
+        "emphasize",
+        "--dry-run",
+        "--in",
+        path.join(emphZhMid, "draft.zh.v1.md"),
+        "--notes",
+        path.join(emphZhMid, "notes.md"),
+      ],
+      code: 0,
+      stdout:
+        /Mark exactly one whole sentence[\s\S]*may say which sentence a section's span belongs on; follow them[\s\S]*## The author's notes \(binding\)[\s\S]*note: in the lead, mark the sentence on what makes cache hits[\s\S]*## The text to mark/,
     },
     {
       name: "emphasize refuses an English span closed after the sentence's period",

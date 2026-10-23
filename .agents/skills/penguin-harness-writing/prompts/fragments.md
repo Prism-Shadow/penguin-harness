@@ -214,6 +214,9 @@ The review's findings, given before the text, name the joins it judged broken (`
 ## The review's findings on the joins
 {{FINDINGS}}
 
+<!-- fragment: notes-rule-emphasize -->
+The author's notes, given before the text, may say which sentence a section's span belongs on; follow them. They never let you change a word.
+
 <!-- fragment: notes-rule-transition -->
 The author's notes, given before the text, are binding: a sentence you rewrite keeps every `keep:` string it held and takes in no `avoid:` string.
 
