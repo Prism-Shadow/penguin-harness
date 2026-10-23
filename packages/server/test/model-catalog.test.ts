@@ -777,6 +777,7 @@ describe("model-catalog", () => {
       "anthropic/claude-sonnet-5.5",
       "anthropic/claude-sonnet-5",
       "deepseek/deepseek-v4.1-flash",
+      "deepseek/deepseek-v4.1-flash-1017",
       "deepseek/deepseek-v4-flash-0731",
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-flash-vision-exp",
@@ -787,6 +788,7 @@ describe("model-catalog", () => {
       "google/gemini-3.6-flash",
       "google/gemini-3.5-flash",
       "google/gemini-3.5-flash-lite",
+      "minimax/minimax-m3.1-flash",
       "minimax/minimax-m3",
       "moonshotai/kimi-k3",
       "moonshotai/kimi-k2.6",
@@ -807,6 +809,7 @@ describe("model-catalog", () => {
       "qwen/qwen3.8-27b",
       "qwen/qwen3.8-max",
       "qwen/qwen3.6-35b-a3b",
+      "recursive/flint-v1.0:free",
       "stepfun/step-5-preview",
       "stepfun/step-3.7-flash",
       "tencent/hy4-preview",
@@ -859,9 +862,10 @@ describe("model-catalog", () => {
     }
     const sf = MODEL_CATALOG.filter((m) => m.provider === "siliconflow");
     // Dictionary order is case-insensitive (as in qwen-pay-as-you-go, where ZHIPU/GLM-5.3-Flash
-    // sorts last): Pro/ and Qwen/ fall between moonshotai/ and tencent/, and GLM-5.3 and its
-    // Flash come before GLM-5.2 as the newer version.
+    // sorts last): Pro/ and Qwen/ fall between moonshotai/ and tencent/, and the newer version
+    // comes first (DeepSeek V4.1 before V4, GLM-5.3 and its Flash before GLM-5.2).
     expect(sf.map((m) => m.modelId)).toEqual([
+      "deepseek-ai/DeepSeek-V4.1-Flash",
       "deepseek-ai/DeepSeek-V4-Flash",
       "deepseek-ai/DeepSeek-V4-Pro",
       "meituan-longcat/LongCat-2.0",
@@ -938,6 +942,7 @@ describe("model-catalog", () => {
       ["deepseek-v4-flash-vision-exp", 1000000, true],
       ["deepseek-v4-pro-0813", 1000000, false],
       ["deepseek-v4.1-flash", 1000000, true],
+      ["deepseek-v4.1-flash-1017", 1000000, true],
       ["dots-3-note-preview", 512000, true],
       ["glm-5.2", 1000000, false],
       ["glm-5.3", 1000000, false],
@@ -950,6 +955,7 @@ describe("model-catalog", () => {
       ["mimo-v2.6-flash", 1000000, true],
       ["mimo-v2.6-pro", 1000000, true],
       ["mimo-v2.6-ultraspeed", 1000000, true],
+      ["minimax-m3.1-flash", 1000000, true],
       ["qwen3.8-flash", 1000000, true],
       ["qwen3.8-max", 1000000, true],
       ["seed-2.1-pro", 256000, true],
@@ -960,9 +966,14 @@ describe("model-catalog", () => {
     // The bare deepseek-v4-flash / deepseek-v4-pro ids, which the gateway sells as the V4
     // "Preview" releases, are deliberately not presets (the user's call, 2026-10-10).
     expect(td.some((m) => /^deepseek-v4-(flash|pro)$/.test(m.modelId))).toBe(false);
+    // Chat Completions on the gateway's OpenAI base, except MiniMax M3.1 Flash, whose Chat
+    // Completions stream openai-chat cannot read: it goes over Anthropic Messages instead.
     for (const m of td) {
-      expect(m.clientType).toBe("openai-chat");
-      expect(m.baseUrl).toBe("https://tokendance.space/gateway/v1");
+      const messages = m.modelId === "minimax-m3.1-flash";
+      expect(m.clientType, m.modelId).toBe(messages ? "ant-messages" : "openai-chat");
+      expect(m.baseUrl, m.modelId).toBe(
+        messages ? "https://tokendance.space/gateway" : "https://tokendance.space/gateway/v1",
+      );
     }
     // The gateway's own CNY LIST rates throughout, promotion or not; a promoted row carries
     // its rate in `discount` and the billed price is DERIVED from the two, never pasted
@@ -1002,7 +1013,7 @@ describe("model-catalog", () => {
       expect(output, `${modelId} output`).toBeCloseTo(cnyBilled[1], 4);
       expect(cacheHit, `${modelId} cache hit`).toBeCloseTo(cnyBilled[2], 4);
     }
-    // Those carry a flat discount, and so does deepseek-v4.1-flash on top of its schedule
+    // Those carry a flat discount, and so do both V4.1 Flash rows on top of their schedule
     // (below); every other row bills its list price unchanged. Some of those others declare
     // DeepSeek's peak/off-peak schedule, so the rows are compared at a PEAK instant —
     // 2026-09-10 is a Thursday, and 10:00 Beijing is inside the morning window — because
@@ -1012,7 +1023,9 @@ describe("model-catalog", () => {
         .filter((m) => m.discount !== undefined)
         .map((m) => m.modelId)
         .sort(),
-    ).toEqual([...discounted.map(([id]) => id), "deepseek-v4.1-flash"].sort());
+    ).toEqual(
+      [...discounted.map(([id]) => id), "deepseek-v4.1-flash", "deepseek-v4.1-flash-1017"].sort(),
+    );
     const peakInstant = new Date("2026-09-10T10:00:00+08:00");
     for (const m of td.filter((x) => x.discount === undefined)) {
       expect(effectivePricing(m, peakInstant), m.modelId).toEqual(m.pricing);
@@ -1029,16 +1042,21 @@ describe("model-catalog", () => {
       "deepseek-v4-flash-vision-exp",
       "deepseek-v4-pro-0813",
       "deepseek-v4.1-flash",
+      "deepseek-v4.1-flash-1017",
     ]);
     const peakList: Record<string, [number, number, number]> = {
       "deepseek-v4-flash-0731": [3, 9, 0.1],
       "deepseek-v4-flash-vision-exp": [2, 8, 0.04],
       "deepseek-v4-pro-0813": [9, 27, 0.3],
       "deepseek-v4.1-flash": [2, 8, 0.04],
+      "deepseek-v4.1-flash-1017": [2, 8, 0.04],
     };
     // 2026-09-12 is a Saturday: off-peak all day.
     const offPeakInstant = new Date("2026-09-12T10:00:00+08:00");
-    const promotion: Record<string, number> = { "deepseek-v4.1-flash": 0.2 };
+    const promotion: Record<string, number> = {
+      "deepseek-v4.1-flash": 0.2,
+      "deepseek-v4.1-flash-1017": 0.2,
+    };
     for (const id of tdScheduled) {
       const row = td.find((m) => m.modelId === id)!;
       expect(row.offPeakDiscount, id).toBe(DEEPSEEK_OFF_PEAK);
@@ -1161,6 +1179,15 @@ describe("model-catalog", () => {
         m.pricing,
       ]),
     ).toEqual([
+      [
+        "MiniMax-M3.1-Flash",
+        1000000,
+        true,
+        undefined,
+        undefined,
+        // One pay-as-you-go tier: cache read 0.015, input 0.15, output 0.60 USD/Mtok.
+        { unit: "usd_per_mtok", cache_read: 0.015, cache_write: 0.15, output: 0.6 },
+      ],
       [
         "MiniMax-M3",
         1000000,
@@ -1737,9 +1764,13 @@ describe("MMSP's clients as the catalog reads them", () => {
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
         continue;
       }
-      if (m.provider === "opencode-go" && m.clientType === "ant-messages") {
-        // OpenCode Go's group pair is the OPENAI_* one its Chat Completions and Responses rows
-        // read; its Messages rows read the Anthropic client's pair, the same split as custom.
+      if (
+        (m.provider === "opencode-go" || m.provider === "tokendance") &&
+        m.clientType === "ant-messages"
+      ) {
+        // OpenCode Go's and TokenDance's group pair is the OPENAI_* one their Chat Completions
+        // and Responses rows read; their Messages rows read the Anthropic client's pair, the
+        // same split as custom.
         expect(env!.envKey, m.modelId).toBe("ANTHROPIC_API_KEY");
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
         continue;
@@ -2044,7 +2075,7 @@ describe("off-peak schedules", () => {
 
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
     // Every direct row, plus the resold rows whose sellers pass DeepSeek's own windows through:
-    // two on Penguin Go, four on OpenCode Go, four on TokenDance and one on OpenRouter. The
+    // two on Penguin Go, four on OpenCode Go, five on TokenDance and two on OpenRouter. The
     // retired rows keep the schedule too. A seller's promotion on top of the schedule
     // (TokenDance's on V4.1 Flash) comes off both tiers alike.
     const rows = MODEL_CATALOG.filter((m) => m.offPeakDiscount === S);
@@ -2054,10 +2085,12 @@ describe("off-peak schedules", () => {
       "deepseek/deepseek-v4-flash-vision-exp",
       "deepseek/deepseek-v4-pro",
       "openrouter/deepseek/deepseek-v4.1-flash",
+      "openrouter/deepseek/deepseek-v4.1-flash-1017",
       "tokendance/deepseek-v4-flash-0731",
       "tokendance/deepseek-v4-flash-vision-exp",
       "tokendance/deepseek-v4-pro-0813",
       "tokendance/deepseek-v4.1-flash",
+      "tokendance/deepseek-v4.1-flash-1017",
       "penguin-go/deepseek-flash",
       "penguin-go/deepseek-v4-pro",
       "opencode-go/deepseek-v4.1-flash",

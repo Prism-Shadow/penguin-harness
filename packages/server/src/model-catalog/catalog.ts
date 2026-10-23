@@ -335,6 +335,8 @@ const QWEN_TOKEN_PLAN_BASE_URL =
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
+/** TokenDance's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
+const TOKENDANCE_MESSAGES_BASE_URL = "https://tokendance.space/gateway";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
@@ -1014,6 +1016,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // The 1017 snapshot, served by DeepSeek's own endpoint (MMSP 0.5.5's registry, models API
+    // read 2026-10-19): $0.15 / $0.60 / $0.003 off-peak, double in DeepSeek's weekday windows,
+    // so the row stores that peak and declares DEEPSEEK_OFF_PEAK like the row above.
+    modelId: "deepseek/deepseek-v4.1-flash-1017",
+    displayName: "DeepSeek V4.1 Flash 1017",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.006, 0.3, 1.2),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "deepseek/deepseek-v4-flash-0731",
     displayName: "DeepSeek V4 Flash 0731",
     provider: "openrouter",
@@ -1141,6 +1157,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.03, 0.3, 2.5),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // The paid listing, which replaced the free variant when its free period ended (models API
+    // read 2026-10-23): $0.15 input / $0.60 output / $0.015 cache read, 1,048,576 tokens, image
+    // input, MiniMax's own list price.
+    modelId: "minimax/minimax-m3.1-flash",
+    displayName: "MiniMax M3.1 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.015, 0.15, 0.6),
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
@@ -1374,6 +1403,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.05, 0.14, 1),
     supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Recursive's Flint, listed 2026-10-21 (models API read 2026-10-23): free, 262,144 tokens,
+    // up to 235,929 output tokens, text input only, with reasoning and tool calls.
+    modelId: "recursive/flint-v1.0:free",
+    displayName: "Flint (free)",
+    provider: "openrouter",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
@@ -1694,11 +1735,24 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- SiliconFlow (gateway, official CNY pricing: cache hit / input / output) --
   {
+    // CNY 1 input / 4 output / 0.02 cache hit over 1,048,576 tokens, image input (MMSP 0.5.5's
+    // registry, SiliconFlow's price list).
+    modelId: "deepseek-ai/DeepSeek-V4.1-Flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "siliconflow",
+    contextWindow: 1048576,
+    pricing: cny(0.02, 1, 4),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    // SiliconFlow repriced it to CNY 1.5 / 4.5 / 0.15 (MMSP 0.5.5's registry).
     modelId: "deepseek-ai/DeepSeek-V4-Flash",
     displayName: "DeepSeek V4 Flash",
     provider: "siliconflow",
-    contextWindow: 1000000,
-    pricing: cny(0.02, 1, 2),
+    contextWindow: 1048576,
+    pricing: cny(0.15, 1.5, 4.5),
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
@@ -1707,8 +1761,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "deepseek-ai/DeepSeek-V4-Pro",
     displayName: "DeepSeek V4 Pro",
     provider: "siliconflow",
-    contextWindow: 1000000,
-    pricing: cny(0.1, 12, 24),
+    contextWindow: 1048576,
+    pricing: cny(1, 12, 24),
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
@@ -1717,7 +1771,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "meituan-longcat/LongCat-2.0",
     displayName: "LongCat 2.0",
     provider: "siliconflow",
-    contextWindow: 1000000,
+    contextWindow: 1048576,
     pricing: cny(0.1, 5, 20),
     supportsVision: false,
     clientType: "openai-chat",
@@ -1777,7 +1831,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "zai-org/GLM-5.3",
     displayName: "GLM-5.3",
     provider: "siliconflow",
-    contextWindow: 1000000,
+    contextWindow: 1048576,
     pricing: cny(2, 8, 28),
     supportsVision: false,
     clientType: "openai-chat",
@@ -1803,7 +1857,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "zai-org/GLM-5.2",
     displayName: "GLM-5.2",
     provider: "siliconflow",
-    contextWindow: 1000000,
+    contextWindow: 1048576,
     pricing: cny(2, 8, 28),
     supportsVision: false,
     clientType: "openai-chat",
@@ -1964,6 +2018,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // reached through this group's generic openai-chat client, which forwards image_url parts.
     modelId: "deepseek-v4.1-flash",
     displayName: "DeepSeek V4.1 Flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    discount: 0.2,
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // The 1017 snapshot, priced exactly as the row above in the public catalog (re-read
+    // 2026-10-23): the same peak tier, schedule and 20% promotion.
+    modelId: "deepseek-v4.1-flash-1017",
+    displayName: "DeepSeek V4.1 Flash 1017",
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(0.04, 2, 8),
@@ -2154,6 +2222,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // CNY 1 input / 4 output / 0.1 cache hit over a 1,000,000-token window, undiscounted (public
+    // catalog, re-read 2026-10-23). Pinned to Anthropic Messages: the gateway's Chat Completions
+    // stream for this model ends in a chunk without `delta`, which openai-chat cannot read
+    // (MMSP 0.5.5's registry pins the same).
+    modelId: "minimax-m3.1-flash",
+    displayName: "MiniMax M3.1 Flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.1, 1, 4),
+    supportsVision: true,
+    clientType: "ant-messages",
+    baseUrl: TOKENDANCE_MESSAGES_BASE_URL,
   },
   {
     // One model reached two ways, priced by whoever is selling it: this row carries the
@@ -2967,6 +3049,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- MiniMax (official USD pay-as-you-go list prices, standard tier at <=512K input — every
   // rate doubles above 512K, and the priority tier is 1.5x). --
+  {
+    // Pay-as-you-go list price, one tier (MiniMax pricing guide, read 2026-10-19 by MMSP 0.5.5's
+    // registry): $0.15 input / $0.60 output / $0.015 cache hit over a 1,000,000-token window.
+    modelId: "MiniMax-M3.1-Flash",
+    displayName: "MiniMax M3.1 Flash",
+    provider: "minimax",
+    contextWindow: 1000000,
+    pricing: usd(0.015, 0.15, 0.6),
+    supportsVision: true,
+  },
   {
     modelId: "MiniMax-M3",
     displayName: "MiniMax M3",
