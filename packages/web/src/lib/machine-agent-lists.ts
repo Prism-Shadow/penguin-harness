@@ -71,7 +71,8 @@ const changeListeners = new Set<(machineId: string) => void>();
  * Session of a machine's Agent only while that machine names the Agent).
  */
 export function publishMachineAgentsChanged(machineId: string): void {
-  for (const [key, owner] of keyOwners) {
+  // A copy: an invalidation tells readers at once, and one may name a key of its own meanwhile.
+  for (const [key, owner] of [...keyOwners]) {
     if (owner.machineId === machineId) agentLists.invalidate(key);
   }
   for (const listener of [...changeListeners]) listener(machineId);
