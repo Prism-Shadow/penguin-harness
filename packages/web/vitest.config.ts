@@ -8,6 +8,15 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // @prismshadow/penguin-ui arrives as pnpm's injected copy (injectWorkspacePackages), a hard-linked
+  // copy of packages/ui under node_modules/.pnpm: since vitest 4 left packages/ui's own graph without
+  // supports-color, its peer set no longer matches this package's and pnpm stops deduping the copy
+  // back to a link. Vite reads no tsconfig for files under node_modules, so without this line the
+  // copy's .tsx compiles with the classic runtime ("React is not defined"). Only `pnpm install`
+  // refreshes the copy: a file added to packages/ui, or one replaced rather than edited in place
+  // (git checkout, an editor's atomic save), is not seen here until it runs. Same in landing, docs
+  // and ui-gallery.
+  esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],

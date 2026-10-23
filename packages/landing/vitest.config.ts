@@ -6,5 +6,9 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // @prismshadow/penguin-ui's .tsx is read from pnpm's injected copy under node_modules, where
+  // Vite reads no tsconfig; why, and what that copy misses until `pnpm install`, is in
+  // packages/web/vitest.config.ts.
+  esbuild: { jsx: "automatic" },
   test: { environment: "node" },
 });
