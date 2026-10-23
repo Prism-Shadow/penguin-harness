@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** fix
 - **Scope:** `core`, `server`, `cli`, `web`, `tooling`
+- **PR:** [#1293](https://github.com/Prism-Shadow/penguin-harness/pull/1293)
 
 [中文版](2026-10-22-deps-security-overrides.zh.md)
 
