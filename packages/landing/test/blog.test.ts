@@ -123,6 +123,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
 
   it("filters by the practice category, newest first", () => {
     expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
+      "testing-agent-harnesses",
       // Posts that share a date are ordered by slug, ascending.
       "build-agent-apps-with-workflows",
       "call-agents-with-the-agent-api",
@@ -161,7 +162,9 @@ describe("frontmatter mapping (author / pinned / category)", () => {
 
   it("filters by the perspectives category", () => {
     expect(postsFor("en", "perspectives").map((p) => p.slug)).toEqual([
+      // The next two share 2026-10-19, so slug ascending is the tie-break.
       "context-slope",
+      "from-a2ui-to-a2app",
       "agent-company-mode",
       // The next three share 2026-07-22, so slug ascending is the tie-break.
       "ai-infrastructure-past-present-future",
