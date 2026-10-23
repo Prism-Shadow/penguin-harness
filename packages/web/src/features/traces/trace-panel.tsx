@@ -1,11 +1,12 @@
 /**
  * Trace panel — the current conversation's Trace files as a dock tab, wrapping the shared
- * file view (performance timeline + event list) around one Session. The file pills page
- * newest-first; the export link downloads the selected file raw. This is the ONLY way to
- * read a Trace: the standalone cross-Session browsing page is gone, so a Trace is read
- * where it was produced, as the "what did this conversation do" view. Importing a Trace
- * from another install is the one thing that outlived the page — it moved to System
- * settings, beside the CLI-sessions filter.
+ * file view (performance timeline + event list) around one Session. The view's sticky toolbar
+ * carries the panel's two controls: the file — a picker over the files, newest first, when the
+ * Session has more than one, else the one file's label — and the export icon, which downloads
+ * the selected file raw. This is the ONLY way to read a Trace: the standalone cross-Session
+ * browsing page is gone, so a Trace is read where it was produced, as the "what did this
+ * conversation do" view. Importing a Trace from another install is the one thing that outlived
+ * the page — it moved to System settings, beside the CLI-sessions filter.
  *
  * Loading is gated on `active` (the dock keeps inactive tabs mounted): the listing is
  * fetched on the first show, re-fetched on every re-show, and re-fetched again whenever a
@@ -20,6 +21,7 @@ import {
   EmptyState,
   ICON_SIZE,
   NoticeStrip,
+  Select,
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -34,9 +36,6 @@ import {
   sortTraceFiles,
 } from "./trace-refresh";
 import type { TraceHighlight } from "./timeline-chart";
-
-/** File pills rendered before the "+N" overflow control expands them (a long Session can hold dozens of compaction shards). */
-const FILE_PILL_CAP = 6;
 
 interface FileRef {
   index: number;
@@ -63,7 +62,6 @@ export function TracePanel({
   const [files, setFiles] = useState<FileRef[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fileIndex, setFileIndex] = useState<number | null>(null);
-  const [showAllFiles, setShowAllFiles] = useState(false);
   const [highlight, setHighlight] = useState<TraceHighlight | null>(null);
 
   // Fetch on show, and again on every settled turn while showing (trace-refresh.ts owns the
@@ -72,7 +70,7 @@ export function TracePanel({
   // edge-detecting fetch effect would lose the FIRST load under StrictMode's dev-mode
   // double-invoke (the tracker advances on the first run, whose fetch the cleanup cancels;
   // the second run then sees no edge and never refetches, leaving the skeleton up forever).
-  // The selected pill survives a re-list while its file still exists; a vanished selection
+  // The selected file survives a re-list while it still exists; a vanished selection
   // falls back to the newest file, and the default is pinned to a real index as soon as the
   // first listing arrives rather than left to that fallback.
   const [listTick, setListTick] = useState(0);
@@ -94,16 +92,16 @@ export function TracePanel({
         // Pin the default the first time a listing arrives. Left as null the selection is
         // "whatever activeTraceFile falls back to" — the newest file, re-resolved on every
         // re-list — so a compaction shard appearing mid-run would move a reader who never
-        // clicked a pill onto the new file, remounting the view below onto a different index
+        // picked a file onto the new one, remounting the view below onto a different index
         // and taking its open rounds, pinned row and scroll position with it. Pinned,
-        // only a pill click moves the selection.
+        // only a pick moves the selection.
         setFileIndex((cur) => cur ?? sorted[0]?.index ?? null);
         setError(null);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         // The listing already on screen is kept: this fires on every settled turn now, so a
-        // blip mid-read must not unmount the pills and the view below it. Only a first load
+        // blip mid-read must not unmount the picker and the view below it. Only a first load
         // (files still null) has nothing to fall back to.
         setError(apiErrorText(err));
       });
@@ -136,81 +134,75 @@ export function TracePanel({
     return <EmptyState title={S.tracePanel.empty} description={S.tracePanel.emptyHint} />;
   }
 
-  const visibleFiles = showAllFiles ? files : files.slice(0, FILE_PILL_CAP);
-
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      <div className="space-y-3">
-        {/* A re-list that failed keeps everything below it and says so here; the listing on
-            screen is the last one that arrived, so it may be a turn or two behind. */}
-        {error !== null && (
-          <NoticeStrip tone="danger" as="p" className="rounded-md border px-2.5 py-1.5 text-xs">
-            {S.tracePanel.loadFailed} · {error}
-          </NoticeStrip>
-        )}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-xs text-gray-400">{S.traces.filesTitle}</span>
-          {visibleFiles.map((f) => (
-            <button
-              key={f.index}
-              type="button"
-              onClick={() => setFileIndex(f.index)}
-              data-tooltip={`${f.date} · ${formatBytes(f.sizeBytes)}`}
-              data-tooltip-extra
-              className={`rounded-md border px-2 py-0.5 font-mono text-xs transition-colors duration-150 ${
-                f.index === activeFile.index
-                  ? "border-gray-400 bg-gray-200/70 font-semibold text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                  : "border-gray-200 text-gray-500 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/60"
-              }`}
-            >
-              #{String(f.index).padStart(3, "0")}
-            </button>
+  /** A file as the picker and the label name it: its number, its date and its size. */
+  const fileLabel = (f: FileRef): string =>
+    `#${String(f.index).padStart(3, "0")} · ${f.date} · ${formatBytes(f.sizeBytes)}`;
+  // One file has nothing to pick from: its label says which it is. A width given to the picker
+  // itself loses to its own w-full, so the box holds it.
+  const fileControl =
+    files.length > 1 ? (
+      <span className="w-52 min-w-0 shrink">
+        <Select
+          size="sm"
+          aria-label={S.traces.filesTitle}
+          value={String(activeFile.index)}
+          onChange={(e) => setFileIndex(Number(e.target.value))}
+        >
+          {files.map((f) => (
+            <option key={f.index} value={String(f.index)}>
+              {fileLabel(f)}
+            </option>
           ))}
-          {!showAllFiles && files.length > FILE_PILL_CAP && (
-            <button
-              type="button"
-              data-tooltip={S.chat.loadMore}
-              aria-label={S.chat.loadMore}
-              onClick={() => setShowAllFiles(true)}
-              className="rounded-md border border-gray-200 px-2 py-0.5 font-mono text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/60"
-            >
-              +{files.length - FILE_PILL_CAP}
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="min-w-0 flex-1 truncate font-mono text-xs text-gray-400">
-            {activeFile.date} · {formatBytes(activeFile.sizeBytes)}
-          </p>
-          {/* Raw-file download for the selected Trace file (same styling as the inactive pills). */}
-          <a
-            href={api.agentTraceDownloadUrl(
-              session.projectId,
-              session.agentId,
-              session.sessionId,
-              activeFile.index,
-            )}
-            download
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/60"
-          >
-            <DownloadIcon size={ICON_SIZE.rowLead} />
-            {S.traces.exportFile}
-          </a>
-        </div>
+        </Select>
+      </span>
+    ) : (
+      <span className="min-w-0 truncate font-mono text-xs text-fg-muted">
+        {fileLabel(activeFile)}
+      </span>
+    );
+  // Raw-file download for the selected Trace file: a flat icon, named by its tooltip.
+  const exportControl = (
+    <a
+      href={api.agentTraceDownloadUrl(
+        session.projectId,
+        session.agentId,
+        session.sessionId,
+        activeFile.index,
+      )}
+      download
+      aria-label={S.traces.exportFile}
+      data-tooltip={S.traces.exportFile}
+      className="flex shrink-0 items-center justify-center rounded-control p-1.5 text-fg-muted transition-colors duration-150 hover:bg-control-hover hover:text-fg"
+    >
+      <DownloadIcon size={ICON_SIZE.iconButton} />
+    </a>
+  );
 
-        {/* The listing tick doubles as the view's re-read signal: every edge that re-lists
-            (a re-show, a settled turn while showing) also re-reads the selected file, since
-            the usual change is this same file having grown rather than a new one appearing. */}
-        <TraceFileView
-          projectId={session.projectId}
-          agentId={session.agentId}
-          sessionId={session.sessionId}
-          index={activeFile.index}
-          reloadSignal={listTick}
-          highlight={highlight}
-          onHighlight={setHighlight}
-        />
-      </div>
+  // The scroll box is the toolbar's sticking container and the scroll the view's round-in-view
+  // label follows (`data-scroll-box`). No top padding: the toolbar sits flush with the top edge.
+  return (
+    <div data-scroll-box className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      {/* A re-list that failed keeps everything below it and says so here; the listing on
+          screen is the last one that arrived, so it may be a turn or two behind. */}
+      {error !== null && (
+        <NoticeStrip tone="danger" as="p" className="mt-3 rounded-md border px-2.5 py-1.5 text-xs">
+          {S.tracePanel.loadFailed} · {error}
+        </NoticeStrip>
+      )}
+      {/* The listing tick doubles as the view's re-read signal: every edge that re-lists
+          (a re-show, a settled turn while showing) also re-reads the selected file, since
+          the usual change is this same file having grown rather than a new one appearing. */}
+      <TraceFileView
+        projectId={session.projectId}
+        agentId={session.agentId}
+        sessionId={session.sessionId}
+        index={activeFile.index}
+        reloadSignal={listTick}
+        highlight={highlight}
+        onHighlight={setHighlight}
+        toolbarStart={fileControl}
+        toolbarEnd={exportControl}
+      />
     </div>
   );
 }

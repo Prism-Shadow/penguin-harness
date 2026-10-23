@@ -9,10 +9,12 @@
  *   followed by an unknown one is not a switch.
  * - A switch on a compaction request lands on the compaction round.
  * - A round with two switches keeps the last for its navigator row; every request row keeps its own.
+ * - A change reads as the level alone where the file states its first, and as `from → to` where
+ *   it switches, each level spelled the way the caller asks (recorded or display name).
  */
 import { describe, expect, it } from "vitest";
 import type { RequestSpan } from "@prismshadow/penguin-server/api";
-import { thinkingLevelChanges } from "../src/features/traces/trace-levels";
+import { levelChangeText, thinkingLevelChanges } from "../src/features/traces/trace-levels";
 
 let clock = 0;
 /** One request of round `taskIndex`, at `level` (undefined: none recorded). */
@@ -68,5 +70,17 @@ describe("thinking level change points", () => {
       [1, "low", "high"],
       [2, "high", "max"],
     ]);
+  });
+});
+
+describe("a level change as text", () => {
+  it("is the level alone where the file states its first, and from → to at a switch", () => {
+    expect(levelChangeText({ from: null, to: "medium" })).toBe("medium");
+    expect(levelChangeText({ from: "medium", to: "high" })).toBe("medium → high");
+  });
+
+  it("spells each level the way the caller asks", () => {
+    const upper = (level: string) => level.toUpperCase();
+    expect(levelChangeText({ from: "medium", to: "high" }, upper)).toBe("MEDIUM → HIGH");
   });
 });

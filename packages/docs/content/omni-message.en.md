@@ -420,7 +420,7 @@ A stop reason answers one question: should this be retried? The kind of failure 
 
 | Value | Meaning | Engine reaction |
 | --- | --- | --- |
-| `completed` | finished normally | continue |
+| `completed` | finished normally. Environment side: a command that ran, whatever its exit status: a non-zero exit or a signal is the command's result, written on the output's last line (`[exit code: N]`, `[terminated by signal X]`) | continue |
 | `aborted` | user interruption or cancellation | stop, emit an `abort` event, hand back to the user |
 | `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed or truncated responses, and anything unclassifiable | LLM side: reconnect within the run on the backoff ladder |
 | `fatal` | a failure no retry can fix. LLM side: a definitive provider 4xx rejection (parameters, quota), rejected credentials, or a deterministic client-side rejection. Environment side: a tool error or timeout | LLM side: stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record. Environment side: the error is fed back to the model, never retried |

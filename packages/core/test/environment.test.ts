@@ -1344,7 +1344,9 @@ describe("Environment.executeTool — robustness", () => {
     expect(payload.output).toContain('Call exec_command again with "cmd" provided');
   });
 
-  it("reports a non-zero exit code in the final output", async () => {
+  it("a command that exits non-zero completes, with the exit code on the output's last line", async () => {
+    // The exit status is the command's result, not the tool's failure: `grep` exits 1 when
+    // nothing matches. Every surface reads `fatal` as "the tool broke", so it must not be one.
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: makeToolConfig(),
@@ -1354,7 +1356,7 @@ describe("Environment.executeTool — robustness", () => {
       env.executeTool({
         toolCall: toolCall({
           name: "exec_command",
-          arguments: JSON.stringify({ cmd: "exit 3" }),
+          arguments: JSON.stringify({ cmd: "echo partial; exit 3" }),
           toolCallId: "call_fail",
         }),
       }),
@@ -1365,8 +1367,9 @@ describe("Environment.executeTool — robustness", () => {
       output: string;
       stop_reason?: string;
     };
-    expect(payload.output).toContain("[exit code: 3]");
-    expect(payload.stop_reason).toBe("fatal");
+    expect(payload.output).toContain("partial");
+    expect(payload.output.trimEnd().endsWith("[exit code: 3]")).toBe(true);
+    expect(payload.stop_reason).toBe("completed");
     // The exit-code marker is also produced via streaming (renderable by the frontend); the
     // streamed deltas concatenated == the complete content (short output here, no truncation).
     const streamed = messages
@@ -1380,6 +1383,31 @@ describe("Environment.executeTool — robustness", () => {
     expect(streamed).toContain("[exit code: 3]");
     expect(streamed).toBe(payload.output);
   });
+
+  // Windows reports no signals: a killed process there ends with an exit code.
+  it.skipIf(process.platform === "win32")(
+    "a command killed by a signal completes, with the signal on the output's last line",
+    async () => {
+      const env = new Environment({ workspaceDir: tmp, toolConfig: makeToolConfig() });
+
+      const messages = await collect(
+        env.executeTool({
+          toolCall: toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "kill -KILL $$" }),
+            toolCallId: "call_killed",
+          }),
+        }),
+      );
+
+      const payload = messages[messages.length - 1]!.payload as {
+        output: string;
+        stop_reason?: string;
+      };
+      expect(payload.output.trimEnd().endsWith("[terminated by signal SIGKILL]")).toBe(true);
+      expect(payload.stop_reason).toBe("completed");
+    },
+  );
 
   it("aborts background children without waiting for inherited pipes", async () => {
     // #23: on interrupt, kill the whole process group -- even though background children

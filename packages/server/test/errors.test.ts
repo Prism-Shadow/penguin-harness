@@ -23,9 +23,9 @@
  * - An LLM failure the retry ladder carried is expected under its own code; an exhausted or
  *   fatal one is unexpected, worded from the abort reason, the request's own detail or the
  *   status text in that order; a user's Stop and a completion are not errors.
- * - A command tool's ordinary non-zero exit is information, not an error; a signal, a spawn
- *   failure, a timeout or a missing session manager are recorded; any other tool failure is
- *   expected under the tool's name, legacy spellings included.
+ * - A command that ran is not an error, whatever its exit code or signal (it completes); a
+ *   spawn failure, a timeout or a missing session manager are recorded; any other tool failure
+ *   is expected under the tool's name, legacy spellings included.
  * - Parallel and nested (child Session) calls never swap names or reasons, and a child's
  *   failures are attributed to the child Agent and Session.
  * - An abandoned compaction is one unexpected row carrying its attempts and error.
@@ -690,49 +690,33 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   const call = (name: string, id: string) => toolCall({ name, arguments: "{}", toolCallId: id });
 
-  it("a command tool's ordinary non-zero exit is not recorded: an exit status is information", () => {
-    // Both command tools end in resultForExit, which maps ANY non-zero exit to `failed`, so
-    // grep finding nothing (exit 1), `test -f` on a missing file, or a diff that differs would
-    // all land in the cost center and bury the real errors. input_command is covered alongside
-    // exec_command because it is how a backgrounded command is polled for its eventual exit —
-    // dropping one but not the other would depend on where the command happened to finish.
-    // Every other tool still records, whatever its output says.
+  it("a command that ran is not recorded, whatever its exit status; a tool that failed is", () => {
+    // Core records a command that ran as completed and puts its exit status in the last note:
+    // grep finding nothing (exit 1) or a process killed by a signal is the command's result,
+    // not the tool's failure. A failed tool still records, whatever its output says.
     const got = feed([
       call("exec_command", "tc-1"),
-      toolCallOutput({
-        output: "grep: no match\n[exit code: 1]",
-        toolCallId: "tc-1",
-        stopReason: "fatal",
-      }),
+      toolCallOutput({ output: "grep: no match\n[exit code: 1]", toolCallId: "tc-1" }),
       call("input_command", "tc-2"),
       toolCallOutput({
-        output: "make: *** [build] Error 2\n[exit code: 2]",
+        output: "cc1plus: out of memory\n[terminated by signal SIGKILL]",
         toolCallId: "tc-2",
-        stopReason: "fatal",
       }),
       call("write_file", "tc-3"),
-      toolCallOutput({
-        output: "EACCES\n[exit code: 1]",
-        toolCallId: "tc-3",
-        stopReason: "fatal",
-      }),
+      toolCallOutput({ output: "EACCES", toolCallId: "tc-3", stopReason: "fatal" }),
     ]);
     expect(got.map((r) => r.code)).toEqual(["tool_fatal:write_file"]);
   });
 
-  it("a command tool killed by a signal, or that never spawned, is still recorded", () => {
-    // `failed` from these tools is not only "exited non-zero": an OOM kill or a segfault
-    // (resultForExit's signal branch) and a spawn failure (nonexistent workdir, EMFILE, an
-    // unresolvable shell) are config/environment faults — the recorder's "needs a human"
-    // category — that no amount of Agent self-correction gets around. Only the exit marker
-    // separates them, which is why the rule reads the note rather than the tool name.
+  it("a failed tool whose call was never seen is filed under tool_fatal:unknown", () => {
+    const got = feed([toolCallOutput({ output: "boom", toolCallId: "tc-9", stopReason: "fatal" })]);
+    expect(got.map((r) => [r.code, r.message])).toEqual([["tool_fatal:unknown", "boom"]]);
+  });
+
+  it("a command tool that never spawned is recorded", () => {
+    // A spawn failure (nonexistent workdir, EMFILE, an unresolvable shell) is a config or
+    // environment fault that no amount of Agent self-correction gets around.
     const got = feed([
-      call("exec_command", "tc-1"),
-      toolCallOutput({
-        output: "cc1plus: out of memory\n[terminated by signal SIGKILL]",
-        toolCallId: "tc-1",
-        stopReason: "fatal",
-      }),
       call("input_command", "tc-2"),
       toolCallOutput({
         output: "[spawn error: ENOENT: no such file or directory, posix_spawn '/bin/nope']",
@@ -740,14 +724,13 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         stopReason: "fatal",
       }),
     ]);
-    expect(got.map((r) => r.code)).toEqual(["tool_fatal:exec_command", "tool_fatal:input_command"]);
+    expect(got.map((r) => r.code)).toEqual(["tool_fatal:input_command"]);
   });
 
   it("a command tool's timeout and a missing session manager are recorded (neither is an exit)", () => {
-    // Environment finalizes a tool timeout as stop_reason `failed` plus its own note — it never
-    // emits stop_reason "timeout" for these tools — so a hung command surfaces as tool_failed
-    // with no exit marker to drop it. A missing command session manager is a server
-    // misconfiguration and produces no exit marker either.
+    // Environment finalizes a tool timeout as stop_reason `fatal` plus its own note — it never
+    // emits stop_reason "timeout" for these tools — so a hung command surfaces as tool_fatal.
+    // A missing command session manager is a server misconfiguration.
     const got = feed([
       call("exec_command", "tc-1"),
       toolCallOutput({
@@ -763,16 +746,6 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       }),
     ]);
     expect(got.map((r) => r.code)).toEqual(["tool_fatal:exec_command", "tool_fatal:input_command"]);
-  });
-
-  it("an exit marker with no cached tool name is dropped, not filed under tool_fatal:unknown", () => {
-    // Only the command tools ever write that marker, so a cache miss (the tool_call evicted, or
-    // never seen) is still that noise — recording it nameless would defeat the exclusion.
-    const got = feed([
-      toolCallOutput({ output: "[exit code: 1]", toolCallId: "tc-1", stopReason: "fatal" }),
-      toolCallOutput({ output: "boom", toolCallId: "tc-2", stopReason: "fatal" }),
-    ]);
-    expect(got.map((r) => [r.code, r.message])).toEqual([["tool_fatal:unknown", "boom"]]);
   });
 
   it("a tool fatal → environment + expected, code carries the tool name; legacy failed/timeout spellings still record", () => {

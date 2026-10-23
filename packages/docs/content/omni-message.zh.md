@@ -420,7 +420,7 @@ type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 
 | 取值 | 含义 | 引擎反应 |
 | --- | --- | --- |
-| `completed` | 正常完成 | 继续 |
+| `completed` | 正常完成。Environment 侧：命令跑完即为完成，与退出状态无关——非零退出码或信号是命令的结果，写在输出末行（`[exit code: N]`、`[terminated by signal X]`） | 继续 |
 | `aborted` | 用户中断或取消 | 停止，产出 `abort` 事件，交还用户 |
 | `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败或被截断的响应，以及一切无法归类的错误 | LLM 侧：同一次运行内按退避阶梯自动重连 |
 | `fatal` | 重试也无法修复的失败。LLM 侧：供应商确定性的 4xx 拒绝（参数、配额）、凭据被拒，或确定性的客户端拒绝；Environment 侧：工具出错或超时 | LLM 侧：停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录。Environment 侧：错误回灌给模型，从不重试 |

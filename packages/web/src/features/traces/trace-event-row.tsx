@@ -1,40 +1,46 @@
 /**
- * Trace event row (shared): timestamp + type icon + type badge + one-line
- * summary; expanding **renders** the content (text/thinking and session_meta's
- * system prompt go through Markdown, tool arguments/output go through a code
- * block, token_usage goes through a bucket table, session_meta goes through a
- * field table + tool definitions) instead of dumping raw JSON;
- * the stop reason (stop_reason / status) is shown in the bottom-right of the
- * expanded area.
+ * Trace event row (shared): timestamp + type icon + one neutral pill naming the record (its kind,
+ * and the role where a kind's role varies: `text (user)`, `text (assistant)`) + one-line summary;
+ * expanding **renders** the content (text/thinking and session_meta's system prompt go through
+ * Markdown, tool arguments/output go through a code block, token_usage goes through a bucket
+ * table, session_meta goes through a field table + tool definitions) instead of dumping raw JSON;
+ * a stop reason other than `completed` (stop_reason / status) is shown in the bottom-right of the
+ * expanded area — a record that completed carries no mark.
  * Linked highlighting with the timeline — a matched row only gets a
  * background color, never an outline; only one row lights up at a time (each
  * row has its own unique rowKey, so adjacent messages at the same timestamp
  * aren't highlighted together).
  */
 import { Fragment, useState } from "react";
-import type { ReactNode } from "react";
 import {
   Badge,
   Fold,
   GlyphIcon,
   ICONS,
+  Pill,
   REHYPE_PLUGINS,
   REMARK_PLUGINS,
   RequiredMark,
   ZoomableImage,
 } from "@prismshadow/penguin-ui";
-import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
 import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { formatTime, humanizeTokens } from "../../lib/format";
 import { stopReasonTone } from "../../lib/stop-reason-tone";
+import { SystemPromptBody } from "./trace-session";
 
-/** An event type as a badge: the session header stands out as a neutral solid tag. */
-export function typeBadge(type: string): BadgeStyle {
-  if (type === "session_meta") return { tone: "neutral", variant: "solid" };
-  if (type === "model_msg") return { tone: "neutral" };
-  return { tone: "attention" };
+/** The kinds whose role varies, so their pill names it: a text or an image is the user's or the model's. */
+const ROLE_KINDS: ReadonlySet<string> = new Set(["text", "inline_data"]);
+
+/**
+ * What a row's pill says: the record's kind, plus its role for the kinds whose role varies —
+ * `text (user)`, `text (assistant)`, `inline_data (user)`; every other kind is bare.
+ */
+function kindLabel(msg: OmniMessage): string {
+  const p = msg.payload as { type?: string; role?: unknown };
+  const kind = p.type ?? msg.type;
+  return ROLE_KINDS.has(kind) && typeof p.role === "string" ? `${kind} (${p.role})` : kind;
 }
 
 /**
@@ -85,7 +91,8 @@ export function summarizeEvent(msg: OmniMessage): string {
     case undefined:
       return "";
     case "text":
-      return `${String(p["role"])}: ${String(p["text"] ?? "").slice(0, 120)}`;
+      // The role is on the row's pill.
+      return String(p["text"] ?? "").slice(0, 120);
     case "thinking":
       return String(p["thinking"] ?? "").slice(0, 120);
     case "image_url":
@@ -215,6 +222,7 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
     // The Session's source as the record carries it; a Trace from before the source was
     // required has none and shows the empty dash.
     ["source", String(p.source ?? "")],
+    ["provider", String(p.provider ?? "")],
     ["model_id", String(p.model_id ?? "")],
     ["context_window", String(p.model_context_window ?? "")],
     // Legacy metas only: current traces no longer record a thinking level (it is a
@@ -245,11 +253,7 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
       {prompt.trim() && (
         <details>
           <summary className={summaryClass}>{S.traces.systemPrompt}</summary>
-          <div className="md-body mt-1.5 max-h-96 overflow-auto rounded bg-gray-100 px-2.5 py-2 text-sm leading-relaxed text-gray-700 dark:bg-gray-800/70 dark:text-gray-300">
-            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS}>
-              {prompt}
-            </ReactMarkdown>
-          </div>
+          <SystemPromptBody prompt={prompt} />
         </details>
       )}
     </div>
@@ -416,15 +420,15 @@ export function EventRow({
   rowKey,
   matched,
   onHighlight,
-  mark,
+  summary,
 }: {
   msg: OmniMessage;
   /** This row's unique identifier (the scroll target for timeline jumps, and also the basis for "only one row lights up"). */
   rowKey: string;
   matched: boolean;
   onHighlight?: (h: { ts: string; rowKey: string } | null) => void;
-  /** A label the row's context gives it, after the type badges (a thinking-level change). */
-  mark?: ReactNode;
+  /** A summary the row's context computed in place of the record's own (a thinking-level change). */
+  summary?: string;
 }) {
   const [open, setOpen] = useState(false);
   const payloadType = (msg.payload as { type?: string }).type ?? msg.type;
@@ -446,11 +450,23 @@ export function EventRow({
           {formatTime(msg.timestamp)}
         </span>
         <TypeIcon type={payloadType} />
-        <Badge {...typeBadge(msg.type)}>{payloadType}</Badge>
-        {msg.origin && msg.origin.length > 0 && <Badge variant="solid">origin</Badge>}
-        {mark !== undefined && <span className="shrink-0">{mark}</span>}
+        {/* The file's head is not a stream record: it stands out as a solid tag. */}
+        <span className="shrink-0">
+          {msg.type === "session_meta" ? (
+            <Badge tone="neutral" variant="solid" size="sm">
+              {payloadType}
+            </Badge>
+          ) : (
+            <Pill>{kindLabel(msg)}</Pill>
+          )}
+        </span>
+        {msg.origin && msg.origin.length > 0 && (
+          <Badge variant="solid" size="sm">
+            origin
+          </Badge>
+        )}
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
-          {summarizeEvent(msg)}
+          {summary ?? summarizeEvent(msg)}
         </span>
       </button>
       {/* The body folds under the theme's layout motion, and is built only while it shows: a
@@ -460,8 +476,9 @@ export function EventRow({
         {() => (
           <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/40">
             <EventBody msg={msg} />
-            {/* Stop reason: bottom-right */}
-            {stopReason && (
+            {/* Stop reason, bottom-right, only when the record did not complete: completed is the
+                absence of a mark. */}
+            {stopReason !== undefined && stopReason !== "completed" && (
               <div className="mt-1.5 flex justify-end">
                 <Badge tone={stopReasonTone(stopReason)}>{stopReason}</Badge>
               </div>

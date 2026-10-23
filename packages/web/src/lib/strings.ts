@@ -4327,7 +4327,7 @@ Benchmark：
     pinnedSession: "已置顶",
     /** The hover ellipsis button that opens the row's full context menu. */
     moreActions: "更多操作",
-    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default, the Trace panel's file pills). */
+    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default). */
     loadMore: "更多",
     /** A list's one reveal row (a sidebar group, time mode's whole list, an archive group): n = conversations that list still hides; a click shows ten more, fetching when the loaded ones run out. */
     expandRestSessions: (n: number) => `展开其余 ${n} 个对话`,
@@ -5010,17 +5010,30 @@ Benchmark：
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
-    /** The round navigator under the global summary: its title, and how many rounds it lists. */
+    /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
     roundNav: "轮次导航",
     roundCount: (n: number) => `${n} 轮`,
-    /** A round head's control that returns to the navigator, on that round's row. */
-    backToNav: "回到导航",
     /** The navigator's number box: its accessible name and its placeholder. */
     jumpToRound: "跳转到轮次",
     jumpToRoundPlaceholder: "轮次",
-    /** A level pill's hint where a Trace first states a thinking level, and where it changes. */
+    /** A navigator row's hint where a Trace first states a thinking level, and where it changes. */
     levelFirst: (level: string) => `思考等级 ${level}`,
     levelChanged: (from: string, to: string) => `思考等级 ${from} → ${to}`,
+    /** The Session section at the top of a Trace file: the file's session_meta, field by field. */
+    session: "会话",
+    model: "模型",
+    contextWindow: "上下文窗口",
+    source: "来源",
+    workspace: "Workspace",
+    agentState: "Agent State",
+    /** The level an old Trace's session_meta recorded (current ones record it per request). */
+    thinkingLevelLabel: "思考等级",
+    /** Beside the system prompt's fold: how long the prompt is. */
+    promptLength: (n: number) => `${n.toLocaleString("en-US")} 字符`,
+    /** The panel a round's ring opens, and the name of the button standing in for a ring on a round with no context snapshot. */
+    roundReadings: "本轮读数",
+    /** The round's own cache hits (summed over its requests), set apart from the context snapshot's. */
+    taskCacheHit: "本轮命中缓存",
   },
 
   benchmark: {

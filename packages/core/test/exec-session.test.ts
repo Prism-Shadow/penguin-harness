@@ -198,7 +198,9 @@ describe("exec_command — long-running command sessions", () => {
     const elapsed = Date.now() - startedAt;
     expect(elapsed).toBeLessThan(3000); // Did not wait for the full sleep 30
     expect(res.output).not.toContain("still running");
-    expect(res.stopReason).toBe("fatal"); // Interrupted by signal -> non-zero exit
+    // The interrupted command ran: its exit status is the result's last note, not a tool failure.
+    expect(res.stopReason).toBe("completed");
+    expect(res.output.trimEnd()).toMatch(/\[(terminated by signal \w+|exit code: \d+)\]$/);
   });
 
   it("input_command rejects chars mixing U+0003 with other content", async () => {

@@ -1,5 +1,6 @@
 /**
- * Where a Trace file's thinking level changes (pure — unit-tested in test/trace-levels.test.ts).
+ * Where a Trace file's thinking level changes, and how a change reads (pure — unit-tested in
+ * test/trace-levels.test.ts).
  *
  * Every request's `request_begin` records the level it went out at, and the analysis copies it
  * onto that request's span (`RequestSpan.thinkingLevel`). Walking the requests in file order, a
@@ -22,6 +23,18 @@ export interface LevelChanges {
   byBeginTs: ReadonlyMap<string, LevelChange>;
   /** By taskIndex: the last change inside that round, for the round's navigator row. */
   byRound: ReadonlyMap<number, LevelChange>;
+}
+
+/**
+ * A change as text: the level alone where the file states its first, `from → to` where it
+ * switches. `name` spells each level — the recorded value on a request row
+ * (`thinking_level=medium → high`), the display name on a navigator row.
+ */
+export function levelChangeText(
+  change: LevelChange,
+  name: (level: string) => string = (level) => level,
+): string {
+  return change.from === null ? name(change.to) : `${name(change.from)} → ${name(change.to)}`;
 }
 
 export function thinkingLevelChanges(requests: readonly RequestSpan[]): LevelChanges {

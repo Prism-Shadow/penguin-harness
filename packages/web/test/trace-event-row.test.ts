@@ -1,0 +1,104 @@
+// @vitest-environment jsdom
+/**
+ * A Trace event row (features/traces/trace-event-row.tsx), as a reader opens it.
+ *
+ * - The row's one pill names the record's kind, and the role where a kind's role varies:
+ *   `text (user)`, `text (assistant)`, `inline_data (user)`; any other kind is bare. The text's
+ *   summary is its text alone.
+ * - Opened, a record that completed carries no stop badge; one that did not names its reason.
+ * - A summary the row's context computed (a thinking-level change) replaces the record's own.
+ */
+import { createElement as h } from "react";
+import { afterEach, describe, expect, it } from "vitest";
+import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import { EventRow } from "../src/features/traces/trace-event-row";
+import { click, mount, unmountAll } from "./helpers/dom";
+
+const at = "2026-10-23T02:32:26.000Z";
+const record = (type: "model_msg" | "event_msg", payload: Record<string, unknown>): OmniMessage =>
+  ({ timestamp: at, type, payload }) as unknown as OmniMessage;
+
+/** Renders one row per record and returns the rows, in order. */
+async function rows(msgs: OmniMessage[], summary?: string): Promise<HTMLLIElement[]> {
+  await mount(
+    h(
+      "ul",
+      null,
+      msgs.map((msg, i) =>
+        h(EventRow, {
+          key: i,
+          msg,
+          rowKey: `0-${i}`,
+          matched: false,
+          ...(summary !== undefined ? { summary } : {}),
+        }),
+      ),
+    ),
+  );
+  return [...document.querySelectorAll<HTMLLIElement>("[data-trace-row]")];
+}
+
+/** The row's line, as read: the text of its toggle. */
+const line = (row: HTMLLIElement): string => row.querySelector("button")?.textContent ?? "";
+
+describe("a Trace event row", () => {
+  afterEach(() => unmountAll());
+
+  it("names the record's kind in its pill, with the role where the kind's role varies", async () => {
+    const [user, assistant, image, thinking, call] = await rows([
+      record("model_msg", { type: "text", role: "user", text: "list the files" }),
+      record("model_msg", { type: "text", role: "assistant", text: "Done." }),
+      record("model_msg", { type: "inline_data", role: "user", mime_type: "image/png", data: "" }),
+      record("model_msg", { type: "thinking", role: "assistant", thinking: "Hmm." }),
+      record("model_msg", { type: "tool_call", role: "assistant", name: "exec_command" }),
+    ]);
+
+    expect(line(user!)).toContain("text (user)list the files");
+    expect(line(user!)).not.toContain("user:");
+    expect(line(assistant!)).toContain("text (assistant)Done.");
+    expect(line(image!)).toContain("inline_data (user)");
+    expect(line(thinking!)).toContain("thinkingHmm.");
+    expect(line(call!)).toContain("tool_callexec_command");
+  });
+
+  it("opened, shows a stop badge only for a record that did not complete", async () => {
+    const [done, nonZero, denied] = await rows([
+      record("model_msg", {
+        type: "tool_call_output",
+        role: "user",
+        tool_call_id: "c1",
+        output: "a.txt",
+        stop_reason: "completed",
+      }),
+      // A command that exited non-zero ran: its status is the output's last note, not a failure.
+      record("model_msg", {
+        type: "tool_call_output",
+        role: "user",
+        tool_call_id: "c2",
+        output: "ls: cannot access\n[exit code: 2]",
+        stop_reason: "completed",
+      }),
+      record("model_msg", {
+        type: "tool_call_output",
+        role: "user",
+        tool_call_id: "c3",
+        output: "denied",
+        stop_reason: "aborted",
+      }),
+    ]);
+    for (const row of [done!, nonZero!, denied!]) await click(row.querySelector("button")!);
+
+    expect(done!.textContent).not.toContain("completed");
+    expect(nonZero!.textContent).toContain("[exit code: 2]");
+    expect(nonZero!.textContent).not.toContain("completed");
+    expect(denied!.textContent).toContain("aborted");
+  });
+
+  it("takes a summary its context computed in place of the record's own", async () => {
+    const [begin] = await rows(
+      [record("event_msg", { type: "request_begin", thinking_level: "high" })],
+      "thinking_level=medium → high",
+    );
+    expect(line(begin!)).toContain("request_beginthinking_level=medium → high");
+  });
+});
