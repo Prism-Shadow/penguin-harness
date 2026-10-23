@@ -186,8 +186,9 @@ local steps:
   pair       --in <f> --pair <f>   per section: markers, citations, figures, code, URLs, numbers
   strip      --in <f> --out <f> [--facts <f> [--numbering-from <other language's post>]]
              [--figures-dir <dir>] [--assets <dir>]
-               removes the model's notes; with --facts each marker group becomes [^n] after its
-               sentence (public sources, numbered by first use or by the other post) and the
+               removes the model's notes; with --facts a paragraph's first marker group with a
+               public source not cited yet becomes [^n] after its sentence (each source once per
+               post, one per paragraph, numbered by first use or by the other post) and the
                [^n]: [title](url) list closes the post; a drawn figure block becomes
                <dir>/<id>.<lang>.html on one line, a screenshot block an image line + caption
   unstrip    --in <published post> --out-dir <dir> [--pair <the other language's recovered draft>
@@ -3663,8 +3664,6 @@ function tldrLines(items) {
 
 /** A sentence longer than this is flagged: English words, Chinese characters. */
 const SENTENCE_CAP = { en: 35, zh: 60 };
-/** Citations per 100 English words or Chinese characters above which check warns. */
-const CITE_DENSITY = { en: 3.5, zh: 1.5 };
 const EMPHASIS = /\*\*([^*\n]+?)\*\*/g;
 
 /**
@@ -3744,49 +3743,68 @@ function emphasisCheck(text, lang, { cap, requireAll = false, strict = false, qu
 }
 
 /**
- * Citation density and placement, read in the published form: a post's own lines, or a draft's
- * lines rendered the way strip's citer will render them (with --facts).
+ * Citation count and placement, read in the published form: a post's own lines, or a draft's lines
+ * rendered the way strip's citer will render them (with --facts). A paragraph or a sentence with
+ * two citations is an error, and so is a post citing more sources than the profile's `sources`
+ * cap; fewer than its floor is a warning. `sources` is undefined for one section of a piece.
  */
-function checkCitations(doc, lang, r, facts) {
+function checkCitations(doc, lang, r, facts, { sources } = {}) {
   const draft = !!doc.raw.match(MARKER);
   if (draft && !facts?.sources.size) return;
   const cite = draft ? citations(facts) : undefined;
   const summary = tldrLines(doc.items);
-  const lines = [];
-  for (const it of doc.items) {
-    if (cite && it.type === "heading" && /^## /.test(it.line)) cite.section();
-    if (!["text", "list", "quote", "table"].includes(it.type)) continue;
+  const starts = paragraphStarts(doc.items);
+  const prose = ["text", "list", "quote", "table"];
+  // Every item stays, so blank lines and headings still end paragraphs; the TL;DR is set apart.
+  const rendered = doc.items.map((it) => {
+    if (cite && starts.has(it.n)) cite.paragraph();
     if (summary.has(it.n)) {
-      if (!draft && /\[\^\d+\]/.test(it.line)) {
+      if (!draft && prose.includes(it.type) && /\[\^\d+\]/.test(it.line)) {
         r.add(
           "error",
           it.n,
           "a citation in the TL;DR: it sums up the body, which carries the citations",
         );
       }
-      continue;
+      return { ...it, type: "tldr" };
     }
-    lines.push({ ...it, line: cite ? cite.render(it.line) : it.line });
-  }
-  const refs = lines.reduce((sum, it) => sum + (it.line.match(/\[\^\d+\]/g)?.length ?? 0), 0);
-  const size = countBody(doc.raw, lang);
-  const per100 = size ? (refs * 100) / size : 0;
-  if (per100 > CITE_DENSITY[lang]) {
-    r.add(
-      "warn",
-      null,
-      `${refs} citations in ${size} ${lang === "zh" ? "characters" : "words"}: ${per100.toFixed(1)} per 100 (at most ${CITE_DENSITY[lang]}); cite the key facts and list the rest under ## NOCITE`,
-    );
-  }
-  for (const p of paragraphs(lines)) {
+    if (!prose.includes(it.type)) return it;
+    return { ...it, line: cite ? cite.render(it.line) : it.line };
+  });
+  const lines = rendered.filter((it) => prose.includes(it.type));
+  const count = (text) => text.match(/\[\^\d+\]/g)?.length ?? 0;
+  for (const p of paragraphs(rendered)) {
+    const k = count(p.text);
+    if (k > 1) {
+      r.add(
+        "error",
+        p.n,
+        `a paragraph with ${k} citations (one per paragraph at most): "${p.text.slice(0, 60)}…"`,
+      );
+    }
     for (const s of sentences(p.text)) {
-      const k = s.match(/\[\^\d+\]/g)?.length ?? 0;
-      if (k > 1)
+      if (count(s) > 1)
         r.add(
-          "warn",
+          "error",
           p.n,
-          `a sentence with ${k} citations (one key citation per sentence): "${s.slice(0, 60)}…"`,
+          `a sentence with ${count(s)} citations (one per sentence at most): "${s.slice(0, 60)}…"`,
         );
+    }
+  }
+  for (const it of lines.filter((x) => x.type === "table")) {
+    if (count(it.line) > 1) r.add("error", it.n, `a table row with ${count(it.line)} citations`);
+  }
+  if (sources) {
+    const n = draft ? cite.cited() : doc.items.filter((it) => it.type === "footnote").length;
+    const what = draft ? "strip would cite" : "the post cites";
+    if (n > sources.cap) {
+      r.add(
+        "error",
+        null,
+        `${what} ${n} sources; the profile allows at most ${sources.cap}: list the facts a reader need not check under ## NOCITE`,
+      );
+    } else if (n < sources.floor) {
+      r.add("warn", null, `${what} ${n} sources, below the profile's floor of ${sources.floor}`);
     }
   }
   const after = new RegExp(`[${TERMINATOR}]\\[\\^\\d+\\]`);
@@ -4053,7 +4071,11 @@ function checkDoc(doc, lang, prof, o, r, facts) {
     }
   }
   checkFootnotes(doc, o, r, facts);
-  if (post) checkCitations(doc, lang, r, facts);
+  if (post) {
+    checkCitations(doc, lang, r, facts, {
+      sources: secN === undefined ? rangeOf(settings.sources) : undefined,
+    });
+  }
   if (facts && doc.raw.match(MARKER)) checkSources(doc, r, facts);
   const footer = undefined;
 
@@ -4359,16 +4381,17 @@ function pairDocs(a, b, o, r) {
   const facts = o.facts ? loadFacts(o.facts) : null;
   // The sources each section cites, as sets: from its footnotes once published, or, in a draft
   // with --facts, from its marker groups as strip's citer will pick them. The walk covers the whole
-  // post, since our own sources are cited once per post.
+  // post, since every source is cited once per post.
   const citedBySection = (d, labels) => {
     const out = [new Set()];
     const pick = facts?.sources.size ? citer(facts) : undefined;
     const summary = tldrLines(d.items);
+    const starts = paragraphStarts(d.items);
     for (const it of d.items) {
+      if (pick && starts.has(it.n)) pick.paragraph();
       if (summary.has(it.n)) continue;
       if (it.type === "heading" && /^## /.test(it.line)) {
         out.push(new Set());
-        pick?.section();
         continue;
       }
       if (["code", "fence", "footnote", "figure"].includes(it.type)) continue;
@@ -4612,37 +4635,21 @@ function runRoute(o) {
 
 const sourceKey = (s) => (s.url ? s.url : `nolink:${s.title}`);
 
-/** Our own pages and repositories, and a link-less "Our …" source: cited once per post. */
-function isInternalSource(s) {
-  if (s.kind === "nolink") return /^our\b/i.test(s.title);
-  if (!s.url) return false;
-  let url;
-  try {
-    url = new URL(s.url);
-  } catch {
-    return false;
-  }
-  const host = url.hostname.toLowerCase();
-  if (host === "penguin.ooo" || host.endsWith(".penguin.ooo")) return true;
-  return (
-    (host === "github.com" || host === "raw.githubusercontent.com") &&
-    /^\/Prism-Shadow\//i.test(url.pathname)
-  );
-}
-
 /**
- * The citer for one post. A marker group (the markers closing one sentence) cites at most one
- * source: of its facts, in the writer's order, the first whose first public source (tag order is
- * priority) is not yet cited in its scope. Our own sources are cited once per post, any other once
- * per `##` section; opinions, private sources and facts listed under ## NOCITE cite nothing. strip
- * numbers what it picks, and check and pair walk a draft with the same citer, so all three agree.
+ * The citer for one post. Every source is cited once per post, and a paragraph cites at most once:
+ * a marker group (the markers closing one sentence) offers, of its facts in the writer's order, the
+ * first whose first public source (tag order is priority) is not cited yet, and only the first
+ * group of a paragraph that offers one gets its footnote. The paragraph's other groups cite
+ * nothing, so their sources stay free for a later paragraph. Opinions, private sources and facts
+ * listed under ## NOCITE cite nothing. strip numbers what it picks, and check and pair walk a draft
+ * with the same citer, so all three agree; each calls `paragraph()` where a paragraph starts.
  */
 function citer(facts, problems = new Set()) {
-  const inPost = new Set();
-  let inSection = new Set();
+  const cited = new Set();
+  let paragraphCited = false;
   return {
-    section() {
-      inSection = new Set();
+    paragraph() {
+      paragraphCited = false;
     },
     pick(ids) {
       const candidates = [];
@@ -4662,15 +4669,33 @@ function citer(facts, problems = new Set()) {
         }
         if (first && !facts.nocite.has(id)) candidates.push(first);
       }
-      for (const s of candidates) {
-        const scope = isInternalSource(s) ? inPost : inSection;
-        if (scope.has(sourceKey(s))) continue;
-        scope.add(sourceKey(s));
-        return s;
-      }
-      return undefined;
+      if (paragraphCited) return undefined;
+      const s = candidates.find((c) => !cited.has(sourceKey(c)));
+      if (!s) return undefined;
+      cited.add(sourceKey(s));
+      paragraphCited = true;
+      return s;
     },
   };
+}
+
+/**
+ * The line numbers where the citer's paragraphs start, as `paragraphs` splits them: every list
+ * item, every table row, and a text or quote line after anything else.
+ */
+function paragraphStarts(items) {
+  const starts = new Set();
+  let prev = null;
+  for (const it of items) {
+    if (it.type === "table") starts.add(it.n);
+    if (!["text", "list", "quote"].includes(it.type)) {
+      prev = null;
+      continue;
+    }
+    if (it.type === "list" || !prev || prev.type !== it.type) starts.add(it.n);
+    prev = it;
+  }
+  return starts;
 }
 
 const TERMINATOR = ".!?,;:。！？，；：、";
@@ -4713,7 +4738,7 @@ function readNumbering(file) {
 /**
  * The citation renderer for one post: each marker group becomes at most one `[^n]`, the source
  * the citer picks, before the punctuation that ends its clause, numbered by first use (or by the
- * other language's map). `section()` is called at every `##` heading.
+ * other language's map). `paragraph()` is called where a paragraph starts.
  */
 function citations(facts, numberingFrom) {
   if (!facts.sources.size) fail("the facts file has no ## SOURCES section; citations need it", 1);
@@ -4767,7 +4792,13 @@ function citations(facts, numberingFrom) {
           : `[^${n}]: ${escapeInline(s.title)}`,
       );
   };
-  return { render, definitions, problems, section: () => picker.section() };
+  return {
+    render,
+    definitions,
+    problems,
+    paragraph: () => picker.paragraph(),
+    cited: () => used.size,
+  };
 }
 
 /** The footnotes of a stripped post: defined, used, numbered 1 … N, linked to SOURCES. */
@@ -5115,6 +5146,7 @@ function stripDoc(doc, o) {
   }
   const kept = [];
   const summary = tldrLines(doc.items);
+  const starts = paragraphStarts(doc.items);
   const notes = [];
   let inComment = false;
   let fence = null;
@@ -5155,9 +5187,9 @@ function stripDoc(doc, o) {
       inComment = !line.includes("-->");
       continue;
     }
-    // Sources other than ours are cited again in a new section. The TL;DR sums up the body, so
-    // its markers stay in the draft as anchors and cite nothing.
-    if (cite && /^## /.test(line)) cite.section();
+    // A paragraph cites at most once. The TL;DR sums up the body, so its markers stay in the
+    // draft as anchors and cite nothing.
+    if (cite && starts.has(n)) cite.paragraph();
     const cited =
       cite && !summary.has(n)
         ? cite.render(line)
@@ -5643,13 +5675,15 @@ category: perspectives
 excerpt: "脚本自检用的样例。"
 ---
 
-Trace 记下标记，规则写在 CLAUDE.md。{F2} Anthropic 也这样做。{F1}
+Trace 记下标记，规则写在 CLAUDE.md。{F2}
+
+Anthropic 也这样做。{F1}
 `;
 
 /** The zh post cites S1 before S2, the en post's order. */
 const FIXTURE_CITES_ZH_SAME_ORDER = FIXTURE_CITES_ZH.replace(
-  "{F2} Anthropic 也这样做。{F1}",
-  "{F1} Anthropic 也这样做。{F2}",
+  "{F2}\n\nAnthropic 也这样做。{F1}",
+  "{F1}\n\nAnthropic 也这样做。{F2}",
 );
 
 /** Two published posts citing the same two sources, each numbered by its own first use. */
@@ -5693,7 +5727,7 @@ const FIXTURE_ORDER_BAD = FIXTURE_ORDER_EN.replace(
   "claim[^2]. The second claim[^1].",
 );
 
-const FIXTURE_CITES_ZH_PARTIAL = FIXTURE_CITES_ZH.replace("CLAUDE.md。{F2} ", "CLAUDE.md。");
+const FIXTURE_CITES_ZH_PARTIAL = FIXTURE_CITES_ZH.replace("CLAUDE.md。{F2}\n", "CLAUDE.md。\n");
 
 /** A published zh post whose reference list does not match the en one. */
 const FIXTURE_PUBLISHED_ZH_OTHER = `---
@@ -5999,12 +6033,12 @@ async function runSelftest() {
   const shotText = caseDir("shot-text", {
     "s2.en.v1.md": s2.replace(/(caption: The marker names[^\n]*)/, "$1\ntext:\n- note: archived"),
   });
-  // Citation scopes and placement: an outside source again in a new section but not twice in
-  // one, ours once per post, a NOCITE fact never; outside a closing quote, or after it when the
-  // quote holds the period.
+  // Citation scopes and placement: every source once per post, a paragraph at most once (its
+  // other new source stays free for the next paragraph), a NOCITE fact never; outside a closing
+  // quote, or after it when the quote holds the period.
   writeFileSync(
     at("scopes.en.v1.md"),
-    `${front}The archive has a format. {F4}\nIt has a marker too. {F4}\n\n## One\n\nThe format again, in a new section. {F4}\nOur docs say so. {F1}\nBackground only. {F6}\n\n## Two\n\nOur docs again. {F1}\nThey call it "the slope". {F5}\nIt "works." {F4}\n`,
+    `${front}The archive has a format. {F4}\nIt has a marker too. {F4}\n\n## One\n\nThe format again, in a new section. {F4}\nOur docs say so. {F1}\nBackground only. {F6}\n\n## Two\n\nOur docs again. {F1}\nThey call it "the slope". {F5}\nThe writer keeps it. {F2}\n\nIt "works." {F2}\n`,
   );
   const scoped = path.join(root, "scopes", "scopes.en.md");
   mkdirSync(path.dirname(scoped), { recursive: true });
@@ -6017,7 +6051,8 @@ async function runSelftest() {
     "--facts",
     at("facts.md"),
   ];
-  // Published posts: a citation after the period; three citations in seven words, two in one sentence.
+  // Published posts: a citation after the period; three citations in one paragraph, two in one
+  // sentence; fourteen sources, one more than the profile's cap.
   const defs = (k) =>
     Array.from(
       { length: k },
@@ -6027,6 +6062,10 @@ async function runSelftest() {
   writeFileSync(
     at("dense.en.md"),
     `${front}Short[^1]. This has two[^2] and more[^3].\n\n${defs(3)}\n`,
+  );
+  writeFileSync(
+    at("many-sources.en.md"),
+    `${front}${Array.from({ length: 14 }, (_, i) => `Claim ${i + 1}[^${i + 1}].`).join("\n\n")}\n\n${defs(14)}\n`,
   );
   // Sentences over the cap, in a section file each, so no page-level rule fires.
   const longEn = caseDir("long-sentence", { "s1.en.v1.md": `## Long\n\n${words(40)}\n` });
@@ -6112,7 +6151,7 @@ async function runSelftest() {
   // The TL;DR sums up the body: its markers cite nothing, so the body's first use sets the numbers.
   writeFileSync(
     at("tldr-cite.en.v1.md"),
-    `${front}Our view comes first. {O1}\n\n**TL;DR**\n\n- Point one. {F5}\n- Point two. {F4}\n- Point three. {O1}\n\n## One\n\nBody four. {F4} Body five. {F5}\n`,
+    `${front}Our view comes first. {O1}\n\n**TL;DR**\n\n- Point one. {F5}\n- Point two. {F4}\n- Point three. {O1}\n\n## One\n\nBody four. {F4}\n\nBody five. {F5}\n`,
   );
   const tldrCited = path.join(root, "tldr", "tldr-cite.en.md");
   mkdirSync(path.dirname(tldrCited), { recursive: true });
@@ -6381,7 +6420,7 @@ async function runSelftest() {
       code: 0,
       file: [
         citedZh,
-        /CLAUDE\.md\[\^1\]。Anthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[PenguinHarness docs/,
+        /CLAUDE\.md\[\^1\]。\n\nAnthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[PenguinHarness docs/,
       ],
     },
     {
@@ -6406,7 +6445,7 @@ async function runSelftest() {
       code: 0,
       file: [
         citedZh,
-        /CLAUDE\.md\[\^1\]。Anthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[packages\/core\/src\/trace\/writer\.ts\]/,
+        /CLAUDE\.md\[\^1\]。\n\nAnthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[packages\/core\/src\/trace\/writer\.ts\]/,
       ],
     },
     {
@@ -6419,7 +6458,7 @@ async function runSelftest() {
       ],
     },
     {
-      name: "a sentence resting on three facts cites the first source not yet cited in its section",
+      name: "a sentence resting on three facts cites the first source not yet cited in the post",
       args: ["strip", "--in", at("caps.en.v1.md"), "--out", capped, ...facts],
       code: 0,
       file: [
@@ -6893,12 +6932,21 @@ async function runSelftest() {
       stdout: /autolink\.en\.v1\.md:14  a bare URL right before a citation/,
     },
     {
-      name: "an outside source is cited again in a new section, but not twice in one",
+      name: "an outside source is cited once per post, not again in a new section",
       args: stripScopes,
       code: 0,
       file: [
         scoped,
-        /The archive has a format\[\^1\]\.\nIt has a marker too\.\n\n## One\n\nThe format again, in a new section\[\^1\]\./,
+        /The archive has a format\[\^1\]\.\nIt has a marker too\.\n\n## One\n\nThe format again, in a new section\.\n/,
+      ],
+    },
+    {
+      name: "a paragraph cites once: its second new source waits for the next paragraph",
+      args: stripScopes,
+      code: 0,
+      file: [
+        scoped,
+        /They call it "the slope"\[\^3\]\.\nThe writer keeps it\.\n\nIt "works\."\[\^4\]\n/,
       ],
     },
     {
@@ -6917,13 +6965,13 @@ async function runSelftest() {
       name: "a citation stands before the punctuation and outside a closing quote, after it when the quote holds the period",
       args: stripScopes,
       code: 0,
-      file: [scoped, /They call it "the slope"\[\^3\]\.\nIt "works\."\[\^1\]\n/],
+      file: [scoped, /They call it "the slope"\[\^3\]\.[\s\S]*It "works\."\[\^4\]\n/],
     },
     {
       name: "check reads a draft through the citer and warns where a quote holds the period",
       args: ["check", "--in", at("scopes.en.v1.md"), ...facts],
       code: 1,
-      stdout: /WARN [^\n]*:21  a citation after a closing quote, bracket or bold/,
+      stdout: /WARN [^\n]*:23  a citation after a closing quote, bracket or bold/,
     },
     {
       name: "a published citation after the punctuation is an error",
@@ -6932,16 +6980,36 @@ async function runSelftest() {
       stdout: /ERROR [^\n]*a citation after the punctuation: it goes before it/,
     },
     {
-      name: "check warns when citations are too dense",
+      name: "a published paragraph with two citations is an error",
       args: ["check", "--in", at("dense.en.md")],
       code: 1,
-      stdout: /WARN [^\n]*3 citations in 6 words: 50\.0 per 100 \(at most 3\.5\)/,
+      stdout: /ERROR [^\n]*a paragraph with 3 citations \(one per paragraph at most\)/,
     },
     {
-      name: "check warns on a sentence with two citations",
+      name: "a published sentence with two citations is an error",
       args: ["check", "--in", at("dense.en.md")],
       code: 1,
-      stdout: /WARN [^\n]*a sentence with 2 citations \(one key citation per sentence\)/,
+      stdout: /ERROR [^\n]*a sentence with 2 citations \(one per sentence at most\)/,
+    },
+    {
+      name: "fewer sources than the profile's floor is a warning",
+      args: ["check", "--in", at("dense.en.md")],
+      code: 1,
+      stdout: /WARN [^\n]*the post cites 3 sources, below the profile's floor of 6/,
+    },
+    {
+      name: "more sources than the profile's cap is an error",
+      args: ["check", "--in", at("many-sources.en.md")],
+      code: 1,
+      stdout: /ERROR [^\n]*the post cites 14 sources; the profile allows at most 13/,
+      notStdout: /a paragraph with/,
+    },
+    {
+      name: "a draft read through the citer is held to the sources floor before it is stripped",
+      args: ["check", "--in", at("scopes.en.v1.md"), ...facts],
+      code: 1,
+      stdout: /WARN [^\n]*strip would cite 4 sources, below the profile's floor of 6/,
+      notStdout: /a paragraph with \d+ citations/,
     },
     {
       name: "check warns on an English sentence over 35 words",
@@ -7092,7 +7160,7 @@ async function runSelftest() {
       code: 0,
       file: [
         tldrCited,
-        /- Point one\.\n- Point two\.\n- Point three\.\n\n## One\n\nBody four\[\^1\]\. Body five\[\^2\]\.\n\n\[\^1\]: \[Write-up 4\]/,
+        /- Point one\.\n- Point two\.\n- Point three\.\n\n## One\n\nBody four\[\^1\]\.\n\nBody five\[\^2\]\.\n\n\[\^1\]: \[Write-up 4\]/,
       ],
     },
     {

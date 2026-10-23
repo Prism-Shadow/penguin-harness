@@ -63,8 +63,8 @@ the two differ. A profile does not repeat the style guide and states nothing abo
 facts come from FACTS only. Its `## Check settings` are what the script enforces —
 `sections`, `lead`, `tldr`, `exclamations`, and the budgets `words`, `lead-words`,
 `section-words`, `zh-chars`, `zh-lead-chars`, `zh-section-chars`, `tldr-words`, `zh-tldr-chars`, each
-`floor-cap`, `emphasis` with its caps `emphasis-words` / `zh-emphasis-chars` (section 4), and
-`ui-labels`: `quoted` in a post, where bold is only the emphasized sentence and a UI label goes in
+`floor-cap`, `emphasis` with its caps `emphasis-words` / `zh-emphasis-chars` (section 4),
+`sources`, the floor and cap of a post's reference list (section 7), and `ui-labels`: `quoted` in a post, where bold is only the emphasized sentence and a UI label goes in
 quotes ("…" / 「…」), `bold` in a docs page.
 A prompt rule with no matching setting is a rule `check` cannot see; change the two together.
 
@@ -228,10 +228,9 @@ markers and the references do not count. The numbers themselves live in each pro
 - `## NOT-FACTS` — claims the model must not make.
 - `## EXISTING-FIGURES` — published screenshots the outline may reuse, by stem.
 - `## NOCITE` (optional) — facts the writer still marks but that cite nothing: `- F12: <why>`.
-  Cite what a reader may want to check: numbers and measurements, verbatim quotes, named
-  third-party claims, research results, the first mention of a product behaviour. List general
-  background, a restatement under another source, and a product detail a docs link in the same
-  post already covers. Record the choices in the PR body.
+  Section 7 says what is cited; list here general background, a restatement under another
+  source, and every repo file or docs page the post only refers to. Record the choices in the PR
+  body.
 
 **The author's notes.** A post may keep a `notes.md` beside `facts.md` for wording settled with the
 author, one line each: `keep[ en|zh]: <exact string>` (the answer must carry it verbatim),
@@ -250,15 +249,23 @@ source: a fact whose sources are all private may be used, with a warning, and ge
 
 ## 7. Citations
 
-The markers become paper-style citations when the post is published, one key citation per
-sentence at most. `strip --facts facts.md` turns each marker group (the markers closing one
-sentence) into at most one GFM footnote: of its facts, in the writer's order, the first whose
-first public source is not yet cited in its scope. Our own sources (`penguin.ooo`, the
-Prism-Shadow repositories on GitHub, a link-less source titled "Our …") are cited once per post;
-any other source once per `##` section. Opinions, private sources and facts under `## NOCITE`
-cite nothing, and a sentence whose sources are all cited already gets no footnote. The TL;DR
-sums up the body, so its markers stay in the draft as anchors and cite nothing; the body's first
-use sets the numbers, and a citation in a published TL;DR is an error. The footnote
+The markers become paper-style citations when the post is published, and most sentences carry
+none: one footnote per paragraph at most, each source once per post, and about 13 sources per post
+as the ceiling (the profile's `sources` setting). Writers still mark every factual sentence, since
+the markers are the truth guard; the citer thins them. `strip --facts facts.md` reads each marker
+group (the markers closing one sentence): of its facts, in the writer's order, the first whose
+first public source is not cited yet is the group's offer, and the first group in a paragraph
+with an offer becomes the paragraph's one GFM footnote. The paragraph's other groups cite
+nothing, so a source they offered stays free for a later paragraph. A list item and a table row
+count as paragraphs. Opinions, private sources and facts under `## NOCITE` cite nothing.
+
+Cite what a reader would want to check: a third-party number, a verbatim quote, a named paper,
+standard or product claim by someone else, our own measurement, and the first mention of a product
+behaviour. List repo files and docs pages the post merely refers to under `## NOCITE`, and name
+the file in a code span instead.
+
+The TL;DR sums up the body, so its markers stay in the draft as anchors and cite nothing; the
+body's first use sets the numbers, and a citation in a published TL;DR is an error. The footnote
 goes before the punctuation that ends its clause, outside a closing quotation mark, bracket or
 bold (`text[^1].`, `文字[^1]。`, `"the slope"[^1].`, `**claim**[^1].`); when the punctuation sits
 inside the closing mark (`slope."`), it follows the whole run and `check` warns. Footnotes are
@@ -288,9 +295,10 @@ the same order, and refuses with a clear message when it does not; strip that la
 `check` on a published post proves every `[^n]` is defined and every definition used, the labels
 run 1 … N in first-use order, every link is in `## SOURCES`, and no citation sits in a figure or a
 caption; a citation after the punctuation is an error. On a published post, and on a draft read
-through the same citer with `--facts`, it warns above 3.5 citations per 100 English words or 1.5
-per 100 Chinese characters, and on a sentence with two citations. `pair` proves both posts cite the
-same set of sources, and each section the same sources, whatever numbers each language gave them.
+through the same citer with `--facts`, a paragraph or a sentence with two citations is an error,
+and so is a post citing more sources than the profile's `sources` cap; fewer than its floor is a
+warning. `pair` proves both posts cite the same set of sources, and each section the same
+sources, whatever numbers each language gave them.
 
 ## 8. Source language and translation
 
