@@ -198,6 +198,16 @@ Chinese-to-English tells: parallel triplets, 'not X but Y' pivots, aphoristic se
 <!-- fragment: flow-rule-post -->
 This {{NOUN}} is one argument written in one sitting. The first sentence after every `## ` heading continues the last sentence before it, reusing a noun or a claim from it, so the reader crosses the heading without a jump. No section opens with a signpost ("In this section", "Next,", "Now that we have", "As mentioned above"; 「本节」「接下来」「下面我们」「上一节」「如上所述」), and no section ends with a sentence whose only job is to announce the next heading: the plan's `ends with` column names the point a section lands on, not a sentence to write. Gloss each term once in the whole {{NOUN}}.
 
+<!-- fragment: transition-findings-rule -->
+The review's findings, given before the text, name the joins it judged broken (`transition`) and the sentences whose only job is to announce the next heading (`signpost`): mend those joins first, within the rules above.
+
+<!-- fragment: transition-findings-section -->
+## The review's findings on the joins
+{{FINDINGS}}
+
+<!-- fragment: notes-rule-transition -->
+The author's notes, given before the text, are binding: a sentence you rewrite keeps every `keep:` string it held and takes in no `avoid:` string.
+
 <!-- fragment: plan-targets -->
 The plan's size for each section is a target; the profile's caps are limits, and the whole stays under its total cap.
 

@@ -7,7 +7,8 @@
  *
  *   node prose.mjs <step> [options]
  *
- *   API steps:   outline | section | write | translate | polish | fix | trim | emphasize | review
+ *   API steps:   outline | section | write | translate | polish | fix | trim | emphasize |
+ *                transition | review
  *   local steps: plan | assemble | route | check | strip | unstrip | pair | selftest
  *
  * A post is planned once (outline, then plan validates and freezes it), written in one call as a
@@ -52,6 +53,7 @@ const API_STEPS = [
   "fix",
   "trim",
   "emphasize",
+  "transition",
   "review",
 ];
 const LOCAL_STEPS = ["plan", "assemble", "route", "check", "strip", "unstrip", "pair", "selftest"];
@@ -79,7 +81,8 @@ const HELP = `usage: node prose.mjs <step> [options]
 
 The flow for a post (one language; the second follows by one translate call):
   outline → plan --freeze → write (the whole post) → check --plan-rows advisory → trim if over
-  → review + truth review → fix (≤ 2 rounds) → translate → … → emphasize → pair → strip → check
+  → review + truth review → fix (≤ 2 rounds) → transition → review → translate → …
+  → transition → review → emphasize → pair → strip → check
 Section mode (long posts, docs written task by task): section 0 … N, each followed by
   check --section → assemble → review → route → fix per section → assemble → … (SKILL.md section 4)
 
@@ -125,6 +128,14 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
                marks one key sentence per section (and in the lead) with ** and changes nothing
                else; an answer that differs once ** are removed, or has a section with no span or
                two, or a span too long or in the wrong place, goes to <out>.rejected.md (exit 1).
+               --out defaults to the next draft version
+  transition --in <draft.<lang>.vN.md> [--findings <review findings>] [--notes <f>]
+               mends the joins: for each ## heading, the first sentence of the paragraph after it
+               and, when the join needs it, the last sentence of the paragraph before it; nothing
+               else. An answer that changes any other block or sentence, a marker of a rewritten
+               sentence, a heading, the TL;DR, a figure block or the frontmatter goes to
+               <out>.rejected.md (exit 1). The review's transition and signpost findings are
+               passed on. Prints every join, before → after; then review the result again.
                --out defaults to the next draft version
   review     --in <f> [--facts <f>] [--notes <f>] [--tells]   numbered findings in the form fix
              reads; --out defaults to findings.<lang>.vN.api.md (findings.s<n>.<lang>.vK.api.md
@@ -1795,6 +1806,43 @@ function buildMessages(step, o) {
       }
       break;
     }
+    case "transition": {
+      if (input === undefined) fail("transition needs --in <draft>");
+      if (sectionOfFile(o.in)) fail("transition edits a whole draft's joins: assemble it first");
+      lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
+      params = profileParams(F, prof, lang);
+      params.STYLE = stylePrompt(lang);
+      params.FLOW_RULE = F["flow-rule-post"];
+      Object.assign(params, notesSlots());
+      params.NOTES_RULE = notes ? ` ${F["notes-rule-transition"]}` : "";
+      params.FINDINGS_RULE = "";
+      params.FINDINGS_SECTION = "";
+      if (o.findings) {
+        // Only the findings about joins go along: the step may not act on any other.
+        const joins = findingItems(read(o.findings, "--findings")).filter(({ item }) =>
+          /\b(transition|signpost)\b/i.test(item),
+        );
+        if (joins.length) {
+          params.FINDINGS_RULE = ` ${F["transition-findings-rule"]}`;
+          params.FINDINGS_SECTION = `${F["transition-findings-section"]}\n\n`;
+          content.FINDINGS = joins.map((x) => x.item).join("\n");
+        } else {
+          note(`${o.findings} has no transition or signpost finding; the call judges every join`);
+        }
+      }
+      content.DRAFT = fenced(input);
+      o.out ??= nextDraftFile(o.in);
+      if (!joinsOf(blocksOf(input).blocks).some((j) => j.after !== undefined)) {
+        hooks.skip = "no `## ` heading is followed by a paragraph: no join to edit";
+      }
+      hooks.verify = (out) => [
+        ...transitionProblems(input, out),
+        ...notesProblems(out, notes, lang),
+      ];
+      hooks.retry = "rerun transition once; a second failure goes to the author";
+      hooks.after = (out) => transitionReport(input, out, o.out);
+      break;
+    }
     case "review": {
       if (input === undefined) fail("review needs --in <draft>");
       lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
@@ -1886,11 +1934,179 @@ function emphasizeProblems(before, after, lang, budgets) {
   return problems;
 }
 
-/** `draft.en.v3.md` → the next free `draft.en.v<k>.md` beside it; any other name needs --out. */
+/**
+ * A text's blocks, as the transition guard compares them: runs of non-blank lines, each heading a
+ * block of its own, fenced code and figure blocks whole. A block's kind is `heading`, `para` (a
+ * paragraph of plain text lines), `tldr` (the TL;DR line and its bullets) or `other`.
+ */
+function blocksOf(text) {
+  const doc = parseText(text);
+  const tldr = tldrLines(doc.items);
+  const blocks = [];
+  let cur = null;
+  const close = () => {
+    if (cur) blocks.push(cur);
+    cur = null;
+  };
+  for (const it of doc.items) {
+    if (it.type === "blank") {
+      close();
+      continue;
+    }
+    if (it.type === "heading") {
+      close();
+      blocks.push({ kind: "heading", h2: /^## /.test(it.line), lines: [it.line], n: it.n });
+      continue;
+    }
+    const kind = tldr.has(it.n) ? "tldr" : it.type === "text" ? "para" : "other";
+    if (!cur) cur = { kind, lines: [], n: it.n };
+    else if (cur.kind !== kind) cur.kind = "other";
+    cur.lines.push(it.line);
+  }
+  close();
+  return { meta: doc.metaRaw, blocks };
+}
+
+/**
+ * The joins of a text: for every `## ` heading, the paragraph right before it (`before`) and the
+ * paragraph right after it (`after`), as block indexes, when those blocks are paragraphs. A TL;DR,
+ * list, figure or caption next to a heading is no paragraph, so that side of the join stays.
+ */
+function joinsOf(blocks) {
+  const joins = [];
+  blocks.forEach((b, i) => {
+    if (b.kind !== "heading" || !b.h2) return;
+    joins.push({
+      heading: b.lines[0].slice(3).trim(),
+      before: blocks[i - 1]?.kind === "para" ? i - 1 : undefined,
+      after: blocks[i + 1]?.kind === "para" ? i + 1 : undefined,
+    });
+  });
+  return joins;
+}
+
+/** Which sentence of which block transition may rewrite: the first after a heading, the last before one. */
+function editableSentences(blocks) {
+  const may = new Map();
+  const allow = (i, which) => {
+    if (i === undefined) return;
+    if (!may.has(i)) may.set(i, new Set());
+    may.get(i).add(which);
+  };
+  for (const j of joinsOf(blocks)) {
+    allow(j.after, "first");
+    allow(j.before, "last");
+  }
+  return may;
+}
+
+const paraSentences = (block) => sentences(block.lines.map((l) => l.trim()).join(" "));
+
+/**
+ * What transition may not do: change any block but the paragraphs next to a `## ` heading, any
+ * sentence of those but the first after the heading and the last before it, the markers or `**`
+ * of a sentence it rewrites, or the number of blocks or sentences.
+ */
+function transitionProblems(before, after) {
+  const a = blocksOf(before);
+  const b = blocksOf(after);
+  const problems = [];
+  if (a.meta !== b.meta) problems.push("the frontmatter changed");
+  if (a.blocks.length !== b.blocks.length) {
+    problems.push(
+      `${b.blocks.length} blocks; the text given had ${a.blocks.length} (a paragraph, heading or figure was added, dropped, split or merged)`,
+    );
+    return problems;
+  }
+  const may = editableSentences(a.blocks);
+  const name = (x) =>
+    x.kind === "heading"
+      ? `the heading "${x.lines[0]}"`
+      : x.kind === "tldr"
+        ? "the TL;DR"
+        : FIGURE_OPEN.test(x.lines[0].trim())
+          ? `figure block ${figureIdsIn(x.lines.join("\n"))[0] ?? ""}`.trim()
+          : `the ${x.kind === "para" ? "paragraph" : "block"} at line ${x.n}`;
+  a.blocks.forEach((x, i) => {
+    const y = b.blocks[i];
+    if (x.lines.join("\n") === y.lines.join("\n")) return;
+    const which = may.get(i);
+    if (!which || y.kind !== "para") {
+      problems.push(
+        `${name(x)} changed; transition rewrites only the first sentence after a heading and the last sentence before one`,
+      );
+      return;
+    }
+    const sa = paraSentences(x);
+    const sb = paraSentences(y);
+    if (sa.length !== sb.length) {
+      problems.push(`${name(x)} has ${sb.length} sentences; it had ${sa.length}`);
+      return;
+    }
+    sa.forEach((s, k) => {
+      const t = sb[k];
+      if (s === t) return;
+      const role =
+        k === 0 && which.has("first")
+          ? "first"
+          : k === sa.length - 1 && which.has("last")
+            ? "last"
+            : undefined;
+      if (!role) {
+        problems.push(
+          `${name(x)}: sentence ${k + 1} changed ("${t.slice(0, 60)}"); only its ${[...which].join(" and ")} sentence may`,
+        );
+        return;
+      }
+      const ma = (s.match(MARKER) ?? []).join("");
+      const mb = (t.match(MARKER) ?? []).join("");
+      if (ma !== mb) {
+        problems.push(
+          `${name(x)}: its ${role} sentence carries ${mb || "no marker"}; it carried ${ma || "none"} (a rewritten sentence keeps its markers in order)`,
+        );
+      }
+      if ((s.match(/\*\*/g) ?? []).length !== (t.match(/\*\*/g) ?? []).length) {
+        problems.push(`${name(x)}: its ${role} sentence gained or lost a ** span`);
+      }
+    });
+  });
+  return problems;
+}
+
+/** Every join, before → after, one line each; then the review that scores the result. */
+function transitionReport(before, after, out) {
+  const a = blocksOf(before).blocks;
+  const b = blocksOf(after).blocks;
+  const changed = (i, k) => {
+    if (i === undefined) return undefined;
+    const sa = paraSentences(a[i]);
+    const sb = paraSentences(b[i]);
+    const at = k === "first" ? 0 : sa.length - 1;
+    return sa[at] === sb[at] ? undefined : `"${sa[at]}" → "${sb[at]}"`;
+  };
+  const lines = joinsOf(a).map((j) => {
+    const parts = [
+      ["last before", changed(j.before, "last")],
+      ["first after", changed(j.after, "first")],
+    ].filter(([, c]) => c);
+    const fixed = j.after === undefined ? " (no paragraph after the heading)" : "";
+    return `  ## ${j.heading}: ${parts.length ? parts.map(([w, c]) => `${w} ${c}`).join("; ") : `unchanged${fixed}`}`;
+  });
+  const edited = lines.filter((l) => !/: unchanged/.test(l)).length;
+  process.stderr.write(
+    `transition: ${edited} of ${lines.length} joins edited\n${lines.join("\n")}\n`,
+  );
+  note(`next: review --in ${out}; its .flow.txt holds the score (m of m expected)`);
+}
+
+/**
+ * `draft.en.v3.md` → the next free `draft.en.v<k>.md` beside it, and unstrip's
+ * `recovered.en.md` → the first free one; any other name needs --out.
+ */
 function nextDraftFile(input) {
-  const m = /^draft\.(en|zh)\.v\d+\.md$/.exec(path.basename(input));
+  const m = /^(?:draft\.(en|zh)\.v\d+|recovered\.(en|zh))\.md$/.exec(path.basename(input));
   if (!m) fail("this step needs --out <file> for an input not named draft.<lang>.vN.md");
-  return nextDraftIn(path.dirname(input), m[1]);
+  return nextDraftIn(path.dirname(input), m[1] ?? m[2]);
 }
 
 /** The next free `draft.<lang>.v<k>.md` in a directory. */
@@ -6013,6 +6229,45 @@ async function runSelftest() {
     `${front}Lead.\n\n${inlineFigure.replace('<text class="fig-tick"', '<text class="fig-title">One</text><text class="fig-title">Two</text><text class="fig-tick"')}\n`,
   );
 
+  // transition: a draft with a TL;DR before the first heading, a figure and a middle paragraph in
+  // the first section, and answers that mend the joins or change what they may not.
+  const joinDraft = `${front}Lead one. {F1} The lead ends here. {F1}\n\n**TL;DR**\n\n- Point one. {F1}\n- Point two. {F2}\n- Point three. {O1}\n\n## First\n\nFirst opens here. {F1} More of first. {F1}\n\n${flowBlock2}\n\nA middle paragraph. {F2}\n\nFirst closes. The last sentence of first. {F2}\n\n## Second\n\nSecond opens here. {O1} Rest of second. {O1}\n`;
+  const joinCase = (name, answerText) => {
+    const dir = caseDir(name, { "draft.en.v1.md": joinDraft });
+    if (answerText !== undefined) answer(`${name}.md`, answerText);
+    return dir;
+  };
+  const joinOk = joinCase(
+    "join-ok",
+    joinDraft
+      .replace("First opens here. {F1}", "The points start with where the archive lives. {F1}")
+      .replace(
+        "The last sentence of first. {F2}",
+        "The last sentence of first hands the marker to second. {F2}",
+      ),
+  );
+  const joinMiddle = joinCase(
+    "join-middle",
+    joinDraft.replace("A middle paragraph. {F2}", "A middle paragraph, reworded. {F2}"),
+  );
+  const joinMarker = joinCase(
+    "join-marker",
+    joinDraft.replace("Second opens here. {O1}", "Second opens from the marker."),
+  );
+  const joinHeading = joinCase("join-heading", joinDraft.replace("## Second", "## The second"));
+  const joinFigure = joinCase(
+    "join-figure",
+    joinDraft.replace("<root>/<project>/", "<root>/").replace("First opens here.", "First opens."),
+  );
+  const joinTldr = joinCase(
+    "join-tldr",
+    joinDraft.replace("- Point three. {O1}", "- Point three leads on. {O1}"),
+  );
+  writeFileSync(
+    path.join(joinOk, "findings.en.v1.md"),
+    "1. [First opens here.] — does not follow the TL;DR — transition — the sentence must pick up the last point\n2. [More of first.] — vague — concision — the sentence must say more\n",
+  );
+
   const self = fileURLToPath(import.meta.url);
   const facts = ["--facts", at("facts.md")];
   const cases = [
@@ -7196,6 +7451,77 @@ async function runSelftest() {
       ],
       code: 0,
       notStdout: /fact markers differ/,
+    },
+    {
+      name: "transition on unstrip's recovered draft writes the first draft version beside it",
+      args: ["transition", "--dry-run", "--in", path.join(roundDir, "recovered.en.md")],
+      code: 0,
+      stdout:
+        /== transition \(en, blog-perspectives\)[^\n]*out \S*selftest-post\/draft\.en\.v1\.md ==/,
+    },
+    {
+      name: "transition --dry-run sends the flow rule and only the review's join findings",
+      args: [
+        "transition",
+        "--dry-run",
+        "--in",
+        path.join(joinOk, "draft.en.v1.md"),
+        "--findings",
+        path.join(joinOk, "findings.en.v1.md"),
+      ],
+      code: 0,
+      stdout:
+        /You edit the joins[\s\S]*one argument written in one sitting[\s\S]*## The review's findings on the joins\n1\. \[First opens here\.\][\s\S]*Edit the joins now\./,
+      notStdout: /\[More of first\.\]/,
+    },
+    {
+      name: "transition accepts a new first sentence after a heading and a new last sentence before one",
+      args: ["transition", "--in", path.join(joinOk, "draft.en.v1.md")],
+      answer: "join-ok.md",
+      code: 0,
+      stderr:
+        /transition: 2 of 2 joins edited\n {2}## First: first after "First opens here\. \{F1\}" → "The points start with where the archive lives\. \{F1\}"\n {2}## Second: last before "The last sentence of first\. \{F2\}" → "The last sentence of first hands the marker to second\. \{F2\}"/,
+      file: [path.join(joinOk, "draft.en.v2.md"), /hands the marker to second/],
+    },
+    {
+      name: "transition refuses a change to a paragraph next to no heading",
+      args: ["transition", "--in", path.join(joinMiddle, "draft.en.v1.md")],
+      answer: "join-middle.md",
+      code: 1,
+      stderr: /the paragraph at line \d+ changed; transition rewrites only/,
+      absent: path.join(joinMiddle, "draft.en.v2.md"),
+    },
+    {
+      name: "transition refuses a rewritten sentence that dropped its marker",
+      args: ["transition", "--in", path.join(joinMarker, "draft.en.v1.md")],
+      answer: "join-marker.md",
+      code: 1,
+      stderr: /its first sentence carries no marker; it carried \{O1\}/,
+      absent: path.join(joinMarker, "draft.en.v2.md"),
+    },
+    {
+      name: "transition refuses a changed heading",
+      args: ["transition", "--in", path.join(joinHeading, "draft.en.v1.md")],
+      answer: "join-heading.md",
+      code: 1,
+      stderr: /the heading "## Second" changed/,
+      absent: path.join(joinHeading, "draft.en.v2.md"),
+    },
+    {
+      name: "transition refuses a changed figure string, even beside an allowed edit",
+      args: ["transition", "--in", path.join(joinFigure, "draft.en.v1.md")],
+      answer: "join-figure.md",
+      code: 1,
+      stderr: /figure block demo-flow changed/,
+      absent: path.join(joinFigure, "draft.en.v2.md"),
+    },
+    {
+      name: "transition refuses an edit to the TL;DR before a heading",
+      args: ["transition", "--in", path.join(joinTldr, "draft.en.v1.md")],
+      answer: "join-tldr.md",
+      code: 1,
+      stderr: /the TL;DR changed/,
+      absent: path.join(joinTldr, "draft.en.v2.md"),
     },
     {
       name: "landing strings with a banned word and an exclamation mark fail",

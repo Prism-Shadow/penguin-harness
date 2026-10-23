@@ -102,20 +102,25 @@ file name is how the script knows the language. A post is written as one documen
 | 5 | `check --plan-rows advisory` | script | the page cap and the profile's caps are hard, the plan's rows are targets; over a cap → `trim` on the whole draft |
 | 6 | `review` + truth review | API + agent | the whole post, flow first: every join after a heading is scored (`transition`, `signpost`), and `<out>.flow.txt` holds `transitions: n of m`; the agent reads against FACTS, the sources and the notes; merged and numbered |
 | 7 | `fix` | API | the whole post, held to its findings (section 10). At most two rounds, the second only when the first had `transition`, `flow` or truth findings, then the author; `trim` if a cap breaks |
-| 8 | `translate` | API | the whole post in one call (section 8) |
-| 9 | `check`, `review --tells` + native reader, `fix` | script + API + agent | the same loop in the second language, at most two rounds; `trim` if over |
-| 10 | `emphasize` | API | on each language's frozen draft, the first language first, then the second with `--mirror <the first's emphasized draft>`: one `**` span per section and in the lead, nothing else changed |
-| 11 | `pair` | script | section by section: markers, citations, emphasis, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
-| 12 | Draw | agent | from the frozen figure blocks (section 9); a block `write` or `translate` changed is redrawn |
-| 13 | `check --svg` | script | every drawn file against its block |
-| 14 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` when its citations come in the same order (section 7) |
-| 15 | Visual check, verify, PR | agent | sections 9 and 12 |
+| 8 | `transition`, then `review` | API | the joins alone: for each `## ` heading, the first sentence after it and, when the join needs it, the last sentence before it; the review's `transition` / `signpost` findings go along (`--findings`), and the guard refuses any other change (section 10). The new review's `transitions: n of m` is the acceptance number: `m of m`, else the author decides. Once per language, after its last `fix` and before `emphasize` |
+| 9 | `translate` | API | the whole post in one call (section 8) |
+| 10 | `check`, `review --tells` + native reader, `fix` | script + API + agent | the same loop in the second language, at most two rounds; `trim` if over |
+| 11 | `transition`, then `review` | API | the joins of the second language, as in step 8 |
+| 12 | `emphasize` | API | on each language's frozen draft, the first language first, then the second with `--mirror <the first's emphasized draft>`: one `**` span per section and in the lead, nothing else changed |
+| 13 | `pair` | script | section by section: markers, citations, emphasis, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
+| 14 | Draw | agent | from the frozen figure blocks (section 9); a block `write` or `translate` changed is redrawn |
+| 15 | `check --svg` | script | every drawn file against its block |
+| 16 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` when its citations come in the same order (section 7) |
+| 17 | Visual check, verify, PR | agent | sections 9 and 12 |
 
 **Flow.** The post is one argument written in one sitting. The first sentence after every `## `
 heading continues the last sentence before it; no section opens with a signpost ("In this
 section", "Next,", 「接下来」) or ends on a sentence that only announces the next heading. The plan's
 `ends with` column names the point a section lands on, not a sentence to write. `write` states
-this, `review` scores every join, and `check` warns on the signposts the style guides list.
+this, `review` scores every join, `transition` mends the joins that fail without touching anything
+else, and `check` warns on the signposts the style guides list. A post's joins get a round of
+their own because a fix round aimed at the whole text leaves them broken: the author's rule is to
+write the whole post, revise it as a whole, then edit only the sentences at the headings.
 
 **Emphasis.** A profile with `emphasis: yes` gets one marked key sentence, or clause, per `##`
 section and one in the lead: the claim a reader skimming the section must not miss. `emphasize`
@@ -145,7 +150,8 @@ s<n>=v<k>` names. `route` splits merged findings by the section that quotes each
 Their prompts aim at the lowest of the planned size, what the page has left and the profile's cap
 (section 5), and `--page <assembled draft>` tells them which version of each other section the
 page holds. From `emphasize` on, the flow is the same. Section mode trades the joins for control,
-so a post written this way needs its transitions checked by `review` on the assembled draft.
+so a post written this way needs its transitions checked by `review` on the assembled draft and
+mended by `transition`.
 
 ## 5. Budgets
 
@@ -400,7 +406,13 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   block no finding names by its id or by quoting its text. `trim`, on a section or a whole draft,
   refuses what section 5 lists.
   `fix`, `polish`, `translate` and `trim` refuse an answer whose version note is not, byte for
-  byte, the one they were given. `emphasize` refuses what section 4 lists.
+  byte, the one they were given. `emphasize` refuses what section 4 lists. `transition` compares
+  the two texts block by block (paragraphs, headings, the TL;DR, figure and code blocks): it
+  refuses an answer that adds, drops, splits or merges a block, changes any block but the paragraph
+  right after a `## ` heading and the paragraph right before one, changes a sentence of those but
+  the first after the heading and the last before it, changes a rewritten sentence's markers (set
+  and order) or its `**`, changes the frontmatter, or breaks a note. A TL;DR, list, figure or
+  caption next to a heading is no paragraph, so that side of the join stays as it is.
   A refused answer is kept as `<out>.rejected.md` and the step exits 1; a change the findings
   should allow goes back with a finding that names it.
 - **The fact diff** (agent): every number, URL, code span, bold or 「」 label and proper noun
@@ -468,7 +480,7 @@ stand-in gateway on a loopback port with a dummy key. A case that guards a fixed
 
 | Path | What it holds |
 | --- | --- |
-| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `emphasize`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `unstrip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
+| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `emphasize`, `transition`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `unstrip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
 | `prompts/contract-section.md`, `contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for one section (section mode), a whole post, a docs page, landing strings |
 | `<scratch>/articles/<slug>/notes.md` | Per post, outside the repo: the author's `keep:` / `avoid:` / `note:` lines (section 6) |
