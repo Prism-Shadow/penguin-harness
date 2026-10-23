@@ -3274,3 +3274,133 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     expect(followUpTexts).not.toContain("[user_steering]");
   });
 });
+
+describe("ContextEngine tool-call loop detection", () => {
+  /** A model that always issues the same two tool calls and never a final reply. */
+  class LoopingLLM implements LLMInterface {
+    calls = 0;
+    async *streamGenerate(
+      _params: GenerativeModelParameters,
+    ): AsyncGenerator<OmniMessage, LLMOutcome> {
+      this.calls += 1;
+      yield assistantText("looping...");
+      yield toolCall({
+        name: "exec_command",
+        arguments: JSON.stringify({ cmd: "echo NEWA111" }),
+        toolCallId: `call_a_${this.calls}`,
+        stopReason: "completed",
+      });
+      yield toolCall({
+        name: "exec_command",
+        arguments: JSON.stringify({ cmd: "echo NEWB222" }),
+        toolCallId: `call_b_${this.calls}`,
+        stopReason: "completed",
+      });
+      yield tokenUsage(emptyTokenCounts(), {
+        cache_read: 0,
+        cache_write: 0,
+        output: 5,
+        total: 12,
+      });
+      return { status: "completed" };
+    }
+  }
+
+  it("stops a run when the same tool calls repeat across consecutive turns", async () => {
+    const llm = new LoopingLLM();
+    const environment = new Environment({
+      workspaceDir: await mkdtemp(join(tmpdir(), "loop-test-")),
+      toolConfig: execCommandToolConfig(),
+    });
+    // maxTurns is unlimited on purpose: the loop must be caught by the detection, not by a
+    // turn cap that a Project may well have turned off.
+    const engine = new ContextEngine({ llm, environment, maxTurns: -1 });
+
+    const { cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
+
+    expect(cutoff).not.toBeNull();
+    expect(cutoff!.kind).toBe("tool_loop");
+    // Four consecutive identical turns fire it (window 3 + the one before the run).
+    expect(llm.calls).toBeLessThanOrEqual(5);
+  });
+
+  it("carries the loop-stopping turn's tool outputs into the next run", async () => {
+    const inputs: OmniMessage[][] = [];
+    class CapturingLoopingLLM extends LoopingLLM {
+      async *streamGenerate(
+        params: GenerativeModelParameters,
+      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+        inputs.push(params.newMessages);
+        return yield* super.streamGenerate(params);
+      }
+    }
+
+    const llm = new CapturingLoopingLLM();
+    const environment = new Environment({
+      workspaceDir: await mkdtemp(join(tmpdir(), "loop-carry-test-")),
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxTurns: -1 });
+
+    const first = await collectRunWithReturn(engine, [userText("go")], allowAll);
+    expect(first.cutoff!.kind).toBe("tool_loop");
+    const stoppedCalls = llm.calls;
+
+    // The loop stops the run, but the just-committed tool_calls must not be left
+    // unanswered in MMSP's stateful history — otherwise the next request is rejected
+    // ("No tool output found for function call") and stays rejected on every retry.
+    expect(engine.hasPendingInput()).toBe(true);
+
+    await collectRunWithReturn(engine, [userText("go on")], allowAll);
+
+    // The next run resends the carried outputs merged with the user message.
+    const resent = inputs[inputs.length - 1]!;
+    const outputIds = resent
+      .filter((m) => (m.payload as { type?: string }).type === "tool_call_output")
+      .map((m) => (m.payload as { tool_call_id?: string }).tool_call_id);
+    expect(outputIds).toContain(`call_a_${stoppedCalls}`);
+    expect(outputIds).toContain(`call_b_${stoppedCalls}`);
+    expect(resent.some((m) => (m.payload as { text?: string }).text === "go on")).toBe(true);
+  });
+
+  it("does not flag a loop while the tool calls differ from turn to turn", async () => {
+    class VaryingLLM implements LLMInterface {
+      calls = 0;
+      async *streamGenerate(
+        _params: GenerativeModelParameters,
+      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+        this.calls += 1;
+        if (this.calls >= 5) {
+          yield assistantText("done");
+          return { status: "completed" };
+        }
+        yield assistantText(`turn ${this.calls}`);
+        yield toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({ cmd: `echo turn_${this.calls}` }),
+          toolCallId: `call_${this.calls}`,
+          stopReason: "completed",
+        });
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 5,
+          total: 12,
+        });
+        return { status: "completed" };
+      }
+    }
+
+    const llm = new VaryingLLM();
+    const environment = new Environment({
+      workspaceDir: await mkdtemp(join(tmpdir(), "no-loop-test-")),
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxTurns: -1 });
+
+    const { cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
+
+    expect(cutoff).toBeNull();
+    expect(llm.calls).toBe(5);
+  });
+});

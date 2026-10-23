@@ -79,11 +79,13 @@ The generator's return value says how the run ended: `null` when it ran to compl
 
 ```ts
 interface RunCutoff {
-  kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
+  kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns" | "tool_loop";
   errorCode?: ErrorCode;
   errorMessage?: string;
 }
 ```
+
+A `tool_loop` cutoff ends a run whose last four turns issued identical tool calls; the loop-stopping turn's tool outputs are held as carry-over, so the next run resends them with the user's message instead of leaving the calls unanswered.
 
 ## Lifecycle of a turn
 

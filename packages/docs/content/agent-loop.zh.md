@@ -79,11 +79,13 @@ interface RunOptions {
 
 ```ts
 interface RunCutoff {
-  kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
+  kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns" | "tool_loop";
   errorCode?: ErrorCode;
   errorMessage?: string;
 }
 ```
+
+`tool_loop` 熔断会结束"连续四轮发出完全相同工具调用"的 run；停住那一轮的工具输出会留作 carry-over，下一轮运行时带着它们和用户消息一起重发，不会把 tool call 晾在那里没人回答。
 
 ## 一轮的生命周期
 
