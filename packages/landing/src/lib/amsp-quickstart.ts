@@ -1,7 +1,8 @@
 /**
  * The code the /amsp page shows: the player's input snippet per run, and the quickstart's install
  * command, curl request, response excerpt and TypeScript example, against `/api/amsp/v1` and
- * `@prismshadow/amsp` 0.3.0 (PRFC-0021). The single place to adjust when the SDK's surface or the
+ * `@prismshadow/amsp` after 0.2.16 (PRFC-0021): `stream()` returns the run to iterate, `run()` its
+ * result alone. The single place to adjust when the SDK's surface or the
  * routes settle. Language-neutral: the words around the code are in the dictionaries.
  */
 import type { RunStep } from "./amsp-demo";
@@ -22,12 +23,12 @@ export function playerCode(scenario: {
     ...(scenario.continues ? ["sessionId"] : []),
     `input: ${JSON.stringify(scenario.input)}`,
   ];
-  const oneLine = `client.run({ ${options.join(", ")} })`;
+  const oneLine = `client.stream({ ${options.join(", ")} })`;
   // One line while it fits the player's column, one option per line past that.
   const call =
     `const run = ${oneLine};`.length <= 76
       ? oneLine
-      : `client.run({\n  ${options.join(",\n  ")},\n})`;
+      : `client.stream({\n  ${options.join(",\n  ")},\n})`;
   const abort =
     scenario.abortAfterMs === undefined
       ? ""
@@ -89,7 +90,7 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.run({ input: "What time is it now?" });
+const run = client.stream({ input: "What time is it now?" });
 for await (const record of run) {
   if (record.type === "model_msg" && record.payload.type === "partial_text") {
     process.stdout.write(record.payload.text);
@@ -98,4 +99,4 @@ for await (const record of run) {
 const { sessionId, status, text, usage } = await run.result();
 
 // Same Session, same context
-await client.run({ sessionId, input: "Now say it in French." }).result();`;
+await client.run({ sessionId, input: "Now say it in French." });`;

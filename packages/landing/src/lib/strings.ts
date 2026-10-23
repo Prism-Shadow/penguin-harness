@@ -447,9 +447,9 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     reference: "协议参考",
     copyPrompt: "复制给编码 Agent 的提示词",
     copied: "已复制",
-    /** After the Web App's API-tab prompt (apiAgentPrompt): the per-Agent lines point at that tab, the SDK lines follow 0.3.0. */
+    /** The Web App's API-tab prompt (apiAgentPrompt), with the per-Agent lines pointing at that tab. */
     agentPrompt: (docsUrl: string) =>
-      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用 Agent 的代码。\n\nBase URL 与 Agent ID：在 PenguinHarness 中该 Agent 的 API 标签页查看。\n\n使用 @prismshadow/amsp SDK：迭代 client.run() 读取实时记录，await 它的 result() 获取结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
+      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用 Agent 的代码。\n\nBase URL 与 Agent ID：在 PenguinHarness 中该 Agent 的 API 标签页查看。\n\n使用 @prismshadow/amsp SDK：stream() 逐条读取记录，await run() 获取完整结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
 
     player: {
       label: "示例运行",
@@ -550,7 +550,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       title: "继续阅读",
       items: {
         reference: { name: "AMSP 协议参考", text: "逐条说明每种记录与控制帧" },
-        omni: { name: "OmniMessage", text: "每种记录的 payload 字段" },
+        records: { name: "AMSP 记录", text: "每种记录的 payload 字段" },
         guide: { name: "Agent API 使用指南", text: "密钥、审批模式、路由与错误" },
         npm: { name: "@prismshadow/amsp", text: "npm 上的 SDK，适用于 Node 24 与浏览器" },
         source: { name: "源码", text: "packages/amsp，Apache-2.0" },

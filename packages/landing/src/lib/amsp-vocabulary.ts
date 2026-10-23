@@ -1,7 +1,7 @@
 /**
  * AMSP's vocabulary, as the /amsp page shows it: the Session stream's records grouped by their
  * envelope `type`, whether the Trace stores each, and the four control frames. The single place to
- * adjust when the spec (PRFC-0021, "AMSP: OmniMessage is the Session stream") moves: the tables,
+ * adjust when the spec (PRFC-0021, "AMSP: the Session stream") moves: the tables,
  * the replay's "stored in the Trace" tone and the protocol types in amsp-protocol.ts all read this
  * file. Each row's meaning is in the dictionaries under `amsp.vocabulary`, keyed by its `id`, so a
  * row added here without its words fails to typecheck.

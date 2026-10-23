@@ -11,7 +11,7 @@
  * - at `[DONE]` the outcome is read from the records (`runOutcome`, PRFC-0021's `RunResult` rule):
  *   `task_end` carries no status.
  *
- * Page-specific on purpose: SDK 0.3.0's `AgentClient` and `SessionReader` and the Web App's view
+ * Page-specific on purpose: the SDK's `AgentClient` and `SessionReader` and the Web App's view
  * model do this for real, and none of them is a dependency of the landing site.
  */
 import type {

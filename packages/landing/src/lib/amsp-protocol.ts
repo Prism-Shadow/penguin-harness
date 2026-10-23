@@ -1,14 +1,14 @@
 /**
  * AMSP's records and control frames, as far as the /amsp page reads them: the scripted runs
  * (amsp-demo.ts) are typed on them and the replay fold (amsp-replay.ts) narrows on them. The
- * payloads the page reads field by field are spelled out, mirroring core's OmniMessage types
+ * payloads the page reads field by field are spelled out, mirroring core's record types
  * (packages/core/src/omnimessage/types.ts) plus PRFC-0021's additions — `task_begin` / `task_end`
  * and `request_begin.thinking_level`; every other kind of the vocabulary is accepted with its
  * fields unread. The control frames take the SDK's shape (`{ kind, … }`).
  *
- * Page-local on purpose: `@prismshadow/amsp` 0.2.x still ships the old event types. Once 0.3.0
- * carries these, this file re-exports them from there and the scripted runs are checked against the
- * real protocol.
+ * Page-local on purpose: `@prismshadow/amsp` 0.2.16 still ships the old event types. Once the
+ * release after it carries these, this file re-exports them from there and the scripted runs are
+ * checked against the real protocol.
  */
 import type { EventKind, ModelKind } from "./amsp-vocabulary";
 
@@ -181,7 +181,7 @@ interface Envelope<T extends string, P> {
 /** A complete tool call as the stream carries it. */
 export type ToolCallRecord = Envelope<"model_msg", ToolCallPayload>;
 
-/** One record: an SSE event with no name and an `id:`, its data the OmniMessage envelope. */
+/** One AMSP record: an SSE event with no name and an `id:`, its data the record's envelope. */
 export type AmspRecord =
   | Envelope<"session_meta", SessionMetaPayload>
   | Envelope<"model_msg", ModelPayload>

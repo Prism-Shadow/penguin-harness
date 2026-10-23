@@ -449,7 +449,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     copyPrompt: "Copy prompt for a coding agent",
     copied: "Copied",
     agentPrompt: (docsUrl: string) =>
-      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call an agent.\n\nBase URL and Agent ID: from the agent's API tab in PenguinHarness.\n\nUse the @prismshadow/amsp SDK: iterate client.run() for the records as they stream, and await its result() for the outcome. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
+      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call an agent.\n\nBase URL and Agent ID: from the agent's API tab in PenguinHarness.\n\nUse the @prismshadow/amsp SDK: stream() for the records as they arrive and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
 
     player: {
       label: "Example runs",
@@ -549,7 +549,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           name: "AMSP reference",
           text: "Every record and control frame, field by field",
         },
-        omni: { name: "OmniMessage", text: "The payload fields of every record kind" },
+        records: { name: "AMSP records", text: "The payload fields of every record kind" },
         guide: { name: "Agent API guide", text: "Keys, approval modes, routes and errors" },
         npm: { name: "@prismshadow/amsp", text: "The SDK on npm, for Node 24 and browsers" },
         source: { name: "Source", text: "packages/amsp, Apache-2.0" },

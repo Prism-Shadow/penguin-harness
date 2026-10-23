@@ -10,7 +10,7 @@ import { ExternalLink, ExternalLinkScope } from "../../components/external-link"
 
 const ITEMS = [
   { key: "reference", href: `${DOCS_URL}amsp/`, external: false },
-  { key: "omni", href: `${DOCS_URL}omni-message/`, external: false },
+  { key: "records", href: `${DOCS_URL}amsp-records/`, external: false },
   { key: "guide", href: `${DOCS_URL}agent-api/`, external: false },
   { key: "npm", href: AMSP_NPM_URL, external: true },
   { key: "source", href: AMSP_SOURCE_URL, external: true },
