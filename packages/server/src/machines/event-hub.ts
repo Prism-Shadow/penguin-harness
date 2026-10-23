@@ -255,6 +255,7 @@ export class MachineEventHub {
   readonly #openTimeoutMs: number;
   readonly #reissueMinMs: number;
   readonly #reissueMaxMs: number;
+  readonly #taps = new Set<(machineId: string, data: string) => void>();
   #closed = false;
 
   constructor(
@@ -274,6 +275,7 @@ export class MachineEventHub {
   /** Stops every reader, upstream call and retry owned by this generation. */
   close(): void {
     this.#closed = true;
+    this.#taps.clear();
     this.#aggregate.close();
     for (const subscription of [...this.#subscriptions.values()]) {
       const readers = [...subscription.readers];
@@ -290,6 +292,16 @@ export class MachineEventHub {
   /** The aggregate stream's buffer, said in the docs as "the hub keeps a replay buffer of its own". */
   get aggregate(): MachineEventAggregate {
     return this.#aggregate;
+  }
+
+  /**
+   * Hears every server event a machine sends while the hub is subscribed to it, with the machine
+   * it came from: what the Session index learns from (session-index.ts). The return value
+   * detaches it.
+   */
+  tap(listener: (machineId: string, data: string) => void): () => void {
+    this.#taps.add(listener);
+    return () => this.#taps.delete(listener);
   }
 
   /**
@@ -446,6 +458,7 @@ export class MachineEventHub {
         // that keeps this subscription alive is one machine's stream or another tab's aggregate.
         if (frame.event === "server_event") {
           this.#aggregate.publish(subscription.machineId, frame.event, frame.data);
+          for (const tap of this.#taps) tap(subscription.machineId, frame.data);
         }
         for (const reader of [...subscription.readers]) {
           if (reader.started) reader.sink.onEvent(frame);

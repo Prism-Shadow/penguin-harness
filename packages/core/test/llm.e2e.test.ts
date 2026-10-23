@@ -25,6 +25,9 @@ const maybe = runLive ? it : it.skip;
 describe(`GenerativeModel live e2e (${provider?.modelId ?? "skipped"})`, () => {
   maybe(
     "streams a short reply with partial text, a complete text, and token usage",
+    // Live calls have inherent network/server jitter: allow a generous timeout and retries so
+    // one slow API call doesn't fail CI (assertions stay strict; only transient timeouts are tolerated).
+    { timeout: 90_000, retry: 2 },
     async () => {
       const model = new GenerativeModel({
         modelId: provider!.modelId,
@@ -59,9 +62,6 @@ describe(`GenerativeModel live e2e (${provider?.modelId ?? "skipped"})`, () => {
       const usage = last.payload as { request: { total: number } };
       expect(usage.request.total).toBeGreaterThan(0);
     },
-    // Live calls have inherent network/server jitter: allow a generous timeout and retries so
-    // one slow API call doesn't fail CI (assertions stay strict; only transient timeouts are tolerated).
-    { timeout: 90_000, retry: 2 },
   );
 });
 
@@ -77,6 +77,7 @@ const maybeGemini = runGemini ? it : it.skip;
 describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquification${runGemini ? "" : ", skipped"})`, () => {
   maybeGemini(
     "same-name tool calls in two consecutive rounds get distinct tool_call_ids; a tool_result sent back with a suffixed id is paired correctly",
+    { timeout: 120_000, retry: 2 },
     async () => {
       const model = new GenerativeModel({
         modelId: "gemini-3.5-flash",
@@ -142,6 +143,5 @@ describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquificatio
       );
       expect(r3.calls.length + r3.text.length).toBeGreaterThan(0);
     },
-    { timeout: 120_000, retry: 2 },
   );
 });
