@@ -1843,6 +1843,7 @@ export const en: Strings = {
     onMachineHint: (machine: string) =>
       `This agent lives on ${machine}: its settings, chats and deletion all happen on that machine, apart from this server's agents of the same id.`,
     usageThisServerOnly: "The usage center counts this server's agents only",
+    readingMachineAgents: (machine: string): string => `Reading the agents on ${machine}…`,
     deleteConfirmOnMachine: (name: string, machine: string): string =>
       `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",

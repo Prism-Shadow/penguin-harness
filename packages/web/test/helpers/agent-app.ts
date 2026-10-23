@@ -21,8 +21,9 @@
  * take it out of reach or bring it back mid-test ({@link AgentServer.setReconnecting}; the page
  * hears of it through `publishMachinesChanged`, as the server's event would tell it). It can be
  * made slow — every answer held until released ({@link AgentServer.hold} with its id) — or have
- * one read fail as an unreachable server does ({@link AgentServer.failNext}); what was answered
- * so far reads back through {@link AgentServer.requests}.
+ * one read fail as an unreachable server does ({@link AgentServer.failNext}); one request, of
+ * any server, can be held on its own ({@link AgentServer.holdNext}), and what was answered so far
+ * reads back through {@link AgentServer.requests}. This server's own Agents can be deleted too.
  *
  * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
  * answers them masked, and the state switch turns one on or off. This server answers which
@@ -204,6 +205,10 @@ export interface AgentServer {
   failNext(machineId: string | null, path: RegExp): void;
   /** Every request answered so far. */
   requests(): ReadonlyArray<{ method: string; path: string; machine: string | null }>;
+  /** Holds the next request matching `path` on that server (null: this one) until `release()`. */
+  holdNext(machineId: string | null, path: RegExp): { release(): void };
+  /** The ids of this server's Agents now (a delete here removes one). */
+  localAgents(): string[];
   /** How the MCP connection test answers an entry (by default: connected, no tools). */
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
   /** Takes a machine out of reach (being brought back), or brings it back. */
@@ -282,6 +287,10 @@ export function agentServer(
   const machineHolds = new Map<string, Array<() => void>>();
   /** Reads to fail once each, oldest first: the server they are on and the path they match. */
   let failures: Array<{ machine: string | null; path: RegExp }> = [];
+  /** Requests to hold once each, oldest first, with the answers they wait for. */
+  let oneHolds: Array<{ machine: string | null; path: RegExp; waiting: Array<() => void> }> = [];
+  /** This server's Agents: the one the suites configure, unless a test deleted it. */
+  let localAgentIds = [AGENT_ID];
   const answered: Array<{ method: string; path: string; machine: string | null }> = [];
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
     ok: true,
@@ -476,7 +485,12 @@ export function agentServer(
       return json({ agents: [] });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
-      return json({ agents: [{ ...summaryOf(AGENT_ID), name: stored.config.name }] });
+      return json({
+        agents: localAgentIds.map((id) => ({
+          ...summaryOf(id),
+          name: id === AGENT_ID ? stored.config.name : id,
+        })),
+      });
     }
     if (path === `/api/projects/${PROJECT_ID}/chat-defaults`)
       return json(options.chatDefaults ?? {});
@@ -519,6 +533,12 @@ export function agentServer(
     if (method !== "GET") {
       const refusedWrite = refused();
       if (refusedWrite !== null) return refusedWrite;
+    }
+    const localAgent = /^\/api\/projects\/[^/]+\/agents\/([^/]+)$/.exec(path);
+    if (localAgent !== null && method === "DELETE" && request.machine === null) {
+      const agentId = decodeURIComponent(localAgent[1]!);
+      localAgentIds = localAgentIds.filter((id) => id !== agentId);
+      return new Response(null, { status: 204 });
     }
     if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
     if (path.startsWith(`${AGENT_PATH}/workbenches/`)) {
@@ -638,6 +658,13 @@ export function agentServer(
     }
     const machineHold = request.machine === null ? undefined : machineHolds.get(request.machine);
     if (machineHold !== undefined) await new Promise<void>((resolve) => machineHold.push(resolve));
+    const oneHold = oneHolds.find(
+      (h) => h.machine === request.machine && h.path.test(request.path),
+    );
+    if (oneHold !== undefined) {
+      oneHolds = oneHolds.filter((h) => h !== oneHold);
+      await new Promise<void>((resolve) => oneHold.waiting.push(resolve));
+    }
     const response = failed(request) ?? answer(request);
     answered.push({ method: request.method, path: request.path, machine: request.machine });
     return response;
@@ -681,6 +708,17 @@ export function agentServer(
       failures.push({ machine, path });
     },
     requests: () => [...answered],
+    holdNext: (machine, path) => {
+      const entry = { machine, path, waiting: [] as Array<() => void> };
+      oneHolds.push(entry);
+      return {
+        release: () => {
+          oneHolds = oneHolds.filter((h) => h !== entry);
+          for (const resume of entry.waiting.splice(0)) resume();
+        },
+      };
+    },
+    localAgents: () => [...localAgentIds],
     release: () => {
       const waiting = held ?? [];
       held = null;
