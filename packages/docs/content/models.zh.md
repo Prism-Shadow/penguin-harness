@@ -493,7 +493,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | atlascloud | — | Atlas Cloud（OpenAI 兼容网关），预置 base URL `https://api.atlascloud.ai/v1`；模型 id 带厂商前缀（如 `deepseek-ai/deepseek-v4.1-flash`） |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
-| minimax | `MINIMAX_API_KEY` | `MiniMax-M3`，上下文窗口 1,000,000 Token，支持视觉，按 id 路由到 MiniMax 官方的 Responses 客户端（`minimax-official`）；无预置 base URL，请求发往 `https://api.minimax.io/v1`，除非 `MINIMAX_BASE_URL` 另有指定；接受 Token Plan 订阅密钥或按量付费 API key |
+| minimax | `MINIMAX_API_KEY` | `MiniMax-M3.1-Flash` 与 `MiniMax-M3`，上下文窗口均为 1,000,000 Token，支持视觉，按 id 路由到 MiniMax 官方的 Responses 客户端（`minimax-official`）；无预置 base URL，请求发往 `https://api.minimax.io/v1`，除非 `MINIMAX_BASE_URL` 另有指定；接受 Token Plan 订阅密钥或按量付费 API key |
 | qwen-pay-as-you-go | — | Qwen 按量付费（DashScope 的 OpenAI 兼容端点），预置 base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`；转售的第三方模型保留供应商前缀 id（如 `kimi/kimi-k3`） |
 | qwen-token-plan | — | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；价格取自各模型页面的官方牌价（预览模型只有配额倍率优惠，没有牌价） |
 | modelscope | — | 魔搭的 OpenAI 兼容 api-inference 网关，预置 base URL `https://api-inference.modelscope.cn/v1`；id 就是上游仓库名（如 `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）；分组标题栏可以经授权中转层为你自动授权一把 token，也可以手动设置。见 [ModelScope 分组](#modelscope-分组) |
@@ -550,7 +550,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 预置模型目录包含以下模型：
 
 - `deepseek-flash` / `deepseek-v4-pro`
-- `MiniMax-M3`
+- `MiniMax-M3.1-Flash` / `MiniMax-M3`
 - `gemini-4-argon` / `gemini-3.8-flash`
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
@@ -579,8 +579,8 @@ Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图
 - **没有价格的条目。** 价格字段可以整体缺席，含义是「没人查过这家的价格」，而不是免费：这类条目在**模型库**页面不显示价格徽标，成本中心把它的用量报为未计价。目录里目前只有 ModelScope 的预置条目是这样——魔搭的 api-inference 是计费的，但它的模型页面是客户端渲染的，读不到费率。写成三个 0 反而更糟：那会被当作免费档，给一个计费网关打上「Free」徽标。
 - **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）、Gemini 3.1 Pro（200K 以上）和 Claude Haiku 5.5（100K 以上，每项费率为 5 倍）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
-  - 十条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813`，OpenRouter 的 `deepseek/deepseek-v4.1-flash`，Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
-  - TokenDance 还在高峰时段对这三条再打 8 折，`deepseek-v4.1-flash` 在空闲时段也打。这一条把 8 折作为促销与时段规则并列声明，卡片在高峰时段显示 `省 20%`、空闲时段显示 `省 60%`，成本中心按 TokenDance 实收计费。`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813` 的 8 折只在高峰时段生效，与时段规则并列的促销表达不了，所以它们的高峰时段按牌价计费，比 TokenDance 实收高 25%。
+  - 十二条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、`deepseek-v4.1-flash-1017`、`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813`，OpenRouter 的 `deepseek/deepseek-v4.1-flash` 和 `deepseek/deepseek-v4.1-flash-1017`，Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
+  - TokenDance 还在高峰时段对这四条再打 8 折，`deepseek-v4.1-flash` 与 `deepseek-v4.1-flash-1017` 在空闲时段也打。这两条把 8 折作为促销与时段规则并列声明，卡片在高峰时段显示 `省 20%`、空闲时段显示 `省 60%`，成本中心按 TokenDance 实收计费。`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813` 的 8 折只在高峰时段生效，与时段规则并列的促销表达不了，所以它们的高峰时段按牌价计费，比 TokenDance 实收高 25%。
   - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
 - **固定折扣。** 目前有八个 TokenDance 模型在打折：
