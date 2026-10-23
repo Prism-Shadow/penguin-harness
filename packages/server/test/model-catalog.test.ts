@@ -504,8 +504,9 @@ describe("model-catalog", () => {
         [0, 0, 0],
       );
       expect(m.pricing!.unit, m.modelId).toBe("usd_per_mtok");
-      // Chat Completions on the wire, so the credential fallback is the OPENAI_* pair.
-      expect(rowEnvKey(m), m.modelId).toBe("OPENAI_API_KEY");
+      // Chat Completions on the wire, but vLLM's own credentials: the client never reads
+      // OPENAI_*.
+      expect(rowEnvKey(m), m.modelId).toBe("VLLM_API_KEY");
     }
     // The upstream id survives verbatim, capitals and all — it is what the vLLM server was
     // started with, and MMSP's per-model thinking table lowercases it on its own side.
@@ -1183,12 +1184,16 @@ describe("model-catalog", () => {
       "qwen-token-plan",
       "qwen-pay-as-you-go",
       "modelscope",
-      "vllm",
       "custom",
     ]) {
       expect(providerInfo(id)!.envKey).toBe("OPENAI_API_KEY");
       expect(providerInfo(id)!.envBaseUrlKey).toBe("OPENAI_BASE_URL");
     }
+    // vLLM's client speaks Chat Completions but reads vLLM's own pair.
+    expect([providerInfo("vllm")!.envKey, providerInfo("vllm")!.envBaseUrlKey]).toEqual([
+      "VLLM_API_KEY",
+      "VLLM_BASE_URL",
+    ]);
     // gatewayBaseUrl (prefilled by group in the frontend's "add model" dialog) is only carried by the gateway providers.
     expect(providerInfo("openrouter")!.gatewayBaseUrl).toBe("https://openrouter.ai/api/v1");
     expect(providerInfo("siliconflow")!.gatewayBaseUrl).toBe("https://api.siliconflow.cn/v1");
@@ -2286,7 +2291,9 @@ describe("environment variable names (what MMSP's routed client reads)", () => {
     // vLLM's preset table names the local server, whose client takes no key from the
     // environment for it.
     expect(hint("vllm", table.vllm)).toBeUndefined();
-    // A group with a protocol and no base URL: the protocol's variable, whoever the group is.
+    // A group with a protocol and no base URL: the protocol's variable, whoever the group is —
+    // VLLM_API_KEY for vLLM's client, never OPENAI_API_KEY.
+    expect(hint("vllm", { client_type: "openai-chat-vllm-adapter" })).toBe("VLLM_API_KEY");
     expect(hint("my-group", { client_type: "ant-messages" })).toBe("ANTHROPIC_API_KEY");
     expect(hint("zhipu", { client_type: "zai-official" })).toBe("ZAI_API_KEY");
     // A user group with neither names nothing: its rows route by id, which a group cannot know.
@@ -2303,6 +2310,10 @@ describe("environment variable names (what MMSP's routed client reads)", () => {
     );
     expect(providerDefaultBaseUrl("custom", { clientType: "openai" })).toBe(
       "https://api.openai.com/v1",
+    );
+    // vLLM's client goes to the local vLLM server, never to OpenAI.
+    expect(providerDefaultBaseUrl("vllm", { clientType: "openai-chat-vllm-adapter" })).toBe(
+      "http://127.0.0.1:8000/v1",
     );
     // A gateway, custom or user-defined group with no protocol: its rows route by id.
     for (const id of ["tokendance", "custom", "my-group"]) {
@@ -2378,6 +2389,19 @@ describe("environment variable names (what MMSP's routed client reads)", () => {
     expect(
       modelEnvironment({ ...row, apiKey: "sk-row" }, { baseUrl: "https://gw.example/v1" }),
     ).toEqual({});
+    // A vLLM row with no base URL anywhere reads vLLM's own pair and goes to the local
+    // server; with a base URL and no key it is called keyless, so it reads nothing.
+    const vllm = {
+      provider: "vllm",
+      modelId: "Qwen/Qwen3.8-27B",
+      clientType: "openai-chat-vllm-adapter",
+    };
+    expect(modelEnvironment(vllm, undefined)).toEqual({
+      apiKeyEnv: "VLLM_API_KEY",
+      baseUrlEnv: "VLLM_BASE_URL",
+      defaultBaseUrl: "http://127.0.0.1:8000/v1",
+    });
+    expect(modelEnvironment(vllm, { baseUrl: "http://gpu-box.lan:8000/v1" })).toEqual({});
     // An open MMSP server is called keyless; an id nothing routes reads nothing.
     expect(
       modelEnvironment(

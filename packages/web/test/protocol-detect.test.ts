@@ -292,6 +292,15 @@ describe("envHintFor (the dialog promises only what MMSP's routed client reads)"
     expect(
       keyHint("my-group", "deepseek-ai/DeepSeek-V4-Pro", "", "", { clientType: "openai-chat" }),
     ).toBe("OPENAI_API_KEY");
+    // A vLLM row with no base URL anywhere reads vLLM's own variables, never OPENAI_*, and its
+    // requests go to the local server unless VLLM_BASE_URL is set.
+    expect(
+      envHintFor("vllm", "Qwen/Qwen3.8-27B", "", "", { clientType: "openai-chat-vllm-adapter" }),
+    ).toEqual({
+      apiKeyEnv: "VLLM_API_KEY",
+      baseUrlEnv: "VLLM_BASE_URL",
+      defaultBaseUrl: "http://127.0.0.1:8000/v1",
+    });
     // vLLM's preset table names the local server, whose client takes no key from the
     // environment for it.
     expect(

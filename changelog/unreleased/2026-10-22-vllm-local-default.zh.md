@@ -8,7 +8,7 @@
 
 [English](2026-10-22-vllm-local-default.md)
 
-vLLM 分组不再读取 OpenAI 的环境变量。MMSP 的 vLLM 客户端改用自己的凭据（MMSP [#276](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/276)），PenguinHarness 需要包含这一改动的 MMSP 版本。
+vLLM 分组不再读取 OpenAI 的环境变量。MMSP 的 vLLM 客户端改用自己的凭据（MMSP [#276](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/276)），随 MMSP 0.5.5 发布；PenguinHarness 现在依赖该版本。
 
 ## 变更内容
 

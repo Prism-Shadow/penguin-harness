@@ -8,7 +8,7 @@
 
 [中文版](2026-10-22-vllm-local-default.zh.md)
 
-The vLLM group stopped reading the OpenAI environment. MMSP's vLLM client now takes its own credentials (MMSP [#276](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/276)), and PenguinHarness requires the MMSP release that carries it.
+The vLLM group stopped reading the OpenAI environment. MMSP's vLLM client now takes its own credentials (MMSP [#276](https://github.com/Prism-Shadow/model-message-stream-protocol/pull/276)), released in MMSP 0.5.5, which PenguinHarness now requires.
 
 ## What changed
 

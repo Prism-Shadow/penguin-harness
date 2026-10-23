@@ -2151,6 +2151,34 @@ describe("group connections ([providers.<id>])", () => {
     });
   });
 
+  it("a vLLM group cleared of its base URL previews VLLM_API_KEY and never the OpenAI key; on a base URL it previews no variable", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-openai-test-secret-value-789");
+    vi.stubEnv("VLLM_API_KEY", "vllm-test-secret-value-321");
+    try {
+      const models = [{ provider: "vllm", modelId: "qwen3.8-27b-local" }];
+      expect((await api.put(url(), { models })).status).toBe(200);
+      // A new Project's group points at the local server: called keyless, no variable.
+      const seeded = (await (await api.get(url())).json()) as ModelsResponse;
+      expect(seeded.providers.vllm?.baseUrl).toBe("http://127.0.0.1:8000/v1");
+      const onServer = pick(seeded, "vllm", "qwen3.8-27b-local");
+      expect(onServer.envKey).toBeUndefined();
+      expect(onServer.effective.apiKeySource).toBe("none");
+      // Cleared, the row goes where VLLM_BASE_URL points and reads VLLM_API_KEY.
+      const cleared = await api.put(groupUrl("vllm"), { baseUrl: "" });
+      expect(cleared.status).toBe(200);
+      const text = await cleared.text();
+      expect(text).not.toContain("sk-openai-test-secret-value-789");
+      expect(text).not.toContain("vllm-test-secret-value-321");
+      expect(pick(JSON.parse(text) as ModelsResponse, "vllm", "qwen3.8-27b-local")).toMatchObject({
+        envKey: "VLLM_API_KEY",
+        envKeyMasked: "vllm…-321",
+        effective: { apiKeySource: "env", apiKeyMasked: "vllm…-321" },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("a group base URL that is not an absolute http(s) URL is a 400 on both write routes and writes nothing; a valid one is stored and a blank one clears it", async () => {
     const models = [{ provider: "vllm", modelId: "qwen3.8-27b-local" }];
     expect((await api.put(url(), { models })).status).toBe(200);

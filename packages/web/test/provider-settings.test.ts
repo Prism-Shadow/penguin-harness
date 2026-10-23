@@ -451,6 +451,9 @@ describe("a blank group base URL names where the requests go", () => {
     expect(groupBaseUrlHint("my-ollama", { clientType: "openai-chat" })).toBe(
       S.models.baseUrlDefault("https://api.openai.com/v1"),
     );
+    expect(groupBaseUrlHint("vllm", { clientType: "openai-chat-vllm-adapter" })).toBe(
+      S.models.baseUrlDefault("http://127.0.0.1:8000/v1"),
+    );
   });
 
   it("says only that the client's default applies where no one client answers for the group", () => {

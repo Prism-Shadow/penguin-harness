@@ -628,8 +628,9 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // this group are documented.
     id: "vllm",
     label: "vLLM",
-    envKey: "OPENAI_API_KEY",
-    envBaseUrlKey: "OPENAI_BASE_URL",
+    // vLLM's own pair, which MMSP's vLLM client reads, and never OpenAI's.
+    envKey: "VLLM_API_KEY",
+    envBaseUrlKey: "VLLM_BASE_URL",
     modelsUrl: "https://recipes.vllm.ai/",
     clientType: VLLM_CLIENT_TYPE,
     // The served ids are the user's own, so this group keeps taking models added by hand.
