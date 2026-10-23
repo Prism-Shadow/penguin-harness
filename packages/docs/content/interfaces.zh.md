@@ -93,11 +93,13 @@ CLI 把终端 I/O 接到这条边界上，Server 把 HTTP 请求和 SSE 通道�
 
 ## LLMInterface
 
-模型侧的完整契约只有一个方法：
+模型侧的完整契约是一个方法，外加一个可选属性：
 
 ```ts
 interface LLMInterface {
   streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  readonly defaultThinkingLevel?: ThinkingLevelName; // the level a request with no pin goes out at;
+                                                     // the engine sends and records it per request
 }
 
 interface GenerativeModelParameters {

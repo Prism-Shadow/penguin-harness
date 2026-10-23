@@ -1497,6 +1497,7 @@ export const en: GalleryStrings = {
             ],
             allowOther: true,
           },
+          answer: "SQLite",
         },
         {
           lead: "The change passed every check.",
@@ -1526,6 +1527,7 @@ export const en: GalleryStrings = {
               { label: "End-to-end tests", description: "About fifteen minutes; needs a browser" },
             ],
           },
+          answer: "Type check, Unit tests",
         },
         {
           lead: "Give the deployment details in one go:",
@@ -1585,6 +1587,16 @@ export const en: GalleryStrings = {
             ],
             submitLabel: "Fill in answers",
           },
+          answer: [
+            "Service name: billing-api",
+            "Region: us-east",
+            "Add-ons: CDN, Backups",
+            "Replicas: 3 pods",
+            "Scale out at: 80%",
+            "Notes:",
+            "  Keep the old version for a day",
+            "  Page me if p95 passes 400 ms",
+          ].join("\n"),
         },
         {
           lead: "Then pick when it goes out:",
@@ -1654,6 +1666,7 @@ export const en: GalleryStrings = {
       a2uiDiagram:
         "flowchart LR\n  A[Request] --> B{Cached?}\n  B -->|yes| C[Serve it]\n  B -->|no| D[Fetch from origin]\n  D --> C",
       a2uiInvalidLead: "A block that cannot be shown gives its reason and its source:",
+      a2uiAnswered: "Answered: read-only, the answers read back from the message the reader sent",
     },
     layout: {
       page: "Page and header",

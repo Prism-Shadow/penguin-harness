@@ -12,10 +12,10 @@
  *   start/delta become `K.delta`, a `stop` fragment becomes nothing, and the complete message
  *   becomes `K.done`. No `.done` is built from fragments; a tool call's `arguments` stay the raw
  *   JSON string.
- * - The run's own input — the envelopes the run handler submitted, which the manager publishes at
- *   launch — is dropped, and nothing on the channel counts before it: whatever the Session
- *   published earlier (an idle `task_state` a child's state change re-published, a background
- *   child's output) is not this run's.
+ * - The run's own input — the envelopes the run handler submitted, which the manager publishes
+ *   right behind the run's first `task_begin` — is dropped, and nothing on the channel counts
+ *   before it: whatever the Session published earlier (that `task_begin`, an idle `task_state` a
+ *   child's state change re-published, a background child's output) is not this run's.
  * - Request ordinals, held usage and the compaction flag are kept per origin: a child Session
  *   counts its own requests and never disturbs the main Session's.
  * - Usage: a `token_usage` precedes its `request_end` and is stamped on that `request.done`, or,
@@ -124,8 +124,8 @@ export class AmspTranslator {
   private lastMainText: StopReason | null = null;
 
   /**
-   * `input` is exactly what the run handler hands `startTask`: the manager publishes those
-   * envelopes at launch, and their serialized form is how their echo is recognized.
+   * `input` is exactly what the run handler hands `startTask`: the manager echoes those
+   * envelopes as the run starts, and their serialized form is how their echo is recognized.
    */
   constructor(input: readonly OmniMessage[], opts: AmspTranslatorOptions = {}) {
     this.now = opts.now ?? (() => new Date());
@@ -500,7 +500,9 @@ export class AmspTranslator {
         const p = msg.payload as ToolListReadyPayload;
         return [{ type: "tools.ready", ...head, tools: p.tools.map((t) => ({ ...t })) }];
       }
-      // `subagent` pointers are Trace-only; anything else is not part of AMSP.
+      // `subagent` pointers are Trace-only, and Task records (`task_begin` / `task_end`) have
+      // no AMSP event: a run is bounded by `run.started` / `run.done`. Anything else is not
+      // part of AMSP, whose vocabulary is closed.
       default:
         return [];
     }

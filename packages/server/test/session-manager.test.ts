@@ -229,7 +229,7 @@ describe("session-manager", () => {
     expect((err as { status: number }).status).toBe(404);
   });
 
-  it("startTask: publishes the input first; when driving ends it returns to idle and pushes task_state", async () => {
+  it("startTask: echoes the input ahead of the run's output; when driving ends it returns to idle and pushes task_state", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");
@@ -237,8 +237,11 @@ describe("session-manager", () => {
     expect(sessionId).toBe("session-1");
     await waitFor(() => manager.statusOf("session-1") === "idle" && recorded.length >= 3);
 
-    // The first entry is the input message (visible to other subscribers), followed by task_state: running.
-    const first = JSON.parse(events[0]!.data) as { payload: { text: string } };
+    // The first message on the stream is the input (visible to other subscribers): this run
+    // opens with no task_begin, so the echo goes out ahead of its first record.
+    const first = JSON.parse(events.find((e) => e.event === undefined)!.data) as {
+      payload: { text: string };
+    };
     expect(first.payload.text).toBe("hello");
     const states = serverEvents(events).filter((e) => e.type === "task_state");
     expect(states.map((s) => s.state)).toEqual(["running", "idle"]);

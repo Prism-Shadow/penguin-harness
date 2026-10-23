@@ -122,7 +122,7 @@ describe("the board's judgement", () => {
     [80, "attention"],
     [94.9, "attention"],
     [95, "danger"],
-  ])("CPU at %s %% is %s, and memory and swap at the same share read the same", (pct, expected) => {
+  ])("CPU at %s percent is %s; memory and swap at that share read the same", (pct, expected) => {
     const resolved = tone({
       cpu: { percent: pct },
       memory: { used: pct, total: 100 },

@@ -16,6 +16,8 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   thinkingMessage,
   tokenUsage,
   toolCall,
@@ -266,6 +268,20 @@ describe("buildContextBreakdown", () => {
       userText("hi"),
       compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 4 }),
       compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+    ]);
+    expect(b.contextClosed).toBe(true);
+  });
+
+  it("keeps the context closed when the Task records written after the compaction follow it", () => {
+    // The Task that ended on the compaction closes, and the next one opens, in this shard:
+    // Task records never open the next file.
+    const b = buildContextBreakdown([
+      taskBegin(),
+      userText("hi"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 4 }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      taskEnd(),
+      taskBegin(),
     ]);
     expect(b.contextClosed).toBe(true);
   });

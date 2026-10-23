@@ -203,7 +203,8 @@ The server's translator reads what the Session publishes while it runs and write
 
 | OmniMessage record or server event | AMSP |
 | --- | --- |
-| Anything the Session published before the run's input (an idle `task_state` a subagent's state change re-published, a background subagent's output) | Not sent: the translator starts at the input's echo |
+| Anything the Session published before the run's input (the run's first `task_begin`, an idle `task_state` a subagent's state change re-published, a background subagent's output) | Not sent: the translator starts at the input's echo |
+| `task_begin` / `task_end` | Not sent: a run is bounded by `run.started` and `run.done` |
 | The run's own input | Not sent |
 | `session_meta` | `context.opened`: a subagent's, or a model switch's between runs; the context a compaction opens is written to the Trace only |
 | `mcp_connect_begin` / `mcp_connect_end` | `mcp_connect.started` / `mcp_connect.done` |
