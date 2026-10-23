@@ -9,7 +9,7 @@ excerpt: "Do not rely on longer prompts to constrain agents for vibe coding. Sto
 
 The 2025 DORA Report links wider AI use to lower software delivery stability. Teams lacking tests, version control, and fast feedback see more instability as AI-generated change volume rises[^1].
 
-**Rules for vibe coding agents should live in your repository, arranged as a pyramid**. The tip holds a few RFC-style hard rules, the middle minimal core interfaces, the base a large set of reusable components. Higher layers need more human attention; lower layers need no line-by-line review.
+Rules for vibe coding agents should live in your repository, arranged as a pyramid. The tip holds a few RFC-style hard rules, the middle minimal core interfaces, the base a large set of reusable components. **Higher layers need more human attention; lower layers need no line-by-line review**.
 
 **TL;DR**
 - Chat agreements do not persist across sessions; rule files only provide context and cannot block violations
@@ -17,20 +17,20 @@ The 2025 DORA Report links wider AI use to lower software delivery stability. Te
 - When an agent repeats a mistake, add a rule and test instead of lengthening prompts
 
 ## Code as memory
-These repository-stored rules persist across sessions through code as memory; long prompts cannot. Every agent session starts with a blank context window, so chat agreements never carry over. **Rule files load as context at session start, but cannot block actions alone. Blocking takes a code hook, policy check, or test**[^2].
+These repository-stored rules persist across sessions through code as memory; long prompts cannot. Every agent session starts with a blank context window, so chat agreements never carry over. Rule files load as context at session start, but cannot block actions alone. Blocking takes a code hook, policy check, or test[^2].
 
 A Replit user documented telling an AI not to modify code without permission, yet the AI deleted a production database. The user noted chat agreements cannot enforce code freezes in these tools[^3].
 
 Critics argue longer, stricter prompts fix this. Longer rule files eat more context and reduce adherence.
 
-We arrange repository rules as a pyramid, focusing human attention on its narrow top.
+**We arrange repository rules as a pyramid, focusing human attention on its narrow top**.
 
 <figure class="post-figure" data-figure="vibe-rules-three-layers"> <svg class="fig-svg" viewBox="0 0 560 346" role="img" aria-labelledby="rules-for-vibe-coding-vibe-rules-three-layers-en-title"> <title id="rules-for-vibe-coding-vibe-rules-three-layers-en-title">Three-layer rule pyramid, narrow at the top and wide at the base, with human attention increasing upward and content volume increasing downward marked on the sides</title> <defs><marker id="rules-for-vibe-coding-vibe-rules-three-layers-en-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="fig-arrowhead"/></marker></defs> <text x="280" y="20" text-anchor="middle" class="fig-title">code as memory</text> <path d="M185.0 44H375.0L421.2 128H138.8Z" class="fig-box"/> <text x="280" y="71" text-anchor="middle" class="fig-title">Human rules</text> <text x="280" y="93" text-anchor="middle">25 rules, each read by a person</text> <text x="280" y="114" text-anchor="middle" class="fig-label">e.g. Trace is append-only</text> <path d="M134.4 136H425.6L471.8 220H88.2Z" class="fig-box"/> <text x="280" y="163" text-anchor="middle" class="fig-title">Interface abstractions</text> <text x="280" y="185" text-anchor="middle">3 core interfaces, people review only boundaries</text> <text x="280" y="206" text-anchor="middle" class="fig-label">e.g. Agent State boundary, approval through Human</text> <path d="M83.8 228H476.2L522.4 312H37.6Z" class="fig-box"/> <text x="280" y="255" text-anchor="middle" class="fig-title">Reusable components</text> <text x="280" y="277" text-anchor="middle">1489 source files, no line-by-line human review</text> <text x="280" y="298" text-anchor="middle" class="fig-label">e.g. hot update reuses terminal handover logic</text> <path d="M22 312V44" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-three-layers-en-arrow)"/> <text x="10" y="34" class="fig-note">Human attention ↑</text> <path d="M538 44V312" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-three-layers-en-arrow)"/> <text x="550" y="334" text-anchor="end" class="fig-note">Content volume ↓</text> </svg> <ol class="fig-steps"><li>Human attention ↑</li> <li>Content volume ↓</li> <li>Human rules</li> <li>25 rules, each read by a person</li> <li>e.g. Trace is append-only</li> <li>Interface abstractions</li> <li>3 core interfaces, people review only boundaries</li> <li>e.g. Agent State boundary, approval through Human</li> <li>Reusable components</li> <li>1489 source files, no line-by-line human review</li> <li>e.g. hot update reuses terminal handover logic</li></ol> <figcaption>The pyramid structure focuses human attention on the small set of hard rules at the tip, while the large volume of code at the base only needs to pass tests under rule constraints, no line-by-line review required</figcaption> </figure>
 
 ## Hard rules at the pyramid tip
-The narrow top of this pyramid holds 25 non-negotiable hard rules.
+**The narrow top of this pyramid holds 25 non-negotiable hard rules**.
 
-Each rule is reviewed by a person, backed by code paths and tests. **Agents cannot remember long rule lists, so only short, hard rules with enforcement are followed consistently**.
+Each rule is reviewed by a person, backed by code paths and tests. Agents cannot remember long rule lists, so only short, hard rules with enforcement are followed consistently.
 
 We use RFC-style one-decision rules, rarely changed after adoption[^4]. Take the Trace rule: Trace is append-only JSON Lines, history only appended, never modified in place. The Trace writer opens the file with O_APPEND for every record, writing in one `write(2)` call. Core tests check old Trace files stay append-only after rotation, and a multi-megabyte record is appended in one write.
 
@@ -39,9 +39,9 @@ Some say writing RFC-style rules is bureaucratic and slows vibe coding. Only rul
 <figure class="post-figure" data-figure="vibe-rules-rule-path"> <svg class="fig-svg" viewBox="0 0 560 242" role="img" aria-labelledby="rules-for-vibe-coding-vibe-rules-rule-path-en-title"> <title id="rules-for-vibe-coding-vibe-rules-rule-path-en-title">Four linear steps from rule establishment to enforcement, with a side branch marking in-session prompts as a soft constraint path</title> <defs><marker id="rules-for-vibe-coding-vibe-rules-rule-path-en-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="fig-arrowhead"/></marker></defs> <g transform="translate(5 0)"> <rect x="10.4" y="10" width="315.1" height="36" rx="6" class="fig-box"/> <text x="168" y="32.5" class="fig-label" text-anchor="middle">Numbered principles / single-decision proposals</text> <path d="M168 46V71" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-rule-path-en-arrow)"/> <rect x="78" y="72" width="180" height="36" rx="6" class="fig-box"/> <text x="168" y="94.5" class="fig-label" text-anchor="middle">Public documentation</text> <path d="M168 108V133" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-rule-path-en-arrow)"/> <rect x="78" y="134" width="180" height="36" rx="6" class="fig-box"/> <text x="168" y="156.5" class="fig-label" text-anchor="middle">Code implementation</text> <path d="M168 170V195" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-rule-path-en-arrow)"/> <rect x="78" y="196" width="180" height="36" rx="6" class="fig-box"/> <text x="168" y="218.5" class="fig-label" text-anchor="middle">Test assertions</text> <path d="M325.55 28H418.6V71" class="fig-link" marker-end="url(#rules-for-vibe-coding-vibe-rules-rule-path-en-arrow)"/> <rect x="298" y="72" width="241.2" height="36" rx="6" class="fig-link"/> <text x="418.6" y="94.5" class="fig-label" text-anchor="middle">In-session prompts (soft constraint)</text> </g> </svg> <ol class="fig-steps"> <li>Numbered principles / single-decision proposals</li> <li>Public documentation</li> <li>Code implementation</li> <li>Test assertions</li> <li>In-session prompts (soft constraint)</li> </ol> <figcaption>Hard rules cannot live only in prompts; code blocks violations at runtime, tests catch regressions in CI, and in-session prompts only act as soft reminders</figcaption> </figure>
 
 ## Core interface boundaries at the middle layer
-Beneath those hard rules, the middle layer holds three core interface abstractions. A person only reviews interface boundaries and dependencies, not their implementation.
+**Beneath those hard rules, the middle layer holds three core interface abstractions**. A person only reviews interface boundaries and dependencies, not their implementation.
 
-**Small interfaces limit accidental change scope; fixed dependencies block approval bypasses**.
+Small interfaces limit accidental change scope; fixed dependencies block approval bypasses.
 
 Agents may edit all configuration, prompts, and Skills inside Agent State. Command policy, credentials, API access toggles, and approval mode live outside Agent State or in server-side storage, unreachable when an agent edits its settings[^5].
 
@@ -54,9 +54,9 @@ Every tool call approval must use a Human interface callback; requests without a
 Some argue minimal interfaces limit agent capability. Only permissions an agent must never grant itself sit outside its reach; the rest is safe to hand over.
 
 ## Reusable components form the base
-Below these interface boundaries, the pyramid base holds code handed to agents: 1,489 TypeScript files across 12 packages in 0.2.16, nearly all reusable components[^7].
+**Below these interface boundaries, the pyramid base holds code handed to agents: 1,489 TypeScript files across 12 packages in 0.2.16, nearly all reusable components**[^7].
 
-Agents iterate on code under upper-layer rules. Humans skip line-by-line review; code only needs to pass tests. **We direct agents to prioritize existing abstractions and reuse code where possible**.
+Agents iterate on code under upper-layer rules. Humans skip line-by-line review; code only needs to pass tests. We direct agents to prioritize existing abstractions and reuse code where possible.
 
 GitClear analyzed 211 million lines changed from 2020 to 2024: refactoring share fell from 25% in 2021 to under 10% in 2024, while copy-pasted code rose from 8.3% to 12.3%[^8]. `test/icon-scale.test.ts` fails on duplicate caret icons, close crosses, or collapse arrows. A hot update hands running Tasks to the new build and reuses existing terminal handover logic.
 
@@ -67,9 +67,9 @@ Some argue fast coding speeds copying, making early abstraction unnecessary work
 ## Start with one rule
 These layered rules, including reuse rules, grow one at a time as an agent's mistakes show where a rule is missing. Mitchell Hashimoto writes of his own practice: every time an agent errs, build a mechanism to stop that error from recurring[^9].
 
-This pyramid exists to allocate attention. Humans focus on the small rule set at the tip; agents iterate on the large code base under tests. Repository rules, pinned by tests, are fixed once and apply to all future sessions.
+**This pyramid exists to allocate attention**. Humans focus on the small rule set at the tip; agents iterate on the large code base under tests. Repository rules, pinned by tests, are fixed once and apply to all future sessions.
 
-When an agent repeats a mistake, find the right layer, **add the rule, and pin it with a failing test. Do not make your prompt longer**.
+When an agent repeats a mistake, find the right layer, add the rule, and pin it with a failing test. Do not make your prompt longer.
 
 [^1]: [Announcing the 2025 DORA Report | Google Cloud Blog](https://cloud.google.com/blog/products/ai-machine-learning/announcing-the-2025-dora-report)
 [^2]: [How Claude remembers your project - Claude Code Docs](https://code.claude.com/docs/en/memory)

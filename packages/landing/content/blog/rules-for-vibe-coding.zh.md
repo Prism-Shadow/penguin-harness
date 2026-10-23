@@ -9,7 +9,7 @@ excerpt: "vibe coding 时别靠拉长提示词约束 Agent，把硬规矩放进�
 
 2025 年 DORA 报告显示，AI 普及与软件交付稳定性呈负相关。缺少自动化测试、成熟版本控制和快速反馈回路的团队，AI 带来的变更量越大，系统越容易失稳[^1]。
 
-vibe coding 时要给 Agent **立的规矩，应当存放在仓库内供每个 Session 启动时读取，组成上窄下宽的金字塔**。塔尖是少数类 RFC 的硬规则，中层是最小核心接口，塔基是大量可复用组件。层级越高内容越少、越需要人投入注意力，层级越低内容越多、越不需要人逐行审读。
+vibe coding 时要给 Agent 立的规矩，应当存放在仓库内供每个 Session 启动时读取，组成上窄下宽的金字塔。塔尖是少数类 RFC 的硬规则，中层是最小核心接口，塔基是大量可复用组件。**层级越高内容越少、越需要人投入注意力，层级越低内容越多、越不需要人逐行审读**。
 
 **TL;DR**
 - 聊天约定不跨会话保留，规则文件仅作上下文，无法拦截违规操作
@@ -17,20 +17,20 @@ vibe coding 时要给 Agent **立的规矩，应当存放在仓库内供每个 S
 - 下次 Agent 重复犯错，在对应层加规则配测试，不用拉长提示词
 
 ## 代码即记忆
-长提示词带不走跨会话规矩，仓库里的规矩跨会话生效，每个新 Agent 会话从空白上下文窗口启动，聊天里说过的规矩不会带到下一次。**规则文件在会话启动时作为上下文加载，无法拦截动作，拦截要靠代码钩子**[^2]。
+长提示词带不走跨会话规矩，仓库里的规矩跨会话生效，每个新 Agent 会话从空白上下文窗口启动，聊天里说过的规矩不会带到下一次。规则文件在会话启动时作为上下文加载，无法拦截动作，拦截要靠代码钩子[^2]。
 
 Replit 有用户记录，自己明确要求 AI 不要未经许可改代码，AI 仍删除了生产数据库。当事人提到这类 vibe coding 工具里无法靠聊天约定强制代码冻结[^3]。
 
 有人觉得写更长、更严格的提示词就能解决问题。更长的规则文件占用更多上下文，遵守率更低。
 
-我们把仓库里的规矩排成上窄下宽的金字塔，人的注意力集中在最上层。
+**我们把仓库里的规矩排成上窄下宽的金字塔，人的注意力集中在最上层**。
 
 <figure class="post-figure" data-figure="vibe-rules-three-layers"> <svg class="fig-svg" viewBox="0 0 560 346" role="img" aria-labelledby="rules-for-vibe-coding-vibe-rules-three-layers-zh-title"> <title id="rules-for-vibe-coding-vibe-rules-three-layers-zh-title">上窄下宽的三层规矩金字塔，左侧标注人注意力向上递增，右侧标注内容量向下递增</title> <defs><marker id="rules-for-vibe-coding-vibe-rules-three-layers-zh-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="fig-arrowhead"/></marker></defs> <text x="280" y="20" text-anchor="middle" class="fig-title">代码即记忆 (code as memory)</text> <path d="M185.0 44H375.0L421.2 128H138.8Z" class="fig-box"/> <text x="280" y="71" text-anchor="middle" class="fig-title">人的规矩</text> <text x="280" y="93" text-anchor="middle">25 条 人逐条审定</text> <text x="280" y="114" text-anchor="middle" class="fig-label">例：Trace 只追加</text> <path d="M134.4 136H425.6L471.8 220H88.2Z" class="fig-box"/> <text x="280" y="163" text-anchor="middle" class="fig-title">接口抽象</text> <text x="280" y="185" text-anchor="middle">3 个核心接口 人只看边界</text> <text x="280" y="206" text-anchor="middle" class="fig-label">例：Agent State 边界、审批走 Human 接口</text> <path d="M83.8 228H476.2L522.4 312H37.6Z" class="fig-box"/> <text x="280" y="255" text-anchor="middle" class="fig-title">可复用组件</text> <text x="280" y="277" text-anchor="middle">1489 个源文件 人不逐行读</text> <text x="280" y="298" text-anchor="middle" class="fig-label">例：热更新复用交接逻辑</text> <path d="M22 312V44" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-three-layers-zh-arrow)"/> <text x="10" y="34" class="fig-note">人注意力↑</text> <path d="M538 44V312" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-three-layers-zh-arrow)"/> <text x="550" y="334" text-anchor="end" class="fig-note">内容量↓</text> </svg> <ol class="fig-steps"><li>人注意力↑</li> <li>内容量↓</li> <li>人的规矩</li> <li>25 条 人逐条审定</li> <li>例：Trace 只追加</li> <li>接口抽象</li> <li>3 个核心接口 人只看边界</li> <li>例：Agent State 边界、审批走 Human 接口</li> <li>可复用组件</li> <li>1489 个源文件 人不逐行读</li> <li>例：热更新复用交接逻辑</li></ol> <figcaption>金字塔结构把人的注意力集中在塔尖的少数硬规则上，塔基的大量代码不需要逐行审读，只要在规则约束下通过测试即可</figcaption> </figure>
 
 ## 塔尖放少数硬规矩
-金字塔最上层放 25 条必须遵守的硬规矩。
+**金字塔最上层放 25 条必须遵守的硬规矩**。
 
-每条规矩都由人逐条审定，配套代码路径和测试守住。**规矩多了 Agent 记不住，只有少而硬、每条都有机制卡住的规则才会被稳定遵守**。
+每条规矩都由人逐条审定，配套代码路径和测试守住。规矩多了 Agent 记不住，只有少而硬、每条都有机制卡住的规则才会被稳定遵守。
 
 我们参考 RFC 单决策单条、落地后不轻易修改的写法，每条规则只讲一件事[^4]。以 Trace 规则为例，Trace 是 append-only 的 JSON Lines 文件，历史记录只追加、不原地修改。写入逻辑每次打开文件都用 O_APPEND，单次 `write(2)` 提交完整记录。核心测试会检查 Trace 文件轮转后的旧文件仍保持只追加，数 MB 的记录通过单次底层写入完成。
 
@@ -39,9 +39,9 @@ Replit 有用户记录，自己明确要求 AI 不要未经许可改代码，AI 
 <figure class="post-figure" data-figure="vibe-rules-rule-path"> <svg class="fig-svg" viewBox="0 0 560 242" role="img" aria-labelledby="rules-for-vibe-coding-vibe-rules-rule-path-zh-title"> <title id="rules-for-vibe-coding-vibe-rules-rule-path-zh-title">硬规矩从确立到生效的四个线性环节，旁路标注会话提示为软约束路径</title> <defs><marker id="rules-for-vibe-coding-vibe-rules-rule-path-zh-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="fig-arrowhead"/></marker></defs> <g transform="translate(16 0)"> <rect x="92" y="10" width="168" height="36" rx="6" class="fig-box"/> <text x="176" y="32.5" class="fig-label" text-anchor="middle">编号原则/单决定提案</text> <path d="M176 46V71" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-rule-path-zh-arrow)"/> <rect x="92" y="72" width="168" height="36" rx="6" class="fig-box"/> <text x="176" y="94.5" class="fig-label" text-anchor="middle">公开文档</text> <path d="M176 108V133" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-rule-path-zh-arrow)"/> <rect x="92" y="134" width="168" height="36" rx="6" class="fig-box"/> <text x="176" y="156.5" class="fig-label" text-anchor="middle">代码实现</text> <path d="M176 170V195" class="fig-edge" marker-end="url(#rules-for-vibe-coding-vibe-rules-rule-path-zh-arrow)"/> <rect x="92" y="196" width="168" height="36" rx="6" class="fig-box"/> <text x="176" y="218.5" class="fig-label" text-anchor="middle">测试断言</text> <path d="M260 28H367.95V71" class="fig-link" marker-end="url(#rules-for-vibe-coding-vibe-rules-rule-path-zh-arrow)"/> <rect x="300" y="72" width="135.9" height="36" rx="6" class="fig-link"/> <text x="368" y="94.5" class="fig-label" text-anchor="middle">会话提示（软约束）</text> </g> </svg> <ol class="fig-steps"> <li>编号原则/单决定提案</li> <li>公开文档</li> <li>代码实现</li> <li>测试断言</li> <li>会话提示（软约束）</li> </ol> <figcaption>硬规矩不能只停留在提示词里，代码在运行时拦住违规动作，测试在 CI 里抓回归，会话提示只做软提醒</figcaption> </figure>
 
 ## 中层划清核心接口边界
-金字塔的中间层是核心接口抽象，一共三个，人只需要审接口的边界和依赖关系，不用读边界后面的具体实现。
+**金字塔的中间层是核心接口抽象，一共三个**。人只需要审接口的边界和依赖关系，不用读边界后面的具体实现。
 
-**接口越小，Agent 误改范围越小，固定依赖就不会绕开必要审批**。
+接口越小，Agent 误改范围越小，固定依赖就不会绕开必要审批。
 
 Agent 可以修改 Agent State 目录内的所有配置、提示词和 Skill。命令策略、凭据、API 访问开关、审批模式放在 Agent State 目录外或服务端存储，Agent 编辑自身设置时碰不到这些内容[^5]。
 
@@ -54,9 +54,9 @@ Agent 可以修改 Agent State 目录内的所有配置、提示词和 Skill。�
 有人觉得最小接口会限制 Agent 的能力。放在外面的只是它永远不该给自己授权的部分，剩下的权限才能放心交给它。
 
 ## 塔基堆起可复用组件
-这份权限覆盖的可复用组件，构成了金字塔的塔基：0.2.16 的 12 个包里共 1489 个 TypeScript 源文件，几乎全部属于这一层[^7]。
+这份权限覆盖的可复用组件，构成了金字塔的塔基。**0.2.16 的 12 个包里共 1489 个 TypeScript 源文件**[^7]。几乎全部属于这一层。
 
-这些代码大部分由 Agent 在规则和接口的约束下迭代，人不需要逐行审读，只要测试通过、不违反上层规则即可。**我们明确告诉 Agent 优先改进现有抽象、能复用就复用**。
+这些代码大部分由 Agent 在规则和接口的约束下迭代，人不需要逐行审读，只要测试通过、不违反上层规则即可。我们明确告诉 Agent 优先改进现有抽象、能复用就复用。
 
 GitClear 分析 2020 到 2024 年共 2.11 亿行变更代码，其中重构占比从 2021 年的 25% 降到 2024 年的 10% 以下，复制粘贴行占比从 8.3% 升到 12.3%[^8]。`test/icon-scale.test.ts` 会在出现第二份 caret 图标、关闭叉或折叠箭头时失败。支持热更新交接运行中任务的改动，直接复用了终端交接已有的机制。
 
@@ -67,9 +67,9 @@ GitClear 分析 2020 到 2024 年共 2.11 亿行变更代码，其中重构占�
 ## 从一条规矩开始
 这些分层规则靠逐次补错完善，我们参考 Mitchell Hashimoto 的实践思路：每次发现 Agent 犯错，就做一个机制让它再也不犯同样的错[^9]。
 
-这个金字塔的核心作用是分配注意力。人把精力放在塔尖的少数规则上，塔基的大量代码交给 Agent 在测试约束下迭代，不用逐行读。规矩放在仓库里、用测试钉住，一次修好，所有后续会话都不会再犯。
+**这个金字塔的核心作用是分配注意力**。人把精力放在塔尖的少数规则上，塔基的大量代码交给 Agent 在测试约束下迭代，不用逐行读。规矩放在仓库里、用测试钉住，一次修好，所有后续会话都不会再犯。
 
-下次 Agent 重复犯同一个错，先判断这个规矩属于哪一层，**把它写进去，再配一个会失败的测试钉住，不用把提示词写得更长**。
+下次 Agent 重复犯同一个错，先判断这个规矩属于哪一层，把它写进去，再配一个会失败的测试钉住，不用把提示词写得更长。
 
 [^1]: [Announcing the 2025 DORA Report | Google Cloud Blog](https://cloud.google.com/blog/products/ai-machine-learning/announcing-the-2025-dora-report)
 [^2]: [How Claude remembers your project - Claude Code Docs](https://code.claude.com/docs/en/memory)
