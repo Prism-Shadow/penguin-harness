@@ -21,6 +21,7 @@ them when the task reaches them:
 | `reference/changelog.md` | Writing or auditing a changelog entry |
 | `reference/model-catalog.md` | Touching the server's model catalog, pricing, provider groups, which environment variable a keyless row reads, or glyphs |
 | `reference/authoring.md` | Writing a blog post, auditing prose, or proposing a simplification |
+| The `penguin-harness-writing` skill | Writing or revising a blog post, a docs page or landing copy: a gateway model writes every word, through its prompts and checks |
 | `reference/release.md` | Preparing a release: the branch order, what changes, the announcement, the blog post and its screenshots |
 | `reference/testing.md` | **Writing or changing any test**: scenarios first, behaviour only, one fake per boundary, branch coverage, speed, CI time as a cost |
 | `reference/ai-slop.md` | **Every** change a user sees or reads: UI, styles, UI strings, docs, landing, blog, changelog — the rules, the scanner, the catalogue of tells |
