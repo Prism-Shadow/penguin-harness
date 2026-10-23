@@ -2,10 +2,17 @@
  * The component library: every topic is registered once, sits in one of the two groups, has a
  * board and a title in both dictionaries, and reaches its frame through the same preference
  * params as the app frames; the sections' links in the gallery bar open where the owner asked.
+ * The content board's answered A2UI copies read their sample answers back in full.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import {
+  choiceFillText,
+  formFillText,
+  parseChoicePick,
+  parseFormFill,
+} from "@prismshadow/penguin-core/a2ui";
 import { STREAM_REVEALS, TOKEN_NAMES } from "@prismshadow/penguin-ui";
 import { HOME_SURFACE } from "../src/app/surfaces";
 import { SEEDED_KEYS } from "../src/app/frame";
@@ -278,6 +285,26 @@ describe("the content board", () => {
     // KaTeX's sheet comes with the package's Markdown; neither frame reaches into node_modules.
     for (const frame of ["../src/library/main.tsx", "../src/app/main.tsx"]) {
       expect(read(frame)).not.toMatch(/katex\.min\.css/);
+    }
+  });
+
+  it("answers a choice and a form in both dictionaries with exactly what each would fill", () => {
+    // An answer the block cannot read back in full would show its answered copy half asked.
+    for (const [lang, S] of [
+      ["zh", zh],
+      ["en", en],
+    ] as const) {
+      const answered = S.library.content.a2uiReply.flatMap(({ spec, answer }) =>
+        answer === undefined ? [] : [{ spec, answer }],
+      );
+      expect(new Set(answered.map(({ spec }) => spec.type))).toEqual(new Set(["choice", "form"]));
+      for (const { spec, answer } of answered) {
+        if (spec.type === "form") {
+          expect(formFillText(spec, parseFormFill(spec, answer) ?? {}, lang)).toBe(answer);
+        } else if (spec.type === "choice") {
+          expect(choiceFillText(spec, parseChoicePick(spec, answer) ?? [], lang)).toBe(answer);
+        }
+      }
     }
   });
 

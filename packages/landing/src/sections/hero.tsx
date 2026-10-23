@@ -104,7 +104,7 @@ export function Hero() {
         </p>
 
         <p
-          className="hero-automation anim-rise mt-5 leading-6 text-balance text-gray-600 sm:leading-8 dark:text-gray-300"
+          className="hero-automation anim-rise mt-5 leading-6 text-balance break-keep text-gray-600 [overflow-wrap:break-word] sm:leading-8 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
           {S.hero.automation}

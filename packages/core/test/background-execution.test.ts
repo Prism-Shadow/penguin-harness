@@ -25,6 +25,7 @@ import {
   buildBackgroundTaskDoneMessage,
   emptyTokenCounts,
   isSteeredBackgroundNotice,
+  isTaskRecord,
   parseBackgroundTaskDoneMessage,
   partialText,
   stripLeadingMarkerBlocks,
@@ -1187,11 +1188,11 @@ describe("sibling background subagents survive a completion notice (issue #581)"
     expect(env.hasRunningBackgroundSubagents()).toBe(true);
 
     // Steering path: beta settles while a Task runs — the engine drains the notice into that
-    // Task at its next boundary, and the host is never signaled.
+    // Task at its next boundary, and the host is never signaled. The engine's first record is
+    // the moment it runs: the Task's task_begin comes before the engine starts.
     let released = false;
     for await (const msg of session.run([userText("how are they doing?")])) {
-      void msg;
-      if (!released) {
+      if (!released && !isTaskRecord(msg)) {
         released = true;
         gates.get("beta")!();
         await waitFor(() => session.hasPendingBackgroundNotices());

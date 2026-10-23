@@ -22,7 +22,7 @@
  */
 import { createContext, createElement, useContext } from "react";
 import type { ReactElement, ReactNode } from "react";
-import type { A2uiWeatherCondition } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiChartKind, A2uiWeatherCondition } from "@prismshadow/penguin-core/a2ui";
 
 /** The words around the A2UI blocks a reply may hold (components/content/a2ui). */
 export interface A2uiStrings {
@@ -53,6 +53,10 @@ export interface A2uiStrings {
   /** A form's number stepper: the buttons that add and subtract one step. */
   stepUp: string;
   stepDown: string;
+  /** A form field's error line when the model gave no hint and the rule has no symbols. */
+  invalid: string;
+  /** A form's dropdown: its empty first row, when the model wrote no placeholder. */
+  choose: string;
   /** The weather conditions a weather widget names, by the catalog's condition key. */
   conditions: Readonly<Record<A2uiWeatherCondition, string>>;
   /** A snapshot widget's head: when its data was read ("As of 14:05"). */
@@ -90,6 +94,29 @@ export interface A2uiStrings {
   /** Which way a reading moved, read out before its change. */
   deltaUp: string;
   deltaDown: string;
+  /**
+   * A chart's kind ("Bar chart"): its accessible name when the model gave no title, and the lead
+   * of the summary a screen reader hears instead of the picture.
+   */
+  chartKind: Readonly<Record<A2uiChartKind, string>>;
+  /** A chart summary's counts: the categories (slices, bins) and the series. */
+  categories: (n: number) => string;
+  seriesCount: (n: number) => string;
+  /** The system-resource board's accessible name when the model named no host. */
+  resources: string;
+  /** The board's readings and sections. */
+  cpu: string;
+  memory: string;
+  swap: string;
+  disk: string;
+  network: string;
+  load: string;
+  uptime: string;
+  /** The network chart's two series. */
+  received: string;
+  sent: string;
+  /** The network chart's caption: its readings carry no times, only their count and order. */
+  lastReadings: (n: number) => string;
 }
 
 /** The Markdown reader's controls (components/content/markdown-reader). */
@@ -186,6 +213,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     showSource: "Show source",
     stepUp: "Increase",
     stepDown: "Decrease",
+    invalid: "Not a valid value",
+    choose: "Choose…",
     conditions: {
       clear: "Clear",
       "partly-cloudy": "Partly cloudy",
@@ -223,6 +252,28 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     done: "Done",
     deltaUp: "up",
     deltaDown: "down",
+    chartKind: {
+      line: "Line chart",
+      area: "Area chart",
+      bar: "Bar chart",
+      pie: "Pie chart",
+      scatter: "Scatter plot",
+      histogram: "Histogram",
+      gauge: "Gauge",
+    },
+    categories: (n) => `${n} ${n === 1 ? "category" : "categories"}`,
+    seriesCount: (n) => `${n} series`,
+    resources: "System resources",
+    cpu: "CPU",
+    memory: "Memory",
+    swap: "Swap",
+    disk: "Disks",
+    network: "Network",
+    load: "Load",
+    uptime: "Uptime",
+    received: "Received",
+    sent: "Sent",
+    lastReadings: (n) => `Last ${n} readings`,
   },
   reader: {
     outline: "Outline",

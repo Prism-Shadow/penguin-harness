@@ -2,8 +2,8 @@
  * The chart primitives: the one place a theme's chart tokens (../chart-style.ts) become marks.
  *
  * Every chart — the cost center's requests, Token and cost charts, the token donut, the
- * sparklines, the ring gauges — draws its bars, lines, areas, points, arcs, grid and axis labels
- * through these, and the Trace timeline its lanes through TimelineBar (timeline-bar.tsx). A chart
+ * sparklines, the ring gauges, the basic bar and line charts — draws its bars, lines, areas,
+ * points, arcs, grid and axis labels through these, and the Trace timeline its lanes through TimelineBar (timeline-bar.tsx). A chart
  * decides WHAT to draw — where a mark sits, which series it belongs to, whether it is dimmed —
  * and never HOW: the width of a bar in its band, its corner radius, outline and fill opacity, a
  * line's width and curve, a point's size, the fill under a line and every colour come from the
@@ -49,6 +49,9 @@ export function resolvePaint(
 const seriesAttr = (paint: ChartPaint) =>
   "series" in paint ? { "data-series": paint.series + 1 } : {};
 
+/** The gap a flush bar leaves to its neighbour, px. */
+const FLUSH_SEAM = 1;
+
 /** The width a bar takes in a band of `band` px: the theme's fill share, capped and floored. */
 export function useBarWidth(band: number): number {
   return fitBarWidth(band, useChartStyle().barFill);
@@ -69,6 +72,10 @@ export function barPath(x: number, y: number, w: number, h: number, radius: numb
  * theme's radius; its fill takes the theme's bar opacity, and an outline the theme's bar
  * stroke (in the bar's own colour unless the theme names one). `opacity` dims the whole mark
  * (a highlight fading the rest).
+ *
+ * A `flush` bar is a histogram's bin: it takes its whole band, less a 1px seam so neighbouring
+ * bins of one colour still read as bins, and keeps square corners — contiguous bins have no top
+ * to round.
  */
 export function ChartBar({
   cx,
@@ -77,6 +84,7 @@ export function ChartBar({
   height,
   paint,
   top = true,
+  flush = false,
   opacity,
   className = "",
 }: {
@@ -86,11 +94,12 @@ export function ChartBar({
   height: number;
   paint: ChartPaint;
   top?: boolean;
+  flush?: boolean;
   opacity?: number;
   className?: string;
 }) {
   const chart = useChartStyle();
-  const width = fitBarWidth(band, chart.barFill);
+  const width = flush ? Math.max(1, band - FLUSH_SEAM) : fitBarWidth(band, chart.barFill);
   const x = cx - width / 2;
   const { color, className: ink } = resolvePaint(chart, paint);
   const outline =
@@ -110,7 +119,7 @@ export function ChartBar({
     opacity,
     style: color !== undefined ? { color } : undefined,
   };
-  const d = top ? barPath(x, y, width, height, chart.barRadius) : null;
+  const d = top && !flush ? barPath(x, y, width, height, chart.barRadius) : null;
   return d === null ? (
     <rect x={x} y={y} width={width} height={height} {...common} />
   ) : (
@@ -163,15 +172,20 @@ export function ChartLine({
  * The fill under a line: the line's path in the theme's curve, dropped to `baseY` and closed.
  * Its opacity is the theme's area opacity times `strength` (a chart dims it while a point is
  * singled out, or draws a sparkline's a little stronger).
+ *
+ * A stacked area's band fills down to the series under it instead: `floor` is that series' top
+ * edge, one point under each of `points`, and the band closes back along it in the same curve.
  */
 export function ChartArea({
   points,
   baseY,
+  floor,
   paint,
   strength = 1,
 }: {
   points: ReadonlyArray<readonly [number, number]>;
   baseY: number;
+  floor?: ReadonlyArray<readonly [number, number]>;
   paint: ChartPaint;
   strength?: number;
 }) {
@@ -180,11 +194,15 @@ export function ChartArea({
   const { color, className: ink } = resolvePaint(chart, paint);
   const first = points[0]!;
   const last = points[points.length - 1]!;
+  const back =
+    floor !== undefined && floor.length > 0
+      ? curvePath([...floor].reverse(), chart.curve).replace(/^M/, "L")
+      : `L${last[0]},${baseY} L${first[0]},${baseY}`;
   return (
     <path
       data-part="area"
       {...seriesAttr(paint)}
-      d={`${curvePath(points, chart.curve)} L${last[0]},${baseY} L${first[0]},${baseY} Z`}
+      d={`${curvePath(points, chart.curve)} ${back} Z`}
       fill="currentColor"
       stroke="none"
       opacity={chart.areaOpacity * strength}
@@ -304,6 +322,35 @@ export function ChartGrid({ x1, x2, y }: { x1: number; x2: number; y: number }) 
       className="stroke-chart-grid"
       strokeWidth={1}
     />
+  );
+}
+
+/**
+ * A value written beside its mark (a reading above its point), in the muted ink at the size a
+ * figure is read at; `data-part="label"` lets a theme set it in its data face.
+ */
+export function ChartLabel({
+  x,
+  y,
+  anchor = "middle",
+  children,
+}: {
+  x: number;
+  y: number;
+  anchor?: "start" | "middle" | "end";
+  children: ReactNode;
+}) {
+  return (
+    <text
+      data-part="label"
+      x={x}
+      y={y}
+      textAnchor={anchor}
+      fontSize={11}
+      className="fill-fg-muted tabular-nums"
+    >
+      {children}
+    </text>
   );
 }
 

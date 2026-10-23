@@ -3,11 +3,12 @@
  *
  * Responsibilities:
  *   - get-or-resume-or-heal: use it directly on an active-table hit; with a Trace,
- *     recover via `agent.resumeSession`; a stale Session that was created but never run
- *     and survived a process restart (no Trace) **self-heals** — recreated via
- *     createSession using the index row's workspace/modelId, yielding a new session_id
- *     and updating the index's primary key; the Task response body always returns the
- *     current actual id;
+ *     recover via `agent.resumeSession`; a Session that was created but never run and has
+ *     lost its runtime object since (a process restart, an idle eviction) has no Trace and
+ *     **self-heals** — recreated via createSession from the index row's workspace and model,
+ *     under the row's own session_id, so everything keyed by that id (a messaging binding, a
+ *     terminal, the client's route) stays attached to it; the Task response body returns the
+ *     id the Session runs under;
  *   - Credential effectiveness: a Project's models/credentials change bumps every affected
  *     Agent's config generation (invalidateProjectRuntimes); runtimes built earlier are
  *     discarded on their next idle access and re-resumed, so the next Task runs with the
@@ -81,6 +82,7 @@ import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/
 import type { SessionRow } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
+import { InputEcho } from "./input-echo.js";
 import { goalPluginNotInstalled, hasGoalHookPackage } from "./goal-plugin.js";
 import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
@@ -113,7 +115,7 @@ import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
-import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
+import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -306,7 +308,7 @@ export interface RuntimeSession {
 export interface SessionLoader {
   /**
    * Load a runtime Session from an index row: recover (with a Trace) or self-heal
-   * rebuild (no Trace, session_id will change). Throws HttpError(409) for unrecoverable
+   * rebuild (no Trace, under the row's session_id). Throws HttpError(409) for unrecoverable
    * cases such as a missing Workspace.
    */
   load(row: SessionRow): Promise<RuntimeSession>;
@@ -371,8 +373,10 @@ export function createCoreSessionLoader(
           throw toUnrecoverableError(err);
         }
       }
-      // No Trace (created but never run, and the process has restarted since): self-heal
-      // rebuild. A missing Workspace → 409.
+      // No Trace (created but never run, and the runtime object is gone since): self-heal
+      // rebuild under the row's own id — a new one would leave behind everything keyed by the
+      // old (a messaging binding whose replies would never go out, a terminal, the client's
+      // route). A missing Workspace → 409.
       try {
         const stat = await fs.stat(row.workspace);
         if (!stat.isDirectory()) throw new Error("not a directory");
@@ -389,6 +393,7 @@ export function createCoreSessionLoader(
       const knownSource = sources?.get(row.sessionId) ?? unrunSource(row.client);
       try {
         return await agent.createSession({
+          sessionId: row.sessionId,
           workspaceDir: row.workspace,
           modelId: row.modelId,
           provider: row.provider,
@@ -1252,16 +1257,14 @@ export class SessionManager {
       entry.status = "running";
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
-      // Round-1 input: same publish + pendingInputs hold as launchTask. Core never yields
-      // a run's own initial input (only the stop hook's later injections), so without this
-      // publish the round-1 messages reach only the Trace — a page already subscribed (a
+      // Round-1 input: same echo + pendingInputs hold as launchTask. Core never yields
+      // a run's own initial input (only the stop hook's later injections), so without the
+      // echo the round-1 messages reach only the Trace — a page already subscribed (a
       // second goal on the session) would not see the user's message or the protocol
       // message until a reload. Append + bootstrap reset for the same abort-mid-bootstrap
       // reasons as launchTask.
       entry.pendingInputs = [...entry.pendingInputs, ...input];
       entry.pendingBootstrap = [];
-      const channel = this.deps.channels.get(entry.sessionId);
-      for (const msg of input) channel.publish(msg);
       this.publishState(entry, "running");
       const approve = this.entryApprove(entry);
       this.publishEvent(entry, {
@@ -1277,7 +1280,7 @@ export class SessionManager {
         signal: ac.signal,
       });
       // The objective doubles as the title material (same role as a task's input text).
-      entry.running = this.drive(entry, gen, { userExcerpt: objective });
+      entry.running = this.drive(entry, gen, { userExcerpt: objective, echo: input });
       return { sessionId: entry.sessionId };
     });
   }
@@ -1285,7 +1288,7 @@ export class SessionManager {
   /**
    * Taps a goal run's stream for `drive`: round boundaries become goal_round events —
    * round 1 from the seeded input (core never yields a run's initial input, so it is
-   * counted here, where startGoal published it), later rounds from the stop-hook continues
+   * counted here, from what startGoal echoes), later rounds from the stop-hook continues
    * core yields, each announced by the hook's `continue` event; a harness-stamped input
    * nothing announced is another package's user_prompt context riding behind the
    * objective, not a round — and the goal hook's `stop` event becomes the
@@ -1376,20 +1379,19 @@ export class SessionManager {
   }
 
   /**
-   * Shared task launch (fresh tasks, auto-started follow-ups and retries): flips to running,
-   * publishes the input, and drives the run. Caller holds the session lock and has verified
-   * idle. A retry's input is empty: nothing is published or held, and drive gets no title
+   * Shared task launch (fresh tasks, auto-started follow-ups and retries): flips to running
+   * and drives the run, which echoes the input. Caller holds the session lock and has verified
+   * idle. A retry's input is empty: nothing is echoed or held, and drive gets no title
    * material — the turn it resends already offered its text when it was first sent.
    */
   private launchTask(entry: RuntimeEntry, input: OmniMessage[]): void {
-    const channel = this.deps.channels.get(entry.sessionId);
     const ac = new AbortController();
     entry.status = "running";
     entry.abort = ac;
     entry.lastActivityMs = Date.now();
-    // Publish the input messages first (visible to other subscribers; the Trace is
-    // persisted by the SDK), then flip the running status. The same envelopes are held as
-    // pendingInputs so GET /messages can serve them before the engine's Trace write
+    // The input messages are echoed by drive, right behind the run's first task_begin (see
+    // InputEcho; the Trace is persisted by the SDK, in that order). The same envelopes are
+    // held as pendingInputs so GET /messages can serve them before the engine's Trace write
     // catches up (delayed by the first run's MCP connect). APPEND, don't replace: inputs
     // of a run aborted mid-bootstrap are still held (nothing reached the Trace; core
     // carries them into this run) and must stay served until this run persists them.
@@ -1397,7 +1399,6 @@ export class SessionManager {
     // its own connect phase, and a stale aborted pair would render as an extra row.
     entry.pendingInputs = [...entry.pendingInputs, ...input];
     entry.pendingBootstrap = [];
-    for (const msg of input) channel.publish(msg);
     this.publishState(entry, "running");
 
     const approve = this.entryApprove(entry);
@@ -1412,7 +1413,7 @@ export class SessionManager {
       .filter(isPlainText("user"))
       .map((m) => m.payload.text)
       .join("\n");
-    entry.running = this.drive(entry, gen, { userExcerpt });
+    entry.running = this.drive(entry, gen, { userExcerpt, echo: input });
   }
 
   /**
@@ -2000,19 +2001,16 @@ export class SessionManager {
    * a Task arriving mid-load waits for this load instead of starting a second one.
    *
    * A Session that is gone or being deleted, alone or with its Agent, resolves quietly: there is
-   * nothing to warm and the caller has nothing to do about it. So does one with no Trace yet,
-   * because loading it is a self-heal REBUILD under a new session id — that would move the
-   * Session out from under the binding that asked, and earlier than any Task would. The row's
-   * `hasTrace` is a cache, so a row that has not caught up only misses the warm-up. Any other
-   * load failure rejects; the first Task meets the same failure and reports it where a person
-   * will see it.
+   * nothing to warm and the caller has nothing to do about it. One that never ran is rebuilt
+   * under its own id (see createCoreSessionLoader), so the binding that asked keeps its Session.
+   * Any other load failure rejects; the first Task meets the same failure and reports it where a
+   * person will see it.
    */
   async preload(sessionId: string): Promise<void> {
     await this.withLock(sessionId, async () => {
       if (this.closed || this.deletingSessions.has(sessionId)) return;
       const row = this.deps.sessions.findById(sessionId);
       if (!row || this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
-      if (!this.entries.has(sessionId) && row.hasTrace !== true) return;
       try {
         await this.ensureEntry(sessionId);
       } catch (err) {
@@ -2092,7 +2090,7 @@ export class SessionManager {
     if (refreshed?.changed) this.invalidateProjectRuntimes(row.projectId);
   }
 
-  /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key on self-heal. */
+  /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key when it answers another id. */
   /** startGoal's check before the load (goal-plugin.ts); an unknown id is left to ensureEntry's 404. */
   private async assertGoalPluginInstalled(sessionId: string): Promise<void> {
     const root = this.deps.root;
@@ -2150,8 +2148,9 @@ export class SessionManager {
     if (pin && pin !== row.thinkingLevel) session.thinkingLevel = pin;
     let currentId = row.sessionId;
     if (session.sessionId !== row.sessionId) {
-      // Self-heal produced a new session_id: update the index's primary key; the SSE
-      // channel and pending state are naturally empty for it.
+      // A loader that answers another session_id (the production loader keeps the row's,
+      // see createCoreSessionLoader): update the index's primary key; the SSE channel and
+      // pending state are naturally empty for it.
       this.deps.sessions.replaceId(row.sessionId, session.sessionId);
       currentId = session.sessionId;
     }
@@ -2230,12 +2229,13 @@ export class SessionManager {
    * Drive the output stream in the background: publish each message + persist usage +
    * persist LLM/tool errors; on completion (including errors) resets to idle and pushes
    * the status. `titleSource` is passed only for Task runs (compaction doesn't generate
-   * a title): its user text drives automatic title generation at run start.
+   * a title): its user text drives automatic title generation at run start, and its `echo`
+   * is the run's input, published right behind the run's first `task_begin` (see InputEcho).
    */
   private async drive(
     entry: RuntimeEntry,
     gen: AsyncGenerator<OmniMessage>,
-    titleSource?: { userExcerpt: string },
+    titleSource?: { userExcerpt: string; echo?: readonly OmniMessage[] },
   ): Promise<void> {
     const ctx: UsageContext = {
       projectId: entry.projectId,
@@ -2297,8 +2297,13 @@ export class SessionManager {
     // exist) — the latter is cleaned up when the parent-level tool_call_output settles;
     // if the call is still in the queue at that point, it never produced a session_meta.
     const subagentPrompts = new Map<string, string>();
+    // Re-fetches the channel per publish, like the loop below (see the comment there).
+    const echo = new InputEcho(titleSource?.echo ?? [], (m) =>
+      this.deps.channels.get(entry.sessionId).publish(m),
+    );
     try {
       for await (const msg of gen) {
+        echo.before(msg);
         // A parent-level (no origin) run_subagent call: record its prompt for the child
         // session_meta that arrives later to use as its title.
         if (!msg.origin || msg.origin.length === 0) {
@@ -2395,6 +2400,7 @@ export class SessionManager {
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
         this.deps.channels.get(entry.sessionId).publish(msg);
+        echo.after(msg);
         watcher?.observe(msg);
         try {
           await this.deps.recorder.record(ctx, msg);
@@ -2411,6 +2417,8 @@ export class SessionManager {
       );
       this.deps.errors?.record({ source: "session", err, ctx, code: "session_run_failed" });
     } finally {
+      // A stream that yielded nothing still echoes its input, ahead of the idle flip.
+      echo.flush();
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
       // The run is over: no fragment will ever continue, so drop the live tail before the

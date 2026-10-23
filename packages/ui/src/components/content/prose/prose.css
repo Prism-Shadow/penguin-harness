@@ -22,7 +22,7 @@
      instead of breaking the layout (especially important for mobile message streams). */
   overflow-wrap: break-word;
 }
-.md-body :is(p, ul, ol, pre, blockquote, table) {
+.md-body :is(p, ul, ol, pre, blockquote, .md-table) {
   margin: 0.5rem 0;
 }
 .md-body li {
@@ -266,26 +266,38 @@ html.dark .shiki span {
   padding-left: calc(var(--ui-space-unit) * 3);
   color: var(--ui-fg-muted);
 }
-.md-body table {
-  border-collapse: collapse;
-  /* A wide table scrolls horizontally inside the body instead of pushing the whole page wide. */
-  display: block;
-  overflow-x: auto;
+/* Tables: the shape is markdown-table.css's, the same for every Markdown host; the body maps its
+   custom properties onto the theme — the muted line under each row, the stronger one under the
+   header, the header in muted ink at medium weight — and sets the cells in the body rung. The
+   stripes and the hover keep the sheet's ink-derived tints, so they read alike on every theme. */
+.md-body {
+  --md-table-pad-y: calc(var(--ui-space-unit) * 1.5);
+  --md-table-pad-x: calc(var(--ui-space-unit) * 2.5);
+  --md-table-rule-w: var(--ui-border-w);
+  --md-table-rule: var(--ui-line-muted);
+  --md-table-rule-head: var(--ui-line);
+  --md-table-head-fg: var(--ui-fg-muted);
+  --md-table-head-weight: var(--ui-weight-medium);
+  --md-table-dur: var(--ui-dur-fast);
+  --md-table-ease: var(--ui-ease-in-out);
 }
-/* `:where` keeps the cell rule at a class's weight, so a surface's own cell rule (a channel
-   bubble's deeper line) wins whichever stylesheet a bundle emits first. */
-.md-body :where(th, td) {
-  border: var(--ui-border-w) solid var(--ui-line);
-  padding: var(--ui-space-unit) calc(var(--ui-space-unit) * 2);
+.md-body :is(th, td) {
   font-size: var(--ui-text-body-size);
   line-height: var(--ui-text-body-lh);
+}
+/* Inline code in a cell: the chip is a tint of the ink rather than the neutral fill. Some themes
+   paint that fill opaque, in the same grey as a stripe, where a chip on a striped row would
+   vanish; a tint composes over whatever is under it, so the chip stays one step deeper than its
+   row — plain, striped, hovered or inside a bubble — in every theme and mode. */
+.md-body .md-table code:not(pre > code) {
+  background-color: color-mix(in srgb, var(--ui-fg) 6%, transparent);
 }
 
 /* A message that is a line in a stream (a channel message body): the same Markdown typography,
    one size tighter. Its blocks sit closer, its headings step down towards body size, and the
    first and last block give up their outer margins so a one-paragraph message occupies exactly
    its row. Used together with .md-body, after it, so these win at equal specificity. */
-.md-compact :is(p, ul, ol, pre, blockquote, table) {
+.md-compact :is(p, ul, ol, pre, blockquote, .md-table) {
   margin: 0.25rem 0;
 }
 .md-compact li {
@@ -296,6 +308,11 @@ html.dark .shiki span {
 }
 .md-compact :is(h1, h2, h3, h4) {
   margin: 0.5rem 0 0.25rem;
+}
+.md-compact {
+  --md-table-pad-y: var(--ui-space-unit);
+  --md-table-pad-x: calc(var(--ui-space-unit) * 2);
+  --md-table-prose-min: 15rem;
 }
 .md-compact h1 {
   font-size: 1.0625rem;
@@ -338,7 +355,7 @@ html.dark .shiki span {
 }
 
 /* Display math is `white-space: nowrap` by construction, so a wide matrix or a long derivation
-   would otherwise push the whole message body sideways. Same treatment as .md-body table and pre:
+   would otherwise push the whole message body sideways. Same treatment as tables and .md-body pre:
    scroll inside the block. Overflow on one axis forces the other to scroll too, so the padding is
    what keeps tall fractions and descenders from being clipped. */
 .md-body .katex-display {

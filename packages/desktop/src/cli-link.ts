@@ -112,10 +112,19 @@ export function inspectWrapperTarget(target: string, desired: string): TargetSta
   return { kind: "ours", detail: `${target} runs a different location of this app` };
 }
 
-/** Creates `target` as a symlink to `desired`, replacing whatever is there. Throws on failure. */
+/**
+ * Creates `target` as a symlink to `desired`, replacing whatever is there. Throws on failure.
+ * An existing symlink is removed with `unlinkSync`, which never follows it; `rmSync` did on
+ * Node 24.0.0–24.13.0 (nodejs/node#61020: a dangling link survived and a link to a directory
+ * threw ERR_FS_EISDIR). Anything else still goes through `rmSync`, which refuses a directory
+ * with ERR_FS_EISDIR — on macOS `unlinkSync` would say EPERM, which the caller takes for a
+ * permission problem and answers with an administrator prompt.
+ */
 export function writeSymlink(target: string, desired: string): void {
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.rmSync(target, { force: true });
+  const existing = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (existing?.isSymbolicLink()) fs.unlinkSync(target);
+  else if (existing) fs.rmSync(target, { force: true });
   fs.symlinkSync(desired, target);
 }
 

@@ -15,11 +15,9 @@
   background-position: var(--boot-wallpaper-position);
   opacity: var(--boot-wallpaper-opacity);
 }
-/* Surface roles are shared across pages: canvas is clear, panels keep a light fill, and
-   activity rows sit directly on the image. Overlay content keeps its theme surfaces. */
-.ui-shell[data-wallpaper] {
-  --wallpaper-panel-fill: color-mix(in srgb, var(--ui-surface) 24%, transparent);
-}
+/* Surface roles are shared across pages: canvas is clear, panels keep a light fill, tone strips
+   keep a thinner tint, and activity rows sit directly on the image. Overlay content keeps its
+   theme surfaces. */
 .ui-shell[data-wallpaper],
 .ui-shell[data-wallpaper] > [data-slot="main"],
 .ui-shell[data-wallpaper] > [data-slot="dock"],
@@ -49,7 +47,7 @@
 /* Cards declare their role in the UI package, so a new page inherits the same fill. */
 .ui-shell[data-wallpaper] [data-slot="composer"],
 .ui-shell[data-wallpaper] [data-wallpaper-surface="panel"]:not([role="dialog"] *) {
-  background-color: var(--wallpaper-panel-fill);
+  background-color: var(--wallpaper-panel-fill, var(--ui-surface));
 }
 .ui-shell[data-wallpaper]
   [data-wallpaper-surface="panel"]:not([role="dialog"] *)
@@ -62,17 +60,28 @@
   background-color: transparent;
 }
 /* A floating panel reads against its own surface, including one mounted inside the shell.
-   Reset the inherited control fills there; the composer and navigation are wallpaper surfaces. */
+   Reset the inherited fills there, so a bubble or a notice inside one keeps its page form; the
+   composer and navigation are wallpaper surfaces. */
 .ui-glass:not([data-slot="composer"], [data-glass="navigation"]),
 [role="dialog"] {
+  --wallpaper-panel-fill: initial;
   --wallpaper-control-fill: initial;
   --wallpaper-hover-fill: initial;
   --wallpaper-selected-fill: initial;
   --wallpaper-well-fill: initial;
   --wallpaper-choice-fill: initial;
+  --wallpaper-neutral-fill: initial;
+  --wallpaper-tint-fill: initial;
 }
+/* The fills a role reads on the image, each with its theme token as the fallback where the role
+   is unset. A bubble's neutral fill is a light wash of the ink; a fill tinted by the accent
+   becomes the accent's own translucent wash. Reduced transparency sets none, so every role
+   falls back to its opaque token. */
 @media not (prefers-reduced-transparency: reduce) {
   .ui-shell[data-wallpaper] {
+    --wallpaper-panel-fill: color-mix(in srgb, var(--ui-surface) 24%, transparent);
+    --wallpaper-neutral-fill: color-mix(in srgb, var(--ui-fg) 7%, transparent);
+    --wallpaper-tint-fill: var(--ui-accent-muted);
     --wallpaper-control-fill: color-mix(in srgb, var(--ui-surface) 24%, transparent);
     --wallpaper-hover-fill: color-mix(in srgb, var(--ui-fg) 5%, transparent);
     --wallpaper-selected-fill: color-mix(in srgb, var(--ui-fg) 8%, transparent);
@@ -160,8 +169,16 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  .ui-shell[data-wallpaper] [data-slot="composer"],
-  .ui-shell[data-wallpaper] [data-wallpaper-surface="panel"]:not([role="dialog"] *) {
-    background-color: var(--ui-surface);
+}
+/* A tone strip (a notice, or any strip that names its tone the same way) keeps its tone on the
+   image at half its tint; the ink is unchanged. It sits in the theme layer, below a theme's own
+   notice recipe (later in the layer and more specific): Frost lays its card on the panel fill,
+   Console paints nothing. A pressed notice is a toast, which floats and keeps its surface. */
+@layer ui-theme {
+  @media not (prefers-reduced-transparency: reduce) {
+    .ui-shell[data-wallpaper]
+      :where([data-wallpaper-surface="tone"]:not(button, [role="dialog"] *)) {
+      background-color: color-mix(in srgb, var(--_tone-bg) 50%, transparent);
+    }
   }
 }

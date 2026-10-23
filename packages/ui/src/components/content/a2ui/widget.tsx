@@ -1,6 +1,6 @@
 /**
  * The surface every A2UI widget sits on — a weather card, a clock, a countdown, a dashboard of
- * readings: one rounded box set apart from the prose, its head naming it on the left and saying
+ * readings, a chart, a machine's resources: one rounded box set apart from the prose, its head naming it on the left and saying
  * when its data was read on the right, its body the widget, and an optional quiet foot (where the
  * data came from).
  *
@@ -19,7 +19,7 @@ import { formatAsOf } from "@prismshadow/penguin-core/a2ui";
 import { useUiStrings } from "../../../strings";
 import { useInView, useNow } from "./use-now";
 
-export type WidgetKind = "weather" | "clock" | "countdown" | "metrics";
+export type WidgetKind = "weather" | "clock" | "countdown" | "metrics" | "chart" | "resources";
 
 const InView = createContext(true);
 

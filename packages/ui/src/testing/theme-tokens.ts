@@ -41,7 +41,7 @@ export const THEME_LAYER = "@layer ui-theme";
 /** The layer a theme's accent presets live in: after `ui-theme`, so a preset beats the dark rule. */
 export const ACCENT_LAYER = "@layer ui-accent";
 
-/** The six names a preset sets: the contract's accent group, and nothing outside it. */
+/** The names a preset may set: the contract's accent group, and nothing outside it. */
 export const ACCENT_TOKEN_NAMES: readonly string[] =
   TOKEN_GROUPS.find((group) => group.id === "color-accent")?.names ?? [];
 

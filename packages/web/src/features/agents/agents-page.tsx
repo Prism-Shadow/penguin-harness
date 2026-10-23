@@ -26,7 +26,12 @@
  * the Agent's name as a machine's Workspace group is. Every control on such a card acts on that
  * machine — its settings page there, a new chat in its temporary workspace, its delete. A machine
  * out of reach keeps what it was last seen holding on the list, greyed, every control off, with
- * the reason beside the tag and on each control.
+ * the reason beside the tag and on each control. A connected machine's cards show what it last
+ * answered from the first paint, greyed and inert without the plug until it answers in this page
+ * load (lib/machine-agent-lists.ts); back on the page later they are live at once.
+ *
+ * The list is read again after a delete or a kernel update with the old one on screen: the
+ * skeleton only stands in while no list of the Project has arrived yet.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -140,7 +145,7 @@ export function AgentCard({
 }: {
   /** Enters the Agent's settings page; null for one that cannot be reached right now. */
   onOpen: (() => void) | null;
-  /** Greyed: a machine's Agent as last seen, while that machine cannot be asked. */
+  /** Greyed: a machine's Agent as last seen, while that machine cannot be asked or has not answered yet. */
   dimmed?: boolean;
   children: ReactNode;
 }) {
@@ -224,8 +229,9 @@ export function AgentsPage() {
     if (!createOpen || library !== null || libraryPending.current) return;
     libraryPending.current = true;
     setLibraryError(null);
+    // This server's library: the dialog's default location. A machine picked there reads its own.
     api
-      .getPluginLibrary()
+      .getPluginLibrary(null)
       .then((res) => setLibrary(pluginPickItems(res.groups.flatMap((g) => g.plugins))))
       .catch((e: unknown) => {
         // Leave `library` unset and release the guard, so the next open tries again.
@@ -387,8 +393,10 @@ export function AgentsPage() {
       const agent = agents.find((a) => a.agentId === agentId);
       return agent ? agentDisplayName(agent) : agentId;
     });
+    // The notice counts this server's Agents only; a machine's Agent is updated from its own
+    // settings page.
     const results = await Promise.allSettled(
-      targets.map((agentId) => api.kernelUpdateAgentConfig(projectId, agentId)),
+      targets.map((agentId) => api.kernelUpdateAgentConfig(projectId, agentId, null)),
     );
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
@@ -420,10 +428,16 @@ export function AgentsPage() {
   const renderCard = ({ agent: a, on }: PlacedAgent) => {
     const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
     const machineId = on?.machine.machineId ?? null;
-    /** Whether the server holding the Agent can be asked right now (this one always can). */
+    /** Whether the server holding the Agent can be acted on right now (this one always can). */
     const reachable = on === null || on.live;
-    /** Why a control is off on an unreachable machine's card. */
-    const offReason = on !== null && !on.live ? (on.reason ?? S.common.loading) : null;
+    /**
+     * Why a control is off on a machine's card that is not live: the machine's reason, or — it is
+     * connected and its first answer in this page load is awaited — that it is being read.
+     */
+    const offReason =
+      on === null || on.live ? null : (on.reason ?? S.agent.readingMachineAgents(on.machine.label));
+    /** The lifted plug: the machine is out of reach or failed to answer — not while it is read. */
+    const outOfReach = on !== null && !on.live && on.reason !== null;
     // An organization's employee: its delete waits for it to leave (the server refuses
     // with 409 agent_employed), and the card says where it works.
     const employments = employmentsOf(a);
@@ -462,7 +476,7 @@ export function AgentsPage() {
             />
             {/* The machine the Agent lives on, written as a machine's Workspace group writes it;
                 its hint says what that means. A machine out of reach adds the lifted plug, its
-                reason in the hint. */}
+                reason in the hint; one whose list is still being read adds nothing. */}
             {on !== null && (
               <span
                 className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
@@ -472,7 +486,7 @@ export function AgentsPage() {
                 {S.chat.machineTag(on.machine.label)}
               </span>
             )}
-            {offReason !== null && (
+            {outOfReach && offReason !== null && (
               <span
                 role="img"
                 aria-label={offReason}

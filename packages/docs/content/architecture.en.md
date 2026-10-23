@@ -125,16 +125,16 @@ packages/
 │   ├── engine/context-engine.ts    # ReAct loop orchestration: turn lifecycle, approvals, carry-over, reconnect, compaction
 │   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · markers/
 │   ├── interfaces/                 # llm.ts · environment.ts · shared.ts (ApproveFn and the vocabulary both sides share)
-│   ├── llm/                        # generative-model.ts MMSP adapter · tool-call-ids.ts id uniqueness · context-limits.ts
+│   ├── llm/                        # generative-model.ts MMSP adapter · app-attribution.ts gateway headers · tool-call-ids.ts id uniqueness · context-limits.ts
 │   ├── environment/                # environment.ts execution close-out · tools/ registry, 7 builtin tools, background sessions · mcp/
 │   ├── hooks/                      # the stop / pre_tool_use / user_prompt hook points and the hook-script runner
 │   ├── plugins/                    # the built-in plugin library and its loader
 │   ├── plugin/ · kernel/           # the plugin contract a server plugin compiles against · the hot-update module kernel
-│   ├── state/                      # paths · default-config · project-config · model-catalog · memory
+│   ├── state/                      # paths · default-config · project-config · model-connection · memory
 │   │                               # agent-state (Skill install, prompt assembly) · agent-vault · builtin-agents
 │   ├── trace/                      # writer.ts append-only JSONL · resume.ts replay-based recovery
 │   └── internal/                   # shared helpers: dates, Session support, merge queue, session-title.ts (one-shot title generation, never in Trace)
-├── server/src                      # index.ts boot sequence · app assembly · db (node:sqlite) · auth · http/routes · runtime · services · hmr · plugin · terminal
+├── server/src                      # index.ts boot sequence · app assembly · db (node:sqlite) · auth · http/routes · runtime · services · hmr · plugin · terminal · model-catalog.ts
 ├── cli/src                         # commander entry · commands/ (run / chat / input / logs / ls / agent / project / schedule / config / serve …) · server client and approval prompts
 ├── web/src                         # api client · state · lib/omni stream rendering · components · feature pages (layout below)
 ├── desktop/                        # the Electron shell

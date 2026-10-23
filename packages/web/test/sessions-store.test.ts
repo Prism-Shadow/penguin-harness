@@ -6,6 +6,8 @@
  * Loading:
  * - A fresh store is loading, and a reload with no Agent set does not claim to be done.
  * - A refresh over rows already on screen does not raise loading.
+ * - An empty list, once listed, stays listed: re-reads as a machine connects and names its own
+ *   Agents never raise loading again (the sidebar's skeleton would stand in for "no Sessions yet").
  *
  * Several machines:
  * - A reload asks each server once: every Agent's first page and every open Workspace group's,
@@ -348,6 +350,27 @@ describe("loading", () => {
     unsubscribe();
     expect(raised).toBe(false);
   });
+
+  it("an empty list once listed never raises loading again as a machine connects and names its Agents", async () => {
+    answers.set(key(null, "a1"), page([], 0));
+    answers.set(key("M1", "a1"), page([], 0));
+    answers.set(key("M1", "trainer"), page([], 0));
+    const store = boot();
+    const seen = [store.getState().loading];
+    const unsubscribe = store.subscribe((state) => {
+      if (state.loading !== seen.at(-1)) seen.push(state.loading);
+    });
+    await store.getState().reload();
+    // The machine connects: both servers are asked.
+    store.setState({ machineIds: ["M1"] });
+    await store.getState().reload();
+    // It names an Agent of its own: asked again, about that one too.
+    store.setState({ agentIdsByMachine: { M1: ["trainer"] } });
+    await store.getState().reload();
+    unsubscribe();
+    expect(seen).toEqual([true, false]);
+    expect(fetch.requests.some((r) => r.machine === "M1")).toBe(true);
+  });
 });
 
 describe("the list across machines", () => {
@@ -464,17 +487,56 @@ describe("the list across machines", () => {
     expect(store.getState().countsByAgent.get("a1")?.active).toBe(1);
   });
 
-  it("this server not answering abandons the reload: the rows stand and loading is left alone", async () => {
-    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
-    const store = boot();
-    await store.getState().reload();
-    expect(ids(store)).toEqual(["here"]);
-    expect(store.getState().loading).toBe(false);
+  describe("this server answering nothing", () => {
+    // The store asks again on a timer; fake timers keep that retry inside the case that
+    // started it instead of reloading against a later case's fetch.
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
 
-    answers.delete(key(null, "a1")); // mid-swap: nothing answers here
-    await store.getState().reload();
-    expect(ids(store)).toEqual(["here"]);
-    expect(store.getState().loading).toBe(false);
+    it("abandons the reload: the rows stand and loading is left alone", async () => {
+      answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+      const store = boot();
+      await store.getState().reload();
+      expect(ids(store)).toEqual(["here"]);
+      expect(store.getState().loading).toBe(false);
+
+      answers.delete(key(null, "a1")); // mid-swap: nothing answers here
+      await store.getState().reload();
+      expect(ids(store)).toEqual(["here"]);
+      expect(store.getState().loading).toBe(false);
+    });
+
+    it("asks again on a doubling backoff, and starts over once it answers", async () => {
+      const warn = vi.mocked(console.warn);
+      const retryIn = () => /asked again in (\d+) ms/.exec(String(warn.mock.lastCall?.[0]))?.[1];
+      const store = boot();
+
+      await store.getState().reload(); // nothing answers
+      const perReload = fetch.requests.length;
+      expect(retryIn()).toBe("2000");
+
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(fetch.requests).toHaveLength(perReload);
+      await vi.advanceTimersByTimeAsync(1); // the retry, still unanswered
+      expect(fetch.requests).toHaveLength(2 * perReload);
+      expect(retryIn()).toBe("4000");
+
+      answers.set(key(null, "a1"), page([row("back", "2026-01-03T00:00:00Z")], 1));
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(fetch.requests).toHaveLength(3 * perReload);
+      expect(ids(store)).toEqual(["back"]);
+
+      answers.delete(key(null, "a1"));
+      await store.getState().reload();
+      expect(retryIn()).toBe("2000");
+    });
   });
 
   it("keeps two machines' counts for one path apart — a badge is about a directory, not a string", async () => {

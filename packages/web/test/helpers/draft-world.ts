@@ -5,11 +5,12 @@
  * The server holds one Project with one Agent (`helper`) here, and one connected machine
  * ({@link MACHINE}) holding an Agent of the same id. It creates, lists, reads and deletes
  * Sessions the way the real routes do, each on the server the request reached, and pushes the
- * user events the real server pushes over its event stream (a fake `EventSource`): a create here
- * announces `session_created`, a delete here `session_deleted`, which is how a row reaches, and
- * leaves, every tab's list. A test can refuse the next create or the next task with an error,
- * hold creates or tasks until {@link DraftWorld.release}, and have the next task answer with a
- * self-healed id, as a restarted server does for a Session with no Trace.
+ * user events the real server pushes over its `/api/events` stream on the API socket (played by
+ * {@link socketWorld}): a create here announces `session_created`, a delete here
+ * `session_deleted`, which is how a row reaches, and leaves, every tab's list. A test can refuse
+ * the next create or the next task with an error, hold creates or tasks until
+ * {@link DraftWorld.release}, and have the next task answer with a self-healed id, as a
+ * restarted server does for a Session with no Trace.
  *
  * The frame is the app's own shape at the route level: a memory data router at `/chat/new`
  * whose root holds the Project, machines and Session-list providers around the draft and a
@@ -33,8 +34,8 @@ import { MachinesProvider } from "../../src/state/machines";
 import { SessionsProvider, useSessions } from "../../src/state/sessions";
 import { DraftView } from "../../src/features/chat/draft-view";
 import { ADMIN_ME } from "./admin-settings";
+import { socketWorld } from "./api-socket-world";
 import { mount } from "./dom";
-import { stubEventSource } from "./event-source";
 import { apiError, json, stubFetch } from "./fetch";
 import type { FakeFetch, FetchRequest } from "./fetch";
 
@@ -58,6 +59,7 @@ const machines: MachinesResponse = {
       machineId: "local-machine",
       local: true,
       connection: null,
+      socket: null,
       api: null,
       status: null,
       root: "/data",
@@ -70,6 +72,7 @@ const machines: MachinesResponse = {
       machineId: MACHINE,
       local: false,
       connection: { pid: 4242 },
+      socket: null,
       keepConnected: true,
       api: null,
       status: { state: "running", checkedAt: "2026-10-15T00:00:00Z", port: 7371 },
@@ -108,6 +111,7 @@ export interface DraftWorld {
 }
 
 export function draftWorld(): DraftWorld {
+  socketWorld.reset();
   /** Every Session by id, with the server that holds it (null = this one). */
   const sessions = new Map<string, { info: SessionInfo; machine: string | null }>();
   let seq = 0;
@@ -115,13 +119,10 @@ export function draftWorld(): DraftWorld {
   const holding = { create: false, task: false };
   let waiting: Array<() => void> = [];
   let heal = false;
-  const events = stubEventSource();
 
   /** A user event, pushed the way the server pushes it: on this server's own stream. */
   const push = (event: ServerEvent) => {
-    for (const source of events) {
-      if (source.url.startsWith("/api/events")) source.emit("server_event", JSON.stringify(event));
-    }
+    socketWorld.push("/api/events", event);
   };
   const row = (sessionId: string, workspace: string): SessionInfo =>
     ({

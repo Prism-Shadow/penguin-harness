@@ -1,7 +1,10 @@
 /**
  * The text fallback and the composer fill texts (a2ui/fallback.ts): each block type as readable
  * Markdown in both languages, mermaid and invalid blocks left untouched, and the exact strings a
- * pick fills — the model reads them as ordinary user text next turn. Widgets print for a pinned
+ * pick fills — the model reads them as ordinary user text next turn. A form's bullet says what
+ * each kind takes (options, range, format, yes / no), its default and its hint; its fill text
+ * writes each kind's answer (a switch as Yes / No, several lines indented, a datetime with a
+ * space), and a form left at its initial answers fills its defaults. Widgets print for a pinned
  * moment and zone; the helpers they share with the renderers (a2ui/widgets.ts) get direct cases
  * only where the fallback does not already show them.
  */
@@ -10,10 +13,12 @@ import {
   choiceFillText,
   countdownParts,
   formFillText,
+  initialAnswer,
   resolveMetric,
   toFallbackMarkdown,
   type A2uiChoice,
   type A2uiForm,
+  type A2uiFormAnswer,
   type A2uiMetric,
   type A2uiMetrics,
   type A2uiWeather,
@@ -40,17 +45,117 @@ describe("toFallbackMarkdown", () => {
     );
   });
 
-  it("a form becomes one bullet per field with its options, range and unit inline", () => {
-    const form: A2uiForm = {
+  it("a form becomes one bullet per field: what its kind takes, its default and its hint", () => {
+    // A unit is spaced as every A2UI value is: "1–10 GB", but a percent hugs its range.
+    const measured: A2uiForm = {
       type: "form",
       title: "Size",
       fields: [
-        { id: "size", label: "Size", kind: "number", min: 1, max: 10, unit: "GB", required: true },
+        {
+          id: "size",
+          label: "Size",
+          kind: "number",
+          min: 1,
+          max: 10,
+          unit: "GB",
+          required: true,
+          default: 3,
+        },
+        { id: "temp", label: "Temperature", kind: "slider", min: 0, max: 1, step: 0.1 },
+        { id: "cpu", label: "CPU target", kind: "slider", min: 50, max: 90, step: 5, unit: "%" },
         { id: "kind", label: "Kind", kind: "single", options: [{ label: "A" }, { label: "B" }] },
+        {
+          id: "notes",
+          label: "Notes",
+          kind: "textarea",
+          placeholder: "Anything else",
+          hint: "one per line",
+        },
       ],
     };
-    expect(toFallbackMarkdown(fence(form), { lang: "en" })).toBe(
-      "**Size**\n\n- **Size** (required): 1–10 GB\n- **Kind**: A / B\n\nReply with one line per field.",
+    const picked: A2uiForm = {
+      type: "form",
+      fields: [
+        { id: "cdn", label: "CDN", kind: "switch", default: true },
+        { id: "run", label: "First run", kind: "datetime", default: "2026-10-20T09:30" },
+        {
+          id: "regions",
+          label: "Regions",
+          kind: "multiple",
+          options: [{ label: "EU" }, { label: "US" }, { label: "Asia" }],
+          default: ["US", "EU"],
+        },
+        {
+          id: "lang",
+          label: "Language",
+          kind: "select",
+          placeholder: "Pick one",
+          options: [{ label: "Go" }, { label: "Rust" }],
+        },
+      ],
+    };
+    const dated: A2uiForm = {
+      type: "form",
+      fields: [
+        { id: "day", label: "Day", kind: "date" },
+        { id: "at", label: "At", kind: "time", required: true },
+        { id: "name", label: "Name", kind: "text", hint: "lower-case" },
+      ],
+    };
+    expect(toFallbackMarkdown(fence(measured), { lang: "en" })).toBe(
+      [
+        "**Size**",
+        "",
+        "- **Size** (required): 1–10 GB (default 3)",
+        "- **Temperature**: 0–1 step 0.1",
+        "- **CPU target**: 50–90% step 5",
+        "- **Kind**: A / B",
+        "- **Notes**: Anything else — one per line",
+        "",
+        "Reply with one line per field.",
+      ].join("\n"),
+    );
+    expect(toFallbackMarkdown(fence(picked), { lang: "en" })).toBe(
+      [
+        "- **CDN**: yes / no (default yes)",
+        "- **First run**: YYYY-MM-DD HH:mm (default 2026-10-20 09:30)",
+        "- **Regions**: EU / US / Asia (default EU, US)",
+        "- **Language**: Go / Rust",
+        "",
+        "Reply with one line per field.",
+      ].join("\n"),
+    );
+    expect(toFallbackMarkdown(fence(dated), { lang: "en" })).toBe(
+      [
+        "- **Day**: YYYY-MM-DD",
+        "- **At** (required): HH:mm",
+        "- **Name** — lower-case",
+        "",
+        "Reply with one line per field.",
+      ].join("\n"),
+    );
+    expect(toFallbackMarkdown(fence(measured), { lang: "zh" })).toBe(
+      [
+        "**Size**",
+        "",
+        "- **Size**（必填）：1–10 GB（默认 3）",
+        "- **Temperature**：0–1 步长 0.1",
+        "- **CPU target**：50–90% 步长 5",
+        "- **Kind**：A / B",
+        "- **Notes**：Anything else — one per line",
+        "",
+        "按字段逐行回复。",
+      ].join("\n"),
+    );
+    expect(toFallbackMarkdown(fence(picked), { lang: "zh" })).toBe(
+      [
+        "- **CDN**：是 / 否（默认 是）",
+        "- **First run**：YYYY-MM-DD HH:mm（默认 2026-10-20 09:30）",
+        "- **Regions**：EU / US / Asia（默认 EU、US）",
+        "- **Language**：Go / Rust",
+        "",
+        "按字段逐行回复。",
+      ].join("\n"),
     );
   });
 
@@ -304,23 +409,108 @@ describe("fill texts", () => {
     expect(choiceFillText(choice, ["something else"], "en")).toBe("something else");
   });
 
-  it("a form fills one `label: answer` line per answered field, numbers with their unit, lists joined", () => {
+  it("a form fills one `label: answer` line per answered field, each kind its own way", () => {
     const form: A2uiForm = {
       type: "form",
       fields: [
-        { id: "n", label: "Count", kind: "number", unit: "GB" },
+        { id: "n", label: "Pods", kind: "number", unit: "pods" },
+        { id: "v", label: "Volume", kind: "slider", min: 0, max: 1, step: 0.1, unit: "dB" },
+        { id: "cpu", label: "CPU target", kind: "slider", min: 50, max: 90, step: 5, unit: "%" },
         {
           id: "k",
           label: "Kind",
           kind: "multiple",
           options: [{ label: "A", value: "alpha" }, { label: "B" }],
         },
-        { id: "t", label: "Notes", kind: "text" },
+        {
+          id: "s",
+          label: "Region",
+          kind: "select",
+          options: [{ label: "EU", value: "eu-west-1" }, { label: "US" }],
+        },
+        { id: "c", label: "CDN", kind: "switch" },
+        { id: "notes", label: "Notes", kind: "textarea" },
       ],
     };
-    const answers = { n: "3", k: ["A", "B"], t: "" };
-    expect(formFillText(form, answers, "en")).toBe("Count: 3 GB\nKind: alpha, B");
-    expect(formFillText(form, answers, "zh")).toBe("Count：3 GB\nKind：alpha、B");
+    const answers = {
+      n: "3",
+      v: "0.7",
+      cpu: "70",
+      k: ["A", "B"],
+      s: "EU",
+      c: false,
+      notes: "first\n\nsecond  \n",
+    };
+    expect(formFillText(form, answers, "en")).toBe(
+      "Pods: 3 pods\nVolume: 0.7 dB\nCPU target: 70%\nKind: alpha, B\nRegion: eu-west-1\nCDN: No\nNotes:\n  first\n\n  second",
+    );
+    expect(formFillText(form, answers, "zh")).toBe(
+      "Pods：3 pods\nVolume：0.7 dB\nCPU target：70%\nKind：alpha、B\nRegion：eu-west-1\nCDN：否\nNotes：\n  first\n\n  second",
+    );
     expect(formFillText(form, {}, "en")).toBe("");
+  });
+
+  it("dates and times fill as written, a datetime with a space; blank text and an empty select fill nothing", () => {
+    const form: A2uiForm = {
+      type: "form",
+      fields: [
+        { id: "d", label: "Day", kind: "date" },
+        { id: "t", label: "At", kind: "time" },
+        { id: "r", label: "Run", kind: "datetime" },
+        { id: "x", label: "Name", kind: "text" },
+        { id: "s", label: "Region", kind: "select", options: [{ label: "EU" }, { label: "US" }] },
+        { id: "o", label: "Note", kind: "textarea" },
+      ],
+    };
+    const answers = {
+      d: "2026-10-20",
+      t: "09:30",
+      r: "2026-10-20T09:30",
+      x: "  ",
+      s: "",
+      o: "one line",
+    };
+    expect(formFillText(form, answers, "en")).toBe(
+      "Day: 2026-10-20\nAt: 09:30\nRun: 2026-10-20 09:30\nNote: one line",
+    );
+  });
+
+  it("an answer of the wrong shape for its kind fills nothing", () => {
+    const form: A2uiForm = {
+      type: "form",
+      fields: [
+        { id: "on", label: "CDN", kind: "switch" },
+        { id: "name", label: "Name", kind: "text" },
+      ],
+    };
+    expect(formFillText(form, { on: "yes", name: true }, "en")).toBe("");
+  });
+
+  it("a form left at its initial answers fills its defaults, a switch and a slider included", () => {
+    const form: A2uiForm = {
+      type: "form",
+      fields: [
+        { id: "pods", label: "Pods", kind: "number", min: 1, max: 10, default: 3 },
+        { id: "share", label: "Share", kind: "slider", min: 10, max: 90 },
+        { id: "cdn", label: "CDN", kind: "switch", default: true },
+        { id: "logs", label: "Logs", kind: "switch" },
+        {
+          id: "regions",
+          label: "Regions",
+          kind: "multiple",
+          options: [{ label: "EU" }, { label: "US", value: "us-east-1" }],
+          default: ["US", "EU"],
+        },
+        { id: "notes", label: "Notes", kind: "text" },
+      ],
+    };
+    const initial: Record<string, A2uiFormAnswer> = {};
+    for (const field of form.fields) {
+      const answer = initialAnswer(field);
+      if (answer !== undefined) initial[field.id] = answer;
+    }
+    expect(formFillText(form, initial, "zh")).toBe(
+      "Pods：3\nShare：10\nCDN：是\nLogs：否\nRegions：EU、us-east-1",
+    );
   });
 });
