@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1291](https://github.com/Prism-Shadow/penguin-harness/pull/1291)
 
 [中文版](2026-10-22-machine-lists-cache.zh.md)
 
