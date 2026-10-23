@@ -1,9 +1,10 @@
 /**
- * The AMSP player: a scripted run replayed event by event, the way mmsp.penguin.ooo replays a
- * model call. Tabs pick the run (a tool call, the same call under approval, a plain answer that
- * continues the first Session); the input block shows the call that starts it; the left pane lists
- * the events as they arrive, the ones the Trace stores on a faint ground; the right pane is the run
- * assembled from them, its status and usage once `task_end` arrives.
+ * The AMSP player: a scripted run replayed step by step, the way mmsp.penguin.ooo replays a model
+ * call. Tabs pick the run (a Session's first request, a follow-up that continues it, a follow-up the
+ * caller interrupts); the input block shows the call that starts it; the left pane lists the stream
+ * as it arrives — the `hello` frame, the records (the ones the Trace stores on a faint ground), the
+ * caller's abort beside the stream, `[DONE]`; the right pane is the run assembled from the records,
+ * its outcome read from them once `[DONE]` arrives.
  *
  * Paced by the run's own timestamps (lib/amsp-replay.ts `stepDelays`), one timer at a time, only
  * while the player is on screen and not paused; after the last event it rests, then plays again.
@@ -18,17 +19,17 @@ import { highlightSiteCode, SiteCodeBlock, SitePill } from "@prismshadow/penguin
 import { S } from "../lib/strings";
 import { SCENARIOS } from "../lib/amsp-demo";
 import { playerCode } from "../lib/amsp-quickstart";
-import { eventLine, foldEvents, stepDelays } from "../lib/amsp-replay";
-import type { ReplayItem, ReplayState } from "../lib/amsp-replay";
+import { foldRun, stepDelays, stepLine } from "../lib/amsp-replay";
+import type { ReplayItem, ReplayState, StepLine } from "../lib/amsp-replay";
 import type { TokenCounts } from "../lib/amsp-protocol";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
 
 /** The finished run stays on screen this long before it plays again. */
 const REST_MS = 3000;
 
-const LINES = SCENARIOS.map((scenario) => scenario.events.map(eventLine));
-const FINISHED = SCENARIOS.map((scenario) => foldEvents(scenario.events, scenario.events.length));
-const DELAYS = SCENARIOS.map((scenario) => stepDelays(scenario.events));
+const LINES = SCENARIOS.map((scenario) => scenario.steps.map(stepLine));
+const FINISHED = SCENARIOS.map((scenario) => foldRun(scenario.steps, scenario.steps.length));
+const DELAYS = SCENARIOS.map((scenario) => stepDelays(scenario.steps));
 const CODE = SCENARIOS.map(playerCode);
 
 const PANE_LABEL = "text-xs font-semibold text-gray-500 dark:text-gray-400";
@@ -37,7 +38,7 @@ export function StreamPlayer() {
   const still = usePrefersReducedMotion();
   const [index, setIndex] = useState(0);
   const scenario = SCENARIOS[index]!;
-  const total = scenario.events.length;
+  const total = scenario.steps.length;
   // The finished run until the player first comes on screen.
   const [count, setCount] = useState(total);
   const [playing, setPlaying] = useState(false);
@@ -92,7 +93,7 @@ export function StreamPlayer() {
   const choose = (next: number) => {
     setIndex(next);
     // Paused or still, a new tab shows its run finished; otherwise it plays from the start.
-    setCount(still || paused ? SCENARIOS[next]!.events.length : 0);
+    setCount(still || paused ? SCENARIOS[next]!.steps.length : 0);
     setPlaying(!still);
   };
 
@@ -106,7 +107,7 @@ export function StreamPlayer() {
   };
 
   const lines = LINES[index]!.slice(0, count);
-  const state = useMemo(() => foldEvents(scenario.events, count), [scenario, count]);
+  const state = useMemo(() => foldRun(scenario.steps, count), [scenario, count]);
   const P = S.amsp.player;
 
   return (
@@ -184,28 +185,8 @@ export function StreamPlayer() {
                   className="amsp-follow absolute inset-0 space-y-px overflow-hidden font-mono text-[12px] leading-5"
                 >
                   {lines.map((line, i) => (
-                    <li
-                      key={i}
-                      className={`grid grid-cols-[24ch_minmax(0,1fr)] gap-x-2 rounded-sm px-2 sm:grid-cols-[12ch_24ch_minmax(0,1fr)] ${
-                        line.stored
-                          ? "bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100"
-                          : "text-gray-500 dark:text-gray-400"
-                      }`}
-                    >
-                      <span className="hidden truncate text-[11px] text-gray-400 sm:block dark:text-gray-500">
-                        {line.envelope}
-                      </span>
-                      <span className="truncate">
-                        {line.kind || <span className="sm:invisible">{line.envelope}</span>}
-                      </span>
-                      <span className="truncate">{line.preview}</span>
-                    </li>
+                    <StreamRow key={i} line={line} />
                   ))}
-                  {count === total && (
-                    <li className="mt-1 border-t border-gray-300 px-2 pt-1 text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                      data: [DONE]
-                    </li>
-                  )}
                 </ol>
               </div>
             </section>
@@ -226,17 +207,55 @@ export function StreamPlayer() {
           </div>
         </div>
       </div>
-      <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{P.note}</p>
     </div>
   );
 }
 
-/** The run assembled: its items under their Requests, then its status and usage once it ended. */
+/**
+ * One row of the stream: a record (on a faint ground when the Trace stores it), a control frame, the
+ * caller's request beside the stream, or the closing `[DONE]` under a rule.
+ */
+function StreamRow({ line }: { line: StepLine }) {
+  const P = S.amsp.player;
+  const tone =
+    line.kind === "done"
+      ? "mt-1 border-t border-gray-300 pt-1 text-gray-500 dark:border-gray-700 dark:text-gray-400"
+      : line.stored
+        ? "bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100"
+        : "text-gray-500 dark:text-gray-400";
+  return (
+    <li
+      className={`grid grid-cols-[24ch_minmax(0,1fr)] gap-x-2 rounded-sm px-2 sm:grid-cols-[12ch_24ch_minmax(0,1fr)] ${tone}`}
+    >
+      <span className="hidden truncate text-[11px] text-gray-400 sm:block dark:text-gray-500">
+        {line.head}
+      </span>
+      <span className="truncate">
+        {line.name || <span className="sm:invisible">{line.head}</span>}
+      </span>
+      <span className="truncate">
+        {line.kind === "request" ? (
+          <span className="font-sans">{P.besideStream}</span>
+        ) : (
+          line.preview
+        )}
+      </span>
+    </li>
+  );
+}
+
+/** The run assembled: who runs it, its items under their Requests, then its outcome at `[DONE]`. */
 function Assembled({ state }: { state: ReplayState }) {
   const P = S.amsp.player;
   const groups = [0, ...state.requests.map((request) => request.index)];
   return (
     <div className="font-mono text-[12px] leading-5">
+      {state.agent !== null && (
+        <p className="mb-2 truncate text-[11px] text-gray-500 dark:text-gray-400">
+          {state.agent}
+          {state.model !== null && <> · {state.model}</>}
+        </p>
+      )}
       {groups.map((request) => {
         const items = state.items.filter((item) => item.request === request);
         const header = state.requests.find((candidate) => candidate.index === request);
@@ -282,7 +301,6 @@ function AssembledItem({ item }: { item: ReplayItem }) {
           {item.kind === "text" && ` · ${item.role}`}
           {item.open && ` · ${P.streaming}`}
         </span>
-        {item.approval && <SitePill tone="neutral">{P.approval[item.approval]}</SitePill>}
       </div>
       <p
         className={`line-clamp-2 break-words ${
@@ -295,10 +313,15 @@ function AssembledItem({ item }: { item: ReplayItem }) {
   );
 }
 
-/** `task_end`'s status, the Request count, the time taken and the tokens, then the usage as bars. */
+/**
+ * The run's outcome as a client reads it at `[DONE]` (`task_end` carries no status): the status,
+ * the facts in the records it was read from, the Request count, the time taken and the tokens,
+ * then the usage as bars.
+ */
 function Outcome({ state }: { state: ReplayState }) {
   const P = S.amsp.player;
-  const usage = state.usage;
+  const { outcome, usage } = state;
+  if (outcome === null) return null;
   const facts = [
     P.requests(state.requests.length),
     ...(state.elapsedMs !== null ? [`${(state.elapsedMs / 1000).toFixed(1)} s`] : []),
@@ -307,12 +330,15 @@ function Outcome({ state }: { state: ReplayState }) {
   return (
     <div className="mt-3 border-t border-gray-300 pt-2 dark:border-gray-700">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-gray-500 dark:text-gray-400">task_end</span>
-        {state.status && <SitePill tone="neutral">{state.status}</SitePill>}
+        <span className="font-sans text-gray-500 dark:text-gray-400">{P.result}</span>
+        <SitePill tone="neutral">{outcome.status}</SitePill>
         <span className="ml-auto font-sans text-gray-600 tabular-nums dark:text-gray-300">
           {facts.join(" · ")}
         </span>
       </div>
+      <p className="mt-1 font-sans text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+        {P.readFrom(outcome)}
+      </p>
       {usage && <UsageBars usage={usage} />}
     </div>
   );

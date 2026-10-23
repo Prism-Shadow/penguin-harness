@@ -3,67 +3,98 @@
  * is what stops an edit (or the spec moving under them) from putting a stream on the page that no
  * server would send.
  *
- * - Given any run, it opens with the `hello` that names its Session, ends with `task_state idle`,
- *   and its clock never runs backwards.
- * - Given any run, `task_begin` and `task_end` enclose its records, and each `request_begin` is
+ * - Given any run, it opens with the `hello` frame that names its Session, ends with `[DONE]`, and
+ *   its clock never runs backwards.
+ * - Given the Session's first message, `session_meta` follows `hello`, then `task_begin`, then the
+ *   echoed input; given a later message, `task_begin` follows `hello` and no `session_meta` comes.
+ * - Given any run, `task_begin` and `task_end` enclose its records and each `request_begin` is
  *   closed by a `request_end` before the next one opens.
  * - Given a streamed message, its fragments go start → delta* → stop before its complete record,
  *   and a tool's output completes after its call and before the next Request.
- * - Given the approval run, the request names the call and the caller's decision arrives before the
- *   tool starts; no other run asks.
- * - Given a run on a new Session, its context opens once, before `task_begin`; given a run that
- *   continues a Session, none opens and the Session is the one an earlier run opened.
+ * - Given the interrupted run, the caller's abort comes before the reply closes as `aborted`, no
+ *   usage is reported for that Request, and the `abort` record comes before `task_end`.
  */
 import { describe, expect, it } from "vitest";
-import { SCENARIOS } from "../src/lib/amsp-demo";
-import type { AmspEvent } from "../src/lib/amsp-protocol";
+import { recordsOf, SCENARIOS } from "../src/lib/amsp-demo";
+import type { RunStep } from "../src/lib/amsp-demo";
+import type { AmspRecord } from "../src/lib/amsp-protocol";
 
-const kind = (event: AmspEvent) => (event.type === "session_meta" ? "" : event.payload.type);
-const indexOf = (events: readonly AmspEvent[], type: string) =>
-  events.findIndex((event) => kind(event) === type);
-const indicesOf = (events: readonly AmspEvent[], type: string) =>
-  events.flatMap((event, i) => (kind(event) === type ? [i] : []));
+const kindOf = (record: AmspRecord) =>
+  record.type === "session_meta" ? "session_meta" : record.payload.type;
+/** The record kinds of a run in order, with the frames and requests beside the stream named too. */
+const sequence = (steps: readonly RunStep[]) =>
+  steps.map((step) =>
+    step.kind === "record"
+      ? kindOf(step.record)
+      : step.kind === "control"
+        ? `event: ${step.control.kind}`
+        : step.kind === "request"
+          ? `${step.request.method} ${step.request.path.split("/").at(-1)}`
+          : "[DONE]",
+  );
+const indicesOf = (kinds: readonly string[], kind: string) =>
+  kinds.flatMap((each, i) => (each === kind ? [i] : []));
+
+const first = SCENARIOS.find((scenario) => !scenario.continues)!;
 
 describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
   "the %s run",
   (_id, scenario) => {
-    const { events } = scenario;
+    const { steps } = scenario;
+    const kinds = sequence(steps);
+    const records = recordsOf(steps);
 
-    it("opens with hello, ends with task_state idle, and its clock never runs backwards", () => {
-      const first = events[0]!;
-      expect(first.type === "server_event" && first.payload).toMatchObject({
-        type: "hello",
-        agent: "demo/coder",
+    it("opens with hello, ends with [DONE], and its clock never runs backwards", () => {
+      expect(steps[0]).toMatchObject({
+        kind: "control",
+        control: { kind: "hello", agent: "demo/coder" },
       });
-      expect(events.at(-1)).toMatchObject({
-        type: "server_event",
-        payload: { type: "task_state", state: "idle" },
-      });
-      const times = events.map((event) => Date.parse(event.timestamp));
+      expect(kinds.at(-1)).toBe("[DONE]");
+      const times = records.map((record) => Date.parse(record.timestamp));
       expect(times.every((time, i) => i === 0 || time >= times[i - 1]!)).toBe(true);
     });
 
-    it("keeps its records between task_begin and task_end, and its Requests paired", () => {
-      const begin = indexOf(events, "task_begin");
-      const end = indexOf(events, "task_end");
-      const records = events.flatMap((event, i) => (event.type === "model_msg" ? [i] : []));
-      expect(records.every((i) => i > begin && i < end)).toBe(true);
+    it("sends session_meta only on the Session's first message, before task_begin and the input", () => {
+      const opening = kinds.slice(0, 4);
+      if (scenario.continues) {
+        expect(kinds).not.toContain("session_meta");
+        expect(opening.slice(0, 3)).toEqual(["event: hello", "task_begin", "text"]);
+        const firstHello = first.steps[0]!;
+        expect(steps[0]).toEqual(firstHello);
+      } else {
+        expect(opening).toEqual(["event: hello", "session_meta", "task_begin", "text"]);
+      }
+      expect(records.find((record) => kindOf(record) === "text")).toMatchObject({
+        payload: { role: "user", text: scenario.input },
+      });
+    });
 
-      const opens = indicesOf(events, "request_begin");
-      const closes = indicesOf(events, "request_end");
+    it("keeps its records between task_begin and task_end, and its Requests paired", () => {
+      const begin = kinds.indexOf("task_begin");
+      const end = kinds.lastIndexOf("task_end");
+      const messages = kinds.flatMap((_, i) =>
+        steps[i]!.kind === "record" &&
+        (steps[i] as { record: AmspRecord }).record.type === "model_msg"
+          ? [i]
+          : [],
+      );
+      expect(messages.every((i) => i > begin && i < end)).toBe(true);
+      expect(end).toBe(kinds.length - 2);
+
+      const opens = indicesOf(kinds, "request_begin");
+      const closes = indicesOf(kinds, "request_end");
       expect(opens.length).toBeGreaterThan(0);
       expect(closes).toHaveLength(opens.length);
       opens.forEach((open, n) => {
         expect(closes[n]!).toBeGreaterThan(open);
         if (n + 1 < opens.length) expect(closes[n]!).toBeLessThan(opens[n + 1]!);
       });
-      expect(end).toBeGreaterThan(closes.at(-1)!);
     });
 
     it("streams each message as start, deltas and stop before its complete record", () => {
-      const fragments = events.flatMap((event, i) =>
-        event.type === "model_msg" && "event_type" in event.payload
-          ? [{ at: i, type: event.payload.type, phase: String(event.payload.event_type) }]
+      const fragments = records.flatMap((record, i) =>
+        record.type === "model_msg" && "event_type" in record.payload
+          ? [{ at: i, type: record.payload.type, phase: String(record.payload.event_type) }]
           : [],
       );
       // Each streamed message reads start, delta…, stop, and no other message interleaves.
@@ -78,49 +109,36 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
       for (const stop of fragments.filter((fragment) => fragment.phase === "stop")) {
         const complete = stop.type.slice("partial_".length);
         expect(
-          events.findIndex((event, i) => i > stop.at && kind(event) === complete),
+          records.findIndex((record, i) => i > stop.at && kindOf(record) === complete),
         ).toBeGreaterThan(stop.at);
       }
     });
 
     it("completes a tool's output after its call and before the next Request", () => {
-      for (const call of indicesOf(events, "tool_call")) {
-        const output = indexOf(events, "tool_call_output");
+      for (const call of indicesOf(kinds, "tool_call")) {
+        const output = kinds.indexOf("tool_call_output");
         expect(output).toBeGreaterThan(call);
-        const nextRequest = indicesOf(events, "request_begin").find((i) => i > call);
+        const nextRequest = indicesOf(kinds, "request_begin").find((i) => i > call);
         if (nextRequest !== undefined) expect(output).toBeLessThan(nextRequest);
       }
     });
 
-    it("asks for approval only when the caller has a decision to send", () => {
-      const asked = indexOf(events, "approval_request");
-      const decided = indexOf(events, "approval_decision");
-      if (scenario.decision === undefined) {
-        expect([asked, decided]).toEqual([-1, -1]);
+    it("ends an interrupted reply as aborted, without usage, and closes the Task after the abort", () => {
+      const abortAt = kinds.indexOf("abort");
+      if (scenario.abortAfterMs === undefined) {
+        expect(abortAt).toBe(-1);
+        expect(kinds.some((kind) => kind.startsWith("POST"))).toBe(false);
         return;
       }
-      const request = events[asked]!;
-      const call = events[indexOf(events, "tool_call")]!;
-      expect(request.type === "server_event" && request.payload).toMatchObject({
-        toolCall: call,
-      });
-      expect(events[decided]).toMatchObject({ payload: { decision: scenario.decision } });
-      expect(decided).toBeGreaterThan(asked);
-      expect(indexOf(events, "partial_tool_call_output")).toBeGreaterThan(decided);
-    });
-
-    it("opens a context only on a new Session", () => {
-      const metas = events.flatMap((event, i) => (event.type === "session_meta" ? [i] : []));
-      if (scenario.continues) {
-        expect(metas).toEqual([]);
-        const opened = SCENARIOS.find((other) => !other.continues)!.events[0]!;
-        expect(events[0]!.payload).toMatchObject({
-          session_id: (opened.payload as { session_id: string }).session_id,
-        });
-      } else {
-        expect(metas).toHaveLength(1);
-        expect(metas[0]!).toBeLessThan(indexOf(events, "task_begin"));
-      }
+      const requestAt = kinds.indexOf("POST abort");
+      const replyAt = kinds.lastIndexOf("text");
+      expect(requestAt).toBeGreaterThan(kinds.indexOf("partial_text"));
+      expect(requestAt).toBeLessThan(replyAt);
+      expect(steps[replyAt]).toMatchObject({ record: { payload: { stop_reason: "aborted" } } });
+      expect(kinds.slice(replyAt)).toEqual(["text", "request_end", "abort", "task_end", "[DONE]"]);
+      expect(steps[replyAt + 1]).toMatchObject({ record: { payload: { status: "aborted" } } });
+      expect(kinds).not.toContain("token_usage");
+      expect(abortAt).toBeLessThan(kinds.indexOf("task_end"));
     });
   },
 );

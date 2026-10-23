@@ -51,7 +51,6 @@ const result = collector.result(); // throws AmspStreamError when the stream end
 
 ## Documentation
 
-- [AMSP overview](https://penguin.ooo/amsp): the protocol on one page, with scripted runs replayed event by event
 - [Agent API](https://penguin.ooo/docs/agent-api): turning an agent's API on, keys, approval modes, routes, errors, the client in Node and browsers
 - [AMSP](https://penguin.ooo/docs/amsp): the protocol, event by event
 

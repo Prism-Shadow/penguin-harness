@@ -3,16 +3,16 @@
  * request_end` around each model request, and each message streaming as fragments until its
  * complete record arrives — with the tool's output completing after its Request closed. The closers
  * are in the brand colour, the fragments are small gray dots on a dashed span. The caption's number
- * is read from the scripted tool-call run, so it cannot drift from the player. On a phone the
+ * is read from the scripted first-request run, so it cannot drift from the player. On a phone the
  * figure and its legend give way to the same steps in words, which a screen reader always hears.
  */
 import { S } from "../../lib/strings";
-import { SCENARIOS } from "../../lib/amsp-demo";
+import { recordsOf, SCENARIOS } from "../../lib/amsp-demo";
 import { resultAfterRequestEnd } from "../../lib/amsp-replay";
 import { Section } from "../../components/section";
 
-/** How long after `request_end` the tool-call run's output completed. */
-const RESULT_AFTER_END_MS = resultAfterRequestEnd(SCENARIOS[0]!.events);
+/** How long after `request_end` the first-request run's tool output completed. */
+const RESULT_AFTER_END_MS = resultAfterRequestEnd(recordsOf(SCENARIOS[0]!.steps));
 
 const LABEL = "font-mono text-[12px]";
 const OPENER = `${LABEL} fill-gray-500 dark:fill-gray-400`;

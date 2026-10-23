@@ -1,39 +1,42 @@
 /**
- * The code the /amsp page shows: the player's input snippet per scenario, and the quickstart's
- * install command, curl request and TypeScript example. The single place to adjust when SDK 1.0's
- * surface or the v2 routes settle (PRFC-0021). Language-neutral: the words around the code are in
- * the dictionaries.
+ * The code the /amsp page shows: the player's input snippet per run, and the quickstart's install
+ * command, curl request, response excerpt and TypeScript example, against `/api/amsp/v1` and
+ * `@prismshadow/amsp` 0.3.0 (PRFC-0021). The single place to adjust when the SDK's surface or the
+ * routes settle. Language-neutral: the words around the code are in the dictionaries.
  */
-import type { AmspEvent } from "./amsp-protocol";
+import type { RunStep } from "./amsp-demo";
 
 /** A local server's key door, and the Agent every sample runs (`<projectId>/<agentId>`). */
-export const AMSP_BASE_URL = "http://localhost:7364/api/amsp/v2";
+export const AMSP_BASE_URL = "http://localhost:7364/api/amsp/v1";
 export const AMSP_DEMO_AGENT = "demo/coder";
 
 export const SDK_INSTALL = "npm install @prismshadow/amsp";
 
-/** What the player's input block shows for a scenario: the call that starts that run. */
+/** What the player's input block shows for a run: the call that starts it (and stops it). */
 export function playerCode(scenario: {
   input: string;
-  decision?: string;
   continues?: boolean;
+  abortAfterMs?: number;
 }): string {
   const options = [
     ...(scenario.continues ? ["sessionId"] : []),
     `input: ${JSON.stringify(scenario.input)}`,
-    ...(scenario.decision ? [`onApproval: () => ${JSON.stringify(scenario.decision)}`] : []),
   ];
+  const oneLine = `client.run({ ${options.join(", ")} })`;
   // One line while it fits the player's column, one option per line past that.
-  const oneLine = `client.stream({ ${options.join(", ")} })`;
   const call =
-    `const run = ${oneLine};`.length <= 72
+    `const run = ${oneLine};`.length <= 76
       ? oneLine
-      : `client.stream({\n  ${options.join(",\n  ")},\n})`;
+      : `client.run({\n  ${options.join(",\n  ")},\n})`;
+  const abort =
+    scenario.abortAfterMs === undefined
+      ? ""
+      : `\nsetTimeout(() => run.abort(), ${scenario.abortAfterMs});`;
   return `import { AgentClient } from "@prismshadow/amsp";
 
 const client = new AgentClient({ baseUrl, agent: ${JSON.stringify(AMSP_DEMO_AGENT)}, apiKey });
-const run = ${call};
-for await (const event of run) console.log(event);`;
+const run = ${call};${abort}
+for await (const record of run) console.log(record);`;
 }
 
 /** Quickstart step 2: one run over curl. */
@@ -42,29 +45,42 @@ export const CURL_RUN = `curl -N ${AMSP_BASE_URL}/agents/${AMSP_DEMO_AGENT}/runs
   -H "Content-Type: application/json" \\
   -d '{"input":"What time is it now?"}'`;
 
+/** One step of a run as the server writes it on the wire. */
+function wireLines(step: RunStep): string[] {
+  switch (step.kind) {
+    case "control": {
+      const { kind, ...data } = step.control;
+      return [`event: ${kind}`, `data: ${JSON.stringify(data)}`];
+    }
+    case "record":
+      return [`id: ${step.id}`, `data: ${JSON.stringify(step.record)}`];
+    case "done":
+      return ["data: [DONE]"];
+    default:
+      // The approvals resource is a separate request, not part of the stream.
+      return [];
+  }
+}
+
 /**
- * The response body of a run, cut for the page: its first `head` and last `tail` events as the
- * `data:` lines the server writes, the rest elided behind a comment line, then the terminator.
+ * The response body of a run, cut for the page: its first `head` and last `tail` stream events as
+ * the SSE lines the server writes, one blank line between events, the rest elided behind a comment.
  */
 export function responseExcerpt(
-  events: readonly AmspEvent[],
+  steps: readonly RunStep[],
   head: number,
   tail: number,
   elided: string,
 ): string {
-  const line = (event: AmspEvent) => `data: ${JSON.stringify(event)}`;
-  const lines =
+  const events = steps.map(wireLines).filter((lines) => lines.length > 0);
+  const kept =
     events.length <= head + tail
-      ? events.map(line)
-      : [
-          ...events.slice(0, head).map(line),
-          `# … ${elided}`,
-          ...events.slice(events.length - tail).map(line),
-        ];
-  return [...lines, "data: [DONE]"].join("\n");
+      ? events
+      : [...events.slice(0, head), [`# … ${elided}`], ...events.slice(events.length - tail)];
+  return kept.map((lines) => lines.join("\n")).join("\n\n");
 }
 
-/** Quickstart step 3: stream a run, read its result, continue its Session. */
+/** Quickstart step 3: run, read the records as they come, read the result, continue the Session. */
 export const SDK_EXAMPLE = `import { AgentClient } from "@prismshadow/amsp";
 
 const client = new AgentClient({
@@ -73,13 +89,13 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.stream({ input: "What time is it now?" });
-for await (const event of run) {
-  if (event.type === "model_msg" && event.payload.type === "partial_text") {
-    process.stdout.write(event.payload.text);
+const run = client.run({ input: "What time is it now?" });
+for await (const record of run) {
+  if (record.type === "model_msg" && record.payload.type === "partial_text") {
+    process.stdout.write(record.payload.text);
   }
 }
-const { sessionId, text, usage } = await run.result();
+const { sessionId, status, text, usage } = await run.result();
 
 // Same Session, same context
-await client.run({ sessionId, input: "Now say it in French." });`;
+await client.run({ sessionId, input: "Now say it in French." }).result();`;

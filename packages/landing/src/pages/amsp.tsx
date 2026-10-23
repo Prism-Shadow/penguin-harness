@@ -1,7 +1,6 @@
 /**
  * AMSP on one page (/amsp): the hero with the player, the run's three boundaries drawn, every
- * record and event, the streams and doors and SDK, three steps to a first run, and where to read
- * on. Its own chunk (see router.tsx). The tab title and description follow the reader's language
+ * record and control frame, three steps to a first run, and where to read on. Its own chunk (see router.tsx). The tab title and description follow the reader's language
  * while it is open.
  */
 import { S } from "../lib/strings";
@@ -9,7 +8,6 @@ import { useDocumentMeta } from "../lib/document-meta";
 import { AmspHero } from "../sections/amsp/hero";
 import { AmspBoundaries } from "../sections/amsp/boundaries";
 import { AmspVocabulary } from "../sections/amsp/vocabulary";
-import { AmspStreams } from "../sections/amsp/streams";
 import { AmspQuickstart } from "../sections/amsp/quickstart";
 import { AmspLinks } from "../sections/amsp/links";
 
@@ -20,7 +18,6 @@ export function AmspPage() {
       <AmspHero />
       <AmspBoundaries />
       <AmspVocabulary />
-      <AmspStreams />
       <AmspQuickstart />
       <AmspLinks />
     </>

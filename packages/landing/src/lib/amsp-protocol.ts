@@ -1,15 +1,16 @@
 /**
- * AMSP v2's envelope, as far as the /amsp page reads it: the scripted runs (amsp-demo.ts) are
- * typed on it and the replay fold (amsp-replay.ts) narrows on it. The payloads the page reads
- * field by field are spelled out, mirroring core's OmniMessage types (packages/core/src/omnimessage
- * /types.ts) plus v2's additions — `task_begin`/`task_end`, `request_begin.thinking_level` and the
- * `server_event` envelope; every other kind of the vocabulary is accepted with its fields unread.
+ * AMSP's records and control frames, as far as the /amsp page reads them: the scripted runs
+ * (amsp-demo.ts) are typed on them and the replay fold (amsp-replay.ts) narrows on them. The
+ * payloads the page reads field by field are spelled out, mirroring core's OmniMessage types
+ * (packages/core/src/omnimessage/types.ts) plus PRFC-0021's additions — `task_begin` / `task_end`
+ * and `request_begin.thinking_level`; every other kind of the vocabulary is accepted with its
+ * fields unread. The control frames take the SDK's shape (`{ kind, … }`).
  *
- * Page-local on purpose: `@prismshadow/amsp` still ships v1 until SDK 1.0, which carries these
- * types. Once it does, this file re-exports them from there and the scripted runs are checked
- * against the real protocol.
+ * Page-local on purpose: `@prismshadow/amsp` 0.2.x still ships the old event types. Once 0.3.0
+ * carries these, this file re-exports them from there and the scripted runs are checked against the
+ * real protocol.
  */
-import type { EventKind, ModelKind, ServerEventKind } from "./amsp-vocabulary";
+import type { EventKind, ModelKind } from "./amsp-vocabulary";
 
 /** How a message, a request, a compaction or a task ended. */
 export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
@@ -121,11 +122,6 @@ type ReadModelPayload =
 
 export type ModelPayload = ReadModelPayload | Unread<Exclude<ModelKind, ReadModelPayload["type"]>>;
 
-export interface TaskEndPayload {
-  type: "task_end";
-  status: StopReason;
-}
-
 export interface RequestBeginPayload {
   type: "request_begin";
   /** The level the engine passed for this request; absent when it passed none. */
@@ -135,7 +131,10 @@ export interface RequestBeginPayload {
 export interface RequestEndPayload {
   type: "request_end";
   status: StopReason;
+  error_code?: string;
+  error_message?: string;
   attempt?: number;
+  /** Present when the engine will retry: the request did not end the run. */
   retry_in_ms?: number;
 }
 
@@ -157,9 +156,11 @@ export interface ToolListReadyPayload {
   tools: { name: string }[];
 }
 
+/** A Task's two boundary records carry their type only: its outcome is read from the records. */
 type ReadEventPayload =
   | { type: "task_begin" }
-  | TaskEndPayload
+  | { type: "task_end" }
+  | { type: "abort"; reason?: string | null; error_code?: string; error_message?: string }
   | RequestBeginPayload
   | RequestEndPayload
   | TokenUsagePayload
@@ -167,28 +168,6 @@ type ReadEventPayload =
   | ToolListReadyPayload;
 
 export type EventPayload = ReadEventPayload | Unread<Exclude<EventKind, ReadEventPayload["type"]>>;
-
-export interface HelloPayload {
-  type: "hello";
-  session_id?: string;
-  agent?: string;
-}
-
-export interface TaskStatePayload {
-  type: "task_state";
-  state: "running" | "idle";
-}
-
-export interface ApprovalRequestPayload {
-  type: "approval_request";
-  /** The call waiting for an answer, as the complete record the stream already carried. */
-  toolCall: ToolCallRecord;
-}
-
-type ReadServerPayload = HelloPayload | TaskStatePayload | ApprovalRequestPayload;
-
-export type ServerEventPayload =
-  ReadServerPayload | Unread<Exclude<ServerEventKind, ReadServerPayload["type"]>>;
 
 interface Envelope<T extends string, P> {
   /** ISO 8601, UTC. */
@@ -202,8 +181,14 @@ interface Envelope<T extends string, P> {
 /** A complete tool call as the stream carries it. */
 export type ToolCallRecord = Envelope<"model_msg", ToolCallPayload>;
 
-export type AmspEvent =
+/** One record: an SSE event with no name and an `id:`, its data the OmniMessage envelope. */
+export type AmspRecord =
   | Envelope<"session_meta", SessionMetaPayload>
   | Envelope<"model_msg", ModelPayload>
-  | Envelope<"event_msg", EventPayload>
-  | Envelope<"server_event", ServerEventPayload>;
+  | Envelope<"event_msg", EventPayload>;
+
+/** A control frame: an SSE event with a name and no id. `data: [DONE]` ends a run stream. */
+export type AmspControl =
+  | { kind: "hello"; session_id: string; agent: string }
+  | { kind: "resync_required" }
+  | { kind: "ping" };

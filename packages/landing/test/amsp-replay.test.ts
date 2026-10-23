@@ -1,67 +1,82 @@
 /**
- * The AMSP player's panes, as functions of how many events have arrived.
+ * The AMSP player's panes, as functions of how many steps of a run have arrived.
  *
  * - Given fragments of a message, they open an item that grows; given its complete record, the item
  *   closes with the record's own content, whatever the fragments said.
  * - Given a tool's output that completes after its Request's `request_end`, it is shown under its
  *   call's Request, not the next one.
- * - Given a run before its `task_end`, there is no status, usage or time; given `task_end`, there
- *   are, and a new Session's run uses exactly what its Session has used.
- * - Given an approval request, the call shows as waiting until the decision arrives.
+ * - Given a run before `[DONE]`, there is no outcome, usage or time; at `[DONE]` there are, and a new
+ *   Session's run uses exactly what its Session has used.
+ * - Given the Session's first message, the pane names the Agent and the model; a later message names
+ *   the Agent only.
+ * - Given a finished run, the outcome is read from the records in the protocol's order: a
+ *   `task_begin` left open is a failure, then an `abort`, then a terminal `request_end` (one to be
+ *   retried is not), then a fatal final reply, else completed.
  * - Given the run's timestamps, the replay waits the recorded gap, within its bounds.
- * - Given an event of a kind the page does not read, or does not know, it still gets a row, shaded
- *   by whether the Trace stores it.
+ * - Given a record of a kind the page does not read, it still gets a row, shaded by whether the Trace
+ *   stores it; frames and the caller's request never are.
  */
 import { describe, expect, it } from "vitest";
-import { SCENARIOS } from "../src/lib/amsp-demo";
-import type { AmspEvent, TokenCounts } from "../src/lib/amsp-protocol";
+import { recordsOf, SCENARIOS } from "../src/lib/amsp-demo";
+import type { RunStep } from "../src/lib/amsp-demo";
+import type { AmspRecord, EventPayload, TokenCounts } from "../src/lib/amsp-protocol";
 import {
-  eventLine,
   FIRST_STEP_MS,
-  foldEvents,
+  foldRun,
   MAX_STEP_MS,
   MIN_STEP_MS,
+  runOutcome,
   stepDelays,
+  stepLine,
 } from "../src/lib/amsp-replay";
 
 const at = (ms: number) => new Date(Date.UTC(2026, 9, 21, 9, 0, 0, ms)).toISOString();
-const text = (ms: number, phase: "start" | "delta" | "stop", piece: string): AmspEvent => ({
+const step = (record: AmspRecord): RunStep => ({ kind: "record", id: "e-1", record });
+const text = (ms: number, phase: "start" | "delta" | "stop", piece: string): AmspRecord => ({
   timestamp: at(ms),
   type: "model_msg",
   payload: { type: "partial_text", role: "assistant", event_type: phase, text: piece },
 });
+const event = (payload: EventPayload): AmspRecord => ({
+  timestamp: at(0),
+  type: "event_msg",
+  payload,
+});
+const reply = (stop: "completed" | "fatal"): AmspRecord => ({
+  timestamp: at(0),
+  type: "model_msg",
+  payload: { type: "text", role: "assistant", text: "…", stop_reason: stop },
+});
 
-const toolRun = SCENARIOS.find((scenario) => scenario.id === "tool")!.events;
-const approvalRun = SCENARIOS.find((scenario) => scenario.id === "approval")!.events;
-const kindAt = (events: readonly AmspEvent[], type: string) =>
-  events.findIndex((event) => event.type !== "session_meta" && event.payload.type === type);
+const run = (id: string) => SCENARIOS.find((scenario) => scenario.id === id)!.steps;
+const firstRun = run("first");
+const kindAt = (steps: readonly RunStep[], type: string) =>
+  steps.findIndex(
+    (each) =>
+      each.kind === "record" &&
+      (each.record.type === "session_meta" ? "session_meta" : each.record.payload.type) === type,
+  );
 
 describe("the assembled run", () => {
   it("closes a streamed message with its complete record's own content", () => {
-    const events: AmspEvent[] = [
+    const steps = [
       text(0, "start", ""),
       text(10, "delta", "Hel"),
       text(20, "delta", "lo"),
       text(30, "stop", ""),
-      {
-        timestamp: at(31),
-        type: "model_msg",
-        payload: { type: "text", role: "assistant", text: "Hello!", stop_reason: "completed" },
-      },
-    ];
-    expect(foldEvents(events, 3).items).toEqual([
+      reply("completed"),
+    ].map(step);
+    expect(foldRun(steps, 3).items).toEqual([
       expect.objectContaining({ kind: "text", body: "Hello", open: true }),
     ]);
-    expect(foldEvents(events, 5).items).toEqual([
-      expect.objectContaining({ kind: "text", body: "Hello!", open: false }),
+    expect(foldRun(steps, 5).items).toEqual([
+      expect.objectContaining({ kind: "text", body: "…", open: false }),
     ]);
   });
 
   it("keeps a tool's output under its call's Request when it completes after request_end", () => {
-    const outputAt = kindAt(toolRun, "tool_call_output");
-    const firstEnd = kindAt(toolRun, "request_end");
-    expect(outputAt).toBeGreaterThan(firstEnd);
-    const { items, requests } = foldEvents(toolRun, toolRun.length);
+    expect(kindAt(firstRun, "tool_call_output")).toBeGreaterThan(kindAt(firstRun, "request_end"));
+    const { items, requests } = foldRun(firstRun, firstRun.length);
     expect(requests.map((request) => request.index)).toEqual([1, 2]);
     expect(items.find((item) => item.kind === "tool_call")?.request).toBe(1);
     expect(items.find((item) => item.kind === "tool_call_output")?.request).toBe(1);
@@ -70,77 +85,108 @@ describe("the assembled run", () => {
     );
   });
 
-  it("has no outcome before task_end, and the Session's usage once it arrives", () => {
-    const end = kindAt(toolRun, "task_end");
-    expect(foldEvents(toolRun, end)).toMatchObject({
+  it("has no outcome before [DONE], and the Session's usage once it arrives", () => {
+    const done = firstRun.length - 1;
+    expect(foldRun(firstRun, done)).toMatchObject({
       done: false,
-      status: null,
+      outcome: null,
       usage: null,
       elapsedMs: null,
     });
-    const finished = foldEvents(toolRun, end + 1);
-    const lastUsage = toolRun.findLast(
-      (event) => event.type === "event_msg" && event.payload.type === "token_usage",
+    const finished = foldRun(firstRun, done + 1);
+    const lastUsage = recordsOf(firstRun).findLast(
+      (record) => record.type === "event_msg" && record.payload.type === "token_usage",
     );
     const session = (lastUsage!.payload as { session: TokenCounts }).session;
-    expect(finished).toMatchObject({ done: true, status: "completed", usage: session });
+    expect(finished).toMatchObject({
+      done: true,
+      outcome: { status: "completed" },
+      usage: session,
+    });
     expect(finished.elapsedMs).toBeGreaterThan(0);
     expect(finished.items.every((item) => !item.open)).toBe(true);
   });
 
-  it("shows a call waiting for approval until the decision arrives", () => {
-    const call = (count: number) =>
-      foldEvents(approvalRun, count).items.find((item) => item.kind === "tool_call");
-    const asked = kindAt(approvalRun, "approval_request");
-    const decided = kindAt(approvalRun, "approval_decision");
-    expect(call(asked)?.approval).toBeUndefined();
-    expect(call(asked + 1)?.approval).toBe("waiting");
-    expect(call(decided)?.approval).toBe("waiting");
-    expect(call(decided + 1)?.approval).toBe("allow");
+  it("names the model only on the Session's first message", () => {
+    expect(foldRun(firstRun, firstRun.length)).toMatchObject({
+      agent: "demo/coder",
+      model: "mock/scripted-model",
+    });
+    const later = run("continue");
+    expect(foldRun(later, later.length)).toMatchObject({ agent: "demo/coder", model: null });
+  });
+
+  it("reads the interrupted run as aborted, with no usage reported", () => {
+    const interrupted = run("interrupt");
+    expect(foldRun(interrupted, interrupted.length)).toMatchObject({
+      outcome: { status: "aborted", closed: true, aborted: true, lastRequestEnd: "aborted" },
+      usage: null,
+    });
+  });
+});
+
+describe("a run's outcome", () => {
+  const begin = event({ type: "task_begin" });
+  const end = event({ type: "task_end" });
+  const completedRequest = event({ type: "request_end", status: "completed" });
+
+  it.each([
+    ["a task_begin left open", [begin, completedRequest, reply("completed")], "fatal"],
+    ["an abort", [begin, event({ type: "abort", error_code: "user_abort" }), end], "aborted"],
+    [
+      "a terminal request_end",
+      [begin, event({ type: "request_end", status: "fatal", error_code: "auth" }), end],
+      "fatal",
+    ],
+    ["a fatal final reply", [begin, completedRequest, reply("fatal"), end], "fatal"],
+    ["none of these", [begin, completedRequest, reply("completed"), end], "completed"],
+  ] as const)("given %s, is %s", (_case, records, status) => {
+    expect(runOutcome(records).status).toBe(status);
+  });
+
+  it("names a server failure internal, and does not end a run on a request it will retry", () => {
+    expect(runOutcome([begin, completedRequest])).toMatchObject({
+      status: "fatal",
+      errorCode: "internal",
+      closed: false,
+    });
+    const retried = event({ type: "request_end", status: "retryable", retry_in_ms: 2000 });
+    expect(runOutcome([begin, retried, completedRequest, reply("completed"), end]).status).toBe(
+      "completed",
+    );
   });
 });
 
 describe("the replay's pace", () => {
   it("waits each recorded gap, held between its bounds", () => {
-    const events = [
+    const steps = [
       text(0, "start", ""),
       text(5, "delta", "a"),
       text(405, "delta", "b"),
       text(9405, "stop", ""),
-    ];
-    expect(stepDelays(events)).toEqual([FIRST_STEP_MS, MIN_STEP_MS, 400, MAX_STEP_MS]);
+    ].map(step);
+    expect(stepDelays(steps)).toEqual([FIRST_STEP_MS, MIN_STEP_MS, 400, MAX_STEP_MS]);
   });
 });
 
-describe("the events pane", () => {
-  it("lists a kind the page does not read, and one it does not know, shaded by the Trace", () => {
-    const compaction: AmspEvent = {
-      timestamp: at(0),
-      type: "event_msg",
-      payload: {
-        type: "compaction_begin",
-        reason: "context",
-        mode: "summarize",
-        context: 180000,
-        turns: 12,
-      },
-    };
-    expect(eventLine(compaction)).toMatchObject({ kind: "compaction_begin", stored: true });
-    expect(eventLine(compaction).preview).toContain('"reason":"context"');
-
-    // A server extension: carried as-is, never stored.
-    const extension = {
-      timestamp: at(0),
-      type: "server_event",
-      payload: { type: "org_run", runId: "r1" },
-    } as unknown as AmspEvent;
-    expect(eventLine(extension)).toMatchObject({ kind: "org_run", stored: false });
-    expect(eventLine(extension).preview).toContain('"runId":"r1"');
-
-    expect(eventLine(text(0, "delta", "Hi"))).toMatchObject({
+describe("the stream pane", () => {
+  it("lists a kind the page does not read, shading only the records the Trace stores", () => {
+    const compaction = event({
+      type: "compaction_begin",
+      reason: "context",
+      mode: "summarize",
+      context: 180000,
+      turns: 12,
+    });
+    expect(stepLine(step(compaction))).toMatchObject({ name: "compaction_begin", stored: true });
+    expect(stepLine(step(compaction)).preview).toContain('"reason":"context"');
+    expect(stepLine(step(text(0, "delta", "Hi")))).toMatchObject({
       phase: "delta",
       stored: false,
       preview: 'delta "Hi"',
     });
+    for (const frame of firstRun.filter((each) => each.kind !== "record")) {
+      expect(stepLine(frame).stored).toBe(false);
+    }
   });
 });

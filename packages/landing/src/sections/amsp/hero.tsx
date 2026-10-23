@@ -1,8 +1,8 @@
 /**
- * The AMSP page's opening, in two columns as on mmsp.penguin.ooo: on the left the protocol's full
- * name with its initials in the brand colour, the claim, the line to MMSP, two actions (the
- * reference, and a prompt to copy for a coding agent) and three counts read from the vocabulary;
- * on the right the player. One column below `lg`, the player under the copy.
+ * The AMSP page's opening, in two columns as on mmsp.penguin.ooo: on the left the AMSP mark and the
+ * protocol's full name with its initials in the brand colour, the claim, the line to MMSP and two
+ * actions (the reference, and a prompt to copy for a coding agent); on the right the player. One
+ * column below `lg`, the player under the copy.
  */
 import { useEffect, useState } from "react";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@prismshadow/penguin-ui/site";
 import { S } from "../../lib/strings";
 import { DOCS_URL, MMSP_URL } from "../../lib/links";
-import { ENVELOPE_COUNT, STORED_KIND_COUNT, STREAM_COUNT } from "../../lib/amsp-vocabulary";
+import { AmspMark } from "../../components/amsp-mark";
 import { ExternalLink, ExternalLinkScope } from "../../components/external-link";
 import { StreamPlayer } from "../../components/stream-player";
 
@@ -59,22 +59,13 @@ function CopyPromptButton() {
 }
 
 export function AmspHero() {
-  const facts = [
-    { value: ENVELOPE_COUNT, label: S.amsp.facts.envelopes },
-    { value: STORED_KIND_COUNT, label: S.amsp.facts.records },
-    { value: STREAM_COUNT, label: S.amsp.facts.streams },
-  ];
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
       <div className="relative mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 px-4 pt-12 pb-14 sm:px-6 sm:pt-16 lg:pt-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:gap-12">
         <div className="min-w-0">
           <p className="anim-rise flex items-center gap-3">
-            <img
-              src={`${import.meta.env.BASE_URL}penguin-logo.svg`}
-              alt=""
-              className="h-10 w-10 shrink-0"
-            />
+            <AmspMark className="h-10 w-10 shrink-0" />
             <span className="text-lg font-semibold tracking-tight sm:text-xl">
               {NAME.map((word, i) => (
                 <span key={word}>
@@ -126,22 +117,6 @@ export function AmspHero() {
             </a>
             <CopyPromptButton />
           </div>
-
-          <ul
-            className="anim-rise mt-10 grid grid-cols-3 gap-4 border-t border-gray-200 pt-6 dark:border-gray-800"
-            style={{ animationDelay: "240ms" }}
-          >
-            {facts.map((fact) => (
-              <li key={fact.label} className="min-w-0">
-                <span className="block text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
-                  {fact.value}
-                </span>
-                <span className="mt-2 block text-xs leading-5 text-gray-500 dark:text-gray-400">
-                  {fact.label}
-                </span>
-              </li>
-            ))}
-          </ul>
         </div>
 
         <div className="anim-rise min-w-0" style={{ animationDelay: "120ms" }}>

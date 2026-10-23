@@ -1,6 +1,6 @@
 /**
  * Three steps to a first run: turn the agent's API on in the Web App, run it with curl (and what
- * comes back, cut from the scripted tool-call run), or from TypeScript with the SDK. The code is
+ * comes back, cut from the scripted first-request run), or from TypeScript with the SDK. The code is
  * lib/amsp-quickstart.ts; the TypeScript is highlighted, the shell commands are code cards.
  */
 import type { ReactNode } from "react";
@@ -28,7 +28,7 @@ function Step({ index, title, children }: { index: number; title: string; childr
 
 export function AmspQuickstart() {
   const Q = S.amsp.quickstart;
-  const response = responseExcerpt(SCENARIOS[0]!.events, 1, 3, Q.curl.elided);
+  const response = responseExcerpt(SCENARIOS[0]!.steps, 3, 3, Q.curl.elided);
   return (
     <Section id="quickstart" title={Q.title}>
       <ol className="mx-auto max-w-4xl space-y-12">
