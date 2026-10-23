@@ -1,0 +1,153 @@
+<!doctype html>
+<!--
+  Source for the AMSP page's share card (public/og-amsp.png), rendered by
+  `node scripts/capture-og-cover.mjs amsp`. Static and dependency-free, like og-cover.html,
+  whose card this one shares: the same size, ground and glows. Edit this file, re-run the
+  script, commit the PNG.
+
+  The picture is four events of the scripted tool-call run the page replays (src/lib/amsp-demo.ts),
+  as its events pane lists them: envelope type, payload type, a preview. Change them with the
+  run's vocabulary.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      .card {
+        position: relative;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background: #141414;
+        color: #f7f7f7;
+      }
+      /* Same two glows as og-cover.html. */
+      .glow {
+        position: absolute;
+        border-radius: 9999px;
+        filter: blur(90px);
+        opacity: 0.22;
+      }
+      .glow-a {
+        top: -180px;
+        left: -140px;
+        width: 700px;
+        height: 700px;
+        background: radial-gradient(circle, #4285f4 0%, transparent 66%);
+      }
+      .glow-b {
+        right: -200px;
+        bottom: -260px;
+        width: 760px;
+        height: 760px;
+        background: radial-gradient(circle, #0ea5e9 0%, transparent 66%);
+      }
+      .inner {
+        position: relative;
+        display: flex;
+        height: 100%;
+        flex-direction: column;
+        justify-content: space-between;
+        box-sizing: border-box;
+        padding: 64px 76px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        color: #d4d4d4;
+      }
+      .logo {
+        width: 56px;
+        height: 56px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 96px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1;
+      }
+      .name {
+        margin: 14px 0 0;
+        font-size: 34px;
+        font-weight: 500;
+        color: #d4d4d4;
+      }
+      /* The initials, in the brand blue the page draws them in. */
+      .name b {
+        font-weight: 600;
+        color: #8ab4f8;
+      }
+      .stream {
+        margin: 0;
+        border-left: 3px solid rgba(171, 171, 171, 0.3);
+        padding: 4px 0 4px 22px;
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 23px;
+        line-height: 1.6;
+        color: #ababab;
+      }
+      .stream .kind {
+        color: #f0f0f0;
+      }
+      .stream .closer {
+        color: #8ab4f8;
+      }
+      .foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid rgba(171, 171, 171, 0.22);
+        padding-top: 24px;
+        font-size: 25px;
+        color: #d4d4d4;
+      }
+      .domain {
+        font-weight: 600;
+        color: #8ab4f8;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="glow glow-a"></div>
+      <div class="glow glow-b"></div>
+      <div class="inner">
+        <div class="brand">
+          <img class="logo" src="../public/penguin-logo.svg" alt="" />PenguinHarness
+        </div>
+        <div>
+          <h1>AMSP</h1>
+          <p class="name"><b>A</b>gent <b>M</b>essage <b>S</b>tream <b>P</b>rotocol</p>
+        </div>
+        <pre
+          class="stream"
+        >server_event  <span class="kind">hello</span>             session-…5d0c2e7a  demo/coder
+model_msg     <span class="kind">tool_call</span>         exec_command {"cmd":"date"}
+model_msg     <span class="kind">text</span>              "It's 09:41 UTC on Wednesday, …"
+event_msg     <span class="closer">task_end</span>          completed</pre>
+        <div class="foot">
+          <div>One protocol for every agent message</div>
+          <div class="domain">penguin.ooo/amsp</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

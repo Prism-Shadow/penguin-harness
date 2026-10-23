@@ -22,6 +22,7 @@ export const zh = {
     home: "主页",
     blog: "博客",
     download: "下载",
+    amsp: "AMSP",
     docs: "文档",
     gallery: "画廊",
     github: "GitHub",
@@ -420,6 +421,168 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     notFound: "文章不存在",
     backHome: "返回首页",
     toc: "目录",
+  },
+
+  /**
+   * The AMSP page (pages/amsp.tsx, sections/amsp/*): AMSP v2 on one page, with scripted runs
+   * replayed. Protocol names (record kinds, fields, routes) stay as the protocol spells them; the
+   * Web App's labels are quoted verbatim from its dictionary.
+   */
+  amsp: {
+    /** The tab title and description while the page is open; the static shell carries the English pair (scripts/site-routes.mjs). */
+    title: "AMSP — Agent Message Stream Protocol | PenguinHarness",
+    description:
+      "AMSP 是 PenguinHarness Agent 的事件流：模型的文本与思考、工具调用与结果、审批、用量和运行边界，经 SSE 实时送达，与 Trace 存下的记录一致。",
+    /** No-break spaces keep 「所有 Agent 消息」 on one line: the headline breaks at its comma. */
+    headline: "所有\u00a0Agent\u00a0消息，同一种协议",
+    subline:
+      "模型的文本和思考、每次工具调用及其结果、审批、Token 用量和运行边界，经 SSE 实时送达，用的就是 Trace 存下的那些记录。",
+    /** The sentence after the "MMSP" link, which opens it. */
+    lineage: " 传输一次模型调用；AMSP 传输 Agent 的每次运行。",
+    reference: "协议参考",
+    copyPrompt: "复制给编码 Agent 的提示词",
+    copied: "已复制",
+    /** The Web App's API-tab prompt (apiAgentPrompt), with the per-Agent lines pointing at that tab. */
+    agentPrompt: (docsUrl: string) =>
+      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用 Agent 的代码。\n\nBase URL 与 Agent ID：在 PenguinHarness 中该 Agent 的 API 标签页查看。\n\n使用 @prismshadow/amsp SDK：stream() 读取事件流，await run() 获取完整结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
+    /** The hero's three counts, each read from lib/amsp-vocabulary.ts; these are their labels. */
+    facts: {
+      envelopes: "种信封类型",
+      records: "种记录写入 Trace",
+      streams: "条流：每个 Session 一条，每个用户一条",
+    },
+
+    player: {
+      label: "示例运行",
+      scenarios: { tool: "工具调用", approval: "审批", answer: "直接回答" },
+      pause: "暂停",
+      play: "播放",
+      input: "同一个客户端",
+      events: "事件依次到达",
+      /** The legend of the faint ground under the events the Trace stores. */
+      stored: "写入 Trace",
+      assembled: "这次运行的全貌",
+      userInput: "输入",
+      request: (n: number) => `Request ${n}`,
+      thinking: (level: string) => `思考等级 ${level}`,
+      streaming: "传输中",
+      approval: { waiting: "等待审批", allow: "已允许", deny: "已拒绝", forbidden: "策略禁止" },
+      running: "运行仍在进行。",
+      requests: (n: number) => `${n} 次 Request`,
+      tokens: (n: string) => `${n} Token`,
+      note: "脚本扮演模型的示例运行：记录、顺序和字段遵循协议，文字、耗时与 Token 数仅作演示。",
+    },
+
+    /** The drawn nesting of a run (sections/amsp/boundaries.tsx). */
+    boundaries: {
+      title: "三个问题，各有一条记录作答",
+      subtitle:
+        "运行结束了吗？这次模型请求结束了吗？这条消息完整了吗？task_end、request_end 和完整消息分别作答，一层套一层。",
+      figureLabel:
+        "一次运行的嵌套结构：task_begin 与 task_end 之间有两个 Request。第一个 Request 里，思考和工具调用先以片段流出，再以完整记录收尾；工具输出在 request_end 之后才完整。第二个 Request 流出回答。",
+      /** The figure in words: read out with it, and shown in its place on a phone. */
+      steps: [
+        "task_begin 打开运行，task_end 带着状态关闭它。",
+        "每个 Request 以带思考等级的 request_begin 开始，以 request_end 结束。",
+        "消息先以 partial_* 片段流出（start、delta、stop），随后由完整记录取代。",
+        "工具在 Request 仍打开时开始运行，它的 tool_call_output 可以在 request_end 之后才完整。",
+      ],
+      partial: "partial_* 片段，仅实时",
+      complete: "完整记录，写入 Trace",
+      caption: (ms: number) =>
+        `在上面的工具调用示例里，tool_call_output 在 request_end 之后 ${ms} ms 才完整，早于下一个 request_begin。`,
+    },
+
+    /** The table of every record and event (sections/amsp/vocabulary.tsx), one row per lib/amsp-vocabulary.ts row. */
+    vocabulary: {
+      title: "全部记录与事件",
+      subtitle:
+        "记录就是 Trace 里的那一行，逐字节相同；v2 只给 Trace 加了 task_begin、task_end 和 request_begin 的 thinking_level。客户端忽略不认识的类型。",
+      head: {
+        envelope: "type",
+        kinds: "payload.type",
+        trace: "Trace",
+        stream: "流",
+        meaning: "含义",
+      },
+      stored: "写入",
+      live: "仅实时",
+      streams: { session: "Session", user: "用户", both: "两者" },
+      meaning: {
+        meta: "一个模型上下文开启：模型、系统提示词、Workspace 和来源。每个 Trace 文件的第一条记录。",
+        complete: "完整消息，模型看到或说出的原样内容，附带提供方的 fidelity 数据。",
+        partial: "流式传输中的同一批消息：start、delta、stop，随后由完整消息取代。",
+        engine:
+          "引擎的控制与计量记录：Task 与 Request 的边界、思考等级、Token 用量、压缩、审批与 Hook。",
+        host: "宿主关于单个 Session 的实时事实：运行状态、待审批的工具调用、标题和 Goal 轮次。",
+        user: "一个登录用户的通知：Session 列表、定时任务和 Workbench 页面的变化。",
+        transport: "两条流共用的连接控制：没有事件 id，不推进游标，也不会重放。",
+      },
+    },
+
+    /** The streams, the doors and the SDK (sections/amsp/streams.tsx). */
+    streams: {
+      title: "两条流，两扇门，一个 SDK",
+      subtitle:
+        "Web App、CLI、Workbench 页面和你自己的程序读的是同一种信封，区别只在从哪扇门进来。",
+      head: { streams: "流", doors: "门", sdk: "SDK" },
+      streams: {
+        session: {
+          name: "Session 流",
+          text: "一个 Session 的记录与实时事实。可在运行中途加入，也可凭 Last-Event-ID 从任一事件重放；其中写入的部分就是 Trace。",
+        },
+        user: {
+          name: "用户流",
+          text: "一个登录用户的通知。尽力送达，事实本身保存在服务端。",
+        },
+      },
+      doors: {
+        key: {
+          name: "Agent 密钥",
+          text: "外部程序和 AgentBench 带着 Agent 的密钥进来。",
+        },
+        session: {
+          name: "登录会话",
+          text: "Web App、CLI 和 Workbench 页面凭登录 Cookie 或本机令牌进来，路径和今天一样。",
+        },
+      },
+      sdk: {
+        AgentClient:
+          "经 Agent 密钥运行 Agent：stream() 逐条读事件，run() 和 result() 给出完整结果。",
+        SessionReader: "经任一扇门跟随一个 Session：先读历史再接实时尾流，去重，断档后重新同步。",
+      },
+      retired: (prefix: string, code: string, version: string) =>
+        `AMSP v1（${prefix}）已退役，请求会得到 ${code}；@prismshadow/amsp ${version} 起只支持 v2。`,
+    },
+
+    /** Three steps to a first run (sections/amsp/quickstart.tsx); the code is lib/amsp-quickstart.ts. */
+    quickstart: {
+      title: "三步跑起第一次运行",
+      enable: {
+        title: "打开 Agent 的 API",
+        /** The Web App's labels, verbatim from packages/web's zh dictionary. */
+        text: "在 PenguinHarness 中打开「智能体」，选中一个 Agent，进入「API」标签页，打开「开启 API 访问」，再点「新建密钥」。",
+        link: "Agent API 使用指南",
+      },
+      curl: {
+        title: "用 curl 运行",
+        response: "响应",
+        note: "响应就是这次运行本身：每条记录一行 data:，以 task_state idle 事件和 data: [DONE] 结尾。",
+        elided: "每条记录一行 data:",
+      },
+      sdk: { title: "或者用 TypeScript" },
+    },
+
+    links: {
+      title: "继续阅读",
+      items: {
+        reference: { name: "AMSP 协议参考", text: "逐条说明每种记录与事件" },
+        omni: { name: "OmniMessage", text: "每种记录的 payload 字段" },
+        guide: { name: "Agent API 使用指南", text: "密钥、审批模式、路由与错误" },
+        npm: { name: "@prismshadow/amsp", text: "npm 上的 SDK，适用于 Node 24 与浏览器" },
+        source: { name: "源码", text: "packages/amsp，Apache-2.0" },
+      },
+    },
   },
 };
 

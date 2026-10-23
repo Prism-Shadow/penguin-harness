@@ -31,6 +31,7 @@ export function Footer() {
             },
             { id: "blog", href: "/blog", label: S.footer.blog, render: routeLink },
             { id: "download", href: "/download", label: S.nav.download, render: routeLink },
+            { id: "amsp", href: "/amsp", label: S.nav.amsp, render: routeLink },
           ],
         },
         {

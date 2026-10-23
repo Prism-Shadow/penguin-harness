@@ -1,9 +1,12 @@
 /**
- * Router: home + blog list + blog post inside a shared Nav/Footer layout.
+ * Router: home, blog list, blog post, download and the AMSP page inside a shared Nav/Footer
+ * layout. The AMSP page is its own chunk: its player, scripted runs and code samples load only on
+ * that route.
  * basename comes from Vite's BASE_URL so the site works under the GitHub Pages
  * project subpath; a route change scrolls to the top or to its hash target
  * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry).
  */
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router";
 import { useRouteScroll } from "@prismshadow/penguin-ui/site";
 import { DOCS_URL, GALLERY_URL } from "./lib/links";
@@ -15,6 +18,10 @@ import { HomePage } from "./pages/home";
 import { BlogListPage } from "./pages/blog-list";
 import { BlogPostPage } from "./pages/blog-post";
 import { DownloadPage } from "./pages/download";
+
+const AmspPage = lazy(() =>
+  import("./pages/amsp").then((module) => ({ default: module.AmspPage })),
+);
 
 /**
  * Deep links into a sibling SPA (the docs, the gallery) that missed a real file (e.g. an
@@ -57,6 +64,15 @@ export function AppRouter() {
           <Route path="/blog" element={<BlogListPage />} />
           <Route path="/blog/:slug" element={<BlogPostPage />} />
           <Route path="/download" element={<DownloadPage />} />
+          <Route
+            path="/amsp"
+            element={
+              // Holds the viewport while the chunk loads, so the footer does not flash up the page.
+              <Suspense fallback={<div className="min-h-screen" />}>
+                <AmspPage />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
         {/* Outside Layout: pure redirects, no nav/footer flash. */}

@@ -22,6 +22,7 @@ export const en: Strings = {
     home: "Home",
     blog: "Blog",
     download: "Download",
+    amsp: "AMSP",
     docs: "Docs",
     gallery: "Gallery",
     github: "GitHub",
@@ -431,5 +432,159 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     notFound: "Post not found",
     backHome: "Back to home",
     toc: "On this page",
+  },
+
+  amsp: {
+    title: "AMSP — Agent Message Stream Protocol | PenguinHarness",
+    description:
+      "AMSP is the event stream of a PenguinHarness agent: the model's text and thinking, tool calls and results, approvals, usage and run boundaries, live over SSE in the records the Trace stores.",
+    headline: "One protocol for every agent message",
+    subline:
+      "The model's text and thinking as they stream, each tool call and its result, approvals, token usage and the run's boundaries, delivered live over SSE in the very records the Trace stores.",
+    lineage: " streams one model call; AMSP streams an agent's runs.",
+    reference: "Protocol reference",
+    copyPrompt: "Copy prompt for a coding agent",
+    copied: "Copied",
+    agentPrompt: (docsUrl: string) =>
+      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call an agent.\n\nBase URL and Agent ID: from the agent's API tab in PenguinHarness.\n\nUse the @prismshadow/amsp SDK: stream() for streamed events and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
+    facts: {
+      envelopes: "envelope types",
+      records: "record kinds the Trace stores",
+      streams: "streams: one per Session, one per user",
+    },
+
+    player: {
+      label: "Example runs",
+      scenarios: { tool: "Tool call", approval: "Approval", answer: "Plain answer" },
+      pause: "Pause",
+      play: "Play",
+      input: "One client",
+      events: "Events as they arrive",
+      stored: "Stored in the Trace",
+      assembled: "The run, assembled",
+      userInput: "Input",
+      request: (n: number) => `Request ${n}`,
+      thinking: (level: string) => `thinking ${level}`,
+      streaming: "streaming",
+      approval: {
+        waiting: "awaiting approval",
+        allow: "allowed",
+        deny: "denied",
+        forbidden: "forbidden by policy",
+      },
+      running: "The run is still going.",
+      requests: (n: number) => (n === 1 ? "1 Request" : `${n} Requests`),
+      tokens: (n: string) => `${n} tokens`,
+      note: "An example run with a scripted model: the records, their order and their fields follow the protocol; the words, timings and token counts are illustrative.",
+    },
+
+    boundaries: {
+      title: "Three questions, each answered by a record",
+      subtitle:
+        "Is the run over? Is the model's request over? Is this message complete? task_end, request_end and the complete message answer them, one inside the other.",
+      figureLabel:
+        "The nesting of one run: between task_begin and task_end are two Requests. In the first, the thinking and the tool call stream as fragments and close with their complete records; the tool's output completes after request_end. The second Request streams the answer.",
+      steps: [
+        "task_begin opens the run; task_end closes it with its status.",
+        "Each Request opens with request_begin, which carries the thinking level, and closes with request_end.",
+        "A message streams as partial_* fragments (start, delta, stop), then its complete record replaces them.",
+        "A tool starts while its Request is open; its tool_call_output may complete after request_end.",
+      ],
+      partial: "partial_* fragments, live only",
+      complete: "complete record, stored in the Trace",
+      caption: (ms: number) =>
+        `In the tool-call run above, tool_call_output completes ${ms} ms after request_end, before the next request_begin.`,
+    },
+
+    vocabulary: {
+      title: "Every record and event",
+      subtitle:
+        "A record is the Trace's own line, byte for byte; v2 adds only task_begin, task_end and request_begin's thinking_level to the Trace. A client ignores a type it does not know.",
+      head: {
+        envelope: "type",
+        kinds: "payload.type",
+        trace: "Trace",
+        stream: "Stream",
+        meaning: "Meaning",
+      },
+      stored: "stored",
+      live: "live only",
+      streams: { session: "Session", user: "user", both: "both" },
+      meaning: {
+        meta: "A model context opened: its model, system prompt, Workspace and source. The first record of every Trace file.",
+        complete:
+          "Complete messages, exactly what the model saw or said, with the provider's fidelity data.",
+        partial:
+          "The same messages while they stream: start, delta, stop, then the complete message replaces them.",
+        engine:
+          "The engine's control and accounting: Task and Request boundaries, the thinking level, token usage, compactions, approvals and hooks.",
+        host: "The host's live facts about one Session: run state, tool calls awaiting approval, title and goal rounds.",
+        user: "Notifications for one signed-in user: changes to Session lists, schedules and Workbench pages.",
+        transport:
+          "Connection control on both streams: no event id, so it moves no cursor and is never replayed.",
+      },
+    },
+
+    streams: {
+      title: "Two streams, two doors, one SDK",
+      subtitle:
+        "The Web App, the CLI, Workbench pages and your own programs read the same envelope; they differ only in the door they come in by.",
+      head: { streams: "Streams", doors: "Doors", sdk: "SDK" },
+      streams: {
+        session: {
+          name: "Session stream",
+          text: "One Session's records and live facts. Join it mid-run, or replay it from any event with Last-Event-ID; its stored part is the Trace.",
+        },
+        user: {
+          name: "User stream",
+          text: "Notifications for one signed-in user. Best effort: the facts themselves are kept on the server.",
+        },
+      },
+      doors: {
+        key: {
+          name: "Agent key",
+          text: "External programs and AgentBench come in with the agent's key.",
+        },
+        session: {
+          name: "Signed in",
+          text: "The Web App, the CLI and Workbench pages come in with a sign-in cookie or the local token, at the routes they use today.",
+        },
+      },
+      sdk: {
+        AgentClient:
+          "Runs an agent through the key door: stream() for the events, run() and result() for the outcome.",
+        SessionReader:
+          "Follows a Session through either door: history first, then the live tail, deduplicated and resynced after a gap.",
+      },
+      retired: (prefix: string, code: string, version: string) =>
+        `AMSP v1 (${prefix}) is retired and answers ${code}; @prismshadow/amsp ${version} speaks v2 only.`,
+    },
+
+    quickstart: {
+      title: "From zero to the first run",
+      enable: {
+        title: "Turn the agent's API on",
+        text: "In PenguinHarness, open Agents, pick an agent, go to its API tab, switch on Enable API access, then click New key.",
+        link: "Agent API guide",
+      },
+      curl: {
+        title: "Run it with curl",
+        response: "response",
+        note: "The answer is the run itself: one data: line per record, ending with the task_state idle event and data: [DONE].",
+        elided: "one data: line per record",
+      },
+      sdk: { title: "Or from TypeScript" },
+    },
+
+    links: {
+      title: "Read on",
+      items: {
+        reference: { name: "AMSP reference", text: "Every record and event, field by field" },
+        omni: { name: "OmniMessage", text: "The payload fields of every record kind" },
+        guide: { name: "Agent API guide", text: "Keys, approval modes, routes and errors" },
+        npm: { name: "@prismshadow/amsp", text: "The SDK on npm, for Node 24 and browsers" },
+        source: { name: "Source", text: "packages/amsp, Apache-2.0" },
+      },
+    },
   },
 };
