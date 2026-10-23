@@ -6,7 +6,8 @@
  *   client-protocols.ts  MMSP's routing (passed through) and the path and fast-mode protocol
  *                        per client; imports only MMSP's credentials module
  *   catalog.ts           the data and lookups; imports MMSP's credentials module
- *   env-keys.ts          the variables a model reads, asked of MMSP; imports catalog.ts
+ *   env-keys.ts          the variables a model reads and its client's default endpoint, asked
+ *                        of MMSP; imports catalog.ts
  *   seed.ts              the Project seed; imports catalog.ts
  *
  * The environment-key rule and the routing are MMSP's (`@prismshadow/mmsp/credentials`); no

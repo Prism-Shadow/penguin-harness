@@ -23,10 +23,13 @@
  * brings them back; a single pick has filled already and keeps nothing.
  *
  * Read-only (the default — an older reply, a Trace), the options stay on screen with every
- * control disabled and no fill button: the question is still part of the record.
+ * control disabled and no fill button: the question is still part of the record. Once the reply
+ * has been answered, the options the message that answered it names are picked (`answeredWith`,
+ * core's `parseChoicePick`), so a reload still shows the pick; an answer the reader wrote
+ * themselves, or any other message, picks nothing.
  */
-import { useId, useState } from "react";
-import { choiceFillText } from "@prismshadow/penguin-core/a2ui";
+import { useId, useMemo, useState } from "react";
+import { choiceFillText, parseChoicePick } from "@prismshadow/penguin-core/a2ui";
 import type { A2uiChoice, A2uiOption } from "@prismshadow/penguin-core/a2ui";
 import { ICON_SIZE } from "../../../icon-scale";
 import { useUiStrings } from "../../../strings";
@@ -59,6 +62,18 @@ function persistPicks(picked: readonly string[]): string[] | null {
 function restorePicks(spec: A2uiChoice, saved: unknown): readonly string[] {
   if (!Array.isArray(saved)) return [];
   return spec.options.map((option) => option.label).filter((label) => saved.includes(label));
+}
+
+/**
+ * The labels the message that answered the reply picked, or null to show the picks as they
+ * stand: the block is the open question, no message answered it, or the message is not a pick.
+ */
+function useAnsweredPicks(spec: A2uiChoice, actions: A2uiActions): readonly string[] | null {
+  const { interactive, answeredWith } = actions;
+  return useMemo(
+    () => (interactive || answeredWith === undefined ? null : parseChoicePick(spec, answeredWith)),
+    [spec, interactive, answeredWith],
+  );
 }
 
 /** A single-select whose options fit one row of chips: four at most, short, none described. */
@@ -95,6 +110,12 @@ function SingleChoice({
   strings: A2uiStrings;
 }) {
   const [picked, setPicked] = useState<string | null>(null);
+  const answered = useAnsweredPicks(spec, actions);
+  // The options go by their place in the list (see OTHER); a single choice's answer is one.
+  const shown =
+    answered === null
+      ? picked
+      : String(spec.options.findIndex((option) => option.label === answered[0]));
   const recommended = spec.options.findIndex((option) => option.recommended === true);
   const options = spec.options.map((option, i) => groupOption(option, String(i), strings));
   if (spec.allowOther === true) {
@@ -111,7 +132,7 @@ function SingleChoice({
       shape={compactChoice(spec) ? "chip" : "card"}
       size="base"
       options={options}
-      value={picked}
+      value={shown}
       onChange={(value) => {
         const option = spec.options[Number(value)];
         if (value === OTHER || option === undefined) {
@@ -146,13 +167,14 @@ function MultiChoice({
     (saved) => restorePicks(spec, saved),
     persistPicks,
   );
+  const answered = useAnsweredPicks(spec, actions);
   return (
     <div className="min-w-0">
       <ChoiceGroup
         shape="card"
         multiple
         options={spec.options.map((option) => groupOption(option, option.label, strings))}
-        value={picked}
+        value={answered ?? picked}
         onChange={(labels) => setPicked(() => labels)}
         disabled={!actions.interactive}
         aria-labelledby={questionId}

@@ -21,6 +21,8 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   tokenUsage,
   toolCall,
   toolListReady,
@@ -349,6 +351,40 @@ describe("agent.resumeSession", () => {
     const session = await agent.resumeSession({ sessionId: SID });
     expect(session.compactability()).toBe("just_compacted");
     session.dispose();
+  });
+
+  it("a file closed by a compaction stays closed when Task records follow it: the restart opens the next context with the summary pending", async () => {
+    // A Task that ended on its compaction leaves its task_end, and the next Task its
+    // task_begin, behind the compaction_end: Task records never open the next file. A
+    // process that died right there must still find the summary in this file.
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      taskBegin(),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]the story so far[/summary]"),
+      requestEnd("completed"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      taskEnd(),
+      taskBegin(),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(session.compactability()).toBe("just_compacted");
+      // The summary is what the next run sends, and nothing of the closed context is replayed.
+      expect(session.hasPendingInput()).toBe(true);
+      expect(session.resumedHistory).toEqual([]);
+    } finally {
+      session.dispose();
+    }
   });
 
   it("compactability stays empty for a resumed session whose context has no completed turn", async () => {

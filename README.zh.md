@@ -269,7 +269,7 @@ pnpm install && pnpm build   # 先构建：core 的导出指向 dist/
 pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，依赖只构建一次）
 ```
 
-用编码 Agent 开发本仓库：开发用的 Skill 在 `.agents/skills/` 下（`penguin-harness-dev`、`penguin-harness-frontend`、`penguin-harness-manual-test`）。Claude Code 通过 `.claude` → `.agents` 软链接直接加载，无需安装；换用其他 Agent 时，把 `.agents/skills/*` 链接或复制到它读取 Skill 的目录即可。
+用编码 Agent 开发本仓库：开发用的 Skill 在 `.agents/skills/` 下（`penguin-harness-dev`、`penguin-harness-frontend`、`penguin-harness-manual-test`、`penguin-harness-writing`）。Claude Code 通过 `.claude` → `.agents` 软链接直接加载，无需安装；换用其他 Agent 时，把 `.agents/skills/*` 链接或复制到它读取 Skill 的目录即可。
 
 完整的 Workspace 开发指南见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)：开发命令、质量门禁、仓库布局和 changelog 规则。
 

@@ -11,17 +11,27 @@
  * While the form is the open question its answers are kept as a draft (draft.ts), so a reload
  * brings them back over the defaults; filling leaves them on screen and in the draft.
  *
- * Read-only, the fields show with every control disabled and no fill button.
+ * Read-only, the fields show with every control disabled and no fill button. Once the reply has
+ * been answered they show the answers read back out of the message that answered it
+ * (`answeredWith`, core's `parseFormFill`), so a reload brings back what the reader sent, not the
+ * model's defaults; a field the message has no acceptable line for shows unanswered
+ * (form-answers.ts). A message that is not the form's answer leaves the form as it was.
  */
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import type { FormEvent } from "react";
-import { fieldProblem, formFillText } from "@prismshadow/penguin-core/a2ui";
+import { fieldProblem, formFillText, parseFormFill } from "@prismshadow/penguin-core/a2ui";
 import type { A2uiForm } from "@prismshadow/penguin-core/a2ui";
 import { useUiStrings } from "../../../strings";
 import { Button } from "../../actions/button/button";
 import { useA2uiActions } from "./actions";
 import { useA2uiDraft } from "./draft";
-import { draftAnswers, filledAnswers, formReady, restoreAnswers } from "./form-answers";
+import {
+  answeredState,
+  draftAnswers,
+  filledAnswers,
+  formReady,
+  restoreAnswers,
+} from "./form-answers";
 import type { A2uiFormState } from "./form-answers";
 import { FormFieldControl } from "./form-fields";
 import { A2UI_TITLE, InlineText } from "./parts";
@@ -35,8 +45,16 @@ export function FormBlock({ spec }: { spec: A2uiForm }) {
     (saved) => restoreAnswers(spec, saved),
     persist,
   );
-  const disabled = !actions.interactive;
-  const ready = actions.interactive && formReady(spec, answers);
+  const { interactive, answeredWith } = actions;
+  // What the message that answered the reply says, or null to show the answers as they stand.
+  const answered = useMemo(() => {
+    if (interactive || answeredWith === undefined) return null;
+    const recovered = parseFormFill(spec, answeredWith);
+    return recovered === null ? null : answeredState(spec, recovered);
+  }, [spec, interactive, answeredWith]);
+  const shown = answered ?? answers;
+  const disabled = !interactive;
+  const ready = interactive && formReady(spec, answers);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -56,15 +74,15 @@ export function FormBlock({ spec }: { spec: A2uiForm }) {
           <FormFieldControl
             key={field.id}
             field={field}
-            answer={answers[field.id]}
+            answer={shown[field.id]}
             onChange={(answer) => setAnswers((current) => ({ ...current, [field.id]: answer }))}
             disabled={disabled}
             strings={strings}
-            problem={fieldProblem(field, answers[field.id])}
+            problem={fieldProblem(field, shown[field.id])}
           />
         ))}
       </div>
-      {actions.interactive && (
+      {interactive && (
         <div className="mt-3">
           <Button type="submit" variant="primary" size="sm" disabled={!ready}>
             {spec.submitLabel ?? strings.fill}

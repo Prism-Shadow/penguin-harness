@@ -1955,6 +1955,8 @@ export const zh = {
       `这个 Agent 在 ${machine} 上：设置、对话与删除都在那台机器上进行，和本服务端同 id 的 Agent 互不相干。`,
     /** The disabled Usage button on a machine's Agent: what the usage center counts. */
     usageThisServerOnly: "成本中心只统计本服务端的 Agent",
+    /** Why a connected machine's Agent cards wait: its list has not answered in this page load yet. */
+    readingMachineAgents: (machine: string): string => `正在读取 ${machine} 的 Agent…`,
     /** Delete's confirmation for a machine's Agent: the machine it is deleted on. */
     deleteConfirmOnMachine: (name: string, machine: string): string =>
       `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,
@@ -2393,6 +2395,8 @@ export const zh = {
     clearGroupKey: "清除分组密钥",
     /** A blank base URL that nothing fills: the group settings' placeholder, and a model's where its group sets none. */
     baseUrlNone: "未设置：使用客户端默认端点",
+    /** The blank base URL field where the client is known: the endpoint its requests go to. */
+    baseUrlDefault: (url: string): string => `未设置：默认发往 ${url}`,
     /** The group settings' Detect while neither the field nor the group holds a base URL. */
     detectNeedsBaseUrl: "先填写 base URL",
     /** The protocol menu's first row in the group settings: the group sets none. */
@@ -2521,8 +2525,8 @@ export const zh = {
       moonshot:
         "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需在环境中同时设置 MOONSHOT_BASE_URL=https://api.moonshot.ai/v1，或在此填写 key 并填该 base URL",
     } as Record<string, string | undefined>,
-    envBaseUrlNote: (envBaseUrlKey: string): string =>
-      `请求发往该客户端的默认端点；设置了 ${envBaseUrlKey} 时发往该地址`,
+    envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
+      `请求发往 ${defaultBaseUrl}；环境里设置了 ${envBaseUrlKey} 时改发往该地址`,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
@@ -2938,6 +2942,10 @@ export const zh = {
     sharedTag: "所有机器共用",
     sharedHint: "在 Project 配置中对所有机器统一管理，不能在这里移除。",
     machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
+    /** A machine out of reach, as the header's machine picker lists it. */
+    machineOutOfReach: (machine: string) => `${machine}（不可达）`,
+    /** A manage-installs row whose machine has not answered yet: its button waits for it. */
+    waitingFor: (machine: string) => `等待 ${machine} 答复`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "设置",
     pageDesc:
@@ -2982,6 +2990,8 @@ export const zh = {
       failed: (reason: string) => `加载失败：${reason}`,
       elsewhere: (machines: string) => `只在 ${machines} 上运行，本机不运行`,
       unsynced: "已安装，尚未同步到该机器",
+      /** Appended to a library status counted with Agents on a machine out of reach. */
+      lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
     noMatch: "没有匹配的插件。",
     /** The description of a shipped package the registry has no entry for. */
@@ -5000,6 +5010,17 @@ Benchmark：
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
+    /** The round navigator under the global summary: its title, and how many rounds it lists. */
+    roundNav: "轮次导航",
+    roundCount: (n: number) => `${n} 轮`,
+    /** A round head's control that returns to the navigator, on that round's row. */
+    backToNav: "回到导航",
+    /** The navigator's number box: its accessible name and its placeholder. */
+    jumpToRound: "跳转到轮次",
+    jumpToRoundPlaceholder: "轮次",
+    /** A level pill's hint where a Trace first states a thinking level, and where it changes. */
+    levelFirst: (level: string) => `思考等级 ${level}`,
+    levelChanged: (from: string, to: string) => `思考等级 ${from} → ${to}`,
   },
 
   benchmark: {

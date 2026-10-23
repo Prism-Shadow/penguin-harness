@@ -15,7 +15,9 @@
  * steps, two callouts, a diagram, and a block that cannot be drawn. It is live: the clock ticks
  * and the countdown counts down, a pick or a submit shows the text the app would put in the
  * composer as a toast, in the gallery's language, and the invalid block shows the fallback every
- * surface does. The widgets' data is a fixed snapshot, as a model's would be.
+ * surface does. The widgets' data is a fixed snapshot, as a model's would be. Below it the two
+ * choices and the form a reader answered come once more as an older reply shows them: read-only,
+ * their answers read back from the message the reader sent.
  */
 import { useMemo } from "react";
 import {
@@ -141,11 +143,36 @@ function a2uiReply(t: GalleryStrings["library"]["content"]): string {
   ].join("\n\n");
 }
 
+/** An answered block as an older reply shows it: its Markdown, and read-only actions with its answer. */
+interface AnsweredReply {
+  text: string;
+  actions: A2uiActions;
+}
+
+/** Every block of the sample reply that carries a reader's answer, once more, answered. */
+function answeredReplies(
+  t: GalleryStrings["library"]["content"],
+  lang: A2uiActions["lang"],
+): AnsweredReply[] {
+  return t.a2uiReply.flatMap(({ lead, spec, answer }) =>
+    answer === undefined
+      ? []
+      : [
+          {
+            text: [lead, fence("a2ui", JSON.stringify(spec, null, 2))].join("\n\n"),
+            actions: { interactive: false, fill: showFill, lang, answeredWith: answer },
+          },
+        ],
+  );
+}
+
 export function ContentBoard() {
   const { S, state } = useGallery();
   const t = S.library.content;
   // One string per language, so the memoised Markdown parses it once.
   const reply = useMemo(() => a2uiReply(t), [t]);
+  // One actions object per answered block and language, so its blocks keep their value.
+  const answered = useMemo(() => answeredReplies(t, state.lang), [t, state.lang]);
   return (
     <div className="gf-board">
       <BoardGroup title={t.headings} aside={t.headingsHint}>
@@ -231,6 +258,12 @@ export function ContentBoard() {
           <A2uiActionsProvider value={A2UI_ACTIONS[state.lang]}>
             <Prose text={reply} className="text-base leading-relaxed text-fg" />
           </A2uiActionsProvider>
+          <span className="lib-caption">{t.a2uiAnswered}</span>
+          {answered.map(({ text, actions }) => (
+            <A2uiActionsProvider key={text} value={actions}>
+              <Prose text={text} className="text-base leading-relaxed text-fg" />
+            </A2uiActionsProvider>
+          ))}
         </div>
       </BoardGroup>
     </div>
