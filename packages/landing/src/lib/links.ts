@@ -6,6 +6,13 @@ export const RELEASES_URL = `${REPO_URL}/releases`;
 export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 
 /**
+ * The host names this site is served from. A link in a post to one of them is a page of this
+ * site, not a site the reader is leaving for (see lib/post-links.ts); the page adds the host it is
+ * actually running on, so a preview deployment counts as itself.
+ */
+export const SITE_HOSTS: readonly string[] = ["penguin.ooo", "www.penguin.ooo"];
+
+/**
  * Docs site: a sibling SPA deployed under the landing page's own base ("/<repo>/docs/",
  * see scripts/build-site.mjs). A plain href — it is a separate app, not a router route.
  * In local dev this resolves to "/docs/", which only exists in the assembled build.

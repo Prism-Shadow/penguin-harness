@@ -431,5 +431,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     notFound: "Post not found",
     backHome: "Back to home",
     toc: "On this page",
+    references: "References",
+    backToRef: (n: number, k: number) =>
+      k > 1 ? `Back to reference ${n}, citation ${k}` : `Back to reference ${n}`,
   },
 };

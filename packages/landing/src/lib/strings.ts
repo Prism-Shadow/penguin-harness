@@ -420,6 +420,11 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     notFound: "文章不存在",
     backHome: "返回首页",
     toc: "目录",
+    /** The heading over a post's numbered citations. */
+    references: "参考资料",
+    /** A citation's back-link, for screen readers: the k-th place in the text that cites source n. */
+    backToRef: (n: number, k: number) =>
+      k > 1 ? `返回正文中引用 ${n} 的第 ${k} 处` : `返回正文中的引用 ${n}`,
   },
 };
 

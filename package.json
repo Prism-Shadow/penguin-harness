@@ -33,7 +33,7 @@
     "@prismshadow/penguin-cli": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@types/node": "^24.0.0",
-    "concurrently": "^10.0.4",
+    "concurrently": "^10.0.6",
     "esbuild": "^0.28.1",
     "oxlint": "^1.81.0",
     "prettier": "^3.9.4",

@@ -23,7 +23,7 @@
     "penguin": "node ../../scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data-cli PENGUIN_PROFILE=dev PORT=7369 -- tsx src/penguin.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.3.1",
     "@penguinharness/a2ui": "workspace:*",
     "@penguinharness/ace-rsi-toolkit": "workspace:*",
     "@penguinharness/agent-company": "workspace:*",
@@ -51,7 +51,7 @@
     "commander": "^13.0.0",
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
-    "smol-toml": "^1.3.0",
+    "smol-toml": "^1.9.1",
     "yaml": "^2.5.0"
   },
   "devDependencies": {
