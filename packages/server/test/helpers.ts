@@ -84,6 +84,7 @@ import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
 import { MachineEventHub } from "../src/machines/event-hub.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
+import { machineSessionForward } from "../src/machines/session-forward.js";
 import type { Access } from "../src/mechanisms/projects.js";
 import { ProcessShellPort } from "../src/builtin-browser/module.js";
 import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
@@ -443,6 +444,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
         machines,
         routes: machinesRoutes({ machines, access: accessDouble(), events }),
         serverProxyRoutes: machinesServerProxyRoutes(machines, { sockets, events }),
+        sessionForward: machineSessionForward(machines, { sockets, events }),
       },
     ]);
   }
