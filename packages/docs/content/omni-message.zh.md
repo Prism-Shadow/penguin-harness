@@ -5,7 +5,7 @@ description: OmniMessage 是统一的消息协议：SDK 产出它，Trace 存储
 
 OmniMessage 是 PenguinHarness 的统一消息协议。SDK 产出 OmniMessage 对象，Trace 逐行存储，Server 经 SSE 原样推送。流出去的、存下来的和模型看到的是同一种结构，前端、后端与存储之间没有第二套格式。
 
-本页先讲信封和三类消息，再逐字段列出全部 payload，最后是贯穿整个协议的规则：流式纪律、`stop_reason`、`origin` 与保真字段。类型定义见 `packages/core/src/omnimessage/types.ts`。
+本页先讲信封和三类消息，再逐字段列出全部 payload，最后是贯穿整个协议的规则：流式纪律、`stop_reason`、`origin` 与保真字段。类型定义见 `packages/amsp/src/omnimessage/types.ts`（`@prismshadow/amsp` 包），`@prismshadow/penguin-core` 原样再导出。
 
 ## 信封
 

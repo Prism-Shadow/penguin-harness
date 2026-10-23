@@ -32,6 +32,13 @@ export default defineConfig({
   ],
   format: ["esm"],
   target: "node24",
+  // The OmniMessage types and markers live in @prismshadow/amsp, and core's entries re-export
+  // them (`export *`). esbuild turns a nested `export *` of an external module into a runtime
+  // copy that leaves the names out of the module's static exports, so an `import { isSessionMeta }
+  // from "@prismshadow/penguin-core"` would not link. Bundling the package keeps every name a
+  // static export of core; it has no dependency of its own and holds no state, so the copy in
+  // core's dist and the one a host imports beside it are the same pure functions.
+  noExternal: ["@prismshadow/amsp"],
   dts: true,
   clean: true,
   sourcemap: true,

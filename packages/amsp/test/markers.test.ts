@@ -1,6 +1,6 @@
 /**
- * Message-marker module tests (packages/core/src/omnimessage/markers): the canonical
- * `[tag]…[/tag]` producers, their inverse parsers, and the compatibility rule that every
+ * Message-marker module tests (packages/amsp/src/omnimessage/markers, which core re-exports):
+ * the canonical `[tag]…[/tag]` producers, their inverse parsers, and the compatibility rule that every
  * parser also accepts the legacy `<tag>…</tag>` form (markers persist in Traces and in each
  * agent's stored compaction prompt) while producers only ever emit the square form.
  *

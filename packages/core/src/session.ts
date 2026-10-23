@@ -32,7 +32,7 @@ import type {
   SessionMetaPayload,
   StopReason,
 } from "./omnimessage/index.js";
-import { stripLeadingMarkerBlocks } from "./omnimessage/markers/index.js";
+import { stripLeadingMarkerBlocks } from "@prismshadow/amsp/markers";
 import type { ModelRef } from "./state/project-config.js";
 import { sameModelRef } from "./state/project-config.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";

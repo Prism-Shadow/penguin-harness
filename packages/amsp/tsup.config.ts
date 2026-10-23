@@ -1,7 +1,13 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: { index: "src/index.ts" },
+  entry: {
+    index: "src/index.ts",
+    // The OmniMessage records and their guards: what core re-exports as its own protocol types.
+    omnimessage: "src/omnimessage/types.ts",
+    // The message markers' producers and parsers: core's `@prismshadow/penguin-core/markers`.
+    markers: "src/omnimessage/markers/index.ts",
+  },
   format: ["esm"],
   // The package runs in Node 24 and in browsers: nothing Node-specific is resolved or injected,
   // and it has no runtime dependency to bundle.

@@ -63,7 +63,7 @@ import {
   transcribeUserInput,
   unwrapSyntheticBlock,
   userSteeringText,
-} from "../omnimessage/markers/index.js";
+} from "@prismshadow/amsp/markers";
 import type {
   ErrorCode,
   ApprovalDecision,

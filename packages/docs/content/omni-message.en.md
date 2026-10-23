@@ -5,7 +5,7 @@ description: OmniMessage is the unified message protocol that the SDK yields, th
 
 OmniMessage is PenguinHarness's unified message protocol. The SDK yields OmniMessage objects, the Trace stores them line by line, and the Server pushes them verbatim over SSE. What streams, what is stored, and what the model sees are one structure: there is no second format between front end, back end, and storage.
 
-This page starts with the envelope and its three message types, then lists every payload field by field, and ends with the rules that span the whole protocol: the streaming discipline, `stop_reason`, `origin` and provider fidelity. The type definitions live in `packages/core/src/omnimessage/types.ts`.
+This page starts with the envelope and its three message types, then lists every payload field by field, and ends with the rules that span the whole protocol: the streaming discipline, `stop_reason`, `origin` and provider fidelity. The type definitions live in `packages/amsp/src/omnimessage/types.ts` (the `@prismshadow/amsp` package), and `@prismshadow/penguin-core` re-exports them.
 
 ## The envelope
 

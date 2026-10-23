@@ -19,8 +19,12 @@ import type {
 // ToolDefinition is defined in omnimessage/types.ts (the tool_list_ready event carries the full tool schema); re-exported here to keep the original import path.
 export type { ToolDefinition } from "../omnimessage/types.js";
 
-/** Thinking level of one request. Shared: the LLM takes it per request and as a construction default, and a spawned child Session inherits or overrides it. */
-export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+/**
+ * Thinking level of one request. Shared: the LLM takes it per request and as a construction
+ * default, and a spawned child Session inherits or overrides it. Defined with the records
+ * (`request_begin.thinking_level` records it), re-exported here at its old path.
+ */
+export type { ThinkingLevelName } from "../omnimessage/types.js";
 
 /**
  * How a run was cut off early, returned as the **return value** of the run generators

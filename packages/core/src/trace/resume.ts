@@ -59,7 +59,7 @@ import {
   extractSummary,
   MARKER_TAGS,
   startsWithMarker,
-} from "../omnimessage/markers/index.js";
+} from "@prismshadow/amsp/markers";
 
 /** Replay result: all the state needed to resume a Session. */
 export interface ResumeResult {

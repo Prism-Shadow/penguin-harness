@@ -16,7 +16,7 @@
  * producer, parser and stripper in one place.
  */
 import { userText } from "../omnimessage/index.js";
-import { stripConversationMarkers } from "../omnimessage/markers/index.js";
+import { stripConversationMarkers } from "@prismshadow/amsp/markers";
 import type {
   OmniMessage,
   TextPayload,
