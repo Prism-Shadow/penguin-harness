@@ -49,6 +49,8 @@
  *     (finalizeHistory). Either way the duration comes from Trace timestamps
  *     alone and never the local clock, so a round settles to the same figure
  *     watched live and replayed after a reload. A stats row is only added if token_usage occurred during the Task.
+ *     The Trace's Task records (task_begin / task_end) are ignored outright, at every level:
+ *     segmentation is still derived as above, so a Trace reads the same with or without them.
  *   - Overlap-dedup helpers: buildDedupIndex/isDuplicate
  *     judge duplicates by exact match of the envelope JSON; when a complete
  *     message hits the dedup check, discardFragmentFor also discards the corresponding in-flight fragment.
@@ -58,6 +60,7 @@ import {
   isEventMessage,
   isModelMessage,
   isPartialPayload,
+  isTaskRecord,
   normalizeSessionSource,
   parseBackgroundTaskDoneMessage,
   parseUserSteeringText,
@@ -723,6 +726,9 @@ export function pushMessage(
   msg: OmniMessage,
   nowMs: number = Date.now(),
 ): void {
+  // Task records: no item, no Task change, no timestamp — checked before the origin routing so a
+  // child's own pair leaves the parent's timing alone too.
+  if (isTaskRecord(msg)) return;
   if (msg.origin && msg.origin.length > 0) {
     routeNested(model, msg, nowMs);
     return;

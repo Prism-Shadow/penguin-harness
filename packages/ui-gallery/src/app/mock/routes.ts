@@ -1462,6 +1462,8 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
   let taskIndex = -1;
   let openRequest: (typeof requests)[number] | null = null;
   let previous: OmniMessage | null = null;
+  /** A `task_begin` waiting for the turn its input opens: it heads that turn's rows. */
+  let heldTaskBegin: number | null = null;
   const calls = new Map<string, { index: number; span: (typeof toolSpans)[number] }>();
   history.forEach((message, i) => {
     const p = payloadOf(message);
@@ -1470,12 +1472,23 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       previous = message;
       return;
     }
+    // Task records time nothing, as on the server: a task_begin heads the turn its input opens,
+    // a task_end closes the rows of the turn it ends.
+    if (p.type === "task_begin") {
+      heldTaskBegin ??= i;
+      return;
+    }
+    if (p.type === "task_end") {
+      const last = tasks[tasks.length - 1];
+      if (last) last.messageTo = i;
+      return;
+    }
     if (p.type === "text" && p.role === "user") {
       taskIndex += 1;
       const prompt = promptLabel(p.text);
       tasks.push({
         taskIndex,
-        messageFrom: i,
+        messageFrom: heldTaskBegin ?? i,
         messageTo: i,
         startTs: "",
         endTs: message.timestamp,
@@ -1484,6 +1497,7 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
         toolMs: 0,
         ...(prompt !== undefined ? { prompt } : {}),
       });
+      heldTaskBegin = null;
     }
     const task = tasks[tasks.length - 1];
     if (task) {

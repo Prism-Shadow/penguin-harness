@@ -18,9 +18,10 @@
  * lives in `session_meta`; a context's boundaries in the compaction pair and the file split)
  * and that readers cannot derive it. The PR description says why the existing records could
  * not carry it. The rule itself is stated in the architecture spec's message-format section.
- * One stated exception, asked for by the owner: `request_begin.thinking_level` (each request's
- * effective level — `session_meta` deliberately omits the level and it can change mid-context,
- * so no existing record carries it).
+ * Two stated exceptions, both asked for by the owner: `request_begin.thinking_level` (each
+ * request's effective level — `session_meta` deliberately omits the level and it can change
+ * mid-context, so no existing record carries it), and the `task_begin` / `task_end` pair
+ * (where a Task starts and whether it reached its end — see TaskBeginPayload).
  *
  * Docs: packages/docs/content/omni-message.{zh,en}.md (site path /docs/omni-message) documents
  * this protocol payload-for-payload — keep the page in sync when changing types here.
@@ -396,6 +397,39 @@ export interface TokenUsagePayload {
 }
 
 /**
+ * Task boundary event: the start of one Task, produced **in pairs** with `task_end` by the
+ * Session (never the engine), streamed and written to Trace. One pair brackets one Task: one
+ * Prompt's run plus the `hook` records of the stop-hook consultation that follows it; a Task a
+ * stop hook's `continue` drives (a goal round) gets a pair of its own. A manual compaction and a
+ * model switch are not Tasks and get no pair — the compaction pair and the new file's
+ * `session_meta` already bound them.
+ *
+ * Placement: `task_begin` precedes every record of its Task, its input included (the Session's
+ * first file still opens with `session_meta`). Task records are appended to the current file and
+ * never open a new one: after a completed compaction they land behind its `compaction_end` in
+ * the old file, so a reader that asks "was this file closed by a compaction?" skips them (see
+ * task-records.ts). A Task may span files: a compaction inside it puts its `task_end` in the
+ * later file.
+ *
+ * The payload is the type alone: how the Task ended is read from the records inside the pair
+ * (`abort`, a terminal `request_end` / `compaction_end`, a `fatal` final assistant text) and who
+ * started it from its input (`sender`, origin blocks). A Task that ends by throwing (a host
+ * failure that left none of those records) writes no `task_end`: an unclosed `task_begin` is
+ * "did not reach its end" — a process exit reads the same. The stated exception to the
+ * closed-vocabulary rule above (owner decision 2026-10-22): before this pair no record said where
+ * a Task starts or whether it finished, and every reader derived it from user Prompts. Traces
+ * written before the pair carry none, and readers keep that derivation for them.
+ */
+export interface TaskBeginPayload {
+  type: "task_begin";
+}
+
+/** Task boundary event: the end of the Task the preceding `task_begin` opened (see TaskBeginPayload). */
+export interface TaskEndPayload {
+  type: "task_end";
+}
+
+/**
  * Request boundary event: the boundary of one LLM Request, produced **in pairs** by
  * `context_engine` and written to Trace. `request_end`
  * with `status` of `completed` means the turn has been committed by MMSP — this is the
@@ -623,6 +657,8 @@ export type ModelPayload = CompleteModelPayload | PartialModelPayload;
 export type EventPayload =
   | ApprovalDecisionPayload
   | AbortPayload
+  | TaskBeginPayload
+  | TaskEndPayload
   | RequestBeginPayload
   | RequestEndPayload
   | TokenUsagePayload

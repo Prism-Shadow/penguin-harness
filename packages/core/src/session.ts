@@ -22,6 +22,8 @@ import {
   buildBackgroundTaskDoneMessage,
   mcpConnectEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   userText,
 } from "./omnimessage/index.js";
 import type {
@@ -563,6 +565,15 @@ export class Session {
    * approval callback `approve` (the engine calls it once per tool_call within a turn).
    * On the first run, `session_meta` is written to the Trace first.
    *
+   * Every Task is bracketed by a `task_begin` / `task_end` pair (see TaskBeginPayload), written
+   * to the Trace and yielded: `task_begin` comes before anything the Task writes — its input
+   * included, so a host that echoes the input publishes it after this record — and `task_end`
+   * after the Task's stop-hook `hook` records. The pair is written through the Session's own
+   * Trace sink, never the engine's, so it never opens the next file a completed compaction left
+   * pending. An aborted Task (a user stop, an abort mid-bootstrap) still ends with `task_end`;
+   * a Task that throws does not: the error propagates and the unclosed `task_begin` records
+   * that the Task never reached its end.
+   *
    * A single `run` automatically drives the whole ReAct loop: consuming the LLM stream,
    * approving and executing tools one at a time, feeding results back for the next turn,
    * until a turn no longer produces a tool_call (Task ends) or it's aborted.
@@ -579,11 +590,11 @@ export class Session {
    *
    * When the Task ends, the Session's stop hooks are consulted (see hooks/stop-hook.ts):
    * every answer is recorded as a `hook` event on the stream and in the Trace, and the first
-   * `continue` drives another Task inside this same call — its input is yielded first, as a
-   * user text message, since a plain run never yields its own input and hosts render the
-   * injected one from the stream. No `continue`, a cutoff (abort, LLM failure, the
-   * max_turns cap) or an aborted signal ends the call; the return value is the last Task's
-   * cutoff, exactly as for a single Task.
+   * `continue` drives another Task inside this same call, with a pair of its own — its input is
+   * yielded right after that Task's `task_begin`, as a user text message, since a plain run
+   * never yields its own input and hosts render the injected one from the stream. No
+   * `continue`, a cutoff (abort, LLM failure, the max_turns cap) or an aborted signal ends the
+   * call; the return value is the last Task's cutoff, exactly as for a single Task.
    */
   async *run(
     newMessages: OmniMessage[],
@@ -642,7 +653,17 @@ export class Session {
       userPrompt: (prompt, signal) => this.consultUserPromptHooks(prompt, signal),
     };
     let input = newMessages;
+    /** Whether `input` is a stop hook's `continue`: yielded by the Session, since no host submitted it. */
+    let continued = false;
     for (;;) {
+      // The Task's pair opens ahead of everything the Task writes, behind the session_meta
+      // that heads the Session's first file. Written through the Session's own sink, never the
+      // engine's: a Task record must not open the file a completed compaction left pending —
+      // the summary is only in the old file until the next context's first message opens the
+      // new one (see TaskBeginPayload).
+      await this.ensureMetaWritten();
+      yield* this.taskRecord(taskBegin());
+      if (continued) yield input[0]!;
       // Manual iteration (not for-await) so the engine's return value — how the Task ended —
       // is read: a cutoff means the model never finished, which no `continue` may override.
       const it = this.runTask(input, taskOpts);
@@ -656,33 +677,52 @@ export class Session {
         }
         yield res.value;
       }
-      if (this.stopHooks.length === 0) return cutoff;
-      const tracePath = this.trace?.currentPath?.();
-      const spawn = this.spawnSubagent;
-      const outcome = await runStopHooks(
-        this.stopHooks,
-        {
-          sessionId: this.sessionId,
-          ...(tracePath !== undefined ? { tracePath } : {}),
-          ...(opts?.signal ? { signal: opts.signal } : {}),
-        },
-        spawn ? (request) => spawn(request, approve) : undefined,
-      );
-      for (const ev of outcome.events) {
-        await this.writeTrace(ev, "hook event");
-        yield ev;
+      let next: string | null = null;
+      if (this.stopHooks.length > 0) {
+        const tracePath = this.trace?.currentPath?.();
+        const spawn = this.spawnSubagent;
+        const outcome = await runStopHooks(
+          this.stopHooks,
+          {
+            sessionId: this.sessionId,
+            ...(tracePath !== undefined ? { tracePath } : {}),
+            ...(opts?.signal ? { signal: opts.signal } : {}),
+          },
+          spawn ? (request) => spawn(request, approve) : undefined,
+        );
+        for (const ev of outcome.events) {
+          await this.writeTrace(ev, "hook event");
+          yield ev;
+        }
+        next = outcome.next;
       }
+      // Reached only when the Task returned, however it ended: a throw from the Task or its
+      // hooks propagates past this point and leaves the pair open, which is the record that
+      // the Task never reached its end.
+      yield* this.taskRecord(taskEnd());
       // A user's interruption outranks every hook: after a cutoff, or with the signal
       // already aborted between Tasks, a `continue` is recorded but never run — an aborted
       // engine would only hold the injected input as carry-over and leak it into the
       // user's next message.
-      if (outcome.next === null || cutoff !== null || opts?.signal?.aborted) return cutoff;
-      input = [userText(outcome.next, "harness")];
-      yield input[0]!;
+      if (next === null || cutoff !== null || opts?.signal?.aborted) return cutoff;
+      input = [userText(next, "harness")];
+      continued = true;
     }
   }
 
-  /** The single-Task path: every Task of a `run` call — a hook-continued one included — runs one of these. */
+  /**
+   * Writes one Task record (`task_begin` / `task_end`) to the Trace, then yields it. Best-effort
+   * like every Session write: the stream carries the record even when the write failed.
+   */
+  private async *taskRecord(msg: OmniMessage): AsyncGenerator<OmniMessage, void> {
+    await this.writeTrace(msg, (msg.payload as { type: string }).type);
+    yield msg;
+  }
+
+  /**
+   * The single-Task path: every Task of a `run` call — a hook-continued one included — runs one
+   * of these, inside the `task_begin` / `task_end` pair `run` writes around it.
+   */
   private async *runTask(
     newMessages: OmniMessage[],
     opts?: RunOptions,
@@ -761,7 +801,9 @@ export class Session {
   }
 
   /**
-   * First-run bootstrap: writes `session_meta`, opens the first context and builds the
+   * First-run bootstrap: writes `session_meta` (a run has already written it, ahead of its
+   * Task's `task_begin`; a compaction or a model switch on a resumed Session gets here first),
+   * opens the first context and builds the
    * engine — streaming the phase as it happens. The bootstrap publishes its records
    * through `emit` — with MCP Servers configured, the `mcp_connect_begin` /
    * `mcp_connect_end` pair around the connect + discovery wait (overall status +

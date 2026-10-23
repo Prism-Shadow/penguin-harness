@@ -18,6 +18,8 @@ import {
   attachedImageLine,
   isSessionMeta,
   isSteeredBackgroundNotice,
+  isTaskBegin,
+  isTaskRecord,
   matchAttachedFileLine,
   matchAttachedImageLine,
   modelVisiblePath,
@@ -819,8 +821,13 @@ export class TraceService implements Traces {
     for (let i = position.ordinal + 1; i < targetShard.length; i++) {
       const msg = targetShard[i]!;
       const p = msg.payload as { type?: string; status?: string };
-      // The next user Task and housekeeping compaction both belong after the selected reply.
-      if (isTaskStartingUser(msg) || (msg.type === "event_msg" && p.type === "compaction_begin")) {
+      // The next user Task and housekeeping compaction both belong after the selected reply —
+      // the next Task from its task_begin on, so the fork never ends on an unclosed one.
+      if (
+        isTaskStartingUser(msg) ||
+        isTaskBegin(msg) ||
+        (msg.type === "event_msg" && p.type === "compaction_begin")
+      ) {
         break;
       }
       // A Task may contain several assistant segments/requests. Only the final visible reply
@@ -1174,12 +1181,20 @@ export class TraceService implements Traces {
      *   - Other messages belong to the current taskIndex: tool output and
      *     approval decisions arriving after request_end still belong to this
      *     turn (they're the results of tools this turn's Request initiated).
+     *   - A `task_begin` opens the pending span too — it precedes its Task's
+     *     input — but starts no turn by itself: turns are still told apart by
+     *     the markers above, so a Trace counts the same turns with or without
+     *     Task records. A span holding nothing but Task records (a file that
+     *     ends on `compaction_end, task_end, task_begin`) stays with the turn
+     *     before it, and no Task record moves a turn's end time.
      */
     const msgTask: number[] = new Array<number>(messages.length).fill(-1);
     /** The pending new turn's starting point (message index); settled once request_begin determines the taskIndex. */
     let pendingFrom: number | null = null;
     /** The navigator label of the pending turn: from its first user text that leaves one (see promptLabel). */
     let pendingPrompt: string | null = null;
+    /** Whether the pending span holds a turn's starting marker, not only a `task_begin` that opened it. */
+    let pendingStartsTurn = false;
 
     for (let mi = 0; mi < messages.length; mi++) {
       const msg = messages[mi]!;
@@ -1244,8 +1259,10 @@ export class TraceService implements Traces {
         ((p.type === "text" && p.role === "user") || p.type === "image_url");
       const startsCompactionTurn =
         !hasOrigin && msg.type === "event_msg" && p.type === "compaction_begin";
+      if (!hasOrigin && isTaskBegin(msg) && pendingFrom === null) pendingFrom = mi;
       if (startsUserTurn || startsCompactionTurn) {
         if (pendingFrom === null) pendingFrom = mi;
+        pendingStartsTurn = true;
         if (startsUserTurn && p.type === "text" && pendingPrompt === null) {
           pendingPrompt = promptLabel(p.text as string);
         }
@@ -1299,6 +1316,7 @@ export class TraceService implements Traces {
                 if (messages[k]!.origin === undefined) msgTask[k] = taskIndex;
               }
               pendingFrom = null;
+              pendingStartsTurn = false;
               if (pendingPrompt !== null) t.prompt = pendingPrompt;
               pendingPrompt = null;
             }
@@ -1536,12 +1554,16 @@ export class TraceService implements Traces {
     // and forms its own turn — reattaching it to the previous turn would smear
     // two separate user sends together.
     if (pendingFrom !== null) {
-      taskIndex++;
+      // Task records alone (the next Task's task_begin behind a closing compaction) are no
+      // turn: they stay with the turn before them.
+      if (pendingStartsTurn) taskIndex++;
       for (let k = pendingFrom; k < messages.length; k++) {
         if (messages[k]!.origin === undefined) msgTask[k] = taskIndex;
       }
-      const t = ensureTask(taskIndex);
-      if (pendingPrompt !== null) t.prompt = pendingPrompt;
+      if (pendingStartsTurn) {
+        const t = ensureTask(taskIndex);
+        if (pendingPrompt !== null) t.prompt = pendingPrompt;
+      }
     }
 
     // Each turn's message index range and end-of-turn time are always derived from
@@ -1582,6 +1604,9 @@ export class TraceService implements Traces {
       // created, and its timestamp has nothing to do with this turn (it also gets
       // rewritten verbatim at the start of a new file after compaction splits the file).
       if (messages[k]!.type === "session_meta") continue;
+      // Nor do Task records: the next Task's task_begin can sit at the end of this turn's
+      // file (behind a closing compaction), written when that next Task started.
+      if (isTaskRecord(messages[k]!)) continue;
       const ts = messages[k]!.timestamp;
       if (t.endTs === "" || ts > t.endTs) t.endTs = ts;
     }

@@ -59,6 +59,11 @@ A Trace is an append-only JSON Lines file. Each line is one OmniMessage envelope
   - Streaming `partial_*` fragments. The producer appends the complete message once the segment ends.
   - Nested messages tagged with `origin`. A subagent's messages go to the child Session's own Trace. The parent Trace keeps a single `subagent` pointer event at the spawn site, recording the child Session id.
 - `request_begin` and `request_end(status)` come in pairs and delimit one Request. Replay uses `request_end.status === "completed"` as the commit criterion for that turn. `request_begin` also records the thinking level the Request went out at (`thinking_level`), which is how the Trace view finds where the level changed; replay does not read it.
+- `task_begin` and `task_end` come in pairs and delimit one Task: one prompt's run plus the `hook` records of its stop hooks; each goal round is a Task of its own, while a manual compaction and a model switch are none. The Session writes them itself:
+  - `task_begin` comes before everything the Task writes, its input included, so a Task opens with it. The Session's first file still starts with `session_meta`.
+  - Task records never open a file. When a Task ends on a completed compaction, its `task_end`, and the next Task's `task_begin`, are appended behind the `compaction_end` in the old file; the next context's first message opens the new one. A Task with a compaction in its middle therefore ends in a later file than it began.
+  - A `task_begin` with no `task_end` before the next `task_begin` or the end of the Trace is a Task that never reached its end: the process exited or the run failed. While the Session runs, the last one is the Task in progress.
+  - Traces written before these records have none. Readers derive the boundaries for them from the user's prompts, as before, and Traces are never rewritten.
 - Appends are serialized inside the writer. Records from concurrent producers (the model stream, parallel tool executions) land strictly one after another, each as a single uninterrupted line. A multi-megabyte record, such as a base64 image Data URL, can never be torn apart by a concurrent append. File rotation never splits a record.
 - Each record is appended with a single `write(2)`, not `fs.appendFile`, which splits payloads larger than 512 KiB into several underlying writes. An abnormal process exit can therefore at most truncate the last record; it can never tear one apart in the middle.
 - Before Session resumption continues an existing file, the writer probes the file tail. If a previous crash left a torn line (no trailing newline), the next record is preceded by a newline, so the torn line never swallows the records appended after it.
@@ -69,12 +74,14 @@ See `packages/core/src/trace/writer.ts` for the implementation.
 
 An illustrative Trace head follows, one OmniMessage envelope per line. Note the order:
 
+- The Task's `task_begin` comes first, after the file's `session_meta`.
 - The user's input is written before the `request_begin` it is sent with.
 - What the [user-prompt hooks](/agent-loop#user-prompt-hooks) answer follows the user's input directly: a harness-stamped user text per context, or a `hook` event for a hook that failed.
 - On the first run, the toolset follows the input as a `tool_list_ready` event, after an `mcp_connect_begin` / `mcp_connect_end` pair when MCP servers are configured. `session_meta` does not carry the tool definitions.
 
 ```jsonl
 {"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
+{"timestamp":"…","type":"event_msg","payload":{"type":"task_begin"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Create hello.txt"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"tool_list_ready","tools":[…]}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
@@ -124,7 +131,7 @@ See `packages/core/src/trace/resume.ts`.
 
 ### After a completed compaction
 
-If the latest Trace file ends with a completed compaction, that context is closed as a whole. Resume starts from an empty context.
+If the latest Trace file ends with a completed compaction, that context is closed as a whole. Resume starts from an empty context. Task records after the `compaction_end` do not count: a restart between the end of one Task and the first message of the next still finds the summary there.
 
 In summarize mode, the `[context_summary]` is reconstructed and prepended to the first input after resume. Older Traces using the earlier angle-bracket `<summary>` form are still understood.
 

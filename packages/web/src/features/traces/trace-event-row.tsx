@@ -52,6 +52,9 @@ const TYPE_ICON: Record<string, string> = {
   token_usage: ICONS.barChart,
   request_begin: ICONS.arrowRightCentered,
   request_end: ICONS.arrowLeftCentered,
+  // A Task's pair: it starts, and it reached its end (however it ended — the records inside say).
+  task_begin: ICONS.play,
+  task_end: ICONS.target,
   approval_decision: ICONS.shieldCheck,
   compaction_begin: ICONS.compress,
   compaction_end: ICONS.compress,

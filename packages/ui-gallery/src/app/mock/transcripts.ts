@@ -101,6 +101,11 @@ export const toolOutput = (ms: number, id: string, output: string): OmniMessage 
     stop_reason: "completed",
   });
 
+/** A Task's start and end: the pair the Session writes around each Task (none around a switch). */
+export const taskBegin = (ms: number): OmniMessage => event(ms, { type: "task_begin" });
+
+export const taskEnd = (ms: number): OmniMessage => event(ms, { type: "task_end" });
+
 /** A request's start, at the thinking level it went out at when the transcript says one. */
 export const requestBegin = (ms: number, level?: ThinkingLevel): OmniMessage =>
   event(ms, { type: "request_begin", ...(level !== undefined ? { thinking_level: level } : {}) });

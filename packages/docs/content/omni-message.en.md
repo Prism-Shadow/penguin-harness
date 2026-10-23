@@ -203,13 +203,15 @@ Renderers can therefore paint deltas as they arrive and swap in the complete mes
 
 ## event_msg
 
-Twelve event payloads record the runtime events outside the model context:
+Fourteen event payloads record the runtime events outside the model context:
 
 | Event `type` | What it records |
 | --- | --- |
 | `tool_list_ready` | The complete tool schema sent to the model |
 | `mcp_connect_begin` | The MCP Servers being contacted |
 | `mcp_connect_end` | The overall connect status and the per-server results |
+| `task_begin` | The start of a Task |
+| `task_end` | The end of the Task the last `task_begin` opened |
 | `request_begin` | The start of a model request, with the thinking level it went out at |
 | `request_end` | The request's terminal status, plus the retry detail block (`error_code`, `error_message`, `attempt`, `retry_in_ms`) |
 | `approval_decision` | An approval decision, paired with its `tool_call_id` |
@@ -219,6 +221,10 @@ Twelve event payloads record the runtime events outside the model context:
 | `abort` | A user interruption and its cause code |
 | `subagent` | A pointer in the parent Trace to a direct child Session |
 | `hook` | A hook's answer: the hook point, name, decision and the hook's own record |
+
+The vocabulary is closed: a record or field is added only when no existing record carries the fact and no reader can derive it. `task_begin` / `task_end` are one of its two stated exceptions (the other is `request_begin.thinking_level`). Before them no record said where a Task starts or whether it reached its end, and every reader derived both from the user's prompts.
+
+The Session writes one pair around each Task: one prompt's run, followed by the `hook` records of the stop hooks it consults. A Task that a stop hook's `continue` drives, such as a goal round, gets a pair of its own. A manual compaction and a model switch are not Tasks and get none. The payload is the type alone. How the Task ended is read from the records inside the pair (`abort`, a terminal `request_end` or `compaction_end`, a `fatal` final reply), and who started it from its input. A Task that throws writes no `task_end`, so an unclosed `task_begin` means the Task never reached its end. Where the records sit in the Trace is covered under [Trace design](/sessions-and-traces#trace-design).
 
 Every payload that reports a failure carries the same error pair: `error_code`, a stable machine-readable cause that render layers localize from, and `error_message`, the raw text of the failure, shown verbatim. The complete listing:
 
@@ -287,6 +293,16 @@ interface McpServerConnectResult {
   tools?: number;             // tools discovered (on completed)
   error_code?: ErrorCode;     // failure cause and detail (on fatal)
   error_message?: string;
+}
+
+interface TaskBeginPayload {
+  type: "task_begin";         // the start of one Task, before everything it writes — its
+                              // input included; written and streamed by the Session
+}
+
+interface TaskEndPayload {
+  type: "task_end";           // the Task returned, however it ended (the records inside
+                              // the pair say how); absent when the Task threw
 }
 
 interface RequestBeginPayload {
@@ -466,7 +482,7 @@ How messages travel along these surfaces, and every ordering guarantee, is cover
 `@prismshadow/penguin-core` exports all protocol types, plus:
 
 - a builder per message kind in `builders.ts`: `userText`, `assistantText`, `toolCall`, `toolCallOutput`, `partialText`, `tokenUsage`, `withOrigin`, `emptyTokenCounts`, `addTokenCounts`, and more;
-- runtime guards: `isCompleteModelMessage`, `isPartialPayload`, `isModelMessage`, `isEventMessage`, `isSessionMeta`.
+- runtime guards: `isCompleteModelMessage`, `isPartialPayload`, `isModelMessage`, `isEventMessage`, `isSessionMeta`, `isTaskRecord`, and `lastNonTaskRecord`, which finds the record that decides whether a Trace file was closed by a compaction.
 
 ```ts
 import { userText, isCompleteModelMessage } from "@prismshadow/penguin-core";

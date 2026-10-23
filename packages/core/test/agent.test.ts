@@ -645,7 +645,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     }
   });
 
-  it("forwards the run input as an origin-tagged user message, after session_meta and before any model output", async () => {
+  it("forwards the run input as an origin-tagged user message, after session_meta and the child's task_begin, before any model output", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-input-forward");
     await fs.mkdir(ws, { recursive: true });
@@ -664,10 +664,14 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const gen = handle.run({ messages: [userText("count the TODO items")] });
       const first = (await gen.next()).value as { type: string };
       expect(first.type).toBe("session_meta");
-      // The input yield precedes childSession.run: pulling it never issues an LLM request.
-      const second = await gen.next();
-      expect(second.done).toBe(false);
-      const msg = second.value as {
+      // The child's Task opens first, the order its own Trace has: task_begin, then the input.
+      const second = (await gen.next()).value as { origin?: string[]; payload: { type: string } };
+      expect(second.origin).toEqual([handle.sessionId]);
+      expect(second.payload.type).toBe("task_begin");
+      // The input follows before the child's run goes on: pulling it never issues an LLM request.
+      const third = await gen.next();
+      expect(third.done).toBe(false);
+      const msg = third.value as {
         type: string;
         origin?: string[];
         payload: { type: string; role?: string; text?: string };

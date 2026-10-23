@@ -1259,27 +1259,32 @@ export class Agent {
           // The engine writes a run's input to the CHILD's own Trace but never replays
           // it to its consumer (a session's normal caller typed that input itself) —
           // here the consumer is the PARENT, whose frontend has never seen the child's
-          // prompt. Forward the input messages themselves (origin-tagged, ahead of the
-          // run's output) so the live nested view shows the child's user side exactly
-          // like a reloaded one (history expansion splices the child Trace, which
-          // carries these same messages). The parent engine drops origin messages from
-          // the parent Trace, so replay never duplicates them. Later rounds
+          // prompt. Forward the input messages themselves (origin-tagged) right behind the
+          // run's first record — its Task's `task_begin`, which precedes the input in the
+          // child's own Trace too — so the live nested view shows the child's user side
+          // exactly like a reloaded one (history expansion splices the child Trace, which
+          // carries these same messages, in this order). The parent engine drops origin
+          // messages from the parent Trace, so replay never duplicates them. Later rounds
           // (input_subagent follow-up prompts, a host panel's message) come through this
           // same generator and are forwarded the same way.
           // The caller owns each message's `sender` — "parent_agent" for the model's own
           // dispatch, none for a human's message from a host panel — so the child's Trace
           // records who actually spoke.
-          for (const input of messages) yield withOrigin(input, hop);
           // Manual iteration so the child run's return value — whether the round was cut
           // off — propagates to the handle's own return for the parent's round report.
           const it = childSession.run(messages, {
             ...(signal ? { signal } : {}),
             ...(childApprove ? { approve: childApprove } : {}),
           });
+          let inputForwarded = false;
           for (;;) {
             const res = await it.next();
             if (res.done) return res.value;
             yield withOrigin(res.value, hop);
+            if (!inputForwarded) {
+              inputForwarded = true;
+              for (const input of messages) yield withOrigin(input, hop);
+            }
           }
         },
         // Mid-run steering rides the child Session's own steering queue — the same

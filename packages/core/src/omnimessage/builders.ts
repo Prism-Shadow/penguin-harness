@@ -37,6 +37,8 @@ import type {
   StopReason,
   StreamEventType,
   SubagentPayload,
+  TaskBeginPayload,
+  TaskEndPayload,
   TextPayload,
   TextSender,
   ThinkingPayload,
@@ -278,6 +280,16 @@ export function abortEvent(
   errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted" = "user_abort",
 ): OmniMessage<AbortPayload> {
   return event({ type: "abort", error_code: errorCode });
+}
+
+/** Task begin event: opens one Task's pair (produced by the Session; see TaskBeginPayload). */
+export function taskBegin(): OmniMessage<TaskBeginPayload> {
+  return event({ type: "task_begin" });
+}
+
+/** Task end event: closes the Task the last `task_begin` opened (see TaskBeginPayload). */
+export function taskEnd(): OmniMessage<TaskEndPayload> {
+  return event({ type: "task_end" });
 }
 
 /**
