@@ -185,6 +185,15 @@ Translate the title; plain, under 70 characters, no colon-teaser.
 <!-- fragment: review-facts-section -->
 {{FACTS}}
 
+<!-- fragment: review-emphasis-rule -->
+The `**TL;DR**` line and one marked key sentence, in `**`, in the lead and in each section are expected: a later step adds the key sentences, and `check` counts them. Do not flag them, their absence, or a section with two; flag only bold beyond those.
+
+<!-- fragment: review-lists -->
+a list where a paragraph works, or a paragraph where the content is a list
+
+<!-- fragment: review-lists-prose -->
+a list where a paragraph works (in this {{NOUN}} the TL;DR is the only list)
+
 <!-- fragment: review-no-tells -->
 (none: this text was written in this language, not translated)
 

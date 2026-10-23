@@ -1856,6 +1856,15 @@ function buildMessages(step, o) {
       params.FACTS_SECTION = content.FACTS !== undefined ? `${F["review-facts-section"]}\n\n` : "";
       Object.assign(params, notesSlots());
       params.NOTES_RULE = notes ? ` ${F["notes-rule-review"]}` : "";
+      // The key sentences emphasize adds are expected, and a post with `body-lists: none` has
+      // the TL;DR as its only list: the review must not ask for what check refuses.
+      params.EMPHASIS_RULE = budgetsOf(prof, lang, o).emphasis
+        ? ` ${F["review-emphasis-rule"]}`
+        : "";
+      params.LIST_RULE =
+        profileSettings(prof)["body-lists"] === "none"
+          ? F["review-lists-prose"]
+          : F["review-lists"];
       if (sec) {
         params.SCOPE = F["review-scope-section"];
         params.NEIGHBOURS = `${F.neighbours}\n\n`;
@@ -1877,7 +1886,8 @@ function buildMessages(step, o) {
         };
         params.DRAFT_LABEL = NOUN[prof.kind][0].toUpperCase() + NOUN[prof.kind].slice(1);
       }
-      content.DRAFT = sec ? fenced(input) : input.trim();
+      // Fenced, so the text's own headings and last line cannot run into the instruction after it.
+      content.DRAFT = fenced(input);
       break;
     }
     default:
@@ -6289,6 +6299,8 @@ async function runSelftest() {
     at("body-list.en.v1.md"),
     `${front}Lead text. {O1}\n\n**TL;DR**\n\n- One. {O1}\n- Two. {O1}\n- Three. {O1}\n\n## One\n\nA paragraph. {O1}\n\n- a body item\n- another item\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n`,
   );
+  // A docs page for the review's prompt: lists allowed, no key sentences.
+  writeFileSync(at("page.en.v1.md"), `---\ntitle: "Page"\ndescription: "A page."\n---\n\nText.\n`);
   // A hand edit strip would not make: curly quotes in English prose, which strip straightens.
   const curly = path.join(root, "curly", "selftest-post.en.md");
   mkdirSync(path.dirname(curly), { recursive: true });
@@ -7519,6 +7531,21 @@ async function runSelftest() {
       stdout:
         /ERROR [^\n]*:20  a list in the body: profile blog-perspectives writes the body in paragraphs/,
       notStdout: /:1[2-4]  a list in the body|a table in the body/,
+    },
+    {
+      name: "review of a post fences the text apart from its instruction and expects the key sentences, the answered objection and the TL;DR as the only list",
+      args: ["review", "--dry-run", "--in", at("draft.en.v1.md")],
+      code: 0,
+      stdout:
+        /a list where a paragraph works \(in this post the TL;DR is the only list\)[\s\S]*softens the writer's own claim\. An objection stated fairly and then answered[\s\S]*one marked key sentence, in `\*\*`, in the lead and in each section are expected[\s\S]*everything between the two fence lines below, and nothing else\.\n\n````markdown\n---\ntitle: "Self-test post"[\s\S]*\*\*the archive in full\*\*\. \{F1\}\{F2\}\n````\n\nReview the text between the fence lines now\./,
+      notStdout: /a paragraph where the content is a list|Review it now/,
+    },
+    {
+      name: "review of a docs page keeps the paragraph-as-list point and says nothing of key sentences",
+      args: ["review", "--dry-run", "--in", at("page.en.v1.md"), "--profile", "docs"],
+      code: 0,
+      stdout: /a list where a paragraph works, or a paragraph where the content is a list/,
+      notStdout: /one marked key sentence/,
     },
     {
       name: "body-tables: none makes a table in the body an error",
