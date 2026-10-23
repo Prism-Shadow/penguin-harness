@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
@@ -248,14 +249,6 @@ describe("MCP servers whose failures repeat what they were sent", () => {
 
   beforeAll(async () => {
     dir = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-echo-")));
-    const mcp = new McpServer({ name: "echo-fixture", version: "1.0.0" });
-    mcp.registerTool(
-      "add",
-      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
-      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
-    );
-    transport = new NodeStreamableHTTPServerTransport();
-    await mcp.connect(transport);
     // A refusal repeats the request line and its credentials, as a debugging proxy or a
     // careless framework does: `/refuse/…` refuses everything, `/mcp` only the tool calls.
     httpServer = createServer((req, res) => {
@@ -278,8 +271,25 @@ describe("MCP servers whose failures repeat what they were sent", () => {
     base = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
   });
 
-  afterAll(async () => {
+  // SDK 2.3: a McpServer serves one connection and a stateless transport one request, so every
+  // test (one Environment, one session) gets its own pair; the HTTP server stays up and hands each
+  // request to the current pair.
+  beforeEach(async () => {
+    const mcp = new McpServer({ name: "echo-fixture", version: "1.0.0" });
+    mcp.registerTool(
+      "add",
+      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
+      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
+    );
+    transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+    await mcp.connect(transport);
+  });
+
+  afterEach(async () => {
     await transport.close();
+  });
+
+  afterAll(async () => {
     await new Promise((resolve) => httpServer.close(resolve));
     await rmEventually(dir);
   }, 30_000);
@@ -1002,14 +1012,6 @@ describe("MCP over Streamable HTTP", () => {
   const seenHeaders: IncomingHttpHeaders[] = [];
 
   beforeAll(async () => {
-    const mcp = new McpServer({ name: "http-fixture", version: "1.0.0" });
-    mcp.registerTool(
-      "add",
-      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
-      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
-    );
-    transport = new NodeStreamableHTTPServerTransport();
-    await mcp.connect(transport);
     httpServer = createServer((req, res) => {
       seenHeaders.push(req.headers);
       void transport.handleRequest(req, res);
@@ -1018,8 +1020,25 @@ describe("MCP over Streamable HTTP", () => {
     url = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}/mcp`;
   });
 
-  afterAll(async () => {
+  // SDK 2.3: a McpServer serves one connection and a stateless transport one request, so every
+  // test (one Environment, one session) gets its own pair; the HTTP server stays up and hands each
+  // request to the current pair.
+  beforeEach(async () => {
+    const mcp = new McpServer({ name: "http-fixture", version: "1.0.0" });
+    mcp.registerTool(
+      "add",
+      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
+      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
+    );
+    transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+    await mcp.connect(transport);
+  });
+
+  afterEach(async () => {
     await transport.close();
+  });
+
+  afterAll(async () => {
     await new Promise((resolve) => httpServer.close(resolve));
   });
 
