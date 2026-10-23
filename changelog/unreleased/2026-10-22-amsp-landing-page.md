@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** feature
 - **Scope:** `landing`, `amsp`
+- **PR:** [#1297](https://github.com/Prism-Shadow/penguin-harness/pull/1297)
 
 [中文版](2026-10-22-amsp-landing-page.zh.md)
 
