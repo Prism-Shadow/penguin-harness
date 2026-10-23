@@ -412,7 +412,7 @@ importers:
     dependencies:
       '@prismshadow/penguin-ui':
         specifier: workspace:*
-        version: file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        version: link:../ui
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -468,7 +468,7 @@ importers:
     dependencies:
       '@prismshadow/penguin-ui':
         specifier: workspace:*
-        version: file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        version: link:../ui
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -623,7 +623,7 @@ importers:
         version: 5.3.0
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@shikijs/langs':
         specifier: ^4.3.1
         version: 4.3.1
@@ -670,6 +670,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.2.7(react@19.2.7)
+      supports-color:
+        specifier: ^10.2.2
+        version: 10.2.2
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -681,7 +684,7 @@ importers:
     dependencies:
       '@prismshadow/penguin-ui':
         specifier: workspace:*
-        version: file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        version: link:../ui
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -736,7 +739,7 @@ importers:
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-ui':
         specifier: workspace:*
-        version: file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        version: link:../ui
       '@xterm/addon-clipboard':
         specifier: ^0.1.0
         version: 0.1.0(@xterm/xterm@5.5.0)
@@ -1934,12 +1937,6 @@ packages:
   '@prismshadow/penguin-server@file:packages/server':
     resolution: {directory: packages/server, type: directory}
     engines: {node: '>=24'}
-
-  '@prismshadow/penguin-ui@file:packages/ui':
-    resolution: {directory: packages/ui, type: directory}
-    peerDependencies:
-      react: ^19.1.0
-      react-dom: ^19.1.0
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -6751,37 +6748,6 @@ snapshots:
       - debug
       - supports-color
       - utf-8-validate
-      - zod
-
-  '@prismshadow/penguin-ui@file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
-    dependencies:
-      '@fontsource-variable/ibm-plex-sans': 5.3.0
-      '@fontsource-variable/jetbrains-mono': 5.3.0
-      '@fontsource-variable/mona-sans': 5.3.0
-      '@fontsource-variable/noto-sans-sc': 5.3.0
-      '@fontsource/ibm-plex-sans-condensed': 5.3.0
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@shikijs/langs': 4.3.1
-      '@shikijs/themes': 4.3.1
-      katex: 0.16.47
-      mermaid: 11.17.2
-      react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
-      react-markdown: 10.1.0(@types/react@19.2.17)(react@19.2.7)(supports-color@10.2.2)
-      rehype-katex: 7.0.1
-      remark-gfm: 4.0.1(supports-color@10.2.2)
-      remark-math: 6.0.0(supports-color@10.2.2)
-      shiki: 4.3.1
-      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - '@types/react'
-      - bufferutil
-      - immer
-      - supports-color
-      - use-sync-external-store
-      - utf-8-validate
-      - ws
       - zod
 
   '@protobufjs/aspromise@1.1.2': {}

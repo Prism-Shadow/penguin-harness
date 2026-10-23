@@ -14,4 +14,4 @@
 - 根目录及使用 vitest 的十六个包与插件中，`vitest` 均为 `^4.1.12`；`core`、`server`、`web` 的 `@vitest/coverage-v8` 锁定为 `4.1.12`，即 vitest 要求的确切版本。
 - vitest 4 移除了 `it(name, fn, options)` 写法。`packages/core/test/llm.e2e.test.ts` 中两条真实 LLM 测试改为把超时与重试选项作为第二个参数传入；旧写法会让整个 core 测试套件在收集阶段失败。
 - 服务端的 vitest 配置删除了 `minWorkers`（vitest 4 已无此项），由 `maxWorkers` 单独决定池大小。该设置原在 [更快的 CI 测试任务](2026-10-15-ci-faster-pipeline.zh.md) 中加入，用来阻止 tinypool 终止空闲 worker。
-- 在 vitest 4 下，pnpm 不再把 `@prismshadow/penguin-ui` 以软链接方式接入 `web`、`landing`、`docs`、`ui-gallery`，而是安装工作区的注入副本（硬链接于 `node_modules/.pnpm` 之下）。这四个包的 vitest 配置因此设置了 `esbuild: { jsx: "automatic" }`：Vite 不为 `node_modules` 下的文件读取 tsconfig，原先会以 classic 运行时编译该副本中的 `.tsx`。副本只在 `pnpm install` 时刷新：在 `packages/ui` 中新增的文件，或被整体替换而非原地修改的文件，要在一次安装之后才能到达这四个包。
+- vitest 4 不再把 `supports-color` 带入 `packages/ui` 的依赖图，导致 pnpm 以注入副本（只在 `pnpm install` 时刷新）而非指向源码的链接，把 `@prismshadow/penguin-ui` 交给 `web`、`landing`、`docs`、`ui-gallery`。`packages/ui` 现将 `supports-color` 声明为 devDependency，这四个包因此照旧链接到它；原因写在 `pnpm-workspace.yaml` 中 `injectWorkspacePackages` 旁。

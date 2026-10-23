@@ -55,6 +55,13 @@ overrides:
   # (@electron/get 3 -> got 11 -> cacheable-request 7); nothing shipped loads it. 4.3.0 sits
   # outside the advisory's range. Remove once app-builder-lib depends on @electron/get >= 5.
   http-cache-semantics: "^4.3.0"
+# packages/ui is consumed as source, so web, landing, docs and ui-gallery must link it rather than
+# get an injected copy: a copy is refreshed only by `pnpm install`, so a file added to or replaced
+# in packages/ui would not reach their tests, dev servers or builds until then. pnpm links an
+# injected workspace package only while its own peer set matches its dependents'; packages/ui's
+# `supports-color` devDependency keeps them matching (vitest 3's `debug` used to bring it in).
+# After a dependency change, `readlink packages/web/node_modules/@prismshadow/penguin-ui` must
+# still print ../../../ui.
 injectWorkspacePackages: true
 syncInjectedDepsAfterScripts:
   - build

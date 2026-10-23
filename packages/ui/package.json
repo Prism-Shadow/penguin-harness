@@ -70,6 +70,7 @@
     "@types/react-dom": "^19.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "supports-color": "^10.2.2",
     "typescript": "^5.6.0",
     "vitest": "^4.1.12"
   }
