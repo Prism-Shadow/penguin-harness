@@ -12,7 +12,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import type { OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import type { AmspRecord, TextPayload } from "@prismshadow/penguin-core";
 
 /** The model id the endpoint stands in for (routed to the Anthropic Messages client). */
 export const MOCK_MODEL_ID = "claude-4-8";
@@ -163,7 +163,7 @@ export async function writeClockPackage(hooksRoot: string): Promise<void> {
 
 /** The main-session user texts among `messages`, as their sender and text. */
 export function userTexts(
-  messages: readonly OmniMessage[],
+  messages: readonly AmspRecord[],
 ): Array<{ sender: string; text: string }> {
   return messages
     .filter((m) => {

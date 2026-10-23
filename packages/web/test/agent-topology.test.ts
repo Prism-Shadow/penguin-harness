@@ -33,23 +33,23 @@ import { describe, expect, it, vi } from "vitest";
 import {
   approvalDecision,
   assistantText,
-  buildBackgroundTaskDoneMessage,
   imageUrlMessage,
   sessionMeta,
   toolCall,
   toolCallOutput,
   userText,
   withOrigin,
-} from "@prismshadow/penguin-core/omnimessage";
-import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core/omnimessage";
+} from "@prismshadow/amsp";
+import { buildBackgroundTaskDoneMessage } from "@prismshadow/amsp/markers";
+import type { AmspRecord, SessionMetaPayload } from "@prismshadow/amsp";
 import {
   agentIdFromStatePath,
   approvalKey,
   createStreamModel,
   hasPendingWithinOrigin,
   pushMessage,
-} from "../src/lib/omni/stream-model";
-import type { StreamModel, SubagentItem } from "../src/lib/omni/stream-model";
+} from "../src/lib/amsp/stream-model";
+import type { StreamModel, SubagentItem } from "../src/lib/amsp/stream-model";
 import {
   agentIdFromRunSubagentArgs,
   extractTopology,
@@ -69,7 +69,7 @@ import {
   taskStartCount,
 } from "../src/features/chat/agent-topology";
 
-function meta(sessionId: string, agentState = "/a"): OmniMessage<SessionMetaPayload> {
+function meta(sessionId: string, agentState = "/a"): AmspRecord<SessionMetaPayload> {
   return sessionMeta({
     session_id: sessionId,
     model_id: "m",
@@ -90,7 +90,7 @@ function spawnChild(m: StreamModel, toolCallId: string, sessionId: string, args 
 }
 
 /** Override a message timestamp (the builders default to the current time). */
-function at<M extends OmniMessage>(msg: M, ts: string): M {
+function at<M extends AmspRecord>(msg: M, ts: string): M {
   return { ...msg, timestamp: ts };
 }
 
@@ -349,7 +349,7 @@ describe("which call a child belongs to", () => {
   ];
   const [A, B, C] = CALLS as [Call, Call, Call];
 
-  const card = (call: Call): OmniMessage[] => [
+  const card = (call: Call): AmspRecord[] => [
     toolCall({
       name: "run_subagent",
       arguments: JSON.stringify(call.args),
@@ -357,13 +357,13 @@ describe("which call a child belongs to", () => {
     }),
     approvalDecision("allow", call.toolCallId),
   ];
-  const childMeta = (call: Call): OmniMessage =>
+  const childMeta = (call: Call): AmspRecord =>
     withOrigin(meta(call.child, `/data/p/agents/${call.agent}/agent_state`), call.child);
-  const childPrompt = (call: Call): OmniMessage =>
+  const childPrompt = (call: Call): AmspRecord =>
     withOrigin(userText(call.args.prompt as string, "parent_agent"), call.child);
-  const childReply = (call: Call): OmniMessage =>
+  const childReply = (call: Call): AmspRecord =>
     withOrigin(assistantText(`${call.child} done`), call.child);
-  const output = (call: Call, text = "done"): OmniMessage =>
+  const output = (call: Call, text = "done"): AmspRecord =>
     toolCallOutput({ output: text, toolCallId: call.toolCallId });
 
   const shown = (m: StreamModel) =>
@@ -378,7 +378,7 @@ describe("which call a child belongs to", () => {
     "child-c": ["Draft the summary table", null],
   };
 
-  const build = (messages: OmniMessage[]): StreamModel => {
+  const build = (messages: AmspRecord[]): StreamModel => {
     const m = createStreamModel();
     for (const msg of messages) pushMessage(m, msg);
     return m;
@@ -408,7 +408,7 @@ describe("which call a child belongs to", () => {
   });
 
   it("history: the same run rebuilt from its Trace (each child's Trace spliced at its start) shows the same", () => {
-    const spliced = (call: Call): OmniMessage[] => [
+    const spliced = (call: Call): AmspRecord[] => [
       childMeta(call),
       childPrompt(call),
       childReply(call),

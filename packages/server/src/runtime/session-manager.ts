@@ -56,7 +56,7 @@ import type {
   CompactAvailability,
   ControlEnvContext,
   AgentAssembly,
-  OmniMessage,
+  AmspRecord,
   ProxyEnvPolicy,
   SpawnConfiner,
   SessionMetaPayload,
@@ -188,8 +188,8 @@ export type RunOpts = {
 
 export interface RuntimeSession {
   readonly sessionId: string;
-  run(newMessages: OmniMessage[], opts: RunOpts): AsyncGenerator<OmniMessage>;
-  compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
+  run(newMessages: AmspRecord[], opts: RunOpts): AsyncGenerator<AmspRecord>;
+  compact(opts: { signal: AbortSignal }): AsyncGenerator<AmspRecord>;
   /**
    * The running context's model (core `Session.provider` / `Session.modelId`, getters over
    * the context's session_meta): the row's pair at creation, moved by each in-session switch
@@ -210,7 +210,7 @@ export interface RuntimeSession {
     provider: string;
     modelId: string;
     signal: AbortSignal;
-  }): AsyncGenerator<OmniMessage, StopReason>;
+  }): AsyncGenerator<AmspRecord, StopReason>;
   /**
    * The Session's thinking level (core `Session.thinkingLevel`, plain state): soft-limited —
    * an assignment applies from the Session's very next LLM request. Optional: test fakes may
@@ -220,14 +220,14 @@ export interface RuntimeSession {
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
   compactability(): CompactAvailability;
   /** Queues a mid-run steering input (core `Session.steer`); false when no Task is running. */
-  steer(input: OmniMessage[]): boolean;
+  steer(input: AmspRecord[]): boolean;
   /**
    * Withdraws a steering input queued via `steer` before core delivers it (core
    * `Session.unsteer`, matched by input-list identity); false when it is no longer queued —
    * already delivered, or the run exited. Optional: test fakes may omit it, in which case
    * every recall reports "already delivered".
    */
-  unsteer?(input: OmniMessage[]): boolean;
+  unsteer?(input: AmspRecord[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
   /**
@@ -274,13 +274,13 @@ export interface RuntimeSession {
    */
   onBackgroundNotice?(listener: () => void): void;
   /** Takes the queued background completion notices as task input (core `Session.takeBackgroundNotices`). Optional, like onBackgroundNotice. */
-  takeBackgroundNotices?(): OmniMessage[];
+  takeBackgroundNotices?(): AmspRecord[];
   /** Whether completion notices are still queued (core `Session.hasPendingBackgroundNotices`); pins the entry against idle eviction. Optional, like onBackgroundNotice. */
   hasPendingBackgroundNotices?(): boolean;
   /** Refreshes the listen-port probes behind the process list's `serviceUrl` (core `Session.probeBackgroundCommandServices`). Optional: test fakes may omit it. */
   probeBackgroundCommandServices?(): Promise<void>;
   /** Subscribes live-forwarded background-subagent messages (core `Session.onBackgroundMessage`); the manager publishes them to the session channel. Optional: test fakes may omit it. */
-  onBackgroundMessage?(listener: (msg: OmniMessage) => void): void;
+  onBackgroundMessage?(listener: (msg: AmspRecord) => void): void;
   /** Background command processes owned by the Session's environment (core `Session.listBackgroundCommands`). Optional: test fakes may omit it. */
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
@@ -294,7 +294,7 @@ export interface RuntimeSession {
   /** Host message to one child session — steering mid-run, a follow-up run when idle, a revival when released (core `Session.sendToBackgroundSubagent`). Optional. */
   sendToBackgroundSubagent?(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome>;
   /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`). Optional. */
@@ -428,7 +428,7 @@ function toUnrecoverableError(err: unknown): HttpError {
 }
 
 export interface UsageRecorderLike {
-  record(ctx: UsageContext, msg: OmniMessage): Promise<void>;
+  record(ctx: UsageContext, msg: AmspRecord): Promise<void>;
 }
 
 export interface SessionManagerDeps {
@@ -484,7 +484,7 @@ export interface SessionManagerDeps {
  * message makes the whole input non-human — the org scheduler's trigger and a subagent's
  * prompt both arrive that way.
  */
-export function isHumanInput(input: readonly OmniMessage[]): boolean {
+export function isHumanInput(input: readonly AmspRecord[]): boolean {
   return input.every((m) => {
     const p = m.payload as { sender?: string };
     return p.sender === undefined || p.sender === "user";
@@ -507,7 +507,7 @@ export interface RecallStore {
 interface QueuedFollowUp {
   /** Recall handle (PendingFollowUpInfo.id), assigned at queue time. */
   id: string;
-  input: OmniMessage[];
+  input: AmspRecord[];
   /**
    * Original content for recall, and the content `task_state` shows on the queued line.
    * Always present: a caller that knows more than the input carries (the HTTP route, which
@@ -521,7 +521,7 @@ interface QueuedFollowUp {
 /** One undelivered steering entry: the display info broadcast on task_state, plus what a recall needs — the exact input list core queued (its unsteer handle) and the original content. */
 interface PendingSteeringEntry {
   info: PendingSteeringInfo;
-  input: OmniMessage[];
+  input: AmspRecord[];
   recall: RecallStore;
 }
 
@@ -564,7 +564,7 @@ export interface RuntimeEntry {
    * the input publish, so the live channel cannot backfill it either. GET /messages
    * appends the ones the Trace has not caught up to yet (exact-envelope dedup).
    */
-  pendingInputs: OmniMessage[];
+  pendingInputs: AmspRecord[];
   /**
    * The running Task's streamed bootstrap records (mcp_connect begin/end,
    * tool_list_ready), held until the run ends. Their Trace writes are deferred by the
@@ -573,7 +573,7 @@ export interface RuntimeEntry {
    * otherwise show nothing at all (a silent blank while a slow server times out).
    * GET /messages appends whichever of them the Trace has not caught up to.
    */
-  pendingBootstrap: OmniMessage[];
+  pendingBootstrap: AmspRecord[];
   /**
    * Steering messages queued on core but not yet delivered to the model — a display mirror
    * of core's steering queue (same FIFO order), so the composer's "steering queued" hint and
@@ -664,7 +664,7 @@ function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
  * `[attached file: …]` lines were folded in — derived from the folded input, `text` would
  * hand a recall back a raw scratchpad path in place of the chip it was meant to restore.
  */
-export function recallStoreOf(input: OmniMessage[]): RecallStore {
+export function recallStoreOf(input: AmspRecord[]): RecallStore {
   const text = input
     .filter(isPlainText("user"))
     .map((m) => m.payload.text)
@@ -685,13 +685,13 @@ export function recallStoreOf(input: OmniMessage[]): RecallStore {
 
 /** If msg is a run_subagent tool call carrying a `prompt`, return its id and prompt (for use as the subagent's title); otherwise null. */
 /** Whether this main-stream message is a delivered `[user_steering]` user text (one per queued steering entry, see core's steeringMessages). */
-function isDeliveredSteering(msg: OmniMessage): boolean {
+function isDeliveredSteering(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: string };
   if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user") return false;
   return typeof p.text === "string" && parseUserSteeringText(p.text) !== null;
 }
 
-function runSubagentCall(msg: OmniMessage): { toolCallId: string; prompt: string } | null {
+function runSubagentCall(msg: AmspRecord): { toolCallId: string; prompt: string } | null {
   const p = msg.payload as {
     type?: string;
     name?: string;
@@ -710,7 +710,7 @@ function runSubagentCall(msg: OmniMessage): { toolCallId: string; prompt: string
 }
 
 /** The denied tool_call_id (approval_decision with decision ≠ allow); otherwise null. */
-function deniedToolCallId(msg: OmniMessage): string | null {
+function deniedToolCallId(msg: AmspRecord): string | null {
   const p = msg.payload as { type?: string; decision?: string; tool_call_id?: string };
   if (msg.type !== "event_msg" || p.type !== "approval_decision") return null;
   if (p.decision === "allow" || typeof p.tool_call_id !== "string") return null;
@@ -718,7 +718,7 @@ function deniedToolCallId(msg: OmniMessage): string | null {
 }
 
 /** The tool_call_id of a parent-level tool call that has settled (a complete tool_call_output); otherwise null. */
-function settledToolCallId(msg: OmniMessage): string | null {
+function settledToolCallId(msg: AmspRecord): string | null {
   const p = msg.payload as { type?: string; tool_call_id?: string };
   if (msg.type !== "model_msg" || p.type !== "tool_call_output") return null;
   return typeof p.tool_call_id === "string" ? p.tool_call_id : null;
@@ -734,7 +734,7 @@ interface ChildSession {
 
 /** Predicate for a plain-text message on the main session (no origin): title material is drawn only from user/model text. */
 function isPlainText(role: "user" | "assistant") {
-  return (msg: OmniMessage): msg is OmniMessage<TextPayload> => {
+  return (msg: AmspRecord): msg is AmspRecord<TextPayload> => {
     const payload = msg.payload as { type?: string; role?: string };
     return (
       msg.type === "model_msg" &&
@@ -865,7 +865,7 @@ export class SessionManager {
   async sendToSubagent(
     sessionId: string,
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
   ): Promise<SubagentMessageOutcome> {
     const entry = await this.ensureEntry(sessionId);
     entry.lastActivityMs = Date.now();
@@ -915,12 +915,12 @@ export class SessionManager {
   }
 
   /**
-   * Live tail of a running session: one synthetic `partial_* start` OmniMessage per open
+   * Live tail of a running session: one synthetic `partial_* start` AmspRecord per open
    * streaming fragment, carrying the full accumulated content so far (see live-tail.ts).
    * Empty when idle or when nothing is streaming. GET /messages attaches this (with a
    * channel cursor) so a client joining mid-stream can render the in-progress message.
    */
-  liveFragments(sessionId: string): OmniMessage[] {
+  liveFragments(sessionId: string): AmspRecord[] {
     return this.liveTail.fragments(sessionId);
   }
 
@@ -931,12 +931,12 @@ export class SessionManager {
    * not caught up to yet — without this, a client rebuilding history during the connect
    * (the draft flow subscribes only after the input publish) loses the user's own message.
    */
-  pendingInputs(sessionId: string): OmniMessage[] {
+  pendingInputs(sessionId: string): AmspRecord[] {
     return this.entries.get(sessionId)?.pendingInputs ?? [];
   }
 
   /** The running Task's streamed bootstrap records (see RuntimeEntry.pendingBootstrap); empty when idle. */
-  pendingBootstrap(sessionId: string): OmniMessage[] {
+  pendingBootstrap(sessionId: string): AmspRecord[] {
     return this.entries.get(sessionId)?.pendingBootstrap ?? [];
   }
 
@@ -1040,7 +1040,7 @@ export class SessionManager {
   }
 
   /** Publishes one live background-subagent message and records its usage (fire-and-forget; the child's own Trace is the durable record). */
-  private forwardBackgroundMessage(sessionId: string, msg: OmniMessage): void {
+  private forwardBackgroundMessage(sessionId: string, msg: AmspRecord): void {
     const entry = this.entries.get(sessionId);
     if (!entry) return;
     // A child producing messages IS session activity: without this stamp the idle sweep
@@ -1142,7 +1142,7 @@ export class SessionManager {
    */
   async startTask(
     sessionId: string,
-    input: OmniMessage[],
+    input: AmspRecord[],
     opts?: { queueIfBusy?: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }> {
     return this.withLock(sessionId, async () => {
@@ -1231,7 +1231,7 @@ export class SessionManager {
     sessionId: string,
     args: {
       /** The user's own message(s) exactly as submitted — text and images, no wrapping. */
-      messages: OmniMessage[];
+      messages: AmspRecord[];
       /** The user's own objective text (leading marker blocks stripped): what the plugin records, the goal_started event and the title material. */
       objective: string;
       budget: number;
@@ -1307,12 +1307,12 @@ export class SessionManager {
   private async *goalStream(
     entry: RuntimeEntry,
     args: {
-      input: OmniMessage[];
+      input: AmspRecord[];
       budget: number;
       approve: ApproveFn;
       signal: AbortSignal;
     },
-  ): AsyncGenerator<OmniMessage> {
+  ): AsyncGenerator<AmspRecord> {
     const gen = entry.session.run(args.input, {
       approve: args.approve,
       signal: args.signal,
@@ -1391,7 +1391,7 @@ export class SessionManager {
    * idle. A retry's input is empty: nothing is echoed or held, and drive gets no title
    * material — the turn it resends already offered its text when it was first sent.
    */
-  private launchTask(entry: RuntimeEntry, input: OmniMessage[]): void {
+  private launchTask(entry: RuntimeEntry, input: AmspRecord[]): void {
     const ac = new AbortController();
     entry.status = "running";
     entry.abort = ac;
@@ -1541,7 +1541,7 @@ export class SessionManager {
         this.publishState(entry, "compacting");
         return this.drive(entry, resumeFrom(first.value, gen));
       }, settled);
-      let first: IteratorResult<OmniMessage, StopReason>;
+      let first: IteratorResult<AmspRecord, StopReason>;
       try {
         first = await head;
       } catch (err) {
@@ -1631,7 +1631,7 @@ export class SessionManager {
    * keeps the composer's "steering queued" hint, content included, alive across reloads —
    * and the content itself is what a recall (recallSteering) hands back to the composer.
    */
-  steer(sessionId: string, input: OmniMessage[], recall: RecallStore): void {
+  steer(sessionId: string, input: AmspRecord[], recall: RecallStore): void {
     const entry = this.entries.get(sessionId);
     if (!entry || entry.status !== "running" || !entry.session.steer(input)) {
       throw new HttpError(
@@ -2241,8 +2241,8 @@ export class SessionManager {
    */
   private async drive(
     entry: RuntimeEntry,
-    gen: AsyncGenerator<OmniMessage>,
-    titleSource?: { userExcerpt: string; echo?: readonly OmniMessage[] },
+    gen: AsyncGenerator<AmspRecord>,
+    titleSource?: { userExcerpt: string; echo?: readonly AmspRecord[] },
   ): Promise<void> {
     const ctx: UsageContext = {
       projectId: entry.projectId,
@@ -2490,7 +2490,7 @@ export class SessionManager {
    */
   private registerChildSession(
     entry: RuntimeEntry,
-    msg: OmniMessage,
+    msg: AmspRecord,
     children: Map<string, ChildSession>,
   ): ChildSession | null {
     if (!isSessionMeta(msg)) return null;

@@ -17,9 +17,9 @@ import {
   Spinner,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import type { ChatItem } from "../../lib/omni/stream-model";
-import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
-import type { TaskStats } from "../../lib/omni/task-stats";
+import type { ChatItem } from "../../lib/amsp/stream-model";
+import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
+import type { TaskStats } from "../../lib/amsp/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
 import { parseUserMessageBody } from "./user-message-body";

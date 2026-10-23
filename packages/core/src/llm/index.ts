@@ -9,7 +9,7 @@ export {
   GenerativeModel,
   EventTranslator,
   groupHistoryToUniMessages,
-  mergeOmniToUniMessage,
+  mergeRecordsToUniMessage,
   translateEvents,
   usageToTokenCounts,
   isUnusableResponseError,

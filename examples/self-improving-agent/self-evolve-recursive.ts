@@ -26,7 +26,7 @@ import {
   createAgent,
   userText,
   isCompleteModelMessage,
-  type OmniMessage,
+  type AmspRecord,
 } from "@prismshadow/penguin-core";
 
 const AGENT_ID = "self-improve-demo";
@@ -141,7 +141,7 @@ function score(summaryText: string | null): { score: number; detail: string[] } 
   return { score: s, detail };
 }
 
-async function collect(run: AsyncGenerator<OmniMessage>): Promise<void> {
+async function collect(run: AsyncGenerator<AmspRecord>): Promise<void> {
   for await (const msg of run) {
     if (isCompleteModelMessage(msg) && msg.payload.type === "text") {
       /* agent chatter suppressed */

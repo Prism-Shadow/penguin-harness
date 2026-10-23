@@ -11,8 +11,8 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { REJECTED_IMAGE_NOTE } from "../src/engine/rejected-images.js";
 import {
-  REJECTED_IMAGE_NOTE,
   assistantText,
   emptyTokenCounts,
   imageUrlMessage,
@@ -26,7 +26,7 @@ import {
   tokenUsage,
   userText,
   withOrigin,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import type {
   RunCutoff,
@@ -38,16 +38,16 @@ import type {
   ToolPermission,
 } from "../src/interfaces/index.js";
 import type {
-  OmniMessage,
+  AmspRecord,
   TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
 
-import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
+import { parseUserSteeringText } from "@prismshadow/amsp/markers";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
 
 /** A real 1x1 PNG data URL: the non-vision fold actually decodes and writes it to disk. */
@@ -57,11 +57,9 @@ const PNG_DATA_URL =
 /** Deterministic fake LLM: the first turn yields a tool_call, the second yields the final reply. */
 class FakeLLM implements LLMInterface {
   calls = 0;
-  receivedSecondInput: OmniMessage[] | null = null;
+  receivedSecondInput: AmspRecord[] | null = null;
 
-  async *streamGenerate(
-    params: GenerativeModelParameters,
-  ): AsyncGenerator<OmniMessage, LLMOutcome> {
+  async *streamGenerate(params: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     this.calls += 1;
     if (this.calls === 1) {
       yield partialText("start", "");
@@ -113,11 +111,11 @@ function execCommandToolConfig() {
   };
 }
 
-const isToolCall = (m: OmniMessage): boolean =>
+const isToolCall = (m: AmspRecord): boolean =>
   isCompleteModelMessage(m) && m.payload.type === "tool_call";
 
 /** Count of text messages in the list starting with `[turn_aborted]` (flatten carry-over count). */
-const turnAbortedCount = (msgs: OmniMessage[]): number =>
+const turnAbortedCount = (msgs: AmspRecord[]): number =>
   msgs.filter((m) => ((m.payload as { text?: string }).text ?? "").startsWith("[turn_aborted]"))
     .length;
 
@@ -130,11 +128,11 @@ const denyAll: ApproveFn = async () => "deny";
 /** Like collectRun, but also captures the run generator's return value (the RunCutoff | null contract). */
 async function collectRunWithReturn(
   engine: ContextEngine,
-  prompt: OmniMessage[],
+  prompt: AmspRecord[],
   approve: ApproveFn,
   signal?: AbortSignal,
-): Promise<{ all: OmniMessage[]; cutoff: RunCutoff | null }> {
-  const all: OmniMessage[] = [];
+): Promise<{ all: AmspRecord[]; cutoff: RunCutoff | null }> {
+  const all: AmspRecord[] = [];
   const it = engine.run(prompt, { approve, ...(signal ? { signal } : {}) });
   for (;;) {
     const res = await it.next();
@@ -145,11 +143,11 @@ async function collectRunWithReturn(
 
 async function collectRun(
   engine: ContextEngine,
-  prompt: OmniMessage[],
+  prompt: AmspRecord[],
   approve: ApproveFn,
   signal?: AbortSignal,
-): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
+): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
   for await (const msg of engine.run(prompt, {
     approve,
     ...(signal ? { signal } : {}),
@@ -269,7 +267,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       let recoveredPath = "";
       let recoveredDuringTask = "";
       const llm: LLMInterface = {
-        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
           calls += 1;
           if (calls === 1) {
             yield toolCall({
@@ -433,9 +431,9 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     });
     try {
       let calls = 0;
-      let secondInput: OmniMessage[] | null = null;
+      let secondInput: AmspRecord[] | null = null;
       const llm: LLMInterface = {
-        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
           calls += 1;
           if (calls === 1) {
             yield toolCall({
@@ -672,9 +670,9 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
   });
 
   it("max turns with pending tool outputs carries them over so the next run pairs the tool_call (issue #33)", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         received.push(params.newMessages);
         if (received.length === 1) {
           // Turn 1: the tool call completes normally; the tool output cannot be fed back
@@ -717,7 +715,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
   });
 
   it("aborts before run: emits abort and carries the (wrapped) input over to the next run", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         received.push(params.newMessages);
@@ -835,7 +833,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       return "allow";
     };
     await collectRun(engine, [userText("go")], approve, controller.signal);
-    const placeholders = (msgs: OmniMessage[]): number =>
+    const placeholders = (msgs: AmspRecord[]): number =>
       msgs.filter(
         (m) => (m.payload as { output?: string }).output === "[interrupted: tool aborted by user]",
       ).length;
@@ -917,7 +915,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
 
   it("in-run reconnect never writes the synthesized [turn_retried] to trace", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -1202,7 +1200,7 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
       return "allow";
     };
 
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], { approve })) {
       all.push(msg);
       if (isCompleteModelMessage(msg) && msg.payload.type === "tool_call_output") {
@@ -1285,7 +1283,7 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
     });
     const engine = new ContextEngine({ llm, environment });
 
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], { approve: allowAll })) {
       all.push(msg);
     }
@@ -1366,7 +1364,7 @@ describe("ContextEngine tool execution resilience", () => {
     } as LLMInterface & { calls: number };
 
     const engine = new ContextEngine({ llm, environment: failingEnv });
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], { approve: allowAll })) {
       all.push(msg);
     }
@@ -1398,7 +1396,7 @@ describe("ContextEngine tool execution resilience", () => {
         return "rw";
       },
       // eslint-disable-next-line require-yield
-      async *executeTool(): AsyncGenerator<OmniMessage> {
+      async *executeTool(): AsyncGenerator<AmspRecord> {
         throw new Error("custom env exploded");
       },
     };
@@ -1438,7 +1436,7 @@ describe("ContextEngine tool execution resilience", () => {
     } as LLMInterface & { calls: number };
 
     const engine = new ContextEngine({ llm, environment: throwingEnv });
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], { approve: allowAll })) {
       all.push(msg);
     }
@@ -1492,7 +1490,7 @@ describe("ContextEngine tool execution resilience", () => {
         toolConfig: execCommandToolConfig(),
       }),
     });
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], {
       approve: async () => {
         throw new Error("approval channel closed");
@@ -1524,7 +1522,7 @@ describe("ContextEngine abort during execution", () => {
   });
 
   it("aborting a long-running tool ends the turn, emits abort, and carries tool results over (model output completed)", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     let call = 0;
     const llm: LLMInterface = {
       async *streamGenerate(params) {
@@ -1566,7 +1564,7 @@ describe("ContextEngine abort during execution", () => {
     const startedAt = Date.now();
     setTimeout(() => controller.abort(), 200);
 
-    const all: OmniMessage[] = [];
+    const all: AmspRecord[] = [];
     for await (const msg of engine.run([userText("go")], {
       approve: allowAll,
       signal: controller.signal,
@@ -1596,7 +1594,7 @@ describe("ContextEngine abort during execution", () => {
   });
 
   it("case A backfills outputs for committed-but-undispatched tool_calls (preserves pairing)", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     const controller = new AbortController();
     let call = 0;
     const llm: LLMInterface = {
@@ -1675,7 +1673,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("auto-retries on LLM timeout: original input + [turn_retried] carrying partial products", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -1739,7 +1737,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     // not add it to this turn's ledger, and does not backfill a paired output; the malformed
     // turn is cleaned up by reconnect.
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -1799,7 +1797,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("auto-retries on LLM malformed: original input + [turn_retried] carrying partial products", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -1856,7 +1854,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("ends the run without an abort event and carries the original input over when reconnect retries are exhausted", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -1909,7 +1907,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("a retryable outcome with a message converges to a terminal request_end carrying it (run does not throw)", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       // The LLM must never throw an exception at the engine: an error resolves by returning
       // a retryable outcome after closing the structure; the concrete failure rides on
@@ -2091,7 +2089,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     // reads nothing out of its wording. While the turn's input holds images, the engine takes
     // the rejection as theirs, replaces them and sends the turn again — no backoff: the 60s
     // base would time this test out if it waited.
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const providerError = "400 You have uploaded an unsupported image.";
     const llm: LLMInterface = {
       async *streamGenerate(params) {
@@ -2160,7 +2158,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     // Nothing to strip: the request's parameters or the committed history are what the
     // provider refuses, and no retry changes either. The wording is not consulted.
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       // eslint-disable-next-line require-yield
       async *streamGenerate(params) {
@@ -2515,7 +2513,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("LLM timeout after a tool already executed: retry carries the call/result via [turn_retried] (tool runs once)", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -2577,7 +2575,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("flatten carry-over (auth exit) includes the model's partial thinking and text (PRN-014)", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -2624,7 +2622,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
   it("carry-over after exhausted retries: raw original input + [turn_retried] with all attempts' products", async () => {
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -2714,7 +2712,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
   it("user abort after a failed retry: [turn_retried] un-nests into the [turn_aborted] flatten", async () => {
     const controller = new AbortController();
     let calls = 0;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -2768,7 +2766,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
   });
 
   it("keeps raw inputs across repeated pre-request aborts (no flatten)", async () => {
-    const received: OmniMessage[][] = [];
+    const received: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         received.push(params.newMessages);
@@ -2837,7 +2835,7 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
   }
 
   /** The text payloads of the [user_steering]-wrapped user messages in a list. */
-  const steeringTexts = (msgs: OmniMessage[]): string[] =>
+  const steeringTexts = (msgs: AmspRecord[]): string[] =>
     msgs
       .map((m) => m.payload as { role?: string; text?: string })
       .filter((p) => p.role === "user" && (p.text ?? "").startsWith("[user_steering]"))
@@ -2956,9 +2954,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // looping and sends the queued text as the next input, wrapped in the same marker (UIs
     // keep it inside the running Task; the model knows it is mid-task user input).
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           yield assistantText("final answer");
@@ -2985,7 +2983,7 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
   });
 
   /** Image URLs of the image messages in a list, in order. */
-  const steeredImages = (msgs: OmniMessage[]): string[] =>
+  const steeredImages = (msgs: AmspRecord[]): string[] =>
     msgs
       .map((m) => m.payload as { type?: string; image_url?: string })
       .filter((p) => p.type === "image_url")
@@ -2995,9 +2993,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // An image with no caption is a complete steering message on its own; each entry's images
     // follow that entry's text, so two steers stay distinguishable in the delivered order.
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(engineRef!.steer([imageUrlMessage("data:image/png;base64,AAAA")])).toBe(true);
@@ -3045,9 +3043,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     const scratch = await mkdtemp(join(tmpdir(), "penguin-steer-img-"));
     try {
       let engineRef: ContextEngine | null = null;
-      const inputs: OmniMessage[][] = [];
+      const inputs: AmspRecord[][] = [];
       const llm: LLMInterface = {
-        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
           inputs.push(params.newMessages);
           if (inputs.length === 1) {
             expect(
@@ -3092,9 +3090,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
   // rest of the Task heading further that way.
   it("a steering fold that fails ends the run instead of carrying on without the images", async () => {
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(
@@ -3126,9 +3124,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // can return the wrong thing. Sending the images on as messages would be the worse answer:
     // a fold is configured precisely because the model does not take images.
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(
@@ -3159,9 +3157,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // `false` means "no Task running — send it as a normal task", which would be the wrong
     // advice for an empty message; so it returns true and simply delivers nothing.
     let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(engineRef!.steer([userText("   ")])).toBe(true);
@@ -3189,9 +3187,9 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // LLM; the user steers DURING the compaction request (the acceptance window stays open);
     // the new context's first input must be [summary, steering], not just the summary.
     let engineRef: ContextEngine | null = null;
-    const newInputs: OmniMessage[][] = [];
+    const newInputs: AmspRecord[][] = [];
     const oldLLM: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         const texts = params.newMessages.map((m) => (m.payload as { text?: string }).text ?? "");
         if (texts.some((t) => t.includes("summary prompt"))) {
           // The compaction request: steering arrives while it streams.
@@ -3217,7 +3215,7 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
       },
     };
     const newLLM: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         newInputs.push(params.newMessages);
         yield assistantText("continuing after compaction");
         return { status: "completed" };

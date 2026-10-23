@@ -1,5 +1,5 @@
 /**
- * OmniMessage — PenguinHarness's primary message protocol.
+ * AmspRecord — PenguinHarness's primary message protocol.
  *
  * All messages share one envelope: `timestamp` (ISO 8601 UTC), `type`, and `payload`.
  * The outer `type` falls into three categories:
@@ -12,7 +12,7 @@
  * the Human interface communicates using: complete `model_msg`, streaming `partial_*`, and all
  * `event_msg`.
  *
- * OmniMessage is a closed vocabulary. A new payload field or enum value is a protocol change
+ * AmspRecord is a closed vocabulary. A new payload field or enum value is a protocol change
  * every reader — Trace replay, the server, the Web App, the CLI, third-party consumers — has to
  * learn, forever. Before adding one, show that no existing record carries the fact (the model
  * lives in `session_meta`; a context's boundaries in the compaction pair and the file split)
@@ -28,7 +28,7 @@
  * and `@prismshadow/penguin-core` re-exports them from its old paths. Nothing here may import
  * Node or core.
  *
- * Docs: packages/docs/content/omni-message.{zh,en}.md (site path /docs/omni-message) documents
+ * Docs: packages/docs/content/amsp-records.{zh,en}.md (site path /docs/amsp-records) documents
  * this protocol payload-for-payload — keep the page in sync when changing types here.
  */
 
@@ -36,7 +36,7 @@
 export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** The outer message category. */
-export type OmniMessageType = "session_meta" | "model_msg" | "event_msg";
+export type AmspRecordType = "session_meta" | "model_msg" | "event_msg";
 
 /** The message's originating role. */
 export type Role = "user" | "assistant";
@@ -70,7 +70,7 @@ export type Role = "user" | "assistant";
  * Legacy Traces may still carry the retired values `failed` / `timeout` / `malformed` /
  * `auth` on their records; replay logic only ever compares against `completed`, and render
  * layers keep read-only handling for the old spellings.
- * Docs: /docs/omni-message § "stop_reason".
+ * Docs: /docs/amsp-records § "stop_reason".
  */
 export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 
@@ -86,7 +86,7 @@ export type StreamEventType = "start" | "delta" | "stop";
  * either). Only session_id is recorded: the corresponding tool_call / agent info can be obtained
  * from the `run_subagent` tool_call in the parent session's stream and the child Session's own
  * Trace (session_meta).
- * Docs: /docs/omni-message § "origin: the Subagent chain".
+ * Docs: /docs/amsp-records § "origin: the Subagent chain".
  */
 export type MessageOrigin = string;
 
@@ -112,7 +112,7 @@ export interface TokenCounts {
 // ---------------------------------------------------------------------------
 // session_meta
 // ---------------------------------------------------------------------------
-// Docs: /docs/omni-message § "session_meta"
+// Docs: /docs/amsp-records § "session_meta"
 
 /** Tool definition passed to the LLM (OpenAI/JSON Schema style). */
 export interface ToolDefinition {
@@ -188,7 +188,7 @@ export type SessionSource =
 // ---------------------------------------------------------------------------
 // model_msg — complete messages
 // ---------------------------------------------------------------------------
-// Docs: /docs/omni-message § "model_msg: complete payloads"
+// Docs: /docs/amsp-records § "model_msg: complete payloads"
 
 /**
  * Provider-fidelity payload (mirrors MMSP's `Fidelity`): an arbitrary JSON-style object of
@@ -296,7 +296,7 @@ export interface ToolCallOutputPayload {
 // ---------------------------------------------------------------------------
 // model_msg — streaming partial_* messages
 // ---------------------------------------------------------------------------
-// Docs: /docs/omni-message § "model_msg: streaming partials"
+// Docs: /docs/amsp-records § "model_msg: streaming partials"
 
 export interface PartialTextPayload {
   type: "partial_text";
@@ -339,7 +339,7 @@ export interface PartialToolCallOutputPayload {
 // ---------------------------------------------------------------------------
 // event_msg
 // ---------------------------------------------------------------------------
-// Docs: /docs/omni-message § "event_msg"
+// Docs: /docs/amsp-records § "event_msg"
 
 export interface ApprovalDecisionPayload {
   type: "approval_decision";
@@ -467,7 +467,7 @@ export interface RetryDetail extends ErrorInfo {
   // classified cause and the real reason behind a retried/failed Request (e.g. `403 …
   // (insufficient_user_quota)`); the server's error records / Cost center read them here
   // because a failed request never produces an abort event. Not plain `message`: in this
-  // protocol "message" means an OmniMessage. (Traces written before the rename carry the
+  // protocol "message" means an AmspRecord. (Traces written before the rename carry the
   // text as `message`; nothing reads that field semantically after the fact.)
   /**
    * 1-based ordinal of this Request within its retry run — the authoritative retry count
@@ -588,7 +588,7 @@ export interface SubagentPayload {
  * (so it belongs to the new turn; also rewritten at the head of each post-compaction
  * file alongside `session_meta`) but not part of reload history — live streams re-emit
  * it on the next run, which is when frontends need the schemas.
- * Docs: /docs/omni-message § "event_msg".
+ * Docs: /docs/amsp-records § "event_msg".
  */
 export interface ToolListReadyPayload {
   type: "tool_list_ready";
@@ -623,7 +623,7 @@ export interface McpServerConnectResult {
  * input so the phase belongs to the new turn (an attempt aborted before the engine
  * exists is live-only). Not part of reload history (a transient status, unlike
  * `tool_list_ready`).
- * Docs: /docs/omni-message § "event_msg".
+ * Docs: /docs/amsp-records § "event_msg".
  */
 export interface McpConnectBeginPayload {
   type: "mcp_connect_begin";
@@ -677,13 +677,18 @@ export type EventPayload =
   | McpConnectBeginPayload
   | McpConnectEndPayload;
 
-export type OmniPayload = SessionMetaPayload | ModelPayload | EventPayload;
+export type AmspPayload = SessionMetaPayload | ModelPayload | EventPayload;
 
-/** The unified message envelope. */
-export interface OmniMessage<P extends OmniPayload = OmniPayload> {
+/**
+ * One AMSP record: the envelope every Trace line and every unnamed Session-stream event is. The
+ * outer `type` is `session_meta`, `model_msg` or `event_msg`; `origin` names the child Session
+ * chain (outer→inner) a subagent's record came through, and is absent on the main Session's own
+ * records.
+ */
+export interface AmspRecord<P extends AmspPayload = AmspPayload> {
   /** ISO 8601 UTC timestamp. */
   timestamp: string;
-  type: OmniMessageType;
+  type: AmspRecordType;
   payload: P;
   /** Nested-origin marker: the chain of child Session ids ordered outer-to-inner; absent = from the main Session (see MessageOrigin). */
   origin?: MessageOrigin[];
@@ -691,11 +696,11 @@ export interface OmniMessage<P extends OmniPayload = OmniPayload> {
 
 // Convenience aliases for concrete message types --------------------------------
 
-export type SessionMetaMessage = OmniMessage<SessionMetaPayload>;
-export type ModelMessage = OmniMessage<ModelPayload>;
-export type EventMessage = OmniMessage<EventPayload>;
-export type CompleteModelMessage = OmniMessage<CompleteModelPayload>;
-export type PartialModelMessage = OmniMessage<PartialModelPayload>;
+export type SessionMetaMessage = AmspRecord<SessionMetaPayload>;
+export type ModelMessage = AmspRecord<ModelPayload>;
+export type EventMessage = AmspRecord<EventPayload>;
+export type CompleteModelMessage = AmspRecord<CompleteModelPayload>;
+export type PartialModelMessage = AmspRecord<PartialModelPayload>;
 
 // ---------------------------------------------------------------------------
 // Runtime discrimination helpers
@@ -709,15 +714,15 @@ const PARTIAL_PAYLOAD_TYPES = [
   "partial_tool_call_output",
 ] as const;
 
-export function isPartialPayload(p: OmniPayload): p is PartialModelPayload {
+export function isPartialPayload(p: AmspPayload): p is PartialModelPayload {
   return (PARTIAL_PAYLOAD_TYPES as readonly string[]).includes((p as { type?: string }).type ?? "");
 }
 
-export function isModelMessage(msg: OmniMessage): msg is ModelMessage {
+export function isModelMessage(msg: AmspRecord): msg is ModelMessage {
   return msg.type === "model_msg";
 }
 
-export function isEventMessage(msg: OmniMessage): msg is EventMessage {
+export function isEventMessage(msg: AmspRecord): msg is EventMessage {
   return msg.type === "event_msg";
 }
 
@@ -728,18 +733,18 @@ export function isEventMessage(msg: OmniMessage): msg is EventMessage {
  * stamp; a consumer that means only the loop-driving injections (round boundaries)
  * additionally excludes the notices by their `[background_task_done]` block.
  */
-export function isHarnessInput(msg: OmniMessage): boolean {
+export function isHarnessInput(msg: AmspRecord): boolean {
   if (msg.origin && msg.origin.length > 0) return false;
   if (msg.type !== "model_msg") return false;
   const p = msg.payload as { type?: string; role?: string; sender?: string };
   return p.type === "text" && p.role === "user" && p.sender === "harness";
 }
 
-export function isSessionMeta(msg: OmniMessage): msg is SessionMetaMessage {
+export function isSessionMeta(msg: AmspRecord): msg is SessionMetaMessage {
   return msg.type === "session_meta";
 }
 
 /** A complete model_msg (not partial_*), i.e. a message that can be written to Trace. */
-export function isCompleteModelMessage(msg: OmniMessage): msg is CompleteModelMessage {
+export function isCompleteModelMessage(msg: AmspRecord): msg is CompleteModelMessage {
   return msg.type === "model_msg" && !isPartialPayload(msg.payload);
 }

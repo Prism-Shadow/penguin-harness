@@ -24,8 +24,8 @@ import type {
   InlineThinkingPayload,
   McpConnectBeginPayload,
   McpConnectEndPayload,
-  OmniMessage,
-  OmniPayload,
+  AmspRecord,
+  AmspPayload,
   PartialTextPayload,
   PartialThinkingPayload,
   PartialToolCallOutputPayload,
@@ -111,7 +111,7 @@ export abstract class TraceIndex {
     fileIndex: number;
     date: string;
     sizeBytes: number;
-    records: OmniMessage[];
+    records: AmspRecord[];
   }): void;
   abstract removeSession(projectId: string, agentId: string, sessionId: string): void;
   abstract removeAgent(projectId: string, agentId: string): void;

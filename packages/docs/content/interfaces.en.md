@@ -3,7 +3,7 @@ title: Core Interfaces
 description: The Human, LLM and Environment contracts behind the engine, with their full signatures, inner types and extension seams.
 ---
 
-The `context_engine` depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations, so the engine sees only [OmniMessage](/omni-message).
+The `context_engine` depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations, so the engine sees only [OmniMessage](/amsp-records).
 
 This page follows a turn's control flow: [the Human boundary](#the-human-boundary), the [LLM contract](#llminterface), the [approval callback](#approvefn) and the [Environment contract](#environmentinterface). It ends with the [subagent](#subagent-interfaces) and [vision](#visiondescriberservice) services and the [extension seams](#extension-seams).
 
@@ -20,7 +20,7 @@ All types are exported by `@prismshadow/penguin-core`. The source lives in `pack
             Human (a boundary, not a class)
             session.run(newMessages, { approve, signal })
                           │ ▲
-                          ▼ │ streamed OmniMessage
+                          ▼ │ streamed AmspRecord
                     context_engine
                      │            │
         LLMInterface │            │ EnvironmentInterface
@@ -69,9 +69,9 @@ Human is deliberately not an interface class. The SDK caller *is* the Human:
 const session = await agent.createSession({ workspaceDir, provider, modelId });
 
 session.run(
-  newMessages: OmniMessage[],                    // input: the Prompt
+  newMessages: AmspRecord[],                     // input: the Prompt
   opts?: RunOptions,
-): AsyncGenerator<OmniMessage, RunCutoff | null>; // output: streamed OmniMessage; returns null when the run completed
+): AsyncGenerator<AmspRecord, RunCutoff | null>; // output: streamed AmspRecord; returns null when the run completed
 
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
@@ -97,13 +97,13 @@ The complete model-side contract is a single method, plus one optional property:
 
 ```ts
 interface LLMInterface {
-  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome>;
   readonly defaultThinkingLevel?: ThinkingLevelName; // the level a request with no pin goes out at;
                                                      // the engine sends and records it per request
 }
 
 interface GenerativeModelParameters {
-  newMessages: OmniMessage[];    // only this turn's new messages (the impl owns history; mixed roles rejected)
+  newMessages: AmspRecord[];     // only this turn's new messages (the impl owns history; mixed roles rejected)
   signal?: AbortSignal;
   thinkingLevel?: ThinkingLevelName;   // per-request override; omitted = the construction default
 }
@@ -187,7 +187,7 @@ interface GenerativeModelConfig {
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | Rule | Behavior |
@@ -208,7 +208,7 @@ The core of the tool-execution contract:
 ```ts
 interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
-  executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
+  executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
   dispose?(): void;                                        // release runtime resources; idempotent
 }
@@ -241,7 +241,7 @@ Rendering is not this interface's concern. Streaming rendering belongs to the CL
 
 ```ts
 interface ToolExecutionRequest {
-  toolCall: OmniMessage<ToolCallPayload>;   // an approved call
+  toolCall: AmspRecord<ToolCallPayload>;    // an approved call
   signal?: AbortSignal;
   approve?: ApproveFn;                      // forwarded to tools that spawn child Sessions (approval inheritance)
 }
@@ -298,7 +298,7 @@ interface EnvironmentServices {
   commandSessions?: CommandSessionManager;  // long-running command session registry (built by Environment)
   subagentSessions?: SubagentSessionManager;// background subagent session registry (likewise)
   backgroundDone?: (event: BackgroundTaskDoneEvent) => void; // completion-report sink for run_in_background launches (likewise)
-  backgroundForward?: (msg: OmniMessage) => void;           // live message tap of a background subagent (likewise)
+  backgroundForward?: (msg: AmspRecord) => void;            // live message tap of a background subagent (likewise)
 }
 
 interface MCPServerConfig {
@@ -333,7 +333,7 @@ interface BuiltinTool {
     ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve?, fs? };
                                      // fs = the file-system port a file tool works through (the sandboxed helper
                                      // when the Session is confined, this process otherwise; fs.sandboxed says which)
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }
 
 interface ToolDefinitionConfig {
@@ -370,13 +370,13 @@ interface SubagentRunner {
 
 interface SubagentHandle {
   sessionId: string;      // the child Session id: the origin hop; subagent_id derives from its tail
-  takeMeta?(): OmniMessage | null; // one-shot take of the child's session_meta (a background launch forwards it upfront)
+  takeMeta?(): AmspRecord | null; // one-shot take of the child's session_meta (a background launch forwards it upfront)
   run(input: {
-    messages: OmniMessage[];  // the round's input, the shape Session.run takes a Prompt in
+    messages: AmspRecord[];   // the round's input, the shape Session.run takes a Prompt in
     signal?: AbortSignal;
     approve?: ApproveFn;  // the parent's approval callback — forwarding is inheritance
-  }): AsyncGenerator<OmniMessage, RunCutoff | null>; // returns null when the round completed
-  steer?(messages: OmniMessage[]): boolean; // queue a steering message for a running round; false when none is running
+  }): AsyncGenerator<AmspRecord, RunCutoff | null>; // returns null when the round completed
+  steer?(messages: AmspRecord[]): boolean; // queue a steering message for a running round; false when none is running
   setThinkingLevel?(level: ThinkingLevelName): void; // pin the child's thinking level from its next request
   dispose(): void;        // release the child Session's runtime resources; idempotent
 }

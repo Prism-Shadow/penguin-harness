@@ -16,7 +16,7 @@ Web App 和 CLI 经 HTTP 与 SSE 访问 Server，桌面应用则把 Server 和 W
 │   CLI       │  │  Web App (React SPA)        │
 │  (penguin)  │  │                             │
 └──────┬──────┘  └──────────────┬──────────────┘
-       │                        │   HTTP · OmniMessage over SSE
+       │                        │   HTTP · AmspRecord over SSE
 ┌──────┴────────────────────────┴──────────────┐
 │  Server (Hono + SQLite)                      │
 └──────────────────────┬───────────────────────┘
@@ -45,7 +45,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 
 ## 三接口边界
 
-`context_engine` 是整个系统的核心，只做两件事：维护线性消息历史，以及在三个接口之间编排事件流。它只认识 [OmniMessage](/omni-message)，不做任何协议转换。
+`context_engine` 是整个系统的核心，只做两件事：维护线性消息历史，以及在三个接口之间编排事件流。它只认识 [OmniMessage](/amsp-records)，不做任何协议转换。
 
 - **Human**：用户侧边界。它刻意不是一个接口类：SDK 的唯一入口 `session.run(newMessages, { approve, signal })` *就是* Human 边界。输入是一组新增的 OmniMessage 和一个审批回调，输出是 OmniMessage 流。Server 是随产品交付的实现；CLI 和 Web App 经 HTTP 与 SSE 访问它，SDK 嵌入方则自己调用 `session.run`。
 - **LLM**：模型侧接口 `LLMInterface`。它把 OmniMessage 转成发往 MMSP 模型网关的请求，再把流式事件转回 OmniMessage。供应商协议适配全部在 MMSP 内完成，core 不引入任何厂商 SDK。
@@ -78,7 +78,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 
 | 设计 | 归属 | 承载位置 |
 | --- | --- | --- |
-| OmniMessage 协议、消息解析与分片聚合 | SDK | `core/src/omnimessage/`，见 [OmniMessage 协议](/omni-message) |
+| OmniMessage 协议、消息解析与分片聚合 | SDK | `core/src/omnimessage/`，见 [OmniMessage 协议](/amsp-records) |
 | ReAct 循环、补发、重连、压缩 | SDK | `core/src/engine/context-engine.ts`，见 [Agent 运行循环](/agent-loop) |
 | 审批机制（每个 `tool_call` 一次决策） | SDK | `ApproveFn`（`core/src/interfaces/shared.ts`）；具体模式由 Server 或 SDK 宿主注入 |
 | 工具执行与集中收尾 | SDK | `core/src/environment/`，见[工具与审批](/tools) |
@@ -136,7 +136,7 @@ packages/
 │   └── internal/                   # shared helpers: dates, Session support, merge queue, session-title.ts (one-shot title generation, never in Trace)
 ├── server/src                      # index.ts boot sequence · app assembly · db (node:sqlite) · auth · http/routes · runtime · services · hmr · plugin · terminal · model-catalog.ts
 ├── cli/src                         # commander entry · commands/ (run / chat / input / logs / ls / agent / project / schedule / config / serve …) · server client and approval prompts
-├── web/src                         # api client · state · lib/omni stream rendering · components · feature pages (layout below)
+├── web/src                         # api client · state · lib/amsp stream rendering · components · feature pages (layout below)
 ├── desktop/                        # the Electron shell
 ├── hmr/                            # the hot-update mechanism
 ├── landing/                        # the product landing page (with the blog)
@@ -149,7 +149,7 @@ packages/
 packages/web/src
 ├── api/          # fetch wrapper · one function per API (DTOs type-only from @prismshadow/penguin-server/api) · SSE wrapper
 ├── state/        # auth / project / sessions / company / theme / locale contexts
-├── lib/omni/     # OmniMessage stream → view-model reducer; connect-first + dedup stream controller
+├── lib/amsp/     # AmspRecord stream → view-model reducer; connect-first + dedup stream controller
 ├── components/   # ui primitives (modal / drawer / select …) and the app layout
 ├── pages/        # the login pages
 └── features/     # chat / agents / skills / plugins / models / usage / traces / benchmark / schedules / company / settings / admin … pages

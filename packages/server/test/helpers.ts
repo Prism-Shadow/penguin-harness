@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { bootAppDeps, createApp } from "../src/app.js";
 import type { ServerBoot } from "../src/app.js";
 import type { ModuleTree, ModuleClass } from "@prismshadow/penguin-core/kernel";
@@ -695,7 +695,7 @@ export async function writeTraceFile(
   dateDir: string,
   sessionId: string,
   index: number,
-  messages: OmniMessage[],
+  messages: AmspRecord[],
 ): Promise<string> {
   const dir = path.join(root, projectId, "agents", agentId, "traces", dateDir);
   await fs.mkdir(dir, { recursive: true });

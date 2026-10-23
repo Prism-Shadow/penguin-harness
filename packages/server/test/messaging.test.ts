@@ -75,7 +75,7 @@ import {
   scratchpadDir,
   toolCall,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
@@ -153,7 +153,7 @@ function echoFakeSession(
   reply = "Reply text",
 ): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(input: OmniMessage[]) {
+    async *run(input: AmspRecord[]) {
       runs.push(input.map((m) => m.payload as InputPayload));
       yield assistantText(reply);
     },
@@ -163,7 +163,7 @@ function echoFakeSession(
 /** Fake Session that parks on one approval per run (drives an approval_request event). */
 function parkingFakeSession(sessionId: string): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-feishu" });
       yield tc;
       const decision = await opts.approve(tc);
@@ -199,7 +199,7 @@ function multiMessageFakeSession(
  */
 function replyThenApprovalFakeSession(sessionId: string, text: string): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       yield assistantText(text);
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-lines" });
       yield tc;
@@ -3500,7 +3500,7 @@ describe("a message carrying several files", () => {
   /** echoFakeSession, but parking for as long as a test holds it. */
   const heldEchoSession = (): RuntimeSession =>
     fakeSession(SID, {
-      async *run(input: OmniMessage[]) {
+      async *run(input: AmspRecord[]) {
         runs.push(input.map((m) => m.payload as InputPayload));
         if (park) await new Promise<void>((resolve) => (release = resolve));
         yield assistantText("Reply text");

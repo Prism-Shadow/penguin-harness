@@ -32,7 +32,7 @@
  *
  * Pure logic module, no React dependency; driven by stream-model.ts.
  */
-import type { TokenUsagePayload } from "@prismshadow/penguin-core/omnimessage";
+import type { TokenUsagePayload } from "@prismshadow/amsp";
 import { computeTps, formatTps, humanizeTokens } from "../format";
 
 /** Token three buckets (cached input / uncached input / output). */

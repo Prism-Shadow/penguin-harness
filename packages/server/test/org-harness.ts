@@ -6,7 +6,7 @@
  */
 import { saveProjectConfig } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
 import { MembersRepo } from "../src/db/repos/members.js";
@@ -78,7 +78,7 @@ export interface FakePlugins {
 /** The version the fake library offers for every plugin an employee is hired with. */
 export const FAKE_LIBRARY_VERSION = "2026.09.14.1";
 
-function textOf(input: OmniMessage[]): string {
+function textOf(input: AmspRecord[]): string {
   const first = input[0] as { payload?: { text?: string } } | undefined;
   return first?.payload?.text ?? "";
 }

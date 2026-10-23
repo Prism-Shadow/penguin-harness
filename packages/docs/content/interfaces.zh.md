@@ -3,7 +3,7 @@ title: 核心接口
 description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签名、内部类型与扩展点。
 ---
 
-`context_engine` 依赖三个接口：Human、LLM 和 Environment。协议转换全部发生在实现内部，引擎能看到的只有 [OmniMessage](/omni-message)。
+`context_engine` 依赖三个接口：Human、LLM 和 Environment。协议转换全部发生在实现内部，引擎能看到的只有 [OmniMessage](/amsp-records)。
 
 本页沿一轮运行的控制流展开：[Human 边界](#human-边界)、[LLM 契约](#llminterface)、[审批回调](#approvefn)和 [Environment 契约](#environmentinterface)。结尾介绍[子 Agent](#子-agent-接口) 和[视觉](#visiondescriberservice)服务，以及[扩展点](#扩展点)。
 
@@ -20,7 +20,7 @@ description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签�
             Human (a boundary, not a class)
             session.run(newMessages, { approve, signal })
                           │ ▲
-                          ▼ │ streamed OmniMessage
+                          ▼ │ streamed AmspRecord
                     context_engine
                      │            │
         LLMInterface │            │ EnvironmentInterface
@@ -69,9 +69,9 @@ Human 刻意不定义成接口类。SDK 调用方*就是* Human：
 const session = await agent.createSession({ workspaceDir, provider, modelId });
 
 session.run(
-  newMessages: OmniMessage[],                    // input: the Prompt
+  newMessages: AmspRecord[],                     // input: the Prompt
   opts?: RunOptions,
-): AsyncGenerator<OmniMessage, RunCutoff | null>; // output: streamed OmniMessage; returns null when the run completed
+): AsyncGenerator<AmspRecord, RunCutoff | null>; // output: streamed AmspRecord; returns null when the run completed
 
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
@@ -97,13 +97,13 @@ CLI 把终端 I/O 接到这条边界上，Server 把 HTTP 请求和 SSE 通道�
 
 ```ts
 interface LLMInterface {
-  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome>;
   readonly defaultThinkingLevel?: ThinkingLevelName; // the level a request with no pin goes out at;
                                                      // the engine sends and records it per request
 }
 
 interface GenerativeModelParameters {
-  newMessages: OmniMessage[];    // only this turn's new messages (the impl owns history; mixed roles rejected)
+  newMessages: AmspRecord[];     // only this turn's new messages (the impl owns history; mixed roles rejected)
   signal?: AbortSignal;
   thinkingLevel?: ThinkingLevelName;   // per-request override; omitted = the construction default
 }
@@ -187,7 +187,7 @@ interface GenerativeModelConfig {
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | 规则 | 行为 |
@@ -208,7 +208,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDec
 ```ts
 interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
-  executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
+  executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
   dispose?(): void;                                        // release runtime resources; idempotent
 }
@@ -241,7 +241,7 @@ interface EnvironmentInterface {
 
 ```ts
 interface ToolExecutionRequest {
-  toolCall: OmniMessage<ToolCallPayload>;   // an approved call
+  toolCall: AmspRecord<ToolCallPayload>;    // an approved call
   signal?: AbortSignal;
   approve?: ApproveFn;                      // forwarded to tools that spawn child Sessions (approval inheritance)
 }
@@ -298,7 +298,7 @@ interface EnvironmentServices {
   commandSessions?: CommandSessionManager;  // long-running command session registry (built by Environment)
   subagentSessions?: SubagentSessionManager;// background subagent session registry (likewise)
   backgroundDone?: (event: BackgroundTaskDoneEvent) => void; // completion-report sink for run_in_background launches (likewise)
-  backgroundForward?: (msg: OmniMessage) => void;           // live message tap of a background subagent (likewise)
+  backgroundForward?: (msg: AmspRecord) => void;            // live message tap of a background subagent (likewise)
 }
 
 interface MCPServerConfig {
@@ -333,7 +333,7 @@ interface BuiltinTool {
     ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve?, fs? };
                                      // fs = the file-system port a file tool works through (the sandboxed helper
                                      // when the Session is confined, this process otherwise; fs.sandboxed says which)
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }
 
 interface ToolDefinitionConfig {
@@ -370,13 +370,13 @@ interface SubagentRunner {
 
 interface SubagentHandle {
   sessionId: string;      // the child Session id: the origin hop; subagent_id derives from its tail
-  takeMeta?(): OmniMessage | null; // one-shot take of the child's session_meta (a background launch forwards it upfront)
+  takeMeta?(): AmspRecord | null; // one-shot take of the child's session_meta (a background launch forwards it upfront)
   run(input: {
-    messages: OmniMessage[];  // the round's input, the shape Session.run takes a Prompt in
+    messages: AmspRecord[];   // the round's input, the shape Session.run takes a Prompt in
     signal?: AbortSignal;
     approve?: ApproveFn;  // the parent's approval callback — forwarding is inheritance
-  }): AsyncGenerator<OmniMessage, RunCutoff | null>; // returns null when the round completed
-  steer?(messages: OmniMessage[]): boolean; // queue a steering message for a running round; false when none is running
+  }): AsyncGenerator<AmspRecord, RunCutoff | null>; // returns null when the round completed
+  steer?(messages: AmspRecord[]): boolean; // queue a steering message for a running round; false when none is running
   setThinkingLevel?(level: ThinkingLevelName): void; // pin the child's thinking level from its next request
   dispose(): void;        // release the child Session's runtime resources; idempotent
 }

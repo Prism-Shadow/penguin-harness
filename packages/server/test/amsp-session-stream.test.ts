@@ -42,7 +42,6 @@ import {
   taskBegin,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
 import { AgentClient, RunCollector, readAmsp } from "@prismshadow/amsp";
 import type { AmspFrame, AmspRecord, RunResult } from "@prismshadow/amsp";
 import type { AgentApiKeyCreateResponse, MessagesResponse } from "../src/api/types.js";
@@ -117,7 +116,7 @@ async function traceFiles(
   root: string,
   agentId: string,
   sessionId: string,
-): Promise<OmniMessage[][]> {
+): Promise<AmspRecord[][]> {
   const dir = path.join(root, P, "agents", agentId, "traces");
   const files: string[] = [];
   for (const day of await fs.readdir(dir)) {
@@ -131,7 +130,7 @@ async function traceFiles(
       (await fs.readFile(f, "utf8"))
         .split("\n")
         .filter((l) => l.trim() !== "")
-        .map((l) => JSON.parse(l) as OmniMessage),
+        .map((l) => JSON.parse(l) as AmspRecord),
     ),
   );
 }

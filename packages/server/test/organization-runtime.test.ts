@@ -19,7 +19,7 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseOrgTriggerMessage, saveProjectConfig } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { MembersRepo } from "../src/db/repos/members.js";
 import { OrgCacheRepo } from "../src/db/repos/organizations.js";
@@ -64,7 +64,7 @@ interface Started {
   queueIfBusy: boolean;
 }
 
-function textOf(input: OmniMessage[]): string {
+function textOf(input: AmspRecord[]): string {
   const first = input[0] as { payload?: { text?: string } } | undefined;
   return first?.payload?.text ?? "";
 }

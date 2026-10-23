@@ -24,7 +24,7 @@ A single `run` drives a complete Task: streaming output, per-call approvals, con
 ## Documentation
 
 - [Architecture](https://penguin.ooo/docs/architecture)
-- [The OmniMessage Protocol](https://penguin.ooo/docs/omni-message)
+- [The OmniMessage Protocol](https://penguin.ooo/docs/amsp-records)
 - [Core Interfaces](https://penguin.ooo/docs/interfaces)
 - [The Agent Loop](https://penguin.ooo/docs/agent-loop)
 - [Sessions & Traces](https://penguin.ooo/docs/sessions-and-traces)

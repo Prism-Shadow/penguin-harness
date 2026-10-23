@@ -31,7 +31,7 @@ import {
   scratchpadDir,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { CompactionMode, OmniMessage } from "@prismshadow/penguin-core";
+import type { CompactionMode, AmspRecord } from "@prismshadow/penguin-core";
 import { promptLabel } from "./trace-prompt-label.js";
 import type {
   AgentTraceSessionEntry,
@@ -117,7 +117,7 @@ function forkSessionId(date: Date): string {
   return `session-${formatLocalDate(date)}-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${randomUUID().replaceAll("-", "").slice(0, 8)}`;
 }
 
-function isAssistantText(msg: OmniMessage): boolean {
+function isAssistantText(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: unknown };
   return (
     msg.type === "model_msg" &&
@@ -128,7 +128,7 @@ function isAssistantText(msg: OmniMessage): boolean {
   );
 }
 
-function isTaskStartingUser(msg: OmniMessage): boolean {
+function isTaskStartingUser(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: unknown };
   if (msg.type !== "model_msg") return false;
   if (p.type === "image_url") return true;
@@ -168,7 +168,7 @@ function rewriteForkText(text: string, sourceScratchpad: string, forkScratchpad:
 }
 
 function positioned(
-  messages: readonly OmniMessage[],
+  messages: readonly AmspRecord[],
   fileIndex: number,
   fromOrdinal = 0,
 ): HistoryMessage[] {
@@ -193,7 +193,7 @@ export type MessagesPageRequest =
 /** A windowed history read's result (route maps it onto MessagesResponse.page). */
 export interface MessagesPageResult {
   /** The window's records with their `tracePosition`, images still inline (the route references them). */
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   /** Cursor of the window's first unit; absent = the window reaches the beginning. */
   before?: string;
   /** Cumulative stats before the window (earlierTurns = prior.turns). */
@@ -230,7 +230,7 @@ interface ExpandCtx {
   projectScanned: boolean;
   ancestry: Set<string>;
   depth: number;
-  raw: Map<string, OmniMessage[] | null>;
+  raw: Map<string, AmspRecord[] | null>;
 }
 
 /**
@@ -239,7 +239,7 @@ interface ExpandCtx {
  * records the Session id; the sub-session's Agent is located within the Project by
  * its Trace file.
  */
-function subagentPointer(msg: OmniMessage): string | null {
+function subagentPointer(msg: AmspRecord): string | null {
   if (msg.type !== "event_msg") return null;
   const p = msg.payload as { type?: string; session_id?: unknown };
   if (p.type !== "subagent" || typeof p.session_id !== "string" || p.session_id === "") {
@@ -348,7 +348,7 @@ export class TraceService implements Traces {
   }
 
   /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
-  private async readShard(path: string): Promise<OmniMessage[]> {
+  private async readShard(path: string): Promise<AmspRecord[]> {
     this.observeShardRead?.(path);
     return readTraceTolerant(path);
   }
@@ -380,9 +380,9 @@ export class TraceService implements Traces {
       }
       for (const line of text.split("\n")) {
         if (!line.includes('"subagent"')) continue;
-        let msg: OmniMessage;
+        let msg: AmspRecord;
         try {
-          msg = JSON.parse(line) as OmniMessage;
+          msg = JSON.parse(line) as AmspRecord;
         } catch {
           continue; // A torn final line (a crashed writer) holds no complete pointer.
         }
@@ -436,7 +436,7 @@ export class TraceService implements Traces {
       raw: new Map(),
     };
     const files = await this.locateAll(projectId, agentId, sessionId);
-    const out: OmniMessage[] = [];
+    const out: AmspRecord[] = [];
     for (const file of files) {
       const raw = await this.readShard(file.path);
       out.push(...(await this.expandMessages(projectId, positioned(raw, file.index), ctx)));
@@ -468,11 +468,11 @@ export class TraceService implements Traces {
     projectId: string,
     childSid: string,
     ctx: ExpandCtx,
-  ): Promise<OmniMessage[] | null> {
+  ): Promise<AmspRecord[] | null> {
     const cached = ctx.raw.get(childSid);
     if (cached !== undefined) return cached;
     const childAgent = await this.resolveChildAgent(projectId, childSid, ctx);
-    let raw: OmniMessage[] | null = null;
+    let raw: AmspRecord[] | null = null;
     if (childAgent) {
       const files = await this.locateAll(projectId, childAgent, childSid);
       if (files.length > 0) {
@@ -490,10 +490,10 @@ export class TraceService implements Traces {
    */
   private async expandMessages(
     projectId: string,
-    messages: readonly OmniMessage[],
+    messages: readonly AmspRecord[],
     ctx: ExpandCtx,
-  ): Promise<OmniMessage[]> {
-    const out: OmniMessage[] = [];
+  ): Promise<AmspRecord[]> {
+    const out: AmspRecord[] = [];
     for (const msg of messages) {
       // The depth cap guards against runaway recursion; ancestry guards against a
       // cyclic pointer (a tampered Trace pointing to itself/an ancestor is not expanded).
@@ -503,7 +503,7 @@ export class TraceService implements Traces {
         continue;
       }
       const raw = await this.readChildRaw(projectId, childSid, ctx);
-      let nested: OmniMessage[] = [];
+      let nested: AmspRecord[] = [];
       if (raw !== null) {
         ctx.ancestry.add(childSid);
         nested = await this.expandMessages(projectId, raw, { ...ctx, depth: ctx.depth + 1 });
@@ -662,7 +662,7 @@ export class TraceService implements Traces {
 
     // Walk backward from the end, scanning whole shards (each from its cached carry-in)
     // until the window has more units than requested or the beginning is reached.
-    const shardMessages = new Map<number, OmniMessage[]>();
+    const shardMessages = new Map<number, AmspRecord[]>();
     let boundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
     let startPos = endPos + 1;
     while (boundaries.length <= req.limit && startPos > 0) {
@@ -791,7 +791,7 @@ export class TraceService implements Traces {
     const targetFilePos = files.findIndex((file) => file.index === position.fileIndex);
     if (targetFilePos < 0) throw invalid("The selected reply no longer exists in this Session.");
 
-    const shards: OmniMessage[][] = [];
+    const shards: AmspRecord[][] = [];
     for (let i = 0; i <= targetFilePos; i++) shards.push(await this.readShard(files[i]!.path));
     const targetShard = shards[targetFilePos]!;
     const target = targetShard[position.ordinal];
@@ -867,7 +867,7 @@ export class TraceService implements Traces {
     const forkScratchpad = path.join(scratchpadRoot, newSessionId);
     const written: string[] = [];
 
-    const rewrite = (msg: OmniMessage): OmniMessage => {
+    const rewrite = (msg: AmspRecord): AmspRecord => {
       if (isSessionMeta(msg)) {
         const sourcePrompt = msg.payload.system_prompt;
         const sourceVisible = modelVisiblePath(sourceScratchpad);
@@ -898,7 +898,7 @@ export class TraceService implements Traces {
             ...msg.payload,
             text: rewriteForkText(p.text, sourceScratchpad, forkScratchpad),
           },
-        } as OmniMessage;
+        } as AmspRecord;
       }
       return msg;
     };
@@ -1048,7 +1048,7 @@ export class TraceService implements Traces {
    */
   private async filePricing(
     projectId: string,
-    meta: OmniMessage | undefined,
+    meta: AmspRecord | undefined,
   ): Promise<{ provider: string; modelId: string; rates: TieredRates } | null> {
     if (meta === undefined) return null;
     const { provider, model_id: modelId } = meta.payload as {
@@ -1245,7 +1245,7 @@ export class TraceService implements Traces {
       // message is a genuine new turn). A subagent's messages pass through without closing it:
       // they belong to another session's stream and say nothing about this one's grouping.
       // The Web answers the same "what is one Task" question over the live stream — see
-      // `openSteering` in web/src/lib/omni/stream-model.ts; the two need to stay in step.
+      // `openSteering` in web/src/lib/amsp/stream-model.ts; the two need to stay in step.
       const isImage = !hasOrigin && msg.type === "model_msg" && p.type === "image_url";
       if (!hasOrigin && !isSteeringText && !(isImage && steeringImages)) steeringImages = false;
       if (isSteeringText) steeringImages = true;
@@ -1815,7 +1815,7 @@ export class TraceService implements Traces {
     agentId: string,
     sessionId: string,
     index: number,
-  ): Promise<OmniMessage[]> {
+  ): Promise<AmspRecord[]> {
     const file = await this.locateByIndex(projectId, agentId, sessionId, index);
     return readTraceTolerant(file.path);
   }
@@ -1867,7 +1867,7 @@ export class TraceService implements Traces {
     content: string,
   ): Promise<TraceImportResponse> {
     const invalid = (message: string) => new HttpError(400, "invalid_trace", message);
-    let records: OmniMessage[];
+    let records: AmspRecord[];
     try {
       // Strict parse: import is the gate for user-supplied files, so a malformed middle
       // line is reported as 400 rather than silently dropped (read paths skip it instead).

@@ -45,7 +45,7 @@ import {
   normalizeSessionSource,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { TraceIndexRepo } from "../db/repos/trace-index.js";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
@@ -87,7 +87,7 @@ function factsFromRecords(
   projectId: string,
   agentId: string,
   sessionId: string,
-  records: OmniMessage[],
+  records: AmspRecord[],
 ): TraceSessionRow {
   const meta = records.find(isSessionMeta);
   let firstPrompt: string | null = null;
@@ -281,7 +281,7 @@ export class TraceIndexService implements TraceIndex {
     const earliest = files[0];
     if (earliest === undefined) return;
     this.counters.headReads += 1;
-    let records: OmniMessage[];
+    let records: AmspRecord[];
     try {
       records = await readTraceHead(traceFilePath(this.root, earliest));
     } catch {
@@ -304,7 +304,7 @@ export class TraceIndexService implements TraceIndex {
     fileIndex: number;
     date: string;
     sizeBytes: number;
-    records: OmniMessage[];
+    records: AmspRecord[];
   }): void {
     this.repo.upsertFile({
       projectId: args.projectId,

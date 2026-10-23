@@ -7,7 +7,7 @@
  * caller may read the Session; the only difference between them is where a page's image
  * references point, which is each door's own `trace-image` route (`imageBase`).
  */
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { Context } from "hono";
 import type { MessagesLiveTail, MessagesPageInfo, MessagesResponse } from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
@@ -48,10 +48,10 @@ function pageLimit(raw: string, name: string): number {
  * writes the very same envelopes, and the client's overlap dedup uses the same rule — and
  * only the history tail can contain them (inputs are the newest records when this races).
  */
-function appendPendingInputs(messages: OmniMessage[], pending: OmniMessage[]): OmniMessage[] {
+function appendPendingInputs(messages: AmspRecord[], pending: AmspRecord[]): AmspRecord[] {
   if (pending.length === 0) return messages;
-  const envelopeKey = (message: OmniMessage): string => {
-    const { tracePosition: _tracePosition, ...envelope } = message as OmniMessage & {
+  const envelopeKey = (message: AmspRecord): string => {
+    const { tracePosition: _tracePosition, ...envelope } = message as AmspRecord & {
       tracePosition?: unknown;
     };
     return JSON.stringify(envelope);
@@ -120,7 +120,7 @@ export async function sessionMessages(
   // page is immutable history — attaching in-flight fragments to it would seed them at
   // the wrong position — so it never carries `live`.
   let live: MessagesLiveTail | undefined;
-  let pendingInputs: OmniMessage[] = [];
+  let pendingInputs: AmspRecord[] = [];
   if (page?.kind !== "before") {
     if (deps.manager.statusOf(row.sessionId) !== "idle") {
       live = {

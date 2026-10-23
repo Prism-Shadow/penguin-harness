@@ -3,9 +3,9 @@
  *
  * Human is the SDK's input/output boundary: there is no "Human
  * implementation/interface".
- *   - Input: the OmniMessage list (Prompt) passed to `run(newMessages, opts?)`, plus the abort
+ *   - Input: the AmspRecord list (Prompt) passed to `run(newMessages, opts?)`, plus the abort
  *     signal `signal` and the per-call approval callback `approve` in `opts`;
- *   - Output: `run` streams OmniMessage via an async generator.
+ *   - Output: `run` streams AmspRecord via an async generator.
  *
  * Approval is a **within-turn interaction**: as soon as a tool_call finishes streaming, `approve`
  * is requested immediately, and it executes if allowed. Approvals for multiple tools happen one
@@ -14,25 +14,27 @@
  * longer produces a tool_call (final reply).
  *
  * Rendering tool calls is not Session/core's responsibility: the CLI / Web frontend renders it
- * from the streamed OmniMessage on its own.
+ * from the streamed AmspRecord on its own.
  * Docs: /docs/agent-loop; /docs/interfaces § "The Human boundary".
  */
 import {
   abortEvent,
-  buildBackgroundTaskDoneMessage,
   mcpConnectEnd,
   sessionMeta,
   taskBegin,
   taskEnd,
   userText,
-} from "./omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import {
+  buildBackgroundTaskDoneMessage,
+  stripLeadingMarkerBlocks,
+} from "@prismshadow/amsp/markers";
 import type {
-  OmniMessage,
+  AmspRecord,
   SessionMetaMessage,
   SessionMetaPayload,
   StopReason,
-} from "./omnimessage/index.js";
-import { stripLeadingMarkerBlocks } from "@prismshadow/amsp/markers";
+} from "@prismshadow/amsp/records";
 import type { ModelRef } from "./state/project-config.js";
 import { sameModelRef } from "./state/project-config.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
@@ -149,7 +151,7 @@ export interface SessionConfig {
   /** Session resume: the engine's initial state derived from Trace replay (carry-over / accumulated stats, etc.). */
   initialEngineState?: EngineInitialState;
   /** Session resume: the full historical messages of the current context (for rendering, including interrupted turns and their markers), for frontend display. */
-  resumedHistory?: OmniMessage[];
+  resumedHistory?: AmspRecord[];
   /**
    * This Session's scratchpad directory: where an input image is saved when it becomes an
    * `[attached image: <path>]` line instead of riding the request as an image. The model
@@ -292,7 +294,7 @@ const TITLE_ASSISTANT_MATERIAL_LIMIT = 1000;
  * the new task's own starting input and keeps its independent turn). The two deliveries are
  * positionally identical in the Trace, so only this recorded stamp can tell them apart.
  */
-function backgroundDoneNotice(event: BackgroundTaskDoneEvent, delivery?: "steering"): OmniMessage {
+function backgroundDoneNotice(event: BackgroundTaskDoneEvent, delivery?: "steering"): AmspRecord {
   const what = event.kind === "command" ? "Background command" : "Background subagent";
   const idField = event.kind === "command" ? "process_id" : "subagent_id";
   const verb =
@@ -321,7 +323,7 @@ function backgroundDoneNotice(event: BackgroundTaskDoneEvent, delivery?: "steeri
  */
 function appendTitleText(
   base: string,
-  msg: OmniMessage,
+  msg: AmspRecord,
   role: "user" | "assistant",
   limit: number,
 ): string {
@@ -336,7 +338,7 @@ export class Session {
   readonly sessionId: string;
   readonly workspaceDir: string;
   /** Session resume: the full historical messages of the current context (for rendering); undefined for a non-resumed Session. */
-  readonly resumedHistory?: OmniMessage[];
+  readonly resumedHistory?: AmspRecord[];
 
   /** Built by the first run's bootstrap (`ensureReady`); null until then — the sync delegates below answer conservatively before it exists. */
   private engine: ContextEngine | null = null;
@@ -345,7 +347,7 @@ export class Session {
    * exist yet to deliver them — dropping them would silently lose the user's message.
    * Prepended on the next run so the model finally sees them.
    */
-  private carryOverInput: OmniMessage[] = [];
+  private carryOverInput: AmspRecord[] = [];
   /**
    * Serialized envelopes of carried inputs the ABORT path already wrote to the Trace
    * (the aborted turn is recorded: input + connect pair + abort). The next run's engine
@@ -354,7 +356,7 @@ export class Session {
    */
   private carryOverPersisted: string[] = [];
   /** The aborted attempt's yielded records (connect pair + abort event), stashed by ensureReady for the caller's Trace write. */
-  private abortedBootstrapRecords: OmniMessage[] = [];
+  private abortedBootstrapRecords: AmspRecord[] = [];
   private readonly bootstrap: SessionConfig["bootstrap"];
   private readonly cancelBootstrap: (() => void) | undefined;
   /**
@@ -398,7 +400,7 @@ export class Session {
    * path calls it under its own rule (see `modelHasVision`). The body reads `imagesDir` at call
    * time, so field ordering in the constructor doesn't matter.
    */
-  private readonly foldImages = (messages: OmniMessage[]): Promise<OmniMessage[]> =>
+  private readonly foldImages = (messages: AmspRecord[]): Promise<AmspRecord[]> =>
     imagesToScratchpadPaths(messages, this.imagesDir);
   /** Title material (used by `generateTitle` as the default): the user input and model body text of the first Task that contains user text. */
   private titleUserText = "";
@@ -419,7 +421,7 @@ export class Session {
   /** Idle-arrival signal for the host (see `onBackgroundNotice`); null until a host subscribes. */
   private noticeListener: (() => void) | null = null;
   /** Live background-subagent message subscriber (see `onBackgroundMessage`); null until a host subscribes — messages are display copies and drop without one. */
-  private bgMessageListener: ((msg: OmniMessage) => void) | null = null;
+  private bgMessageListener: ((msg: AmspRecord) => void) | null = null;
 
   constructor(config: SessionConfig) {
     this.sessionId = config.meta.session_id;
@@ -533,9 +535,9 @@ export class Session {
    * parent agent wrote is not a Prompt the user submitted.
    */
   private async consultUserPromptHooks(
-    input: OmniMessage[],
+    input: AmspRecord[],
     signal?: AbortSignal,
-  ): Promise<{ records: OmniMessage[] } | null> {
+  ): Promise<{ records: AmspRecord[] } | null> {
     const hooks = this.userPromptHooks.filter((h) => h.trigger !== "host");
     if (hooks.length === 0) return null;
     const texts: string[] = [];
@@ -561,7 +563,7 @@ export class Session {
   }
 
   /**
-   * Runs a Task to completion and streams out OmniMessage. `newMessages` is this call's Prompt
+   * Runs a Task to completion and streams out AmspRecord. `newMessages` is this call's Prompt
    * (only the newly added input); `opts` carries the abort signal `signal` and the per-call
    * approval callback `approve` (the engine calls it once per tool_call within a turn).
    * On the first run, `session_meta` is written to the Trace first, and yielded first: the main
@@ -601,9 +603,9 @@ export class Session {
    * call; the return value is the last Task's cutoff, exactly as for a single Task.
    */
   async *run(
-    newMessages: OmniMessage[],
+    newMessages: AmspRecord[],
     opts?: SessionRunOptions,
-  ): AsyncGenerator<OmniMessage, RunCutoff | null> {
+  ): AsyncGenerator<AmspRecord, RunCutoff | null> {
     // The sandbox command policy is applied here, at the Human boundary itself: the
     // injected callback is wrapped so a vetoed command is refused before the host is ever
     // asked, which is what makes the policy outrank every approval mode — no host, and no
@@ -723,7 +725,7 @@ export class Session {
    * Writes one Task record (`task_begin` / `task_end`) to the Trace, then yields it. Best-effort
    * like every Session write: the stream carries the record even when the write failed.
    */
-  private async *taskRecord(msg: OmniMessage): AsyncGenerator<OmniMessage, void> {
+  private async *taskRecord(msg: AmspRecord): AsyncGenerator<AmspRecord, void> {
     await this.writeTrace(msg, (msg.payload as { type: string }).type);
     yield msg;
   }
@@ -733,9 +735,9 @@ export class Session {
    * of these, inside the `task_begin` / `task_end` pair `run` writes around it.
    */
   private async *runTask(
-    newMessages: OmniMessage[],
+    newMessages: AmspRecord[],
     opts?: RunOptions,
-  ): AsyncGenerator<OmniMessage, RunCutoff | null> {
+  ): AsyncGenerator<AmspRecord, RunCutoff | null> {
     // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
     // A previously aborted bootstrap dropped these before the engine existed: they lead
@@ -839,10 +841,10 @@ export class Session {
    * resume history, LLM construction) throws to the caller, and a later run retries with
    * a fresh attempt.
    */
-  private async *ensureReady(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
+  private async *ensureReady(signal?: AbortSignal): AsyncGenerator<AmspRecord, boolean> {
     if (await this.ensureMetaWritten()) yield this.meta;
     if (this.engine) return true;
-    const records: OmniMessage[] = [];
+    const records: AmspRecord[] = [];
     const { queue, result: work } = pumpOpener((emit) => this.bootstrap({ emit }));
     for (;;) {
       const res = await raceAbort(queue.next(), signal);
@@ -917,14 +919,14 @@ export class Session {
    * a standalone `[user_steering]` user message — sent with the next request input alongside
    * that turn's tool outputs, or alone as the continuation input when the turn produced no
    * tool calls — so the model sees it without the loop being interrupted. `input` is an
-   * OmniMessage list, the same shape `run` takes a Prompt in: its user text becomes the
+   * AmspRecord list, the same shape `run` takes a Prompt in: its user text becomes the
    * block's body, and its images ride behind that message just as a Prompt's do; on a model
    * without vision they become `[attached image: …]` path lines inside the block instead (see
    * the engine's steeringMessages). Returns false when no Task is running — the host should
    * then submit the message as a normal task instead. Delivery is independent of approval
    * mode; anything still queued when the run exits (abort included) is discarded.
    */
-  steer(input: OmniMessage[]): boolean {
+  steer(input: AmspRecord[]): boolean {
     // No engine yet = no running Task to steer (the first run's bootstrap hasn't finished).
     return this.engine?.steer(input) ?? false;
   }
@@ -935,7 +937,7 @@ export class Session {
    * is no longer queued — already delivered to the model, or the run exited — so the host
    * reports "already delivered" instead of silently pretending the recall worked.
    */
-  unsteer(input: OmniMessage[]): boolean {
+  unsteer(input: AmspRecord[]): boolean {
     return this.engine?.unsteer(input) ?? false;
   }
 
@@ -968,7 +970,7 @@ export class Session {
    * answer, and its hooks replace the Session's. What it did not bring stays as it was.
    */
   private adoptContext(
-    meta: OmniMessage | undefined,
+    meta: AmspRecord | undefined,
     modelHasVision: boolean | undefined,
     hooks: SessionHooks | undefined,
   ): void {
@@ -1000,7 +1002,7 @@ export class Session {
    * spawned from here inherit it; anything else — the switch was stopped or its compaction
    * failed (the events say how) and the Session stays on the model it was on.
    */
-  async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<OmniMessage, StopReason> {
+  async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<AmspRecord, StopReason> {
     const target: ModelRef = { provider: opts.provider, model_id: opts.modelId };
     if (sameModelRef(target, { provider: this.provider, model_id: this.modelId })) {
       return "completed";
@@ -1053,7 +1055,7 @@ export class Session {
    * if compaction isn't configured.
    * Docs: /docs/agent-loop § "Compaction".
    */
-  async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
+  async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<AmspRecord> {
     // Nothing compactable and no engine: stay a strict no-op, without bootstrapping — a
     // session that never ran must not leave trace records (meta / tool_list_ready) behind,
     // or an untouched session would look resumable.
@@ -1074,7 +1076,7 @@ export class Session {
    * records, so the Session writes them itself (as runTask does), keeping the interruption
    * visible in the Trace.
    */
-  private async *ensureEngine(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
+  private async *ensureEngine(signal?: AbortSignal): AsyncGenerator<AmspRecord, boolean> {
     if (yield* this.ensureReady(signal)) return true;
     for (const m of this.abortedBootstrapRecords) {
       await this.writeTrace(m, "aborted bootstrap record");
@@ -1143,7 +1145,7 @@ export class Session {
   }
 
   /** Best-effort `session_meta` Trace write (warn-and-continue stance): a failure logs and never interrupts the run. */
-  private async writeTrace(msg: OmniMessage, label: string): Promise<boolean> {
+  private async writeTrace(msg: AmspRecord, label: string): Promise<boolean> {
     if (!this.trace) return false;
     try {
       await this.trace.write(msg);
@@ -1215,7 +1217,7 @@ export class Session {
   }
 
   /** The running context's session_meta message — the first context's until a compaction opens another (used e.g. by host tools to forward nested-session metadata to a parent session). */
-  get metaMessage(): OmniMessage {
+  get metaMessage(): AmspRecord {
     return this.meta;
   }
 
@@ -1266,7 +1268,7 @@ export class Session {
    */
   async sendToBackgroundSubagent(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     return (
@@ -1323,7 +1325,7 @@ export class Session {
    * queue — the caller owns delivery of what it took; anything queued after this call is
    * signaled/drained separately.
    */
-  takeBackgroundNotices(): OmniMessage[] {
+  takeBackgroundNotices(): AmspRecord[] {
     return this.pendingNotices.splice(0).map((e) => backgroundDoneNotice(e));
   }
 
@@ -1338,7 +1340,7 @@ export class Session {
    * session's event channel so the frontend sees a background child working in real time.
    * One listener; a later call replaces the earlier one.
    */
-  onBackgroundMessage(listener: (msg: OmniMessage) => void): void {
+  onBackgroundMessage(listener: (msg: AmspRecord) => void): void {
     this.bgMessageListener = listener;
   }
 

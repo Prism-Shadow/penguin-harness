@@ -6,10 +6,6 @@ import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
 export default defineConfig({
   entry: [
     "src/index.ts",
-    "src/omnimessage/index.ts",
-    // Message markers: their own entry so hosts (web/server/cli) can import the marker
-    // producers and parsers without pulling the rest of the SDK surface.
-    "src/omnimessage/markers/index.ts",
     "src/interfaces/index.ts",
     // The plugin contract: types only, so a plugin package compiles against the SDK
     // without depending on whatever embeds it.
@@ -32,7 +28,7 @@ export default defineConfig({
   ],
   format: ["esm"],
   target: "node24",
-  // The OmniMessage types and markers live in @prismshadow/amsp, and core's entries re-export
+  // The records and markers live in @prismshadow/amsp, and core's root entry re-exports
   // them (`export *`). esbuild turns a nested `export *` of an external module into a runtime
   // copy that leaves the names out of the module's static exports, so an `import { isSessionMeta }
   // from "@prismshadow/penguin-core"` would not link. Bundling the package keeps every name a

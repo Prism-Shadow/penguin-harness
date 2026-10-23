@@ -17,8 +17,8 @@ import {
   effectiveMaxOutputTokens,
   resolveContextWindow,
 } from "../src/llm/context-limits.js";
-import { toolCallOutput, userText } from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import { toolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 
 describe("constant derivation (one tunable: OUTPUT_SAFETY_MARGIN)", () => {
   it("derives the floor and headroom from the margin so their invariants cannot drift", () => {
@@ -83,7 +83,7 @@ describe("approximateMessagesTokens", () => {
         role: "user",
         image_url: `data:image/png;base64,${"A".repeat(100_000)}`,
       },
-    } as unknown as OmniMessage;
+    } as unknown as AmspRecord;
     const est = approximateMessagesTokens([image]);
     // 100k base64 chars would be ~25k "tokens" by the char heuristic; the flat allowance
     // stays in the low thousands so one pasted screenshot cannot floor the output cap.

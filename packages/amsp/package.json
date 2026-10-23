@@ -17,9 +17,9 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./omnimessage": {
-      "types": "./dist/omnimessage.d.ts",
-      "import": "./dist/omnimessage.js"
+    "./records": {
+      "types": "./dist/records.d.ts",
+      "import": "./dist/records.js"
     },
     "./markers": {
       "types": "./dist/markers.d.ts",

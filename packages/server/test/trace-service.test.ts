@@ -43,7 +43,7 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type {
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
   TokenCounts,
   StopReason,
@@ -67,7 +67,7 @@ const P = "project-t";
 const A = "agent-t";
 const S = "session-2026-07-05-10-00-00-aabbccdd";
 
-function at(ts: string, msg: OmniMessage): OmniMessage {
+function at(ts: string, msg: AmspRecord): AmspRecord {
   return { ...msg, timestamp: ts };
 }
 
@@ -248,7 +248,7 @@ describe("trace-service", () => {
   });
 
   /** One completed text turn: Prompt, one Request, and its usage stamped at `ts` plus three seconds. */
-  const priceTurn = (ts: string, request: TokenCounts): OmniMessage[] => {
+  const priceTurn = (ts: string, request: TokenCounts): AmspRecord[] => {
     const t = Date.parse(ts);
     const plus = (s: number) => new Date(t + s * 1000).toISOString();
     return [

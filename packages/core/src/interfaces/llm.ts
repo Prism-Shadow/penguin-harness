@@ -2,14 +2,14 @@
  * What the LLM side needs: the contract `context_engine` drives one model request through.
  *
  * The engine calls exactly one method here — `streamGenerate` — and reads exactly two things
- * back: the yielded OmniMessage stream, and the generator's `LLMOutcome` return value (the
+ * back: the yielded AmspRecord stream, and the generator's `LLMOutcome` return value (the
  * request's terminal state; see the docs page's "control plane"). Besides that it reads one
  * optional property, `defaultThinkingLevel`, to know which level a request with no pin goes
  * out at. Protocol conversion to and from the provider is the implementation's own business.
  *
  * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
-import type { ErrorCode, OmniMessage, StopReason, ToolDefinition } from "../omnimessage/types.js";
+import type { ErrorCode, AmspRecord, StopReason, ToolDefinition } from "@prismshadow/amsp/records";
 import type { ThinkingLevelName } from "./shared.js";
 // Concrete class, used only as a type annotation (type-only import; no runtime dependency, no circular reference).
 import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
@@ -91,8 +91,8 @@ export interface GenerativeModelConfig {
 }
 
 export interface GenerativeModelParameters {
-  /** OmniMessage array for the input newly added this turn; implementations must merge it into a single UniMessage (multiple roles not accepted). */
-  newMessages: OmniMessage[];
+  /** AmspRecord array for the input newly added this turn; implementations must merge it into a single UniMessage (multiple roles not accepted). */
+  newMessages: AmspRecord[];
   signal?: AbortSignal;
   /**
    * Per-request thinking level override: applied to **this request only**; omitted falls back
@@ -105,7 +105,7 @@ export interface GenerativeModelParameters {
 /**
  * The terminal state of an LLM request, returned as the **return value** of the `streamGenerate`
  * async generator (not a yielded message). The status values share the same four-value protocol
- * as OmniMessage `stop_reason`:
+ * as AmspRecord `stop_reason`:
  *   - `completed`: finished normally (already produced `token_usage`);
  *   - `aborted`: user-initiated interruption — stop and hand back to the user;
  *   - `retryable`: a failure worth retrying — transport drops, idle timeouts, 408/429/5xx,
@@ -152,7 +152,7 @@ export interface LLMOutcome {
  * Docs: /docs/interfaces § "LLMInterface".
  */
 export interface LLMInterface {
-  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome>;
   /**
    * The level this object sends when a request names none (its construction default). The
    * engine reads it to resolve each request's effective level once — pin, else this — and

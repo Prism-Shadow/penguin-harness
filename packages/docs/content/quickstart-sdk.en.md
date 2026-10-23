@@ -63,6 +63,6 @@ The program asks the agent to create `hello.txt`, using the current directory as
 ## Next steps
 
 - [Core Interfaces](/interfaces): the contracts behind `createAgent`, `Session`, LLM and Environment.
-- [The OmniMessage Protocol](/omni-message): the shape of what `session.run()` yields.
+- [The OmniMessage Protocol](/amsp-records): the shape of what `session.run()` yields.
 - [The Agent Loop](/agent-loop): what happens inside a single Task.
 - [Sessions & Traces](/sessions-and-traces): how conversations and execution records are stored.

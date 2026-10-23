@@ -51,7 +51,7 @@ For the fields of each config file, see the [Configuration Reference](/configura
 
 ## Trace design
 
-A Trace is an append-only JSON Lines file. Each line is one OmniMessage envelope; see the [OmniMessage Protocol](/omni-message). History is only ever appended, never modified in place.
+A Trace is an append-only JSON Lines file. Each line is one OmniMessage envelope; see the [OmniMessage Protocol](/amsp-records). History is only ever appended, never modified in place.
 
 - One Trace file corresponds to one complete model context. When compaction produces a new context segment, the writer rotates to a new file with an incrementing index: `_002`, `_003`, …
 - Recorded: `session_meta`, complete `model_msg`, and all `event_msg`.

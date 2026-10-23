@@ -68,7 +68,7 @@ Trace 是一个 Session 的记录：每条消息、每次工具调用、每个�
 
 OmniMessage 是 PenguinHarness 各处通用的统一消息格式：SDK 用它流式输出，Trace 用它存储，引擎内部也用它运转。产品宣传中也叫 Penguin Message，文档一律使用 OmniMessage。
 
-见 [OmniMessage 协议](/omni-message)。
+见 [OmniMessage 协议](/amsp-records)。
 
 ### 审批模式
 

@@ -4,7 +4,7 @@
  * first, then images, as the composer submits them.
  */
 import { imageUrlMessage, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { badRequest } from "../http/validate.js";
 import { INLINE_IMAGE_MAX_BYTES, INLINE_IMAGE_MAX_MB } from "../services/attachment-limits.js";
 
@@ -26,7 +26,7 @@ function dataUrlBytes(url: string): number {
  * the inline-image cap, and all of them together within the admin's per-message total; an
  * http(s) URL is passed on untouched (the server does not fetch it).
  */
-export function parseRunInput(input: unknown, totalImageBytes: number): OmniMessage[] {
+export function parseRunInput(input: unknown, totalImageBytes: number): AmspRecord[] {
   const empty = () =>
     badRequest("input must be a non-empty string, or an array of text and image_url items.");
   if (typeof input === "string") {
@@ -34,8 +34,8 @@ export function parseRunInput(input: unknown, totalImageBytes: number): OmniMess
     return [userText(input)];
   }
   if (!Array.isArray(input) || input.length === 0) throw empty();
-  const texts: OmniMessage[] = [];
-  const images: OmniMessage[] = [];
+  const texts: AmspRecord[] = [];
+  const images: AmspRecord[] = [];
   let imageBytes = 0;
   input.forEach((item: unknown, i) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {

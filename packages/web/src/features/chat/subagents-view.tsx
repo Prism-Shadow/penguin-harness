@@ -46,7 +46,7 @@ import { ApiError } from "../../api/client";
 import { abortSubagent, messageSubagent, patchSession } from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
+import type { NestedSessionMeta, StreamModel } from "../../lib/amsp/stream-model";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import type { PermissionPick } from "../../lib/permission-level";

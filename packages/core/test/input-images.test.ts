@@ -18,21 +18,19 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
 } from "../src/index.js";
+import { assistantText, imageUrlMessage, userText } from "@prismshadow/amsp/records";
 import {
-  assistantText,
   buildHandoffMessage,
   buildModelSwitchMessage,
   buildScheduledMessage,
   buildSkillsMessage,
-  imageUrlMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
-  userText,
-} from "../src/omnimessage/index.js";
-import type { TextPayload } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/markers";
+import type { TextPayload } from "@prismshadow/amsp/records";
 
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -205,7 +203,7 @@ describe("Session input-image wiring", () => {
   function steeringLLM(steer: () => void): LLMInterface {
     let turn = 0;
     return {
-      async *streamGenerate(): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
         if (++turn === 1) steer();
         yield assistantText(`turn ${turn}`);
         return { status: "completed" };
@@ -244,10 +242,10 @@ describe("Session input-image wiring", () => {
   it("a vision model gets no fold at all, so an unwritable scratchpad never comes up", async () => {
     // The engine is handed no converter when the model takes images: the steering images ride
     // as messages and nothing touches the directory, broken or not.
-    const inputs: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
     let session!: Session;
     const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(params): AsyncGenerator<AmspRecord, LLMOutcome> {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(session.steer([userText("look at this"), imageUrlMessage(DATA_URL)])).toBe(true);

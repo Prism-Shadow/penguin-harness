@@ -51,7 +51,7 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 
 ## Trace 设计
 
-Trace 是只追加的 JSON Lines 文件，每行是一个 OmniMessage 信封，详见 [OmniMessage 协议](/omni-message)。历史只追加，从不原地修改。
+Trace 是只追加的 JSON Lines 文件，每行是一个 OmniMessage 信封，详见 [OmniMessage 协议](/amsp-records)。历史只追加，从不原地修改。
 
 - 一个 Trace 文件对应一个完整的模型上下文。压缩产生新的上下文段时，写入器切换到新文件，索引依次递增：`_002`、`_003`……
 - 记录的内容：`session_meta`、完整的 `model_msg`，以及所有 `event_msg`。

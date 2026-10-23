@@ -36,15 +36,15 @@ import {
   toolCallOutput,
   toolListReady,
   userText,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { Writer, readTrace } from "../src/trace/index.js";
 
 const PINNED = "./fixtures/trace-bytes.jsonl";
 const SESSION = "session-2026-10-23-10-00-00-0a1b2c3d";
 
 /** One record of every kind the Trace stores, in a plausible order. */
-function everyStoredKind(): OmniMessage[] {
+function everyStoredKind(): AmspRecord[] {
   const counts = { cache_read: 10, cache_write: 2, output: 7, total: 40 };
   return [
     sessionMeta({
@@ -120,7 +120,7 @@ describe("the bytes a Trace holds", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function written(records: OmniMessage[], name: string): Promise<string> {
+  async function written(records: AmspRecord[], name: string): Promise<string> {
     const writer = new Writer({
       tracesDir: join(dir, name),
       sessionId: SESSION,

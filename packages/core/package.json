@@ -17,14 +17,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./omnimessage": {
-      "types": "./dist/omnimessage/index.d.ts",
-      "import": "./dist/omnimessage/index.js"
-    },
-    "./markers": {
-      "types": "./dist/omnimessage/markers/index.d.ts",
-      "import": "./dist/omnimessage/markers/index.js"
-    },
     "./interfaces": {
       "types": "./dist/interfaces/index.d.ts",
       "import": "./dist/interfaces/index.js"

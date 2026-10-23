@@ -70,7 +70,7 @@ import type {
   GenerativeModelParameters,
   LLMInterface,
   LLMOutcome,
-  OmniMessage,
+  AmspRecord,
   TextPayload,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
@@ -107,7 +107,7 @@ const ROW: SessionRow = {
 function approvalFakeSession(sessionId: string, toolName = "write_file"): RuntimeSession {
   return fakeSession(sessionId, {
     toolPermission: (name) => (name === "read_tool" ? "r" : "rw"),
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: toolName, arguments: "{}", toolCallId: "tc-1" });
       yield tc;
       const decision = await opts.approve(tc);
@@ -131,7 +131,7 @@ function approvalFakeSession(sessionId: string, toolName = "write_file"): Runtim
  */
 function parkedRunSession(order: string[]): RuntimeSession {
   const fake = fakeSession("session-1", {
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       try {
         const tc = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
         yield tc;
@@ -171,7 +171,7 @@ describe("session-manager", () => {
   let sessions: SessionsRepo;
   let channels: ChannelHub;
   let sources: SessionSources;
-  let recorded: OmniMessage[];
+  let recorded: AmspRecord[];
   let recordedCtx: UsageContext[];
 
   const makeManager = (
@@ -338,7 +338,7 @@ describe("session-manager", () => {
     const runOpts: Record<string, unknown>[] = [];
     const fake: RuntimeSession = fakeSession("session-1", {
       thinkingLevel: undefined,
-      async *run(_input: OmniMessage[], opts: Record<string, unknown>) {
+      async *run(_input: AmspRecord[], opts: Record<string, unknown>) {
         runOpts.push(opts);
         yield assistantText("ok");
       },
@@ -404,12 +404,12 @@ describe("session-manager", () => {
   it("a background notice arriving while idle auto-starts a task carrying the taken notices", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     let noticeCb: (() => void) | null = null;
-    const queue: OmniMessage[] = [];
-    const runInputs: OmniMessage[][] = [];
+    const queue: AmspRecord[] = [];
+    const runInputs: AmspRecord[][] = [];
     const fake: RuntimeSession = fakeSession("session-1", {
       onBackgroundNotice: (cb) => (noticeCb = cb),
       takeBackgroundNotices: () => queue.splice(0),
-      async *run(input: OmniMessage[]) {
+      async *run(input: AmspRecord[]) {
         runInputs.push(input);
         yield assistantText("ok");
       },
@@ -438,7 +438,7 @@ describe("session-manager", () => {
   });
 
   it("live-forwarded background-subagent messages publish to the channel and record usage", async () => {
-    let forward: ((msg: OmniMessage) => void) | null = null;
+    let forward: ((msg: AmspRecord) => void) | null = null;
     const fake: RuntimeSession = fakeSession("session-1", {
       onBackgroundMessage: (cb) => (forward = cb),
       async *run() {},
@@ -460,12 +460,12 @@ describe("session-manager", () => {
     // unable to deliver idle-arrival completion reports (the real-app no-notification bug).
     sessions.updateApprovalMode("session-1", "allow-all");
     let noticeCb: (() => void) | null = null;
-    const queue: OmniMessage[] = [];
-    const runInputs: OmniMessage[][] = [];
+    const queue: AmspRecord[] = [];
+    const runInputs: AmspRecord[][] = [];
     const fake: RuntimeSession = fakeSession("session-1", {
       onBackgroundNotice: (cb) => (noticeCb = cb),
       takeBackgroundNotices: () => queue.splice(0),
-      async *run(input: OmniMessage[]) {
+      async *run(input: AmspRecord[]) {
         runInputs.push(input);
         yield assistantText("ok");
       },
@@ -508,10 +508,10 @@ describe("session-manager", () => {
     // idle" is an ordering the test makes rather than a race against a sleep.
     const llm = new (class implements LLMInterface {
       calls = 0;
-      inputs: OmniMessage[][] = [];
+      inputs: AmspRecord[][] = [];
       async *streamGenerate(
         params: GenerativeModelParameters,
-      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+      ): AsyncGenerator<AmspRecord, LLMOutcome> {
         this.calls += 1;
         this.inputs.push(params.newMessages);
         if (this.calls === 1) {
@@ -591,7 +591,7 @@ describe("session-manager", () => {
     // failure produces one tool_call_output(failed), an LLM failure produces one
     // request_end(failed) + an abort carrying the real reason.
     const failing: RuntimeSession = fakeSession("session-1", {
-      async *run(): AsyncGenerator<OmniMessage> {
+      async *run(): AsyncGenerator<AmspRecord> {
         yield requestBegin();
         yield toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
         yield toolCallOutput({
@@ -663,7 +663,7 @@ describe("session-manager", () => {
   it("steer: forwards to the running session; idle / lost race → 409 not_running", async () => {
     const steered: string[] = [];
     const fake = approvalFakeSession("session-1");
-    fake.steer = (input: OmniMessage[]) => {
+    fake.steer = (input: AmspRecord[]) => {
       steered.push((input[0]!.payload as TextPayload).text);
       return true;
     };
@@ -705,7 +705,7 @@ describe("session-manager", () => {
     const fake: RuntimeSession = {
       ...approvalFakeSession("session-1"),
       steer: () => true,
-      async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
         const tc1 = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
         yield tc1;
         yield approvalDecision(await opts.approve(tc1), "tc-1");
@@ -766,7 +766,7 @@ describe("session-manager", () => {
     const runInputs: string[][] = [];
     const fake = approvalFakeSession("session-1");
     const origRun = fake.run.bind(fake);
-    fake.run = function (input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    fake.run = function (input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       runInputs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
       return origRun(input, opts);
     };
@@ -856,10 +856,10 @@ describe("session-manager", () => {
     let releaseCompact: (() => void) | null = null;
     const fake: RuntimeSession = fakeSession("session-1", {
       // eslint-disable-next-line require-yield
-      async *run(input: OmniMessage[]): AsyncGenerator<OmniMessage> {
+      async *run(input: AmspRecord[]): AsyncGenerator<AmspRecord> {
         runInputs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
       },
-      async *compact(): AsyncGenerator<OmniMessage> {
+      async *compact(): AsyncGenerator<AmspRecord> {
         await new Promise<void>((resolve) => {
           releaseCompact = resolve;
         });
@@ -1511,7 +1511,7 @@ describe("session-manager", () => {
     // while it works drops the very Session its completion report is queued on.
     let running = true;
     let loads = 0;
-    let forward: ((msg: OmniMessage) => void) | null = null;
+    let forward: ((msg: AmspRecord) => void) | null = null;
     const fake = (): RuntimeSession =>
       fakeSession("session-1", {
         hasRunningBackgroundSubagents: () => running,
@@ -1657,7 +1657,7 @@ describe("session-manager", () => {
 
   it("a subagent's title fires at registration (mid-run), from its spawning prompt alone", async () => {
     const notified: { ctx: UsageContext; req: TitleRequest }[] = [];
-    const driven: OmniMessage[] = [];
+    const driven: AmspRecord[] = [];
     // Gate the run right after the sub-session's output: both notifications must already
     // be in by then, proving neither waited for the run to complete.
     let release!: () => void;

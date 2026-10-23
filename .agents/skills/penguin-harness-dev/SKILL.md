@@ -217,5 +217,5 @@ at the top of `generative-model.ts`.
 - **OmniMessage is closed by default.** No new field, type or enum value unless the fact is
   unrepresentable by existing records and underivable by readers; prefer recording earlier or
   streaming an existing record over a new field. Say so in the PR. The architecture spec's
-  message-format section states the rule, and `packages/amsp/src/omnimessage/types.ts` repeats it
+  message-format section states the rule, and `packages/amsp/src/records/types.ts` repeats it
   at its head.

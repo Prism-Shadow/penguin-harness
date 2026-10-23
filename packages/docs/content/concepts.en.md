@@ -68,7 +68,7 @@ See [Sessions & Traces](/sessions-and-traces).
 
 OmniMessage is the single message format PenguinHarness uses everywhere: the SDK streams it, the Trace stores it, and the engine works with it internally. Marketing materials also call it Penguin Message; the documentation uses OmniMessage.
 
-See [The OmniMessage Protocol](/omni-message).
+See [The OmniMessage Protocol](/amsp-records).
 
 ### Approval mode
 

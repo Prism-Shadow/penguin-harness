@@ -79,7 +79,6 @@ import {
   taskEnd,
   toolCall,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
 import { RunCollector, readAmsp } from "@prismshadow/amsp";
 import type { AmspFrame, AmspRecord, RunResult } from "@prismshadow/amsp";
 import type {
@@ -185,7 +184,7 @@ function stream(res: Response) {
  */
 function blocking(sessionId: string) {
   let release: () => void = () => {};
-  const runs: Array<{ input: OmniMessage[]; signal: AbortSignal }> = [];
+  const runs: Array<{ input: AmspRecord[]; signal: AbortSignal }> = [];
   const session = fakeSession(sessionId, {
     async *run(input, { signal }) {
       runs.push({ input, signal });

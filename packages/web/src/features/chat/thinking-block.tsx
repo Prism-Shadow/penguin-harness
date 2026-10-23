@@ -4,7 +4,7 @@
  */
 import { ThinkingBlock } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import type { ThinkingItem } from "../../lib/omni/stream-model";
+import type { ThinkingItem } from "../../lib/amsp/stream-model";
 
 export function SessionThinking({ item }: { item: ThinkingItem }) {
   const failed = item.stopReason !== undefined && item.stopReason !== "completed";

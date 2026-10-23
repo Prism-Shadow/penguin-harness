@@ -16,7 +16,7 @@ The stack, top to bottom:
 │   CLI       │  │  Web App (React SPA)        │
 │  (penguin)  │  │                             │
 └──────┬──────┘  └──────────────┬──────────────┘
-       │                        │   HTTP · OmniMessage over SSE
+       │                        │   HTTP · AmspRecord over SSE
 ┌──────┴────────────────────────┴──────────────┐
 │  Server (Hono + SQLite)                      │
 └──────────────────────┬───────────────────────┘
@@ -45,7 +45,7 @@ The CLI and the Web App talk to the Server over HTTP and SSE. Among the shipped 
 
 ## The three-interface boundary
 
-The `context_engine` is the heart of the system. It does exactly two things: it maintains the linear message history, and it orchestrates the event flow between three interfaces. It speaks only [OmniMessage](/omni-message) and performs no protocol conversion.
+The `context_engine` is the heart of the system. It does exactly two things: it maintains the linear message history, and it orchestrates the event flow between three interfaces. It speaks only [OmniMessage](/amsp-records) and performs no protocol conversion.
 
 - **Human**: the user-side boundary. It is deliberately not an interface class: the SDK's single entry point, `session.run(newMessages, { approve, signal })`, *is* the Human boundary. Input is a list of new OmniMessages plus an approval callback; output is a stream of OmniMessages. The Server is the shipped implementation. The CLI and the Web App reach it over HTTP and SSE, and SDK embedders call `session.run` themselves.
 - **LLM**: the model-side interface, `LLMInterface`. It translates OmniMessage into requests against the MMSP model gateway, and streamed events back into OmniMessage. All provider protocol adaptation happens inside MMSP, so core never imports a vendor SDK.
@@ -78,7 +78,7 @@ Item by item, each design maps to an owner and to the file or module that carrie
 
 | Design | Owner | Carried by |
 | --- | --- | --- |
-| The OmniMessage protocol, message parsing and partial aggregation | SDK | `core/src/omnimessage/` — see [The OmniMessage Protocol](/omni-message) |
+| The OmniMessage protocol, message parsing and partial aggregation | SDK | `core/src/omnimessage/` — see [The OmniMessage Protocol](/amsp-records) |
 | The ReAct loop, carry-over, reconnect, compaction | SDK | `core/src/engine/context-engine.ts` — see [The Agent Loop](/agent-loop) |
 | The approval mechanism (one decision per `tool_call`) | SDK | `ApproveFn` (`core/src/interfaces/shared.ts`); the concrete mode is injected by the Server or an SDK host |
 | Tool execution and centralized close-out | SDK | `core/src/environment/` — see [Tools & Approval](/tools) |
@@ -136,7 +136,7 @@ packages/
 │   └── internal/                   # shared helpers: dates, Session support, merge queue, session-title.ts (one-shot title generation, never in Trace)
 ├── server/src                      # index.ts boot sequence · app assembly · db (node:sqlite) · auth · http/routes · runtime · services · hmr · plugin · terminal · model-catalog.ts
 ├── cli/src                         # commander entry · commands/ (run / chat / input / logs / ls / agent / project / schedule / config / serve …) · server client and approval prompts
-├── web/src                         # api client · state · lib/omni stream rendering · components · feature pages (layout below)
+├── web/src                         # api client · state · lib/amsp stream rendering · components · feature pages (layout below)
 ├── desktop/                        # the Electron shell
 ├── hmr/                            # the hot-update mechanism
 ├── landing/                        # the product landing page (with the blog)
@@ -149,7 +149,7 @@ packages/
 packages/web/src
 ├── api/          # fetch wrapper · one function per API (DTOs type-only from @prismshadow/penguin-server/api) · SSE wrapper
 ├── state/        # auth / project / sessions / company / theme / locale contexts
-├── lib/omni/     # OmniMessage stream → view-model reducer; connect-first + dedup stream controller
+├── lib/amsp/     # AmspRecord stream → view-model reducer; connect-first + dedup stream controller
 ├── components/   # ui primitives (modal / drawer / select …) and the app layout
 ├── pages/        # the login pages
 └── features/     # chat / agents / skills / plugins / models / usage / traces / benchmark / schedules / company / settings / admin … pages

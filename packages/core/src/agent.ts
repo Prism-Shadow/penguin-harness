@@ -91,14 +91,14 @@ import {
   toolListReady,
   userText,
   withOrigin,
-} from "./omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   MessageOrigin,
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
   SessionSource,
   ToolCallPayload,
-} from "./omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
 import type { CompactionSettings, OpenContextOptions } from "./engine/context-engine.js";
@@ -1255,7 +1255,7 @@ export class Agent {
           // defaults to deny). The tool_call received for approval also carries the
           // origin, so the approval UI can identify which tool a subagent is calling.
           const childApprove = approve
-            ? (tc: OmniMessage<ToolCallPayload>) => approve(withOrigin(tc, hop))
+            ? (tc: AmspRecord<ToolCallPayload>) => approve(withOrigin(tc, hop))
             : undefined;
           // The engine writes a run's input to the CHILD's own Trace but never replays
           // it to its consumer (a session's normal caller typed that input itself) —
@@ -1678,7 +1678,7 @@ function remindToUpdate(hook: InstalledHook): void {
 }
 
 /** Drives a hook-spawned child to completion in the background, dropping its stream (its own Trace is the record), and releases it. */
-function runDetached(handle: SubagentHandle, messages: OmniMessage[], approve?: ApproveFn): void {
+function runDetached(handle: SubagentHandle, messages: AmspRecord[], approve?: ApproveFn): void {
   void (async () => {
     try {
       const it = handle.run({ messages, ...(approve ? { approve } : {}) });

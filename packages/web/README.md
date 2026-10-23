@@ -10,13 +10,13 @@ src/
 ├── api/            # fetch wrapper, typed endpoint functions, EventSource (SSE) wrapper
 ├── state/          # auth / project / sessions / theme / locale contexts
 ├── lib/
-│   ├── omni/       # OmniMessage stream → view-model reducer + connect-first/dedup controller
+│   ├── omni/       # AmspRecord stream → view-model reducer + connect-first/dedup controller
 │   └── …           # formatting, i18n dictionaries (zh/en), attachments, helpers
 ├── components/     # ui primitives (modal, drawer, select, …) + app layout
 └── features/       # chat / agents / plugins / skills / models / usage / traces / benchmark / admin
 ```
 
-DTO types are imported type-only from `@prismshadow/penguin-server/api`; no server code enters the bundle. Rendering rules for streaming partials (start/delta/stop aggregation, complete-message replacement, origin-chain nesting into subagent cards) live in `lib/omni/stream-model.ts`, which is fully unit-tested.
+DTO types are imported type-only from `@prismshadow/penguin-server/api`; no server code enters the bundle. Rendering rules for streaming partials (start/delta/stop aggregation, complete-message replacement, origin-chain nesting into subagent cards) live in `lib/amsp/stream-model.ts`, which is fully unit-tested.
 
 ## Development
 

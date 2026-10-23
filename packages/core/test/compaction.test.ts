@@ -45,15 +45,15 @@ import {
   toolCallOutput,
   toolListReady,
   userText,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   CompactionBeginPayload,
   CompactionEndPayload,
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
   TextPayload,
   TokenUsagePayload,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   EnvironmentInterface,
@@ -74,13 +74,13 @@ import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 // ---------------------------------------------------------------------------
 
 interface ScriptedResponse {
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   outcome?: LLMOutcome;
 }
 
 /** Fake LLM that responds according to a script, recording each input it receives. */
 class ScriptedLLM implements LLMInterface {
-  calls: OmniMessage[][] = [];
+  calls: AmspRecord[][] = [];
   /** The per-request thinking level of each call, in the same order as `calls`. */
   levels: (ThinkingLevelName | undefined)[] = [];
   constructor(
@@ -89,9 +89,7 @@ class ScriptedLLM implements LLMInterface {
     readonly defaultThinkingLevel?: ThinkingLevelName,
   ) {}
 
-  async *streamGenerate(
-    params: GenerativeModelParameters,
-  ): AsyncGenerator<OmniMessage, LLMOutcome> {
+  async *streamGenerate(params: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     this.calls.push(params.newMessages);
     this.levels.push(params.thinkingLevel);
     const next = this.responses.shift();
@@ -122,7 +120,7 @@ const fakeEnvironment: EnvironmentInterface = {
 const allowAll: ApproveFn = async () => "allow";
 
 /** Builds a token_usage: request.total is the context-usage figure, session.total is the cumulative one. */
-const usage = (requestTotal: number, sessionTotal: number): OmniMessage =>
+const usage = (requestTotal: number, sessionTotal: number): AmspRecord =>
   tokenUsage(
     { cache_read: 0, cache_write: 0, output: 0, total: sessionTotal },
     { cache_read: 0, cache_write: 0, output: 0, total: requestTotal },
@@ -147,17 +145,17 @@ const metaMessage = sessionMeta({
   source: "user",
 });
 
-async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
+async function collect(gen: AsyncGenerator<AmspRecord>): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
   for await (const msg of gen) all.push(msg);
   return all;
 }
 
 /** Like collect, but also captures the run generator's return value (RunCutoff | null). */
 async function collectWithReturn<R>(
-  gen: AsyncGenerator<OmniMessage, R>,
-): Promise<{ all: OmniMessage[]; cutoff: R }> {
-  const all: OmniMessage[] = [];
+  gen: AsyncGenerator<AmspRecord, R>,
+): Promise<{ all: AmspRecord[]; cutoff: R }> {
+  const all: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) return { all, cutoff: res.value };
@@ -167,7 +165,7 @@ async function collectWithReturn<R>(
 
 type CompactionEventPayload = CompactionBeginPayload | CompactionEndPayload;
 
-const compactionEvents = (msgs: OmniMessage[]): CompactionEventPayload[] =>
+const compactionEvents = (msgs: AmspRecord[]): CompactionEventPayload[] =>
   msgs
     .filter((m) => {
       const t = (m.payload as { type?: string }).type ?? "";
@@ -175,10 +173,10 @@ const compactionEvents = (msgs: OmniMessage[]): CompactionEventPayload[] =>
     })
     .map((m) => m.payload as CompactionEventPayload);
 
-const payloadTypes = (msgs: OmniMessage[]): (string | undefined)[] =>
+const payloadTypes = (msgs: AmspRecord[]): (string | undefined)[] =>
   msgs.map((m) => (m.payload as { type?: string }).type);
 
-const textOf = (m: OmniMessage): string => (m.payload as TextPayload).text;
+const textOf = (m: AmspRecord): string => (m.payload as TextPayload).text;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -472,7 +470,7 @@ describe("context compaction", () => {
     });
     const firstPath = trace.currentPath();
 
-    const out1: OmniMessage[] = [];
+    const out1: AmspRecord[] = [];
     for await (const msg of engine.run([userText("task one")], { approve: allowAll })) {
       out1.push(msg);
       if (msg === connectBegin) beginSeen = true;
@@ -945,7 +943,7 @@ describe("context compaction", () => {
       ],
       "llm1",
     );
-    const recorded: OmniMessage[] = [];
+    const recorded: AmspRecord[] = [];
     const engine = new ContextEngine({
       llm: llm1,
       environment: fakeEnvironment,
@@ -2037,7 +2035,7 @@ describe("context compaction", () => {
     // available, so a silent no-op leaves it waiting for a banner that never arrives.
     const resumedLLM = new ScriptedLLM([{ messages: [assistantText("[summary]s[/summary]")] }]);
     const newContextLLM = new ScriptedLLM([{ messages: [assistantText("on it")] }]);
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const session = new Session({
       meta: metaMessage.payload,
       // Like the real opener, the bootstrap publishes the context's toolset record.
@@ -2087,7 +2085,7 @@ describe("context compaction", () => {
     // context, and compacting it must not bootstrap — trace records (session_meta /
     // tool_list_ready) would make an untouched session look resumable.
     let bootstrapped = false;
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const session = new Session({
       meta: metaMessage.payload,
       bootstrap: async () => {
@@ -2136,7 +2134,7 @@ describe("context compaction", () => {
       approve: approveThenAbort,
       signal: controller.signal,
     });
-    const out: OmniMessage[] = [];
+    const out: AmspRecord[] = [];
     for await (const msg of runGen) {
       out.push(msg);
       // Simulates a user abort right after the compaction start event (the compaction request then returns aborted).
@@ -2163,7 +2161,7 @@ describe("compaction summary streaming (issue #290)", () => {
   });
 
   /** The text messages the compaction span pushed to the stream, in order. */
-  const streamedTexts = (msgs: OmniMessage[]): string[] =>
+  const streamedTexts = (msgs: AmspRecord[]): string[] =>
     msgs
       .filter((m) => {
         const t = (m.payload as { type?: string }).type;
@@ -2251,7 +2249,7 @@ describe("compaction summary streaming (issue #290)", () => {
   });
 
   /** The thinking messages the compaction span pushed to the stream, in order. */
-  const streamedThinking = (msgs: OmniMessage[]): string[] =>
+  const streamedThinking = (msgs: AmspRecord[]): string[] =>
     msgs
       .filter((m) => {
         const t = (m.payload as { type?: string }).type;
@@ -2509,7 +2507,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
     });
 
     const gen = engine.run([userText("go")], { approve: allowAll });
-    const seen: OmniMessage[] = [];
+    const seen: AmspRecord[] = [];
     // Drive until the tool has been dispatched but not yet answered.
     for (;;) {
       const next = gen.next();

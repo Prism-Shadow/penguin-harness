@@ -1,11 +1,11 @@
 /**
  * AMSP (Agent Message Stream Protocol): the wire types.
  *
- * AMSP is the stream of one Session: its OmniMessage records as the Trace holds them, plus the
+ * AMSP is the stream of one Session: its AmspRecord records as the Trace holds them, plus the
  * `partial_*` fragments streamed while a message is produced, and four control frames. A stream
  * is `text/event-stream`; every event is one of two kinds:
  *
- * - a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` the OmniMessage
+ * - a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` the AmspRecord
  *   envelope `{timestamp, type, payload, origin?}` — {@link AmspRecord}, the payloads snake_case
  *   exactly as the Trace stores them;
  * - a **control frame**: a named event without an `id:` — `hello`, `resync_required` or `ping`
@@ -15,19 +15,12 @@
  * ignored, and so is a `payload.type` it does not know. Within `/v1` the protocol only grows:
  * new records, new optional fields, new control frames.
  *
- * The record vocabulary is OmniMessage's own (`./omnimessage/types.ts`, re-exported here).
+ * The record vocabulary is AmspRecord's own (`./omnimessage/types.ts`, re-exported here).
  * The rest of this file is the shape of the Agent API's requests and answers around the stream.
  */
-import type { MessageOrigin, OmniMessage, ToolCallPayload } from "./omnimessage/types.js";
+import type { MessageOrigin, AmspRecord, ToolCallPayload } from "./records/index.js";
 
-export * from "./omnimessage/types.js";
-
-/**
- * One record of a Session stream: the OmniMessage envelope. The outer `type` is `session_meta`,
- * `model_msg` or `event_msg`; `origin` names the child Session chain (outer→inner) a subagent's
- * record came through, and is absent on the main Session's own records.
- */
-export type AmspRecord = OmniMessage;
+export * from "./records/index.js";
 
 /**
  * A control frame. `hello` opens a run stream and names its Session; `resync_required` says the

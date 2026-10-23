@@ -18,16 +18,16 @@
  * stream, the echo is published exactly once.
  */
 import { isSessionMeta, isTaskBegin } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 
 export class InputEcho {
-  private pending: OmniMessage[];
+  private pending: AmspRecord[];
   /** The opening `task_begin` has gone out. */
   private begun = false;
 
   constructor(
-    input: readonly OmniMessage[],
-    private readonly publish: (msg: OmniMessage) => void,
+    input: readonly AmspRecord[],
+    private readonly publish: (msg: AmspRecord) => void,
     /** This run opens a new context's file: the echo waits behind its `session_meta`. */
     private readonly afterContextMeta = false,
   ) {
@@ -35,7 +35,7 @@ export class InputEcho {
   }
 
   /** Call with each streamed message before it is published: anything but an opening record takes the echo out first. */
-  before(msg: OmniMessage): void {
+  before(msg: AmspRecord): void {
     const opening =
       isMain(msg) &&
       ((!this.begun && isTaskBegin(msg)) ||
@@ -44,7 +44,7 @@ export class InputEcho {
   }
 
   /** Call with each streamed message after it is published: the opening `task_begin` (or the meta it waits for) takes the echo out behind it. */
-  after(msg: OmniMessage): void {
+  after(msg: AmspRecord): void {
     if (!isMain(msg)) return;
     if (isTaskBegin(msg) && !this.begun) {
       this.begun = true;
@@ -62,6 +62,6 @@ export class InputEcho {
   }
 }
 
-function isMain(msg: OmniMessage): boolean {
+function isMain(msg: AmspRecord): boolean {
   return msg.origin === undefined || msg.origin.length === 0;
 }

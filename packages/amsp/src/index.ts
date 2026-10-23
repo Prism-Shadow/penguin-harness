@@ -1,5 +1,5 @@
 /**
- * @prismshadow/amsp — public entry point: the AMSP records (OmniMessage, which the PenguinHarness
+ * @prismshadow/amsp — public entry point: the AMSP records (AmspRecord, which the PenguinHarness
  * server and core import as their own protocol types) and control frames, the Agent API's request
  * and answer shapes, and a zero-dependency client: `AgentClient` for runs, `SessionReader` for
  * following a Session, both over a `Transport`.

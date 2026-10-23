@@ -2,9 +2,9 @@
  * GenerativeModel pure unit tests (no network).
  *
  * Covers two core pieces of logic:
- *   1. Merging OmniMessage[] into one UniMessage (including throwing on mixed roles, and
+ *   1. Merging AmspRecord[] into one UniMessage (including throwing on mixed roles, and
  *      mapping each content type);
- *   2. Translating UniEvent[] into OmniMessage[] (partial_* ordering, complete messages,
+ *   2. Translating UniEvent[] into AmspRecord[] (partial_* ordering, complete messages,
  *      token_usage, tool_call_id passthrough).
  * As well as helper functions for token conversion, UniConfig construction, and retry
  * determination.
@@ -41,7 +41,7 @@ import {
   isRateLimitError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
-  mergeOmniToUniMessage,
+  mergeRecordsToUniMessage,
   stripToolCallIdSuffix,
   toolDefinitionsToSchemas,
   translateEvents,
@@ -49,23 +49,22 @@ import {
 } from "../src/llm/index.js";
 import {
   assistantText,
-  buildBackgroundTaskDoneMessage,
   imageUrlMessage,
   inlineData,
   inlineThinking,
   thinkingMessage,
   toolCall,
   toolCallOutput,
-  userSteeringText,
   userText,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import { buildBackgroundTaskDoneMessage, userSteeringText } from "@prismshadow/amsp/markers";
 import type {
-  OmniMessage,
+  AmspRecord,
   TextPayload,
   ThinkingPayload,
   ToolCallPayload,
   TokenUsagePayload,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 
 // MMSP's public stream, built by hand: `delta` events carrying one item each, closed by one
 // `stop` event. An item streams as its fragments followed by its done item.
@@ -147,11 +146,11 @@ function okStream(usage: UsageMetadata = { ...NO_USAGE, prompt_tokens: 1, respon
   })();
 }
 
-const typeOf = (m: OmniMessage): string => (m.payload as { type?: string }).type ?? "";
+const typeOf = (m: AmspRecord): string => (m.payload as { type?: string }).type ?? "";
 
-describe("mergeOmniToUniMessage", () => {
+describe("mergeRecordsToUniMessage", () => {
   it("merges same-role messages into one UniMessage and maps content types", () => {
-    const uni = mergeOmniToUniMessage([
+    const uni = mergeRecordsToUniMessage([
       userText("hello"),
       imageUrlMessage("https://example.com/a.png"),
       inlineData("user", Buffer.from("xyz").toString("base64"), "image/png"),
@@ -173,7 +172,7 @@ describe("mergeOmniToUniMessage", () => {
   });
 
   it("maps assistant thinking and inline_thinking content", () => {
-    const uni = mergeOmniToUniMessage([
+    const uni = mergeRecordsToUniMessage([
       thinkingMessage("step by step"),
       inlineThinking(Buffer.from("sig").toString("base64"), "application/octet-stream"),
     ]);
@@ -192,8 +191,8 @@ describe("mergeOmniToUniMessage", () => {
     }
   });
 
-  it("maps assistant tool_call OmniMessage (args JSON string → object)", () => {
-    const uni = mergeOmniToUniMessage([
+  it("maps assistant tool_call AmspRecord (args JSON string → object)", () => {
+    const uni = mergeRecordsToUniMessage([
       toolCall({
         name: "exec_command",
         arguments: '{"cmd":"ls -la"}',
@@ -211,7 +210,7 @@ describe("mergeOmniToUniMessage", () => {
   });
 
   it("maps tool_call_output to tool_result with role user and preserves id", () => {
-    const uni = mergeOmniToUniMessage([
+    const uni = mergeRecordsToUniMessage([
       toolCallOutput({ output: "total 0", toolCallId: "call_1" }),
     ]);
     expect(uni.role).toBe("user");
@@ -224,7 +223,7 @@ describe("mergeOmniToUniMessage", () => {
 
   it("maps tool_call_output images to tool_result.images (data URL array)", () => {
     const dataUrl = "data:image/png;base64,AAAA";
-    const uni = mergeOmniToUniMessage([
+    const uni = mergeRecordsToUniMessage([
       toolCallOutput({ output: "image/png, 4 B", toolCallId: "call_img", images: [dataUrl] }),
     ]);
     expect(uni.role).toBe("user");
@@ -238,10 +237,10 @@ describe("mergeOmniToUniMessage", () => {
 
   it("an injected request input (tool outputs + steered notice + steering) collapses into ONE user message", () => {
     // The engine's next-input assembly appends background notices and steering behind the
-    // turn's tool outputs — several user-side OmniMessages. On the wire they must be a
+    // turn's tool outputs — several user-side records. On the wire they must be a
     // single user UniMessage (content_items in input order): what MMSP receives always
     // alternates user / assistant, and an injection can never produce two adjacent user
-    // messages. The per-message granularity exists only at the OmniMessage/Trace layer.
+    // messages. The per-message granularity exists only at the AmspRecord/Trace layer.
     const notice = buildBackgroundTaskDoneMessage(
       {
         kind: "command",
@@ -252,7 +251,7 @@ describe("mergeOmniToUniMessage", () => {
       },
       "Background command finished",
     );
-    const uni = mergeOmniToUniMessage([
+    const uni = mergeRecordsToUniMessage([
       toolCallOutput({ output: "total 0", toolCallId: "call_1" }),
       userText(notice, "harness"),
       userText(userSteeringText("also check the tests")),
@@ -269,13 +268,13 @@ describe("mergeOmniToUniMessage", () => {
   });
 
   it("throws on mixed roles", () => {
-    expect(() => mergeOmniToUniMessage([userText("hi"), thinkingMessage("reasoning")])).toThrow(
+    expect(() => mergeRecordsToUniMessage([userText("hi"), thinkingMessage("reasoning")])).toThrow(
       /mixed roles/,
     );
   });
 
   it("throws on empty input", () => {
-    expect(() => mergeOmniToUniMessage([])).toThrow();
+    expect(() => mergeRecordsToUniMessage([])).toThrow();
   });
 });
 
@@ -697,8 +696,8 @@ describe("translateEvents", () => {
 });
 
 describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () => {
-  function pushAll(tr: EventTranslator, events: UniEvent[]): OmniMessage[] {
-    const out: OmniMessage[] = [];
+  function pushAll(tr: EventTranslator, events: UniEvent[]): AmspRecord[] {
+    const out: AmspRecord[] = [];
     for (const e of events) for (const m of tr.pushEvent(e)) out.push(m);
     return out;
   }
@@ -1139,7 +1138,7 @@ describe("GenerativeModel per-request thinking level", () => {
     return { model, configs };
   }
 
-  async function drainAll(gen: AsyncGenerator<OmniMessage, LLMOutcome | void>): Promise<void> {
+  async function drainAll(gen: AsyncGenerator<AmspRecord, LLMOutcome | void>): Promise<void> {
     let res = await gen.next();
     while (!res.done) res = await gen.next();
   }
@@ -1196,7 +1195,7 @@ describe("GenerativeModel per-request output cap (window clamp, issue #218)", ()
     return { model, configs };
   }
 
-  async function drainAll(gen: AsyncGenerator<OmniMessage, LLMOutcome | void>): Promise<void> {
+  async function drainAll(gen: AsyncGenerator<AmspRecord, LLMOutcome | void>): Promise<void> {
     let res = await gen.next();
     while (!res.done) res = await gen.next();
   }
@@ -1422,9 +1421,9 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
   }
 
   async function drain(
-    gen: AsyncGenerator<OmniMessage, LLMOutcome | void>,
-  ): Promise<{ messages: OmniMessage[]; outcome: LLMOutcome }> {
-    const messages: OmniMessage[] = [];
+    gen: AsyncGenerator<AmspRecord, LLMOutcome | void>,
+  ): Promise<{ messages: AmspRecord[]; outcome: LLMOutcome }> {
+    const messages: AmspRecord[] = [];
     let res = await gen.next();
     while (!res.done) {
       messages.push(res.value);
@@ -1436,7 +1435,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
   it("returns fatal on a build failure such as empty input (never throws)", async () => {
     const model = new SeamModel((sig) => hang(sig));
     const { messages, outcome } = await drain(model.streamGenerate({ newMessages: [] }));
-    // A mergeOmniToUniMessage failure converges to fatal (the same input can never
+    // A mergeRecordsToUniMessage failure converges to fatal (the same input can never
     // assemble on a retry), never throws.
     expect(outcome.status).toBe("fatal");
     expect(messages).toHaveLength(0);
@@ -1844,7 +1843,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
 
 describe("provider fidelity payloads (opaque)", () => {
   it("round-trips fidelity payloads back to UniMessage content items (setHistory path)", () => {
-    const uni = mergeOmniToUniMessage([
+    const uni = mergeRecordsToUniMessage([
       thinkingMessage("deep", "completed", { signature: "sig-1" }),
       assistantText("hi", "completed", { phase: "answer", signature: "sig-2" }),
       toolCall({ name: "t", arguments: "{}", toolCallId: "tc1", fidelity: { signature: "sig-3" } }),
@@ -1863,7 +1862,7 @@ describe("provider fidelity payloads (opaque)", () => {
   });
 
   it("an empty-text message keeps its fidelity on the way out (a signed empty part is still signed)", () => {
-    const uni = mergeOmniToUniMessage([assistantText("", "completed", { signature: "sig-t" })]);
+    const uni = mergeRecordsToUniMessage([assistantText("", "completed", { signature: "sig-t" })]);
     expect(uni.content_items).toEqual([
       { type: "text.done", text: "", fidelity: { signature: "sig-t" } },
     ]);
@@ -1871,7 +1870,7 @@ describe("provider fidelity payloads (opaque)", () => {
 });
 
 describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses the function name as the id)", () => {
-  const callIdsOf = (messages: OmniMessage[]): string[] =>
+  const callIdsOf = (messages: AmspRecord[]): string[] =>
     messages
       .filter((m) => typeOf(m) === "tool_call")
       .map((m) => (m.payload as ToolCallPayload).tool_call_id);
@@ -1917,7 +1916,7 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
     const ids = new ToolCallIdAllocator();
     const round = (city: string): string[] => {
       const translator = new EventTranslator(ids);
-      const out: OmniMessage[] = [];
+      const out: AmspRecord[] = [];
       for (const e of [
         ...call("get_time", "get_time", [`{"city":"${city}"}`]),
         stop("tool_call"),
@@ -1936,7 +1935,7 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
     ids.markUsed("exec"); // this provider id was already taken in the previous turn
     const { messages } = (() => {
       const translator = new EventTranslator(ids);
-      const out: OmniMessage[] = [];
+      const out: AmspRecord[] = [];
       for (const e of [...call("exec", "exec", ['{"cmd":', '"ls"}']), stop("tool_call")]) {
         for (const m of translator.pushEvent(e)) out.push(m);
       }
@@ -1951,17 +1950,17 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
   });
 
   it("outbound restoration: the #n suffix on tool_call / tool_call_output is stripped before sending to the provider; unsuffixed ids pass as-is", () => {
-    const result = mergeOmniToUniMessage([
+    const result = mergeRecordsToUniMessage([
       toolCallOutput({ output: "10:00", toolCallId: "get_time#2" }),
     ]);
     expect((result.content_items[0] as { tool_call_id: string }).tool_call_id).toBe("get_time");
 
-    const call = mergeOmniToUniMessage([
+    const call = mergeRecordsToUniMessage([
       toolCall({ name: "get_time", arguments: "{}", toolCallId: "get_time#3" }),
     ]);
     expect((call.content_items[0] as { tool_call_id: string }).tool_call_id).toBe("get_time");
 
-    const passthrough = mergeOmniToUniMessage([
+    const passthrough = mergeRecordsToUniMessage([
       toolCallOutput({ output: "ok", toolCallId: "call_Ab12" }),
     ]);
     expect((passthrough.content_items[0] as { tool_call_id: string }).tool_call_id).toBe(
@@ -2008,7 +2007,7 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
       toolCallOutput({ output: "10:00", toolCallId: "get_time" }),
     ]);
 
-    const out: OmniMessage[] = [];
+    const out: AmspRecord[] = [];
     const gen = model.streamGenerate({ newMessages: [userText("And Paris?")] });
     let res = await gen.next();
     while (!res.done) {

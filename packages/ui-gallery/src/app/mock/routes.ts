@@ -146,7 +146,7 @@ import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
 import { payloadOf } from "./types";
-import type { OmniMessage } from "./types";
+import type { AmspRecord } from "./types";
 
 type Ctx = RequestContext;
 
@@ -1460,8 +1460,8 @@ function promptLabel(text: string): string | undefined {
     : Array.from(line.replace(/\s+/g, " ")).slice(0, 120).join("");
 }
 
-function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
-  const ms = (m: OmniMessage) => Date.parse(m.timestamp);
+function analyze(history: readonly AmspRecord[]): TraceAnalysisResponse {
+  const ms = (m: AmspRecord) => Date.parse(m.timestamp);
   const requests: TraceAnalysisResponse["requests"] = [];
   const tasks: TraceAnalysisResponse["tasks"] = [];
   const toolCalls: TraceAnalysisResponse["toolCalls"] = [];
@@ -1470,7 +1470,7 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
   const usageTrend: TraceAnalysisResponse["usageTrend"] = [];
   let taskIndex = -1;
   let openRequest: (typeof requests)[number] | null = null;
-  let previous: OmniMessage | null = null;
+  let previous: AmspRecord | null = null;
   /** A `task_begin` waiting for the turn its input opens: it heads that turn's rows. */
   let heldTaskBegin: number | null = null;
   const calls = new Map<string, { index: number; span: (typeof toolSpans)[number] }>();

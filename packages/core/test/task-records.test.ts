@@ -35,8 +35,8 @@ import {
   tokenUsage,
   toolListReady,
   userText,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord, SessionMetaPayload } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   EnvironmentInterface,
@@ -51,7 +51,7 @@ import type { StopHook } from "../src/hooks/stop-hook.js";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 
 interface ScriptedResponse {
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   outcome?: LLMOutcome;
 }
 
@@ -59,7 +59,7 @@ interface ScriptedResponse {
 class ScriptedLLM implements LLMInterface {
   constructor(private readonly responses: ScriptedResponse[]) {}
 
-  async *streamGenerate(_: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome> {
+  async *streamGenerate(_: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     const next = this.responses.shift();
     if (!next) return { status: "retryable", errorMessage: "no scripted response" };
     for (const msg of next.messages) yield msg;
@@ -81,7 +81,7 @@ const fakeEnvironment: EnvironmentInterface = {
 
 const allowAll: ApproveFn = async () => "allow";
 
-const usage = (requestTotal: number, sessionTotal: number): OmniMessage =>
+const usage = (requestTotal: number, sessionTotal: number): AmspRecord =>
   tokenUsage(
     { cache_read: 0, cache_write: 0, output: 0, total: sessionTotal },
     { cache_read: 0, cache_write: 0, output: 0, total: requestTotal },
@@ -110,7 +110,7 @@ const compactAt100: CompactionSettings = {
 };
 
 /** Each record's kind: its payload type, or `session_meta`. */
-const kinds = (msgs: OmniMessage[]): (string | undefined)[] =>
+const kinds = (msgs: AmspRecord[]): (string | undefined)[] =>
   msgs.map((m) =>
     m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type,
   );
@@ -118,7 +118,7 @@ const kinds = (msgs: OmniMessage[]): (string | undefined)[] =>
 const isTaskKind = (k: string | undefined): boolean => k === "task_begin" || k === "task_end";
 
 /** The landmarks of a run: Task records, hook decisions and user texts, in order. */
-const landmarks = (msgs: OmniMessage[]): string[] =>
+const landmarks = (msgs: AmspRecord[]): string[] =>
   msgs.flatMap((m) => {
     const p = m.payload as { type?: string; role?: string; text?: string; decision?: string };
     if (isTaskKind(p.type)) return [p.type!];
@@ -127,8 +127,8 @@ const landmarks = (msgs: OmniMessage[]): string[] =>
     return [];
   });
 
-async function collect<R>(gen: AsyncGenerator<OmniMessage, R>): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
+async function collect<R>(gen: AsyncGenerator<AmspRecord, R>): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) return all;
@@ -161,10 +161,10 @@ describe("Task records", () => {
     bootstrap?: SessionConfig["bootstrap"];
     sink?: TraceSink;
     metaAlreadyWritten?: boolean;
-  }): { session: Session; trace: Writer; written: OmniMessage[] } {
+  }): { session: Session; trace: Writer; written: AmspRecord[] } {
     const llms = [...(args.llms ?? [])];
     const trace = new Writer({ tracesDir: traces, sessionId: "sess_tasks" });
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const sink: TraceSink = args.sink ?? {
       write: async (msg) => {
         written.push(msg);
@@ -352,7 +352,7 @@ describe("Task records", () => {
 
     // The process dies once the next Task's task_begin is on disk, before its input.
     const next = session.run([userText("task two")], { approve: allowAll });
-    expect(kinds([(await next.next()).value as OmniMessage])).toEqual(["task_begin"]);
+    expect(kinds([(await next.next()).value as AmspRecord])).toEqual(["task_begin"]);
     await next.return(null);
 
     const resumed = resumeTrace(await readTrace(oldPath));
@@ -420,7 +420,7 @@ describe("Task records", () => {
       },
     });
 
-    const stream: OmniMessage[] = [];
+    const stream: AmspRecord[] = [];
     for await (const msg of session.run([userText("hello")], { signal: ac.signal })) {
       stream.push(msg);
       if ((msg.payload as { type?: string }).type === "mcp_connect_begin") ac.abort();

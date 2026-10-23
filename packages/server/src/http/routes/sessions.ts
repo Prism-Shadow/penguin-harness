@@ -19,7 +19,7 @@ import {
   stripLeadingMarkerBlocks,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   FilesStatResponse,
@@ -338,7 +338,7 @@ function resolveScratchpadFile(dir: string, fileName: string): string | null {
  * until the request is known to be good, and goal mode can reject files before any bytes land.
  */
 interface ParsedTaskInput {
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   attachments: TaskAttachment[];
   /** The `text` parts in order, as submitted — the recall store's text (pre-attachment-lines). */
   texts: string[];
@@ -352,7 +352,7 @@ function parseTaskInput(body: Record<string, unknown>, limits: AttachmentLimits)
   if (!Array.isArray(input) || input.length === 0) {
     throw badRequest("input must be an array with at least one item.");
   }
-  const messages: OmniMessage[] = [];
+  const messages: AmspRecord[] = [];
   const attachments: TaskAttachment[] = [];
   const texts: string[] = [];
   const images: string[] = [];
@@ -376,7 +376,7 @@ function parseTaskInput(body: Record<string, unknown>, limits: AttachmentLimits)
       return;
     }
     if (part.type === "file") {
-      // Not an OmniMessage of its own: the file becomes an `[attached file: …]` line on the
+      // Not an AmspRecord of its own: the file becomes an `[attached file: …]` line on the
       // text message once written to the scratchpad, so it carries no payload into the run.
       attachments.push(parseAttachmentPart(part, i, limits));
       // Per-request count / total-bytes caps, re-checked on every part so a hostile `input`
@@ -1284,7 +1284,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const outcome = await deps.manager.sendToSubagent(
       row.sessionId,
       pathParam(c, "childSessionId"),
-      // The HTTP boundary is where a host's payload becomes OmniMessage — no sender, because
+      // The HTTP boundary is where a host's payload becomes AmspRecord — no sender, because
       // a human typed this (the model's own dispatch through input_subagent stamps
       // "parent_agent" on its side).
       [userText(text)],

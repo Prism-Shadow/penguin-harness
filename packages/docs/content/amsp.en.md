@@ -3,7 +3,7 @@ title: AMSP
 description: The Agent Message Stream Protocol — a Session's OmniMessage records over SSE, the control frames, the run and Session streams, the approvals resource, how a run's result is read, and the earlier v1 events each record replaces.
 ---
 
-AMSP (Agent Message Stream Protocol) is the wire format of the [Agent API](/agent-api). It streams one Session: the Session's [OmniMessage](/omni-message) records exactly as its Trace holds them, the `partial_*` fragments streamed while a message is produced, and four control frames around them. Nothing is translated on the way: every line of a Trace is a valid AMSP record, and each payload is the one described field by field on the OmniMessage page.
+AMSP (Agent Message Stream Protocol) is the wire format of the [Agent API](/agent-api). It streams one Session: the Session's [OmniMessage](/amsp-records) records exactly as its Trace holds them, the `partial_*` fragments streamed while a message is produced, and four control frames around them. Nothing is translated on the way: every line of a Trace is a valid AMSP record, and each payload is the one described field by field on the OmniMessage page.
 
 The Web App's server events (run state, approval requests, titles, goal progress and the rest) are not part of AMSP. A program reads what it needs from the records and from two resources: the Session, `GET …/sessions/:sessionId`, for its status and model, and its pending approvals, `GET …/sessions/:sessionId/approvals`.
 

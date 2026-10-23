@@ -64,7 +64,7 @@ export function WorkbenchAppPage() {
     // stream open (and raises the event above) is not mounted: without a stream of its own,
     // a page shown as the whole app would never notice its workbench being edited or removed.
     const conn = openUserEvents({
-      onOmniMessage: () => undefined,
+      onRecord: () => undefined,
       onServerEvent: (ev) => {
         if (ev.type !== "workbench_updated" && ev.type !== "workbench_removed") return;
         if (ev.projectId === projectId && ev.agentId === agentId) void load();

@@ -14,7 +14,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { toolCall, withOrigin } from "@prismshadow/penguin-core";
 import type {
   BackgroundSubagentInfo,
-  OmniMessage,
+  AmspRecord,
   SubagentMessageOptions,
   SubagentMessageOutcome,
 } from "@prismshadow/penguin-core";
@@ -47,10 +47,10 @@ function subagentsFakeSession(
     listBackgroundSubagents: () => children.map((c) => ({ ...c })),
     sendToBackgroundSubagent: async (
       childSessionId: string,
-      messages: OmniMessage[],
+      messages: AmspRecord[],
       opts?: SubagentMessageOptions,
     ): Promise<SubagentMessageOutcome> => {
-      // The route turns the request's text into OmniMessage; the fake reads it back out.
+      // The route turns the request's text into AmspRecord; the fake reads it back out.
       const text = messages.map((m) => (m.payload as { text?: string }).text ?? "").join("");
       sent.push({ childSessionId, text, ...(opts !== undefined ? { opts } : {}) });
       const child = children.find((c) => c.sessionId === childSessionId);

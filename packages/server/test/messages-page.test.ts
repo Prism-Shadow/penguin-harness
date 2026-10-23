@@ -45,11 +45,8 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/penguin-core";
-import {
-  buildBackgroundTaskDoneMessage,
-  buildHandoffMessage,
-} from "@prismshadow/penguin-core/markers";
-import type { OmniMessage, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
+import { buildBackgroundTaskDoneMessage, buildHandoffMessage } from "@prismshadow/amsp/markers";
+import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { decodeCursor, encodeCursor } from "../src/services/message-window.js";
 import { MESSAGES_PAGE_MAX_BYTES } from "../src/services/trace-service.js";
 import type { TraceService } from "../src/services/trace-service.js";
@@ -60,7 +57,7 @@ const A = "agent-w";
 const S = "session-2026-07-20-10-00-00-aabb0001";
 const CHILD = "session-2026-07-20-10-00-05-ccdd0002";
 
-function at(ts: string, msg: OmniMessage): OmniMessage {
+function at(ts: string, msg: AmspRecord): AmspRecord {
   return { ...msg, timestamp: ts };
 }
 
@@ -83,7 +80,7 @@ function metaPayload(over: Partial<SessionMetaPayload> = {}): SessionMetaPayload
 }
 
 /** One complete turn (prompt → request → reply → usage), 4 messages, spaced inside one minute `mm`. */
-function turn(mm: number, n: number, sessionTotal: number): OmniMessage[] {
+function turn(mm: number, n: number, sessionTotal: number): AmspRecord[] {
   const t = (s: string) => `2026-07-20T10:${String(mm).padStart(2, "0")}:${s}Z`;
   return [
     at(t("00.000"), userText(`q${n}`)),
@@ -98,7 +95,7 @@ function turn(mm: number, n: number, sessionTotal: number): OmniMessage[] {
  * One Task whose tool output carries `outputChars` characters of text, or as many characters
  * of base64 in one PNG screenshot when `image` is set.
  */
-function heavyTurn(mm: number, n: number, outputChars: number, image = false): OmniMessage[] {
+function heavyTurn(mm: number, n: number, outputChars: number, image = false): AmspRecord[] {
   const t = (s: string) => `2026-07-20T10:${String(mm).padStart(2, "0")}:${s}Z`;
   const output = image
     ? toolCallOutput({
@@ -120,8 +117,8 @@ function heavyTurn(mm: number, n: number, outputChars: number, image = false): O
   ];
 }
 
-const textOf = (m: OmniMessage): string | undefined => (m.payload as { text?: string }).text;
-const userTexts = (ms: OmniMessage[]): string[] =>
+const textOf = (m: AmspRecord): string | undefined => (m.payload as { text?: string }).text;
+const userTexts = (ms: AmspRecord[]): string[] =>
   ms
     .filter(
       (m) =>
@@ -524,7 +521,7 @@ describe("messages windowed reads", () => {
 
   it("Task records change no window: the same Tasks page with the same prompts and prior figures with or without them", async () => {
     const PAIRED = "session-2026-07-20-10-00-00-aabb0009";
-    const tasks: OmniMessage[][] = [
+    const tasks: AmspRecord[][] = [
       turn(0, 1, 1000),
       // Stopped before any request: its elapsed time runs to its last record (1s), so the next
       // Task's task_begin, minutes later, must not stretch it.
@@ -822,7 +819,7 @@ describe("messages windowed reads", () => {
     ]);
     const M1 = { provider: "custom", modelId: "m1" };
     const M2 = { provider: "other", modelId: "m2" };
-    const metas = (ms: OmniMessage[]) => ms.filter((m) => m.type === "session_meta");
+    const metas = (ms: AmspRecord[]) => ms.filter((m) => m.type === "session_meta");
 
     // Partway into the context after the switch: no meta in the window, and it runs on m2.
     const last = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });

@@ -63,6 +63,6 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 ## 下一步
 
 - [接口契约](/interfaces)：`createAgent`、`Session`、LLM 与 Environment 背后的接口契约。
-- [OmniMessage 协议](/omni-message)：`session.run()` 产出的消息结构。
+- [OmniMessage 协议](/amsp-records)：`session.run()` 产出的消息结构。
 - [Agent 运行循环](/agent-loop)：一个 Task 内部经历了什么。
 - [Session 与 Trace](/sessions-and-traces)：会话与执行记录如何存储。

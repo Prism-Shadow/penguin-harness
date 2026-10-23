@@ -811,7 +811,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
 - `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，Agent API 的运行新建的 Session 由服务器写入 `"api"`，这两个值客户端都不能发送。`excludeOrg` 用它剔除 `org` 行，Agent API 只延续 `api` 行；见 [Agent API](/agent-api#会话)。Trace 未记录 `source` 的 `"org"` 行（旧版本写下的，或尚未运行过的）读作 `company` 会话。
-- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/omni-message#sessionmeta)），它与用户的归档标记一起决定 Session 的类别。`subagent` 与 `company` 会话无论标记如何都不属于任何类别，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它们移出这一页和所有总数，只有不带这些参数的完整列表才返回它们。其余的会话，用户归档的，或 `source` 为 `api`、`schedule`、`cli`、`workbench` 且用户没有取消归档的，为 `archived`；否则为 `active`。取消归档会写入一个保留标记，之后的运行从不清除它，所以用户取消归档过的程序会话保持 `active`，直到再次被归档。这条规则在每次读取时计算，不改写磁盘上的任何内容；Session 信息中的 `archived` 就是它的结论。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
+- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/amsp-records#sessionmeta)），它与用户的归档标记一起决定 Session 的类别。`subagent` 与 `company` 会话无论标记如何都不属于任何类别，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它们移出这一页和所有总数，只有不带这些参数的完整列表才返回它们。其余的会话，用户归档的，或 `source` 为 `api`、`schedule`、`cli`、`workbench` 且用户没有取消归档的，为 `archived`；否则为 `active`。取消归档会写入一个保留标记，之后的运行从不清除它，所以用户取消归档过的程序会话保持 `active`，直到再次被归档。这条规则在每次读取时计算，不改写磁盘上的任何内容；Session 信息中的 `archived` 就是它的结论。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
 - 创建时 `source` 只接受 `"cli"`，由 `penguin run` 发送；其他来源只由服务器自己写入，省略时创建 `user` 会话。已停用的 `"benchmark"` 仍然接受，按 `"cli"` 处理。
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，系统隐藏的条目（带隐藏属性，如 `AppData`、`NTUSER.DAT`）另带 `hidden: true`，只写盘符如 `D:` 即视为其根目录 `D:\`。请求主目录并带 `places=1` 时，另附选择器左栏所需的两项：`standardFolders`（桌面、文档、下载、图片，按该机器自己的规则取得——Windows 的已知文件夹、Linux 的 XDG 用户目录；读取失败时省略）与 `locations`（Windows 的各盘符、macOS 的各卷、Linux 的根目录及 `/media`、`/run/media`、`/mnt` 下的挂载点，各带 `kind`，有名称时带 `label`）。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
 - `POST /dirs/access` 是桌面端 Workspace 选择器里的**允许访问**。macOS 只替它认定为读取责任方的应用询问桌面、文稿与下载的访问权限，因此由桌面 shell 的主进程把绝对路径 `path` 读一次，响应要等用户作答后才返回。`granted` 表示这次读取是否成功（非 macOS 平台不读取，恒为 `true`）。`packaged` 为 `false` 表示这是从终端启动的开发实例，macOS 把它的读取记在该终端名下。`path` 不是绝对路径时返回 `400` `dir_not_absolute`；服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`；shell 在 120 秒内没有应答时返回 `504` `timeout`。只有桌面应用自己的窗口可以调用，其他会话返回 `403` `desktop_shell_only`。
@@ -891,16 +891,16 @@ Trace 只存储完整的消息，流式的 `partial_*` 消息从不落盘，所�
 
 ```ts
 interface MessagesResponse {
-  messages: (OmniMessage & { tracePosition?: { fileIndex: number; ordinal: number } })[];
+  messages: (AmspRecord & { tracePosition?: { fileIndex: number; ordinal: number } })[];
   live?: {
     // The Session channel's most recently assigned SSE event id (`<epoch>-<seq>`):
     // every event published up to and including this id is already reflected in `fragments`.
     cursor: string;
-    // One synthetic `partial_* start` OmniMessage per open streaming fragment, whose
+    // One synthetic `partial_* start` AmspRecord per open streaming fragment, whose
     // payload carries the full accumulated content so far (text/thinking prefix,
     // tool-call name + accumulated arguments, tool-output prefix + images), with the
     // original `origin` chain preserved (subagent fragments included).
-    fragments: OmniMessage[];
+    fragments: AmspRecord[];
   };
 }
 ```
@@ -1334,11 +1334,11 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 
 ### 传输格式
 
-默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见 [OmniMessage 协议](/omni-message)）。名为 `ping` 的事件是心跳（见[投递保证](#投递保证)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
+默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见 [OmniMessage 协议](/amsp-records)）。名为 `ping` 的事件是心跳（见[投递保证](#投递保证)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
 
 ```ts
 export type ServerEvent =
-  | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
+  | { type: "approval_request"; toolCall: AmspRecord<ToolCallPayload>; origin?: string[] }
   | {
       type: "task_state";
       state: "idle" | "running" | "compacting";

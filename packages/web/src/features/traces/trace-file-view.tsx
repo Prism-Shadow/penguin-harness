@@ -35,7 +35,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type {
   TraceAnalysisResponse,
   TraceModelSegment,
@@ -130,7 +130,7 @@ interface TaskTimeline {
  * the round's own messages: a subagent's messages (`origin` set) are not this file's rounds.
  */
 export type RoundEntry =
-  | (RoundRange & { status: "loaded"; rows: OmniMessage[] })
+  | (RoundRange & { status: "loaded"; rows: AmspRecord[] })
   | (RoundRange & { status: "failed"; error: string });
 
 /** How long the target message row stays pinned highlighted after a bar-click jump (milliseconds). */
@@ -139,7 +139,7 @@ const PIN_MS = 2500;
 /** Unique key for a message row (also the DOM scroll anchor). */
 const rowKeyOf = (taskIndex: number, i: number): string => `${taskIndex}-${i}`;
 
-const isMainSession = (msg: OmniMessage): boolean => !(msg.origin && msg.origin.length > 0);
+const isMainSession = (msg: AmspRecord): boolean => !(msg.origin && msg.origin.length > 0);
 
 /** Identity of the range a read was issued for, so a read the analysis has since moved past is dropped. */
 const rangeKey = (r: RoundRange): string => `${r.messageFrom}:${r.messageTo}`;

@@ -10,8 +10,8 @@ import {
   partialToolCallOutput,
   toolCallOutput,
   userText,
-} from "../src/omnimessage/index.js";
-import type { ToolCallOutputPayload } from "../src/omnimessage/index.js";
+} from "../src/records/index.js";
+import type { ToolCallOutputPayload } from "../src/records/index.js";
 
 describe("builders", () => {
   it("stamps an ISO 8601 timestamp and correct shells", () => {

@@ -5,15 +5,15 @@
  * Given an automatic request retry that later succeeds, its recoverable error does not win.
  */
 import { describe, expect, it } from "vitest";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { workbenchResult } from "../src/workbenches/result.js";
-const message = (payload: object, origin?: string[]): OmniMessage =>
+const message = (payload: object, origin?: string[]): AmspRecord =>
   ({
     timestamp: "2026-10-14T00:00:00Z",
     type: "model_msg",
     payload,
     ...(origin ? { origin } : {}),
-  }) as OmniMessage;
+  }) as AmspRecord;
 const ask = (text: string) => message({ type: "text", role: "user", text });
 const answer = (text: string) =>
   message({ type: "text", role: "assistant", text, stop_reason: "completed" });

@@ -13,22 +13,22 @@
  * Browser-safe: the Web App reads the same records off the same envelopes.
  */
 import { isEventMessage } from "./types.js";
-import type { OmniMessage } from "./types.js";
+import type { AmspRecord } from "./types.js";
 
 /** Whether `msg` is a `task_begin` or a `task_end` (of any Session — origin is not checked). */
-export function isTaskRecord(msg: OmniMessage): boolean {
+export function isTaskRecord(msg: AmspRecord): boolean {
   if (!isEventMessage(msg)) return false;
   const t = (msg.payload as { type?: string }).type;
   return t === "task_begin" || t === "task_end";
 }
 
 /** Whether `msg` is a `task_begin` (of any Session — origin is not checked). */
-export function isTaskBegin(msg: OmniMessage): boolean {
+export function isTaskBegin(msg: AmspRecord): boolean {
   return isEventMessage(msg) && (msg.payload as { type?: string }).type === "task_begin";
 }
 
 /** The last record of `messages` that is not a Task record; undefined when there is none. */
-export function lastNonTaskRecord(messages: readonly OmniMessage[]): OmniMessage | undefined {
+export function lastNonTaskRecord(messages: readonly AmspRecord[]): AmspRecord | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]!;
     if (!isTaskRecord(msg)) return msg;

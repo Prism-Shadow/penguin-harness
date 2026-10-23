@@ -13,10 +13,11 @@ export default defineConfig([
     ...shared,
     entry: {
       index: "src/index.ts",
-      // The OmniMessage records and their guards: what core re-exports as its own protocol types.
-      omnimessage: "src/omnimessage/types.ts",
-      // The message markers' producers and parsers: core's `@prismshadow/penguin-core/markers`.
-      markers: "src/omnimessage/markers/index.ts",
+      // The records: the envelope, every payload, their guards and builders. Core re-exports
+      // this entry and the markers from its root.
+      records: "src/records/index.ts",
+      // The message markers' producers and parsers.
+      markers: "src/markers/index.ts",
     },
     // The package runs in Node 24 and in browsers: nothing Node-specific is resolved or injected,
     // and it has no runtime dependency to bundle.

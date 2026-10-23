@@ -1,6 +1,6 @@
 /**
  * Records as a Session streams them, built by hand: this package depends on nothing, its tests
- * included. The shapes are OmniMessage's (src/omnimessage/types.ts); the server's wire suite
+ * included. The shapes are AmspRecord's (src/records/types.ts); the server's wire suite
  * checks that a real run streams these shapes in this order.
  */
 import type { AmspRecord, TokenCounts } from "../../src/index.js";

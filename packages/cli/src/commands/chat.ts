@@ -37,7 +37,7 @@ import type { Command } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
 import type {
   ApprovalDecision,
-  OmniMessage,
+  AmspRecord,
   ThinkingLevelName,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
@@ -174,7 +174,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
        * that pin failed, for the next message to retry.
        */
       let pinAfterCreate: ThinkingLevelName | null = null;
-      let resumedMessages: OmniMessage[] | null = null;
+      let resumedMessages: AmspRecord[] | null = null;
       if (opts.resume !== undefined) {
         let sessionId: string | undefined;
         if (typeof opts.resume === "string") {
@@ -540,7 +540,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
 
       // Interactive approval prompt: reuses the persistent readline; the tool call is
       // already rendered above via streaming, so it is not re-rendered here.
-      const interactivePrompt = (_tc: OmniMessage<ToolCallPayload>): Promise<ApprovalDecision> =>
+      const interactivePrompt = (_tc: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision> =>
         new Promise((resolve) => {
           state = "approving";
           pendingApproval = (decision) => {

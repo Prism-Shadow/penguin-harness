@@ -18,11 +18,7 @@
  * `text/html` data URL served there would be a document, not a picture. Any other data URL
  * stays inline, where it is as harmless as it always was.
  */
-import type {
-  ImageUrlPayload,
-  OmniMessage,
-  ToolCallOutputPayload,
-} from "@prismshadow/penguin-core";
+import type { ImageUrlPayload, AmspRecord, ToolCallOutputPayload } from "@prismshadow/penguin-core";
 import type { HistoryMessage, TracePosition } from "../api/types.js";
 
 /** Image types the trace-image route serves (core's own supported set). */
@@ -102,7 +98,7 @@ export function withImagesByReference(
  * the route serves — the same test the page applied before it handed out the URL.
  */
 export function traceRecordImage(
-  record: OmniMessage,
+  record: AmspRecord,
   slot: number | undefined,
 ): { mime: string; bytes: Buffer } | null {
   if (record.type !== "model_msg") return null;

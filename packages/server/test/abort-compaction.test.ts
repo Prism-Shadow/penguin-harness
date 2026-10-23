@@ -12,7 +12,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { compactionBegin, compactionEnd } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -45,7 +45,7 @@ describe("abort during compaction", () => {
     sid = uniqueSessionId();
     probe = { started: false, sawAbort: false, endStatus: null };
     const session = fakeSession(sid, {
-      async *compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage> {
+      async *compact(opts: { signal: AbortSignal }): AsyncGenerator<AmspRecord> {
         probe.started = true;
         yield compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 });
         await new Promise<void>((resolve) => {

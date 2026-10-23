@@ -1,7 +1,7 @@
 /**
  * @prismshadow/penguin-core — public entry point for the PenguinHarness core SDK.
  *
- * Exports the OmniMessage protocol, the three interface contracts (Human/LLM/Environment),
+ * Exports the AmspRecord protocol, the three interface contracts (Human/LLM/Environment),
  * and the runtime entry points for Agent / Session / context_engine along with their
  * submodules (state / llm / environment / trace).
  *
@@ -19,7 +19,9 @@ import type { BuildInfo } from "./version-info.js";
 import { resolveBuildInfo } from "./internal/build-info.js";
 
 // Protocol and interface contracts (foundation)
-export * from "./omnimessage/index.js";
+export * from "@prismshadow/amsp/records";
+export * from "@prismshadow/amsp/markers";
+export * from "./engine/rejected-images.js";
 export * from "./interfaces/index.js";
 // Build/harness identity: not an interface contract, so it sits outside interfaces/ (see version-info.ts).
 export type * from "./version-info.js";

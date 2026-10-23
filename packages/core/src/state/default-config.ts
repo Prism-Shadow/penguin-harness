@@ -23,7 +23,7 @@ import type {
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "../interfaces/index.js";
-import type { CompactionMode } from "../omnimessage/types.js";
+import type { CompactionMode } from "@prismshadow/amsp/records";
 // The seeded compaction threshold is declared beside the derivation that caps it, so the
 // default and the cap cannot drift apart.
 import { DEFAULT_MAX_CONTEXT_LENGTH } from "../llm/context-limits.js";
