@@ -198,10 +198,15 @@ A TL;DR, in a profile that has one (`tldr: yes`), is not part of the lead: the `
 and its bullets are counted apart and held to `tldr-words` / `zh-tldr-chars`, the plan's row 0
 sizes the lead alone, and the lead's section call states the TL;DR budget separately.
 
-**Over budget.** A whole draft over a cap goes through `trim --in draft.<lang>.vN.md --outline
-<outline>`, which names the sections to cut: each one over its profile cap, then, while the page is
-over its cap, the ones furthest above their plan row. It refuses an answer that changes any other
-section, or leaves a named section or the page over its cap. In section mode, a section whose
+**Over budget.** A whole draft over a cap goes through `trim --in draft.<lang>.vN.md`, which
+names the sections to cut and asks for just enough. A section over its profile cap aims at 95 % of
+that cap, never at its plan row. If the page is still over its cap, the rest of the cut, down to
+95 % of the page cap, is shared among the other sections in proportion to their size; the lead is
+left alone. Each named section has a floor at 90 % of its target. The prompt asks for rephrasing
+inside complete sentences and keeps every fact: numbers with their units, approximations
+("about", 约), attributions, and qualifiers as strong as they are ("many" never becomes "most").
+`trim` refuses an answer that changes any other section, leaves a named section or the page over
+its cap, or cuts a named section below its floor, so a telegraphic cut is rerun, not shipped. In section mode, a section whose
 only problem is its size goes through `trim --in <section> --outline <outline>` (or `--cap <n>`).
 Either way the call may only delete words or put a shorter phrase in place of a longer one. The script refuses the answer when it is still over the cap, or when a
 marker, a footnote reference, a figure block, a heading, the frontmatter or the version note

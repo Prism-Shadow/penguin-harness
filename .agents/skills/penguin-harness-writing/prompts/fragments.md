@@ -253,8 +253,8 @@ You cut one section of a {{NOUN}} down to its size budget.
 You cut a whole {{NOUN}} down to its size budget, in {{TRIM_NAMED}} and nowhere else: every other section, the frontmatter, the TL;DR and every heading come back byte for byte.
 
 <!-- fragment: trim-budget-doc -->
-the page holds at most {{TRIM_PAGE_CAP}} of body text and counts {{TRIM_PAGE_NOW}} now. Cut these sections, and only these:
+the page holds at most {{TRIM_PAGE_CAP}} of body text and counts {{TRIM_PAGE_NOW}} now. Cut these sections, and only these, each just enough to reach its aim, and stop there:
 {{TRIM_SECTIONS}}
 
 <!-- fragment: trim-section-line -->
-- {{TRIM_WHERE}}: now {{TRIM_LINE_NOW}}; at most {{TRIM_LINE_CAP}}; aim for about {{TRIM_LINE_AIM}}
+- {{TRIM_WHERE}}: now {{TRIM_LINE_NOW}}; aim for about {{TRIM_LINE_AIM}}; at most {{TRIM_LINE_CAP}} and at least {{TRIM_LINE_FLOOR}}
