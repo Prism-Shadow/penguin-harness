@@ -46,8 +46,8 @@ What differs by kind of text lives in one profile, `reference/profile-<name>.md`
 
 | Profile | For | Contract |
 | --- | --- | --- |
-| `blog-perspectives` | a perspective post: one thesis, a lead, a TL;DR, a few short sections | `prompts/contract-section.md` (per section), `contract-post.md` |
-| `blog-practice` | a technical post: the system-post shape, numbers rules, TL;DR | the same |
+| `blog-perspectives` | a perspective post: an essay on one thesis in connected paragraphs, a lead, a TL;DR, a few sections | `prompts/contract-section.md` (per section), `contract-post.md` |
+| `blog-practice` | a technical post argued as an essay: a design thesis, sections that each argue one point with evidence and answer the design not taken, numbers rules, TL;DR | the same |
 | `docs` | a page of `packages/docs/content/`, Obsidian-Help style | `prompts/contract-docs.md` |
 | `landing` | strings for the landing page's dictionaries | `prompts/contract-landing.md` |
 
@@ -64,7 +64,9 @@ facts come from FACTS only. Its `## Check settings` are what the script enforces
 `sections`, `lead`, `tldr`, `exclamations`, and the budgets `words`, `lead-words`,
 `section-words`, `zh-chars`, `zh-lead-chars`, `zh-section-chars`, `tldr-words`, `zh-tldr-chars`, each
 `floor-cap`, `emphasis` with its caps `emphasis-words` / `zh-emphasis-chars` (section 4),
-`sources`, the floor and cap of a post's reference list (section 7), and `ui-labels`: `quoted` in a post, where bold is only the emphasized sentence and a UI label goes in
+`sources`, the floor and cap of a post's reference list (section 7), `body-lists` and
+`body-tables` (`none` makes a list outside the TL;DR, or a Markdown table, an error, for a post
+written as an essay in paragraphs), and `ui-labels`: `quoted` in a post, where bold is only the emphasized sentence and a UI label goes in
 quotes ("…" / 「…」), `bold` in a docs page.
 A prompt rule with no matching setting is a rule `check` cannot see; change the two together.
 
@@ -403,7 +405,8 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   (`--section`, or an `s<n>.…` file): its shape and the figures its plan row owns. For posts also:
   `## ` only, figure blocks complete and in manifest order (`--figures`), drawn figures (`--svg`,
   `--draft`), screenshot paths and files (`--assets`), footnotes on a published post, no
-  `**Sources**` line, no in-page anchors, the emphasis rule where the profile has one (section 4;
+  `**Sources**` line, no in-page anchors, no list outside the TL;DR or no table where the profile
+  says `body-lists: none` or `body-tables: none`, the emphasis rule where the profile has one (section 4;
   a draft before `emphasize` has no span, and one with any span needs one in every section), and
   the citation rules of section 7. In every profile, a `**` that CommonMark cannot read as
   emphasis is an error: a closing run after punctuation and before a letter, an opening run after a

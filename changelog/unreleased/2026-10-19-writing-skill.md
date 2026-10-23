@@ -65,7 +65,10 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
   site reads a footnote right after a bare URL as part of the link.
 - Profiles in `reference/profile-<name>.md` hold what differs by kind of text: shape, reader,
   sizes and the rules `check` enforces. The profiles shipped are a perspective post, a docs page
-  and landing strings, each with its own output contract.
+  and landing strings, each with its own output contract. A perspective post is written as an
+  essay in connected paragraphs: each section argues one point with reasoning and evidence and
+  answers the strongest objection where it arises. A profile's `body-lists: none` makes a list
+  outside the TL;DR an error, and `body-tables: none` does the same for a table.
 - Voice rules ask the model to write for readers with dyslexia or ADHD, who read with effort. The
   rules require the model to put the point first, use short sentences, use common words, omit
   asides, and omit defensive hedging. They also ban the "Yes, but…" concession pivot by name.
