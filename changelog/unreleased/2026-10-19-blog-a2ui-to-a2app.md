@@ -16,6 +16,10 @@ sits beside an agent's chat and calls the agent turn by turn.
 - Two figures are drawn as inline SVG with the shared figure styles: a comparison of the three
   approaches, and the workbench's two loops (using the app and changing it from chat).
 - The three screenshots are ones already published in the community repository's `blog-assets/`.
-- Sources are cited as numbered footnotes, at most one per sentence, the same sources in both languages.
+- Sources are cited as numbered footnotes: at most one per paragraph, each source once, and the same 10
+  sources in both languages.
+- A transition round rewrote only the first sentence after a heading where a join did not connect, and
+  one fix round states the workbench's limits (no sandbox, server permissions, no approval pauses) as
+  limits and gives the A2UI screenshot a caption that says what it shows.
 - The post opens with a three-point TL;DR and bolds one key sentence in the lead and in each section.
 - The landing blog test lists the new post first among the perspectives posts.
