@@ -12,6 +12,9 @@
  *   same Project, never read or overwrite each other (#68); a cleared draft reads as empty.
  * - Dropping the model pin keeps everything else; dropping the `[default_chat]`-seeded
  *   selections keeps user content and the model pin, and changes nothing without them.
+ * - A sent draft carries over the model and the Workspace (sticky Workspace): the machine
+ *   travels with the path on a remote Workspace and is omitted at home; an explicit ""
+ *   Workspace (temporary) carries over as "".
  * - A storage that throws (quota, private mode) never escapes: saving and clearing are
  *   no-ops and loading is empty.
  */
@@ -24,6 +27,7 @@ import {
   loadDraft,
   parseDraft,
   saveDraft,
+  sentDraftCarryOver,
   sessionDraftKey,
 } from "../src/features/chat/draft-cache";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
@@ -300,5 +304,46 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     expect(() => saveDraft(draftKey("u", "p"), { text: "x" }, broken)).not.toThrow();
     expect(() => clearDraft(draftKey("u", "p"), broken)).not.toThrow();
     expect(loadDraft(draftKey("u", "p"), broken)).toEqual({});
+  });
+});
+
+describe("sentDraftCarryOver (sticky Workspace)", () => {
+  const MODEL_REF = { provider: "anthropic", modelId: "claude-opus-4-8" };
+
+  it("keeps the model and the Workspace, with the machine traveling on a remote path", () => {
+    expect(
+      sentDraftCarryOver({ modelRef: MODEL_REF, workspace: "/srv/app", machineId: "M1" }),
+    ).toEqual({ workspace: "/srv/app", modelRef: MODEL_REF, machineId: "M1" });
+  });
+
+  it("omits the machine at home (null or empty), and the model when none was picked", () => {
+    expect(sentDraftCarryOver({ workspace: "/srv/repo", machineId: null })).toEqual({
+      workspace: "/srv/repo",
+    });
+    expect(sentDraftCarryOver({ workspace: "/srv/repo", machineId: "" })).toEqual({
+      workspace: "/srv/repo",
+    });
+    expect(sentDraftCarryOver({ workspace: "/srv/repo" })).toEqual({ workspace: "/srv/repo" });
+  });
+
+  it('an explicit "" Workspace (temporary) carries over as ""', () => {
+    expect(sentDraftCarryOver({ modelRef: MODEL_REF, workspace: "" })).toEqual({
+      workspace: "",
+      modelRef: MODEL_REF,
+    });
+  });
+
+  it("round-trips through the slot: the next draft reads the carried Workspace back", () => {
+    const s = memoryStorage();
+    saveDraft(
+      draftKey("u", "p"),
+      sentDraftCarryOver({ modelRef: MODEL_REF, workspace: "/srv/app", machineId: "M1" }),
+      s,
+    );
+    expect(loadDraft(draftKey("u", "p"), s)).toEqual({
+      workspace: "/srv/app",
+      modelRef: MODEL_REF,
+      machineId: "M1",
+    });
   });
 });

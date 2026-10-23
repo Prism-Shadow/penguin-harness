@@ -26,6 +26,7 @@ Session 创建后，Workspace 就锁定了；模型仍然可以换，见[切换�
 
 - Project 的**新对话默认值**（在 **Project 设置**中，见 [Web App](/web-app#project-与成员)）会预填新草稿的 Agent、Workspace 和审批模式，模型则默认为 Project 的默认模型。思考等级优先显示 Agent 自己的等级，没有时用 Project 的默认值，再没有就是 medium（中）。
 - 在草稿里切换思考等级或模型，切换后的值就成为新的默认值：思考等级立即写回所选 Agent 的 `model.thinking_level`，模型则沿用到你的下一个对话。
+- 发出去的对话，其 Workspace 也会沿用：下一个新草稿默认落在上一次发送时的 Workspace（及其所在机器），直到你另选目录或修改 Project 默认值。
 - 草稿按用户和 Project 保存所选项、正文和选中的 Skill。草稿里有已输入的文字时再点**新建对话**，这份草稿会移到侧边栏的**草稿**分组。
 
 审批模式共四种，见[工具与审批](/tools)。

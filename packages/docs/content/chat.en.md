@@ -26,6 +26,7 @@ Good to know:
 
 - The Project's **New chat defaults** (in **Project settings**, see [Web App](/web-app#projects-and-members)) prefill a new draft's agent, Workspace and approval mode, and the model starts as the Project's default model. The thinking level shows the agent's own level, else the Project default, else medium.
 - Switching the thinking level or the model in a draft makes it the new default: the level is written back to the selected agent's `model.thinking_level` immediately, and the model carries over to your next conversation.
+- A sent conversation's Workspace carries over too: the next draft starts in the Workspace the last one was sent from (on its machine), until you pick another one or change the Project defaults.
 - A draft keeps its selections, text and Skills per user and Project. If you select **New chat** while a draft holds typed text, that draft moves to a **Drafts** group in the sidebar.
 
 There are four approval modes. See [Tools and Approvals](/tools).
