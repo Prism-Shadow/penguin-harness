@@ -79,12 +79,12 @@ const client = new AgentClient({
 });
 
 // One question, the whole answer.
-const first = await client.ask({ input: "Summarize README.md" });
+const first = await client.run({ input: "Summarize README.md" });
 if (first.status !== "completed") throw new Error(`${first.status}: ${first.error?.message ?? ""}`);
 console.log(first.text);
 
 // The same conversation, streamed: pass its Session id back.
-const run = client.run({
+const run = client.stream({
   sessionId: first.sessionId,
   input: "Now list its headings",
   onApproval: (toolCall, origin) => {
@@ -101,10 +101,10 @@ const second = await run.result();
 ```
 
 - The stream carries the conversation's records: AMSP record envelopes `{timestamp, type, payload, origin?}`, the same lines the Trace stores. The answer streams as `partial_text` records and arrives whole as an assistant `text` record.
-- `ask()` runs to the end and resolves with the result: `status`, `error`, `sessionId`, `text` (the main conversation's answer), `usage`, `sessionUsage` and `requests`. `run()` starts the run and returns it at once: iterate it once for the records, await `run.session` for the Session id, and `run.result()` for the end.
+- `run()` runs to the end and resolves with the result: `status`, `error`, `sessionId`, `text` (the main conversation's answer), `usage`, `sessionUsage` and `requests`. `stream()` starts the run and returns it at once: iterate it once for the records, await `run.session` for the Session id, and `run.result()` for the end.
 - **Conversations.** Keep one `sessionId` per conversation of the program, such as one per end user or chat thread, and pass it back to continue. Omit it to start a new conversation. Only the Agent's own API conversations can be continued.
 - **Approvals.** `onApproval(toolCall, origin, { sessionId })` is called only when the approval mode makes a call wait; `origin` is set for a subagent's call. Without it, or when it throws, the client answers `deny`. A person can answer the same call in the Web App; the first answer counts.
-- **Aborting.** Abort the `signal` passed to `run()` or `ask()` to drop the connection: the server aborts the run. `run.abort()` asks the server to abort and keeps the stream until `[DONE]`; the result's `status` is `aborted`.
+- **Aborting.** Abort the `signal` passed to `stream()` or `run()` to drop the connection: the server aborts the run. `run.abort()` asks the server to abort and keeps the stream until `[DONE]`; the result's `status` is `aborted`.
 - **Failures.** A refusal before the stream starts rejects with `AmspHttpError` (`status`, `code`, `message`; see section 5). After that, `result()` resolves for every run that reached `[DONE]`: check `status` (`completed`, `aborted`, `retryable` or `fatal`) and `error`. A stream that breaks before `[DONE]` rejects with `AmspStreamError`.
 - **Unknown records** are passed through. Switch on `payload.type` with a default branch.
 - **Following a conversation** that runs elsewhere, or across many runs: `SessionReader` reads its history and then its live records, and reconnects on its own.

@@ -43,14 +43,14 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.run({ input: "Summarize README.md" });
+const run = client.stream({ input: "Summarize README.md" });
 for await (const record of run) {
   if (record.origin || !isModelMessage(record)) continue;
   if (record.payload.type === "partial_text") process.stdout.write(record.payload.text);
 }
 const first = await run.result();
 
-const second = await client.ask({
+const second = await client.run({
   sessionId: first.sessionId,
   input: "Now list its headings",
   onApproval: () => "allow", // without a callback, every call that waits is denied
@@ -58,7 +58,7 @@ const second = await client.ask({
 console.log(second.text, second.usage.total);
 ```
 
-- `run()` starts the run and returns it: iterate it once for the records, await `session` for the Session id (resolved at `hello`), `result()` for the outcome, and call `abort()` to have the server abort it. `ask()` returns the result alone.
+- `stream()` starts the run and returns it: iterate it once for the records, await `session` for the Session id (resolved at `hello`), `result()` for the outcome, and call `abort()` to have the server abort it. `run()` returns the result alone.
 - `RunResult` is `{status, error?, sessionId, text, usage, sessionUsage, requests}`, read from the main Session's records. `status` is decided in order: the last `task_begin` unclosed, or no Task began, is `fatal` with code `internal`; an `abort` record is `aborted`; a `request_end` or `compaction_end` that is not `completed`, carries no `retry_in_ms` and no later request followed gives its status and error; a last assistant `text` that ended `fatal` is `fatal`; anything else is `completed`. `text` joins the main Session's assistant texts with a blank line, compaction summaries left out; `usage` sums every `token_usage.request`, subagents included; `sessionUsage` is the last main `token_usage.session`; `requests` counts the main `request_begin` records.
 - `result()` resolves for every run whose stream reached `[DONE]`. A refusal before the stream rejects with `AmspHttpError` (`status`, `code`, `message`); a stream that ends or breaks before `[DONE]` rejects with `AmspStreamError`; aborting the `signal` rejects with its reason.
 - `agent()`, `session(id)`, `messages(id, page?)`, `approvals(id, wait?)`, `abort(id)` and `approve(id, toolCallId, decision)` call the other routes; `parseArguments(toolCall)` reads a tool call's JSON arguments.
@@ -115,7 +115,6 @@ const result = collector.result(); // a stream that ended without [DONE] broke: 
 
 | Earlier | Now |
 | --- | --- |
-| `client.stream()` / `client.run()` | `client.run()` / `client.ask()` |
 | `onApproval(request, ctx)` | `onApproval(toolCall, origin, ctx)` |
 | `RunResult.items` | Removed |
 | `run.started` / `run.done` | `event: hello` / `data: [DONE]`, the outcome read from the records |

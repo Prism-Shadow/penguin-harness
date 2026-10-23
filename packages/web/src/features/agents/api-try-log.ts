@@ -558,7 +558,7 @@ export async function runTry(
   dispatch({ type: "start" });
   const agent = `${target.projectId}/${target.agentId}`;
   const client = new AgentClient({ agent, transport: tryTransport(target.machineId ?? null) });
-  const run = client.run({
+  const run = client.stream({
     input: body.input,
     ...(body.session_id !== undefined ? { sessionId: body.session_id } : {}),
     signal,

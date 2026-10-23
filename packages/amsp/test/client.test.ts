@@ -6,7 +6,7 @@
  * - Given a run stream, iterating it reads the records in order and none of its control frames;
  *   `session` resolves at `hello`, and the request carries the input, the Session to continue,
  *   the key and the caller's headers.
- * - Given `ask()`, the result arrives with nothing kept to iterate.
+ * - Given `run()`, the result arrives with nothing kept to iterate.
  * - Given named events AMSP does not define and a record type the client does not know, the first
  *   are left out and the second is read like any record.
  * - Given a run's records, `result()` decides the status in the rule's order — an unclosed last
@@ -106,7 +106,7 @@ describe("a run", () => {
     // A beat mid-run and a host's own event: neither is a record.
     steps.splice(4, 0, control("ping"), control("server_event", { type: "task_state" }));
     fake.stream("POST", RUNS, steps);
-    const run = clientOf(fake, { "X-Trace": "t1" }).run({ input: "Say hello", sessionId: SID });
+    const run = clientOf(fake, { "X-Trace": "t1" }).stream({ input: "Say hello", sessionId: SID });
     expect(await run.session).toBe(SID);
     expect(await collect(run)).toEqual(records);
     const call = fake.calls[0]!;
@@ -116,10 +116,10 @@ describe("a run", () => {
     expect(call.headers.get("accept")).toBe("text/event-stream");
   });
 
-  it("ask() resolves to the result alone", async () => {
+  it("run() resolves to the result alone", async () => {
     const fake = createFetchFake();
     fake.stream("POST", RUNS, runBody(plainRun(SID, "Hi there")));
-    const result = await clientOf(fake).ask({ input: "Say hello" });
+    const result = await clientOf(fake).run({ input: "Say hello" });
     expect(result).toEqual({
       status: "completed",
       sessionId: SID,
@@ -135,7 +135,7 @@ describe("a run", () => {
     const odd = ev({ type: "something_new", value: 1 });
     const records = [...plainRun(SID).slice(0, -1), odd, taskEnd()];
     fake.stream("POST", RUNS, runBody(records));
-    const run = clientOf(fake).run({ input: "x" });
+    const run = clientOf(fake).stream({ input: "x" });
     expect((await collect(run)).map(kind)).toContain("something_new");
     expect((await run.result()).status).toBe("completed");
   });
@@ -224,7 +224,7 @@ describe("a run", () => {
   ])("decides the status: %s", async (_name, records, expected) => {
     const fake = createFetchFake();
     fake.stream("POST", RUNS, runBody(records));
-    const result = await clientOf(fake).ask({ input: "go" });
+    const result = await clientOf(fake).run({ input: "go" });
     expect({ status: result.status, ...(result.error ? { error: result.error } : {}) }).toEqual(
       expected,
     );
@@ -260,7 +260,7 @@ describe("a run", () => {
         taskEnd(),
       ]),
     );
-    const result = await clientOf(fake).ask({ input: "go" });
+    const result = await clientOf(fake).run({ input: "go" });
     expect(result.text).toBe("First.\n\nSecond.");
     expect(result.usage).toEqual(counts(10, 100));
     expect(result.sessionUsage).toEqual(counts(8, 80));
@@ -272,7 +272,7 @@ describe("a run that fails", () => {
   it("rejects a refusal before the stream with its status and code, and the session with it", async () => {
     const fake = createFetchFake();
     fake.json("POST", RUNS, 409, { error: { code: "task_in_progress", message: "Busy." } });
-    const run = clientOf(fake).run({ input: "x", sessionId: SID });
+    const run = clientOf(fake).stream({ input: "x", sessionId: SID });
     await expect(run.result()).rejects.toMatchObject({
       name: "AmspHttpError",
       status: 409,
@@ -284,7 +284,7 @@ describe("a run that fails", () => {
   it("rejects a stream that ends before [DONE], after reading what came", async () => {
     const fake = createFetchFake();
     fake.stream("POST", RUNS, runBody(plainRun(SID).slice(0, 4), false));
-    const run = clientOf(fake).run({ input: "x" });
+    const run = clientOf(fake).stream({ input: "x" });
     const read: AmspRecord[] = [];
     await expect(
       (async () => {
@@ -302,20 +302,20 @@ describe("a run that fails", () => {
       frame(taskBegin(), "ep-1"),
       { fail: new TypeError("socket hang up") },
     ]);
-    await expect(clientOf(fake).ask({ input: "x" })).rejects.toBeInstanceOf(AmspStreamError);
+    await expect(clientOf(fake).run({ input: "x" })).rejects.toBeInstanceOf(AmspStreamError);
   });
 
   it("rejects an answer that is not an event stream", async () => {
     const fake = createFetchFake();
     fake.text("POST", RUNS, 200, "<html>proxy</html>", "text/html");
-    await expect(clientOf(fake).ask({ input: "x" })).rejects.toBeInstanceOf(AmspStreamError);
+    await expect(clientOf(fake).run({ input: "x" })).rejects.toBeInstanceOf(AmspStreamError);
   });
 
   it("rejects with the signal's reason and closes the connection when the caller aborts", async () => {
     const fake = createFetchFake();
     const served = fake.stream("POST", RUNS, [hello(SID), frame(taskBegin(), "ep-1"), never()]);
     const controller = new AbortController();
-    const run = clientOf(fake).run({ input: "x", signal: controller.signal });
+    const run = clientOf(fake).stream({ input: "x", signal: controller.signal });
     await run.session;
     controller.abort(new Error("caller left"));
     await expect(run.result()).rejects.toThrow("caller left");
@@ -333,7 +333,7 @@ describe("a run that fails", () => {
       frame(taskEnd(), "ep-3"),
       DONE,
     ]);
-    const run = clientOf(fake).run({ input: "x" });
+    const run = clientOf(fake).stream({ input: "x" });
     await run.session;
     await run.abort();
     expect((await run.result()).status).toBe("aborted");
@@ -362,7 +362,7 @@ describe("approvals", () => {
       DONE,
     ]);
     const asked: unknown[] = [];
-    const result = await clientOf(fake).ask({
+    const result = await clientOf(fake).run({
       input: "x",
       onApproval: (toolCall, origin, ctx) => {
         asked.push([toolCall.tool_call_id, origin, ctx.sessionId]);
@@ -389,7 +389,7 @@ describe("approvals", () => {
       frame(taskEnd(), "ep-4"),
       DONE,
     ]);
-    await clientOf(fake).ask({ input: "x", onApproval: () => "allow" });
+    await clientOf(fake).run({ input: "x", onApproval: () => "allow" });
     const look = fake.calls.find((c) => c.path === APPROVALS)!;
     expect(look.signal?.aborted).toBe(true);
     expect(fake.calls.some((c) => c.method === "POST" && c.path.includes("/approvals/"))).toBe(
@@ -418,7 +418,7 @@ describe("approvals", () => {
       frame(taskEnd(), "ep-4"),
       DONE,
     ]);
-    await clientOf(fake).ask({ input: "x", ...(onApproval ? { onApproval } : {}) });
+    await clientOf(fake).run({ input: "x", ...(onApproval ? { onApproval } : {}) });
     expect(fake.calls.find((c) => c.path === answerPath("call_1"))?.body).toEqual({
       decision: "deny",
     });
@@ -431,7 +431,7 @@ describe("approvals", () => {
       RUNS,
       runBody([taskBegin(), toolCall("call_1", '{"cmd":', "aborted"), abort(), taskEnd()]),
     );
-    await clientOf(fake).ask({ input: "x", onApproval: () => "allow" });
+    await clientOf(fake).run({ input: "x", onApproval: () => "allow" });
     expect(fake.calls.some((c) => c.path === APPROVALS)).toBe(false);
   });
 
@@ -450,7 +450,7 @@ describe("approvals", () => {
       frame(taskEnd(), "ep-4"),
       DONE,
     ]);
-    expect((await clientOf(fake).ask({ input: "x", onApproval: () => "deny" })).status).toBe(
+    expect((await clientOf(fake).run({ input: "x", onApproval: () => "deny" })).status).toBe(
       "completed",
     );
   });
@@ -470,7 +470,7 @@ describe("approvals", () => {
       frame(taskEnd(), "ep-4"),
       DONE,
     ]);
-    const run = clientOf(fake).run({
+    const run = clientOf(fake).stream({
       input: "x",
       onApproval: async () => {
         await human.promise;
