@@ -711,7 +711,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 | `--set-default` | 同时把这条条目设为 Project 的默认模型。 | — |
 
 - CLI 绝不会从模型 id 推断 `--provider`。网关会按上游模型 id 转售厂商模型，靠猜测分组可能把凭证写到另一家厂商的端点上。内置分组之外的端点一律用 `custom`。
-- 新建条目只在显式传入时才存 `--client-type`、`--base-url` 与 `--api-key`。不传的项跟随分组，分组也没有即交给客户端缺省；不读内置模型目录。新建 Project 的文件已在各分组上存好网关的端点与协议、Penguin Go 的中转地址与 `vllm` 的 `openai-chat-vllm-adapter`。分组没有设置协议时，`custom` 或用户自定义分组的条目取 `openai-chat`。更新已有条目时，只有显式传入这些选项才会改动；`--clear-*` 选项清除条目自己的值，此后它跟随分组。
+- 新建条目只在显式传入时才存 `--client-type`、`--base-url` 与 `--api-key`。不传的项跟随分组，分组也没有即交给客户端缺省；不读内置模型目录。新建 Project 的文件已在各分组上存好网关的端点与协议、Penguin Go 的中转地址，以及 `vllm` 的 `openai-chat-vllm-adapter` 与本地 base URL `http://127.0.0.1:8000/v1`。分组没有设置协议时，`custom` 或用户自定义分组的条目取 `openai-chat`。更新已有条目时，只有显式传入这些选项才会改动；`--clear-*` 选项清除条目自己的值，此后它跟随分组。
 - 用这种方式重新加回删掉的预置模型，只会存下你传入的值；模型库页面的**同步新增模型**会把它连同目录的协议与端点一起补回。
 - 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow`、`atlascloud` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
 - `penguin-go` 的协议固定为 `mmsp`，与模型库页面及其 API 一致：传入其他 `--client-type` 会被拒绝，除非它就是该条目或分组已存的值；对分组使用 `--clear-client-type` 同样被拒绝。

@@ -124,20 +124,20 @@ import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
-  canonicalClientType,
   catalogEntryFor,
   fastModeProtocol,
-  groupKeyReaches,
   isAddableGroup,
+  isVendorGroup,
   modelHomepageUrl,
   providerInfo,
   unroutableVendorModel,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
+import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
 import type {
   FastModeProtocol,
   ModelProviderBridgeAuth,
   ModelProviderInfo,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import {
   allGroupKeys,
   discountedPrice,
@@ -159,7 +159,7 @@ import {
   DEFAULT_CUSTOM_CLIENT_TYPE,
   detectableBaseUrl,
   displayWidthCh,
-  envHintKeyFor,
+  envHintFor,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -411,7 +411,7 @@ export interface RowState {
   vision: boolean;
   /** Environment variable name used as fallback when api_key is empty (given by the server based on catalog/protocol). */
   envKey?: string;
-  /** Masked preview of the env-fallback value (first-party official entries only; the plaintext never leaves the server). */
+  /** Masked preview of the env-fallback value (only for a keyless row with no base URL anywhere; the plaintext never leaves the server). */
   envKeyMasked?: string;
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
@@ -710,9 +710,9 @@ export function detectedEnvKeys(rows: readonly RowState[]): Set<string> {
  *
  * The client type and base URL are the ones the entry will actually be USED with — its own,
  * else what it inherits from its group (`inherited`, none by default) — and for a custom-like
- * entry that resolves to none, the compatible client it will be saved on, for the same reason
- * envHintClientType exists: a custom-like group leaves the protocol empty until detection or a
- * manual pick fills it in, and fastModeProtocol would then
+ * entry that resolves to none, the compatible client it will be saved on: a custom-like group
+ * leaves the protocol empty until detection or a manual pick fills it in, and fastModeProtocol
+ * would then
  * fall back to routing by model id. Typing an id that routes to a client with no fast tier
  * (`kimi-k3`, `deepseek-v4-pro`) into a custom group would hide a switch that the persisted
  * `openai-chat` entry can in fact serve. An empty result keeps the id-based routing the preset
@@ -767,12 +767,21 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *   group key that does NOT reach the model — its own base URL is on another origin — is said
  *   outright, since the card will read "not configured"; otherwise nothing truthful can be said.
  * - Base URL: the group's setting where it has one; else the shape a required one takes; else
- *   what an empty one means — the client's default endpoint.
+ *   what an empty one means — the endpoint the requests go to (`defaultBaseUrl`, the routed
+ *   client's default, where MMSP routes the model), else the client's default endpoint.
  */
 export function connectionPlaceholders(
   draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
   group: ProviderConnectionDto | undefined,
-  { envKey, baseUrlRequired }: { envKey?: string | undefined; baseUrlRequired: boolean },
+  {
+    envKey,
+    baseUrlRequired,
+    defaultBaseUrl,
+  }: {
+    envKey?: string | undefined;
+    baseUrlRequired: boolean;
+    defaultBaseUrl?: string | undefined;
+  },
 ): { apiKey: string | undefined; baseUrl: string } {
   const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
   const apiKey = draft.credential?.apiKeyMasked
@@ -789,7 +798,9 @@ export function connectionPlaceholders(
       ? S.models.inheritFromGroup
       : baseUrlRequired
         ? "https://…"
-        : S.models.baseUrlNone;
+        : defaultBaseUrl !== undefined
+          ? S.models.baseUrlDefault(defaultBaseUrl)
+          : S.models.baseUrlNone;
   return { apiKey, baseUrl };
 }
 
@@ -1028,7 +1039,7 @@ export function ModelsPage() {
     // drop them along with the rows they annotate whenever the active Project changes.
     setSpeedResults(new Map());
     try {
-      adopt(await api.getModels(projectId));
+      adopt(await api.getModels(projectId, null));
     } catch (e) {
       setLoadError(apiErrorText(e));
     }
@@ -1140,10 +1151,8 @@ export function ModelsPage() {
     try {
       const res = await api.syncPlatformModels(projectId);
       adopt(res);
-      // The platform's sync only adds the models it newly offers; the ones already here keep
-      // their prices, protocols and promotions.
-      if (res.added === 0) toastInfo(S.models.platformUpToDate);
-      else toastSuccess(S.models.platformSyncAdded(res.added));
+      if (res.added === 0 && res.updated === 0) toastInfo(S.models.platformUpToDate);
+      else toastSuccess(S.models.platformSyncResult(res.added, res.updated));
     } catch (error) {
       if (error instanceof ApiError && error.code === "platform_reauthorization_required") {
         keyLanded.current = false;
@@ -3059,10 +3068,10 @@ function ModelDialog({
           set({ vision: false });
           toastInfo(S.models.detectVisionNo);
         } else {
-          toastError(S.models.detectFailedBody);
+          toastError(S.models.detectVisionFailed);
         }
       } catch {
-        toastError(S.models.detectFailedBody);
+        toastError(S.models.detectVisionFailed);
       } finally {
         setVisionDetecting(false);
       }
@@ -3292,19 +3301,21 @@ function ModelDialog({
   // the model id and API key labels in both the add and edit dialogs; custom
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
-  // The variable a blank key may be PRESENTED as covered by, for the entry as drafted (core's
-  // modelEnvPreviewKey, which the server's masked preview reads too) on its EFFECTIVE shape:
-  // undefined for every row whose endpoint — its own or the one it follows — is not the
-  // vendor's own (a gateway's endpoint, a custom or vLLM server, a vendor group pointed at a
-  // proxy) and for a keyless vLLM / custom row with no base URL anywhere. The hint and the
+  // The variables a blank key may be PRESENTED as covered by, for the entry as drafted (the
+  // catalog's modelEnvironment, which the server's masked preview reads too): what MMSP's routed
+  // client reads, which is nothing for a base URL other than its own default endpoint (a
+  // gateway's endpoint, a custom or vLLM server, a vendor's second host, a proxy). A custom,
+  // vLLM or user-group row with no base URL anywhere does get its protocol client's variable,
+  // as its Session would, and the note below says where its requests go. The hint and the
   // stored-mask block below follow this.
-  const liveEnvKey = envHintKeyFor(
+  const liveEnv = envHintFor(
     form.provider,
     form.modelId,
     form.clientType,
     form.baseUrl,
     groupShape(group),
   );
+  const liveEnvKey = liveEnv.apiKeyEnv;
   // An id this entry's group cannot place (see unroutableFix). The save is refused by the
   // server for a new or rekeyed entry, so the warning and its way out are shown before the
   // attempt; a row that was already stored keeps saving and carries the same warning on its
@@ -3448,16 +3459,26 @@ function ModelDialog({
   const { apiKey: apiKeyHint, baseUrl: baseUrlHint } = connectionPlaceholders(form, group, {
     envKey: envHintKey,
     baseUrlRequired,
+    defaultBaseUrl: liveEnv.defaultBaseUrl,
   });
-  // Default endpoint note (zhipu / moonshot each have domestic / international
-  // endpoints): shown only when the env fallback hint appears (hence keyed off the same
-  // envHintKey) and this entry actually goes through the provider's own client (the
-  // resolved envKey matches the provider) — entries going through the OpenAI
-  // client (OPENAI_API_KEY) have no provider default endpoint to speak of.
+  // Where a blank key's requests go, shown only beside the env fallback hint (hence keyed off
+  // the same envHintKey). A vendor group whose client defaults to one of two hosts (zhipu /
+  // moonshot) says how to reach the other one, when this entry goes through the provider's
+  // own client (the resolved envKey matches the provider). Any other group's row on a protocol
+  // client with no base URL anywhere — custom, vLLM, a user group — names the endpoint its
+  // requests go to, the client's default as MMSP records it (https://api.openai.com/v1 for the
+  // OpenAI protocols), unless the matching `*_BASE_URL` is set, so a self-hosted id is never
+  // sent there unannounced.
   const envNote =
-    envHintKey !== undefined && envHintKey === dialogProvider?.envKey
-      ? S.models.providerEnvNotes[form.provider]
-      : undefined;
+    envHintKey === undefined
+      ? undefined
+      : envHintKey === dialogProvider?.envKey && S.models.providerEnvNotes[form.provider]
+        ? S.models.providerEnvNotes[form.provider]
+        : !isVendorGroup(form.provider) &&
+            liveEnv.baseUrlEnv !== undefined &&
+            liveEnv.defaultBaseUrl !== undefined
+          ? S.models.envBaseUrlNote(liveEnv.defaultBaseUrl, liveEnv.baseUrlEnv)
+          : undefined;
   // The add dialog's note on the protocol a new model will speak, inside its Details: the
   // group's (with blank fields following the group where it also names the endpoint, the user's
   // own endpoint where it does not), or — a custom / user-defined group with nothing to follow —
@@ -3608,7 +3629,7 @@ function ModelDialog({
               {S.models.baseUrl}
             </FieldLabel>
             {/* Always live: no API key is needed (the server falls back to the stored key
-                and then to the protocol's env var), and anything that does go wrong is
+                and then probes anonymously), and anything that does go wrong is
                 explained in a popup. `detecting` only guards re-entrancy. */}
             <Button
               variant="link"

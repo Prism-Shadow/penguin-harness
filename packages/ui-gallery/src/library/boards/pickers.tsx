@@ -1,16 +1,22 @@
 /**
- * 选择器: the package's Select, Segmented, Switch, ToggleRow, SwatchPicker, OptionMenu and
- * Dropdown, each holding its own choice, and the Menu rows at both densities. The control sizes
- * group sets a Select beside an Input and a Button of the same rung: one row, one height.
+ * 选择器: the package's Select, Segmented, Slider, ChoiceGroup, Switch, ToggleRow, SwatchPicker,
+ * OptionMenu and Dropdown, each holding its own choice, and the Menu rows at both densities. The
+ * control sizes group sets a Select beside an Input and a Button of the same rung: one row, one
+ * height. The choice groups show every shape and mode — chips that act on a press, chips that
+ * toggle, cards led by the disc with a muted "Other…", checkbox cards — and an answered one, closed.
  */
 import { useState } from "react";
-import type { ControlSize } from "@prismshadow/penguin-ui";
+import type { ChoiceGroupOption, ControlSize } from "@prismshadow/penguin-ui";
 import {
   ACCENT_PRESETS,
   Button,
   ChevronDown,
+  ChoiceGroup,
   Dropdown,
+  FieldLegend,
+  GlyphIcon,
   ICONS,
+  ICON_SIZE,
   Input,
   Menu,
   MenuItem,
@@ -18,8 +24,10 @@ import {
   MenuRadioItem,
   MenuSeparator,
   OptionMenu,
+  Pill,
   Segmented,
   Select,
+  Slider,
   SwatchPicker,
   Switch,
   ToggleRow,
@@ -27,6 +35,9 @@ import {
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
+
+/** The value of the "Other…" entry, which no listed option takes. */
+const OTHER = "other";
 
 export function PickersBoard() {
   const { S, state } = useGallery();
@@ -48,6 +59,34 @@ export function PickersBoard() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [groupBy, setGroupBy] = useState<"workspace" | "agent">("workspace");
   const [sortBy, setSortBy] = useState<"recent" | "manual">("recent");
+  const [share, setShare] = useState(60);
+  const [temperature, setTemperature] = useState(0.7);
+  const [merge, setMerge] = useState<string | null>(null);
+  const [features, setFeatures] = useState<string[]>(["cdn", "logs"]);
+  const [database, setDatabase] = useState<string | null>("pg");
+  const [regions, setRegions] = useState<string[]>(["eu-west"]);
+  const mergeOptions: ChoiceGroupOption[] = t.mergeOptions.map((label, i) => ({
+    value: String(i),
+    label:
+      i === 0 ? (
+        <span className="inline-flex items-center gap-1.5">
+          {label}
+          <Pill tone="info">{t.recommended}</Pill>
+        </span>
+      ) : (
+        label
+      ),
+  }));
+  const databases: ChoiceGroupOption[] = [
+    ...t.databases,
+    {
+      value: OTHER,
+      label: t.other,
+      muted: true,
+      // A pen in the disc's place: this one is written, not picked.
+      lead: <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.rowLead} />,
+    },
+  ];
   return (
     <div className="gf-board">
       <BoardGroup title={t.select}>
@@ -106,6 +145,95 @@ export function PickersBoard() {
             onChange={setSegment}
             cols={3}
           />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.slider}>
+        <div className="lib-stack">
+          <Slider
+            label={t.sliderShare}
+            min={0}
+            max={100}
+            step={5}
+            unit={t.sliderUnit}
+            value={share}
+            onChange={setShare}
+          />
+          <Slider
+            label={t.sliderTemperature}
+            hint={t.sliderTemperatureHint}
+            min={0}
+            max={1}
+            step={0.1}
+            value={temperature}
+            onChange={setTemperature}
+          />
+          <Slider
+            label={t.sliderTopP}
+            hint={t.sliderTopPHint}
+            min={0}
+            max={1}
+            step={0.05}
+            value={0.9}
+            onChange={() => {}}
+            disabled
+          />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.choiceGroup}>
+        <div className="lib-stack">
+          {/* Acts on the press: one tab stop, resting on the recommended option. */}
+          <fieldset className="min-w-0">
+            <FieldLegend>{t.choiceMerge}</FieldLegend>
+            <ChoiceGroup
+              shape="chip"
+              options={mergeOptions}
+              value={merge}
+              onChange={setMerge}
+              initialStop="0"
+            />
+          </fieldset>
+          <fieldset className="min-w-0">
+            <FieldLegend>{t.choiceFeatures}</FieldLegend>
+            <ChoiceGroup
+              shape="chip"
+              size="sm"
+              multiple
+              options={t.features}
+              value={features}
+              onChange={setFeatures}
+            />
+          </fieldset>
+          <fieldset className="min-w-0">
+            <FieldLegend>{t.choiceDatabase}</FieldLegend>
+            <ChoiceGroup
+              shape="card"
+              options={databases}
+              value={database}
+              // "Other…" hands the answer to the reader's own words, so nothing stays pressed.
+              onChange={(value) => setDatabase(value === OTHER ? null : value)}
+            />
+          </fieldset>
+          <fieldset className="min-w-0">
+            <FieldLegend>{t.choiceRegions}</FieldLegend>
+            <ChoiceGroup
+              shape="card"
+              multiple
+              options={t.regions}
+              value={regions}
+              onChange={setRegions}
+            />
+          </fieldset>
+          {/* An answered question still on screen: every option closed. */}
+          <fieldset className="min-w-0">
+            <FieldLegend>{t.choiceAnswered}</FieldLegend>
+            <ChoiceGroup
+              shape="chip"
+              options={mergeOptions}
+              value="1"
+              onChange={() => {}}
+              disabled
+            />
+          </fieldset>
         </div>
       </BoardGroup>
       <BoardGroup title={t.switches}>

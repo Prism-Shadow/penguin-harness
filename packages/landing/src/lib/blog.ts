@@ -1,8 +1,12 @@
 /**
- * Blog index: local Markdown posts imported at build time via import.meta.glob.
+ * Blog index: local Markdown posts read at build time via import.meta.glob.
  * File naming: content/blog/<slug>.<lang>.md — one file per post per language;
  * a post missing the active language falls back to the other one, so the list
  * is always complete in both locales.
+ *
+ * The index (every post's frontmatter) is part of the main bundle, so the list and the home
+ * page's latest updates render at once. A post's body is a chunk of its own, fetched when the
+ * post is opened (`loadPostBody`): the home page carries no post text.
  */
 import { parseFrontmatter } from "@prismshadow/penguin-ui/site";
 import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
@@ -24,7 +28,6 @@ export interface BlogPost {
   authors: string[];
   /** `pinned: true` in frontmatter: sorts before everything else, badge on the card. */
   pinned: boolean;
-  body: string;
 }
 
 /** Split `author` frontmatter on comma-class separators (`,` `，` `、`); default when empty. */
@@ -41,17 +44,23 @@ export function formatAuthors(authors: string[], locale: Locale): string {
   return authors.join(locale === "zh" ? "、" : ", ");
 }
 
-const files = import.meta.glob("../../content/blog/*.md", {
-  query: "?raw",
+/** Each post file's frontmatter record, parsed at build time (scripts/frontmatter-plugin.ts). */
+const frontmatter = import.meta.glob<Record<string, string>>("../../content/blog/*.md", {
+  query: "?frontmatter",
   import: "default",
   eager: true,
-}) as Record<string, string>;
+});
 
-function toPost(path: string, raw: string): BlogPost | null {
+/** Each post file's full text, as a chunk of its own; keyed like `frontmatter`. */
+const sources = import.meta.glob<string>("../../content/blog/*.md", {
+  query: "?raw",
+  import: "default",
+});
+
+function toPost(path: string, meta: Record<string, string>): BlogPost | null {
   const file = path.split("/").pop() ?? "";
   const match = /^(.+)\.(zh|en)\.md$/.exec(file);
   if (!match) return null;
-  const { meta, body } = parseFrontmatter(raw);
   const category: BlogCategory =
     meta.category === "changelog" ||
     meta.category === "practice" ||
@@ -67,7 +76,6 @@ function toPost(path: string, raw: string): BlogPost | null {
     excerpt: meta.excerpt ?? "",
     authors: parseAuthors(meta.author),
     pinned: meta.pinned === "true",
-    body,
   };
 }
 
@@ -105,8 +113,8 @@ export function formatPostDate(date: string, locale: Locale): string {
   }).format(utc);
 }
 
-const ALL: BlogPost[] = Object.entries(files)
-  .map(([path, raw]) => toPost(path, raw))
+const ALL: BlogPost[] = Object.entries(frontmatter)
+  .map(([path, meta]) => toPost(path, meta))
   .filter((p): p is BlogPost => p !== null);
 
 /** Pick the locale's version of each slug (fallback to the other language), pinned/newest first. */
@@ -140,4 +148,31 @@ export function latestPosts(locale: Locale, count: number): BlogPost[] {
 export function getPost(slug: string, locale: Locale): BlogPost | undefined {
   const candidates = ALL.filter((p) => p.slug === slug);
   return candidates.find((p) => p.lang === locale) ?? candidates[0];
+}
+
+/** The glob key of a post's file. */
+const sourceOf = (post: Pick<BlogPost, "slug" | "lang">) =>
+  `../../content/blog/${post.slug}.${post.lang}.md`;
+
+/** Bodies fetched so far, by file. A body never changes once loaded. */
+const bodies = new Map<string, string>();
+
+/** A post's Markdown body (the file without its frontmatter), fetched once and then kept. */
+export async function loadPostBody(post: Pick<BlogPost, "slug" | "lang">): Promise<string> {
+  const file = sourceOf(post);
+  const known = bodies.get(file);
+  if (known !== undefined) return known;
+  const load = sources[file];
+  if (!load) throw new Error(`No blog post file for ${post.slug} (${post.lang})`);
+  const body = parseFrontmatter(await load()).body;
+  bodies.set(file, body);
+  return body;
+}
+
+/**
+ * The body when `loadPostBody` has already fetched it, so a page can render the whole post in
+ * its first frame; undefined otherwise.
+ */
+export function loadedPostBody(post: Pick<BlogPost, "slug" | "lang">): string | undefined {
+  return bodies.get(sourceOf(post));
 }

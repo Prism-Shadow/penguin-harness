@@ -17,6 +17,17 @@
  * (`/server/<id>/api/…`) with an Agent list of their own — created and deleted there, never
  * here — and every other Agent request with the same one server's worth of state, the way the
  * gallery's demo does; one being brought back answers nothing, as a real one has nothing to answer.
+ * A machine lists its own Sessions to the sidebar ({@link FakeMachine.sessions}), and a test can
+ * take it out of reach or bring it back mid-test ({@link AgentServer.setReconnecting}; the page
+ * hears of it through `publishMachinesChanged`, as the server's event would tell it). It can be
+ * made slow — every answer held until released ({@link AgentServer.hold} with its id) — or have
+ * one read fail as an unreachable server does ({@link AgentServer.failNext}); one request, of
+ * any server, can be held on its own ({@link AgentServer.holdNext}), and what was answered so far
+ * reads back through {@link AgentServer.requests}. This server's own Agents can be deleted too.
+ *
+ * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
+ * answers them masked, and the state switch turns one on or off. This server answers which
+ * servers hold a bot (`accountHolders`), the way it would after asking its machines.
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
@@ -36,6 +47,9 @@ import type {
   AgentSummary,
   ChatDefaultsDto,
   MachineInfo,
+  MessagingAccountHoldersResponse,
+  MessagingChannel,
+  MessagingChannelState,
   PluginItem,
   AgentApiSettings,
   ModelsResponse,
@@ -43,6 +57,7 @@ import type {
   AgentConfigUpdateRequest,
   McpServerTestResponse,
   ScheduleItem,
+  SessionInfo,
   SessionsBatchRequest,
   WorkbenchInfo,
   WorkbenchVersion,
@@ -155,6 +170,8 @@ export interface FakeMachine {
   agents: string[];
   /** Its own plugin library (by default empty): what an Agent created there can start with. */
   library?: PluginItem[];
+  /** The Sessions it lists to the sidebar (by default none), per Agent as its batch read asks. */
+  sessions?: SessionInfo[];
 }
 
 export interface AgentServer {
@@ -181,9 +198,23 @@ export interface AgentServer {
   refuseNext(status: number, code: string, message?: string): void;
   /** Writes wait until {@link AgentServer.release} is called (to see a write in flight). */
   hold(): void;
+  /** Holds every answer of the machine until `release()`: a slow machine. */
+  hold(machineId: string): { release(): void };
   release(): void;
+  /** The next read matching `path` on that server (null: this one) answers 502 server_unreachable. */
+  failNext(machineId: string | null, path: RegExp): void;
+  /** Every request answered so far. */
+  requests(): ReadonlyArray<{ method: string; path: string; machine: string | null }>;
+  /** Holds the next request matching `path` on that server (null: this one) until `release()`. */
+  holdNext(machineId: string | null, path: RegExp): { release(): void };
+  /** The ids of this server's Agents now (a delete here removes one). */
+  localAgents(): string[];
   /** How the MCP connection test answers an entry (by default: connected, no tools). */
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
+  /** Takes a machine out of reach (being brought back), or brings it back. */
+  setReconnecting(machineId: string, reconnecting: boolean): void;
+  /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
+  messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
 }
 
 export function agentServer(
@@ -201,6 +232,10 @@ export function agentServer(
     schedules?: Array<{ machineId?: string; item: ScheduleItem }>;
     /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
     otherProject?: boolean;
+    /** Saved messaging bindings, per conversation, on a machine when one is named. */
+    messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
+    /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
+    accountHolders?: MessagingAccountHoldersResponse;
   } = {},
 ): AgentServer {
   /** Installed Skill names by `<machine or "">/<agent>`. */
@@ -237,8 +272,26 @@ export function agentServer(
     if (machine === null) schedules = next;
     else machineSchedules.set(machine, next);
   };
+  /** Bindings by `<machine or "">/<session>`: each server keeps its own conversations'. */
+  const messagingKey = (machineId: string | null, sessionId: string) =>
+    `${machineId ?? ""}/${sessionId}`;
+  const messaging = new Map<string, MessagingChannelState[]>(
+    (options.messaging ?? []).map((entry) => [
+      messagingKey(entry.machineId ?? null, entry.sessionId),
+      entry.bindings,
+    ]),
+  );
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
+  /** Per held machine, the answers waiting for its release. */
+  const machineHolds = new Map<string, Array<() => void>>();
+  /** Reads to fail once each, oldest first: the server they are on and the path they match. */
+  let failures: Array<{ machine: string | null; path: RegExp }> = [];
+  /** Requests to hold once each, oldest first, with the answers they wait for. */
+  let oneHolds: Array<{ machine: string | null; path: RegExp; waiting: Array<() => void> }> = [];
+  /** This server's Agents: the one the suites configure, unless a test deleted it. */
+  let localAgentIds = [AGENT_ID];
+  const answered: Array<{ method: string; path: string; machine: string | null }> = [];
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
     ok: true,
     tools: [],
@@ -281,6 +334,7 @@ export function agentServer(
       machineId: "local-machine",
       local: true,
       connection: null,
+      socket: null,
       api: null,
       status: null,
       root: "/data",
@@ -293,11 +347,13 @@ export function agentServer(
       machineId: m.machineId,
       local: false,
       connection: m.reconnecting === true ? null : { pid: 4242 },
+      socket: null,
       ...(m.reconnecting === true
         ? {
             reconnect: {
               since: "2026-10-15T00:00:00Z",
               attempts: 2,
+              maxAttempts: 8,
               nextAt: null,
               lastError: null,
               diagnosis: null,
@@ -335,6 +391,16 @@ export function agentServer(
     }
     if (request.path === "/api/plugins") {
       return json({ groups: [{ id: "all", title: "All", plugins: machine.library ?? [] }] });
+    }
+    if (request.path === SESSIONS_BATCH_PATH && request.method === "POST") {
+      const { requests } = request.body as SessionsBatchRequest;
+      return json({
+        results: requests.map((r) => ({
+          agentId: r.agentId,
+          ok: true,
+          sessions: (machine.sessions ?? []).filter((s) => s.agentId === r.agentId),
+        })),
+      });
     }
     if (request.path.startsWith(`${agentsPath}/`) && request.method === "DELETE") {
       const agentId = decodeURIComponent(request.path.slice(agentsPath.length + 1));
@@ -419,7 +485,12 @@ export function agentServer(
       return json({ agents: [] });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
-      return json({ agents: [{ ...summaryOf(AGENT_ID), name: stored.config.name }] });
+      return json({
+        agents: localAgentIds.map((id) => ({
+          ...summaryOf(id),
+          name: id === AGENT_ID ? stored.config.name : id,
+        })),
+      });
     }
     if (path === `/api/projects/${PROJECT_ID}/chat-defaults`)
       return json(options.chatDefaults ?? {});
@@ -427,6 +498,28 @@ export function agentServer(
       return json(options.models ?? { models: [], providers: {} });
     if (path === `/api/projects/${PROJECT_ID}/machines`) {
       return json({ machines: machinesList(), imageVersion: "0.2.16", job: null, jobs: [] });
+    }
+    if (path === `/api/projects/${PROJECT_ID}/messaging/account-holders` && method === "GET") {
+      return json(options.accountHolders ?? { holders: [], unreachable: [] });
+    }
+    const messagingPath = /^\/api\/sessions\/([^/]+)\/messaging(?:\/([^/]+)\/state)?$/.exec(path);
+    if (messagingPath !== null) {
+      const key = messagingKey(request.machine, decodeURIComponent(messagingPath[1]!));
+      const bindings = messaging.get(key) ?? [];
+      if (messagingPath[2] === undefined) return json({ bindings });
+      const channel = messagingPath[2] as MessagingChannel;
+      const entry = bindings.find((b) => b.binding.channel === channel);
+      if (entry === undefined || method !== "POST") return apiError(404, "not_found");
+      const { enabled } = request.body as { enabled: boolean };
+      const next: MessagingChannelState = {
+        binding: { ...entry.binding, enabled },
+        status: { state: enabled ? "connected" : "disconnected" },
+      };
+      messaging.set(
+        key,
+        bindings.map((b) => (b === entry ? next : b)),
+      );
+      return json(next);
     }
     if (/^\/api\/projects\/[^/]+\/agents\/[^/]+\/sessions$/.test(path) && method === "GET") {
       return json({ sessions: [] });
@@ -440,6 +533,12 @@ export function agentServer(
     if (method !== "GET") {
       const refusedWrite = refused();
       if (refusedWrite !== null) return refusedWrite;
+    }
+    const localAgent = /^\/api\/projects\/[^/]+\/agents\/([^/]+)$/.exec(path);
+    if (localAgent !== null && method === "DELETE" && request.machine === null) {
+      const agentId = decodeURIComponent(localAgent[1]!);
+      localAgentIds = localAgentIds.filter((id) => id !== agentId);
+      return new Response(null, { status: 204 });
     }
     if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
     if (path.startsWith(`${AGENT_PATH}/workbenches/`)) {
@@ -540,12 +639,52 @@ export function agentServer(
     return apiError(404, "not_found");
   };
 
+  /** The failure a read meets, if one was asked for its server and path (it answers one read only). */
+  const failed = (request: FetchRequest): Response | null => {
+    if (!isRead(request)) return null;
+    const match = failures.find((f) => f.machine === request.machine && f.path.test(request.path));
+    if (match === undefined) return null;
+    failures = failures.filter((f) => f !== match);
+    return apiError(
+      502,
+      "server_unreachable",
+      `${request.machine ?? "this server"} did not answer`,
+    );
+  };
+
   const fetch = stubFetch(async (request) => {
     if (held !== null && !isRead(request)) {
       await new Promise<void>((resolve) => held!.push(resolve));
     }
-    return answer(request);
+    const machineHold = request.machine === null ? undefined : machineHolds.get(request.machine);
+    if (machineHold !== undefined) await new Promise<void>((resolve) => machineHold.push(resolve));
+    const oneHold = oneHolds.find(
+      (h) => h.machine === request.machine && h.path.test(request.path),
+    );
+    if (oneHold !== undefined) {
+      oneHolds = oneHolds.filter((h) => h !== oneHold);
+      await new Promise<void>((resolve) => oneHold.waiting.push(resolve));
+    }
+    const response = failed(request) ?? answer(request);
+    answered.push({ method: request.method, path: request.path, machine: request.machine });
+    return response;
   });
+  function hold(): void;
+  function hold(machineId: string): { release(): void };
+  function hold(machineId?: string): { release(): void } | void {
+    if (machineId === undefined) {
+      held = [];
+      return;
+    }
+    const waiting = machineHolds.get(machineId) ?? [];
+    machineHolds.set(machineId, waiting);
+    return {
+      release: () => {
+        if (machineHolds.get(machineId) === waiting) machineHolds.delete(machineId);
+        for (const resume of waiting.splice(0)) resume();
+      },
+    };
+  }
   return {
     fetch,
     machineAgents: (machineId) => machines.find((m) => m.machineId === machineId)?.agents ?? [],
@@ -564,9 +703,22 @@ export function agentServer(
     refuseNext: (status, code, message = code) => {
       refusal = { status, code, message };
     },
-    hold: () => {
-      held = [];
+    hold,
+    failNext: (machine, path) => {
+      failures.push({ machine, path });
     },
+    requests: () => [...answered],
+    holdNext: (machine, path) => {
+      const entry = { machine, path, waiting: [] as Array<() => void> };
+      oneHolds.push(entry);
+      return {
+        release: () => {
+          oneHolds = oneHolds.filter((h) => h !== entry);
+          for (const resume of entry.waiting.splice(0)) resume();
+        },
+      };
+    },
+    localAgents: () => [...localAgentIds],
     release: () => {
       const waiting = held ?? [];
       held = null;
@@ -575,6 +727,11 @@ export function agentServer(
     answerMcpTest: (answer) => {
       mcpTest = answer;
     },
+    setReconnecting: (machineId, reconnecting) => {
+      const machine = machines.find((m) => m.machineId === machineId);
+      if (machine !== undefined) machine.reconnecting = reconnecting;
+    },
+    messagingOn: (machineId, sessionId) => messaging.get(messagingKey(machineId, sessionId)) ?? [],
   };
 }
 

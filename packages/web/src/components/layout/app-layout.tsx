@@ -309,19 +309,20 @@ export function AppLayout() {
   const { user, desktopMode, sessionVia } = useAuth();
   // The docks belong to the conversation they were arranged in, so switching Sessions
   // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
-  // a parked draft id) is a scope of its own, handed to the Session the first send
-  // creates; pages with no Session scope to a placeholder. Layout effect, not a plain
-  // one: it has to land before the chat page's docks paint, or the outgoing
-  // conversation's docks flash on the incoming one.
+  // a parked draft id), qualified by its Project like the browser's, is a scope of its own,
+  // handed to the Session the first send creates; pages with no Session scope to a
+  // placeholder. Layout effect, not a plain one: it has to land before the chat page's docks
+  // paint, or the outgoing conversation's docks flash on the incoming one.
   const dockScope = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   useLayoutEffect(() => {
     const projectId = currentProject?.projectId ?? null;
     const provisional = dockScope === "new" || dockScope?.startsWith("draft-");
+    const draftScope = `${projectId ?? "~none"}:${dockScope}`;
     const scope = provisional
-      ? `${projectId ?? "~none"}:${dockScope}`
+      ? draftScope
       : (dockScope ?? (projectId === null ? null : `~project:${projectId}`));
     dispatchBrowser({ type: "scope", scope, projectId });
-    setDockScope(dockScope);
+    setDockScope(provisional ? draftScope : dockScope);
   }, [dockScope, currentProject?.projectId]);
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.

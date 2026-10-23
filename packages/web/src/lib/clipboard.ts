@@ -14,6 +14,14 @@
  * with the page's selection and focused input handed back afterwards. The module stays so
  * callers never name the package or its options, and a later change of implementation
  * touches this file alone.
+ *
+ * Every write is plain text alone, on both paths. That is the reason for `format`: the copy
+ * command copies the hidden element as the browser copies any selection, adding a `text/html`
+ * flavour that carries the page's inherited ink and font — the dark theme's light text on a
+ * pasted page — unless its copy event is cancelled and handed the text, which `format` makes
+ * the library do. On the Clipboard API path it writes one ClipboardItem holding `text/plain`
+ * instead of `writeText`; where ClipboardItem does not exist the library falls through to the
+ * command, still plain text alone.
  */
 import copy from "copy-to-clipboard";
 
@@ -24,5 +32,5 @@ import copy from "copy-to-clipboard";
  * failed shows no check, not an unexpected dialog.
  */
 export function writeClipboard(text: string): Promise<boolean> {
-  return copy(text);
+  return copy(text, { format: "text/plain" });
 }

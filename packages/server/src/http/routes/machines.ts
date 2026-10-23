@@ -11,6 +11,10 @@
  * POST /:machineId/release      — drop it from this Project. The install stays.
  * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
  *                                 or 409 when a connect already runs.
+ * POST /:machineId/reconnect    — a person's Retry while the server brings a kept machine back:
+ *                                 the next attempt now, or a new streak after it stopped; 200
+ *                                 with the list, or 409 (`job_running`, `password_refused`,
+ *                                 `not_kept_connected`).
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
  * POST /add                     — put machines in this Project's list, installing nothing.
  * GET  /ssh-hosts               — every host in the ssh config, with its block's user, host, port.
@@ -52,14 +56,20 @@ import type {
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
+import { answerOf } from "../../socket/stream-answer.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { MachinesService } from "../../machines/service.js";
+import type { MachineEventHub } from "../../machines/event-hub.js";
+import { machineEventsStream } from "../../machines/aggregate-stream.js";
+import type { WatchedMachine } from "../../machines/aggregate-stream.js";
 import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MachinesRouteDeps {
   machines: MachinesService;
   access: Access;
+  /** The generation's event hub, which holds one `/api/events` subscription per machine (machines/event-hub.ts). */
+  events: MachineEventHub;
 }
 
 export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
@@ -86,6 +96,39 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       jobs: deps.machines.jobs(),
     };
   };
+
+  /**
+   * Every connected machine's own events, on ONE stream per tab — the aggregation the hub's
+   * one-subscription-per-machine makes possible (machines/event-hub.ts, and docs § "One event
+   * stream per machine"). Each event carries the machine it came from; `last-event-id` is
+   * answered from the aggregate's own bounded buffer. The stream opens at once and the machines
+   * attach as their targets resolve, so a slow machine cannot hold the tab's stream up; the
+   * machines are read again on each of the stream's beats, so one connected after the tab opened
+   * joins the stream the tab already holds (machines/aggregate-stream.ts).
+   */
+  app.get("/events", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    // The machines this Project holds a connection to: the tab watches these, and a machine it
+    // does not hold has no socket for the hub to subscribe over (its row says so already).
+    const watched = (): WatchedMachine[] =>
+      deps.machines.list(projectId).flatMap((machine) => {
+        const machineId = machine.machineId;
+        if (machine.local || machineId === null || machine.connection === null) return [];
+        // Also what the hub re-reads when it dials this machine again after a failed dial.
+        return [
+          { machineId, target: () => deps.machines.proxyTarget(machineId).catch(() => null) },
+        ];
+      });
+    return machineEventsStream(
+      deps.events,
+      watched,
+      c.req.header("Last-Event-ID") ?? null,
+      (line) => console.log(line),
+      // The socket transport's answer, when the socket carried this call
+      // (socket/stream-answer.ts): the events answer it directly.
+      { answer: answerOf(c.req.raw) },
+    );
+  });
 
   /**
    * Bring machines into use — the one verb a person needs. Each is queued for the whole
@@ -342,6 +385,37 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       throw new HttpError(409, "connect_refused", "That machine cannot be connected to.");
     }
     return c.json(state(c), 202);
+  });
+
+  // A person's Retry while the server brings a machine back: the next attempt now, or after the
+  // streak stopped a new one from the first attempt. Not a job — the list says how it goes.
+  app.post("/:machineId/reconnect", (c) => {
+    const answer = deps.machines.retryReconnect(c.req.param("machineId"));
+    if (!answer.ok) {
+      if (answer.why === "unknown-machine") {
+        throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+      }
+      if (answer.why === "busy") {
+        throw new HttpError(
+          409,
+          "job_running",
+          "A job is working on that machine; wait for it to finish.",
+        );
+      }
+      if (answer.why === "password") {
+        throw new HttpError(
+          409,
+          "password_refused",
+          "That machine refused the password saved for it. Save its password again in its SSH settings; that tries again.",
+        );
+      }
+      throw new HttpError(
+        409,
+        "not_kept_connected",
+        "This server does not keep that machine connected, so there is nothing to bring back. Start it instead.",
+      );
+    }
+    return c.json(state(c));
   });
 
   // Addressed by the machine's OWN id, like the proxy: this answers "what is on THAT

@@ -1,14 +1,16 @@
 /**
  * The dock system (features/dock) and the chat toolbar's two dock toggles: every side
- * element — subagents panel, Workspace files, Memory, Trace, terminals — is a tab in the
- * right or bottom dock.
+ * element — subagents panel, Workspace files, Memory, Trace, the command-line terminal — is a
+ * tab in the right or bottom dock.
  * - the toolbar has exactly two pull-open buttons; an opened dock with no tabs shows a
  *   picker (choose what to open here), and each dock's own "+" menu adds more tabs;
- * - Ctrl+` toggles the terminal tabs (front → hide → restore); the shell keeps running
+ * - Ctrl+` toggles the terminal panel (front → hide → restore); the shell keeps running
  *   while hidden and reattaches on reopen;
+ * - the terminal panel holds the conversation's shells as tabs of its own: its "+" starts
+ *   another and shows it, a shell tab's × asks and kills the shell, and killing the last one
+ *   closes the panel (and the dock with its last tab);
  * - tabs of different kinds mix in one strip with always-visible per-tab ×s: a panel
- *   tab's × closes the panel, a terminal tab's × kills the shell, the last tab closing
- *   puts the dock away;
+ *   tab's × closes the panel, the last tab closing puts the dock away;
  * - a whole dock moves to the other edge via its header button, a single tab via drag
  *   onto the drop targets;
  * - full screen is a dock at its largest below the toolbar (the right dock over its row, the
@@ -16,8 +18,10 @@
  *   drag past the max and left the same ways; a dock it covers coming on stage ends it;
  * - the arrangement is PER CONVERSATION (each one manages its own tabs, browser-window
  *   style) and survives a reload; the bottom dock's height ratio is a global preference;
+ * - a shell belongs to the conversation that opened it: another conversation's terminal panel
+ *   never lists it and starts a shell of its own, while the owner's panel lists its shell opened
+ *   elsewhere; a draft has no Session, so Ctrl+` starts nothing there;
  * - a new shell starts in the conversation's Workspace, not the home directory;
- * - "Detach" hands the terminal off to /terminal?id=… in a new window and its tab leaves;
  * - a failed shell create surfaces as an error toast instead of silence.
  */
 import { test, expect } from "@playwright/test";
@@ -64,11 +68,10 @@ async function createSession(request, projectId) {
 }
 
 /**
- * The dock adopts a live shell no conversation holds before creating one, so a leftover
- * shell from a previous test would leak into the next test's screen. Each test starts
- * from zero terminals; kill is async (SIGHUP → pty exit), so poll until none is alive.
- * The persisted arrangement is per-browser-context (fresh per test), so only the
- * server-side shells need cleaning.
+ * Each test starts from zero terminals, so the shell counts and seq numbers it reads are its
+ * own; kill is async (SIGHUP → pty exit), so poll until none is alive. The persisted
+ * arrangement is per-browser-context (fresh per test), so only the server-side shells need
+ * cleaning.
  */
 async function killAllTerminals(request) {
   const { terminals } = await (await request.get(`${BASE}/api/terminals`)).json();
@@ -98,9 +101,12 @@ async function openViaPicker(page, position, kind) {
   await page.getByTestId(`dock-pick-${kind}`).click();
 }
 
-/** A terminal tab's × asks first (an easy mis-click); confirm through the dialog. */
+/** The terminal panel's tabs, one per shell of the conversation (their data-tab-id is the shell's id). */
+const shellTabs = (page) => page.locator('[data-testid="terminal-tab"]');
+
+/** A shell tab's × asks first (an easy mis-click); confirm through the dialog. */
 async function killTabConfirmed(page, tabLocator) {
-  await tabLocator.getByTestId("dock-tab-close").click();
+  await tabLocator.getByTestId("terminal-tab-close").click();
   await page.getByRole("dialog").getByRole("button", { name: "关闭此终端" }).click();
 }
 
@@ -128,12 +134,19 @@ test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopenin
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
-  await configureProjectModel(page.request);
+  const projectId = await configureProjectModel(page.request);
   await killAllTerminals(page.request);
-  await page.goto(`${BASE}/chat`);
+  // A draft has no Session to own a shell: the shortcut is not taken there (the count of live
+  // shells below would read 2 if it had started one).
+  await page.goto(`${BASE}/chat/new`);
   await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
+  await expect(anyDock(page)).toHaveCount(0);
 
-  // Open with the keyboard, like Codex/VS Code. The docks render on the draft page too.
+  const sessionId = await createSession(page.request, projectId);
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  // Open with the keyboard, like Codex/VS Code.
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 10000 });
   await waitForShell(page, "DOCK_UP_1");
@@ -155,12 +168,9 @@ test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopenin
   await expect(dockAt(page, "bottom")).toBeVisible();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DOCK_KEEPS_RUNNING");
 
-  // A terminal tab's × (always visible) asks first — killing ends the shell for real —
-  // and confirming kills it; the last tab gone puts the dock away.
-  await killTabConfirmed(
-    page,
-    dockAt(page, "bottom").locator('[data-testid="dock-tab"][data-terminal-id]'),
-  );
+  // A shell tab's × (always visible) asks first — killing ends the shell for real — and
+  // confirming kills it; the last shell gone closes the panel, and the dock with its last tab.
+  await killTabConfirmed(page, shellTabs(page));
   await expect(anyDock(page)).toHaveCount(0);
   await expect
     .poll(
@@ -318,24 +328,23 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   const right = dockAt(page, "right");
   await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
 
-  // A shell into the SAME dock through its own "+" menu.
+  // The terminal panel into the SAME dock through its own "+" menu; it starts a shell itself.
   await right.getByTestId("dock-add").click();
   await page.getByTestId("dock-add-terminal").click();
-  await expect(
-    right.locator('[data-testid="dock-tab"][data-terminal-id][data-active="true"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(right.locator('[data-tab-id="terminal"][data-active="true"]')).toBeVisible({
+    timeout: 20000,
+  });
   await waitForShell(page, "MIXED_DOCK");
-  // The strip lists both kinds; the terminal label carries its stable `N:` seq prefix.
+  // The dock's strip lists both panels; the shell's own tab carries its stable `N:` seq prefix.
   await expect(right.locator('[data-testid="dock-tab"]')).toHaveCount(2);
-  await expect(right.locator('[data-testid="dock-tab"][data-terminal-id]').first()).toContainText(
-    /^\d+:/,
-  );
+  await expect(shellTabs(page)).toHaveCount(1);
+  await expect(shellTabs(page).first()).toContainText(/^\d+:/);
 
   // Tab click switches; the terminal's view survives being covered (still attached below).
   await right.locator('[data-tab-id="workspace"]').click();
   await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
-  await expect(right.getByText("根目录")).toBeVisible();
-  await right.locator('[data-testid="dock-tab"][data-terminal-id]').click();
+  await expect(right.getByRole("button", { name: "刷新" })).toBeVisible();
+  await right.locator('[data-tab-id="terminal"]').click();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("MIXED_DOCK");
 
   // A panel tab's × closes just the panel; the terminal tab remains, dock stays.
@@ -462,9 +471,7 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
   await waitForShell(page, "SCOPED_SHELL");
-  const shellId = await page
-    .locator('[data-testid="dock-tab"][data-terminal-id]')
-    .getAttribute("data-terminal-id");
+  const shellId = await shellTabs(page).getAttribute("data-tab-id");
 
   // B starts with no docks of its own — A's tabs (terminal included) never leak in.
   await page.goto(`${BASE}/chat/${sidB}`);
@@ -482,11 +489,81 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
   await page.getByPlaceholder(/输入消息/).waitFor();
   await expect(dockAt(page, "right").locator('[data-tab-id="workspace"]')).toBeVisible();
   await expect(
-    page.locator(`[data-testid="dock-tab"][data-terminal-id="${shellId}"][data-active="true"]`),
+    page.locator(`[data-testid="terminal-tab"][data-tab-id="${shellId}"][data-active="true"]`),
   ).toBeVisible();
   await waitForShell(page, "STILL_SAME_SHELL");
   await expect(page.locator('[data-tab-id="memory"]')).toHaveCount(0);
   await killAllTerminals(page.request);
+});
+
+test("a shell belongs to its conversation: another's panel never lists it, the owner's does", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const sidA = await createSession(page.request, projectId);
+  const sidB = await createSession(page.request, projectId);
+  // A's shell opened elsewhere (another device: nothing of it in this browser), and one no
+  // conversation opened (the API, the CLI). Neither is B's.
+  const opened = async (data) => {
+    const res = await page.request.post(`${BASE}/api/terminals`, { data });
+    expect(res.ok(), "create shell").toBeTruthy();
+    return (await res.json()).id;
+  };
+  const shellOfA = await opened({ cwd: "~", sessionId: sidA });
+  await opened({ cwd: "~" });
+
+  // B: its terminal panel lists neither, and starts a shell of B's own.
+  await page.goto(`${BASE}/chat/${sidB}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  await page.keyboard.press("Control+Backquote");
+  await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
+  const shellOfB = await shellTabs(page).getAttribute("data-tab-id");
+  expect(shellOfB).not.toBe(shellOfA);
+  const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
+  expect(terminals.find((t) => t.id === shellOfB)?.sessionId).toBe(sidB);
+
+  // A: its panel lists its shell from elsewhere, and only it — nothing new is started.
+  await page.goto(`${BASE}/chat/${sidA}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  await page.keyboard.press("Control+Backquote");
+  await expect(
+    page.locator(`[data-testid="terminal-tab"][data-tab-id="${shellOfA}"][data-active="true"]`),
+  ).toBeVisible({ timeout: 20000 });
+  await expect(shellTabs(page)).toHaveCount(1);
+  await waitForShell(page, "OWNED_SHELL");
+  const after = await (await page.request.get(`${BASE}/api/terminals`)).json();
+  expect(after.terminals.filter((t) => t.alive)).toHaveLength(3);
+  await killAllTerminals(page.request);
+});
+
+test("the terminal panel's + starts another shell and shows it; ending the last closes the panel", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const sessionId = await createSession(page.request, projectId);
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  await page.keyboard.press("Control+Backquote");
+  await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
+  await waitForShell(page, "FIRST_SHELL");
+
+  await page.getByTestId("terminal-new-tab").click();
+  await expect(shellTabs(page)).toHaveCount(2, { timeout: 20000 });
+  await expect(shellTabs(page).nth(1)).toHaveAttribute("data-active", "true");
+  await waitForShell(page, "SECOND_SHELL");
+  // The first one is still there: back to it, its screen comes back.
+  await shellTabs(page).first().locator('[role="tab"]').click();
+  await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("FIRST_SHELL");
+
+  // `exit` in one leaves the other; ending the last with its × closes the panel and the dock.
+  await runInTerminal(page, "exit");
+  await expect(shellTabs(page)).toHaveCount(1, { timeout: 40000 });
+  await killTabConfirmed(page, shellTabs(page));
+  await expect(anyDock(page)).toHaveCount(0);
 });
 
 test("a new shell starts in the conversation's Workspace, not at home", async ({ page }) => {
@@ -517,42 +594,6 @@ test("a new shell starts in the conversation's Workspace, not at home", async ({
   expect(terminals.filter((t) => t.alive).map((t) => t.cwd.split(/[/\\]/).pop())).toContain(
     dirName,
   );
-  await killAllTerminals(page.request);
-});
-
-test("Detach hands the terminal to /terminal?id=… and its tab leaves the strip", async ({
-  page,
-  context,
-}) => {
-  await provisionAndLogin(page.request, U, P);
-  const projectId = await configureProjectModel(page.request);
-  await killAllTerminals(page.request);
-  const sessionId = await createSession(page.request, projectId);
-  await page.goto(`${BASE}/chat/${sessionId}`);
-  await page.getByPlaceholder(/输入消息/).waitFor();
-
-  await page.keyboard.press("Control+Backquote");
-  await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
-  await waitForShell(page, "DETACH_ME");
-
-  const popupPromise = context.waitForEvent("page");
-  await dockAt(page, "bottom").getByTestId("dock-detach").click();
-  const popup = await popupPromise;
-  await popup.waitForURL(/\/terminal\?id=/);
-  // Same shell, same screen: the marker typed in the dock shows in the window.
-  await expect
-    .poll(() => popup.locator(".xterm-rows").innerText(), { timeout: 20000 })
-    .toContain("DETACH_ME");
-  // The dock let go: no terminal tab left (the dock hid with its last tab gone).
-  await expect(anyDock(page)).toHaveCount(0);
-  // Closing the window hands the shell BACK: its tab returns to the dock it left.
-  await popup.close();
-  await expect(
-    dockAt(page, "bottom").locator(
-      '[data-testid="dock-tab"][data-terminal-id][data-active="true"]',
-    ),
-  ).toBeVisible({ timeout: 10000 });
-  await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DETACH_ME");
   await killAllTerminals(page.request);
 });
 

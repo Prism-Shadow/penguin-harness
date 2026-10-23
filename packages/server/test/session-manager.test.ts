@@ -31,7 +31,7 @@
  *   environment and refuses new Tasks, and a run parked on an approval is denied, winds down,
  *   and is disposed only after it has, even once the database has closed under it.
  * - Idle entries are evicted (running ones, pending approvals, working subagents and a kept
- *   Session pin them); a preload loads without running, and leaves a Session with no Trace;
+ *   Session pin them); a preload loads without running, a Session with no Trace included;
  *   invalidating an Agent's or a Project's runtimes rebuilds them at next access, never
  *   mid-run, and publishes a discarded runtime's background count as cleared.
  *
@@ -229,7 +229,7 @@ describe("session-manager", () => {
     expect((err as { status: number }).status).toBe(404);
   });
 
-  it("startTask: publishes the input first; when driving ends it returns to idle and pushes task_state", async () => {
+  it("startTask: echoes the input ahead of the run's output; when driving ends it returns to idle and pushes task_state", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");
@@ -237,8 +237,11 @@ describe("session-manager", () => {
     expect(sessionId).toBe("session-1");
     await waitFor(() => manager.statusOf("session-1") === "idle" && recorded.length >= 3);
 
-    // The first entry is the input message (visible to other subscribers), followed by task_state: running.
-    const first = JSON.parse(events[0]!.data) as { payload: { text: string } };
+    // The first message on the stream is the input (visible to other subscribers): this run
+    // opens with no task_begin, so the echo goes out ahead of its first record.
+    const first = JSON.parse(events.find((e) => e.event === undefined)!.data) as {
+      payload: { text: string };
+    };
     expect(first.payload.text).toBe("hello");
     const states = serverEvents(events).filter((e) => e.type === "task_state");
     expect(states.map((s) => s.state)).toEqual(["running", "idle"]);
@@ -1337,10 +1340,7 @@ describe("session-manager", () => {
       },
     };
     const manager = makeManager(loader);
-    // No Trace yet: the load would be a self-heal rebuild under a new id, so preload leaves it.
-    await manager.preload("session-1");
-    expect(loads).toBe(0);
-    sessions.markHasTrace("session-1");
+    // No Trace yet, and loaded all the same: the rebuild keeps the Session's id.
     await manager.preload("session-1");
     expect(loads).toBe(1);
     // Only the load: no run started, nothing published.

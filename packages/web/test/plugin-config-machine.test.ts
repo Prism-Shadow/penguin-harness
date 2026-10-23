@@ -16,7 +16,7 @@ describe("plugin config endpoints", () => {
   it("goes to the picked machine, and stays here otherwise", async () => {
     vi.stubGlobal("WebSocket", undefined);
     const fetch = stubFetch(() => json({ plugins: [], ok: true, message: "" }));
-    await api.adminGetPluginConfig();
+    await api.adminGetPluginConfig(null);
     await api.adminGetPluginConfig(ID);
     await api.adminPutPluginConfig({ name: "sandbox", values: {} }, ID);
     await api.adminRunPluginConfigAction({ name: "sandbox", action: "setup" }, ID);

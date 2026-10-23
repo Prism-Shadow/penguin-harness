@@ -69,6 +69,7 @@ import type {
   MeResponse,
   LanguageIndexResponse,
   MessagesResponse,
+  MessagingAccountHoldersResponse,
   MessagingBindingsResponse,
   ModelBalanceResponse,
   ModelProtocolDetectResponse,
@@ -134,7 +135,7 @@ import type {
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 // The catalog decides which groups publish a balance, as it does on the server.
-import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
+import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 import type { UsageDay } from "./fixtures";
@@ -1277,6 +1278,11 @@ router
   .post("/api/sessions/:sessionId/messaging/wechat/scan/poll", () => readOnly("poll a WeChat scan"))
   .post("/api/sessions/:sessionId/messaging/wechat/scan/verify", () => empty())
   .post("/api/sessions/:sessionId/messaging/wechat/scan/cancel", () => empty());
+// Nothing in the demo holds a bot, and the demo's machines have nothing to be asked.
+router.get(
+  "/api/projects/:projectId/messaging/account-holders",
+  (): MessagingAccountHoldersResponse => ({ holders: [], unreachable: [] }),
+);
 
 // ---------------------------------------------------------------------------------------------
 // Messages, tasks, approvals, the run
@@ -1431,6 +1437,20 @@ router
 // ---------------------------------------------------------------------------------------------
 
 /** What the server derives from a Trace file, derived here from the transcript the same way. */
+/**
+ * A round's navigator label, as the server derives it: the first non-empty line of the text that
+ * started it, whitespace collapsed, at most 120 characters (the demo's prompts carry no markers).
+ */
+function promptLabel(text: string): string | undefined {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l !== "");
+  return line === undefined
+    ? undefined
+    : Array.from(line.replace(/\s+/g, " ")).slice(0, 120).join("");
+}
+
 function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
   const ms = (m: OmniMessage) => Date.parse(m.timestamp);
   const requests: TraceAnalysisResponse["requests"] = [];
@@ -1442,6 +1462,8 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
   let taskIndex = -1;
   let openRequest: (typeof requests)[number] | null = null;
   let previous: OmniMessage | null = null;
+  /** A `task_begin` waiting for the turn its input opens: it heads that turn's rows. */
+  let heldTaskBegin: number | null = null;
   const calls = new Map<string, { index: number; span: (typeof toolSpans)[number] }>();
   history.forEach((message, i) => {
     const p = payloadOf(message);
@@ -1450,18 +1472,32 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       previous = message;
       return;
     }
+    // Task records time nothing, as on the server: a task_begin heads the turn its input opens,
+    // a task_end closes the rows of the turn it ends.
+    if (p.type === "task_begin") {
+      heldTaskBegin ??= i;
+      return;
+    }
+    if (p.type === "task_end") {
+      const last = tasks[tasks.length - 1];
+      if (last) last.messageTo = i;
+      return;
+    }
     if (p.type === "text" && p.role === "user") {
       taskIndex += 1;
+      const prompt = promptLabel(p.text);
       tasks.push({
         taskIndex,
-        messageFrom: i,
+        messageFrom: heldTaskBegin ?? i,
         messageTo: i,
         startTs: "",
         endTs: message.timestamp,
         tokens: { cacheRead: 0, cacheWrite: 0, output: 0 },
         llmMs: 0,
         toolMs: 0,
+        ...(prompt !== undefined ? { prompt } : {}),
       });
+      heldTaskBegin = null;
     }
     const task = tasks[tasks.length - 1];
     if (task) {
@@ -1469,7 +1505,11 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       task.endTs = message.timestamp;
     }
     if (p.type === "request_begin") {
-      openRequest = { beginTs: message.timestamp, taskIndex: Math.max(taskIndex, 0) };
+      openRequest = {
+        beginTs: message.timestamp,
+        taskIndex: Math.max(taskIndex, 0),
+        ...(p.thinking_level !== undefined ? { thinkingLevel: p.thinking_level } : {}),
+      };
       requests.push(openRequest);
       if (task && task.startTs === "") task.startTs = message.timestamp;
     } else if (p.type === "request_end" && openRequest) {
@@ -2392,6 +2432,7 @@ router
       machineId: null,
       local: false,
       connection: null,
+      socket: null,
       api: null,
       status: null,
       root: `~/.penguin/data`,
@@ -2424,6 +2465,11 @@ router
     readOnly("install on a machine"),
   )
   .post("/api/projects/:projectId/machines/:machineId/connect", () => readOnly("connect a machine"))
+  // Nothing in the fixtures is being brought back: a Retry finds nothing to do, as the server
+  // answers for a machine that is up.
+  .post("/api/projects/:projectId/machines/:machineId/reconnect", ({ store }) =>
+    machinesResponse(store),
+  )
   .post("/api/projects/:projectId/machines/:machineId/restart", () => readOnly("restart a machine"))
   .post("/api/projects/:projectId/machines/:machineId/sync", () =>
     readOnly("sync a machine's config"),

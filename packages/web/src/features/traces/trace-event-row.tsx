@@ -12,6 +12,7 @@
  * aren't highlighted together).
  */
 import { Fragment, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Badge,
   Fold,
@@ -51,6 +52,9 @@ const TYPE_ICON: Record<string, string> = {
   token_usage: ICONS.barChart,
   request_begin: ICONS.arrowRightCentered,
   request_end: ICONS.arrowLeftCentered,
+  // A Task's pair: it starts, and it reached its end (however it ended — the records inside say).
+  task_begin: ICONS.play,
+  task_end: ICONS.target,
   approval_decision: ICONS.shieldCheck,
   compaction_begin: ICONS.compress,
   compaction_end: ICONS.compress,
@@ -100,6 +104,9 @@ export function summarizeEvent(msg: OmniMessage): string {
       const ses = p["session"] as { total?: number } | undefined;
       return `request.total=${req?.total ?? 0} session.total=${ses?.total ?? 0}`;
     }
+    case "request_begin":
+      // The level the request went out at; a Trace written before the field records none.
+      return typeof p["thinking_level"] === "string" ? `thinking_level=${p["thinking_level"]}` : "";
     case "request_end":
       return `status=${String(p["status"])}`;
     case "approval_decision":
@@ -409,12 +416,15 @@ export function EventRow({
   rowKey,
   matched,
   onHighlight,
+  mark,
 }: {
   msg: OmniMessage;
   /** This row's unique identifier (the scroll target for timeline jumps, and also the basis for "only one row lights up"). */
   rowKey: string;
   matched: boolean;
   onHighlight?: (h: { ts: string; rowKey: string } | null) => void;
+  /** A label the row's context gives it, after the type badges (a thinking-level change). */
+  mark?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const payloadType = (msg.payload as { type?: string }).type ?? msg.type;
@@ -438,6 +448,7 @@ export function EventRow({
         <TypeIcon type={payloadType} />
         <Badge {...typeBadge(msg.type)}>{payloadType}</Badge>
         {msg.origin && msg.origin.length > 0 && <Badge variant="solid">origin</Badge>}
+        {mark !== undefined && <span className="shrink-0">{mark}</span>}
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
           {summarizeEvent(msg)}
         </span>

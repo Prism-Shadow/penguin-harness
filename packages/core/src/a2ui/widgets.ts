@@ -1,8 +1,9 @@
 /**
  * Pure helpers the widget renderers share with the text fallback: reading a block's date-times,
- * formatting numbers, temperatures and times in the block's language, and resolving a metric's
- * defaults (kind, gauge, which way is worse, tone, the share a gauge draws). No DOM and no Node,
- * `Intl` only, so the browser, the CLI and the bundled checker print a reading the same way.
+ * formatting numbers, values with units, temperatures and times in the block's language, and
+ * resolving a metric's defaults (kind, gauge, which way is worse, tone, the share a gauge draws).
+ * No DOM and no Node, `Intl` only, so the browser, the CLI and the bundled checker print a
+ * reading the same way.
  */
 import type { A2uiLang, A2uiMetric, A2uiMetricKind, A2uiWeatherCondition } from "./types.js";
 
@@ -133,9 +134,27 @@ export function formatNumber(value: number, lang: A2uiLang, decimals?: number): 
 /** A unit that hugs the number: "37%", "21°C", "5′". */
 const TIGHT_UNIT = /^[%°′″]/;
 
-function appendUnit(text: string, unit: string | undefined): string {
+/**
+ * A figure (or a range of figures) followed by its unit: "37%", "21°C", "320 GB", "1–10 pods".
+ * The one spacing rule for every value A2UI prints — a chart's ticks, a metric, a form's fill
+ * text and its fallback — in both languages.
+ */
+export function appendUnit(text: string, unit: string | undefined): string {
   if (unit === undefined || unit === "") return text;
   return TIGHT_UNIT.test(unit) ? `${text}${unit}` : `${text} ${unit}`;
+}
+
+/**
+ * A number with its unit, the way every chart value and tick prints: "37%", "320 GB", "1,240";
+ * `decimals` as formatNumber takes it.
+ */
+export function formatValue(
+  value: number,
+  unit: string | undefined,
+  lang: A2uiLang,
+  decimals?: number,
+): string {
+  return appendUnit(formatNumber(value, lang, decimals), unit);
 }
 
 /** `prefix` + number + unit; no space before "%", "°", "′", "″", a space before any other unit. */

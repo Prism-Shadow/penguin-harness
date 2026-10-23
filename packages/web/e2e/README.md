@@ -26,10 +26,20 @@ run with the renderer CPU throttled and every API answer delayed from a fixed se
 anything of one Project shown under the other, on any request that pairs a Project with an Agent
 it does not have, and on any `agent_not_found` answer.
 
+PR CI also runs `dock.spec.mjs` and `terminal.spec.mjs`, the only browser tests that run a real
+shell through the server: each conversation keeps its own dock tabs (nothing of one shows in
+another), a new shell starts in the conversation's Workspace, a failed shell create surfaces as
+a toast and a later attempt recovers, and a shell keeps its screen across a reload.
+
 ```sh
-pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs
-SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs dock.spec.mjs terminal.spec.mjs
+SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs dock.spec.mjs terminal.spec.mjs
 ```
+
+`copy-style.spec.mjs` is run on demand, not in CI: copying selected text in the dark theme —
+⌘C on the conversation, its menu's Copy row, the Files panel's Markdown preview — writes the
+selection's text as `text/plain` alone, and a selection in the composer still copies the
+composer's own.
 
 Arguments are forwarded to Playwright, so a spec path or `--grep` selects a focused run.
 With no arguments the runner executes every browser spec. `SKIP_BUILD=1` requires a current
