@@ -39,6 +39,9 @@
  * - Empty or blank fidelity-only messages render nothing, live or rebuilt.
  * - A Task's stats row lists the memory files it changed (completed writes and edits under
  *   the memory root only).
+ * - The Trace's Task records (task_begin / task_end) render nothing and move no Task: history
+ *   with them rebuilds the items a history without them does, a Task stopped before any
+ *   request included.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -59,6 +62,8 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   thinkingMessage,
   tokenUsage,
   toolCall,
@@ -2907,5 +2912,53 @@ describe("task_stats memory changes", () => {
     expect(all).toHaveLength(3);
     expect(all[1]!.memoryChanges).toMatchObject([{ scope: "user", file: "y.md", op: "edit" }]);
     expect(all[2]!.memoryChanges).toBeUndefined(); // walk stops at the previous task_stats
+  });
+});
+
+describe("Task records", () => {
+  it("render nothing and move no Task: history with the pair rebuilds the items history without it does", () => {
+    const ts = (mmss: string) => `2026-07-20T10:${mmss}Z`;
+    const tasks: OmniMessage[][] = [
+      [
+        at(userText("q1"), ts("00:00.000")),
+        at(requestBegin(), ts("00:01.000")),
+        at(assistantText("a1"), ts("00:02.000")),
+        at(tokenUsage(counts(100), out(40)), ts("00:02.500")),
+        at(requestEnd("completed"), ts("00:03.000")),
+      ],
+      // Stopped before any request: its elapsed time runs to its last record, so the next
+      // Task's task_begin, minutes later, must not stretch it.
+      [at(userText("q2"), ts("01:00.000")), at(abortEvent(), ts("01:01.000"))],
+      [
+        at(userText("q3"), ts("05:00.000")),
+        at(requestBegin(), ts("05:01.000")),
+        at(assistantText("a3"), ts("05:02.000")),
+        at(tokenUsage(counts(200), out(40)), ts("05:02.500")),
+        at(requestEnd("completed"), ts("05:03.000")),
+      ],
+    ];
+    const ends = [ts("00:03.100"), ts("01:01.000"), ts("05:03.100")];
+    const NOW_MS = Date.parse(ts("06:00.000"));
+
+    const plain = createStreamModel();
+    pushMessages(plain, tasks.flat(), NOW_MS);
+    finalizeHistory(plain);
+    const paired = createStreamModel();
+    pushMessages(
+      paired,
+      tasks.flatMap((task, i) => [
+        at(taskBegin(), task[0]!.timestamp),
+        ...task,
+        at(taskEnd(), ends[i]!),
+      ]),
+      NOW_MS,
+    );
+    finalizeHistory(paired);
+
+    expect(items(paired)).toEqual(items(plain));
+    // The session's elapsed time is the same sum: 3s for the first Task, 1s for the stopped one,
+    // 3s for the last.
+    expect(paired.stats).toEqual(plain.stats);
+    expect(paired.stats.sessionElapsedMs).toBe(3000 + 1000 + 3000);
   });
 });

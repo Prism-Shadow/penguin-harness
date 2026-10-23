@@ -1,11 +1,14 @@
 /**
  * Trace file view (reworked):
- * grouped by **round (Task)** — a global summary at the top; below it, one
- * group per Task, with the card's top-right corner showing that round's stats
- * and a **context-usage donut ring** (upper bound = the session's context
- * window, default 128000; the three segments are cacheRead / cacheWrite /
- * output, showing both usage ratio and composition, with exact numbers on
- * hover), followed by that round's execution timeline and all of its messages.
+ * grouped by **round (Task)** — a global summary at the top, the round navigator under it (every
+ * round in one list, trace-round-nav.tsx), then one card per Task. A card's head is one line: the
+ * round's number, its compaction badge, and four readings — tool calls, cache hit rate, cost,
+ * duration (round-facts.tsx) — then a control back to the navigator. Opened, the card's first
+ * line holds the rest of its readings: input (with the cache hits), output, output TPS and a
+ * **context-usage donut ring** (upper bound = the session's context window, default 128000; the
+ * three segments are cacheRead / cacheWrite / output, showing both usage ratio and composition,
+ * with exact numbers on hover); then the round's execution timeline and all of its messages. A
+ * `request_begin` row where the thinking level changes wears the new level (trace-levels.ts).
  *
  * Loading is per round: opening a file reads only its analysis — every number on the panel and
  * every round's message index range — and the file's newest round is open, read and scrolled into view. The other
@@ -16,10 +19,9 @@
  * Token usage here is **broken down by category** rather than given as one
  * lump sum (a total alone doesn't show where the money went): this round's
  * input (with the portion that was a **cache hit** in parentheses, target
- * icon), this round's output, plus tool-call count / cost / duration / output
- * TPS. A round shows totals only; the global summary adds the file's hit rate
- * (cache hit ÷ input) and, behind a "?" beside each, the cost's priced parts
- * and the duration's API / tool components. The conversation page's stats
+ * icon), this round's output, plus tool-call count / hit rate / cost / duration / output
+ * TPS. A round shows totals only; the global summary adds, behind a "?" beside each, the
+ * cost's priced parts and the duration's API / tool components. The conversation page's stats
  * row only gives input/output totals — cache composition and this kind of
  * debugging detail belongs here. Every figure, cost included, is
  * the server's: the analysis prices each round with the cost center's rule,
@@ -48,7 +50,9 @@ import {
   Chevron,
   Fold,
   GlyphIcon,
+  ICONS,
   ICON_SIZE,
+  IconButton,
   Skeleton,
   StatChip,
   TokenDonut,
@@ -58,7 +62,6 @@ import { CostPartsRows, ElapsedSplitRows, StatHint } from "../../components/ui/s
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import {
-  cacheHitRate,
   computeTps,
   formatAverage,
   formatMoney,
@@ -85,6 +88,12 @@ import type { RoundRange, TraceEventsSignal } from "./trace-rounds";
 import { TimelineChart } from "./timeline-chart";
 import type { TraceHighlight } from "./timeline-chart";
 import { EventRow } from "./trace-event-row";
+import { LevelPill } from "./level-pill";
+import { RoundFacts, hitRateOf, inputOf, roundFactsOf } from "./round-facts";
+import type { Buckets } from "./round-facts";
+import { ROUND_NAV_MIN_ROUNDS, RoundNav } from "./trace-round-nav";
+import { thinkingLevelChanges } from "./trace-levels";
+import type { LevelChanges } from "./trace-levels";
 
 /**
  * Badge text for a round card, or null when the round is not a compaction turn.
@@ -102,15 +111,10 @@ export function compactionBadgeLabel(st: TraceTaskStats | undefined): string | n
 }
 
 /**
- * The three Token buckets (token_usage.request). No `total` field: usage is
- * always shown broken down, and the total = input (cacheRead + cacheWrite) +
- * output — there's no second convention.
+ * The three Token buckets (token_usage.request), zeroed. No `total` field: usage is always shown
+ * broken down, and the total = input (cacheRead + cacheWrite) + output — there's no second
+ * convention.
  */
-interface Buckets {
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-}
 const zeroBuckets = (): Buckets => ({ cacheRead: 0, cacheWrite: 0, output: 0 });
 
 /** A round's timeline as the analysis gives it: everything a card draws without reading events. */
@@ -186,12 +190,6 @@ function SummaryRow({ label, value, hint }: { label: string; value: string; hint
   );
 }
 
-/** This round's input = cache hit (cacheRead) + cache miss (cacheWrite). */
-const inputOf = (b: Buckets): number => b.cacheRead + b.cacheWrite;
-
-/** Cache hit rate of this round's input: the shared formula (lib/format.ts cacheHitRate, also used by the Cost center's bubble); input 0 → null (shown as `—`). */
-const hitRateOf = (b: Buckets): number | null => cacheHitRate(b.cacheRead, b.cacheWrite);
-
 /**
  * The size, ink and face a round's readings share, and no chip breaking over two lines. The chips
  * themselves are the package's `StatChip` (a glyph and a value in tabular figures, named by its
@@ -202,11 +200,9 @@ const CHIP_ROW_CLASS = "whitespace-nowrap font-mono text-xs text-gray-500 dark:t
 
 /**
  * This round's input chip: `↑ 84k (◎ 60k)` — the parenthesized number is the
- * portion that was a **cache hit** (target icon). The round's hit rate is not
- * on screen: a third number would blow out this row of chips, and a hover hint
- * on a reading whose text is fully visible never opens. "How much was hit"
- * gives a rough sense on its own, and the global summary's cache-hit row gives
- * the file's rate; the chip's `aria-label` still carries this round's.
+ * portion that was a **cache hit** (target icon). The round's hit rate is the
+ * head's own reading, so it is not repeated here; the chip's `aria-label`
+ * still carries it.
  */
 function InputChip({ buckets }: { buckets: Buckets }) {
   const input = inputOf(buckets);
@@ -233,6 +229,16 @@ function InputChip({ buckets }: { buckets: Buckets }) {
       </span>
     </span>
   );
+}
+
+/**
+ * Where focus lands once the next commit is drawn: a round's head after a jump from the navigator,
+ * the round's navigator row after "back". `seq` makes a second press for the same round land again.
+ */
+interface FocusTarget {
+  kind: "round" | "nav";
+  taskIndex: number;
+  seq: number;
 }
 
 /** A file's analysis and what it decided: the view's state per file, reset on a switch to another file. */
@@ -296,6 +302,20 @@ export function TraceFileView({
   const [error, setError] = useState<string | null>(null);
   /** Message row pinned highlighted after a bar-click jump; auto-clears when its timer fires (independent of hover highlighting, and can stack with it). */
   const [pinnedRow, setPinnedRow] = useState<string | null>(null);
+  /** The navigator's fold; open until the reader folds it. */
+  const [navOpen, setNavOpen] = useState(true);
+  /** The round the reader last jumped to or came back from: its navigator row is marked current. */
+  const [navCurrent, setNavCurrent] = useState<number | null>(null);
+  /** The navigator row holding the list's tab stop; null means the newest round's. */
+  const [navActive, setNavActive] = useState<number | null>(null);
+  const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
+  const focusSeq = useRef(0);
+  /** The last focus target landed on: a later commit does not land it again. */
+  const landedSeq = useRef(0);
+  /** A "back" is waiting for the navigator's rows, which a folded navigator mounts a commit late. */
+  const backPending = useRef(false);
+  /** Bumped when the rows mount while a "back" waits for them: it lands then. */
+  const [navRowsShown, setNavRowsShown] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -321,6 +341,9 @@ export function TraceFileView({
     setShownRounds(TRACE_ROUNDS_PAGE);
     setError(null);
     setPinnedRow(null);
+    setNavCurrent(null);
+    setNavActive(null);
+    setFocusTarget(null);
   }
 
   // Round reads belong to the file they were issued for: switching files (or unmounting)
@@ -404,6 +427,30 @@ export function TraceFileView({
     rootRef.current?.querySelector(`[data-round="${reveal}"]`)?.scrollIntoView({ block: "start" });
   }, [reveal]);
 
+  // A jump from the navigator brings the round's card to the top and focuses its toggle; "back"
+  // brings the navigator to the top and focuses that round's row. Instant, like the reveal: a
+  // smooth jump across hundreds of cards would sweep past all of them. The card is drawn and
+  // opened in the same commit as the request. A navigator the reader had folded mounts its rows
+  // a commit after it sees `open`; their mount re-runs this, and the pending target lands then.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (focusTarget === null || root === null || focusTarget.seq === landedSeq.current) return;
+    if (focusTarget.kind === "round") {
+      const card = root.querySelector(`[data-round="${focusTarget.taskIndex}"]`);
+      if (card === null) return;
+      card.scrollIntoView({ block: "start" });
+      card.querySelector<HTMLElement>('[data-slot="toggle"]')?.focus({ preventScroll: true });
+    } else {
+      const row = root.querySelector(`[data-nav-round="${focusTarget.taskIndex}"]`);
+      if (row === null) return;
+      root.querySelector('[data-slot="round-nav"]')?.scrollIntoView({ block: "start" });
+      row.scrollIntoView({ block: "nearest" });
+      row.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+    }
+    landedSeq.current = focusTarget.seq;
+    backPending.current = false;
+  }, [focusTarget, navRowsShown]);
+
   // The error takes the whole view only while there is nothing to take it from: this re-reads
   // on every settled turn now, so a blip mid-read would otherwise blank a file the user is in
   // the middle of. With a file already rendered the failure is a line above it.
@@ -425,6 +472,36 @@ export function TraceFileView({
       next.delete(ti);
       return next;
     });
+  };
+
+  /**
+   * A navigator row or the number box: draw the cards down to this round (they page from the
+   * newest end), open it, and land on its head.
+   */
+  const jumpToRound = (taskIndex: number) => {
+    const order = [...analysis.tasks].sort((a, b) => a.taskIndex - b.taskIndex);
+    const position = order.findIndex((t) => t.taskIndex === taskIndex);
+    if (position < 0) return;
+    setShownRounds((n) => Math.max(n, order.length - position));
+    setFile((prev) =>
+      prev.expanded.has(taskIndex)
+        ? prev
+        : { ...prev, expanded: new Set(prev.expanded).add(taskIndex) },
+    );
+    setNavCurrent(taskIndex);
+    setNavActive(taskIndex);
+    focusSeq.current += 1;
+    setFocusTarget({ kind: "round", taskIndex, seq: focusSeq.current });
+  };
+
+  /** A round head's "back": open the navigator and land on that round's row. */
+  const backToNav = (taskIndex: number) => {
+    setNavOpen(true);
+    setNavCurrent(taskIndex);
+    setNavActive(taskIndex);
+    focusSeq.current += 1;
+    backPending.current = true;
+    setFocusTarget({ kind: "nav", taskIndex, seq: focusSeq.current });
   };
 
   /** Click a bar: scroll to the corresponding message row and pin the highlight — the mouse moving away afterward shouldn't clear it, so this is stored separately from hover highlighting. */
@@ -457,6 +534,16 @@ export function TraceFileView({
       onToggle={toggle}
       onShowEarlier={() => setShownRounds((n) => n + TRACE_ROUNDS_PAGE)}
       onJump={jumpTo}
+      navOpen={navOpen}
+      navCurrent={navCurrent}
+      navActive={navActive}
+      onToggleNav={() => setNavOpen((v) => !v)}
+      onNavActive={setNavActive}
+      onNavRowsShown={() => {
+        if (backPending.current) setNavRowsShown((n) => n + 1);
+      }}
+      onJumpToRound={jumpToRound}
+      onBackToNav={backToNav}
     />
   );
 }
@@ -479,6 +566,14 @@ export function TraceFileBody({
   onToggle,
   onShowEarlier,
   onJump,
+  navOpen,
+  navCurrent,
+  navActive,
+  onToggleNav,
+  onNavActive,
+  onNavRowsShown,
+  onJumpToRound,
+  onBackToNav,
 }: {
   rootRef?: RefObject<HTMLDivElement | null>;
   analysis: TraceAnalysisResponse;
@@ -494,7 +589,22 @@ export function TraceFileBody({
   onHighlight: (h: TraceHighlight | null) => void;
   onToggle: (taskIndex: number) => void;
   onShowEarlier: () => void;
+  /** A timeline bar was clicked: scroll to its message row. */
   onJump: (ts: string) => void;
+  /** The navigator's fold. */
+  navOpen: boolean;
+  /** The round last jumped to or returned from, marked in the navigator. */
+  navCurrent: number | null;
+  /** The navigator row holding the list's tab stop (null: the newest round's). */
+  navActive: number | null;
+  onToggleNav: () => void;
+  onNavActive: (taskIndex: number) => void;
+  /** The navigator's rows mounted (it opened). */
+  onNavRowsShown?: () => void;
+  /** Draw, open and land on a round's card. */
+  onJumpToRound: (taskIndex: number) => void;
+  /** From a round's head back to its navigator row. */
+  onBackToNav: (taskIndex: number) => void;
 }) {
   // Cost is not priced here: the analysis carries each round's cost (and the file's), priced by
   // the server with the cost center's own rule — the Project's current rates for the file's
@@ -506,7 +616,7 @@ export function TraceFileBody({
   // off the file's head session_meta; an older server sends none, and the ring falls back to 128000.
   const contextMax = resolveContextWindow(analysis.modelContextWindow);
 
-  const { timelines, global, globalLlmMs } = useMemo(() => {
+  const { timelines, toolCallsByRound, global, globalLlmMs } = useMemo(() => {
     const g = { buckets: zeroBuckets(), toolCalls: analysis.toolSpans.length };
     const byTask = new Map<number, TaskTimeline>();
     const ensure = (ti: number): TaskTimeline => {
@@ -538,8 +648,15 @@ export function TraceFileBody({
       g.buckets.output += t.tokens.output;
     }
     const gLlm = analysis.tasks.reduce((s, t) => s + t.llmMs, 0);
-    return { timelines: byTask, global: g, globalLlmMs: gLlm };
+    const calls = new Map<number, number>();
+    for (const [ti, d] of byTask) calls.set(ti, d.spans.length);
+    return { timelines: byTask, toolCallsByRound: calls, global: g, globalLlmMs: gLlm };
   }, [analysis]);
+
+  // Where the thinking level changes: the request_begin rows and the navigator rows that say so.
+  const levelChanges = useMemo(() => thinkingLevelChanges(analysis.requests), [analysis]);
+  const allRounds = useMemo(() => visibleRounds(analysis.tasks, analysis.tasks.length), [analysis]);
+  const showNav = analysis.tasks.length >= ROUND_NAV_MIN_ROUNDS;
 
   const shown = useMemo(() => visibleRounds(analysis.tasks, shownRounds), [analysis, shownRounds]);
   const earlier = analysis.tasks.length - shown.length;
@@ -640,6 +757,24 @@ export function TraceFileBody({
         </div>
       </Card>
 
+      {/* Every round in one list, for a file long enough to need it. */}
+      {showNav && (
+        <RoundNav
+          tasks={allRounds}
+          toolCalls={toolCallsByRound}
+          levelChanges={levelChanges}
+          badgeOf={compactionBadgeLabel}
+          currency={currency}
+          open={navOpen}
+          current={navCurrent}
+          active={navActive}
+          onToggle={onToggleNav}
+          onActive={onNavActive}
+          onJump={onJumpToRound}
+          {...(onNavRowsShown !== undefined ? { onRowsShown: onNavRowsShown } : {})}
+        />
+      )}
+
       {/* The rounds before the drawn ones: each click draws the next page of them above. */}
       {earlier > 0 && (
         <button
@@ -656,14 +791,6 @@ export function TraceFileBody({
       {shown.map((st) => {
         const open = expanded.has(st.taskIndex);
         const timeline = timelines.get(st.taskIndex);
-        // A round's duration range always comes from the server (computed over
-        // the whole file; the start is that round's first request_begin). For a
-        // degenerate round with no Request, startTs is an empty string → the
-        // duration counts as 0.
-        const startMs = Date.parse(st.startTs);
-        const endMs = Date.parse(st.endTs);
-        const durationMs =
-          Number.isFinite(startMs) && Number.isFinite(endMs) ? Math.max(0, endMs - startMs) : 0;
         // This round's convention as computed by the server over the whole
         // file: ctx = context snapshot at the end of this round (last
         // non-compaction Request), tokens = this round's throughput (used
@@ -672,99 +799,106 @@ export function TraceFileBody({
         const tokens = st.tokens;
         const compactionBadge = compactionBadgeLabel(st);
         return (
-          // `data-round` is what a file's first open scrolls to; the margin keeps the card off
-          // the panel's top edge once it is there.
+          // `data-round` is what a file's first open and a navigator jump scroll to; the margin
+          // keeps the card off the panel's top edge once it is there.
           <Card key={st.taskIndex} padding="none" data-round={st.taskIndex} className="scroll-mt-3">
-            <button
-              type="button"
+            {/* One line, never wrapping: the toggle takes the room and its readings give way at
+                their tail; the control back to the navigator sits outside it, since a button
+                holds no other control. */}
+            <div
               data-slot="head"
-              onClick={() => onToggle(st.taskIndex)}
-              aria-expanded={open}
-              className="flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-control-hover dark:bg-gray-900"
+              className="flex items-center gap-1 bg-gray-50 pr-1.5 dark:bg-gray-900"
             >
-              <Chevron open={open} size={13} className="text-gray-400" />
-              <span className="shrink-0 text-sm font-semibold">
-                {S.traces.task(st.taskIndex + 1)}
-              </span>
-              {/* Compaction rounds are explicitly flagged: their Token /
-                  cost / duration / TPS count toward the global summary just
-                  like user rounds do, and this badge answers "this round isn't answering the
-                  user, it's housekeeping" — naming which housekeeping, since a discard round
-                  clears the context rather than compacting it. */}
-              {compactionBadge !== null && (
-                <span className="shrink-0">
-                  <Pill>{compactionBadge}</Pill>
-                </span>
-              )}
-              <span className="min-w-0 flex-1" />
-              {/* This round's stats, iconified in the top-right corner: totals only, each chip
-                  named by its label. No "?" here — the head is a button, which holds no
-                  control, and the breakdowns belong to the global summary's totals. */}
-              <div
-                className={`flex flex-wrap items-center justify-end gap-x-3 gap-y-1 ${CHIP_ROW_CLASS}`}
+              <button
+                type="button"
+                data-slot="toggle"
+                onClick={() => onToggle(st.taskIndex)}
+                aria-expanded={open}
+                className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-1 pl-3 text-left whitespace-nowrap transition-colors duration-150 hover:bg-control-hover"
               >
-                <StatChip
-                  glyph={STAT_ICONS.toolCalls}
-                  value={String(timeline?.spans.length ?? 0)}
-                  label={S.traces.toolCalls}
+                <Chevron open={open} size={13} className="text-gray-400" />
+                <span className="shrink-0 text-sm font-semibold">
+                  {S.traces.task(st.taskIndex + 1)}
+                </span>
+                {/* Compaction rounds are explicitly flagged: their Token /
+                    cost / duration / TPS count toward the global summary just
+                    like user rounds do, and this badge answers "this round isn't answering the
+                    user, it's housekeeping" — naming which housekeeping, since a discard round
+                    clears the context rather than compacting it. */}
+                {compactionBadge !== null && (
+                  <span className="shrink-0">
+                    <Pill>{compactionBadge}</Pill>
+                  </span>
+                )}
+                {/* The four readings: totals only, no "?" — the breakdowns belong to the global
+                    summary's totals. */}
+                <RoundFacts
+                  facts={roundFactsOf(st, timeline?.spans.length ?? 0)}
+                  currency={currency}
                 />
-                {/* Token usage broken down by category: this round's input
-                    (parenthesized portion is the cache hit) + this round's
-                    output. Uses the server's this-round throughput tokens (whole file, including compaction). */}
-                <InputChip buckets={tokens} />
-                <StatChip
-                  glyph={STAT_ICONS.output}
-                  value={humanizeTokens(tokens.output)}
-                  label={S.traces.taskOutput}
-                />
-                <StatChip
-                  glyph={STAT_ICONS.cost}
-                  value={formatMoney(st.cost ?? null, currency)}
-                  label={`${S.common.cost}（${currency}）`}
-                />
-                <StatChip
-                  glyph={STAT_ICONS.elapsed}
-                  value={humanizeDuration(durationMs)}
-                  label={S.chat.statElapsed}
-                />
-                <StatChip
-                  glyph={STAT_ICONS.tps}
-                  value={formatTps(computeTps(tokens.output, st.llmMs))}
-                  label={S.chat.statTps}
-                />
-              </div>
-              {/* Context-usage donut ring at the end of this round (upper
-                  bound = the session context window) + the three-segment
-                  composition, with exact numbers on hover (see TokenDonut's
-                  title). The exact figures are given by the chips on the
-                  left; the ring is only a peripheral hint of the usage
-                  ratio, hence its small size. It's fed the snapshot ctx
-                  rather than the accumulated tokens — the latter
-                  recounts the history each round carries forward, so a few
-                  rounds of tool calls alone could fill the ring. A pure compaction Task has no snapshot and draws no ring. */}
-              {ctx && (
-                <TokenDonut
-                  cacheRead={ctx.cacheRead}
-                  cacheWrite={ctx.cacheWrite}
-                  output={ctx.output}
-                  max={contextMax}
-                  size={22}
-                  labels={{
-                    usage: S.chat.contextUsage,
-                    cacheRead: S.usage.colCacheRead,
-                    cacheWrite: S.usage.colCacheWrite,
-                    output: S.usage.colOutput,
-                  }}
-                  format={humanizeTokens}
-                />
+              </button>
+              {showNav && (
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  label={S.traces.backToNav}
+                  onClick={() => onBackToNav(st.taskIndex)}
+                >
+                  <GlyphIcon d={ICONS.menu} size={ICON_SIZE.iconButton} />
+                </IconButton>
               )}
-            </button>
+            </div>
 
             {/* The round's body folds under the theme's layout motion, and is built only while
                 it shows: a round's timeline and its rows are the costly part of this page. */}
             <Fold open={open} data-slot="body" bodyClassName="space-y-3 p-3">
               {() => (
                 <>
+                  {/* The rest of the round's readings, off the head: the input broken down into
+                      its cache hits, the output, the output speed, and the context ring. */}
+                  <div
+                    data-slot="readings"
+                    className={`flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-muted pb-2 ${CHIP_ROW_CLASS}`}
+                  >
+                    {/* Uses the server's this-round throughput tokens (whole file, including compaction). */}
+                    <InputChip buckets={tokens} />
+                    <StatChip
+                      glyph={STAT_ICONS.output}
+                      value={humanizeTokens(tokens.output)}
+                      label={S.traces.taskOutput}
+                    />
+                    <StatChip
+                      glyph={STAT_ICONS.tps}
+                      value={formatTps(computeTps(tokens.output, st.llmMs))}
+                      label={S.chat.statTps}
+                    />
+                    {/* Context-usage donut ring at the end of this round (upper bound = the
+                        session context window) + the three-segment composition, with exact
+                        numbers on hover (see TokenDonut's title). Only a peripheral hint of the
+                        usage ratio, hence its small size. It's fed the snapshot ctx rather than
+                        the accumulated tokens — the latter recounts the history each round carries
+                        forward, so a few rounds of tool calls alone could fill the ring. A pure
+                        compaction Task has no snapshot and draws no ring. */}
+                    {ctx && (
+                      <span className="ml-auto flex">
+                        <TokenDonut
+                          cacheRead={ctx.cacheRead}
+                          cacheWrite={ctx.cacheWrite}
+                          output={ctx.output}
+                          max={contextMax}
+                          size={22}
+                          labels={{
+                            usage: S.chat.contextUsage,
+                            cacheRead: S.usage.colCacheRead,
+                            cacheWrite: S.usage.colCacheWrite,
+                            output: S.usage.colOutput,
+                          }}
+                          format={humanizeTokens}
+                        />
+                      </span>
+                    )}
+                  </div>
+
                   {/* This round's timeline: drawn from the analysis, so it is there before the messages are read. */}
                   {timeline !== undefined &&
                     (timeline.segments.length > 0 ||
@@ -790,6 +924,7 @@ export function TraceFileBody({
                   <RoundMessages
                     round={st}
                     entry={rounds.get(st.taskIndex)}
+                    levelChanges={levelChanges}
                     hoveredRow={hoveredRow}
                     pinnedRow={pinnedRow}
                     onHighlight={onHighlight}
@@ -812,12 +947,15 @@ export function TraceFileBody({
 function RoundMessages({
   round,
   entry,
+  levelChanges,
   hoveredRow,
   pinnedRow,
   onHighlight,
 }: {
   round: TraceTaskStats;
   entry: RoundEntry | undefined;
+  /** A `request_begin` row at a change point wears the new level. */
+  levelChanges: LevelChanges;
   hoveredRow: string | null;
   pinnedRow: string | null;
   onHighlight: (h: TraceHighlight | null) => void;
@@ -848,6 +986,10 @@ function RoundMessages({
         <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800/60 dark:border-gray-800">
           {entry.rows.map((msg, i) => {
             const rk = rowKeyOf(round.taskIndex, i);
+            const change =
+              (msg.payload as { type?: string }).type === "request_begin"
+                ? levelChanges.byBeginTs.get(msg.timestamp)
+                : undefined;
             return (
               <EventRow
                 key={i}
@@ -855,6 +997,7 @@ function RoundMessages({
                 rowKey={rk}
                 matched={rk === hoveredRow || rk === pinnedRow}
                 onHighlight={(h) => onHighlight(h)}
+                mark={change !== undefined ? <LevelPill change={change} /> : undefined}
               />
             );
           })}

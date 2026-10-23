@@ -11,7 +11,7 @@
  */
 import type { GoalServerEvent } from "@prismshadow/penguin-server/api";
 import { IDS } from "./ids";
-import type { Lang, OmniMessage, PayloadOf, ToolCallMessage } from "./types";
+import type { Lang, OmniMessage, PayloadOf, ThinkingLevel, ToolCallMessage } from "./types";
 
 // ---------------------------------------------------------------------------------------------
 // Builders
@@ -101,7 +101,14 @@ export const toolOutput = (ms: number, id: string, output: string): OmniMessage 
     stop_reason: "completed",
   });
 
-export const requestBegin = (ms: number): OmniMessage => event(ms, { type: "request_begin" });
+/** A Task's start and end: the pair the Session writes around each Task (none around a switch). */
+export const taskBegin = (ms: number): OmniMessage => event(ms, { type: "task_begin" });
+
+export const taskEnd = (ms: number): OmniMessage => event(ms, { type: "task_end" });
+
+/** A request's start, at the thinking level it went out at when the transcript says one. */
+export const requestBegin = (ms: number, level?: ThinkingLevel): OmniMessage =>
+  event(ms, { type: "request_begin", ...(level !== undefined ? { thinking_level: level } : {}) });
 
 export const requestEnd = (ms: number): OmniMessage =>
   event(ms, { type: "request_end", status: "completed" });
@@ -202,6 +209,15 @@ The hooks question now ranks the right file first:
 rank("How do I configure hooks?", index)[0].source;
 // => "corpus/claude-code-docs/hooks.md"
 \`\`\`
+
+Retrieval on the test questions, before and after:
+
+| Question | Top result | Before | After | Score | Recall@5 | What changed |
+| --- | --- | --- | --- | --- | --- | --- |
+| How do I configure hooks? | \`corpus/claude-code-docs/hooks.md\` | 7 | 1 | 0.92 | 100% | The file is indexed now, so it outranks the settings page that only mentions hooks |
+| Which events can a hook block? | \`corpus/claude-code-docs/hooks.md\` | — | 1 | 0.88 | 100% | Answered from the events table instead of the overview |
+| Where do MCP servers go? | \`corpus/claude-code-docs/mcp.md\` | 1 | 1 | 0.95 | 100% | Unchanged |
+| How are slash commands named? | \`corpus/claude-code-docs/slash-commands.md\` | 2 | 2 | 0.71 | 80% | Unchanged; the CLI reference still ranks first |
 
 Nothing else in the corpus changed, so the index rebuild took 12.4 ms [1].
 
@@ -335,6 +351,15 @@ To change what comes first, tune \`k1\` and \`b\` in \`src/rag.ts\`; the guard s
 rank("如何配置 hooks？", index)[0].source;
 // => "corpus/claude-code-docs/hooks.md"
 \`\`\`
+
+测试问题上的检索结果，改动前后对比：
+
+| 问题 | 首位结果 | 改动前 | 改动后 | 得分 | Recall@5 | 变化 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 如何配置 hooks？ | \`corpus/claude-code-docs/hooks.md\` | 7 | 1 | 0.92 | 100% | 文件已进入索引，排在只提到 hooks 的设置页之前 |
+| hook 能拦截哪些事件？ | \`corpus/claude-code-docs/hooks.md\` | — | 1 | 0.88 | 100% | 改由事件表作答，不再引用概览页 |
+| MCP 服务器配置在哪里？ | \`corpus/claude-code-docs/mcp.md\` | 1 | 1 | 0.95 | 100% | 无变化 |
+| 斜杠命令如何命名？ | \`corpus/claude-code-docs/slash-commands.md\` | 2 | 2 | 0.71 | 80% | 无变化；CLI 参考仍排第一 |
 
 语料库里其他文件没有变化，索引重建用时 12.4 ms [1]。
 
@@ -488,12 +513,14 @@ export function doneTranscript(lang: Lang, now: number, ref: ModelRef): Transcri
     history: [
       meta(s(0), IDS.sessions.done, ref, IDS.workspace),
       userText(s(0), c.prompt),
-      requestBegin(s(0.4)),
+      // The finished Task ran at medium; the scripted reply a sent message plays goes out at
+      // high, so the Trace tab marks where the level changed.
+      requestBegin(s(0.4), "medium"),
       thinking(s(6), c.thinking),
       toolCall(s(7), "call_read_rag", "read_file", { path: "src/rag.ts" }),
       requestEnd(s(7.1)),
       toolOutput(s(7.5), "call_read_rag", RAG_EXCERPT),
-      requestBegin(s(7.8)),
+      requestBegin(s(7.8), "medium"),
       toolCall(s(14), "call_edit_rag", "edit_file", {
         path: "src/rag.ts",
         old_string: RAG_OLD,
@@ -501,14 +528,14 @@ export function doneTranscript(lang: Lang, now: number, ref: ModelRef): Transcri
       }),
       requestEnd(s(14.1)),
       toolOutput(s(14.6), "call_edit_rag", "Edited src/rag.ts (+3 -1)."),
-      requestBegin(s(15)),
+      requestBegin(s(15), "medium"),
       toolCall(s(18), "call_test", "exec_command", {
         cmd: "pnpm vitest run test/rag.test.ts",
         description: lang === "zh" ? "运行检索测试" : "Run the retrieval tests",
       }),
       requestEnd(s(18.1)),
       toolOutput(s(20.2), "call_test", TEST_OUTPUT),
-      requestBegin(s(20.5)),
+      requestBegin(s(20.5), "medium"),
       assistantText(s(31), c.answer),
       tokenUsage(s(31.2), 43_800, 12_400),
       requestEnd(s(31.2)),
@@ -655,7 +682,7 @@ export function scriptedReply(lang: Lang, callId: string): ScriptStep[] {
   const push = (msg: OmniMessage) => steps.push({ at, msg });
   const p = (ms: number, payload: Parameters<typeof partial>[1]) => partial(ms, payload);
 
-  push(requestBegin(0));
+  push(requestBegin(0, "high"));
   at += 300;
   push(p(0, { type: "partial_thinking", role: "assistant", event_type: "start", thinking: "" }));
   for (const chunk of chunks(c.thinking)) {
@@ -707,7 +734,7 @@ export function scriptedReply(lang: Lang, callId: string): ScriptStep[] {
   at += 1400;
   push(toolOutput(0, callId, RAG_EXCERPT));
   at += 300;
-  push(requestBegin(0));
+  push(requestBegin(0, "high"));
 
   at += 500;
   push(p(0, { type: "partial_text", role: "assistant", event_type: "start", text: "" }));

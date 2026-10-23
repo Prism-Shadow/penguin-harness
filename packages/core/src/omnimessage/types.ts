@@ -18,10 +18,15 @@
  * lives in `session_meta`; a context's boundaries in the compaction pair and the file split)
  * and that readers cannot derive it. The PR description says why the existing records could
  * not carry it. The rule itself is stated in the architecture spec's message-format section.
+ * Two stated exceptions, both asked for by the owner: `request_begin.thinking_level` (each
+ * request's effective level — `session_meta` deliberately omits the level and it can change
+ * mid-context, so no existing record carries it), and the `task_begin` / `task_end` pair
+ * (where a Task starts and whether it reached its end — see TaskBeginPayload).
  *
  * Docs: packages/docs/content/omni-message.{zh,en}.md (site path /docs/omni-message) documents
  * this protocol payload-for-payload — keep the page in sync when changing types here.
  */
+import type { ThinkingLevelName } from "../interfaces/shared.js";
 
 /** The outer message category. */
 export type OmniMessageType = "session_meta" | "model_msg" | "event_msg";
@@ -120,7 +125,7 @@ export interface ToolDefinition {
  * and the model its context actually ran with; the context's toolset follows as the
  * `tool_list_ready` record. Everything that shapes the request prefix — model, prompt,
  * toolset — holds from a context's open to its close; the thinking level is not part of it (a
- * per-request parameter, deliberately not recorded — see the note in the body).
+ * per-request parameter, recorded on each `request_begin` instead — see the note in the body).
  */
 export interface SessionMetaPayload {
   session_id: string;
@@ -134,7 +139,8 @@ export interface SessionMetaPayload {
   system_prompt: string;
   // The thinking level is deliberately NOT here: it is a per-request parameter (the Session
   // pin, else the Agent config default read at context open), not part of the recorded
-  // prefix. Legacy Traces may carry a `thinking_level` field; it is displayed, never read.
+  // prefix; each request's effective level is on its `request_begin`. Legacy Traces may carry
+  // a `thinking_level` field here; it is displayed, never read.
   // The tool definitions were embedded here (`tools`) before the tool_list_ready split (see
   // ToolListReadyPayload): the toolset is only known after MCP servers connect, and meta
   // must not wait for that. Pre-split Traces still carry the field on disk; it is
@@ -391,6 +397,39 @@ export interface TokenUsagePayload {
 }
 
 /**
+ * Task boundary event: the start of one Task, produced **in pairs** with `task_end` by the
+ * Session (never the engine), streamed and written to Trace. One pair brackets one Task: one
+ * Prompt's run plus the `hook` records of the stop-hook consultation that follows it; a Task a
+ * stop hook's `continue` drives (a goal round) gets a pair of its own. A manual compaction and a
+ * model switch are not Tasks and get no pair — the compaction pair and the new file's
+ * `session_meta` already bound them.
+ *
+ * Placement: `task_begin` precedes every record of its Task, its input included (the Session's
+ * first file still opens with `session_meta`). Task records are appended to the current file and
+ * never open a new one: after a completed compaction they land behind its `compaction_end` in
+ * the old file, so a reader that asks "was this file closed by a compaction?" skips them (see
+ * task-records.ts). A Task may span files: a compaction inside it puts its `task_end` in the
+ * later file.
+ *
+ * The payload is the type alone: how the Task ended is read from the records inside the pair
+ * (`abort`, a terminal `request_end` / `compaction_end`, a `fatal` final assistant text) and who
+ * started it from its input (`sender`, origin blocks). A Task that ends by throwing (a host
+ * failure that left none of those records) writes no `task_end`: an unclosed `task_begin` is
+ * "did not reach its end" — a process exit reads the same. The stated exception to the
+ * closed-vocabulary rule above (owner decision 2026-10-22): before this pair no record said where
+ * a Task starts or whether it finished, and every reader derived it from user Prompts. Traces
+ * written before the pair carry none, and readers keep that derivation for them.
+ */
+export interface TaskBeginPayload {
+  type: "task_begin";
+}
+
+/** Task boundary event: the end of the Task the preceding `task_begin` opened (see TaskBeginPayload). */
+export interface TaskEndPayload {
+  type: "task_end";
+}
+
+/**
  * Request boundary event: the boundary of one LLM Request, produced **in pairs** by
  * `context_engine` and written to Trace. `request_end`
  * with `status` of `completed` means the turn has been committed by MMSP — this is the
@@ -400,6 +439,14 @@ export interface TokenUsagePayload {
  */
 export interface RequestBeginPayload {
   type: "request_begin";
+  /**
+   * The effective thinking level this request went out at: the Session's pin, else the level
+   * the context opened with — the same value the engine handed the LLM. Absent when no level
+   * was sent (the provider default applies), and on Traces written before the field; readers
+   * treat absent as unknown. Observation only: replay never reads it. The stated exception to
+   * the closed-vocabulary rule above.
+   */
+  thinking_level?: ThinkingLevelName;
 }
 
 /**
@@ -610,6 +657,8 @@ export type ModelPayload = CompleteModelPayload | PartialModelPayload;
 export type EventPayload =
   | ApprovalDecisionPayload
   | AbortPayload
+  | TaskBeginPayload
+  | TaskEndPayload
   | RequestBeginPayload
   | RequestEndPayload
   | TokenUsagePayload

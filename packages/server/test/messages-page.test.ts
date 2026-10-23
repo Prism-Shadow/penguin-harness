@@ -19,6 +19,11 @@
  *   would pass it, and the cut page equals a unit-count cut at the same place (cursor,
  *   prior stats, messages) — even when the whole history is within the unit count.
  * - Given units carrying screenshots, an image counts as its reference URL, not its bytes.
+ *
+ * Task records (task_begin / task_end):
+ * - Given the same Tasks with and without the pair, the windows hold the same prompts and carry
+ *   the same prior figures — a Task stopped before any request included, whose elapsed time must
+ *   not stretch to the next Task's task_begin.
  */
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -33,6 +38,8 @@ import {
   approvalDecision,
   sessionMeta,
   subagentEvent,
+  taskBegin,
+  taskEnd,
   tokenUsage,
   toolCall,
   toolCallOutput,
@@ -513,6 +520,46 @@ describe("messages windowed reads", () => {
     expect(tail.prior.sessionTokens).toBe(2000); // last session.total before the window
     expect(tail.prior.contextTokens).toBe(102); // last request.total before the window (turn(…, 2) writes 100+2)
     expect(tail.prior.subagentTokens).toBe(0);
+  });
+
+  it("Task records change no window: the same Tasks page with the same prompts and prior figures with or without them", async () => {
+    const PAIRED = "session-2026-07-20-10-00-00-aabb0009";
+    const tasks: OmniMessage[][] = [
+      turn(0, 1, 1000),
+      // Stopped before any request: its elapsed time runs to its last record (1s), so the next
+      // Task's task_begin, minutes later, must not stretch it.
+      [
+        at("2026-07-20T10:01:00.000Z", userText("q2")),
+        at("2026-07-20T10:01:01.000Z", abortEvent()),
+      ],
+      turn(5, 3, 3000),
+    ];
+    const ends = [
+      "2026-07-20T10:00:03.600Z",
+      "2026-07-20T10:01:01.000Z",
+      "2026-07-20T10:05:03.600Z",
+    ];
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...tasks.flat(),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-20", PAIRED, 1, [
+      sessionMeta(metaPayload({ session_id: PAIRED })),
+      ...tasks.flatMap((task, i) => [
+        at(task[0]!.timestamp, taskBegin()),
+        ...task,
+        at(ends[i]!, taskEnd()),
+      ]),
+    ]);
+
+    for (const limit of [1, 2]) {
+      const plain = await service.readMessagesPage(P, A, S, { kind: "tail", limit });
+      const paired = await service.readMessagesPage(P, A, PAIRED, { kind: "tail", limit });
+      expect(userTexts(paired.messages)).toEqual(userTexts(plain.messages));
+      expect(paired.prior).toEqual(plain.prior);
+    }
+    const tail = await service.readMessagesPage(P, A, PAIRED, { kind: "tail", limit: 1 });
+    expect(tail.prior.elapsedMs).toBe(3000 + 1000);
   });
 
   it("subagent pointers expand only inside the window; earlier children feed prior.subagentTokens without appearing", async () => {

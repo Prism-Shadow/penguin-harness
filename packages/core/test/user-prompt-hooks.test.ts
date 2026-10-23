@@ -256,13 +256,15 @@ describe("Session user-prompt hooks", () => {
     const out = await collect(session.run([userText(prompt)]));
 
     // The Prompt itself is never yielded; what the hooks made of it is, ahead of the reply.
-    expect(out.map(shape).slice(0, 3)).toEqual([
+    expect(out.map(shape).slice(0, 4)).toEqual([
+      "task_begin",
       "harness:ctx A",
       "hook:user_prompt:b-broken",
       "harness:ctx E",
     ]);
-    expect(trace.written.map(shape).slice(0, 5)).toEqual([
+    expect(trace.written.map(shape).slice(0, 6)).toEqual([
       "session_meta",
+      "task_begin",
       `user:${prompt}`,
       "harness:ctx A",
       "hook:user_prompt:b-broken",
@@ -341,9 +343,14 @@ describe("Session user-prompt hooks", () => {
 
     expect(hook.seen).toHaveLength(1);
     expect(llm.calls.map(textsOf)).toEqual([["start", "tick"], ["again"]]);
-    // The continuation is the one input a `continue` event announces.
+    // The continuation is the one input a `continue` event announces: the first Task closes
+    // and the continued one opens on it.
     const announced = out.findIndex(isHookContinue);
-    expect(shape(out[announced + 1]!)).toBe("harness:again");
+    expect(out.slice(announced + 1, announced + 4).map(shape)).toEqual([
+      "task_end",
+      "task_begin",
+      "harness:again",
+    ]);
   });
 
   it("consults none for a retry: a run with no input resends the failed turn's input alone", async () => {

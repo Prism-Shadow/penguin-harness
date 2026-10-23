@@ -20,6 +20,7 @@ import { parse as parseToml } from "smol-toml";
 import { DEFAULT_PROJECT_ID, projectConfigPath } from "@prismshadow/penguin-core";
 import { registerConfigCommand } from "../src/commands/config.js";
 import { getMessages } from "../src/i18n.js";
+import { seedProject } from "./seeded-project.js";
 
 let tmpHome: string;
 let tmpRoot: string;
@@ -29,6 +30,8 @@ beforeEach(async () => {
   prevHome = process.env.PENGUIN_HOME;
   tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-home-"));
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-root-"));
+  // A Project as the server seeds one: core's own default carries no models.
+  await seedProject(tmpRoot);
   process.env.PENGUIN_HOME = tmpHome;
 });
 
@@ -262,6 +265,7 @@ describe("penguin config model add without --model-id: the group's connection", 
   });
 
   it("refuses the flags that describe one model, and writes nothing", async () => {
+    const seeded = await fs.readFile(configFile(), "utf8");
     const rowOnly = [
       ["--context-window", "32768"],
       ["--max-tokens", "8000"],
@@ -286,10 +290,11 @@ describe("penguin config model add without --model-id: the group's connection", 
         "describe one model: add --model-id <upstream id>, or drop them to set the tokendance group's connection.",
       );
     }
-    await expect(fs.access(configFile())).rejects.toThrow();
+    expect(await fs.readFile(configFile(), "utf8")).toBe(seeded);
   });
 
   it("refuses an ambiguous or empty request before anything is written", async () => {
+    const seeded = await fs.readFile(configFile(), "utf8");
     const refusals = [
       ["--api-key", "td-group-key-aaaa", "--clear-api-key"],
       ["--api-key", " "],
@@ -304,16 +309,17 @@ describe("penguin config model add without --model-id: the group's connection", 
     const badName = await run(["add", "--provider", "My Lab", "--base-url", "http://x/v1"]);
     expect(badName.code).toBe(1);
     expect(badName.err).toContain("My Lab");
-    await expect(fs.access(configFile())).rejects.toThrow();
+    expect(await fs.readFile(configFile(), "utf8")).toBe(seeded);
   });
 
   it("refuses a group base URL that is not an absolute http(s) URL, and writes nothing", async () => {
+    const seeded = await fs.readFile(configFile(), "utf8");
     for (const baseUrl of ["not-a-url", "127.0.0.1:11434/v1", "ftp://lab.example/v1"]) {
       const refused = await run(["add", "--provider", "my-lab", "--base-url", baseUrl]);
       expect(refused.code, baseUrl).toBe(1);
       expect(refused.err, baseUrl).toContain(`Invalid --base-url "${baseUrl}"`);
     }
-    await expect(fs.access(configFile())).rejects.toThrow();
+    expect(await fs.readFile(configFile(), "utf8")).toBe(seeded);
   });
 });
 

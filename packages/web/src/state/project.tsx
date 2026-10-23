@@ -68,6 +68,7 @@ interface ProjectStoreState {
 
   /** The last Agent list applied, tagged with the Project it was listed for; null before any. */
   agents: Scoped<AgentSummary[]> | null;
+  /** No list of the current Project has been applied yet, and one is being read. */
   agentsLoading: boolean;
   currentAgentId: string | null;
 
@@ -142,9 +143,12 @@ function createProjectStore() {
       // Project with Agents it does not have.
       const applies = () =>
         ask === agentsAsked && isCurrentProject(projectId, get().currentProjectId);
-      set({ agentsLoading: true });
+      // Loading means no list of this Project yet. A reload (after a delete, a create, a kernel
+      // update, a finished turn) keeps the list it has on screen until the new one lands: raising
+      // the flag would swap every page that waits on it for its skeleton and back.
+      if (scopedValue(get().agents, projectId) === null) set({ agentsLoading: true });
       try {
-        const res = await api.listAgents(projectId);
+        const res = await api.listAgents(projectId, null);
         if (!applies()) return;
         const wanted = get().currentAgentId ?? localStorage.getItem(agentKey(projectId));
         set({

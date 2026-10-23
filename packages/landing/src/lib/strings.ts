@@ -47,7 +47,8 @@ export const zh = {
     positioning: "统一、稳定的 Agent 自进化框架",
     /** The badge on the positioning line's top-right corner. */
     badge: "免费开源",
-    automation: "全自动优化模型 × Agent Harness",
+    /** A no-break space before each dot keeps it at the end of its line when a phone wraps. */
+    automation: "全自动优化：任意模型\u00a0· 任意算法\u00a0· 任意 Benchmark",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
@@ -419,6 +420,11 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     notFound: "文章不存在",
     backHome: "返回首页",
     toc: "目录",
+    /** The heading over a post's numbered citations. */
+    references: "参考资料",
+    /** A citation's back-link, for screen readers: the k-th place in the text that cites source n. */
+    backToRef: (n: number, k: number) =>
+      k > 1 ? `返回正文中引用 ${n} 的第 ${k} 处` : `返回正文中的引用 ${n}`,
   },
 };
 

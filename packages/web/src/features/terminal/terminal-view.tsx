@@ -57,6 +57,12 @@ export interface TerminalInfo {
   alive: boolean;
   /** Last OSC window title the shell set (debounced server-side), if any. */
   title?: string | null;
+  /**
+   * The conversation (Session) the shell belongs to; null for one no conversation opened (the
+   * API, the CLI, the /terminal page). Absent when the server that answered predates the field
+   * — a machine on an older build — which says nothing about the owner either way.
+   */
+  sessionId?: string | null;
 }
 
 export type TerminalStatus = "connecting" | "ready" | "exited" | "error";

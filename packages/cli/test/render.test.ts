@@ -13,6 +13,8 @@ import {
   toolCallOutput,
   tokenUsage,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   userText,
   partialText,
   partialThinking,
@@ -126,6 +128,20 @@ describe("StreamRenderer", () => {
     r.handle(partialThinking("stop"));
     r.handle(thinkingMessage("thinking")); // must not be re-rendered
     expect(stripAnsi(text())).toBe("thinking\n");
+  });
+
+  it("prints nothing for a Task's task_begin / task_end, live or from history", () => {
+    const live = collector();
+    const r = new StreamRenderer(live.stream, t);
+    r.handle(taskBegin());
+    r.handle(partialText("start", "Hi"));
+    r.handle(partialText("stop", "", "completed"));
+    r.handle(assistantText("Hi"));
+    r.handle(taskEnd());
+    expect(stripAnsi(live.text())).toBe("Hi\n");
+    const history = collector();
+    renderHistory([taskBegin(), assistantText("Hi"), taskEnd()], history.stream, t);
+    expect(stripAnsi(history.text())).toBe("Hi\n");
   });
 
   it("does not render a complete tool_call without partials", () => {

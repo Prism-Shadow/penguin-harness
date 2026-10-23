@@ -406,13 +406,15 @@ describe("in-session model switch", () => {
     expect(llmB.calls).toHaveLength(1);
     expect(llmB.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT, "task two"]);
     const fresh = await readTrace(h.trace.currentPath());
-    expect(payloadTypes(fresh).slice(0, 4)).toEqual([
+    // The switch wrote the summary with the file's head; the next Task opens behind it.
+    expect(payloadTypes(fresh).slice(0, 5)).toEqual([
       "session_meta",
       "tool_list_ready",
       "text",
+      "task_begin",
       "text",
     ]);
-    expect(textOf(fresh[3]!)).toBe("task two");
+    expect(textOf(fresh[4]!)).toBe("task two");
     expect(fresh.filter((m) => m.type === "model_msg" && textOf(m) === SUMMARY_TEXT)).toHaveLength(
       1,
     );
@@ -545,7 +547,13 @@ describe("in-session model switch", () => {
     // carry-over is not written to it — carry-over may hold synthetic messages, which are never
     // persisted — so a resume of that file has nothing pending (the documented gap: the user
     // re-sends the message).
-    expect(payloadTypes(await readTrace(oldPath))).toEqual(["session_meta", "text", "abort"]);
+    expect(payloadTypes(await readTrace(oldPath))).toEqual([
+      "session_meta",
+      "task_begin",
+      "text",
+      "abort",
+      "task_end",
+    ]);
     const opened = await readTrace(h.trace.currentPath());
     expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready"]);
     expect(modelOf(opened[0]!)).toEqual(MODEL_B);
@@ -580,12 +588,15 @@ describe("in-session model switch", () => {
     controller.abort();
     await collect(h.session.run([userText("task two")], { signal: controller.signal }));
     const openPath = h.trace.currentPath();
+    // The run's task_begin stayed behind the compaction in the closed file; its input opened
+    // this one.
     expect(payloadTypes(await readTrace(openPath))).toEqual([
       "session_meta",
       "tool_list_ready",
       "text",
       "text",
       "abort",
+      "task_end",
     ]);
     expect(h.session.compactability()).toBe("just_compacted");
 
@@ -607,6 +618,7 @@ describe("in-session model switch", () => {
       "text",
       "text",
       "abort",
+      "task_end",
     ]);
     expect(textOf(left[2]!)).toBe(SUMMARY_TEXT);
     const opened = await readTrace(h.trace.currentPath());
@@ -683,10 +695,11 @@ describe("in-session model switch", () => {
     // Live, the summary is sent once; on disk it is written once — the run does not re-write it.
     expect(llmC.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT, "task two"]);
     const latest = await readTrace(h.trace.currentPath());
-    expect(payloadTypes(latest).slice(0, 4)).toEqual([
+    expect(payloadTypes(latest).slice(0, 5)).toEqual([
       "session_meta",
       "tool_list_ready",
       "text",
+      "task_begin",
       "text",
     ]);
     // Any later restart replays C's history from this file, the summary at its head.
@@ -1298,10 +1311,11 @@ describe("in-session model switch", () => {
     // own and no other.
     await collect(h.session.run([userText("task two")], { approve: allowAll }));
     const opened = await readTrace(h.trace.currentPath());
-    expect(payloadTypes(opened).slice(0, 5)).toEqual([
+    expect(payloadTypes(opened).slice(0, 6)).toEqual([
       "session_meta",
       "tool_list_ready",
       "text",
+      "task_begin",
       "text",
       "request_begin",
     ]);

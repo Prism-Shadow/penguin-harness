@@ -1,37 +1,80 @@
 /**
- * The Agents of each machine, as the Agents page and the plugin market list them.
+ * The Agents of each machine, as the Agents page, the plugin market and the session list read them.
  *
  * A machine's Agents are that machine's own (lib/agent-location.ts): each machine contributes its
  * own list, kept apart from this server's and from every other machine's, even where ids repeat.
  * The machines are the Project's installed ones, read from the one live account of the machines
  * (state/machines.tsx), so a list follows a machine the moment the Machines page sees it change.
  *
- * A connected machine is asked, and its answer is remembered (lib/machine-cache.ts) — the same
- * account the composer offers a remote draft. A machine that is not connected, or that failed to
- * answer, contributes what it was last seen holding, marked as not live and with the reason in
- * the words the composer uses: a list that silently dropped a machine's Agents would read as
- * Agents lost rather than as a machine out of reach.
+ * Every machine's list lives in ONE read store (lib/read-store.ts, `agentLists`), keyed by the
+ * Project and the machine, and remembered across reloads (lib/machine-cache.ts): every reader of
+ * a machine shares one request, and a page comes back to the list it last showed rather than to a
+ * placeholder. A connected machine is asked when a page mounts (unless it answered moments ago),
+ * when it connects, and after a write there; nothing polls. A machine that is not connected, or
+ * that failed to answer, contributes what it was last seen holding, marked as not live and with
+ * the reason in the words the composer uses: a list that silently dropped a machine's Agents
+ * would read as Agents lost rather than as a machine out of reach.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AgentSummary, MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
-import { apiErrorText } from "./api-error";
 import { cachedMachineAgents, rememberMachineAgents } from "./machine-cache";
 import { machineLink, remoteAgentsEmpty } from "./machine-link";
 import type { MachineLink } from "./machine-link";
-import { scoped, scopedValue } from "./project-scope";
-import type { Scoped } from "./project-scope";
+import { createReadStore, readKey, useRead, useReads } from "./read-store";
+import type { ReadState, ReadStorage, ReadStore } from "./read-store";
 import { useMachines } from "../state/machines";
 import { useProject } from "../state/project";
+
+/** The Project and machine each list key is about, as {@link agentListKey} made it. */
+const keyOwners = new Map<string, { projectId: string; machineId: string }>();
+
+/** The key of one machine's Agent list in a Project. */
+function agentListKey(projectId: string, machineId: string): string {
+  const key = readKey(projectId, machineId, "agents");
+  if (!keyOwners.has(key)) keyOwners.set(key, { projectId, machineId });
+  return key;
+}
+
+/** The lists' storage: what each machine was last seen running (lib/machine-cache.ts). */
+const listStorage: ReadStorage<AgentSummary[]> = {
+  load: (key) => {
+    const owner = keyOwners.get(key);
+    if (owner === undefined) return null;
+    const remembered = cachedMachineAgents(owner.projectId, owner.machineId);
+    // An empty list is never written down (it clears the entry): nothing remembered.
+    return remembered.length === 0 ? null : remembered;
+  },
+  save: (key, agents) => {
+    const owner = keyOwners.get(key);
+    if (owner !== undefined) rememberMachineAgents(owner.projectId, owner.machineId, agents);
+  },
+  clear: (key) => {
+    const owner = keyOwners.get(key);
+    if (owner !== undefined) rememberMachineAgents(owner.projectId, owner.machineId, []);
+  },
+};
+
+/** Every machine's Agent list, per Project — this server's stays in state/project.tsx. */
+export const agentLists: ReadStore<AgentSummary[]> = createReadStore({ storage: listStorage });
+
+/** Asks the machine for its Agents. */
+const fetchMachineAgents = (projectId: string, machineId: string) =>
+  api.listAgents(projectId, machineId).then((res) => res.agents);
 
 const changeListeners = new Set<(machineId: string) => void>();
 
 /**
  * A machine's Agents changed under the page — one was created or deleted there, or a plugin
- * install moved its counts: every reader of that machine's list asks it again, the session list
- * included (it lists a Session of a machine's Agent only while that machine names the Agent).
+ * install moved its counts: its list is marked stale in every Project it was read for, so every
+ * reader of it asks again — one request between them — the session list included (it lists a
+ * Session of a machine's Agent only while that machine names the Agent).
  */
 export function publishMachineAgentsChanged(machineId: string): void {
+  // A copy: an invalidation tells readers at once, and one may name a key of its own meanwhile.
+  for (const [key, owner] of [...keyOwners]) {
+    if (owner.machineId === machineId) agentLists.invalidate(key);
+  }
   for (const listener of [...changeListeners]) listener(machineId);
 }
 
@@ -96,12 +139,20 @@ export function useMachineInfo(machineId: string | null): AgentMachineInfo | nul
 /** One machine's Agents, as a page shows them. */
 export interface MachineAgents {
   machine: AgentMachineInfo;
-  /** What the machine answered now (`live`), or what it was last seen holding. */
+  /** What the machine last answered, in this page load or before it; empty when nothing is known. */
   agents: AgentSummary[];
-  /** The machine answered this list just now: its Agents can be acted on. */
+  /**
+   * The machine is connected and answered in this page load, and its last read did not fail: its
+   * Agents can be acted on. Survives navigation — a page left and re-entered is live at once.
+   */
   live: boolean;
-  /** Why the list is not live, in words; null when it is, and while its first answer is awaited. */
+  /**
+   * Not live: the link's reason (remoteAgentsEmpty), or the machine's own failure once connected;
+   * null while a connected machine's first answer is awaited.
+   */
   reason: string | null;
+  /** The list is from storage only: the machine has not answered in this page load. */
+  lastKnown: boolean;
 }
 
 /** One Agent of a mixed list: where it lives (null: this server), and its summary. */
@@ -142,8 +193,53 @@ export function mixAgents(
   );
 }
 
-/** A machine's answer: its Agents, or the failure in words. */
-type Answer = { agents: AgentSummary[] } | { error: string };
+const NO_AGENTS: AgentSummary[] = [];
+const NO_LISTS: MachineAgents[] = [];
+
+/**
+ * `next`, keeping each element of `prev` that `same` finds equal to its counterpart — and `prev`
+ * itself when every element is kept — so an unchanged machine keeps its object across ticks.
+ */
+function keepSame<T>(prev: readonly T[], next: T[], same: (a: T, b: T) => boolean): T[] {
+  const kept = next.map((item) => prev.find((old) => same(old, item)) ?? item);
+  return kept.length === prev.length && kept.every((item, i) => item === prev[i])
+    ? (prev as T[])
+    : kept;
+}
+
+const sameMachine = (a: AgentMachineInfo, b: AgentMachineInfo) =>
+  a.machineId === b.machineId && a.label === b.label && a.link === b.link && a.port === b.port;
+
+const sameList = (a: MachineAgents, b: MachineAgents) =>
+  a.machine === b.machine &&
+  a.agents === b.agents &&
+  a.live === b.live &&
+  a.reason === b.reason &&
+  a.lastKnown === b.lastKnown;
+
+/** One machine's list as a page shows it, from its read state. */
+function listOf(
+  machine: AgentMachineInfo,
+  state: ReadState<AgentSummary[]> | undefined,
+): MachineAgents {
+  const connected = machine.link === "connected";
+  const failure = state?.error ?? null;
+  const live = connected && state?.fresh === true && failure === null;
+  return {
+    machine,
+    agents: state?.value ?? NO_AGENTS,
+    live,
+    reason: live
+      ? null
+      : connected
+        ? // Connected and not answered yet is a wait, not a reason.
+          failure === null
+          ? null
+          : remoteAgentsEmpty("connected", failure)
+        : remoteAgentsEmpty(machine.link, null),
+    lastKnown: state?.value != null && !state.fresh,
+  };
+}
 
 /**
  * Every machine's Agents for `projectId` (empty for a user with no machines to read), and a way
@@ -158,75 +254,57 @@ export function useMachineAgents(projectId: string | null): {
   reload: (machineId?: string) => void;
 } {
   const machines = useMachines();
-  const infos = useMemo(
-    () => agentMachines(machines.state, machines.settled),
-    [machines.state, machines.settled],
+  /** The machines as last handed out: one whose facts did not change keeps its object. */
+  const lastInfos = useRef<AgentMachineInfo[]>([]);
+  const infos = keepSame(
+    lastInfos.current,
+    agentMachines(machines.state, machines.settled),
+    sameMachine,
   );
-  /** The connected machines, as a string: an unchanged set keeps the effect below still. */
+  lastInfos.current = infos;
+
+  const states = useReads(
+    agentLists,
+    projectId === null
+      ? []
+      : infos.map((machine) => ({
+          key: agentListKey(projectId, machine.machineId),
+          run: () => fetchMachineAgents(projectId, machine.machineId),
+          // Nothing can be asked of a machine that is not connected: its list stands as last seen.
+          enabled: machine.link === "connected",
+        })),
+  );
+
+  /** The lists as last handed out, for the same reason as the machines. */
+  const lastLists = useRef<MachineAgents[]>(NO_LISTS);
+  const lists = useMemo(() => {
+    const next =
+      projectId === null ? NO_LISTS : infos.map((machine, i) => listOf(machine, states[i]));
+    lastLists.current = keepSame(lastLists.current, next, sameList);
+    return lastLists.current;
+  }, [projectId, infos, states]);
+
+  // A machine that left the Project's list takes what was read of it along: nothing will read
+  // it again, and a machine added back later starts from its own answer.
+  const listed = machines.state === null ? null : infos.map((m) => m.machineId).join(",");
+  const lastListed = useRef<{ projectId: string; ids: string[] } | null>(null);
+  useEffect(() => {
+    if (projectId === null || listed === null) return;
+    const ids = listed === "" ? [] : listed.split(",");
+    const before = lastListed.current;
+    if (before !== null && before.projectId === projectId) {
+      for (const gone of before.ids.filter((id) => !ids.includes(id))) {
+        for (const key of agentLists.keys(readKey(projectId, gone))) agentLists.forget(key);
+      }
+    }
+    lastListed.current = { projectId, ids };
+  }, [projectId, listed]);
+
+  /** The connected machines, as a string: an unchanged set keeps `reload` still. */
   const connectedKey = infos
     .filter((m) => m.link === "connected")
     .map((m) => m.machineId)
     .join(",");
-  /**
-   * The machines' answers, tagged with the Project they were read for (lib/project-scope.ts):
-   * the reset below lags a Project switch by one commit, and in that commit the previous
-   * Project's answers are not this one's.
-   */
-  const [answers, setAnswers] = useState<Scoped<ReadonlyMap<string, Answer>> | null>(null);
-  /** The Project the page is on now: an answer about another is dropped. */
-  const currentProject = useRef(projectId);
-  currentProject.current = projectId;
-  /** Per machine, the read whose answer counts: a later read of that machine outdates it. */
-  const generation = useRef(new Map<string, number>());
-
-  const read = useCallback((askProject: string, machineId: string) => {
-    const gen = (generation.current.get(machineId) ?? 0) + 1;
-    generation.current.set(machineId, gen);
-    const current = () =>
-      currentProject.current === askProject && generation.current.get(machineId) === gen;
-    /** The Project's answers so far, with this machine's set to `answer`. */
-    const withAnswer = (
-      prev: Scoped<ReadonlyMap<string, Answer>> | null,
-      answer: Answer,
-    ): Scoped<ReadonlyMap<string, Answer>> =>
-      scoped(askProject, new Map(scopedValue(prev, askProject)).set(machineId, answer));
-    api.listAgents(askProject, machineId).then(
-      (res) => {
-        if (!current()) return;
-        rememberMachineAgents(askProject, machineId, res.agents);
-        setAnswers((prev) => withAnswer(prev, { agents: res.agents }));
-      },
-      (err: unknown) => {
-        if (!current()) return;
-        setAnswers((prev) => withAnswer(prev, { error: apiErrorText(err) }));
-      },
-    );
-  }, []);
-
-  useEffect(() => {
-    setAnswers(null);
-  }, [projectId]);
-
-  /** The connected machines as last rendered, for a change heard between renders. */
-  const connected = useRef(connectedKey);
-  connected.current = connectedKey;
-  useEffect(
-    () =>
-      subscribeMachineAgentsChanged((machineId) => {
-        const askProject = currentProject.current;
-        if (askProject !== null && connected.current.split(",").includes(machineId)) {
-          read(askProject, machineId);
-        }
-      }),
-    [read],
-  );
-
-  // Every connected machine, read when the set changes (a machine came back, the Project moved).
-  useEffect(() => {
-    if (projectId === null || connectedKey === "") return;
-    for (const machineId of connectedKey.split(",")) read(projectId, machineId);
-  }, [projectId, connectedKey, read]);
-
   const reload = useCallback(
     (machineId?: string) => {
       const targets =
@@ -236,29 +314,35 @@ export function useMachineAgents(projectId: string | null): {
     [connectedKey],
   );
 
-  const lists = useMemo(() => {
-    if (projectId === null) return [];
-    const answered = scopedValue(answers, projectId);
-    return infos.map((machine): MachineAgents => {
-      const answer = machine.link === "connected" ? answered?.get(machine.machineId) : undefined;
-      if (answer !== undefined && "agents" in answer) {
-        return { machine, agents: answer.agents, live: true, reason: null };
-      }
-      const failure = answer !== undefined && "error" in answer ? answer.error : null;
-      return {
-        machine,
-        agents: cachedMachineAgents(projectId, machine.machineId),
-        live: false,
-        // Connected and not answered yet is a wait, not a reason.
-        reason:
-          machine.link === "connected" && failure === null
-            ? null
-            : remoteAgentsEmpty(machine.link, failure),
-      };
-    });
-  }, [projectId, infos, answers]);
-
   return { lists, reload };
+}
+
+/**
+ * The store's read for callers outside React (the sessions store): dedupes with the pages' reads,
+ * remembers the answer. A list the machine answered in this page load, with no write or absence
+ * since, is answered from the store; otherwise the machine is asked, joining a read already in
+ * flight. A failed read rejects with the failure in words.
+ */
+export async function readMachineAgents(
+  projectId: string,
+  machineId: string,
+): Promise<AgentSummary[]> {
+  const key = agentListKey(projectId, machineId);
+  const known = agentLists.get(key);
+  if (!known.fresh || known.stale || known.reading || known.error !== null) {
+    await agentLists.read(key, () => fetchMachineAgents(projectId, machineId));
+  }
+  const state = agentLists.get(key);
+  if (state.error !== null) throw new Error(state.error);
+  return state.value ?? NO_AGENTS;
+}
+
+/**
+ * The machine cannot be asked right now: what it was last seen running stands, and is read again
+ * once it is back — by {@link readMachineAgents} as by a page — since it may have changed meanwhile.
+ */
+export function machineAgentsOutOfReach(projectId: string, machineId: string): void {
+  agentLists.invalidate(agentListKey(projectId, machineId));
 }
 
 /**
@@ -270,9 +354,13 @@ export function useMachineAgents(projectId: string | null): {
 export function useAgentsOn(machineId: string | null): readonly AgentSummary[] {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
-  return useMemo(
-    () =>
-      machineId === null || projectId === null ? agents : cachedMachineAgents(projectId, machineId),
-    [machineId, projectId, agents],
+  const onMachine = machineId !== null && projectId !== null;
+  const state = useRead(
+    agentLists,
+    onMachine ? agentListKey(projectId, machineId) : null,
+    () => fetchMachineAgents(projectId!, machineId!),
+    // Read by the pages that list Agents; this one only shows what they read.
+    { enabled: false },
   );
+  return onMachine ? (state.value ?? NO_AGENTS) : agents;
 }

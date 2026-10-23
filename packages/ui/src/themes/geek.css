@@ -106,13 +106,14 @@
        and a hue is a preset. The family derives from it: hover and active shade toward black
        (away from the white label, so they only gain contrast; on the ink the step is slight,
        and a fill that barely moves is this theme's way), the wash and the line are the accent
-       at an alpha. A preset sets `--ui-accent` alone; its label ink is the theme's for the
-       mode. */
+       at an alpha, and the tint is the wash's strength mixed into the page. A preset sets
+       `--ui-accent` alone; its label ink is the theme's for the mode. */
     --ui-accent: #1d1d1f;
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #000000);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 74%, #000000);
     --ui-accent-fg: #ffffff;
-    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 10%, transparent);
+    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 8%, transparent);
+    --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 8%, var(--ui-canvas));
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 50%, transparent);
 
     /* Colour — semantic tones: a hairline and its ink, no tint — a badge is a ruled word on the
@@ -458,7 +459,8 @@
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #ffffff);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 90%, #000000);
     --ui-accent-fg: #000000;
-    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 16%, transparent);
+    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 10%, transparent);
+    --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 10%, var(--ui-canvas));
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 60%, transparent);
 
     /* Colour — semantic tones: E2B's code hues; fills take black ink. The lines, the fills and
@@ -878,26 +880,27 @@
 
   /* A notice is a status line, the way a console prints one: a bracketed tone tag in the tone's
      ink — `[ OK ]`, `[WARN]`, `[FAIL]` — in the mono face at the start, the message beside it
-     in the reading face, nothing round it, painted in the page's own colour (quiet on the page,
-     opaque where a toast floats over content). The tag stands out of the flow — absolutely at
-     the row's inset, the host padded for it — because a host lays its body and actions out as a
-     flex row, and a tag in the flow would be a third item pushing the body to the middle. Every
-     tag is six characters, so in the mono face all five are one width, and the fixed 4rem
-     column holds each of them with room to spare. A toast is the same line inside one hairline,
-     so it has an edge where it floats. (Two earlier passes — a coloured left rule, then a solid
-     tone block — were decoration and went.) */
+     in the reading face, nothing round it and nothing painted under it (the tone tints are
+     clear here), so it lies on the page or on a custom background alike; a toast takes the
+     page's own colour where it floats over content. The tag stands out of the flow —
+     absolutely at the row's inset, the host padded for it — because a host lays its body and
+     actions out as a flex row, and a tag in the flow would be a third item pushing the body to
+     the middle. Every tag is six characters, so in the mono face all five are one width, and
+     the fixed 4rem column holds each of them with room to spare. A toast is the same line inside
+     one hairline, so it has an edge where it floats. (Two earlier passes — a coloured left rule,
+     then a solid tone block — were decoration and went.) */
   :root[data-theme="geek"] .ui-notice {
     position: relative;
     padding-inline-start: calc(4rem + var(--ui-row-px));
     border: 0;
     border-radius: 0;
-    background-color: var(--ui-canvas);
     box-shadow: none;
     color: var(--ui-fg);
     font-family: var(--ui-font-sans);
   }
   :root[data-theme="geek"] button.ui-notice {
     border: var(--ui-border-w) solid var(--ui-line-emphasis);
+    background-color: var(--ui-canvas);
   }
   /* The host's own leading mark gives way to the tag: two marks would say the same thing. */
   :root[data-theme="geek"] .ui-notice [data-slot="icon"] {
@@ -999,10 +1002,10 @@
  * theme shipped with before its own went black and white, then five terminal hues — phosphor
  * green, cyan, magenta, gold, cobalt — each deep in light for the theme's white label and bright
  * in dark for its black ink, the way the theme's dark fills are. A preset sets `--ui-accent` and
- * nothing else — hover, active, wash and line derive from it in the theme's rules above, and the
- * label ink is the theme's for the mode — so each preset is one value per mode; the orange holds
- * across modes (black ink on it clears 4.5:1 in dark) and has no dark rule. The selectors match
- * only Console's root, so a preset another theme lists paints nothing here.
+ * nothing else — hover, active, wash, tint and line derive from it in the theme's rules above,
+ * and the label ink is the theme's for the mode — so each preset is one value per mode; the
+ * orange holds across modes (black ink on it clears 4.5:1 in dark) and has no dark rule. The
+ * selectors match only Console's root, so a preset another theme lists paints nothing here.
  */
 @layer ui-accent {
   :root[data-theme="geek"][data-accent="orange"] {
