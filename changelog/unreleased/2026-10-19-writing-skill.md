@@ -28,7 +28,9 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
     limits.
   - `review` reads the whole post and scores every join between sections. `fix`, `trim` and
     `translate` work on the whole post too, and refuse an answer that changes what they were not
-    asked to change.
+    asked to change. The review gets the text fenced apart from its instruction. It does not
+    flag the TL;DR line, the marked key sentences, or an objection stated and answered as the
+    essay form asks. In a post whose body has no lists it never asks for one.
   - `transition` mends the joins in a round of its own, once per language after its last `fix`.
     For each heading only the first sentence after it may change and, when the join needs it, the
     last sentence before it. Any other change, or a lost fact marker, is refused. `review` then

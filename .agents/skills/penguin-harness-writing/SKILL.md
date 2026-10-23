@@ -440,8 +440,11 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   effort and figures, in the form `fix` consumes, never a rewrite; on the whole post, flow across
   sections is its main question, every join after a heading is scored, and the closing
   `transitions: n of m` line goes to `<out>.flow.txt`; per section in section mode) and the
-  agents' blind reviews — a truth reviewer
-  with FACTS and the sources, a native reader for the second language.
+  agents' blind reviews — a truth reviewer with FACTS and the sources, a native reader for the
+  second language. The API review reads the text between fence lines, apart from its
+  instruction. It expects the `**TL;DR**` line and the key sentences `emphasize` adds (`check`
+  counts those), takes an objection stated and answered as part of the argument rather than a
+  "Yes, but…" pivot, and never asks for a list where the profile says `body-lists: none`.
 
 Findings, from any reviewer, are numbered and quote the passage:
 `N. [passage quoted verbatim] — problem — the fact (F#) or rule it violates — what the fix must achieve (not the wording)`.
