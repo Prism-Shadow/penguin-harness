@@ -12,13 +12,17 @@ technical posts (`--profile blog-practice`, blog category `practice`). The skill
 profile's prompt block to the gateway model with every step of such a post, and its Chinese block
 for Chinese text. The profile sets:
 
-- two shapes, each with per-section word ranges in a short, figure-led budget. One is a change
-  story in the section order of Modal's
-  [Building fast filesystems for VMs](https://modal.com/blog/vm-sandbox-filesystem): the obvious
-  plan, the measurement that broke it, the redesign with its cost named, and results against the
-  naive baseline. The other is a post about a system we built: why it exists, its principle, three
-  or four comparisons of the design not taken against the one taken, and a close with the command
-  and the docs link;
+- the essay form: a technical post is one argued essay in connected paragraphs. The lead states
+  the design claim the post defends and why it matters to the reader. Each section argues one
+  point with its reasoning and evidence, and answers the design not taken as the objection. The
+  close returns to the thesis with its consequence for the reader. The body has no list and no
+  table, and a figure supports the paragraph before it instead of replacing it;
+- two shapes in argument order. One is a change story in the section order of Modal's
+  [Building fast filesystems for VMs](https://modal.com/blog/vm-sandbox-filesystem): the problem
+  measured, the obvious design argued and broken by a measurement, the redesign with its cost
+  named, and the results as the proof. The other is a post about a system we built: why it must
+  exist and its principle, two or three arguments that each answer the design not taken with the
+  same metric, and a close with the command and the docs link;
 - how numbers are used: units, both endpoints of every ratio, a real baseline, one sentence on
   method that says whether the numbers come from a simulator or a live provider, and no number or
   ratio that FACTS does not hold;
@@ -30,8 +34,9 @@ for Chinese text. The profile sets:
 - citations: most sentences carry none, and the facts that need one are third-party numbers,
   quotes and our own measurements.
 
-Its check settings hold the practice budgets: 6 to 8 sections, a body of at most 750 English words
-(1,800 Chinese characters), a lead of 50 to 70 words, sections of 50 to 130 words capped at 140
-(340 characters), and an optional TL;DR of 30 to 50 words. A published practice post cites 8 to
-13 sources. The READMEs list
+Its check settings hold the practice budgets: 4 to 5 sections, a body of at most 750 English words
+(1,800 Chinese characters), a lead of 50 to 90 words, argument sections of 100 to 170 words and a
+close of 60 to 100 (a section cap of 170 words, 400 characters), and an optional TL;DR of 30 to 50
+words. A published practice post cites 8 to 13 sources, and `body-lists: none` and
+`body-tables: none` make a list or a table in its body an error. The READMEs list
 `penguin-harness-writing` with the other development skills.
