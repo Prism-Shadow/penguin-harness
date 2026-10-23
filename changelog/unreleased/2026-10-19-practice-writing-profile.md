@@ -38,5 +38,7 @@ Its check settings hold the practice budgets: 4 to 5 sections, a body of at most
 (1,800 Chinese characters), a lead of 50 to 90 words, argument sections of 100 to 170 words and a
 close of 60 to 100 (a section cap of 170 words, 400 characters), and an optional TL;DR of 30 to 50
 words. A published practice post cites 8 to 13 sources, and `body-lists: none` and
-`body-tables: none` make a list or a table in its body an error. The READMEs list
+`body-tables: none` make a list or a table in its body an error. The skill's `review` reads a
+practice post by the same form: it expects the key sentences and an objection stated and
+answered, and never asks for a list in the body. The READMEs list
 `penguin-harness-writing` with the other development skills.
