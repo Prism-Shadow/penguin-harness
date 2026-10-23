@@ -3,6 +3,7 @@
 - **Date:** 2026-10-22
 - **Type:** process
 - **Scope:** `ci`, `desktop`
+- **PR:** [#1296](https://github.com/Prism-Shadow/penguin-harness/pull/1296)
 
 [中文版](2026-10-22-unsigned-dry-run.zh.md)
 
