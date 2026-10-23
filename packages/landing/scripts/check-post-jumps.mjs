@@ -18,9 +18,10 @@
  *   demand), a citation clicked straight away still lands.
  *
  * It serves `dist/` itself, the way GitHub Pages does (the route shells postbuild writes), and
- * answers every request that leaves the machine with nothing, except the posts' pictures: those
- * come from a stand-in, `--late` ms after they are asked for (default 1200), with no size known
- * in advance, so a jump made before they arrive shows whether it still lands. `--every=N` clicks
+ * answers every request that leaves the machine with nothing, except the posts' pictures: each
+ * comes from a stand-in of the picture's real size (src/lib/blog-image-sizes.json; 1600x1000 for
+ * one not recorded), `--late` ms after it is asked for (default 1200), so a jump made before the
+ * pictures arrive shows whether anything still moves under it. `--every=N` clicks
  * every Nth citation and back-link. An engine Playwright has not installed is skipped with a
  * note (`pnpm --filter @prismshadow/penguin-landing exec playwright install firefox webkit`).
  * Exits 1 when any jump misses, listing each.
@@ -84,8 +85,18 @@ const server = createServer((req, res) => {
 });
 await new Promise((resolve) => server.listen(PORT, "127.0.0.1", resolve));
 
-const PICTURE =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000"><rect width="1600" height="1000" fill="#999"/></svg>';
+const SIZES = JSON.parse(
+  readFileSync(path.resolve(HERE, "../src/lib/blog-image-sizes.json"), "utf8"),
+);
+const COMMUNITY = "/penguin-harness-community/raw/refs/heads/main/blog-assets/";
+
+/** A stand-in for the picture at `url`, at the size recorded for the post's source. */
+function picture(url) {
+  const at = url.indexOf(COMMUNITY);
+  const src = at >= 0 ? `/blog-assets/${url.slice(at + COMMUNITY.length)}` : url;
+  const [w, h] = SIZES[src] ?? [1600, 1000];
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#999"/></svg>`;
+}
 
 /** Resolves once the page has stopped scrolling (a smooth scroll included). */
 const settle = (page) =>
@@ -136,10 +147,11 @@ async function openContext(browser, lang, width) {
   await context.route(
     (url) => url.hostname !== "127.0.0.1",
     async (route) => {
-      if (!/penguin-harness-community\/raw\//.test(route.request().url()))
+      const url = route.request().url();
+      if (!url.includes(COMMUNITY) && !url.includes("github.com/user-attachments/"))
         return route.abort().catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, LATE_MS));
-      await route.fulfill({ contentType: "image/svg+xml", body: PICTURE }).catch(() => {});
+      await route.fulfill({ contentType: "image/svg+xml", body: picture(url) }).catch(() => {});
     },
   );
   await context.addInitScript((lang) => {

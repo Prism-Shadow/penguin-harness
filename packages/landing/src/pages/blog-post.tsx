@@ -8,8 +8,8 @@
  * This module and each post's body are chunks of their own (see the router and lib/blog.ts),
  * so the Markdown renderer and the post text reach a reader only when a post is opened.
  */
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
-import type { ComponentPropsWithoutRef, RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer } from "react";
+import type { ComponentPropsWithoutRef } from "react";
 import type { ExtraProps } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import { Link, useLocation, useParams } from "react-router";
@@ -34,7 +34,7 @@ import type { Strings } from "../lib/strings";
 import { blogAssetUrl, SITE_HOSTS } from "../lib/links";
 import { classifyPostHref, inPageHash } from "../lib/post-links";
 import { landOnHash } from "../lib/hash-arrival";
-import { holdPostJumps } from "../lib/jump-hold";
+import imageSizes from "../lib/blog-image-sizes.json";
 import { formatAuthors, formatPostDate, getPost, loadPostBody, loadedPostBody } from "../lib/blog";
 import type { BlogPost } from "../lib/blog";
 import { CategoryBadge } from "../components/category-badge";
@@ -104,6 +104,9 @@ export function MdLink({
 /** The path prefix post bodies use for images this repo does not carry. */
 const BLOG_ASSET_PREFIX = "/blog-assets/";
 
+/** Each Markdown image's width and height, by its source as the post writes it. */
+const IMAGE_SIZES: Readonly<Record<string, readonly number[] | undefined>> = imageSizes;
+
 /**
  * Image adapter: rewrites `/blog-assets/<name>` sources to the community repo that actually hosts
  * them (see blogAssetUrl in lib/links.ts). Every other src — absolute URLs, GitHub user-attachment
@@ -114,17 +117,36 @@ const BLOG_ASSET_PREFIX = "/blog-assets/";
  * diffable, and the tests that assert on those paths keep asserting on the paths. Applies equally
  * to `![alt](…)` and to the raw `<img src="…">` tags posts use for theme-swapped screenshots,
  * because rehype-raw turns those into ordinary `img` nodes before this map is consulted.
+ *
+ * A Markdown image gets the width and height recorded for it (lib/blog-image-sizes.json, written
+ * by scripts/blog-image-sizes.mjs), so its place is held before the picture arrives: the
+ * preflight's `height: auto` keeps it fluid at that aspect ratio. Without a size, each picture
+ * that loads pushes down everything below it, the reader's place and the target of a jump in
+ * flight alike. A raw `<img>` keeps the size it was written with.
  */
 export function MdImage({
   node: _node,
   src,
+  width,
+  height,
   ...imgProps
 }: ComponentPropsWithoutRef<"img"> & ExtraProps) {
+  const recorded =
+    typeof src === "string" && width === undefined && height === undefined
+      ? IMAGE_SIZES[src]
+      : undefined;
   const resolved =
     typeof src === "string" && src.startsWith(BLOG_ASSET_PREFIX)
       ? blogAssetUrl(src.slice(BLOG_ASSET_PREFIX.length))
       : src;
-  return <img {...imgProps} src={resolved} />;
+  return (
+    <img
+      {...imgProps}
+      src={resolved}
+      width={recorded?.[0] ?? width}
+      height={recorded?.[1] ?? height}
+    />
+  );
 }
 
 /**
@@ -270,34 +292,20 @@ function usePostBody(post: BlogPost | undefined): string | undefined {
 let landedFor = "";
 
 /**
- * Jumps within a post. Once the body is in the DOM, land on the address's anchor (a shared `#fn-3`
- * or `#heading` link) as the browser would have at load had the body been there
- * (lib/hash-arrival.ts): the target is marked and washed, and scrolled clear of the sticky header
- * once the page has finished rising. The layout's own route scroll runs when the route commits,
- * which for a body still on its way is before the target exists. And hold the target of that
- * landing, and of every link followed inside the page, while the pictures above it arrive
- * (lib/jump-hold.ts), so a scroll still on its way does not stop short of it.
+ * Land on the address's anchor (a shared `#fn-3` or `#heading` link) once the body is in the DOM,
+ * as the browser would have at load had the body been there (lib/hash-arrival.ts): the target is
+ * marked and washed, and scrolled clear of the sticky header once the page has finished rising.
+ * The layout's own route scroll runs when the route commits, which for a body still on its way is
+ * before the target exists. Jumps made inside the page are the browser's own; the pictures'
+ * recorded sizes (MdImage) keep their targets in place while the pictures arrive.
  */
-function usePostJumps(body: RefObject<HTMLElement | null>, ready: boolean) {
+function useHashTarget(ready: boolean) {
   const { key } = useLocation();
-  const hold = useRef<ReturnType<typeof holdPostJumps> | null>(null);
-  // A layout effect declared first, so the hold is in place before the landing below asks for it.
-  useLayoutEffect(() => {
-    if (!ready || !body.current) return;
-    const jumps = holdPostJumps(body.current);
-    hold.current = jumps;
-    return () => {
-      jumps.dispose();
-      hold.current = null;
-    };
-  }, [ready, body]);
   useLayoutEffect(() => {
     if (!ready || key === landedFor) return;
     let live = true;
-    void landOnHash(window, () => live).then((jumped) => {
-      if (!live) return;
-      landedFor = key;
-      if (jumped) hold.current?.holdHash();
+    void landOnHash(window, () => live).then(() => {
+      if (live) landedFor = key;
     });
     return () => {
       live = false;
@@ -312,8 +320,7 @@ export function BlogPostPage() {
   const body = usePostBody(post);
   const toc = useMemo(() => (body === undefined ? [] : extractToc(body)), [body]);
   const { activeId, pinTo } = useActiveTocEntry(toc);
-  const article = useRef<HTMLElement>(null);
-  usePostJumps(article, body !== undefined);
+  useHashTarget(body !== undefined);
 
   if (!post) {
     return (
@@ -341,7 +348,7 @@ export function BlogPostPage() {
         showToc ? "max-w-5xl xl:grid xl:grid-cols-[minmax(0,1fr)_13rem] xl:gap-12" : "max-w-3xl"
       }`}
     >
-      <article ref={article} className={showToc ? "mx-auto w-full max-w-3xl xl:mx-0" : ""}>
+      <article className={showToc ? "mx-auto w-full max-w-3xl xl:mx-0" : ""}>
         <Link
           to="/blog"
           className="inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
