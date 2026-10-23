@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-writing
-description: "Use when writing or revising reader-facing prose for penguin.ooo — a blog post of any category, a docs page, or landing-page copy: the division of labour (a gateway model writes every reader-facing word, agents research, prompt, assemble, draw, check and ship), the outline-then-whole-draft flow with budgets (section mode as the fallback), the FACTS guard and footnote citations, the profiles, inline SVG figures drawn from the model's figure blocks, the checks, and how it is verified."
+description: "Use when writing or revising reader-facing prose for penguin.ooo — a blog post of any category, a docs page, or landing-page copy: the division of labour (a gateway model writes every reader-facing word, agents research, prompt, assemble, draw, check and ship), the outline-then-whole-draft flow with budgets and a transition round (section mode as the fallback), the FACTS guard and sparse footnote citations, the profiles, inline SVG figures drawn from the model's figure blocks, the checks, and how it is verified."
 ---
 
 # Writing for penguin.ooo
@@ -8,7 +8,7 @@ description: "Use when writing or revising reader-facing prose for penguin.ooo �
 Posts, docs pages and landing copy are written by a model on the TokenDance gateway and shipped
 by agents. A post is written the way a person writes one: an outline first, then the whole post in
 one call, so its sections join; the review, the fixes, the cuts and the translation work on the
-whole post too. A long post or a docs page can fall back to section mode. This page is the contract; `scripts/prose.mjs` is
+whole post too, and a round of its own edits only the sentences at the headings. A long post or a docs page can fall back to section mode. This page is the contract; `scripts/prose.mjs` is
 the only way text reaches a draft, and `prompts/` plus `reference/` hold every word sent to the
 model. `penguin-harness-dev/reference/authoring.md` covers what is true of every post (the
 bilingual pair, frontmatter, where screenshots live).
@@ -81,6 +81,14 @@ the model's output and keeps it on its point. The one habit it does not remove i
 "not X but Y" pivot, and `check` and `review` look for it. For the same reader a post opens with a
 TL;DR of its key points, and one sentence per section is marked in bold by `emphasize`; the writer
 bolds nothing else.
+
+The tip this rule comes from (the author's post, verbatim):
+
+> 亲测超级好用😂 | 之前为了矫正大模型的说话问题（RL不是没有代价的，你就是代价……），我整过很多版本的工作要求，最极端的是输出前多加一步子Agent专门负责矫正Agent汇报……，然而，真的不如假装残疾人好使。方法就一行⬇️【直接在Agent.md里加入，假设用户是阅读障碍。】⬆️大模型就会说人话了，也不长篇大论了，也会捡重点的说了，也不防御性写作了，也不BTW了唯一扳不过来的是【Yes, But】这个有主意朋友可以跟我说说。现在 LLM 也很难低成本私有化部署和调试，各家又都是冲着把人干掉去训练的，结果现在工作就是个可悲的【人机打架】的L3阶段。而且就DeepSeek而言，我老觉得他有点文本代码化的倾向，就是完全没有脑子……比之前还没有那种，不做真正的思考，纯无脑执行那种。
+
+The rule keeps the tip's one line, assume a reader with dyslexia, and turns the rest of its report
+into bans: its "BTW" detours and its defensive writing are the aside and hedging bans, and the
+"Yes, but" pivot the tip could not remove is banned by name.
 
 The zh style guide keeps Harness and Agent Harness in English with that capitalisation, never
 「夹具」「线束」「挽具」; a test fixture is 合成测试, 测试数据 or 测试配置; `check` makes 夹具 an error and a
@@ -478,6 +486,16 @@ Markdown is skipped by `format:check`; the text is covered by `check`, by the la
 blog tests (content integrity, anchors, links) or the docs package's content tests, and by reading.
 A post PR runs the landing tests, `format:check` and
 `node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs packages/landing/content/blog`.
+A post is finished when, on the test host, those pass with `git diff --check`; `check --in <post>
+--draft <draft> --facts facts.md --pair <other post>` and `pair` report 0 errors, `check --svg`
+passes, both reference lists are within the profile's `sources` cap and the last `review` scores
+`m of m` joins; and the built landing, driven in 8 combinations (en and zh, light and dark, 1280
+and 390 px wide), shows every citation as `[n]` or `[n, m]` with no two groups touching and none
+at a line start, jumps from every `[n]` to its note below the sticky nav and back with no new tab
+or reload, opens the external-link dialog for a reference link, never scrolls sideways, hides
+every `.fig-steps`, holds exactly one bold span in the lead and in each section, carries no 「夹具」
+on a zh page and logs no console or page error. A change to this skill runs `selftest` and
+`format:check` on the test host, `git diff --check`, and `--dry-run` of `transition` and `write`.
 When the author asks for the suite on another machine, `penguin-harness-dev/reference/verification.md`
 has the remote runner and its traps. After changing the script, a contract, a profile's settings or
 the check patterns, run `node .agents/skills/penguin-harness-writing/scripts/prose.mjs selftest`
@@ -492,6 +510,7 @@ stand-in gateway on a loopback port with a dummy key. A case that guards a fixed
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
 | `prompts/contract-section.md`, `contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for one section (section mode), a whole post, a docs page, landing strings |
 | `<scratch>/articles/<slug>/notes.md` | Per post, outside the repo: the author's `keep:` / `avoid:` / `note:` lines (section 6) |
-| `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the counting rules and budgets, the flow rule, the notes and fixed-title blocks, the trim scopes, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
+| `<scratch>/articles/<slug>/recovered.<lang>.md`, `figures/`, `facts.<lang>.seed.md` | Per post, outside the repo: what `unstrip` recovers from a published post (section 11) |
+| `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the counting rules and budgets, the flow rule, the transition step's findings and notes rules, the notes and fixed-title blocks, the trim scopes, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
 | `reference/en-style.md`, `reference/zh-style.md` | Voice and the full banned lists, for every kind of text. The block between the `prompt` markers is what the model receives; the check patterns below it are what `check` greps for; change both together |
 | `reference/profile-<name>.md` | One per kind of text (section 2) |
