@@ -15,6 +15,7 @@ import { formatSessionId } from "../src/internal/session-support.js";
 import { projectDir } from "../src/state/paths.js";
 import { modelVisiblePath } from "../src/internal/model-visible-path.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 
 let tmpRoot: string;
 let prevHome: string | undefined;
@@ -25,6 +26,8 @@ beforeEach(async () => {
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-harness-lifecycle-"));
   process.env.PENGUIN_HOME = tmpRoot;
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(tmpRoot);
 });
 
 afterEach(async () => {

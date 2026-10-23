@@ -53,9 +53,9 @@
  * |                    | output; host: `StreamText`                               |                                                       |
  * | `ui-glyph`         | an icon drawn in every theme's style; the theme's CSS    | direct children `data-set="line" \| "octicons" \| "pixel"`, one drawing each; the line set may hold a `data-part="duo"` body under its stroke; a decorative glyph may carry `data-tint="<hue>"` |
  * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
- * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
- * |                    | weather, clock, countdown or metrics tile in a reply;    |                                                       |
- * |                    | host: `WidgetSurface`                                    |                                                       |
+ * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
+ * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
+ * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour, and the field is one flat
  * colour, never a gradient: Frost lays a flat grey field behind the window and sets the
@@ -218,15 +218,16 @@
  * shows the Octicons today; the set still ships). A host's transform (a chevron's turn, an
  * activity mark's motion) moves all three together.
  *
- * `ui-widget` (2026-10-04) is the surface of the A2UI widgets a reply may carry — a weather card,
- * a clock, a countdown, a dashboard of readings: one rounded box with a head (the name, and when
- * the data was read), a body and an optional foot (the source). Inside it the host marks what a
- * recipe may restyle: every big numeral (`data-figure`), every tile (`data-tile`), every weather
- * illustration's svg (`data-art`). Frost sets it as a soft filled tile with white tiles inside
- * and its numerals at the regular weight, the way it sets a title large; Console as a hairline
- * box with a ruled head, hairline tiles, numerals in the mono face (a reading is data) and the
- * illustration's lines square-capped on crisp edges; Primer keeps the host's card. The
- * illustration's loops run on `--ui-live-timing`, so they step in Console and glide elsewhere.
+ * `ui-widget` (2026-10-04) is the surface of the A2UI widgets a reply may carry — a weather card, a
+ * clock, a countdown, a dashboard of readings, a chart, a machine's resources (2026-10-19): one
+ * rounded box with a head (the name, and when the data was read), a body and an optional foot (the
+ * source). Inside it the host marks what a recipe may restyle: every big numeral (`data-figure`),
+ * every tile (`data-tile`), every weather illustration's svg (`data-art`). Frost sets it as a soft
+ * filled tile with white tiles inside and its numerals at the regular weight, the way it sets a
+ * title large; Console as a hairline box with a ruled head, hairline tiles, numerals in the mono
+ * face (a reading is data) and the illustration's lines square-capped on crisp edges; Primer keeps
+ * the host's card. The illustration's loops run on `--ui-live-timing`, so they step in Console and
+ * glide elsewhere.
  */
 export const HOOKS = [
   "ui-glass",

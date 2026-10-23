@@ -36,6 +36,11 @@ pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.sp
 SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs dock.spec.mjs terminal.spec.mjs
 ```
 
+`copy-style.spec.mjs` is run on demand, not in CI: copying selected text in the dark theme —
+⌘C on the conversation, its menu's Copy row, the Files panel's Markdown preview — writes the
+selection's text as `text/plain` alone, and a selection in the composer still copies the
+composer's own.
+
 Arguments are forwarded to Playwright, so a spec path or `--grep` selects a focused run.
 With no arguments the runner executes every browser spec. `SKIP_BUILD=1` requires a current
 server/web build and their workspace dependencies; the default runner builds them in dependency

@@ -23,15 +23,18 @@ describe("MessageRow", () => {
 });
 
 describe("MessageBubble", () => {
-  it("sets a prompt's text in a tinted bubble that wraps long tokens", () => {
+  it("sets a prompt's text on the accent's tint, in a bubble that wraps long tokens", () => {
     const html = renderStatic(createElement(MessageBubble, { variant: "user" }, "hello"));
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["bg-fill-neutral", "max-w-[88%]", "wrap-anywhere", "text-fg"]),
+    const tokens = classTokens(html);
+    expect(tokens).toEqual(
+      expect.arrayContaining(["bg-accent-tint", "max-w-[88%]", "wrap-anywhere", "text-fg"]),
     );
+    // The person's own words follow the accent; the neutral fill is for what is not theirs.
+    expect(tokens).not.toContain("bg-fill-neutral");
     expect(html).toMatch(/<p [^>]*>hello<\/p><\/div>$/);
   });
 
-  it("marks a steer with the person glyph and its label, with what it carried inside", () => {
+  it("marks a steer with the person glyph and its label, on the prompt's tint with what it carried inside", () => {
     const html = renderStatic(
       createElement(
         MessageBubble,
@@ -46,6 +49,14 @@ describe("MessageBubble", () => {
     expect(html).toContain(`d="${ICONS.user}"`);
     expect(html).toMatch(/>Steering<\/span>go on<\/p>/);
     expect(html.indexOf("go on")).toBeLessThan(html.indexOf("a.pdf"));
+    // The same voice as the prompt, with the neutral line a filled box takes; the label is in the
+    // body ink, which reads on the tint where the muted ink did not.
+    expect(classTokens(html)).toEqual(
+      expect.arrayContaining(["bg-accent-tint", "border-line-emphasis"]),
+    );
+    const label = /<span class="([^"]*)">Steering<\/span>/.exec(html)?.[1]?.split(" ") ?? [];
+    expect(label).toContain("text-fg");
+    expect(label).not.toContain("text-fg-muted");
   });
 
   it("draws a notice in the muted ink, a reconnect in the attention ink with its controls last", () => {

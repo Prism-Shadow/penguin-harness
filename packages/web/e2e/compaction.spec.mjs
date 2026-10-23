@@ -139,10 +139,16 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
   const main = page.locator("main");
   await expect(main.getByText("第 1 轮")).toBeVisible();
   await expect(main.getByText("第 2 轮")).toBeVisible();
-  const roundRows = main.locator("button").filter({ hasText: /第 \d 轮/ });
-  const compactionRow = roundRows.filter({ hasText: "第 2 轮" }).first();
-  await expect(compactionRow).toContainText("tok/s"); // the compaction round has its own TPS
-  await expect(compactionRow).not.toContainText("—");
+  // The TPS is on the open round's first line of readings, not on its head: the newest round
+  // (the compaction) opens with the file.
+  const compactionToggle = main.locator("[data-round='1'] [data-slot='toggle']");
+  await expect(compactionToggle).toContainText("第 2 轮");
+  if ((await compactionToggle.getAttribute("aria-expanded")) !== "true") {
+    await compactionToggle.click();
+  }
+  const compactionReadings = main.locator("[data-round='1'] [data-slot='readings']");
+  await expect(compactionReadings).toContainText("tok/s"); // the compaction round has its own TPS
+  await expect(compactionReadings).not.toContainText("—");
 
   // Global elapsed time = **the sum of each round's elapsed time (including the compaction
   // round)**, matching the same scope as the per-round display below — adding up each round

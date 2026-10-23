@@ -1,13 +1,14 @@
 /**
  * The frame's contract: the URL the gallery builds is the URL the frame reads back, the seeding
  * script writes the app's own storage keys, and the one key the package does not export is the
- * app's. A page outside the gallery names three preferences and leaves the rest to the app.
+ * app's. A page outside the gallery names three preferences and leaves the rest to the app. A
+ * frame whose URL names a custom background boots with it; the gallery's own frames name none.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
-import { THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
+import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import {
   APP_FRAME_PATH,
   APP_LANG_KEY,
@@ -35,6 +36,7 @@ describe("the frame URL", () => {
       route: "/chat/s-1?tab=x",
       signedOut: true,
       open: "settings",
+      notices: true,
     });
     expect(src.startsWith(`/gallery${APP_FRAME_PATH}?`)).toBe(true);
     const params = parseFrameParams(src.slice(src.indexOf("?")));
@@ -43,6 +45,7 @@ describe("the frame URL", () => {
       lang: "zh",
       signedOut: true,
       open: "settings",
+      notices: true,
     });
     for (const [param, key] of Object.entries(SEEDED_KEYS)) {
       expect(src, key).toContain(`${param}=`);
@@ -83,6 +86,29 @@ describe("the frame URL", () => {
   it("opens the chat when the route is missing or not a path, signed in by default", () => {
     expect(parseFrameParams("")).toEqual({ route: "/chat", lang: "en" });
     expect(parseFrameParams("?route=http://evil&lang=fr")).toEqual({ route: "/chat", lang: "en" });
+  });
+
+  it("boots with a custom background only when the URL names one", () => {
+    const seeded = (search: string) => {
+      const window: Record<string, unknown> = {};
+      vm.runInContext(
+        storageSeedScript(),
+        vm.createContext({ window, location: { search }, URLSearchParams, Object }),
+      );
+      return window.localStorage as Storage;
+    };
+    // A data URL carries `+`, `/` and `=`, which a query string must keep intact.
+    const image = "data:image/jpeg;base64,/9j/4A+Q=";
+    const settings = JSON.stringify({ transparency: 25, mode: "cover", position: "center center" });
+    const params = new URLSearchParams({ route: "/chat", wallpaper: image });
+    params.set("wallpaperSettings", settings);
+    const named = seeded(`?${params}`);
+    expect(named.getItem(BACKGROUND_STORAGE_KEYS.image)).toBe(image);
+    expect(named.getItem(BACKGROUND_STORAGE_KEYS.settings)).toBe(settings);
+    // The gallery's own frames name no background, so theirs keep the plain page.
+    const plain = seeded(`?${new URL(appFrameSrc("http://g", PREFS, { route: "/chat" })).search}`);
+    expect(plain.getItem(BACKGROUND_STORAGE_KEYS.image)).toBeNull();
+    expect(plain.getItem(BACKGROUND_STORAGE_KEYS.settings)).toBeNull();
   });
 
   it("seeds the app's own storage keys, every one of them the package's or the app's", () => {

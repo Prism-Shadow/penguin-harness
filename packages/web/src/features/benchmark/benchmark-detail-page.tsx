@@ -214,7 +214,7 @@ export function BenchmarkDetailPage() {
     if (!projectId || switchedAway) return;
     let cancelled = false;
     api
-      .getModels(projectId)
+      .getModels(projectId, null)
       .then((res) => {
         if (!cancelled) setModels(res);
       })

@@ -35,6 +35,16 @@ import {
   mountDraft,
 } from "./helpers/draft-world";
 
+// The page's socket streams are the test's to drive: the draft world pushes the server's user
+// events into the handlers the page registers (helpers/api-socket-world.ts). One-shot calls
+// stay on fetch, as they are before the socket's first handshake; the transport itself —
+// frames, reconnects, deadlines — is pinned by api-socket.test.ts.
+vi.mock("../src/api/socket", async (importActual) => {
+  const actual = await importActual<typeof import("../src/api/socket")>();
+  const { socketWorld } = await import("./helpers/api-socket-world");
+  return { ...actual, apiSocket: socketWorld.apiSocket };
+});
+
 const DRAFT_KEY = draftKey(ADMIN_ME.user.userId, PROJECT_ID);
 /** The Send button's name in the active language (the locale follows the browser's). */
 const send = () => button(S.chat.send);

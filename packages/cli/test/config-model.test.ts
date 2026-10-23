@@ -20,6 +20,7 @@ import { parse as parseToml } from "smol-toml";
 import { DEFAULT_PROJECT_ID, projectConfigPath } from "@prismshadow/penguin-core";
 import { registerConfigCommand } from "../src/commands/config.js";
 import { getMessages } from "../src/i18n.js";
+import { seedProject } from "./seeded-project.js";
 
 let tmpHome: string;
 let tmpRoot: string;
@@ -29,6 +30,8 @@ beforeEach(async () => {
   prevHome = process.env.PENGUIN_HOME;
   tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-home-"));
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-root-"));
+  // A Project as the server seeds one: core's own default carries no models.
+  await seedProject(tmpRoot);
   process.env.PENGUIN_HOME = tmpHome;
 });
 
@@ -187,8 +190,9 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       tmpRoot,
     ]);
     await runModel(["add", "--model-id", "in-house-1", "--provider", "mylab", "--root", tmpRoot]);
-    // A new Project's [providers.vllm] sets the adapter for every entry, the models a user
-    // serves included, and no endpoint: the entry stores neither, and resolves to the group's.
+    // A new Project's [providers.vllm] sets the adapter and the local server's address for every
+    // entry, the models a user serves included: the entry stores neither, and resolves to the
+    // group's.
     await runModel([
       "add",
       "--model-id",
@@ -224,7 +228,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     const list = await runModel(["list", "--root", tmpRoot]);
     const vllmLine = list.out.split("\n").find((l) => l.includes("my-served-model"));
     expect(vllmLine).toContain("client_type=openai-chat-vllm-adapter (provider)");
-    expect(vllmLine).not.toContain("base_url=");
+    expect(vllmLine).toContain("base_url=http://127.0.0.1:8000/v1 (provider)");
   });
 
   it("refuses a NEW vendor-group entry whose id MMSP cannot route, and leaves the config untouched", async () => {
@@ -714,6 +718,7 @@ describe("model add/default/vision: --provider is required, (provider, model_id)
   });
 
   it("add without --provider is a usage error too: the group is never inferred, so no config is written", async () => {
+    const seeded = await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8");
     const bad = await runModel([
       "add",
       "--model-id",
@@ -726,7 +731,7 @@ describe("model add/default/vision: --provider is required, (provider, model_id)
     expect(bad.code).not.toBe(0);
     expect(bad.err).toContain("--provider");
     // The credential must not have landed on a guessed vendor: nothing was persisted at all.
-    await expect(fs.access(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID))).rejects.toThrow();
+    expect(await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8")).toBe(seeded);
   });
 
   it("dangling reference: the pair is not in models; the error carries the pair reference and a model list hint", async () => {

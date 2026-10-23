@@ -5,11 +5,13 @@
  * - `MessageRow` is a message the person sent: a column on the right, with its footer under it.
  *   A prompt that starts a Task takes a turn's room; a steer delivered inside a running Task is
  *   tighter, since it starts nothing.
- * - `MessageBubble` is the chrome, in three variants: `user`, the prompt's text in a tinted
- *   bubble; `steering`, a lighter bordered chip for a steer, marked by the person glyph and a
- *   short label, with the images and files it carried inside it; and `notice`, a quiet mono line
- *   — an abort, a failed request, a reconnect with its controls — in the muted ink or, for a
- *   reconnect, the attention ink.
+ * - `MessageBubble` is the chrome, in three variants: `user`, the prompt's text in a bubble
+ *   tinted by the accent; `steering`, a smaller bordered chip on the same tint for a steer, marked
+ *   by the person glyph and a short label, with the images and files it carried inside it; and
+ *   `notice`, a quiet mono line — an abort, a failed request, a reconnect with its controls — in
+ *   the muted ink or, for a reconnect, the attention ink. The person's own words sit on the
+ *   accent's tint, so they follow the accent the person chose; with the theme's own accent that
+ *   tint is a gray.
  * - `MessageAttachments` holds what a prompt carried, above its text: the images and the files,
  *   each an `AttachmentList` row (attachments.tsx), in the order the composer showed them.
  * - `MessageMeta` is the footer: the time and a copy button. From `sm` up it is invisible but
@@ -76,7 +78,7 @@ export function MessageBubble({
   switch (variant) {
     case "user":
       return (
-        <div className={`${WIDTH} rounded-lg bg-fill-neutral px-4 py-2.5`}>
+        <div className={`${WIDTH} rounded-lg bg-accent-tint px-4 py-2.5`}>
           <p className="wrap-anywhere font-sans whitespace-pre-wrap text-base leading-relaxed text-fg">
             {children}
           </p>
@@ -85,13 +87,13 @@ export function MessageBubble({
     case "steering":
       return (
         <div
-          className={`flex ${WIDTH} flex-col gap-1.5 rounded-md border border-line-emphasis bg-fill-neutral px-3 py-1.5`}
+          className={`flex ${WIDTH} flex-col gap-1.5 rounded-md border border-line-emphasis bg-accent-tint px-3 py-1.5`}
         >
           <div className="flex items-start gap-1.5">
             <GlyphIcon d={ICONS.user} className="mt-1 shrink-0 text-fg-subtle" />
             <p className="wrap-anywhere font-sans whitespace-pre-wrap text-sm leading-relaxed text-fg">
               {label !== undefined && (
-                <span className="mr-1.5 text-xs font-semibold text-fg-muted">{label}</span>
+                <span className="mr-1.5 text-xs font-semibold text-fg">{label}</span>
               )}
               {children}
             </p>

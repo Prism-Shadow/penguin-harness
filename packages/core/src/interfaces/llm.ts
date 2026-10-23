@@ -3,8 +3,9 @@
  *
  * The engine calls exactly one method here — `streamGenerate` — and reads exactly two things
  * back: the yielded OmniMessage stream, and the generator's `LLMOutcome` return value (the
- * request's terminal state; see the docs page's "control plane"). Protocol conversion to and
- * from the provider is the implementation's own business.
+ * request's terminal state; see the docs page's "control plane"). Besides that it reads one
+ * optional property, `defaultThinkingLevel`, to know which level a request with no pin goes
+ * out at. Protocol conversion to and from the provider is the implementation's own business.
  *
  * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
@@ -75,7 +76,7 @@ export interface GenerativeModelConfig {
   requestTimeoutMs?: number;
   /**
    * The Session's id, for endpoints whose attribution scheme identifies the conversation
-   * rather than the app (OpenCode's `x-opencode-session`; see state/model-catalog.ts
+   * rather than the app (OpenCode's `x-opencode-session`; see llm/app-attribution.ts
    * `attributionHeaders`). Unset — a request outside any Session: a connectivity test, a
    * vision probe, a one-off utility completion — attributionHeaders mints a fresh id, which
    * the instance then keeps for all of its requests, so they are a conversation of their own.
@@ -152,4 +153,12 @@ export interface LLMOutcome {
  */
 export interface LLMInterface {
   streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  /**
+   * The level this object sends when a request names none (its construction default). The
+   * engine reads it to resolve each request's effective level once — pin, else this — and
+   * both sends that value and records it on the request's `request_begin`, so the record
+   * cannot drift from the wire. An implementation without a default may omit it; the engine
+   * then sends and records a level only when the Session pins one.
+   */
+  readonly defaultThinkingLevel?: ThinkingLevelName;
 }

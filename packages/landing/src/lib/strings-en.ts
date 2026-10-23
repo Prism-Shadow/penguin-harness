@@ -46,7 +46,12 @@ export const en: Strings = {
   hero: {
     positioning: "Unified and Stable RSI Framework",
     badge: "for free",
-    automation: "Automatically improve model × agent harness",
+    /**
+     * No-break spaces keep each "any …" pair on one line, and each dot at the end of its line,
+     * when a phone wraps the tagline.
+     */
+    automation:
+      "Fully automatic optimization: any\u00a0model\u00a0· any\u00a0algorithm\u00a0· any\u00a0benchmark",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [
@@ -426,5 +431,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     notFound: "Post not found",
     backHome: "Back to home",
     toc: "On this page",
+    references: "References",
+    backToRef: (n: number, k: number) =>
+      k > 1 ? `Back to reference ${n}, citation ${k}` : `Back to reference ${n}`,
   },
 };

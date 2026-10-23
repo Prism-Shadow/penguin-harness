@@ -1,6 +1,6 @@
 /**
- * Fenced-block scanning on CommonMark's rules, so the checker, the text fallback and the prose
- * lint agree with the Markdown renderer about where a block starts and ends: 3+ backticks or
+ * Fenced-block scanning on CommonMark's rules, so the checker, the text fallback and the language
+ * detection agree with the Markdown renderer about where a block starts and ends: 3+ backticks or
  * tildes, at most 3 spaces of indentation, the language is the first word of the info string,
  * the closing fence is the same character and at least as long, and the body is de-indented by
  * the opening fence's indentation. Every fence is tracked, whatever its language, because a

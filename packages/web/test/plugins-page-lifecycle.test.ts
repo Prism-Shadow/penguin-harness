@@ -3,6 +3,11 @@
  * contexts, API calls and presentation shells are replaced. No pure identity helper is
  * substituted for the page's request lifecycle.
  *
+ * A server module installed for the machine in view:
+ * - Given the machine has not answered since the install, the row keeps the state it had; once
+ *   it answers, the row shows what the machine reports — installed when it runs it, "not on
+ *   that machine" only from an answer that lacks it.
+ *
  * The registry's sources:
  * - Given the server answers while still reading a source, the page says so and lists what has
  *   answered; it reads the registry again after a pause, not before, and once the source has
@@ -11,7 +16,7 @@
 import { act, createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InstalledPluginsResponse } from "@prismshadow/penguin-server/api";
-import { mount, click, run, unmountAll } from "./helpers/dom";
+import { mount, click, run, unmountAll, watchText } from "./helpers/dom";
 import { en } from "../src/lib/strings-en";
 import { setActiveStrings } from "../src/lib/strings";
 
@@ -66,6 +71,7 @@ vi.mock("../src/features/plugins/plugin-card", () => ({
         "data-state": props.row.module?.state,
         "data-delete": props.onDeletePlugin === null ? "closed" : "open",
       },
+      h("span", { "data-status": true }, props.status),
       h(
         "button",
         {
@@ -212,6 +218,64 @@ describe("the Plugins page's response lifecycle", () => {
     expect(row("mixed")?.getAttribute("data-delete")).toBe("closed");
     expect(api.uninstallPlugin).not.toHaveBeenCalled();
   });
+});
+
+describe("a server module installed for the machine in view", () => {
+  const OTHER = "Other00000000000";
+  /** One row of the Project's tables (or the machine's own list): `@acme/plugin`, on OTHER. */
+  const listed = (active: boolean): InstalledPluginsResponse["plugins"][number] => ({
+    specifier: "@acme/plugin",
+    active,
+    builtin: false,
+    modules: [],
+    replaces: [],
+    everywhere: false,
+    machines: [OTHER],
+    here: active,
+  });
+  const tables = (lists: boolean): InstalledPluginsResponse => ({
+    machineId: "self",
+    file: "project.toml",
+    restartPending: false,
+    shipped: ["@acme/plugin"],
+    plugins: lists ? [listed(false)] : [],
+  });
+  const machineAnswer = (runs: boolean): InstalledPluginsResponse => ({
+    ...tables(false),
+    machineId: OTHER,
+    plugins: runs ? [listed(true)] : [],
+  });
+
+  it.each([
+    [true, "installed"],
+    [false, "not-here"],
+  ] as const)(
+    "keeps the row's state until the machine answers (runs it: %s), then shows %s",
+    async (runs, after) => {
+      context.machines = [OTHER];
+      const afterInstall = deferred<InstalledPluginsResponse>();
+      let machineReads = 0;
+      vi.mocked(api.getInstalledPlugins).mockImplementation((_project, server) => {
+        if (server === null) return Promise.resolve(tables(false));
+        machineReads += 1;
+        return machineReads === 1 ? Promise.resolve(machineAnswer(false)) : afterInstall.promise;
+      });
+      vi.mocked(api.installPlugin).mockResolvedValue(tables(true));
+      await mount(h(PluginsPage));
+      await click(document.querySelector(`[data-machine="${OTHER}"]`)!);
+      const state = watchText('[data-row="plugin"] [data-status]');
+      expect(state.texts()).toEqual(["available"]);
+
+      await click(row("plugin")!.querySelector("button")!);
+      await click(document.querySelector("[data-confirm]")!);
+      expect(api.installPlugin).toHaveBeenCalledWith("A", "@acme/plugin", OTHER);
+      expect(machineReads).toBe(2);
+      expect(state.texts()).toEqual(["available"]);
+
+      await run(() => afterInstall.resolve(machineAnswer(runs)));
+      expect(state.texts()).toEqual(["available", after]);
+    },
+  );
 });
 
 describe("the registry's sources", () => {

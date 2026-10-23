@@ -205,6 +205,15 @@ export const zh = {
       signInRefused: "那台机器拒绝了本服务端的登录——请在「机器管理」页面修改它的 SSH 设置",
       failed: (message: string) => `那台机器没有答复：${message}`,
     },
+    /** The API socket this server holds to the machine (machines-view's socketReading). */
+    detailSocket: "API 套接字",
+    socket: {
+      connected: "已连接",
+      dialling: "拨号中",
+      refused: "被拒绝",
+      failed: "失败",
+    },
+    agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
     updateNotice: (count: number) => `${count} 台机器待更新`,
@@ -465,7 +474,12 @@ export const zh = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",
+    /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "新建终端",
+    /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
+    shellEntry: "命令行终端",
+    /** The terminal panel's strip of shells, for assistive technology. */
+    tabsLabel: "终端标签页",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
@@ -473,8 +487,6 @@ export const zh = {
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
     noTerminalApi:
       "该服务端没有终端接口：运行中的 runtime 早于该功能。热更新只替换平台与前端，终端接口属于 runtime，需更新 runtime 本身（重启无效）",
-    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
-    detach: "在新窗口打开",
     status: {
       connecting: "连接中",
       ready: "已连接",
@@ -1943,6 +1955,8 @@ export const zh = {
       `这个 Agent 在 ${machine} 上：设置、对话与删除都在那台机器上进行，和本服务端同 id 的 Agent 互不相干。`,
     /** The disabled Usage button on a machine's Agent: what the usage center counts. */
     usageThisServerOnly: "成本中心只统计本服务端的 Agent",
+    /** Why a connected machine's Agent cards wait: its list has not answered in this page load yet. */
+    readingMachineAgents: (machine: string): string => `正在读取 ${machine} 的 Agent…`,
     /** Delete's confirmation for a machine's Agent: the machine it is deleted on. */
     deleteConfirmOnMachine: (name: string, machine: string): string =>
       `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,
@@ -2196,8 +2210,12 @@ export const zh = {
         "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
         `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
       ].join("\n"),
-    /** Penguin Go's "Sync models" (in its Connected menu) adds the models the platform newly offers; it never rewrites the ones already here. */
-    platformSyncAdded: (n: number): string => `已新增 ${n} 个模型`,
+    /** Penguin Go's "Sync models" adds missing models and refreshes existing prices and promotions; names only the non-zero counts (both zero is `platformUpToDate`). */
+    platformSyncResult: (added: number, updated: number): string => {
+      if (added === 0) return `已更新 ${updated} 个模型`;
+      if (updated === 0) return `已新增 ${added} 个模型`;
+      return `已新增 ${added} 个模型，更新 ${updated} 个模型`;
+    },
     platformUpToDate: "已是最新",
     homepage: "模型主页",
     speedTest: "测速",
@@ -2253,6 +2271,8 @@ export const zh = {
       `已检测为 ${protocol}，base URL 已整理为 ${url}`,
     /** The ONE failure toast: 所有失败情形共用，只讲用户能动手改的两件事。 */
     detectFailedBody: "无法检测接口协议，请检查 API Key 与 base URL。",
+    /** The vision probe learned nothing (auth, network, an unrelated 400): not a protocol problem, so it must not send the reader to the key or the URL. */
+    detectVisionFailed: "无法判断该模型是否接受图片输入，视觉保持不变",
     /** 保存时检测无结果：按兼容协议继续保存。 */
     detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
@@ -2375,6 +2395,8 @@ export const zh = {
     clearGroupKey: "清除分组密钥",
     /** A blank base URL that nothing fills: the group settings' placeholder, and a model's where its group sets none. */
     baseUrlNone: "未设置：使用客户端默认端点",
+    /** The blank base URL field where the client is known: the endpoint its requests go to. */
+    baseUrlDefault: (url: string): string => `未设置：默认发往 ${url}`,
     /** The group settings' Detect while neither the field nor the group holds a base URL. */
     detectNeedsBaseUrl: "先填写 base URL",
     /** The protocol menu's first row in the group settings: the group sets none. */
@@ -2499,10 +2521,12 @@ export const zh = {
     // wherever the env fallback hint appears.
     providerEnvNotes: {
       zhipu:
-        "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需填 base URL https://open.bigmodel.cn/api/paas/v4",
+        "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需在环境中同时设置 ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4，或在此填写 key 并填该 base URL",
       moonshot:
-        "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需填 base URL https://api.moonshot.ai/v1",
+        "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需在环境中同时设置 MOONSHOT_BASE_URL=https://api.moonshot.ai/v1，或在此填写 key 并填该 base URL",
     } as Record<string, string | undefined>,
+    envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
+      `请求发往 ${defaultBaseUrl}；环境里设置了 ${envBaseUrlKey} 时改发往该地址`,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
@@ -2918,6 +2942,10 @@ export const zh = {
     sharedTag: "所有机器共用",
     sharedHint: "在 Project 配置中对所有机器统一管理，不能在这里移除。",
     machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
+    /** A machine out of reach, as the header's machine picker lists it. */
+    machineOutOfReach: (machine: string) => `${machine}（不可达）`,
+    /** A manage-installs row whose machine has not answered yet: its button waits for it. */
+    waitingFor: (machine: string) => `等待 ${machine} 答复`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "设置",
     pageDesc:
@@ -2962,6 +2990,8 @@ export const zh = {
       failed: (reason: string) => `加载失败：${reason}`,
       elsewhere: (machines: string) => `只在 ${machines} 上运行，本机不运行`,
       unsynced: "已安装，尚未同步到该机器",
+      /** Appended to a library status counted with Agents on a machine out of reach. */
+      lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
     noMatch: "没有匹配的插件。",
     /** The description of a shipped package the registry has no entry for. */
@@ -3961,6 +3991,21 @@ Benchmark：
     sessionNotFoundHint: "这个链接指向的会话已经不在了，或者你没有访问它的权限。",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",
+    /**
+     * A conversation on a machine the server cannot reach: its history lives there. The headline
+     * names the machine by its alias and says its link state; the transport's own error is folded
+     * under the details row.
+     */
+    machineAway: {
+      reconnecting: (alias: string) => `${alias} 当前连不上，正在重连`,
+      reconnectStopped: (alias: string) => `${alias} 当前连不上，已停止自动重连`,
+      signInRefused: (alias: string) => `${alias} 当前连不上：保存的登录密码被拒绝`,
+      stopped: (alias: string) => `${alias} 上的服务已停止`,
+      notConnected: (alias: string) => `${alias} 尚未连接`,
+      missing: "这个对话所在的机器不在当前 Project 的机器列表中",
+      hint: "对话保存在那台机器上，连接恢复后会自动加载。",
+      details: "技术细节",
+    },
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openAgents: "智能体面板",
@@ -4153,10 +4198,11 @@ Benchmark：
     copyCode: "复制代码",
     copyReply: "复制回复",
     /**
-     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram, and
-     * the weather, clock, countdown and metrics widgets), handed to the UI package that draws
-     * them (lib/ui-strings.ts). Of the four tone names, a warning is about loss or harm and a
-     * caution about something recoverable breaking, so the two must not read as the same level.
+     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram, a
+     * chart, and the weather, clock, countdown, metrics and resources widgets), handed to the UI
+     * package that draws them (lib/ui-strings.ts). Of the four tone names, a warning is about
+     * loss or harm and a caution about something recoverable breaking, so the two must not read
+     * as the same level.
      */
     a2ui: {
       /** The language these words are in: widgets format numbers, dates and weekdays in it. */
@@ -4182,6 +4228,10 @@ Benchmark：
       /** A form's number stepper: add or subtract one step. */
       stepUp: "增加",
       stepDown: "减少",
+      /** A form field's error line when the model gave no hint and the rule has no symbols. */
+      invalid: "值无效",
+      /** A form dropdown's empty first row, when the model wrote no placeholder. */
+      choose: "请选择…",
       /** The weather conditions, by the catalog's key (the same words as core's fallback). */
       conditions: {
         clear: "晴",
@@ -4226,6 +4276,33 @@ Benchmark：
       /** Which way a reading moved, read out before its change. */
       deltaUp: "上升",
       deltaDown: "下降",
+      /** A chart's kind: its name when the model gave no title, and the lead of its summary. */
+      chartKind: {
+        line: "折线图",
+        area: "面积图",
+        bar: "柱状图",
+        pie: "饼图",
+        scatter: "散点图",
+        histogram: "直方图",
+        gauge: "仪表",
+      },
+      /** A chart summary's counts: the categories (slices, bins) and the series. */
+      categories: (n: number) => `${n} 个类别`,
+      seriesCount: (n: number) => `${n} 个系列`,
+      /** The system-resource board's name when the model named no host, and its sections. */
+      resources: "系统资源",
+      cpu: "CPU",
+      memory: "内存",
+      swap: "交换",
+      disk: "磁盘",
+      network: "网络",
+      load: "负载",
+      uptime: "运行时间",
+      /** The network chart's two series. */
+      received: "接收",
+      sent: "发送",
+      /** The network chart's caption: its readings carry no times, only their count and order. */
+      lastReadings: (n: number) => `近 ${n} 次读数`,
     },
     forkSession: "从这里分叉对话",
     forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",
@@ -4543,6 +4620,8 @@ Benchmark：
     sendingTestMessage: "发送中…",
     testMessageSent: "测试消息已发送",
     statusLabel: "连接状态",
+    /** The status label while the machine is out of reach: what follows is its last answer, not a live state. */
+    statusLastKnown: "最后已知状态",
     status: {
       disconnected: "未连接",
       connecting: "连接中",
@@ -4648,6 +4727,60 @@ Benchmark：
       "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
     troubleNoGroupInbound:
       "在群里发消息，面板却一直显示「本次连接建立以来还没有收到过消息」？这一行只能作为你读到它之后再发的那条消息的证据：它只覆盖当前这条连接，停用再启用连接、或者再保存一次凭证，都会开启一条新连接并把它清零。所以先重新发一条。如果这一行仍然显示没有收到过，那就是 Telegram 没有把它投递过来，本机再怎么查也无济于事：确认机器人确实还在这个群里；如果刚在 @BotFather 关掉 Group Privacy，必须把机器人移出该群再重新拉入，已有的群不会自动生效；并确认没有别的程序（包括你自己手动跑的 getUpdates，见上一条）在用同一个 Token 轮询。另外，Telegram 频道（channel）的贴文不受支持——本连接只处理群聊与私聊。",
+    /**
+     * A conversation that lives on a machine: its bot connects from that machine, not from this
+     * server. The dock panel and the dialog say where, above the channels.
+     */
+    runsOn: (alias: string) => `连接自 ${alias}`,
+    /**
+     * In the "what binding does" fold, for a conversation on a machine: what running there means
+     * for the connection, for a QR login, and for this app being away.
+     */
+    machineHelp: (alias: string) =>
+      `这个对话位于 ${alias}，它的机器人也在那里运行。连接由 ${alias} 主动向平台发起：那台机器需要能访问该平台，不需要公网地址。扫码登录的是 ${alias}，而不是这台电脑。即使本应用关闭或与 ${alias} 断开，只要那台机器的服务在运行，机器人就会继续回复。`,
+    /**
+     * The notice over a machine conversation's editor while the machine is out of reach: why, in
+     * the Machines page's terms; whether the bot still answers; and how old the state shown under
+     * it is (null: nothing was ever read from it in this browser). The editor is read-only then.
+     */
+    machineUnreachable: (
+      alias: string,
+      state: "reconnecting" | "reconnectStopped" | "signInRefused" | "stopped" | "notConnected",
+      asOf: string | null,
+    ): string => {
+      const why = {
+        reconnecting: `${alias} 正在重新连接。`,
+        reconnectStopped: `${alias} 的自动重连已停止，请在「机器管理」页面重试。`,
+        signInRefused: `${alias} 拒绝了本服务端的登录，请在「机器管理」页面修改它的 SSH 设置。`,
+        stopped: `${alias} 的服务已停止，请在「机器管理」页面启动它。`,
+        notConnected: `${alias} 尚未连接，请在「机器管理」页面启用它。`,
+      }[state];
+      const bot =
+        state === "stopped" || state === "notConnected"
+          ? "服务启动之前，机器人不会回复。"
+          : `机器人从 ${alias} 连接而不是从这里，只要那台机器的服务在运行，它就会继续回复。`;
+      const shown =
+        asOf === null
+          ? "机器恢复连接后，这里会显示它的设置。"
+          : `以下是 ${asOf} 时的状态；机器恢复连接后才能修改。`;
+      return `${why}${bot}${shown}`;
+    },
+    /** The same notice when the conversation's machine is not on this Project's list at all. */
+    machineMissing: "这个对话所在的机器不在本 Project 的机器列表里，无法在这里查看或修改它的连接。",
+    /** Enabling refused: the bot is connected on another server this one can see (null: this server). */
+    accountHeldOn: (where: string | null) =>
+      `${where === null ? "该机器人已在本服务端上连接。" : `该机器人已在 ${where} 上连接。`}先在那里停用，再在这里启用。`,
+    /** After enabling: the machines that could not be asked whether they hold the bot, and why not. */
+    holdersUnchecked: (
+      machines: ReadonlyArray<{
+        alias: string;
+        reason: "not_connected" | "older_build" | "failed";
+      }>,
+    ) => {
+      const reason = { not_connected: "未连接", older_build: "需要更新", failed: "没有答复" };
+      const list = machines.map((m) => `${m.alias}（${reason[m.reason]}）`).join("、");
+      return `已启用，但未能询问 ${list}。如果同一个机器人在那里也已连接，请在那里停用：一个机器人同一时刻只能在一处运行。`;
+    },
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -4877,6 +5010,17 @@ Benchmark：
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
+    /** The round navigator under the global summary: its title, and how many rounds it lists. */
+    roundNav: "轮次导航",
+    roundCount: (n: number) => `${n} 轮`,
+    /** A round head's control that returns to the navigator, on that round's row. */
+    backToNav: "回到导航",
+    /** The navigator's number box: its accessible name and its placeholder. */
+    jumpToRound: "跳转到轮次",
+    jumpToRoundPlaceholder: "轮次",
+    /** A level pill's hint where a Trace first states a thinking level, and where it changes. */
+    levelFirst: (level: string) => `思考等级 ${level}`,
+    levelChanged: (from: string, to: string) => `思考等级 ${from} → ${to}`,
   },
 
   benchmark: {

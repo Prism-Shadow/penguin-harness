@@ -2,6 +2,19 @@
  * Unit tests for the Trace service: multi-file history concatenation, file
  * listing, pagination (following a growing file), performance-analysis derivation
  * (including the head's context window), and Agent-level drill-down browsing.
+ *
+ * Round navigator data, as the Trace view reads it from the analysis:
+ * - Each request carries the thinking level its request_begin records; one written before the
+ *   field carries none (unknown, not a level).
+ * - A round's label is the first line of the user text that started it, marker blocks and
+ *   attachment lines left out, whitespace collapsed, cut at 120 characters.
+ * - A round no user text started (an image-only send, a summarize compaction) has no label; a
+ *   send that never got a request keeps its own.
+ *
+ * Task records (task_begin / task_end), in the analysis:
+ * - Given the same Tasks with and without the pair, the rounds and their times are the same: a
+ *   task_begin heads the round its input starts, no Task record moves a round's end, and a file
+ *   that ends on Task records alone (behind a closing compaction) gains no round.
  */
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,7 +22,9 @@ import {
   abortEvent,
   approvalDecision,
   assistantText,
+  attachedFileLine,
   buildBackgroundTaskDoneMessage,
+  buildSkillsMessage,
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
@@ -18,6 +33,8 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   thinkingMessage,
   tokenUsage,
   toolCall,
@@ -412,6 +429,65 @@ describe("trace-service", () => {
     // rounds of 60k/65k" ended up displaying as 125k.
     expect(t.tokens).toEqual({ cacheRead: 108_000, cacheWrite: 12_000, output: 5_000 });
     expect(t.llmMs).toBe(2000 + 2000);
+  });
+
+  it("Task records leave the rounds as they are: a task_begin heads its Task's round, and none moves a round's end or adds one", async () => {
+    const ts = (hhmm: string, s: string) => `2026-07-05T${hhmm}:${s}Z`;
+    const task1 = [
+      at(ts("10:00", "00.000"), userText("first")),
+      at(ts("10:00", "01.000"), requestBegin()),
+      at(ts("10:00", "02.000"), assistantText("one")),
+      at(ts("10:00", "03.000"), requestEnd("completed")),
+      at(ts("10:00", "03.100"), tokenUsage(counts(100), counts(100))),
+    ];
+    // Half an hour later; it ends on a compaction, so its task_end and the next Task's
+    // task_begin (another half hour later) close the file behind compaction_end.
+    const task2 = [
+      at(ts("10:30", "00.000"), userText("second")),
+      at(ts("10:30", "01.000"), requestBegin()),
+      at(ts("10:30", "02.000"), assistantText("two")),
+      at(ts("10:30", "03.000"), requestEnd("completed")),
+      at(ts("10:30", "03.100"), tokenUsage(counts(300), counts(200))),
+      at(
+        ts("10:30", "04.000"),
+        compactionBegin({ reason: "context", mode: "summarize", context: 200, turns: 2 }),
+      ),
+      at(ts("10:30", "04.000"), userText("COMPACT NOW")),
+      at(ts("10:30", "04.100"), requestBegin()),
+      at(ts("10:30", "06.000"), assistantText("[summary]so far[/summary]")),
+      at(ts("10:30", "06.000"), requestEnd("completed")),
+      at(
+        ts("10:30", "06.100"),
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      ),
+    ];
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      at(ts("10:00", "00.000"), taskBegin()),
+      ...task1,
+      at(ts("10:00", "03.200"), taskEnd()),
+      at(ts("10:30", "00.000"), taskBegin()),
+      ...task2,
+      at(ts("10:30", "06.200"), taskEnd()),
+      at(ts("11:00", "00.000"), taskBegin()),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-05", S, 2, [
+      sessionMeta(metaPayload()),
+      ...task1,
+      ...task2,
+    ]);
+
+    const paired = await service.analyze(P, A, S, 1);
+    const plain = await service.analyze(P, A, S, 2);
+    const rounds = (a: typeof plain) =>
+      a.tasks.map((t) => ({ startTs: t.startTs, endTs: t.endTs, prompt: t.prompt }));
+    expect(rounds(paired)).toEqual(rounds(plain));
+    expect(paired.tasks).toHaveLength(3);
+    expect(paired.elapsedMs).toBe(plain.elapsedMs);
+    // The second Task's round starts at its task_begin (index 8), and the trailing task_begin
+    // of the next Task stays with the compaction round, whose rows end the file.
+    expect(paired.tasks[1]!.messageFrom).toBe(8);
+    expect(paired.tasks[2]!.messageTo).toBe(21);
   });
 
   it("human approval waits don't count toward LLM generation time (the TPS denominator)", async () => {
@@ -1386,5 +1462,80 @@ describe("trace-service", () => {
     expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t2"]);
     // But the duration list still records t1 (flagged with the interrupted status).
     expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.stopReason).toBe("retryable");
+  });
+
+  it("each request carries the thinking level its request_begin records; a request written before the field carries none", async () => {
+    const T = (sec: string) => `2026-07-05T10:03:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 11, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), userText("one")),
+      at(T("01.000"), requestBegin("medium")),
+      at(T("02.000"), requestEnd("completed")),
+      at(T("03.000"), userText("two")),
+      at(T("04.000"), requestBegin("high")),
+      at(T("05.000"), requestEnd("completed")),
+      // Written by a core that predates the field.
+      at(T("06.000"), userText("three")),
+      at(T("07.000"), requestBegin()),
+      at(T("08.000"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 11);
+    expect(a.requests.map((r) => r.thinkingLevel)).toEqual(["medium", "high", undefined]);
+    expect("thinkingLevel" in a.requests[2]!).toBe(false);
+  });
+
+  it("a round's navigator label is the first line of the text that started it, markers and attachment lines left out, cut at 120 characters", async () => {
+    const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
+    const long = "x".repeat(200);
+    await writeTraceFile(root, P, A, "2026-07-05", S, 12, [
+      sessionMeta(metaPayload()),
+      // A skill invocation prepends a [use_skills] block; the label is the user's own line.
+      at(
+        T("00.000"),
+        userText(buildSkillsMessage(["pdf"], "\n  Fix   the login\tpage  \nand then the tests")),
+      ),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), requestEnd("completed")),
+      // An attachment sent with no typed text leaves no line to label.
+      at(T("03.000"), userText(attachedFileLine("/home/u/report.pdf"))),
+      at(T("04.000"), requestBegin()),
+      at(T("05.000"), requestEnd("completed")),
+      at(T("06.000"), userText(long)),
+      at(T("07.000"), requestBegin()),
+      at(T("08.000"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 12);
+    expect(a.tasks.map((t) => t.prompt)).toEqual([
+      "Fix the login page",
+      undefined,
+      "x".repeat(120),
+    ]);
+  });
+
+  it("rounds no user text started carry no label — an image-only send, a summarize compaction — and a send that never got a request keeps its own", async () => {
+    const T = (sec: string) => `2026-07-05T10:05:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 13, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), imageUrlMessage("data:image/png;base64,AAAA")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), requestEnd("completed")),
+      at(
+        T("03.000"),
+        compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }),
+      ),
+      at(T("03.500"), userText("COMPACT NOW")),
+      at(T("04.000"), requestBegin()),
+      at(T("04.500"), assistantText("[summary]s[/summary]")),
+      at(T("05.000"), requestEnd("completed")),
+      at(T("05.500"), compactionEnd({ reason: "context", mode: "summarize", status: "completed" })),
+      // Interrupted right after sending: no request_begin ever settles this round.
+      at(T("06.000"), userText("are you there?")),
+    ]);
+    const a = await service.analyze(P, A, S, 13);
+    expect(a.tasks.map((t) => [t.compaction ?? false, t.prompt])).toEqual([
+      [false, undefined],
+      [true, undefined],
+      [false, "are you there?"],
+    ]);
   });
 });

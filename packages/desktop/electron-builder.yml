@@ -12,10 +12,10 @@
 # files sidestep every asar edge (fork-from-archive, unpacked-tree resolution splits)
 # at the cost of some inodes.
 #
-# macOS release artifacts are Developer ID signed and notarized in CI when the signing
-# secrets are present. Windows release artifacts are Authenticode-signed through EVSign
-# during packaging so update metadata is generated from the final signed bytes. Unsigned
-# dry-run builds remain possible outside the release path.
+# macOS release artifacts are Developer ID signed and notarized in CI when the build requires
+# signing. Windows release artifacts are Authenticode-signed through EVSign during packaging
+# so update metadata is generated from the final signed bytes. A desktop-build.yml dry run,
+# which does not require signing, is unsigned.
 appId: com.prismshadow.penguinharness
 productName: PenguinHarness
 # Declaring the publish target is what makes electron-builder emit the update metadata

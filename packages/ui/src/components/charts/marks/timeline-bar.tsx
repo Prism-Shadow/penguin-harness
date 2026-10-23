@@ -5,6 +5,10 @@
  * outline (drawn inside the box, so it never changes the bar's size or position) and fill
  * opacity (applied to the fill alone, so a dimmed bar's own opacity class still works).
  *
+ * Bars set end to end (a horizontal stack's segments) say which ends meet a neighbour
+ * (`square`): those stay square, so the theme's radius rounds only the stack's free ends, as a
+ * stacked column rounds only its top.
+ *
  * Everything else a lane needs from a bar — the pointer handlers, the jump on click, the
  * accessible name of a data mark, a ring for a failure, a fade while another mark is singled
  * out — passes through. The bar itself holds still: a bar that is still open is marked by the
@@ -15,15 +19,28 @@ import { useChartStyle } from "../chart-style";
 import { resolvePaint } from "./marks";
 import type { ChartPaint } from "./marks";
 
+/** Which ends of a bar meet a neighbour's: the start (left), the end (right), or both. */
+export type TimelineBarJoin = "start" | "end" | "both";
+
+/** A bar's corner radius under a theme radius `r`, its joined ends left square. */
+export function timelineRadius(r: number, square?: TimelineBarJoin): number | string {
+  if (square === undefined) return r;
+  if (square === "both") return 0;
+  return square === "start" ? `0 ${r}px ${r}px 0` : `${r}px 0 0 ${r}px`;
+}
+
 export function TimelineBar({
   paint,
   place,
+  square,
   className = "",
   ...rest
 }: {
   paint: ChartPaint;
   /** Where the bar sits along its lane (left / width / margin), from the chart's time scale. */
   place: CSSProperties;
+  /** The ends that meet a neighbouring bar, kept square. */
+  square?: TimelineBarJoin;
   className?: string;
 } & Omit<HTMLAttributes<HTMLSpanElement>, "className" | "style" | "color">) {
   const chart = useChartStyle();
@@ -42,7 +59,7 @@ export function TimelineBar({
   const style: CSSProperties = {
     ...place,
     ...(fill !== undefined ? { backgroundColor: fill } : {}),
-    ...(chart.barRadius > 0 ? { borderRadius: chart.barRadius } : {}),
+    ...(chart.barRadius > 0 ? { borderRadius: timelineRadius(chart.barRadius, square) } : {}),
     ...(chart.barStroke > 0
       ? { boxShadow: `inset 0 0 0 ${chart.barStroke}px ${outlineColor}` }
       : {}),

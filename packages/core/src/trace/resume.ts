@@ -18,6 +18,8 @@
  *     input.
  *   - Output = assistant messages between this `start` and `stop`.
  *
+ * Task records (`task_begin` / `task_end`) are events and take no part in this attribution.
+ *
  * Determination order: first check file-level compaction closure; then evaluate turn by turn
  * (completed turns go to history, others are dropped wholesale while keeping outputs paired with
  * already-committed tool_calls — a turn whose provider rejected an image gives its input back
@@ -33,6 +35,7 @@ import {
   isCompleteModelMessage,
   isEventMessage,
   isSessionMeta,
+  lastNonTaskRecord,
   replaceInputImages,
   toolCallOutput,
   userText,
@@ -302,8 +305,11 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
 
   // —— First check the file-level case: compaction closure (the file ends with a completed
   // compaction stop and no new file was opened, i.e. it's still the latest index at resume time)
-  // — this file's context is fully closed, so the whole file is not replayed.
-  const last = messages[messages.length - 1];
+  // — this file's context is fully closed, so the whole file is not replayed. Task records
+  // after the compaction_end do not count: they never open the next file, so a Task that ended
+  // on the compaction (and the next one's task_begin) leaves them in this one, and a restart
+  // there must still find the summary (see omnimessage/task-records.ts).
+  const last = lastNonTaskRecord(messages);
   if (last && isCompactionEnd(last)) {
     const p = last.payload;
     if (p.status === "completed") {
@@ -467,7 +473,8 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
         danglingBegin = null;
       } else if (t === "abort" && (msg.origin?.length ?? 0) === 0) renderMessages.push(msg);
       // Other events (token_usage / approval_decision / tool_list_ready / mcp_connect_*,
-      // etc.) don't participate in turn determination and stay out of the render view —
+      // task_begin / task_end, etc.) don't participate in turn determination and stay out of
+      // the render view —
       // the bootstrap records are re-emitted live by the next run when they matter.
     }
   }
