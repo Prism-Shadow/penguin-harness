@@ -7,8 +7,9 @@
  *
  *   node prose.mjs <step> [options]
  *
- *   API steps:   outline | section | write | translate | polish | fix | trim | emphasize | review
- *   local steps: plan | assemble | route | check | strip | pair | selftest
+ *   API steps:   outline | section | write | translate | polish | fix | trim | emphasize |
+ *                transition | review
+ *   local steps: plan | assemble | route | check | strip | unstrip | pair | selftest
  *
  * A post is planned once (outline, then plan validates and freezes it), written in one call as a
  * whole, reviewed, fixed, cut and translated as a whole, and published by strip, which turns the
@@ -52,9 +53,10 @@ const API_STEPS = [
   "fix",
   "trim",
   "emphasize",
+  "transition",
   "review",
 ];
-const LOCAL_STEPS = ["plan", "assemble", "route", "check", "strip", "pair", "selftest"];
+const LOCAL_STEPS = ["plan", "assemble", "route", "check", "strip", "unstrip", "pair", "selftest"];
 const LANG_NAME = { en: "English", zh: "Chinese" };
 const BLOG_CATEGORIES = ["news", "practice", "perspectives", "changelog"];
 const CATEGORY_NAME = {
@@ -79,7 +81,8 @@ const HELP = `usage: node prose.mjs <step> [options]
 
 The flow for a post (one language; the second follows by one translate call):
   outline → plan --freeze → write (the whole post) → check --plan-rows advisory → trim if over
-  → review + truth review → fix (≤ 2 rounds) → translate → … → emphasize → pair → strip → check
+  → review + truth review → fix (≤ 2 rounds) → transition → review → translate → …
+  → transition → review → emphasize → pair → strip → check
 Section mode (long posts, docs written task by task): section 0 … N, each followed by
   check --section → assemble → review → route → fix per section → assemble → … (SKILL.md section 4)
 
@@ -125,6 +128,14 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
                marks one key sentence per section (and in the lead) with ** and changes nothing
                else; an answer that differs once ** are removed, or has a section with no span or
                two, or a span too long or in the wrong place, goes to <out>.rejected.md (exit 1).
+               --out defaults to the next draft version
+  transition --in <draft.<lang>.vN.md> [--findings <review findings>] [--notes <f>]
+               mends the joins: for each ## heading, the first sentence of the paragraph after it
+               and, when the join needs it, the last sentence of the paragraph before it; nothing
+               else. An answer that changes any other block or sentence, a marker of a rewritten
+               sentence, a heading, the TL;DR, a figure block or the frontmatter goes to
+               <out>.rejected.md (exit 1). The review's transition and signpost findings are
+               passed on. Prints every join, before → after; then review the result again.
                --out defaults to the next draft version
   review     --in <f> [--facts <f>] [--notes <f>] [--tells]   numbered findings in the form fix
              reads; --out defaults to findings.<lang>.vN.api.md (findings.s<n>.<lang>.vK.api.md
@@ -175,10 +186,22 @@ local steps:
   pair       --in <f> --pair <f>   per section: markers, citations, figures, code, URLs, numbers
   strip      --in <f> --out <f> [--facts <f> [--numbering-from <other language's post>]]
              [--figures-dir <dir>] [--assets <dir>]
-               removes the model's notes; with --facts each marker group becomes [^n] after its
-               sentence (public sources, numbered by first use or by the other post) and the
+               removes the model's notes; with --facts a paragraph's first marker group with a
+               public source not cited yet becomes [^n] after its sentence (each source once per
+               post, one per paragraph, numbered by first use or by the other post) and the
                [^n]: [title](url) list closes the post; a drawn figure block becomes
                <dir>/<id>.<lang>.html on one line, a screenshot block an image line + caption
+  unstrip    --in <published post> --out-dir <dir> [--pair <the other language's recovered draft>
+             --facts <its seed or facts file>] [--slug <slug>]
+               a published post back into a draft: <dir>/recovered.<lang>.md (each inline figure
+               and screenshot a figure block, each [^n] a fact marker), <dir>/figures/<id>.<lang>.html
+               (each inline figure as published, for check --svg and strip --figures-dir) and
+               <dir>/facts.<lang>.seed.md (## SOURCES from the reference list, ## FACTS one line per
+               citation). Guard: every figure matches its block, and strip of the draft with the
+               seed gives back every figure and image line byte for byte and the prose once
+               citations are removed; else exit 1. --pair aligns the second language with the
+               first: the same S ids, and each citation the fact id the paired draft gives that
+               source in the same section
   selftest                        runs the local steps on built-in fixtures; exits 1 on a regression`;
 
 const OPTIONS = new Set([
@@ -228,6 +251,7 @@ const OPTIONS = new Set([
   "title",
   "notes",
   "plan-rows",
+  "out-dir",
 ]);
 const FLAGS = new Set(["dry-run", "help", "tells", "facts-all", "freeze"]);
 const REPEATABLE = new Set(["research", "pin"]);
@@ -1783,6 +1807,43 @@ function buildMessages(step, o) {
       }
       break;
     }
+    case "transition": {
+      if (input === undefined) fail("transition needs --in <draft>");
+      if (sectionOfFile(o.in)) fail("transition edits a whole draft's joins: assemble it first");
+      lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
+      params = profileParams(F, prof, lang);
+      params.STYLE = stylePrompt(lang);
+      params.FLOW_RULE = F["flow-rule-post"];
+      Object.assign(params, notesSlots());
+      params.NOTES_RULE = notes ? ` ${F["notes-rule-transition"]}` : "";
+      params.FINDINGS_RULE = "";
+      params.FINDINGS_SECTION = "";
+      if (o.findings) {
+        // Only the findings about joins go along: the step may not act on any other.
+        const joins = findingItems(read(o.findings, "--findings")).filter(({ item }) =>
+          /\b(transition|signpost)\b/i.test(item),
+        );
+        if (joins.length) {
+          params.FINDINGS_RULE = ` ${F["transition-findings-rule"]}`;
+          params.FINDINGS_SECTION = `${F["transition-findings-section"]}\n\n`;
+          content.FINDINGS = joins.map((x) => x.item).join("\n");
+        } else {
+          note(`${o.findings} has no transition or signpost finding; the call judges every join`);
+        }
+      }
+      content.DRAFT = fenced(input);
+      o.out ??= nextDraftFile(o.in);
+      if (!joinsOf(blocksOf(input).blocks).some((j) => j.after !== undefined)) {
+        hooks.skip = "no `## ` heading is followed by a paragraph: no join to edit";
+      }
+      hooks.verify = (out) => [
+        ...transitionProblems(input, out),
+        ...notesProblems(out, notes, lang),
+      ];
+      hooks.retry = "rerun transition once; a second failure goes to the author";
+      hooks.after = (out) => transitionReport(input, out, o.out);
+      break;
+    }
     case "review": {
       if (input === undefined) fail("review needs --in <draft>");
       lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
@@ -1874,11 +1935,179 @@ function emphasizeProblems(before, after, lang, budgets) {
   return problems;
 }
 
-/** `draft.en.v3.md` → the next free `draft.en.v<k>.md` beside it; any other name needs --out. */
+/**
+ * A text's blocks, as the transition guard compares them: runs of non-blank lines, each heading a
+ * block of its own, fenced code and figure blocks whole. A block's kind is `heading`, `para` (a
+ * paragraph of plain text lines), `tldr` (the TL;DR line and its bullets) or `other`.
+ */
+function blocksOf(text) {
+  const doc = parseText(text);
+  const tldr = tldrLines(doc.items);
+  const blocks = [];
+  let cur = null;
+  const close = () => {
+    if (cur) blocks.push(cur);
+    cur = null;
+  };
+  for (const it of doc.items) {
+    if (it.type === "blank") {
+      close();
+      continue;
+    }
+    if (it.type === "heading") {
+      close();
+      blocks.push({ kind: "heading", h2: /^## /.test(it.line), lines: [it.line], n: it.n });
+      continue;
+    }
+    const kind = tldr.has(it.n) ? "tldr" : it.type === "text" ? "para" : "other";
+    if (!cur) cur = { kind, lines: [], n: it.n };
+    else if (cur.kind !== kind) cur.kind = "other";
+    cur.lines.push(it.line);
+  }
+  close();
+  return { meta: doc.metaRaw, blocks };
+}
+
+/**
+ * The joins of a text: for every `## ` heading, the paragraph right before it (`before`) and the
+ * paragraph right after it (`after`), as block indexes, when those blocks are paragraphs. A TL;DR,
+ * list, figure or caption next to a heading is no paragraph, so that side of the join stays.
+ */
+function joinsOf(blocks) {
+  const joins = [];
+  blocks.forEach((b, i) => {
+    if (b.kind !== "heading" || !b.h2) return;
+    joins.push({
+      heading: b.lines[0].slice(3).trim(),
+      before: blocks[i - 1]?.kind === "para" ? i - 1 : undefined,
+      after: blocks[i + 1]?.kind === "para" ? i + 1 : undefined,
+    });
+  });
+  return joins;
+}
+
+/** Which sentence of which block transition may rewrite: the first after a heading, the last before one. */
+function editableSentences(blocks) {
+  const may = new Map();
+  const allow = (i, which) => {
+    if (i === undefined) return;
+    if (!may.has(i)) may.set(i, new Set());
+    may.get(i).add(which);
+  };
+  for (const j of joinsOf(blocks)) {
+    allow(j.after, "first");
+    allow(j.before, "last");
+  }
+  return may;
+}
+
+const paraSentences = (block) => sentences(block.lines.map((l) => l.trim()).join(" "));
+
+/**
+ * What transition may not do: change any block but the paragraphs next to a `## ` heading, any
+ * sentence of those but the first after the heading and the last before it, the markers or `**`
+ * of a sentence it rewrites, or the number of blocks or sentences.
+ */
+function transitionProblems(before, after) {
+  const a = blocksOf(before);
+  const b = blocksOf(after);
+  const problems = [];
+  if (a.meta !== b.meta) problems.push("the frontmatter changed");
+  if (a.blocks.length !== b.blocks.length) {
+    problems.push(
+      `${b.blocks.length} blocks; the text given had ${a.blocks.length} (a paragraph, heading or figure was added, dropped, split or merged)`,
+    );
+    return problems;
+  }
+  const may = editableSentences(a.blocks);
+  const name = (x) =>
+    x.kind === "heading"
+      ? `the heading "${x.lines[0]}"`
+      : x.kind === "tldr"
+        ? "the TL;DR"
+        : FIGURE_OPEN.test(x.lines[0].trim())
+          ? `figure block ${figureIdsIn(x.lines.join("\n"))[0] ?? ""}`.trim()
+          : `the ${x.kind === "para" ? "paragraph" : "block"} at line ${x.n}`;
+  a.blocks.forEach((x, i) => {
+    const y = b.blocks[i];
+    if (x.lines.join("\n") === y.lines.join("\n")) return;
+    const which = may.get(i);
+    if (!which || y.kind !== "para") {
+      problems.push(
+        `${name(x)} changed; transition rewrites only the first sentence after a heading and the last sentence before one`,
+      );
+      return;
+    }
+    const sa = paraSentences(x);
+    const sb = paraSentences(y);
+    if (sa.length !== sb.length) {
+      problems.push(`${name(x)} has ${sb.length} sentences; it had ${sa.length}`);
+      return;
+    }
+    sa.forEach((s, k) => {
+      const t = sb[k];
+      if (s === t) return;
+      const role =
+        k === 0 && which.has("first")
+          ? "first"
+          : k === sa.length - 1 && which.has("last")
+            ? "last"
+            : undefined;
+      if (!role) {
+        problems.push(
+          `${name(x)}: sentence ${k + 1} changed ("${t.slice(0, 60)}"); only its ${[...which].join(" and ")} sentence may`,
+        );
+        return;
+      }
+      const ma = (s.match(MARKER) ?? []).join("");
+      const mb = (t.match(MARKER) ?? []).join("");
+      if (ma !== mb) {
+        problems.push(
+          `${name(x)}: its ${role} sentence carries ${mb || "no marker"}; it carried ${ma || "none"} (a rewritten sentence keeps its markers in order)`,
+        );
+      }
+      if ((s.match(/\*\*/g) ?? []).length !== (t.match(/\*\*/g) ?? []).length) {
+        problems.push(`${name(x)}: its ${role} sentence gained or lost a ** span`);
+      }
+    });
+  });
+  return problems;
+}
+
+/** Every join, before → after, one line each; then the review that scores the result. */
+function transitionReport(before, after, out) {
+  const a = blocksOf(before).blocks;
+  const b = blocksOf(after).blocks;
+  const changed = (i, k) => {
+    if (i === undefined) return undefined;
+    const sa = paraSentences(a[i]);
+    const sb = paraSentences(b[i]);
+    const at = k === "first" ? 0 : sa.length - 1;
+    return sa[at] === sb[at] ? undefined : `"${sa[at]}" → "${sb[at]}"`;
+  };
+  const lines = joinsOf(a).map((j) => {
+    const parts = [
+      ["last before", changed(j.before, "last")],
+      ["first after", changed(j.after, "first")],
+    ].filter(([, c]) => c);
+    const fixed = j.after === undefined ? " (no paragraph after the heading)" : "";
+    return `  ## ${j.heading}: ${parts.length ? parts.map(([w, c]) => `${w} ${c}`).join("; ") : `unchanged${fixed}`}`;
+  });
+  const edited = lines.filter((l) => !/: unchanged/.test(l)).length;
+  process.stderr.write(
+    `transition: ${edited} of ${lines.length} joins edited\n${lines.join("\n")}\n`,
+  );
+  note(`next: review --in ${out}; its .flow.txt holds the score (m of m expected)`);
+}
+
+/**
+ * `draft.en.v3.md` → the next free `draft.en.v<k>.md` beside it, and unstrip's
+ * `recovered.en.md` → the first free one; any other name needs --out.
+ */
 function nextDraftFile(input) {
-  const m = /^draft\.(en|zh)\.v\d+\.md$/.exec(path.basename(input));
+  const m = /^(?:draft\.(en|zh)\.v\d+|recovered\.(en|zh))\.md$/.exec(path.basename(input));
   if (!m) fail("this step needs --out <file> for an input not named draft.<lang>.vN.md");
-  return nextDraftIn(path.dirname(input), m[1]);
+  return nextDraftIn(path.dirname(input), m[1] ?? m[2]);
 }
 
 /** The next free `draft.<lang>.v<k>.md` in a directory. */
@@ -3025,12 +3254,12 @@ function normalize(text) {
 }
 
 /** The drawn text of an SVG: every `<tspan>`, and the direct text of every `<text>`. */
-function svgLeaves(svg) {
+function svgLeaves(svg, clean = plain) {
   const leaves = [];
   for (const m of svg.matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/g)) {
     const inner = m[1];
-    for (const t of inner.matchAll(/<tspan\b[^>]*>([\s\S]*?)<\/tspan>/g)) leaves.push(plain(t[1]));
-    const direct = plain(inner.replace(/<tspan\b[\s\S]*?<\/tspan>/g, " "));
+    for (const t of inner.matchAll(/<tspan\b[^>]*>([\s\S]*?)<\/tspan>/g)) leaves.push(clean(t[1]));
+    const direct = clean(inner.replace(/<tspan\b[\s\S]*?<\/tspan>/g, " "));
     if (direct) leaves.push(direct);
   }
   return leaves.filter(Boolean);
@@ -3112,7 +3341,7 @@ function figureProblems(html, fig, { slug, lang }) {
 function slugOf(o, file) {
   if (o.slug) return o.slug;
   const m = /^(.+)\.(en|zh)\.md$/.exec(path.basename(file));
-  if (m && !/^(draft|outline|findings)\b/.test(m[1])) return m[1];
+  if (m && !/^(draft|outline|findings|recovered)\b/.test(m[1])) return m[1];
   return path.basename(path.dirname(path.resolve(file)));
 }
 
@@ -3435,8 +3664,6 @@ function tldrLines(items) {
 
 /** A sentence longer than this is flagged: English words, Chinese characters. */
 const SENTENCE_CAP = { en: 35, zh: 60 };
-/** Citations per 100 English words or Chinese characters above which check warns. */
-const CITE_DENSITY = { en: 3.5, zh: 1.5 };
 const EMPHASIS = /\*\*([^*\n]+?)\*\*/g;
 
 /**
@@ -3516,49 +3743,68 @@ function emphasisCheck(text, lang, { cap, requireAll = false, strict = false, qu
 }
 
 /**
- * Citation density and placement, read in the published form: a post's own lines, or a draft's
- * lines rendered the way strip's citer will render them (with --facts).
+ * Citation count and placement, read in the published form: a post's own lines, or a draft's lines
+ * rendered the way strip's citer will render them (with --facts). A paragraph or a sentence with
+ * two citations is an error, and so is a post citing more sources than the profile's `sources`
+ * cap; fewer than its floor is a warning. `sources` is undefined for one section of a piece.
  */
-function checkCitations(doc, lang, r, facts) {
+function checkCitations(doc, lang, r, facts, { sources } = {}) {
   const draft = !!doc.raw.match(MARKER);
   if (draft && !facts?.sources.size) return;
   const cite = draft ? citations(facts) : undefined;
   const summary = tldrLines(doc.items);
-  const lines = [];
-  for (const it of doc.items) {
-    if (cite && it.type === "heading" && /^## /.test(it.line)) cite.section();
-    if (!["text", "list", "quote", "table"].includes(it.type)) continue;
+  const starts = paragraphStarts(doc.items);
+  const prose = ["text", "list", "quote", "table"];
+  // Every item stays, so blank lines and headings still end paragraphs; the TL;DR is set apart.
+  const rendered = doc.items.map((it) => {
+    if (cite && starts.has(it.n)) cite.paragraph();
     if (summary.has(it.n)) {
-      if (!draft && /\[\^\d+\]/.test(it.line)) {
+      if (!draft && prose.includes(it.type) && /\[\^\d+\]/.test(it.line)) {
         r.add(
           "error",
           it.n,
           "a citation in the TL;DR: it sums up the body, which carries the citations",
         );
       }
-      continue;
+      return { ...it, type: "tldr" };
     }
-    lines.push({ ...it, line: cite ? cite.render(it.line) : it.line });
-  }
-  const refs = lines.reduce((sum, it) => sum + (it.line.match(/\[\^\d+\]/g)?.length ?? 0), 0);
-  const size = countBody(doc.raw, lang);
-  const per100 = size ? (refs * 100) / size : 0;
-  if (per100 > CITE_DENSITY[lang]) {
-    r.add(
-      "warn",
-      null,
-      `${refs} citations in ${size} ${lang === "zh" ? "characters" : "words"}: ${per100.toFixed(1)} per 100 (at most ${CITE_DENSITY[lang]}); cite the key facts and list the rest under ## NOCITE`,
-    );
-  }
-  for (const p of paragraphs(lines)) {
+    if (!prose.includes(it.type)) return it;
+    return { ...it, line: cite ? cite.render(it.line) : it.line };
+  });
+  const lines = rendered.filter((it) => prose.includes(it.type));
+  const count = (text) => text.match(/\[\^\d+\]/g)?.length ?? 0;
+  for (const p of paragraphs(rendered)) {
+    const k = count(p.text);
+    if (k > 1) {
+      r.add(
+        "error",
+        p.n,
+        `a paragraph with ${k} citations (one per paragraph at most): "${p.text.slice(0, 60)}…"`,
+      );
+    }
     for (const s of sentences(p.text)) {
-      const k = s.match(/\[\^\d+\]/g)?.length ?? 0;
-      if (k > 1)
+      if (count(s) > 1)
         r.add(
-          "warn",
+          "error",
           p.n,
-          `a sentence with ${k} citations (one key citation per sentence): "${s.slice(0, 60)}…"`,
+          `a sentence with ${count(s)} citations (one per sentence at most): "${s.slice(0, 60)}…"`,
         );
+    }
+  }
+  for (const it of lines.filter((x) => x.type === "table")) {
+    if (count(it.line) > 1) r.add("error", it.n, `a table row with ${count(it.line)} citations`);
+  }
+  if (sources) {
+    const n = draft ? cite.cited() : doc.items.filter((it) => it.type === "footnote").length;
+    const what = draft ? "strip would cite" : "the post cites";
+    if (n > sources.cap) {
+      r.add(
+        "error",
+        null,
+        `${what} ${n} sources; the profile allows at most ${sources.cap}: list the facts a reader need not check under ## NOCITE`,
+      );
+    } else if (n < sources.floor) {
+      r.add("warn", null, `${what} ${n} sources, below the profile's floor of ${sources.floor}`);
     }
   }
   const after = new RegExp(`[${TERMINATOR}]\\[\\^\\d+\\]`);
@@ -3825,7 +4071,11 @@ function checkDoc(doc, lang, prof, o, r, facts) {
     }
   }
   checkFootnotes(doc, o, r, facts);
-  if (post) checkCitations(doc, lang, r, facts);
+  if (post) {
+    checkCitations(doc, lang, r, facts, {
+      sources: secN === undefined ? rangeOf(settings.sources) : undefined,
+    });
+  }
   if (facts && doc.raw.match(MARKER)) checkSources(doc, r, facts);
   const footer = undefined;
 
@@ -4131,16 +4381,17 @@ function pairDocs(a, b, o, r) {
   const facts = o.facts ? loadFacts(o.facts) : null;
   // The sources each section cites, as sets: from its footnotes once published, or, in a draft
   // with --facts, from its marker groups as strip's citer will pick them. The walk covers the whole
-  // post, since our own sources are cited once per post.
+  // post, since every source is cited once per post.
   const citedBySection = (d, labels) => {
     const out = [new Set()];
     const pick = facts?.sources.size ? citer(facts) : undefined;
     const summary = tldrLines(d.items);
+    const starts = paragraphStarts(d.items);
     for (const it of d.items) {
+      if (pick && starts.has(it.n)) pick.paragraph();
       if (summary.has(it.n)) continue;
       if (it.type === "heading" && /^## /.test(it.line)) {
         out.push(new Set());
-        pick?.section();
         continue;
       }
       if (["code", "fence", "footnote", "figure"].includes(it.type)) continue;
@@ -4384,37 +4635,21 @@ function runRoute(o) {
 
 const sourceKey = (s) => (s.url ? s.url : `nolink:${s.title}`);
 
-/** Our own pages and repositories, and a link-less "Our …" source: cited once per post. */
-function isInternalSource(s) {
-  if (s.kind === "nolink") return /^our\b/i.test(s.title);
-  if (!s.url) return false;
-  let url;
-  try {
-    url = new URL(s.url);
-  } catch {
-    return false;
-  }
-  const host = url.hostname.toLowerCase();
-  if (host === "penguin.ooo" || host.endsWith(".penguin.ooo")) return true;
-  return (
-    (host === "github.com" || host === "raw.githubusercontent.com") &&
-    /^\/Prism-Shadow\//i.test(url.pathname)
-  );
-}
-
 /**
- * The citer for one post. A marker group (the markers closing one sentence) cites at most one
- * source: of its facts, in the writer's order, the first whose first public source (tag order is
- * priority) is not yet cited in its scope. Our own sources are cited once per post, any other once
- * per `##` section; opinions, private sources and facts listed under ## NOCITE cite nothing. strip
- * numbers what it picks, and check and pair walk a draft with the same citer, so all three agree.
+ * The citer for one post. Every source is cited once per post, and a paragraph cites at most once:
+ * a marker group (the markers closing one sentence) offers, of its facts in the writer's order, the
+ * first whose first public source (tag order is priority) is not cited yet, and only the first
+ * group of a paragraph that offers one gets its footnote. The paragraph's other groups cite
+ * nothing, so their sources stay free for a later paragraph. Opinions, private sources and facts
+ * listed under ## NOCITE cite nothing. strip numbers what it picks, and check and pair walk a draft
+ * with the same citer, so all three agree; each calls `paragraph()` where a paragraph starts.
  */
 function citer(facts, problems = new Set()) {
-  const inPost = new Set();
-  let inSection = new Set();
+  const cited = new Set();
+  let paragraphCited = false;
   return {
-    section() {
-      inSection = new Set();
+    paragraph() {
+      paragraphCited = false;
     },
     pick(ids) {
       const candidates = [];
@@ -4434,15 +4669,33 @@ function citer(facts, problems = new Set()) {
         }
         if (first && !facts.nocite.has(id)) candidates.push(first);
       }
-      for (const s of candidates) {
-        const scope = isInternalSource(s) ? inPost : inSection;
-        if (scope.has(sourceKey(s))) continue;
-        scope.add(sourceKey(s));
-        return s;
-      }
-      return undefined;
+      if (paragraphCited) return undefined;
+      const s = candidates.find((c) => !cited.has(sourceKey(c)));
+      if (!s) return undefined;
+      cited.add(sourceKey(s));
+      paragraphCited = true;
+      return s;
     },
   };
+}
+
+/**
+ * The line numbers where the citer's paragraphs start, as `paragraphs` splits them: every list
+ * item, every table row, and a text or quote line after anything else.
+ */
+function paragraphStarts(items) {
+  const starts = new Set();
+  let prev = null;
+  for (const it of items) {
+    if (it.type === "table") starts.add(it.n);
+    if (!["text", "list", "quote"].includes(it.type)) {
+      prev = null;
+      continue;
+    }
+    if (it.type === "list" || !prev || prev.type !== it.type) starts.add(it.n);
+    prev = it;
+  }
+  return starts;
 }
 
 const TERMINATOR = ".!?,;:。！？，；：、";
@@ -4485,7 +4738,7 @@ function readNumbering(file) {
 /**
  * The citation renderer for one post: each marker group becomes at most one `[^n]`, the source
  * the citer picks, before the punctuation that ends its clause, numbered by first use (or by the
- * other language's map). `section()` is called at every `##` heading.
+ * other language's map). `paragraph()` is called where a paragraph starts.
  */
 function citations(facts, numberingFrom) {
   if (!facts.sources.size) fail("the facts file has no ## SOURCES section; citations need it", 1);
@@ -4539,7 +4792,13 @@ function citations(facts, numberingFrom) {
           : `[^${n}]: ${escapeInline(s.title)}`,
       );
   };
-  return { render, definitions, problems, section: () => picker.section() };
+  return {
+    render,
+    definitions,
+    problems,
+    paragraph: () => picker.paragraph(),
+    cited: () => used.size,
+  };
 }
 
 /** The footnotes of a stripped post: defined, used, numbered 1 … N, linked to SOURCES. */
@@ -4857,15 +5116,26 @@ function straightQuotes(line) {
 
 function runStrip(o) {
   if (!o.in || !o.out) fail("strip needs --in <file> --out <file>");
-  const doc = parseDoc(o.in);
-  const lang = o.lang ?? langOf(o.in);
+  const { body, notes } = stripDoc(parseDoc(o.in), o);
+  writeFileSync(o.out, body);
+  for (const n of notes) process.stderr.write(`removed note: ${n.trim()}\n`);
+  process.stderr.write(`wrote ${o.out}\n`);
+}
+
+/**
+ * A draft as published: citations from its markers (with `facts`), drawn figures inlined from
+ * `figures-dir`, screenshot blocks as image lines. Returns the text and the model's notes it
+ * removed; unstrip's guard calls it on the draft it recovered.
+ */
+function stripDoc(doc, o) {
+  const lang = o.lang ?? langOf(doc.file);
   const cite = o.facts ? citations(loadFacts(o.facts), o["numbering-from"]) : null;
   if (!cite && o["numbering-from"]) fail("--numbering-from needs --facts");
   if (!cite && doc.raw.match(/\{F\d+\}/)) note("no --facts: markers removed without citations");
   if (doc.figures.length) {
     checkLang(
       lang ?? "",
-      `${o.in}: no .en./.zh. in the name, and figure blocks need one; pass --lang`,
+      `${doc.file}: no .en./.zh. in the name, and figure blocks need one; pass --lang`,
     );
     const bad = doc.figures.filter((f) => !f.id || !f.closed || !f.alt || !f.caption);
     if (bad.length)
@@ -4876,6 +5146,7 @@ function runStrip(o) {
   }
   const kept = [];
   const summary = tldrLines(doc.items);
+  const starts = paragraphStarts(doc.items);
   const notes = [];
   let inComment = false;
   let fence = null;
@@ -4916,9 +5187,9 @@ function runStrip(o) {
       inComment = !line.includes("-->");
       continue;
     }
-    // Sources other than ours are cited again in a new section. The TL;DR sums up the body, so
-    // its markers stay in the draft as anchors and cite nothing.
-    if (cite && /^## /.test(line)) cite.section();
+    // A paragraph cites at most once. The TL;DR sums up the body, so its markers stay in the
+    // draft as anchors and cite nothing.
+    if (cite && starts.has(n)) cite.paragraph();
     const cited =
       cite && !summary.has(n)
         ? cite.render(line)
@@ -4937,9 +5208,368 @@ function runStrip(o) {
   body = head ? `${head}\n${body}\n` : `${body}\n`;
   const left = body.match(/\{[FO]\d+\}|\{\{[A-Z_]+\}\}/g);
   if (left) fail(`markers or slots survived the strip: ${[...new Set(left)].join(", ")}`, 1);
-  writeFileSync(o.out, body);
-  for (const n of notes) process.stderr.write(`removed note: ${n.trim()}\n`);
-  process.stderr.write(`wrote ${o.out}\n`);
+  return { body, notes };
+}
+
+// ---------------------------------------------------------------------------
+// unstrip: a published post back into the draft strip made it from
+// ---------------------------------------------------------------------------
+
+/** escapeInline undone: `&lt;`, `&gt;` and `&amp;` outside code spans. */
+function unescapeInline(text) {
+  return text
+    .split(/((`+)[\s\S]*?[^`]\2(?!`))/)
+    .map((part, i) =>
+      i % 3 === 0 ? part.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : part,
+    )
+    .filter((part, i) => i % 3 !== 2)
+    .join("");
+}
+
+/** A figure-block value that parseSpecLine reads back as it is: one wrapped in quotes keeps them. */
+function specValue(text) {
+  const v = text.replace(/\s+/g, " ").trim();
+  if (unquote(v) === v) return v;
+  return v.startsWith('"') ? `'${v}'` : `"${v}"`;
+}
+
+/** An HTML run as a figure block holds it: tags dropped, entities decoded, spaces collapsed. */
+function htmlText(html) {
+  return decode(html.replace(/<[^>]*>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The figure block an inline figure was drawn from: `alt` from the SVG's `<title>`, `caption` from
+ * the `<figcaption>`, `text:` from the fig-steps in order (keys s1 … sn), and `title` from the one
+ * drawn leaf with a letter that is not a step. Returns the block's lines and what it cannot hold.
+ */
+function blockOfFigure(line) {
+  const problems = [];
+  const id = htmlFigureId(line);
+  const svg = /<svg\b[^>]*>([\s\S]*?)<\/svg>/.exec(line)?.[1] ?? "";
+  const alt = /<title\b[^>]*>([\s\S]*?)<\/title>/.exec(svg)?.[1];
+  const caption = /<figcaption\b[^>]*>([\s\S]*?)<\/figcaption>/.exec(line)?.[1];
+  const ol =
+    /<ol\b[^>]*\bclass="[^"]*\bfig-steps\b[^"]*"[^>]*>([\s\S]*?)<\/ol>/.exec(line)?.[1] ?? "";
+  const steps = [...ol.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map((m) => htmlText(m[1]));
+  const known = new Set(steps.map(normalize));
+  const extra = [...new Set(svgLeaves(svg, htmlText))].filter(
+    (leaf) => /\p{L}/u.test(leaf) && !known.has(normalize(leaf)),
+  );
+  const what = `figure ${id ?? "(no data-figure)"}`;
+  if (!id) problems.push("an inline figure without data-figure");
+  if (alt === undefined) problems.push(`${what}: no <title> in its <svg>`);
+  if (caption === undefined) problems.push(`${what}: no <figcaption>`);
+  if (!steps.length && !extra.length) {
+    problems.push(`${what}: no fig-steps and no title, so strip would publish it as a screenshot`);
+  }
+  if (extra.length > 1) {
+    problems.push(
+      `${what}: drawn text that is no step and not the one title: ${extra
+        .slice(1)
+        .map((x) => `"${x.slice(0, 40)}"`)
+        .join(", ")}`,
+    );
+  }
+  const lines = [
+    `\`\`\`figure id=${id}`,
+    `alt: ${specValue(htmlText(alt ?? ""))}`,
+    `caption: ${specValue(htmlText(caption ?? ""))}`,
+    ...(extra.length ? [`title: ${specValue(extra[0])}`] : []),
+    ...(steps.length ? ["text:", ...steps.map((s, i) => `- s${i + 1}: ${specValue(s)}`)] : []),
+    "```",
+  ];
+  return { id, lines, problems };
+}
+
+/** The screenshot block an image line and its italic caption were published from. */
+function blockOfScreenshot(imageLine, captionLine, lang) {
+  const [, alt, src] = IMAGE_LINE.exec(imageLine.trim());
+  const m = /^\/blog-assets\/(.+)-(en|zh)\.(png|jpe?g|gif|webp|svg)$/.exec(src);
+  const problems = [];
+  if (!m) problems.push(`the image "${src}" is not /blog-assets/<name>-<lang>.<ext>`);
+  else if (m[2] !== lang) problems.push(`the image "${src}" carries -${m[2]} in a ${lang} post`);
+  const id = m?.[1] ?? path.basename(src).replace(/\.[a-z]+$/i, "");
+  const lines = [
+    `\`\`\`figure id=${id}`,
+    `alt: ${specValue(unescapeInline(alt))}`,
+    `caption: ${specValue(unescapeInline(captionLine.trim().slice(1, -1)))}`,
+    "```",
+  ];
+  return { id, ext: m?.[3], lines, problems };
+}
+
+/** The `[^n]:` list of a published post, by label: title and URL as strip wrote them, unescaped. */
+function referenceList(doc) {
+  const defs = new Map();
+  for (const it of doc.items.filter((x) => x.type === "footnote")) {
+    const m = /^\[\^([^\]]+)\]:\s*(.*)$/.exec(it.line.trim());
+    const link = /^\[([\s\S]*)\]\((\S+)\)$/.exec(m[2].trim());
+    defs.set(
+      m[1],
+      link
+        ? { title: unescapeInline(link[1].replace(/\\([[\]])/g, "$1")), url: link[2] }
+        : { title: unescapeInline(m[2].trim()), url: null },
+    );
+  }
+  return defs;
+}
+
+/**
+ * How a second language's citations take the first language's ids: the S id of the same source,
+ * and the fact id the paired draft cites that source with in the same section (in order, when it
+ * cites it more than once there). Anything without a counterpart gets a fresh id.
+ */
+function unstripAlignment(o) {
+  if (!o.facts) fail("unstrip --pair needs --facts <the seed or facts file its markers name>");
+  const facts = loadFacts(o.facts);
+  const firstSource = (id) =>
+    (facts.tags.get(id) ?? [])
+      .map((t) => facts.sources.get(t))
+      .find((s) => s && (s.kind === "url" || s.kind === "nolink"));
+  const bySection = splitSections(read(o.pair, "--pair")).map((part) => {
+    const ids = new Map();
+    for (const m of part.text.matchAll(/\{(F\d+)\}/g)) {
+      const s = firstSource(m[1]);
+      if (s) ids.set(sourceKey(s), [...(ids.get(sourceKey(s)) ?? []), m[1]]);
+    }
+    return ids;
+  });
+  const sIds = new Map([...facts.sources.values()].map((s) => [sourceKey(s), s.id]));
+  const top = (prefix, ids) =>
+    Math.max(0, ...[...ids].filter((x) => x.startsWith(prefix)).map((x) => Number(x.slice(1))));
+  return {
+    nextF: top("F", facts.ids) + 1,
+    nextS: top("S", facts.sources.keys()) + 1,
+    sourceId: (src) => sIds.get(sourceKey(src)),
+    take: (section, src) => bySection[section]?.get(sourceKey(src))?.shift(),
+  };
+}
+
+const CITED = new RegExp(`((?:\\[\\^[^\\]\\s]+\\])+)([${TERMINATOR}]*)`, "g");
+
+/**
+ * unstrip: a published post (drawn figures inline, screenshots as image lines, citations as
+ * `[^n]`) back into a draft whose figure blocks and markers strip turns into the same post.
+ */
+function runUnstrip(o) {
+  if (!o.in || !o["out-dir"]) fail("unstrip needs --in <published post> --out-dir <dir>");
+  const doc = parseDoc(o.in);
+  const lang = checkLang(
+    o.lang ?? langOf(o.in) ?? "",
+    `${o.in}: no .en./.zh. in the name; pass --lang`,
+  );
+  if (doc.raw.match(MARKER) || doc.figures.length) {
+    fail(`${o.in} is a draft (fact markers or figure blocks); unstrip reads a published post`);
+  }
+  const dir = o["out-dir"];
+  const figDir = path.join(dir, "figures");
+  const slug = o.slug ?? /^(.+)\.(en|zh)\.md$/.exec(path.basename(o.in))?.[1] ?? path.basename(dir);
+  const defs = referenceList(doc);
+  const align = o.pair ? unstripAlignment(o) : undefined;
+  const problems = [];
+  const files = [];
+  const cited = [];
+  const sourceIds = new Map();
+  let nextF = align?.nextF ?? 1;
+  let nextS = align?.nextS ?? 1;
+  const sourceId = (label, src) => {
+    if (!sourceIds.has(label)) {
+      let id = src && align?.sourceId(src);
+      if (!id) id = !align && /^\d+$/.test(label) ? `S${label}` : `S${nextS++}`;
+      if (align && src && !align.sourceId(src))
+        note(`[^${label}] "${src.title}" is not in --facts; it gets ${id}`);
+      sourceIds.set(label, id);
+    }
+    return sourceIds.get(label);
+  };
+  let section = 0;
+  const factFor = (label, n) => {
+    const src = defs.get(label);
+    if (!src) problems.push(`line ${n}: [^${label}] has no definition`);
+    const sid = sourceId(label, src);
+    let id = src && align?.take(section, src);
+    if (align && !id)
+      note(`line ${n}: [^${label}] has no counterpart in --pair's section ${section}`);
+    id ??= `F${nextF++}`;
+    cited.push({ id, sid, n });
+    return `{${id}}`;
+  };
+  // A citation stood before the punctuation that ends its clause; the marker goes after it, where
+  // the writer puts it and strip's citer reads it back (`claim[^1].` ↔ `claim.{F1}`).
+  const markers = (line, n) =>
+    line
+      .split(/((`+)[\s\S]*?[^`]\2(?!`))/)
+      .map((part, k) =>
+        k % 3 !== 0
+          ? part
+          : part.replace(
+              CITED,
+              (m, refs, after) =>
+                after +
+                [...refs.matchAll(/\[\^([^\]\s]+)\]/g)].map((r) => factFor(r[1], n)).join(""),
+            ),
+      )
+      .filter((part, k) => k % 3 !== 2)
+      .join("");
+  const out = [];
+  const shots = [];
+  for (let i = 0; i < doc.items.length; i++) {
+    const it = doc.items[i];
+    if (it.type === "heading" && /^## /.test(it.line)) section++;
+    if (it.type === "footnote") continue;
+    if (it.type === "htmlfigure") {
+      const b = blockOfFigure(it.line.trim());
+      problems.push(...b.problems);
+      out.push("", ...b.lines, "");
+      files.push([figureFile(figDir, { id: b.id }, lang), `${it.line.trim()}\n`]);
+      continue;
+    }
+    if (it.type === "image" && doc.items[i + 1]?.type === "caption") {
+      const b = blockOfScreenshot(it.line, doc.items[i + 1].line, lang);
+      problems.push(...b.problems);
+      if (b.ext && b.ext !== "png") shots.push(`${b.id}-${lang}.${b.ext}`);
+      out.push("", ...b.lines, "");
+      i++;
+      continue;
+    }
+    if (it.type === "image") problems.push(`line ${it.n}: an image without its italic caption`);
+    out.push(["code", "fence", "comment"].includes(it.type) ? it.line : markers(it.line, it.n));
+  }
+  const head = doc.metaRaw === null ? "" : `---\n${doc.metaRaw}\n---\n\n`;
+  const recovered = `${head}${out
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()}\n`;
+
+  // The facts seed: each citation's sentence, read from the draft the way the citer reads it.
+  const sentenceOf = new Map();
+  const draftDoc = parseText(recovered);
+  for (const p of paragraphs(draftDoc.items)) {
+    for (const s of sentences(p.text)) {
+      const text = s.replace(MARKER, "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+      for (const m of s.match(MARKER) ?? []) if (!sentenceOf.has(m)) sentenceOf.set(m, text);
+    }
+  }
+  for (const it of draftDoc.items) {
+    for (const m of it.line.match(MARKER) ?? []) {
+      if (!sentenceOf.has(m)) sentenceOf.set(m, it.line.replace(MARKER, "").trim());
+    }
+  }
+  const byNumber = (a, b) => Number(a.slice(1)) - Number(b.slice(1));
+  const sourceLines = [...defs]
+    .map(([label, src]) => [sourceId(label, src), src])
+    .sort((a, b) => byNumber(a[0], b[0]))
+    .map(([id, src]) => `- ${id}: ${src.title} · ${src.url ?? "nolink"}`);
+  const seed = [
+    `<!-- Seed recovered by unstrip from ${path.basename(o.in)}: one fact per citation, the sentence that carried it. Merge it into facts.md and verify every fact against its source again. -->`,
+    "",
+    "## SOURCES",
+    ...sourceLines,
+    "",
+    "## FACTS",
+    ...cited.map(({ id, sid }) => `- ${id}: ${sentenceOf.get(`{${id}}`) ?? ""} [${sid}]`),
+    "",
+  ].join("\n");
+
+  mkdirSync(figDir, { recursive: true });
+  const draftFile = path.join(dir, `recovered.${lang}.md`);
+  const seedFile = path.join(dir, `facts.${lang}.seed.md`);
+  writeFileSync(draftFile, recovered);
+  writeFileSync(seedFile, seed);
+  for (const [file, text] of files) writeFileSync(file, text);
+
+  const guard = problems.length
+    ? { problems: [], lines: 0 }
+    : unstripGuard(doc, draftFile, seedFile, { slug, lang, figDir, cite: defs.size > 0 });
+  problems.push(...guard.problems);
+  const drawn = files.length;
+  const shotCount = draftDoc.figures.length - drawn;
+  process.stdout.write(
+    `${o.in} → ${dir}\n` +
+      `  recovered.${lang}.md: ${splitSections(recovered).length - 1} sections · ${drawn} drawn figure block(s) · ${shotCount} screenshot block(s) · ${cited.length} marker(s)\n` +
+      `  figures/: ${drawn} file(s), each the inline figure as published\n` +
+      `  facts.${lang}.seed.md: ${defs.size} source(s) · ${cited.length} fact(s), one per citation\n`,
+  );
+  for (const p of problems) process.stdout.write(`ERROR ${p}\n`);
+  if (problems.length) {
+    process.stdout.write(
+      `unstrip: ${problems.length} problem(s); the files are written for reading, not for use\n`,
+    );
+    process.exit(1);
+  }
+  process.stdout.write(
+    `  guard: every drawn figure matches its block (check --svg); strip of the draft with the seed gives back ` +
+      `every figure and image line byte for byte and the other ${guard.lines} line(s) once citations are removed\n` +
+      `  strip under the current citer: ${guard.again.refs} citation(s) and ${guard.again.sources} source(s); the post has ${guard.post.refs} and ${guard.post.sources}\n`,
+  );
+  if (shots.length) {
+    note(
+      `${shots.join(", ")}: not .png, so strip needs --assets <community>/blog-assets to keep it`,
+    );
+  }
+  if (path.basename(path.resolve(dir)) !== slug) {
+    note(`the folder is not named ${slug}: pass --slug ${slug} to check and strip`);
+  }
+  const other = lang === "en" ? "zh" : "en";
+  if (!o.pair) {
+    note(
+      `next, the other language: unstrip --in ${o.in.replace(new RegExp(`\\.${lang}\\.md$`), `.${other}.md`)} --out-dir ${dir} --pair ${draftFile} --facts ${seedFile}`,
+    );
+  }
+  note(
+    `then merge ${seedFile} into facts.md and verify each fact; write --reuse-figures ${draftFile}; check --in <draft> --svg ${figDir}`,
+  );
+}
+
+/**
+ * unstrip's guard: every drawn figure against its block, as check --svg does, then strip of the
+ * recovered draft with the seed against the post: figure and image lines byte for byte (an image's
+ * extension aside), every other line once citations are removed. Citations themselves may differ:
+ * strip applies the current citer, which can cite fewer.
+ */
+function unstripGuard(post, draftFile, seedFile, { slug, lang, figDir, cite }) {
+  const problems = [];
+  const draft = parseDoc(draftFile);
+  for (const fig of draft.figures.filter(isDrawn)) {
+    for (const p of figureProblems(read(figureFile(figDir, fig, lang)), fig, { slug, lang }))
+      problems.push(`figures/${fig.id}.${lang}.html: ${p}`);
+  }
+  if (problems.length) return { problems, lines: 0 };
+  const o = { "figures-dir": figDir, slug, lang, ...(cite ? { facts: seedFile } : {}) };
+  const again = parseText(stripDoc(draft, o).body, "strip");
+  if (post.metaRaw !== again.metaRaw) problems.push("strip gives back another frontmatter");
+  const kept = (d) => d.items.filter((it) => !["blank", "footnote"].includes(it.type));
+  const a = kept(post);
+  const b = kept(again);
+  const bare = (line) => line.replace(/\[\^[^\]\s]+\]/g, "");
+  const imageKey = (line) => line.replace(/\.(png|jpe?g|gif|webp|svg)\)\s*$/, ")");
+  if (a.length !== b.length)
+    problems.push(`strip gives back ${b.length} lines; the post has ${a.length}`);
+  for (let i = 0; i < Math.min(a.length, b.length) && problems.length < 8; i++) {
+    const [x, y] = [a[i], b[i]];
+    const same =
+      x.type === "image"
+        ? imageKey(x.line) === imageKey(y.line)
+        : ["htmlfigure", "caption"].includes(x.type)
+          ? x.line === y.line
+          : bare(x.line) === bare(y.line);
+    if (!same) problems.push(`line ${x.n}: strip gives back "${y.line.slice(0, 80)}"`);
+  }
+  const refs = (d) =>
+    d.items.reduce(
+      (k, it) => k + (it.type === "footnote" ? 0 : (it.line.match(/\[\^[^\]\s]+\]/g)?.length ?? 0)),
+      0,
+    );
+  const sources = (d) => d.items.filter((it) => it.type === "footnote").length;
+  return {
+    problems,
+    lines: a.filter((it) => !["htmlfigure", "image", "caption"].includes(it.type)).length,
+    post: { refs: refs(post), sources: sources(post) },
+    again: { refs: refs(again), sources: sources(again) },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -5045,13 +5675,15 @@ category: perspectives
 excerpt: "脚本自检用的样例。"
 ---
 
-Trace 记下标记，规则写在 CLAUDE.md。{F2} Anthropic 也这样做。{F1}
+Trace 记下标记，规则写在 CLAUDE.md。{F2}
+
+Anthropic 也这样做。{F1}
 `;
 
 /** The zh post cites S1 before S2, the en post's order. */
 const FIXTURE_CITES_ZH_SAME_ORDER = FIXTURE_CITES_ZH.replace(
-  "{F2} Anthropic 也这样做。{F1}",
-  "{F1} Anthropic 也这样做。{F2}",
+  "{F2}\n\nAnthropic 也这样做。{F1}",
+  "{F1}\n\nAnthropic 也这样做。{F2}",
 );
 
 /** Two published posts citing the same two sources, each numbered by its own first use. */
@@ -5095,7 +5727,7 @@ const FIXTURE_ORDER_BAD = FIXTURE_ORDER_EN.replace(
   "claim[^2]. The second claim[^1].",
 );
 
-const FIXTURE_CITES_ZH_PARTIAL = FIXTURE_CITES_ZH.replace("CLAUDE.md。{F2} ", "CLAUDE.md。");
+const FIXTURE_CITES_ZH_PARTIAL = FIXTURE_CITES_ZH.replace("CLAUDE.md。{F2}\n", "CLAUDE.md。\n");
 
 /** A published zh post whose reference list does not match the en one. */
 const FIXTURE_PUBLISHED_ZH_OTHER = `---
@@ -5401,12 +6033,12 @@ async function runSelftest() {
   const shotText = caseDir("shot-text", {
     "s2.en.v1.md": s2.replace(/(caption: The marker names[^\n]*)/, "$1\ntext:\n- note: archived"),
   });
-  // Citation scopes and placement: an outside source again in a new section but not twice in
-  // one, ours once per post, a NOCITE fact never; outside a closing quote, or after it when the
-  // quote holds the period.
+  // Citation scopes and placement: every source once per post, a paragraph at most once (its
+  // other new source stays free for the next paragraph), a NOCITE fact never; outside a closing
+  // quote, or after it when the quote holds the period.
   writeFileSync(
     at("scopes.en.v1.md"),
-    `${front}The archive has a format. {F4}\nIt has a marker too. {F4}\n\n## One\n\nThe format again, in a new section. {F4}\nOur docs say so. {F1}\nBackground only. {F6}\n\n## Two\n\nOur docs again. {F1}\nThey call it "the slope". {F5}\nIt "works." {F4}\n`,
+    `${front}The archive has a format. {F4}\nIt has a marker too. {F4}\n\n## One\n\nThe format again, in a new section. {F4}\nOur docs say so. {F1}\nBackground only. {F6}\n\n## Two\n\nOur docs again. {F1}\nThey call it "the slope". {F5}\nThe writer keeps it. {F2}\n\nIt "works." {F2}\n`,
   );
   const scoped = path.join(root, "scopes", "scopes.en.md");
   mkdirSync(path.dirname(scoped), { recursive: true });
@@ -5419,7 +6051,8 @@ async function runSelftest() {
     "--facts",
     at("facts.md"),
   ];
-  // Published posts: a citation after the period; three citations in seven words, two in one sentence.
+  // Published posts: a citation after the period; three citations in one paragraph, two in one
+  // sentence; fourteen sources, one more than the profile's cap.
   const defs = (k) =>
     Array.from(
       { length: k },
@@ -5429,6 +6062,10 @@ async function runSelftest() {
   writeFileSync(
     at("dense.en.md"),
     `${front}Short[^1]. This has two[^2] and more[^3].\n\n${defs(3)}\n`,
+  );
+  writeFileSync(
+    at("many-sources.en.md"),
+    `${front}${Array.from({ length: 14 }, (_, i) => `Claim ${i + 1}[^${i + 1}].`).join("\n\n")}\n\n${defs(14)}\n`,
   );
   // Sentences over the cap, in a section file each, so no page-level rule fires.
   const longEn = caseDir("long-sentence", { "s1.en.v1.md": `## Long\n\n${words(40)}\n` });
@@ -5514,7 +6151,7 @@ async function runSelftest() {
   // The TL;DR sums up the body: its markers cite nothing, so the body's first use sets the numbers.
   writeFileSync(
     at("tldr-cite.en.v1.md"),
-    `${front}Our view comes first. {O1}\n\n**TL;DR**\n\n- Point one. {F5}\n- Point two. {F4}\n- Point three. {O1}\n\n## One\n\nBody four. {F4} Body five. {F5}\n`,
+    `${front}Our view comes first. {O1}\n\n**TL;DR**\n\n- Point one. {F5}\n- Point two. {F4}\n- Point three. {O1}\n\n## One\n\nBody four. {F4}\n\nBody five. {F5}\n`,
   );
   const tldrCited = path.join(root, "tldr", "tldr-cite.en.md");
   mkdirSync(path.dirname(tldrCited), { recursive: true });
@@ -5612,6 +6249,69 @@ async function runSelftest() {
   answer(
     "tr-title.md",
     `${front}The rules live in CLAUDE.md. {F1} Anthropic does the same {F1}, and the code \`a。 b\` stays. {O1}\n`,
+  );
+  // unstrip: the fixture published, then recovered into a folder named by its slug; a pair of
+  // published posts recovered with aligned ids; a drawing with two strings no block can hold.
+  const roundPost = path.join(root, "roundtrip", "selftest-post.en.md");
+  const roundDir = path.join(root, "recovered", "selftest-post");
+  const roundAgain = path.join(root, "roundtrip", "again", "selftest-post.en.md");
+  mkdirSync(path.dirname(roundAgain), { recursive: true });
+  const orderOut = path.join(root, "recovered", "order");
+  // A hand edit strip would not make: curly quotes in English prose, which strip straightens.
+  const curly = path.join(root, "curly", "selftest-post.en.md");
+  mkdirSync(path.dirname(curly), { recursive: true });
+  writeFileSync(
+    curly,
+    `${front}He said “hi” to the archive[^1].\n\n[^1]: [Source 1](https://example.com/s1)\n`,
+  );
+  const twoTitles = path.join(root, "two-titles", "selftest-post.en.md");
+  mkdirSync(path.dirname(twoTitles), { recursive: true });
+  const inlineFigure = FIXTURE_FIGURE.split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join(" ");
+  writeFileSync(
+    twoTitles,
+    `${front}Lead.\n\n${inlineFigure.replace('<text class="fig-tick"', '<text class="fig-title">One</text><text class="fig-title">Two</text><text class="fig-tick"')}\n`,
+  );
+
+  // transition: a draft with a TL;DR before the first heading, a figure and a middle paragraph in
+  // the first section, and answers that mend the joins or change what they may not.
+  const joinDraft = `${front}Lead one. {F1} The lead ends here. {F1}\n\n**TL;DR**\n\n- Point one. {F1}\n- Point two. {F2}\n- Point three. {O1}\n\n## First\n\nFirst opens here. {F1} More of first. {F1}\n\n${flowBlock2}\n\nA middle paragraph. {F2}\n\nFirst closes. The last sentence of first. {F2}\n\n## Second\n\nSecond opens here. {O1} Rest of second. {O1}\n`;
+  const joinCase = (name, answerText) => {
+    const dir = caseDir(name, { "draft.en.v1.md": joinDraft });
+    if (answerText !== undefined) answer(`${name}.md`, answerText);
+    return dir;
+  };
+  const joinOk = joinCase(
+    "join-ok",
+    joinDraft
+      .replace("First opens here. {F1}", "The points start with where the archive lives. {F1}")
+      .replace(
+        "The last sentence of first. {F2}",
+        "The last sentence of first hands the marker to second. {F2}",
+      ),
+  );
+  const joinMiddle = joinCase(
+    "join-middle",
+    joinDraft.replace("A middle paragraph. {F2}", "A middle paragraph, reworded. {F2}"),
+  );
+  const joinMarker = joinCase(
+    "join-marker",
+    joinDraft.replace("Second opens here. {O1}", "Second opens from the marker."),
+  );
+  const joinHeading = joinCase("join-heading", joinDraft.replace("## Second", "## The second"));
+  const joinFigure = joinCase(
+    "join-figure",
+    joinDraft.replace("<root>/<project>/", "<root>/").replace("First opens here.", "First opens."),
+  );
+  const joinTldr = joinCase(
+    "join-tldr",
+    joinDraft.replace("- Point three. {O1}", "- Point three leads on. {O1}"),
+  );
+  writeFileSync(
+    path.join(joinOk, "findings.en.v1.md"),
+    "1. [First opens here.] — does not follow the TL;DR — transition — the sentence must pick up the last point\n2. [More of first.] — vague — concision — the sentence must say more\n",
   );
 
   const self = fileURLToPath(import.meta.url);
@@ -5727,7 +6427,7 @@ async function runSelftest() {
       code: 0,
       file: [
         citedZh,
-        /CLAUDE\.md\[\^1\]。Anthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[PenguinHarness docs/,
+        /CLAUDE\.md\[\^1\]。\n\nAnthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[PenguinHarness docs/,
       ],
     },
     {
@@ -5752,7 +6452,7 @@ async function runSelftest() {
       code: 0,
       file: [
         citedZh,
-        /CLAUDE\.md\[\^1\]。Anthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[packages\/core\/src\/trace\/writer\.ts\]/,
+        /CLAUDE\.md\[\^1\]。\n\nAnthropic 也这样做\[\^2\]。\n\n\[\^1\]: \[packages\/core\/src\/trace\/writer\.ts\]/,
       ],
     },
     {
@@ -5765,7 +6465,7 @@ async function runSelftest() {
       ],
     },
     {
-      name: "a sentence resting on three facts cites the first source not yet cited in its section",
+      name: "a sentence resting on three facts cites the first source not yet cited in the post",
       args: ["strip", "--in", at("caps.en.v1.md"), "--out", capped, ...facts],
       code: 0,
       file: [
@@ -6239,12 +6939,21 @@ async function runSelftest() {
       stdout: /autolink\.en\.v1\.md:14  a bare URL right before a citation/,
     },
     {
-      name: "an outside source is cited again in a new section, but not twice in one",
+      name: "an outside source is cited once per post, not again in a new section",
       args: stripScopes,
       code: 0,
       file: [
         scoped,
-        /The archive has a format\[\^1\]\.\nIt has a marker too\.\n\n## One\n\nThe format again, in a new section\[\^1\]\./,
+        /The archive has a format\[\^1\]\.\nIt has a marker too\.\n\n## One\n\nThe format again, in a new section\.\n/,
+      ],
+    },
+    {
+      name: "a paragraph cites once: its second new source waits for the next paragraph",
+      args: stripScopes,
+      code: 0,
+      file: [
+        scoped,
+        /They call it "the slope"\[\^3\]\.\nThe writer keeps it\.\n\nIt "works\."\[\^4\]\n/,
       ],
     },
     {
@@ -6263,13 +6972,13 @@ async function runSelftest() {
       name: "a citation stands before the punctuation and outside a closing quote, after it when the quote holds the period",
       args: stripScopes,
       code: 0,
-      file: [scoped, /They call it "the slope"\[\^3\]\.\nIt "works\."\[\^1\]\n/],
+      file: [scoped, /They call it "the slope"\[\^3\]\.[\s\S]*It "works\."\[\^4\]\n/],
     },
     {
       name: "check reads a draft through the citer and warns where a quote holds the period",
       args: ["check", "--in", at("scopes.en.v1.md"), ...facts],
       code: 1,
-      stdout: /WARN [^\n]*:21  a citation after a closing quote, bracket or bold/,
+      stdout: /WARN [^\n]*:23  a citation after a closing quote, bracket or bold/,
     },
     {
       name: "a published citation after the punctuation is an error",
@@ -6278,16 +6987,36 @@ async function runSelftest() {
       stdout: /ERROR [^\n]*a citation after the punctuation: it goes before it/,
     },
     {
-      name: "check warns when citations are too dense",
+      name: "a published paragraph with two citations is an error",
       args: ["check", "--in", at("dense.en.md")],
       code: 1,
-      stdout: /WARN [^\n]*3 citations in 6 words: 50\.0 per 100 \(at most 3\.5\)/,
+      stdout: /ERROR [^\n]*a paragraph with 3 citations \(one per paragraph at most\)/,
     },
     {
-      name: "check warns on a sentence with two citations",
+      name: "a published sentence with two citations is an error",
       args: ["check", "--in", at("dense.en.md")],
       code: 1,
-      stdout: /WARN [^\n]*a sentence with 2 citations \(one key citation per sentence\)/,
+      stdout: /ERROR [^\n]*a sentence with 2 citations \(one per sentence at most\)/,
+    },
+    {
+      name: "fewer sources than the profile's floor is a warning",
+      args: ["check", "--in", at("dense.en.md")],
+      code: 1,
+      stdout: /WARN [^\n]*the post cites 3 sources, below the profile's floor of 6/,
+    },
+    {
+      name: "more sources than the profile's cap is an error",
+      args: ["check", "--in", at("many-sources.en.md")],
+      code: 1,
+      stdout: /ERROR [^\n]*the post cites 14 sources; the profile allows at most 13/,
+      notStdout: /a paragraph with/,
+    },
+    {
+      name: "a draft read through the citer is held to the sources floor before it is stripped",
+      args: ["check", "--in", at("scopes.en.v1.md"), ...facts],
+      code: 1,
+      stdout: /WARN [^\n]*strip would cite 4 sources, below the profile's floor of 6/,
+      notStdout: /a paragraph with \d+ citations/,
     },
     {
       name: "check warns on an English sentence over 35 words",
@@ -6438,7 +7167,7 @@ async function runSelftest() {
       code: 0,
       file: [
         tldrCited,
-        /- Point one\.\n- Point two\.\n- Point three\.\n\n## One\n\nBody four\[\^1\]\. Body five\[\^2\]\.\n\n\[\^1\]: \[Write-up 4\]/,
+        /- Point one\.\n- Point two\.\n- Point three\.\n\n## One\n\nBody four\[\^1\]\.\n\nBody five\[\^2\]\.\n\n\[\^1\]: \[Write-up 4\]/,
       ],
     },
     {
@@ -6675,6 +7404,207 @@ async function runSelftest() {
       absent: path.join(trTitle, "draft.en.v1.md"),
     },
     {
+      name: "unstrip: the fixture is published first, for the round trip",
+      args: [
+        "strip",
+        "--in",
+        at("draft.en.v1.md"),
+        "--out",
+        roundPost,
+        "--figures-dir",
+        good,
+        ...facts,
+      ],
+      code: 0,
+    },
+    {
+      name: "unstrip turns inline figures and screenshots into figure blocks and citations into markers, and its guard passes",
+      args: ["unstrip", "--in", roundPost, "--out-dir", roundDir],
+      code: 0,
+      stdout:
+        /1 drawn figure block\(s\) · 1 screenshot block\(s\) · 2 marker\(s\)[\s\S]*guard: every drawn figure matches its block/,
+      files: [
+        [
+          path.join(roundDir, "recovered.en.md"),
+          /keeps its place in the Trace\*\*\.\{F1\}\n[\s\S]*```figure id=demo-flow\nalt: Archived tool output moving to a path under the Project root\.\ncaption: The Trace keeps a marker where the output was\.\ntext:\n- s1: <root>\/<project>\/\n- s2: \[output archived: <path>\]\n```[\s\S]*The Trace keeps a short marker\.\{F2\}[\s\S]*```figure id=demo-shot\nalt: The Trace view showing an archived output\.\ncaption: The marker names the file as <path> and the id as `<id>`\.\n```/,
+        ],
+        [
+          path.join(roundDir, "facts.en.seed.md"),
+          /## SOURCES\n- S1: PenguinHarness docs: Agent loop · https:\/\/penguin\.ooo\/docs\/agent-loop\n- S2: packages\/core\/src\/trace\/writer\.ts · https:\/\/github\.com\/Prism-Shadow\/penguin-harness\/blob\/v0\.2\.16\/packages\/core\/src\/trace\/writer\.ts\n\n## FACTS\n- F1: Archived output keeps its place in the Trace\. \[S1\]\n- F2: The Trace keeps a short marker\. \[S2\]\n/,
+        ],
+        [
+          path.join(roundDir, "figures", "demo-flow.en.html"),
+          /^<figure class="post-figure" data-figure="demo-flow">[^\n]*<\/figure>\n$/,
+        ],
+      ],
+    },
+    {
+      name: "unstrip: the recovered draft passes check --svg against the recovered figures",
+      args: [
+        "check",
+        "--in",
+        path.join(roundDir, "recovered.en.md"),
+        "--facts",
+        path.join(roundDir, "facts.en.seed.md"),
+        "--svg",
+        path.join(roundDir, "figures"),
+      ],
+      code: 0,
+      stdout: /\b0 errors/,
+    },
+    {
+      name: "unstrip: strip of the recovered draft with the seed gives back the published post byte for byte",
+      args: [
+        "strip",
+        "--in",
+        path.join(roundDir, "recovered.en.md"),
+        "--out",
+        roundAgain,
+        "--facts",
+        path.join(roundDir, "facts.en.seed.md"),
+        "--figures-dir",
+        path.join(roundDir, "figures"),
+      ],
+      code: 0,
+      same: [roundAgain, roundPost],
+    },
+    {
+      name: "unstrip refuses a draft",
+      args: ["unstrip", "--in", at("draft.en.v1.md"), "--out-dir", path.join(root, "nope")],
+      code: 2,
+      stderr: /is a draft/,
+    },
+    {
+      name: "unstrip refuses a drawing with two strings that are no step, since a block holds one title",
+      args: ["unstrip", "--in", twoTitles, "--out-dir", path.join(root, "recovered", "two")],
+      code: 1,
+      stdout: /drawn text that is no step and not the one title: "Two"/,
+    },
+    {
+      name: "unstrip's guard refuses a post strip would not give back, such as a hand-typed curly quote",
+      args: ["unstrip", "--in", curly, "--out-dir", path.join(root, "recovered", "curly")],
+      code: 1,
+      stdout: /ERROR line 8: strip gives back "He said "hi" to the archive\[\^1\]\."/,
+    },
+    {
+      name: "unstrip: the first language of a pair, numbered by its own first use",
+      args: ["unstrip", "--in", path.join(orderDir, "order.en.md"), "--out-dir", orderOut],
+      code: 0,
+      stderr: /next, the other language: unstrip --in \S*order\.zh\.md/,
+      file: [
+        path.join(orderOut, "facts.en.seed.md"),
+        /- S1: One · https:\/\/example\.com\/one\n- S2: Two · https:\/\/example\.com\/two\n[\s\S]*- F3: The first claim again\. \[S1\]/,
+      ],
+    },
+    {
+      name: "unstrip --pair gives the second language the first's source ids and, section by section, its fact ids",
+      args: [
+        "unstrip",
+        "--in",
+        path.join(orderDir, "order.zh.md"),
+        "--out-dir",
+        orderOut,
+        "--pair",
+        path.join(orderOut, "recovered.en.md"),
+        "--facts",
+        path.join(orderOut, "facts.en.seed.md"),
+      ],
+      code: 0,
+      files: [
+        [
+          path.join(orderOut, "recovered.zh.md"),
+          /第二条说法。\{F2\}第一条说法。\{F1\}[\s\S]*第一条说法再次出现。\{F3\}/,
+        ],
+        [
+          path.join(orderOut, "facts.zh.seed.md"),
+          /- S1: One · https:\/\/example\.com\/one\n- S2: Two · https:\/\/example\.com\/two\n/,
+        ],
+      ],
+    },
+    {
+      name: "unstrip: the two recovered drafts carry the same markers section by section",
+      args: [
+        "pair",
+        "--in",
+        path.join(orderOut, "recovered.en.md"),
+        "--pair",
+        path.join(orderOut, "recovered.zh.md"),
+      ],
+      code: 0,
+      notStdout: /fact markers differ/,
+    },
+    {
+      name: "transition on unstrip's recovered draft writes the first draft version beside it",
+      args: ["transition", "--dry-run", "--in", path.join(roundDir, "recovered.en.md")],
+      code: 0,
+      stdout:
+        /== transition \(en, blog-perspectives\)[^\n]*out \S*selftest-post\/draft\.en\.v1\.md ==/,
+    },
+    {
+      name: "transition --dry-run sends the flow rule and only the review's join findings",
+      args: [
+        "transition",
+        "--dry-run",
+        "--in",
+        path.join(joinOk, "draft.en.v1.md"),
+        "--findings",
+        path.join(joinOk, "findings.en.v1.md"),
+      ],
+      code: 0,
+      stdout:
+        /You edit the joins[\s\S]*one argument written in one sitting[\s\S]*## The review's findings on the joins\n1\. \[First opens here\.\][\s\S]*Edit the joins now\./,
+      notStdout: /\[More of first\.\]/,
+    },
+    {
+      name: "transition accepts a new first sentence after a heading and a new last sentence before one",
+      args: ["transition", "--in", path.join(joinOk, "draft.en.v1.md")],
+      answer: "join-ok.md",
+      code: 0,
+      stderr:
+        /transition: 2 of 2 joins edited\n {2}## First: first after "First opens here\. \{F1\}" → "The points start with where the archive lives\. \{F1\}"\n {2}## Second: last before "The last sentence of first\. \{F2\}" → "The last sentence of first hands the marker to second\. \{F2\}"/,
+      file: [path.join(joinOk, "draft.en.v2.md"), /hands the marker to second/],
+    },
+    {
+      name: "transition refuses a change to a paragraph next to no heading",
+      args: ["transition", "--in", path.join(joinMiddle, "draft.en.v1.md")],
+      answer: "join-middle.md",
+      code: 1,
+      stderr: /the paragraph at line \d+ changed; transition rewrites only/,
+      absent: path.join(joinMiddle, "draft.en.v2.md"),
+    },
+    {
+      name: "transition refuses a rewritten sentence that dropped its marker",
+      args: ["transition", "--in", path.join(joinMarker, "draft.en.v1.md")],
+      answer: "join-marker.md",
+      code: 1,
+      stderr: /its first sentence carries no marker; it carried \{O1\}/,
+      absent: path.join(joinMarker, "draft.en.v2.md"),
+    },
+    {
+      name: "transition refuses a changed heading",
+      args: ["transition", "--in", path.join(joinHeading, "draft.en.v1.md")],
+      answer: "join-heading.md",
+      code: 1,
+      stderr: /the heading "## Second" changed/,
+      absent: path.join(joinHeading, "draft.en.v2.md"),
+    },
+    {
+      name: "transition refuses a changed figure string, even beside an allowed edit",
+      args: ["transition", "--in", path.join(joinFigure, "draft.en.v1.md")],
+      answer: "join-figure.md",
+      code: 1,
+      stderr: /figure block demo-flow changed/,
+      absent: path.join(joinFigure, "draft.en.v2.md"),
+    },
+    {
+      name: "transition refuses an edit to the TL;DR before a heading",
+      args: ["transition", "--in", path.join(joinTldr, "draft.en.v1.md")],
+      answer: "join-tldr.md",
+      code: 1,
+      stderr: /the TL;DR changed/,
+      absent: path.join(joinTldr, "draft.en.v2.md"),
+    },
+    {
       name: "landing strings with a banned word and an exclamation mark fail",
       args: ["check", "--in", at("strings.en.txt"), "--profile", "landing"],
       code: 1,
@@ -6719,6 +7649,10 @@ async function runSelftest() {
         }
       }
       if (c.absent && existsSync(c.absent)) why.push(`${path.basename(c.absent)} was written`);
+      if (c.same) {
+        const [a, b] = c.same.map((f) => (existsSync(f) ? readFileSync(f, "utf8") : undefined));
+        if (a === undefined || a !== b) why.push(`${c.same.join(" and ")} differ`);
+      }
       if (why.length) {
         failed++;
         process.stdout.write(`FAIL ${c.name}\n  ${why.join("\n  ")}\n${res.stdout}${res.stderr}`);
@@ -6765,6 +7699,7 @@ if (API_STEPS.includes(step)) {
   else if (step === "assemble") runAssemble(opts);
   else if (step === "route") runRoute(opts);
   else if (step === "selftest") await runSelftest();
+  else if (step === "unstrip") runUnstrip(opts);
   else runStrip(opts);
 } else {
   fail(`unknown step "${step}"; steps: ${[...API_STEPS, ...LOCAL_STEPS].join(", ")}`);

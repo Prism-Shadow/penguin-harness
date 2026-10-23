@@ -29,6 +29,14 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
   - `review` reads the whole post and scores every join between sections. `fix`, `trim` and
     `translate` work on the whole post too, and refuse an answer that changes what they were not
     asked to change.
+  - `transition` mends the joins in a round of its own, once per language after its last `fix`.
+    For each heading only the first sentence after it may change and, when the join needs it, the
+    last sentence before it. Any other change, or a lost fact marker, is refused. `review` then
+    scores the joins again.
+  - `unstrip` turns a published post back into a draft. It restores the figure blocks and fact
+    markers, keeps the drawn figures as files and seeds a facts file from the reference list, so a
+    post can be revised without redrawing its figures. Its guard checks that `strip` gives back
+    the same figures and text.
   - Section mode remains for long posts and docs pages: `section` writes one section per call,
     `assemble` joins the sections byte for byte, and `route` splits review findings by the section
     they quote.
@@ -42,16 +50,17 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
   brings in a fact no finding named, changes a figure block no finding named, changes a marker, or
   is still over its cap after a cut. `fix`, `polish`, `translate`, and `trim` also set aside an
   answer that changes the version note. The next version is not written.
-- Posts cite like papers, with at most one key citation per sentence. Each fact in the facts file is
+- Posts cite like papers, and most sentences carry no citation. Each fact in the facts file is
   tagged with its sources. `strip` turns the writer's fact markers into numbered GFM footnotes with
-  a linked reference list. Footnotes are numbered by first use. A sentence cites the first source of
-  its facts that is not yet cited. Our own pages and repositories are cited once per post. All other
-  sources are cited once per section. Facts listed under an optional `## NOCITE` section cite
-  nothing. The TL;DR sums up the body, so it carries no footnotes. The footnote goes before the
-  punctuation that ends its clause (`text[^1].`, `文字[^1]。`). `check` warns when citation rates rise
-  above 3.5 citations per 100 English words or 1.5 per 100 Chinese characters. It also warns on any
-  sentence with two citations. The second language keeps the first language's numbers when it cites
-  the sources in the same order. `pair` checks that both cite the same sources. The `**Sources**`
+  a linked reference list. Footnotes are numbered by first use. Each source is cited once per post,
+  and each paragraph at most once: by its first sentence whose facts bring a source not yet cited.
+  Facts listed under an optional `## NOCITE` section cite nothing, and so do the repo files and docs
+  pages a post only refers to; the post names them in code spans. The TL;DR sums up the body, so it
+  carries no footnotes. The footnote goes before the punctuation that ends its clause (`text[^1].`,
+  `文字[^1]。`). A profile's `sources` setting bounds the reference list: 6 to 13 sources for a
+  perspective post. `check` reports an error above that cap and on a paragraph or sentence with two
+  citations, and a warning below the floor. The second language keeps the first language's numbers
+  when it cites the sources in the same order. `pair` checks that both cite the same sources. The `**Sources**`
   footer is gone. URLs in the text are autolinks, formatted as `<https://…>`. This is because the
   site reads a footnote right after a bare URL as part of the link.
 - Profiles in `reference/profile-<name>.md` hold what differs by kind of text: shape, reader,
@@ -60,8 +69,8 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
 - Voice rules ask the model to write for readers with dyslexia or ADHD, who read with effort. The
   rules require the model to put the point first, use short sentences, use common words, omit
   asides, and omit defensive hedging. They also ban the "Yes, but…" concession pivot by name.
-  `review` checks for both. `check` warns on sentences over 35 English words or 60 Chinese
-  characters. In Chinese text, Harness and Agent Harness stay in English. `check` treats 夹具 as an
+  `review` checks for both. `SKILL.md` quotes the author's tip this rule comes from, verbatim.
+  `check` warns on sentences over 35 English words or 60 Chinese characters. In Chinese text, Harness and Agent Harness stay in English. `check` treats 夹具 as an
   error. It treats a lowercase "harness" as a warning.
 - For the same readers, a post opens with a TL;DR of its key points. The new `emphasize` step marks
   one key sentence per section in bold. It does not change any other character. Bold in a post is

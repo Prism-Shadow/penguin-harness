@@ -7,7 +7,9 @@ for Chinese text. `## Check settings` is read by `prose.mjs` and never sent: the
 frontmatter and the references list do not count). The outline's plan is held to the caps, and
 `check` makes a section above its cap (or above 1.1 × its planned size) an error and one below its
 floor a warning. `emphasis` turns on the one marked key sentence per section that `emphasize`
-adds and `check` and `pair` hold to its cap.
+adds and `check` and `pair` hold to its cap. `sources` counts the entries of the reference list
+(`[^n]:`) a published post ends with, or the sources strip would cite from a draft read with
+`--facts`: above the cap is an error, below the floor a warning.
 
 <!-- prompt -->
 A perspective post argues one thesis.
@@ -44,3 +46,4 @@ A perspective post argues one thesis.
 - emphasis: yes
 - emphasis-words: 25
 - zh-emphasis-chars: 40
+- sources: 6-13

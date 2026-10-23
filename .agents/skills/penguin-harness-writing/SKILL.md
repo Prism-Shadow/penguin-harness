@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-writing
-description: "Use when writing or revising reader-facing prose for penguin.ooo — a blog post of any category, a docs page, or landing-page copy: the division of labour (a gateway model writes every reader-facing word, agents research, prompt, assemble, draw, check and ship), the outline-then-whole-draft flow with budgets (section mode as the fallback), the FACTS guard and footnote citations, the profiles, inline SVG figures drawn from the model's figure blocks, the checks, and how it is verified."
+description: "Use when writing or revising reader-facing prose for penguin.ooo — a blog post of any category, a docs page, or landing-page copy: the division of labour (a gateway model writes every reader-facing word, agents research, prompt, assemble, draw, check and ship), the outline-then-whole-draft flow with budgets and a transition round (section mode as the fallback), the FACTS guard and sparse footnote citations, the profiles, inline SVG figures drawn from the model's figure blocks, the checks, and how it is verified."
 ---
 
 # Writing for penguin.ooo
@@ -8,7 +8,7 @@ description: "Use when writing or revising reader-facing prose for penguin.ooo �
 Posts, docs pages and landing copy are written by a model on the TokenDance gateway and shipped
 by agents. A post is written the way a person writes one: an outline first, then the whole post in
 one call, so its sections join; the review, the fixes, the cuts and the translation work on the
-whole post too. A long post or a docs page can fall back to section mode. This page is the contract; `scripts/prose.mjs` is
+whole post too, and a round of its own edits only the sentences at the headings. A long post or a docs page can fall back to section mode. This page is the contract; `scripts/prose.mjs` is
 the only way text reaches a draft, and `prompts/` plus `reference/` hold every word sent to the
 model. `penguin-harness-dev/reference/authoring.md` covers what is true of every post (the
 bilingual pair, frontmatter, where screenshots live).
@@ -63,8 +63,8 @@ the two differ. A profile does not repeat the style guide and states nothing abo
 facts come from FACTS only. Its `## Check settings` are what the script enforces —
 `sections`, `lead`, `tldr`, `exclamations`, and the budgets `words`, `lead-words`,
 `section-words`, `zh-chars`, `zh-lead-chars`, `zh-section-chars`, `tldr-words`, `zh-tldr-chars`, each
-`floor-cap`, `emphasis` with its caps `emphasis-words` / `zh-emphasis-chars` (section 4), and
-`ui-labels`: `quoted` in a post, where bold is only the emphasized sentence and a UI label goes in
+`floor-cap`, `emphasis` with its caps `emphasis-words` / `zh-emphasis-chars` (section 4),
+`sources`, the floor and cap of a post's reference list (section 7), and `ui-labels`: `quoted` in a post, where bold is only the emphasized sentence and a UI label goes in
 quotes ("…" / 「…」), `bold` in a docs page.
 A prompt rule with no matching setting is a rule `check` cannot see; change the two together.
 
@@ -81,6 +81,14 @@ the model's output and keeps it on its point. The one habit it does not remove i
 "not X but Y" pivot, and `check` and `review` look for it. For the same reader a post opens with a
 TL;DR of its key points, and one sentence per section is marked in bold by `emphasize`; the writer
 bolds nothing else.
+
+The tip this rule comes from (the author's post, verbatim):
+
+> 亲测超级好用😂 | 之前为了矫正大模型的说话问题（RL不是没有代价的，你就是代价……），我整过很多版本的工作要求，最极端的是输出前多加一步子Agent专门负责矫正Agent汇报……，然而，真的不如假装残疾人好使。方法就一行⬇️【直接在Agent.md里加入，假设用户是阅读障碍。】⬆️大模型就会说人话了，也不长篇大论了，也会捡重点的说了，也不防御性写作了，也不BTW了唯一扳不过来的是【Yes, But】这个有主意朋友可以跟我说说。现在 LLM 也很难低成本私有化部署和调试，各家又都是冲着把人干掉去训练的，结果现在工作就是个可悲的【人机打架】的L3阶段。而且就DeepSeek而言，我老觉得他有点文本代码化的倾向，就是完全没有脑子……比之前还没有那种，不做真正的思考，纯无脑执行那种。
+
+The rule keeps the tip's one line, assume a reader with dyslexia, and turns the rest of its report
+into bans: its "BTW" detours and its defensive writing are the aside and hedging bans, and the
+"Yes, but" pivot the tip could not remove is banned by name.
 
 The zh style guide keeps Harness and Agent Harness in English with that capitalisation, never
 「夹具」「线束」「挽具」; a test fixture is 合成测试, 测试数据 or 测试配置; `check` makes 夹具 an error and a
@@ -102,20 +110,25 @@ file name is how the script knows the language. A post is written as one documen
 | 5 | `check --plan-rows advisory` | script | the page cap and the profile's caps are hard, the plan's rows are targets; over a cap → `trim` on the whole draft |
 | 6 | `review` + truth review | API + agent | the whole post, flow first: every join after a heading is scored (`transition`, `signpost`), and `<out>.flow.txt` holds `transitions: n of m`; the agent reads against FACTS, the sources and the notes; merged and numbered |
 | 7 | `fix` | API | the whole post, held to its findings (section 10). At most two rounds, the second only when the first had `transition`, `flow` or truth findings, then the author; `trim` if a cap breaks |
-| 8 | `translate` | API | the whole post in one call (section 8) |
-| 9 | `check`, `review --tells` + native reader, `fix` | script + API + agent | the same loop in the second language, at most two rounds; `trim` if over |
-| 10 | `emphasize` | API | on each language's frozen draft, the first language first, then the second with `--mirror <the first's emphasized draft>`: one `**` span per section and in the lead, nothing else changed |
-| 11 | `pair` | script | section by section: markers, citations, emphasis, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
-| 12 | Draw | agent | from the frozen figure blocks (section 9); a block `write` or `translate` changed is redrawn |
-| 13 | `check --svg` | script | every drawn file against its block |
-| 14 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` when its citations come in the same order (section 7) |
-| 15 | Visual check, verify, PR | agent | sections 9 and 12 |
+| 8 | `transition`, then `review` | API | the joins alone: for each `## ` heading, the first sentence after it and, when the join needs it, the last sentence before it; the review's `transition` / `signpost` findings go along (`--findings`), and the guard refuses any other change (section 10). The new review's `transitions: n of m` is the acceptance number: `m of m`, else the author decides. Once per language, after its last `fix` and before `emphasize` |
+| 9 | `translate` | API | the whole post in one call (section 8) |
+| 10 | `check`, `review --tells` + native reader, `fix` | script + API + agent | the same loop in the second language, at most two rounds; `trim` if over |
+| 11 | `transition`, then `review` | API | the joins of the second language, as in step 8 |
+| 12 | `emphasize` | API | on each language's frozen draft, the first language first, then the second with `--mirror <the first's emphasized draft>`: one `**` span per section and in the lead, nothing else changed |
+| 13 | `pair` | script | section by section: markers, citations, emphasis, figure blocks, code spans, URLs; numbers compared; Chinese size against the English |
+| 14 | Draw | agent | from the frozen figure blocks (section 9); a block `write` or `translate` changed is redrawn |
+| 15 | `check --svg` | script | every drawn file against its block |
+| 16 | `strip` | script | citations, inline figures, screenshot lines; the first language, then the second with `--numbering-from` when its citations come in the same order (section 7) |
+| 17 | Visual check, verify, PR | agent | sections 9 and 12 |
 
 **Flow.** The post is one argument written in one sitting. The first sentence after every `## `
 heading continues the last sentence before it; no section opens with a signpost ("In this
 section", "Next,", 「接下来」) or ends on a sentence that only announces the next heading. The plan's
 `ends with` column names the point a section lands on, not a sentence to write. `write` states
-this, `review` scores every join, and `check` warns on the signposts the style guides list.
+this, `review` scores every join, `transition` mends the joins that fail without touching anything
+else, and `check` warns on the signposts the style guides list. A post's joins get a round of
+their own because a fix round aimed at the whole text leaves them broken: the author's rule is to
+write the whole post, revise it as a whole, then edit only the sentences at the headings.
 
 **Emphasis.** A profile with `emphasis: yes` gets one marked key sentence, or clause, per `##`
 section and one in the lead: the claim a reader skimming the section must not miss. `emphasize`
@@ -145,7 +158,8 @@ s<n>=v<k>` names. `route` splits merged findings by the section that quotes each
 Their prompts aim at the lowest of the planned size, what the page has left and the profile's cap
 (section 5), and `--page <assembled draft>` tells them which version of each other section the
 page holds. From `emphasize` on, the flow is the same. Section mode trades the joins for control,
-so a post written this way needs its transitions checked by `review` on the assembled draft.
+so a post written this way needs its transitions checked by `review` on the assembled draft and
+mended by `transition`.
 
 ## 5. Budgets
 
@@ -222,10 +236,9 @@ markers and the references do not count. The numbers themselves live in each pro
 - `## NOT-FACTS` — claims the model must not make.
 - `## EXISTING-FIGURES` — published screenshots the outline may reuse, by stem.
 - `## NOCITE` (optional) — facts the writer still marks but that cite nothing: `- F12: <why>`.
-  Cite what a reader may want to check: numbers and measurements, verbatim quotes, named
-  third-party claims, research results, the first mention of a product behaviour. List general
-  background, a restatement under another source, and a product detail a docs link in the same
-  post already covers. Record the choices in the PR body.
+  Section 7 says what is cited; list here general background, a restatement under another
+  source, and every repo file or docs page the post only refers to. Record the choices in the PR
+  body.
 
 **The author's notes.** A post may keep a `notes.md` beside `facts.md` for wording settled with the
 author, one line each: `keep[ en|zh]: <exact string>` (the answer must carry it verbatim),
@@ -244,15 +257,23 @@ source: a fact whose sources are all private may be used, with a warning, and ge
 
 ## 7. Citations
 
-The markers become paper-style citations when the post is published, one key citation per
-sentence at most. `strip --facts facts.md` turns each marker group (the markers closing one
-sentence) into at most one GFM footnote: of its facts, in the writer's order, the first whose
-first public source is not yet cited in its scope. Our own sources (`penguin.ooo`, the
-Prism-Shadow repositories on GitHub, a link-less source titled "Our …") are cited once per post;
-any other source once per `##` section. Opinions, private sources and facts under `## NOCITE`
-cite nothing, and a sentence whose sources are all cited already gets no footnote. The TL;DR
-sums up the body, so its markers stay in the draft as anchors and cite nothing; the body's first
-use sets the numbers, and a citation in a published TL;DR is an error. The footnote
+The markers become paper-style citations when the post is published, and most sentences carry
+none: one footnote per paragraph at most, each source once per post, and about 13 sources per post
+as the ceiling (the profile's `sources` setting). Writers still mark every factual sentence, since
+the markers are the truth guard; the citer thins them. `strip --facts facts.md` reads each marker
+group (the markers closing one sentence): of its facts, in the writer's order, the first whose
+first public source is not cited yet is the group's offer, and the first group in a paragraph
+with an offer becomes the paragraph's one GFM footnote. The paragraph's other groups cite
+nothing, so a source they offered stays free for a later paragraph. A list item and a table row
+count as paragraphs. Opinions, private sources and facts under `## NOCITE` cite nothing.
+
+Cite what a reader would want to check: a third-party number, a verbatim quote, a named paper,
+standard or product claim by someone else, our own measurement, and the first mention of a product
+behaviour. List repo files and docs pages the post merely refers to under `## NOCITE`, and name
+the file in a code span instead.
+
+The TL;DR sums up the body, so its markers stay in the draft as anchors and cite nothing; the
+body's first use sets the numbers, and a citation in a published TL;DR is an error. The footnote
 goes before the punctuation that ends its clause, outside a closing quotation mark, bracket or
 bold (`text[^1].`, `文字[^1]。`, `"the slope"[^1].`, `**claim**[^1].`); when the punctuation sits
 inside the closing mark (`slope."`), it follows the whole run and `check` warns. Footnotes are
@@ -282,9 +303,10 @@ the same order, and refuses with a clear message when it does not; strip that la
 `check` on a published post proves every `[^n]` is defined and every definition used, the labels
 run 1 … N in first-use order, every link is in `## SOURCES`, and no citation sits in a figure or a
 caption; a citation after the punctuation is an error. On a published post, and on a draft read
-through the same citer with `--facts`, it warns above 3.5 citations per 100 English words or 1.5
-per 100 Chinese characters, and on a sentence with two citations. `pair` proves both posts cite the
-same set of sources, and each section the same sources, whatever numbers each language gave them.
+through the same citer with `--facts`, a paragraph or a sentence with two citations is an error,
+and so is a post citing more sources than the profile's `sources` cap; fewer than its floor is a
+warning. `pair` proves both posts cite the same set of sources, and each section the same
+sources, whatever numbers each language gave them.
 
 ## 8. Source language and translation
 
@@ -400,7 +422,13 @@ dark, the references list and a jump to it). `curl` there may need `--noproxy '*
   block no finding names by its id or by quoting its text. `trim`, on a section or a whole draft,
   refuses what section 5 lists.
   `fix`, `polish`, `translate` and `trim` refuse an answer whose version note is not, byte for
-  byte, the one they were given. `emphasize` refuses what section 4 lists.
+  byte, the one they were given. `emphasize` refuses what section 4 lists. `transition` compares
+  the two texts block by block (paragraphs, headings, the TL;DR, figure and code blocks): it
+  refuses an answer that adds, drops, splits or merges a block, changes any block but the paragraph
+  right after a `## ` heading and the paragraph right before one, changes a sentence of those but
+  the first after the heading and the last before it, changes a rewritten sentence's markers (set
+  and order) or its `**`, changes the frontmatter, or breaks a note. A TL;DR, list, figure or
+  caption next to a heading is no paragraph, so that side of the join stays as it is.
   A refused answer is kept as `<out>.rejected.md` and the step exits 1; a change the findings
   should allow goes back with a finding that names it.
 - **The fact diff** (agent): every number, URL, code span, bold or 「」 label and proper noun
@@ -435,6 +463,17 @@ twice goes to `findings.unrouted.<lang>.vN.md` for the orchestrator.
   `packages/landing/test/blog.test.ts` pins post order per category, so a new post edits that
   list. Add a changelog pair (`Type: process`, `Scope: landing`) per
   `penguin-harness-dev/reference/changelog.md`.
+- **A published post back into a draft**: `unstrip --in packages/landing/content/blog/<slug>.<lang>.md
+  --out-dir <scratch>/articles/<slug>/` writes `recovered.<lang>.md` (each inline figure and each
+  screenshot back as its figure block, each `[^n]` back as a fact marker after its punctuation),
+  `figures/<id>.<lang>.html` (each inline figure as published, so `check --svg` and `strip
+  --figures-dir` work without a redraw) and `facts.<lang>.seed.md` (`## SOURCES` from the reference
+  list, verbatim; `## FACTS` one line per citation, the sentence that carried it). The second
+  language takes `--pair <the first's recovered draft> --facts <its seed>`, so both drafts carry the
+  same source and fact ids section by section. Its guard proves every figure against its block and
+  strips the draft with the seed: figure and image lines must come back byte for byte, every other
+  line once citations are removed; it then reports how many citations the current citer keeps.
+  The seed is a starting point: merge it into `facts.md` and verify each fact again.
 - **A docs page**: `write` (one call) to a draft, `strip` to
   `packages/docs/content/<slug>.<lang>.md`; a new page is also added to `src/lib/nav.ts`, which the
   docs package's content test keeps in sync.
@@ -447,6 +486,16 @@ Markdown is skipped by `format:check`; the text is covered by `check`, by the la
 blog tests (content integrity, anchors, links) or the docs package's content tests, and by reading.
 A post PR runs the landing tests, `format:check` and
 `node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs packages/landing/content/blog`.
+A post is finished when, on the test host, those pass with `git diff --check`; `check --in <post>
+--draft <draft> --facts facts.md --pair <other post>` and `pair` report 0 errors, `check --svg`
+passes, both reference lists are within the profile's `sources` cap and the last `review` scores
+`m of m` joins; and the built landing, driven in 8 combinations (en and zh, light and dark, 1280
+and 390 px wide), shows every citation as `[n]` or `[n, m]` with no two groups touching and none
+at a line start, jumps from every `[n]` to its note below the sticky nav and back with no new tab
+or reload, opens the external-link dialog for a reference link, never scrolls sideways, hides
+every `.fig-steps`, holds exactly one bold span in the lead and in each section, carries no 「夹具」
+on a zh page and logs no console or page error. A change to this skill runs `selftest` and
+`format:check` on the test host, `git diff --check`, and `--dry-run` of `transition` and `write`.
 When the author asks for the suite on another machine, `penguin-harness-dev/reference/verification.md`
 has the remote runner and its traps. After changing the script, a contract, a profile's settings or
 the check patterns, run `node .agents/skills/penguin-harness-writing/scripts/prose.mjs selftest`
@@ -457,10 +506,11 @@ stand-in gateway on a loopback port with a dummy key. A case that guards a fixed
 
 | Path | What it holds |
 | --- | --- |
-| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `emphasize`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
+| `scripts/prose.mjs` | The runner: API steps `outline`, `section`, `write`, `translate`, `polish`, `fix`, `trim`, `emphasize`, `transition`, `review`; local steps `plan`, `assemble`, `route`, `check`, `strip`, `unstrip`, `pair`, `selftest`. `--help` lists every option; `--dry-run` prints the assembled messages without calling or saving |
 | `prompts/<step>.system.md`, `prompts/<step>.user.md` | One prompt pair per API step; `{{SLOT}}`s filled by the script, and any slot left unfilled aborts the call |
 | `prompts/contract-section.md`, `contract-post.md`, `contract-docs.md`, `contract-landing.md` | The output contract for one section (section mode), a whole post, a docs page, landing strings |
 | `<scratch>/articles/<slug>/notes.md` | Per post, outside the repo: the author's `keep:` / `avoid:` / `note:` lines (section 6) |
-| `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the counting rules and budgets, the flow rule, the notes and fixed-title blocks, the trim scopes, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
+| `<scratch>/articles/<slug>/recovered.<lang>.md`, `figures/`, `facts.<lang>.seed.md` | Per post, outside the repo: what `unstrip` recovers from a published post (section 11) |
+| `prompts/fragments.md` | Prompt text used as slot values: the section shapes, marker rules, the counting rules and budgets, the flow rule, the transition step's findings and notes rules, the notes and fixed-title blocks, the trim scopes, the review scopes, the neighbours and translated-context blocks, the version-note rule, the meme brief, feedback blocks, the default title rules, the translation tells |
 | `reference/en-style.md`, `reference/zh-style.md` | Voice and the full banned lists, for every kind of text. The block between the `prompt` markers is what the model receives; the check patterns below it are what `check` greps for; change both together |
 | `reference/profile-<name>.md` | One per kind of text (section 2) |
