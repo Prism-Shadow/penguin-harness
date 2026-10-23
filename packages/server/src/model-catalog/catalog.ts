@@ -1162,13 +1162,14 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
-    // The free variant is OpenRouter's only listing of MiniMax-M3.1-Flash (MMSP 0.5.5's
-    // registry, models API read 2026-10-19).
-    modelId: "minimax/minimax-m3.1-flash:free",
-    displayName: "MiniMax M3.1 Flash (free)",
+    // The paid listing, which replaced the free variant when its free period ended (models API
+    // read 2026-10-23): $0.15 input / $0.60 output / $0.015 cache read, 1,048,576 tokens, image
+    // input, MiniMax's own list price.
+    modelId: "minimax/minimax-m3.1-flash",
+    displayName: "MiniMax M3.1 Flash",
     provider: "openrouter",
-    contextWindow: 1000000,
-    pricing: usd(0, 0, 0),
+    contextWindow: 1048576,
+    pricing: usd(0.015, 0.15, 0.6),
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
@@ -1402,6 +1403,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.05, 0.14, 1),
     supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Recursive's Flint, listed 2026-10-21 (models API read 2026-10-23): free, 262,144 tokens,
+    // up to 235,929 output tokens, text input only, with reasoning and tool calls.
+    modelId: "recursive/flint-v1.0:free",
+    displayName: "Flint (free)",
+    provider: "openrouter",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
