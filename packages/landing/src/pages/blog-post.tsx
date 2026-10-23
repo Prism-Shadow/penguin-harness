@@ -32,7 +32,7 @@ import type {
 import { S } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { blogAssetUrl, SITE_HOSTS } from "../lib/links";
-import { classifyPostHref } from "../lib/post-links";
+import { classifyPostHref, inPageHash } from "../lib/post-links";
 import { landOnHash } from "../lib/hash-arrival";
 import { holdPostJumps } from "../lib/jump-hold";
 import { formatAuthors, formatPostDate, getPost, loadPostBody, loadedPostBody } from "../lib/blog";
@@ -52,7 +52,9 @@ const OWN_HOSTS: readonly string[] =
  * Link adapter: a link opens according to where it goes (lib/post-links.ts).
  *
  * - A `#` link stays on the page: a citation and its entry in the references, a heading. The
- *   browser scrolls to the target; the route scroll and the page's hash effect agree with it.
+ *   browser scrolls to the target; the route scroll and the page's hash effect agree with it. An
+ *   address of this same page with a fragment (`/blog/<post>#…`, `https://penguin.ooo/blog/<post>#…`)
+ *   is rendered as the bare fragment, so it is such a jump too (lib/post-links.ts, `inPageHash`).
  * - A page of this site opens in a new tab (`target="_blank"` + `rel="noreferrer"`, which also
  *   implies `noopener`), since a post is a reading surface people come back to.
  * - Anywhere else opens in a new tab once the reader confirms, through the confirmation the page
@@ -70,8 +72,16 @@ export function MdLink({
   ...anchorProps
 }: ComponentPropsWithoutRef<"a"> & ExtraProps) {
   const { href = "" } = anchorProps;
+  const here = typeof window === "undefined" ? "" : window.location.pathname;
+  const hash = inPageHash(href, OWN_HOSTS, here);
+  if (hash) {
+    return (
+      <a {...anchorProps} href={hash}>
+        {children}
+      </a>
+    );
+  }
   const kind = classifyPostHref(href, OWN_HOSTS);
-  if (kind === "anchor") return <a {...anchorProps}>{children}</a>;
   if (kind === "external") {
     return (
       <ExternalLink

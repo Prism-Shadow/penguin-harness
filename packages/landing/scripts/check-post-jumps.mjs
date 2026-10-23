@@ -9,9 +9,11 @@
  * For each post that cites sources, in English and Chinese, at 1280 and 390 px wide:
  *
  * - Clicking a citation brings its reference entry to just below the sticky header, measured by
- *   the entry's position once the scroll has settled, and marks it (`:target`), with no new tab
- *   and no reload. Each back-link brings its citation back the same way.
- * - The post opened at `#fn-n` (a shared link) lands on entry n and marks it.
+ *   the entry's position once the scroll has settled, and marks it (`:target`), without leaving
+ *   the page: no new tab or window, no page load. Each back-link brings its citation back, and on
+ *   a wide screen each TOC entry its heading, the same way. Every link that names a place on the
+ *   page is a bare `#…` link with no `target`.
+ * - The post opened at `#fn-n` or at a heading (a shared link) lands there and marks it.
  * - Opened from the blog list (client-side navigation, the post's code and text loading on
  *   demand), a citation clicked straight away still lands.
  *
@@ -120,7 +122,7 @@ const landing = (page, id) =>
     if (!placed)
       return { miss: `its top is at ${Math.round(top)} px (header ends at ${Math.round(header)})` };
     if (!marked) return { miss: "not marked as the target" };
-    return { token: window.__jumps };
+    return {};
   }, id);
 
 const misses = [];
@@ -151,60 +153,82 @@ async function openContext(browser, lang, width) {
 async function check(engine, browser, slug, lang, width) {
   const where = `${engine} ${slug} ${lang} ${width}`;
   const context = await openContext(browser, lang, width);
-  let popups = 0;
   const page = await context.newPage();
+  // Leaving the page shows as a popup (a new tab or window) or as a navigation request of the
+  // page itself (a load); a jump within the page makes neither.
+  let left = 0;
   page.on("popup", (p) => {
-    popups++;
+    left++;
     void p.close();
   });
+  page.on("request", (r) => {
+    if (r.isNavigationRequest() && r.frame() === page.mainFrame()) left++;
+  });
   const miss = (what, detail) => misses.push(`${where}: ${what}: ${detail}`);
+
+  /** Click a link that should jump within the page, then judge where its target landed. */
+  const jump = async (link, what) => {
+    const href = await link.getAttribute("href");
+    const before = left;
+    await link.click();
+    await settle(page);
+    jumps++;
+    const r = await landing(page, decodeURIComponent(href.slice(1)));
+    if (left > before) miss(`${what} ${href}`, "left the page (a new tab, a window or a load)");
+    else if (r.miss) miss(`${what} ${href}`, r.miss);
+  };
 
   // Opened from the list, a citation clicked as soon as the body is there.
   await page.goto(`${BASE}/blog`, { waitUntil: "domcontentloaded" });
   await page.locator(`a[href$="/blog/${slug}"]`).first().click();
   await page.waitForSelector(".site-prose a[data-footnote-ref]");
-  await page.evaluate(() => (window.__jumps = Math.random()));
-  const token = await page.evaluate(() => window.__jumps);
-  const first = page.locator(".site-prose a[data-footnote-ref]").first();
-  const firstHref = await first.getAttribute("href");
-  await first.click();
-  await settle(page);
-  jumps++;
-  const early = await landing(page, firstHref.slice(1));
-  if (early.miss) miss(`from the list, ${firstHref}`, early.miss);
+  left = 0;
+  await jump(page.locator(".site-prose a[data-footnote-ref]").first(), "from the list, citation");
 
-  // Every citation, then every back-link.
+  // Every link that names a place on this page is a bare `#…` link, opening nowhere else.
+  const stray = await page.evaluate(() => {
+    const here = location.pathname.replace(/\/+$/, "");
+    return [...document.querySelectorAll("a[href]")]
+      .filter((a) => {
+        const url = new URL(a.getAttribute("href"), location.href);
+        const samePage =
+          url.origin === location.origin && url.pathname.replace(/\/+$/, "") === here;
+        return samePage && url.hash.length > 1;
+      })
+      .filter((a) => !a.getAttribute("href").startsWith("#") || a.hasAttribute("target"))
+      .map((a) => a.outerHTML.slice(0, 120));
+  });
+  for (const tag of stray) miss("in-page link", `not a bare # link, or it has a target: ${tag}`);
+
+  // Every citation, every back-link, and on a wide screen every TOC entry.
   const count = (sel) => page.locator(sel).count();
-  for (const [sel, kind] of [
+  for (const [sel, what] of [
     [".site-prose a[data-footnote-ref]", "citation"],
     [".site-prose a[data-footnote-backref]", "back-link"],
+    ...(width >= 1280 ? [["aside.site-toc a", "TOC entry"]] : []),
   ]) {
     const n = await count(sel);
-    for (let i = 0; i < n; i += EVERY) {
-      const link = page.locator(sel).nth(i);
-      const href = await link.getAttribute("href");
-      const before = popups;
-      await link.click();
-      await settle(page);
-      jumps++;
-      const r = await landing(page, href.slice(1));
-      if (popups > before) miss(`${kind} ${href}`, "opened a new tab");
-      else if (r.miss) miss(`${kind} ${href}`, r.miss);
-      else if (r.token !== token) miss(`${kind} ${href}`, "reloaded the page");
-    }
+    for (let i = 0; i < n; i += EVERY) await jump(page.locator(sel).nth(i), what);
   }
 
-  // Opened at an entry's address.
+  // Opened at an entry's address, and at a heading's.
   const entries = await count(".site-prose [data-footnotes] li");
-  const id = `fn-${Math.ceil(entries / 2)}`;
-  const direct = await context.newPage();
-  await direct.goto(`${BASE}/blog/${slug}#${id}`, { waitUntil: "domcontentloaded" });
-  await direct.waitForSelector(".site-prose a[data-footnote-ref]");
-  await direct.waitForTimeout(LATE_MS + 800);
-  await settle(direct);
-  jumps++;
-  const opened = await landing(direct, id);
-  if (opened.miss) miss(`opened at #${id}`, opened.miss);
+  const heading = await page.evaluate(
+    () => [...document.querySelectorAll(".site-prose h2[id]:not(#footnote-label)")].at(-1)?.id,
+  );
+  for (const id of [`fn-${Math.ceil(entries / 2)}`, heading].filter(Boolean)) {
+    const direct = await context.newPage();
+    await direct.goto(`${BASE}/blog/${slug}#${encodeURIComponent(id)}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await direct.waitForSelector(".site-prose a[data-footnote-ref]");
+    await direct.waitForTimeout(LATE_MS + 800);
+    await settle(direct);
+    jumps++;
+    const opened = await landing(direct, id);
+    if (opened.miss) miss(`opened at #${id}`, opened.miss);
+    await direct.close();
+  }
   await context.close();
 }
 

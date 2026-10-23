@@ -22,6 +22,9 @@ export const JUMP_HOLD_MS = 3000;
 /** How long it is held at most, while pictures are still arriving. */
 export const JUMP_HOLD_CAP_MS = 15000;
 
+/** How soon after a click on a `#` link the browser's move to its anchor counts as following it. */
+const FOLLOW_MS = 1000;
+
 /** Keys that scroll the page; pressing one is the reader taking over. */
 const SCROLL_KEYS = ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "];
 
@@ -74,12 +77,23 @@ export function holdPostJumps(body: Element): { holdHash(): void; dispose(): voi
     const target = document.getElementById(hashTargetId(window.location.hash));
     if (target) jumps.jumped(target, performance.now());
   };
-  let pending = 0;
+  // A followed link is held once the browser has moved to its anchor, which it announces with
+  // `hashchange` (some engines only after the click's own tasks have run). A link to the anchor
+  // the page is already at moves nothing and announces nothing, so it is held at once. Back and
+  // Forward announce a change too, but no click came before them.
+  let followed = -Infinity;
   const onClick = (event: MouseEvent) => {
     if (event.defaultPrevented || !(event.target instanceof Element)) return;
-    if (!event.target.closest("a[href^='#']")) return;
-    // The browser follows the link once this event is over: see where it went then.
-    pending = window.setTimeout(holdHash, 0);
+    const link = event.target.closest("a[href^='#']");
+    if (!link) return;
+    const here = hashTargetId(window.location.hash);
+    if (here && hashTargetId(link.getAttribute("href") ?? "") === here) holdHash();
+    else followed = performance.now();
+  };
+  const onHashChange = () => {
+    if (performance.now() - followed > FOLLOW_MS) return;
+    followed = -Infinity;
+    holdHash();
   };
   const letGo = () => jumps.letGo();
   const onKey = (event: KeyboardEvent) => {
@@ -88,6 +102,7 @@ export function holdPostJumps(body: Element): { holdHash(): void; dispose(): voi
   const observer = new ResizeObserver(() => jumps.resized(performance.now())?.scrollIntoView());
   observer.observe(body);
   document.addEventListener("click", onClick);
+  window.addEventListener("hashchange", onHashChange);
   window.addEventListener("wheel", letGo, { passive: true });
   window.addEventListener("touchstart", letGo, { passive: true });
   // A press lets go too (the scrollbar, a selection); the link a jump follows is pressed before
@@ -97,9 +112,9 @@ export function holdPostJumps(body: Element): { holdHash(): void; dispose(): voi
   return {
     holdHash,
     dispose() {
-      window.clearTimeout(pending);
       observer.disconnect();
       document.removeEventListener("click", onClick);
+      window.removeEventListener("hashchange", onHashChange);
       window.removeEventListener("wheel", letGo);
       window.removeEventListener("touchstart", letGo);
       window.removeEventListener("pointerdown", letGo);
