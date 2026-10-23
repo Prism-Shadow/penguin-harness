@@ -100,7 +100,7 @@ for await (const record of run) {
 const second = await run.result();
 ```
 
-- The stream carries the conversation's records: OmniMessage envelopes `{timestamp, type, payload, origin?}`, the same lines the Trace stores. The answer streams as `partial_text` records and arrives whole as an assistant `text` record.
+- The stream carries the conversation's records: AMSP record envelopes `{timestamp, type, payload, origin?}`, the same lines the Trace stores. The answer streams as `partial_text` records and arrives whole as an assistant `text` record.
 - `ask()` runs to the end and resolves with the result: `status`, `error`, `sessionId`, `text` (the main conversation's answer), `usage`, `sessionUsage` and `requests`. `run()` starts the run and returns it at once: iterate it once for the records, await `run.session` for the Session id, and `run.result()` for the end.
 - **Conversations.** Keep one `sessionId` per conversation of the program, such as one per end user or chat thread, and pass it back to continue. Omit it to start a new conversation. Only the Agent's own API conversations can be continued.
 - **Approvals.** `onApproval(toolCall, origin, { sessionId })` is called only when the approval mode makes a call wait; `origin` is set for a subagent's call. Without it, or when it throws, the client answers `deny`. A person can answer the same call in the Web App; the first answer counts.

@@ -3,7 +3,7 @@ title: The Agent Loop
 description: How session.run drives Tasks and turns: approval flow, concurrent tool execution, hooks, mid-run steering, automatic reconnect, and compaction.
 ---
 
-The SDK's single execution entry point is `session.run(newMessages, opts?)`. The input is the list of new OmniMessages, called the Prompt. The return value is an async generator that streams [OmniMessage](/amsp-records) outputs. One `run` call drives one complete Task, which ends when the model produces a final answer with no tool calls. A [stop hook](#stop-hooks) can ask for more, in which case the same `run` call drives several Tasks in a row.
+The SDK's single execution entry point is `session.run(newMessages, opts?)`. The input is the list of new records, called the Prompt. The return value is an async generator that streams [AMSP records](/amsp-records). One `run` call drives one complete Task, which ends when the model produces a final answer with no tool calls. A [stop hook](#stop-hooks) can ask for more, in which case the same `run` call drives several Tasks in a row.
 
 This page shows the `context_engine`'s overall flow first, then breaks down each stage. The message-level observable timeline and the ordering guarantees are covered on [Message Flow & Ordering](/message-flow). Source: `packages/core/src/engine/context-engine.ts`.
 
@@ -210,7 +210,7 @@ The scripts run on the hot path of every prompt. Keep them fast, set a tight `ti
 
 ## Mid-run steering
 
-While a Task is running, the host can queue a user message with `session.steer(input)`. The input is a list of OmniMessages, the same shape `run` takes a Prompt in. Steering does not interrupt the loop. At the next input assembly, the engine delivers the queued input as part of that turn.
+While a Task is running, the host can queue a user message with `session.steer(input)`. The input is a list of records, the same shape `run` takes a Prompt in. Steering does not interrupt the loop. At the next input assembly, the engine delivers the queued input as part of that turn.
 
 ### How a steering message is delivered
 

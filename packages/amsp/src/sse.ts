@@ -15,7 +15,7 @@ export interface SseEvent {
 
 /**
  * What one event of an AMSP stream is:
- * - `record`: an unnamed event, its data one AmspRecord envelope, with the event's id;
+ * - `record`: an unnamed event, its data one record envelope, with the event's id;
  * - `control`: `hello`, `resync_required` or `ping`;
  * - `done`: `data: [DONE]`, the end of a run stream;
  * - `other`: a named event AMSP does not define. A host may add its own (the Web App's internal

@@ -105,7 +105,7 @@ export interface GenerativeModelParameters {
 /**
  * The terminal state of an LLM request, returned as the **return value** of the `streamGenerate`
  * async generator (not a yielded message). The status values share the same four-value protocol
- * as AmspRecord `stop_reason`:
+ * as the record's `stop_reason`:
  *   - `completed`: finished normally (already produced `token_usage`);
  *   - `aborted`: user-initiated interruption — stop and hand back to the user;
  *   - `retryable`: a failure worth retrying — transport drops, idle timeouts, 408/429/5xx,
@@ -125,7 +125,7 @@ export interface GenerativeModelParameters {
 export interface LLMOutcome {
   status: StopReason;
   /**
-   * Classified cause (the omnimessage ErrorCode vocabulary): present on every
+   * Classified cause (the records' ErrorCode vocabulary): present on every
    * non-completed failure outcome. Carried onto the `request_end` event as `error_code`,
    * next to `error_message` — the status answers "retry?", the code says what kind of
    * error it was, machine-readably.

@@ -1,5 +1,5 @@
 /**
- * AmspRecord — PenguinHarness's primary message protocol.
+ * AMSP records — PenguinHarness's one message format.
  *
  * All messages share one envelope: `timestamp` (ISO 8601 UTC), `type`, and `payload`.
  * The outer `type` falls into three categories:
@@ -12,7 +12,7 @@
  * the Human interface communicates using: complete `model_msg`, streaming `partial_*`, and all
  * `event_msg`.
  *
- * AmspRecord is a closed vocabulary. A new payload field or enum value is a protocol change
+ * The records are a closed vocabulary. A new payload field or enum value is a protocol change
  * every reader — Trace replay, the server, the Web App, the CLI, third-party consumers — has to
  * learn, forever. Before adding one, show that no existing record carries the fact (the model
  * lives in `session_meta`; a context's boundaries in the compaction pair and the file split)
@@ -23,13 +23,13 @@
  * mid-context, so no existing record carries it), and the `task_begin` / `task_end` pair
  * (where a Task starts and whether it reached its end — see TaskBeginPayload).
  *
- * These types are AMSP's record vocabulary as much as the Trace's: every Trace line is an AMSP
+ * These types are the Trace's vocabulary and AMSP's alike: every Trace line is an AMSP
  * record as it stands. They live in this package, which has no dependency and runs in browsers,
- * and `@prismshadow/penguin-core` re-exports them from its old paths. Nothing here may import
+ * and `@prismshadow/penguin-core` re-exports them from its root. Nothing here may import
  * Node or core.
  *
  * Docs: packages/docs/content/amsp-records.{zh,en}.md (site path /docs/amsp-records) documents
- * this protocol payload-for-payload — keep the page in sync when changing types here.
+ * the records payload-for-payload — keep the page in sync when changing types here.
  */
 
 /** Thinking level of one request: what `request_begin.thinking_level` records. Core re-exports it as the level a Session sets and a request carries. */
@@ -348,7 +348,7 @@ export interface ApprovalDecisionPayload {
 }
 
 /**
- * The one error vocabulary of the omnimessage layer. Every payload that reports a
+ * The one error vocabulary of the records. Every payload that reports a
  * failure carries the same pair: `error_code` — machine-readable and stable, what
  * render layers localize from — and `error_message` — the raw human text (provider
  * output, exception prose), shown verbatim because it is not translatable.
@@ -467,7 +467,7 @@ export interface RetryDetail extends ErrorInfo {
   // classified cause and the real reason behind a retried/failed Request (e.g. `403 …
   // (insufficient_user_quota)`); the server's error records / Cost center read them here
   // because a failed request never produces an abort event. Not plain `message`: in this
-  // protocol "message" means an AmspRecord. (Traces written before the rename carry the
+  // protocol "message" means a record. (Traces written before the rename carry the
   // text as `message`; nothing reads that field semantically after the fact.)
   /**
    * 1-based ordinal of this Request within its retry run — the authoritative retry count

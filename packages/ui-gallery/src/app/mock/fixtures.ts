@@ -817,9 +817,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           {
             name: "penguin-sdk",
             description:
-              "Build with the PenguinHarness SDK: the Session, Agent State and AmspRecord APIs.",
-            descriptionZh:
-              "使用 PenguinHarness SDK 开发：Session、Agent State 与 AmspRecord 接口。",
+              "Build with the PenguinHarness SDK: the Session, Agent State and AMSP record APIs.",
+            descriptionZh: "使用 PenguinHarness SDK 开发：Session、Agent State 与 AMSP 记录接口。",
             version: "0.2.13",
             package: "@penguinharness/penguin-sdk",
             source: "builtin",
@@ -1652,7 +1651,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       "corpus/claude-code-docs/memory.md":
         "# Memory\n\nMemory files are Markdown with a frontmatter name and description.\n",
       "corpus/penguin-docs/server-api.md": "# Server API\n\nEvery route is listed here.\n",
-      "corpus/penguin-docs/amsp-records.md": "# AmspRecord\n\nThe message protocol.\n",
+      "corpus/penguin-docs/amsp-records.md": "# AMSP Records\n\nThe message format.\n",
     },
   };
 

@@ -13,7 +13,7 @@
 
 - `request_begin` 新增可选字段 `thinking_level`：引擎为该请求实际发送的等级——Session 钉住的等级，否则为该上下文开启时读到的等级。普通请求与压缩请求都带该字段。未发送任何等级时（如父会话无等级时派生的子会话）不带该字段。
 - 引擎每次请求只解析一次等级，记录与发给模型的请求用同一个值。`LLMInterface` 新增可选属性 `defaultThinkingLevel`，由 `GenerativeModel` 提供；发给模型的请求与此前逐字节相同。
-- 这是「OmniMessage 不新增字段」规则的一次明示例外，出于用户要求：`session_meta` 不记录等级，而等级可以在上下文中途更换。
+- 这是「AMSP 记录不新增字段」规则的一次明示例外，出于用户要求：`session_meta` 不记录等级，而等级可以在上下文中途更换。
 - Trace 分析把该字段复制到每次请求上（`RequestSpan.thinkingLevel`）。此前写入的 Trace 没有等级：不做迁移、不回写，界面上也不显示等级。
 
 ## 轨迹观测

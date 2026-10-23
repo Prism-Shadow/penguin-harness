@@ -3,7 +3,7 @@ title: Core Interfaces
 description: The Human, LLM and Environment contracts behind the engine, with their full signatures, inner types and extension seams.
 ---
 
-The `context_engine` depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations, so the engine sees only [OmniMessage](/amsp-records).
+The `context_engine` depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations, so the engine sees only [AMSP records](/amsp-records).
 
 This page follows a turn's control flow: [the Human boundary](#the-human-boundary), the [LLM contract](#llminterface), the [approval callback](#approvefn) and the [Environment contract](#environmentinterface). It ends with the [subagent](#subagent-interfaces) and [vision](#visiondescriberservice) services and the [extension seams](#extension-seams).
 
@@ -42,7 +42,7 @@ Every interface follows two rules:
 
 ### Message plane and control plane
 
-The **content** that crosses all three boundaries is OmniMessage and nothing else:
+The **content** that crosses all three boundaries is AMSP records and nothing else:
 
 - `session.run`'s input and its streamed output
 - `streamGenerate`'s input array and its yielded stream
@@ -56,10 +56,10 @@ What travels alongside it is the **control plane**. It is deliberately not messa
 | --- | --- | --- |
 | `signal: AbortSignal` | `RunOptions`, `GenerativeModelParameters`, `ToolExecutionRequest` | An interruption that had to wait its turn in a message queue would not be an interruption. |
 | `thinkingLevel` | `GenerativeModelParameters` | A per-request parameter, like a timeout: it says how to run the request, not what to say. The engine holds the live value as its own state (`ContextEngine.setThinkingLevel`, fed by the `Session.thinkingLevel` setter, the soft-limited knob). When a request omits it, the LLM object's construction default applies, which is the context's opening level. `RunOptions` carries no level. |
-| `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes an OmniMessage tool call. The answer is a three-value enum, which the engine turns into an `approval_decision` message as soon as it has it. |
+| `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes a `tool_call` record. The answer is a three-value enum, which the engine turns into an `approval_decision` message as soon as it has it. |
 | `LLMOutcome` | `streamGenerate`'s generator return value | The request's terminal state, which the engine's retry and reconnect policy branches on. A generator's return value is guaranteed by the type system; "the last message yielded must be a `request_end`" could only ever be a runtime convention. The engine writes that `request_end` from it. |
 
-Everything else that is not OmniMessage belongs to the Environment's management plane, described under [EnvironmentInterface](#environmentinterface).
+Everything else that is not a record belongs to the Environment's management plane, described under [EnvironmentInterface](#environmentinterface).
 
 ## The Human boundary
 
@@ -216,7 +216,7 @@ interface EnvironmentInterface {
 
 The interface carries two planes, and only the first belongs to the agent loop:
 
-- **The message plane** is `executeTool`, the only method `context_engine` calls here. An OmniMessage tool call goes in; a stream of OmniMessage comes out.
+- **The message plane** is `executeTool`, the only method `context_engine` calls here. A `tool_call` record goes in; a stream of records comes out.
 - **The management plane** is `listTools`, `toolPermission`, `dispose` and the optional members below. None of them pass through the engine. They serve Session assembly and a host's own UI, such as the Web App's process and subagents panels or an approval mode's permission lookup. They are ordinary method calls that return ordinary data, which is why they are not message-shaped: making them messages would not make the engine's boundary any purer.
 
 | Optional management member | Purpose |
@@ -386,7 +386,7 @@ Spawning and running are separate, so the same child Session can accept a follow
 
 A round reports a cut-off through its return value, so the parent reports that round as failed instead of handing the model half an answer.
 
-A round's input is an OmniMessage list: the same shape `steer` takes, and the same shape a host passes to `EnvironmentInterface.sendToBackgroundSubagent`. Both ways into a child session speak one vocabulary. The caller owns each message's `sender`. The model's own dispatch (`run_subagent`, `input_subagent`) stamps `parent_agent`, while a human's message from a host panel carries none, so the child's Trace records who actually spoke.
+A round's input is a record list: the same shape `steer` takes, and the same shape a host passes to `EnvironmentInterface.sendToBackgroundSubagent`. Both ways into a child session speak one vocabulary. The caller owns each message's `sender`. The model's own dispatch (`run_subagent`, `input_subagent`) stamps `parent_agent`, while a human's message from a host panel carries none, so the child's Trace records who actually spoke.
 
 ## VisionDescriberService
 

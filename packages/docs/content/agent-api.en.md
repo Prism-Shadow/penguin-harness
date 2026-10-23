@@ -206,7 +206,7 @@ Once the stream has started, an error is never a separate frame: the records say
 
 ## The amsp client
 
-`@prismshadow/amsp` is the TypeScript client of the Agent API and the package that defines AMSP: the OmniMessage records and their guards, the control frames, and the requests and answers around them; `@prismshadow/amsp/markers` holds the message markers. It has no dependencies and runs in Node 24 and in current browsers.
+`@prismshadow/amsp` is the TypeScript client of the Agent API and the package that defines AMSP: the records with their guards and builders, the control frames, and the requests and answers around them; `@prismshadow/amsp/markers` holds the message markers. It has no dependencies and runs in Node 24 and in current browsers.
 
 The package is versioned with PenguinHarness. The versions after 0.2.16 read the stream described on [AMSP](/amsp); they cannot read the events of a server from 0.2.16 or earlier, and a client from 0.2.16 or earlier cannot read this stream. An install that allows `^0.2.16` picks up the new client on its next install or update; see [Upgrading an older client](#upgrading-an-older-client).
 

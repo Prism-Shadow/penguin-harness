@@ -3,8 +3,8 @@
  * call through, plus the configuration and runtime services an Environment is built with.
  *
  * Two planes live in this file and must not be confused (see the docs page):
- * - the **message plane** — `executeTool`, which the engine drives: an AmspRecord tool call
- *   in, a stream of AmspRecord out, nothing else;
+ * - the **message plane** — `executeTool`, which the engine drives: a `tool_call` record
+ *   in, a stream of records out, nothing else;
  * - the **management plane** — the tool list, the permission lookup, the background command
  *   and subagent listings, their stop/steer entry points and the listener attachments. These
  *   never pass through `context_engine`: they serve a host's own UI (the Web App's process

@@ -3,11 +3,11 @@
  * frontend SPA (single source of truth).
  *
  * These field definitions are authoritative for the Web API contract. Conventions:
- *   - DTO fields use camelCase; AmspRecord keeps the core protocol as-is (snake_case shell),
+ *   - DTO fields use camelCase; an AMSP record keeps its own shape as-is (snake_case envelope),
  *     no conversion;
  *   - This file holds only types, no implementation; exposed to the frontend via package
  *     exports `"./api"` for type-only import;
- *   - Types are taken only from core's pure subpaths (omnimessage / interfaces), so the
+ *   - Types are taken only from `@prismshadow/amsp` and core's pure `interfaces` subpath, so the
  *     frontend can safely reference them.
  *
  * Docs: packages/docs/content/server-api.{zh,en}.md (site path /docs/server-api) is the
@@ -3245,7 +3245,7 @@ export interface MessagingAccountHoldersResponse {
 }
 
 // ---------------------------------------------------------------------------
-// SSE server events (AmspRecord uses the default event, only server_event here)
+// SSE server events (records use the default event, only server_event here)
 // ---------------------------------------------------------------------------
 
 /** Docs: /docs/server-api § "Streaming (SSE)". */

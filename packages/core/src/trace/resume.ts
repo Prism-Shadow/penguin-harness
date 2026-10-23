@@ -308,7 +308,7 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
   // — this file's context is fully closed, so the whole file is not replayed. Task records
   // after the compaction_end do not count: they never open the next file, so a Task that ended
   // on the compaction (and the next one's task_begin) leaves them in this one, and a restart
-  // there must still find the summary (see omnimessage/task-records.ts).
+  // there must still find the summary (see task-records.ts in @prismshadow/amsp/records).
   const last = lastNonTaskRecord(messages);
   if (last && isCompactionEnd(last)) {
     const p = last.payload;

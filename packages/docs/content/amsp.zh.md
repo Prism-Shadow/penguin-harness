@@ -1,9 +1,9 @@
 ---
 title: AMSP
-description: Agent Message Stream Protocol：一个 Session 的 OmniMessage 记录经 SSE 上线，包括控制帧、运行流与 Session 流、待决审批资源、运行结果的读法，以及每条记录取代的 v1 旧事件。
+description: Agent Message Stream Protocol：一个 Session 的记录经 SSE 上线，包括控制帧、运行流与 Session 流、待决审批资源、运行结果的读法，以及每条记录取代的 v1 旧事件。
 ---
 
-AMSP（Agent Message Stream Protocol）是 [Agent API](/agent-api) 的传输格式。它流式传输一个 Session：该 Session 的 [OmniMessage](/amsp-records) 记录，与 Trace 中保存的完全相同；消息产出过程中流式发出的 `partial_*` 分片；以及围绕它们的四个控制帧。线上不做任何翻译：Trace 的每一行都是一条合法的 AMSP 记录，每种载荷的字段都以 OmniMessage 页面的说明为准。
+AMSP（Agent Message Stream Protocol）是 [Agent API](/agent-api) 的传输格式。它流式传输一个 Session：该 Session 的记录，与 Trace 中保存的完全相同；消息产出过程中流式发出的 `partial_*` 分片；以及围绕它们的四个控制帧。线上不做任何翻译：Trace 的每一行都是一条合法的 AMSP 记录，每种载荷的字段都以 [AMSP 记录](/amsp-records)页面的说明为准。
 
 Web App 的服务器事件（运行状态、审批请求、标题、goal 进度等）不属于 AMSP。程序需要的信息从记录和两个资源中读取：Session 本身 `GET …/sessions/:sessionId`，给出状态与模型；它的待决审批 `GET …/sessions/:sessionId/approvals`。
 
@@ -13,7 +13,7 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 
 - 流的类型是 `text/event-stream; charset=utf-8`，带 `Cache-Control: no-cache` 和 `X-Accel-Buffering: no`。每个事件由几行 SSE 字段和一个空行组成。
 - 每个事件属于两类之一，以 `event:` 名区分：
-  - **记录**不带名字。它带 `id:`，形如 `<epoch>-<seq>`；`data:` 是单行 JSON 的 OmniMessage 外壳 `{timestamp, type, payload, origin?}`；
+  - **记录**不带名字。它带 `id:`，形如 `<epoch>-<seq>`；`data:` 是单行 JSON 的记录外壳 `{timestamp, type, payload, origin?}`；
   - **控制帧**带名字、不带 `id:`，因此不移动续传位置，也从不进缓冲、不被补发。
 - 同一条流里 id 递增，但不一定连续：服务器的通道也为 AMSP 不传送的事件编号。服务器重启或重建该 Session 的通道时，epoch 会改变。
 - 载荷为 snake_case，与 Trace 保存的完全一致，供应商的 `fidelity` 也在其中。字节以 base64 文本传送：`inline_data.data`、`inline_thinking.data`、工具输出的 `images`，以及 `data:` URL。
@@ -308,7 +308,7 @@ data: [DONE]
 - 版本写在路径里：`/api/amsp/v1`；记录本身不带版本。
 - 在 `/v1` 之内只做增加：新的记录、新的可选字段、新的控制帧。忽略未知内容的读取方可以继续工作。
 - 改变已有字段的含义需要新版本。
-- 记录就是 OmniMessage 本身，所以 OmniMessage 的改动就是 AMSP 的改动，遵守同样的规则。
+- 记录就是 Trace 的记录本身，所以记录的改动就是 AMSP 的改动，遵守同样的规则。
 
 ## 自行读取流
 

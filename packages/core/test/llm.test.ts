@@ -240,7 +240,7 @@ describe("mergeRecordsToUniMessage", () => {
     // turn's tool outputs — several user-side records. On the wire they must be a
     // single user UniMessage (content_items in input order): what MMSP receives always
     // alternates user / assistant, and an injection can never produce two adjacent user
-    // messages. The per-message granularity exists only at the AmspRecord/Trace layer.
+    // messages. The per-message granularity exists only at the record/Trace layer.
     const notice = buildBackgroundTaskDoneMessage(
       {
         kind: "command",

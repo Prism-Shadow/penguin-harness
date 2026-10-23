@@ -25,7 +25,7 @@
  *      unclassifiable error — ends `retryable`, with the concrete failure on `errorMessage`.
  *      User interruption ends with `aborted`.
  *
- * `context_engine` only consumes AmspRecord; all Uni* protocol details are encapsulated here.
+ * `context_engine` only consumes AMSP records; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
  */
 import { ThinkingLevel, UnsupportedParameterError } from "@prismshadow/mmsp";
@@ -226,7 +226,7 @@ export function mergeRecordsToUniMessage(messages: AmspRecord[]): UniMessage {
 /**
  * Converts MMSP `UsageMetadata` into PenguinHarness `TokenCounts`.
  *
- * Conversion rules (MMSP UsageMetadata → AmspRecord TokenCounts, null treated as 0):
+ * Conversion rules (MMSP UsageMetadata → the records' TokenCounts, null treated as 0):
  *   - `cache_read  = cached_tokens` (input tokens served from cache hits);
  *   - `cache_write = prompt_tokens` (input tokens on a cache miss);
  *   - `output     = thoughts_tokens + response_tokens`;

@@ -1,13 +1,13 @@
 ---
-title: The OmniMessage Protocol
-description: OmniMessage is the unified message protocol that the SDK yields, the Trace stores, and the Server streams verbatim over SSE.
+title: AMSP Records
+description: The AMSP record is the one message format: the SDK yields it, the Trace stores it, and the Server streams it verbatim over SSE.
 ---
 
-OmniMessage is PenguinHarness's unified message protocol. The SDK yields OmniMessage objects, the Trace stores them line by line, and the Server pushes them verbatim over SSE. What streams, what is stored, and what the model sees are one structure: there is no second format between front end, back end, and storage.
+An AMSP record is PenguinHarness's one message format. The SDK yields records, the Trace stores them line by line, and the Server pushes them verbatim over SSE. What streams, what is stored, and what the model sees are one structure: there is no second format between front end, back end, and storage.
 
-These messages are also the records of [AMSP](/amsp), the stream the [Agent API](/agent-api) serves to programs outside PenguinHarness: every line of a Trace is a valid AMSP record, so a change to OmniMessage is a change to that public protocol.
+They are the records of [AMSP](/amsp), the stream the [Agent API](/agent-api) serves to programs outside PenguinHarness: every line of a Trace is a valid AMSP record, so a change to the records is a change to that public protocol.
 
-This page starts with the envelope and its three message types, then lists every payload field by field, and ends with the rules that span the whole protocol: the streaming discipline, `stop_reason`, `origin` and provider fidelity. The type definitions live in `packages/amsp/src/records/types.ts` (the `@prismshadow/amsp` package), and `@prismshadow/penguin-core` re-exports them.
+This page starts with the envelope and its three message types, then lists every payload field by field, and ends with the rules that span every record: the streaming discipline, `stop_reason`, `origin` and provider fidelity. The definitions live in `packages/amsp/src/records/` (the `@prismshadow/amsp` package, entry `@prismshadow/amsp/records`), and `@prismshadow/penguin-core` re-exports them from its root.
 
 ## The envelope
 
@@ -481,13 +481,13 @@ How messages travel along these surfaces, and every ordering guarantee, is cover
 
 ## Builders and guards
 
-`@prismshadow/penguin-core` exports all protocol types, plus:
+`@prismshadow/amsp` exports every record type, plus the following, and `@prismshadow/penguin-core` re-exports all of it:
 
-- a builder per message kind in `builders.ts`: `userText`, `assistantText`, `toolCall`, `toolCallOutput`, `partialText`, `tokenUsage`, `withOrigin`, `emptyTokenCounts`, `addTokenCounts`, and more;
+- a builder per message kind in `records/builders.ts`: `userText`, `assistantText`, `toolCall`, `toolCallOutput`, `partialText`, `tokenUsage`, `withOrigin`, `emptyTokenCounts`, `addTokenCounts`, and more;
 - runtime guards: `isCompleteModelMessage`, `isPartialPayload`, `isModelMessage`, `isEventMessage`, `isSessionMeta`, `isTaskRecord`, and `lastNonTaskRecord`, which finds the record that decides whether a Trace file was closed by a compaction.
 
 ```ts
-import { userText, isCompleteModelMessage } from "@prismshadow/penguin-core";
+import { userText, isCompleteModelMessage } from "@prismshadow/amsp";
 
 const prompt = userText("List the files in the current directory");
 // { timestamp: "…", type: "model_msg", payload: { type: "text", role: "user", text: "…" } }

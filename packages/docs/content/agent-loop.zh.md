@@ -3,7 +3,7 @@ title: Agent 运行循环
 description: session.run 如何驱动 Task 与轮次：审批、工具并发执行、钩子、运行中插话、自动重连与上下文压缩。
 ---
 
-SDK 唯一的执行入口是 `session.run(newMessages, opts?)`：输入是本次新增的 OmniMessage 列表（Prompt），返回值是一个异步生成器，流式产出 [OmniMessage](/amsp-records)。一次 `run` 驱动一个完整的 Task，直到模型给出不含工具调用的最终答复；若 [Stop hook](#stop-hook) 要求继续，同一次 `run` 会接连驱动多个 Task。
+SDK 唯一的执行入口是 `session.run(newMessages, opts?)`：输入是本次新增的记录列表（Prompt），返回值是一个异步生成器，流式产出 [AMSP 记录](/amsp-records)。一次 `run` 驱动一个完整的 Task，直到模型给出不含工具调用的最终答复；若 [Stop hook](#stop-hook) 要求继续，同一次 `run` 会接连驱动多个 Task。
 
 本页先给出 `context_engine` 的总体流程，再逐个环节拆解；逐条消息的可见时序与顺序保证见[消息流转与时序](/message-flow)。源码：`packages/core/src/engine/context-engine.ts`。
 
@@ -210,7 +210,7 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 
 ## 运行中插话
 
-Task 运行期间，宿主可以用 `session.steer(input)` 排队一条用户消息（`input` 是 OmniMessage 列表，与 `run` 接收 Prompt 的形状一致），而不打断循环。到下一次组装输入时，引擎把它随那一轮送出。
+Task 运行期间，宿主可以用 `session.steer(input)` 排队一条用户消息（`input` 是记录列表，与 `run` 接收 Prompt 的形状一致），而不打断循环。到下一次组装输入时，引擎把它随那一轮送出。
 
 ### 插话消息如何送达
 

@@ -4,11 +4,11 @@
 - **Type:** feature
 - **Scope:** `amsp`, `server`, `core`, `web`, `docs`
 - **PR:** [#1301](https://github.com/Prism-Shadow/penguin-harness/pull/1301)
-- **Breaking:** `/api/amsp/v1` keeps its path, but its stream changes shape: `run.*`, `K.delta` and `K.done` events give way to the Session's OmniMessage records, and the `@prismshadow/amsp` client of 0.2.16 and earlier cannot read it. The SDK of this release, which a `^0.2.16` dependency picks up, cannot read an older server's stream.
+- **Breaking:** `/api/amsp/v1` keeps its path, but its stream changes shape: `run.*`, `K.delta` and `K.done` events give way to the Session's records, and the `@prismshadow/amsp` client of 0.2.16 and earlier cannot read it. The SDK of this release, which a `^0.2.16` dependency picks up, cannot read an older server's stream.
 
 [中文版](2026-10-23-amsp-session-stream.zh.md)
 
-The Agent API streams a Session as its Trace holds it. Every record is the OmniMessage envelope, untranslated, plus the `partial_*` fragments and four control frames. The SDK reads and follows those records, and the API gains the routes a program needs to follow a Session it did not start.
+The Agent API streams a Session as its Trace holds it. Every record is the envelope the Trace stores, untranslated, plus the `partial_*` fragments and four control frames. The SDK reads and follows those records, and the API gains the routes a program needs to follow a Session it did not start.
 
 ## The stream
 

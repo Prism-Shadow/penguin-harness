@@ -1,6 +1,6 @@
 /**
  * What PenguinHarness is made of, as a radiating diagram: PenguinHarness fans out into
- * AmspRecord / Penguin SDK / Agent State, and each concept drops into the card under it that
+ * AMSP / Penguin SDK / Agent State, and each concept drops into the card under it that
  * says what it is and links to its docs page. Arrow paths carry slow-moving dots (SMIL
  * animateMotion). The diagram is hidden on small screens, where the three cards stack.
  */

@@ -162,7 +162,7 @@ describe("docs search", () => {
     expect(searchRecords(records, "partial_tool_call_output")).toHaveLength(1);
   });
 
-  it("finds identifier headings from the real AmspRecord documentation", () => {
+  it("finds identifier headings from the real AMSP records documentation", () => {
     for (const lang of ["en", "zh"] as const) {
       const { meta, body } = parseFrontmatter(
         readFileSync(join(contentDir, `amsp-records.${lang}.md`), "utf8"),
@@ -171,7 +171,7 @@ describe("docs search", () => {
         {
           slug: "amsp-records",
           lang,
-          title: meta.title ?? "AmspRecord",
+          title: meta.title ?? "AMSP Records",
           description: meta.description ?? "",
           body,
         },

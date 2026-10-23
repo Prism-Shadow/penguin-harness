@@ -344,7 +344,7 @@ function isOrgTriggerKind(value: string | undefined): value is OrgTriggerKind {
 export interface ModelSwitchOrigin {
   sessionId: string;
   sessionTitle?: string;
-  /** Absolute path of the source session's latest Trace file (JSONL of AmspRecord envelopes). */
+  /** Absolute path of the source session's latest Trace file (JSONL of AMSP records). */
   tracePath?: string;
   workspace?: string;
   /** The source session's model reference pair (never concatenated — two separate fields). */

@@ -1,9 +1,9 @@
 ---
 title: AMSP
-description: The Agent Message Stream Protocol — a Session's OmniMessage records over SSE, the control frames, the run and Session streams, the approvals resource, how a run's result is read, and the earlier v1 events each record replaces.
+description: The Agent Message Stream Protocol — a Session's records over SSE, the control frames, the run and Session streams, the approvals resource, how a run's result is read, and the earlier v1 events each record replaces.
 ---
 
-AMSP (Agent Message Stream Protocol) is the wire format of the [Agent API](/agent-api). It streams one Session: the Session's [OmniMessage](/amsp-records) records exactly as its Trace holds them, the `partial_*` fragments streamed while a message is produced, and four control frames around them. Nothing is translated on the way: every line of a Trace is a valid AMSP record, and each payload is the one described field by field on the OmniMessage page.
+AMSP (Agent Message Stream Protocol) is the wire format of the [Agent API](/agent-api). It streams one Session: the Session's records exactly as its Trace holds them, the `partial_*` fragments streamed while a message is produced, and four control frames around them. Nothing is translated on the way: every line of a Trace is a valid AMSP record, and each payload is the one described field by field on the [AMSP Records](/amsp-records) page.
 
 The Web App's server events (run state, approval requests, titles, goal progress and the rest) are not part of AMSP. A program reads what it needs from the records and from two resources: the Session, `GET …/sessions/:sessionId`, for its status and model, and its pending approvals, `GET …/sessions/:sessionId/approvals`.
 
@@ -13,7 +13,7 @@ The types are in `@prismshadow/amsp`, which `@prismshadow/penguin-core` re-expor
 
 - A stream is `text/event-stream; charset=utf-8`, sent with `Cache-Control: no-cache` and `X-Accel-Buffering: no`. Each event is a few SSE fields followed by a blank line.
 - Every event is one of two kinds, told apart by its `event:` name:
-  - a **record** has no name. It has an `id:`, `<epoch>-<seq>`, and its `data:` is one OmniMessage envelope as single-line JSON, `{timestamp, type, payload, origin?}`;
+  - a **record** has no name. It has an `id:`, `<epoch>-<seq>`, and its `data:` is one record envelope as single-line JSON, `{timestamp, type, payload, origin?}`;
   - a **control frame** has a name and no `id:`, so it moves no resume position and is never buffered or replayed.
 - Ids increase within a stream but need not be consecutive: the server's channel also numbers events AMSP does not carry. The epoch changes when the server restarts or recreates the Session's channel.
 - Payloads are snake_case, exactly as the Trace stores them, provider `fidelity` included. Bytes travel as base64 text: `inline_data.data`, `inline_thinking.data`, a tool output's `images`, and `data:` URLs.
@@ -308,7 +308,7 @@ New on the wire: `task_begin` / `task_end`, `abort`, `token_usage`, each fragmen
 - The version is in the path, `/api/amsp/v1`; records carry none.
 - Within `/v1`, changes only add: new records, new optional fields, new control frames. A reader that ignores what it does not know keeps working.
 - A change to what an existing field means needs a new version.
-- Since the records are OmniMessage's own, a change to OmniMessage is a change to AMSP, held to the same rules.
+- Since the records are the Trace's own, a change to a record is a change to AMSP, held to the same rules.
 
 ## Reading the stream yourself
 

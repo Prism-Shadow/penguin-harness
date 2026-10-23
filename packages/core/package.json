@@ -5,7 +5,7 @@
   "engines": {
     "node": ">=24"
   },
-  "description": "PenguinHarness core SDK: context_engine, OmniMessage protocol, LLM/Environment interfaces.",
+  "description": "PenguinHarness core SDK: context_engine, the AMSP records it speaks, LLM/Environment interfaces.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

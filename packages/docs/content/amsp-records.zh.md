@@ -1,13 +1,13 @@
 ---
-title: OmniMessage 协议
-description: OmniMessage 是统一的消息协议：SDK 产出它，Trace 存储它，Server 经 SSE 原样推送它。
+title: AMSP 记录
+description: AMSP 记录是唯一的消息格式：SDK 产出它，Trace 存储它，Server 经 SSE 原样推送它。
 ---
 
-OmniMessage 是 PenguinHarness 的统一消息协议。SDK 产出 OmniMessage 对象，Trace 逐行存储，Server 经 SSE 原样推送。流出去的、存下来的和模型看到的是同一种结构，前端、后端与存储之间没有第二套格式。
+AMSP 记录是 PenguinHarness 唯一的消息格式。SDK 产出记录，Trace 逐行存储，Server 经 SSE 原样推送。流出去的、存下来的和模型看到的是同一种结构，前端、后端与存储之间没有第二套格式。
 
-这些消息也是 [AMSP](/amsp) 的记录，即 [Agent API](/agent-api) 向 PenguinHarness 之外的程序提供的流：Trace 的每一行都是一条合法的 AMSP 记录，因此 OmniMessage 的改动就是这个公开协议的改动。
+它们就是 [AMSP](/amsp) 的记录，即 [Agent API](/agent-api) 向 PenguinHarness 之外的程序提供的流：Trace 的每一行都是一条合法的 AMSP 记录，因此记录的改动就是这个公开协议的改动。
 
-本页先讲信封和三类消息，再逐字段列出全部 payload，最后是贯穿整个协议的规则：流式纪律、`stop_reason`、`origin` 与保真字段。类型定义见 `packages/amsp/src/records/types.ts`（`@prismshadow/amsp` 包），`@prismshadow/penguin-core` 原样再导出。
+本页先讲信封和三类消息，再逐字段列出全部 payload，最后是贯穿所有记录的规则：流式纪律、`stop_reason`、`origin` 与保真字段。定义见 `packages/amsp/src/records/`（`@prismshadow/amsp` 包，入口 `@prismshadow/amsp/records`），`@prismshadow/penguin-core` 从包根原样再导出。
 
 ## 信封
 
@@ -481,13 +481,13 @@ type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 
 ## 构造与判别
 
-`@prismshadow/penguin-core` 导出全部协议类型，此外还有：
+`@prismshadow/amsp` 导出全部记录类型，此外还有以下内容，`@prismshadow/penguin-core` 全部再导出：
 
-- `builders.ts` 里每种消息的构造函数：`userText`、`assistantText`、`toolCall`、`toolCallOutput`、`partialText`、`tokenUsage`、`withOrigin`、`emptyTokenCounts`、`addTokenCounts` 等；
+- `records/builders.ts` 里每种消息的构造函数：`userText`、`assistantText`、`toolCall`、`toolCallOutput`、`partialText`、`tokenUsage`、`withOrigin`、`emptyTokenCounts`、`addTokenCounts` 等；
 - 运行时判别函数：`isCompleteModelMessage`、`isPartialPayload`、`isModelMessage`、`isEventMessage`、`isSessionMeta`、`isTaskRecord`，以及 `lastNonTaskRecord`——它找出判定一个 Trace 文件是否被压缩收尾时要看的那条记录。
 
 ```ts
-import { userText, isCompleteModelMessage } from "@prismshadow/penguin-core";
+import { userText, isCompleteModelMessage } from "@prismshadow/amsp";
 
 const prompt = userText("List the files in the current directory");
 // { timestamp: "…", type: "model_msg", payload: { type: "text", role: "user", text: "…" } }

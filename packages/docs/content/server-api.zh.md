@@ -863,7 +863,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/` | Session 信息 |
 | PATCH | `/` | 更新 Session：`{approvalMode?, sandbox?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | 删除 Session，连同它的 Trace、暂存文件和子 Agent Session |
-| GET | `/messages` | OmniMessage 历史，全量或按 Task 窗口 |
+| GET | `/messages` | 记录历史，全量或按 Task 窗口 |
 | GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
 | POST | `/fork` | 在一条已完成的助手回复之后分叉空闲的 Session：`{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | SSE 事件流；见[流式传输（SSE）](#流式传输sse) |
@@ -878,7 +878,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `PATCH /` 带 `archived: true` 归档 Session；带 `archived: false` 取消归档，并让它留在侧边栏：由程序打开的 Session 此后再运行也保持 `active`，直到再次被归档。两者都以 `session_archived` 宣告。`subagent` 与 `company` 会话不在任何列表中，对它们设置 `archived` 返回 `409` `session_not_listed`。运行、恢复、定时任务投递或消息接入都照常作用于已归档的 Session，且不会取消归档。
 - `DELETE /` 先中止运行中的 Task，再移除 Session 的 Trace 文件、暂存文件、索引行和消息渠道绑定。它派生的子 Agent Session（由其 Trace 中的 `subagent` 记录找出）按同样的方式一并删除。每删除一个 Session 都以 `session_deleted` 宣告。
-- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
 - `GET /goal` 返回 `{goal}`：Session 从未跑过目标时为 `null`，否则为 `{objective, status, budget, used, rounds}`。`status` 取值为 `active`、`complete`、`blocked`、`budget_limited` 或 `aborted`，`budget` 为 -1 表示不限制。目标只存活在它的运行期间，所以 Session 已停止运行、目标却仍是 active 时，会报告为 `aborted`。见[目标模式](/goal-mode)。
@@ -909,7 +909,7 @@ interface MessagesResponse {
 
 ### 分叉
 
-`tracePosition` 是历史响应的元数据，不属于持久化的 OmniMessage 信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
+`tracePosition` 是历史响应的元数据，不属于持久化的记录信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
 
 分叉会克隆保留的 Trace 文件，并把源暂存区按新 Session id 拍快照，同时改写系统生成的本地附件标记，因此以后无论删除哪个 Session，分叉都能继续工作。从同一个源 Session 的任意回复创建的分叉，共用一套与界面语言无关的持久标题序号（`Source title (1)`、`Source title (2)`）；删除较早的分叉也不会释放它的序号。源 Session 正在运行或压缩时返回 409。
 
@@ -1334,7 +1334,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 
 ### 传输格式
 
-默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见 [OmniMessage 协议](/amsp-records)）。名为 `ping` 的事件是心跳（见[投递保证](#投递保证)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
+默认（未命名）的 SSE 事件以单行 JSON 携带原始 AMSP 记录：SDK 产出、Trace 存储的就是这些记录（见 [AMSP 记录](/amsp-records)）。名为 `ping` 的事件是心跳（见[投递保证](#投递保证)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
 
 ```ts
 export type ServerEvent =

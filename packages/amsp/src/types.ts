@@ -1,11 +1,11 @@
 /**
  * AMSP (Agent Message Stream Protocol): the wire types.
  *
- * AMSP is the stream of one Session: its AmspRecord records as the Trace holds them, plus the
+ * AMSP is the stream of one Session: its records as the Trace holds them, plus the
  * `partial_*` fragments streamed while a message is produced, and four control frames. A stream
  * is `text/event-stream`; every event is one of two kinds:
  *
- * - a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` the AmspRecord
+ * - a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` the record
  *   envelope `{timestamp, type, payload, origin?}` — {@link AmspRecord}, the payloads snake_case
  *   exactly as the Trace stores them;
  * - a **control frame**: a named event without an `id:` — `hello`, `resync_required` or `ping`
@@ -15,7 +15,7 @@
  * ignored, and so is a `payload.type` it does not know. Within `/v1` the protocol only grows:
  * new records, new optional fields, new control frames.
  *
- * The record vocabulary is AmspRecord's own (`./omnimessage/types.ts`, re-exported here).
+ * The record vocabulary lives in `./records/` and is re-exported here.
  * The rest of this file is the shape of the Agent API's requests and answers around the stream.
  */
 import type { MessageOrigin, AmspRecord, ToolCallPayload } from "./records/index.js";

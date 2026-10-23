@@ -175,7 +175,7 @@ describe("streams", () => {
     // A stream's own beat reaches no handler: it is liveness, and the deadline was re-armed.
     last().receive({ id: 1, event: "heartbeat", data: "{}" });
     last().receive({ id: 1, event: "server_event", eventId: "h-1", data: '{"type":"hello"}' });
-    // An event with no `event:` line arrives named `message` (sse-text.ts), and stays an AmspRecord.
+    // An event with no `event:` line arrives named `message` (sse-text.ts), and stays a record.
     last().receive({ id: 1, event: "message", eventId: "1-2", data: '{"kind":"m"}' });
     last().receive({
       id: 1,

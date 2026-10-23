@@ -1,4 +1,4 @@
-# OmniMessage 类型与标记迁入 `@prismshadow/amsp`
+# 记录类型与标记迁入 `@prismshadow/amsp`
 
 - **Date:** 2026-10-23
 - **Type:** refactor
@@ -11,7 +11,7 @@ Trace 里的记录就是 AMSP 流出的记录，因此它们的类型与消息�
 
 ## 细节
 
-- `packages/core/src/omnimessage/types.ts` 与 `omnimessage/markers/*` 移至 `packages/amsp/src/omnimessage/`。`@prismshadow/amsp` 经两个新入口导出它们：`@prismshadow/amsp/omnimessage`（外壳、全部载荷与判定函数）与 `@prismshadow/amsp/markers`（标记的生成与解析）。根入口不变。
-- `@prismshadow/penguin-core` 依赖 `@prismshadow/amsp`，并从原路径再导出二者：包根、`@prismshadow/penguin-core/omnimessage` 与 `@prismshadow/penguin-core/markers`。`ThinkingLevelName` 随记录定义，仍从 `interfaces` 再导出。
+- 记录类型与消息标记从 core 移至 `packages/amsp/src/records/` 与 `packages/amsp/src/markers/`。`@prismshadow/amsp` 经两个入口导出它们：`@prismshadow/amsp/records`（外壳、全部载荷与判定函数）与 `@prismshadow/amsp/markers`（标记的生成与解析）；包根也导出记录。
+- `@prismshadow/penguin-core` 依赖 `@prismshadow/amsp`，并从包根再导出二者。`ThinkingLevelName` 随记录定义，仍从 `interfaces` 再导出。
 - 工作区构建先构建 `@prismshadow/amsp` 再构建 core；发布流程本就先发布它。
 - core 新增一个测试，以一个入库的 Trace 文件固定每种入库记录各一条的字节。

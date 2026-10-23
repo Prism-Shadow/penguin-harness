@@ -1,7 +1,7 @@
 /**
  * Event streams: a Session's output, the user-level server events, and the machines aggregate.
  *
- * - AmspRecord uses the default event (no `event:` line); data is the message envelope as
+ * - Records use the default event (no `event:` line); data is the message envelope as
  *   raw JSON;
  * - Server events use `event: server_event` (approval_request / task_state / resync_required /
  *   credentials_updated / hello, and `heartbeat` — the stream's own beat);
@@ -46,7 +46,7 @@ export interface StreamHandlers {
    * A frame whose `event:` name this module does not dispatch by itself — the machines
    * aggregate's `machine_event` is the one caller today (openMachineEvents below). `data` is
    * the parsed JSON, `eventId` as on the two handlers above. A stream that supplies none keeps
-   * reading such a frame as an AmspRecord, which is what every stream did before named
+   * reading such a frame as a record, which is what every stream did before named
    * dispatch existed; `heartbeat` never reaches here either way, it is liveness only.
    */
   onEvent?: (name: string, data: unknown, eventId: string | null) => void;
@@ -132,7 +132,7 @@ export function openMachineEvents(
 ): StreamConnection {
   const path = `/api/projects/${encodeURIComponent(projectId)}/machines/events`;
   const streamHandlers: StreamHandlers = {
-    // No unnamed frames on this stream: a machine's `message` would be an AmspRecord from a
+    // No unnamed frames on this stream: a machine's `message` would be a record from a
     // Session, which the aggregate does not carry (`machine_event` carries server events only).
     onRecord: () => undefined,
     onServerEvent: (event, eventId) => handlers.onHubEvent?.(event, eventId),

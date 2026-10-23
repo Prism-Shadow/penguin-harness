@@ -4,11 +4,11 @@
 - **Type:** feature
 - **Scope:** `amsp`, `server`, `core`, `web`, `docs`
 - **PR:** [#1301](https://github.com/Prism-Shadow/penguin-harness/pull/1301)
-- **Breaking:** `/api/amsp/v1` 路径不变，流的形状改变：`run.*`、`K.delta` 与 `K.done` 事件让位于 Session 的 OmniMessage 记录，0.2.16 及更早的 `@prismshadow/amsp` 客户端读不懂新的流。本版本的 SDK（`^0.2.16` 的依赖会取到它）也读不懂旧服务端的流。
+- **Breaking:** `/api/amsp/v1` 路径不变，流的形状改变：`run.*`、`K.delta` 与 `K.done` 事件让位于 Session 的记录，0.2.16 及更早的 `@prismshadow/amsp` 客户端读不懂新的流。本版本的 SDK（`^0.2.16` 的依赖会取到它）也读不懂旧服务端的流。
 
 [English](2026-10-23-amsp-session-stream.md)
 
-Agent API 按 Trace 的样子传送一个 Session：每条记录都是 OmniMessage 外壳，不经翻译，另有 `partial_*` 片段与四个控制帧。SDK 读取并跟随这些记录；API 也补上了程序跟随一个不是自己发起的 Session 所需的路由。
+Agent API 按 Trace 的样子传送一个 Session：每条记录都是 Trace 存储的外壳，不经翻译，另有 `partial_*` 片段与四个控制帧。SDK 读取并跟随这些记录；API 也补上了程序跟随一个不是自己发起的 Session 所需的路由。
 
 ## 流
 

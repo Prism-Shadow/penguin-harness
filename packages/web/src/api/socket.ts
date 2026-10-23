@@ -585,11 +585,11 @@ export class ApiSocket {
           // Liveness only, and it has already been banked above: the beat is never an
           // application event, so it reaches no handler. `ping` is the session and user
           // streams' own beat; over HTTP the SSE reader drops it by the same name — and
-          // here it is a frame whose `{}` payload must not be read as an AmspRecord.
+          // here it is a frame whose `{}` payload must not be read as a record.
         } else if (stream.handlers.onEvent !== undefined) {
           stream.handlers.onEvent(name, data, eventId);
         } else {
-          // No named-event handler: an unlisted name is an AmspRecord, exactly as every name
+          // No named-event handler: an unlisted name is a record, exactly as every name
           // but `server_event` was treated before `onEvent` existed.
           stream.handlers.onRecord(data as AmspRecord, eventId);
         }

@@ -376,7 +376,7 @@ function parseTaskInput(body: Record<string, unknown>, limits: AttachmentLimits)
       return;
     }
     if (part.type === "file") {
-      // Not an AmspRecord of its own: the file becomes an `[attached file: …]` line on the
+      // Not a record of its own: the file becomes an `[attached file: …]` line on the
       // text message once written to the scratchpad, so it carries no payload into the run.
       attachments.push(parseAttachmentPart(part, i, limits));
       // Per-request count / total-bytes caps, re-checked on every part so a hostile `input`
@@ -1284,7 +1284,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const outcome = await deps.manager.sendToSubagent(
       row.sessionId,
       pathParam(c, "childSessionId"),
-      // The HTTP boundary is where a host's payload becomes AmspRecord — no sender, because
+      // The HTTP boundary is where a host's payload becomes a record — no sender, because
       // a human typed this (the model's own dispatch through input_subagent stamps
       // "parent_agent" on its side).
       [userText(text)],

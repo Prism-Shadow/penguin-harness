@@ -5,7 +5,7 @@
  * implementation/interface".
  *   - Input: the AmspRecord list (Prompt) passed to `run(newMessages, opts?)`, plus the abort
  *     signal `signal` and the per-call approval callback `approve` in `opts`;
- *   - Output: `run` streams AmspRecord via an async generator.
+ *   - Output: `run` streams records via an async generator.
  *
  * Approval is a **within-turn interaction**: as soon as a tool_call finishes streaming, `approve`
  * is requested immediately, and it executes if allowed. Approvals for multiple tools happen one
@@ -14,7 +14,7 @@
  * longer produces a tool_call (final reply).
  *
  * Rendering tool calls is not Session/core's responsibility: the CLI / Web frontend renders it
- * from the streamed AmspRecord on its own.
+ * from the streamed records on its own.
  * Docs: /docs/agent-loop; /docs/interfaces § "The Human boundary".
  */
 import {
@@ -563,7 +563,7 @@ export class Session {
   }
 
   /**
-   * Runs a Task to completion and streams out AmspRecord. `newMessages` is this call's Prompt
+   * Runs a Task to completion and streams out records. `newMessages` is this call's Prompt
    * (only the newly added input); `opts` carries the abort signal `signal` and the per-call
    * approval callback `approve` (the engine calls it once per tool_call within a turn).
    * On the first run, `session_meta` is written to the Trace first, and yielded first: the main

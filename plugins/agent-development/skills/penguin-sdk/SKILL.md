@@ -1,7 +1,7 @@
 ---
 name: penguin-sdk
 description: Use to build a standalone external program with an agent in it, or connect an external program to a Penguin agent. For an app inside PenguinHarness with its own Agent and workbench tab, use agent-initialization and penguin-plugin directly; no SDK/API question applies. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Workbenches — the tabs and pages beside the chat that an Agent keeps for itself inside PenguinHarness — are the penguin-plugin skill's.
-version: 2026.10.23.1
+version: 2026.10.23.2
 ---
 
 # Penguin Harness SDK and Agent API
@@ -15,7 +15,7 @@ To have an agent perform a task for you, use the `run_subagent` tool: both ways 
 **The SDK: `@prismshadow/penguin-core`, embedded in the program.**
 
 - *What it is.* The agent loop as a TypeScript library. The program creates its own Agent from a data directory inside the project and runs its Sessions in-process. No Penguin server is involved, at build time or at run time.
-- *What you get.* The basic agent loop: the Agent State files (`AGENTS.md`, Skills, tools), the streamed OmniMessages and an `approve` callback for every tool call, in a self-contained folder that runs wherever Node 24 does, on the program's own model key.
+- *What you get.* The basic agent loop: the Agent State files (`AGENTS.md`, Skills, tools), the streamed AMSP records and an `approve` callback for every tool call, in a self-contained folder that runs wherever Node 24 does, on the program's own model key.
 - *What you don't get.* No server-managed Sessions (the program keeps its own), no visibility in the Web App, no approvals UI (the program answers in code) and no cost center. The embedded agent belongs to the program: changes to an Agent inside PenguinHarness never reach it.
 - *Choose it when* the program must stand alone: shipped to other machines or people, run where no Penguin server is, or with the agent built into the product.
 
@@ -80,7 +80,7 @@ Each path also needs one thing only the user can provide: a model credential on 
 
 - An **Agent** loads its state (prompts, tools, skills) from `<root>/<project_id>/agents/<agent_id>/`. Creating an Agent whose directory is empty initializes it with defaults.
 - A **Session** is one conversation of an Agent inside a **Workspace** directory.
-- `session.run()` executes one task and streams every step (thinking, text, tool calls) as OmniMessages.
+- `session.run()` executes one task and streams every step (thinking, text, tool calls) as AMSP records.
 
 ### Project location
 

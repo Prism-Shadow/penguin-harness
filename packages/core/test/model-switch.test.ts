@@ -4,7 +4,7 @@
  * A switch is a compaction whose new context opens on the model the user picked: the running
  * context is summarized on the model it is on — always summarize, whatever the configured mode —
  * and the next context opens on the target. The compaction is an ordinary `manual` one: no
- * AmspRecord field or reason names the switch. The model lives only in the new context's
+ * record field or reason names the switch. The model lives only in the new context's
  * `session_meta`, and the switch opens that context's Trace file at once — its head is the
  * durable record — and streams the meta last, so a Session rebuilt from the latest file alone
  * runs on the new model, carrying the summary. The engine knows nothing of models: the Session

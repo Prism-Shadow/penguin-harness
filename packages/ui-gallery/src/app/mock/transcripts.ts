@@ -1,5 +1,5 @@
 /**
- * The demo conversations as AmspRecord transcripts, in both languages, plus the scripted
+ * The demo conversations as record transcripts, in both languages, plus the scripted
  * reply a sent message streams. Every message is built by the small builders below, so the
  * envelopes (timestamps, roles, stop reasons) are always well-formed, and the running states
  * the gallery exists to show are set up the way the server produces them:

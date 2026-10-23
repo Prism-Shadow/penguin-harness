@@ -51,7 +51,7 @@ For the fields of each config file, see the [Configuration Reference](/configura
 
 ## Trace design
 
-A Trace is an append-only JSON Lines file. Each line is one OmniMessage envelope; see the [OmniMessage Protocol](/amsp-records). History is only ever appended, never modified in place.
+A Trace is an append-only JSON Lines file. Each line is one AMSP record; see [AMSP Records](/amsp-records). History is only ever appended, never modified in place.
 
 - One Trace file corresponds to one complete model context. When compaction produces a new context segment, the writer rotates to a new file with an incrementing index: `_002`, `_003`, …
 - Recorded: `session_meta`, complete `model_msg`, and all `event_msg`.
@@ -78,7 +78,7 @@ See `packages/core/src/trace/writer.ts` for the implementation.
 
 ### Head of a Trace
 
-An illustrative Trace head follows, one OmniMessage envelope per line. Note the order:
+An illustrative Trace head follows, one record per line. Note the order:
 
 - The Task's `task_begin` comes first, after the file's `session_meta`.
 - The user's input is written before the `request_begin` it is sent with.
@@ -177,7 +177,7 @@ Each content message carries an opaque provider `fidelity` payload: thinking sig
 - Some models require it byte-for-byte on history replay.
 - Any rewriting would break compatibility.
 
-This is one reason the Trace stores raw OmniMessage envelopes rather than a post-processed format.
+This is one reason the Trace stores raw records rather than a post-processed format.
 
 ## Observability
 

@@ -16,7 +16,7 @@ import type {
   ToolCallPayload,
 } from "@prismshadow/amsp/records";
 
-// ToolDefinition is defined in omnimessage/types.ts (the tool_list_ready event carries the full tool schema); re-exported here to keep the original import path.
+// ToolDefinition is defined with the records (@prismshadow/amsp: the tool_list_ready event carries the full tool schema); re-exported here to keep the original import path.
 export type { ToolDefinition } from "@prismshadow/amsp/records";
 
 /**

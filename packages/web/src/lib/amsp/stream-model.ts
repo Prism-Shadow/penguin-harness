@@ -1,7 +1,7 @@
 /**
- * AmspRecord stream → render view-model reducer. A
+ * Record stream → render view-model reducer. A
  * pure logic module, no React dependency: takes in an ordered sequence of
- * AmspRecord (history's complete messages + real-time partial/complete/
+ * records (history's complete messages + real-time partial/complete/
  * event), and produces a `ChatItem[]` view model (updated in place, with the caller triggering the re-render).
  *
  * Key points:
@@ -249,7 +249,7 @@ export interface SubagentItem {
 export interface AbortItem {
   kind: "abort";
   id: number;
-  /** Machine-readable cause (the omnimessage ErrorCode vocabulary); the banner localizes from it. */
+  /** Machine-readable cause (the records' ErrorCode vocabulary); the banner localizes from it. */
   errorCode?: string;
   /** Raw failure detail, shown verbatim (absent on live user interrupts). */
   errorMessage?: string;

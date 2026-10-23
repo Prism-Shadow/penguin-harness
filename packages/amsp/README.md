@@ -1,6 +1,6 @@
 # @prismshadow/amsp
 
-AMSP (Agent Message Stream Protocol) is the stream of one PenguinHarness Session: its OmniMessage records exactly as the Trace holds them, the `partial_*` fragments streamed while a message is produced, and four control frames. This package defines it — the record types and their guards, the message markers, the control frames, the shapes of the Agent API's requests and answers — and carries the client: `AgentClient` to run an agent, `SessionReader` to follow a conversation. No runtime dependencies; runs in Node 24 and in current browsers on `fetch`, `ReadableStream`, `TextDecoder` and `AbortController`.
+AMSP (Agent Message Stream Protocol) is the stream of one PenguinHarness Session: its records exactly as the Trace holds them, the `partial_*` fragments streamed while a message is produced, and four control frames. This package defines it — the record types with their guards and builders (`@prismshadow/amsp/records`, also on the root), the message markers (`@prismshadow/amsp/markers`), the control frames, the shapes of the Agent API's requests and answers — and carries the client: `AgentClient` to run an agent, `SessionReader` to follow a conversation. No runtime dependencies; runs in Node 24 and in current browsers on `fetch`, `ReadableStream`, `TextDecoder` and `AbortController`.
 
 The package is versioned with PenguinHarness. The versions after 0.2.16 read the stream PenguinHarness serves at `/api/amsp/v1` since the protocol was redefined around these records: they cannot read the events a server of 0.2.16 or earlier sends, and a client of 0.2.16 or earlier cannot read this stream. A dependency on `^0.2.16` picks up the new client on its next install; pin `0.2.16` to keep the old one.
 
@@ -8,7 +8,7 @@ The package is versioned with PenguinHarness. The versions after 0.2.16 read the
 
 A stream is SSE. Every event is one of two kinds:
 
-- a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` one OmniMessage envelope, `{timestamp, type, payload, origin?}`, payloads snake_case as the Trace stores them. `origin` names the subagent Session chain a record came through; the main Session's records have none;
+- a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` one record envelope, `{timestamp, type, payload, origin?}`, payloads snake_case as the Trace stores them. `origin` names the subagent Session chain a record came through; the main Session's records have none;
 - a **control frame**: `event: hello` (`{"session_id", "agent"}`, a run stream's first event), `event: resync_required` (`{}`, the id a Session stream resumed from has left the server's buffer), `event: ping` (`{}`, at once and every 20 seconds), and `data: [DONE]`, a run stream's last line.
 
 A reader ignores an event name and a `payload.type` it does not know. A run's records go from `task_begin` to `task_end`; a new Session's first run also carries its `session_meta` right after `hello`. There is no error frame: a run the server could not finish leaves its last `task_begin` unclosed before `[DONE]`, and a body that ends without `[DONE]` is a broken connection.

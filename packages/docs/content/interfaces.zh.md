@@ -3,7 +3,7 @@ title: 核心接口
 description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签名、内部类型与扩展点。
 ---
 
-`context_engine` 依赖三个接口：Human、LLM 和 Environment。协议转换全部发生在实现内部，引擎能看到的只有 [OmniMessage](/amsp-records)。
+`context_engine` 依赖三个接口：Human、LLM 和 Environment。协议转换全部发生在实现内部，引擎能看到的只有 [AMSP 记录](/amsp-records)。
 
 本页沿一轮运行的控制流展开：[Human 边界](#human-边界)、[LLM 契约](#llminterface)、[审批回调](#approvefn)和 [Environment 契约](#environmentinterface)。结尾介绍[子 Agent](#子-agent-接口) 和[视觉](#visiondescriberservice)服务，以及[扩展点](#扩展点)。
 
@@ -42,7 +42,7 @@ description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签�
 
 ### 消息面与控制面
 
-穿过三条边界的**内容**有且只有 OmniMessage：
+穿过三条边界的**内容**有且只有 AMSP 记录：
 
 - `session.run` 的输入与流式输出
 - `streamGenerate` 的输入数组与产出的流
@@ -56,10 +56,10 @@ description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签�
 | --- | --- | --- |
 | `signal: AbortSignal` | `RunOptions`、`GenerativeModelParameters`、`ToolExecutionRequest` | 中断若要在消息队列里排队等候，就不再是中断。 |
 | `thinkingLevel` | `GenerativeModelParameters` | 逐请求参数，与超时同类：它说明请求怎么执行，而不是要说什么。引擎把当前生效的值保存在自己的状态里（`ContextEngine.setThinkingLevel`，由 `Session.thinkingLevel` setter 供值，一个带软限制的旋钮）。请求未携带时，套用 LLM 对象的构造默认值，也就是上下文的起始等级。`RunOptions` 不携带等级。 |
-| `approve` 及其 `ApprovalDecision` | `RunOptions`、`ToolExecutionRequest` | 回调接收一个 OmniMessage 工具调用，返回三值枚举；引擎一拿到结果，立即写成一条 `approval_decision` 消息。 |
+| `approve` 及其 `ApprovalDecision` | `RunOptions`、`ToolExecutionRequest` | 回调接收一条 `tool_call` 记录，返回三值枚举；引擎一拿到结果，立即写成一条 `approval_decision` 消息。 |
 | `LLMOutcome` | `streamGenerate` 生成器的返回值 | 请求的终态，引擎的重试与重连策略以此为分支依据。生成器返回值由类型系统保证；「最后产出的消息必须是 `request_end`」只能是运行时约定。引擎据此写出那条 `request_end`。 |
 
-其余不属于 OmniMessage 的内容都归 Environment 的管理面，在 [EnvironmentInterface](#environmentinterface) 一节说明。
+其余不属于记录的内容都归 Environment 的管理面，在 [EnvironmentInterface](#environmentinterface) 一节说明。
 
 ## Human 边界
 
@@ -216,7 +216,7 @@ interface EnvironmentInterface {
 
 这个接口承载两个面，只有第一个属于 Agent 循环：
 
-- **消息面**是 `executeTool`，`context_engine` 在这里调用的唯一方法。进去一个 OmniMessage 工具调用，出来一条 OmniMessage 流。
+- **消息面**是 `executeTool`，`context_engine` 在这里调用的唯一方法。进去一条 `tool_call` 记录，出来一条记录流。
 - **管理面**是 `listTools`、`toolPermission`、`dispose` 和下面的可选成员。它们都不经过引擎，服务于 Session 组装和宿主自己的 UI，比如 Web App 的进程面板和子 Agent 面板，或者审批模式的权限查询。这些都是返回普通数据的普通方法调用，所以不做成消息形态：把它们改成消息，引擎的边界也不会更纯粹。
 
 | 可选管理成员 | 用途 |
@@ -386,7 +386,7 @@ interface SubagentHandle {
 
 某一轮中途被切断时，返回值会说明这一点，父级据此把这一轮报告为失败，而不是把半截答案交给模型。
 
-一轮的输入是一个 OmniMessage 列表：和 `steer` 接受的形状相同，也是宿主传给 `EnvironmentInterface.sendToBackgroundSubagent` 的形状。进入子 Session 的两条途径使用同一套词汇。每条消息的 `sender` 由调用方负责。模型自己发起的派发（`run_subagent`、`input_subagent`）会打上 `parent_agent`，宿主面板里来自人的消息则不带标记，子 Agent 的 Trace 由此能记录到底是谁在说话。
+一轮的输入是一个记录列表：和 `steer` 接受的形状相同，也是宿主传给 `EnvironmentInterface.sendToBackgroundSubagent` 的形状。进入子 Session 的两条途径使用同一套词汇。每条消息的 `sender` 由调用方负责。模型自己发起的派发（`run_subagent`、`input_subagent`）会打上 `parent_agent`，宿主面板里来自人的消息则不带标记，子 Agent 的 Trace 由此能记录到底是谁在说话。
 
 ## VisionDescriberService
 

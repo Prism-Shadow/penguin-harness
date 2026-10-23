@@ -1,10 +1,11 @@
 /**
- * @prismshadow/amsp — public entry point: the AMSP records (AmspRecord, which the PenguinHarness
- * server and core import as their own protocol types) and control frames, the Agent API's request
+ * @prismshadow/amsp — public entry point: the AMSP records (`AmspRecord`, every payload, the guards
+ * and the builders, which core re-exports as its own) and control frames, the Agent API's request
  * and answer shapes, and a zero-dependency client: `AgentClient` for runs, `SessionReader` for
  * following a Session, both over a `Transport`.
  *
- * The message markers are a separate entry, `@prismshadow/amsp/markers`.
+ * The records are also the `@prismshadow/amsp/records` entry; the message markers are a separate
+ * entry, `@prismshadow/amsp/markers`.
  */
 export * from "./types.js";
 export { AmspHttpError, AmspStreamError } from "./errors.js";

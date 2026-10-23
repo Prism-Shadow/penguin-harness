@@ -1,5 +1,5 @@
 /**
- * AmspRecord builders. All modules create messages exclusively through these builders, avoiding
+ * Record builders. All modules create records exclusively through these builders, avoiding
  * ad hoc protocol structures scattered across the codebase.
  * Every builder writes an ISO 8601 UTC timestamp.
  * Docs: /docs/amsp-records § "Builders and guards".

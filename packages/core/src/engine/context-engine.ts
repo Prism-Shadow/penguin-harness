@@ -1,7 +1,7 @@
 /**
  * context_engine — orchestrates the ReAct loop.
  *
- * context_engine only handles AmspRecord, orchestrating the flow of events between the
+ * context_engine only handles AMSP records, orchestrating the flow of events between the
  * Human, LLM, and Environment interfaces, and writes every observable action to Trace.
  * The initial version keeps a linear message history.
  *
