@@ -604,8 +604,9 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
 
   useEffect(() => {
     let cancelled = false;
+    // This server's Project config: the copy every machine the Project uses is synced from.
     api
-      .getChatDefaults(projectId)
+      .getChatDefaults(projectId, null)
       .then((res) => {
         if (!cancelled) setSaved(res);
       })
@@ -613,7 +614,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
         if (!cancelled) setLoadError(apiErrorText(e));
       });
     api
-      .getModels(projectId)
+      .getModels(projectId, null)
       .then((res) => {
         if (!cancelled) setModels(res);
       })

@@ -12,7 +12,10 @@
  * and gallery/. The result is a single artifact — one GitHub Pages deployment hosts all three.
  *
  * The gallery compiles the Web App's source, which imports core and amsp from their built dist
- * (the UI package is source-only, and the server lends it types only), so those two build first.
+ * and the model catalog from the server's (`server/dist/model-catalog.js`; the UI package is
+ * source-only), so those build first. The server's build inlines hmr, so hmr builds before it,
+ * and JavaScript only: nothing here reads the server's declarations (PENGUIN_BUILD_JS_ONLY, see
+ * packages/server/tsup.config.ts).
  */
 import { execSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -33,16 +36,23 @@ if (!base.startsWith("/") || !base.endsWith("/")) {
   process.exit(1);
 }
 
-const run = (cmd, BASE_PATH) => {
-  const note = BASE_PATH === undefined ? "" : ` (BASE_PATH=${BASE_PATH})`;
-  console.log(`\n[build-site] ${cmd}${note}`);
-  const env = BASE_PATH === undefined ? process.env : { ...process.env, BASE_PATH };
-  execSync(cmd, { cwd: root, stdio: "inherit", env });
+const run = (cmd, BASE_PATH, extra = {}) => {
+  const vars = { ...(BASE_PATH === undefined ? {} : { BASE_PATH }), ...extra };
+  const note = Object.entries(vars).map(([k, v]) => `${k}=${v}`);
+  console.log(`\n[build-site] ${cmd}${note.length > 0 ? ` (${note.join(" ")})` : ""}`);
+  execSync(cmd, { cwd: root, stdio: "inherit", env: { ...process.env, ...vars } });
 };
 
 run("pnpm --filter @prismshadow/penguin-landing build", base);
 run("pnpm --filter @prismshadow/penguin-docs build", `${base}docs/`);
 run("pnpm --filter @prismshadow/penguin-core --filter @prismshadow/amsp build");
+run(
+  "pnpm --filter @prismshadow/penguin-hmr --filter @prismshadow/penguin-server build",
+  undefined,
+  {
+    PENGUIN_BUILD_JS_ONLY: "1",
+  },
+);
 run("pnpm --filter @prismshadow/penguin-ui-gallery build", `${base}gallery/`);
 
 const pkgDir = (pkg) => join(root, "packages", pkg);

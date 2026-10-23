@@ -203,7 +203,8 @@ data: [DONE]
 
 | OmniMessage 记录或服务器事件 | AMSP |
 | --- | --- |
-| Session 在本次运行的输入之前发布的一切（子 Agent 状态变化重发的空闲 `task_state`、后台子 Agent 的输出） | 不发送：翻译器从输入的回显开始 |
+| Session 在本次运行的输入之前发布的一切（本次运行的第一个 `task_begin`、子 Agent 状态变化重发的空闲 `task_state`、后台子 Agent 的输出） | 不发送：翻译器从输入的回显开始 |
+| `task_begin` / `task_end` | 不发送：一次运行由 `run.started` 与 `run.done` 界定 |
 | 运行自身的输入 | 不发送 |
 | `session_meta` | `context.opened`：子 Agent 的，或两次运行之间切换模型的；压缩开出的上下文只写 Trace |
 | `mcp_connect_begin` / `mcp_connect_end` | `mcp_connect.started` / `mcp_connect.done` |

@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
@@ -248,14 +249,6 @@ describe("MCP servers whose failures repeat what they were sent", () => {
 
   beforeAll(async () => {
     dir = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-echo-")));
-    const mcp = new McpServer({ name: "echo-fixture", version: "1.0.0" });
-    mcp.registerTool(
-      "add",
-      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
-      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
-    );
-    transport = new NodeStreamableHTTPServerTransport();
-    await mcp.connect(transport);
     // A refusal repeats the request line and its credentials, as a debugging proxy or a
     // careless framework does: `/refuse/…` refuses everything, `/mcp` only the tool calls.
     httpServer = createServer((req, res) => {
@@ -278,8 +271,25 @@ describe("MCP servers whose failures repeat what they were sent", () => {
     base = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
   });
 
-  afterAll(async () => {
+  // SDK 2.3: a McpServer serves one connection and a stateless transport one request, so every
+  // test (one Environment, one session) gets its own pair; the HTTP server stays up and hands each
+  // request to the current pair.
+  beforeEach(async () => {
+    const mcp = new McpServer({ name: "echo-fixture", version: "1.0.0" });
+    mcp.registerTool(
+      "add",
+      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
+      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
+    );
+    transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+    await mcp.connect(transport);
+  });
+
+  afterEach(async () => {
     await transport.close();
+  });
+
+  afterAll(async () => {
     await new Promise((resolve) => httpServer.close(resolve));
     await rmEventually(dir);
   }, 30_000);
@@ -763,30 +773,34 @@ describe("Session first-run bootstrap events", () => {
       const streamed: OmniMessage[] = [];
       for await (const msg of session.run([userText("go")])) streamed.push(msg);
       const types = streamed.map((m) => (m.payload as { type?: string }).type);
-      expect(types.slice(0, 3)).toEqual([
+      // The Task opens first, then the bootstrap streams as it happens.
+      expect(types.slice(0, 4)).toEqual([
+        "task_begin",
         "mcp_connect_begin",
         "mcp_connect_end",
         "tool_list_ready",
       ]);
       expect(types).toContain("text");
-      const begin = streamed[0]!.payload as { servers?: string[] };
+      const begin = streamed[1]!.payload as { servers?: string[] };
       expect(begin.servers).toEqual(["fx"]);
-      const end = streamed[1]!.payload as {
+      const end = streamed[2]!.payload as {
         status?: string;
         results?: { server: string; status: string; tools?: number; duration_ms: number }[];
       };
       expect(end.status).toBe("completed");
       expect(end.results).toHaveLength(1);
       expect(end.results![0]).toMatchObject({ server: "fx", status: "completed", tools: 6 });
-      const toolsMsg = streamed[2]!.payload as { tools?: { name: string }[] };
+      const toolsMsg = streamed[3]!.payload as { tools?: { name: string }[] };
       expect(toolsMsg.tools!.map((t) => t.name)).toContain("mcp__fx__echo");
       // Trace ordering: the engine writes the bootstrap records AFTER the run's input, so
-      // the connect phase belongs to the new turn — meta, the user text, then the pair.
+      // the connect phase belongs to the new turn — meta, the Task's opening record, the user
+      // text, then the pair.
       const writtenTypes = written.map(
         (m) => (m.payload as { type?: string }).type ?? "session_meta",
       );
-      expect(writtenTypes.slice(0, 5)).toEqual([
+      expect(writtenTypes.slice(0, 6)).toEqual([
         "session_meta",
+        "task_begin",
         "text",
         "mcp_connect_begin",
         "mcp_connect_end",
@@ -814,7 +828,7 @@ describe("Session first-run bootstrap events", () => {
       const streamed: OmniMessage[] = [];
       for await (const msg of session.run([userText("go")])) streamed.push(msg);
       const types = streamed.map((m) => (m.payload as { type?: string }).type);
-      expect(types[0]).toBe("tool_list_ready");
+      expect(types.slice(0, 2)).toEqual(["task_begin", "tool_list_ready"]);
       expect(types).not.toContain("mcp_connect_begin");
     } finally {
       session.dispose();
@@ -878,15 +892,24 @@ describe("Session first-run bootstrap events", () => {
           first.push(msg);
         }
       })();
-      // Wait for the begin event to stream, then interrupt mid-connect.
-      for (let i = 0; i < 100 && first.length === 0; i += 1) {
+      // Wait for the connect begin event to stream, then interrupt mid-connect.
+      const connecting = () =>
+        first.some((m) => (m.payload as { type?: string }).type === "mcp_connect_begin");
+      for (let i = 0; i < 100 && !connecting(); i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       ac.abort();
       await run;
       const firstTypes = first.map((m) => (m.payload as { type?: string }).type);
-      expect(firstTypes).toEqual(["mcp_connect_begin", "mcp_connect_end", "abort"]);
-      expect((first[1]!.payload as { status?: string }).status).toBe("aborted");
+      // A stopped Task still closes its pair.
+      expect(firstTypes).toEqual([
+        "task_begin",
+        "mcp_connect_begin",
+        "mcp_connect_end",
+        "abort",
+        "task_end",
+      ]);
+      expect((first[2]!.payload as { status?: string }).status).toBe("aborted");
       // The aborted turn is RECORDED: the Session itself writes the input, the aborted
       // connect pair and the abort event (no engine exists to do it) — the analysis page
       // shows the interruption and a reload/restart keeps the message.
@@ -895,23 +918,26 @@ describe("Session first-run bootstrap events", () => {
       );
       expect(writtenTypes).toEqual([
         "session_meta",
+        "task_begin",
         "text",
         "mcp_connect_begin",
         "mcp_connect_end",
         "abort",
+        "task_end",
       ]);
-      expect((written.at(-2)!.payload as { status?: string }).status).toBe("aborted");
+      expect((written.at(-3)!.payload as { status?: string }).status).toBe("aborted");
 
       release();
       const second: OmniMessage[] = [];
       for await (const msg of session.run([userText("again")])) second.push(msg);
       const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
-      expect(secondTypes.slice(0, 3)).toEqual([
+      expect(secondTypes.slice(0, 4)).toEqual([
+        "task_begin",
         "mcp_connect_begin",
         "mcp_connect_end",
         "tool_list_ready",
       ]);
-      expect((second[1]!.payload as { status?: string }).status).toBe("completed");
+      expect((second[2]!.payload as { status?: string }).status).toBe("completed");
       expect(secondTypes).toContain("text");
       // Abort cancels the attempt: the next run started a FRESH bootstrap (reconnect).
       expect(calls).toBe(2);
@@ -1002,14 +1028,6 @@ describe("MCP over Streamable HTTP", () => {
   const seenHeaders: IncomingHttpHeaders[] = [];
 
   beforeAll(async () => {
-    const mcp = new McpServer({ name: "http-fixture", version: "1.0.0" });
-    mcp.registerTool(
-      "add",
-      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
-      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
-    );
-    transport = new NodeStreamableHTTPServerTransport();
-    await mcp.connect(transport);
     httpServer = createServer((req, res) => {
       seenHeaders.push(req.headers);
       void transport.handleRequest(req, res);
@@ -1018,8 +1036,25 @@ describe("MCP over Streamable HTTP", () => {
     url = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}/mcp`;
   });
 
-  afterAll(async () => {
+  // SDK 2.3: a McpServer serves one connection and a stateless transport one request, so every
+  // test (one Environment, one session) gets its own pair; the HTTP server stays up and hands each
+  // request to the current pair.
+  beforeEach(async () => {
+    const mcp = new McpServer({ name: "http-fixture", version: "1.0.0" });
+    mcp.registerTool(
+      "add",
+      { description: "Adds two numbers.", inputSchema: z.object({ a: z.number(), b: z.number() }) },
+      async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
+    );
+    transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+    await mcp.connect(transport);
+  });
+
+  afterEach(async () => {
     await transport.close();
+  });
+
+  afterAll(async () => {
     await new Promise((resolve) => httpServer.close(resolve));
   });
 

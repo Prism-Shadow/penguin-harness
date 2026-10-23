@@ -3,9 +3,9 @@
  * historical Session (Workspace deleted / Model removed from config / Trace
  * missing session_meta) all collapse into HttpError(409, session_unrecoverable),
  * preserving the original core message instead of bubbling up as a 500. A Session rebuilt
- * without a Trace records the source this process knows, else the one its row stands for
- * (`company` on the organization runtime's `org` row, `api` on the Agent API's `api` row), else
- * core's default.
+ * without a Trace keeps its row's id, and records the source this process knows, else the one
+ * its row stands for (`company` on the organization runtime's `org` row, `api` on the Agent
+ * API's `api` row), else core's default.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -104,7 +104,7 @@ describe("session-loader", () => {
     expect((err as HttpError).code).toBe("workspace_missing");
   });
 
-  it("self-heal rebuild re-records a registry-known source in the fresh session_meta; an unknown one is company on an org row, api on an api row, user on any other", async () => {
+  it("self-heal rebuild keeps the row's id and re-records a registry-known source in the fresh session_meta; an unknown one is company on an org row, api on an api row, user on any other", async () => {
     // The anthropic pair constructs without a credential (the same pair session-index
     // creates over HTTP); custom/m1 would demand a key at client construction.
     await saveProjectConfig(root, PROJECT, {
@@ -125,6 +125,8 @@ describe("session-loader", () => {
     const sources = new SessionSources();
     sources.set(SID, "schedule");
     const known = await createCoreSessionLoader(root, sources).load(healRow);
+    // Under the row's own id: everything keyed by it (a messaging binding, a terminal) stays.
+    expect(known.sessionId).toBe(SID);
     const knownMeta = (known as unknown as { metaMessage: { payload: { source?: string } } })
       .metaMessage;
     expect(knownMeta.payload.source).toBe("schedule");

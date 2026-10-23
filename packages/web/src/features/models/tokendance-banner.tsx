@@ -9,7 +9,7 @@
  * global reduced-motion rule leaves it plain.
  */
 import { useState } from "react";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { Button, CloseButton, ICON_GAP, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 

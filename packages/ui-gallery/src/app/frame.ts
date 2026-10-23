@@ -14,11 +14,15 @@
  * the shared origin storage, and what the app writes (a preference changed in its Settings, a
  * collapsed sidebar) stays in that frame.
  *
+ * Two more params serve the screenshot script and the browser checks, and the gallery's own pages
+ * set neither: `wallpaper` (with `wallpaperSettings`) seeds a custom background the same way, and
+ * `notices=1` raises the notices a conversation can carry.
+ *
  * A page outside the gallery frames the same document with `embeddedFrameSrc`: it names only the
  * theme, the mode and the language, and adds `embed=1`, which makes the app the guest of that
  * page (guest-frame.ts).
  */
-import { THEME_STORAGE_KEYS } from "../../../ui/src/boot";
+import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "../../../ui/src/boot";
 
 /** The frame's document, relative to the gallery's base. */
 export const APP_FRAME_PATH = "/app.html";
@@ -48,6 +52,18 @@ export const SEEDED_KEYS: Readonly<Record<string, string>> = {
   lang: APP_LANG_KEY,
 };
 
+/**
+ * Frame URL param → the custom background's storage key (`boot.ts`), seeded only when the URL
+ * names it: `wallpaper=<data URL>`, and optionally `wallpaperSettings=<the settings JSON>`. A
+ * frame given an image boots with it exactly as a user's browser that saved one does; the
+ * gallery's own pages name neither, so their frames keep the plain page. The image travels in
+ * the request line, which a server refuses past 16 KB, so a caller passes a small one.
+ */
+export const BACKGROUND_SEEDED_KEYS: Readonly<Record<string, string>> = {
+  wallpaper: BACKGROUND_STORAGE_KEYS.image,
+  wallpaperSettings: BACKGROUND_STORAGE_KEYS.settings,
+};
+
 /** What the gallery tells a frame, besides the app route. */
 export interface FramePrefs {
   theme: string;
@@ -72,6 +88,12 @@ export interface FrameTarget {
    * and hands the wheel to the page (app/main.tsx).
    */
   embedded?: boolean;
+  /**
+   * Raise the notices a conversation can carry, which the demo account otherwise keeps down: the
+   * initial-password banner across the main column and the context-window notice over the
+   * composer (mock/notices.ts).
+   */
+  notices?: boolean;
 }
 
 /** The frame's URL: the document, then the target and the preferences as query params. */
@@ -82,6 +104,7 @@ export function appFrameSrc(base: string, prefs: FramePrefs, target: FrameTarget
   if (target.signedOut) params.set("auth", "out");
   if (target.open) params.set("open", target.open);
   if (target.embedded) params.set("embed", "1");
+  if (target.notices) params.set("notices", "1");
   return `${base}${APP_FRAME_PATH}?${params.toString()}`;
 }
 
@@ -118,13 +141,15 @@ export function parseFrameParams(search: string): FrameParams {
     ...(params.get("auth") === "out" ? { signedOut: true } : {}),
     ...(open ? { open } : {}),
     ...(params.get("embed") === "1" ? { embedded: true } : {}),
+    ...(params.get("notices") === "1" ? { notices: true } : {}),
   };
 }
 
 /**
  * The inline script that gives the frame document its own storage, seeded from the URL. A
- * classic, dependency-free IIFE, generated from `SEEDED_KEYS` so the keys can never drift from
- * the app's. It must run before the app's boot script, which reads the same storage.
+ * classic, dependency-free IIFE, generated from `SEEDED_KEYS` and `BACKGROUND_SEEDED_KEYS` so the
+ * keys can never drift from the app's. It must run before the app's boot script, which reads the
+ * same storage.
  */
 export function storageSeedScript(): string {
   return (
@@ -136,7 +161,8 @@ export function storageSeedScript(): string {
     "clear:function(){m={}}," +
     "key:function(i){var ks=Object.keys(m);return i<ks.length?ks[i]:null}," +
     "get length(){return Object.keys(m).length}}}" +
-    `var S=${JSON.stringify(SEEDED_KEYS)},q=new URLSearchParams(location.search),seed={};` +
+    `var S=${JSON.stringify({ ...SEEDED_KEYS, ...BACKGROUND_SEEDED_KEYS })},` +
+    "q=new URLSearchParams(location.search),seed={};" +
     "for(var p in S){var v=q.get(p);if(v)seed[S[p]]=v}" +
     'Object.defineProperty(window,"localStorage",{value:store(seed),configurable:true});' +
     'Object.defineProperty(window,"sessionStorage",{value:store({}),configurable:true});' +

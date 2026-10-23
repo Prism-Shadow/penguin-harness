@@ -35,31 +35,25 @@
  * `ant-messages`, `openai-chat` — are also what the custom-model protocol detection stores;
  * `google-genai` and `mmsp` are picked by hand.
  */
-import { MMSP_CLIENTS, routedClientType } from "@prismshadow/penguin-core/model-catalog";
-
-/** The official client of each first-party vendor group, which its unpinned ids route to. */
-const VENDOR_GROUP_CLIENT_TYPES: Readonly<Record<string, string>> = {
-  anthropic: "anthropic-official",
-  openai: "openai-official",
-  google: "google-official",
-  deepseek: "deepseek-official",
-  minimax: "minimax-official",
-  zhipu: "zai-official",
-  moonshot: "moonshot-official",
-};
+import {
+  CLIENT_PROTOCOLS,
+  routedClientType,
+  vendorClientType,
+} from "@prismshadow/penguin-server/model-catalog";
 
 /**
  * The protocol path appended to the base URL for a model entry. An explicit client type
  * wins over group membership (a `client_type: "openai-chat"` entry inside a vendor group
  * still goes through the generic OpenAI-compatible client); with no client type the entry
- * routes as MMSP routes it, by the vendor family its model id begins with (core's
+ * routes as MMSP routes it, by the vendor family its model id begins with (MMSP's
  * routedClientType). While the id is blank, or begins with no known family, the group's own
- * vendor client stands in — Chat Completions for every other group — and so does it for a
- * pinned client type MMSP does not know. Pure display logic: the empty-input hint must work
- * before anything is typed, so it never reads the current base URL value.
+ * vendor client stands in (the catalog's vendorClientType) — Chat Completions for every other
+ * group — and so does it for a pinned client type MMSP does not know. Pure display logic: the
+ * empty-input hint must work before anything is typed, so it never reads the current base URL
+ * value.
  */
 export function protocolPathForModel(provider: string, clientType: string, modelId = ""): string {
   const client =
-    routedClientType(modelId.trim(), clientType) ?? VENDOR_GROUP_CLIENT_TYPES[provider] ?? "";
-  return MMSP_CLIENTS[client]?.path ?? "/chat/completions";
+    routedClientType(modelId.trim(), clientType.trim() || null) ?? vendorClientType(provider);
+  return (client !== undefined ? CLIENT_PROTOCOLS[client]?.path : undefined) ?? "/chat/completions";
 }

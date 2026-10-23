@@ -93,11 +93,13 @@ The return value tells a consumer whether the run really finished. Failures emit
 
 ## LLMInterface
 
-The complete model-side contract is a single method:
+The complete model-side contract is a single method, plus one optional property:
 
 ```ts
 interface LLMInterface {
   streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  readonly defaultThinkingLevel?: ThinkingLevelName; // the level a request with no pin goes out at;
+                                                     // the engine sends and records it per request
 }
 
 interface GenerativeModelParameters {

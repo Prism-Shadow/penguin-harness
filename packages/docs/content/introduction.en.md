@@ -3,7 +3,7 @@ title: Introduction
 description: What PenguinHarness is, what ships in the box, and where to start.
 ---
 
-Welcome to the PenguinHarness documentation. PenguinHarness is the **Unified and Stable RSI Framework**: an open-source agent harness that automatically improves model × agent harness. The model stays fixed; the harness — prompts, Skills, tools, hooks — is what evolves, and every self-evolution algorithm runs on the same Benchmarks, scoreboards and snapshots. It is built as one TypeScript stack, deploys fully locally, runs on as little as a single CPU, and reaches 1000+ online and local models through one gateway.
+Welcome to the PenguinHarness documentation. PenguinHarness is the **Unified and Stable RSI Framework**, an open-source agent harness. Fully automatic optimization: any model, any algorithm, any benchmark. The model stays fixed; the harness — prompts, Skills, tools, hooks — is what evolves, and every self-evolution algorithm runs on the same Benchmarks, scoreboards and snapshots. It is built as one TypeScript stack, deploys fully locally, runs on as little as a single CPU, and reaches 1000+ online and local models through one gateway.
 
 ## Get started
 
@@ -29,7 +29,7 @@ PenguinHarness is made of these components. They share one data root and one mes
 
 ## The three pillars
 
-PenguinHarness is summed up in one line, **Unified and Stable RSI Framework — automatically improve model × agent harness**, and organized around three concepts: the message protocol, the SDK and the skill library. Each concept carries one pillar:
+PenguinHarness is summed up in one line as the **Unified and Stable RSI Framework — fully automatic optimization: any model, any algorithm, any benchmark**. It is organized around three concepts: the message protocol, the SDK and the skill library. Each concept carries one pillar:
 
 | Pillar | Meaning |
 | --- | --- |

@@ -33,6 +33,8 @@
  *   a request follows.
  * - Given task_state re-published as running, the run goes on; idle ends it with exactly one
  *   run.done, after which nothing more is produced.
+ * - Given a run carrying Task records (its task_begin ahead of the input's echo, a goal round's
+ *   own pair mid-run), the caller reads exactly the events the same run yields without them.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -41,6 +43,7 @@ import {
   assistantText,
   compactionBegin,
   compactionEnd,
+  hookEvent,
   partialText,
   partialThinking,
   partialToolCall,
@@ -48,6 +51,8 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   thinkingMessage,
   tokenUsage,
   toolCall,
@@ -454,6 +459,52 @@ describe("AMSP translator", () => {
     });
     const continued = startRun().play([begin, failed, requestBegin(), requestEnd("completed")]);
     expect(runDone(continued).status).toBe("completed");
+  });
+
+  it("a run carrying Task records yields exactly the events it yields without them", () => {
+    const input = [userText("go")];
+    const round1 = [
+      requestBegin(),
+      assistantText("first"),
+      tokenUsage(counts(5, 10), counts(5, 10)),
+      requestEnd("completed"),
+      hookEvent({ hook: "stop", name: "goal", decision: "continue" }),
+    ];
+    const round2 = [
+      userText("again", "harness"),
+      requestBegin(),
+      assistantText("second"),
+      tokenUsage(counts(5, 20), counts(5, 10)),
+      requestEnd("completed"),
+      hookEvent({ hook: "stop", name: "goal", decision: "stop" }),
+    ];
+    const translate = (channel: OmniMessage[]): string => {
+      const translator = new AmspTranslator(input, { now: () => NOW });
+      let seq = 0;
+      const out = channel.flatMap((m) =>
+        translator.feed({ id: `e-${++seq}`, data: JSON.stringify(m) }),
+      );
+      out.push(
+        ...translator.feed({
+          id: `e-${++seq}`,
+          event: "server_event",
+          data: JSON.stringify({ type: "task_state", state: "idle" } satisfies ServerEvent),
+        }),
+      );
+      return JSON.stringify(out);
+    };
+    const plain = translate([...input, ...round1, ...round2]);
+    const paired = translate([
+      taskBegin(),
+      ...input,
+      ...round1,
+      taskEnd(),
+      taskBegin(),
+      ...round2,
+      taskEnd(),
+    ]);
+    expect(paired).toBe(plain);
+    expect(plain).toContain("run.done");
   });
 
   it("a task_state re-published while running does not end the run; idle does, once", () => {

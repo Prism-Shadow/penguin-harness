@@ -70,7 +70,7 @@ export function isLocalSurfaceUrl(url: string, origin: string | null): boolean {
 /** "Open in a new tab" for a Workspace HTML file: mints a preview token, then 302s to the preview host. */
 const PREVIEW_REDIRECT_PATH = /^\/api\/sessions\/[^/]+\/files\/preview-redirect$/;
 
-/** A terminal detached from the dock into a window of its own. */
+/** The standalone terminal page; the dock no longer opens it, but a link to it may. */
 const TERMINAL_PATH = "/terminal";
 
 /**
@@ -100,8 +100,7 @@ export type WindowOpenAction = "window" | "external" | "deny";
  *   origin. It mints its token with the session cookie, so the system browser would get a 401;
  * - a preview page, `/preview/…` on the preview host, which is where a preview's own links and
  *   `window.open` calls land;
- * - a detached terminal, `/terminal` on the app origin: the page needs the session, and the
- *   opener watches the window it gets back to return the tab to the dock when it closes.
+ * - the standalone terminal page, `/terminal` on the app origin: the page needs the session.
  *
  * `external`, the system browser, is for an http(s) or mailto URL that is not this instance —
  * another site, or another port on this machine, such as a dev server a conversation started.

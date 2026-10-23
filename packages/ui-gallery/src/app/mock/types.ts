@@ -13,6 +13,8 @@ export type SessionMetaPayload = Extract<OmniPayload, { session_id: string }>;
 export type TypedPayload = Exclude<OmniPayload, SessionMetaPayload>;
 export type PayloadOf<T extends TypedPayload["type"]> = Extract<TypedPayload, { type: T }>;
 export type ToolCallMessage = Extract<ServerEvent, { type: "approval_request" }>["toolCall"];
+/** A thinking level as a request's `request_begin` records it. */
+export type ThinkingLevel = NonNullable<PayloadOf<"request_begin">["thinking_level"]>;
 
 /**
  * A message's typed payload, or null for the `session_meta` record. The envelope's `type` is

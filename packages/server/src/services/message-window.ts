@@ -32,11 +32,16 @@
  * token totals (via the caller-provided child expander), and the last main-session
  * session/context token readings.
  *
+ * Task records (`task_begin` / `task_end`) are skipped outright, before anything else looks at
+ * a message: Tasks are still derived from user prompts here, and skipping keeps every cut,
+ * count and timing exactly what it is on a Trace written before the records existed — the
+ * cached prefix records stay valid, so CACHE_VERSION is unchanged by them.
+ *
  * Scan state is carried across shards (a Task can span a rotation). Cached per-shard
  * prefix records (trace_files.page_stats) persist the carry so old shards are read at
  * most once ever; bump CACHE_VERSION whenever any rule in this file changes.
  */
-import { parseUserSteeringText } from "@prismshadow/penguin-core";
+import { isTaskRecord, parseUserSteeringText } from "@prismshadow/penguin-core";
 import {
   parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
@@ -308,6 +313,7 @@ export async function scanMessages(
     // Shards never contain origin-carrying messages (core's Writer filters them);
     // defensively skip any that appear rather than mis-shaping the counts.
     if (msg.origin !== undefined && msg.origin.length > 0) continue;
+    if (isTaskRecord(msg)) continue;
     const ms = tsMs(msg.timestamp);
     const p = msg.payload as Record<string, unknown> & { type?: string; role?: string };
 

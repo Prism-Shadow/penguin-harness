@@ -18,9 +18,10 @@
  * one per worker, which is worth more on the Windows runner than anywhere else.
  * What makes it safe: no file in this suite mocks a module — `vi.mock` would leak into
  * every later file in the same fork, which `test/isolation.test.ts` guards against — the
- * few that mutate `process.env` save and restore it, and files inside a worker still run
- * one at a time. The pool stays `forks` for that last reason: `process.env` is per-process,
- * so a thread pool would let those env-mutating files race each other.
+ * few that mutate `process.env` save and restore it (TZ through test/helpers/time-zone.ts:
+ * deleting TZ does not move a Windows process back to its own zone), and files inside a worker
+ * still run one at a time. The pool stays `forks` for that last reason: `process.env` is
+ * per-process, so a thread pool would let those env-mutating files race each other.
  *
  * `retry` on win32 mirrors core's: real SQLite files and full app trees against a runner
  * whose I/O stalls at a measurable rate, retried per test rather than by re-running the
@@ -53,10 +54,9 @@ import { WeightedShards } from "./test/setup/weighted-shards";
  * third on Windows nearly doubled every file's time for no shorter shard. `availableParallelism`
  * counts threads, not cores, which is why it is consulted only where the two are the same.
  *
- * `minWorkers` equals `maxWorkers` because with `isolate: false` a worker above the minimum is
- * terminated while idle, and that termination can reject inside tinypool after every file has
- * passed ("Terminating worker thread"), failing the run with no failing test. Three workers over
- * a minimum of one did so on every run on a four-core machine; equal counts were not seen to.
+ * `maxWorkers` is the only worker knob: vitest 4 replaced tinypool with its own pool and dropped
+ * `minWorkers`, which under vitest 3 kept tinypool from terminating an idle worker and failing a
+ * run after every file had passed.
  */
 const WORKERS =
   process.platform === "darwin" ? Math.max(1, Math.min(4, availableParallelism())) : 2;
@@ -65,7 +65,6 @@ export default defineConfig({
   test: {
     environment: "node",
     maxWorkers: WORKERS,
-    minWorkers: WORKERS,
     sequence: { sequencer: WeightedShards },
     isolate: false,
     restoreMocks: true,

@@ -1,12 +1,13 @@
 /**
  * The plot frame (src/components/charts/chart-frame): the `ui-chart` root in the muted ink, its
  * grid and axis labels as named parts with the caller's formatting, the caller's marks between
- * them, and no bubble until a point is hovered. The frame's geometry is chart-geom.test.ts.
+ * them, and no bubble until a point is hovered — a column with no name (a reading with no time)
+ * included. The frame's geometry is chart-geom.test.ts.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { ChartFrame } from "../src/components/charts/chart-frame/chart-frame";
-import { makeGeom } from "../src/components/charts/chart-frame/chart-geom";
+import { makeGeom, makeRangeGeom, PAD_R } from "../src/components/charts/chart-frame/chart-geom";
 import { classTokens, renderStatic } from "../src/testing";
 
 type Props = Parameters<typeof ChartFrame>[0];
@@ -31,6 +32,16 @@ describe("ChartFrame", () => {
     expect(html).not.toMatch(/gray-|dark:/);
   });
 
+  it("takes the caller's name for the image, and the canvas height its geometry asks for", () => {
+    const html = frame({
+      geom: makeRangeGeom(3, 0, 100, 640, PAD_R, { h: 120 }),
+      label: "Cost, last 3 days",
+    });
+    expect(html).toContain('aria-label="Cost, last 3 days"');
+    expect(html).toContain('height="120"');
+    expect(html).toContain('viewBox="0 0 640 120"');
+  });
+
   it("names its grid and axis parts, and prints the caller's tick and date formats", () => {
     const html = frame({ fmtX: (d: string) => d.slice(8) });
     expect(html.match(/data-part="grid"/g)).toHaveLength(5);
@@ -48,5 +59,13 @@ describe("ChartFrame", () => {
     const hovered = frame({ bubble, hover: 1 });
     expect(hovered).toContain("day 1");
     expect(classTokens(hovered)).toEqual(expect.arrayContaining(["border-line", "bg-overlay"]));
+  });
+
+  it("draws the cursor and the bubble for a hovered column that has no name", () => {
+    const bubble = (i: number) => `reading ${i}`;
+    const hovered = frame({ dates: ["", "", ""], bubble, hover: 1 });
+    expect(hovered).toContain("reading 1");
+    expect(hovered).toContain("stroke-line-emphasis");
+    expect(frame({ dates: ["", "", ""], bubble, hover: 3 })).not.toContain("reading");
   });
 });

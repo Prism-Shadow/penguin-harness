@@ -226,7 +226,7 @@ describe("SessionManager.startGoal", () => {
     });
 
     // The inputs were published on the message stream (no `event:` name) for live viewers —
-    // round 1 by startGoal itself (core never yields a run's initial input, and a page
+    // round 1 echoed by the manager (core never yields a run's initial input, and a page
     // already subscribed would otherwise miss it until a reload), round 2 off the stream:
     // the user's own message verbatim — the [use_skills] block included — and both rounds'
     // harness-stamped protocol messages.

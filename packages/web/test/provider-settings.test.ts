@@ -27,7 +27,11 @@
  *   line under the fields, no count of the models' own values.
  * - Given a group whose catalog names a model list (OpenRouter, TokenDance), the dialog links
  *   to it in a new tab; custom and a user-defined group have none, and no link.
- * - A blank group key promises an environment variable only where it may be sent there.
+ * - A blank group base URL names the endpoint the requests go to: the default endpoint of the
+ *   group's client (the protocol it names, else the vendor's); a group with no one client says
+ *   only that the client's default applies.
+ * - A blank group key promises an environment variable only for a group with no base URL — the
+ *   vendor's own endpoint included — and only one the server proved is set.
  * - A model with nothing of its own follows the group's table field by field, and a field the
  *   table leaves blank is the client's default — never the catalog's value.
  * - A group key reaches a model with no base URL of its own or one on the group's origin; a
@@ -45,7 +49,7 @@ import {
   catalogGroupConnection,
   presetProviderTable,
   providerInfo,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import type { ModelsResponse, ProviderConnectionDto } from "@prismshadow/penguin-server/api";
 import {
   applyProviderUpdate,
@@ -55,6 +59,7 @@ import {
 } from "../src/features/models/connection";
 import {
   ProviderSettingsDialog,
+  groupBaseUrlHint,
   groupEnvKey,
   initialDraft,
   protocolChoice,
@@ -438,23 +443,50 @@ describe("what the group settings dialog shows", () => {
   });
 });
 
+describe("a blank group base URL names where the requests go", () => {
+  it("names the default endpoint of the group's client: the protocol it names, else the vendor's", () => {
+    expect(groupBaseUrlHint("deepseek", { clientType: null })).toBe(
+      S.models.baseUrlDefault("https://api.deepseek.com"),
+    );
+    expect(groupBaseUrlHint("my-ollama", { clientType: "openai-chat" })).toBe(
+      S.models.baseUrlDefault("https://api.openai.com/v1"),
+    );
+    expect(groupBaseUrlHint("vllm", { clientType: "openai-chat-vllm-adapter" })).toBe(
+      S.models.baseUrlDefault("http://127.0.0.1:8000/v1"),
+    );
+  });
+
+  it("says only that the client's default applies where no one client answers for the group", () => {
+    for (const id of ["custom", "my-ollama", "tokendance"]) {
+      expect(groupBaseUrlHint(id, { clientType: null }), id).toBe(S.models.baseUrlNone);
+    }
+  });
+});
+
 describe("a blank group key and the environment", () => {
   const detected = new Set(["DEEPSEEK_API_KEY"]);
   const blank = { baseUrl: "", clientType: null };
 
-  it("promises the vendor's variable on its own endpoint, where the server proved it is set", () => {
+  it("promises the vendor's variable for a vendor group with no base URL or the client's default endpoint, where the server proved it is set", () => {
     expect(groupEnvKey("deepseek", blank, detected)).toBe("DEEPSEEK_API_KEY");
+    expect(groupEnvKey("deepseek", blank, new Set())).toBeUndefined();
     expect(
       groupEnvKey("deepseek", { ...blank, baseUrl: "https://api.deepseek.com/" }, detected),
     ).toBe("DEEPSEEK_API_KEY");
   });
 
-  it("promises nothing for a proxy, an unset variable or a gateway", () => {
-    expect(
-      groupEnvKey("deepseek", { ...blank, baseUrl: "https://proxy.example/v1" }, detected),
-    ).toBeUndefined();
-    expect(groupEnvKey("deepseek", blank, new Set())).toBeUndefined();
-    expect(groupEnvKey("openrouter", blank, new Set(["OPENAI_API_KEY"]))).toBeUndefined();
+  it("promises nothing once the group names another base URL", () => {
+    for (const baseUrl of ["https://proxy.example/v1", "https://api.deepseek.example/v1"]) {
+      expect(groupEnvKey("deepseek", { ...blank, baseUrl }, detected), baseUrl).toBeUndefined();
+    }
+  });
+
+  it("with no base URL, a group's protocol names its variable, whichever group it is; a gateway with neither names none", () => {
+    const openai = new Set(["OPENAI_API_KEY"]);
+    expect(groupEnvKey("openrouter", blank, openai)).toBeUndefined();
+    expect(groupEnvKey("openrouter", { ...blank, clientType: "openai-chat" }, openai)).toBe(
+      "OPENAI_API_KEY",
+    );
   });
 });
 

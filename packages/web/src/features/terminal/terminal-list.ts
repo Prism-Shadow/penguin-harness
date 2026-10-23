@@ -1,8 +1,8 @@
 /**
  * The user's live terminals, as a tiny module-level store. Every shell the user has is in
- * here, tabbed into a dock or not: the docks' strips show the tabbed ones (dock-state.ts),
- * while the toolbar's terminal menu lists all of them, so any shell can be pulled into
- * view here.
+ * here, each filed under the conversation that opened it (`sessionId`): a conversation's
+ * terminal panel lists exactly its own (terminalsOf) — never another conversation's, machine's
+ * or Project's.
  *
  * The server is the source of truth (`GET /api/terminals`, alive only); this store decides
  * *when* to look. There is no push channel for terminal lifecycle yet, so:
@@ -13,11 +13,10 @@
  */
 import type { TerminalInfo } from "./terminal-view";
 import { probeSession } from "../../api/session-probe";
-import { pruneTerminalTabs } from "../dock/dock-state";
 import { apiUrl } from "../../lib/server-context";
 import {
+  machineForTerminal,
   rememberTerminalMachine,
-  terminalMachinesPublished,
   terminalSources,
   terminalUrl,
 } from "../../lib/terminal-machines";
@@ -42,14 +41,28 @@ const POLL_MS = 30_000;
 
 /** Raw live list as the server reports it (creation order). */
 let raw: TerminalInfo[] = [];
+/**
+ * Bumped by every change this window makes to the list itself — a shell it created, a shell it
+ * refiled under another conversation. A list fetched across such a change misses or misfiles
+ * that shell, so it is neither shown nor allowed to prune: it would drop the very tab the change
+ * just made (see refreshTerminals).
+ */
+let localChanges = 0;
 /** Stable snapshot (same reference until contents change) for useSyncExternalStore. */
 let terminals: TerminalInfo[] = [];
 let fingerprint = "";
 let inflight: Promise<void> | null = null;
 const listeners = new Set<() => void>();
+/** Listeners that only hear changes and start no polling of their own (watchTerminals). */
+const watchers = new Set<() => void>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 /** True once the server answered 404 for the terminal API (an older runtime). */
 let unsupported = false;
+/**
+ * Whether the list on hand is every source's answer. A machine that did not answer one round
+ * (a connection being re-held) leaves its shells out of it, which is not their end.
+ */
+let complete = false;
 
 /**
  * Terminals the user just asked to kill, excluded from refresh results while the shell is
@@ -75,7 +88,11 @@ function commit(next: TerminalInfo[]): void {
   if (nextFingerprint === fingerprint) return;
   terminals = next;
   fingerprint = nextFingerprint;
-  for (const listener of [...listeners]) listener();
+  notify();
+}
+
+function notify(): void {
+  for (const listener of [...listeners, ...watchers]) listener();
 }
 
 /** Live title update from the attached client's own xterm (OSC parsed locally). */
@@ -89,6 +106,25 @@ export function liveTerminals(): TerminalInfo[] {
   return terminals;
 }
 
+/**
+ * A conversation's own live shells, on the machine it runs on, in creation order. Only an owner
+ * the server named counts: a shell from a server that reports none (an older build on a
+ * machine) belongs to no conversation's list until that server is updated.
+ */
+export function terminalsOf(sessionId: string, machineId: string | null): TerminalInfo[] {
+  return terminals.filter(
+    (t) => t.alive && t.sessionId === sessionId && machineForTerminal(t.id) === machineId,
+  );
+}
+
+/**
+ * Whether the last list read heard from every source, so a shell missing from it has really
+ * gone — what the terminal panel waits for before it closes over a last shell that ended.
+ */
+export function terminalListComplete(): boolean {
+  return complete;
+}
+
 /** Whether this server serves the terminal API at all (false on an older runtime). */
 export function terminalApiSupported(): boolean {
   return !unsupported;
@@ -97,6 +133,8 @@ export function terminalApiSupported(): boolean {
 /** Re-reads the list from the server; concurrent calls share one request. */
 export function refreshTerminals(): Promise<void> {
   if (inflight) return inflight;
+  const changesAtStart = localChanges;
+  let stale = false;
   inflight = (async () => {
     try {
       // Every source, this server first: a terminal is a pty on ONE machine's kernel, so
@@ -119,7 +157,7 @@ export function refreshTerminals(): Promise<void> {
       // control this page offers.
       if (here?.status === 404 && !unsupported) {
         unsupported = true;
-        for (const listener of [...listeners]) listener();
+        notify();
         return;
       }
       // This poll is often the only request an idle window still makes, so it is the
@@ -148,30 +186,46 @@ export function refreshTerminals(): Promise<void> {
         if (!listed.has(id)) pendingKills.delete(id); // fully gone: nothing left to hide
       }
       const live = terminals.filter((t) => t.alive && !isPendingKill(t.id));
-      // Pruning is the one thing here that DESTROYS something: it drops terminal tabs out
-      // of every conversation's stored arrangement. So it may only act on a complete
-      // picture — every source answered, and the machine set already published. Neither
-      // holds on a fresh page: the machines are published once the machine list has been
-      // read, and a connection the server is still re-holding after a restart answers
-      // nothing yet, so an early refresh sees this server alone. Pruning on that would
-      // delete the tabs of terminals that are alive on a machine, and storage does not get
-      // them back. Displaying the short list meanwhile is fine — a pane whose bytes cannot
-      // arrive is not usable yet, but it is not gone either, and the next complete refresh
-      // restores it.
-      if (terminalMachinesPublished() && answers.every((a) => a.res !== null && a.res.ok)) {
-        pruneTerminalTabs(new Set(live.map((t) => t.id)));
-      }
+      // This window created or refiled a shell while the list was on its way: the answer
+      // predates that, so it would take the new shell out of the panel (or file it under the
+      // old conversation) until the next poll. Ask again instead (below, once this request is
+      // no longer the one in flight).
+      stale = localChanges !== changesAtStart;
+      if (stale) return;
+      // A short answer (a machine still being re-held after a restart answers nothing yet) is
+      // displayed as it is: a pane whose bytes cannot arrive is not usable yet, but nothing
+      // acts on its strength (terminalListComplete), and the next complete refresh restores
+      // the rest.
+      const answeredAll = answers.every((a) => a.res !== null && a.res.ok);
+      const flipped = answeredAll !== complete;
+      complete = answeredAll;
       commit(live);
+      if (flipped) notify();
     } catch {
       // Network hiccup: the next poll/focus refresh will catch up.
     } finally {
       inflight = null;
     }
-  })();
+  })().then(async () => {
+    // A stale answer asks again, and whoever awaited this round waits for that one.
+    if (stale) await refreshTerminals();
+  });
   return inflight;
 }
 
 const onFocus = (): void => void refreshTerminals();
+
+/**
+ * Hears every change of the list and of the API's support without asking the server for
+ * anything: for a feed that is followed for good (the panel registry's `offered`), which
+ * must not keep a poll running on pages that show no terminal.
+ */
+export function watchTerminals(listener: () => void): () => void {
+  watchers.add(listener);
+  return () => {
+    watchers.delete(listener);
+  };
+}
 
 export function subscribeTerminals(listener: () => void): () => void {
   if (listeners.size === 0) {
@@ -195,8 +249,15 @@ export function subscribeTerminals(listener: () => void): () => void {
  * so the count/tabs react to the user's own action instantly rather than after a re-fetch.
  */
 export function noteTerminalCreated(info: TerminalInfo): void {
+  localChanges += 1;
   if (raw.some((t) => t.id === info.id)) return;
   commit([...raw, info]);
+}
+
+/** A shell this window just refiled under another conversation (the PATCH answer in hand). */
+export function noteTerminalReowned(id: string, sessionId: string | null): void {
+  localChanges += 1;
+  commit(raw.map((t) => (t.id === id ? { ...t, sessionId } : t)));
 }
 
 /**

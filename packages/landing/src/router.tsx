@@ -3,18 +3,55 @@
  * basename comes from Vite's BASE_URL so the site works under the GitHub Pages
  * project subpath; a route change scrolls to the top or to its hash target
  * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry).
+ *
+ * The post page is the one route loaded on demand: it carries the Markdown renderer, which the
+ * home page, the list and the download page never use.
  */
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router";
-import { useRouteScroll } from "@prismshadow/penguin-ui/site";
+import { lazy, Suspense, useEffect } from "react";
+import {
+  BrowserRouter,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router";
+import { useRouteScroll, useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { DOCS_URL, GALLERY_URL } from "./lib/links";
+import { getPost, loadPostBody } from "./lib/blog";
 import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
 import { NeonBackground } from "./components/neon-bg";
+import { PostPending } from "./components/post-pending";
 import { HomePage } from "./pages/home";
 import { BlogListPage } from "./pages/blog-list";
-import { BlogPostPage } from "./pages/blog-post";
 import { DownloadPage } from "./pages/download";
+
+const BlogPostPage = lazy(() =>
+  import("./pages/blog-post").then((page) => ({ default: page.BlogPostPage })),
+);
+
+/**
+ * A post's route. Its body starts downloading beside the page's code instead of after it; the
+ * main column holds a screen of empty space until both are in, and the page then shows header
+ * and body together.
+ */
+function BlogPostRoute() {
+  const { slug = "" } = useParams();
+  const { locale } = useSiteLocale();
+  const post = getPost(slug, locale);
+  useEffect(() => {
+    // A chunk that fails to load reloads the page (main.tsx): nothing to handle here.
+    if (post) void loadPostBody(post).catch(() => undefined);
+  }, [post]);
+  return (
+    <Suspense fallback={<PostPending />}>
+      <BlogPostPage />
+    </Suspense>
+  );
+}
 
 /**
  * Deep links into a sibling SPA (the docs, the gallery) that missed a real file (e.g. an
@@ -55,7 +92,7 @@ export function AppRouter() {
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="/blog" element={<BlogListPage />} />
-          <Route path="/blog/:slug" element={<BlogPostPage />} />
+          <Route path="/blog/:slug" element={<BlogPostRoute />} />
           <Route path="/download" element={<DownloadPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

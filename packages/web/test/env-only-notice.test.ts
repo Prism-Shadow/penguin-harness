@@ -40,6 +40,7 @@ const machine = (id: string, envOnly: MachineEnvOnly[]): MachineInfo => ({
   machineId: "M0000000000000001",
   local: false,
   connection: { pid: 4242 },
+  socket: null,
   keepConnected: true,
   api: null,
   status: { state: "running", checkedAt: "2026-10-15T08:00:00.000Z", port: 7364 },

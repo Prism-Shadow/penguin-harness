@@ -219,6 +219,8 @@ Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的
 
 在 Web App 中，Agent 的设置页向所有成员提供**导出快照**，向 Project owner 提供**导入快照**。导入会整体替换 Agent State，版本号取包内的 `version`，并保留当前的 Vault；导入之前会先为当前版本打一个快照。导入的版本不比当前版本新时，需要先确认。智能体页面的创建对话框也可以直接用导出的快照包新建 Agent（**从快照初始化**）：新 Agent 以包内的状态和版本起步，无需确认。
 
+只有 `agent_state/` 是真实目录、且其中所有符号链接都解析在 `agent_state/` 之内的包才会被接受；链接指向 `agent_state/` 之外或指向不存在目标的包，以及 `system_config.yaml` 无法读取的包，都会被拒绝。导入时若现行 Vault 无法读取，则在触碰 State 之前停止。替换失败且无法恢复原 State 时，原 State 与 Vault 保留在该 Agent 目录下的导入暂存目录中，服务端日志会给出其路径。
+
 ## 可审计性
 
 - 每次 Evaluator 运行和每个被测会话，都是带完整 Trace 的普通 Session。

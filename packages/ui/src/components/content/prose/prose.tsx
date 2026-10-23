@@ -17,11 +17,15 @@
  * (`.md-body code` in prose.css). An `a2ui` or `mermaid` fence is drawn as a component instead,
  * on the same settle (see MdPre).
  *
- * KaTeX is held back the same way, for the same reason: `streaming` swaps the rehype stage out, so
- * a formula shows its own TeX source until the message settles and is typeset once (see
- * NO_REHYPE_PLUGINS in markdown-plugins.ts for the measurements). KaTeX's own stylesheet is
- * imported here, so a consumer never loads it on its own; the `.katex` rules in prose.css out-rank
- * it by specificity, whichever of the two a bundle happens to emit first.
+ * KaTeX is held back the same way, for the same reason: `streaming` swaps the rehype stage for the
+ * table pass alone, so a formula shows its own TeX source until the message settles and is typeset
+ * once (see STREAMING_REHYPE_PLUGINS in markdown-plugins.ts for the measurements). KaTeX's own
+ * stylesheet is imported here, so a consumer never loads it on its own; the `.katex` rules in
+ * prose.css out-rank it by specificity, whichever of the two a bundle happens to emit first.
+ *
+ * Tables are boxed and their cells classified on every render, streaming or not
+ * (markdown-table.ts); markdown-table.css, imported here after prose.css, styles them, and
+ * `.md-body` maps its custom properties onto the theme.
  *
  * `arrivals`, from a host whose theme fades streaming text in (StreamText), adds one rehype pass
  * that puts each run of newly arrived text in a `data-arrive` span, or marks an element that
@@ -43,11 +47,12 @@ import type { Components, ExtraProps, Options } from "react-markdown";
 import { A2uiBlock } from "../a2ui/a2ui-block";
 import { MermaidBlock } from "../a2ui/mermaid-block";
 import { CodeBlock } from "../code-block/code-block";
-import { NO_REHYPE_PLUGINS, REHYPE_PLUGINS, REMARK_PLUGINS } from "./markdown-plugins";
+import { REHYPE_PLUGINS, REMARK_PLUGINS, STREAMING_REHYPE_PLUGINS } from "./markdown-plugins";
 import { decodeArrivals, rehypeStreamArrivals } from "./stream-arrivals";
 import type { RevealArrival } from "./stream-arrivals";
 import "katex/dist/katex.min.css";
 import "./prose.css";
+import "./markdown-table.css";
 
 /** Flatten a react-markdown code element's children to plain text (string or string array in practice). */
 function codeText(children: unknown): string {
@@ -238,7 +243,7 @@ export const Md = memo(function Md({
       remarkPlugins={
         extraPlugins === undefined ? REMARK_PLUGINS : [...REMARK_PLUGINS, ...extraPlugins]
       }
-      rehypePlugins={withArrivals(streaming ? NO_REHYPE_PLUGINS : REHYPE_PLUGINS, arrivals)}
+      rehypePlugins={withArrivals(streaming ? STREAMING_REHYPE_PLUGINS : REHYPE_PLUGINS, arrivals)}
       components={components === undefined ? base : { ...base, ...components }}
     >
       {text}
