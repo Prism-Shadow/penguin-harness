@@ -3,6 +3,7 @@
 - **Date:** 2026-10-23
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#1302](https://github.com/Prism-Shadow/penguin-harness/pull/1302)
 
 [English](2026-10-23-blog-citation-jumps.md)
 
