@@ -64,6 +64,12 @@ A Trace is an append-only JSON Lines file. Each line is one OmniMessage envelope
   - Task records never open a file. When a Task ends on a completed compaction, its `task_end`, and the next Task's `task_begin`, are appended behind the `compaction_end` in the old file; the next context's first message opens the new one. A Task with a compaction in its middle therefore ends in a later file than it began.
   - A `task_begin` with no `task_end` before the next `task_begin` or the end of the Trace is a Task that never reached its end: the process exited or the run failed. While the Session runs, the last one is the Task in progress.
   - Traces written before these records have none. Readers derive the boundaries for them from the user's prompts, as before, and Traces are never rewritten.
+- The main Session's `session_meta` is also streamed, once, when it is written, and never sent again. That happens at three moments:
+  - a new Session's first message writes it at the head of the first file, before that Task's `task_begin`;
+  - the context a compaction opens writes it when the new file opens, just before the first record written after the compaction. When the compaction ended the previous Task, that is after the next Task's `task_begin` and before its input, since Task records never open a file;
+  - a model switch writes it when the switch completes, between runs, so it is on the Session's stream and not in the next run's.
+
+  A reader that needs it later reads the Session, or the whole history, which carries every file's `session_meta`. See [AMSP](/amsp).
 - Appends are serialized inside the writer. Records from concurrent producers (the model stream, parallel tool executions) land strictly one after another, each as a single uninterrupted line. A multi-megabyte record, such as a base64 image Data URL, can never be torn apart by a concurrent append. File rotation never splits a record.
 - Each record is appended with a single `write(2)`, not `fs.appendFile`, which splits payloads larger than 512 KiB into several underlying writes. An abnormal process exit can therefore at most truncate the last record; it can never tear one apart in the middle.
 - Before Session resumption continues an existing file, the writer probes the file tail. If a previous crash left a torn line (no trailing newline), the next record is preceded by a newline, so the torn line never swallows the records appended after it.

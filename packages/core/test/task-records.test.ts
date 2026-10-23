@@ -4,13 +4,17 @@
  *
  * - Given a Session's first message, the Trace holds session_meta, task_begin, the input, the
  *   Task's records and then task_end; the stream carries the same records in the same order,
- *   minus the session_meta (written, not streamed, for a first context) and the input (which a
- *   host echoes).
+ *   minus the input (which a host echoes): the session_meta first, once.
+ * - Given a second message, or a Session resumed from its Trace, the stream carries no
+ *   session_meta.
  * - Given a stop hook that continues once, the run writes two pairs: the hook's record inside the
  *   first, and the continued input right after the second task_begin, on the stream and on disk.
  * - Given a Task whose final request triggers a completed compaction, its task_end and the next
  *   Task's task_begin land in the old file behind compaction_end, and the next Task's input opens
- *   the new file.
+ *   the new file; the Session says a context is pending until then, and the next run streams the
+ *   new file's session_meta once, after its task_begin, as the file has it.
+ * - Given a stop hook that continues after such a compaction, the continued Task streams the new
+ *   session_meta before its input, as the new file has them.
  * - Given a process that dies right after that next task_begin, resuming the old file still
  *   yields the pending `[context_summary]` (a Task record must not hide the closure).
  * - Given a manual compaction, or a model switch, no Task record is streamed or written.
@@ -156,6 +160,7 @@ describe("Task records", () => {
     compaction?: CompactionSettings;
     bootstrap?: SessionConfig["bootstrap"];
     sink?: TraceSink;
+    metaAlreadyWritten?: boolean;
   }): { session: Session; trace: Writer; written: OmniMessage[] } {
     const llms = [...(args.llms ?? [])];
     const trace = new Writer({ tracesDir: traces, sessionId: "sess_tasks" });
@@ -190,6 +195,7 @@ describe("Task records", () => {
         },
       },
       ...(args.stopHooks ? { hooks: { stop: args.stopHooks } } : {}),
+      ...(args.metaAlreadyWritten ? { metaAlreadyWritten: true } : {}),
       imagesDir: join(traces, "scratch"),
       modelHasVision: true,
     });
@@ -207,9 +213,29 @@ describe("Task records", () => {
     expect(kinds(disk).slice(0, 2)).toEqual(["session_meta", "task_begin"]);
     expect(landmarks(disk)).toEqual(["task_begin", "user:hello", "task_end"]);
     expect(kinds(disk).at(-1)).toBe("task_end");
-    // The stream is the Trace minus the file head and the input (the host echoes the input).
-    const expected = disk.filter((m) => m.type !== "session_meta" && m !== disk[2]);
+    // The stream is the Trace minus the input (the host echoes it).
+    const expected = disk.filter((m) => m !== disk[2]);
     expect(kinds(stream)).toEqual(kinds(expected));
+    expect(stream[0]).toEqual(disk[0]);
+  });
+
+  it("a second message, and a Session resumed from its Trace, stream no session_meta", async () => {
+    const llm = new ScriptedLLM([
+      { messages: [assistantText("one"), usage(10, 10)] },
+      { messages: [assistantText("two"), usage(10, 20)] },
+    ]);
+    const { session } = makeSession({ llms: [llm] });
+    await collect(session.run([userText("first")], { approve: allowAll }));
+    const second = await collect(session.run([userText("second")], { approve: allowAll }));
+    expect(kinds(second)).not.toContain("session_meta");
+
+    const resumed = makeSession({
+      llms: [new ScriptedLLM([{ messages: [assistantText("back"), usage(10, 10)] }])],
+      metaAlreadyWritten: true,
+    });
+    const stream = await collect(resumed.session.run([userText("again")], { approve: allowAll }));
+    expect(kinds(stream)[0]).toBe("task_begin");
+    expect(kinds(stream)).not.toContain("session_meta");
   });
 
   it("a stop hook's continue gets a pair of its own: the hook record closes the first Task, the continued input opens the second", async () => {
@@ -259,7 +285,9 @@ describe("Task records", () => {
 
     await collect(session.run([userText("task one")], { approve: allowAll }));
     const oldPath = trace.currentPath();
-    await collect(session.run([userText("task two")], { approve: allowAll }));
+    expect(session.contextOpenPending()).toBe(true);
+    const stream = await collect(session.run([userText("task two")], { approve: allowAll }));
+    expect(session.contextOpenPending()).toBe(false);
 
     expect(trace.currentPath()).not.toBe(oldPath);
     const oldFile = await readTrace(oldPath);
@@ -267,6 +295,50 @@ describe("Task records", () => {
     const newFile = await readTrace(trace.currentPath());
     expect(newFile[0]!.type).toBe("session_meta");
     expect(landmarks(newFile)).toEqual([`user:${SUMMARY_TEXT}`, "user:task two", "task_end"]);
+    // The new file's meta streams once, right behind the Task's task_begin: the order on disk,
+    // where the input the host echoes comes next.
+    expect(kinds(stream).slice(0, 2)).toEqual(["task_begin", "session_meta"]);
+    expect(kinds(stream).filter((k) => k === "session_meta")).toHaveLength(1);
+    expect(stream[1]).toEqual(newFile[0]);
+  });
+
+  it("a Task a stop hook continues after a compaction streams the new session_meta before its input", async () => {
+    const llm1 = new ScriptedLLM([
+      { messages: [assistantText("answer one"), usage(150, 150)] },
+      { messages: [assistantText(SUMMARY_REPLY), usage(160, 310)] },
+    ]);
+    const llm2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 330)] }]);
+    let asked = 0;
+    const hook: StopHook = {
+      name: "goal",
+      run: async () =>
+        ++asked === 1 ? { decision: "continue", input: "again" } : { decision: "stop" },
+    };
+    const { session, trace } = makeSession({
+      llms: [llm1, llm2],
+      compaction: compactAt100,
+      stopHooks: [hook],
+    });
+
+    const stream = await collect(session.run([userText("task one")], { approve: allowAll }));
+
+    const marks = stream.flatMap((m) =>
+      m.type === "session_meta" ? ["session_meta"] : landmarks([m]),
+    );
+    expect(marks).toEqual([
+      "session_meta",
+      "task_begin",
+      "hook:continue",
+      "task_end",
+      "task_begin",
+      "session_meta",
+      "user:again",
+      "hook:stop",
+      "task_end",
+    ]);
+    const newFile = await readTrace(trace.currentPath());
+    expect(newFile[0]!.type).toBe("session_meta");
+    expect(landmarks(newFile).slice(0, 2)).toEqual([`user:${SUMMARY_TEXT}`, "user:again"]);
   });
 
   it("a restart right after the next task_begin still resumes the closed context with its summary pending", async () => {
@@ -355,6 +427,7 @@ describe("Task records", () => {
     }
 
     expect(kinds(stream)).toEqual([
+      "session_meta",
       "task_begin",
       "mcp_connect_begin",
       "mcp_connect_end",
@@ -399,7 +472,7 @@ describe("Task records", () => {
 
     const stream = await collect(session.run([userText("hello")], { approve: allowAll }));
 
-    expect(kinds(stream)[0]).toBe("task_begin");
+    expect(kinds(stream).slice(0, 2)).toEqual(["session_meta", "task_begin"]);
     expect(kinds(stream).at(-1)).toBe("task_end");
     expect(stream.some((m) => (m.payload as { type?: string }).type === "text")).toBe(true);
   });

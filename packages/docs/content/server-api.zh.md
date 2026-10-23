@@ -867,6 +867,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
 | POST | `/fork` | 在一条已完成的助手回复之后分叉空闲的 Session：`{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | SSE 事件流；见[流式传输（SSE）](#流式传输sse) |
+| GET | `/amsp` | 该 Session 的 AMSP 流：只有记录和 `ping`，不含 `/stream` 另加的服务器事件 |
+| GET | `/approvals[?wait=]` | 等待决定的工具调用：`{approvals: [{tool_call, origin?}]}` |
 | GET | `/context` | 当前模型上下文的组成，以及压缩将从哪里开始 |
 | GET | `/goal` | 当前 Session 最近一次目标运行 |
 
@@ -880,6 +882,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
 - `GET /goal` 返回 `{goal}`：Session 从未跑过目标时为 `null`，否则为 `{objective, status, budget, used, rounds}`。`status` 取值为 `active`、`complete`、`blocked`、`budget_limited` 或 `aborted`，`budget` 为 -1 表示不限制。目标只存活在它的运行期间，所以 Session 已停止运行、目标却仍是 active 时，会报告为 `aborted`。见[目标模式](/goal-mode)。
+- `GET /amsp` 为登录用户或本机 API token 提供 Agent API 的 Session 流，与 `GET /api/amsp/v1/sessions/:sessionId/stream` 是同一个处理器：每条记录带其 `id:`，`event: ping` 立即发出、此后每 20 秒一次，续传所用的 `Last-Event-ID`（或 `lastEventId`）已被挤出缓冲时发 `event: resync_required`、`data: {}`。它不写任何 `server_event`，没有初始的 `task_state` 快照，也不补发 `approval_request`。见 [Session 流](/amsp#session-流)。
+- `GET /approvals` 是 Agent API 的待决审批资源，与 `GET /api/amsp/v1/sessions/:sessionId/approvals` 是同一个处理器：列出每次调用的 `tool_call` 载荷，子 Agent 的调用另带 `origin`。带 `wait=<秒数>`（限制在 1–60 之间）时，列表为空就挂起，直到有调用进入等待或时间用完；`wait` 不是整数时返回 400。回答经 `POST /approvals/:toolCallId`。见[审批](/amsp#审批)。
 
 ### GET /messages 上的 `live` 字段
 
@@ -1324,6 +1328,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
+| 每个 Session（AMSP） | `GET /api/sessions/:sessionId/amsp` | 只有 Session 的记录和 `ping`，与 Agent API 提供的相同；见 [Session 流](/amsp#session-流) |
 | 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_archived`、`session_deleted`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated`、公司模式的 `org_*` 事件，以及只发给管理员的 `machines_changed` |
 | 每个 Project 的机器 | `GET /api/projects/:projectId/machines/events` | 每台已连接机器自己的事件，各自带上来源机器的标记，由 hub 每台机器唯一的那次订阅合并而来（**socket hub 内每台机器一条事件流**） |
 

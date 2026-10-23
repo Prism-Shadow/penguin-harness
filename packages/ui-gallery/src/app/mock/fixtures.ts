@@ -68,7 +68,7 @@ import {
   HARBOR_VERSION,
 } from "../../../../core/dist/state/builtin-benchmarks-data.js";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
-import type { AmspEvent } from "../../../../amsp/src/types";
+import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
 import { agentEvaluationPlugin, rsiToolkitPlugins } from "./library-plugins";
@@ -1975,10 +1975,12 @@ function dateOutput(ms: number): string {
 }
 
 /**
- * The body the try route streams, as `data:` lines and `[DONE]`: the example question answered
- * by running `date` over two Requests — the tool call's fragments and the complete call, its
- * result, then the answer's fragments and the complete answer, so the rendered view has
- * fragments to merge; a run that continues a Session gets one answer in one Request.
+ * The body the try route streams, as AMSP frames: `hello`, a `ping`, the run's records with their
+ * ids, then `[DONE]`. A new Session's first message: its session_meta, the Task, the example
+ * question answered by running `date` over two Requests — the tool call's fragments and the
+ * complete call, its decision and output, then the answer's fragments and the complete answer, so
+ * the rendered view has fragments to merge; a run that continues a Session gets one answer in one
+ * Request.
  */
 export function amspTryStream(
   body: unknown,
@@ -1987,6 +1989,8 @@ export function amspTryStream(
   const { agent, lang, now } = run;
   const L = <T>(zh: T, en: T): T => (lang === "zh" ? zh : en);
   const sessionField = (body as { session_id?: unknown } | null)?.session_id;
+  const inputField = (body as { input?: unknown } | null)?.input;
+  const question = typeof inputField === "string" ? inputField : "";
   const sessionId = typeof sessionField === "string" ? sessionField : TRY_SESSION_ID;
   let clock = now;
   const at = (stepMs: number) => new Date((clock += stepMs)).toISOString();
@@ -1996,37 +2000,31 @@ export function amspTryStream(
     output,
     total,
   });
-  const started: AmspEvent = {
-    type: "run.started",
-    at: at(0),
-    session_id: sessionId,
-    agent,
-  };
-  let events: AmspEvent[];
+  const ev = (stepMs: number, payload: object): AmspRecord =>
+    ({ timestamp: at(stepMs), type: "event_msg", payload }) as AmspRecord;
+  const msg = (stepMs: number, payload: object): AmspRecord =>
+    ({ timestamp: at(stepMs), type: "model_msg", payload }) as AmspRecord;
+  const userInput = msg(10, {
+    type: "text",
+    role: "user",
+    text: question,
+    stop_reason: "completed",
+  });
+  let records: AmspRecord[];
   if (typeof sessionField === "string") {
     const answer = usage(38, 3120, 2944);
-    events = [
-      started,
-      { type: "request.started", at: at(120), request: 1 },
-      {
-        type: "text.done",
-        at: at(1400),
-        role: "assistant",
-        text: L(
-          "演示数据只回答第一个问题；真实的 Agent 会在这里接着同一个会话作答。",
-          "The demo answers only the first question; a real agent would carry on this conversation here.",
-        ),
-        stop_reason: "completed",
-      },
-      { type: "request.done", at: at(20), request: 1, status: "completed", usage: answer },
-      {
-        type: "run.done",
-        at: at(10),
-        status: "completed",
-        requests: 1,
-        usage: answer,
-        session_usage: usage(124, 5848, 5184),
-      },
+    const text = L(
+      "演示数据只回答第一个问题；真实的 Agent 会在这里接着同一个会话作答。",
+      "The demo answers only the first question; a real agent would carry on this conversation here.",
+    );
+    records = [
+      ev(0, { type: "task_begin" }),
+      userInput,
+      ev(120, { type: "request_begin", thinking_level: "medium" }),
+      msg(1400, { type: "text", role: "assistant", text, stop_reason: "completed" }),
+      ev(10, { type: "token_usage", session: usage(124, 5848, 5184), request: answer }),
+      ev(10, { type: "request_end", status: "completed" }),
+      ev(10, { type: "task_end" }),
     ];
   } else {
     const call = usage(31, 1376, 1152);
@@ -2039,78 +2037,88 @@ export function amspTryStream(
     // The answer as a model streams it: three fragments, then the complete text.
     const third = Math.ceil(answerText.length / 3);
     const fragments = [0, 1, 2].map((i) => answerText.slice(i * third, (i + 1) * third));
-    events = [
-      started,
+    const id = "toolu_try_date";
+    records = [
       {
-        type: "context.opened",
-        at: at(60),
-        session_id: sessionId,
-        provider: "anthropic",
-        model_id: "claude-sonnet-5",
-        context_window: 200000,
-      },
-      {
-        type: "tools.ready",
-        at: at(20),
+        timestamp: at(0),
+        type: "session_meta",
+        payload: {
+          session_id: sessionId,
+          provider: "anthropic",
+          model_id: "claude-sonnet-5",
+          model_context_window: 200000,
+          system_prompt: "",
+          agent_state: "",
+          workspace: "",
+          source: "api",
+        },
+      } as AmspRecord,
+      ev(10, { type: "task_begin" }),
+      userInput,
+      ev(20, {
+        type: "tool_list_ready",
         tools: ["exec_command", "read_file", "write_file", "edit_file", "web_fetch"].map(
           (name) => ({ name, description: "" }),
         ),
-      },
-      { type: "request.started", at: at(40), request: 1 },
-      {
-        type: "tool_call.delta",
-        at: at(1200),
-        tool_call_id: "toolu_try_date",
+      }),
+      ev(40, { type: "request_begin", thinking_level: "medium" }),
+      msg(1200, {
+        type: "partial_tool_call",
+        event_type: "start",
         name: "exec_command",
+        arguments: "",
+        tool_call_id: id,
+      }),
+      msg(100, {
+        type: "partial_tool_call",
+        event_type: "delta",
+        name: "",
         arguments: '{"cmd": ',
-      },
-      {
-        type: "tool_call.delta",
-        at: at(200),
-        tool_call_id: "toolu_try_date",
+        tool_call_id: id,
+      }),
+      msg(200, {
+        type: "partial_tool_call",
+        event_type: "delta",
         name: "",
         arguments: '"date"}',
-      },
-      {
-        type: "tool_call.done",
-        at: at(100),
-        tool_call_id: "toolu_try_date",
+        tool_call_id: id,
+      }),
+      msg(10, {
+        type: "partial_tool_call",
+        event_type: "stop",
+        name: "",
+        arguments: "",
+        tool_call_id: id,
+      }),
+      msg(10, {
+        type: "tool_call",
         name: "exec_command",
         arguments: '{"cmd":"date"}',
+        tool_call_id: id,
         stop_reason: "completed",
-      },
-      {
-        type: "tool_result.done",
-        at: at(260),
-        tool_call_id: "toolu_try_date",
+      }),
+      ev(10, { type: "approval_decision", decision: "allow", tool_call_id: id }),
+      ev(10, { type: "token_usage", session: call, request: call }),
+      ev(10, { type: "request_end", status: "completed" }),
+      msg(260, {
+        type: "tool_call_output",
         output: `${clockText}\n`,
+        tool_call_id: id,
         stop_reason: "completed",
-      },
-      { type: "request.done", at: at(10), request: 1, status: "completed", usage: call },
-      { type: "request.started", at: at(30), request: 2 },
-      ...fragments.map((text): AmspEvent => ({
-        type: "text.delta",
-        at: at(400),
-        role: "assistant",
-        text,
-      })),
-      {
-        type: "text.done",
-        at: at(10),
-        role: "assistant",
-        text: answerText,
-        stop_reason: "completed",
-      },
-      { type: "request.done", at: at(20), request: 2, status: "completed", usage: answer },
-      {
-        type: "run.done",
-        at: at(10),
-        status: "completed",
-        requests: 2,
-        usage: usage(86, 2728, 2240),
-        session_usage: usage(86, 2728, 2240),
-      },
+      }),
+      ev(30, { type: "request_begin", thinking_level: "medium" }),
+      msg(10, { type: "partial_text", role: "assistant", event_type: "start", text: "" }),
+      ...fragments.map((text) =>
+        msg(400, { type: "partial_text", role: "assistant", event_type: "delta", text }),
+      ),
+      msg(10, { type: "partial_text", role: "assistant", event_type: "stop", text: "" }),
+      msg(10, { type: "text", role: "assistant", text: answerText, stop_reason: "completed" }),
+      ev(10, { type: "token_usage", session: usage(86, 2728, 2240), request: answer }),
+      ev(20, { type: "request_end", status: "completed" }),
+      ev(10, { type: "task_end" }),
     ];
   }
-  return [...events.map((e) => JSON.stringify(e)), "[DONE]"].map((d) => `data: ${d}\n\n`).join("");
+  const hello = `event: hello\ndata: ${JSON.stringify({ session_id: sessionId, agent })}\n\n`;
+  const frames = records.map((r, i) => `id: try-${i + 1}\ndata: ${JSON.stringify(r)}\n\n`);
+  return [hello, "event: ping\ndata: {}\n\n", ...frames, "data: [DONE]\n\n"].join("");
 }

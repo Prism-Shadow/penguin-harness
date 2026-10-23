@@ -83,6 +83,7 @@ import {
 } from "./internal/session-support.js";
 import {
   compactionEnd,
+  isSessionMeta,
   mcpConnectBegin,
   mcpConnectEnd,
   normalizeSessionSource,
@@ -1280,6 +1281,11 @@ export class Agent {
           for (;;) {
             const res = await it.next();
             if (res.done) return res.value;
+            // The child streams its own session_meta when it writes one (its first run's, a
+            // compaction's). The parent's stream carries the child's meta once, as sent above
+            // or by takeMeta: it identifies the nested Session, and each copy reaching the
+            // parent engine would record another `subagent` pointer.
+            if (isSessionMeta(res.value) && !res.value.origin?.length) continue;
             yield withOrigin(res.value, hop);
             if (!inputForwarded) {
               inputForwarded = true;

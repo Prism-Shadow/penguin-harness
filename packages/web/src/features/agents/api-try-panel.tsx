@@ -5,16 +5,18 @@
  * as a program would receive it.
  *
  * The output is one box in two views, switched in its header beside the Session the run named:
- * Rendered, one numbered row per item or event — an item's fragments merged into the content
- * they add up to, the answer included — and Raw, one numbered line per `data:` payload exactly
- * as received, scrolling sideways rather than wrapping. Both views share the box's height and
+ * Rendered, one numbered row per message or record, labelled by its `payload.type` — a message's
+ * `partial_*` fragments merged into the content they add up to, the answer included — and Raw,
+ * one numbered line per `data:` payload as received, scrolling sideways rather than wrapping. Both views share the box's height and
  * scroll inside it. The strip under them names the run's outcome: the status, the Request count,
  * the output and total tokens, the cache-read and cache-write tokens when there are any, and the
- * elapsed time; or, in the danger tone, why there is none.
+ * elapsed time; or, in the danger tone, why there is none: a refusal, a stream that ended before
+ * `[DONE]`, or a run that did not reach its end (its last `task_begin` never closed).
  *
  * Running again continues the same Session, as a program does with `session_id`; New
  * conversation starts over. Stop asks the Session's abort route, so the stream still ends with
- * its `run.done`; an approval the Agent's API approval mode asks for is answered on its row.
+ * `[DONE]`; an approval the Agent's API approval mode asks for — found by the SDK's approval loop
+ * — is answered on its `tool_call` row, and the SDK posts the answer.
  * Leaving the tab mid-run closes the connection, which aborts the run on the server.
  *
  * `ApiTryView` is the section for one state, with no state of its own; the reducer and the
@@ -39,7 +41,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useAgentLocation } from "../../lib/agent-location";
 import {
-  answerApproval,
+  approvalDesk,
   initialTryState,
   rawLines,
   reduceTry,
@@ -47,8 +49,17 @@ import {
   runTry,
   stopTry,
   tryBody,
+  unfinished,
 } from "./api-try-log";
-import type { TryEventRow, TryField, TryItemRow, TryRow, TryState, TryView } from "./api-try-log";
+import type {
+  ApprovalDesk,
+  TryEventRow,
+  TryField,
+  TryItemRow,
+  TryRow,
+  TryState,
+  TryView,
+} from "./api-try-log";
 
 export interface ApiTryViewProps {
   input: string;
@@ -61,7 +72,7 @@ export interface ApiTryViewProps {
   view: TryView;
   result: TryState["result"];
   error: TryState["error"];
-  /** The body ended before `run.done`. */
+  /** The body ended before `[DONE]`. */
   broken: boolean;
   /** Nothing can run (the admin has the Agent API off); `disabledReason` says why. */
   disabled: boolean;
@@ -181,21 +192,20 @@ function fieldLine(fields: readonly TryField[], after?: ReactNode) {
   );
 }
 
-/** A merged item's content: prose in the text face, arguments and output in mono. */
-function itemContent(row: TryItemRow, live: boolean) {
+/** A merged message's content: prose in the text face, arguments and output in mono. */
+function itemContent(row: TryItemRow, live: boolean, onApprove: ApiTryViewProps["onApprove"]) {
   const caret = live && row.open ? <StreamingCaret /> : null;
   const tags =
     row.tags.length > 0 ? (
       <span className="mr-2 font-mono text-xs text-fg-muted">{row.tags.join(" ")}</span>
     ) : null;
-  switch (row.item) {
+  switch (row.label) {
     case "text":
     case "thinking":
-    case "summary":
       return (
         <p
           className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${
-            row.item === "text" ? "text-fg" : "text-fg-muted"
+            row.label === "text" ? "text-fg" : "text-fg-muted"
           }`}
         >
           {tags}
@@ -205,6 +215,7 @@ function itemContent(row: TryItemRow, live: boolean) {
       );
     case "tool_call": {
       const args = prettyArguments(row.text);
+      const approval = row.approval;
       return (
         <div className="font-mono text-xs leading-5">
           <p className="break-words">
@@ -218,10 +229,18 @@ function itemContent(row: TryItemRow, live: boolean) {
               {caret}
             </pre>
           )}
+          {approval?.pending === true && (
+            <div className="mt-2">
+              <ApprovalButtons
+                labels={{ allow: S.chat.approve, deny: S.chat.deny }}
+                onDecide={(decision) => onApprove(approval.toolCallId, decision)}
+              />
+            </div>
+          )}
         </div>
       );
     }
-    case "tool_result":
+    case "tool_call_output":
       return (
         <div className="font-mono text-xs leading-5">
           {(tags !== null || row.images !== undefined) && (
@@ -255,28 +274,12 @@ function itemContent(row: TryItemRow, live: boolean) {
   }
 }
 
-/**
- * A standalone event's content: its key fields, and under them, while an approval waits, the
- * conversation view's own Allow and Deny.
- */
-function eventContent(row: TryEventRow, onApprove: ApiTryViewProps["onApprove"]) {
-  const approval = row.approval;
-  return (
-    <>
-      {fieldLine(row.fields)}
-      {approval?.pending === true && (
-        <div className="mt-2">
-          <ApprovalButtons
-            labels={{ allow: S.chat.approve, deny: S.chat.deny }}
-            onDecide={(decision) => onApprove(approval.toolCallId, decision)}
-          />
-        </div>
-      )}
-    </>
-  );
+/** A standalone record's content: its key fields. */
+function eventContent(row: TryEventRow) {
+  return fieldLine(row.fields);
 }
 
-/** The rendered view: one numbered row per item or event, the label before the content. */
+/** The rendered view: one numbered row per message or record, the label before the content. */
 function renderedRows(p: ApiTryViewProps) {
   return (
     <ol className="grid grid-cols-[auto_minmax(0,1fr)] gap-y-2 py-3 pr-3 sm:grid-cols-[auto_auto_minmax(0,1fr)]">
@@ -298,7 +301,7 @@ function renderedRows(p: ApiTryViewProps) {
             {rowLabel(row)}
           </span>
           <div className="col-start-2 min-w-0 sm:col-start-auto">
-            {row.kind === "item" ? itemContent(row, p.running) : eventContent(row, p.onApprove)}
+            {row.kind === "item" ? itemContent(row, p.running, p.onApprove) : eventContent(row)}
           </div>
         </li>
       ))}
@@ -338,7 +341,9 @@ export function ApiTryView(p: ApiTryViewProps) {
       ? `${p.error.status} ${p.error.code} — ${p.error.message}`
       : p.broken
         ? S.agent.apiTryStreamBroken
-        : null;
+        : run !== undefined && unfinished(run)
+          ? S.agent.apiTryUnfinished
+          : null;
 
   return (
     // A flush card, the page's box whose bands run edge to edge: the theme draws its frame as it
@@ -386,7 +391,7 @@ export function ApiTryView(p: ApiTryViewProps) {
 
       {/* The output's header: the Session on the left, the views on the right. One line from sm
           up, so neither a view switch nor a long id pushes the switch down — a narrow box cuts the
-          id short, which is whole in its copy button and on the run.started row; below sm the
+          id short, which is whole in its copy button and in the raw view's hello; below sm the
           Session and the switch take a line each. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[color:inherit] bg-[var(--ui-code-bg)] px-3 py-1.5 sm:flex-nowrap">
         {p.sessionId !== null && (
@@ -453,7 +458,7 @@ export function ApiTryView(p: ApiTryViewProps) {
         </OutputBody>
       )}
 
-      {/* The outcome: what run.done reported, or why the stream gave none. */}
+      {/* The outcome: what the run's records come to, or why the stream gave none. */}
       {(run !== undefined || notice !== null) && (
         <div
           data-slot="foot"
@@ -506,6 +511,8 @@ export function ApiTryPanel({
   /** The machine the Agent lives on: the run, its Session and its answers go there. */
   const machineId = useAgentLocation();
   const connection = useRef<AbortController | null>(null);
+  /** The current run's open questions: a button's answer goes back to the SDK through it. */
+  const desk = useRef<ApprovalDesk | null>(null);
   // Leaving mid-run closes the connection, and the server aborts the run.
   useEffect(() => () => connection.current?.abort(), []);
   const disabled = disabledReason !== undefined;
@@ -528,7 +535,14 @@ export function ApiTryPanel({
         if (state.running || disabled || state.input.trim() === "") return;
         const controller = new AbortController();
         connection.current = controller;
-        void runTry({ projectId, agentId, machineId }, dispatch, tryBody(state), controller.signal);
+        desk.current = approvalDesk(dispatch);
+        void runTry(
+          { projectId, agentId, machineId },
+          dispatch,
+          tryBody(state),
+          controller.signal,
+          desk.current,
+        );
       }}
       onStop={() => {
         stopTry(state, connection.current, machineId).catch((e: unknown) =>
@@ -538,12 +552,7 @@ export function ApiTryPanel({
       onNewSession={() => dispatch({ type: "reset" })}
       onView={(view) => dispatch({ type: "view", view })}
       onApprove={async (toolCallId, decision) => {
-        if (state.sessionId === null) return;
-        try {
-          await answerApproval(state.sessionId, toolCallId, decision, dispatch, machineId);
-        } catch (e) {
-          toastError(apiErrorText(e));
-        }
+        desk.current?.answer(toolCallId, decision);
       }}
     />
   );

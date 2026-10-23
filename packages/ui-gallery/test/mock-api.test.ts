@@ -12,6 +12,8 @@
  */
 import { describe, expect, it } from "vitest";
 import * as api from "../../web/src/api/endpoints";
+import { runTry } from "../../web/src/features/agents/api-try-log";
+import type { TryAction } from "../../web/src/features/agents/api-try-log";
 import { ApiError, UNMOCKED } from "../src/app/mock/errors";
 import { IDS } from "../src/app/mock/ids";
 import { answerAsResponse } from "../src/app/mock/fetch-shim";
@@ -355,50 +357,43 @@ describe("the mocked API", () => {
     expect((await api.putAgentApi(project, agent, { open: true }, null)).serverEnabled).toBe(false);
   });
 
-  it("streams a Try run as the try route does: the example run, then a continued one", async () => {
+  it("streams a Try run as the try route does, read by the SDK: the example run, then a continued one", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
-    const project = store.f.project.projectId;
-    const agent = store.f.agents[0]!.agentId;
-    /** The body's `data:` payloads, in order. */
-    const payloads = async (res: Response) =>
-      (await res.text())
-        .split("\n\n")
-        .filter((block) => block !== "")
-        .map((block) => block.replace(/^data: /, ""));
-    const typeOf = (payload: string) => (JSON.parse(payload) as { type: string }).type;
+    const target = { projectId: store.f.project.projectId, agentId: store.f.agents[0]!.agentId };
+    /** One Try run as the panel drives it: the actions it dispatched, by type. */
+    const tryOnce = async (body: { input: string; session_id?: string }) => {
+      const actions: TryAction[] = [];
+      await runTry(target, (a) => actions.push(a), body, new AbortController().signal);
+      const kinds = actions.flatMap((a) => {
+        if (a.type !== "record") return [];
+        const r = a.record;
+        return [r.type === "session_meta" ? "session_meta" : (r.payload as { type: string }).type];
+      });
+      const done = actions.find((a) => a.type === "done");
+      const hello = actions.find((a) => a.type === "hello");
+      return { kinds, done, hello };
+    };
 
-    const first = await api.tryAgentApi(
-      project,
-      agent,
-      { input: "What time is it now?" },
-      { machineId: null },
-    );
-    expect(first.headers.get("content-type")).toMatch(/^text\/event-stream/);
-    const run = await payloads(first);
-    expect(run.at(-1)).toBe("[DONE]");
-    const types = run.slice(0, -1).map(typeOf);
-    expect(types[0]).toBe("run.started");
-    expect(types).toContain("tool_call.done");
-    expect(types).toContain("tool_result.done");
-    expect(types.at(-1)).toBe("run.done");
+    const first = await tryOnce({ input: "What time is it now?" });
+    expect(first.kinds.slice(0, 3)).toEqual(["session_meta", "task_begin", "text"]);
+    expect(first.kinds).toContain("tool_call");
+    expect(first.kinds).toContain("tool_call_output");
+    expect(first.kinds.at(-1)).toBe("task_end");
+    expect(first.done).toMatchObject({ result: { status: "completed", requests: 2 } });
+    const sessionId = first.hello?.type === "hello" ? first.hello.sessionId : "";
 
-    const sessionId = (JSON.parse(run[0]!) as { session_id: string }).session_id;
-    const next = await payloads(
-      await api.tryAgentApi(
-        project,
-        agent,
-        { input: "And now?", session_id: sessionId },
-        { machineId: null },
-      ),
-    );
-    expect(next.slice(0, -1).map(typeOf)).toEqual([
-      "run.started",
-      "request.started",
-      "text.done",
-      "request.done",
-      "run.done",
+    const next = await tryOnce({ input: "And now?", session_id: sessionId });
+    expect(next.kinds).toEqual([
+      "task_begin",
+      "text",
+      "request_begin",
+      "text",
+      "token_usage",
+      "request_end",
+      "task_end",
     ]);
-    expect(JSON.parse(next[0]!)).toMatchObject({ session_id: sessionId });
+    expect(next.hello).toMatchObject({ sessionId });
+    expect(next.done).toMatchObject({ result: { status: "completed", sessionId } });
   });
 
   it("serves the group tables a new Project writes, and takes a protocol or a cleared key on any group", async () => {

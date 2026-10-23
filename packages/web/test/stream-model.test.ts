@@ -42,6 +42,8 @@
  * - The Trace's Task records (task_begin / task_end) render nothing and move no Task: history
  *   with them rebuilds the items a history without them does, a Task stopped before any
  *   request included.
+ * - A Session's first message streams its session_meta ahead of task_begin: it renders nothing
+ *   and marks no model change.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -484,6 +486,16 @@ describe("approvals and events", () => {
     expect(banner.running).toBe(false);
     expect(banner.status).toBe("retryable");
     expect(banner.errorMessage).toBe("the response contained no usable summary");
+  });
+
+  it("a Session's first message streams its session_meta ahead of task_begin, and nothing renders for it", () => {
+    const m = createStreamModel();
+    pushMessage(m, meta("s1"));
+    pushMessage(m, taskBegin());
+    pushMessage(m, userText("first question"));
+    expect(items(m).map((i) => i.kind)).not.toContain("model_change");
+    expect(items(m)).toHaveLength(1);
+    expect(m.contextModel).toMatchObject({ sessionId: "s1" });
   });
 
   it("a main-session session_meta on another model pushes a model_change item after the compaction row; the window's first meta, a same-pair rewrite and a nested child's meta push none", () => {

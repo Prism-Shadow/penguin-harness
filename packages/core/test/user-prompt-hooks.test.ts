@@ -256,7 +256,8 @@ describe("Session user-prompt hooks", () => {
     const out = await collect(session.run([userText(prompt)]));
 
     // The Prompt itself is never yielded; what the hooks made of it is, ahead of the reply.
-    expect(out.map(shape).slice(0, 4)).toEqual([
+    expect(out.map(shape).slice(0, 5)).toEqual([
+      "session_meta",
       "task_begin",
       "harness:ctx A",
       "hook:user_prompt:b-broken",

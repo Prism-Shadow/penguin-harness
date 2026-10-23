@@ -138,6 +138,8 @@ import type {
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
+// The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
+import type { ApprovalsResponse } from "../../../../amsp/src/types";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
@@ -1347,6 +1349,13 @@ router
     return json({ sessionId } satisfies TaskCreateResponse, 202);
   })
   .get("/api/sessions/:sessionId/goal", (): GoalResponse => ({ goal: null }))
+  // The Agent API's approvals resource on the cookie door, which the API tab's Try it reads
+  // through the SDK: the demo's runs decide their calls themselves, so a look with `wait` holds a
+  // moment, as the server's would, and finds nothing.
+  .get("/api/sessions/:sessionId/approvals", async ({ query }): Promise<ApprovalsResponse> => {
+    if (query.get("wait") !== null) await new Promise((resolve) => setTimeout(resolve, 1000));
+    return { approvals: [] };
+  })
   .post("/api/sessions/:sessionId/approvals/:toolCallId", ({ store, params, body }) => {
     const decision = record(body).decision === "deny" ? "deny" : "allow";
     if (!store.decide(params.sessionId!, params.toolCallId!, decision)) {

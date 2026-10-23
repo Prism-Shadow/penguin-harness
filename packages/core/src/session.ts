@@ -124,7 +124,8 @@ export interface SessionConfig {
    * composition layer assembles them from the Agent State as it is then — and the records it
    * produced while opening (its MCP connect pair and tool_list_ready, through `opts.emit`).
    * The Session adopts the meta as its current one (`metaMessage`); the engine yields the
-   * records live, writes meta and records at the head of the rotated Trace file, and seeds
+   * records live, writes meta and records at the head of the rotated Trace file (streaming the
+   * meta as it writes it), and seeds
    * the new LLM's cumulative session counts itself. Context compaction is unavailable if not
    * provided. The hooks it answers with become the Session's (see
    * {@link SessionOpenedContext}).
@@ -445,7 +446,7 @@ export class Session {
       ...(config.maxTurns !== undefined ? { maxTurns: config.maxTurns } : {}),
       // Context compaction: the new-context factory + resolved settings; the engine writes the
       // context's session_meta (and tool_list_ready) at the start of the new Trace file after
-      // splitting. The factory is wrapped so the opener is told the model a switch in flight is
+      // splitting, and streams the meta then. The factory is wrapped so the opener is told the model a switch in flight is
       // moving to, and the Session follows the opened context (see `adoptContext`).
       ...(config.openNextContext
         ? {
@@ -563,7 +564,10 @@ export class Session {
    * Runs a Task to completion and streams out OmniMessage. `newMessages` is this call's Prompt
    * (only the newly added input); `opts` carries the abort signal `signal` and the per-call
    * approval callback `approve` (the engine calls it once per tool_call within a turn).
-   * On the first run, `session_meta` is written to the Trace first.
+   * On the first run, `session_meta` is written to the Trace first, and yielded first: the main
+   * Session's every `session_meta` is on the stream exactly once, when it is written — this one,
+   * a compaction's new context's (behind the Task's `task_begin`, when its first write opens the
+   * file) and a model switch's (see `switchModel`).
    *
    * Every Task is bracketed by a `task_begin` / `task_end` pair (see TaskBeginPayload), written
    * to the Trace and yielded: `task_begin` comes before anything the Task writes — its input
@@ -661,9 +665,14 @@ export class Session {
       // engine's: a Task record must not open the file a completed compaction left pending —
       // the summary is only in the old file until the next context's first message opens the
       // new one (see TaskBeginPayload).
-      await this.ensureMetaWritten();
+      if (await this.ensureMetaWritten()) yield this.meta;
       yield* this.taskRecord(taskBegin());
-      if (continued) yield input[0]!;
+      if (continued) {
+        // The continued Task's input is the first thing it writes: a context a compaction left
+        // pending opens on it, so the new file's session_meta streams ahead of it, as on disk.
+        if (this.engine) yield* this.engine.openPendingContext();
+        yield input[0]!;
+      }
       // Manual iteration (not for-await) so the engine's return value — how the Task ended —
       // is read: a cutoff means the model never finished, which no `continue` may override.
       const it = this.runTask(input, taskOpts);
@@ -801,9 +810,9 @@ export class Session {
   }
 
   /**
-   * First-run bootstrap: writes `session_meta` (a run has already written it, ahead of its
-   * Task's `task_begin`; a compaction or a model switch on a resumed Session gets here first),
-   * opens the first context and builds the
+   * First-run bootstrap: writes and yields `session_meta` (a run has already done both, ahead
+   * of its Task's `task_begin`; a compaction or a model switch on a Session whose meta is not
+   * written yet gets here first), opens the first context and builds the
    * engine — streaming the phase as it happens. The bootstrap publishes its records
    * through `emit` — with MCP Servers configured, the `mcp_connect_begin` /
    * `mcp_connect_end` pair around the connect + discovery wait (overall status +
@@ -831,7 +840,7 @@ export class Session {
    * a fresh attempt.
    */
   private async *ensureReady(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
-    await this.ensureMetaWritten();
+    if (await this.ensureMetaWritten()) yield this.meta;
     if (this.engine) return true;
     const records: OmniMessage[] = [];
     const { queue, result: work } = pumpOpener((emit) => this.bootstrap({ emit }));
@@ -1109,11 +1118,28 @@ export class Session {
     return (init?.carryOver?.length ?? 0) > 0 || init?.pendingSummary !== undefined;
   }
 
-  /** Writes `session_meta` to the Trace before the first run/compaction; best-effort — failure doesn't interrupt the run. */
-  private async ensureMetaWritten(): Promise<void> {
-    if (this.metaWritten) return;
+  /**
+   * Whether the next Task opens a new Trace file: a compaction (in this process, or the one a
+   * resumed Trace ended on) left the next context's file to its first write. That Task's stream
+   * then carries the new file's `session_meta` right behind its `task_begin` and ahead of its
+   * input — the order the Trace has them — so a host that echoes the input waits for it.
+   */
+  contextOpenPending(): boolean {
+    if (this.engine) return this.engine.contextOpenPending();
+    return this.trace !== undefined && this.engineDeps.initialState?.pendingTraceRotation === true;
+  }
+
+  /**
+   * Writes `session_meta` to the Trace before the first run/compaction; best-effort — failure
+   * doesn't interrupt the run. True when this call was the write (attempted, whatever its
+   * outcome): the caller then yields the meta, so the main Session's `session_meta` is on the
+   * stream exactly once, at the moment it is written.
+   */
+  private async ensureMetaWritten(): Promise<boolean> {
+    if (this.metaWritten) return false;
     await this.writeTrace(this.meta, "session_meta");
     this.metaWritten = true;
+    return true;
   }
 
   /** Best-effort `session_meta` Trace write (warn-and-continue stance): a failure logs and never interrupts the run. */

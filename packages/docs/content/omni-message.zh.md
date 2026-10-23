@@ -5,6 +5,8 @@ description: OmniMessage 是统一的消息协议：SDK 产出它，Trace 存储
 
 OmniMessage 是 PenguinHarness 的统一消息协议。SDK 产出 OmniMessage 对象，Trace 逐行存储，Server 经 SSE 原样推送。流出去的、存下来的和模型看到的是同一种结构，前端、后端与存储之间没有第二套格式。
 
+这些消息也是 [AMSP](/amsp) 的记录，即 [Agent API](/agent-api) 向 PenguinHarness 之外的程序提供的流：Trace 的每一行都是一条合法的 AMSP 记录，因此 OmniMessage 的改动就是这个公开协议的改动。
+
 本页先讲信封和三类消息，再逐字段列出全部 payload，最后是贯穿整个协议的规则：流式纪律、`stop_reason`、`origin` 与保真字段。类型定义见 `packages/amsp/src/omnimessage/types.ts`（`@prismshadow/amsp` 包），`@prismshadow/penguin-core` 原样再导出。
 
 ## 信封
@@ -473,7 +475,7 @@ type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 | 落盘的 Trace | `session_meta` + 完整 `model_msg` + 全部 `event_msg`（不存分片，也不存带 `origin` 的消息） |
 | Server 的 SSE 推送 | 与 SDK 边界相同，原样的单行 JSON，见 [Server API](/server-api) |
 
-[Agent API](/agent-api) 不推送 OmniMessage，它的事件流是 [AMSP](/amsp)：服务器为 PenguinHarness 之外的程序，对同一条实时流所做的投影。OmniMessage 不因此改变，没有新增任何字段、类型或取值。
+[Agent API](/agent-api) 以 [AMSP](/amsp) 记录的形式推送同样的消息，外加控制帧，不含 Web App 的服务器事件。
 
 消息沿这些通道传递的机制与各项顺序保证，见[消息流转与时序](/message-flow)。
 

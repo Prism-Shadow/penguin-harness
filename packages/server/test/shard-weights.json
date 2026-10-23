@@ -13,7 +13,6 @@
   "test/agent-transfer.test.ts": 13.4,
   "test/agents-delete-employed.test.ts": 3.5,
   "test/amsp-routes.test.ts": 5.4,
-  "test/amsp-translate.test.ts": 0,
   "test/api-token.test.ts": 6.3,
   "test/archived-sessions.test.ts": 14.3,
   "test/asset-archives.test.ts": 0.1,

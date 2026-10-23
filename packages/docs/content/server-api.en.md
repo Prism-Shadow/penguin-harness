@@ -867,6 +867,8 @@ Two conventions apply to every route here. A Session the caller cannot access al
 | GET | `/trace-image?file=&ordinal=[&i=]` | One image of a Trace record, as a windowed `/messages` page references it |
 | POST | `/fork` | Forks an idle Session after a completed assistant reply: `{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | The SSE event stream; see [Streaming (SSE)](#streaming-sse) |
+| GET | `/amsp` | The Session's AMSP stream: its records and `ping`, without the server events `/stream` adds |
+| GET | `/approvals[?wait=]` | The tool calls waiting for a decision: `{approvals: [{tool_call, origin?}]}` |
 | GET | `/context` | What the current model context is made of, and where compaction will start |
 | GET | `/goal` | The Session's most recent goal run |
 
@@ -880,6 +882,8 @@ Two conventions apply to every route here. A Session the caller cannot access al
 - A windowed page serves images by reference. In each record that carries a `tracePosition`, a PNG, JPEG, GIF or WebP `data:` URL, whether a user's `image_url` or an entry of a tool output's `images`, is replaced by `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`, with `&i=<k>` for the k-th entry of `images`. That route answers the decoded image with its own type, `Cache-Control: private, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`. It returns 404 `trace_image_not_found` when the record holds no such image, and 400 for a missing or malformed parameter. Subagent messages, other image types and the full read keep their `data:` URLs.
 - `GET /context` returns the parts the current model context is made of, plus `compactionThreshold`: the context size, in tokens, at which the Session's next request starts compaction. That threshold is the agent's `compaction.max_context_length`, capped by the room the model's context window leaves. It is `null` when compaction is disabled, when the agent's config cannot be read, or when the threshold is not below the window. The route reads the newest Trace file on every call, so the figures are a snapshot rather than a live counter.
 - `GET /goal` returns `{goal}`, which is `null` if the Session never ran a goal, or otherwise `{objective, status, budget, used, rounds}`. `status` is `active`, `complete`, `blocked`, `budget_limited` or `aborted`, and a `budget` of -1 means unlimited. A goal lives only inside its run, so a goal that still reads as active while the Session is not running is reported as `aborted`. See [Goal mode](/goal-mode).
+- `GET /amsp` serves the Agent API's Session stream, the same handler as `GET /api/amsp/v1/sessions/:sessionId/stream`, to a signed-in reader or the local API token: each record with its `id:`, `event: ping` at once and every 20 seconds, and `event: resync_required` with `data: {}` when the `Last-Event-ID` (or `lastEventId`) it resumes from has left the buffer. It writes no `server_event`, no initial `task_state` snapshot and no replayed `approval_request`. See [The Session stream](/amsp#the-session-stream).
+- `GET /approvals` is the Agent API's approvals resource, the same handler as `GET /api/amsp/v1/sessions/:sessionId/approvals`: each call's `tool_call` payload, with `origin` for a subagent's call. With `wait=<seconds>`, clamped to 1–60, an empty answer is held until a call waits or the time runs out; a `wait` that is not a whole number is 400. Answer through `POST /approvals/:toolCallId`. See [Approvals](/amsp#approvals).
 
 ### The `live` field on GET /messages
 
@@ -1324,6 +1328,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | `GET /api/sessions/:sessionId/stream` | The Session's message stream and run events, including `session_created` for its subagent Sessions and the goal-mode events |
+| Per Session, as AMSP | `GET /api/sessions/:sessionId/amsp` | The Session's records and `ping` only, as the Agent API serves them; see [The Session stream](/amsp#the-session-stream) |
 | Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_archived`, `session_deleted`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated`, company mode's `org_*` events, and for admins `machines_changed` |
 | Per Project's machines | `GET /api/projects/:projectId/machines/events` | Every connected machine's own events, each tagged with the machine it came from, merged from the hub's one subscription per machine (**One event stream per machine within the socket hub**) |
 

@@ -238,6 +238,13 @@ export interface RuntimeSession {
    */
   hasPendingInput?(): boolean;
   /**
+   * Whether the next Task opens a new Trace file (core `Session.contextOpenPending`): a
+   * compaction left the next context's file to its first write, so that Task streams the new
+   * `session_meta` behind its `task_begin`, and the input echo waits for it (see InputEcho).
+   * Optional: test fakes may omit it, reading as no.
+   */
+  contextOpenPending?(): boolean;
+  /**
    * Runs the named package's `user_prompt` hook (core `Session.runUserPromptHook` — hooks
    * run in core and nowhere else); null = the package is not installed or names no such
    * command. Optional: test fakes may omit it, reading as not installed.
@@ -2298,8 +2305,12 @@ export class SessionManager {
     // if the call is still in the queue at that point, it never produced a session_meta.
     const subagentPrompts = new Map<string, string>();
     // Re-fetches the channel per publish, like the loop below (see the comment there).
-    const echo = new InputEcho(titleSource?.echo ?? [], (m) =>
-      this.deps.channels.get(entry.sessionId).publish(m),
+    // Read before the run's first step: the generator has not started, so this is the state
+    // the run opens on.
+    const echo = new InputEcho(
+      titleSource?.echo ?? [],
+      (m) => this.deps.channels.get(entry.sessionId).publish(m),
+      entry.session.contextOpenPending?.() === true,
     );
     try {
       for await (const msg of gen) {
@@ -2320,11 +2331,14 @@ export class SessionManager {
             entry.pendingSteering.shift();
             this.publishState(entry, entry.status);
           }
-          // The main session's own session_meta is streamed when a model switch opens its new
-          // context, and the runtime is on that context's model by then: the entry and the row
-          // follow it here, ahead of the publish below, so a client that re-reads the Session
-          // on this record already finds the new model. The new context's file is open too, its
-          // records on it, and what the context it replaced still held pending went with it.
+          // The main session's own session_meta is streamed whenever it is written: a Session's
+          // first message, a compaction's new context (when its file opens), a model switch.
+          // The runtime is on that context's model by then: the entry and the row follow it
+          // here, ahead of the publish below, so a client that re-reads the Session on this
+          // record already finds the new model (the first meta and a compaction's name the
+          // model the entry is on, and nothing moves). The context's file is open too, its
+          // records on it — so what the bootstrap held for GET /messages is in the Trace — and
+          // what the context it replaced still held pending went with it.
           if (isSessionMeta(msg)) {
             this.syncEntryModel(entry);
             entry.pendingBootstrap = [];

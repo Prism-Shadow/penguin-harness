@@ -440,6 +440,29 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe("after prompt\n");
   });
 
+  it("prints nothing for the session_meta and task_begin a Session's first message streams", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(
+      sessionMeta({
+        session_id: "s",
+        provider: "custom",
+        model_id: "m",
+        model_context_window: 1,
+        system_prompt: "sp",
+        agent_state: "/a",
+        workspace: "/w",
+        source: "user",
+      }),
+    );
+    r.handle(taskBegin());
+    expect(stripAnsi(text())).toBe("");
+    r.handle(partialText("start", ""));
+    r.handle(partialText("delta", "hello"));
+    r.handle(partialText("stop", "", "completed"));
+    expect(stripAnsi(text())).toBe("hello\n");
+  });
+
   it("does not print token_usage per turn; endTask prints [stats] line with per-task deltas", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);

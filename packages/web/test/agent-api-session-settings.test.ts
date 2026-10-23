@@ -208,8 +208,8 @@ describe("API Session settings", () => {
     expect(copied[0]).toContain(`${window.location.origin}/api/amsp/v1`);
     expect(copied[0]).toContain(`${PROJECT_ID}/${AGENT_ID}`);
     expect(copied[0]).toContain("PENGUIN_AGENT_KEY");
-    expect(copied[0]).toContain("stream()");
-    expect(copied[0]).toContain("await run()");
+    expect(copied[0]).toContain("run()");
+    expect(copied[0]).toContain("await ask()");
   });
 
   it("disables every picker for a member who is not the owner", async () => {

@@ -521,7 +521,8 @@ export class ContextEngine {
    * Set to true once compaction completes: Trace rotation is deferred until the next
    * message that needs writing (see `write`) — so that if no further messages follow the
    * compaction, we don't create an empty file containing only session_meta. A model switch is
-   * the one exception: it performs the rotation at once (see `switchContext`).
+   * the one exception: it performs the rotation at once (see `switchContext`). Whoever opens
+   * the file streams its session_meta (see `openPendingContext`).
    */
   private pendingTraceRotation = false;
   /**
@@ -773,6 +774,9 @@ export class ContextEngine {
     // messages, and resumption replay best-effort reconstructs from original messages.
     // Exception: the compaction summary, which is the new
     // context's first input record, is written as usual.
+    // The first write after a compaction opens the new context's file: its session_meta
+    // streams here, ahead of the input the host echoes, in the order the Trace has them.
+    yield* this.openPendingContext();
     if (summary) await this.write(summary);
     for (const msg of newMessages) await this.write(msg);
     // User-prompt hooks (RunOptions.userPrompt, wired by the Session from the Agent's
@@ -1024,6 +1028,7 @@ export class ContextEngine {
             // into the summary, with no hardcoded continuation instruction appended. Queued
             // steering (including anything that arrived during the compaction request) is
             // delivered right after the summary as standalone [user_steering] user turns.
+            yield* this.openPendingContext();
             await this.write(result.summary!);
             const injected = [
               ...(yield* this.deliverBackgroundNotices()),
@@ -1134,6 +1139,15 @@ export class ContextEngine {
     });
   }
 
+  /**
+   * Whether a compaction left the next context's Trace file to open: the next write opens it and
+   * streams its session_meta (see `openPendingContext`). A host that publishes a run's input itself
+   * holds it behind that record, so the stream keeps the Trace's order.
+   */
+  contextOpenPending(): boolean {
+    return this.pendingTraceRotation && this.deps.trace !== undefined;
+  }
+
   async *compact(opts?: {
     signal?: AbortSignal | undefined;
     /** Compacts in this mode whatever the settings say (a model switch always summarizes). */
@@ -1210,14 +1224,17 @@ export class ContextEngine {
       );
     }
     // The eager open: session_meta and the opener's records head the new file, then the summary.
-    await this.rotateIfPending();
+    const opened = await this.rotateIfPending();
     if (this.openingSummary) await this.write(this.openingSummary);
     if (this.pendingSummary) {
       // On the file now: from here it is pending input, which a run sends without writing.
       this.pendingCarryOver = [this.pendingSummary, ...this.pendingCarryOver];
       this.pendingSummary = null;
     }
-    if (this.contextMeta) yield this.contextMeta;
+    // The switch's last record, and its only stream of the new file's session_meta (yielded
+    // without a Trace sink too: the switch's own stream says where the Session moved).
+    const meta = opened ?? this.contextMeta;
+    if (meta) yield meta;
     return "completed";
   }
 
@@ -2119,8 +2136,9 @@ export class ContextEngine {
    * usage counter. The records the opener emits while opening (its MCP connect pair, its
    * tool_list_ready) are yielded live as they come, so a slow connect is never a silent gap.
    * Trace **does not** split files immediately — that's deferred until the next message that
-   * needs writing, when it rotates and opens with the context's session_meta and records (see
-   * `write`), avoiding an empty file if no further messages follow the compaction; a model
+   * needs writing, when it rotates and opens with the context's session_meta and records,
+   * streaming the meta (see `openPendingContext`), avoiding an empty file if no further messages
+   * follow the compaction; a model
    * switch opens the file right after this returns instead (see `switchContext`).
    */
   private async *startNewContext(): AsyncGenerator<OmniMessage> {
@@ -2317,12 +2335,14 @@ export class ContextEngine {
   /**
    * Performs the deferred Trace rotation when one is pending: splits the file and opens it with
    * the current context's session_meta and records (its MCP connect pair, if any, and its
-   * toolset). Best-effort like every Trace write. Reached through `write` by the first message
-   * after a compaction, and directly by `switchContext`, which opens the file at once.
+   * toolset). Best-effort like every Trace write. Returns the session_meta it wrote (attempted,
+   * whatever the outcome), for the caller to stream; null when nothing was pending. Reached
+   * through `openPendingContext` by the first write after a compaction, through `write` as a
+   * backstop, and directly by `switchContext`, which opens the file at once.
    */
-  private async rotateIfPending(): Promise<void> {
+  private async rotateIfPending(): Promise<OmniMessage | null> {
     const trace = this.deps.trace;
-    if (!trace || !this.pendingTraceRotation) return;
+    if (!trace || !this.pendingTraceRotation) return null;
     this.pendingTraceRotation = false;
     try {
       if (trace.rotate) await trace.rotate();
@@ -2332,12 +2352,28 @@ export class ContextEngine {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[trace] rotate failed: ${message}\n`);
     }
+    return this.contextMeta ?? null;
+  }
+
+  /**
+   * Opens the file a compaction left pending, when one is, and streams its session_meta: the
+   * main Session's every session_meta is on the stream exactly once, at the moment it is
+   * written. Called right before the write that opens the file — the run's input (a Task's
+   * first write, after its `task_begin`; the Session calls it before yielding a continued
+   * Task's input) and a mid-Task summary. The records the opener emitted were streamed when the
+   * context opened and are only written here.
+   */
+  async *openPendingContext(): AsyncGenerator<OmniMessage> {
+    const opened = await this.rotateIfPending();
+    if (opened) yield opened;
   }
 
   /**
    * Trace writes are **best-effort**: observability should never interrupt the ReAct
    * loop, so write failures only warn rather than throw. The first write after compaction first
-   * performs the deferred Trace rotation (see `rotateIfPending`).
+   * performs the deferred Trace rotation (see `rotateIfPending`) — a backstop: the two writes
+   * that come first after a compaction (a run's input, a mid-Task summary) open the file through
+   * `openPendingContext`, which streams its session_meta.
    */
   private async write(msg: OmniMessage): Promise<void> {
     await this.rotateIfPending();

@@ -1,7 +1,7 @@
 ---
 name: penguin-sdk
 description: Use to build a standalone external program with an agent in it, or connect an external program to a Penguin agent. For an app inside PenguinHarness with its own Agent and workbench tab, use agent-initialization and penguin-plugin directly; no SDK/API question applies. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Workbenches — the tabs and pages beside the chat that an Agent keeps for itself inside PenguinHarness — are the penguin-plugin skill's.
-version: 2026.10.19.1
+version: 2026.10.23.1
 ---
 
 # Penguin Harness SDK and Agent API
@@ -21,7 +21,7 @@ To have an agent perform a task for you, use the `run_subagent` tool: both ways 
 
 **The API: Penguin's Agent API, over AMSP.**
 
-- *What it is.* The program calls an Agent that lives in PenguinHarness, over HTTP. The Penguin server runs each turn and streams it back as AMSP events, and the program continues a conversation by its Session id. TypeScript uses the `@prismshadow/amsp` client (`AgentClient`); any other language, or curl, speaks HTTP and SSE directly.
+- *What it is.* The program calls an Agent that lives in PenguinHarness, over HTTP. The Penguin server runs each turn and streams it back over AMSP as the Session's records, the ones its Trace holds, and the program continues a conversation by its Session id. TypeScript uses the `@prismshadow/amsp` client (`AgentClient`); any other language, or curl, speaks HTTP and SSE directly.
 - *What you get.* The Agent as PenguinHarness runs it: its `AGENTS.md`, Skills and memory, on the Project's models and credentials, so the program holds no model key. The server keeps the conversations as archived chats (**Settings › Archived chats** in the Web App), where a person finds one and unarchives it to read it and answer its approvals, and their usage lands in the cost center.
 - *What it requires.* A running Penguin server that the program can reach over the network; API access turned on for that Agent by the Project's owner, on the Agent's **API** tab; and a key created there, shown once. You never turn these on yourself (see *The API path*).
 - *Choose it when* the Agent already exists in PenguinHarness or should be managed there, people need to see its conversations or costs, or the program is not written in TypeScript.
