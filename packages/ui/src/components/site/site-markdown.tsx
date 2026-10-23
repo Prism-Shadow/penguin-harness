@@ -3,15 +3,22 @@
  * for blog posts and doc pages. The renderer owns what both share — ## and ### headings carry
  * the ids `extractToc` lists, fenced blocks render as `SiteCodeBlock` (highlighted by the
  * `highlight` it is handed), a tab group from `remarkTabs` renders as `SiteCodeTabs`, and a run
- * of citations reads as one bracketed group (`rehypeCitations`, after the host's own rehype
- * plugins). The host owns the rest: its plugin list (which Markdown it accepts, raw HTML included
- * or not), its link and image adapters (where a link opens, where an image is hosted), and its
- * footnote options (their ids and the list's label). Pass all of them as module-level constants:
+ * of citations reads as one bracketed group (`rehypeCitations`, the last rehype plugin). The
+ * host owns the rest: its plugin list (which Markdown it accepts, raw HTML included or not), its
+ * link and image adapters (where a link opens, where an image is hosted), and its footnote
+ * options (their ids and the list's label). Pass all of them as module-level constants:
  * react-markdown uses each component as an element type and re-runs its pipeline on a new plugin
  * list, so a fresh object per render remounts the body.
  *
- * `variant` picks the heading and table rhythm: `post` for a blog post's flowing text, `doc` for
- * a reference page's ruled sections and plain tables.
+ * Tables and citations are what the renderer adds to the host's rehype stage rather than leaving
+ * to it: `rehypeMarkdownTables` runs after the host's own plugins (after the blog's `rehype-raw`,
+ * so a table written as raw HTML is shaped too), boxing every table and classifying its cells for
+ * markdown-table.css, exactly as a chat reply's are; `rehypeCitations` runs after it. The list is
+ * rebuilt only when the host's own list changes, so a host's module-level constant keeps one
+ * pipeline.
+ *
+ * `variant` picks the heading rhythm: `post` for a blog post's flowing text, `doc` for a
+ * reference page's ruled sections.
  */
 import { useMemo } from "react";
 import type { ReactNode } from "react";
@@ -20,7 +27,8 @@ import type { Components, Options } from "react-markdown";
 import { nodeText, parseTabLabels, readFencedCode, slugifyHeading } from "./markdown-text";
 import type { HastElement } from "./markdown-text";
 import type { CodeHighlighter } from "../content/code-block/highlight-options";
-import { SITE_REMARK_PLUGINS } from "../content/prose/markdown-plugins";
+import { SITE_REHYPE_PLUGINS, SITE_REMARK_PLUGINS } from "../content/prose/markdown-plugins";
+import { rehypeMarkdownTables } from "../content/prose/markdown-table";
 import { rehypeCitations } from "./rehype-citations";
 import { remarkCallout } from "./remark-callout";
 import { remarkTabs } from "./remark-tabs";
@@ -98,6 +106,7 @@ export function SiteMarkdown({
   children: string;
   variant: "post" | "doc";
   remarkPlugins?: Options["remarkPlugins"];
+  /** The host's own rehype stage; the table and citation passes are appended after it. */
   rehypePlugins?: Options["rehypePlugins"];
   /** The Markdown-to-HTML step's options: a host that renders footnotes names and labels them. */
   remarkRehypeOptions?: SiteRemarkRehypeOptions;
@@ -109,7 +118,15 @@ export function SiteMarkdown({
   className?: string;
 }) {
   const merged = useMemo(() => ({ ...BASE_COMPONENTS, ...components }), [components]);
-  const rehype = useMemo(() => [...(rehypePlugins ?? []), rehypeCitations], [rehypePlugins]);
+  const rehype = useMemo(
+    () => [
+      ...(rehypePlugins === undefined || rehypePlugins === null
+        ? SITE_REHYPE_PLUGINS
+        : [...rehypePlugins, rehypeMarkdownTables]),
+      rehypeCitations,
+    ],
+    [rehypePlugins],
+  );
   return (
     <div className={`site-prose ${className}`} data-variant={variant}>
       <SiteCodeHighlight.Provider value={highlight ?? null}>

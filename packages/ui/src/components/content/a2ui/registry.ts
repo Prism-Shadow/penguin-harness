@@ -1,7 +1,8 @@
 /**
  * Which component draws each A2UI block type.
  *
- * The eight built-ins — four blocks and four widgets — are here from module load.
+ * The ten built-ins — four blocks and six widgets (a chart and the resource board among them) —
+ * are here from module load.
  * `registerA2uiRenderer` is the door anything else comes in by — a host that wants its own
  * choice, a plugin that brings a type the grammar has learned — and a registration takes
  * precedence over the built-in of the same type until it is unregistered, when the built-in is
@@ -15,11 +16,13 @@ import { useSyncExternalStore } from "react";
 import type { ComponentType } from "react";
 import type { A2uiSpec } from "@prismshadow/penguin-core/a2ui";
 import { CalloutBlock } from "./callout-block";
+import { ChartBlock } from "./chart-block";
 import { ChoiceBlock } from "./choice-block";
 import { ClockBlock } from "./clock-block";
 import { CountdownBlock } from "./countdown-block";
 import { FormBlock } from "./form-block";
 import { MetricsBlock } from "./metrics-block";
+import { ResourcesBlock } from "./resources-block";
 import { StepsBlock } from "./steps-block";
 import { WeatherBlock } from "./weather-block";
 
@@ -41,6 +44,8 @@ const BUILT_IN: { readonly [T in A2uiBlockType]: A2uiRenderer<A2uiSpecOf<T>> } =
   clock: ClockBlock,
   countdown: CountdownBlock,
   metrics: MetricsBlock,
+  chart: ChartBlock,
+  resources: ResourcesBlock,
 };
 
 // Keyed by string so a type the grammar adds later can be registered before this file names it.

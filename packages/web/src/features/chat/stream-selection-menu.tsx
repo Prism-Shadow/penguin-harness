@@ -20,6 +20,9 @@
  * gets the native menu. A touch or pen press-and-hold is declined outright — the OS selection
  * and link menus own that gesture — which is why none of the hook's press-and-hold handlers are
  * spread here.
+ *
+ * Copy writes what ⌘C writes from the same selection: its text as plain text, and nothing else
+ * (lib/selection-copy.ts holds that rule for both).
  */
 import { useRef, useState, useSyncExternalStore } from "react";
 import type {
@@ -56,6 +59,7 @@ import {
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { useAuth } from "../../state/auth";
 import { writeClipboard } from "../../lib/clipboard";
+import { inEditable, writeSelectionCopy } from "../../lib/selection-copy";
 import { restoreSelection } from "../../components/ui/text-selection";
 import { openLinkInBrowser } from "../builtin-browser/browser-actions";
 import { browserLinkTarget, subscribeBrowser } from "../builtin-browser/browser-store";
@@ -72,9 +76,10 @@ export interface CapturedSelection {
 }
 
 /**
- * The selection's rows, in SELECTION_MENU_ITEMS order. Copy writes the selection to the clipboard
- * and confirms with a toast: a row closes under the pointer, so it cannot carry the copy
- * button's at-the-control feedback (the Files panel's copy-path row confirms the same way).
+ * The selection's rows, in SELECTION_MENU_ITEMS order. Copy writes the selection's text to the
+ * clipboard as plain text and confirms with a toast: a row closes under the pointer, so it
+ * cannot carry the copy button's at-the-control feedback (the Files panel's copy-path row
+ * confirms the same way).
  * Add to conversation hands the excerpt to the composer as a chip; nothing already typed is
  * touched and nothing is sent.
  */
@@ -98,7 +103,9 @@ export function SelectionMenuRows({
             glyph={STAT_ICONS.copy}
             label={S.common.copy}
             onSelect={() => {
-              void writeClipboard(selection.text).then((ok) => ok && toastSuccess(S.common.copied));
+              void writeSelectionCopy(selection.text).then(
+                (ok) => ok && toastSuccess(S.common.copied),
+              );
               onDone(selection);
             }}
           />
@@ -218,16 +225,6 @@ const toAnchor = (r: DOMRect): AnchorRect => ({
   left: r.left,
   right: r.right,
 });
-
-/** Fields whose own context menu (paste, spelling) is the one that belongs to them. */
-const EDITABLE_SELECTOR =
-  "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
-
-/** Is the node inside such a field? */
-function inEditable(node: Node): boolean {
-  const element = node instanceof Element ? node : node.parentElement;
-  return element !== null && element.closest(EDITABLE_SELECTOR) !== null;
-}
 
 /** The link the node lies in, when that link is part of the stream. */
 function linkAt(node: Node, host: Node): HTMLAnchorElement | null {

@@ -201,7 +201,7 @@ Detection never blocks a save. If you select **Confirm** while neither the model
 
 - If the model answers, the switch turns on: "This model accepts images; vision turned on".
 - If the model says it does not take images, the switch turns off. That is a real answer, not an error.
-- If the probe fails on authentication or the network, the switch stays as it was, and the message asks you to check the API key and the base URL.
+- If the probe fails on authentication or the network, the switch stays as it was: "Could not tell whether this model accepts images; vision left as it was".
 
 > [!NOTE]
 > Unlike protocol detection, this probe is a real, billed request: an image request cannot be made free the way the protocol probes are. It runs only when you select **Detect**, never on its own and never on save.
@@ -522,7 +522,7 @@ The group's protocol is fixed to MMSP. Neither the group settings nor a model's 
 The group's key comes from its header; see [Connect an account](#connect-an-account). It is the only key the group uses: `PENGUIN_GO_API_KEY` and `PENGUIN_GO_BASE_URL` are no longer read, so if you set only those, reconnect from the group header or paste the key in its group settings. Connecting, and **Sync models** in the **Connected** menu, also read the platform's own model catalog:
 
 - Models the platform offers and the Project does not have are added, with their protocol, display name, context window, vision flag, list price and promotion. While the group's settings hold a base URL, an added model stores an endpoint only where it differs from the platform's relay URL, so a group you pointed at a proxy takes it along; with no base URL there, the model stores the platform's in full. They carry no key and use the group key. Pure embedding models are left out.
-- Existing models retain their ids, display names, prices, promotions, context and vision settings, keys and current selections. Only Go-managed routing changes; nothing is deleted. The detailed catalog remains `/api/client/models`, because `/api/v1/models` contains only the basic model list.
+- Existing models listed by the platform receive its latest list prices and promotions, replacing any you edited by hand; a promotion the platform has ended is cleared. Their ids, display names, context and vision settings, keys and current selections stay as they are. Go-managed routing is refreshed; user-redirected endpoints stay as configured. Models absent from the response keep their prices and promotions, and nothing is deleted. The detailed catalog remains `/api/client/models`, because `/api/v1/models` contains only the basic model list.
 - As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database. **Restore defaults** resets this group like any other and clears its promotions; **Sync models** brings the platform's models and promotions back. If that record is lost, usage is priced at the list price.
 
 The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.

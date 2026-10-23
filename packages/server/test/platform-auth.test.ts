@@ -9,11 +9,17 @@
  *   delivered key once, as the group's key every model of the group uses, and adds the
  *   delivered models the group lacks with their list price, routing and promotion (a member is
  *   refused, and a sync before any key asks for reauthorization); a model the group already
- *   holds keeps its own price and promotion; nothing of the account or the key itself is ever
- *   answered back. In a group where no model uses the key yet (every one keyed on its own, and
+ *   holds receives the platform's price and promotion; nothing of the account or the key itself
+ *   is answered back. In a group where no model uses the key yet (every one keyed on its own, and
  *   nothing new delivered), the key still lands and the flow completes with a count of 0.
- * - A later sync adds a newly listed model the same way, and never rewrites a model the group
- *   holds: a repricing or a new promotion of one changes nothing, and nothing is written.
+ * - Given an existing model, a later sync refreshes its list price and promotion, including a
+ *   promotion-only change or an ended promotion, and reports that update. An unchanged sync
+ *   is a no-op.
+ * - Given user annotations and models absent from the platform response, sync preserves them
+ *   and other groups while updating the advertised model's prices and promotion.
+ * - Given a preset with a platform promotion, adding presets preserves it, Restore defaults
+ *   clears it, and a subsequent group sync restores it on the platform's own list price.
+ * - A later sync also adds newly listed models with their price, routing and promotion.
  * - An added model stores its protocol and endpoint per field against the group's table as
  *   the file holds it (never the catalog's): a field the table holds is followed — a group
  *   pointed at a proxy takes the new model along, with its key — and one the table lacks is
@@ -27,7 +33,6 @@
  * - A flow the user cancels while a poll is in flight applies nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { catalogEntryFor } from "../src/model-catalog/index.js";
 import type {
   ModelsResponse,
   PlatformAuthFlowStatusResponse,
@@ -285,7 +290,6 @@ describe("Penguin Go key authorization routes", () => {
     const initialPenguinGoModels = initial.models.filter(
       (model) => model.provider === "penguin-go",
     );
-    const gemini = catalogEntryFor("penguin-go", "gemini-3.8-flash")!;
     // The preset group is there before any authorization, keyless, on the platform's endpoint.
     // The delivery lands on top of it: the group ends up with the preset's models and the
     // delivered ones, whichever the preset already carried.
@@ -358,16 +362,15 @@ describe("Penguin Go key authorization routes", () => {
     expect(deepseekFuture).not.toHaveProperty("credential");
     expect(deepseekFuture).not.toHaveProperty("maxTokens");
     expect(deepseekFuture).not.toHaveProperty("discount");
-    // A model the preset already held is not rewritten: its price and promotion stay what
-    // the Project had, whatever the platform lists.
+    // Existing presets receive the platform's list price and promotion too.
     const heldGemini = penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash");
     expect(heldGemini?.pricing).toEqual({
-      cacheRead: gemini.pricing!.cache_read,
-      cacheWrite: gemini.pricing!.cache_write,
-      output: gemini.pricing!.output,
+      cacheRead: 0,
+      cacheWrite: 1.25,
+      output: 10,
     });
-    expect(heldGemini).not.toHaveProperty("discount");
-    expect(promotionOf("gemini-3.8-flash")).toBeUndefined();
+    expect(heldGemini?.discount).toBe(0.5);
+    expect(promotionOf("gemini-3.8-flash")).toMatchObject({ discount: 0.5 });
     expect(JSON.stringify(after)).not.toContain("sk-penguin-go-secret-0001");
     // Stored once, for the group.
     const raw = await t.deps.projectConfigService.readRaw(projectId);
@@ -403,12 +406,9 @@ describe("Penguin Go key authorization routes", () => {
     ).toEqual(own.map(() => "model"));
   });
 
-  it("a later sync adds what the platform newly lists, with its price, routing and promotion, and never rewrites a model the group holds", async () => {
+  it("refreshes an existing model's price and promotion and adds newly listed models", async () => {
     expect((await authorize()).status).toBe("completed");
-    const authorized = await models();
-
-    // The platform reprices a model the group holds and deepens a promotion: nothing changes
-    // here, and nothing is written.
+    // The platform reprices a model the group already holds and adds a promotion.
     currentCatalogModels = currentCatalogModels.map((model) =>
       (model as { modelId?: unknown }).modelId === "deepseek-future"
         ? {
@@ -420,12 +420,16 @@ describe("Penguin Go key authorization routes", () => {
         : model,
     );
     const repriced = await sync();
-    expect(repriced).toMatchObject({ added: 0, updated: 0 });
-    expect(repriced.updatedAt).toBe(authorized.updatedAt);
+    expect(repriced).toMatchObject({ added: 0, updated: 1 });
     expect(repriced.models.find((model) => model.modelId === "deepseek-future")).toMatchObject({
-      pricing: { cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
+      pricing: { cacheRead: 0.06, cacheWrite: 0.3, output: 1.2 },
+      discount: 0.25,
     });
-    expect(promotionOf("deepseek-future")).toBeUndefined();
+    expect(promotionOf("deepseek-future")).toMatchObject({ discount: 0.25 });
+    expect(
+      (await t.deps.projectConfigService.getPricing(projectId, "penguin-go", "deepseek-future"))
+        ?.peak,
+    ).toMatchObject({ cacheRead: 0.045, cacheWrite: 0.225, output: 0.9 });
 
     currentCatalogModels.push({
       provider: "google",
@@ -474,8 +478,138 @@ describe("Penguin Go key authorization routes", () => {
     expect(future).not.toHaveProperty("credential");
     expect(future).not.toHaveProperty("maxTokens");
     expect(future).not.toHaveProperty("listPricing");
-    // The model the group already held is still as it was.
-    expect(promotionOf("deepseek-future")).toBeUndefined();
+    expect(promotionOf("deepseek-future")).toMatchObject({ discount: 0.25 });
+    const unchanged = await sync();
+    expect(unchanged).toMatchObject({ added: 0, updated: 0 });
+    expect(unchanged.updatedAt).toBe(added.updatedAt);
+  });
+
+  it("refreshes promotion-only changes and clears an ended promotion without rewriting list prices", async () => {
+    await authorize();
+    const before = await models();
+    const remote = deliveryBody.connection.models[0]!;
+    currentCatalogModels = [
+      {
+        ...remote,
+        pricing: { unit: "usd_per_mtok", cacheRead: 0, cacheWrite: 0.9375, output: 7.5 },
+        discount: 0.25,
+      },
+    ];
+    const changed = await sync();
+    expect(changed).toMatchObject({ added: 0, updated: 1, updatedAt: before.updatedAt });
+    expect(
+      changed.models.find((m) => m.provider === "penguin-go" && m.modelId === remote.modelId),
+    ).toMatchObject({ pricing: { cacheRead: 0, cacheWrite: 1.25, output: 10 }, discount: 0.25 });
+    expect(
+      (await t.deps.projectConfigService.getPricing(projectId, "penguin-go", remote.modelId))?.peak,
+    ).toMatchObject({ cacheRead: 0, cacheWrite: 0.9375, output: 7.5 });
+
+    const { discount: _discount, listPricing, ...unpromoted } = remote;
+    currentCatalogModels = [{ ...unpromoted, pricing: listPricing }];
+    const ended = await sync();
+    expect(ended).toMatchObject({ added: 0, updated: 1, updatedAt: before.updatedAt });
+    expect(
+      ended.models.find((m) => m.provider === "penguin-go" && m.modelId === remote.modelId),
+    ).not.toHaveProperty("discount");
+    expect(
+      (await t.deps.projectConfigService.getPricing(projectId, "penguin-go", remote.modelId))?.peak,
+    ).toMatchObject({ cacheRead: 0, cacheWrite: 1.25, output: 10 });
+    expect(await sync()).toMatchObject({ added: 0, updated: 0 });
+  });
+
+  it("preserves existing annotations, connections, unadvertised models and other groups during sync", async () => {
+    deliveredModels = [
+      deliveryBody.connection.models[0]!,
+      {
+        ...deliveryBody.connection.models[1]!,
+        pricing: { unit: "usd_per_mtok", cacheRead: 0.015, cacheWrite: 0.075, output: 0.3 },
+        listPricing: { unit: "usd_per_mtok", cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
+        discount: 0.5,
+      },
+    ];
+    await authorize();
+    const raw = structuredClone(await t.deps.projectConfigService.readRaw(projectId));
+    const rows = raw.models as Array<Record<string, unknown>>;
+    const held = rows.find(
+      (m) => m.provider === "penguin-go" && m.model_id === "gemini-3.8-flash",
+    )!;
+    Object.assign(held, {
+      display_name: "My Gemini",
+      context_window: 8192,
+      max_tokens: 1024,
+      vision: false,
+      fast_mode: true,
+      base_url: "https://my-relay.example/api/v1",
+      client_type: "mmsp",
+      api_key: "sk-model-override",
+    });
+    await t.deps.projectConfigService.writeRaw(projectId, raw);
+    const before = await models();
+    // Only one of the two already authorized models is advertised this time.
+    currentCatalogModels = [
+      {
+        ...deliveryBody.connection.models[0]!,
+        pricing: { unit: "usd_per_mtok", cacheRead: 0.1, cacheWrite: 1, output: 4 },
+        listPricing: { unit: "usd_per_mtok", cacheRead: 0.2, cacheWrite: 2, output: 8 },
+      },
+    ];
+    const result = await sync();
+    expect(result).toMatchObject({ added: 0, updated: 1 });
+    const after = await t.deps.projectConfigService.readRaw(projectId);
+    const expected = structuredClone(raw);
+    const expectedRow = (expected.models as Array<Record<string, unknown>>).find(
+      (m) => m.provider === "penguin-go" && m.model_id === "gemini-3.8-flash",
+    )!;
+    expectedRow.pricing = { unit: "usd_per_mtok", cache_read: 0.2, cache_write: 2, output: 8 };
+    expect(after).toEqual(expected);
+    expect(result.models.filter((m) => m.provider !== "penguin-go")).toEqual(
+      before.models.filter((m) => m.provider !== "penguin-go"),
+    );
+    expect(
+      result.models.find((m) => m.provider === "penguin-go" && m.modelId === "deepseek-future"),
+    ).toEqual(
+      before.models.find((m) => m.provider === "penguin-go" && m.modelId === "deepseek-future"),
+    );
+  });
+
+  it("restores a held Argon preset's platform discount after Restore defaults while Add new models preserves it", async () => {
+    await authorize();
+    const argon = {
+      ...deliveryBody.connection.models[0]!,
+      modelId: "gemini-4-argon",
+      displayName: "Gemini 4 Argon",
+      pricing: { unit: "usd_per_mtok", cacheRead: 0.05, cacheWrite: 1, output: 5 },
+      listPricing: { unit: "usd_per_mtok", cacheRead: 0.1, cacheWrite: 2, output: 10 },
+    };
+    currentCatalogModels = [...currentCatalogModels, argon];
+    expect(await sync()).toMatchObject({ added: 0, updated: 1 });
+    const ref = (m: { provider: string; modelId: string }) =>
+      m.provider === "penguin-go" && m.modelId === argon.modelId;
+    const add = await owner.post(`/api/projects/${projectId}/models/sync-presets`, { mode: "add" });
+    expect(add.status).toBe(200);
+    expect((await models()).models.find(ref)?.discount).toBe(0.5);
+
+    const restore = await owner.post(`/api/projects/${projectId}/models/sync-presets`, {
+      mode: "restore",
+    });
+    expect(restore.status).toBe(200);
+    expect((await models()).models.find(ref)).not.toHaveProperty("discount");
+    const restored = await sync();
+    expect(restored).toMatchObject({ added: 1, updated: 2 });
+    expect(restored.models.find(ref)).toMatchObject({
+      pricing: { cacheRead: 0.1, cacheWrite: 2, output: 10 },
+      discount: 0.5,
+    });
+    expect(
+      (await t.deps.projectConfigService.getPricing(projectId, "penguin-go", argon.modelId))?.peak,
+    ).toMatchObject({ cacheRead: 0.05, cacheWrite: 1, output: 5 });
+    const persisted = await t.deps.projectConfigService.readRaw(projectId);
+    const stored = (persisted.models as Array<Record<string, unknown>>).find(
+      (m) => m.provider === "penguin-go" && m.model_id === argon.modelId,
+    )!;
+    expect(stored).toMatchObject({ pricing: { cache_read: 0.1, cache_write: 2, output: 10 } });
+    expect(stored).not.toHaveProperty("discount");
+    expect(await sync()).toMatchObject({ added: 0, updated: 0 });
   });
 
   it("a platform model is stored against the group's table field by field: a group pointed at a proxy takes a new model along with its key, and a field the table lacks is written on the model", async () => {

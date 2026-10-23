@@ -1028,7 +1028,7 @@ export function ModelsPage() {
     // drop them along with the rows they annotate whenever the active Project changes.
     setSpeedResults(new Map());
     try {
-      adopt(await api.getModels(projectId));
+      adopt(await api.getModels(projectId, null));
     } catch (e) {
       setLoadError(apiErrorText(e));
     }
@@ -1140,10 +1140,8 @@ export function ModelsPage() {
     try {
       const res = await api.syncPlatformModels(projectId);
       adopt(res);
-      // The platform's sync only adds the models it newly offers; the ones already here keep
-      // their prices, protocols and promotions.
-      if (res.added === 0) toastInfo(S.models.platformUpToDate);
-      else toastSuccess(S.models.platformSyncAdded(res.added));
+      if (res.added === 0 && res.updated === 0) toastInfo(S.models.platformUpToDate);
+      else toastSuccess(S.models.platformSyncResult(res.added, res.updated));
     } catch (error) {
       if (error instanceof ApiError && error.code === "platform_reauthorization_required") {
         keyLanded.current = false;
@@ -3059,10 +3057,10 @@ function ModelDialog({
           set({ vision: false });
           toastInfo(S.models.detectVisionNo);
         } else {
-          toastError(S.models.detectFailedBody);
+          toastError(S.models.detectVisionFailed);
         }
       } catch {
-        toastError(S.models.detectFailedBody);
+        toastError(S.models.detectVisionFailed);
       } finally {
         setVisionDetecting(false);
       }

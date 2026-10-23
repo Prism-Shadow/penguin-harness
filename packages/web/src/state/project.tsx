@@ -144,7 +144,7 @@ function createProjectStore() {
         ask === agentsAsked && isCurrentProject(projectId, get().currentProjectId);
       set({ agentsLoading: true });
       try {
-        const res = await api.listAgents(projectId);
+        const res = await api.listAgents(projectId, null);
         if (!applies()) return;
         const wanted = get().currentAgentId ?? localStorage.getItem(agentKey(projectId));
         set({

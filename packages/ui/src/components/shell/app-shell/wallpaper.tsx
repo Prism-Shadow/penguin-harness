@@ -40,13 +40,18 @@ export function NavigationBackdrop() {
   );
 }
 
-/** A page canvas or panel. Shared cards opt in themselves, including outside the chat dock. */
+/**
+ * A surface's role on a custom background (`data-wallpaper-surface`, read by wallpaper.css), one
+ * of three kinds: `canvas` turns clear; `panel` keeps a light fill; `tone`, a strip tinted with a
+ * tone it names in `data-tone` as a notice does, keeps that tint at half strength. Shared cards
+ * and strips declare the attribute themselves, including outside the chat dock.
+ */
 export function WallpaperSurface({
   variant = "canvas",
   ...props
 }: HTMLAttributes<HTMLDivElement> & {
   ref?: Ref<HTMLDivElement>;
-  variant?: "canvas" | "panel";
+  variant?: "canvas" | "panel" | "tone";
 }) {
   return <div {...props} data-wallpaper-surface={variant} />;
 }

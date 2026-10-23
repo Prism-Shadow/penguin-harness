@@ -49,13 +49,16 @@ export * from "./components/actions/hidden-file-input/hidden-file-input";
 export * from "./components/overlays/menu-panel/menu-panel";
 
 // W2-A — forms: the field scaffolding, the text controls and their search box, checkboxes and
-// radios.
+// radios, the choice group of chips or cards, the number input with its stepper, and the slider.
 export * from "./components/forms/field/field";
 export * from "./components/forms/input/input";
 export * from "./components/forms/password-input/password-input";
 export * from "./components/forms/search-input/search-input";
 export * from "./components/forms/checkbox/checkbox";
 export * from "./components/forms/radio/radio";
+export * from "./components/forms/choice-group/choice-group";
+export * from "./components/forms/number-input/number-input";
+export * from "./components/forms/slider/slider";
 
 // W2-B — pickers, switches and settings rows, with the portal panel and the "?" disclosure they
 // open (moved up from W3).
@@ -118,8 +121,9 @@ export * from "./components/content/typography/typography";
 export * from "./components/content/diff-viewer/diff-viewer";
 
 // A2UI — the components a model writes into a reply: the ```a2ui block that parses and dispatches
-// through the renderer registry, the four built-in blocks and the four widgets (with the surface
-// they share and the weather drawing), the actions a host hands them, and the ```mermaid diagram.
+// through the renderer registry, the four built-in blocks and the six widgets (with the surface
+// they share and the weather drawing; the chart block and the resource board drawn by the basic
+// charts), the actions a host hands them, and the ```mermaid diagram.
 // Mermaid itself is imported on the first diagram, never by this barrel.
 export * from "./components/content/a2ui/actions";
 export * from "./components/content/a2ui/registry";
@@ -135,6 +139,8 @@ export * from "./components/content/a2ui/weather-block";
 export * from "./components/content/a2ui/clock-block";
 export * from "./components/content/a2ui/countdown-block";
 export * from "./components/content/a2ui/metrics-block";
+export * from "./components/content/a2ui/chart-block";
+export * from "./components/content/a2ui/resources-block";
 
 // W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
 // row and pager, the create pair, the notice with its variants and the page to-do built on it,
@@ -189,6 +195,18 @@ export * from "./components/charts/token-donut/token-donut";
 export * from "./components/charts/sparkline/sparkline";
 export * from "./components/charts/ring/ring";
 export * from "./components/charts/legend/legend";
+// The basic charts drawn from data (an A2UI chart block draws one; the composites build on them):
+// the value axis and stacks, the axis captions, the bar, horizontal bar and line charts, the pie,
+// the scatter plot and the gauge.
+export * from "./components/charts/cartesian/cartesian-data";
+export * from "./components/charts/cartesian/plot-layout";
+export * from "./components/charts/cartesian/plot-captions";
+export * from "./components/charts/cartesian/bar-chart";
+export * from "./components/charts/cartesian/hbar-chart";
+export * from "./components/charts/cartesian/line-chart";
+export * from "./components/charts/pie-chart/pie-chart";
+export * from "./components/charts/scatter-chart/scatter-chart";
+export * from "./components/charts/gauge/gauge";
 
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";
