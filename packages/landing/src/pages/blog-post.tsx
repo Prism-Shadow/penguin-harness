@@ -16,7 +16,6 @@ import { Link, useLocation, useParams } from "react-router";
 import {
   ArrowRightIcon,
   extractToc,
-  hashTargetId,
   highlightSiteCode,
   SiteCopyButton,
   SiteMarkdown,
@@ -33,7 +32,9 @@ import type {
 import { S } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { blogAssetUrl, SITE_HOSTS } from "../lib/links";
-import { classifyPostHref } from "../lib/post-links";
+import { classifyPostHref, inPageHash } from "../lib/post-links";
+import { landOnHash } from "../lib/hash-arrival";
+import imageSizes from "../lib/blog-image-sizes.json";
 import { formatAuthors, formatPostDate, getPost, loadPostBody, loadedPostBody } from "../lib/blog";
 import type { BlogPost } from "../lib/blog";
 import { CategoryBadge } from "../components/category-badge";
@@ -51,7 +52,9 @@ const OWN_HOSTS: readonly string[] =
  * Link adapter: a link opens according to where it goes (lib/post-links.ts).
  *
  * - A `#` link stays on the page: a citation and its entry in the references, a heading. The
- *   browser scrolls to the target; the route scroll and the page's hash effect agree with it.
+ *   browser scrolls to the target; the route scroll and the page's hash effect agree with it. An
+ *   address of this same page with a fragment (`/blog/<post>#…`, `https://penguin.ooo/blog/<post>#…`)
+ *   is rendered as the bare fragment, so it is such a jump too (lib/post-links.ts, `inPageHash`).
  * - A page of this site opens in a new tab (`target="_blank"` + `rel="noreferrer"`, which also
  *   implies `noopener`), since a post is a reading surface people come back to.
  * - Anywhere else opens in a new tab once the reader confirms, through the confirmation the page
@@ -69,8 +72,16 @@ export function MdLink({
   ...anchorProps
 }: ComponentPropsWithoutRef<"a"> & ExtraProps) {
   const { href = "" } = anchorProps;
+  const here = typeof window === "undefined" ? "" : window.location.pathname;
+  const hash = inPageHash(href, OWN_HOSTS, here);
+  if (hash) {
+    return (
+      <a {...anchorProps} href={hash}>
+        {children}
+      </a>
+    );
+  }
   const kind = classifyPostHref(href, OWN_HOSTS);
-  if (kind === "anchor") return <a {...anchorProps}>{children}</a>;
   if (kind === "external") {
     return (
       <ExternalLink
@@ -93,6 +104,9 @@ export function MdLink({
 /** The path prefix post bodies use for images this repo does not carry. */
 const BLOG_ASSET_PREFIX = "/blog-assets/";
 
+/** Each Markdown image's width and height, by its source as the post writes it. */
+const IMAGE_SIZES: Readonly<Record<string, readonly number[] | undefined>> = imageSizes;
+
 /**
  * Image adapter: rewrites `/blog-assets/<name>` sources to the community repo that actually hosts
  * them (see blogAssetUrl in lib/links.ts). Every other src — absolute URLs, GitHub user-attachment
@@ -103,17 +117,36 @@ const BLOG_ASSET_PREFIX = "/blog-assets/";
  * diffable, and the tests that assert on those paths keep asserting on the paths. Applies equally
  * to `![alt](…)` and to the raw `<img src="…">` tags posts use for theme-swapped screenshots,
  * because rehype-raw turns those into ordinary `img` nodes before this map is consulted.
+ *
+ * A Markdown image gets the width and height recorded for it (lib/blog-image-sizes.json, written
+ * by scripts/blog-image-sizes.mjs), so its place is held before the picture arrives: the
+ * preflight's `height: auto` keeps it fluid at that aspect ratio. Without a size, each picture
+ * that loads pushes down everything below it, the reader's place and the target of a jump in
+ * flight alike. A raw `<img>` keeps the size it was written with.
  */
 export function MdImage({
   node: _node,
   src,
+  width,
+  height,
   ...imgProps
 }: ComponentPropsWithoutRef<"img"> & ExtraProps) {
+  const recorded =
+    typeof src === "string" && width === undefined && height === undefined
+      ? IMAGE_SIZES[src]
+      : undefined;
   const resolved =
     typeof src === "string" && src.startsWith(BLOG_ASSET_PREFIX)
       ? blogAssetUrl(src.slice(BLOG_ASSET_PREFIX.length))
       : src;
-  return <img {...imgProps} src={resolved} />;
+  return (
+    <img
+      {...imgProps}
+      src={resolved}
+      width={recorded?.[0] ?? width}
+      height={recorded?.[1] ?? height}
+    />
+  );
 }
 
 /**
@@ -253,23 +286,31 @@ function usePostBody(post: BlogPost | undefined): string | undefined {
 }
 
 /**
- * The navigation whose hash target this page last scrolled to. Module state, like
- * useRouteScroll's, so the remount a language switch causes does not jump again.
+ * The navigation whose anchor this page last landed on. Module state, like useRouteScroll's, so
+ * the remount a language switch causes does not jump again.
  */
-let scrolledFor = "";
+let landedFor = "";
 
 /**
- * Scroll to the hash target (a TOC entry, a shared `#heading` link) once the body is in the
- * DOM. The layout's own route scroll runs when the route commits, which for a body still on
- * its way is before the heading exists.
+ * Land on the address's anchor (a shared `#fn-3` or `#heading` link) once the body is in the DOM,
+ * as the browser would have at load had the body been there (lib/hash-arrival.ts): the target is
+ * marked and washed, and scrolled clear of the sticky header once the page has finished rising.
+ * The layout's own route scroll runs when the route commits, which for a body still on its way is
+ * before the target exists. Jumps made inside the page are the browser's own; the pictures'
+ * recorded sizes (MdImage) keep their targets in place while the pictures arrive.
  */
 function useHashTarget(ready: boolean) {
-  const { key, hash } = useLocation();
+  const { key } = useLocation();
   useLayoutEffect(() => {
-    if (!ready || key === scrolledFor) return;
-    scrolledFor = key;
-    if (hash) document.getElementById(hashTargetId(hash))?.scrollIntoView();
-  }, [ready, key, hash]);
+    if (!ready || key === landedFor) return;
+    let live = true;
+    void landOnHash(window, () => live).then(() => {
+      if (live) landedFor = key;
+    });
+    return () => {
+      live = false;
+    };
+  }, [ready, key]);
 }
 
 export function BlogPostPage() {

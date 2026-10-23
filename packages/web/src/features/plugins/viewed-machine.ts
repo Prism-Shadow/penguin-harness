@@ -1,9 +1,11 @@
 /**
  * Which machine the Plugins page views: the one picked in its header while the picker still
- * offers it, this server otherwise. A picked machine can leave the choices (the last session
- * on it ends, its table entry is removed) — and with a single choice left the picker is
- * hidden, so a pick that outlived its machine would hold the page on it with no way back.
- * Derived on every render rather than reset in an effect, so it never renders the stale pick.
+ * offers it, this server otherwise. A machine out of reach stays among the choices (as last
+ * seen), so a pick holds through a reconnect; a picked machine leaves them only when the
+ * Project stops naming it (removed from the machine list and from every table) — and with no
+ * other machine left the picker is gone, so a pick that outlived its machine would hold the
+ * page on it with no way back. Derived on every render rather than reset in an effect, so it
+ * never renders the stale pick.
  */
 export function viewedMachine(
   picked: string | null,

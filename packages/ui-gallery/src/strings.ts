@@ -26,6 +26,11 @@ import type { TopicGroupId, TopicId } from "./library/topics";
 export interface A2uiSample {
   lead: string;
   spec: A2uiSpec;
+  /**
+   * The message a reader sent to answer a choice or a form, as its fill button wrote it: the
+   * board shows the block once more, answered, reading its answers back from this text.
+   */
+  answer?: string;
 }
 
 /** What a surface page says: its title, one line on what the frame shows, and how the app reaches it. */
@@ -1456,6 +1461,7 @@ export const zh = {
             ],
             allowOther: true,
           },
+          answer: "SQLite",
         },
         {
           lead: "改动已经通过全部检查。",
@@ -1481,6 +1487,7 @@ export const zh = {
               { label: "端到端测试", description: "大约十五分钟，需要浏览器" },
             ],
           },
+          answer: "类型检查、单元测试",
         },
         {
           lead: "部署信息一次填完：",
@@ -1540,6 +1547,16 @@ export const zh = {
             ],
             submitLabel: "填入回答",
           },
+          answer: [
+            "服务名：billing-api",
+            "区域：华北",
+            "附加功能：CDN、备份",
+            "副本数：3 个",
+            "扩容阈值：80%",
+            "备注：",
+            "  旧版本保留一天",
+            "  p95 超过 400 ms 时通知我",
+          ].join("\n"),
         },
         {
           lead: "再定发布时间：",
@@ -1609,6 +1626,7 @@ export const zh = {
       a2uiDiagram:
         "flowchart LR\n  A[请求] --> B{命中缓存}\n  B -->|是| C[直接返回]\n  B -->|否| D[回源读取]\n  D --> C",
       a2uiInvalidLead: "无法显示的块给出原因和源码：",
+      a2uiAnswered: "已作答：只读，作答取自读者发出的消息",
     },
     layout: {
       page: "页面与页头",
