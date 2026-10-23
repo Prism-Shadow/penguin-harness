@@ -76,6 +76,8 @@ const MAX_ATTEMPTS = 6;
 const BACKOFF_S = [10, 20, 40, 60, 90];
 /** trim aims this far under the cap: the model counts loosely, and an answer over the cap is rejected. */
 const TRIM_AIM = 0.95;
+/** A whole-draft trim that leaves a section below this share of its target cut too much: refused. */
+const TRIM_FLOOR = 0.9;
 
 const HELP = `usage: node prose.mjs <step> [options]
 
@@ -115,9 +117,11 @@ API steps (one gateway call each; --dry-run prints the messages instead and save
                heading, title or section count changed that no finding names, goes to
                <out>.rejected.md (exit 1)
   trim       --in <draft.<lang>.vN.md | s<n>.<lang>.v<k>.md> [--outline <f> | --cap <n>]
-               cuts deletions and shorter wording only. A whole draft: the sections over a
-               profile cap, then those furthest above their plan row while the page is over; an
-               answer that changes another section goes to <out>.rejected.md. A section: an answer
+               cuts deletions and shorter wording only. A whole draft: each section over its
+               profile cap, aimed at 95 % of that cap (never at its plan row), and, while the page
+               is over its cap, a proportional share of the rest from every other section; an
+               answer that changes another section, or cuts a named section below 90 % of its
+               target, goes to <out>.rejected.md. A section: an answer
                still over the cap, or with a marker, footnote, figure block, heading, frontmatter
                or version note changed, goes there too (exit 1; retry once, then the author).
                --out defaults to the next version. fix, polish and translate refuse a changed
@@ -1642,7 +1646,7 @@ function buildMessages(step, o) {
         lang = checkLang(o.lang ?? langOf(o.in) ?? "en", "--lang");
         const budgets = budgetsOf(prof, lang, o);
         const outline = outlineGiven();
-        const plan = trimPlan(input, lang, budgets, outline);
+        const plan = trimPlan(input, lang, budgets);
         if (!plan.named.size) {
           hooks.skip = `every section is within its cap and the page is ${plan.total} ${budgets.unit}${plan.pageCap !== undefined ? ` of at most ${plan.pageCap}` : ""}: nothing to trim`;
         }
@@ -1663,7 +1667,8 @@ function buildMessages(step, o) {
               .replace("{{TRIM_WHERE}}", where(n))
               .replace("{{TRIM_LINE_NOW}}", unit(x.now))
               .replace("{{TRIM_LINE_CAP}}", unit(x.cap))
-              .replace("{{TRIM_LINE_AIM}}", unit(x.aim)),
+              .replace("{{TRIM_LINE_AIM}}", unit(x.aim))
+              .replace("{{TRIM_LINE_FLOOR}}", unit(x.floor)),
           )
           .join("\n");
         params.TRIM_TLDR = "";
@@ -2330,58 +2335,59 @@ function fixProblems(before, after, findingsText, { whole = false } = {}) {
 }
 
 /**
- * Which sections a whole-draft trim cuts, and to what: every section over its profile cap, then,
- * while the page is over its cap, the sections furthest above their plan row, and with no plan to
- * go by the largest ones, until the cuts cover the excess.
+ * Which sections a whole-draft trim cuts, and to what. A section over its profile cap is cut to a
+ * little under that cap (TRIM_AIM of it), never to its plan row. When the page is over its cap
+ * even after those cuts, what is left over, down to a little under the page cap, is shared among
+ * the other sections in proportion to their size. Each named section also gets a floor
+ * (TRIM_FLOOR of its target): an answer below it cut too much and is refused.
  */
-function trimPlan(text, lang, budgets, outline) {
+function trimPlan(text, lang, budgets) {
   const parts = splitSections(text).map((part) => {
     const limit = part.n === 0 ? budgets.lead : budgets.section;
     const sizes = part.n === 0 ? leadCounts(part.text, lang) : { lead: countBody(part.text, lang) };
-    const planned = plannedSize(
-      outline?.rows.find((r) => r.n === part.n),
-      outline,
-      budgets,
-    );
-    return {
-      n: part.n,
-      heading: part.heading,
-      now: sizes.lead,
-      tldr: sizes.tldr ?? 0,
-      limit,
-      planned,
-    };
+    return { n: part.n, heading: part.heading, now: sizes.lead, tldr: sizes.tldr ?? 0, limit };
   });
   const named = new Map();
-  const add = (p, aim) => named.set(p.n, { now: p.now, cap: p.limit?.cap ?? p.now, aim });
   for (const p of parts) {
-    if (p.limit && p.now > p.limit.cap) add(p, Math.min(p.limit.cap, p.planned ?? p.limit.cap));
+    if (p.limit && p.now > p.limit.cap) {
+      const cap = p.limit.cap;
+      named.set(p.n, {
+        now: p.now,
+        cap,
+        aim: Math.floor(cap * TRIM_AIM),
+        floor: Math.floor(cap * TRIM_FLOOR),
+        why: "cap",
+      });
+    }
   }
   const total = parts.reduce((sum, p) => sum + p.now + p.tldr, 0);
   const pageCap = budgets.total?.cap;
-  const excess = pageCap !== undefined ? total - pageCap : 0;
-  let cut = [...named.values()].reduce((sum, x) => sum + x.now - x.aim, 0);
-  const rest = () => parts.filter((p) => !named.has(p.n));
-  for (const p of rest()
-    .filter((p) => p.planned !== undefined && p.now > p.planned)
-    .sort((a, b) => b.now - b.planned - (a.now - a.planned))) {
-    if (cut >= excess) break;
-    add(p, p.planned);
-    cut += p.now - p.planned;
-  }
-  for (const p of rest().sort((a, b) => b.now - a.now)) {
-    if (cut >= excess) break;
-    const share = Math.min(excess - cut, Math.ceil(p.now / 5));
-    add(p, p.now - share);
-    cut += share;
+  if (pageCap !== undefined && total > pageCap) {
+    const cut = [...named.values()].reduce((sum, x) => sum + x.now - x.aim, 0);
+    const need = total - Math.floor(pageCap * TRIM_AIM) - cut;
+    // The lead states the thesis, so the page's share falls on the sections.
+    const rest = parts.filter((p) => p.n > 0 && !named.has(p.n) && p.now > 0);
+    const pool = rest.reduce((sum, p) => sum + p.now, 0);
+    if (need > 0 && pool > 0) {
+      for (const p of rest) {
+        const target = p.now - Math.ceil((need * p.now) / pool);
+        named.set(p.n, {
+          now: p.now,
+          cap: p.limit?.cap ?? p.now,
+          aim: target,
+          floor: Math.floor(target * TRIM_FLOOR),
+          why: "page",
+        });
+      }
+    }
   }
   return { named, total, pageCap, headings: parts.map((p) => p.heading) };
 }
 
 /**
  * What a whole-draft trim may not do: change a section it was not asked to cut, leave a named
- * section over its cap or the page over its cap, or change what trim keeps everywhere (markers,
- * footnote references, figure blocks, headings, frontmatter).
+ * section over its cap or the page over its cap, cut a named section below its floor, or change
+ * what trim keeps everywhere (markers, footnote references, figure blocks, headings, frontmatter).
  */
 function trimDocProblems(before, after, { plan, lang, budgets, where }) {
   const problems = preservedProblems(before, after);
@@ -2404,6 +2410,11 @@ function trimDocProblems(before, after, { plan, lang, budgets, where }) {
     const x = plan.named.get(i);
     if (x && sizes.lead > x.cap)
       problems.push(`${where(i)} is still over its cap: ${sizes.lead} > ${x.cap}`);
+    else if (x && sizes.lead < x.floor) {
+      problems.push(
+        `${where(i)} was cut to ${sizes.lead} ${budgets.unit}, below its floor of ${x.floor}: it was to land near ${x.aim}, so the answer cut more than the budget asks`,
+      );
+    }
   });
   if (plan.pageCap !== undefined && total > plan.pageCap) {
     problems.push(`the page is still over its cap: ${total} ${budgets.unit} > ${plan.pageCap}`);
@@ -6254,7 +6265,18 @@ async function runSelftest() {
   const trimDocBad = caseDir("trim-doc-bad", {
     "draft.en.v1.md": plain.replace(shortGap, longGap),
   });
-  answer("trim-doc-ok.md", plain);
+  // Section 3 at 239 words, cap 160: the aim is 152 and the floor 144, whatever its plan row says.
+  const gapOf = (k) =>
+    `We would rather keep a marker than leave a gap. {O1} ${filler.repeat(k).trim()} The format was settled early {F3}.`;
+  answer("trim-doc-ok.md", plain.replace(shortGap, gapOf(9)));
+  const trimDocOver = caseDir("trim-doc-over", {
+    "draft.en.v1.md": plain.replace(shortGap, longGap),
+  });
+  answer("trim-doc-over.md", plain.replace(shortGap, gapOf(7)));
+  // Every section within its cap and the page over its own: a share of the cut for each section.
+  const trimPage = caseDir("trim-page", {
+    "draft.en.v1.md": `${front}${words(70)}\n${["Alpha", "Beta", "Gamma", "Delta", "Epsilon"].map((h) => `\n## ${h}\n\n${words(150)}\n`).join("")}`,
+  });
   answer(
     "trim-doc-bad.md",
     plain.replace("Files live under one root per Project.", "Files live under a root."),
@@ -7321,8 +7343,46 @@ async function runSelftest() {
       code: 0,
       file: [
         path.join(trimDocOk, "draft.en.v2.md"),
-        /We would rather keep a marker than leave a gap\. \{O1\} The format/,
+        /We would rather keep a marker than leave a gap\. \{O1\} We keep a marker[\s\S]*The format was settled early \{F3\}\./,
       ],
+    },
+    {
+      name: "a whole-draft trim names only the section over its cap and aims a little under the cap, not at its plan row",
+      args: [
+        "trim",
+        "--dry-run",
+        "--in",
+        path.join(trimDocOk, "draft.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      code: 0,
+      stdout:
+        /rephrasing inside complete sentences[\s\S]*just enough to reach its aim, and stop there:\n- section 3 \("A marker beats a gap"\): now 239 English words; aim for about 152 English words; at most 160 English words and at least 144 English words\n[\s\S]*"many" stays "many" and never becomes "most"/,
+      notStdout: /- (the lead|section [124] )/,
+    },
+    {
+      name: "a whole-draft trim refuses an answer that cuts a section below its floor",
+      args: [
+        "trim",
+        "--in",
+        path.join(trimDocOver, "draft.en.v1.md"),
+        "--outline",
+        at("outline.final.md"),
+      ],
+      answer: "trim-doc-over.md",
+      code: 1,
+      stderr:
+        /section 3 \("A marker beats a gap"\) was cut to 127 words, below its floor of 144: it was to land near 152/,
+      absent: path.join(trimDocOver, "draft.en.v2.md"),
+    },
+    {
+      name: "a page over its cap shares the cut among the sections, down to a little under the page cap, and leaves the lead alone",
+      args: ["trim", "--dry-run", "--in", path.join(trimPage, "draft.en.v1.md")],
+      code: 0,
+      stdout:
+        /the page holds at most 750 English words of body text and counts 820 English words now[\s\S]*- section 1 \("Alpha"\): now 150 English words; aim for about 128 English words; at most 160 English words and at least 115 English words\n[\s\S]*- section 5 \("Epsilon"\): now 150 English words; aim for about 128/,
+      notStdout: /- the lead:/,
     },
     {
       name: "trim on a whole draft refuses an answer that changes a section it was not asked to cut",

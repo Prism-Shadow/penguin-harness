@@ -47,7 +47,10 @@ model's own strings, check and ship. The key is read from `TOKENDANCE_API_KEY` o
   counting rule `check` uses. A prompt for one section asks for its planned size, or for what the
   page has left when that is less. It never asks for the 1.1 × margin. After every section step,
   `check` reports the page total against its cap. `trim` shortens sections that are only too long,
-  without rewriting them.
+  without rewriting them. On a whole draft it cuts each section over its cap to just under that cap,
+  never down to its plan row. When the page is over its cap, it shares the cut among the sections
+  instead. It asks for complete sentences that keep every number, unit, approximation, attribution
+  and qualifier, and it refuses an answer that cuts a section more than 10% below its target.
 - `fix` and `trim` answers are checked before they are saved. Such an answer is set aside if it
   brings in a fact no finding named, changes a figure block no finding named, changes a marker, or
   is still over its cap after a cut. `fix`, `polish`, `translate`, and `trim` also set aside an
