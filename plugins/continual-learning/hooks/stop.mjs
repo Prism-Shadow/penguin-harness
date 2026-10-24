@@ -122,7 +122,7 @@ function condense(records) {
       lines.push(`[tool_call ${p.name}] ${clip(p.arguments || "", CLIP.toolCall)}`);
     } else if (p.type === "tool_call_output") {
       const name = toolNames.get(p.tool_call_id) || p.tool_call_id;
-      const status = p.stop_reason && p.stop_reason !== "completed" ? ` · ${p.stop_reason}` : "";
+      const status = p.status && p.status !== "completed" ? ` · ${p.status}` : "";
       lines.push(`[tool_output ${name}${status}] ${clip(p.output || "", CLIP.toolOutput)}`);
     }
   }

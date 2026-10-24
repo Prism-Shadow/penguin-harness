@@ -18,6 +18,7 @@ import {
   UnsupportedParameterError,
 } from "@prismshadow/mmsp";
 import type {
+  AutoLLMClient,
   EventContentItem,
   Fidelity,
   FinishReason,
@@ -211,7 +212,7 @@ describe("mergeRecordsToUniMessage", () => {
 
   it("maps tool_call_output to tool_result with role user and preserves id", () => {
     const uni = mergeRecordsToUniMessage([
-      toolCallOutput({ output: "total 0", toolCallId: "call_1" }),
+      toolCallOutput({ output: "total 0", toolCallId: "call_1", status: "completed" }),
     ]);
     expect(uni.role).toBe("user");
     expect(uni.content_items[0]).toEqual({
@@ -224,7 +225,12 @@ describe("mergeRecordsToUniMessage", () => {
   it("maps tool_call_output images to tool_result.images (data URL array)", () => {
     const dataUrl = "data:image/png;base64,AAAA";
     const uni = mergeRecordsToUniMessage([
-      toolCallOutput({ output: "image/png, 4 B", toolCallId: "call_img", images: [dataUrl] }),
+      toolCallOutput({
+        output: "image/png, 4 B",
+        toolCallId: "call_img",
+        images: [dataUrl],
+        status: "completed",
+      }),
     ]);
     expect(uni.role).toBe("user");
     expect(uni.content_items[0]).toEqual({
@@ -252,7 +258,7 @@ describe("mergeRecordsToUniMessage", () => {
       "Background command finished",
     );
     const uni = mergeRecordsToUniMessage([
-      toolCallOutput({ output: "total 0", toolCallId: "call_1" }),
+      toolCallOutput({ output: "total 0", toolCallId: "call_1", status: "completed" }),
       userText(notice, "harness"),
       userText(userSteeringText("also check the tests")),
     ]);
@@ -338,36 +344,32 @@ describe("translateEvents", () => {
         role: "assistant",
         event_type: "start",
         text: "",
-        stop_reason: "completed",
       },
       {
         type: "partial_text",
         role: "assistant",
         event_type: "delta",
         text: "Hel",
-        stop_reason: "completed",
       },
       {
         type: "partial_text",
         role: "assistant",
         event_type: "delta",
         text: "lo",
-        stop_reason: "completed",
       },
       {
         type: "partial_text",
         role: "assistant",
         event_type: "stop",
         text: "",
-        stop_reason: "completed",
       },
     ]);
 
-    // complete text message: the done item's text, stop_reason completed (finish_reason "stop").
+    // complete text message: the done item's text; no record carries an end reason.
     const complete = messages.find((m) => typeOf(m) === "text")!.payload as TextPayload;
     expect(complete.text).toBe("Hello");
     expect(complete.role).toBe("assistant");
-    expect(complete.stop_reason).toBe("completed");
+    expect(complete).not.toHaveProperty("stop_reason");
 
     // token accounting: request total = 12 + 4 = 16.
     expect(requestTokens.total).toBe(16);
@@ -410,7 +412,7 @@ describe("translateEvents", () => {
     expect(tc.name).toBe("exec_command");
     expect(tc.tool_call_id).toBe("c1");
     expect(tc.arguments).toBe('{"cmd":"ls -la"}');
-    expect(tc.stop_reason).toBe("completed");
+    expect(tc).not.toHaveProperty("stop_reason");
   });
 
   it("reads the complete call off the done item alone: the fragments are never reconciled against it", () => {
@@ -541,16 +543,14 @@ describe("translateEvents", () => {
     expect(
       messages.map(typeOf).filter((t) => t === "thinking" || t === "text" || t === "tool_call"),
     ).toEqual(["thinking", "text", "tool_call"]);
-    // Items that ended before the stream did are `completed`: the finish reason belongs to the
-    // item that ends the stream (here the tool call).
+    // Each complete message goes out at its own done item, before the next item starts.
+    const types = messages.map(typeOf);
+    expect(types.indexOf("thinking")).toBeLessThan(types.indexOf("partial_text"));
+    expect(types.indexOf("text")).toBeLessThan(types.indexOf("partial_tool_call"));
     const think = messages.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
     expect(think.thinking).toBe("I should run ls");
-    expect(think.stop_reason).toBe("completed");
     const txt = messages.find((m) => typeOf(m) === "text")!.payload as TextPayload;
     expect(txt.text).toBe("Running it.");
-    expect(txt.stop_reason).toBe("completed");
-    const tc = messages.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
-    expect(tc.stop_reason).toBe("completed");
   });
 
   it("keeps every item in generation order: text after a tool call, thinking between texts", () => {
@@ -578,26 +578,16 @@ describe("translateEvents", () => {
     ).toHaveLength(3);
   });
 
-  it("the item that ends the stream takes the request's finish reason: `length` ends it fatal", () => {
-    // A reply cut at the output cap: the request itself committed (nothing retries), but the
-    // last item ended in a way only a human can fix, which is what the abnormal terminal label
-    // tells the render layers. Earlier items are unaffected.
-    const { messages } = translateEvents([
-      ...thinking(["plan"]),
-      ...text(["cut off mid-sen"]),
-      stop("length"),
-    ]);
-    const think = messages.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
-    expect(think.stop_reason).toBe("completed");
-    const txt = messages.find((m) => typeOf(m) === "text")!.payload as TextPayload;
-    expect(txt.stop_reason).toBe("fatal");
-    const textStop = messages.find(
-      (m) =>
-        typeOf(m) === "partial_text" &&
-        (m.payload as { event_type?: string }).event_type === "stop",
-    )!.payload as { stop_reason: string };
-    expect(textStop.stop_reason).toBe("fatal");
-    // The messages of the last item wait for the stop event: nothing about it went out before.
+  it("a `length` finish truncates the request; the records carry no trace of it", () => {
+    // A reply cut at the output cap: the stream arrived whole, so every item is complete, and
+    // the finish reason is the request's alone (GenerativeModel turns it into `truncated`).
+    const tr = new EventTranslator();
+    const messages: AmspRecord[] = [];
+    for (const e of [...thinking(["plan"]), ...text(["cut off mid-sen"]), stop("length")]) {
+      for (const m of tr.pushEvent(e)) messages.push(m);
+    }
+    expect(tr.stopped).toBe(true);
+    expect(tr.truncatedBy).toBe("length");
     expect(messages.map(typeOf)).toEqual([
       "partial_thinking",
       "partial_thinking",
@@ -607,8 +597,17 @@ describe("translateEvents", () => {
       "partial_text",
       "partial_text",
       "text",
-      "token_usage",
     ]);
+    expect(messages.every((m) => !("stop_reason" in m.payload))).toBe(true);
+    expect((messages.find((m) => typeOf(m) === "text")!.payload as TextPayload).text).toBe(
+      "cut off mid-sen",
+    );
+  });
+
+  it("a normal finish truncates nothing", () => {
+    const tr = new EventTranslator();
+    for (const e of [...text(["done"]), stop("stop")]) Array.from(tr.pushEvent(e));
+    expect(tr.truncatedBy).toBeNull();
   });
 
   it("a fragment carrying only fidelity opens nothing on screen; its done item still becomes a complete message", () => {
@@ -702,14 +701,14 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
     return out;
   }
 
-  it("closes an open text item with a stop + complete text marked with the interruption reason, and emits no token_usage", () => {
+  it("closes an open text item with a stop and a complete text of what arrived, and emits no token_usage", () => {
     const tr = new EventTranslator();
     // Two fragments went out, then the stream broke (no done item, no stop event).
     const out = pushAll(tr, [
       delta({ type: "text.delta", text: "Par" }),
       delta({ type: "text.delta", text: "tial" }),
     ]);
-    for (const m of tr.finishInterrupted("retryable")) out.push(m);
+    for (const m of tr.finishInterrupted()) out.push(m);
 
     expect(out.map(typeOf)).toEqual([
       "partial_text", // start
@@ -718,81 +717,63 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
       "partial_text", // stop (backfilled by finishInterrupted)
       "text", // complete message
     ]);
-
-    const stop_ = out[3]!.payload as { event_type: string; stop_reason: string };
-    expect(stop_.event_type).toBe("stop");
-    expect(stop_.stop_reason).toBe("retryable");
+    expect((out[3]!.payload as { event_type: string }).event_type).toBe("stop");
     const complete = out[4]!.payload as TextPayload;
     expect(complete.text).toBe("Partial");
-    expect(complete.stop_reason).toBe("retryable");
+    expect(complete).not.toHaveProperty("stop_reason");
   });
 
-  it("closes an open thinking item with the interruption reason on both partial stop and complete message", () => {
+  it("closes an open thinking item with its partial stop and a complete message", () => {
     const tr = new EventTranslator();
     const out = pushAll(tr, [delta({ type: "thinking.delta", thinking: "half a thought" })]);
-    for (const m of tr.finishInterrupted("aborted")) out.push(m);
-
-    const stop_ = out.find(
-      (m) =>
-        typeOf(m) === "partial_thinking" &&
-        (m.payload as { event_type?: string }).event_type === "stop",
-    )!.payload as { stop_reason: string };
-    expect(stop_.stop_reason).toBe("aborted");
+    for (const m of tr.finishInterrupted()) out.push(m);
+    expect(out.map(typeOf)).toEqual([
+      "partial_thinking",
+      "partial_thinking",
+      "partial_thinking",
+      "thinking",
+    ]);
     const complete = out.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
     expect(complete.thinking).toBe("half a thought");
-    // Streamed concatenation == complete message: the complete thinking's stop_reason matches
-    // partial(stop).
-    expect(complete.stop_reason).toBe("aborted");
   });
 
-  it("completes an incomplete (fragments-only) tool_call with the interruption reason, not 'completed'", () => {
+  it("closes a tool call cut short with its partial stop alone: no complete record", () => {
     const tr = new EventTranslator();
     const out = pushAll(tr, [
       delta({ type: "tool_call.delta", name: "exec_command", arguments: "", tool_call_id: "c1" }),
       delta({ type: "tool_call.delta", name: "", arguments: '{"cmd":"ls', tool_call_id: "" }),
     ]);
-    for (const m of tr.finishInterrupted("aborted")) out.push(m);
+    for (const m of tr.finishInterrupted()) out.push(m);
 
-    const complete = out.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
-    expect(complete.tool_call_id).toBe("c1");
-    expect(complete.name).toBe("exec_command");
-    // Key point: not "completed" -> context_engine will not dispatch it for execution (it only
-    // serves structural completeness and observability).
-    expect(complete.stop_reason).toBe("aborted");
-    expect(complete.arguments).toBe('{"cmd":"ls'); // Keeps the (incomplete) fragments accumulated so far.
-
-    const toolStop = out.find(
-      (m) =>
-        typeOf(m) === "partial_tool_call" &&
-        (m.payload as { event_type: string }).event_type === "stop",
-    )!.payload as { stop_reason: string };
-    expect(toolStop.stop_reason).toBe("aborted");
+    // Half its arguments arrived: it is no call the engine could dispatch, and no call the
+    // model history holds — so it never gets a complete record.
+    expect(out.map(typeOf)).toEqual([
+      "partial_tool_call", // start
+      "partial_tool_call", // delta
+      "partial_tool_call", // stop
+    ]);
+    expect((out[2]!.payload as { event_type: string; tool_call_id: string }).tool_call_id).toBe(
+      "c1",
+    );
     expect(out.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("does not re-emit nor relabel a tool_call already completed by its done item (keeps 'completed')", () => {
+  it("does not re-emit a tool_call already completed by its done item", () => {
     const tr = new EventTranslator();
     const out = pushAll(tr, call("exec_command", "c1", ['{"cmd":"ls"}']));
     const before = out.length;
-    for (const m of tr.finishInterrupted("retryable")) out.push(m);
+    for (const m of tr.finishInterrupted()) out.push(m);
     expect(out.length).toBe(before); // Already produced on its done item, not duplicated.
-    const complete = out.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
-    expect(complete.stop_reason).toBe("completed");
+    expect(out.map(typeOf)).toContain("tool_call");
   });
 
-  it("a finished text still waiting for the stream's end takes the interruption reason", () => {
-    // The text's done item arrived, but the stream broke before its stop event: the request
-    // never committed, so the complete text is labelled like the request — and goes out at
-    // all, rather than staying held.
+  it("a finished text goes out at its done item, before the stream ends", () => {
     const tr = new EventTranslator();
     const out = pushAll(tr, text(["all of it"]));
-    expect(out.map(typeOf)).toEqual(["partial_text", "partial_text"]); // start + delta; the rest waits
-    for (const m of tr.finishInterrupted("retryable")) out.push(m);
     expect(out.map(typeOf)).toEqual(["partial_text", "partial_text", "partial_text", "text"]);
-    const complete = out[3]!.payload as TextPayload;
-    expect(complete.text).toBe("all of it");
-    expect(complete.stop_reason).toBe("retryable");
-    expect((out[2]!.payload as { stop_reason: string }).stop_reason).toBe("retryable");
+    for (const m of tr.finishInterrupted()) out.push(m);
+    expect(out).toHaveLength(4); // nothing was left open
+    expect((out[3]!.payload as TextPayload).text).toBe("all of it");
   });
 });
 
@@ -1230,7 +1211,7 @@ describe("GenerativeModel per-request output cap (window clamp, issue #218)", ()
     const imageOutput = toolCallOutput({
       output: "Read image OK (1024x768).",
       toolCallId: "c1",
-      stopReason: "completed",
+      status: "completed",
       images: [`data:image/png;base64,${"A".repeat(1_000_000)}`],
     });
     await drainAll(model.streamGenerate({ newMessages: [imageOutput] }));
@@ -1515,7 +1496,6 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome.status).toBe("retryable");
     const complete = messages.find((m) => typeOf(m) === "text");
     expect((complete!.payload as TextPayload).text).toBe("hi");
-    expect((complete!.payload as TextPayload).stop_reason).toBe("retryable");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
@@ -1539,7 +1519,6 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome.errorMessage).toContain("Unexpected token");
     const complete = messages.find((m) => typeOf(m) === "text");
     expect((complete!.payload as TextPayload).text).toBe("hi");
-    expect((complete!.payload as TextPayload).stop_reason).toBe("retryable");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
@@ -1557,10 +1536,10 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     );
     expect(outcome).toMatchObject({ status: "retryable", errorCode: "malformed" });
     expect(messages.map(typeOf)).not.toContain("token_usage");
-    // The text's done item had arrived, but its request never committed: labelled retryable.
+    // The text's done item had arrived: its complete record went out; the request's
+    // `retryable` says it never committed.
     const complete = messages.find((m) => typeOf(m) === "text")!.payload as TextPayload;
     expect(complete.text).toBe("hi");
-    expect(complete.stop_reason).toBe("retryable");
 
     async function* noEvents(): AsyncGenerator<UniEvent> {
       throw new Error("Streaming response ended without finish_reason");
@@ -1584,9 +1563,51 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     );
     expect(outcome).toMatchObject({ status: "retryable", errorCode: "malformed" });
     expect(messages.map(typeOf)).not.toContain("token_usage");
-    expect((messages.find((m) => typeOf(m) === "text")!.payload as TextPayload).stop_reason).toBe(
-      "retryable",
+    expect((messages.find((m) => typeOf(m) === "text")!.payload as TextPayload).text).toBe("hi");
+  });
+
+  it("a response cut off at its cap is truncated: no usage, and taken back out of the stateful history", async () => {
+    // MMSP records the turn before it yields the stop event; this seam does the same, so the
+    // test sees what GenerativeModel does with a turn MMSP already committed.
+    class RecordingSeam extends GenerativeModel {
+      constructor(private readonly finish: "stop" | "length" | "unknown") {
+        super({ modelId: "claude-sonnet-4-6", tools: [], requestTimeoutMs: 10000 });
+      }
+      protected override async *openStream(uni: UniMessage): AsyncGenerator<UniEvent> {
+        yield* text(["Half an ans"]);
+        const client = (this as unknown as { client: AutoLLMClient }).client;
+        client.setHistory([...client.getHistory(), uni, { role: "assistant", content_items: [] }]);
+        yield stop(this.finish);
+      }
+    }
+    const historyOf = (m: GenerativeModel): UniMessage[] =>
+      (m as unknown as { client: AutoLLMClient }).client.getHistory();
+
+    const cut = new RecordingSeam("length");
+    const { messages, outcome } = await drain(
+      cut.streamGenerate({ newMessages: [userText("go")] }),
     );
+    expect(outcome).toEqual({
+      status: "truncated",
+      errorMessage: "the response stopped at the output limit (finish_reason: length)",
+    });
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+    expect((messages.find((m) => typeOf(m) === "text")!.payload as TextPayload).text).toBe(
+      "Half an ans",
+    );
+    expect(historyOf(cut)).toHaveLength(0);
+
+    const odd = new RecordingSeam("unknown");
+    const unknown = await drain(odd.streamGenerate({ newMessages: [userText("go")] }));
+    expect(unknown.outcome.status).toBe("truncated");
+    expect(unknown.outcome.errorMessage).toContain("finish_reason: unknown");
+    expect(historyOf(odd)).toHaveLength(0);
+
+    const whole = new RecordingSeam("stop");
+    const done = await drain(whole.streamGenerate({ newMessages: [userText("go")] }));
+    expect(done.outcome).toEqual({ status: "completed" });
+    expect(done.messages.map(typeOf)).toContain("token_usage");
+    expect(historyOf(whole)).toHaveLength(2);
   });
 
   it("a stop event in hand completes the request even when the abort landed as it arrived", async () => {
@@ -1771,7 +1792,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       message:
         "request (100091 tokens) exceeds the available context size (98304 tokens), try increasing it",
       body: undefined,
-      stopReason: "fatal",
+      outcomeStatus: "fatal",
       code: "rejected",
     },
     {
@@ -1781,7 +1802,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
         "input[366].image[0]: You have uploaded an unsupported image. Please make sure your " +
         "image is valid and has one of the following formats: webp, png, jpeg, and gif.",
       body: undefined,
-      stopReason: "fatal",
+      outcomeStatus: "fatal",
       code: "rejected",
     },
     {
@@ -1789,7 +1810,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       status: 400,
       message: "unknown parameter: max_output_tokens",
       body: undefined,
-      stopReason: "fatal",
+      outcomeStatus: "fatal",
       code: "rejected",
     },
     {
@@ -1797,16 +1818,16 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       status: 500,
       message: "Could not process image",
       body: undefined,
-      stopReason: "retryable",
+      outcomeStatus: "retryable",
       code: "network",
     },
-  ])("classifies $name as $code", async ({ status, message, body, stopReason, code }) => {
+  ])("classifies $name as $code", async ({ status, message, body, outcomeStatus, code }) => {
     async function* rejection(): AsyncGenerator<UniEvent> {
       throw Object.assign(new Error(message), { status, ...(body ? { error: body } : {}) });
     }
     const model = new SeamModel(() => rejection());
     const { outcome } = await drain(model.streamGenerate({ newMessages: [userText("go")] }));
-    expect(outcome).toMatchObject({ status: stopReason, errorCode: code });
+    expect(outcome).toMatchObject({ status: outcomeStatus, errorCode: code });
   });
 
   it("classifies an undici transport drop (TypeError terminated, cause UND_ERR_SOCKET) as retryable", async () => {
@@ -1822,7 +1843,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     );
     expect(outcome.status).toBe("retryable");
     const complete = messages.find((m) => typeOf(m) === "text");
-    expect((complete!.payload as TextPayload).stop_reason).toBe("retryable");
+    expect((complete!.payload as TextPayload).text).toBe("hi");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
@@ -1844,8 +1865,8 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
 describe("provider fidelity payloads (opaque)", () => {
   it("round-trips fidelity payloads back to UniMessage content items (setHistory path)", () => {
     const uni = mergeRecordsToUniMessage([
-      thinkingMessage("deep", "completed", { signature: "sig-1" }),
-      assistantText("hi", "completed", { phase: "answer", signature: "sig-2" }),
+      thinkingMessage("deep", { signature: "sig-1" }),
+      assistantText("hi", { phase: "answer", signature: "sig-2" }),
       toolCall({ name: "t", arguments: "{}", toolCallId: "tc1", fidelity: { signature: "sig-3" } }),
     ]);
     expect(uni.content_items).toEqual([
@@ -1862,7 +1883,7 @@ describe("provider fidelity payloads (opaque)", () => {
   });
 
   it("an empty-text message keeps its fidelity on the way out (a signed empty part is still signed)", () => {
-    const uni = mergeRecordsToUniMessage([assistantText("", "completed", { signature: "sig-t" })]);
+    const uni = mergeRecordsToUniMessage([assistantText("", { signature: "sig-t" })]);
     expect(uni.content_items).toEqual([
       { type: "text.done", text: "", fidelity: { signature: "sig-t" } },
     ]);
@@ -1887,7 +1908,7 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
       .map((m) => m.payload as ToolCallPayload);
     expect(calls[0]!.arguments).toBe('{"city":"Tokyo"}');
     expect(calls[1]!.arguments).toBe('{"city":"Paris"}');
-    expect(calls.every((c) => c.stop_reason === "completed")).toBe(true);
+    expect(calls).toHaveLength(2);
     // The fragments of each call go out under its own id, the suffixed one included.
     const partialIds = messages
       .filter((m) => typeOf(m) === "partial_tool_call")
@@ -1951,7 +1972,7 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
 
   it("outbound restoration: the #n suffix on tool_call / tool_call_output is stripped before sending to the provider; unsuffixed ids pass as-is", () => {
     const result = mergeRecordsToUniMessage([
-      toolCallOutput({ output: "10:00", toolCallId: "get_time#2" }),
+      toolCallOutput({ output: "10:00", toolCallId: "get_time#2", status: "completed" }),
     ]);
     expect((result.content_items[0] as { tool_call_id: string }).tool_call_id).toBe("get_time");
 
@@ -1961,7 +1982,7 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
     expect((call.content_items[0] as { tool_call_id: string }).tool_call_id).toBe("get_time");
 
     const passthrough = mergeRecordsToUniMessage([
-      toolCallOutput({ output: "ok", toolCallId: "call_Ab12" }),
+      toolCallOutput({ output: "ok", toolCallId: "call_Ab12", status: "completed" }),
     ]);
     expect((passthrough.content_items[0] as { tool_call_id: string }).tool_call_id).toBe(
       "call_Ab12",
@@ -2004,7 +2025,7 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
     model.setHistory([
       userText("What time is it in Tokyo?"),
       toolCall({ name: "get_time", arguments: '{"city":"Tokyo"}', toolCallId: "get_time" }),
-      toolCallOutput({ output: "10:00", toolCallId: "get_time" }),
+      toolCallOutput({ output: "10:00", toolCallId: "get_time", status: "completed" }),
     ]);
 
     const out: AmspRecord[] = [];

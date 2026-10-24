@@ -463,10 +463,11 @@ export async function scanMessages(
           state.task.pendingCompactionUsage = false;
         }
         const status = p.status;
-        // A retryable end renders a reconnect-hint item. The legacy spellings
+        // A retryable or truncated end renders a reconnect-hint item. The legacy spellings
         // (failed/timeout/malformed) keep pre-convergence Traces rendering the same way.
         if (
           status === "retryable" ||
+          status === "truncated" ||
           status === "failed" ||
           status === "timeout" ||
           status === "malformed"

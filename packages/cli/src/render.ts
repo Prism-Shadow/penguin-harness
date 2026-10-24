@@ -220,10 +220,9 @@ export interface RenderOptions {
 
 /**
  * Statically renders resumed history messages (`--resume`: full-message semantics, no
- * partial_*, including interrupted messages and their markers). Uses the
- * same color scheme as streaming rendering: user input `> `, dim thinking, cyan tool
- * calls, dim tool-output gutter; a message whose `stop_reason` isn't completed gets a
- * dim marker appended at the end of its line.
+ * partial_*, including the abort markers). Uses the same color scheme as streaming rendering:
+ * user input `> `, dim thinking, cyan tool calls, dim tool-output gutter; a tool result whose
+ * `status` isn't completed gets a dim marker after its last line.
  */
 export function renderHistory(
   messages: AmspRecord[],
@@ -253,10 +252,8 @@ export function renderHistory(
       output?: string;
       images?: string[];
       tool_call_id?: string;
-      stop_reason?: string;
+      status?: string;
     };
-    const marker =
-      p.stop_reason && p.stop_reason !== "completed" ? dim(` [${p.stop_reason}]`, c) : "";
     switch (p.type) {
       case "text":
         if (p.role === "user") {
@@ -270,21 +267,21 @@ export function renderHistory(
           }
         } else {
           // A reply's a2ui blocks print as their text fallback, as they do while streaming.
-          out.write(`${toFallbackMarkdown(p.text ?? "")}${marker}\n`);
+          out.write(`${toFallbackMarkdown(p.text ?? "")}\n`);
         }
         break;
       case "image_url":
         out.write(`\n> ${dim("[image]", c)}\n`);
         break;
       case "thinking":
-        out.write(`${dim(p.thinking ?? "", c)}${marker}\n`);
+        out.write(`${dim(p.thinking ?? "", c)}\n`);
         break;
       case "tool_call": {
         if (p.name) toolNames.set(nameKey(msg, p.tool_call_id ?? ""), p.name);
         const preview =
           renderPartialToolCall(p.name ?? "", p.arguments ?? "", { final: true }) ??
           `${p.name} ${p.arguments}`;
-        out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`, c)}${marker}\n`);
+        out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`, c)}\n`);
         break;
       }
       case "tool_call_output": {
@@ -322,6 +319,8 @@ export function renderHistory(
         for (const _ of p.images ?? []) {
           out.write(`${c.dim}${label} -> [image]${c.reset}\n`);
         }
+        if (p.status && p.status !== "completed")
+          out.write(`${dim(`${label} [${p.status}]`, c)}\n`);
         break;
       }
       default:
@@ -482,7 +481,8 @@ export class StreamRenderer {
   private taskFirstTsMs: number | null = null;
   private taskLastReqEndMs: number | null = null;
   /** Retryable terminal state of the previous request (legacy Traces carry the finer pre-convergence spellings): the next request_begin is a retry, at which point a notice is printed. */
-  private pendingRetry: "retryable" | "failed" | "timeout" | "malformed" | null = null;
+  private pendingRetry: "retryable" | "truncated" | "failed" | "timeout" | "malformed" | null =
+    null;
   /** The pending failure's classified cause (request_end.error_code), for the retry line's wording. */
   private pendingRetryCode: string | undefined;
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
@@ -858,9 +858,12 @@ export class StreamRenderer {
           this.finishLine();
           this.out.write(`${dim(this.t.llmFatalLabel(p.error_message), this.c)}\n`);
           this.lastLineKey = null;
-        } else if (endStatus === "retryable" && p.retry_in_ms === undefined) {
-          // A live-protocol retryable with no planned wait is the ladder giving up — the
-          // run ends on it. The legacy spellings never take this branch: their era stamped
+        } else if (
+          (endStatus === "retryable" || endStatus === "truncated") &&
+          p.retry_in_ms === undefined
+        ) {
+          // A live-protocol retryable / truncated with no planned wait is the ladder giving up —
+          // the run ends on it. The legacy spellings never take this branch: their era stamped
           // no retry_in_ms mid-ladder, and their exhaustion printed from the abort event.
           this.pendingRetry = null;
           this.pendingRetryAttempt = undefined;
@@ -872,6 +875,7 @@ export class StreamRenderer {
           this.lastLineKey = null;
         } else if (
           endStatus === "retryable" ||
+          endStatus === "truncated" ||
           endStatus === "failed" ||
           endStatus === "timeout" ||
           endStatus === "malformed"

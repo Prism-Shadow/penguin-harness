@@ -3690,11 +3690,13 @@ Scenarios:
     subagent: "Subagent",
     subagentRunning: "Running",
     /**
-     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
-     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
-     * renders its English `reason` prose as-is.
+     * Abort banner (user interruptions, and the turn cap). The cause localizes from
+     * `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim. The turn cap's line is
+     * localized whole (its message only restates the cap in English). A legacy Trace without a
+     * code renders its English `reason` prose as-is.
      */
     aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      if (item?.errorCode === "max_turns") return "[Stopped]: reached the maximum turns per task";
       const cause =
         item?.errorCode === "user_abort"
           ? "aborted by user"
@@ -3708,11 +3710,11 @@ Scenarios:
     },
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `retryable` is the live status; the finer spellings only appear when
-     * replaying Traces written before the stop-reason convergence.
+     * wording. `retryable` and `truncated` are the live statuses; the finer spellings only
+     * appear when replaying Traces written before the status convergence.
      */
     reconnect: (
-      status: "retryable" | "failed" | "timeout" | "malformed",
+      status: "retryable" | "truncated" | "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
@@ -3731,9 +3733,11 @@ Scenarios:
               ? "Network or service temporarily unavailable"
               : kind === "image_rejected"
                 ? "The model provider rejected an image in this turn's input (replaced with a note)"
-                : kind === "failed"
-                  ? "The model provider returned an error"
-                  : "The request failed";
+                : kind === "truncated"
+                  ? "The model's output was cut off (it hit the output limit or did not finish normally)"
+                  : kind === "failed"
+                    ? "The model provider returned an error"
+                    : "The request failed";
       const action =
         state === "gaveUp"
           ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`

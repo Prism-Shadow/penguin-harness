@@ -110,6 +110,7 @@ const fakeEnvironment: EnvironmentInterface = {
     yield toolCallOutput({
       output: "tool ran",
       toolCallId: tc.payload.tool_call_id,
+      status: "completed",
     });
   },
   toolPermission() {
@@ -595,8 +596,8 @@ describe("context compaction", () => {
     expect(
       out.some(
         (m) =>
-          (m.payload as { type?: string }).type === "text" &&
-          textOf(m).includes("reached max turns (1)"),
+          (m.payload as { type?: string; error_code?: string }).type === "abort" &&
+          (m.payload as { error_code?: string }).error_code === "max_turns",
       ),
     ).toBe(true);
     expect(llm2.calls).toHaveLength(1);
@@ -1134,13 +1135,13 @@ describe("context compaction", () => {
       const repair = retry[0]!.payload as {
         tool_call_id: string;
         output: string;
-        stop_reason?: string;
+        status?: string;
       };
       expect(repair.tool_call_id).toBe(`c${attempt - 1}`);
       expect(repair.output).toBe(
         "[tool error] the compaction request expects a summary, not tool calls",
       );
-      expect(repair.stop_reason).toBe("fatal");
+      expect(repair.status).toBe("fatal");
       expect(textOf(retry[1]!)).toBe(SUMMARY_RETRY_GUIDANCE);
       expect(textOf(retry[2]!)).toBe("COMPACT NOW");
     }
@@ -1277,13 +1278,13 @@ describe("context compaction", () => {
     const repair = retry[0]!.payload as {
       tool_call_id: string;
       output: string;
-      stop_reason?: string;
+      status?: string;
     };
     expect(repair.tool_call_id).toBe("c1");
     expect(repair.output).toBe(
       "[tool error] the compaction request expects a summary, not tool calls",
     );
-    expect(repair.stop_reason).toBe("fatal");
+    expect(repair.status).toBe("fatal");
     expect(textOf(retry[1]!)).toBe(SUMMARY_RETRY_GUIDANCE);
     expect(textOf(retry[2]!)).toBe("COMPACT NOW");
 
@@ -1302,49 +1303,6 @@ describe("context compaction", () => {
       "[context_summary]\nreal summary\n[/context_summary]",
       "task two",
     ]);
-  });
-
-  it("a non-completed tool_call (interruption-closure shape) does not reject the summary", async () => {
-    // Same filter as the ordinary turn loop: only stop_reason === "completed" tool_calls are
-    // real requests. A tool_call synthesized to close out an interruption carries the
-    // interruption reason — it is structural, gets no synthesized repair, and must not cost
-    // a rejection attempt.
-    const llm1 = new ScriptedLLM(
-      [
-        { messages: [assistantText("answer"), usage(150, 150)] },
-        {
-          messages: [
-            toolCall({ name: "t", arguments: "", toolCallId: "cz", stopReason: "retryable" }),
-            assistantText("[summary]still fine[/summary]"),
-          ],
-        },
-      ],
-      "llm1",
-    );
-    const llm2 = new ScriptedLLM([{ messages: [assistantText("ok"), usage(10, 200)] }], "llm2");
-    const trace = new Writer({ tracesDir: traces, sessionId: "sess_closure" });
-    const engine = new ContextEngine({
-      llm: llm1,
-      environment: fakeEnvironment,
-      trace,
-      sessionMeta: metaMessage,
-      compaction: settings(),
-      openNextContext: () => ({ llm: llm2 }),
-    });
-    const oldPath = trace.currentPath();
-
-    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
-    expect(compactionEvents(out)[1]).toMatchObject({
-      type: "compaction_end",
-      status: "completed",
-    });
-    // One compaction attempt, no retry, and no repair synthesized for the closure call.
-    expect(llm1.calls).toHaveLength(2);
-    const closureRepairs = (await readTrace(oldPath)).filter((m) => {
-      const p = m.payload as { type?: string; tool_call_id?: string };
-      return p.type === "tool_call_output" && p.tool_call_id === "cz";
-    });
-    expect(closureRepairs).toEqual([]);
   });
 
   it("mid-task: a committed rejection absorbs the turn's tool outputs — retries never resend them, and an empty-handed abandonment ends the run by the interruption flow", async () => {
@@ -2316,7 +2274,7 @@ describe("compaction summary streaming (issue #290)", () => {
         {
           messages: [
             thinkingMessage("whole thought"),
-            thinkingMessage("", "completed", { signature: "opaque" }),
+            thinkingMessage("", { signature: "opaque" }),
             assistantText("[summary]whole[/summary]"),
             usage(160, 310),
           ],
@@ -2421,7 +2379,11 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
         async *executeTool({ toolCall: tc }) {
           dispatched.push(tc.payload.tool_call_id);
           await gate;
-          yield toolCallOutput({ output: "tool ran", toolCallId: tc.payload.tool_call_id });
+          yield toolCallOutput({
+            output: "tool ran",
+            toolCallId: tc.payload.tool_call_id,
+            status: "completed",
+          });
         },
         toolPermission() {
           return "rw";
@@ -2544,7 +2506,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
         yield toolCallOutput({
           output: "[tool error] boom",
           toolCallId: tc.payload.tool_call_id,
-          stopReason: "fatal",
+          status: "fatal",
         });
       },
       toolPermission() {
@@ -2571,9 +2533,9 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
     await collect(engine.run([userText("go")], { approve: allowAll }));
     const compactionInput = llm1.calls[1]!;
     expect(payloadTypes(compactionInput)).toEqual(["tool_call_output", "text"]);
-    const out = compactionInput[0]!.payload as { output: string; stop_reason?: string };
+    const out = compactionInput[0]!.payload as { output: string; status?: string };
     expect(out.output).toBe("[tool error] boom");
-    expect(out.stop_reason).toBe("fatal");
+    expect(out.status).toBe("fatal");
   });
 
   it("a denied tool still pairs: the denial output rides the compaction request", async () => {

@@ -1348,14 +1348,15 @@ export class TraceService implements Traces {
           // continue the turn, otherwise a single blip would split that turn's
           // Tokens/duration/TPS across two Tasks and inflate the Task count.
           //
-          // This list must track the engine's: `retryable` is the one reconnecting
-          // status today (both loops share RETRY_STATUSES). The legacy spellings keep
+          // This list must track the engine's: `retryable` and `truncated` are the
+          // reconnecting statuses (both loops share RETRY_STATUSES). The legacy spellings keep
           // pre-convergence Traces analyzable — in that era timeout/malformed always
           // reconnected, while `failed` reconnected in the turn loop but ended a
           // compaction attempt (the then fail-fast compaction policy), hence the
           // compactionActive guard on it.
           const retryable =
             status === "retryable" ||
+            status === "truncated" ||
             status === "timeout" ||
             status === "malformed" ||
             (status === "failed" && !compactionActive);
@@ -1509,21 +1510,16 @@ export class TraceService implements Traces {
       }
       if (p.type === "tool_call" && typeof p.tool_call_id === "string") {
         if (!hasOrigin) sawToolCallThisRequest = true; // This turn called a tool -> the next turn continues the same Task
-        const callStop = typeof p.stop_reason === "string" ? p.stop_reason : undefined;
         const span: ToolCallSpan = {
           toolCallId: p.tool_call_id,
           name: typeof p.name === "string" ? p.name : "",
           startTs: msg.timestamp,
         };
-        if (callStop !== undefined) span.stopReason = callStop;
         openToolCalls.set(p.tool_call_id, span);
         toolCalls.push(span);
-        // The timeline lane only accepts calls that "will actually be executed":
-        // an interrupt-compensation tool_call (stop_reason other than completed)
-        // never gets an approval/output, and putting it on a lane would render as
-        // a phantom "executing" state spanning the whole timeline — so it's
-        // skipped outright.
-        if (!hasOrigin && (callStop === undefined || callStop === "completed")) {
+        // Every complete tool_call is one the engine dispatched (a call the stream cut short
+        // has no complete record), so each gets a timeline lane.
+        if (!hasOrigin) {
           const timeline: TraceToolSpan = {
             toolCallId: p.tool_call_id,
             name: typeof p.name === "string" ? p.name : "",
@@ -1539,12 +1535,13 @@ export class TraceService implements Traces {
           span.endTs = msg.timestamp;
           const dur = Date.parse(msg.timestamp) - Date.parse(span.startTs);
           if (Number.isFinite(dur)) span.durationMs = dur;
-          if (typeof p.stop_reason === "string") span.stopReason = p.stop_reason;
+          // A result written before tool results carried a status reads as completed.
+          span.status = typeof p.status === "string" ? p.status : "completed";
         }
         const timeline = openSpansById.get(p.tool_call_id);
         if (timeline && timeline.outputTs === undefined) {
           timeline.outputTs = msg.timestamp;
-          if (typeof p.stop_reason === "string") timeline.stopReason = p.stop_reason;
+          timeline.status = typeof p.status === "string" ? p.status : "completed";
         }
       }
     }

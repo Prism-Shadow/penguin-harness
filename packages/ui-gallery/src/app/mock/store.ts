@@ -432,19 +432,13 @@ export class DemoStore {
     if (live.transcript.openThinking) delete live.transcript.openThinking;
     const open = live.transcript.openText;
     if (open) {
-      // The streamed part stays, closed as aborted, as the engine records a cut-off reply.
+      // The streamed part stays, as the engine records a cut-off reply.
       delete live.transcript.openText;
       this.emit(
         live,
-        partial(0, {
-          type: "partial_text",
-          role: "assistant",
-          event_type: "stop",
-          text: "",
-          stop_reason: "aborted",
-        }),
+        partial(0, { type: "partial_text", role: "assistant", event_type: "stop", text: "" }),
       );
-      if (open.text !== "") this.emit(live, assistantText(0, open.text, "aborted"));
+      if (open.text !== "") this.emit(live, assistantText(0, open.text));
     }
     if (live.transcript.pendingApproval) {
       delete live.transcript.pendingApproval;

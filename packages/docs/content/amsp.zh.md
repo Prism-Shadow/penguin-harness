@@ -94,7 +94,7 @@ id: 7c41d0a2-2
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"task_begin"}}
 
 id: 7c41d0a2-4
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Say hello","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Say hello"}}
 
 id: 7c41d0a2-5
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"tool_list_ready","tools":[…]}}
@@ -103,16 +103,16 @@ id: 7c41d0a2-6
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
 
 id: 7c41d0a2-7
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"start","text":"","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"start","text":""}}
 
 id: 7c41d0a2-8
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"delta","text":"Hello!","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"delta","text":"Hello!"}}
 
 id: 7c41d0a2-9
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"stop","text":"","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"stop","text":""}}
 
 id: 7c41d0a2-10
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"assistant","text":"Hello!","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"assistant","text":"Hello!"}}
 
 id: 7c41d0a2-11
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"token_usage","session":{"cache_read":0,"cache_write":0,"output":2,"total":412},"request":{"cache_read":0,"cache_write":0,"output":2,"total":412}}}
@@ -197,14 +197,13 @@ POST …/sessions/:sessionId/approvals/:toolCallId   {"decision": "allow" | "den
 `[DONE]` 只说明运行结束了，运行的情况在记录里。客户端的 `RunResult` 从主 Session 的记录（不带 `origin` 的那些）中读出它，依次判定：
 
 1. 最后一个 `task_begin` 没有 `task_end`，或没有任何 Task 开始：`fatal`，错误码 `internal`。服务器在驱动运行时出了故障。
-2. 有 `abort` 记录：`aborted`，带其错误。
-3. 最后一个非 `completed` 且不带 `retry_in_ms` 的 `request_end` 或 `compaction_end`，其后没有新的 `request_begin`：取它的状态和错误。
-4. 最后一条助手 `text` 以 `fatal` 结束（即轮次上限的提示）：`fatal`。
-5. 其余情况为 `completed`。
+2. 有 `abort` 记录：`aborted`，带其错误。达到轮次上限的 Task 也这样结束，错误码为 `max_turns`。
+3. 最后一个非 `completed` 且不带 `retry_in_ms` 的 `request_end` 或 `compaction_end`，其后没有新的 `request_begin`：取它的状态和错误。供应商一再截断的响应以 `truncated` 结束。
+4. 其余情况为 `completed`。
 
 结果的其余字段：
 
-- `text`：主 Session 的助手文本，以空行连接，不含 `compaction_begin` 与 `compaction_end` 之间的内容；
+- `text`：主 Session 中以 `completed` 结束的 Request 的助手文本，以空行连接，不含 `compaction_begin` 与 `compaction_end` 之间的内容（被重试的尝试不计入）；
 - `usage`：全部 `token_usage.request` 之和，包括子 Agent 的；
 - `sessionUsage`：主 Session 最后一个 `token_usage.session`，没有时为 `null`；
 - `requests`：主 Session 的 `request_begin` 记录数，包括重试的尝试。
@@ -213,7 +212,7 @@ POST …/sessions/:sessionId/approvals/:toolCallId   {"decision": "allow" | "den
 
 ## 错误
 
-流开始之前，拒绝以 HTTP 状态码和 `{"error": {"code", "message"}}` 表示，状态码列在[错误](/agent-api#错误)中。以 `fatal` 或 `retryable` 结束的运行，HTTP 响应仍是 `200`：HTTP 状态码只反映请求本身。
+流开始之前，拒绝以 HTTP 状态码和 `{"error": {"code", "message"}}` 表示，状态码列在[错误](/agent-api#错误)中。以 `fatal`、`retryable` 或 `truncated` 结束的运行，HTTP 响应仍是 `200`：HTTP 状态码只反映请求本身。
 
 流中的故障由记录的 `error_code` 和 `error_message` 表示：出现在 `request_end` 和 `compaction_end` 上、`abort` 上，以及 `mcp_connect_end` 及其每一项 `results` 上。错误码如下：
 
@@ -246,7 +245,7 @@ data: {"type":"event_msg","payload":{"type":"request_begin","thinking_level":"me
 data: {"type":"model_msg","payload":{"type":"partial_tool_call","event_type":"start","name":"exec_command","tool_call_id":"call_1",…}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call","event_type":"delta","arguments":"{\"command\": \"ls\"}","tool_call_id":"call_1",…}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call","event_type":"stop","tool_call_id":"call_1",…}}
-data: {"type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"command\":\"ls\"}","tool_call_id":"call_1","stop_reason":"completed"}}
+data: {"type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"command\":\"ls\"}","tool_call_id":"call_1"}}
             ← caller: GET …/sessions/<id>/approvals?wait=30 → {"approvals":[{"tool_call":{…,"tool_call_id":"call_1"}}]}
             ← caller: POST …/sessions/<id>/approvals/call_1 {"decision":"allow"} → 204
 data: {"type":"event_msg","payload":{"type":"approval_decision","decision":"allow","tool_call_id":"call_1"}}
@@ -255,7 +254,7 @@ data: {"type":"event_msg","payload":{"type":"token_usage",…}}
 data: {"type":"event_msg","payload":{"type":"request_end","status":"completed"}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call_output","event_type":"delta","output":"README.md\nsrc\n","tool_call_id":"call_1",…}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call_output","event_type":"stop","tool_call_id":"call_1",…}}
-data: {"type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"README.md\nsrc\n","tool_call_id":"call_1","stop_reason":"completed"}}
+data: {"type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"README.md\nsrc\n","tool_call_id":"call_1","status":"completed"}}
 data: {"type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
 …
 ```
@@ -271,7 +270,7 @@ data: {"type":"event_msg","payload":{"type":"request_begin",…}}
 data: {"type":"model_msg","payload":{"type":"partial_text","event_type":"delta","text":"Let me",…}}
             ← caller: POST …/sessions/<id>/abort → 202
 data: {"type":"model_msg","payload":{"type":"partial_text","event_type":"stop",…}}
-data: {"type":"model_msg","payload":{"type":"text","role":"assistant","text":"Let me","stop_reason":"aborted"}}
+data: {"type":"model_msg","payload":{"type":"text","role":"assistant","text":"Let me"}}
 data: {"type":"event_msg","payload":{"type":"request_end","status":"aborted","attempt":2}}
 data: {"type":"event_msg","payload":{"type":"abort","error_code":"user_abort"}}
 data: {"type":"event_msg","payload":{"type":"task_end"}}

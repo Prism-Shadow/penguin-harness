@@ -10,11 +10,14 @@
  * - Given named events AMSP does not define and a record type the client does not know, the first
  *   are left out and the second is read like any record.
  * - Given a run's records, `result()` decides the status in the rule's order — an unclosed last
- *   `task_begin` or no Task at all, then an `abort`, then an unrecovered terminal record, then a
- *   fatal last answer — and nothing a subagent records decides it.
+ *   `task_begin` or no Task at all, then an `abort` (the turn cap's included), then an
+ *   unrecovered terminal record (`truncated` included) — and nothing a subagent records decides
+ *   it.
  * - Given a run with a compaction and a subagent, `text` is the main Session's answers without
  *   the summary or the child's, `usage` counts every request the child's included, and
  *   `sessionUsage` is the main Session's last count.
+ * - Given an attempt that was truncated and retried, `text` keeps only the completed Request's
+ *   answer.
  *
  * Failures:
  * - Given a refusal before the stream, the run rejects with AmspHttpError and `session` with it.
@@ -30,7 +33,7 @@
  * - Given a call the server decides itself, the open look is closed when its decision arrives and
  *   nothing is posted.
  * - Given no callback, or one that throws, the answer posted is `deny`.
- * - Given a call cut short, no look opens.
+ * - Given a call cut short (fragments only, no complete record), no look opens.
  * - Given a call someone else answered first (`approval_not_found`), the run goes on.
  *
  * The rest: `agent()`, `session()`, `messages()` with a page, `approvals()` with a wait,
@@ -59,6 +62,7 @@ import {
   decision,
   ev,
   partialText,
+  partialToolCall,
   plainRun,
   requestBegin,
   requestEnd,
@@ -205,9 +209,33 @@ describe("a run", () => {
       { status: "fatal", error: { code: "rejected", message: "" } },
     ],
     [
-      "the turn cap's fatal answer: fatal, no error",
-      [...main, assistantText("Stopped at the turn limit.", "fatal"), requestEnd(), taskEnd()],
-      { status: "fatal" },
+      "the turn cap's abort: aborted, max_turns",
+      [
+        ...main,
+        assistantText("Working."),
+        requestEnd(),
+        abort("max_turns", { error_message: "reached max turns (1)" }),
+        taskEnd(),
+      ],
+      { status: "aborted", error: { code: "max_turns", message: "reached max turns (1)" } },
+    ],
+    [
+      "a truncated attempt retried, then an answer: completed",
+      [
+        ...main,
+        assistantText("Half an ans"),
+        requestEnd("truncated", { error_message: "cut", retry_in_ms: 2000 }),
+        requestBegin(),
+        assistantText("The answer."),
+        requestEnd(),
+        taskEnd(),
+      ],
+      { status: "completed" },
+    ],
+    [
+      "truncation the retries never got past: truncated, with its detail",
+      [...main, requestEnd("truncated", { error_message: "cut", attempt: 6 }), taskEnd()],
+      { status: "truncated", error: { code: "unknown", message: "cut" } },
     ],
     [
       "a subagent's abort and failure: completed",
@@ -244,7 +272,7 @@ describe("a run", () => {
         usage(counts(3, 30), counts(3, 30)),
         requestEnd(),
         requestBegin(child),
-        assistantText("child says", "completed", child),
+        assistantText("child says", child),
         usage(counts(2, 20), counts(2, 20), child),
         requestEnd("completed", {}, child),
         compactionBegin(),
@@ -354,7 +382,7 @@ describe("approvals", () => {
     fake.stream("POST", RUNS, [
       hello(SID),
       frame(taskBegin(), "ep-1"),
-      frame(toolCall("call_1", '{"cmd":"ls"}', "completed", ["child-1"]), "ep-2"),
+      frame(toolCall("call_1", '{"cmd":"ls"}', ["child-1"]), "ep-2"),
       () => fake.requested("POST", answerPath("call_1")),
       frame(decision("call_1", "allow", ["child-1"]), "ep-3"),
       frame(toolOutput("call_1", "a.txt", ["child-1"]), "ep-4"),
@@ -429,7 +457,14 @@ describe("approvals", () => {
     fake.stream(
       "POST",
       RUNS,
-      runBody([taskBegin(), toolCall("call_1", '{"cmd":', "aborted"), abort(), taskEnd()]),
+      runBody([
+        taskBegin(),
+        partialToolCall("call_1", "start"),
+        partialToolCall("call_1", "delta", '{"cmd":'),
+        partialToolCall("call_1", "stop"),
+        abort(),
+        taskEnd(),
+      ]),
     );
     await clientOf(fake).run({ input: "x", onApproval: () => "allow" });
     expect(fake.calls.some((c) => c.path === APPROVALS)).toBe(false);

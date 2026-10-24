@@ -70,7 +70,6 @@ const image = () => ({
     type: "image_url",
     role: "user",
     image_url: "data:image/png;base64,aGk=",
-    stop_reason: "completed",
   },
 });
 const assistant = (text: string) => ({
@@ -89,9 +88,9 @@ const toolCall = (name: string, id: string, args: string) => ({
   type: "model_msg",
   payload: { type: "tool_call", role: "assistant", name, tool_call_id: id, arguments: args },
 });
-const toolOutput = (id: string, output: string, stop_reason = "completed") => ({
+const toolOutput = (id: string, output: string, status = "completed") => ({
   type: "model_msg",
-  payload: { type: "tool_call_output", role: "user", tool_call_id: id, output, stop_reason },
+  payload: { type: "tool_call_output", role: "user", tool_call_id: id, output, status },
 });
 // One in-task turn: the model answers, calls a tool, gets its output, usage lands — no new
 // user input, so the Task keeps going.

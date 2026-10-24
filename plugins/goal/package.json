@@ -34,7 +34,7 @@
       "goal": true
     },
     "hooks": {
-      "version": "2026.10.04.1",
+      "version": "2026.10.23.1",
       "user_prompt": [
         {
           "command": "start.mjs",

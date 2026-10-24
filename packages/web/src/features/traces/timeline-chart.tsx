@@ -203,8 +203,8 @@ function buildGroups(
       callMs,
       approvalMs: msOf(t.approvalTs),
       outputMs: msOf(t.outputTs),
-      failed: t.stopReason !== undefined && t.stopReason !== "completed",
-      ...(t.stopReason !== undefined ? { status: t.stopReason } : {}),
+      failed: t.status !== undefined && t.status !== "completed",
+      ...(t.status !== undefined ? { status: t.status } : {}),
       ...(t.decision !== undefined ? { decision: t.decision } : {}),
     });
   }

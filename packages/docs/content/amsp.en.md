@@ -94,7 +94,7 @@ id: 7c41d0a2-2
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"task_begin"}}
 
 id: 7c41d0a2-4
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Say hello","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Say hello"}}
 
 id: 7c41d0a2-5
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"tool_list_ready","tools":[…]}}
@@ -103,16 +103,16 @@ id: 7c41d0a2-6
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
 
 id: 7c41d0a2-7
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"start","text":"","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"start","text":""}}
 
 id: 7c41d0a2-8
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"delta","text":"Hello!","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"delta","text":"Hello!"}}
 
 id: 7c41d0a2-9
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"stop","text":"","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"stop","text":""}}
 
 id: 7c41d0a2-10
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"assistant","text":"Hello!","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"assistant","text":"Hello!"}}
 
 id: 7c41d0a2-11
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"token_usage","session":{"cache_read":0,"cache_write":0,"output":2,"total":412},"request":{"cache_read":0,"cache_write":0,"output":2,"total":412}}}
@@ -197,14 +197,13 @@ POST …/sessions/:sessionId/approvals/:toolCallId   {"decision": "allow" | "den
 `[DONE]` says only that a run is over; how it went is in the records. The client's `RunResult` reads it from the main Session's records, those without `origin`, in this order:
 
 1. The last `task_begin` has no `task_end`, or no Task began: `fatal`, with error code `internal`. The server failed while driving the run.
-2. An `abort` record: `aborted`, with its error.
-3. The last `request_end` or `compaction_end` that is not `completed` and carries no `retry_in_ms`, unless a later `request_begin` followed: its status and error.
-4. The last assistant `text` ended `fatal`, the turn limit's notice: `fatal`.
-5. Otherwise `completed`.
+2. An `abort` record: `aborted`, with its error. The turn limit ends a Task this way too, with error code `max_turns`.
+3. The last `request_end` or `compaction_end` that is not `completed` and carries no `retry_in_ms`, unless a later `request_begin` followed: its status and error. A response the provider kept cutting off ends `truncated`.
+4. Otherwise `completed`.
 
 The rest of the result:
 
-- `text`: the main Session's assistant texts joined with a blank line, leaving out what falls between `compaction_begin` and `compaction_end`;
+- `text`: the assistant texts of the main Session's Requests that completed, joined with a blank line, leaving out what falls between `compaction_begin` and `compaction_end` (an attempt that was retried contributes none);
 - `usage`: the sum of every `token_usage.request`, subagents included;
 - `sessionUsage`: the main Session's last `token_usage.session`, or `null`;
 - `requests`: the number of main-Session `request_begin` records, retried attempts included.
@@ -213,7 +212,7 @@ A program that reads the stream itself gets the same result by feeding `hello` a
 
 ## Errors
 
-Before a stream starts, a refusal is an HTTP status and `{"error": {"code", "message"}}`; the statuses are listed under [Errors](/agent-api#errors). A run that ends `fatal` or `retryable` is still answered `200`: the HTTP status covers only the request.
+Before a stream starts, a refusal is an HTTP status and `{"error": {"code", "message"}}`; the statuses are listed under [Errors](/agent-api#errors). A run that ends `fatal`, `retryable` or `truncated` is still answered `200`: the HTTP status covers only the request.
 
 Inside the stream, a failure is a record's `error_code` and `error_message`: on `request_end` and `compaction_end`, on `abort`, and on `mcp_connect_end` and each of its `results`. The codes:
 
@@ -246,7 +245,7 @@ data: {"type":"event_msg","payload":{"type":"request_begin","thinking_level":"me
 data: {"type":"model_msg","payload":{"type":"partial_tool_call","event_type":"start","name":"exec_command","tool_call_id":"call_1",…}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call","event_type":"delta","arguments":"{\"command\": \"ls\"}","tool_call_id":"call_1",…}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call","event_type":"stop","tool_call_id":"call_1",…}}
-data: {"type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"command\":\"ls\"}","tool_call_id":"call_1","stop_reason":"completed"}}
+data: {"type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"command\":\"ls\"}","tool_call_id":"call_1"}}
             ← caller: GET …/sessions/<id>/approvals?wait=30 → {"approvals":[{"tool_call":{…,"tool_call_id":"call_1"}}]}
             ← caller: POST …/sessions/<id>/approvals/call_1 {"decision":"allow"} → 204
 data: {"type":"event_msg","payload":{"type":"approval_decision","decision":"allow","tool_call_id":"call_1"}}
@@ -255,7 +254,7 @@ data: {"type":"event_msg","payload":{"type":"token_usage",…}}
 data: {"type":"event_msg","payload":{"type":"request_end","status":"completed"}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call_output","event_type":"delta","output":"README.md\nsrc\n","tool_call_id":"call_1",…}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call_output","event_type":"stop","tool_call_id":"call_1",…}}
-data: {"type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"README.md\nsrc\n","tool_call_id":"call_1","stop_reason":"completed"}}
+data: {"type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"README.md\nsrc\n","tool_call_id":"call_1","status":"completed"}}
 data: {"type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
 …
 ```
@@ -271,7 +270,7 @@ data: {"type":"event_msg","payload":{"type":"request_begin",…}}
 data: {"type":"model_msg","payload":{"type":"partial_text","event_type":"delta","text":"Let me",…}}
             ← caller: POST …/sessions/<id>/abort → 202
 data: {"type":"model_msg","payload":{"type":"partial_text","event_type":"stop",…}}
-data: {"type":"model_msg","payload":{"type":"text","role":"assistant","text":"Let me","stop_reason":"aborted"}}
+data: {"type":"model_msg","payload":{"type":"text","role":"assistant","text":"Let me"}}
 data: {"type":"event_msg","payload":{"type":"request_end","status":"aborted","attempt":2}}
 data: {"type":"event_msg","payload":{"type":"abort","error_code":"user_abort"}}
 data: {"type":"event_msg","payload":{"type":"task_end"}}

@@ -250,7 +250,7 @@ Task 运行期间，宿主可以用 `session.steer(input)` 排队一条用户消
 
 ## 自动重连
 
-只有 `retryable` 的 LLM 失败会触发同一次运行内的重连；`fatal` 失败立即结束运行。
+只有 `retryable` 或 `truncated` 的 LLM 失败会触发同一次运行内的重连；`fatal` 失败立即结束运行。
 
 ### 可重试失败与致命失败
 
@@ -271,6 +271,8 @@ fatal 判定是一份确定性的白名单，所以用自己的说法描述瞬�
 - 无法组装成请求的输入（`invalid_input`）。
 
 同样的请求只会以同样的方式失败，走退避阶梯只会推迟用户本可据以处理的错误信息。
+
+响应完整送达、供应商却没有正常结束它（`finish_reason` 为 `length` 即达到输出上限，或 `unknown`），以 `truncated` 收尾。这次尝试不提交：LLM 接口把这一轮移出 MMSP 的历史，也不产出 `token_usage`。引擎按同一阶梯重试，重试块里的 `[request_error]` 行写明 finish reason，模型据此可以换一种更短的写法。截断的尝试虽然收到了内容，但这不是进展的证据，所以它让阶梯继续攀升，而不是归零。
 
 只有一种拒绝仍会重试：带图片的请求被供应商以 4xx 拒绝。供应商对这类拒绝的措辞五花八门，按文字匹配并不可靠，因此只要本轮输入带图片，引擎就把 4xx 一律视为图片被拒（`image_rejected`）：把每张图片换成一句固定说明，写明带图的请求被拒、已去图重发（供应商的报错原文经重试输入的 `[request_error]` 行到达模型，见下文）；该次尝试记为 `retryable`、`retry_in_ms: 0`，清理后的输入立即重发。清理后的输入此后一直是本轮的输入，中断或下一条消息都不会再发送这张图。恢复 Session 时也做同样的替换。输入不带图片的 4xx 与其他拒绝一样是 fatal：被拒的图片已在已提交的历史中时，重试也去不掉它。
 
@@ -297,10 +299,10 @@ fatal 判定是一份确定性的白名单，所以用自己的说法描述瞬�
 
 ### 运行何时放弃
 
-运行在两种情况下放弃：`fatal` 失败，以及重试耗尽的 `retryable` 失败。两种情况都不产出 `abort` 事件，因为 `abort` 只标记用户中断：`request_end` 即终局记录，本轮尚未了结的状态保留为下一次运行的补发内容。
+运行在两种情况下放弃：`fatal` 失败，以及重试耗尽的 `retryable` 或 `truncated` 失败。两种情况都不产出 `abort` 事件，因为 `abort` 只标记用户中断与轮次上限：`request_end` 即终局记录，本轮尚未了结的状态保留为下一次运行的补发内容。
 
 - `fatal` 失败的终局 `request_end` 状态为 `fatal`，并带 `error_code` 与 `error_message`。
-- 重试耗尽时，终局 `request_end` 状态为 `retryable`，带 `attempt` 与错误字段，但没有 `retry_in_ms`；重试输入（原始输入加上它的 `[turn_retried]` 块）保留为补发内容。
+- 重试耗尽时，终局 `request_end` 状态为 `retryable`（或 `truncated`），带 `attempt` 与错误字段，但没有 `retry_in_ms`；重试输入（原始输入加上它的 `[turn_retried]` 块）保留为补发内容。
 
 Session 创建时锁定的只有模型引用，凭据在 Session 装载时取自当前 Project 配置，因此凭据失败后，用户更新该模型的 API key 再发送即可。
 

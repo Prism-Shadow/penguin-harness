@@ -3863,11 +3863,13 @@ Benchmark：
     subagent: "子会话",
     subagentRunning: "运行中",
     /**
-     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
-     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
-     * renders its English `reason` prose as-is.
+     * Abort banner (user interruptions, and the turn cap). The cause localizes from
+     * `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim. The turn cap's line is
+     * localized whole (its message only restates the cap in English). A legacy Trace without a
+     * code renders its English `reason` prose as-is.
      */
     aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      if (item?.errorCode === "max_turns") return "[已停止]：已达到单次任务最大轮数";
       const cause =
         item?.errorCode === "user_abort"
           ? "用户中断"
@@ -3881,11 +3883,11 @@ Benchmark：
     },
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `retryable` is the live status; the finer spellings only appear when
-     * replaying Traces written before the stop-reason convergence.
+     * wording. `retryable` and `truncated` are the live statuses; the finer spellings only
+     * appear when replaying Traces written before the status convergence.
      */
     reconnect: (
-      status: "retryable" | "failed" | "timeout" | "malformed",
+      status: "retryable" | "truncated" | "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
@@ -3904,9 +3906,11 @@ Benchmark：
               ? "网络或服务暂时不可用"
               : kind === "image_rejected"
                 ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-                : kind === "failed"
-                  ? "模型服务返回错误"
-                  : "请求失败";
+                : kind === "truncated"
+                  ? "模型输出被截断（达到输出上限或未正常结束）"
+                  : kind === "failed"
+                    ? "模型服务返回错误"
+                    : "请求失败";
       const action =
         state === "gaveUp"
           ? `第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`

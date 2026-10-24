@@ -9,7 +9,12 @@
  *
  * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
-import type { ErrorCode, AmspRecord, StopReason, ToolDefinition } from "@prismshadow/amsp/records";
+import type {
+  ErrorCode,
+  AmspRecord,
+  RequestEndStatus,
+  ToolDefinition,
+} from "@prismshadow/amsp/records";
 import type { ThinkingLevelName } from "./shared.js";
 // Concrete class, used only as a type annotation (type-only import; no runtime dependency, no circular reference).
 import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
@@ -104,8 +109,8 @@ export interface GenerativeModelParameters {
 
 /**
  * The terminal state of an LLM request, returned as the **return value** of the `streamGenerate`
- * async generator (not a yielded message). The status values share the same four-value protocol
- * as the record's `stop_reason`:
+ * async generator (not a yielded message). The engine records the status as the Request's
+ * `request_end.status` — the only record of why a Request ended:
  *   - `completed`: finished normally (already produced `token_usage`);
  *   - `aborted`: user-initiated interruption — stop and hand back to the user;
  *   - `retryable`: a failure worth retrying — transport drops, idle timeouts, 408/429/5xx,
@@ -119,11 +124,16 @@ export interface GenerativeModelParameters {
  *     a model without a fast tier). The engine stops the run and surfaces `errorMessage`;
  *     the fix is a config or credential change, then a new request (only the model
  *     reference is fixed at Session creation — credentials come from the current Project
- *     config, so a key update lets the Session continue).
+ *     config, so a key update lets the Session continue);
+ *   - `truncated`: the stream arrived whole but the provider did not report a normal finish
+ *     (finish reason `length` — the output cap — or `unknown`). The attempt is not committed
+ *     (no `token_usage`, removed from the stateful history) and the engine retries it on the
+ *     `retryable` ladder; `errorMessage` names the finish reason. A one-shot caller reads the
+ *     text that arrived, as for `completed`.
  * Docs: /docs/interfaces § "LLMOutcome semantics".
  */
 export interface LLMOutcome {
-  status: StopReason;
+  status: RequestEndStatus;
   /**
    * Classified cause (the records' ErrorCode vocabulary): present on every
    * non-completed failure outcome. Carried onto the `request_end` event as `error_code`,
@@ -132,8 +142,9 @@ export interface LLMOutcome {
    */
   errorCode?: ErrorCode;
   /**
-   * Error detail (`describeError` text): present on `fatal`, and on `retryable` when a
-   * concrete transport/provider error was caught (a plain idle timeout has none). Carried
+   * Error detail (`describeError` text): present on `fatal` and `truncated`, and on
+   * `retryable` when a concrete transport/provider error was caught (a plain idle timeout has
+   * none). Carried
    * onto the `request_end` event as `error_message` — one name across the internal outcome
    * and the wire — so observability (the Cost center's errors panel) can show the real
    * reason behind a retried request.
@@ -144,7 +155,8 @@ export interface LLMOutcome {
 /**
  * A stateful LLM object attached to a Session.
  * `streamGenerate` yields streaming `partial_*` messages as an async generator, and appends the
- * corresponding complete `model_msg` once each fragment ends; Token usage is emitted as a
+ * corresponding complete `model_msg` once each item ends (a tool call still streaming when the
+ * request is interrupted closes with its `stop` fragment alone); Token usage is emitted as a
  * `token_usage` event_msg. **Never throws to `context_engine`**: any interruption/exception is
  * closed off in well-formed structure and returned normally, and **must** report the terminal
  * state via `LLMOutcome` — error handling happens entirely inside the LLM interface, and

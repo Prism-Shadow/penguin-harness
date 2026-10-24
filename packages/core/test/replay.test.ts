@@ -117,9 +117,9 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: "result-1", toolCallId: "tc1" }),
+      toolCallOutput({ output: "result-1", toolCallId: "tc1", status: "completed" }),
       requestBegin(),
-      thinkingMessage("half", "aborted"), // the replay request was interrupted
+      thinkingMessage("half"), // the replay request was interrupted
       requestEnd("aborted"),
     ]);
     expect(textsOf(result.history)).toEqual(["run it", "exec_command"]);
@@ -133,6 +133,7 @@ describe("resumeTrace", () => {
       output: "image/png, 8 B",
       toolCallId: "tc1",
       images: [image],
+      status: "completed",
     });
     const errorMessage = "400 Could not process image";
     const upToRequest: AmspRecord[] = [
@@ -185,7 +186,7 @@ describe("resumeTrace", () => {
       meta(),
       userText("A"),
       requestBegin(),
-      thinkingMessage("half", "aborted"),
+      thinkingMessage("half"),
       // The process exited during the request: no end.
     ]);
     expect(result.history).toEqual([]);
@@ -204,7 +205,7 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc2" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: "done-1", toolCallId: "tc1" }),
+      toolCallOutput({ output: "done-1", toolCallId: "tc1", status: "completed" }),
       // tc2's output was lost along with the process.
     ]);
     // carry-over = real trailing output + in-memory synthesized placeholder (never written to Trace), pairing complete.
@@ -222,7 +223,7 @@ describe("resumeTrace", () => {
       requestBegin(),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       // A parallel tool finished during the request: its output lands between start and stop.
-      toolCallOutput({ output: "early", toolCallId: "tc1" }),
+      toolCallOutput({ output: "early", toolCallId: "tc1", status: "completed" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
     ]);
@@ -291,7 +292,7 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: "result-1", toolCallId: "tc1" }),
+      toolCallOutput({ output: "result-1", toolCallId: "tc1", status: "completed" }),
       // Steering delivered with the tool output as the second turn's input.
       userText(steered),
       requestBegin(),
@@ -329,7 +330,7 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: "late", toolCallId: "tc1" }),
+      toolCallOutput({ output: "late", toolCallId: "tc1", status: "completed" }),
       userText(steered),
     ]);
     expect(textsOf(result.history)).toEqual(["run it", "exec_command"]);
@@ -615,7 +616,7 @@ describe("engine trace round-trip", () => {
       async *streamGenerate() {
         call += 1;
         if (call === 1) {
-          yield thinkingMessage("half", "aborted");
+          yield thinkingMessage("half");
           return { status: "aborted" };
         }
         yield assistantText("ok");
@@ -659,9 +660,9 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       requestBegin(),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc2" }),
-      toolCallOutput({ output: "early", toolCallId: "tc1" }),
+      toolCallOutput({ output: "early", toolCallId: "tc1", status: "completed" }),
       requestEnd("aborted"),
-      toolCallOutput({ output: "late", toolCallId: "tc2", stopReason: "aborted" }),
+      toolCallOutput({ output: "late", toolCallId: "tc2", status: "aborted" }),
     ]);
     expect(result.history).toEqual([]);
     expect(textsOf(result.carryOver)).toEqual(["go"]);
@@ -678,7 +679,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       userText("go"),
       requestBegin(),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
-      toolCallOutput({ output: "ran-during-timeout", toolCallId: "tc1" }),
+      toolCallOutput({ output: "ran-during-timeout", toolCallId: "tc1", status: "completed" }),
       requestEnd("retryable"), // this round is dropped: tc1 never entered MMSP history
       requestBegin(),
       assistantText("recovered"),
@@ -777,7 +778,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ct" }),
       requestEnd("completed"),
       tokenUsage(usage(150), usage(150)),
-      toolCallOutput({ output: "tool ran", toolCallId: "ct" }),
+      toolCallOutput({ output: "tool ran", toolCallId: "ct", status: "completed" }),
       compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
       userText("COMPACT NOW"),
       requestBegin(),
@@ -788,7 +789,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCallOutput({
         output: "[tool error] the compaction request expects a summary, not tool calls",
         toolCallId: "c1",
-        stopReason: "fatal",
+        status: "fatal",
       }),
       requestBegin(),
       thinkingMessage("still nothing"),
@@ -828,7 +829,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ct" }),
       requestEnd("completed"),
       tokenUsage(usage(150), usage(150)),
-      toolCallOutput({ output: "tool ran", toolCallId: "ct" }),
+      toolCallOutput({ output: "tool ran", toolCallId: "ct", status: "completed" }),
       compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
       userText("COMPACT NOW"),
       requestBegin(),
@@ -838,7 +839,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCallOutput({
         output: "[tool error] the compaction request expects a summary, not tool calls",
         toolCallId: "c1",
-        stopReason: "fatal",
+        status: "fatal",
       }),
       compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
     ]);

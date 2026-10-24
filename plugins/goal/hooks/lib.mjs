@@ -107,22 +107,18 @@ export function lastRoundRecords(records) {
 
 /**
  * How the round's Task ended, read off its records: an `abort` event is the user's
- * interruption; a last `request_end` that is not completed is a failure the run gave up on;
- * a last assistant text with a fatal stop reason is the max_turns cap. Anything else completed.
+ * interruption or the max_turns cap (`error_code: "max_turns"`); a last `request_end` that is
+ * not completed is a failure the run gave up on. Anything else completed.
  */
 export function stopReasonOf(roundRecords) {
   let lastRequestEnd = null;
-  let lastAssistant = null;
   for (const r of roundRecords) {
     if (!r || (r.origin && r.origin.length)) continue;
     const p = r.payload || {};
     if (r.type === "event_msg" && p.type === "abort") return "aborted";
     if (r.type === "event_msg" && p.type === "request_end") lastRequestEnd = p;
-    if (r.type === "model_msg" && p.type === "text" && p.role === "assistant") lastAssistant = p;
   }
   if (lastRequestEnd && lastRequestEnd.status !== "completed") return "fatal";
-  const stop = lastAssistant && lastAssistant.stop_reason;
-  if (stop === "fatal" || stop === "failed") return "fatal";
   return "completed";
 }
 

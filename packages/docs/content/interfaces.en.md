@@ -37,8 +37,8 @@ All types are exported by `@prismshadow/penguin-core`. The source lives in `pack
 
 Every interface follows two rules:
 
-- **Never throw into the engine.** Errors become messages or return values that carry a `stop_reason`.
-- **Follow the streaming discipline.** A stream goes `start → delta → stop`, and the complete message follows immediately.
+- **Never throw into the engine.** Errors become messages (a tool result's `status`) or return values (`LLMOutcome.status`, recorded as `request_end.status`).
+- **Follow the streaming discipline.** A stream goes `start → delta → stop`, and the complete message of a fully generated item follows immediately.
 
 ### Message plane and control plane
 
@@ -115,9 +115,9 @@ The generator yields `partial_*` fragments and complete messages, and emits Toke
 
 ```ts
 interface LLMOutcome {
-  status: StopReason;      // completed | aborted | retryable | fatal
+  status: RequestEndStatus; // completed | aborted | retryable | fatal | truncated
   errorCode?: ErrorCode;   // classified cause on a non-completed failure; carried onto request_end as error_code
-  errorMessage?: string;   // failure detail: on fatal, and on retryable when a concrete error was caught;
+  errorMessage?: string;   // failure detail: on fatal and truncated, and on retryable when a concrete error was caught;
                            // carried onto request_end as error_message, so the errors panel shows
                            // the real reason behind a retried request
 }
@@ -126,7 +126,8 @@ interface LLMOutcome {
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | Finished normally (`token_usage` already emitted) | Proceed |
-| `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed or truncated responses, and anything unclassifiable | Reconnect within the run on the backoff ladder |
+| `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, and anything unclassifiable | Reconnect within the run on the backoff ladder |
+| `truncated` | The response arrived whole but the provider did not finish it the normal way (`finish_reason` `length` or `unknown`); the implementation removes the turn from its stateful history and emits no `token_usage` | Retry on the same ladder, without resetting it |
 | `fatal` | A failure no retry can fix: a provider 4xx rejection (408 and 429 excluded), rejected credentials, or a deterministic client-side rejection before any network I/O (for example, fast mode on a model without a fast tier) | Stop the run and surface `errorMessage` |
 | `aborted` | User interrupt | Stop and hand back to the user |
 
@@ -348,7 +349,7 @@ interface ToolDefinitionConfig {
 }
 ```
 
-A tool emits only content deltas. The Environment handles framing, timeouts, truncation, `stop_reason` priority and turning errors into messages centrally, so a tool author can hardly break the protocol.
+A tool emits only content deltas. The Environment handles framing, timeouts, truncation, the result's `status` priority and turning errors into messages centrally, so a tool author can hardly break the protocol.
 
 Adding a tool is registration: add one `name → factory` entry to `BUILTIN_TOOL_FACTORIES` (`packages/core/src/environment/tools/registry.ts`). For each tool's parameters and behavior, see [Tools & Approval](/tools).
 

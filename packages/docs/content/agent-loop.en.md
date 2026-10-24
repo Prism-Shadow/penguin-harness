@@ -250,7 +250,7 @@ Goal mode adds no rule of its own. Images attached to a goal ride round 1 with t
 
 ## Automatic reconnect
 
-Only a `retryable` LLM failure triggers an in-run reconnect; a `fatal` one ends the run at once.
+Only a `retryable` or `truncated` LLM failure triggers an in-run reconnect; a `fatal` one ends the run at once.
 
 ### Retryable and fatal failures
 
@@ -271,6 +271,8 @@ A `fatal` failure stops the run at once, without retrying. It covers:
 - input that cannot be assembled into a request (`invalid_input`).
 
 An identical request can only fail the same way, so the ladder would only delay the actionable error.
+
+A response that arrives whole but that the provider did not finish the normal way — `finish_reason` `length` (the output cap) or `unknown` — ends `truncated`. It is not committed: the LLM interface takes the turn back out of MMSP's history, and emits no `token_usage`. The engine retries it on the same ladder, and the retry's `[request_error]` line names the finish reason, so the model can answer in a shorter way. A truncated attempt received content, but that is no sign of progress, so it climbs the ladder instead of resetting it.
 
 One rejection is retried anyway: a provider 4xx on a request whose input carries images. Providers word such refusals too many ways to match reliably, so the engine takes any 4xx on an image-bearing input as a rejection of the images (`image_rejected`): it replaces each image with a fixed note saying the request was rejected while it carried the image (the provider's error reaches the model through the retry's `[request_error]` line, see below), records that attempt as `retryable` with `retry_in_ms: 0`, and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement. A 4xx on an input with no image is fatal like any other: a refused image already in the committed history is beyond the reach of a retry.
 
@@ -297,10 +299,10 @@ An attempt that **received content** before dropping — a `terminated: other si
 
 ### When the run gives up
 
-A run gives up in two cases: a `fatal` failure, and a `retryable` failure whose retries ran out. In both, the run ends without an `abort` event, because `abort` marks only a user interruption. The `request_end` is the terminal record, and the turn's pending state is kept as carry-over for the next run.
+A run gives up in two cases: a `fatal` failure, and a `retryable` or `truncated` failure whose retries ran out. In both, the run ends without an `abort` event, because `abort` marks only a user interruption or the turn cap. The `request_end` is the terminal record, and the turn's pending state is kept as carry-over for the next run.
 
 - A `fatal` failure's terminal `request_end` carries status `fatal` with `error_code` and `error_message`.
-- When the retries run out, the terminal `request_end` is `retryable`, with `attempt` and the error pair but no `retry_in_ms`. The retry input — the original input plus its `[turn_retried]` block — is kept as carry-over.
+- When the retries run out, the terminal `request_end` is `retryable` (or `truncated`), with `attempt` and the error pair but no `retry_in_ms`. The retry input — the original input plus its `[turn_retried]` block — is kept as carry-over.
 
 Only the model reference is fixed at Session creation. Credentials are read from the current Project config when the Session loads, so after a credential failure the user updates the model's API key and sends again.
 

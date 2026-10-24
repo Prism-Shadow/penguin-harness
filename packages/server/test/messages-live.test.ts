@@ -59,7 +59,11 @@ function midStreamFakeSession(sessionId: string): RuntimeSession {
       yield partialToolCallOutput({ eventType: "delta", output: "line 1\n", toolCallId: "tc-lv" });
       const decision = await opts.approve(tc); // blocks until the test decides
       yield approvalDecision(decision, "tc-lv");
-      yield toolCallOutput({ output: "line 1\nline 2\n", toolCallId: "tc-lv" });
+      yield toolCallOutput({
+        output: "line 1\nline 2\n",
+        toolCallId: "tc-lv",
+        status: "completed",
+      });
       yield assistantText("done");
     },
   });

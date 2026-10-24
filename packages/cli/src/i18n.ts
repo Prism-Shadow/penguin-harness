@@ -993,11 +993,11 @@ export interface Messages {
     elapsed: string;
     elapsedDelta: string;
   }): string;
-  /** Abort line (user interruptions only): the cause localizes from `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim; a legacy Trace without a code renders its English `reason` prose as-is. */
+  /** Abort line (user interruptions, and the turn cap): the cause localizes from `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim, except on the turn cap's line, which is localized whole; a legacy Trace without a code renders its English `reason` prose as-is. */
   abortLabel(abort?: { errorCode?: string; errorMessage?: string; reason?: string }): string;
   /** Run-ending LLM failure (request_end status fatal — no abort event follows); the provider's error text rides verbatim. */
   llmFatalLabel(errorMessage?: string): string;
-  /** The retry ladder gave up (request_end `retryable` with no planned retry); `attempt` is the final attempt's ordinal, `errorMessage` the last failure's detail. */
+  /** The retry ladder gave up (request_end `retryable` / `truncated` with no planned retry); `attempt` is the final attempt's ordinal, `errorMessage` the last failure's detail. */
   reconnectGaveUpLabel(attempt: number, errorMessage?: string): string;
   /**
    * request_end ended with a status the engine reconnects on: the engine retries carrying
@@ -1005,7 +1005,7 @@ export interface Messages {
    * `errorCode` (legacy Traces: the retired status spellings say the same thing).
    */
   reconnectLabel(
-    status: "retryable" | "failed" | "timeout" | "malformed",
+    status: "retryable" | "truncated" | "failed" | "timeout" | "malformed",
     attempt: number,
     errorCode?: string,
   ): string;
@@ -2136,6 +2136,7 @@ const en: Messages = {
   taskStats: (s) =>
     `[stats] context ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · ${s.elapsed} (${s.elapsedDelta})`,
   abortLabel: (abort) => {
+    if (abort?.errorCode === "max_turns") return "[stopped]: reached the maximum turns per task";
     const cause =
       abort?.errorCode === "user_abort"
         ? "aborted by user"
@@ -2163,9 +2164,11 @@ const en: Messages = {
             ? "network or service temporarily unavailable"
             : kind === "image_rejected"
               ? "the model provider rejected an image in this turn's input (replaced with a note)"
-              : kind === "failed"
-                ? "the model provider returned an error"
-                : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
+              : kind === "truncated"
+                ? "the model's output was cut off (it hit the output limit or did not finish normally)"
+                : kind === "failed"
+                  ? "the model provider returned an error"
+                  : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
@@ -3219,6 +3222,7 @@ const zh: Messages = {
   taskStats: (s) =>
     `[统计信息] 上下文 ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · 用时 ${s.elapsed} (${s.elapsedDelta})`,
   abortLabel: (abort) => {
+    if (abort?.errorCode === "max_turns") return "[已停止]：已达到单次任务最大轮数";
     const cause =
       abort?.errorCode === "user_abort"
         ? "用户中断"
@@ -3243,9 +3247,11 @@ const zh: Messages = {
             ? "网络或服务暂时不可用"
             : kind === "image_rejected"
               ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-              : kind === "failed"
-                ? "模型服务返回错误"
-                : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
+              : kind === "truncated"
+                ? "模型输出被截断（达到输出上限或未正常结束）"
+                : kind === "failed"
+                  ? "模型服务返回错误"
+                  : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`

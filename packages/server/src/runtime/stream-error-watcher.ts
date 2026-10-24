@@ -13,7 +13,8 @@
  * - `fatal` → unexpected (`llm_fatal`): a definitive rejection (provider 4xx, credentials,
  *   fast mode on a model without a fast tier) the engine never retries; the run stopped on
  *   it and only a human changing config or credentials can fix it.
- * - `retryable` → depends on whether the retry ladder carried it:
+ * - `retryable` and `truncated` (a response the provider cut off, retried the same way) →
+ *   depend on whether the retry ladder carried them:
  *     - another attempt followed (a `request_begin` resolved the pending record) → expected
  *       (`llm_retried`): recorded for the record, not raised at an operator;
  *     - nothing followed but the end of the run (an `abort`, or close) → unexpected
@@ -38,16 +39,15 @@
  * Pending state is bucketed by origin: subagent messages interleave with the parent
  * session's (even more so with parallel subagents), and mixing them up would misattribute.
  *
- * Environment (source = `environment`): reads `tool_call_output`'s stop_reason —
- * `fatal` (and the legacy failed/timeout spellings) → expected (the error is fed back to
- * the model, and the Agent adjusts on its own; `aborted` is denial/interruption, not
- * recorded). Exactly one shape is
+ * Environment (source = `environment`): reads `tool_call_output`'s `status` —
+ * `fatal` → expected (the error is fed back to the model, and the Agent adjusts on its own;
+ * `aborted` is a denial, not recorded). Exactly one shape is
  * dropped: a command tool's ordinary non-zero exit, which is how a shell command reports
  * information rather than a fault — see isOrdinaryCommandExit; the same tools' environment
  * faults (killed by a signal, spawn failure, tool timeout) still record.
  * `tool_call_output` only has tool_call_id, no tool name, so `tool_call_id → tool name`
  * is cached (tool_call always arrives before its output), and the tool name is written
- * into code (`tool_failed:exec_command`) — so the stats dashboard's "most common error
+ * into code (`tool_fatal:exec_command`) — so the stats dashboard's "most common error
  * code" and the error table can show at a glance which tool failed.
  *
  * **Attribution (ctx) is recorded against the session that actually produced the error,
@@ -65,7 +65,13 @@
  */
 import { isEventMessage, isModelMessage, isSessionMeta } from "@prismshadow/penguin-core";
 import path from "node:path";
-import type { AmspRecord, SessionMetaMessage, StopReason } from "@prismshadow/penguin-core";
+import type {
+  AmspRecord,
+  RequestEndStatus,
+  SessionMetaMessage,
+  StopReason,
+  ToolStatus,
+} from "@prismshadow/penguin-core";
 import { MESSAGE_MAX } from "./error-recorder.js";
 import type { ErrorContext, ErrorKind, ErrorSink } from "./error-recorder.js";
 
@@ -83,7 +89,7 @@ export const TOOL_NAMES_MAX = 1000;
 export const ORIGIN_CTX_MAX = 200;
 
 /** Recorded LLM failure states (`aborted` / `completed` are not errors and aren't included here). */
-type LlmFailure = "retryable" | "fatal";
+type LlmFailure = "retryable" | "truncated" | "fatal";
 
 /** Error code, classification, and fallback message (the last used when no abort reason is available). */
 interface FailureSpec {
@@ -102,6 +108,13 @@ const LLM_FAILURES: Record<LlmFailure, FailureSpec> = {
     kind: "unexpected",
     text: "LLM request failed and the retries did not recover it.",
   },
+  // A response the provider kept cutting off (its output cap, or an abnormal finish) until the
+  // ladder ran out: the same lost turn as an exhausted `retryable`, under the same code.
+  truncated: {
+    code: "llm_failed",
+    kind: "unexpected",
+    text: "LLM response was truncated and the retries did not recover it.",
+  },
   // Its own code, not the failed bucket: dedup is `(source, code, Project)` over a short
   // window, and `llm_retried` can fire on any recovered blip — sharing a bucket would let
   // a genuine run-ending failure be dropped as a duplicate of one. The engine never
@@ -114,7 +127,7 @@ const LLM_FAILURES: Record<LlmFailure, FailureSpec> = {
 };
 
 /**
- * A `retryable` the engine went on to retry: expected — the engine's defined handling path
+ * A `retryable` (or `truncated`) the engine went on to retry: expected — the engine's defined handling path
  * absorbed it and the user never lost anything, so it belongs in the record but not in an
  * operator's queue. Its own code so the exhausted case keeps `llm_failed` to itself and
  * neither can dedup the other away.
@@ -125,15 +138,8 @@ const LLM_RETRIED: FailureSpec = {
   text: "LLM request failed (the engine reconnects and retries).",
 };
 
-/** Recorded tool failure states (`aborted` = denial/interruption, not an error): `fatal` is the live spelling, failed/timeout the legacy Trace ones. */
-type ToolFailure = "fatal" | "failed" | "timeout";
-
 function isLlmFailure(s: unknown): s is LlmFailure {
-  return s === "retryable" || s === "fatal";
-}
-
-function isToolFailure(s: unknown): s is ToolFailure {
-  return s === "fatal" || s === "failed" || s === "timeout";
+  return s === "retryable" || s === "truncated" || s === "fatal";
 }
 
 /**
@@ -282,7 +288,7 @@ export class StreamErrorWatcher {
   private observeLlm(msg: AmspRecord): void {
     const p = msg.payload as {
       type?: string;
-      status?: StopReason;
+      status?: RequestEndStatus;
       reason?: string | null;
       error_message?: string;
       attempt?: number;
@@ -342,7 +348,7 @@ export class StreamErrorWatcher {
     const entry = this.pending.get(key);
     if (entry === undefined) return;
     this.pending.delete(key);
-    const spec = retried && entry.status === "retryable" ? LLM_RETRIED : LLM_FAILURES[entry.status];
+    const spec = retried && entry.status !== "fatal" ? LLM_RETRIED : LLM_FAILURES[entry.status];
     const trimmed = reason?.trim();
     // Message priority: a legacy abort reason (old cores' failure prose) → a sentence
     // composed from the staged request_end's own detail and attempt — the terminal
@@ -424,7 +430,7 @@ export class StreamErrorWatcher {
       name?: string;
       output?: string;
       tool_call_id?: string;
-      stop_reason?: StopReason;
+      status?: ToolStatus;
     };
     if (typeof p.tool_call_id !== "string") return;
     const origin = originKey(msg); // The session that made this call (both attribution and the tool-name cache are bucketed by it)
@@ -444,7 +450,7 @@ export class StreamErrorWatcher {
 
     const name = this.toolNames.get(key);
     this.toolNames.delete(key); // This call has settled: dequeue it, the cache only keeps in-flight calls
-    if (!isToolFailure(p.stop_reason)) return; // completed / aborted (denial, user interrupt) are not errors
+    if (p.status !== "fatal") return; // completed / aborted (a denial) are not errors
     const output = p.output ?? "";
     if (isOrdinaryCommandExit(name, output)) return; // a shell's exit status is information, not a fault
     this.errors.record({
@@ -452,7 +458,7 @@ export class StreamErrorWatcher {
       err: toolFailureText(output),
       ctx: this.ctxFor(origin),
       // The tool name goes into code: so the stats dashboard's "most common error code" and table can show which tool failed.
-      code: `tool_${p.stop_reason}:${name ?? "unknown"}`,
+      code: `tool_fatal:${name ?? "unknown"}`,
       kind: "expected",
     });
   }

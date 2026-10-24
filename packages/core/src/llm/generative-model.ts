@@ -11,13 +11,15 @@
  *          first fragment, a `stop` when it ends);
  *        - a `.done` item → the full `model_msg` (thinking / text / tool_call);
  *        - the `stop` event → a `token_usage` event_msg, produced **only on normal
- *          completion** (observability/Token).
- *   3. Interruption/error handling: `finishInterrupted` closes the item still streaming and
- *      backfills its complete message, then the output ends — never leaking a malformed
- *      structure. This interface **never retries internally** — it only classifies, and
- *      `context_engine` owns the retry policy: `retryable` rides the engine's reconnect
- *      ladder, `fatal` stops the run. The split is an allowlist of certainty: only failures a
- *      retry provably cannot fix are `fatal` — a provider 4xx rejection (408/429 excluded, see
+ *          completion** (observability/Token); a finish reason other than `stop` / `tool_call`
+ *          makes the request `truncated` instead — no usage, and the turn MMSP had already
+ *          recorded is taken back out of its history.
+ *   3. Interruption/error handling: `finishInterrupted` closes the item still streaming, then
+ *      the output ends — never leaking a malformed structure. This interface **never retries
+ *      internally** — it only classifies, and `context_engine` owns the retry policy:
+ *      `retryable` and `truncated` ride the engine's reconnect ladder, `fatal` stops the run.
+ *      The split is an allowlist of certainty: only failures a retry provably cannot fix are
+ *      `fatal` — a provider 4xx rejection (408/429 excluded, see
  *      `isFatalProviderRejection`), a credentials failure (`isAuthenticationError`), MMSP's
  *      fast-mode UnsupportedParameterError (`isFastModeUnsupportedError`), and input that
  *      fails to assemble into a request at all. Everything else — network/transport drops,
@@ -58,7 +60,6 @@ import type {
   CompleteModelPayload,
   Fidelity,
   AmspRecord,
-  StopReason,
   TokenCounts,
 } from "@prismshadow/amsp/records";
 import type {
@@ -265,23 +266,12 @@ interface OpenItem {
 }
 
 /** A `partial_*` message of the open item (a tool call's name rides on its `start` alone). */
-function partial(
-  open: OpenItem,
-  eventType: "start" | "delta" | "stop",
-  content = "",
-  stopReason: StopReason = "completed",
-): AmspRecord {
+function partial(open: OpenItem, eventType: "start" | "delta" | "stop", content = ""): AmspRecord {
   if (open.kind === "tool_call") {
     const name = eventType === "start" ? open.name : "";
-    return partialToolCall({
-      eventType,
-      name,
-      arguments: content,
-      toolCallId: open.toolCallId,
-      stopReason,
-    });
+    return partialToolCall({ eventType, name, arguments: content, toolCallId: open.toolCallId });
   }
-  return (open.kind === "text" ? partialText : partialThinking)(eventType, content, stopReason);
+  return (open.kind === "text" ? partialText : partialThinking)(eventType, content);
 }
 
 /**
@@ -293,7 +283,9 @@ function partial(
  *   - a `.delta` becomes a `partial_*` delta, behind a `start` on the item's first fragment;
  *   - a `.done` becomes the partial `stop` and the complete `model_msg`, read off the done
  *     item alone (the streamed fragments are never reconciled against it);
- *   - the `stop` event carries the request's usage and finish reason.
+ *   - the `stop` event carries the request's usage and finish reason. No record carries the
+ *     finish reason: a finish other than `stop` / `tool_call` makes the request `truncated`,
+ *     which the request's `request_end` records.
  *
  * Docs: /docs/amsp-records § "The streaming discipline".
  */
@@ -306,13 +298,9 @@ export class EventTranslator {
   constructor(private readonly toolCallIds: ToolCallIdAllocator = new ToolCallIdAllocator()) {}
 
   private open: OpenItem | null = null;
-  /**
-   * A finished text or thinking item whose messages have not gone out yet: its stop reason is
-   * `completed` unless it ends the stream — then it is the request's own — and only the next
-   * event says which. A tool call never waits: the engine starts on it the moment it is complete.
-   */
-  private held: TextDoneItem | ThinkingDoneItem | null = null;
   private stopSeen = false;
+  /** The `stop` event's finish reason when it was not a normal one (`length`, `unknown`). */
+  private cutBy: string | null = null;
   private requestTokens: TokenCounts = emptyTokenCounts();
 
   /** Consumes one UniEvent, yielding 0..n records. */
@@ -320,16 +308,15 @@ export class EventTranslator {
     if (event.event_type === "stop") {
       this.stopSeen = true;
       if (event.usage_metadata) this.requestTokens = usageToTokenCounts(event.usage_metadata);
-      // "length" and "unknown" end the last item `fatal`: the request itself committed, so
-      // nothing retries, but it ended in a way only a human can fix (raise the output cap),
-      // which is what the abnormal terminal label tells the render layers.
+      // "length" and "unknown" mean the provider did not finish the response the normal way:
+      // the request is truncated (see `truncatedBy`), retried rather than committed.
       const normal = event.finish_reason === "stop" || event.finish_reason === "tool_call";
-      yield* this.close(normal ? "completed" : "fatal");
+      if (!normal) this.cutBy = event.finish_reason ?? "unknown";
+      // Every item closed with its done item before the stop; one still open never finished.
+      yield* this.finishInterrupted();
       return;
     }
     for (const item of event.content_items) {
-      // Another item arrived, so the one held back did not end the stream.
-      if (this.held) yield* this.close("completed");
       switch (item.type) {
         case "text.delta":
           yield* this.fragment("text", item.text);
@@ -342,10 +329,8 @@ export class EventTranslator {
           break;
         case "text.done":
         case "thinking.done":
-          this.held = item;
-          break;
         case "tool_call.done":
-          yield* this.close("completed", item);
+          yield* this.complete(item);
           break;
         // Other items (inline data, inline thinking, embeddings) are not model streaming
         // output here.
@@ -356,20 +341,29 @@ export class EventTranslator {
   }
 
   /**
-   * Interruption finalization: even when interrupted or on error, the structure closes as
-   * `start → delta → stop → complete message`. The item still streaming gets its partial
-   * `stop` and a complete message holding what had arrived, tagged with the interruption
-   * `stopReason` (`aborted` / `retryable` / `fatal`) to tell it from a normal completion —
-   * `context_engine` dispatches only tool calls that ended `completed`. Produces no
-   * `token_usage`: an interrupted Request has no usage to report.
+   * Interruption finalization: the item still streaming gets its partial `stop`. A text or
+   * thinking item is also written as a complete message holding what had arrived; a tool call
+   * cut short gets no complete record — its arguments never fully arrived, so it is neither a
+   * call the engine could dispatch nor one the model history holds. Produces no `token_usage`:
+   * an interrupted Request has no usage to report.
    */
-  *finishInterrupted(stopReason: StopReason): Generator<AmspRecord> {
-    yield* this.close(stopReason);
+  *finishInterrupted(): Generator<AmspRecord> {
+    const open = this.open;
+    this.open = null;
+    if (!open) return;
+    yield partial(open, "stop");
+    if (open.kind === "text") yield assistantText(open.content);
+    else if (open.kind === "thinking") yield thinkingMessage(open.content);
   }
 
-  /** Whether the `stop` event arrived: a fully delivered, committed response. */
+  /** Whether the `stop` event arrived: a fully delivered response. */
   get stopped(): boolean {
     return this.stopSeen;
+  }
+
+  /** The finish reason of a delivered response the provider did not finish normally (`length`, `unknown`), else null. */
+  get truncatedBy(): string | null {
+    return this.cutBy;
   }
 
   /** Token usage for this request (the `stop` event's). */
@@ -398,32 +392,22 @@ export class EventTranslator {
     yield partial(this.open, "delta", content);
   }
 
-  /**
-   * Ends the item in hand: its partial `stop`, then its complete message — the done item's
-   * (`done`, else the one held back), or, when the stream broke before one arrived, whatever
-   * its fragments carried.
-   */
-  private *close(
-    stopReason: StopReason,
-    done: TextDoneItem | ThinkingDoneItem | ToolCallDoneItem | null = this.held,
+  /** A done item: the open item's partial `stop`, then the complete message read off the done item. */
+  private *complete(
+    done: TextDoneItem | ThinkingDoneItem | ToolCallDoneItem,
   ): Generator<AmspRecord> {
     const open = this.open;
-    this.open = this.held = null;
-    if (open) yield partial(open, "stop", "", stopReason);
-    if (done?.type === "tool_call.done") {
+    this.open = null;
+    if (open) yield partial(open, "stop");
+    if (done.type === "tool_call.done") {
       const toolCallId = open?.toolCallId ?? this.toolCallIds.allocate(done.tool_call_id);
       const args = JSON.stringify(done.arguments);
       const { name, fidelity } = done;
-      yield toolCall({ name, arguments: args, toolCallId, stopReason, ...fidelityProp(fidelity) });
-    } else if (done) {
-      yield done.type === "text.done"
-        ? assistantText(done.text, stopReason, done.fidelity)
-        : thinkingMessage(done.thinking, stopReason, done.fidelity);
-    } else if (open?.kind === "tool_call") {
-      const { name, content, toolCallId } = open;
-      yield toolCall({ name, arguments: content, toolCallId, stopReason });
-    } else if (open) {
-      yield (open.kind === "text" ? assistantText : thinkingMessage)(open.content, stopReason);
+      yield toolCall({ name, arguments: args, toolCallId, ...fidelityProp(fidelity) });
+    } else if (done.type === "text.done") {
+      yield assistantText(done.text, done.fidelity);
+    } else {
+      yield thinkingMessage(done.thinking, done.fidelity);
     }
   }
 }
@@ -845,24 +829,28 @@ export class GenerativeModel implements LLMInterface {
    * UniEvents into records.
    *
    * **Never throws to `context_engine`**: whether it ends normally or is interrupted/errors out,
-   * every `partial_*` segment is closed as `start → delta → stop → complete message`,
-   * and the terminal state is then returned as `LLMOutcome`:
+   * every `partial_*` segment is closed with its `stop` (an item fully generated also gets its
+   * complete message), and the terminal state is then returned as `LLMOutcome`:
    *   - **Normal completion**: the `stop` event closed every item; `token_usage` is produced
    *     (only in this case) → `completed`;
-   *   - **User interruption**: `finishInterrupted("aborted")` closes out, produces no usage →
+   *   - **Truncation**: the `stop` event arrived with a finish reason other than `stop` /
+   *     `tool_call` (`length`, `unknown`): the turn MMSP recorded is removed from its history,
+   *     no usage is produced → `truncated` (its `errorMessage` names the finish reason), which
+   *     the engine retries like `retryable`;
+   *   - **User interruption**: `finishInterrupted()` closes out, produces no usage →
    *     `aborted`;
    *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`),
    *     a credentials failure (`isAuthenticationError`), a fast-mode rejection
    *     (`isFastModeUnsupportedError`, thrown deterministically before any network I/O when
    *     this config enables `fast_mode` on a model without a fast tier), or input that never
-   *     assembled into a request: `finishInterrupted("fatal")` closes out, produces no usage
+   *     assembled into a request: `finishInterrupted()` closes out, produces no usage
    *     → `fatal` (carrying `errorMessage`), which the engine stops the run on instead of
    *     retrying — the identical request can never succeed, so the ladder would only delay
    *     the actionable message. The engine makes one exception: a provider 4xx on an input
    *     that holds images is retried with the images replaced (`image_rejected`);
    *   - **Every other failure** — idle timeout, network/transport drops, 408/429/5xx,
    *     MMSP parse errors and truncated streams, and anything unclassifiable:
-   *     `finishInterrupted("retryable")` closes out, produces no usage → `retryable`
+   *     `finishInterrupted()` closes out, produces no usage → `retryable`
    *     (carrying `errorMessage` when a concrete error was caught), reconnected by
    *     `context_engine` within the same run. Unclassifiable errors stay retryable on
    *     purpose: the fatal detector is an allowlist, and a gateway phrasing a transient
@@ -936,8 +924,11 @@ export class GenerativeModel implements LLMInterface {
     // Terminal-state classification: retryable (transport/parse failures) / fatal (definitive
     // rejections) / aborted (user). null means it ended normally.
     let outcome: LLMOutcome | null = null;
+    // The stateful history's length before this request: a truncated response is cut back to it.
+    let historyLength = 0;
     try {
       await this.refreshApiKey();
+      historyLength = this.client.getHistory().length;
       const it = this.openStream(
         uniMessage,
         ac.signal,
@@ -1077,10 +1068,25 @@ export class GenerativeModel implements LLMInterface {
     }
 
     if (outcome) {
-      // Interrupted/errored: close the item still streaming and backfill its complete message, producing no token_usage.
-      const reason: StopReason = outcome.status === "completed" ? "retryable" : outcome.status;
-      for (const msg of translator.finishInterrupted(reason)) yield msg;
+      // Interrupted/errored: close the item still streaming, producing no token_usage.
+      for (const msg of translator.finishInterrupted()) yield msg;
       return outcome;
+    }
+
+    // Delivered whole but not finished the normal way (the output cap, or a finish reason MMSP
+    // does not map): MMSP recorded the turn before yielding its stop, so it is taken back out —
+    // only a completed request may enter the history. No usage, and the context size stays.
+    const cutBy = translator.truncatedBy;
+    if (cutBy !== null) {
+      const history = this.client.getHistory();
+      if (history.length > historyLength) this.client.setHistory(history.slice(0, historyLength));
+      return {
+        status: "truncated",
+        errorMessage:
+          cutBy === "length"
+            ? "the response stopped at the output limit (finish_reason: length)"
+            : `the response ended without a normal finish (finish_reason: ${cutBy})`,
+      };
     }
 
     // Normal completion: the `stop` event closed every item; produce token_usage.

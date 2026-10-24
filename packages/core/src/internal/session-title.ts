@@ -222,7 +222,10 @@ export async function generateTitleWithLLM(
   for (;;) {
     const step = await gen.next();
     if (step.done) {
-      if (step.value.status !== "completed") return { title: null, usage };
+      // A truncated answer is still the text that arrived: a title cut at the cap is usable.
+      if (step.value.status !== "completed" && step.value.status !== "truncated") {
+        return { title: null, usage };
+      }
       break;
     }
     const msg = step.value;

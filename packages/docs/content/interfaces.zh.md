@@ -37,8 +37,8 @@ description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签�
 
 每个接口都遵守两条规则：
 
-- **绝不向引擎抛异常。** 错误会转化成携带 `stop_reason` 的消息或返回值。
-- **遵守流式纪律。** 流按 `start → delta → stop` 推进，完整消息紧随其后。
+- **绝不向引擎抛异常。** 错误会转化成消息（工具结果的 `status`）或返回值（`LLMOutcome.status`，记作 `request_end.status`）。
+- **遵守流式纪律。** 流按 `start → delta → stop` 推进，完整生成的条目紧随其后给出完整消息。
 
 ### 消息面与控制面
 
@@ -115,9 +115,9 @@ interface GenerativeModelParameters {
 
 ```ts
 interface LLMOutcome {
-  status: StopReason;      // completed | aborted | retryable | fatal
+  status: RequestEndStatus; // completed | aborted | retryable | fatal | truncated
   errorCode?: ErrorCode;   // classified cause on a non-completed failure; carried onto request_end as error_code
-  errorMessage?: string;   // failure detail: on fatal, and on retryable when a concrete error was caught;
+  errorMessage?: string;   // failure detail: on fatal and truncated, and on retryable when a concrete error was caught;
                            // carried onto request_end as error_message, so the errors panel shows
                            // the real reason behind a retried request
 }
@@ -126,7 +126,8 @@ interface LLMOutcome {
 | status | 含义 | 引擎反应 |
 | --- | --- | --- |
 | `completed` | 正常完成（`token_usage` 已经发出） | 继续执行 |
-| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、格式错误或截断的响应，以及一切无法归类的错误 | 在本次运行内按退避阶梯重连 |
+| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、格式错误的响应，以及一切无法归类的错误 | 在本次运行内按退避阶梯重连 |
+| `truncated` | 响应完整送达，但供应商没有正常结束它（`finish_reason` 为 `length` 或 `unknown`）；实现把这一轮移出有状态的历史，不产出 `token_usage` | 按同一阶梯重试，但不使阶梯归零 |
 | `fatal` | 重试救不回来的失败：供应商 4xx 拒绝（408 和 429 除外）、凭证被拒，或发起任何网络 I/O 之前就能确定的客户端拒绝（例如给没有快速档位的模型开启快速模式） | 停止运行并呈现 `errorMessage` |
 | `aborted` | 用户中断 | 停止，把控制权交还用户 |
 
@@ -348,7 +349,7 @@ interface ToolDefinitionConfig {
 }
 ```
 
-工具只发出内容 delta。分帧、超时、截断、`stop_reason` 优先级，以及把错误转成消息，全部由 Environment 集中处理，工具作者几乎不可能破坏协议。
+工具只发出内容 delta。分帧、超时、截断、结果 `status` 的优先级，以及把错误转成消息，全部由 Environment 集中处理，工具作者几乎不可能破坏协议。
 
 添加工具就是注册：在 `BUILTIN_TOOL_FACTORIES`（`packages/core/src/environment/tools/registry.ts`）里加一条 `name → factory` 条目。各工具的参数和行为见[工具与审批](/tools)。
 

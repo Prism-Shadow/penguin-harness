@@ -137,10 +137,10 @@ class ApprovalLoop {
   }
 
   record(rec: AmspRecord): void {
-    const p = rec.payload as { type?: string; tool_call_id?: string; stop_reason?: string };
+    const p = rec.payload as { type?: string; tool_call_id?: string };
     if (rec.type === "model_msg" && p.type === "tool_call") {
-      // A call cut short is never run, so no decision follows it.
-      if ((p.stop_reason ?? "completed") !== "completed") return;
+      // Every complete call is dispatched, so a decision follows it (a call cut short has no
+      // complete record).
       this.#undecided.add(approvalKey(rec.origin, p.tool_call_id ?? ""));
       this.#kick();
     } else if (rec.type === "event_msg" && p.type === "approval_decision") {

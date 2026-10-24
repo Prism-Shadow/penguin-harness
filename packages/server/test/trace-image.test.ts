@@ -74,6 +74,7 @@ describe("images by reference", () => {
         output: "two shots",
         toolCallId: "t1",
         images: [dataUrl("image/jpeg", JPEG), dataUrl("image/png", PNG)],
+        status: "completed",
       }), // 6
       assistantText("done"), // 7
       requestEnd("completed"), // 8

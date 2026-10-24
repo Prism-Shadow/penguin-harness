@@ -1,9 +1,9 @@
 /**
  * The LLM stream drops mid-way through writing tool arguments (MMSP cannot parse the
- * half-streamed arguments when the stream ends → malformed): that tool_call was never committed
- * into MMSP's history — the engine never dispatches it and never emits a paired output;
- * reconnect resends the same input verbatim. The frontend settles the broken tool card as soon
- * as the settle reason arrives (no more running timer) and shows a retry hint line (with the
+ * half-streamed arguments when the stream ends → malformed): that call closes with its partial
+ * stop alone — no complete tool_call is written, the engine never dispatches it and never emits
+ * a paired output; reconnect resends the same input verbatim. The frontend settles the broken
+ * tool card when its Request ends (no more running timer) and shows a retry hint line (with the
  * attempt count). After a successful retry, subsequent tool calls appear and complete as normal.
  */
 import { test, expect } from "@playwright/test";
@@ -52,26 +52,28 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
   // Retry hint line: set to "retry attempt 1 started" once request_begin arrives.
   await expect(page.getByText(/已发起第 1 次重试/)).toBeVisible();
 
-  // Trace: the broken tool_call is persisted (stop_reason=malformed) but **no paired output is
-  // added** — it never entered MMSP's history, so there's nothing to pair; the retry is
-  // represented by a request_end(malformed) event.
+  // Trace: the broken call left no complete tool_call — only its fragments streamed, and the
+  // Trace keeps none — so every recorded call is one that ran and has its output; the retry is
+  // represented by a retryable request_end coded malformed.
   const msgs = await (await page.request.get(`${BASE}/api/sessions/${sessionId}/messages`)).json();
-  const broken = msgs.messages.find(
-    (m) => m.payload.type === "tool_call" && m.payload.stop_reason === "malformed",
-  );
-  expect(broken, "malformed tool_call recorded").toBeTruthy();
-  const paired = msgs.messages.find(
-    (m) =>
-      m.payload.type === "tool_call_output" &&
-      m.payload.tool_call_id === broken.payload.tool_call_id,
-  );
-  expect(paired, "no paired output for a never-dispatched call").toBeFalsy();
+  const calls = msgs.messages.filter((m) => m.payload.type === "tool_call");
+  for (const call of calls) {
+    const paired = msgs.messages.find(
+      (m) =>
+        m.payload.type === "tool_call_output" &&
+        m.payload.tool_call_id === call.payload.tool_call_id,
+    );
+    expect(paired, `recorded call ${call.payload.tool_call_id} has its output`).toBeTruthy();
+  }
   const retryEnd = msgs.messages.find(
-    (m) => m.payload.type === "request_end" && m.payload.status === "malformed",
+    (m) =>
+      m.payload.type === "request_end" &&
+      m.payload.status === "retryable" &&
+      m.payload.error_code === "malformed",
   );
-  expect(retryEnd, "request_end(malformed) recorded").toBeTruthy();
+  expect(retryEnd, "request_end(retryable, malformed) recorded").toBeTruthy();
 
-  // UI: after expanding the group, the broken tool card shows malformed and is **settled**
+  // UI: after expanding the group, the broken tool card shows aborted and is **settled**
   // (no more running timer).
   await page
     .getByRole("button", { name: /运行完毕/ })
@@ -79,12 +81,12 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
     .click();
   const group = page.locator(".anim-msg.my-2").first();
   // Visibility is asserted explicitly: `toContainText` walks every descendant except
-  // SCRIPT/NOSCRIPT/STYLE, so the StatusIcon's own SVG <title>malformed</title> satisfies it
+  // SCRIPT/NOSCRIPT/STYLE, so the StatusIcon's own SVG <title>aborted</title> satisfies it
   // even when nothing is drawn. This call never ran, so it has no output block to expand
-  // into — the row's `[malformed]` marker is the only explanation a touch user can reach.
+  // into — the row's `[aborted]` marker is the only explanation a touch user can reach.
   await expect(
-    group.getByText("[malformed]").filter({ visible: true }),
-    "the broken tool card shows a visible malformed marker",
+    group.getByText("[aborted]").filter({ visible: true }),
+    "the broken tool card shows a visible aborted marker",
   ).toHaveCount(1);
   // A running spinner has role=status; none should remain after the turn ends.
   await expect(page.locator('[role="status"]')).toHaveCount(0);
