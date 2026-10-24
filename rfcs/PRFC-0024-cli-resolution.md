@@ -10,7 +10,7 @@
 ## Summary
 [summary]: #summary
 
-This RFC makes the choice of which CLI entry to run a named problem — **resolution** — shared by every consumer that runs the harness's CLI: server startup, remote machine commands, the push gate, and the user-facing command shim. Resolution answers from what the installation declares and what [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) holds. Every [distro channel](./PRFC-0021-distros.md#guide-level-explanation)'s product ships a **pushed-CLI loader**, and a resolution that cannot find a usable loader answers with a named fault.
+This RFC makes the choice of which CLI entry to run a named problem — **resolution** — shared by every consumer that runs the harness's CLI: server startup, remote machine commands, the push gate, and the user-facing command shim. Resolution answers from what the installation declares and what [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) holds. Every [distro channel](./PRFC-0021-distros.md#guide-level-explanation)'s product ships a **pushed-CLI loader**, and a resolution that cannot find a usable loader answers with a named fault. The answer is a decision procedure with a fixed order: each state of the record and the declaration yields one entry or one named fault.
 
 ## Motivation
 [motivation]: #motivation
@@ -40,6 +40,10 @@ The pushed CLI's rework is next: renaming, reshaping entries, changing how serve
 
 A server supervisor deciding which entry to re-spawn, a remote machine command deciding what to invoke on the peer, the push gate deciding which loader to smoke-test a candidate against, and the command shim deciding what to put on the user's `PATH` — four consumers, one question. Today each answers it privately, with its own spelling and its own fallback habit; this RFC gives them one answer to share.
 
+### Resolution answers in a fixed order
+
+Resolution reads the record first and the declaration second. A root with no record runs the installed entry, a damaged record is a fault, and a record with a pushed CLI picks the loader. The loader answers `pushed` when the declaration names it and `legacy` when only the pre-declaration name does; a product that declares no loader and carries no legacy loader answers a fault. Every answer carries its name, and each consumer records the name it acted under.
+
 ### Identity by declaration
 
 The loader identifies itself by declaration: an exported identity constant, a declaration in the package manifest, or a pointer in the record; which carrier wins is left open below. Resolution discovers the loader from the declaration. A rename that keeps the declaration intact is invisible to resolution; a rename that breaks it becomes a named fault at the point of discovery.
@@ -50,7 +54,7 @@ Every channel's product carries a loadable pushed-CLI loader, asserted at build 
 
 ### A fault is named
 
-A resolution that cannot find a usable loader answers at the point of failure with a named fault. Where a lesser entry then runs anyway — the installed CLI in place of the pushed one — that fallback is a recorded, named decision. "A server that starts beats one that does not" stays available as a choice and stops being available as an accident. A rename that makes the pushed path vanish then becomes a report visible at install time.
+A resolution that cannot find a usable loader answers at the point of failure with a named fault; the reference section fixes the names. Where a lesser entry then runs anyway — the installed CLI in place of the pushed one — that fallback is a recorded, named decision. "A server that starts beats one that does not" stays available as a choice and stops being available as an accident. A rename that makes the pushed path vanish then becomes a report visible at install time.
 
 ### Cross-version peers
 
@@ -66,13 +70,67 @@ Remote commands resolve the peer's loader by asking: the peer declares, the call
 3. **The push gate** — a candidate push is smoke-tested through the loader the receiving installation will actually run; a gate that tests a different loader from the one that will run is a gate on the wrong door.
 4. **The command shim** — what the data root exposes on the user's `PATH` is resolution's answer, so the person typing `penguin` gets the same entry a supervisor would.
 
+### Resolution: the inputs and the order
+
+Resolution takes four inputs: the caller's own entry, the data root, the record that root holds, and the declaration the caller's product carries. Its answers are one entry with a reason, or one fault with a name.
+
+1. **Self.** A caller whose own entry is the loader answers with itself, under the reason its name earns: `pushed` for the declared loader, `legacy` for the legacy name. The rule keeps a loader from loading itself.
+2. **The record.** The meta reader of [PRFC-0023](./PRFC-0023-harness-meta.md#reference-level-explanation) answers with the record, no record, or a damaged record.
+3. **No record.** A root that holds no record holds no pushed CLI, so the installed entry runs, under the reason `no-record`.
+4. **A damaged record.** A record the reader cannot read or parse answers the fault `damaged-record`.
+5. **The CLI pointer.** A record with no CLI entry at all holds no pushed CLI, so the installed entry runs, under the reason `no-pushed-cli`.
+6. **An unusable pointer.** A CLI entry with no pointer, an empty or malformed pointer, or a pointer that resolves outside the store answers the fault `cli-pointer-unusable`.
+7. **A pointer with no file.** A pointer the store no longer holds answers the fault `cli-bundle-missing`.
+8. **The declared loader.** A product that declares a loader answers it under the reason `pushed` when the target is present, and the fault `loader-missing` when the target is absent.
+9. **The legacy loader.** A product that declares no loader answers the legacy loader under the reason `legacy` while the transition window is open and that loader is present; with neither a declaration nor a legacy loader the answer is the fault `loader-absent`.
+
+The first step that applies decides the answer, and later steps stay unread.
+
+### The cases and their answers
+
+| Record | CLI pointer | Declaration | Answer |
+| --- | --- | --- | --- |
+| record | present, file in the store | declared loader present | the loader — `pushed` |
+| record | present, file in the store | declared loader absent | fault `loader-missing` |
+| record | present, file in the store | no declaration, legacy loader present, window open | the legacy loader — `legacy` |
+| record | present, file in the store | no declaration, no legacy loader | fault `loader-absent` |
+| record | present, file missing from the store | any | fault `cli-bundle-missing` |
+| record | present, pointer unusable | any | fault `cli-pointer-unusable` |
+| record | no CLI entry | any | the installed entry — `no-pushed-cli` |
+| no record | — | any | the installed entry — `no-record` |
+| damaged record | — | any | fault `damaged-record` |
+| the caller is the loader | — | — | the caller itself — `pushed` or `legacy` |
+
+Presence decides the answer; loading is a report of its own. A loader present on disk that cannot load the CLI reports `loader-unloadable` as its first act, and a consumer that probes — the push gate before it accepts a push, the release assertion before it ships an artifact — turns a failed probe into that same fault before anything runs.
+
+A consumer acts on the answer. A supervisor that must start a server runs the installed entry when the answer is a fault and records the fault name. The loader runs nothing on a fault and reports it, and reports `no-record` when a person or a remote command invokes it on a root that holds no record. A remote command surfaces the peer's fault unchanged. The command shim carries resolution's answer, so the entry a person reaches is the entry a supervisor would run. A consumer whose own entry cannot be re-spawned — an extension-less symlink on `PATH`, a source run through a TypeScript runner — runs the server in process and records the condition `entry-not-respawnable`.
+
+### What each channel answers
+
+Every channel's product installs one entry and declares one loader, and provisioning writes the root's first record ([PRFC-0023](./PRFC-0023-harness-meta.md#guide-level-explanation)). The table reads resolution's answer per channel, at the first run and after a push.
+
+| Channel | Installed entry | Declared loader | First run | After a push |
+| --- | --- | --- | --- | --- |
+| npm package | the main CLI bin | the loader bin beside it | the loader — `pushed` | the loader — `pushed` |
+| release tarball, universal included | the launcher script | the loader beside the installed CLI pair | the loader — `pushed` | the loader — `pushed` |
+| Docker image | the extension-less symlink today, a re-runnable entry after the change below | the loader inside the image | the loader — `pushed`; the symlink entry answers `entry-not-respawnable` until it is reshaped | the loader — `pushed` |
+| desktop application | the bundled CLI, started through the shell's launch entry | the packaged loader beside the launch entry | the loader — `pushed`; a product built without the loader answers `loader-absent` | the loader — `pushed` |
+| source checkout | the built CLI; a source run has no re-runnable entry | the loader beside the built CLI | built run: the loader — `pushed`; source run: `entry-not-respawnable` | the loader — `pushed`; the dev root's provisioning stays open below |
+| machines-installed peer | the loader, which is the peer's only CLI face | the same loader | the loader — `pushed`; a bare release never installed from a peer answers `no-record` | the loader — `pushed` |
+
+A remote command is the one consumer that resolves across machines: it reads the peer's declaration and invokes the declared loader, and a peer built before declarations answers by the legacy name. The peer's own resolution then runs, so a peer whose record is damaged reports `damaged-record`, and a peer that was never pushed and never installed from a peer reports `no-record`.
+
+### The transition window
+
+The legacy name is the loader's file name in products built before the declaration: `penguin-hmr.js`. Resolution reads the declaration first and the legacy name second, and reaches the legacy name only where no declaration exists. An answer from the legacy name is recorded as `legacy`, so the window stays visible while it lasts.
+
+A declaration that names a missing or unloadable loader answers its fault alone, and the legacy name stays unread. A new product with a broken declaration is a broken installation, and a fallback would hide it.
+
+The window closes when the release line carrying declarations reaches the machines a deployment cares about. After that, the products drop the legacy branch, and a product without a declaration answers `loader-absent`. The length of the window, and the exact shape of the probe a caller uses on a peer, stay open below.
+
 ### Carriers of identity *(candidates)*
 
 An exported constant from the loader module; a declaration in the package's manifest; a pointer in the harness meta record. The candidates differ in where a stale implementation fails loudly. The choice is left to the implementation round, with one fixed requirement: the carrier is a declaration, something a reader can consult.
-
-### The transition window *(candidate)*
-
-Machines installed before the declaration exists answer by the legacy name; callers try the declared identity first and fall back to the legacy spelling during the window; the window closes when the release line carrying declarations has reached the machines a deployment cares about. The length and the exact probe are implementation questions; the two-step shape — new name preferred, old name still honored — is recorded as a candidate.
 
 ### Channel assertions at build time *(candidate)*
 
@@ -89,11 +147,11 @@ Resolution depends on presence: a reader that can trust the record to exist neve
 ## Invariants
 [invariants]: #invariants
 
-### Identity by declaration
+### Declarations identify, names are recorded
 
-> However artifacts are named or renamed across [distro channels](./PRFC-0021-distros.md#guide-level-explanation), [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation) still identifies the [pushed-CLI loader](./PRFC-0024-cli-resolution.md#guide-level-explanation) by declaration or record.
+> However artifacts are named or renamed across [distro channels](./PRFC-0021-distros.md#guide-level-explanation), [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation) still identifies the [pushed-CLI loader](./PRFC-0024-cli-resolution.md#guide-level-explanation) by the declaration its product carries, and a file name answers only where no declaration exists, recorded as a legacy answer.
 
-This is the property the whole RFC fixes. A name shared by convention across packages and machines fails three different ways at run time when it changes; a future rework that reintroduces recognition by file name brings that pattern back with it.
+This is the property the whole RFC fixes. A name shared by convention across packages and machines fails three different ways at run time when it changes; a future rework that reintroduces recognition by file name brings that pattern back with it. The legacy name is the one place a name still answers, and it answers only while a product declares nothing; the answer is recorded, so the window can close on evidence and a name never sits beside a declaration.
 
 ### Every channel ships its loader
 
@@ -134,6 +192,7 @@ Node's `bin` map is a declared entry: a package says what it installs, and calle
 A few details are left to the implementation or to a later revision.
 
 - The carrier of identity: exported constant, package manifest, record pointer, or a combination.
+- The carrier of a result name: a value, an exit code, a typed error, or a combination.
 - The length of the transition window and the exact shape of the peer probe.
 - Whether a failed build-time assertion is a hard release failure or a warning during the window.
 - The exact entry shape for the two gap channels: the desktop launch entry's placement, and what the symlink channel's `PATH` face becomes.
@@ -146,6 +205,13 @@ Resolution generalizes: the web assets and the platform halves of a push can be 
 ---
 
 ## Changes
+
+### v1.1.0
+
+- Added the resolution procedure: four inputs, nine steps in a fixed order, and the table of cases with one entry or one named fault each.
+- Added the per-channel answers: the installed entry, the declared loader, and resolution's answer at the first run and after a push, for all six channels.
+- Added the transition window's handling: the legacy name answers only where no declaration exists, its answer is recorded as `legacy`, and a broken declaration answers its fault alone.
+- Retired the invariant "Identity by declaration" and replaced it with "Declarations identify, names are recorded": the earlier sentence said identity comes from a declaration or the record, and the window answers by the legacy name.
 
 ### v1.0.0
 
