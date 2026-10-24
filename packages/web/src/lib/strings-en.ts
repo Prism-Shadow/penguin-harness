@@ -2596,6 +2596,12 @@ export const en: Strings = {
     toastSaved: "Scheduled task saved",
     toastEnabled: "Scheduled task enabled",
     toastDisabled: "Scheduled task disabled",
+    /** Manual fire (fireSchedule): an extra run now; queued when the target Session is busy. */
+    fireNow: "Run now",
+    toastFired: "Fired once by hand",
+    toastQueued: "Target session is busy; the firing is queued",
+    /** A fire that 404s on the route itself: the server is older than this page. */
+    fireStaleServer: "The server predates manual firing; it takes effect after a restart",
     /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "This conversation",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -6089,6 +6095,10 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
+      schedule_invalid: "This scheduled task's file is invalid, so it cannot fire.",
+      schedule_session_missing:
+        "The Session this task is bound to no longer exists; the task is marked invalid. Editing the task file recovers it.",
+      schedule_fire_failed: "The firing failed: no Session could be opened for it.",
       model_not_addable:
         "This group carries its built-in models only; add the model under a custom group.",
       penguin_go_protocol_fixed: "Penguin Go always uses the MMSP protocol; it cannot be changed.",

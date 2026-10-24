@@ -10,6 +10,7 @@
  *                    [--session-id | --workspace [--model-id --provider]]
  *                    [--enable|--disable] [--project-id] [--agent-id] [--json] [--server]
  *   penguin schedule rm <name> [--project-id] [--agent-id] [--json] [--server]
+ *   penguin schedule run <name> [--project-id] [--agent-id] [--json] [--server]
  *
  * `ls`: schedules live per agent (GET .../agents/:a/schedules); without `--agent-id`
  * the command iterates every agent of the project. Columns: agent, name, enabled,
@@ -31,10 +32,18 @@
  * and switching target kinds clears the other kind's fields. `rm` deletes without
  * prompting (agents drive this; the server's owner authorization still applies).
  * `--start-at now` means the current instant.
+ *
+ * `run` fires one task right now (POST .../schedules/:name/fire): the same dispatch
+ * as a due slot — bound Session or a fresh one, queued when busy — but an extra run
+ * that never consumes the schedule itself (a one-shot's real firing still happens).
  * Docs: /docs/cli § "penguin schedule".
  */
 import type { Command } from "commander";
-import type { ScheduleItem, SchedulesResponse } from "@prismshadow/penguin-server/api";
+import type {
+  ScheduleFireResponse,
+  ScheduleItem,
+  SchedulesResponse,
+} from "@prismshadow/penguin-server/api";
 import {
   resolveAgentId,
   resolveConnection,
@@ -272,6 +281,28 @@ export function registerScheduleCommand(program: Command, t: Messages): void {
       );
       if (opts.json === true) process.stdout.write(`${JSON.stringify({ name })}\n`);
       else process.stdout.write(`${t.schedule.removed(name)}\n`);
+    });
+
+  schedule
+    .command("run <name>")
+    .description(t.schedule.runDesc)
+    .option("--project-id <id>", t.common.projectId)
+    .option("--agent-id <id>", t.common.agentId)
+    .option("--json", t.common.json)
+    .option("--server <url>", t.common.server)
+    .action(async (name: string, opts) => {
+      const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
+      const projectId = resolveProjectId(opts.projectId);
+      const agentId = resolveAgentId(opts.agentId);
+      const fired = await client.request<ScheduleFireResponse>(
+        "POST",
+        `/api/projects/${enc(projectId)}/agents/${enc(agentId)}/schedules/${enc(name)}/fire`,
+      );
+      if (opts.json === true) process.stdout.write(`${JSON.stringify(fired)}\n`);
+      else
+        process.stdout.write(
+          `${t.schedule.fired(name, shortSessionId(fired.sessionId), fired.queued)}\n`,
+        );
     });
 }
 

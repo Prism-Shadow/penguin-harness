@@ -4302,6 +4302,16 @@ export interface ScheduleUpsertRequest {
   provider?: string;
 }
 
+/**
+ * POST .../schedules/:name/fire: where the manual firing went — the bound Session
+ * or a fresh one, sent now or queued behind a busy target.
+ */
+export interface ScheduleFireResponse {
+  sessionId: string;
+  /** True when the target Session was busy: the firing waits and is sent once it turns idle. */
+  queued: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Agent State version and snapshots
 // ---------------------------------------------------------------------------

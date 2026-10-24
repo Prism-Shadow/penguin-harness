@@ -159,6 +159,7 @@ import type {
   RecalledMessageResponse,
   RestartResponse,
   RetryNowResponse,
+  ScheduleFireResponse,
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
@@ -1847,6 +1848,22 @@ export const deleteSchedule = (
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/schedules/${encodeURIComponent(name)}`,
     { method: "DELETE", server: machineId },
+  );
+
+/**
+ * Fire one scheduled task right now (an extra run; the schedule itself is untouched).
+ * Answers where the firing went — the session, sent or queued behind a busy target.
+ */
+export const fireSchedule = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  machineId: string | null = null,
+) =>
+  apiFetch<ScheduleFireResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/schedules/${encodeURIComponent(name)}/fire`,
+    { method: "POST", server: machineId },
   );
 
 // Plugin library, and an Agent's installed skills and hook packages ----------------------------

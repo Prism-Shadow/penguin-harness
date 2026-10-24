@@ -372,6 +372,7 @@ penguin schedule ls [--project-id <id>] [--agent-id <id>] [--json] [--server <ur
 penguin schedule add <name> --prompt <text> --start-at <ISO|now> [options]
 penguin schedule update <name> [options]
 penguin schedule rm <name> [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
+penguin schedule run <name> [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
 ```
 
 `penguin schedule ls` 列出所有 Agent 的定时任务，用 `--agent-id` 可只看一个。各列为：Agent、名称、是否启用、开始时间、周期（一次性任务显示 `once`）、目标（绑定的 Session 短 id，或 `new session`）、上次触发时间，以及每个非 active 状态的标记（`expired`、`done`、`missed` 或 `invalid`）。无法解析的定时任务文件也会列出，并标记 `invalid`。已完成、已错过和已过期的任务会由服务端归档，随即从列表中消失，见[结束的任务会归档](/schedules#结束的任务会归档)。
@@ -395,12 +396,14 @@ penguin schedule rm <name> [--project-id <id>] [--agent-id <id>] [--json] [--ser
 - `add` 创建的任务默认启用，因为添加任务就是想让它跑起来；不想启用就用 `--disabled`。这是与原始文件的刻意差异：原始文件的 `enabled = false` 默认值保留不变，供手工编辑使用。
 - `update` 读取已存储的任务，修改后写回，未指定的字段保持原值。在绑定 Session 和新建 Session 两种目标之间切换时，会清空另一种目标的字段。
 - `rm` 不询问直接删除。服务器仍要求调用者是 Project 所有者。
+- `run` 立即手工触发一次：与到点触发走同样的分发（绑定 Session 或新建 Session，目标忙则排队），但只是额外跑一次，不消费原时间表——一次性任务真正到点的那次照样会跑。
 
 ```bash
 penguin schedule add daily-report --prompt "summarize the day" --start-at 2026-09-01T09:00:00Z --period 1d
 penguin schedule add deploy-watch --prompt "check the deploy" --start-at now --period 30m --session-id 402a2e24
 penguin schedule update daily-report --period 12h --disable
 penguin schedule rm daily-report
+penguin schedule run daily-report
 ```
 
 ## penguin org
