@@ -57,7 +57,7 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { jsonOnlyWrites } from "./auth/middleware.js";
+import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
@@ -102,6 +102,7 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
+import { commandRoutes } from "./http/routes/command.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -522,6 +523,12 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
 
   // Every route but /api/hmr is the platform's, served through the seam above. What follows
   // is the layer's own tail: static hosting and the SPA fallback.
+
+  // Host commands for the command palette, mounted in every mode — a plain server answers
+  // with an empty list, so the page has one question to ask wherever it runs.
+  app.use("/api/command", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.use("/api/command/*", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.route("/api/command", commandRoutes(deps));
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a

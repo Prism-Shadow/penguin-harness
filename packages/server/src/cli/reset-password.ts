@@ -12,38 +12,40 @@
  * Docs: /docs/cli § "penguin server / penguin web".
  */
 import path from "node:path";
-import { resolveRoot } from "@prismshadow/penguin-core";
-import { resetAdminPassword } from "@prismshadow/penguin-server/reset-admin-password";
+import { resetAdminPassword } from "../reset-admin-password.js";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
+import type { CliContext } from "@prismshadow/penguin-core/plugin";
+import { serveMessages } from "./messages.js";
+import { serverCliSummary } from "./module.js";
 
-/** Attaches the subcommand to the `penguin server` command (see registerServeCommands). */
-export function registerResetPasswordCommand(server: Command, t: Messages): void {
+/** Attaches the subcommand to the `penguin server` command (see serve.ts's registerCliCommands). */
+export function registerResetPasswordCommand(server: Command, ctx: CliContext): void {
+  const m = serveMessages(ctx.language);
   server
     .command("reset-admin-password")
-    .description(t.resetPassword.desc)
+    .description(serverCliSummary("server.reset-admin-password", ctx.language))
     .action(async () => {
-      const root = resolveRoot();
+      const root = ctx.root;
       const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
       const result = await resetAdminPassword(root, dbPath);
       switch (result.outcome) {
         case "server_running":
           process.stderr.write(
-            t.resetPassword.serverRunning(`http://localhost:${result.lock.port}/`) + "\n",
+            m.resetPassword.serverRunning(`http://localhost:${result.lock.port}/`) + "\n",
           );
           process.exitCode = 1;
           return;
         case "no_database":
-          process.stderr.write(t.resetPassword.noDatabase(result.dbPath) + "\n");
+          process.stderr.write(m.resetPassword.noDatabase(result.dbPath) + "\n");
           process.exitCode = 1;
           return;
         case "no_admin":
-          process.stderr.write(t.resetPassword.noAdmin() + "\n");
+          process.stderr.write(m.resetPassword.noAdmin() + "\n");
           process.exitCode = 1;
           return;
         case "reset":
-          process.stdout.write(t.resetPassword.done(root) + "\n");
-          process.stdout.write(t.resetPassword.next() + "\n");
+          process.stdout.write(m.resetPassword.done(root) + "\n");
+          process.stdout.write(m.resetPassword.next() + "\n");
       }
     });
 }

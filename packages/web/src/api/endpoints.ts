@@ -215,6 +215,8 @@ import type {
   UpdateProfileResponse,
   DesktopTrayPatch,
   DesktopTrayStatusResponse,
+  HostCommand,
+  HostCommandsResponse,
   HookArchiveInstallRequest,
   UsageErrorKind,
   UsageErrorsClearResponse,
@@ -2307,6 +2309,13 @@ export const restartServer = () =>
 // Desktop client update (desktop-shell sessions only) ----------------------------------
 
 export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
+
+/** The host commands this server's process offers the command palette; empty under a plain server. Admin only. */
+export const getHostCommands = () => apiFetch<HostCommandsResponse>("/api/command");
+
+/** Runs one host command; the host answers with its own UI (a dialog, the updater). */
+export const runHostCommand = (command: HostCommand) =>
+  apiFetch<void>(`/api/command/${encodeURIComponent(command)}`, { method: "POST", body: {} });
 
 export const desktopUpdateCheck = () =>
   apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });

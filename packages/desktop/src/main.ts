@@ -104,8 +104,20 @@ import {
   trayStatusMessage,
   updateTrayPrefs,
 } from "./tray-prefs.js";
-import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
-import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
+import {
+  checkForUpdatesManually,
+  getUpdaterStatus,
+  handleUpdaterCommand,
+  initUpdater,
+  onUpdaterStatus,
+  updatesAvailableInThisForm,
+} from "./updater.js";
+import {
+  hostCommandsMessage,
+  parseHostCommand,
+  parseUpdaterCommand,
+  updaterStatusMessage,
+} from "./updater-status.js";
 import {
   APP_WINDOW_OPTIONS,
   childGoneLine,
@@ -187,6 +199,25 @@ function fatal(context: string, err: unknown): void {
   app.exit(1);
 }
 
+/**
+ * Windows and Linux: the menu bar is hidden outright, not auto-hidden. With `autoHideMenuBar`
+ * a lone Alt press pulled the bar up and took the keyboard from the page, so every Alt
+ * combination the page or the terminal wanted (Alt+B, Alt+., Alt+Enter) was eaten. Hidden,
+ * the application menu still exists — its accelerators keep working, and macOS keeps its
+ * system menu bar — and F10 brings the bar up for the rare time it is wanted. The menu's
+ * own actions are offered from the page's command palette (see http/routes/command.ts).
+ */
+function hideMenuBar(target: BrowserWindow): void {
+  if (process.platform === "darwin") return;
+  target.setMenuBarVisibility(false);
+  target.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.key !== "F10") return;
+    if (input.alt || input.control || input.meta || input.shift) return;
+    target.setMenuBarVisibility(!target.isMenuBarVisible());
+    event.preventDefault();
+  });
+}
+
 function createWindow(url: string): void {
   // Linux window/taskbar icon (and Windows dev runs); packaged Windows uses the exe
   // resources and macOS its bundle icns, so those ignore it (see app-icon.ts).
@@ -253,6 +284,7 @@ function createWindow(url: string): void {
   // the Files panel previews Agent-written HTML in an iframe that allows popups, so any window
   // allowed here is one that HTML can open too — a hidden one, it could own outright.
   win.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
+  hideMenuBar(win);
   win.webContents.on("did-create-window", (child) => guardOpenedWindow(child, iconPath));
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {
@@ -373,6 +405,7 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  * which Electron would otherwise apply, is refused: off-screen is hidden too.
  */
 function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void {
+  hideMenuBar(child);
   child.center();
   child.webContents.on("content-bounds-updated", (event) => event.preventDefault());
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
@@ -609,6 +642,16 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
       handleUpdaterCommand(action);
       return;
     }
+    // The page's command palette asking for a host command — what the menu items ran.
+    const host = parseHostCommand(message);
+    if (host === "install-cli") {
+      void installCliCommand(win);
+      return;
+    }
+    if (host === "check-updates") {
+      void checkForUpdatesManually();
+      return;
+    }
     const command = parseTrayCommand(message);
     if (command !== null) {
       if (command.locale !== undefined) setTrayLocale(command.locale);
@@ -622,6 +665,12 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   });
   child.postMessage(updaterStatusMessage(getUpdaterStatus()));
   pushTrayStatus();
+  child.postMessage(
+    hostCommandsMessage([
+      ...(currentCliInstallKind() !== null ? (["install-cli"] as const) : []),
+      ...(updatesAvailableInThisForm() ? (["check-updates"] as const) : []),
+    ]),
+  );
 }
 
 /** Starts (or restarts) the embedded server and points the window at the claim link. */
