@@ -1,24 +1,33 @@
 /**
- * AMSP's records and control frames, as far as the /amsp page reads them: the scripted runs
- * (amsp-demo.ts) are typed on them and the replay fold (amsp-replay.ts) narrows on them. The
- * payloads the page reads field by field are spelled out, mirroring the AMSP record types
- * (packages/amsp/src/records/types.ts), `task_begin` / `task_end` and `request_begin.thinking_level`
- * included; every other kind of the vocabulary is accepted with its fields unread. The control
- * frames take the SDK's shape (`{ kind, … }`).
+ * AMSP's records and control frames, as the /amsp page reads and shows them: the scripted runs
+ * (amsp-demo.ts) and the record reference's examples (amsp-records.ts) are typed on them, and the
+ * replay fold (amsp-replay.ts) narrows on them. They mirror the AMSP record types
+ * (packages/amsp/src/records/types.ts) as the protocol ships: no record carries a `stop_reason`;
+ * a Request's end is `request_end.status`, which adds `truncated`; a tool result says what it is
+ * in its own `status`; an item cut short streams its fragments and gets no complete record. The
+ * control frames take the SDK's shape (`{ kind, … }`).
  *
- * Page-local on purpose: `@prismshadow/amsp` 0.2.16 still ships the old event types. Once the
- * release after it carries these, this file re-exports them from there and the scripted runs are
- * checked against the real protocol.
+ * Page-local on purpose: `@prismshadow/amsp` 0.2.16 still ships the old event types, and the
+ * landing site depends on no protocol package. Once a release carries these, this file re-exports
+ * them from there and the scripted runs are checked against the real protocol.
  */
-import type { EventKind, ModelKind } from "./amsp-vocabulary";
+import type { ControlKind } from "./amsp-vocabulary";
 
-/** How a message, a request, a compaction or a task ended. */
+/** How a compaction or an MCP connect phase ended. */
 export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
+
+/** How a Request ended: the {@link StopReason} values plus `truncated` (cut off, retried). */
+export type RequestEndStatus = StopReason | "truncated";
+
+/** What a tool result is: it ran to its end, it failed, or it never ran. */
+export type ToolStatus = "completed" | "aborted" | "fatal";
 
 /** The phase of a streaming fragment. */
 export type StreamPhase = "start" | "delta" | "stop";
 
 export type ThinkingLevel = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export type Role = "user" | "assistant";
 
 export interface TokenCounts {
   cache_read: number;
@@ -27,11 +36,11 @@ export interface TokenCounts {
   total: number;
 }
 
-/** A kind of the vocabulary whose fields this page never reads. */
-interface Unread<K extends string> {
-  type: K;
-  [field: string]: unknown;
-}
+/** Wire data a provider needs back on replay; opaque to the harness. */
+export type Fidelity = Record<string, unknown>;
+
+export type SessionSource =
+  "user" | "api" | "schedule" | "subagent" | "cli" | "company" | "workbench";
 
 export interface SessionMetaPayload {
   session_id: string;
@@ -41,21 +50,46 @@ export interface SessionMetaPayload {
   system_prompt: string;
   agent_state: string;
   workspace: string;
-  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company" | "workbench";
+  source: SessionSource;
 }
+
+// model_msg: complete messages
 
 export interface TextPayload {
   type: "text";
-  role: "user" | "assistant";
+  role: Role;
   text: string;
-  stop_reason?: StopReason;
+  sender?: "user" | "parent_agent" | "harness" | "server";
+  fidelity?: Fidelity;
+}
+
+export interface ImageUrlPayload {
+  type: "image_url";
+  role: "user";
+  image_url: string;
+}
+
+export interface InlineDataPayload {
+  type: "inline_data";
+  role: Role;
+  data: string;
+  mime_type: string;
+  fidelity?: Fidelity;
 }
 
 export interface ThinkingPayload {
   type: "thinking";
   role: "assistant";
   thinking: string;
-  stop_reason?: StopReason;
+  fidelity?: Fidelity;
+}
+
+export interface InlineThinkingPayload {
+  type: "inline_thinking";
+  role: "assistant";
+  data: string;
+  mime_type: string;
+  fidelity?: Fidelity;
 }
 
 export interface ToolCallPayload {
@@ -64,23 +98,25 @@ export interface ToolCallPayload {
   name: string;
   arguments: string;
   tool_call_id: string;
-  stop_reason?: StopReason;
+  fidelity?: Fidelity;
 }
 
 export interface ToolCallOutputPayload {
   type: "tool_call_output";
   role: "user";
   output: string;
+  images?: string[];
   tool_call_id: string;
-  stop_reason?: StopReason;
+  status: ToolStatus;
 }
+
+// model_msg: streaming fragments
 
 export interface PartialTextPayload {
   type: "partial_text";
   role: "assistant";
   event_type: StreamPhase;
   text: string;
-  stop_reason?: StopReason;
 }
 
 export interface PartialThinkingPayload {
@@ -88,7 +124,6 @@ export interface PartialThinkingPayload {
   role: "assistant";
   event_type: StreamPhase;
   thinking: string;
-  stop_reason?: StopReason;
 }
 
 export interface PartialToolCallPayload {
@@ -98,7 +133,6 @@ export interface PartialToolCallPayload {
   name: string;
   arguments: string;
   tool_call_id: string;
-  stop_reason?: StopReason;
 }
 
 export interface PartialToolCallOutputPayload {
@@ -106,13 +140,16 @@ export interface PartialToolCallOutputPayload {
   role: "user";
   event_type: StreamPhase;
   output: string;
+  images?: string[];
   tool_call_id: string;
-  stop_reason?: StopReason;
 }
 
-type ReadModelPayload =
+export type ModelPayload =
   | TextPayload
+  | ImageUrlPayload
+  | InlineDataPayload
   | ThinkingPayload
+  | InlineThinkingPayload
   | ToolCallPayload
   | ToolCallOutputPayload
   | PartialTextPayload
@@ -120,22 +157,36 @@ type ReadModelPayload =
   | PartialToolCallPayload
   | PartialToolCallOutputPayload;
 
-export type ModelPayload = ReadModelPayload | Unread<Exclude<ModelKind, ReadModelPayload["type"]>>;
+// event_msg
+
+/** The records' one error vocabulary: a stable code to localize from, and the raw text. */
+export interface ErrorInfo {
+  error_code?: string;
+  error_message?: string;
+}
+
+/** The retry detail `request_end` and `compaction_end` share. */
+export interface RetryDetail extends ErrorInfo {
+  attempt?: number;
+  retry_in_ms?: number;
+}
+
+export interface TaskBeginPayload {
+  type: "task_begin";
+}
+
+export interface TaskEndPayload {
+  type: "task_end";
+}
 
 export interface RequestBeginPayload {
   type: "request_begin";
-  /** The level the engine passed for this request; absent when it passed none. */
   thinking_level?: ThinkingLevel;
 }
 
-export interface RequestEndPayload {
+export interface RequestEndPayload extends RetryDetail {
   type: "request_end";
-  status: StopReason;
-  error_code?: string;
-  error_message?: string;
-  attempt?: number;
-  /** Present when the engine will retry: the request did not end the run. */
-  retry_in_ms?: number;
+  status: RequestEndStatus;
 }
 
 export interface TokenUsagePayload {
@@ -144,30 +195,86 @@ export interface TokenUsagePayload {
   request: TokenCounts;
 }
 
+export interface AbortPayload extends ErrorInfo {
+  type: "abort";
+  /** Legacy prose cause, read only when no `error_code` is present. */
+  reason?: string | null;
+}
+
 export interface ApprovalDecisionPayload {
   type: "approval_decision";
   decision: "allow" | "deny" | "forbidden";
   tool_call_id: string;
 }
 
-export interface ToolListReadyPayload {
-  type: "tool_list_ready";
-  /** Names only in the scripted runs: the descriptions and schemas are long and say nothing here. */
-  tools: { name: string }[];
+export interface HookPayload {
+  type: "hook";
+  hook: "stop" | "pre_tool_use" | "user_prompt";
+  name: string;
+  decision?: "continue" | "stop" | "allow" | "deny";
+  reason?: string;
+  output?: Record<string, string | number | boolean>;
 }
 
-/** A Task's two boundary records carry their type only: its outcome is read from the records. */
-type ReadEventPayload =
-  | { type: "task_begin" }
-  | { type: "task_end" }
-  | { type: "abort"; reason?: string | null; error_code?: string; error_message?: string }
+export interface CompactionBeginPayload {
+  type: "compaction_begin";
+  reason: "context" | "turns" | "manual";
+  mode: "summarize" | "discard";
+  context: number;
+  turns: number;
+}
+
+export interface CompactionEndPayload extends RetryDetail {
+  type: "compaction_end";
+  reason: "context" | "turns" | "manual";
+  mode: "summarize" | "discard";
+  status: StopReason;
+}
+
+export interface SubagentPayload {
+  type: "subagent";
+  session_id: string;
+}
+
+export interface ToolListReadyPayload {
+  type: "tool_list_ready";
+  tools: { name: string; description: string; parameters?: Record<string, unknown> }[];
+}
+
+export interface McpConnectBeginPayload {
+  type: "mcp_connect_begin";
+  servers: string[];
+}
+
+export interface McpServerConnectResult extends ErrorInfo {
+  server: string;
+  transport: "stdio" | "http" | "sse";
+  status: StopReason;
+  duration_ms: number;
+  tools?: number;
+}
+
+export interface McpConnectEndPayload extends ErrorInfo {
+  type: "mcp_connect_end";
+  status: StopReason;
+  results: McpServerConnectResult[];
+}
+
+export type EventPayload =
+  | TaskBeginPayload
+  | TaskEndPayload
   | RequestBeginPayload
   | RequestEndPayload
   | TokenUsagePayload
+  | AbortPayload
   | ApprovalDecisionPayload
-  | ToolListReadyPayload;
-
-export type EventPayload = ReadEventPayload | Unread<Exclude<EventKind, ReadEventPayload["type"]>>;
+  | HookPayload
+  | CompactionBeginPayload
+  | CompactionEndPayload
+  | SubagentPayload
+  | ToolListReadyPayload
+  | McpConnectBeginPayload
+  | McpConnectEndPayload;
 
 interface Envelope<T extends string, P> {
   /** ISO 8601, UTC. */
@@ -188,4 +295,4 @@ export type AmspRecord =
   | Envelope<"event_msg", EventPayload>;
 
 /** A control frame: an SSE event with a name and no id. `data: [DONE]` ends a run stream. */
-export type AmspControl = { kind: "resync_required" } | { kind: "ping" };
+export type AmspControl = { kind: ControlKind };

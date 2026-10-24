@@ -1,101 +1,120 @@
 /**
- * AMSP's vocabulary, as the /amsp page shows it: the Session stream's records grouped by their
- * envelope `type`, whether the Trace stores each, and the control frames. The single place to
- * adjust when the spec (PRFC-0021, "AMSP: the Session stream") moves: the tables,
- * the replay's "stored in the Trace" tone and the protocol types in amsp-protocol.ts all read this
- * file. Each row's meaning is in the dictionaries under `amsp.vocabulary`, keyed by its `id`, so a
- * row added here without its words fails to typecheck.
+ * AMSP's vocabulary, as the /amsp page shows it: every kind of record, grouped into the families
+ * the record reference lists, with its envelope `type` and whether the Trace stores it, and the
+ * control frames. The single place to adjust when the protocol moves: the record reference
+ * (sections/amsp/records.tsx, with its examples and fields in amsp-records.ts), the replay's
+ * "stored in the Trace" tone and the protocol types in amsp-protocol.ts all read this file. The
+ * words for each family, record and frame are in the dictionaries under `amsp.records`, keyed by
+ * id, so an entry added here without its words fails to typecheck.
  */
 
 /** The envelope's outer `type`. */
 export type Envelope = "session_meta" | "model_msg" | "event_msg";
 
-export interface VocabularyRow {
+interface KindEntry {
+  /** The record's `payload.type`; `session_meta`, whose payload has none, by its envelope. */
   id: string;
   envelope: Envelope;
-  /** The `payload.type` values of the row; `session_meta`'s payload has none. */
-  kinds: readonly string[];
   /** Stored in the Trace on disk (a durable record), or live on the stream only. */
   stored: boolean;
-  /** Sent only on a Session's first message, as its stream's first record; not repeated later. */
-  firstMessageOnly?: true;
 }
 
-export const VOCABULARY = [
+const model = <Id extends string>(id: Id, stored: boolean) =>
+  ({ id, envelope: "model_msg", stored }) as const;
+const event = <Id extends string>(id: Id) => ({ id, envelope: "event_msg", stored: true }) as const;
+
+export const FAMILIES = [
   {
-    id: "meta",
-    envelope: "session_meta",
-    kinds: [],
-    stored: true,
-    firstMessageOnly: true,
+    id: "session",
+    records: [{ id: "session_meta", envelope: "session_meta", stored: true }],
   },
   {
     id: "complete",
-    envelope: "model_msg",
-    kinds: [
-      "text",
-      "image_url",
-      "inline_data",
-      "thinking",
-      "inline_thinking",
-      "tool_call",
-      "tool_call_output",
+    records: [
+      model("text", true),
+      model("thinking", true),
+      model("tool_call", true),
+      model("tool_call_output", true),
+      model("image_url", true),
+      model("inline_data", true),
+      model("inline_thinking", true),
     ],
-    stored: true,
   },
   {
     id: "partial",
-    envelope: "model_msg",
-    kinds: ["partial_text", "partial_thinking", "partial_tool_call", "partial_tool_call_output"],
-    stored: false,
+    records: [
+      model("partial_text", false),
+      model("partial_thinking", false),
+      model("partial_tool_call", false),
+      model("partial_tool_call_output", false),
+    ],
   },
   {
-    id: "engine",
-    envelope: "event_msg",
-    kinds: [
-      "task_begin",
-      "task_end",
-      "request_begin",
-      "request_end",
-      "token_usage",
-      "compaction_begin",
-      "compaction_end",
-      "mcp_connect_begin",
-      "mcp_connect_end",
-      "tool_list_ready",
-      "approval_decision",
-      "hook",
-      "abort",
-      "subagent",
+    id: "boundaries",
+    records: [
+      event("task_begin"),
+      event("task_end"),
+      event("request_begin"),
+      event("request_end"),
+      event("token_usage"),
     ],
-    stored: true,
   },
-] as const satisfies readonly VocabularyRow[];
+  {
+    id: "interventions",
+    records: [event("abort"), event("approval_decision"), event("hook")],
+  },
+  {
+    id: "context",
+    records: [
+      event("compaction_begin"),
+      event("compaction_end"),
+      event("tool_list_ready"),
+      event("mcp_connect_begin"),
+      event("mcp_connect_end"),
+      event("subagent"),
+    ],
+  },
+] as const satisfies readonly { id: string; records: readonly KindEntry[] }[];
 
-type RowOf<E extends Envelope> = Extract<(typeof VOCABULARY)[number], { envelope: E }>;
+type Entry = (typeof FAMILIES)[number]["records"][number];
 
+/** Every kind of record, by its id. */
+export type RecordKind = Entry["id"];
 /** Every `payload.type` a `model_msg` may carry. */
-export type ModelKind = RowOf<"model_msg">["kinds"][number];
+export type ModelKind = Extract<Entry, { envelope: "model_msg" }>["id"];
 /** Every `payload.type` an `event_msg` may carry. */
-export type EventKind = RowOf<"event_msg">["kinds"][number];
+export type EventKind = Extract<Entry, { envelope: "event_msg" }>["id"];
+
+const ENTRIES: readonly KindEntry[] = FAMILIES.flatMap(
+  (family): readonly KindEntry[] => family.records,
+);
+
+/** A kind's envelope and storage, by id. */
+export function kindEntry(id: RecordKind): KindEntry {
+  return ENTRIES.find((entry) => entry.id === id)!;
+}
 
 /**
  * The control frames: SSE events with a name and no id, which move no resume position and are
- * never replayed. `[DONE]` is the run stream's last line. What each says is in the dictionaries
- * under `amsp.vocabulary.frames`, keyed by `id`.
+ * never replayed. `ping` opens a run stream and beats every 20 seconds; `[DONE]` is a run
+ * stream's last line. One line each: removing a frame here removes it from the page and from the
+ * protocol type.
  */
 export const CONTROL_FRAMES = [
-  { id: "resync_required", wire: "event: resync_required", data: "{}" },
-  { id: "ping", wire: "event: ping", data: "{}" },
-  { id: "done", wire: "data: [DONE]", data: "" },
+  { id: "ping", wire: "event: ping\ndata: {}" },
+  { id: "resync_required", wire: "event: resync_required\ndata: {}" },
+  { id: "done", wire: "data: [DONE]" },
 ] as const;
+
+/** A named control frame's `event:` (the `[DONE]` line has none). */
+export type ControlKind = Exclude<(typeof CONTROL_FRAMES)[number]["id"], "done">;
 
 /** Whether the Trace stores a record of this envelope and kind (an unlisted kind: not stored). */
 export function isStored(envelope: Envelope, kind: string | undefined): boolean {
-  const row = VOCABULARY.find(
+  const entry = ENTRIES.find(
     (candidate) =>
       candidate.envelope === envelope &&
-      (candidate.kinds.length === 0 || (candidate.kinds as readonly string[]).includes(kind ?? "")),
+      (envelope === "session_meta" || candidate.id === (kind ?? "")),
   );
-  return row?.stored ?? false;
+  return entry?.stored ?? false;
 }

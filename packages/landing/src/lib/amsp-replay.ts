@@ -6,9 +6,9 @@
  * The fold reads a run the way a client of the protocol does:
  * - fragments open an item and grow it; the complete record closes it with its own content, never
  *   compared with the fragments joined (two renderings of one message; only the complete one is
- *   stored);
+ *   stored); an item cut short closes at its `stop` with no complete record, and stays as streamed;
  * - a tool's output belongs to its call's Request even when it completes after `request_end`;
- * - at `[DONE]` the outcome is read from the records (`runOutcome`, PRFC-0021's `RunResult` rule):
+ * - at `[DONE]` the outcome is read from the records (`runOutcome`, the SDK's `RunResult` rule):
  *   `task_end` carries no status.
  *
  * Page-specific on purpose: the SDK's `AgentClient` and `SessionReader` and the Web App's view
@@ -17,7 +17,7 @@
 import type {
   AmspRecord,
   ModelPayload,
-  StopReason,
+  RequestEndStatus,
   StreamPhase,
   ThinkingLevel,
   TokenCounts,
@@ -35,8 +35,12 @@ export interface ReplayItem {
   name?: string;
   /** The text, thinking, arguments or output: the fragments so far, then the complete record's own. */
   body: string;
-  /** Fragments have arrived and the complete record has not. */
+  /** Fragments have arrived and the complete record has not, while the run goes on. */
   open: boolean;
+  /** Its `stop` fragment arrived: no more fragments follow. */
+  stopped: boolean;
+  /** Its complete record arrived: the item ran to its end. An item cut short never gets one. */
+  recorded: boolean;
   /** The Request it belongs to (a tool's output: its call's); 0 before the run's first. */
   request: number;
 }
@@ -48,15 +52,14 @@ export interface ReplayRequest {
 
 /** A run's outcome, and the facts in the records it was read from. */
 export interface RunOutcome {
-  status: StopReason;
-  /** `internal` for a run whose last `task_begin` was never closed; else the terminal record's. */
+  status: RequestEndStatus;
+  /** `internal` for a run that did not reach its end; else the abort's or the terminal record's. */
   errorCode?: string;
-  /** Every `task_begin` has its `task_end`. */
+  /** The last `task_begin` has its `task_end`. */
   closed: boolean;
   aborted: boolean;
-  /** The main Session's last `request_end`, and its last assistant text, as they ended. */
-  lastRequestEnd: StopReason | null;
-  finalText: StopReason | null;
+  /** How the main Session's last `request_end` ended. */
+  lastRequestEnd: RequestEndStatus | null;
 }
 
 export interface ReplayState {
@@ -89,46 +92,50 @@ const kindOf = (record: AmspRecord) =>
   record.type === "session_meta" ? "session_meta" : record.payload.type;
 
 /**
- * A finished run's outcome, read from its records in PRFC-0021's order: an unclosed `task_begin`
- * is a server failure; else an `abort`; else the last terminal `request_end` / `compaction_end`
- * (not completed, not to be retried); else a fatal final assistant text; else completed.
+ * A finished run's outcome, read from its records in the SDK's order (`RunResult`): a run whose
+ * last `task_begin` has no `task_end`, or that began none, did not reach its end (`fatal`,
+ * `internal`); else an `abort`, with its cause; else the last `request_end` / `compaction_end`
+ * that did not complete and plans no retry, unless a later Request went on; else completed.
  */
 export function runOutcome(records: readonly AmspRecord[]): RunOutcome {
   const main = records.filter((record) => record.origin === undefined);
-  let open = 0;
-  let aborted = false;
-  let terminal: { status: StopReason; errorCode?: string } | null = null;
-  let lastRequestEnd: StopReason | null = null;
-  let finalText: StopReason | null = null;
+  let task: "none" | "open" | "closed" = "none";
+  let abort: { errorCode?: string } | null = null;
+  let terminal: { status: RequestEndStatus; errorCode?: string } | null = null;
+  let lastRequestEnd: RequestEndStatus | null = null;
   for (const record of main) {
-    if (record.type === "event_msg") {
-      const p = record.payload;
-      if (p.type === "task_begin") open += 1;
-      else if (p.type === "task_end") open = Math.max(0, open - 1);
-      else if (p.type === "abort") aborted = true;
-      else if (p.type === "request_end" || p.type === "compaction_end") {
-        const end = p as { status: StopReason; error_code?: string; retry_in_ms?: number };
-        if (p.type === "request_end") lastRequestEnd = end.status;
-        if (end.status !== "completed" && end.retry_in_ms === undefined) {
+    if (record.type !== "event_msg") continue;
+    const p = record.payload;
+    switch (p.type) {
+      case "task_begin":
+        task = "open";
+        break;
+      case "task_end":
+        task = "closed";
+        break;
+      case "abort":
+        abort = { errorCode: p.error_code ?? "user_abort" };
+        break;
+      case "request_begin":
+        // The run went on: an earlier failure was not its end.
+        terminal = null;
+        break;
+      case "request_end":
+      case "compaction_end":
+        if (p.type === "request_end") lastRequestEnd = p.status;
+        if (p.status !== "completed" && p.retry_in_ms === undefined) {
           terminal = {
-            status: end.status,
-            ...(end.error_code !== undefined ? { errorCode: end.error_code } : {}),
+            status: p.status,
+            ...(p.error_code !== undefined ? { errorCode: p.error_code } : {}),
           };
         }
-      }
-    } else if (
-      record.type === "model_msg" &&
-      record.payload.type === "text" &&
-      record.payload.role === "assistant"
-    ) {
-      finalText = record.payload.stop_reason ?? "completed";
+        break;
     }
   }
-  const facts = { closed: open === 0, aborted, lastRequestEnd, finalText };
-  if (open > 0) return { status: "fatal", errorCode: "internal", ...facts };
-  if (aborted) return { status: "aborted", ...facts };
+  const facts = { closed: task === "closed", aborted: abort !== null, lastRequestEnd };
+  if (task !== "closed") return { status: "fatal", errorCode: "internal", ...facts };
+  if (abort !== null) return { status: "aborted", ...abort, ...facts };
   if (terminal !== null) return { ...terminal, ...facts };
-  if (finalText === "fatal") return { status: "fatal", ...facts };
   return { status: "completed", ...facts };
 }
 
@@ -142,40 +149,45 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
   let done = false;
 
   const current = () => requests.length;
-  const byKey = (key: string) => items.find((item) => item.key === key);
-  /** The open text or thinking of this role, which a fragment grows and a complete record closes. */
+  const byKey = (key: string) => items.findLast((item) => item.key === key);
+  /** The text or thinking of this role still waiting for its complete record. */
   const openProse = (kind: ItemKind, role: ReplayItem["role"]) =>
     items.findLast((item) => item.open && item.kind === kind && item.role === role);
   const callRequest = (callId: string) => byKey(`call:${callId}`)?.request ?? current();
+  const fresh = (kind: ItemKind, role: ReplayItem["role"], key: string | null) =>
+    key ?? `${kind}:${role}:${items.length}`;
 
-  /** A fragment: opens the item on its first piece, grows it with every delta. */
-  const grow = (
+  /** A fragment: `start` opens the item, a `delta` grows it, `stop` ends its fragments. */
+  const fragment = (
     kind: ItemKind,
     role: ReplayItem["role"],
     key: string | null,
+    phase: StreamPhase,
     piece: string,
     extra: { name?: string; callId?: string },
   ) => {
     const found = key === null ? openProse(kind, role) : byKey(key);
-    if (found !== undefined) {
-      // A fragment after its complete record adds nothing.
-      if (!found.open) return;
+    if (found !== undefined && found.open && !found.stopped) {
+      if (phase === "stop") found.stopped = true;
       found.body += piece;
       if (extra.name) found.name = extra.name;
       return;
     }
+    if (phase === "stop") return;
     items.push({
-      key: key ?? `${kind}:${role}:${items.length}`,
+      key: fresh(kind, role, key),
       kind,
       role,
       body: piece,
       open: true,
+      stopped: false,
+      recorded: false,
       request: extra.callId !== undefined ? callRequest(extra.callId) : current(),
       ...(extra.name ? { name: extra.name } : {}),
     });
   };
 
-  /** A complete record: closes its open item with its own content, or stands as a new one. */
+  /** A complete record: closes its item with its own content, or stands as a new one. */
   const complete = (
     kind: ItemKind,
     role: ReplayItem["role"],
@@ -184,18 +196,22 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
     extra: { name?: string; callId?: string },
   ) => {
     const found = key === null ? openProse(kind, role) : byKey(key);
-    if (found !== undefined) {
+    if (found !== undefined && found.open) {
       found.body = body;
       found.open = false;
+      found.stopped = true;
+      found.recorded = true;
       if (extra.name) found.name = extra.name;
       return;
     }
     items.push({
-      key: key ?? `${kind}:${role}:${items.length}`,
+      key: fresh(kind, role, key),
       kind,
       role,
       body,
       open: false,
+      stopped: true,
+      recorded: true,
       request: extra.callId !== undefined ? callRequest(extra.callId) : current(),
       ...(extra.name ? { name: extra.name } : {}),
     });
@@ -211,20 +227,20 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
       const p = record.payload;
       switch (p.type) {
         case "partial_text":
-          if (p.event_type !== "stop") grow("text", p.role, null, p.text, {});
+          fragment("text", p.role, null, p.event_type, p.text, {});
           break;
         case "partial_thinking":
-          if (p.event_type !== "stop") grow("thinking", p.role, null, p.thinking, {});
+          fragment("thinking", p.role, null, p.event_type, p.thinking, {});
           break;
         case "partial_tool_call":
-          if (p.event_type !== "stop")
-            grow("tool_call", p.role, `call:${p.tool_call_id}`, p.arguments, { name: p.name });
+          fragment("tool_call", p.role, `call:${p.tool_call_id}`, p.event_type, p.arguments, {
+            name: p.name,
+          });
           break;
         case "partial_tool_call_output":
-          if (p.event_type !== "stop")
-            grow("tool_call_output", p.role, `output:${p.tool_call_id}`, p.output, {
-              callId: p.tool_call_id,
-            });
+          fragment("tool_call_output", p.role, `output:${p.tool_call_id}`, p.event_type, p.output, {
+            callId: p.tool_call_id,
+          });
           break;
         case "text":
           complete("text", p.role, null, p.text, {});
@@ -304,15 +320,9 @@ export interface StepLine {
   phase: StreamPhase | null;
   /** The Trace stores this record. */
   stored: boolean;
-  /** One line of the step's content, cut short. */
+  /** The step's content on one line, whole: the pane shortens it to its column. */
   preview: string;
 }
-
-/** A preview wraps in its column; past this it is cut, so a row stays within three lines. */
-const PREVIEW_CHARS = 48;
-
-const cut = (text: string) =>
-  text.length > PREVIEW_CHARS ? `${text.slice(0, PREVIEW_CHARS - 1)}…` : text;
 
 const quote = (text: string) => JSON.stringify(text);
 
@@ -330,7 +340,7 @@ function recordLine(record: AmspRecord): StepLine {
     name,
     phase,
     stored: isStored(record.type, record.type === "session_meta" ? undefined : name),
-    preview: cut(preview),
+    preview,
   });
   /** A fragment: its phase, then what it carries, if anything. */
   const fragment = (name: string, phase: StreamPhase, head: string, piece: string) =>
@@ -358,7 +368,7 @@ function recordLine(record: AmspRecord): StepLine {
       case "tool_call":
         return line(p.type, `${p.name} ${p.arguments}`);
       case "tool_call_output":
-        return line(p.type, quote(p.output));
+        return line(p.type, `${p.status} ${quote(p.output)}`);
       default:
         return line(p.type, rest(p));
     }
@@ -388,7 +398,7 @@ export function stepLine(step: RunStep): StepLine {
     name,
     phase: null,
     stored: false,
-    preview: cut(preview),
+    preview,
   });
   switch (step.kind) {
     case "record":

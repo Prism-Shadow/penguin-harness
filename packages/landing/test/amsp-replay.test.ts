@@ -2,15 +2,18 @@
  * The AMSP player's panes, as functions of how many steps of a run have arrived.
  *
  * - Given fragments of a message, they open an item that grows; given its complete record, the item
- *   closes with the record's own content, whatever the fragments said.
+ *   closes with the record's own content, whatever the fragments said; given a message cut short,
+ *   the item keeps what streamed and is marked as having no complete record, and a later attempt
+ *   starts an item of its own.
  * - Given a tool's output that completes after its Request's `request_end`, it is shown under its
  *   call's Request, not the next one.
  * - Given a run before `[DONE]`, there is no outcome, usage or time; at `[DONE]` there are, and a new
  *   Session's run uses exactly what its Session has used.
  * - Given the Session's first message, the pane names the model; a later message names none.
- * - Given a finished run, the outcome is read from the records in the protocol's order: a
- *   `task_begin` left open is a failure, then an `abort`, then a terminal `request_end` (one to be
- *   retried is not), then a fatal final reply, else completed.
+ * - Given a finished run, the outcome is read from the records in the SDK's order: a `task_begin`
+ *   left open (or none) is a failure, then an `abort` with its cause, then a terminal `request_end`
+ *   (`truncated` included; one to be retried, or one a later Request went on from, is not), else
+ *   completed.
  * - Given the run's timestamps, the replay waits the recorded gap, within its bounds.
  * - Given a finished run, its spans nest longest first: each Request inside the Task, each streamed
  *   message inside its Request, except a tool's output, which ends after its Request does and before
@@ -46,10 +49,10 @@ const event = (payload: EventPayload): AmspRecord => ({
   type: "event_msg",
   payload,
 });
-const reply = (stop: "completed" | "fatal"): AmspRecord => ({
+const reply = (): AmspRecord => ({
   timestamp: at(0),
   type: "model_msg",
-  payload: { type: "text", role: "assistant", text: "…", stop_reason: stop },
+  payload: { type: "text", role: "assistant", text: "…" },
 });
 
 const run = (id: string) => SCENARIOS.find((scenario) => scenario.id === id)!.steps;
@@ -68,13 +71,39 @@ describe("the assembled run", () => {
       text(10, "delta", "Hel"),
       text(20, "delta", "lo"),
       text(30, "stop", ""),
-      reply("completed"),
+      reply(),
     ].map(step);
     expect(foldRun(steps, 3).items).toEqual([
       expect.objectContaining({ kind: "text", body: "Hello", open: true }),
     ]);
     expect(foldRun(steps, 5).items).toEqual([
       expect.objectContaining({ kind: "text", body: "…", open: false }),
+    ]);
+  });
+
+  it("keeps a reply cut short as what streamed, and starts a retried attempt afresh", () => {
+    const interrupted = run("interrupt");
+    const cut = foldRun(interrupted, interrupted.length).items.find(
+      (item) => item.kind === "text" && item.role === "assistant",
+    );
+    expect(cut).toMatchObject({
+      body: "The first mechanical clocks appeared in European monasteries around",
+      open: false,
+      recorded: false,
+    });
+
+    const steps = [
+      text(0, "start", ""),
+      text(10, "delta", "Cut"),
+      text(20, "stop", ""),
+      text(30, "start", ""),
+      text(40, "delta", "Whole"),
+      text(50, "stop", ""),
+      reply(),
+    ].map(step);
+    expect(foldRun(steps, steps.length).items).toEqual([
+      expect.objectContaining({ body: "Cut", recorded: false }),
+      expect.objectContaining({ body: "…", recorded: true }),
     ]);
   });
 
@@ -131,18 +160,34 @@ describe("a run's outcome", () => {
   const end = event({ type: "task_end" });
   const completedRequest = event({ type: "request_end", status: "completed" });
 
+  const failed = event({ type: "request_end", status: "fatal", error_code: "auth" });
+
   it.each([
-    ["a task_begin left open", [begin, completedRequest, reply("completed")], "fatal"],
+    ["a task_begin left open", [begin, completedRequest, reply()], "fatal"],
+    ["no task_begin at all", [completedRequest, reply()], "fatal"],
     ["an abort", [begin, event({ type: "abort", error_code: "user_abort" }), end], "aborted"],
+    ["a terminal request_end", [begin, failed, end], "fatal"],
     [
-      "a terminal request_end",
-      [begin, event({ type: "request_end", status: "fatal", error_code: "auth" }), end],
-      "fatal",
+      "a truncated request past its retries",
+      [begin, event({ type: "request_end", status: "truncated", attempt: 3 }), end],
+      "truncated",
     ],
-    ["a fatal final reply", [begin, completedRequest, reply("fatal"), end], "fatal"],
-    ["none of these", [begin, completedRequest, reply("completed"), end], "completed"],
+    [
+      "a failure a later Request went on from",
+      [begin, failed, event({ type: "request_begin" }), completedRequest, end],
+      "completed",
+    ],
+    ["none of these", [begin, completedRequest, reply(), end], "completed"],
   ] as const)("given %s, is %s", (_case, records, status) => {
     expect(runOutcome(records).status).toBe(status);
+  });
+
+  it("gives the turn cap's abort its cause", () => {
+    const capped = event({ type: "abort", error_code: "max_turns" });
+    expect(runOutcome([begin, completedRequest, capped, end])).toMatchObject({
+      status: "aborted",
+      errorCode: "max_turns",
+    });
   });
 
   it("names a server failure internal, and does not end a run on a request it will retry", () => {
@@ -152,9 +197,7 @@ describe("a run's outcome", () => {
       closed: false,
     });
     const retried = event({ type: "request_end", status: "retryable", retry_in_ms: 2000 });
-    expect(runOutcome([begin, retried, completedRequest, reply("completed"), end]).status).toBe(
-      "completed",
-    );
+    expect(runOutcome([begin, retried, completedRequest, reply(), end]).status).toBe("completed");
   });
 });
 
@@ -197,7 +240,7 @@ describe("the message structure", () => {
   });
 
   it("has no spans for a run whose Task never closed", () => {
-    const open = [event({ type: "task_begin" }), text(10, "start", ""), reply("completed")];
+    const open = [event({ type: "task_begin" }), text(10, "start", ""), reply()];
     expect(runSpans(open)).toBeNull();
   });
 });

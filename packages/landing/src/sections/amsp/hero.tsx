@@ -4,64 +4,20 @@
  * actions (the reference, and a prompt to copy for a coding agent); on the right the player. One
  * column below `lg`, the player under the copy.
  */
-import { useEffect, useState } from "react";
-import {
-  ArrowRightIcon,
-  CheckIcon,
-  TerminalIcon,
-  writeSiteClipboard,
-} from "@prismshadow/penguin-ui/site";
+import { ArrowRightIcon } from "@prismshadow/penguin-ui/site";
 import { S } from "../../lib/strings";
 import { DOCS_URL, MMSP_URL } from "../../lib/links";
 import { AmspMark } from "../../components/amsp-mark";
+import { CopyPromptButton } from "../../components/copy-prompt-button";
 import { ExternalLink, ExternalLinkScope } from "../../components/external-link";
 import { StreamPlayer } from "../../components/stream-player";
 
 /** The name spells its acronym: each word's initial is drawn in the brand colour. */
 const NAME = ["Agent", "Message", "Stream", "Protocol"];
 
-/** How long the copy button shows its check after a copy. */
-const COPIED_MS = 2000;
-
-function CopyPromptButton() {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), COPIED_MS);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
-  const copy = async () => {
-    // The prompt is read by a coding agent elsewhere, so the guide's address must be absolute.
-    const guide = new URL(`${DOCS_URL}agent-api/`, window.location.origin).href;
-    if (await writeSiteClipboard(S.amsp.agentPrompt(guide))) setCopied(true);
-  };
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => void copy()}
-        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-5 text-sm font-semibold whitespace-nowrap text-gray-900 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
-      >
-        {copied ? (
-          <CheckIcon className="site-copy-done h-4 w-4" />
-        ) : (
-          <TerminalIcon className="h-4 w-4" />
-        )}
-        {S.amsp.copyPrompt}
-      </button>
-      <span role="status" className="sr-only">
-        {copied ? S.amsp.copied : ""}
-      </span>
-    </>
-  );
-}
-
 export function AmspHero() {
   return (
     <section className="relative overflow-hidden">
-      <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
       <div className="relative mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 px-4 pt-12 pb-14 sm:px-6 sm:pt-16 lg:pt-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:gap-12">
         <div className="min-w-0">
           <p className="anim-rise flex items-center gap-3">

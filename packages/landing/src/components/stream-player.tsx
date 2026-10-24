@@ -3,19 +3,20 @@
  * call. Tabs pick the run (a Session's first request, a follow-up that continues it, a follow-up the
  * caller interrupts); the input block shows the call that starts it; the left pane lists the stream
  * as it arrives — the opening `ping`, the records (the ones the Trace stores on a faint ground),
- * the caller's abort beside the stream, `[DONE]`; the right pane is the run assembled from the records, under the
- * agent the client names; the strip under both reads the run's outcome from them once `[DONE]`
- * arrives.
+ * the caller's abort beside the stream, `[DONE]`; the right pane is the run assembled from the
+ * records, under the agent the client names, and once `[DONE]` arrives the outcome read from them.
  *
- * Paced by the run's own timestamps (lib/amsp-replay.ts `stepDelays`), one timer at a time, only
- * while the player is on screen and not paused; after the last event it rests, then plays again.
- * Under reduced motion it shows each run finished and never plays. The events pane has a fixed
- * height and follows its newest row, a long preview wrapping in its column rather than running
- * past it; the assembled pane and the outcome strip each hold the height of the tallest finished
- * run (every one is rendered invisibly in the same grid cell), so nothing below moves during a
- * replay. Sized so the whole player fits one screen beside the hero's copy at 1280 × 800.
+ * Paced by the run's own timestamps (lib/amsp-replay.ts `stepDelays`, faster than real time), one
+ * timer at a time, only while the player is on screen and not paused; after the last event it
+ * rests, then plays again. Under reduced motion it shows each run finished and never plays.
+ *
+ * Nothing scrolls: the stream pane lists every step of the run, one line each (a preview is
+ * shortened to its column), and each pane holds the height of the tallest finished run (every one
+ * is rendered invisibly in the same grid cell), so nothing below moves during a replay or on a tab
+ * change. Sized so the whole player, every row of every run, fits one screen beside the hero's copy
+ * at 1280 × 800.
  */
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { highlightSiteCode, SiteCodeBlock, SitePill } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
@@ -47,7 +48,6 @@ export function StreamPlayer() {
   const [paused, setPaused] = useState(false);
   const [visible, setVisible] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const eventsRef = useRef<HTMLOListElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const tabsId = useId();
 
@@ -84,14 +84,6 @@ export function StreamPlayer() {
     return () => window.clearTimeout(timer);
   }, [playing, still, paused, visible, count, total, index]);
 
-  // The events pane keeps its newest row in view, its top edge fading once rows scroll past it.
-  useLayoutEffect(() => {
-    const pane = eventsRef.current;
-    if (!pane) return;
-    pane.scrollTop = pane.scrollHeight;
-    pane.toggleAttribute("data-cut", pane.scrollTop > 0);
-  }, [count, index]);
-
   const choose = (next: number) => {
     setIndex(next);
     // Paused or still, a new tab shows its run finished; otherwise it plays from the start.
@@ -114,8 +106,8 @@ export function StreamPlayer() {
 
   return (
     <div ref={rootRef}>
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 text-left dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex flex-wrap items-center gap-1 border-b border-gray-200 px-2 pt-2 dark:border-gray-800">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white text-left dark:border-gray-800 dark:bg-gray-950">
+        <div className="flex flex-wrap items-center gap-1 border-b border-gray-200 px-2 pt-1.5 dark:border-gray-800">
           <div
             ref={tabsRef}
             role="tablist"
@@ -144,7 +136,7 @@ export function StreamPlayer() {
               type="button"
               aria-pressed={paused}
               onClick={() => setPaused((was) => !was)}
-              className="mb-1.5 ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:text-gray-950 dark:text-gray-400 dark:hover:text-gray-100"
+              className="mb-1 ml-auto inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600 transition-colors hover:text-gray-950 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
             >
               {paused ? <PlayGlyph /> : <PauseGlyph />}
               <span>{paused ? P.play : P.pause}</span>
@@ -157,35 +149,43 @@ export function StreamPlayer() {
           id={`${tabsId}-panel`}
           aria-labelledby={`${tabsId}-tab-${scenario.id}`}
         >
-          <div className="border-b border-gray-200 px-3 pt-2.5 dark:border-gray-800">
+          <div className="border-b border-gray-200 px-3 pt-2 dark:border-gray-800">
             <h3 className={PANE_LABEL}>{P.input}</h3>
-            <div className="amsp-code -mx-3">
-              <SiteCodeBlock
-                code={CODE[index]!}
-                language="typescript"
-                highlight={highlightSiteCode}
-              />
+            {/* Every tab's code takes the height of the longest, so the panes below never move. */}
+            <div className="amsp-code amsp-code-tight -mx-3 grid">
+              {CODE.map((code, i) => (
+                <div
+                  key={i}
+                  aria-hidden={i !== index || undefined}
+                  className={`col-start-1 row-start-1 ${i === index ? "" : "invisible"}`}
+                >
+                  <SiteCodeBlock code={code} language="typescript" highlight={highlightSiteCode} />
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="grid gap-px bg-gray-200 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] dark:bg-gray-800">
-            <section className="flex h-72 min-w-0 flex-col bg-gray-50 p-3 xl:h-auto dark:bg-gray-900">
+          <div className="grid gap-px bg-gray-200 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] dark:bg-gray-800">
+            <section className="min-w-0 bg-white px-2.5 py-2 dark:bg-gray-950">
               <div className="flex items-center justify-between gap-3">
                 <h3 className={PANE_LABEL}>{P.events}</h3>
                 <span className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
                   <span
                     aria-hidden="true"
-                    className="h-2.5 w-3.5 rounded-sm border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950"
+                    className="h-2.5 w-3.5 rounded-sm border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900"
                   />
                   {P.stored}
                 </span>
               </div>
-              <div className="relative mt-2 min-h-0 flex-1">
-                <ol
-                  ref={eventsRef}
-                  aria-live="off"
-                  className="amsp-follow absolute inset-0 space-y-px overflow-hidden font-mono text-[12px] leading-5"
-                >
+              <div className="mt-1.5 grid font-mono text-[12px] leading-4">
+                {LINES.map((all, i) => (
+                  <ol key={i} aria-hidden="true" className="invisible col-start-1 row-start-1">
+                    {all.map((line, j) => (
+                      <StreamRow key={j} line={line} />
+                    ))}
+                  </ol>
+                ))}
+                <ol aria-live="off" className="col-start-1 row-start-1">
                   {lines.map((line, i) => (
                     <StreamRow key={i} line={line} />
                   ))}
@@ -193,9 +193,9 @@ export function StreamPlayer() {
               </div>
             </section>
 
-            <section className="min-w-0 bg-gray-50 p-3 dark:bg-gray-900">
+            <section className="min-w-0 bg-white px-2.5 py-2 dark:bg-gray-950">
               <h3 className={PANE_LABEL}>{P.assembled}</h3>
-              <div className="mt-2 grid">
+              <div className="mt-1.5 grid">
                 {FINISHED.map((finished, i) => (
                   <div key={i} aria-hidden="true" className="invisible col-start-1 row-start-1">
                     <Assembled state={finished} />
@@ -207,23 +207,6 @@ export function StreamPlayer() {
               </div>
             </section>
           </div>
-
-          <div className="grid border-t border-gray-200 px-3 py-2.5 dark:border-gray-800">
-            {FINISHED.map((finished, i) => (
-              <div key={i} aria-hidden="true" className="invisible col-start-1 row-start-1">
-                <Outcome state={finished} />
-              </div>
-            ))}
-            <div className="col-start-1 row-start-1">
-              {state.done ? (
-                <Outcome state={state} />
-              ) : (
-                <p className="text-[13px] leading-6 text-gray-500 dark:text-gray-400">
-                  {P.running}
-                </p>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -231,14 +214,18 @@ export function StreamPlayer() {
 }
 
 /**
- * The kind column fits every kind but the longest (`partial_tool_call_output`, and the caller's
- * abort path); those run on into the preview's column, their preview following on the same line and
- * wrapping under the preview column. So the preview keeps the rest of the width and a row takes two
- * lines at most.
+ * The columns of a stream row: the envelope, the kind, and the preview. The kind column fits
+ * every kind but the longest (`partial_tool_call_output`, and the caller's abort path), which run
+ * on into the preview's column with their preview after them.
  */
 const KIND_CH = "partial_tool_call".length;
-/** The kind column and the gap after it: how far a long kind's continuation lines hang. */
-const HANG = "calc(var(--kind) + 0.5rem)";
+/** What the preview column holds at the width the player has beside the hero's copy. */
+const PREVIEW_CH = 30;
+
+/** A preview shortened to fit its column, ending in an ellipsis when it had more. */
+function fit(text: string, chars: number): string {
+  return text.length > chars ? `${text.slice(0, Math.max(1, chars - 1))}…` : text;
+}
 
 /**
  * One row of the stream: a record (on a faint ground when the Trace stores it), a control frame, the
@@ -248,15 +235,17 @@ function StreamRow({ line }: { line: StepLine }) {
   const P = S.amsp.player;
   const tone =
     line.kind === "done"
-      ? "mt-1 border-t border-gray-300 pt-1 text-gray-500 dark:border-gray-700 dark:text-gray-400"
+      ? "mt-0.5 border-t border-gray-200 pt-0.5 text-gray-500 dark:border-gray-800 dark:text-gray-400"
       : line.stored
-        ? "bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100"
+        ? "bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100"
         : "text-gray-500 dark:text-gray-400";
   const long = line.name.length > KIND_CH;
+  // A long kind takes some of the preview's column: the preview gets what is left of it.
+  const room = long ? PREVIEW_CH - (line.name.length - KIND_CH) - 1 : PREVIEW_CH;
   return (
     <li
       style={{ "--kind": `${KIND_CH}ch` } as CSSProperties}
-      className={`grid grid-cols-[var(--kind)_minmax(0,1fr)] gap-x-2 rounded-sm px-2 sm:grid-cols-[9ch_var(--kind)_minmax(0,1fr)] ${tone}`}
+      className={`grid grid-cols-[var(--kind)_minmax(0,1fr)] gap-x-1.5 rounded-sm px-1.5 sm:grid-cols-[9ch_var(--kind)_minmax(0,1fr)] ${tone}`}
     >
       {/* A record with no payload type (session_meta) lets its envelope run into the kind's column. */}
       <span
@@ -271,28 +260,28 @@ function StreamRow({ line }: { line: StepLine }) {
       ) : (
         <span className="sm:hidden">{line.head}</span>
       )}
-      <span
-        className={`[overflow-wrap:anywhere] ${long ? "col-span-2" : ""}`}
-        style={long ? { paddingLeft: HANG, textIndent: `calc(-1 * ${HANG})` } : undefined}
-      >
+      <span className={`[overflow-wrap:anywhere] ${long ? "col-span-2" : ""}`}>
         {long && <>{line.name} </>}
         {line.kind === "request" ? (
           <span className="font-sans">{P.besideStream}</span>
         ) : (
-          line.preview
+          fit(line.preview, room)
         )}
       </span>
     </li>
   );
 }
 
-/** The run assembled: the agent and (on a first message) the model, then the items by Request. */
+/**
+ * The run assembled: the agent and (on a first message) the model, the items by Request, then,
+ * once `[DONE]` has arrived, the outcome.
+ */
 function Assembled({ state }: { state: ReplayState }) {
   const P = S.amsp.player;
   const groups = [0, ...state.requests.map((request) => request.index)];
   return (
-    <div className="font-mono text-[12px] leading-5">
-      <p className="mb-2 text-[11px] text-gray-500 dark:text-gray-400">
+    <div className="font-mono text-[12px] leading-4">
+      <p className="mb-1.5 text-[11px] text-gray-500 dark:text-gray-400">
         {AMSP_DEMO_AGENT}
         {state.model !== null && <> · {state.model}</>}
       </p>
@@ -301,14 +290,14 @@ function Assembled({ state }: { state: ReplayState }) {
         const header = state.requests.find((candidate) => candidate.index === request);
         if (header === undefined && items.length === 0) return null;
         return (
-          <div key={request} className={header ? "mt-2" : ""}>
+          <div key={request} className={header ? "mt-1.5" : ""}>
             {header && (
-              <p className="mb-1 border-t border-gray-200 pt-1 text-[11px] leading-4 text-gray-500 dark:border-gray-800 dark:text-gray-400">
+              <p className="mb-0.5 border-t border-gray-200 pt-1 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400">
                 {P.request(header.index)}
                 {header.thinkingLevel && <> · {P.thinking(header.thinkingLevel)}</>}
               </p>
             )}
-            <ul className="space-y-1">
+            <ul className="space-y-0.5">
               {items.map((item) => (
                 <AssembledItem key={item.key} item={item} />
               ))}
@@ -316,6 +305,11 @@ function Assembled({ state }: { state: ReplayState }) {
           </div>
         );
       })}
+      {state.done ? (
+        <Outcome state={state} />
+      ) : (
+        <p className="mt-2 font-sans text-[12px] text-gray-500 dark:text-gray-400">{P.running}</p>
+      )}
     </div>
   );
 }
@@ -328,18 +322,17 @@ function AssembledItem({ item }: { item: ReplayItem }) {
       : item.kind === "tool_call_output"
         ? item.body.trimEnd()
         : item.body;
+  const pending = item.open || !item.recorded;
   return (
     <li>
-      <div className="flex items-center gap-2 text-[11px] leading-4 text-gray-500 dark:text-gray-400">
-        <span>
-          {item.kind}
-          {item.kind === "text" && ` · ${item.role}`}
-          {item.open && ` · ${P.streaming}`}
-        </span>
+      <div className="text-[11px] text-gray-500 dark:text-gray-400">
+        {item.kind}
+        {item.kind === "text" && ` · ${item.role}`}
+        {item.open ? ` · ${P.streaming}` : !item.recorded && ` · ${P.fragmentsOnly}`}
       </div>
       <p
         className={`line-clamp-2 break-words ${
-          item.open ? "text-gray-500 dark:text-gray-400" : "text-gray-900 dark:text-gray-100"
+          pending ? "text-gray-500 dark:text-gray-400" : "text-gray-900 dark:text-gray-100"
         }`}
       >
         {body}
@@ -351,7 +344,7 @@ function AssembledItem({ item }: { item: ReplayItem }) {
 /**
  * The run's outcome as a client reads it at `[DONE]` (`task_end` carries no status): the status,
  * the Request count, the time taken and the tokens, the facts in the records it was read from,
- * then the usage as bars, side by side from `sm` up.
+ * then the usage as bars.
  */
 function Outcome({ state }: { state: ReplayState }) {
   const P = S.amsp.player;
@@ -363,13 +356,11 @@ function Outcome({ state }: { state: ReplayState }) {
     ...(usage ? [P.tokens(usage.total.toLocaleString("en-US"))] : []),
   ];
   return (
-    <div className="text-[13px]">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <div className="mt-2 border-t border-gray-200 pt-1.5 font-sans dark:border-gray-800">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
         <span className="text-gray-500 dark:text-gray-400">{P.result}</span>
         <SitePill tone="neutral">{outcome.status}</SitePill>
-        <span className="ml-auto text-gray-600 tabular-nums dark:text-gray-300">
-          {facts.join(" · ")}
-        </span>
+        <span className="text-gray-600 tabular-nums dark:text-gray-300">{facts.join(" · ")}</span>
       </div>
       <p className="mt-1 text-[11px] leading-4 text-gray-500 dark:text-gray-400">
         {P.readFrom(outcome)}
@@ -389,7 +380,7 @@ const BARS: { field: keyof Omit<TokenCounts, "total">; tone: string }[] = [
 function UsageBars({ usage }: { usage: TokenCounts }) {
   const largest = Math.max(1, ...BARS.map((bar) => usage[bar.field]));
   return (
-    <div className="mt-2 grid gap-x-5 gap-y-1 font-mono text-[12px] leading-5 sm:grid-cols-3">
+    <div className="mt-1.5 space-y-0.5 font-mono text-[11px] leading-4">
       {BARS.map((bar) => {
         const value = usage[bar.field];
         // A count too small for its share of the bar still shows.
@@ -399,8 +390,8 @@ function UsageBars({ usage }: { usage: TokenCounts }) {
             key={bar.field}
             className="grid grid-cols-[11ch_minmax(0,1fr)_6ch] items-center gap-x-2"
           >
-            <span className="text-[11px] text-gray-500 dark:text-gray-400">{bar.field}</span>
-            <span className="h-2 overflow-hidden rounded-sm bg-gray-200 dark:bg-gray-800">
+            <span className="text-gray-500 dark:text-gray-400">{bar.field}</span>
+            <span className="h-1.5 overflow-hidden rounded-sm bg-gray-100 dark:bg-gray-800">
               <span
                 className={`amsp-bar block h-full rounded-sm ${bar.tone}`}
                 style={{ width: `${width}%` }}
@@ -418,7 +409,7 @@ function UsageBars({ usage }: { usage: TokenCounts }) {
 
 function PauseGlyph(): ReactNode {
   return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
       <rect x="14" y="4" width="4" height="16" rx="1" />
       <rect x="6" y="4" width="4" height="16" rx="1" />
     </svg>
@@ -427,7 +418,7 @@ function PauseGlyph(): ReactNode {
 
 function PlayGlyph(): ReactNode {
   return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
       <path d="M6 3l14 9-14 9V3Z" />
     </svg>
   );

@@ -3,16 +3,20 @@
  * is what stops an edit (or the spec moving under them) from putting a stream on the page that no
  * server would send.
  *
- * - Given any run, it opens with `ping`, ends with `[DONE]`, and its clock never runs backwards.
+ * - Given any run, it opens with `ping`, ends with `[DONE]`, its clock never runs backwards, and no
+ *   record carries a `stop_reason`.
  * - Given the Session's first message, its first record is `session_meta` naming the new Session,
  *   then `task_begin`, then the echoed input; given a later message, its first record is
  *   `task_begin` and no `session_meta` comes.
  * - Given any run, `task_begin` and `task_end` enclose its records and each `request_begin` is
  *   closed by a `request_end` before the next one opens.
- * - Given a streamed message, its fragments go start → delta* → stop before its complete record,
- *   and a tool's output completes after its call and before the next Request.
- * - Given the interrupted run, the caller's abort comes before the reply closes as `aborted`, no
- *   usage is reported for that Request, and the `abort` record comes before `task_end`.
+ * - Given a streamed message, its fragments go start → delta* → stop; one that ran to its end has
+ *   its complete record right after the stop, one cut short has none.
+ * - Given a tool call, its output completes after its call and before the next Request, and says
+ *   what it is in its `status`.
+ * - Given the interrupted run, the caller's abort comes while the reply streams, the reply's
+ *   fragments close with no complete text, its Request ends `aborted` with no usage reported, and
+ *   the `abort` record comes before `task_end`.
  */
 import { describe, expect, it } from "vitest";
 import { recordsOf, SCENARIOS } from "../src/lib/amsp-demo";
@@ -42,9 +46,10 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
     const kinds = sequence(steps);
     const records = recordsOf(steps);
 
-    it("opens with ping, ends with [DONE], and its clock never runs backwards", () => {
+    it("opens with ping, ends with [DONE], keeps time, and carries no stop_reason", () => {
       expect(kinds[0]).toBe("event: ping");
       expect(kinds.at(-1)).toBe("[DONE]");
+      expect(JSON.stringify(records)).not.toContain("stop_reason");
       const times = records.map((record) => Date.parse(record.timestamp));
       expect(times.every((time, i) => i === 0 || time >= times[i - 1]!)).toBe(true);
     });
@@ -86,7 +91,7 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
       });
     });
 
-    it("streams each message as start, deltas and stop before its complete record", () => {
+    it("streams each message as start, deltas and stop, and records it only when it ran to its end", () => {
       const fragments = records.flatMap((record, i) =>
         record.type === "model_msg" && "event_type" in record.payload
           ? [{ at: i, type: record.payload.type, phase: String(record.payload.event_type) }]
@@ -100,25 +105,25 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
       for (const message of messages) {
         expect(message).toMatch(/^(\w+):start( \1:delta)+ \1:stop$/);
       }
-      // …and its complete record follows its stop.
+      // …and its complete record follows its stop at once, unless the run cut it short.
       for (const stop of fragments.filter((fragment) => fragment.phase === "stop")) {
         const complete = stop.type.slice("partial_".length);
-        expect(
-          records.findIndex((record, i) => i > stop.at && kindOf(record) === complete),
-        ).toBeGreaterThan(stop.at);
+        const next = records.findIndex((record, i) => i > stop.at && kindOf(record) === complete);
+        expect(next).toBe(scenario.abortAfterMs === undefined ? stop.at + 1 : -1);
       }
     });
 
-    it("completes a tool's output after its call and before the next Request", () => {
+    it("completes a tool's output after its call and before the next Request, with its status", () => {
       for (const call of indicesOf(kinds, "tool_call")) {
         const output = kinds.indexOf("tool_call_output");
         expect(output).toBeGreaterThan(call);
+        expect(steps[output]).toMatchObject({ record: { payload: { status: "completed" } } });
         const nextRequest = indicesOf(kinds, "request_begin").find((i) => i > call);
         if (nextRequest !== undefined) expect(output).toBeLessThan(nextRequest);
       }
     });
 
-    it("ends an interrupted reply as aborted, without usage, and closes the Task after the abort", () => {
+    it("leaves an interrupted reply as fragments, ends its Request aborted, and closes the Task after the abort", () => {
       const abortAt = kinds.indexOf("abort");
       if (scenario.abortAfterMs === undefined) {
         expect(abortAt).toBe(-1);
@@ -126,12 +131,22 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
         return;
       }
       const requestAt = kinds.indexOf("POST abort");
-      const replyAt = kinds.lastIndexOf("text");
+      const stopAt = kinds.lastIndexOf("partial_text");
       expect(requestAt).toBeGreaterThan(kinds.indexOf("partial_text"));
-      expect(requestAt).toBeLessThan(replyAt);
-      expect(steps[replyAt]).toMatchObject({ record: { payload: { stop_reason: "aborted" } } });
-      expect(kinds.slice(replyAt)).toEqual(["text", "request_end", "abort", "task_end", "[DONE]"]);
-      expect(steps[replyAt + 1]).toMatchObject({ record: { payload: { status: "aborted" } } });
+      expect(requestAt).toBeLessThan(stopAt);
+      expect(steps[stopAt]).toMatchObject({ record: { payload: { event_type: "stop" } } });
+      expect(kinds.slice(stopAt)).toEqual([
+        "partial_text",
+        "request_end",
+        "abort",
+        "task_end",
+        "[DONE]",
+      ]);
+      expect(steps[stopAt + 1]).toMatchObject({ record: { payload: { status: "aborted" } } });
+      // The only text the run recorded is the input it echoed.
+      expect(records.filter((record) => kindOf(record) === "text")).toEqual([
+        expect.objectContaining({ payload: expect.objectContaining({ role: "user" }) }),
+      ]);
       expect(kinds).not.toContain("token_usage");
       expect(abortAt).toBeLessThan(kinds.indexOf("task_end"));
     });
