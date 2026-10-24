@@ -22,7 +22,7 @@ The `stop_reason` field left every AMSP record. A Request's end reason is record
 - SDK `RunResult`: an `abort` is `aborted` (the turn cap's with code `max_turns`), a terminal `request_end` may be `truncated`, the rule that read a `fatal` last assistant text is gone, and `text` holds only the assistant text of Requests that completed.
 - The Web App dropped the `[stop reason]` badges after replies and thinking, settles a cut-short call's card as aborted when its Request ends, shows a retry line for `truncated`, and reads a reply's fork point from whether its Request completed. The Trace view's badge and timeline show the record's `status`, and the Trace analysis DTOs' `stopReason` fields became `status`.
 - The cost center's error table records an exhausted `truncated` as `llm_failed` and a retried one as `llm_retried`; tool failures are always `tool_fatal:<tool>`.
-- The goal and continual-learning hooks read the new shape (hook versions `2026.10.23.1`), and the penguin-sdk skill lists `truncated` among the statuses.
+- The goal and continual-learning hooks read the new shape (hook versions `2026.10.23.1` and `2026.10.24.1`); continual-learning counts a turn per Request that completed rather than per `token_usage`, so a truncated retry adds none. The penguin-sdk skill lists `truncated` among the statuses.
 - The records, AMSP, Agent API, agent-loop, message-flow, interfaces, tools, architecture and sessions-and-traces docs pages follow the new shape; the records page's `stop_reason` section became "End reasons".
 
 ## Compatibility

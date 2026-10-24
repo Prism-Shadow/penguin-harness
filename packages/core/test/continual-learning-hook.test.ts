@@ -92,13 +92,18 @@ const toolOutput = (id: string, output: string, status = "completed") => ({
   type: "model_msg",
   payload: { type: "tool_call_output", role: "user", tool_call_id: id, output, status },
 });
-// One in-task turn: the model answers, calls a tool, gets its output, usage lands — no new
-// user input, so the Task keeps going.
+const requestEnd = (status = "completed") => ({
+  type: "event_msg",
+  payload: { type: "request_end", status },
+});
+// One in-task turn: the model answers, calls a tool, gets its output, usage lands, the Request
+// completes — no new user input, so the Task keeps going.
 const turn = (i: number) => [
   assistant(`working ${i}`),
   toolCall("exec_command", `t${i}`, '{"cmd":"ls"}'),
   toolOutput(`t${i}`, "ok"),
   usage(),
+  requestEnd(),
 ];
 
 const append = (records: unknown[]) =>
@@ -132,13 +137,23 @@ describe("continual-learning stop.mjs", () => {
     expect(prompt).toContain("YYYY.MM.DD.N");
   });
 
+  it("counts only Requests that completed: a truncated attempt reports usage but is no turn", async () => {
+    await append([meta(), user("long answer")]);
+    for (let i = 1; i <= 30; i++) await append(turn(i));
+    // Cut at the output cap and retried: billed (its usage lands), not committed.
+    await append([assistant("Half an ans"), usage(), requestEnd("truncated")]);
+    expect(stop()).toBeUndefined();
+    await append(turn(31));
+    expect(stop()).toMatchObject({ output: { turns: 31 } });
+  });
+
   it("windows per task: a new input resets the count, and it never fires without skills", async () => {
     // A long task that already fired…
     await append([meta(), user("big refactor")]);
     for (let i = 1; i <= 35; i++) await append(turn(i));
     expect(stop()).toMatchObject({ output: { turns: 35 } });
     // …then a short follow-up task: its own window, silent — the long task never re-fires.
-    await append([user("quick question"), assistant("quick answer"), usage()]);
+    await append([user("quick question"), assistant("quick answer"), usage(), requestEnd()]);
     expect(stop()).toBeUndefined();
     // A harness-injected input (a goal round) starts its own task window too.
     await append([
@@ -148,6 +163,7 @@ describe("continual-learning stop.mjs", () => {
       },
       assistant("round work"),
       usage(),
+      requestEnd(),
     ]);
     expect(stop()).toBeUndefined();
     await fs.rm(path.join(agentState, "skills"), { recursive: true, force: true });

@@ -22,7 +22,7 @@
 - SDK 的 `RunResult`：`abort` 判为 `aborted`（轮次上限带错误码 `max_turns`），终局的 `request_end` 可以是 `truncated`，按最后一条 assistant 文本 `fatal` 判定的规则取消，`text` 只包含以 `completed` 结束的 Request 的 assistant 文本。
 - Web App 去掉了回复与思考后面的 `[停止原因]` 标记；被截断的调用卡片在其 Request 结束时置为已中断；`truncated` 显示重试提示行；回复能否作为分叉点，按它所在的 Request 是否完成判断。Trace 视图的标记与时间线显示记录的 `status`，Trace 分析 DTO 里的 `stopReason` 字段改名为 `status`。
 - 成本中心的异常表把用尽重试的 `truncated` 记为 `llm_failed`，被重试的记为 `llm_retried`；工具失败一律记为 `tool_fatal:<工具名>`。
-- goal 与 continual-learning 钩子读取新的形状（钩子版本 `2026.10.23.1`），penguin-sdk 技能在状态列表里加上 `truncated`。
+- goal 与 continual-learning 钩子读取新的形状（钩子版本分别为 `2026.10.23.1` 与 `2026.10.24.1`）；continual-learning 改为每个以 `completed` 结束的 Request 记一轮，不再按 `token_usage` 计数，截断后的重试因此不多记一轮。penguin-sdk 技能在状态列表里加上 `truncated`。
 - 记录、AMSP、Agent API、运行循环、消息流、接口、工具、架构与 Session 和 Trace 等文档页随新的形状更新，记录页的 `stop_reason` 一节改为「结束原因」。
 
 ## 兼容性
