@@ -25,8 +25,7 @@ const RESULT_AFTER_END_MS = resultAfterRequestEnd(RECORDS);
 /** One tick per half second of the run. */
 const TICK_MS = 500;
 
-const LEVEL =
-  "flex items-center pr-3 text-sm font-medium text-gray-700 sm:pr-4 dark:text-gray-200";
+const LEVEL = "flex items-center pr-3 text-sm font-medium text-gray-700 sm:pr-4 dark:text-gray-200";
 const LANE = "relative h-9";
 const BAR =
   "absolute inset-y-0 flex items-center justify-between gap-2 overflow-hidden rounded-[3px] px-2 font-mono text-[12px] whitespace-nowrap";
@@ -129,8 +128,9 @@ function StructureChart({ spans }: { spans: NonNullable<typeof SPANS> }) {
         ))}
       </div>
 
-      {/* Each message's kind under its bar, on two staggered lines so neighbours never touch. */}
-      <div aria-hidden="true" />
+      {/* Each message's kind under its bar, on two staggered lines so neighbours never touch; the
+          row and its empty first cell leave the grid together on a phone. */}
+      <div aria-hidden="true" className="hidden sm:block" />
       <div className="relative hidden h-10 sm:block">
         {spans.messages.map((span, i) => (
           <span

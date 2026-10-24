@@ -54,7 +54,9 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
         expect(kinds.slice(0, 2)).toEqual(["task_begin", "text"]);
       } else {
         expect(kinds.slice(0, 3)).toEqual(["session_meta", "task_begin", "text"]);
-        expect(records[0]).toMatchObject({ payload: { session_id: expect.stringMatching(/^session-/) } });
+        expect(records[0]).toMatchObject({
+          payload: { session_id: expect.stringMatching(/^session-/) },
+        });
       }
       expect(records.find((record) => kindOf(record) === "text")).toMatchObject({
         payload: { role: "user", text: scenario.input },
