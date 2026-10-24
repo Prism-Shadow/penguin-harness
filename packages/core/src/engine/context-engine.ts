@@ -32,7 +32,6 @@
 import {
   abortEvent,
   approvalDecision,
-  assistantText,
   compactionBegin,
   compactionEnd,
   addTokenCounts,
@@ -40,7 +39,6 @@ import {
   isCompleteModelMessage,
   isModelMessage,
   isSessionMeta,
-  partialText,
   requestBegin,
   requestEnd,
   subagentEvent,
@@ -90,6 +88,7 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../interfaces/index.js";
+import { isInterruptedToolCall } from "../interfaces/llm.js";
 import { MergeQueue, pumpOpener } from "../internal/merge-queue.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
@@ -229,10 +228,11 @@ export interface ContextEngineDeps {
   maxReconnects?: number;
   /**
    * Absolute ceiling on the attempts a single turn may make, counting every attempt whether
-   * or not it received anything. Defaults to 20. It only binds once received content has
-   * reset the consecutive ladder (`maxReconnects`) at least once, and exists solely to keep
-   * that reset from turning an endpoint that streams a few tokens and drops into an endless
-   * retry loop.
+   * or not it received anything. Defaults to 10. It only binds once received content has
+   * reset the consecutive ladder (`maxReconnects`) at least once, and exists to keep that reset
+   * from turning an endpoint that streams a few tokens and drops — or a response that keeps
+   * stopping at its output cap, each attempt billed in full — into a long retry loop. The
+   * compaction loop does not use it: its requests run on `compactionMaxReconnects` alone.
    */
   maxTurnAttempts?: number;
   /**
@@ -426,11 +426,11 @@ interface TurnRetryState {
 }
 
 /**
- * LLM outcomes that reconnect in-run: exactly `retryable`. The classification lives in the
- * LLM interface (see LLMOutcome) — transport drops, timeouts, 408/429/5xx, malformed
- * responses and everything unclassifiable come back `retryable`, while definitive provider
- * rejections and credential failures come back `fatal` and the turn loop aborts on them
- * before consulting this set.
+ * LLM outcomes that reconnect in-run: exactly `retryable`. The classification lives in the LLM
+ * interface (see LLMOutcome) — transport drops, timeouts, 408/429/5xx, malformed responses, a
+ * response cut off at its output cap (`output_truncated`) and everything unclassifiable come
+ * back `retryable`, while definitive provider rejections and credential failures come back
+ * `fatal` and the turn loop aborts on them before consulting this set.
  *
  * Both loops retry the same set on the same backoff ladder, and by default with the same
  * budget: compaction runs on `compactionMaxReconnects`, which follows `maxReconnects` unless
@@ -579,7 +579,7 @@ export class ContextEngine {
     this.pendingBootstrapRecords = deps.bootstrapRecords ?? null;
     this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
-    this.maxTurnAttempts = deps.maxTurnAttempts ?? 20;
+    this.maxTurnAttempts = deps.maxTurnAttempts ?? 10;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 2000;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
     this.compactionMaxReconnects = deps.compactionMaxReconnects ?? this.maxReconnects;
@@ -828,8 +828,8 @@ export class ContextEngine {
     if (startNotices.length > 0) nextInput = [...nextInput, ...startNotices];
 
     for (;;) {
-      // max_turns guard: emit a length notice and stop once exceeded. A non-positive cap
-      // (-1 per the config contract "must be > 0 or -1") disables the guard entirely —
+      // max_turns guard: end the Task with an abort coded max_turns once exceeded. A
+      // non-positive cap (-1 per the config contract "must be > 0 or -1") disables the guard —
       // same convention as maxSessionTurns in shouldCompact (issue #55: -1 used to trip
       // `0 >= -1` and stop before the first turn).
       if (this.maxTurns > 0 && turnCount >= this.maxTurns) {
@@ -840,8 +840,9 @@ export class ContextEngine {
         // sending a fresh message would be rejected by the provider as an unanswered tool_use
         // (400, see issue #33).
         this.pendingCarryOver = nextInput;
-        yield* this.emitMaxTurns();
-        return { kind: "max_turns" };
+        const errorMessage = `reached max turns (${this.maxTurns})`;
+        yield* this.emitAbort("max_turns", errorMessage);
+        return { kind: "max_turns", errorCode: "max_turns", errorMessage };
       }
       turnCount += 1;
 
@@ -854,9 +855,9 @@ export class ContextEngine {
       // that is what makes it safe to resend this turn's input unchanged, appending a
       // `[turn_retried]` block carrying what the failed attempt already produced — the model
       // continues from there instead of re-running tools; the tag is distinct from the
-      // user-interruption `[turn_aborted]`. (The one attempt that IS committed — a fully
-      // delivered response whose finish_reason arrived — is forced to `completed` in
-      // GenerativeModel precisely so it never reaches this loop.)
+      // user-interruption `[turn_aborted]`. (The one attempt MMSP does record — a fully
+      // delivered response whose finish reason was not a normal one — is taken back out of its
+      // history by GenerativeModel before it returns `retryable`, so it holds the same way.)
       const failedTurns: TurnResult[] = [];
       let attemptInput = nextInput;
       // Two counters, because the ladder and the ceiling answer different questions (see
@@ -945,7 +946,8 @@ export class ContextEngine {
         // deliberately wide — the LLM interface sends every unclassifiable error here,
         // because its fatal detector is an allowlist and a gateway phrasing a transient
         // fault its own way (`Upstream HTTP/2 stream failed (upstream_http2_stream_error)`)
-        // must keep its retries; the concrete failure rides on errorMessage.
+        // must keep its retries; the concrete failure rides on errorMessage. A response cut off
+        // at its output cap (`output_truncated`, never committed) takes the same path.
         //
         // When retries are exhausted or the backoff is interrupted, the retry input is held
         // as-is as carry-over (the original input is already written to Trace, so it isn't
@@ -960,12 +962,13 @@ export class ContextEngine {
         // `[turn_retried]` carries the accumulated output into every retry and the turn keeps
         // inching forward. What bounds this is the ceiling below, not the ladder: an endpoint
         // that streams a few tokens and drops, every single time, would otherwise be retried
-        // forever.
+        // forever. A response cut off at its output cap is no exception: it received content
+        // like any other, and the same ceiling bounds how often it is asked again.
         if (turn.receivedContent) consecutive = 0;
-        // Exhausted: give up without an abort event — abort marks a user interruption,
-        // and the last failure's request_end (status `retryable` with no `retry_in_ms`,
-        // since no retry is planned) is the terminal record frontends and observability
-        // read; `attempt` and `error_message` ride on it.
+        // Exhausted: give up without an abort event — abort marks a user interruption or the
+        // turn cap, and the last failure's request_end (status `retryable` with no
+        // `retry_in_ms`, since no retry is planned) is the terminal record frontends and
+        // observability read; `attempt` and `error_message` ride on it.
         if (consecutive >= this.maxReconnects || attempts >= this.maxTurnAttempts) {
           this.pendingCarryOver = attemptInput;
           return {
@@ -1344,6 +1347,9 @@ export class ContextEngine {
     let outcome: LLMOutcome = { status: "completed" };
     // Set by the first message the stream yields (see TurnResult.receivedContent).
     let receivedContent = false;
+    // Whether this attempt reported its usage (a completed request does, and so does one cut off
+    // at its output cap).
+    let sawUsage = false;
 
     // Driver task: consumes the LLM stream + approves one at a time + dispatches tool
     // execution. It is itself a producer.
@@ -1368,6 +1374,11 @@ export class ContextEngine {
           const res = await gen.next();
           if (res.done) {
             outcome = res.value;
+            if (sawUsage && outcome.status === "completed") {
+              this.sessionTurns += 1;
+              // A turn completed: the summary the context opened with is history now.
+              this.openingSummary = null;
+            }
             // A provider's 4xx on an input that holds images is taken as a rejection of the
             // images, whatever the message says: providers word these refusals too many ways
             // to match, and a wrong match would end the run on something a retry can fix. The
@@ -1430,16 +1441,13 @@ export class ContextEngine {
           }
           const msg = res.value;
           receivedContent = true;
-          // token_usage means "this Request completed normally": record the context usage /
-          // Session cumulative counts — stamped onto the message BEFORE it is yielded or
-          // written, so the stream and the Trace carry the Session series rather than the
-          // LLM's per-request stand-in — and increment the Session turn count (counted per
-          // LLM Request, across Tasks; used for compaction threshold checks).
-          if (this.observeTokenUsage(msg)) {
-            this.sessionTurns += 1;
-            // A turn completed: the summary the context opened with is history now.
-            this.openingSummary = null;
-          }
+          // token_usage reports a Request the provider finished (completed, or cut off at its
+          // output cap and billed all the same): record the context usage / Session cumulative counts —
+          // stamped onto the message BEFORE it is yielded or written, so the stream and the
+          // Trace carry the Session series rather than the LLM's per-request stand-in. The
+          // Session turn count (per committed LLM Request, across Tasks; used for compaction
+          // threshold checks) waits for the outcome: an attempt cut off at its cap is no turn.
+          if (this.observeTokenUsage(msg)) sawUsage = true;
           queue.push(msg);
           await this.write(msg);
           // Collect complete thinking/text segments (including partial segments finalized on
@@ -1450,19 +1458,16 @@ export class ContextEngine {
           ) {
             assistantSegments.push(msg);
           }
-          // Approve as soon as each real, complete tool_call finishes streaming. A tool_call
-          // synthesized to close out an interruption carries a non-"completed" stop_reason (see
-          // finishInterrupted): its arguments weren't fully emitted, and it exists only
-          // for structural closure and observability — it isn't dispatched for execution, isn't
-          // added to this turn's ledger, and gets no paired output backfilled: such a tool_call
-          // was never committed to history by MMSP, so there's nothing to pair. This turn
-          // must then end with a non-completed outcome (only interruption closure produces such
-          // a tool_call): a retryable outcome is cleaned up by
-          // reconnect resending the flatten carry-over, while the run-ending ones
-          // (aborted/fatal) exit directly.
+          // Approve as soon as each complete tool_call finishes streaming. A tool call the LLM
+          // closed early — its request was interrupted, failed or cut off before the call's
+          // own end arrived — is written whole with the arguments that arrived, but marked (see
+          // markInterruptedToolCall): it is never dispatched, isn't added to this turn's ledger,
+          // and gets no paired output, since the request holding it is never committed. Its
+          // Request's request_end says so; the reconnect (retryable) resends the
+          // flattened carry-over, and the run-ending outcomes (aborted / fatal) exit directly.
           if (isCompleteModelMessage(msg) && msg.payload.type === "tool_call") {
+            if (isInterruptedToolCall(msg)) continue;
             const tc = msg as AmspRecord<ToolCallPayload>;
-            if (tc.payload.stop_reason !== "completed") continue;
             const toolCallId = tc.payload.tool_call_id;
             callOrder.push(toolCallId);
             toolCalls.push(tc);
@@ -1527,7 +1532,7 @@ export class ContextEngine {
                       ? "Tool call denied by policy."
                       : "Tool call denied by user.",
                 toolCallId,
-                stopReason: "aborted",
+                status: "aborted",
               });
               queue.push(denied);
               await this.write(denied);
@@ -1636,30 +1641,12 @@ export class ContextEngine {
       const failed = toolCallOutput({
         output: `[tool error] ${message}`,
         toolCallId: toolCall.payload.tool_call_id,
-        stopReason: "fatal",
+        status: "fatal",
       });
       queue.push(failed);
       await this.write(failed);
       toolOutputs.push(failed);
     }
-  }
-
-  /** Max turns reached: emits a failed notice (streaming fragments + complete text) for CLI/frontend rendering. */
-  private async *emitMaxTurns(): AsyncGenerator<AmspRecord> {
-    // Reduce leading newlines: avoid stacking extra newlines before the text (comment #15).
-    const text = `[reached max turns (${this.maxTurns}); stopping]`;
-    const partials = [
-      partialText("start"),
-      partialText("delta", text),
-      partialText("stop", "", "fatal"),
-    ];
-    for (const partial of partials) {
-      yield partial;
-      await this.write(partial);
-    }
-    const note = assistantText(text, "fatal");
-    yield note;
-    await this.write(note);
   }
 
   // -------------------------------------------------------------------------
@@ -1885,7 +1872,7 @@ export class ContextEngine {
           toolCallOutput({
             output: "[tool error] the compaction request expects a summary, not tool calls",
             toolCallId: tc.payload.tool_call_id,
-            stopReason: "fatal",
+            status: "fatal",
           }),
         );
         for (const repair of pendingRepairs) await this.write(repair);
@@ -1911,7 +1898,9 @@ export class ContextEngine {
           ...(attempt.errorMessage !== undefined ? { errorMessage: attempt.errorMessage } : {}),
         };
       } else {
-        // Retryable failure: keep its cause and detail as the last error of record.
+        // Retryable failure, a response cut off at its cap included (taken back out of MMSP's
+        // history, so nothing was committed): keep its cause and detail as the last error of
+        // record.
         lastError = attempt.errorMessage;
         lastErrorCode = attempt.errorCode;
       }
@@ -2117,11 +2106,9 @@ export class ContextEngine {
           const body = (msg.payload as ThinkingPayload).thinking;
           if (!sawPartialThinking && body !== "") yield msg;
         } else if (msg.payload.type === "tool_call") {
-          // Same filter as the turn loop: a tool_call synthesized to close out an interruption
-          // carries a non-completed stop_reason — it is structural closure, not a real request,
-          // and gets no paired output.
-          const tc = msg as AmspRecord<ToolCallPayload>;
-          if (tc.payload.stop_reason === "completed") toolCalls.push(tc);
+          // Same rule as the turn loop: a tool call closed early (its request ended before the
+          // call did) is no real request and gets no paired output; every other one needs one.
+          if (!isInterruptedToolCall(msg)) toolCalls.push(msg as AmspRecord<ToolCallPayload>);
         }
       }
     }
@@ -2202,11 +2189,12 @@ export class ContextEngine {
     await this.write(msg);
   }
 
-  /** User interruption: emits an abort event carrying the machine-readable cause. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
+  /** User interruption, or the turn cap: emits an abort event carrying the machine-readable cause. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
   private async *emitAbort(
-    errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted",
+    errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted" | "max_turns",
+    errorMessage?: string,
   ): AsyncGenerator<AmspRecord> {
-    const msg = abortEvent(errorCode);
+    const msg = abortEvent(errorCode, errorMessage);
     yield msg;
     await this.write(msg);
   }
@@ -2243,7 +2231,7 @@ export class ContextEngine {
           toolCallOutput({
             output: "[interrupted: tool aborted by user]",
             toolCallId: tc.payload.tool_call_id,
-            stopReason: "aborted",
+            status: "aborted",
           }),
         );
       // Placeholders are sent to the model only and not written to Trace (synthetic carry-over
@@ -2420,7 +2408,7 @@ function transcribeTurnLines(
   }
   for (const out of toolOutputs) {
     const p = out.payload as ToolCallOutputPayload;
-    lines.push(transcribeToolCallOutput(p.tool_call_id, p.stop_reason ?? "completed", p.output));
+    lines.push(transcribeToolCallOutput(p.tool_call_id, p.status ?? "completed", p.output));
   }
   return lines;
 }

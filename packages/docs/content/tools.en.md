@@ -31,7 +31,7 @@ interface ToolExecutionContext {
 }
 
 interface ToolResult {
-  stopReason?: StopReason; // the tool's self-reported terminal state (lowest priority, see below)
+  status?: ToolStatus; // the tool's self-reported result status (lowest priority, see below)
   note?: string; // terminal marker appended outside the output budget (e.g. exit code)
   images?: string[]; // data-URL images, appended after the text output
 }
@@ -41,7 +41,7 @@ A tool only yields incremental `partial_tool_call_output` deltas. The Environmen
 
 - streaming framing (start / stop) and `tool_call_id` threading;
 - timeouts, and head-and-tail truncation once output exceeds `maxOutputLength` (default 16000 characters);
-- `stop_reason` priority: user interrupt > timeout > tool throw > tool self-report. A timeout or a throw ends the call as `fatal`;
+- the result's `status` priority: user interrupt > timeout > tool throw > tool self-report. A user interrupt ends the call as `aborted`, with the output produced so far and the interruption note; a timeout or a throw ends it as `fatal`;
 - never-empty output: `[no output]` is substituted when a call produced no text and no note;
 - `note` (for example the exit code) and images are appended outside the output budget, so the terminal marker survives even when long output is cut.
 
@@ -87,7 +87,7 @@ The same spelling rule covers every path core composes for the model:
 
 The Trace does not duplicate those bytes. It does record the same absolute Session path shown to the model, the Web App and the CLI, which exposes the host's data-root layout.
 
-A failed archive write never changes the original tool's `stop_reason`. The visible note and the stderr warning carry only a short error code (plus the tool name on stderr), never the path or the raw error message.
+A failed archive write never changes the original tool's `status`. The visible note and the stderr warning carry only a short error code (plus the tool name on stderr), never the path or the raw error message.
 
 ## Configuration fields
 
@@ -155,7 +155,7 @@ exec_command(cmd)
      input_command(process_id, kill: true) ──► SIGTERM the process group (SIGKILL after a grace period)
 ```
 
-A command that exits cleanly adds no note. A non-zero exit adds `[exit code: N]` and a signal adds `[terminated by signal S]`; both end the call as `fatal`.
+A command that exits cleanly adds no note. A non-zero exit adds `[exit code: N]` and a signal adds `[terminated by signal S]`; either way the call ends `completed`, because the exit status is the command's result, not the tool's failure. `fatal` is kept for the tool's own failures: a timeout, a spawn error, a throw.
 
 The tools' arguments (explicit keys):
 
@@ -465,5 +465,5 @@ An existing entry that holds a literal `${…}` in a value reads it as a referen
 - Text blocks are joined into the output text, and image blocks ride along as images (data URLs).
 - Audio and binary resources become placeholder lines; a text resource contributes its text; a `resource_link` becomes `[resource: <uri>]` plus its description; an unknown block type becomes `[unsupported content type: <type>]`.
 - When the joined text is empty, `structuredContent` is serialized as JSON.
-- A Server-reported `isError` ends the call with `stop_reason: "fatal"`, and the Server's error text as the content (`[tool reported an error with no message]` when it sent none).
+- A Server-reported `isError` ends the call with `status: "fatal"`, and the Server's error text as the content (`[tool reported an error with no message]` when it sent none).
 - Session teardown (`Environment.dispose`) closes every MCP client, and stdio child processes exit with it.

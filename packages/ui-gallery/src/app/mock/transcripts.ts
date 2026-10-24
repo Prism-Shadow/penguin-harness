@@ -65,14 +65,11 @@ export const userText = (
   sender?: "harness" | "server" | "parent_agent",
 ): AmspRecord => model(ms, { type: "text", role: "user", text, ...(sender ? { sender } : {}) });
 
-export const assistantText = (
-  ms: number,
-  text: string,
-  stopReason: "completed" | "aborted" = "completed",
-): AmspRecord => model(ms, { type: "text", role: "assistant", text, stop_reason: stopReason });
+export const assistantText = (ms: number, text: string): AmspRecord =>
+  model(ms, { type: "text", role: "assistant", text });
 
 export const thinking = (ms: number, text: string): AmspRecord =>
-  model(ms, { type: "thinking", role: "assistant", thinking: text, stop_reason: "completed" });
+  model(ms, { type: "thinking", role: "assistant", thinking: text });
 
 export const toolCall = (
   ms: number,
@@ -88,7 +85,6 @@ export const toolCall = (
     name,
     arguments: JSON.stringify(args),
     tool_call_id: id,
-    stop_reason: "completed",
   },
 });
 
@@ -98,7 +94,7 @@ export const toolOutput = (ms: number, id: string, output: string): AmspRecord =
     role: "user",
     output,
     tool_call_id: id,
-    stop_reason: "completed",
+    status: "completed",
   });
 
 /** A Task's start and end: the pair the Session writes around each Task (none around a switch). */

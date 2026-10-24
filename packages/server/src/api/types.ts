@@ -3680,7 +3680,8 @@ export interface ToolCallSpan {
   startTs: string;
   endTs?: string;
   durationMs?: number;
-  stopReason?: string;
+  /** The paired tool_call_output's `status` (completed / aborted / fatal); absent while the call has no output. */
+  status?: string;
 }
 
 /** Workspace file entry (Files tab). */
@@ -3813,7 +3814,8 @@ export interface TraceToolSpan {
   approvalTs?: string;
   decision?: string;
   outputTs?: string;
-  stopReason?: string;
+  /** The tool_call_output's `status` (completed / aborted / fatal); absent while unclosed. */
+  status?: string;
   /** The Task that initiated this tool (grouped with its tool_call segment): async output belongs to this Task even if it arrives after request_end. */
   taskIndex: number;
 }

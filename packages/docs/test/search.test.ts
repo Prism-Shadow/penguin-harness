@@ -177,7 +177,7 @@ describe("docs search", () => {
         },
       ]);
 
-      for (const heading of ["session_meta", "model_msg", "event_msg", "stop_reason"]) {
+      for (const heading of ["session_meta", "model_msg", "event_msg", "origin"]) {
         expect(
           searchRecords(records, heading, 50).some((result) =>
             result.record.heading.startsWith(heading),

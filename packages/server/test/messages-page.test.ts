@@ -102,8 +102,9 @@ function heavyTurn(mm: number, n: number, outputChars: number, image = false): A
         output: "screenshot",
         toolCallId: `t${n}`,
         images: [`data:image/png;base64,${"A".repeat(outputChars)}`],
+        status: "completed",
       })
-    : toolCallOutput({ output: "x".repeat(outputChars), toolCallId: `t${n}` });
+    : toolCallOutput({ output: "x".repeat(outputChars), toolCallId: `t${n}`, status: "completed" });
   return [
     at(t("00.000"), userText(`q${n}`)),
     at(t("01.000"), requestBegin()),
@@ -326,7 +327,10 @@ describe("messages windowed reads", () => {
       at("2026-07-20T10:01:01.000Z", requestBegin()),
       at("2026-07-20T10:01:02.000Z", toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" })),
       at("2026-07-20T10:01:03.000Z", requestEnd("completed")),
-      at("2026-07-20T10:01:04.000Z", toolCallOutput({ output: "out", toolCallId: "t1" })),
+      at(
+        "2026-07-20T10:01:04.000Z",
+        toolCallOutput({ output: "out", toolCallId: "t1", status: "completed" }),
+      ),
       at("2026-07-20T10:01:05.000Z", userText("[user_steering]\nfaster\n[/user_steering]")),
       at("2026-07-20T10:01:05.100Z", imageUrlMessage("data:image/png;base64,AAAA")),
       at("2026-07-20T10:01:06.000Z", requestBegin()),
@@ -424,7 +428,10 @@ describe("messages windowed reads", () => {
       at("2026-07-20T10:01:01.000Z", requestBegin()),
       at("2026-07-20T10:01:02.000Z", toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" })),
       at("2026-07-20T10:01:03.000Z", requestEnd("completed")),
-      at("2026-07-20T10:01:04.000Z", toolCallOutput({ output: "launched", toolCallId: "t1" })),
+      at(
+        "2026-07-20T10:01:04.000Z",
+        toolCallOutput({ output: "launched", toolCallId: "t1", status: "completed" }),
+      ),
       at("2026-07-20T10:01:05.000Z", userText(plain, "harness")),
       at("2026-07-20T10:01:06.000Z", requestBegin()),
       at("2026-07-20T10:01:07.000Z", assistantText("done")),
@@ -572,7 +579,10 @@ describe("messages windowed reads", () => {
       ),
       at("2026-07-20T10:00:03.000Z", subagentEvent(CHILD)),
       at("2026-07-20T10:00:04.000Z", requestEnd("completed")),
-      at("2026-07-20T10:00:05.000Z", toolCallOutput({ output: "done", toolCallId: "c1" })),
+      at(
+        "2026-07-20T10:00:05.000Z",
+        toolCallOutput({ output: "done", toolCallId: "c1", status: "completed" }),
+      ),
       at("2026-07-20T10:00:06.000Z", tokenUsage(counts(1000), counts(100))),
       // Turn 2 spawns child2.
       at("2026-07-20T10:01:00.000Z", userText("q2")),
@@ -583,7 +593,10 @@ describe("messages windowed reads", () => {
       ),
       at("2026-07-20T10:01:03.000Z", subagentEvent(child2)),
       at("2026-07-20T10:01:04.000Z", requestEnd("completed")),
-      at("2026-07-20T10:01:05.000Z", toolCallOutput({ output: "done", toolCallId: "c2" })),
+      at(
+        "2026-07-20T10:01:05.000Z",
+        toolCallOutput({ output: "done", toolCallId: "c2", status: "completed" }),
+      ),
       at("2026-07-20T10:01:06.000Z", tokenUsage(counts(2000), counts(120))),
     ]);
     await writeTraceFile(root, P, A, "2026-07-20", CHILD, 1, [
@@ -670,8 +683,14 @@ describe("messages windowed reads", () => {
       at("2026-07-20T10:00:03.000Z", approvalDecision("allow", "t1")),
       at("2026-07-20T10:00:04.000Z", approvalDecision("allow", "t2")),
       at("2026-07-20T10:00:05.000Z", requestEnd("completed")),
-      at("2026-07-20T10:00:09.000Z", toolCallOutput({ output: "a", toolCallId: "t1" })),
-      at("2026-07-20T10:00:11.000Z", toolCallOutput({ output: "b", toolCallId: "t2" })),
+      at(
+        "2026-07-20T10:00:09.000Z",
+        toolCallOutput({ output: "a", toolCallId: "t1", status: "completed" }),
+      ),
+      at(
+        "2026-07-20T10:00:11.000Z",
+        toolCallOutput({ output: "b", toolCallId: "t2", status: "completed" }),
+      ),
       at("2026-07-20T10:00:11.000Z", requestBegin()),
       at("2026-07-20T10:00:13.000Z", assistantText("a1")),
       at("2026-07-20T10:00:13.000Z", requestEnd("completed")),

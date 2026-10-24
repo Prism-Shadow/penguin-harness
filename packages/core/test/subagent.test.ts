@@ -55,7 +55,7 @@ interface LoosePayload {
   type?: string;
   event_type?: string;
   output?: string;
-  stop_reason?: string;
+  status?: string;
   tool_call_id?: string;
 }
 const pl = (m: AmspRecord): LoosePayload => m.payload as LoosePayload;
@@ -206,7 +206,7 @@ describe("run_subagent tool (foreground)", () => {
     // The child's text deltas are mirrored as this tool's own output (Environment derives the
     // complete tool_call_output from this).
     expect(ownDeltas(out)).toBe("Hello world");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     // The model is free to choose the agent, model, and thinking level (spawn arguments); the
     // prompt is handed to run.
     expect(seen[0]).toEqual({
@@ -233,7 +233,7 @@ describe("run_subagent tool (foreground)", () => {
       const { services } = makeServices(runner);
       const tool = createSubagentTool(DEF, services);
       const { out, result } = await collectWithReturn(tool.execute(args, CTX));
-      expect(result?.stopReason).toBe("fatal");
+      expect(result?.status).toBe("fatal");
       expect(ownDeltas(out)).toContain("must be given together");
       expect(spawned).toHaveLength(0);
     }
@@ -253,7 +253,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(seen).toHaveLength(1);
     expect(seen[0]?.modelId).toBeUndefined();
     expect(seen[0]?.provider).toBeUndefined();
@@ -274,7 +274,7 @@ describe("run_subagent tool (foreground)", () => {
       const { out, result } = await collectWithReturn(
         tool.execute({ prompt: "x", thinking_level }, CTX),
       );
-      expect(result?.stopReason).toBe("fatal");
+      expect(result?.status).toBe("fatal");
       expect(ownDeltas(out)).toContain("invalid `thinking_level`");
       expect(ownDeltas(out)).toContain("low / medium / high / xhigh / max");
       expect(spawned).toHaveLength(0);
@@ -296,7 +296,7 @@ describe("run_subagent tool (foreground)", () => {
       const { services } = makeServices(runner);
       const tool = createSubagentTool(DEF, services);
       const { result } = await collectWithReturn(tool.execute(args, CTX));
-      expect(result?.stopReason).toBe("completed");
+      expect(result?.status).toBe("completed");
       expect(seen).toHaveLength(1);
       expect("thinkingLevel" in seen[0]!).toBe(false);
     }
@@ -321,7 +321,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices();
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("no subagent runner");
   });
 
@@ -335,7 +335,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({}, CTX));
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("prompt");
   });
 
@@ -349,7 +349,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(result?.note).toContain("without a text answer");
   });
 
@@ -362,7 +362,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(result?.note).toContain("subagent aborted: user_abort");
   });
 
@@ -386,7 +386,7 @@ describe("run_subagent tool (foreground)", () => {
     const { out, result } = await collectWithReturn(
       tool.execute({ prompt: "x" }, { ...CTX, approve }),
     );
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(ownDeltas(out)).toContain("decision:allow");
     expect(askedFor).toEqual(["exec_command"]);
   });
@@ -405,7 +405,7 @@ describe("run_subagent tool (foreground)", () => {
     const { result } = await collectWithReturn(
       tool.execute({ prompt: "x", yield_time_ms: 10_000 }, { ...CTX, signal: controller.signal }),
     );
-    expect(result?.stopReason).toBe("aborted");
+    expect(result?.status).toBe("aborted");
     await until(() => sawAbort);
   });
 });
@@ -444,7 +444,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       tool.execute({ prompt: "task", yield_time_ms: 250 }, CTX),
     );
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(ownDeltas(out)).toBe("start:task ");
     const id = extractSubagentId(result);
     // subagent_id is derived from the tail of the child Session id: it can be correlated with
@@ -471,7 +471,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     // Output buffered while backgrounded is delivered on the tail via polling; after a turn
     // ends, the session is kept (resumable).
     expect(ownDeltas(out)).toContain("end:task");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(result?.note).toContain(`subagent idle with subagent_id ${id}`);
   });
 
@@ -492,7 +492,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       writeTool.execute({ subagent_id: id, prompt: "two", yield_time_ms: 3000 }, CTX),
     );
     expect(ownDeltas(out)).toContain("ran:two");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(child.prompts).toEqual(["one", "two"]);
   });
 
@@ -509,7 +509,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       writeTool.execute({ subagent_id: id, prompt: "more", yield_time_ms: 250 }, CTX),
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("still running");
     child.release();
   });
@@ -520,7 +520,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       writeTool.execute({ subagent_id: "subagent-deadbeef" }, CTX),
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("unknown subagent_id subagent-deadbeef");
   });
 
@@ -553,7 +553,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       writeTool.execute({ subagent_id: id, yield_time_ms: 3000 }, { ...CTX, approve }),
     );
     expect(ownDeltas(out)).toContain("approved:allow");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
   });
 
   it("refuses to spawn beyond the background subagent capacity", async () => {
@@ -578,7 +578,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     }
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("too many background subagents");
   });
 
@@ -728,7 +728,7 @@ describe("subagent steering and per-run abort", () => {
       writeTool.execute({ subagent_id: id, prompt: "go left", yield_time_ms: 250 }, CTX),
     );
     expect(ownDeltas(out)).toContain(`steering message queued for subagent ${id}`);
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(result?.note).toContain("still running");
     expect(child.steers).toHaveLength(1);
     const payload = child.steers[0]![0]!.payload as { text?: string; sender?: string };
@@ -754,7 +754,7 @@ describe("subagent steering and per-run abort", () => {
     );
     expect(ownDeltas(out)).toContain(`aborting subagent ${id}'s current run`);
     // The aborted round settles as failed with the child's abort reason; the session is kept.
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(result?.note).toContain("subagent aborted");
     expect(result?.note).toContain(`subagent idle with subagent_id ${id}`);
     expect(manager.get(id)).toBeDefined();
@@ -763,7 +763,7 @@ describe("subagent steering and per-run abort", () => {
       writeTool.execute({ subagent_id: id, prompt: "again", yield_time_ms: 3000 }, CTX),
     );
     expect(ownDeltas(followUp.out)).toContain("ran:again");
-    expect(followUp.result?.stopReason).toBe("completed");
+    expect(followUp.result?.status).toBe("completed");
     expect(child.prompts).toEqual(["task", "again"]);
   });
 
@@ -784,7 +784,7 @@ describe("subagent steering and per-run abort", () => {
       ),
     );
     expect(ownDeltas(out)).toContain("ran:redirect");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(child.prompts).toEqual(["task", "redirect"]);
     // The redirect ran fresh — nothing was delivered as steering.
     expect(child.steers).toHaveLength(0);
@@ -806,7 +806,7 @@ describe("subagent steering and per-run abort", () => {
       writeTool.execute({ subagent_id: id, abort: true, yield_time_ms: 250 }, CTX),
     );
     expect(ownDeltas(out)).toContain("already idle; nothing to abort");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
   });
 
   it("exposes list/steer/abort to the host via Environment, converging on the same channel", async () => {
@@ -1032,7 +1032,7 @@ describe("subagent steering and per-run abort", () => {
     );
     expect(ownDeltas(out)).toContain(`[subagent ${id} resumed]`);
     expect(ownDeltas(out)).toContain("ran:again");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(resumes).toEqual([{ sessionId: HOP }]);
     expect(prompts).toContain("again");
     expect(manager.get(id)).toBeDefined();

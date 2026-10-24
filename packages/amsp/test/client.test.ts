@@ -4,22 +4,28 @@
  *
  * Runs:
  * - Given a run stream, iterating it reads the records in order and none of its control frames;
- *   `session` resolves at `hello`, and the request carries the input, the Session to continue,
- *   the key and the caller's headers.
+ *   `session` resolves with the Session the run continues, and the request carries the input,
+ *   that Session, the key and the caller's headers.
+ * - Given a new Session's run, `session` resolves at its `session_meta`, not at the opening beat,
+ *   and the result names that Session.
  * - Given `run()`, the result arrives with nothing kept to iterate.
  * - Given named events AMSP does not define and a record type the client does not know, the first
  *   are left out and the second is read like any record.
  * - Given a run's records, `result()` decides the status in the rule's order — an unclosed last
- *   `task_begin` or no Task at all, then an `abort`, then an unrecovered terminal record, then a
- *   fatal last answer — and nothing a subagent records decides it.
+ *   `task_begin` or no Task at all, then an `abort` (the turn cap's included), then an
+ *   unrecovered terminal record (an output cap the retries never got past included) — and nothing
+ *   a subagent records decides it.
  * - Given a run with a compaction and a subagent, `text` is the main Session's answers without
  *   the summary or the child's, `usage` counts every request the child's included, and
  *   `sessionUsage` is the main Session's last count.
+ * - Given a Request cut off at its output cap and retried, and one interrupted, `text` keeps only
+ *   the completed Request's answer, though the others' texts have their records.
  *
  * Failures:
  * - Given a refusal before the stream, the run rejects with AmspHttpError and `session` with it.
  * - Given a stream that ends without `[DONE]`, or breaks, the run rejects with AmspStreamError;
- *   given a body that is not an event stream, the same.
+ *   given a body that is not an event stream, or a new Session's stream with no `session_meta`,
+ *   the same.
  * - Given the caller's signal aborting mid-run, the run rejects with its reason and the
  *   connection closes; `run.abort()` posts the Session's abort and the stream still ends.
  *
@@ -30,7 +36,8 @@
  * - Given a call the server decides itself, the open look is closed when its decision arrives and
  *   nothing is posted.
  * - Given no callback, or one that throws, the answer posted is `deny`.
- * - Given a call cut short, no look opens.
+ * - Given a call cut short (written whole, then its Request ends without completing), the look
+ *   it opened closes at that `request_end`.
  * - Given a call someone else answered first (`approval_not_found`), the run goes on.
  *
  * The rest: `agent()`, `session()`, `messages()` with a page, `approvals()` with a wait,
@@ -46,7 +53,6 @@ import {
   DONE,
   frame,
   gate,
-  hello,
   never,
 } from "./helpers/fetch-fake.js";
 import type { FetchFake, Step } from "./helpers/fetch-fake.js";
@@ -58,7 +64,9 @@ import {
   counts,
   decision,
   ev,
+  meta,
   partialText,
+  partialToolCall,
   plainRun,
   requestBegin,
   requestEnd,
@@ -85,10 +93,15 @@ function clientOf(fake: FetchFake, extra: Record<string, string> = {}): AgentCli
   });
 }
 
-/** A run stream: hello, the records with ids, then [DONE] unless `done` is false. */
+const PING = control("ping");
+
+/** A run stream: the opening beat, the records with ids, then [DONE] unless `done` is false. */
 function runBody(records: AmspRecord[], done = true): Step[] {
-  return [hello(SID), ...records.map((r, i) => frame(r, `ep-${i + 1}`)), ...(done ? [DONE] : [])];
+  return [PING, ...records.map((r, i) => frame(r, `ep-${i + 1}`)), ...(done ? [DONE] : [])];
 }
+
+/** A new Session's run stream opens: the beat, then the Session's session_meta. */
+const opening = (): Step[] => [PING, frame(meta(SID), "ep-0")];
 
 async function collect(iterable: AsyncIterable<AmspRecord>): Promise<AmspRecord[]> {
   const out: AmspRecord[] = [];
@@ -99,7 +112,7 @@ async function collect(iterable: AsyncIterable<AmspRecord>): Promise<AmspRecord[
 const kind = (r: AmspRecord) => (r.payload as { type?: string }).type ?? r.type;
 
 describe("a run", () => {
-  it("reads the records in order without the control frames, and names its Session at hello", async () => {
+  it("reads the records in order without the control frames, and names the Session it continues", async () => {
     const fake = createFetchFake();
     const records = plainRun(SID);
     const steps = runBody(records);
@@ -114,6 +127,22 @@ describe("a run", () => {
     expect(call.headers.get("authorization")).toBe("Bearer penguin_key");
     expect(call.headers.get("x-trace")).toBe("t1");
     expect(call.headers.get("accept")).toBe("text/event-stream");
+  });
+
+  it("names a new Session at its session_meta, not at the opening beat", async () => {
+    const fake = createFetchFake();
+    const held = gate();
+    const [beat, ...rest] = runBody(plainRun(SID));
+    fake.stream("POST", RUNS, [beat!, held.promise, ...rest]);
+    const run = clientOf(fake).stream({ input: "Say hello" });
+    let named: string | null = null;
+    void run.session.then((id) => (named = id));
+    await fake.requested("POST", RUNS);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(named).toBeNull();
+    held.open();
+    expect(await run.session).toBe(SID);
+    expect((await run.result()).sessionId).toBe(SID);
   });
 
   it("run() resolves to the result alone", async () => {
@@ -205,9 +234,45 @@ describe("a run", () => {
       { status: "fatal", error: { code: "rejected", message: "" } },
     ],
     [
-      "the turn cap's fatal answer: fatal, no error",
-      [...main, assistantText("Stopped at the turn limit.", "fatal"), requestEnd(), taskEnd()],
-      { status: "fatal" },
+      "the turn cap's abort: aborted, max_turns",
+      [
+        ...main,
+        assistantText("Working."),
+        requestEnd(),
+        abort("max_turns", { error_message: "reached max turns (1)" }),
+        taskEnd(),
+      ],
+      { status: "aborted", error: { code: "max_turns", message: "reached max turns (1)" } },
+    ],
+    [
+      "an attempt cut off at its output cap retried, then an answer: completed",
+      [
+        ...main,
+        assistantText("Half an ans"),
+        requestEnd("retryable", {
+          error_code: "output_truncated",
+          error_message: "cut",
+          retry_in_ms: 2000,
+        }),
+        requestBegin(),
+        assistantText("The answer."),
+        requestEnd(),
+        taskEnd(),
+      ],
+      { status: "completed" },
+    ],
+    [
+      "an output cap the retries never got past: retryable, output_truncated",
+      [
+        ...main,
+        requestEnd("retryable", {
+          error_code: "output_truncated",
+          error_message: "cut",
+          attempt: 6,
+        }),
+        taskEnd(),
+      ],
+      { status: "retryable", error: { code: "output_truncated", message: "cut" } },
     ],
     [
       "a subagent's abort and failure: completed",
@@ -224,10 +289,36 @@ describe("a run", () => {
   ])("decides the status: %s", async (_name, records, expected) => {
     const fake = createFetchFake();
     fake.stream("POST", RUNS, runBody(records));
-    const result = await clientOf(fake).run({ input: "go" });
+    const result = await clientOf(fake).run({ input: "go", sessionId: SID });
     expect({ status: result.status, ...(result.error ? { error: result.error } : {}) }).toEqual(
       expected,
     );
+  });
+
+  it("keeps the text of a Request that did not complete out of the answer", async () => {
+    const fake = createFetchFake();
+    fake.stream(
+      "POST",
+      RUNS,
+      runBody([
+        taskBegin(),
+        userText("go"),
+        requestBegin(),
+        assistantText("Half an ans"),
+        requestEnd("retryable", { error_code: "output_truncated", retry_in_ms: 0 }),
+        requestBegin(),
+        assistantText("The answer."),
+        requestEnd(),
+        requestBegin(),
+        assistantText("Interrupted mid-"),
+        requestEnd("aborted"),
+        abort(),
+        taskEnd(),
+      ]),
+    );
+    const result = await clientOf(fake).run({ input: "go", sessionId: SID });
+    expect(result.status).toBe("aborted");
+    expect(result.text).toBe("The answer.");
   });
 
   it("keeps a summary and a subagent's text out of the answer, and counts every request's usage", async () => {
@@ -244,7 +335,7 @@ describe("a run", () => {
         usage(counts(3, 30), counts(3, 30)),
         requestEnd(),
         requestBegin(child),
-        assistantText("child says", "completed", child),
+        assistantText("child says", child),
         usage(counts(2, 20), counts(2, 20), child),
         requestEnd("completed", {}, child),
         compactionBegin(),
@@ -260,7 +351,7 @@ describe("a run", () => {
         taskEnd(),
       ]),
     );
-    const result = await clientOf(fake).run({ input: "go" });
+    const result = await clientOf(fake).run({ input: "go", sessionId: SID });
     expect(result.text).toBe("First.\n\nSecond.");
     expect(result.usage).toEqual(counts(10, 100));
     expect(result.sessionUsage).toEqual(counts(8, 80));
@@ -295,10 +386,18 @@ describe("a run that fails", () => {
     await expect(run.result()).rejects.toBeInstanceOf(AmspStreamError);
   });
 
+  it("rejects a new Session's stream that reaches [DONE] without its session_meta", async () => {
+    const fake = createFetchFake();
+    fake.stream("POST", RUNS, runBody([taskBegin(), userText("go"), taskEnd()]));
+    const run = clientOf(fake).stream({ input: "go" });
+    await expect(run.result()).rejects.toBeInstanceOf(AmspStreamError);
+    await expect(run.session).rejects.toBeInstanceOf(AmspStreamError);
+  });
+
   it("rejects a connection that breaks mid-stream", async () => {
     const fake = createFetchFake();
     fake.stream("POST", RUNS, [
-      hello(SID),
+      ...opening(),
       frame(taskBegin(), "ep-1"),
       { fail: new TypeError("socket hang up") },
     ]);
@@ -313,7 +412,7 @@ describe("a run that fails", () => {
 
   it("rejects with the signal's reason and closes the connection when the caller aborts", async () => {
     const fake = createFetchFake();
-    const served = fake.stream("POST", RUNS, [hello(SID), frame(taskBegin(), "ep-1"), never()]);
+    const served = fake.stream("POST", RUNS, [...opening(), frame(taskBegin(), "ep-1"), never()]);
     const controller = new AbortController();
     const run = clientOf(fake).stream({ input: "x", signal: controller.signal });
     await run.session;
@@ -326,7 +425,7 @@ describe("a run that fails", () => {
     const fake = createFetchFake();
     fake.empty("POST", `/sessions/${SID}/abort`, 202);
     fake.stream("POST", RUNS, [
-      hello(SID),
+      ...opening(),
       frame(taskBegin(), "ep-1"),
       () => fake.requested("POST", `/sessions/${SID}/abort`),
       frame(abort(), "ep-2"),
@@ -352,9 +451,9 @@ describe("approvals", () => {
     fake.json("GET", APPROVALS, 200, { approvals: [pending("call_1", ["child-1"])] });
     fake.empty("POST", answerPath("call_1"), 204);
     fake.stream("POST", RUNS, [
-      hello(SID),
+      ...opening(),
       frame(taskBegin(), "ep-1"),
-      frame(toolCall("call_1", '{"cmd":"ls"}', "completed", ["child-1"]), "ep-2"),
+      frame(toolCall("call_1", '{"cmd":"ls"}', ["child-1"]), "ep-2"),
       () => fake.requested("POST", answerPath("call_1")),
       frame(decision("call_1", "allow", ["child-1"]), "ep-3"),
       frame(toolOutput("call_1", "a.txt", ["child-1"]), "ep-4"),
@@ -381,7 +480,7 @@ describe("approvals", () => {
     const fake = createFetchFake();
     fake.json("GET", APPROVALS, 200, { approvals: [] }, never());
     fake.stream("POST", RUNS, [
-      hello(SID),
+      ...opening(),
       frame(taskBegin(), "ep-1"),
       frame(call("call_1"), "ep-2"),
       () => fake.requested("GET", APPROVALS),
@@ -410,7 +509,7 @@ describe("approvals", () => {
     fake.json("GET", APPROVALS, 200, { approvals: [pending("call_1")] });
     fake.empty("POST", answerPath("call_1"), 204);
     fake.stream("POST", RUNS, [
-      hello(SID),
+      ...opening(),
       frame(taskBegin(), "ep-1"),
       frame(call("call_1"), "ep-2"),
       () => fake.requested("POST", answerPath("call_1")),
@@ -424,15 +523,37 @@ describe("approvals", () => {
     });
   });
 
-  it("opens no look for a call cut short", async () => {
+  it("closes the open look when the call's Request ends without completing", async () => {
+    // A call the stream cut short is written whole with the arguments that arrived; its Request
+    // then ends without completing, so it was never dispatched and no decision follows it.
     const fake = createFetchFake();
-    fake.stream(
-      "POST",
-      RUNS,
-      runBody([taskBegin(), toolCall("call_1", '{"cmd":', "aborted"), abort(), taskEnd()]),
+    fake.json("GET", APPROVALS, 200, { approvals: [] }, never());
+    const lookClosed = () =>
+      new Promise<void>((resolve) => {
+        const signal = fake.calls.find((c) => c.path === APPROVALS)!.signal!;
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    fake.stream("POST", RUNS, [
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      frame(partialToolCall("call_1", "start"), "ep-2"),
+      frame(partialToolCall("call_1", "delta", '{"cmd":'), "ep-3"),
+      frame(partialToolCall("call_1", "stop"), "ep-4"),
+      frame(toolCall("call_1", '{"cmd":'), "ep-5"),
+      () => fake.requested("GET", APPROVALS),
+      frame(requestEnd("aborted"), "ep-6"),
+      lookClosed,
+      frame(abort(), "ep-7"),
+      frame(taskEnd(), "ep-8"),
+      DONE,
+    ]);
+    const result = await clientOf(fake).run({ input: "x", onApproval: () => "allow" });
+    expect(result.status).toBe("aborted");
+    expect(fake.calls.filter((c) => c.path === APPROVALS)).toHaveLength(1);
+    expect(fake.calls.some((c) => c.method === "POST" && c.path.includes("/approvals/"))).toBe(
+      false,
     );
-    await clientOf(fake).run({ input: "x", onApproval: () => "allow" });
-    expect(fake.calls.some((c) => c.path === APPROVALS)).toBe(false);
   });
 
   it("goes on when someone else answered first", async () => {
@@ -442,7 +563,7 @@ describe("approvals", () => {
       error: { code: "approval_not_found", message: "Already decided." },
     });
     fake.stream("POST", RUNS, [
-      hello(SID),
+      ...opening(),
       frame(taskBegin(), "ep-1"),
       frame(call("call_1"), "ep-2"),
       () => fake.requested("POST", answerPath("call_1")),
@@ -462,7 +583,7 @@ describe("approvals", () => {
     fake.empty("POST", answerPath("call_1"), 204);
     const human = gate();
     fake.stream("POST", RUNS, [
-      hello(SID),
+      ...opening(),
       frame(taskBegin(), "ep-1"),
       frame(call("call_1"), "ep-2"),
       () => fake.requested("POST", answerPath("call_1")),

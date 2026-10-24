@@ -17,8 +17,10 @@
  *   (history is served by the messages endpoint) — it only sends the initial events the
  *   caller supplied (pending approvals / hello). With a Last-Event-ID that hits the buffer,
  *   replay resumes from there; on a miss, `resync_required` is sent first, then the
- *   connection continues. A page cannot set headers on an EventSource it opens itself, so
- *   the id may come as the `lastEventId` query parameter instead; the header wins.
+ *   connection continues. An AMSP stream answers a miss before it starts instead: an HTTP
+ *   409 `resync_required`, and no stream. A page cannot set headers on an EventSource it
+ *   opens itself, so the id may come as the `lastEventId` query parameter instead; the
+ *   header wins.
  * - Revocation: a stream is authorised at connect and never again by the request path, so
  *   an authenticated route hands over {@link SseRevocation} — the registry that can end
  *   this stream from outside, and the check the heartbeat runs on it.
@@ -28,6 +30,7 @@ import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import type { ServerEvent } from "../api/types.js";
+import { HttpError } from "./errors.js";
 import type { Channel, ChannelEvent, ChannelListener } from "../runtime/channel.js";
 import type { LiveStreams } from "../auth/live-streams.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -69,15 +72,23 @@ export interface SseEndpointOptions {
   /**
    * Write the channel as AMSP (amsp/session-stream.ts): its records and the `ping` beat only.
    * A channel event with a name — the Web App's `server_event` — is never written, and a
-   * `Last-Event-ID` the buffer no longer holds is answered with `event: resync_required` /
-   * `data: {}`, id-less like the beat, instead of the `server_event` the internal stream writes.
-   * Initial events and the heartbeat event do not apply.
+   * `Last-Event-ID` the buffer no longer holds (evicted, or of an epoch before a restart) is
+   * refused before the stream starts, with {@link resyncRequired}, instead of the `server_event`
+   * the internal stream writes. Initial events and the heartbeat event do not apply.
    */
   amsp?: boolean;
 }
 
-/** AMSP's resync frame: named, id-less, so it moves no cursor and is never replayed. */
-const AMSP_RESYNC = { event: "resync_required", data: "{}" } as const;
+/**
+ * The answer to an AMSP resume the buffer cannot serve: the reader reads the history again and
+ * opens the stream without an id.
+ */
+export const resyncRequired = (): HttpError =>
+  new HttpError(
+    409,
+    "resync_required",
+    "The id to resume from has left the server's buffer: read the history, then open the stream without it.",
+  );
 
 /**
  * The revocation wiring an authenticated SSE route hands {@link sseEndpoint}. One
@@ -114,13 +125,18 @@ export function sseEndpoint(
   channel: StreamedChannel,
   opts: SseEndpointOptions = {},
 ): Response {
+  // The header wins: the browser sets it on its own reconnects, and it is newer than the id
+  // the page wrote into the URL when it opened this EventSource.
+  const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("lastEventId");
+  // AMSP refuses a resume it cannot serve while it can still answer with a status: once the
+  // stream has started, only its frames are left.
+  if (opts.amsp === true && lastEventId !== undefined && !channel.replayAfter(lastEventId).hit) {
+    throw resyncRequired();
+  }
   // A stream the socket transported is answered directly, as the frames it already are
   // (socket/stream-answer.ts); an HTTP reader gets the SSE text below, as ever.
   const answered = answerOf(c.req.raw);
   if (answered !== null) return channelAnswered(c, channel, opts, answered);
-  // The header wins: the browser sets it on its own reconnects, and it is newer than the id
-  // the page wrote into the URL when it opened this EventSource.
-  const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("lastEventId");
   const revocation = opts.revocation;
   c.header("X-Accel-Buffering", "no");
   c.header("Cache-Control", "no-cache");
@@ -175,7 +191,10 @@ export function sseEndpoint(
         const replay = channel.replayAfter(lastEventId);
         if (!replay.hit) {
           if (opts.amsp === true) {
-            enqueue(() => stream.writeSSE(AMSP_RESYNC));
+            // Checked before the stream started; should the buffer have moved since, end the
+            // stream: the reader reopens it with the same id and is answered the 409.
+            finish();
+            return;
           } else {
             const resync: ServerEvent = { type: "resync_required" };
             channel.sendTo(listener, resync, "server_event");
@@ -281,7 +300,9 @@ function channelAnswered(
       const replay = channel.replayAfter(lastEventId);
       if (!replay.hit) {
         if (opts.amsp === true) {
-          answer.event(AMSP_RESYNC.event, null, AMSP_RESYNC.data);
+          // As on HTTP: refused before the answer started; a buffer that moved since ends it.
+          finish();
+          return new Response(null, { status: 200 });
         } else {
           const resync: ServerEvent = { type: "resync_required" };
           channel.sendTo(listener, resync, "server_event");

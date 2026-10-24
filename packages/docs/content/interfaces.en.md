@@ -37,8 +37,8 @@ All types are exported by `@prismshadow/penguin-core`. The source lives in `pack
 
 Every interface follows two rules:
 
-- **Never throw into the engine.** Errors become messages or return values that carry a `stop_reason`.
-- **Follow the streaming discipline.** A stream goes `start → delta → stop`, and the complete message follows immediately.
+- **Never throw into the engine.** Errors become messages (a tool result's `status`) or return values (`LLMOutcome.status`, recorded as `request_end.status`).
+- **Follow the streaming discipline.** A stream goes `start → delta → stop`, and the complete message follows immediately — for an item an interruption cut off too, holding what arrived.
 
 ### Message plane and control plane
 
@@ -58,6 +58,7 @@ What travels alongside it is the **control plane**. It is deliberately not messa
 | `thinkingLevel` | `GenerativeModelParameters` | A per-request parameter, like a timeout: it says how to run the request, not what to say. The engine holds the live value as its own state (`ContextEngine.setThinkingLevel`, fed by the `Session.thinkingLevel` setter, the soft-limited knob). When a request omits it, the LLM object's construction default applies, which is the context's opening level. `RunOptions` carries no level. |
 | `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes a `tool_call` record. The answer is a three-value enum, which the engine turns into an `approval_decision` message as soon as it has it. |
 | `LLMOutcome` | `streamGenerate`'s generator return value | The request's terminal state, which the engine's retry and reconnect policy branches on. A generator's return value is guaranteed by the type system; "the last message yielded must be a `request_end`" could only ever be a runtime convention. The engine writes that `request_end` from it. |
+| `markInterruptedToolCall` | a mark on a yielded `tool_call` record | A tool call the implementation closed because its request ended early, held in the process only. The record is written like any other; the mark tells the engine not to dispatch it. Readers of the stream or the Trace read the same fact from the Request's `request_end.status`. |
 
 Everything else that is not a record belongs to the Environment's management plane, described under [EnvironmentInterface](#environmentinterface).
 
@@ -117,7 +118,7 @@ The generator yields `partial_*` fragments and complete messages, and emits Toke
 interface LLMOutcome {
   status: StopReason;      // completed | aborted | retryable | fatal
   errorCode?: ErrorCode;   // classified cause on a non-completed failure; carried onto request_end as error_code
-  errorMessage?: string;   // failure detail: on fatal, and on retryable when a concrete error was caught;
+  errorMessage?: string;   // failure detail: on fatal, and on retryable when a concrete error was caught or the response was cut off;
                            // carried onto request_end as error_message, so the errors panel shows
                            // the real reason behind a retried request
 }
@@ -126,7 +127,7 @@ interface LLMOutcome {
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | Finished normally (`token_usage` already emitted) | Proceed |
-| `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed or truncated responses, and anything unclassifiable | Reconnect within the run on the backoff ladder |
+| `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, and anything unclassifiable. A response that arrived whole but stopped at its output cap is one too, coded `output_truncated`: the implementation removes the turn from its stateful history, and still emits its `token_usage` (it was billed) | Reconnect within the run on the backoff ladder |
 | `fatal` | A failure no retry can fix: a provider 4xx rejection (408 and 429 excluded), rejected credentials, or a deterministic client-side rejection before any network I/O (for example, fast mode on a model without a fast tier) | Stop the run and surface `errorMessage` |
 | `aborted` | User interrupt | Stop and hand back to the user |
 
@@ -138,6 +139,7 @@ Implementation constraints:
 
 - Never throw.
 - Do no internal retries. Reconnecting is the engine's job; see [The Agent Loop](/agent-loop).
+- Close every item. One still streaming when the request is interrupted, fails or is cut off gets its `stop` and a complete message holding what arrived. A tool call closed this way carries the raw argument text and goes through `markInterruptedToolCall` (exported by core), so the engine never dispatches it.
 
 ### GenerativeModelConfig
 
@@ -171,7 +173,8 @@ interface GenerativeModelConfig {
 
 - A `.delta` becomes a `partial_*` delta, behind a `start` on the item's first fragment.
 - A `.done` becomes the partial `stop` and the complete message (thinking, text or tool call), read off the `.done` item alone.
-- The `stop` event carries the request's Token usage and finish reason. A response that finishes on `length` (cut off at the output cap) or `unknown` ends its last item `fatal`; a stream that ends without a `stop` event is `retryable`.
+- The `stop` event carries the request's Token usage and finish reason. A response that finishes on `length` (cut off at the output cap) ends `retryable` with `errorCode` `output_truncated`, and one that finishes on `unknown` ends `retryable` coded `malformed`; either is taken back out of the stateful history and still metered. A stream that ends without a `stop` event is `retryable`.
+- An item still streaming when the request ends early is closed with what had arrived; a tool call closed this way is marked with `markInterruptedToolCall`.
 
 **Thought summaries.** Every request asks the gateway for thought summaries (`thinking_summary`). No provider rejects the flag: the gateway drops it for families without such a feature, and the Claude family reads it as summarized thinking. Besides letting the reader watch the model reason, it keeps events arriving during a reasoning phase.
 
@@ -348,7 +351,7 @@ interface ToolDefinitionConfig {
 }
 ```
 
-A tool emits only content deltas. The Environment handles framing, timeouts, truncation, `stop_reason` priority and turning errors into messages centrally, so a tool author can hardly break the protocol.
+A tool emits only content deltas. The Environment handles framing, timeouts, truncation, the result's `status` priority and turning errors into messages centrally, so a tool author can hardly break the protocol.
 
 Adding a tool is registration: add one `name → factory` entry to `BUILTIN_TOOL_FACTORIES` (`packages/core/src/environment/tools/registry.ts`). For each tool's parameters and behavior, see [Tools & Approval](/tools).
 

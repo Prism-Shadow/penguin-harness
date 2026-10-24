@@ -2409,7 +2409,9 @@ export function isProbeContent(msg: AmspRecord): boolean {
 }
 
 /**
- * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
+ * Probe verdict from the terminal LLM outcome. `completed` always passes, and so does a
+ * response cut off at its output cap (`output_truncated`: a whole response the probe's tiny
+ * max_tokens cut off). A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
  * model that spends the probe's tiny max_tokens entirely on thinking (finish_reason=length ->
  * MMSP's EmptyResponseError, a `retryable` outcome that still streamed content) — the
@@ -2421,7 +2423,10 @@ export function probeVerdict(
   outcome: LLMOutcome,
   sawContent: boolean,
 ): { ok: true } | { ok: false; message: string } {
-  if (outcome.status === "completed") return { ok: true };
+  // A response cut at the probe's tiny cap is a whole answer: the endpoint answered.
+  if (outcome.status === "completed" || outcome.errorCode === "output_truncated") {
+    return { ok: true };
+  }
   if (outcome.status === "retryable" && sawContent) return { ok: true };
   return { ok: false, message: outcomeDetail(outcome) };
 }

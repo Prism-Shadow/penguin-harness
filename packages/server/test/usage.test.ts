@@ -27,7 +27,7 @@
  *   covered through its route in errors.test.ts).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { sessionMeta, tokenUsage, withOrigin } from "@prismshadow/penguin-core";
+import { requestEnd, sessionMeta, tokenUsage, withOrigin } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { ORIGIN_MODELS_MAX, UsageRecorder } from "../src/runtime/usage-recorder.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
@@ -86,6 +86,25 @@ describe("usage-recorder", () => {
     expect(row.model_id).toBe("main-model");
     expect(row.total).toBe(115); // taken from request.total
     expect(row.cache_read).toBe(100);
+  });
+
+  it("a request cut off at its output cap is metered by its token_usage and adds no failure row; a failed one adds a 0-token row", async () => {
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    await rec.record(CTX, tokenUsage(counts(500), counts(500)));
+    await rec.record(
+      CTX,
+      requestEnd("retryable", {
+        errorCode: "output_truncated",
+        errorMessage: "cut",
+        retryInMs: 2000,
+      }),
+    );
+    await rec.record(CTX, requestEnd("retryable", { errorCode: "network", retryInMs: 2000 }));
+    const rows = db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all();
+    expect(rows).toEqual([
+      { status: "completed", total: 500 },
+      { status: "retryable", total: 0 },
+    ]);
   });
 
   it("a sub-session's session_meta registers the origin→model mapping; token_usage is attributed via it", async () => {

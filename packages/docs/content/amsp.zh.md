@@ -3,7 +3,7 @@ title: AMSP
 description: Agent Message Stream Protocol：一个 Session 的记录经 SSE 上线，包括控制帧、运行流与 Session 流、待决审批资源、运行结果的读法，以及每条记录取代的 v1 旧事件。
 ---
 
-AMSP（Agent Message Stream Protocol）是 [Agent API](/agent-api) 的传输格式。它流式传输一个 Session：该 Session 的记录，与 Trace 中保存的完全相同；消息产出过程中流式发出的 `partial_*` 分片；以及围绕它们的四个控制帧。线上不做任何翻译：Trace 的每一行都是一条合法的 AMSP 记录，每种载荷的字段都以 [AMSP 记录](/amsp-records)页面的说明为准。
+AMSP（Agent Message Stream Protocol）是 [Agent API](/agent-api) 的传输格式。它流式传输一个 Session：该 Session 的记录，与 Trace 中保存的完全相同；消息产出过程中流式发出的 `partial_*` 分片；以及围绕它们的心跳 `ping`，运行流还以 `data: [DONE]` 收尾。线上不做任何翻译：Trace 的每一行都是一条合法的 AMSP 记录，每种载荷的字段都以 [AMSP 记录](/amsp-records)页面的说明为准。
 
 Web App 的服务器事件（运行状态、审批请求、标题、goal 进度等）不属于 AMSP。程序需要的信息从记录和两个资源中读取：Session 本身 `GET …/sessions/:sessionId`，给出状态与模型；它的待决审批 `GET …/sessions/:sessionId/approvals`。
 
@@ -46,7 +46,7 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 
 主 Session 的 `session_meta` 在写入时上流，且只上流一次。写入发生在三个时刻：
 
-- **新 Session 的第一条消息。** 它位于该 Session 第一个 Trace 文件的开头，先于该 Task 的 `task_begin`，所以新建 Session 的运行流在 `hello` 之后紧接着给出它。
+- **新 Session 的第一条消息。** 它位于该 Session 第一个 Trace 文件的开头，先于该 Task 的 `task_begin`，所以它是新建 Session 的运行流的第一条记录，运行流也正是凭它的 `session_id` 给出新 Session 的 id。
 - **压缩开启的新上下文。** 新文件在压缩之后第一条要写入的记录之前开出，`session_meta` 随之上流。压缩结束了上一个 Task 时，Task 记录不开新文件，下一个 Task 的 `task_begin` 已经流出，所以 `session_meta` 落在这个 `task_begin` 之后、该 Task 的输入之前。
 - **模型切换。** 切换完成时即开出新文件，这发生在两次运行之间，所以它的 `session_meta` 在 Session 流上，不在下一次运行的运行流里。
 
@@ -62,16 +62,14 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 
 | 帧 | 数据 | 何时 |
 | --- | --- | --- |
-| `event: hello` | `{"session_id", "agent"}` | 运行流的第一个事件：运行所在的 Session（新建的或延续的），以及形如 `<projectId>/<agentId>` 的 Agent |
-| `event: resync_required` | `{}` | Session 流续传所用的 `Last-Event-ID` 已被挤出服务器的缓冲。重新读取历史，再继续读这条流 |
-| `event: ping` | `{}` | 运行流上紧跟在 `hello` 之后，Session 流上紧跟在补发的记录之后，此后每 20 秒一次。它取代了早先的 `: keep-alive` 注释，浏览器从不把注释交给页面 |
+| `event: ping` | `{}` | 运行流上最先发出，Session 流上紧跟在补发的记录之后，此后每 20 秒一次。它取代了早先的 `: keep-alive` 注释，浏览器从不把注释交给页面 |
 | `data: [DONE]` | — | 运行流的最后一行，运行结束时写出 |
 
 ## 运行流
 
 `POST <Base URL>/agents/:projectId/:agentId/runs` 运行一次 Agent，并以这次运行的流作答；请求体见[运行请求](/agent-api#运行请求)。流依次为：
 
-1. `hello`，然后是 `ping`；
+1. `ping`；
 2. 新 Session 的第一条消息上，该 Session 的 `session_meta`；
 3. `task_begin`，然后是 Session 所记录的本次输入：每个文本项一条用户 `text`，其后每张图片一条 `image_url`；
 4. 本次运行的记录；
@@ -81,9 +79,6 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 新 Session 上的一次直接回答，时间戳和较长的值已省略：
 
 ```text
-event: hello
-data: {"session_id":"session-2026-10-23-10-00-00-3f9a1c2e","agent":"demo/coder"}
-
 event: ping
 data: {}
 
@@ -94,7 +89,7 @@ id: 7c41d0a2-2
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"task_begin"}}
 
 id: 7c41d0a2-4
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Say hello","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Say hello"}}
 
 id: 7c41d0a2-5
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"tool_list_ready","tools":[…]}}
@@ -103,16 +98,16 @@ id: 7c41d0a2-6
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
 
 id: 7c41d0a2-7
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"start","text":"","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"start","text":""}}
 
 id: 7c41d0a2-8
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"delta","text":"Hello!","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"delta","text":"Hello!"}}
 
 id: 7c41d0a2-9
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"stop","text":"","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"stop","text":""}}
 
 id: 7c41d0a2-10
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"assistant","text":"Hello!","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"assistant","text":"Hello!"}}
 
 id: 7c41d0a2-11
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"token_usage","session":{"cache_read":0,"cache_write":0,"output":2,"total":412},"request":{"cache_read":0,"cache_write":0,"output":2,"total":412}}}
@@ -126,6 +121,7 @@ data: {"timestamp":"…","type":"event_msg","payload":{"type":"task_end"}}
 data: [DONE]
 ```
 
+- 没有哪个帧专门给出 Session 的 id：新 Session 由它的 `session_meta`（流的第一条记录）给出，延续 Session 的运行即请求所带的 `session_id`。
 - 服务器先订阅 Session、再启动 Task，所以这次运行的内容不会漏掉。被拒绝的请求（例如会话正忙或请求体有误）在流开始之前以 JSON 作答。
 - 流从本次运行的第一条主 Session 记录开始：Session 在此之前发布的内容（例如后台子 Agent 的输出）不在这条流上。
 - Session 回到空闲时写出 `[DONE]`。响应体在它之前就结束，意味着连接断了，运行的结局未知：`GET …/sessions/:sessionId` 给出它的状态，历史给出它的记录。
@@ -139,9 +135,9 @@ data: [DONE]
 | 密钥门 | `GET /api/amsp/v1/sessions/:sessionId/stream` | 该 Agent 的密钥；Agent 允许无密钥访问时可不带。只限该 Agent 的 API 会话 |
 | Cookie 门 | `GET /api/sessions/:sessionId/amsp` | 登录 Cookie 或本机 API token，Project 授权与 Web App 相同 |
 
-两个入口用同一个处理器。Session 流跨运行跟随该 Session，也包括不是由它发起的运行：经 `POST …/sessions/:sessionId/tasks` 发起的、在 Web App 中发起的，或其他调用方发起的。它只携带记录和 `ping`：没有 `hello`，没有 `[DONE]`，订阅时也没有状态快照。流一直保持打开，直到调用方关闭它。
+两个入口用同一个处理器。Session 流跨运行跟随该 Session，也包括不是由它发起的运行：经 `POST …/sessions/:sessionId/tasks` 发起的、在 Web App 中发起的，或其他调用方发起的。它只携带记录和 `ping`：没有 `[DONE]`，订阅时也没有状态快照。流一直保持打开，直到调用方关闭它。
 
-- **续传。** 把最后见到的记录 id 作为 `Last-Event-ID` 发送；无法设置请求头时，改用查询参数 `lastEventId`，两者同在时以请求头为准。服务器为每个活跃 Session 保留有界的缓冲：id 仍在缓冲中时，先补发它之后的记录；不在时，流以 `resync_required` 开头，然后继续实时推送。
+- **续传。** 把最后见到的记录 id 作为 `Last-Event-ID` 发送；无法设置请求头时，改用查询参数 `lastEventId`，两者同在时以请求头为准。服务器为每个活跃 Session 保留有界的缓冲：id 仍在缓冲中时，先补发它之后的记录。不在时（缓冲已越过它，或服务器在此期间重启过），不开流：请求以 `409` `resync_required` 作答，错误信封与其他错误相同。此时像第一次打开那样从头开始：读取历史，并不带 id 订阅。
 - **加入。** 先订阅、再读历史，中间就不会漏掉记录：把这期间到达的记录暂存起来，在历史之后交付，并跳过历史中已有的记录。历史的 `live` 字段把两者接起来，见[历史](#历史)。客户端的 `SessionReader` 做的正是这些。
 - **死连接。** 收到过 `ping` 的流此后 50 秒毫无动静，即为死连接：关闭它，带着 `Last-Event-ID` 重新打开。
 - Web App 自己的 `GET /api/sessions/:sessionId/stream` 是另一条通道：它携带同样的记录，另外还有 Web App 的服务器事件，见[流式传输（SSE）](/server-api#流式传输sse)。
@@ -173,7 +169,7 @@ interface MessagesResponse {
 ```
 
 - 分窗读取带 `page`，其中的图片按引用下发：主 Session 记录里 PNG、JPEG、GIF 或 WebP 的 `data:` URL 会被替换为所在入口的 `…/sessions/:sessionId/trace-image?file=&ordinal=[&i=]`，由它返回图片。
-- Session 运行期间带 `live`，`before` 页除外。`cursor` 是读取历史时流的最后一个 id，`fragments` 把每条仍在流式产出的消息表示为一条 `partial_*` `start`，携带到此为止流出的全部内容。丢弃暂存的、id 不晚于 cursor（同一 epoch）的 `partial_*` 记录，以 `fragments` 代替，再交付其余记录。cursor 从不丢弃完整记录，完整记录与历史去重即可。cursor 的 epoch 与流不同时，跳过 `live`，交给随后的 resync 处理。
+- Session 运行期间带 `live`，`before` 页除外。`cursor` 是读取历史时流的最后一个 id，`fragments` 把每条仍在流式产出的消息表示为一条 `partial_*` `start`，携带到此为止流出的全部内容。丢弃暂存的、id 不晚于 cursor（同一 epoch）的 `partial_*` 记录，以 `fragments` 代替，再交付其余记录。cursor 从不丢弃完整记录，完整记录与历史去重即可。cursor 的 epoch 与流不同时，跳过 `live`，交给 `resync_required` 之后的从头开始处理。
 
 ## 审批
 
@@ -197,19 +193,18 @@ POST …/sessions/:sessionId/approvals/:toolCallId   {"decision": "allow" | "den
 `[DONE]` 只说明运行结束了，运行的情况在记录里。客户端的 `RunResult` 从主 Session 的记录（不带 `origin` 的那些）中读出它，依次判定：
 
 1. 最后一个 `task_begin` 没有 `task_end`，或没有任何 Task 开始：`fatal`，错误码 `internal`。服务器在驱动运行时出了故障。
-2. 有 `abort` 记录：`aborted`，带其错误。
-3. 最后一个非 `completed` 且不带 `retry_in_ms` 的 `request_end` 或 `compaction_end`，其后没有新的 `request_begin`：取它的状态和错误。
-4. 最后一条助手 `text` 以 `fatal` 结束（即轮次上限的提示）：`fatal`。
-5. 其余情况为 `completed`。
+2. 有 `abort` 记录：`aborted`，带其错误。达到轮次上限的 Task 也这样结束，错误码为 `max_turns`。
+3. 最后一个非 `completed` 且不带 `retry_in_ms` 的 `request_end` 或 `compaction_end`，其后没有新的 `request_begin`：取它的状态和错误。重试始终没能越过输出上限的响应，以 `retryable` 结束，错误码为 `output_truncated`。
+4. 其余情况为 `completed`。
 
 结果的其余字段：
 
-- `text`：主 Session 的助手文本，以空行连接，不含 `compaction_begin` 与 `compaction_end` 之间的内容；
+- `text`：主 Session 中以 `completed` 结束的 Request 的助手文本，以空行连接，不含 `compaction_begin` 与 `compaction_end` 之间的内容（被重试或被中断的 Request 不计入，尽管它们的文本也有记录）；
 - `usage`：全部 `token_usage.request` 之和，包括子 Agent 的；
 - `sessionUsage`：主 Session 最后一个 `token_usage.session`，没有时为 `null`；
 - `requests`：主 Session 的 `request_begin` 记录数，包括重试的尝试。
 
-自行读取流的程序，把 `hello` 和记录交给客户端的 `RunCollector`，就能得到同样的结果。
+自行读取流的程序，把记录交给客户端的 `RunCollector`（延续 Session 的运行同时给出所发送的 `session_id`），就能得到同样的结果。
 
 ## 错误
 
@@ -221,10 +216,12 @@ POST …/sessions/:sessionId/approvals/:toolCallId   {"decision": "allow" | "den
 | --- | --- |
 | `user_abort` | 运行被中止：经 `POST …/abort`、运行流的调用方断开连接，或有人在 Web App 中中止 |
 | `backoff_interrupted`、`compaction_interrupted` | 中止发生在引擎等待重试期间，或压缩期间 |
+| `max_turns` | Task 达到轮次上限；`error_message` 写明上限 |
 | `timeout` | 模型连接没有了动静 |
 | `network` | 连接中断、没有更具体错误码的供应商错误，或无法归类的故障 |
 | `rate_limited` | 供应商返回 `429`：触发限流，或配额耗尽 |
 | `malformed` | 模型响应解析失败或被截断 |
+| `output_truncated` | 模型响应停在输出上限：不提交，并会重试 |
 | `auth` | 供应商拒绝了凭据 |
 | `rejected` | 供应商明确拒绝了请求（参数、配额） |
 | `image_rejected` | 带图片的请求被供应商以 4xx 拒绝；引擎不看报文，一律视为图片被拒。图片换成一句固定说明后立即重试，供应商的报错原文由重试输入的 `[request_error]` 行携带（`retryable`，`retry_in_ms: 0`） |
@@ -246,7 +243,7 @@ data: {"type":"event_msg","payload":{"type":"request_begin","thinking_level":"me
 data: {"type":"model_msg","payload":{"type":"partial_tool_call","event_type":"start","name":"exec_command","tool_call_id":"call_1",…}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call","event_type":"delta","arguments":"{\"command\": \"ls\"}","tool_call_id":"call_1",…}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call","event_type":"stop","tool_call_id":"call_1",…}}
-data: {"type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"command\":\"ls\"}","tool_call_id":"call_1","stop_reason":"completed"}}
+data: {"type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"command\":\"ls\"}","tool_call_id":"call_1"}}
             ← caller: GET …/sessions/<id>/approvals?wait=30 → {"approvals":[{"tool_call":{…,"tool_call_id":"call_1"}}]}
             ← caller: POST …/sessions/<id>/approvals/call_1 {"decision":"allow"} → 204
 data: {"type":"event_msg","payload":{"type":"approval_decision","decision":"allow","tool_call_id":"call_1"}}
@@ -255,7 +252,7 @@ data: {"type":"event_msg","payload":{"type":"token_usage",…}}
 data: {"type":"event_msg","payload":{"type":"request_end","status":"completed"}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call_output","event_type":"delta","output":"README.md\nsrc\n","tool_call_id":"call_1",…}}
 data: {"type":"model_msg","payload":{"type":"partial_tool_call_output","event_type":"stop","tool_call_id":"call_1",…}}
-data: {"type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"README.md\nsrc\n","tool_call_id":"call_1","stop_reason":"completed"}}
+data: {"type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"README.md\nsrc\n","tool_call_id":"call_1","status":"completed"}}
 data: {"type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
 …
 ```
@@ -271,7 +268,7 @@ data: {"type":"event_msg","payload":{"type":"request_begin",…}}
 data: {"type":"model_msg","payload":{"type":"partial_text","event_type":"delta","text":"Let me",…}}
             ← caller: POST …/sessions/<id>/abort → 202
 data: {"type":"model_msg","payload":{"type":"partial_text","event_type":"stop",…}}
-data: {"type":"model_msg","payload":{"type":"text","role":"assistant","text":"Let me","stop_reason":"aborted"}}
+data: {"type":"model_msg","payload":{"type":"text","role":"assistant","text":"Let me"}}
 data: {"type":"event_msg","payload":{"type":"request_end","status":"aborted","attempt":2}}
 data: {"type":"event_msg","payload":{"type":"abort","error_code":"user_abort"}}
 data: {"type":"event_msg","payload":{"type":"task_end"}}
@@ -284,7 +281,7 @@ data: [DONE]
 
 | 旧事件 | 现在 |
 | --- | --- |
-| `run.started` | `event: hello` |
+| `run.started` | 没有对应的帧：新 Session 由它的 `session_meta` 给出，延续的 Session 即请求所带的 `session_id`，Agent 即请求所指定的 Agent |
 | `run.done` | `data: [DONE]`；状态与计数按同样的规则从记录读出（[运行的结果](#运行的结果)） |
 | `context.opened` | `session_meta` |
 | `mcp_connect.started` / `mcp_connect.done` | `mcp_connect_begin` / `mcp_connect_end` |
@@ -314,4 +311,4 @@ data: [DONE]
 
 运行是带 `Authorization` 的 POST 请求，所以请用 `fetch` 读取，不要用 `EventSource`。与服务器同源的页面可以用 `EventSource` 打开 Cookie 门的 Session 流，自行重开时把 `lastEventId` 写进 URL。按 `EventSource` 的规则读取响应体：行以 LF、CRLF 或单独的 CR 结束；空行结束一个事件；以 `:` 开头的行是注释；同一事件的多行 `data:` 以换行符连接。然后按事件名分派，运行流读到 `data: [DONE]` 时停止。
 
-`@prismshadow/amsp` 导出了其中每一步：`readSse` 把响应体的事件逐个产出为 `{event, id, data}`，`frameOf` 把一个事件分为记录、控制帧、`[DONE]` 或 AMSP 未定义的事件名，`readAmsp` 两步一起做，`RunCollector` 把一次运行的帧归并为它的结果。见[客户端参考](/agent-api#客户端参考)。
+`@prismshadow/amsp` 导出了其中每一步：`readSse` 把响应体的事件逐个产出为 `{event, id, data}`，`frameOf` 把一个事件分为记录、控制帧、`[DONE]` 或 AMSP 未定义的事件名，`readAmsp` 两步一起做，`RunCollector` 把一次运行的记录归并为它的结果。见[客户端参考](/agent-api#客户端参考)。

@@ -10,11 +10,12 @@
  *    limit of running Sessions (429) are refused before anything starts (admission.ts).
  * 4. The handler subscribes to the Session's channel BEFORE the Task starts, so nothing of the
  *    run can be published unseen; a start that fails answers JSON, and nothing is streamed.
- * 5. The stream is AMSP's run stream: `event: hello` naming the Session, then the channel's
+ * 5. The stream is AMSP's run stream: `event: ping` at once and every 20 s, the channel's
  *    records from this run's first main-Session record on — the Session's `session_meta` on its
- *    first message, its `task_begin` otherwise — each with its `id:`, `event: ping` at once and
- *    every 20 s, and `data: [DONE]` when the run is over: when the Session's state goes back to
- *    idle. The Web App's server events on the same channel are never written.
+ *    first message, its `task_begin` otherwise — each with its `id:`, and `data: [DONE]` when the
+ *    run is over: when the Session's state goes back to idle. The Web App's server events on the
+ *    same channel are never written. No frame names the Session: a new one is named by that
+ *    first `session_meta`, a continued one by the `session_id` the caller sent.
  *
  * Nothing in the stream says how the run went; its records do. A run the server could not finish
  * leaves its last `task_begin` unclosed before `[DONE]` (the manager records the failure).
@@ -116,7 +117,6 @@ function isMainRecord(evt: ChannelEvent): boolean {
 
 export async function runStream(c: Context<AmspEnv>, deps: RunStreamDeps): Promise<Response> {
   const { projectId, agentId, keyId } = c.var.amsp;
-  const agent = `${projectId}/${agentId}`;
   const body = await readJson(c);
   const sessionField = body.session_id;
   if (
@@ -185,10 +185,6 @@ export async function runStream(c: Context<AmspEnv>, deps: RunStreamDeps): Promi
       inbox.close();
     });
     try {
-      await stream.writeSSE({
-        event: "hello",
-        data: JSON.stringify({ session_id: session, agent }),
-      });
       await stream.writeSSE({ event: "ping", data: "{}" });
       /** The run's own `task_state running` has gone by: an idle after it is the run's end. */
       let running = false;

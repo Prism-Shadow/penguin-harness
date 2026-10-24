@@ -15,7 +15,7 @@ import type { AmspControl, AmspRecord } from "./types.js";
 export interface StreamHandlers {
   /** A record, with its event id (null on a record that came without one). */
   onRecord(id: string | null, record: AmspRecord): void;
-  /** A control frame: `hello`, `resync_required` or `ping`. */
+  /** A control frame: `ping`. */
   onControl(control: AmspControl): void;
   /** A named event AMSP does not define; most readers leave it out. */
   onOther?(name: string, data: string): void;

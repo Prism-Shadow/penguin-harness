@@ -50,11 +50,6 @@ export function control(name: string, data: object = {}): string {
   return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-/** The run stream's opening: `hello` naming the Session, then the first beat. */
-export function hello(sessionId: string, agent = "demo/coder"): string {
-  return control("hello", { session_id: sessionId, agent }) + control("ping");
-}
-
 export const DONE = "data: [DONE]\n\n";
 
 /** A promise the test settles by hand, to hold a stream at a point of its script. */

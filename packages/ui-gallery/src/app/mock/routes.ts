@@ -916,16 +916,9 @@ router
   })
   // Try it: the stream a real run sends, scripted (fixtures.ts), whole in one body.
   .post("/api/projects/:projectId/agents/:agentId/api/try", (ctx) =>
-    raw(
-      amspTryStream(ctx.body, {
-        agent: `${ctx.params.projectId}/${ctx.params.agentId}`,
-        lang: ctx.store.lang,
-        now: Date.now(),
-      }),
-      {
-        "content-type": "text/event-stream; charset=utf-8",
-      },
-    ),
+    raw(amspTryStream(ctx.body, { lang: ctx.store.lang, now: Date.now() }), {
+      "content-type": "text/event-stream; charset=utf-8",
+    }),
   );
 
 // ---------------------------------------------------------------------------------------------
@@ -1558,11 +1551,11 @@ function analyze(history: readonly AmspRecord[]): TraceAnalysisResponse {
       if (call) {
         const started = Date.parse(call.span.callTs);
         call.span.outputTs = message.timestamp;
-        call.span.stopReason = p.stop_reason ?? "completed";
+        call.span.status = p.status ?? "completed";
         const entry = toolCalls[call.index]!;
         entry.endTs = message.timestamp;
         entry.durationMs = ms(message) - started;
-        entry.stopReason = p.stop_reason ?? "completed";
+        entry.status = p.status ?? "completed";
         if (task) task.toolMs += ms(message) - started;
       }
     } else if (p.type === "approval_decision") {

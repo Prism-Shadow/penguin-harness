@@ -8,8 +8,9 @@
  *   holds is delivered once, and the rest follow it.
  * - Given a running Session, held fragments at or before the history's live cursor are dropped,
  *   the live snapshot takes their place, and the fragments after the cursor follow.
- * - Given `resync_required`, a reset is announced and the history is read again under the same
- *   stream; what streams after it follows.
+ * - Given a reopen the server refuses 409 `resync_required`, a reset is announced and the reader
+ *   opens as the first time: the stream without `Last-Event-ID`, then the history under it, then
+ *   what streams after.
  * - Given a stream that carried a heartbeat and then 50 s of silence, it is reopened with the
  *   last record's id as `Last-Event-ID`; a stream that ends is reopened the same way after the
  *   pause, and nothing is delivered twice.
@@ -136,31 +137,31 @@ describe("SessionReader", () => {
     reader.close();
   });
 
-  it("starts over from the history on resync_required", async () => {
+  it("starts over as on a first open when a reopen is refused resync_required", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const fake = createFetchFake();
     const first = userText("one");
     const second = assistantText("two");
     fake.json("GET", HISTORY, 200, { messages: [first] });
     fake.json("GET", HISTORY, 200, { messages: [first, second] });
-    const delivered = gate();
-    fake.stream("GET", STREAM, [
-      control("ping"),
-      () => delivered.promise,
-      control("resync_required"),
-      frame(taskEnd(), "e-9"),
-      never(),
-    ]);
+    fake.stream("GET", STREAM, [control("ping"), frame(taskBegin(), "e-1")]);
+    fake.json("GET", STREAM, 409, {
+      error: { code: "resync_required", message: "The id has left the buffer." },
+    });
+    fake.stream("GET", STREAM, [control("ping"), frame(taskEnd(), "f-1"), never()]);
     const { reader, seen, resets } = readerOf(fake);
-    reader.on("event", () => delivered.open());
-    await vi.waitFor(() => expect(seen).toHaveLength(5));
-    expect(seen).toEqual([
-      "history:text(one)",
+    await vi.waitFor(() => expect(seen).toEqual(["history:text(one)", "live:task_begin"]));
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(seen).toHaveLength(6));
+    expect(seen.slice(2)).toEqual([
       "reset",
       "history:text(one)",
       "history:text(two)",
       "live:task_end",
     ]);
     expect(resets()).toBe(1);
+    const streams = fake.calls.filter((c) => c.path === STREAM);
+    expect(streams.map((c) => c.headers.get("last-event-id"))).toEqual([null, "e-1", null]);
     reader.close();
   });
 

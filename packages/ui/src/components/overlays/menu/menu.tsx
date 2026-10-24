@@ -100,6 +100,8 @@ export interface MenuItemProps {
   role?: MenuItemRole;
   /** Layout extras on the row (a width, a margin); its look is the family's. */
   className?: string;
+  /** The row's tab order: `-1` for every row but one, where its list is a single tab stop. */
+  tabIndex?: number;
   "aria-label"?: string;
   /** ARIA the caller's container needs on the row (`aria-current` on the open one, say). */
   [aria: `aria-${string}`]: string | number | boolean | undefined;

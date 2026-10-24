@@ -16,7 +16,7 @@ export interface SseEvent {
 /**
  * What one event of an AMSP stream is:
  * - `record`: an unnamed event, its data one record envelope, with the event's id;
- * - `control`: `hello`, `resync_required` or `ping`;
+ * - `control`: `ping`;
  * - `done`: `data: [DONE]`, the end of a run stream;
  * - `other`: a named event AMSP does not define. A host may add its own (the Web App's internal
  *   channel carries `server_event`); a reader ignores them.
@@ -121,7 +121,7 @@ export async function* readSse(
   }
 }
 
-const CONTROL_KINDS = new Set(["hello", "resync_required", "ping"]);
+const CONTROL_KINDS = new Set(["ping"]);
 
 /** Parses an event's data as JSON; anything that is not breaks the stream. */
 function json(data: string): unknown {
@@ -137,7 +137,7 @@ function json(data: string): unknown {
 /**
  * What an SSE event is to AMSP (see {@link AmspFrame}). An unnamed event whose data is not an
  * envelope — not JSON, or no outer `type` — is an {@link AmspStreamError}: the stream is not
- * AMSP's. A control frame's data is read for `hello`'s two fields and otherwise ignored.
+ * AMSP's. A control frame's data is ignored.
  */
 export function frameOf(ev: SseEvent): AmspFrame {
   if (ev.event === null || ev.event === "message") {
@@ -155,18 +155,7 @@ export function frameOf(ev: SseEvent): AmspFrame {
     return { kind: "record", id: ev.id, record: value as AmspRecord };
   }
   if (CONTROL_KINDS.has(ev.event)) {
-    if (ev.event === "hello") {
-      const hello = json(ev.data) as { session_id?: unknown; agent?: unknown } | null;
-      return {
-        kind: "control",
-        control: {
-          kind: "hello",
-          session_id: typeof hello?.session_id === "string" ? hello.session_id : "",
-          agent: typeof hello?.agent === "string" ? hello.agent : "",
-        },
-      };
-    }
-    return { kind: "control", control: { kind: ev.event as "resync_required" | "ping" } };
+    return { kind: "control", control: { kind: ev.event as AmspControl["kind"] } };
   }
   return { kind: "other", name: ev.event, data: ev.data };
 }

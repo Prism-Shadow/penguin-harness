@@ -148,7 +148,7 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
         yield delta(
           describeArgumentError(definition, args, { argument: "file_path", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       // An empty string is valid content (creates an empty file); only a missing/non-string
       // value is an argument error.
@@ -157,7 +157,7 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
         yield delta(
           describeArgumentError(definition, args, { argument: "content", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
@@ -181,10 +181,10 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
         }
         throw err;
       });
-      if (outcome.kind === "aborted") return { stopReason: "aborted" };
+      if (outcome.kind === "aborted") return { status: "aborted" };
       if (outcome.kind === "fatal") {
         yield delta(outcome.text);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const { existed, previous } = outcome;
 

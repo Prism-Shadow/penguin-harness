@@ -165,12 +165,12 @@ The AMSP record is at once the SDK's external interface, the Trace's on-disk for
 
 ### Errors converge into messages
 
-The LLM and the Environment never throw into the engine. Their results carry a four-value `stop_reason`, and the concrete cause rides on `error_code` and `error_message`:
+The LLM and the Environment never throw into the engine. A Request's end is recorded as `request_end.status`, a tool result carries its own `status` (`completed`, `aborted` for a call denied or interrupted while it ran, `fatal`), and the concrete cause rides on `error_code` and `error_message`:
 
-| `stop_reason` | Meaning and engine behavior |
+| `request_end.status` | Meaning and engine behavior |
 | --- | --- |
 | `completed` | Finished normally; the loop continues or the Task ends |
-| `retryable` | An LLM failure worth retrying: the engine reconnects within the run, up to 5 consecutive fruitless retries, on an exponential backoff with a ceiling |
+| `retryable` | An LLM failure worth retrying, a response cut off at its output cap (`output_truncated`) included: the engine reconnects within the run, up to 5 consecutive fruitless retries, on an exponential backoff with a ceiling |
 | `fatal` | A definitive failure, such as a rejected credential: the run stops at once, because no retry can make it work |
 | `aborted` | A user interruption |
 

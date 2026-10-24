@@ -2,14 +2,14 @@
  * AMSP (Agent Message Stream Protocol): the wire types.
  *
  * AMSP is the stream of one Session: its records as the Trace holds them, plus the
- * `partial_*` fragments streamed while a message is produced, and four control frames. A stream
+ * `partial_*` fragments streamed while a message is produced, and control frames. A stream
  * is `text/event-stream`; every event is one of two kinds:
  *
  * - a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` the record
  *   envelope `{timestamp, type, payload, origin?}` — {@link AmspRecord}, the payloads snake_case
  *   exactly as the Trace stores them;
- * - a **control frame**: a named event without an `id:` — `hello`, `resync_required` or `ping`
- *   ({@link AmspControl}) — or the run stream's last line, `data: [DONE]`.
+ * - a **control frame**: a named event without an `id:` — `ping` ({@link AmspControl}) — or the
+ *   run stream's last line, `data: [DONE]`.
  *
  * A reader dispatches on the SSE event name: unnamed is a record, a name it does not know is
  * ignored, and so is a `payload.type` it does not know. Within `/v1` the protocol only grows:
@@ -23,14 +23,13 @@ import type { MessageOrigin, AmspRecord, ToolCallPayload } from "./records/index
 export * from "./records/index.js";
 
 /**
- * A control frame. `hello` opens a run stream and names its Session; `resync_required` says the
- * `Last-Event-ID` the stream was opened with is no longer in the server's buffer, so the reader
- * reads the history again and carries on with this stream; `ping` is the 20-second heartbeat.
+ * A control frame. `ping` opens a run stream, follows any replay on a Session stream, and is the
+ * 20-second heartbeat. No frame names a run's Session: a new Session's is its `session_meta`, the
+ * run stream's first record, and a continued one's is the `session_id` the request sent. Nor
+ * does a frame say a resume failed: a `Last-Event-ID` the server's buffer no longer holds is
+ * refused before the stream starts, 409 `resync_required`.
  */
-export type AmspControl =
-  | { kind: "hello"; session_id: string; agent: string }
-  | { kind: "resync_required" }
-  | { kind: "ping" };
+export type AmspControl = { kind: "ping" };
 
 /** A Session's run state, as `GET …/sessions/:id` reports it. */
 export type SessionStatus = "idle" | "running" | "compacting";

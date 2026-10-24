@@ -14,12 +14,12 @@
  * 4. deliver the held records;
  * 5. skipping any complete record the history already delivered (the stream can publish a record
  *    a moment before the Trace has it, so both can hold it);
- * 6. on `resync_required` — the id it resumed from has left the server's buffer — start over
- *    from the history, after a `reset`;
- * 7. once the stream has carried a heartbeat, 50 s without any frame means the connection died
+ * 6. once the stream has carried a heartbeat, 50 s without any frame means the connection died
  *    without saying so: it is closed and opened again with `Last-Event-ID`, and the server
- *    replays what was missed (or answers `resync_required`). A stream that ends is reopened the
- *    same way.
+ *    replays what was missed. A stream that ends is reopened the same way;
+ * 7. a reopen the server refuses 409 `resync_required` — the id it resumed from has left the
+ *    server's buffer, or the server restarted — starts over as a first open does: a `reset`,
+ *    then the stream without `Last-Event-ID` and the history read under it.
  *
  * There is no approvals table: pending approvals are a resource (`…/approvals`), not on the
  * stream. A record whose `payload.type` the caller does not know is delivered like any other.
@@ -27,6 +27,10 @@
 import { AmspHttpError } from "./errors.js";
 import type { StreamEnd, Transport } from "./transport.js";
 import type { AmspControl, AmspRecord, HistoryRecord, MessagesResponse } from "./types.js";
+
+/** The server's answer to a resume its buffer cannot serve: start over from the history. */
+const isResyncRequired = (err: unknown): boolean =>
+  err instanceof AmspHttpError && err.status === 409 && err.code === "resync_required";
 
 /** One record, as the reader delivers it: from the history read, or from the stream. */
 export interface ReaderEvent {
@@ -209,13 +213,16 @@ export class SessionReader {
       onControl: (control: AmspControl) => {
         if (connection.signal.aborted) return;
         if (control.kind === "ping") sawPing = true;
-        if (control.kind === "resync_required") this.#resync();
         spoke();
       },
     });
     done.then(
       (_end: StreamEnd) => this.#reopen(connection),
       (err: unknown) => {
+        if (!connection.signal.aborted && isResyncRequired(err)) {
+          this.#startOver(connection);
+          return;
+        }
         // A refusal no retry will change (the Session is gone, the key was revoked) ends it.
         if (
           !connection.signal.aborted &&
@@ -258,9 +265,14 @@ export class SessionReader {
     for (const listener of this.#listeners.reset) listener();
   }
 
-  /** `resync_required`: the stream carries on, the history is read again under it. */
-  #resync(): void {
+  /** A resume refused `resync_required`: what was delivered is void; open as the first time. */
+  #startOver(connection: AbortController): void {
+    if (this.#closed || this.#connection !== connection) return;
+    if (this.#watchdog !== null) clearTimeout(this.#watchdog);
+    this.#watchdog = null;
+    this.#lastId = null;
     this.#reset();
+    this.#connect(true);
   }
 
   async #loadHistory(): Promise<void> {
@@ -307,7 +319,8 @@ export class SessionReader {
   /**
    * The held records with the live snapshot woven in: what came at or before the cursor without
    * its fragments, then the snapshot, then the rest. A cursor of another epoch than the stream's
-   * (the server restarted between the two) is left out; the resync that follows covers it.
+   * (the server restarted between the two) is left out; the reopen that follows, refused
+   * `resync_required`, covers it.
    */
   #weave(held: Held[], live: NonNullable<MessagesResponse["live"]>): Held[] {
     const cursor = parseId(live.cursor);

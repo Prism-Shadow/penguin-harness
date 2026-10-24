@@ -46,6 +46,7 @@ import type {
   TokenUsagePayload,
   ToolCallOutputPayload,
   ToolListReadyPayload,
+  ToolStatus,
   ToolCallPayload,
   ToolDefinition,
   ThinkingLevelName,
@@ -76,8 +77,8 @@ export function sessionMeta(payload: SessionMetaPayload): SessionMetaMessage {
  * Provider-fidelity payload (opaque, see `Fidelity` in types.ts): kept as-is and restored
  * verbatim on replay. Builder convention: positional-argument-style builders take it as a
  * trailing `fidelity` object; object-argument-style builders (toolCall) carry it in the
- * parameter object alongside `stopReason`. An empty object is treated as absent — the
- * payload field is only set when the fidelity carries at least one key.
+ * parameter object. An empty object is treated as absent — the payload field is only set when
+ * the fidelity carries at least one key.
  */
 function fidelityProp(fidelity?: Fidelity): { fidelity?: Fidelity } {
   return fidelity !== undefined && Object.keys(fidelity).length > 0 ? { fidelity } : {};
@@ -86,16 +87,9 @@ function fidelityProp(fidelity?: Fidelity): { fidelity?: Fidelity } {
 export function textMessage(
   role: Role,
   text: string,
-  stopReason: StopReason = "completed",
   fidelity?: Fidelity,
 ): AmspRecord<TextPayload> {
-  return model({
-    type: "text",
-    role,
-    text,
-    stop_reason: stopReason,
-    ...fidelityProp(fidelity),
-  });
+  return model({ type: "text", role, text, ...fidelityProp(fidelity) });
 }
 
 /** User-role text. `sender` marks non-human origins (the parent agent's subagent prompt, a harness or server injection); omitted = the human user, and the field stays absent. */
@@ -105,19 +99,11 @@ export const userText = (text: string, sender?: TextSender): AmspRecord<TextPayl
   return msg;
 };
 
-export const assistantText = (
-  text: string,
-  stopReason: StopReason = "completed",
-  fidelity?: Fidelity,
-): AmspRecord<TextPayload> => textMessage("assistant", text, stopReason, fidelity);
+export const assistantText = (text: string, fidelity?: Fidelity): AmspRecord<TextPayload> =>
+  textMessage("assistant", text, fidelity);
 
 export function imageUrlMessage(imageUrl: string): AmspRecord<ImageUrlPayload> {
-  return model({
-    type: "image_url",
-    role: "user",
-    image_url: imageUrl,
-    stop_reason: "completed",
-  });
+  return model({ type: "image_url", role: "user", image_url: imageUrl });
 }
 
 export function inlineData(
@@ -131,23 +117,15 @@ export function inlineData(
     role,
     data,
     mime_type: mimeType,
-    stop_reason: "completed",
     ...fidelityProp(fidelity),
   });
 }
 
 export function thinkingMessage(
   thinking: string,
-  stopReason: StopReason = "completed",
   fidelity?: Fidelity,
 ): AmspRecord<ThinkingPayload> {
-  return model({
-    type: "thinking",
-    role: "assistant",
-    thinking,
-    stop_reason: stopReason,
-    ...fidelityProp(fidelity),
-  });
+  return model({ type: "thinking", role: "assistant", thinking, ...fidelityProp(fidelity) });
 }
 
 export function inlineThinking(
@@ -160,7 +138,6 @@ export function inlineThinking(
     role: "assistant",
     data,
     mime_type: mimeType,
-    stop_reason: "completed",
     ...fidelityProp(fidelity),
   });
 }
@@ -169,7 +146,6 @@ export function toolCall(args: {
   name: string;
   arguments: string;
   toolCallId: string;
-  stopReason?: StopReason;
   fidelity?: Fidelity;
 }): AmspRecord<ToolCallPayload> {
   return model({
@@ -178,15 +154,15 @@ export function toolCall(args: {
     name: args.name,
     arguments: args.arguments,
     tool_call_id: args.toolCallId,
-    stop_reason: args.stopReason ?? "completed",
     ...fidelityProp(args.fidelity),
   });
 }
 
+/** A complete tool result; `status` says what it is (see ToolStatus) and every caller names it. */
 export function toolCallOutput(args: {
   output: string;
   toolCallId: string;
-  stopReason?: StopReason;
+  status: ToolStatus;
   /** Images carried by the tool output (array of data URLs); images aren't incremental — a single delta carries the whole set in the streaming path, and the complete message carries them too. */
   images?: string[];
 }): AmspRecord<ToolCallOutputPayload> {
@@ -196,38 +172,21 @@ export function toolCallOutput(args: {
     output: args.output,
     ...(args.images !== undefined && args.images.length > 0 ? { images: args.images } : {}),
     tool_call_id: args.toolCallId,
-    stop_reason: args.stopReason ?? "completed",
+    status: args.status,
   });
 }
 
 // Streaming partial_* model_msg -------------------------------------------------
 
-export function partialText(
-  eventType: StreamEventType,
-  text = "",
-  stopReason: StopReason = "completed",
-): AmspRecord<PartialTextPayload> {
-  return model({
-    type: "partial_text",
-    role: "assistant",
-    event_type: eventType,
-    text,
-    stop_reason: stopReason,
-  });
+export function partialText(eventType: StreamEventType, text = ""): AmspRecord<PartialTextPayload> {
+  return model({ type: "partial_text", role: "assistant", event_type: eventType, text });
 }
 
 export function partialThinking(
   eventType: StreamEventType,
   thinking = "",
-  stopReason: StopReason = "completed",
 ): AmspRecord<PartialThinkingPayload> {
-  return model({
-    type: "partial_thinking",
-    role: "assistant",
-    event_type: eventType,
-    thinking,
-    stop_reason: stopReason,
-  });
+  return model({ type: "partial_thinking", role: "assistant", event_type: eventType, thinking });
 }
 
 export function partialToolCall(args: {
@@ -235,7 +194,6 @@ export function partialToolCall(args: {
   name: string;
   arguments?: string;
   toolCallId: string;
-  stopReason?: StopReason;
 }): AmspRecord<PartialToolCallPayload> {
   return model({
     type: "partial_tool_call",
@@ -244,7 +202,6 @@ export function partialToolCall(args: {
     name: args.name,
     arguments: args.arguments ?? "",
     tool_call_id: args.toolCallId,
-    stop_reason: args.stopReason ?? "completed",
   });
 }
 
@@ -252,7 +209,6 @@ export function partialToolCallOutput(args: {
   eventType: StreamEventType;
   output?: string;
   toolCallId: string;
-  stopReason?: StopReason;
   /** Images carried by the tool output (array of data URLs); images aren't incremental — a single delta carries the whole set. */
   images?: string[];
 }): AmspRecord<PartialToolCallOutputPayload> {
@@ -263,7 +219,6 @@ export function partialToolCallOutput(args: {
     output: args.output ?? "",
     ...(args.images !== undefined && args.images.length > 0 ? { images: args.images } : {}),
     tool_call_id: args.toolCallId,
-    stop_reason: args.stopReason ?? "completed",
   });
 }
 
@@ -276,10 +231,17 @@ export function approvalDecision(
   return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
 }
 
+/** abort event: a user interruption (its three codes), or the Task stopped at its turn cap (`max_turns`, with a line naming the cap). */
 export function abortEvent(
-  errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted" = "user_abort",
+  errorCode:
+    "user_abort" | "backoff_interrupted" | "compaction_interrupted" | "max_turns" = "user_abort",
+  errorMessage?: string,
 ): AmspRecord<AbortPayload> {
-  return event({ type: "abort", error_code: errorCode });
+  return event({
+    type: "abort",
+    error_code: errorCode,
+    ...(errorMessage !== undefined ? { error_message: errorMessage } : {}),
+  });
 }
 
 /** Task begin event: opens one Task's pair (produced by the Session; see TaskBeginPayload). */
