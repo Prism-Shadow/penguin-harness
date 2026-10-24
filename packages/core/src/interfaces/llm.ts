@@ -127,9 +127,9 @@ export interface GenerativeModelParameters {
  *     config, so a key update lets the Session continue);
  *   - `truncated`: the stream arrived whole but the provider did not report a normal finish
  *     (finish reason `length` — the output cap — or `unknown`). The attempt is not committed
- *     (no `token_usage`, removed from the stateful history) and the engine retries it on the
- *     `retryable` ladder; `errorMessage` names the finish reason. A one-shot caller reads the
- *     text that arrived, as for `completed`.
+ *     (removed from the stateful history; its `token_usage` still goes out, since it was billed)
+ *     and the engine retries it on the `retryable` ladder; `errorMessage` names the finish
+ *     reason. A one-shot caller reads the text that arrived, as for `completed`.
  * Docs: /docs/interfaces § "LLMOutcome semantics".
  */
 export interface LLMOutcome {

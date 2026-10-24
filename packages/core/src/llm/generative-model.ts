@@ -11,9 +11,9 @@
  *          first fragment, a `stop` when it ends);
  *        - a `.done` item → the full `model_msg` (thinking / text / tool_call);
  *        - the `stop` event → a `token_usage` event_msg, produced **only on normal
- *          completion** (observability/Token); a finish reason other than `stop` / `tool_call`
- *          makes the request `truncated` instead — no usage, and the turn MMSP had already
- *          recorded is taken back out of its history.
+ *          completion** (observability/Token) and on a truncation; a finish reason other than
+ *          `stop` / `tool_call` makes the request `truncated` — still metered, but the turn MMSP
+ *          had already recorded is taken back out of its history.
  *   3. Interruption/error handling: `finishInterrupted` closes the item still streaming, then
  *      the output ends — never leaking a malformed structure. This interface **never retries
  *      internally** — it only classifies, and `context_engine` owns the retry policy:
@@ -835,8 +835,8 @@ export class GenerativeModel implements LLMInterface {
    *     (only in this case) → `completed`;
    *   - **Truncation**: the `stop` event arrived with a finish reason other than `stop` /
    *     `tool_call` (`length`, `unknown`): the turn MMSP recorded is removed from its history,
-   *     no usage is produced → `truncated` (its `errorMessage` names the finish reason), which
-   *     the engine retries like `retryable`;
+   *     its `token_usage` is produced (the provider billed it) → `truncated` (its `errorMessage`
+   *     names the finish reason), which the engine retries like `retryable`;
    *   - **User interruption**: `finishInterrupted()` closes out, produces no usage →
    *     `aborted`;
    *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`),
@@ -1075,11 +1075,15 @@ export class GenerativeModel implements LLMInterface {
 
     // Delivered whole but not finished the normal way (the output cap, or a finish reason MMSP
     // does not map): MMSP recorded the turn before yielding its stop, so it is taken back out —
-    // only a completed request may enter the history. No usage, and the context size stays.
+    // only a completed request may enter the history, and the context size stays. The provider
+    // billed the attempt and reported its usage, so its token_usage goes out like any finished
+    // request's.
     const cutBy = translator.truncatedBy;
     if (cutBy !== null) {
       const history = this.client.getHistory();
       if (history.length > historyLength) this.client.setHistory(history.slice(0, historyLength));
+      const cutTokens = translator.getRequestTokens();
+      yield tokenUsage(cutTokens, cutTokens);
       return {
         status: "truncated",
         errorMessage:

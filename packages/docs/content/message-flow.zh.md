@@ -92,7 +92,7 @@ Human ──run(newMessages)──► engine
 | 分片纪律 | 每段严格 `start → delta* → stop`，完整消息紧随其后；全部 delta 拼接 ≡ 完整消息 |
 | 审批位次 | `approval_decision` 在其 `tool_call` 之后、该工具的任何输出之前 |
 | 配对完整 | 每个已提交的 `tool_call` 恰好对应一条完整的 `tool_call_output`（被拒绝的是合成输出） |
-| LLM 流收尾 | 请求正常完成时，`token_usage` 是 LLM 流的最后一条，`request_end` 紧随其后；未完成的请求不产出 `token_usage` |
+| LLM 流收尾 | 请求正常完成或被截断时，`token_usage` 是 LLM 流的最后一条，`request_end` 紧随其后；失败或被中断的请求不产出 `token_usage` |
 | 提交判据 | `request_end.status === "completed"` ⇔ 该轮已被网关提交（回放据此取舍） |
 | 流序 = Trace 序 | 边流边写；Trace 只滤掉分片与 `origin` 消息 |
 | 传输有序 | SSE 按通道投递，事件 id 单调递增；断线重连时从 `Last-Event-ID` 补发，或收到 `resync_required`，见 [Server API](/server-api) |

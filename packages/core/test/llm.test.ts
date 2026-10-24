@@ -1566,7 +1566,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect((messages.find((m) => typeOf(m) === "text")!.payload as TextPayload).text).toBe("hi");
   });
 
-  it("a response cut off at its cap is truncated: no usage, and taken back out of the stateful history", async () => {
+  it("a response cut off at its cap is truncated: metered, and taken back out of the stateful history", async () => {
     // MMSP records the turn before it yields the stop event; this seam does the same, so the
     // test sees what GenerativeModel does with a turn MMSP already committed.
     class RecordingSeam extends GenerativeModel {
@@ -1591,7 +1591,8 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       status: "truncated",
       errorMessage: "the response stopped at the output limit (finish_reason: length)",
     });
-    expect(messages.map(typeOf)).not.toContain("token_usage");
+    // The provider billed the attempt and reported its usage: it is metered like any other.
+    expect(messages.map(typeOf)).toContain("token_usage");
     expect((messages.find((m) => typeOf(m) === "text")!.payload as TextPayload).text).toBe(
       "Half an ans",
     );

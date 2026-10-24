@@ -127,7 +127,7 @@ interface LLMOutcome {
 | --- | --- | --- |
 | `completed` | Finished normally (`token_usage` already emitted) | Proceed |
 | `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, and anything unclassifiable | Reconnect within the run on the backoff ladder |
-| `truncated` | The response arrived whole but the provider did not finish it the normal way (`finish_reason` `length` or `unknown`); the implementation removes the turn from its stateful history and emits no `token_usage` | Retry on the same ladder, without resetting it |
+| `truncated` | The response arrived whole but the provider did not finish it the normal way (`finish_reason` `length` or `unknown`); the implementation removes the turn from its stateful history, and still emits its `token_usage` (it was billed) | Retry on the same ladder, without resetting it |
 | `fatal` | A failure no retry can fix: a provider 4xx rejection (408 and 429 excluded), rejected credentials, or a deterministic client-side rejection before any network I/O (for example, fast mode on a model without a fast tier) | Stop the run and surface `errorMessage` |
 | `aborted` | User interrupt | Stop and hand back to the user |
 

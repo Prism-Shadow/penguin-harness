@@ -100,10 +100,16 @@ export class UsageRecorder implements UsageRecording {
       });
       return;
     }
-    // A failed request (request_end and not completed, usually with no token_usage):
-    // persist 0 tokens + status, feeding the "model success rate" stat; a successful
-    // request is already counted once via the token_usage branch above, not repeated here.
-    if (payload.type === "request_end" && payload.status && payload.status !== "completed") {
+    // A failed request (request_end and not completed, with no token_usage): persist 0 tokens
+    // + status, feeding the "model success rate" stat. A successful request is already counted
+    // once via the token_usage branch above, not repeated here — and so is a truncated one: the
+    // provider delivered and billed it (its token_usage came first), it was only cut at a cap.
+    if (
+      payload.type === "request_end" &&
+      payload.status &&
+      payload.status !== "completed" &&
+      payload.status !== "truncated"
+    ) {
       this.usage.insert({
         ...base,
         cacheRead: 0,

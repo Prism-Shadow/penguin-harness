@@ -1850,6 +1850,13 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
         inputs.push(params.newMessages);
         if (calls === 1) {
           yield assistantText("Half an ans");
+          // A truncated attempt was billed: it reports its usage like a finished request.
+          yield tokenUsage(emptyTokenCounts(), {
+            cache_read: 0,
+            cache_write: 0,
+            output: 64,
+            total: 100,
+          });
           return { status: "truncated", errorMessage: cut };
         }
         yield assistantText("A shorter answer.");
@@ -1884,6 +1891,12 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       .filter((p) => p.type === "request_end");
     expect(ends.map((p) => p.status)).toEqual(["truncated", "completed"]);
     expect(ends[0]!.retry_in_ms).toBe(0);
+    // Both attempts are metered, but only the completed one is a Session turn.
+    const usages = all
+      .map((m) => m.payload as { type?: string; session?: { total: number } })
+      .filter((p) => p.type === "token_usage");
+    expect(usages.map((p) => p.session!.total)).toEqual([100, 101]);
+    expect((engine as unknown as { sessionTurns: number }).sessionTurns).toBe(1);
   });
 
   it("does not reset the ladder on a truncated attempt: consecutive truncations exhaust maxReconnects", async () => {

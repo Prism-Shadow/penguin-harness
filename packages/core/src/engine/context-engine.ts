@@ -1348,6 +1348,8 @@ export class ContextEngine {
     let outcome: LLMOutcome = { status: "completed" };
     // Set by the first message the stream yields (see TurnResult.receivedContent).
     let receivedContent = false;
+    // Whether this attempt reported its usage (a completed or a truncated request does).
+    let sawUsage = false;
 
     // Driver task: consumes the LLM stream + approves one at a time + dispatches tool
     // execution. It is itself a producer.
@@ -1372,6 +1374,11 @@ export class ContextEngine {
           const res = await gen.next();
           if (res.done) {
             outcome = res.value;
+            if (sawUsage && outcome.status === "completed") {
+              this.sessionTurns += 1;
+              // A turn completed: the summary the context opened with is history now.
+              this.openingSummary = null;
+            }
             // A provider's 4xx on an input that holds images is taken as a rejection of the
             // images, whatever the message says: providers word these refusals too many ways
             // to match, and a wrong match would end the run on something a retry can fix. The
@@ -1434,16 +1441,13 @@ export class ContextEngine {
           }
           const msg = res.value;
           receivedContent = true;
-          // token_usage means "this Request completed normally": record the context usage /
-          // Session cumulative counts — stamped onto the message BEFORE it is yielded or
-          // written, so the stream and the Trace carry the Session series rather than the
-          // LLM's per-request stand-in — and increment the Session turn count (counted per
-          // LLM Request, across Tasks; used for compaction threshold checks).
-          if (this.observeTokenUsage(msg)) {
-            this.sessionTurns += 1;
-            // A turn completed: the summary the context opened with is history now.
-            this.openingSummary = null;
-          }
+          // token_usage reports a Request the provider finished (completed, or truncated and
+          // billed all the same): record the context usage / Session cumulative counts —
+          // stamped onto the message BEFORE it is yielded or written, so the stream and the
+          // Trace carry the Session series rather than the LLM's per-request stand-in. The
+          // Session turn count (per committed LLM Request, across Tasks; used for compaction
+          // threshold checks) waits for the outcome: a truncated attempt is no turn.
+          if (this.observeTokenUsage(msg)) sawUsage = true;
           queue.push(msg);
           await this.write(msg);
           // Collect complete thinking/text segments (including partial segments finalized on

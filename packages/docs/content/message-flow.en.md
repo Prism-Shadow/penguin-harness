@@ -92,7 +92,7 @@ The two tables below separate what a consumer may rely on from what it may not.
 | Streaming discipline | every segment goes strictly `start → delta* → stop`, complete message right after; concatenated deltas ≡ the complete message |
 | Approval position | `approval_decision` comes after its `tool_call` and before any output of that tool |
 | Pairing | every committed `tool_call` gets exactly one complete `tool_call_output` (a denial gets the synthetic one) |
-| LLM stream tail | on a completed request, `token_usage` is the LLM stream's last message and `request_end` follows immediately; a request that did not complete produces no `token_usage` |
+| LLM stream tail | on a completed or truncated request, `token_usage` is the LLM stream's last message and `request_end` follows immediately; a request that failed or was interrupted produces no `token_usage` |
 | Commit criterion | `request_end.status === "completed"` ⇔ the turn was committed by the gateway (replay keeps or drops on this) |
 | Stream order = Trace order | written as streamed; the Trace only filters partials and `origin` messages |
 | Transport ordering | SSE delivers per channel with monotonic ids; reconnects replay from `Last-Event-ID` or get `resync_required` — see [Server API](/server-api) |

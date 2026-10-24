@@ -13,7 +13,7 @@
 ## 细节
 
 - `request_end.status` 的类型是 `RequestEndStatus`，即四个 `StopReason` 取值加上 `truncated`，由 `@prismshadow/amsp` 导出。`StopReason` 本身不变，仍是 `compaction_end` 与 MCP 连接结果的类型。
-- 供应商没有正常结束的响应（`finish_reason` 为 `length` 即达到输出上限，或 `unknown`）以 `truncated` 收尾，不再以最后一项 `fatal` 的形式提交。`GenerativeModel` 把这一轮移出 MMSP 的历史，不产出 `token_usage`；引擎按重连阶梯重试，`[request_error]` 行写明 finish reason。截断的尝试不让阶梯归零，连续截断会用尽 `maxReconnects`，最后一条 `request_end`（`truncated`、不带 `retry_in_ms`）结束运行，与 `retryable` 用尽时相同。截断的压缩请求计入压缩的重试预算。
+- 供应商没有正常结束的响应（`finish_reason` 为 `length` 即达到输出上限，或 `unknown`）以 `truncated` 收尾，不再以最后一项 `fatal` 的形式提交。`GenerativeModel` 把这一轮移出 MMSP 的历史，但照常产出它的 `token_usage`（供应商已计费，成本中心照常计入；它不算作 Session 的一轮，也不新增失败记录）；引擎按重连阶梯重试，`[request_error]` 行写明 finish reason。截断的尝试不让阶梯归零，连续截断会用尽 `maxReconnects`，最后一条 `request_end`（`truncated`、不带 `retry_in_ms`）结束运行，与 `retryable` 用尽时相同。截断的压缩请求计入压缩的重试预算。
 - 单发请求把截断的回答当作完成的回答读取：会话标题、`read_file` 的读图模型、模型测速与视觉探测。
 - `tool_call_output.status` 必填：`completed`、`fatal`，或 `aborted`，后者现在表示调用被拒、没有执行。`retryable` 退出工具的词表。工具返回的 `ToolResult.stopReason` 改为 `ToolResult.status`（`ToolStatus`），构造函数 `toolCallOutput` 接收 `status`。`partial_*` 记录不带状态。
 - 达到 `max_turns` 的 Task 以一条 `abort` 记录结束（`error_code: "max_turns"`，`error_message` 为 `reached max turns (N)`），不再写一条 `fatal` 的 assistant 提示。运行的 `RunCutoff` 带同一个错误码。Web App 与 CLI 显示为「[已停止]：已达到单次任务最大轮数」，Web App 的这一行带「重试」。
