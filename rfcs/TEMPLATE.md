@@ -41,6 +41,21 @@ This is the technical portion of the RFC. Explain the design in sufficient detai
 
 This section should return to the examples given in the previous section, and explain more fully how the detailed proposal makes those examples work.
 
+## Invariants
+[invariants]: #invariants
+
+Optional — omit this section when the design holds no property that must stay true permanently. Each invariant is one entry: a `### <invariant name>` heading, one sentence in a blockquote, then a short body.
+
+```markdown
+### <invariant name>
+
+> <one sentence in the vocabulary of this RFC, stating what always holds and citing concepts as this RFC defines them>
+
+<description — what the property asserts; explanation — how it reads across the concepts this RFC defines; why — what this RFC loses if the property is broken>
+```
+
+A statement belongs here when it passes three checks: **it speaks concepts** (every citation lands on a section of an RFC that defines the concept), **it matters** (break it and this RFC's purpose is lost), and **it survives implementation** (replace every file that implements the mechanism and the property still holds). An invariant is retired only by name, in a revision of the RFC that declared it, recorded under `## Changes`.
+
 ## Drawbacks
 [drawbacks]: #drawbacks
 
