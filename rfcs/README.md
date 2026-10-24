@@ -49,3 +49,4 @@ Numbers and filenames carry over from the design repository unchanged. Two draft
 | [PRFC-0019-rsi-toolkits.md](PRFC-0019-rsi-toolkits.md) | RSI Toolkits | landed |
 | [PRFC-0020-agent-workbench.md](PRFC-0020-agent-workbench.md) | Agent Workbench: app naming, plugin distribution, and product support | landed |
 | [PRFC-0022-rfc-invariant.md](PRFC-0022-rfc-invariant.md) | RFC Invariants: a permanent section for what must always hold | draft |
+| [PRFC-0023-harness-meta.md](PRFC-0023-harness-meta.md) | Harness Meta: every data root carries the record of its harness | draft |
