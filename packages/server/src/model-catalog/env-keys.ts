@@ -111,18 +111,3 @@ export function providerEnvFallbackKey(
   const clientType = groupClientType(providerId, group);
   return clientType === undefined ? undefined : clientEnvKey(clientType, group?.baseUrl);
 }
-
-/**
- * Where a group's requests go while its settings name no base URL, or undefined — the group
- * dialog's base URL hint: the default endpoint of MMSP's client for the group (groupClientType),
- * as MMSP's credentials table records it. A group with no one client names none.
- */
-export function providerDefaultBaseUrl(
-  providerId: string,
-  group: Pick<ProviderConnectionShape, "clientType"> | undefined,
-): string | undefined {
-  const clientType = groupClientType(providerId, group);
-  // routedClientType spells a client type the way the table is keyed (an earlier name accepted).
-  const routed = clientType === undefined ? null : routedClientType("", clientType);
-  return routed === null ? undefined : CLIENT_CREDENTIALS[routed]?.defaultBaseUrl;
-}

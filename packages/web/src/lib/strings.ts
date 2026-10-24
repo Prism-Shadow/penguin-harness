@@ -2359,7 +2359,8 @@ export const zh = {
     currencyCny: "人民币 ¥",
     apiKey: "API key",
     apiKeyKeepHint: "留空保留现有 key",
-    apiKeyEnvHint: (envKey: string): string => `留空则使用环境变量 ${envKey}`,
+    /** The API key placeholder where a blank key is covered by an environment variable the server reports set; it names no variable. */
+    apiKeyDefault: "留空使用默认 API key",
     keyConfigured: "已配置 key",
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",
@@ -2394,10 +2395,8 @@ export const zh = {
     groupSettingsTitle: (label: string): string => `${label} 分组设置`,
     /** The clear box under a stored group key. */
     clearGroupKey: "清除分组密钥",
-    /** A blank base URL that nothing fills: the group settings' placeholder, and a model's where its group sets none. */
-    baseUrlNone: "未设置：使用客户端默认端点",
-    /** The blank base URL field where the client is known: the endpoint its requests go to. */
-    baseUrlDefault: (url: string): string => `未设置：默认发往 ${url}`,
+    /** The base URL placeholder where no group setting fills a blank field and none is required; it names no URL. */
+    baseUrlDefault: "留空使用默认 base URL",
     /** The group settings' Detect while neither the field nor the group holds a base URL. */
     detectNeedsBaseUrl: "先填写 base URL",
     /** The protocol menu's first row in the group settings: the group sets none. */

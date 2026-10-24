@@ -27,9 +27,8 @@
  *   line under the fields, no count of the models' own values.
  * - Given a group whose catalog names a model list (OpenRouter, TokenDance), the dialog links
  *   to it in a new tab; custom and a user-defined group have none, and no link.
- * - A blank group base URL names the endpoint the requests go to: the default endpoint of the
- *   group's client (the protocol it names, else the vendor's); a group with no one client says
- *   only that the client's default applies.
+ * - A blank group base URL says it uses the default and names no endpoint; where the group
+ *   needs one, the field shows the shape a URL takes instead.
  * - A blank group key promises an environment variable only for a group with no base URL — the
  *   vendor's own endpoint included — and only one the server proved is set.
  * - A model with nothing of its own follows the group's table field by field, and a field the
@@ -59,7 +58,6 @@ import {
 } from "../src/features/models/connection";
 import {
   ProviderSettingsDialog,
-  groupBaseUrlHint,
   groupEnvKey,
   initialDraft,
   protocolChoice,
@@ -423,6 +421,16 @@ describe("what the group settings dialog shows", () => {
     }
   });
 
+  it("says a blank base URL uses the default without naming it, and shows a URL's shape where one is required", () => {
+    const deepseek = dialog("deepseek", undefined);
+    expect(deepseek).toContain(`placeholder="${S.models.baseUrlDefault}"`);
+    expect(deepseek).not.toContain("api.deepseek.com");
+    // A user-defined group with a model that stores no base URL cannot save a blank one.
+    const required = dialog("my-group", undefined, [row()]);
+    expect(required).toContain('placeholder="https://…"');
+    expect(required).not.toContain(`placeholder="${S.models.baseUrlDefault}"`);
+  });
+
   it("offers Penguin Go no protocol menu and no Detect, and names its fixed protocol", () => {
     const go = dialog("penguin-go", presetGroup("penguin-go"));
     expect(go).not.toContain('aria-haspopup="menu"');
@@ -440,26 +448,6 @@ describe("what the group settings dialog shows", () => {
     expect(dialog("my-ollama", { baseUrl: "http://127.0.0.1:11434/v1" })).not.toContain(
       S.models.modelList,
     );
-  });
-});
-
-describe("a blank group base URL names where the requests go", () => {
-  it("names the default endpoint of the group's client: the protocol it names, else the vendor's", () => {
-    expect(groupBaseUrlHint("deepseek", { clientType: null })).toBe(
-      S.models.baseUrlDefault("https://api.deepseek.com"),
-    );
-    expect(groupBaseUrlHint("my-ollama", { clientType: "openai-chat" })).toBe(
-      S.models.baseUrlDefault("https://api.openai.com/v1"),
-    );
-    expect(groupBaseUrlHint("vllm", { clientType: "openai-chat-vllm-adapter" })).toBe(
-      S.models.baseUrlDefault("http://127.0.0.1:8000/v1"),
-    );
-  });
-
-  it("says only that the client's default applies where no one client answers for the group", () => {
-    for (const id of ["custom", "my-ollama", "tokendance"]) {
-      expect(groupBaseUrlHint(id, { clientType: null }), id).toBe(S.models.baseUrlNone);
-    }
   });
 });
 
