@@ -8,12 +8,12 @@
 
 [中文版](2026-10-23-amsp-session-stream.zh.md)
 
-The Agent API streams a Session as its Trace holds it. Every record is the envelope the Trace stores, untranslated, plus the `partial_*` fragments and four control frames. The SDK reads and follows those records, and the API gains the routes a program needs to follow a Session it did not start.
+The Agent API streams a Session as its Trace holds it. Every record is the envelope the Trace stores, untranslated, plus the `partial_*` fragments and a few control frames. The SDK reads and follows those records, and the API gains the routes a program needs to follow a Session it did not start.
 
 ## The stream
 
-- A record is an unnamed SSE event with an `id:` and the envelope `{timestamp, type, payload, origin?}`. The control frames are `event: hello` (`{session_id, agent}`), `event: resync_required` (`{}`), `event: ping` (`{}`, at once and every 20 s, replacing `: keep-alive`) and `data: [DONE]`.
-- A run stream is `hello`, `ping`, then the run's records from its first main-Session record, then `[DONE]` once the Session is idle again. On a new Session's first message, the Session's `session_meta` comes before `task_begin` and the input; later messages carry none.
+- A record is an unnamed SSE event with an `id:` and the envelope `{timestamp, type, payload, origin?}`. The control frames are `event: resync_required` (`{}`), `event: ping` (`{}`, at once and every 20 s, replacing `: keep-alive`) and `data: [DONE]`.
+- A run stream is `ping`, then the run's records from its first main-Session record, then `[DONE]` once the Session is idle again. On a new Session's first message, the Session's `session_meta` comes first, before `task_begin` and the input, and its `session_id` names the new Session; later messages carry none, and a run that continues a Session is on the `session_id` its request sent.
 - The Web App's server events (`task_state`, `approval_request`, `session_title`, `goal_*` …) never appear on an AMSP entry. A run that did not reach its end leaves its last `task_begin` unclosed before `[DONE]`; there is no error frame.
 
 ## Routes
@@ -36,7 +36,7 @@ The Agent API streams a Session as its Trace holds it. Every record is the envel
 
 ## Web App
 
-- The API tab's Try it runs through the SDK. Rows are labelled by the record's `payload.type`, a message's fragments and its complete record are one row, and `hello` and `ping` are not listed. Allow and Deny sit on the waiting `tool_call`'s row. The outcome strip is the run's `RunResult`, or says that the stream ended before `[DONE]` or that the run did not reach its end.
+- The API tab's Try it runs through the SDK. Rows are labelled by the record's `payload.type`, a message's fragments and its complete record are one row, and `ping` is not listed. Allow and Deny sit on the waiting `tool_call`'s row. The outcome strip is the run's `RunResult`, or says that the stream ended before `[DONE]` or that the run did not reach its end.
 - The tab's SDK example iterates `stream()`.
 
 ## Compatibility

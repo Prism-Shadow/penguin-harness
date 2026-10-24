@@ -370,8 +370,8 @@ describe("the mocked API", () => {
         return [r.type === "session_meta" ? "session_meta" : (r.payload as { type: string }).type];
       });
       const done = actions.find((a) => a.type === "done");
-      const hello = actions.find((a) => a.type === "hello");
-      return { kinds, done, hello };
+      const session = actions.find((a) => a.type === "session");
+      return { kinds, done, session };
     };
 
     const first = await tryOnce({ input: "What time is it now?" });
@@ -380,7 +380,7 @@ describe("the mocked API", () => {
     expect(first.kinds).toContain("tool_call_output");
     expect(first.kinds.at(-1)).toBe("task_end");
     expect(first.done).toMatchObject({ result: { status: "completed", requests: 2 } });
-    const sessionId = first.hello?.type === "hello" ? first.hello.sessionId : "";
+    const sessionId = first.session?.type === "session" ? first.session.sessionId : "";
 
     const next = await tryOnce({ input: "And now?", session_id: sessionId });
     expect(next.kinds).toEqual([
@@ -392,7 +392,7 @@ describe("the mocked API", () => {
       "request_end",
       "task_end",
     ]);
-    expect(next.hello).toMatchObject({ sessionId });
+    expect(next.session).toMatchObject({ sessionId });
     expect(next.done).toMatchObject({ result: { status: "completed", sessionId } });
   });
 

@@ -1974,18 +1974,15 @@ function dateOutput(ms: number): string {
 }
 
 /**
- * The body the try route streams, as AMSP frames: `hello`, a `ping`, the run's records with their
- * ids, then `[DONE]`. A new Session's first message: its session_meta, the Task, the example
+ * The body the try route streams, as AMSP frames: a `ping`, the run's records with their ids, then
+ * `[DONE]`. A new Session's first message: its session_meta, which names it, the Task, the example
  * question answered by running `date` over two Requests — the tool call's fragments and the
  * complete call, its decision and output, then the answer's fragments and the complete answer, so
  * the rendered view has fragments to merge; a run that continues a Session gets one answer in one
  * Request.
  */
-export function amspTryStream(
-  body: unknown,
-  run: { agent: string; lang: Lang; now: number },
-): string {
-  const { agent, lang, now } = run;
+export function amspTryStream(body: unknown, run: { lang: Lang; now: number }): string {
+  const { lang, now } = run;
   const L = <T>(zh: T, en: T): T => (lang === "zh" ? zh : en);
   const sessionField = (body as { session_id?: unknown } | null)?.session_id;
   const inputField = (body as { input?: unknown } | null)?.input;
@@ -2117,7 +2114,6 @@ export function amspTryStream(
       ev(10, { type: "task_end" }),
     ];
   }
-  const hello = `event: hello\ndata: ${JSON.stringify({ session_id: sessionId, agent })}\n\n`;
   const frames = records.map((r, i) => `id: try-${i + 1}\ndata: ${JSON.stringify(r)}\n\n`);
-  return [hello, "event: ping\ndata: {}\n\n", ...frames, "data: [DONE]\n\n"].join("");
+  return ["event: ping\ndata: {}\n\n", ...frames, "data: [DONE]\n\n"].join("");
 }

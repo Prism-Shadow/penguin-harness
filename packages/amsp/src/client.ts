@@ -52,7 +52,7 @@ export type OnApproval = (
 export interface RunOptions {
   /** The new user input: text, or text and image items. */
   input: string | InputItem[];
-  /** Continues this Session; omitted, the run starts a new one, named by the stream's `hello`. */
+  /** Continues this Session; omitted, the run starts a new one, named by its `session_meta`. */
   sessionId?: string;
   /** Aborting it closes the connection, which aborts the run on the server, and rejects the run with the signal's reason. */
   signal?: AbortSignal;
@@ -71,7 +71,11 @@ export interface RunOptions {
  * call `abort()` or abort the signal for that.
  */
 export interface Run extends AsyncIterable<AmspRecord> {
-  /** The Session id, from the stream's `hello`, before any record. */
+  /**
+   * The Session id, once the run is under way: for a continued Session the `sessionId` passed, at
+   * the stream's first frame; for a new one, at its `session_meta`, the stream's first record.
+   * Rejects when the run is refused, or its stream breaks, before then.
+   */
   readonly session: Promise<string>;
   /** The outcome. Rejects with an {@link AmspHttpError} on a refusal, an {@link AmspStreamError} when the stream broke, or the abort reason. */
   result(): Promise<RunResult>;
@@ -342,10 +346,21 @@ class AgentRun implements Run {
     const forward = () => control.abort(signal!.reason);
     if (signal?.aborted) forward();
     else signal?.addEventListener("abort", forward, { once: true });
-    const collector = new RunCollector();
+    const collector = new RunCollector(
+      opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {},
+    );
     const approvals = new ApprovalLoop(this.#transport, opts.onApproval, control.signal, (err) =>
       control.abort(err),
     );
+    let named = false;
+    /** Resolves `session` once the collector knows the Session and the stream has a frame. */
+    const name = () => {
+      const sessionId = collector.sessionId;
+      if (named || sessionId === null) return;
+      named = true;
+      this.#resolveSession(sessionId);
+      approvals.started(sessionId);
+    };
     try {
       const request: RunRequest = {
         ...(opts.sessionId !== undefined ? { session_id: opts.sessionId } : {}),
@@ -357,14 +372,10 @@ class AgentRun implements Run {
           method: "POST",
           body: request,
           signal: control.signal,
-          onControl: (ctrl) => {
-            if (ctrl.kind !== "hello") return;
-            collector.hello(ctrl.session_id);
-            this.#resolveSession(ctrl.session_id);
-            approvals.started(ctrl.session_id);
-          },
+          onControl: name,
           onRecord: (_id, record) => {
             collector.add(record);
+            name();
             approvals.record(record);
             this.#push(record);
           },

@@ -3,7 +3,7 @@ title: AMSP
 description: Agent Message Stream Protocol：一个 Session 的记录经 SSE 上线，包括控制帧、运行流与 Session 流、待决审批资源、运行结果的读法，以及每条记录取代的 v1 旧事件。
 ---
 
-AMSP（Agent Message Stream Protocol）是 [Agent API](/agent-api) 的传输格式。它流式传输一个 Session：该 Session 的记录，与 Trace 中保存的完全相同；消息产出过程中流式发出的 `partial_*` 分片；以及围绕它们的四个控制帧。线上不做任何翻译：Trace 的每一行都是一条合法的 AMSP 记录，每种载荷的字段都以 [AMSP 记录](/amsp-records)页面的说明为准。
+AMSP（Agent Message Stream Protocol）是 [Agent API](/agent-api) 的传输格式。它流式传输一个 Session：该 Session 的记录，与 Trace 中保存的完全相同；消息产出过程中流式发出的 `partial_*` 分片；以及围绕它们的少量控制帧。线上不做任何翻译：Trace 的每一行都是一条合法的 AMSP 记录，每种载荷的字段都以 [AMSP 记录](/amsp-records)页面的说明为准。
 
 Web App 的服务器事件（运行状态、审批请求、标题、goal 进度等）不属于 AMSP。程序需要的信息从记录和两个资源中读取：Session 本身 `GET …/sessions/:sessionId`，给出状态与模型；它的待决审批 `GET …/sessions/:sessionId/approvals`。
 
@@ -46,7 +46,7 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 
 主 Session 的 `session_meta` 在写入时上流，且只上流一次。写入发生在三个时刻：
 
-- **新 Session 的第一条消息。** 它位于该 Session 第一个 Trace 文件的开头，先于该 Task 的 `task_begin`，所以新建 Session 的运行流在 `hello` 之后紧接着给出它。
+- **新 Session 的第一条消息。** 它位于该 Session 第一个 Trace 文件的开头，先于该 Task 的 `task_begin`，所以它是新建 Session 的运行流的第一条记录，运行流也正是凭它的 `session_id` 给出新 Session 的 id。
 - **压缩开启的新上下文。** 新文件在压缩之后第一条要写入的记录之前开出，`session_meta` 随之上流。压缩结束了上一个 Task 时，Task 记录不开新文件，下一个 Task 的 `task_begin` 已经流出，所以 `session_meta` 落在这个 `task_begin` 之后、该 Task 的输入之前。
 - **模型切换。** 切换完成时即开出新文件，这发生在两次运行之间，所以它的 `session_meta` 在 Session 流上，不在下一次运行的运行流里。
 
@@ -62,16 +62,15 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 
 | 帧 | 数据 | 何时 |
 | --- | --- | --- |
-| `event: hello` | `{"session_id", "agent"}` | 运行流的第一个事件：运行所在的 Session（新建的或延续的），以及形如 `<projectId>/<agentId>` 的 Agent |
 | `event: resync_required` | `{}` | Session 流续传所用的 `Last-Event-ID` 已被挤出服务器的缓冲。重新读取历史，再继续读这条流 |
-| `event: ping` | `{}` | 运行流上紧跟在 `hello` 之后，Session 流上紧跟在补发的记录之后，此后每 20 秒一次。它取代了早先的 `: keep-alive` 注释，浏览器从不把注释交给页面 |
+| `event: ping` | `{}` | 运行流上最先发出，Session 流上紧跟在补发的记录之后，此后每 20 秒一次。它取代了早先的 `: keep-alive` 注释，浏览器从不把注释交给页面 |
 | `data: [DONE]` | — | 运行流的最后一行，运行结束时写出 |
 
 ## 运行流
 
 `POST <Base URL>/agents/:projectId/:agentId/runs` 运行一次 Agent，并以这次运行的流作答；请求体见[运行请求](/agent-api#运行请求)。流依次为：
 
-1. `hello`，然后是 `ping`；
+1. `ping`；
 2. 新 Session 的第一条消息上，该 Session 的 `session_meta`；
 3. `task_begin`，然后是 Session 所记录的本次输入：每个文本项一条用户 `text`，其后每张图片一条 `image_url`；
 4. 本次运行的记录；
@@ -81,9 +80,6 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 新 Session 上的一次直接回答，时间戳和较长的值已省略：
 
 ```text
-event: hello
-data: {"session_id":"session-2026-10-23-10-00-00-3f9a1c2e","agent":"demo/coder"}
-
 event: ping
 data: {}
 
@@ -126,6 +122,7 @@ data: {"timestamp":"…","type":"event_msg","payload":{"type":"task_end"}}
 data: [DONE]
 ```
 
+- 没有哪个帧专门给出 Session 的 id：新 Session 由它的 `session_meta`（流的第一条记录）给出，延续 Session 的运行即请求所带的 `session_id`。
 - 服务器先订阅 Session、再启动 Task，所以这次运行的内容不会漏掉。被拒绝的请求（例如会话正忙或请求体有误）在流开始之前以 JSON 作答。
 - 流从本次运行的第一条主 Session 记录开始：Session 在此之前发布的内容（例如后台子 Agent 的输出）不在这条流上。
 - Session 回到空闲时写出 `[DONE]`。响应体在它之前就结束，意味着连接断了，运行的结局未知：`GET …/sessions/:sessionId` 给出它的状态，历史给出它的记录。
@@ -139,7 +136,7 @@ data: [DONE]
 | 密钥门 | `GET /api/amsp/v1/sessions/:sessionId/stream` | 该 Agent 的密钥；Agent 允许无密钥访问时可不带。只限该 Agent 的 API 会话 |
 | Cookie 门 | `GET /api/sessions/:sessionId/amsp` | 登录 Cookie 或本机 API token，Project 授权与 Web App 相同 |
 
-两个入口用同一个处理器。Session 流跨运行跟随该 Session，也包括不是由它发起的运行：经 `POST …/sessions/:sessionId/tasks` 发起的、在 Web App 中发起的，或其他调用方发起的。它只携带记录和 `ping`：没有 `hello`，没有 `[DONE]`，订阅时也没有状态快照。流一直保持打开，直到调用方关闭它。
+两个入口用同一个处理器。Session 流跨运行跟随该 Session，也包括不是由它发起的运行：经 `POST …/sessions/:sessionId/tasks` 发起的、在 Web App 中发起的，或其他调用方发起的。它只携带记录和 `ping`：没有 `[DONE]`，订阅时也没有状态快照。流一直保持打开，直到调用方关闭它。
 
 - **续传。** 把最后见到的记录 id 作为 `Last-Event-ID` 发送；无法设置请求头时，改用查询参数 `lastEventId`，两者同在时以请求头为准。服务器为每个活跃 Session 保留有界的缓冲：id 仍在缓冲中时，先补发它之后的记录；不在时，流以 `resync_required` 开头，然后继续实时推送。
 - **加入。** 先订阅、再读历史，中间就不会漏掉记录：把这期间到达的记录暂存起来，在历史之后交付，并跳过历史中已有的记录。历史的 `live` 字段把两者接起来，见[历史](#历史)。客户端的 `SessionReader` 做的正是这些。
@@ -209,7 +206,7 @@ POST …/sessions/:sessionId/approvals/:toolCallId   {"decision": "allow" | "den
 - `sessionUsage`：主 Session 最后一个 `token_usage.session`，没有时为 `null`；
 - `requests`：主 Session 的 `request_begin` 记录数，包括重试的尝试。
 
-自行读取流的程序，把 `hello` 和记录交给客户端的 `RunCollector`，就能得到同样的结果。
+自行读取流的程序，把记录交给客户端的 `RunCollector`（延续 Session 的运行同时给出所发送的 `session_id`），就能得到同样的结果。
 
 ## 错误
 
@@ -284,7 +281,7 @@ data: [DONE]
 
 | 旧事件 | 现在 |
 | --- | --- |
-| `run.started` | `event: hello` |
+| `run.started` | 没有对应的帧：新 Session 由它的 `session_meta` 给出，延续的 Session 即请求所带的 `session_id`，Agent 即请求所指定的 Agent |
 | `run.done` | `data: [DONE]`；状态与计数按同样的规则从记录读出（[运行的结果](#运行的结果)） |
 | `context.opened` | `session_meta` |
 | `mcp_connect.started` / `mcp_connect.done` | `mcp_connect_begin` / `mcp_connect_end` |
@@ -314,4 +311,4 @@ data: [DONE]
 
 运行是带 `Authorization` 的 POST 请求，所以请用 `fetch` 读取，不要用 `EventSource`。与服务器同源的页面可以用 `EventSource` 打开 Cookie 门的 Session 流，自行重开时把 `lastEventId` 写进 URL。按 `EventSource` 的规则读取响应体：行以 LF、CRLF 或单独的 CR 结束；空行结束一个事件；以 `:` 开头的行是注释；同一事件的多行 `data:` 以换行符连接。然后按事件名分派，运行流读到 `data: [DONE]` 时停止。
 
-`@prismshadow/amsp` 导出了其中每一步：`readSse` 把响应体的事件逐个产出为 `{event, id, data}`，`frameOf` 把一个事件分为记录、控制帧、`[DONE]` 或 AMSP 未定义的事件名，`readAmsp` 两步一起做，`RunCollector` 把一次运行的帧归并为它的结果。见[客户端参考](/agent-api#客户端参考)。
+`@prismshadow/amsp` 导出了其中每一步：`readSse` 把响应体的事件逐个产出为 `{event, id, data}`，`frameOf` 把一个事件分为记录、控制帧、`[DONE]` 或 AMSP 未定义的事件名，`readAmsp` 两步一起做，`RunCollector` 把一次运行的记录归并为它的结果。见[客户端参考](/agent-api#客户端参考)。

@@ -14,14 +14,14 @@
  *   so nothing compares them: the latest is what shows. Fragments find their row by the message
  *   they belong to — a tool call or its output by its `tool_call_id` — so a row keeps its place
  *   when other rows come between its fragments.
- * - Every other record is a row of its own, with its key fields. The control frames `hello` and
- *   `ping` are not rows.
+ * - Every other record is a row of its own, with its key fields. The control frame `ping` is not
+ *   a row.
  *
- * The outcome strip is the SDK's `RunResult`. The Session the stream's `hello` names stays after
- * the run, so the next run continues the conversation, the way a program passes `session_id`;
- * New conversation forgets it. An approval the Agent's API approval mode asks for reaches the
- * panel through the SDK's approval loop: the `tool_call` row it is about offers Allow and Deny,
- * and the answer goes back through the SDK.
+ * The outcome strip is the SDK's `RunResult`. The Session the run is on (a new one's is named by
+ * its `session_meta`) stays after the run, so the next run continues the conversation, the way a
+ * program passes `session_id`; New conversation forgets it. An approval the Agent's API approval
+ * mode asks for reaches the panel through the SDK's approval loop: the `tool_call` row it is
+ * about offers Allow and Deny, and the answer goes back through the SDK.
  */
 import { AgentClient, AmspHttpError } from "@prismshadow/amsp";
 import type {
@@ -369,9 +369,9 @@ export interface TryState {
   running: boolean;
   /** The Session the last run named: the next run continues it. */
   sessionId: string | null;
-  /** When the current run's hello arrived (ms); null until then, so Stop knows whom to ask. */
+  /** When the current run named its Session (ms); null until then, so Stop knows whom to ask. */
   startedAtMs: number | null;
-  /** The current run's lines, as received: hello's, then one `data:` line per record. */
+  /** The current run's lines, as received: one `data:` line per record. */
   lines: string[];
   /** The rendered view's rows. */
   rows: TryRow[];
@@ -389,7 +389,8 @@ export interface TryState {
 export type TryAction =
   | { type: "input"; text: string }
   | { type: "start" }
-  | { type: "hello"; sessionId: string; agent: string; atMs: number }
+  /** The run is under way on this Session: the SDK's `run.session` resolved. */
+  | { type: "session"; sessionId: string; atMs: number }
   | { type: "record"; record: AmspRecord }
   | { type: "done"; result: RunResult; atMs: number }
   | { type: "httpError"; status: number; code: string; message: string }
@@ -435,17 +436,8 @@ export function reduceTry(state: TryState, action: TryAction): TryState {
         broken: false,
         closed: false,
       };
-    case "hello":
-      return {
-        ...state,
-        sessionId: action.sessionId,
-        startedAtMs: action.atMs,
-        lines: [
-          ...state.lines,
-          "event: hello",
-          `data: ${JSON.stringify({ session_id: action.sessionId, agent: action.agent })}`,
-        ],
-      };
+    case "session":
+      return { ...state, sessionId: action.sessionId, startedAtMs: action.atMs };
     case "record":
       return {
         ...state,
@@ -546,7 +538,8 @@ export type ApprovalDesk = ReturnType<typeof approvalDesk>;
 /**
  * One run: the SDK's client over the try transport, one `record` per record as it arrives, then
  * `done` with the result. A refusal before the stream is `httpError`; a stream that breaks is
- * `ended`; aborting `signal` (Stop before the hello, or leaving the tab) ends it as stopped.
+ * `ended`; aborting `signal` (Stop before the run named its Session, or leaving the tab) ends it
+ * as stopped.
  */
 export async function runTry(
   target: TryTarget,
@@ -565,7 +558,7 @@ export async function runTry(
     onApproval: (toolCall) => desk.ask(toolCall),
   });
   run.session.then(
-    (sessionId) => dispatch({ type: "hello", sessionId, agent, atMs: Date.now() }),
+    (sessionId) => dispatch({ type: "session", sessionId, atMs: Date.now() }),
     () => {},
   );
   try {

@@ -21,6 +21,7 @@ import type {
   AmspRecord,
   CompactionEndPayload,
   RequestEndPayload,
+  SessionMetaPayload,
   StopReason,
   TextPayload,
   TokenCounts,
@@ -60,7 +61,10 @@ function errorOf(p: { error_code?: string; error_message?: string }): AmspError 
 /**
  * Folds a run's records, in stream order, into its {@link RunResult}. `AgentClient` uses it; a
  * program that reads a run's body itself — with its own `fetch`, its own credentials, its own
- * URL — feeds it the `hello` and the records `readAmsp` yields, and gets the same result.
+ * URL — feeds it the records `readAmsp` yields, and gets the same result.
+ *
+ * The Session the run is on is the `sessionId` given here when the run continued one; a run that
+ * started a new Session is named by that Session's `session_meta`, its stream's first record.
  */
 export class RunCollector {
   #sessionId: string | null = null;
@@ -75,12 +79,22 @@ export class RunCollector {
   #sessionUsage: TokenCounts | null = null;
   #requests = 0;
 
-  /** The `hello` that opened the run: the Session it runs on. */
-  hello(sessionId: string): void {
-    this.#sessionId ??= sessionId;
+  /** `sessionId`: the Session the run continued, as its request's `session_id` named it. */
+  constructor(opts: { sessionId?: string } = {}) {
+    this.#sessionId = opts.sessionId ?? null;
+  }
+
+  /** The Session the run is on; null until a new Session's `session_meta` has been added. */
+  get sessionId(): string | null {
+    return this.#sessionId;
   }
 
   add(rec: AmspRecord): void {
+    if (rec.type === "session_meta") {
+      // The main Session's first meta names a new Session; a new context's is the same Session's.
+      if (isMain(rec)) this.#sessionId ??= (rec.payload as SessionMetaPayload).session_id;
+      return;
+    }
     const type = payloadType(rec);
     if (type === "token_usage") {
       const p = rec.payload as TokenUsagePayload;
@@ -148,12 +162,15 @@ export class RunCollector {
   }
 
   /**
-   * The result of a stream that reached `[DONE]`; an {@link AmspStreamError} when no `hello`
-   * named the Session, since then nothing says what the records belong to.
+   * The result of a stream that reached `[DONE]`; an {@link AmspStreamError} when the run
+   * neither continued a given Session nor carried a new one's `session_meta`, since then nothing
+   * says what the records belong to.
    */
   result(): RunResult {
     if (this.#sessionId === null) {
-      throw new AmspStreamError("The stream ended without the hello that names its Session.");
+      throw new AmspStreamError(
+        "The stream ended without the session_meta that names its new Session.",
+      );
     }
     const outcome = this.#outcome();
     return {

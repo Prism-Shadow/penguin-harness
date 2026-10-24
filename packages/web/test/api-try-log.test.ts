@@ -15,9 +15,9 @@
  *
  * The panel:
  * - A run reads as numbered rows — the input, the call, its output, the answer — with no row for
- *   `hello` or `ping`; the Session id stays, the input clears, and the next run carries that
- *   session_id. The outcome strip shows the status, the Requests and the tokens.
- * - The raw view prints hello and one `data:` line per record as received, `[DONE]` last.
+ *   `ping`; the Session its session_meta names stays, the input clears, and the next run carries
+ *   that session_id. The outcome strip shows the status, the Requests and the tokens.
+ * - The raw view prints one `data:` line per record as received, `[DONE]` last.
  * - A refusal before the stream shows its status, code and message and no rows; a body that ends
  *   before `[DONE]` says the stream broke; a run whose last task_begin was never closed says it
  *   did not reach its end.
@@ -81,16 +81,20 @@ const call = (id: string, args: string, stop = "completed") =>
     stop_reason: stop,
   });
 
+/** The new Session's session_meta: what names it on its first run's stream. */
+const meta = () =>
+  rec("session_meta", {
+    session_id: SESSION,
+    provider: "anthropic",
+    model_id: "claude",
+    model_context_window: 200000,
+    source: "api",
+  });
+
 /** The example run: the model runs `date`, the tool answers, the model answers in fragments. */
 function timeRun(): AmspRecord[] {
   return [
-    rec("session_meta", {
-      session_id: SESSION,
-      provider: "anthropic",
-      model_id: "claude",
-      model_context_window: 200000,
-      source: "api",
-    }),
+    meta(),
     ev({ type: "task_begin" }),
     msg({ type: "text", role: "user", text: "What time is it now?", stop_reason: "completed" }),
     ev({ type: "request_begin", thinking_level: "medium" }),
@@ -125,13 +129,13 @@ function timeRun(): AmspRecord[] {
   ];
 }
 
-const hello = `event: hello\ndata: ${JSON.stringify({ session_id: SESSION, agent: "demo/coder" })}\n\nevent: ping\ndata: {}\n\n`;
+const PING = "event: ping\ndata: {}\n\n";
 const frame = (r: AmspRecord, i: number) => `id: e-${i + 1}\ndata: ${JSON.stringify(r)}\n\n`;
 const DONE = "data: [DONE]\n\n";
 
 /** A whole run stream, as the try route sends it. */
 function sse(records: AmspRecord[], done = true): Response {
-  return new Response(hello + records.map(frame).join("") + (done ? DONE : ""), {
+  return new Response(PING + records.map(frame).join("") + (done ? DONE : ""), {
     status: 200,
     headers: { "content-type": "text/event-stream; charset=utf-8" },
   });
@@ -288,7 +292,7 @@ describe("the rendered view's rows", () => {
 });
 
 describe("the panel", () => {
-  it("reads a run as numbered rows without hello or ping, keeps the Session, and continues it", async () => {
+  it("reads a run as numbered rows without ping, keeps the Session, and continues it", async () => {
     const fetch = stubFetch(() => sse(timeRun()));
     const h = harness();
     await runTry(TARGET, h.dispatch, tryBody(h.state), new AbortController().signal);
@@ -325,14 +329,12 @@ describe("the panel", () => {
     expect(fetch.requests.at(-1)!.body).toEqual({ input: "And now?", session_id: SESSION });
   });
 
-  it("prints hello and one data line per record in the raw view, [DONE] last", async () => {
-    const records = [ev({ type: "task_begin" }), ev({ type: "task_end" })];
+  it("prints one data line per record in the raw view, [DONE] last", async () => {
+    const records = [meta(), ev({ type: "task_begin" }), ev({ type: "task_end" })];
     stubFetch(() => sse(records));
     const h = harness();
     await runTry(TARGET, h.dispatch, tryBody(h.state), new AbortController().signal);
     expect(rawLines(h.state)).toEqual([
-      "event: hello",
-      `data: ${JSON.stringify({ session_id: SESSION, agent: "demo/coder" })}`,
       ...records.map((r) => `data: ${JSON.stringify(r)}`),
       "data: [DONE]",
     ]);
@@ -350,7 +352,7 @@ describe("the panel", () => {
     await runTry(TARGET, broken.dispatch, tryBody(broken.state), new AbortController().signal);
     expect(html(broken.state)).toContain(S.agent.apiTryStreamBroken);
 
-    stubFetch(() => sse([ev({ type: "task_begin" })]));
+    stubFetch(() => sse([meta(), ev({ type: "task_begin" })]));
     const unfinished = harness();
     await runTry(
       TARGET,
@@ -367,7 +369,8 @@ describe("the panel", () => {
     stubFetch((req) => {
       if (req.path === TRY_PATH) {
         body = live(req.signal);
-        body.send(hello);
+        body.send(PING);
+        body.record(meta());
         body.record(ev({ type: "task_begin" }));
         body.record(call("call_9", '{"cmd":"rm -rf build"}'));
         return body.response;
@@ -414,7 +417,7 @@ describe("the panel", () => {
     const fetch = stubFetch(() => new Response(null, { status: 202 }));
     const named = harness();
     named.dispatch({ type: "start" });
-    named.dispatch({ type: "hello", sessionId: SESSION, agent: "demo/coder", atMs: 0 });
+    named.dispatch({ type: "session", sessionId: SESSION, atMs: 0 });
     await stopTry(named.state, null);
     expect(fetch.requests.at(-1)).toMatchObject({
       method: "POST",

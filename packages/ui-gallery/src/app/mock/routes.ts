@@ -916,16 +916,9 @@ router
   })
   // Try it: the stream a real run sends, scripted (fixtures.ts), whole in one body.
   .post("/api/projects/:projectId/agents/:agentId/api/try", (ctx) =>
-    raw(
-      amspTryStream(ctx.body, {
-        agent: `${ctx.params.projectId}/${ctx.params.agentId}`,
-        lang: ctx.store.lang,
-        now: Date.now(),
-      }),
-      {
-        "content-type": "text/event-stream; charset=utf-8",
-      },
-    ),
+    raw(amspTryStream(ctx.body, { lang: ctx.store.lang, now: Date.now() }), {
+      "content-type": "text/event-stream; charset=utf-8",
+    }),
   );
 
 // ---------------------------------------------------------------------------------------------

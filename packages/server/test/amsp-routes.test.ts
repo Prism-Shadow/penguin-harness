@@ -32,7 +32,8 @@
  *   continuing a Session preserves its choices, clearing defaults restores normal creation,
  *   and a removed workspace refuses creation without leaving a Session behind.
  * - Given a run without session_id, a Session is created with client `api` and source `api`
- *   and the stream's hello names it; the stream ends with [DONE] and its records read completed.
+ *   and the stream's first record, its session_meta, names it; the stream ends with [DONE] and
+ *   its records read completed.
  * - Given the Agent's API approval mode, the Session a run creates carries it; changing the
  *   mode on the tab leaves that Session as it was, and a PATCH on the Session moves it.
  * - Given a run with session_id, the same Session continues and its runtime receives the new
@@ -48,14 +49,14 @@
  *   Session is a 204.
  * - Given a malformed body, the answer is 400 `bad_request` naming the field — an oversized or
  *   non-image data URL, a file item, too many image bytes included — and nothing is created.
- * - Given a run stream, `event: ping` is written right after hello and every 20 s after
- *   (fake timers); there is no `: keep-alive` comment.
+ * - Given a run stream, `event: ping` opens it and is written every 20 s after (fake timers);
+ *   there is no `: keep-alive` comment.
  *
  * Scenarios — the API tab's try route (`POST /api/projects/:p/agents/:a/api/try`, the owner's
  * sign-in in place of a key):
  * - Given the owner's cookie, the try route streams what a keyed run streams, record kind for
- *   record kind: hello names a Session with client `api`, source `api` and the Agent's API
- *   approval mode, and [DONE] ends it; no key's last use moves.
+ *   record kind: its session_meta names a Session with client `api`, source `api` and the
+ *   Agent's API approval mode, and [DONE] ends it; no key's last use moves.
  * - Given a member who is not the owner, the answer is 403 `owner_required`; a user outside the
  *   Project gets 404, a signed-out request 401; none of them creates anything.
  * - Given the Agent's switch off, or no such Agent, the answer is 404 `agent_not_found`; given
@@ -126,17 +127,19 @@ const kindOf = (r: AmspRecord): string =>
 const recordsOf = (frames: AmspFrame[]): AmspRecord[] =>
   frames.flatMap((f) => (f.kind === "record" ? [f.record] : []));
 
-/** The Session a run stream's hello names. */
+/** The opening frame of a run stream. */
+const PING: AmspFrame = { kind: "control", control: { kind: "ping" } };
+
+/** The new Session a run stream names: its main session_meta's. */
 function sessionOf(frames: AmspFrame[]): string {
-  const hello = frames.find((f) => f.kind === "control" && f.control.kind === "hello");
-  if (hello?.kind !== "control" || hello.control.kind !== "hello") throw new Error("no hello");
-  return hello.control.session_id;
+  const meta = recordsOf(frames).find((r) => r.type === "session_meta" && !r.origin?.length);
+  if (meta === undefined) throw new Error("no session_meta");
+  return (meta.payload as { session_id: string }).session_id;
 }
 
-/** The run's result, as the SDK folds its records. */
-function resultOf(frames: AmspFrame[]): RunResult {
-  const collector = new RunCollector();
-  collector.hello(sessionOf(frames));
+/** The run's result, as the SDK folds its records; `sessionId` is the Session a run continued. */
+function resultOf(frames: AmspFrame[], sessionId?: string): RunResult {
+  const collector = new RunCollector(sessionId !== undefined ? { sessionId } : {});
   for (const r of recordsOf(frames)) collector.add(r);
   return collector.result();
 }
@@ -461,17 +464,15 @@ describe("Agent API: runs", () => {
   const session = async (sessionId: string): Promise<SessionResponse["session"]> =>
     ((await (await admin.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse).session;
 
-  it("a run without session_id creates a Session with client api and source api and names it at hello", async () => {
+  it("a run without session_id creates a Session with client api and source api and names it with its session_meta", async () => {
     const res = await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { input: "Say hello" } });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
     expect(res.headers.get("cache-control")).toBe("no-cache");
     expect(res.headers.get("x-accel-buffering")).toBe("no");
     const items = await stream(res).rest();
-    expect(items[0]).toMatchObject({
-      kind: "control",
-      control: { kind: "hello", agent: `${P}/${A}` },
-    });
+    expect(items[0]).toEqual(PING);
+    expect(items[1]).toMatchObject({ kind: "record", record: { type: "session_meta" } });
     expect(items.at(-1)).toEqual(DONE);
     const result = resultOf(items);
     expect(result).toMatchObject({ status: "completed", requests: 1 });
@@ -498,11 +499,11 @@ describe("Agent API: runs", () => {
     const workspace = await fs.realpath(await fs.mkdtemp(`${t.root}/api-workspace-`));
     const tab = `/api/projects/${P}/agents/${A}/api`;
     const model = { provider: "custom", modelId: "claude-api-model" };
-    const firstId = async (res: Response) => {
+    const firstId = async (res: Response, continued?: string) => {
       if (res.status !== 200) throw new Error(await res.text());
       const events = await stream(res).rest();
-      expect(resultOf(events).status).toBe("completed");
-      return sessionOf(events);
+      expect(resultOf(events, continued).status).toBe("completed");
+      return continued ?? sessionOf(events);
     };
     try {
       expect((await admin.put(tab, { model, thinkingLevel: "high", workspace })).status).toBe(200);
@@ -513,6 +514,7 @@ describe("Agent API: runs", () => {
       await admin.put(tab, { model: null, thinkingLevel: "low", workspace: null });
       await firstId(
         await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { session_id: id, input: "two" } }),
+        id,
       );
       expect(await session(id)).toMatchObject({ ...model, thinkingLevel: "high", workspace });
       const tried = await firstId(await admin.post(`${tab}/try`, { input: "three" }));
@@ -584,10 +586,7 @@ describe("Agent API: runs", () => {
       const events = stream(
         await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { session_id: sessionId, input } }),
       );
-      expect(await events.next()).toMatchObject({
-        kind: "control",
-        control: { kind: "hello", session_id: sessionId },
-      });
+      expect(await events.next()).toEqual(PING);
       const upTo = await events.until("partial_text");
       release();
       const rest = await events.rest();
@@ -918,7 +917,7 @@ describe("Agent API: runs", () => {
     }
   });
 
-  it("a ping goes out right after hello and every 20 s after, and no keep-alive comment", async () => {
+  it("a ping opens the stream and goes out every 20 s after, and no keep-alive comment", async () => {
     const sessionId = uniqueSessionId();
     const { session: runtime, release } = blocking(sessionId);
     adoptSession(t.deps, runtime, { projectId: P, agentId: A, client: "api" });
@@ -939,7 +938,7 @@ describe("Agent API: runs", () => {
         }
       };
       await readUntil('"text":"Working"');
-      expect(text.startsWith("event: hello\n")).toBe(true);
+      expect(text.startsWith("event: ping\ndata: {}\n\n")).toBe(true);
       expect(text.split("event: ping\n").length - 1).toBe(1);
       await vi.advanceTimersByTimeAsync(20_000);
       await readUntil("event: ping\ndata: {}\n\n", 2);
@@ -1019,10 +1018,7 @@ describe("Agent API: the try route", () => {
     expect(shape(items)).toEqual(shape(keyed));
     expect(items.at(-1)).toEqual(DONE);
     expect(resultOf(items)).toMatchObject({ status: "completed", requests: 1 });
-    expect(items[0]).toMatchObject({
-      kind: "control",
-      control: { kind: "hello", agent: `${P}/${A}` },
-    });
+    expect(items[0]).toEqual(PING);
     const created = (
       (await (await admin.get(`/api/sessions/${sessionOf(items)}`)).json()) as SessionResponse
     ).session;
@@ -1077,10 +1073,7 @@ describe("Agent API: the try route", () => {
     const events = stream(
       await admin.post(tryPath(), { session_id: sessionId, input: "And now?" }),
     );
-    expect(await events.next()).toMatchObject({
-      kind: "control",
-      control: { kind: "hello", session_id: sessionId },
-    });
+    expect(await events.next()).toEqual(PING);
     await events.until("partial_text");
     release();
     expect((await events.rest()).at(-1)).toEqual(DONE);
