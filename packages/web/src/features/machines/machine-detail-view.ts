@@ -427,7 +427,8 @@ export interface ConfigSyncView {
 /**
  * What the dialog says of the machine's last config sync; null before the first one since the
  * server started. A skipped model's reason is the far side's code in the reader's language where
- * the app knows it, its own words otherwise.
+ * the app knows it, its own words otherwise — except for one of this server's built-in models,
+ * whose refusal means the machine's build does not list it yet, and says so.
  */
 export function configSyncView(
   machine: MachineInfo,
@@ -445,7 +446,10 @@ export function configSyncView(
       : c.failed(sync.detail ?? ""),
     envOnly: sync.envOnly.length > 0,
     skipped: sync.skipped.map((one) =>
-      c.skippedModel(`${one.provider}/${one.modelId}`, byCode[one.code] ?? one.reason),
+      c.skippedModel(
+        `${one.provider}/${one.modelId}`,
+        one.builtInHere === true ? c.notInMachineBuild : (byCode[one.code] ?? one.reason),
+      ),
     ),
   };
 }
@@ -458,6 +462,20 @@ export function configSyncView(
 export function envOnlyItems(machine: MachineInfo): string[] {
   return (machine.configSync?.envOnly ?? []).map(
     (one) => `${one.projectId}/${one.provider}/${one.modelId}:${one.variable}`,
+  );
+}
+
+/**
+ * What the "models not synced to this machine" notice is about, one item per refused entry and
+ * why (`projectId/provider/modelId:code`, then `:built-in` for one of this server's built-in
+ * models): the set its dismissal is kept against, so another model refused, or the same one
+ * refused for another reason, brings it back. The sync's time is not in it: a sync runs on its
+ * own after every config edit and every reconnect, and the same refusal again is not news.
+ */
+export function skippedItems(machine: MachineInfo): string[] {
+  return (machine.configSync?.skipped ?? []).map(
+    (one) =>
+      `${one.projectId}/${one.provider}/${one.modelId}:${one.code}${one.builtInHere === true ? ":built-in" : ""}`,
   );
 }
 

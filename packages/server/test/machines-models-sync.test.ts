@@ -12,7 +12,8 @@
  * plaintext, merged into theirs per field — a field we do not hold is left alone there.
  *
  * An entry the machine refuses by name is left out and the rest of the table still lands, with
- * no pointer to it. A Project the machine is still provisioning on its first boot (its creation
+ * no pointer to it; one of our built-in models refused as not addable is marked as such, since
+ * then it is the machine's build that is behind. A Project the machine is still provisioning on its first boot (its creation
  * refused as taken, the Project not listed yet) is written once it is listed; one that never is
  * stays refused. A value a row takes from this server's environment never travels, and
  * `envSourced` names exactly those.
@@ -28,6 +29,7 @@ import type { ModelEntry } from "@prismshadow/penguin-core";
 import type { ModelsResponse, ModelsUpdateRequest } from "../src/api/types.js";
 import { envSourced, planModelSync, syncModelsToMachine } from "../src/machines/models-sync.js";
 import type { LocalModels } from "../src/machines/models-sync.js";
+import { catalogEntryFor } from "../src/model-catalog/catalog.js";
 import { machineApi } from "../src/machines/machine-api.js";
 import type { MachineApi } from "../src/machines/machine-api.js";
 import { createTestApp } from "./helpers.js";
@@ -551,6 +553,9 @@ describe("syncModelsToMachine, against a running server", () => {
         ],
       });
 
+      // A hand-added id is not one of our built-in models: the far side's own reason stands.
+      expect(outcome.kind === "synced" && outcome.skipped[0]).not.toHaveProperty("builtInHere");
+
       const config = await machine.deps.projectConfigService.loadConfig("default_project");
       expect(config.models.some((m) => m.model_id === "gemini-9.9-not-a-preset")).toBe(false);
       expect(config.models.find((m) => m.model_id === "deepseek-v4-flash")?.api_key).toBe(
@@ -561,6 +566,59 @@ describe("syncModelsToMachine, against a running server", () => {
       server.close();
       await machine.cleanup();
     }
+  });
+
+  it("marks a built-in model of ours that a machine on an older build refuses as not addable", async () => {
+    // An older build's catalog does not list a row this one ships, so its PUT refuses that row
+    // by name exactly as it refuses a hand-added id.
+    expect(catalogEntryFor("deepseek", "deepseek-v4-flash")).toBeDefined();
+    const refuse = new Set(["deepseek/deepseek-v4-flash", "deepseek/deepseek-hand-added"]);
+    const api: MachineApi = {
+      postBytes: async () => ({ status: 500, text: "" }),
+      request: async (method, path, body) => {
+        if (path === "/api/projects") {
+          return { status: 200, text: JSON.stringify({ projects: [{ projectId: "p1" }] }) };
+        }
+        if (method === "GET") return { status: 200, text: JSON.stringify(remoteTable()) };
+        const sent = (body as ModelsUpdateRequest).models.find((m) =>
+          refuse.has(`${m.provider}/${m.modelId}`),
+        );
+        if (sent === undefined) return { status: 200, text: "{}" };
+        const details = { provider: sent.provider, modelId: sent.modelId };
+        return {
+          status: 400,
+          text: JSON.stringify({
+            error: { code: "model_not_addable", message: "cannot be added", details },
+          }),
+        };
+      },
+    };
+
+    const outcome = await syncModelsToMachine({
+      api,
+      projects: ["p1"],
+      loadLocal: async () => ({
+        models: [local(), local({ model_id: "deepseek-hand-added" })],
+      }),
+    });
+    expect(outcome).toMatchObject({ kind: "synced", projects: ["p1"], refused: [] });
+    expect(outcome.kind === "synced" && outcome.skipped).toEqual([
+      {
+        projectId: "p1",
+        provider: "deepseek",
+        modelId: "deepseek-v4-flash",
+        code: "model_not_addable",
+        reason: "cannot be added",
+        builtInHere: true,
+      },
+      {
+        projectId: "p1",
+        provider: "deepseek",
+        modelId: "deepseek-hand-added",
+        code: "model_not_addable",
+        reason: "cannot be added",
+      },
+    ]);
   });
 
   it("creates the Project over there under the same id, and it works", async () => {

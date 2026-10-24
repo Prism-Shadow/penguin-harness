@@ -1420,6 +1420,15 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               code: "model_not_addable",
               reason: "cannot be added",
             },
+            // A built-in model here that the machine's older build does not list yet.
+            {
+              projectId: IDS.project,
+              provider: "minimax",
+              modelId: "MiniMax-M3.1-Flash",
+              code: "model_not_addable",
+              reason: "cannot be added",
+              builtInHere: true,
+            },
           ],
         },
       },

@@ -249,6 +249,8 @@ export const en: Strings = {
           "Model keys from environment variables can't be synced to this machine. Set the keys by hand first.",
         skippedTitle: "These models were not synced to this machine:",
         skippedModel: (model: string, reason: string) => `${model}: ${reason}`,
+        notInMachineBuild:
+          "This machine's version doesn't include this built-in model yet; update the machine, then sync config again.",
       },
       held: {
         moving: "Another action is running on this machine.",

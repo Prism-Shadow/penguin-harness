@@ -304,6 +304,8 @@ export const zh = {
         envOnly: "环境变量里的模型密钥无法同步到这台机器，请先手动配置模型密钥。",
         skippedTitle: "这些模型没有同步到这台机器：",
         skippedModel: (model: string, reason: string) => `${model}：${reason}`,
+        /** Why a built-in model of this server was refused: the machine's build does not list it yet. */
+        notInMachineBuild: "这台机器的版本还没有这个内置模型；请先更新这台机器，再同步配置。",
       },
       /**
        * The one sentence under the toolbar while some of its verbs wait: why, said plainly. The
