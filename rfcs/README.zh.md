@@ -51,3 +51,4 @@
 | [PRFC-0021-distros.md](PRFC-0021-distros.md) | 发行通道：harness 抵达一台机器的共用词表 | 草案 |
 | [PRFC-0022-rfc-invariant.md](PRFC-0022-rfc-invariant.md) | RFC Invariants：一个永久节，写下必须一直成立的性质 | 草案 |
 | [PRFC-0023-harness-meta.md](PRFC-0023-harness-meta.md) | Harness Meta：每个数据根都带着自己那份 harness 记录 | 草案 |
+| [PRFC-0024-cli-resolution.md](PRFC-0024-cli-resolution.md) | CLI 解析：每条通道按声明解析要运行的 CLI | 草案 |
