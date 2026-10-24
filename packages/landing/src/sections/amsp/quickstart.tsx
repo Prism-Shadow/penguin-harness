@@ -1,7 +1,8 @@
 /**
  * Three steps to a first run: turn the agent's API on in the Web App, run it with curl (and what
  * comes back, cut from the scripted first-request run), or from TypeScript with the SDK. The code is
- * lib/amsp-quickstart.ts; the TypeScript is highlighted, the shell commands are code cards.
+ * lib/amsp-quickstart.ts; the TypeScript is highlighted, the shell commands are code cards. Every
+ * block wraps a line too long for its column instead of scrolling it out of view.
  */
 import type { ReactNode } from "react";
 import { highlightSiteCode, SiteCodeBlock } from "@prismshadow/penguin-ui/site";
@@ -28,7 +29,7 @@ function Step({ index, title, children }: { index: number; title: string; childr
 
 export function AmspQuickstart() {
   const Q = S.amsp.quickstart;
-  const response = responseExcerpt(SCENARIOS[0]!.steps, 3, 3, Q.curl.elided);
+  const response = responseExcerpt(SCENARIOS[0]!.steps, 2, 3, Q.curl.elided);
   return (
     <Section id="quickstart" title={Q.title}>
       <ol className="mx-auto max-w-4xl space-y-12">
@@ -42,12 +43,12 @@ export function AmspQuickstart() {
           </a>
         </Step>
         <Step index={2} title={Q.curl.title}>
-          <CodeCard code={CURL_RUN} label="curl" />
-          <CodeCard code={response} label={Q.curl.response} />
+          <CodeCard code={CURL_RUN} label="curl" className="amsp-wrap" />
+          <CodeCard code={response} label={Q.curl.response} className="amsp-wrap" />
           <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">{Q.curl.note}</p>
         </Step>
         <Step index={3} title={Q.sdk.title}>
-          <CodeCard code={SDK_INSTALL} label="npm" />
+          <CodeCard code={SDK_INSTALL} label="npm" className="amsp-wrap" />
           <div className="amsp-code overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
             <SiteCodeBlock code={SDK_EXAMPLE} language="typescript" highlight={highlightSiteCode} />
           </div>

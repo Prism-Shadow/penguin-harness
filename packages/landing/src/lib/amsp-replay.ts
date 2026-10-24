@@ -16,6 +16,7 @@
  */
 import type {
   AmspRecord,
+  ModelPayload,
   StopReason,
   StreamPhase,
   ThinkingLevel,
@@ -61,8 +62,7 @@ export interface RunOutcome {
 export interface ReplayState {
   items: ReplayItem[];
   requests: ReplayRequest[];
-  /** Who runs it: the Agent from `hello`, the model from `session_meta` (a first message only). */
-  agent: string | null;
+  /** The model, from `session_meta`: a Session's first message only. */
   model: string | null;
   /** Once `[DONE]` has arrived. */
   outcome: RunOutcome | null;
@@ -138,7 +138,6 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
   const requests: ReplayRequest[] = [];
   const records: AmspRecord[] = [];
   let usage: TokenCounts | null = null;
-  let agent: string | null = null;
   let model: string | null = null;
   let done = false;
 
@@ -258,7 +257,7 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
   for (const step of steps.slice(0, count)) {
     switch (step.kind) {
       case "control":
-        if (step.control.kind === "hello") agent = step.control.agent;
+        // A heartbeat or a resync notice: it adds nothing to the run.
         break;
       case "record":
         fold(step.record);
@@ -273,7 +272,7 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
   }
 
   if (!done) {
-    return { items, requests, agent, model, outcome: null, usage: null, elapsedMs: null, done };
+    return { items, requests, model, outcome: null, usage: null, elapsedMs: null, done };
   }
   for (const item of items) item.open = false;
   const at = (type: string, last: boolean) => {
@@ -287,7 +286,6 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
   return {
     items,
     requests,
-    agent,
     model,
     outcome: runOutcome(records),
     usage,
@@ -310,7 +308,8 @@ export interface StepLine {
   preview: string;
 }
 
-const PREVIEW_CHARS = 120;
+/** A preview wraps in its column; past this it is cut, so a row stays within three lines. */
+const PREVIEW_CHARS = 48;
 
 const cut = (text: string) =>
   text.length > PREVIEW_CHARS ? `${text.slice(0, PREVIEW_CHARS - 1)}…` : text;
@@ -430,6 +429,80 @@ export function stepDelays(steps: readonly RunStep[]): number[] {
     if (now === null || before === null) return MIN_STEP_MS;
     return Math.min(MAX_STEP_MS, Math.max(MIN_STEP_MS, now - before));
   });
+}
+
+/** A stretch of a run, in milliseconds since its first `task_begin`. */
+export interface Span {
+  begin: number;
+  end: number;
+}
+
+/** A streamed message: from its `start` fragment to its complete record. */
+export interface MessageSpan extends Span {
+  kind: ItemKind;
+}
+
+/** A run's three levels, longest first: the Task, its Requests, the messages they stream. */
+export interface RunSpans {
+  task: Span;
+  requests: Span[];
+  messages: MessageSpan[];
+}
+
+/** A message or one of its fragments: the key that pairs the two (the call id, else the role). */
+function streamKey(payload: Extract<ModelPayload, { type: ItemKind | `partial_${ItemKind}` }>) {
+  const id = "tool_call_id" in payload ? payload.tool_call_id : payload.role;
+  return `${payload.type.replace(/^partial_/, "")}:${id}`;
+}
+
+/**
+ * The main Session's spans in a finished run: the Task from its first `task_begin` to its last
+ * `task_end`, each Request from `request_begin` to `request_end`, each message from its `start`
+ * fragment to its complete record. A message that arrives complete with no fragments (the echoed
+ * input) spans no time and is left out; a run with no closed Task has no spans.
+ */
+export function runSpans(records: readonly AmspRecord[]): RunSpans | null {
+  const main = records.filter((record) => record.origin === undefined);
+  const first = main.find((record) => kindOf(record) === "task_begin");
+  const last = main.findLast((record) => kindOf(record) === "task_end");
+  if (first === undefined || last === undefined) return null;
+  const zero = Date.parse(first.timestamp);
+  const at = (record: AmspRecord) => Date.parse(record.timestamp) - zero;
+
+  const requests: Span[] = [];
+  const messages: MessageSpan[] = [];
+  const streaming = new Map<string, number>();
+  let request: number | null = null;
+  for (const record of main) {
+    if (record.type === "event_msg") {
+      if (record.payload.type === "request_begin") request = at(record);
+      else if (record.payload.type === "request_end" && request !== null) {
+        requests.push({ begin: request, end: at(record) });
+        request = null;
+      }
+    } else if (record.type === "model_msg") {
+      const p = record.payload;
+      switch (p.type) {
+        case "partial_text":
+        case "partial_thinking":
+        case "partial_tool_call":
+        case "partial_tool_call_output":
+          if (p.event_type === "start") streaming.set(streamKey(p), at(record));
+          break;
+        case "text":
+        case "thinking":
+        case "tool_call":
+        case "tool_call_output": {
+          const begin = streaming.get(streamKey(p));
+          if (begin === undefined) break;
+          streaming.delete(streamKey(p));
+          messages.push({ kind: p.type, begin, end: at(record) });
+          break;
+        }
+      }
+    }
+  }
+  return { task: { begin: 0, end: at(last) }, requests, messages };
 }
 
 /** When a tool's output completed after its call's `request_end`: how long after, in ms. */

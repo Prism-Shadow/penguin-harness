@@ -3,9 +3,9 @@
  * model was called). The records, their order and their fields follow PRFC-0021 and the engine as
  * it emits them:
  *
- * - the stream opens with the `hello` control frame; on the Session's first message
- *   `session_meta` follows, then `task_begin`, then the echoed input; later messages open with
- *   `task_begin` right after `hello`;
+ * - on the Session's first message the stream opens with `session_meta`, which carries the new
+ *   Session's id, then `task_begin`, then the echoed input; later messages, whose Session id the
+ *   caller passed, open with `task_begin`;
  * - a Request pair brackets the model's output; a tool runs while its Request is still open and its
  *   output completes after `request_end`;
  * - fragments stream `start → delta → stop`, then the complete message follows;
@@ -28,7 +28,6 @@ import type {
   SessionMetaPayload,
   TokenCounts,
 } from "./amsp-protocol";
-import { AMSP_DEMO_AGENT } from "./amsp-quickstart";
 
 /** A request the caller sends beside the stream (the interrupted run's abort). */
 export interface CallerRequest {
@@ -121,11 +120,6 @@ const DATE_ARGUMENTS = '{"cmd":"date"}';
 const REQUEST_1 = counts(0, 2816, 58, 3004);
 const REQUEST_2 = counts(2816, 162, 31, 3021);
 const REQUEST_3 = counts(2978, 52, 18, 3057);
-
-const hello = (sessionId: string): Script => [
-  0,
-  { control: { kind: "hello", session_id: sessionId, agent: AMSP_DEMO_AGENT } },
-];
 
 /** On a Session's first message: the context it opened. */
 const sessionMeta = (sessionId: string): Script => [
@@ -292,7 +286,6 @@ const outputRest = (clock: string): Script[] => [
  * clock in a second Request and answers.
  */
 const FIRST_RUN = timed("2026-10-21T09:41:07.000Z", EPOCH, [
-  hello(SESSION),
   sessionMeta(SESSION),
   ...taskOpening("What time is it now?"),
   [8, record({ type: "request_begin", thinking_level: "medium" })],
@@ -325,7 +318,6 @@ const CONTINUE_RUN = timed(
   "2026-10-21T09:41:15.000Z",
   EPOCH,
   [
-    hello(SESSION),
     ...taskOpening("Now say it in French."),
     [8, record({ type: "request_begin", thinking_level: "medium" })],
     ...textSteps(574, ["Il est 9 h 41 UTC,", " le mercredi 21 octobre 2026."]),
@@ -358,8 +350,7 @@ const INTERRUPT_RUN = timed(
   "2026-10-21T09:41:30.000Z",
   EPOCH,
   [
-    hello(SESSION),
-    ...taskOpening("Now tell me the history of mechanical clocks, in detail."),
+    ...taskOpening("Explain clocks in depth."),
     [8, record({ type: "request_begin", thinking_level: "medium" })],
     ...replyPieces(600, HISTORY),
     [12, { request: { method: "POST", path: `/sessions/${SESSION}/abort` } }],
@@ -377,7 +368,7 @@ export const SCENARIOS: readonly AmspScenario[] = [
   { id: "continue", input: "Now say it in French.", continues: true, steps: CONTINUE_RUN },
   {
     id: "interrupt",
-    input: "Now tell me the history of mechanical clocks, in detail.",
+    input: "Explain clocks in depth.",
     continues: true,
     abortAfterMs: ABORT_AFTER_MS,
     steps: INTERRUPT_RUN,

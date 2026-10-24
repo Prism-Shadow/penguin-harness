@@ -188,7 +188,4 @@ export type AmspRecord =
   | Envelope<"event_msg", EventPayload>;
 
 /** A control frame: an SSE event with a name and no id. `data: [DONE]` ends a run stream. */
-export type AmspControl =
-  | { kind: "hello"; session_id: string; agent: string }
-  | { kind: "resync_required" }
-  | { kind: "ping" };
+export type AmspControl = { kind: "resync_required" } | { kind: "ping" };

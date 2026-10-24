@@ -2,23 +2,25 @@
  * The AMSP player: a scripted run replayed step by step, the way mmsp.penguin.ooo replays a model
  * call. Tabs pick the run (a Session's first request, a follow-up that continues it, a follow-up the
  * caller interrupts); the input block shows the call that starts it; the left pane lists the stream
- * as it arrives — the `hello` frame, the records (the ones the Trace stores on a faint ground), the
- * caller's abort beside the stream, `[DONE]`; the right pane is the run assembled from the records,
- * its outcome read from them once `[DONE]` arrives.
+ * as it arrives — the records (the ones the Trace stores on a faint ground), the caller's abort
+ * beside the stream, `[DONE]`; the right pane is the run assembled from the records, under the
+ * agent the client names; the strip under both reads the run's outcome from them once `[DONE]`
+ * arrives.
  *
  * Paced by the run's own timestamps (lib/amsp-replay.ts `stepDelays`), one timer at a time, only
  * while the player is on screen and not paused; after the last event it rests, then plays again.
  * Under reduced motion it shows each run finished and never plays. The events pane has a fixed
- * height and follows its newest row; the assembled pane holds the height of the tallest finished
+ * height and follows its newest row, a long preview wrapping in its column rather than running
+ * past it; the assembled pane and the outcome strip each hold the height of the tallest finished
  * run (every one is rendered invisibly in the same grid cell), so nothing below moves during a
- * replay.
+ * replay. Sized so the whole player fits one screen beside the hero's copy at 1280 × 800.
  */
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { highlightSiteCode, SiteCodeBlock, SitePill } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { SCENARIOS } from "../lib/amsp-demo";
-import { playerCode } from "../lib/amsp-quickstart";
+import { AMSP_DEMO_AGENT, playerCode } from "../lib/amsp-quickstart";
 import { foldRun, stepDelays, stepLine } from "../lib/amsp-replay";
 import type { ReplayItem, ReplayState, StepLine } from "../lib/amsp-replay";
 import type { TokenCounts } from "../lib/amsp-protocol";
@@ -205,6 +207,23 @@ export function StreamPlayer() {
               </div>
             </section>
           </div>
+
+          <div className="grid border-t border-gray-200 px-3 py-2.5 dark:border-gray-800">
+            {FINISHED.map((finished, i) => (
+              <div key={i} aria-hidden="true" className="invisible col-start-1 row-start-1">
+                <Outcome state={finished} />
+              </div>
+            ))}
+            <div className="col-start-1 row-start-1">
+              {state.done ? (
+                <Outcome state={state} />
+              ) : (
+                <p className="text-[13px] leading-6 text-gray-500 dark:text-gray-400">
+                  {P.running}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -225,15 +244,18 @@ function StreamRow({ line }: { line: StepLine }) {
         : "text-gray-500 dark:text-gray-400";
   return (
     <li
-      className={`grid grid-cols-[24ch_minmax(0,1fr)] gap-x-2 rounded-sm px-2 sm:grid-cols-[12ch_24ch_minmax(0,1fr)] ${tone}`}
+      className={`grid grid-cols-[24ch_minmax(0,1fr)] gap-x-2 rounded-sm px-2 sm:grid-cols-[10ch_24ch_minmax(0,1fr)] ${tone}`}
     >
-      <span className="hidden truncate text-[11px] text-gray-400 sm:block dark:text-gray-500">
+      {/* A record with no payload type (session_meta) lets its envelope run into the name's column. */}
+      <span
+        className={`hidden text-[11px] text-gray-400 sm:block dark:text-gray-500 ${
+          line.name ? "" : "sm:col-span-2"
+        }`}
+      >
         {line.head}
       </span>
-      <span className="truncate">
-        {line.name || <span className="sm:invisible">{line.head}</span>}
-      </span>
-      <span className="truncate">
+      {line.name ? <span>{line.name}</span> : <span className="sm:hidden">{line.head}</span>}
+      <span className="[overflow-wrap:anywhere]">
         {line.kind === "request" ? (
           <span className="font-sans">{P.besideStream}</span>
         ) : (
@@ -244,18 +266,16 @@ function StreamRow({ line }: { line: StepLine }) {
   );
 }
 
-/** The run assembled: who runs it, its items under their Requests, then its outcome at `[DONE]`. */
+/** The run assembled: the agent and (on a first message) the model, then the items by Request. */
 function Assembled({ state }: { state: ReplayState }) {
   const P = S.amsp.player;
   const groups = [0, ...state.requests.map((request) => request.index)];
   return (
     <div className="font-mono text-[12px] leading-5">
-      {state.agent !== null && (
-        <p className="mb-2 truncate text-[11px] text-gray-500 dark:text-gray-400">
-          {state.agent}
-          {state.model !== null && <> · {state.model}</>}
-        </p>
-      )}
+      <p className="mb-2 text-[11px] text-gray-500 dark:text-gray-400">
+        {AMSP_DEMO_AGENT}
+        {state.model !== null && <> · {state.model}</>}
+      </p>
       {groups.map((request) => {
         const items = state.items.filter((item) => item.request === request);
         const header = state.requests.find((candidate) => candidate.index === request);
@@ -263,7 +283,7 @@ function Assembled({ state }: { state: ReplayState }) {
         return (
           <div key={request} className={header ? "mt-2" : ""}>
             {header && (
-              <p className="mb-1 border-t border-gray-200 pt-1 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400">
+              <p className="mb-1 border-t border-gray-200 pt-1 text-[11px] leading-4 text-gray-500 dark:border-gray-800 dark:text-gray-400">
                 {P.request(header.index)}
                 {header.thinkingLevel && <> · {P.thinking(header.thinkingLevel)}</>}
               </p>
@@ -276,11 +296,6 @@ function Assembled({ state }: { state: ReplayState }) {
           </div>
         );
       })}
-      {state.done ? (
-        <Outcome state={state} />
-      ) : (
-        <p className="mt-3 font-sans text-gray-500 dark:text-gray-400">{P.running}</p>
-      )}
     </div>
   );
 }
@@ -295,7 +310,7 @@ function AssembledItem({ item }: { item: ReplayItem }) {
         : item.body;
   return (
     <li>
-      <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+      <div className="flex items-center gap-2 text-[11px] leading-4 text-gray-500 dark:text-gray-400">
         <span>
           {item.kind}
           {item.kind === "text" && ` · ${item.role}`}
@@ -315,8 +330,8 @@ function AssembledItem({ item }: { item: ReplayItem }) {
 
 /**
  * The run's outcome as a client reads it at `[DONE]` (`task_end` carries no status): the status,
- * the facts in the records it was read from, the Request count, the time taken and the tokens,
- * then the usage as bars.
+ * the Request count, the time taken and the tokens, the facts in the records it was read from,
+ * then the usage as bars, side by side from `sm` up.
  */
 function Outcome({ state }: { state: ReplayState }) {
   const P = S.amsp.player;
@@ -328,15 +343,15 @@ function Outcome({ state }: { state: ReplayState }) {
     ...(usage ? [P.tokens(usage.total.toLocaleString("en-US"))] : []),
   ];
   return (
-    <div className="mt-3 border-t border-gray-300 pt-2 dark:border-gray-700">
+    <div className="text-[13px]">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-sans text-gray-500 dark:text-gray-400">{P.result}</span>
+        <span className="text-gray-500 dark:text-gray-400">{P.result}</span>
         <SitePill tone="neutral">{outcome.status}</SitePill>
-        <span className="ml-auto font-sans text-gray-600 tabular-nums dark:text-gray-300">
+        <span className="ml-auto text-gray-600 tabular-nums dark:text-gray-300">
           {facts.join(" · ")}
         </span>
       </div>
-      <p className="mt-1 font-sans text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+      <p className="mt-1 text-[11px] leading-4 text-gray-500 dark:text-gray-400">
         {P.readFrom(outcome)}
       </p>
       {usage && <UsageBars usage={usage} />}
@@ -354,7 +369,7 @@ const BARS: { field: keyof Omit<TokenCounts, "total">; tone: string }[] = [
 function UsageBars({ usage }: { usage: TokenCounts }) {
   const largest = Math.max(1, ...BARS.map((bar) => usage[bar.field]));
   return (
-    <div className="mt-2 space-y-1">
+    <div className="mt-2 grid gap-x-5 gap-y-1 font-mono text-[12px] leading-5 sm:grid-cols-3">
       {BARS.map((bar) => {
         const value = usage[bar.field];
         // A count too small for its share of the bar still shows.

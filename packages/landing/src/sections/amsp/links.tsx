@@ -1,6 +1,7 @@
 /**
  * Where to read on: the reference pages on the docs site, then the SDK on npm and its source,
- * which leave the site and ask first. Ruled one-line rows: name, what it is, an arrow.
+ * which leave the site and ask first. Ruled rows: name, what it is, an arrow; one line from `sm`
+ * up, the description wrapping on a phone.
  */
 import { ArrowRightIcon, ExternalLinkIcon } from "@prismshadow/penguin-ui/site";
 import { S } from "../../lib/strings";
@@ -32,7 +33,7 @@ export function AmspLinks() {
                 <span className="shrink-0 font-semibold text-gray-900 dark:text-gray-100">
                   {words.name}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-gray-500 dark:text-gray-400">
+                <span className="min-w-0 flex-1 text-gray-500 sm:truncate dark:text-gray-400">
                   {words.text}
                 </span>
                 {item.external ? (

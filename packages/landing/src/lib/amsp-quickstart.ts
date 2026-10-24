@@ -13,7 +13,10 @@ export const AMSP_DEMO_AGENT = "demo/coder";
 
 export const SDK_INSTALL = "npm install @prismshadow/amsp";
 
-/** What the player's input block shows for a run: the call that starts it (and stops it). */
+/**
+ * What the player's input block shows for a run: the client and the call that starts it (and
+ * stops it); the import is the quickstart's. Every line fits the player's column at `lg`.
+ */
 export function playerCode(scenario: {
   input: string;
   continues?: boolean;
@@ -33,9 +36,7 @@ export function playerCode(scenario: {
     scenario.abortAfterMs === undefined
       ? ""
       : `\nsetTimeout(() => run.abort(), ${scenario.abortAfterMs});`;
-  return `import { AgentClient } from "@prismshadow/amsp";
-
-const client = new AgentClient({ baseUrl, agent: ${JSON.stringify(AMSP_DEMO_AGENT)}, apiKey });
+  return `const client = new AgentClient({ baseUrl, agent: ${JSON.stringify(AMSP_DEMO_AGENT)}, apiKey });
 const run = ${call};${abort}
 for await (const record of run) console.log(record);`;
 }

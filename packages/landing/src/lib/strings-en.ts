@@ -477,12 +477,13 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       tokens: (n: string) => `${n} tokens`,
     },
 
-    boundaries: {
-      title: "Three questions, each answered by a record",
+    structure: {
+      title: "Message structure",
       subtitle:
-        "Is the run over? Is the model's request over? Is this message complete? task_end, request_end and the complete message answer them, one inside the other.",
+        "A run nests three spans, longest first: the Task, each Request to the model, and each message from its first fragment to its complete record.",
       figureLabel:
-        "The nesting of one run: between task_begin and task_end are two Requests. In the first, the thinking and the tool call stream as fragments and close with their complete records; the tool's output completes after request_end. The second Request streams the answer.",
+        "The first-request run on one time axis, in three rows from longest to shortest. The Task runs from task_begin to task_end. Under it, two Requests each run from request_begin to request_end. Under them, each message runs from its first partial_* fragment to its complete record: the thinking and the tool call in the first Request, the tool's output completing after the first request_end, and the answer in the second Request.",
+      levels: { task: "Task", request: "Request", message: "Message" },
       steps: [
         "task_begin opens a Task and task_end closes it; a task_begin still open at [DONE] means the run did not reach its end.",
         "Each Request opens with request_begin, which carries the thinking level, and closes with request_end.",
@@ -492,7 +493,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       partial: "partial_* fragments, live only",
       complete: "complete record, stored in the Trace",
       caption: (ms: number) =>
-        `In the first-request run above, tool_call_output completes ${ms} ms after request_end, before the next request_begin.`,
+        `Drawn from the first-request run above: tool_call_output completes ${ms} ms after the first request_end, before the next request_begin.`,
     },
 
     vocabulary: {
@@ -504,7 +505,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       live: "live only",
       firstMessage: "sent on a first message only",
       meaning: {
-        meta: "A model context opened: its model, system prompt, Workspace and source. A Session's first message sends it right after hello; later messages do not repeat it.",
+        meta: "A model context opened: its model, system prompt, Workspace and source. It opens the stream of a Session's first message and carries the session_id a later request passes to continue; later messages do not repeat it.",
         complete:
           "Complete messages, exactly what the model saw or said, with the provider's fidelity data.",
         partial:
@@ -516,8 +517,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         title: "Control frames",
         head: { frame: "Frame", data: "Data", meaning: "Meaning" },
         meaning: {
-          hello:
-            "A run stream's first event. It names the Session; the next request that carries the id continues the same context.",
           resync_required:
             "The Last-Event-ID to resume from has left the buffer: read the history again, then keep reading the stream.",
           ping: "The heartbeat, sent right after subscribing and every 20 seconds after.",
@@ -536,7 +535,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       curl: {
         title: "Run it with curl",
         response: "response",
-        note: "The answer is the run itself: hello first, session_meta next on a Session's first message, then one event with an id per record, and data: [DONE] last.",
+        note: "The answer is the run itself: one event with an id per record, session_meta first on a Session's first message, and data: [DONE] last.",
         elided: "one event per record",
       },
       sdk: { title: "Or from TypeScript" },

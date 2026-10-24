@@ -480,14 +480,16 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       tokens: (n: string) => `${n} Token`,
     },
 
-    /** The drawn nesting of a run (sections/amsp/boundaries.tsx). */
-    boundaries: {
-      title: "三个问题，各有一条记录作答",
+    /** A run's three levels as one bar chart (sections/amsp/structure.tsx). */
+    structure: {
+      title: "消息结构",
       subtitle:
-        "运行结束了吗？这次模型请求结束了吗？这条消息完整了吗？task_end、request_end 和完整消息分别作答，一层套一层。",
+        "一次运行嵌套三层，从长到短依次是：Task、每次向模型发出的 Request，以及每条消息从第一个片段到完整记录的过程。",
       figureLabel:
-        "一次运行的嵌套结构：task_begin 与 task_end 之间有两个 Request。第一个 Request 里，思考和工具调用先以片段流出，再以完整记录收尾；工具输出在 request_end 之后才完整。第二个 Request 流出回答。",
-      /** The figure in words: read out with it, and shown in its place on a phone. */
+        "首次请求示例画在同一条时间轴上，按时长从长到短分三行。Task 从 task_begin 到 task_end。其下是两个 Request，各自从 request_begin 到 request_end。再下面是消息，每条从第一个 partial_* 片段到完整记录：第一个 Request 里的思考和工具调用，在第一个 request_end 之后才完整的工具输出，以及第二个 Request 里的回答。",
+      /** The chart's row names, top to bottom. */
+      levels: { task: "Task", request: "Request", message: "消息" },
+      /** The figure in words: read out with it, and shown under it on a phone. */
       steps: [
         "task_begin 打开一个 Task，task_end 关闭它；[DONE] 时仍未闭合的 task_begin 说明运行没有走到终点。",
         "每个 Request 以带思考等级的 request_begin 开始，以 request_end 结束。",
@@ -497,7 +499,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       partial: "partial_* 片段，仅实时",
       complete: "完整记录，写入 Trace",
       caption: (ms: number) =>
-        `在上面的首次请求示例里，tool_call_output 在 request_end 之后 ${ms} ms 才完整，早于下一个 request_begin。`,
+        `图中是上面的首次请求示例：tool_call_output 在第一个 request_end 之后 ${ms} ms 才完整，早于下一个 request_begin。`,
     },
 
     /** The records and the control frames (sections/amsp/vocabulary.tsx), keyed by lib/amsp-vocabulary.ts. */
@@ -510,7 +512,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       live: "仅实时",
       firstMessage: "仅随首条消息上流",
       meaning: {
-        meta: "一个模型上下文开启：模型、系统提示词、Workspace 和来源。Session 的首条消息在 hello 之后送出它，之后的消息不再重复。",
+        meta: "一个模型上下文开启：模型、系统提示词、Workspace 和来源。Session 的首条消息以它开启运行流，其中的 session_id 供之后的请求延续同一段上下文；之后的消息不再重复它。",
         complete: "完整消息，模型看到或说出的原样内容，附带提供方的 fidelity 数据。",
         partial: "流式传输中的同一批消息：start、delta、stop，随后由完整消息取代。",
         engine:
@@ -520,7 +522,6 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         title: "控制帧",
         head: { frame: "帧", data: "数据", meaning: "含义" },
         meaning: {
-          hello: "运行流的第一个事件，给出 Session 的 id；下一次请求带上它即延续同一段上下文。",
           resync_required: "续传用的 Last-Event-ID 已被挤出缓冲：重读历史后继续读这条流。",
           ping: "心跳，订阅后立即发送，此后每 20 秒一次。",
           done: "运行流的最后一行。",
@@ -540,7 +541,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       curl: {
         title: "用 curl 运行",
         response: "响应",
-        note: "响应就是这次运行本身：先是 hello，Session 的首条消息随后是 session_meta，再是每条记录一个带 id 的事件，最后是 data: [DONE]。",
+        note: "响应就是这次运行本身：每条记录一个带 id 的事件，Session 的首条消息以 session_meta 开头，最后是 data: [DONE]。",
         elided: "每条记录一个事件",
       },
       sdk: { title: "或者用 TypeScript" },

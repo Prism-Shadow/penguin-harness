@@ -3,10 +3,10 @@
  * is what stops an edit (or the spec moving under them) from putting a stream on the page that no
  * server would send.
  *
- * - Given any run, it opens with the `hello` frame that names its Session, ends with `[DONE]`, and
- *   its clock never runs backwards.
- * - Given the Session's first message, `session_meta` follows `hello`, then `task_begin`, then the
- *   echoed input; given a later message, `task_begin` follows `hello` and no `session_meta` comes.
+ * - Given any run, it ends with `[DONE]` and its clock never runs backwards.
+ * - Given the Session's first message, the stream opens with `session_meta` naming the new Session,
+ *   then `task_begin`, then the echoed input; given a later message, it opens with `task_begin` and
+ *   no `session_meta` comes.
  * - Given any run, `task_begin` and `task_end` enclose its records and each `request_begin` is
  *   closed by a `request_end` before the next one opens.
  * - Given a streamed message, its fragments go start → delta* → stop before its complete record,
@@ -35,8 +35,6 @@ const sequence = (steps: readonly RunStep[]) =>
 const indicesOf = (kinds: readonly string[], kind: string) =>
   kinds.flatMap((each, i) => (each === kind ? [i] : []));
 
-const first = SCENARIOS.find((scenario) => !scenario.continues)!;
-
 describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
   "the %s run",
   (_id, scenario) => {
@@ -44,25 +42,19 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
     const kinds = sequence(steps);
     const records = recordsOf(steps);
 
-    it("opens with hello, ends with [DONE], and its clock never runs backwards", () => {
-      expect(steps[0]).toMatchObject({
-        kind: "control",
-        control: { kind: "hello", agent: "demo/coder" },
-      });
+    it("ends with [DONE], and its clock never runs backwards", () => {
       expect(kinds.at(-1)).toBe("[DONE]");
       const times = records.map((record) => Date.parse(record.timestamp));
       expect(times.every((time, i) => i === 0 || time >= times[i - 1]!)).toBe(true);
     });
 
-    it("sends session_meta only on the Session's first message, before task_begin and the input", () => {
-      const opening = kinds.slice(0, 4);
+    it("opens with session_meta only on the Session's first message, then task_begin and the input", () => {
       if (scenario.continues) {
         expect(kinds).not.toContain("session_meta");
-        expect(opening.slice(0, 3)).toEqual(["event: hello", "task_begin", "text"]);
-        const firstHello = first.steps[0]!;
-        expect(steps[0]).toEqual(firstHello);
+        expect(kinds.slice(0, 2)).toEqual(["task_begin", "text"]);
       } else {
-        expect(opening).toEqual(["event: hello", "session_meta", "task_begin", "text"]);
+        expect(kinds.slice(0, 3)).toEqual(["session_meta", "task_begin", "text"]);
+        expect(records[0]).toMatchObject({ payload: { session_id: expect.stringMatching(/^session-/) } });
       }
       expect(records.find((record) => kindOf(record) === "text")).toMatchObject({
         payload: { role: "user", text: scenario.input },

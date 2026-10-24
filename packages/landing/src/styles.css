@@ -277,6 +277,17 @@
   background: transparent !important;
   font-size: 12.5px;
   line-height: 1.25rem;
+  /* A line longer than its column wraps rather than scrolling out of it (on a phone). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* The quickstart's command and response cards wrap the same way, a long `data:` line hanging past
+   its field name. */
+.amsp-wrap .site-code-card-line {
+  padding-left: 6ch;
+  text-indent: -6ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 html.dark .amsp-code .shiki,
 html.dark .amsp-code .shiki span {

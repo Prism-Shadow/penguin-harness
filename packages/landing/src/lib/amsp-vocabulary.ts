@@ -1,6 +1,6 @@
 /**
  * AMSP's vocabulary, as the /amsp page shows it: the Session stream's records grouped by their
- * envelope `type`, whether the Trace stores each, and the four control frames. The single place to
+ * envelope `type`, whether the Trace stores each, and the control frames. The single place to
  * adjust when the spec (PRFC-0021, "AMSP: the Session stream") moves: the tables,
  * the replay's "stored in the Trace" tone and the protocol types in amsp-protocol.ts all read this
  * file. Each row's meaning is in the dictionaries under `amsp.vocabulary`, keyed by its `id`, so a
@@ -17,7 +17,7 @@ export interface VocabularyRow {
   kinds: readonly string[];
   /** Stored in the Trace on disk (a durable record), or live on the stream only. */
   stored: boolean;
-  /** Sent only on a Session's first message (after `hello`), not repeated on later ones. */
+  /** Sent only on a Session's first message, first on its stream; not repeated on later ones. */
   firstMessageOnly?: true;
 }
 
@@ -85,7 +85,6 @@ export type EventKind = RowOf<"event_msg">["kinds"][number];
  * under `amsp.vocabulary.frames`, keyed by `id`.
  */
 export const CONTROL_FRAMES = [
-  { id: "hello", wire: "event: hello", data: '{"session_id", "agent"}' },
   { id: "resync_required", wire: "event: resync_required", data: "{}" },
   { id: "ping", wire: "event: ping", data: "{}" },
   { id: "done", wire: "data: [DONE]", data: "" },

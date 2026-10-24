@@ -7,12 +7,15 @@
  *   call's Request, not the next one.
  * - Given a run before `[DONE]`, there is no outcome, usage or time; at `[DONE]` there are, and a new
  *   Session's run uses exactly what its Session has used.
- * - Given the Session's first message, the pane names the Agent and the model; a later message names
- *   the Agent only.
+ * - Given the Session's first message, the pane names the model; a later message names none.
  * - Given a finished run, the outcome is read from the records in the protocol's order: a
  *   `task_begin` left open is a failure, then an `abort`, then a terminal `request_end` (one to be
  *   retried is not), then a fatal final reply, else completed.
  * - Given the run's timestamps, the replay waits the recorded gap, within its bounds.
+ * - Given a finished run, its spans nest longest first: each Request inside the Task, each streamed
+ *   message inside its Request, except a tool's output, which ends after its Request does and before
+ *   the next one opens; a message that arrives whole (the echoed input) has no span, and a run whose
+ *   Task never closed has none at all.
  * - Given a record of a kind the page does not read, it still gets a row, shaded by whether the Trace
  *   stores it; frames and the caller's request never are.
  */
@@ -26,6 +29,7 @@ import {
   MAX_STEP_MS,
   MIN_STEP_MS,
   runOutcome,
+  runSpans,
   stepDelays,
   stepLine,
 } from "../src/lib/amsp-replay";
@@ -108,12 +112,9 @@ describe("the assembled run", () => {
   });
 
   it("names the model only on the Session's first message", () => {
-    expect(foldRun(firstRun, firstRun.length)).toMatchObject({
-      agent: "demo/coder",
-      model: "mock/scripted-model",
-    });
+    expect(foldRun(firstRun, firstRun.length)).toMatchObject({ model: "mock/scripted-model" });
     const later = run("continue");
-    expect(foldRun(later, later.length)).toMatchObject({ agent: "demo/coder", model: null });
+    expect(foldRun(later, later.length)).toMatchObject({ model: null });
   });
 
   it("reads the interrupted run as aborted, with no usage reported", () => {
@@ -169,6 +170,38 @@ describe("the replay's pace", () => {
   });
 });
 
+describe("the message structure", () => {
+  it("nests the Requests in the Task and the messages in their Requests, the tool's output ending late", () => {
+    const spans = runSpans(recordsOf(firstRun))!;
+    const [first, second] = spans.requests;
+    expect(spans.requests).toHaveLength(2);
+    for (const request of spans.requests) {
+      expect(request.begin).toBeGreaterThanOrEqual(spans.task.begin);
+      expect(request.end).toBeLessThanOrEqual(spans.task.end);
+    }
+    expect(spans.messages.map((message) => message.kind)).toEqual([
+      "thinking",
+      "tool_call",
+      "tool_call_output",
+      "text",
+    ]);
+    const [thinking, call, output, answer] = spans.messages;
+    for (const message of [thinking!, call!]) {
+      expect(message.begin).toBeGreaterThan(first!.begin);
+      expect(message.end).toBeLessThan(first!.end);
+    }
+    expect(output!.end).toBeGreaterThan(first!.end);
+    expect(output!.end).toBeLessThan(second!.begin);
+    expect(answer!.begin).toBeGreaterThan(second!.begin);
+    expect(answer!.end).toBeLessThan(second!.end);
+  });
+
+  it("has no spans for a run whose Task never closed", () => {
+    const open = [event({ type: "task_begin" }), text(10, "start", ""), reply("completed")];
+    expect(runSpans(open)).toBeNull();
+  });
+});
+
 describe("the stream pane", () => {
   it("lists a kind the page does not read, shading only the records the Trace stores", () => {
     const compaction = event({
@@ -185,7 +218,10 @@ describe("the stream pane", () => {
       stored: false,
       preview: 'delta "Hi"',
     });
-    for (const frame of firstRun.filter((each) => each.kind !== "record")) {
+    const ping: RunStep = { kind: "control", control: { kind: "ping" } };
+    const besides = run("interrupt").filter((each) => each.kind !== "record");
+    expect(besides.map((each) => each.kind)).toEqual(["request", "done"]);
+    for (const frame of [ping, ...besides]) {
       expect(stepLine(frame).stored).toBe(false);
     }
   });
