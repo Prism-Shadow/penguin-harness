@@ -80,13 +80,11 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
     .first()
     .click();
   const group = page.locator(".anim-msg.my-2").first();
-  // Visibility is asserted explicitly: `toContainText` walks every descendant except
-  // SCRIPT/NOSCRIPT/STYLE, so the StatusIcon's own SVG <title>aborted</title> satisfies it
-  // even when nothing is drawn. This call never ran, so it has no output block to expand
-  // into — the row's `[aborted]` marker is the only explanation a touch user can reach.
+  // The broken call never ran and gets no result: its status icon names it aborted (the icon's
+  // aria-label and tooltip), the only explanation a touch user can reach.
   await expect(
-    group.getByText("[aborted]").filter({ visible: true }),
-    "the broken tool card shows a visible aborted marker",
+    group.locator('[role="img"][aria-label="aborted"]'),
+    "the broken tool card is settled as aborted",
   ).toHaveCount(1);
   // A running spinner has role=status; none should remain after the turn ends.
   await expect(page.locator('[role="status"]')).toHaveCount(0);
