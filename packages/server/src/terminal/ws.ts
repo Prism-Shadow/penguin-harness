@@ -13,9 +13,16 @@
  * CORS, so without it any page the user visits could open a shell on this machine.
  */
 import type { IncomingMessage, Server as HttpServer } from "node:http";
+import { format } from "node:url";
+import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
-import { SESSION_COOKIE } from "../auth/middleware.js";
+import {
+  isOwnOrigin,
+  originTarget,
+  parseCookieHeader,
+  sessionCookies,
+} from "../auth/middleware.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 
@@ -39,6 +46,7 @@ const BACKPRESSURE_POLL_MS = 250;
 export interface TerminalWebSocketDeps {
   /** The booted platform owns the terminals; the runtime asks it per upgrade. */
   hmr: ServerHmrHost;
+  trustProxy?: boolean;
   authService: Auth;
   log: (line: string) => void;
 }
@@ -53,10 +61,36 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     // "no handler -> destroy" behaviour) can deal with it.
     if (!match) return;
 
-    if (!isAllowedOrigin(req)) return refuse(socket, 403, "Forbidden");
+    let target: URL;
+    try {
+      // IncomingMessage has no Fetch Request URL; Node formats its transport authority.
+      if (!req.headers.host) return refuse(socket, 403, "Forbidden");
+      const protocol = req.socket instanceof TLSSocket && req.socket.encrypted ? "https:" : "http:";
+      target = new URL(
+        format({ protocol, host: req.headers.host, pathname: url.pathname, slashes: true }),
+      );
+      const forwarded = req.headers["x-forwarded-proto"];
+      if (
+        req.headers.origin &&
+        !isOwnOrigin(
+          req.headers.origin,
+          originTarget(
+            target,
+            Array.isArray(forwarded) ? forwarded.join(",") : forwarded,
+            deps.trustProxy ?? false,
+          ),
+        )
+      ) {
+        return refuse(socket, 403, "Forbidden");
+      }
+    } catch {
+      return refuse(socket, 403, "Forbidden");
+    }
 
-    const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-    const authed = token ? deps.authService.authenticateWithMeta(token) : null;
+    const authed =
+      sessionCookies(parseCookieHeader(req.headers.cookie), target)
+        .map(({ token }) => deps.authService.authenticateWithMeta(token))
+        .find((a) => a !== null) ?? null;
     if (!authed) return refuse(socket, 401, "Unauthorized");
 
     // The platform may be mid-swap; ensure() resolves the instance that owns the
@@ -78,41 +112,6 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         refuse(socket, 500, "Internal Server Error");
       });
   });
-}
-
-/**
- * A WebSocket handshake bypasses CORS entirely, so any origin may attempt one and the cookie
- * still rides along. Only a genuinely same-origin page may connect: host AND port must match
- * the Host the browser targeted — the same rule every write is held to (auth/middleware.ts).
- */
-function isAllowedOrigin(req: IncomingMessage): boolean {
-  const origin = req.headers.origin;
-  if (!origin) return true; // non-browser client (CLI, tests): no ambient cookie to abuse
-  let parsed: URL;
-  try {
-    parsed = new URL(origin);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  return parsed.host === (req.headers.host ?? "");
-}
-
-function readCookie(header: string | undefined, name: string): string | null {
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== name) continue;
-    try {
-      return decodeURIComponent(part.slice(eq + 1).trim());
-    } catch {
-      // A malformed percent escape is an invalid credential, not a server error — this
-      // runs in the `upgrade` handler, where a throw would take the whole process down.
-      return null;
-    }
-  }
-  return null;
 }
 
 function refuse(socket: Duplex, status: number, text: string): void {
