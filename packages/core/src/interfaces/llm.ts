@@ -70,8 +70,8 @@ export interface GenerativeModelConfig {
    * on every event, and excludes consumer-side time (yielding, approvals, Trace writes). It
    * therefore bounds the connect + first-event wait and the gaps between events, never how
    * long the model generates. From system_config.model.timeoutMs; <=0 disables it. Defaults
-   * to 300000: a model whose reasoning never reaches the wire spends its whole thinking phase
-   * inside the first-event gap.
+   * to 600000: a model whose reasoning never reaches the wire (or a relay that withholds it
+   * until the answer starts) spends its whole thinking phase inside the first-event gap.
    */
   requestTimeoutMs?: number;
   /**

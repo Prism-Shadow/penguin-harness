@@ -384,8 +384,13 @@
     }
   }
 
+  /* A run still arriving is never the scroll anchor: it sits at the live edge and moves down
+     with every line the stream adds, so a browser anchored on it carries a reader who has
+     scrolled up along with the stream, a line at a time. Anchored on the settled text above it,
+     the view stays where the reader left it. */
   .ui-stream [data-arrive] {
     animation: ui-stream-arrive var(--ui-dur-reveal) var(--ui-ease-out) both;
+    overflow-anchor: none;
   }
   @keyframes ui-stream-arrive {
     from {

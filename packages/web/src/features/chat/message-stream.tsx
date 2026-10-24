@@ -27,7 +27,7 @@ import { interactiveReplyIndex } from "./a2ui-reply";
 import { readOnlyActions } from "./a2ui-answered";
 import { WorkspaceLinksProvider } from "./workspace-links";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
-import { createStreamFollow, stickToBottom } from "./stream-follow";
+import { createStreamFollow, followToBottom, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
 import { useStreamSelectionMenu } from "./stream-selection-menu";
@@ -441,7 +441,7 @@ export function MessageStream({
     follow.hold(menuOpen);
     if (menuOpen) return;
     const el = scrollRef.current;
-    if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
+    if (el && !returningRef.current) followToBottom(el, follow);
     syncJump();
     // syncJump is recreated per render; the effect keys on the menu's open state only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -454,7 +454,9 @@ export function MessageStream({
   // Every snap goes through stickToBottom, which reports the landed position to the follow
   // model synchronously — the snap's async scroll event otherwise races late content growth
   // and could misinitialize follow as "parked above the bottom" right after entering a
-  // conversation (see stream-follow.ts).
+  // conversation (see stream-follow.ts). A following view's snap goes through followToBottom,
+  // which first judges the live position, so a scroll the browser has applied but not yet
+  // reported (a key, the scrollbar, a find or outline jump) is never undone.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
@@ -480,7 +482,7 @@ export function MessageStream({
     }
     lastPrependedRef.current = prepended;
     if (el) lastHeightRef.current = el.scrollHeight;
-    if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
+    if (el && !returningRef.current) followToBottom(el, follow);
     if (el) recordAnchor(el);
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
@@ -499,7 +501,7 @@ export function MessageStream({
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
       lastHeightRef.current = el.scrollHeight;
-      if (follow.snaps && !returningRef.current) stickToBottom(el, follow);
+      if (!returningRef.current) followToBottom(el, follow);
       syncJump();
     });
     ro.observe(el);
@@ -508,6 +510,28 @@ export function MessageStream({
     if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
     // syncJump is recreated per render; the observer only needs the stable follow object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow]);
+
+  // The wheel is heard natively, by a listener that is not passive and never prevents the
+  // default. React registers its wheel handlers as passive, and the browser then scrolls on the
+  // compositor first and tells the page up to a frame later: a stream commit in between would
+  // still follow, and its snap would pull the view back down under the reader's first upward
+  // tick. A blocking listener makes the browser hand the page the first wheel event of a gesture
+  // before it scrolls (the rest of the gesture stays asynchronous), so follow is off before the
+  // view moves.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      follow.wheel(e.deltaY);
+      if (e.deltaY < 0) cancelReturn(); // user takes over: the glide stops within a frame
+      syncJump();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // cancelReturn and syncJump are recreated per render but read only refs, state setters and
+    // the stable follow object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [follow]);
 
@@ -583,11 +607,6 @@ export function MessageStream({
         onContextMenu={selectionMenu.hostProps.onContextMenu}
         onKeyDown={selectionMenu.hostProps.onKeyDown}
         onScroll={onScroll}
-        onWheel={(e) => {
-          follow.wheel(e.deltaY);
-          if (e.deltaY < 0) cancelReturn(); // user takes over: the glide stops within a frame
-          syncJump();
-        }}
         onTouchStart={(e) => {
           const t = e.touches[0];
           if (t) follow.touchStart(t.clientY);

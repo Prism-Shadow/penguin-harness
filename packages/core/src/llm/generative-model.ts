@@ -748,7 +748,7 @@ export class GenerativeModel implements LLMInterface {
 
     this.uniConfig = buildUniConfig(config);
     this.defaultThinkingLevel = config.thinkingLevel;
-    this.requestTimeoutMs = config.requestTimeoutMs ?? 300000;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? 600000;
     this.toolCallIds = config.toolCallIds ?? new ToolCallIdAllocator();
     this.configuredMaxTokens = config.maxTokens;
     this.contextWindow = resolveContextWindow(config.contextWindow);

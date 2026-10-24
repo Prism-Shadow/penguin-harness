@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import {
   CheckIcon,
+  CheckLineIcon,
   ChevronDown,
   CloseIcon,
   DownloadIcon,
@@ -29,6 +30,7 @@ describe("marks", () => {
   it("draw the rest on the 24x24 line grid, hidden from assistive technology", () => {
     const marks = [
       createElement(CheckIcon),
+      createElement(CheckLineIcon),
       createElement(PlusIcon),
       createElement(DownloadIcon),
       createElement(UploadIcon),
