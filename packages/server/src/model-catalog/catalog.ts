@@ -1186,6 +1186,21 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Read 2026-10-24 from the models API and the per-model endpoints API: $2 input / $10
+    // output / $0.20 cache read over 1,048,576 tokens, image input, served by Moonshot AI alone
+    // and with no promotion on the default endpoint (`discount: 0`). The listing's
+    // `moonshotai/highspeed` endpoint ($4 / $20 / $0.20) is a provider route under this same id,
+    // not a model of its own.
+    modelId: "moonshotai/kimi-k3.1-pro",
+    displayName: "Kimi K3.1 Pro",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.2, 2, 10),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "moonshotai/kimi-k3",
     displayName: "Kimi K3",
     provider: "openrouter",
@@ -3442,6 +3457,30 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: false,
   },
   // -- Moonshot (Kimi) (official CNY pricing) --
+  {
+    // Moonshot's list (pricing page, read 2026-10-23 for MMSP 0.5.6's registry): CNY 13 input /
+    // 68 output / 1.3 cache hit over a 1,048,576-token window, image input. The default
+    // five-minute cache write bills at the input price, which is what cache_write stores; the
+    // one-hour write, which only MMSP's `prompt_caching` enhance asks for, bills twice that.
+    modelId: "kimi-k3.1-pro",
+    displayName: "Kimi K3.1 Pro",
+    provider: "moonshot",
+    contextWindow: 1048576,
+    pricing: cny(1.3, 13, 68),
+    supportsVision: true,
+  },
+  {
+    // The same model at two to three times the output speed (Moonshot's model list), at twice
+    // the input, output and cache-write prices and the same cache hit: CNY 26 / 136 / 1.3.
+    // Moonshot's vision guide names only kimi-k3.1-pro, but its model list files both ids under
+    // multimodal models, and MMSP's live probe read a base64 image through this one.
+    modelId: "kimi-k3.1-pro-highspeed",
+    displayName: "Kimi K3.1 Pro Highspeed",
+    provider: "moonshot",
+    contextWindow: 1048576,
+    pricing: cny(1.3, 26, 136),
+    supportsVision: true,
+  },
   {
     modelId: "kimi-k3",
     displayName: "Kimi K3",

@@ -790,6 +790,7 @@ describe("model-catalog", () => {
       "google/gemini-3.5-flash-lite",
       "minimax/minimax-m3.1-flash",
       "minimax/minimax-m3",
+      "moonshotai/kimi-k3.1-pro",
       "moonshotai/kimi-k3",
       "moonshotai/kimi-k2.6",
       "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -1467,6 +1468,8 @@ describe("model-catalog", () => {
       "claude-sonnet-4-6",
     ]);
     expect(MODEL_CATALOG.filter((m) => m.provider === "moonshot").map((m) => m.modelId)).toEqual([
+      "kimi-k3.1-pro",
+      "kimi-k3.1-pro-highspeed",
       "kimi-k3",
       "kimi-k2.6",
       "kimi-k2.5",
@@ -1533,6 +1536,8 @@ describe("model-catalog", () => {
       ["anthropic", "claude-sonnet-5-5", "openrouter", "anthropic/claude-sonnet-5.5"],
       ["anthropic", "claude-sonnet-5", "openrouter", "anthropic/claude-sonnet-5"],
       ["google", "gemini-3.5-flash-lite", "openrouter", "google/gemini-3.5-flash-lite"],
+      ["moonshot", "kimi-k3.1-pro", "openrouter", "moonshotai/kimi-k3.1-pro"],
+      ["moonshot", "kimi-k3.1-pro", "tokendance", "kimi-k3.1-pro"],
       ["moonshot", "kimi-k3", "openrouter", "moonshotai/kimi-k3"],
       ["moonshot", "kimi-k2.6", "openrouter", "moonshotai/kimi-k2.6"],
       ["moonshot", "kimi-k2.6", "siliconflow", "Pro/moonshotai/Kimi-K2.6"],
@@ -1570,6 +1575,14 @@ describe("model-catalog", () => {
       (m) => m.provider === "moonshot" && m.modelId === "kimi-k3",
     )!.pricing!;
     expect([cnyOf(k3.cache_read), cnyOf(k3.cache_write), cnyOf(k3.output)]).toEqual([2, 20, 100]);
+    // The high-speed variant doubles every bucket but the cache hit.
+    for (const [id, list] of [
+      ["kimi-k3.1-pro", [1.3, 13, 68]],
+      ["kimi-k3.1-pro-highspeed", [1.3, 26, 136]],
+    ] as const) {
+      const p = catalogEntryFor("moonshot", id)!.pricing!;
+      expect([cnyOf(p.cache_read), cnyOf(p.cache_write), cnyOf(p.output)], id).toEqual(list);
+    }
     const k26 = MODEL_CATALOG.find(
       (m) => m.provider === "moonshot" && m.modelId === "kimi-k2.6",
     )!.pricing!;

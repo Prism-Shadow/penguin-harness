@@ -75,7 +75,7 @@
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.5",
+    "@prismshadow/mmsp": "^0.5.6",
     "arktype": "^2.2.3",
     "smol-toml": "^1.9.1",
     "yaml": "^2.5.0"
