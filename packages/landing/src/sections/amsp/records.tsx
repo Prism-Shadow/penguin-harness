@@ -5,7 +5,8 @@
  * detail — its envelope and whether the Trace stores it, what it is, an example with every field
  * filled in, and a table of its fields: name, type, required or optional, meaning, example value.
  * The catalogue is lib/amsp-records.ts, the families and frames lib/amsp-vocabulary.ts, the words
- * the dictionaries' `amsp.records`. The selector is a list from `md` up and a native select on a
+ * the dictionaries' `amsp.records`. The selector is a list from `md` up, its names in their
+ * family's colour (lib/amsp-tones.ts, with its legend above the list), and a native select on a
  * phone, where the field table stacks.
  */
 import { useId, useState } from "react";
@@ -14,6 +15,8 @@ import { S } from "../../lib/strings";
 import { CONTROL_FRAMES, FAMILIES, kindEntry } from "../../lib/amsp-vocabulary";
 import { exampleOf, RECORD_DOCS } from "../../lib/amsp-records";
 import type { DocId, FieldDoc, RecordDoc } from "../../lib/amsp-records";
+import { familyOf, TONES } from "../../lib/amsp-tones";
+import type { FamilyTone } from "../../lib/amsp-tones";
 import { Section } from "../../components/section";
 
 type FrameId = (typeof CONTROL_FRAMES)[number]["id"];
@@ -35,6 +38,15 @@ const labelOf = (choice: Choice) =>
     ? choice.doc
     : (CONTROL_FRAMES.find((frame) => frame.id === choice.frame)!.wire.split("\n")[0] ?? "");
 const CHOICES = GROUPS.flatMap((group) => group.choices);
+
+/** A choice's colours: its envelope's family, a fragment in the family's lighter ink. */
+function toneOf(choice: Choice): { tone: FamilyTone; text: string } {
+  if ("frame" in choice || choice.doc === "envelope") {
+    return { tone: TONES.frame, text: TONES.frame.ink };
+  }
+  const tone = TONES[familyOf(kindEntry(choice.doc).envelope)];
+  return { tone, text: choice.doc.startsWith("partial_") ? tone.soft : tone.ink };
+}
 
 /** An example value, shortened to the table's column. */
 const EXAMPLE_CHARS = 40;
@@ -75,6 +87,10 @@ export function AmspRecords() {
         </label>
 
         <nav aria-label={R.choose} className="hidden md:block">
+          <p className="mb-3 flex gap-3 font-mono text-[11px]">
+            <span className={TONES.model.soft}>model_msg</span>
+            <span className={TONES.event.soft}>event_msg</span>
+          </p>
           {GROUPS.map((group) => (
             <div key={group.id} className="mb-3">
               <p className="mb-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
@@ -84,6 +100,7 @@ export function AmspRecords() {
                 {group.choices.map((choice) => {
                   const key = keyOf(choice);
                   const active = key === current;
+                  const { tone, text } = toneOf(choice);
                   return (
                     <li key={key}>
                       <button
@@ -91,10 +108,10 @@ export function AmspRecords() {
                         aria-controls={detailId}
                         aria-current={active || undefined}
                         onClick={() => setChosen(choice)}
-                        className={`-ml-2 w-full rounded-md border-l-2 px-2 py-px text-left font-mono text-[13px] leading-5 transition-colors ${
+                        className={`-ml-2 w-full rounded-md border-l-2 px-2 py-px text-left font-mono text-[13px] leading-5 transition-opacity ${text} ${
                           active
-                            ? "border-brand-600 bg-brand-50 text-brand-800 dark:border-brand-400 dark:bg-brand-400/10 dark:text-brand-200"
-                            : "border-transparent text-gray-600 hover:text-gray-950 dark:text-gray-400 dark:hover:text-white"
+                            ? `border-current font-semibold ${tone.ground || "bg-gray-100 dark:bg-gray-800"}`
+                            : "border-transparent opacity-80 hover:opacity-100"
                         }`}
                       >
                         {labelOf(choice)}
@@ -124,17 +141,19 @@ function RecordDetail({ record }: { record: RecordDoc }) {
   const words = R.items[record.id];
   const entry = record.id === "envelope" ? null : kindEntry(record.id);
   const facts = entry
-    ? [
-        `type: ${entry.envelope}`,
-        entry.stored ? R.stored : R.live,
-        ...(record.id === "session_meta" ? [R.firstMessage] : []),
-      ]
+    ? [entry.stored ? R.stored : R.live, ...(record.id === "session_meta" ? [R.firstMessage] : [])]
     : [];
+  const tone = entry ? TONES[familyOf(entry.envelope)] : null;
   return (
     <article>
       <h3 className="font-mono text-xl font-semibold tracking-tight">{record.id}</h3>
-      {facts.length > 0 && (
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{facts.join(" · ")}</p>
+      {entry && tone && (
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+          <span className={`rounded-sm px-1.5 font-mono leading-5 ${tone.ground} ${tone.ink}`}>
+            type: {entry.envelope}
+          </span>
+          {facts.join(" · ")}
+        </p>
       )}
       <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">{words.summary}</p>
 

@@ -6,22 +6,22 @@
  * - every stream opens with the `ping` control frame; on the Session's first message the first
  *   record is `session_meta`, whose `session_id` names the new Session, then `task_begin`, then the
  *   echoed input; a later message, on the `session_id` its request sent, starts at `task_begin`;
- * - a Request pair brackets the model's output; a tool runs while its Request is still open and its
- *   output completes after `request_end`;
- * - a message streams `start → delta → stop`, then its complete record follows; one that is cut
- *   short streams its fragments and gets no complete record;
+ * - a Request pair brackets the model's output; a tool runs once its call is complete, and its
+ *   output completes after `request_end`, the next Request opening on it;
+ * - every streamed message goes `start → delta → stop`, then its complete record follows, an
+ *   interrupted one included (it holds what had arrived);
  * - `task_end` closes the Task and `data: [DONE]` the stream.
  *
  * The interrupted run aborts mid-reply, through the abort request beside the stream: the reply's
- * fragments close with their `stop` and no complete text follows, `request_end` reads `aborted`
- * (no `token_usage`), the `abort` record follows, and the Task still closes with `task_end` before
- * `[DONE]`.
+ * fragments close with their `stop` and its complete text holds what had arrived, `request_end`
+ * reads `aborted` (the turn was not committed; no `token_usage`), the `abort` record follows, and
+ * the Task still closes with `task_end` before `[DONE]`.
  *
  * The timings are those of a real agent run: the first token a second or more after the request,
  * a few seconds of thinking, a `date` call that runs for a fifth of a second, a second Request of
- * a few seconds. Each message is shown as one `delta` (a real stream sends many), so a whole run
- * fits the player at once. The model is a script (`mock/scripted-model`), so its words and token
- * counts are illustrative.
+ * a few seconds; records that follow one another at once are a millisecond apart. Each message is
+ * shown as one `delta` (a real stream sends many), so a whole run fits the player at once. The
+ * model is a script (`mock/scripted-model`), so its words and token counts are illustrative.
  *
  * Typed on amsp-protocol.ts, so a kind the vocabulary does not list fails to typecheck.
  * test/amsp-demo.test.ts holds the runs to the protocol's ordering rules.
@@ -147,10 +147,11 @@ const sessionMeta = (sessionId: string): Script => [
   }),
 ];
 
-/** `task_begin`, then the input the server echoes. */
+/** `task_begin`, then the input the server echoes, then the Request it opens. */
 const taskOpening = (input: string): Script[] => [
   [4, record({ type: "task_begin" })],
-  [2, model({ type: "text", role: "user", text: input })],
+  [1, model({ type: "text", role: "user", text: input })],
+  [1, record({ type: "request_begin", thinking_level: "medium" })],
 ];
 
 /**
@@ -220,7 +221,7 @@ const callSteps = (): Script[] => [
     }),
   ],
   [
-    2,
+    1,
     model({
       type: "tool_call",
       role: "assistant",
@@ -248,18 +249,17 @@ const FIRST_RUN = timed("2026-10-21T09:41:07.000Z", EPOCH, [
   ping,
   sessionMeta(SESSION),
   ...taskOpening("What time is it now?"),
-  [8, record({ type: "request_begin", thinking_level: "medium" })],
   ...streamed("partial_thinking", 1380, THINKING, 1300),
-  [2, model({ type: "thinking", role: "assistant", thinking: joined(THINKING) })],
+  [1, model({ type: "thinking", role: "assistant", thinking: joined(THINKING) })],
   ...callSteps(),
-  // The tool starts while its Request is still open, and finishes after the Request closed.
-  [20, outputFragment("start", "")],
-  [4, record({ type: "token_usage", session: REQUEST_1, request: REQUEST_1 })],
-  [2, record({ type: "request_end", status: "completed" })],
-  [150, outputFragment("delta", CLOCK)],
+  // The call is complete: the Request ends and the tool runs; its output completes after.
+  [1, record({ type: "token_usage", session: REQUEST_1, request: REQUEST_1 })],
+  [1, record({ type: "request_end", status: "completed" })],
+  [1, outputFragment("start", "")],
+  [180, outputFragment("delta", CLOCK)],
   [30, outputFragment("stop", "")],
   [
-    2,
+    1,
     model({
       type: "tool_call_output",
       role: "user",
@@ -268,12 +268,13 @@ const FIRST_RUN = timed("2026-10-21T09:41:07.000Z", EPOCH, [
       status: "completed",
     }),
   ],
-  [10, record({ type: "request_begin", thinking_level: "medium" })],
+  // The next Request opens on the tool's output.
+  [1, record({ type: "request_begin", thinking_level: "medium" })],
   ...streamed("partial_text", 1250, ANSWER, 620),
-  [2, model({ type: "text", role: "assistant", text: joined(ANSWER) })],
-  [8, record({ type: "token_usage", session: add(REQUEST_1, REQUEST_2), request: REQUEST_2 })],
-  [2, record({ type: "request_end", status: "completed" })],
-  [8, record({ type: "task_end" })],
+  [1, model({ type: "text", role: "assistant", text: joined(ANSWER) })],
+  [1, record({ type: "token_usage", session: add(REQUEST_1, REQUEST_2), request: REQUEST_2 })],
+  [1, record({ type: "request_end", status: "completed" })],
+  [1, record({ type: "task_end" })],
   [2, { done: true }],
 ]);
 
@@ -289,19 +290,18 @@ const CONTINUE_RUN = timed(
   [
     ping,
     ...taskOpening("Now say it in French."),
-    [8, record({ type: "request_begin", thinking_level: "medium" })],
     ...streamed("partial_text", 1150, FRENCH, 420),
-    [2, model({ type: "text", role: "assistant", text: joined(FRENCH) })],
+    [1, model({ type: "text", role: "assistant", text: joined(FRENCH) })],
     [
-      8,
+      1,
       record({
         type: "token_usage",
         session: add(add(REQUEST_1, REQUEST_2), REQUEST_3),
         request: REQUEST_3,
       }),
     ],
-    [2, record({ type: "request_end", status: "completed" })],
-    [8, record({ type: "task_end" })],
+    [1, record({ type: "request_end", status: "completed" })],
+    [1, record({ type: "task_end" })],
     [2, { done: true }],
   ],
   recordCount(FIRST_RUN) + 1,
@@ -317,8 +317,8 @@ const HISTORY = [
 
 /**
  * A long answer the caller stops mid-reply: the abort request lands, the reply's fragments close
- * with their `stop` and no complete text, the Request and then the run are marked aborted, and
- * the Task still closes before `[DONE]`.
+ * with their `stop` and its complete text holds what had arrived, the Request and then the run are
+ * marked aborted, and the Task still closes before `[DONE]`.
  */
 const INTERRUPT_RUN = timed(
   "2026-10-21T09:41:30.000Z",
@@ -326,15 +326,17 @@ const INTERRUPT_RUN = timed(
   [
     ping,
     ...taskOpening("Explain clocks in depth."),
-    [8, record({ type: "request_begin", thinking_level: "medium" })],
-    // The reply's fragments; the abort lands before it ends, so its stop closes it with no text.
-    ...streamed("partial_text", 1320, HISTORY, 76).slice(0, -1),
-    [66, { request: { method: "POST", path: `/sessions/${SESSION}/abort` } }],
+    // The reply's fragments; the abort lands before it ends.
+    ...streamed("partial_text", 1320, HISTORY, 0).slice(0, -1),
+    [76, { request: { method: "POST", path: `/sessions/${SESSION}/abort` } }],
+    // Its stop and its complete text, which holds what had arrived.
     [10, model({ type: "partial_text", role: "assistant", event_type: "stop", text: "" })],
-    // A Request that did not complete carries its attempt ordinal; an interruption has no error.
-    [6, record({ type: "request_end", status: "aborted", attempt: 1 })],
-    [2, record({ type: "abort", error_code: "user_abort" })],
-    [4, record({ type: "task_end" })],
+    [1, model({ type: "text", role: "assistant", text: joined(HISTORY) })],
+    // `aborted`: the turn was not committed. A Request that did not complete carries its attempt
+    // ordinal; an interruption has no error.
+    [1, record({ type: "request_end", status: "aborted", attempt: 1 })],
+    [1, record({ type: "abort", error_code: "user_abort" })],
+    [1, record({ type: "task_end" })],
     [2, { done: true }],
   ],
   recordCount(FIRST_RUN) + recordCount(CONTINUE_RUN) + 1,

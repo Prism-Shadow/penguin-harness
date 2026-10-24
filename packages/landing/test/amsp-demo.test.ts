@@ -10,13 +10,13 @@
  *   `task_begin` and no `session_meta` comes.
  * - Given any run, `task_begin` and `task_end` enclose its records and each `request_begin` is
  *   closed by a `request_end` before the next one opens.
- * - Given a streamed message, its fragments go start → delta* → stop; one that ran to its end has
- *   its complete record right after the stop, one cut short has none.
+ * - Given a streamed message, its fragments go start → delta* → stop, and its complete record
+ *   follows the stop at once, an interrupted message's included.
  * - Given a tool call, its output completes after its call and before the next Request, and says
  *   what it is in its `status`.
- * - Given the interrupted run, the caller's abort comes while the reply streams, the reply's
- *   fragments close with no complete text, its Request ends `aborted` with no usage reported, and
- *   the `abort` record comes before `task_end`.
+ * - Given the interrupted run, the caller's abort comes while the reply streams, the reply closes
+ *   with a complete text holding what had arrived, its Request ends `aborted` with no usage
+ *   reported, and the `abort` record comes before `task_end`.
  */
 import { describe, expect, it } from "vitest";
 import { recordsOf, SCENARIOS } from "../src/lib/amsp-demo";
@@ -91,7 +91,7 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
       });
     });
 
-    it("streams each message as start, deltas and stop, and records it only when it ran to its end", () => {
+    it("streams each message as start, deltas and stop, then its complete record", () => {
       const fragments = records.flatMap((record, i) =>
         record.type === "model_msg" && "event_type" in record.payload
           ? [{ at: i, type: record.payload.type, phase: String(record.payload.event_type) }]
@@ -105,11 +105,9 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
       for (const message of messages) {
         expect(message).toMatch(/^(\w+):start( \1:delta)+ \1:stop$/);
       }
-      // …and its complete record follows its stop at once, unless the run cut it short.
+      // …and its complete record follows its stop at once.
       for (const stop of fragments.filter((fragment) => fragment.phase === "stop")) {
-        const complete = stop.type.slice("partial_".length);
-        const next = records.findIndex((record, i) => i > stop.at && kindOf(record) === complete);
-        expect(next).toBe(scenario.abortAfterMs === undefined ? stop.at + 1 : -1);
+        expect(kindOf(records[stop.at + 1]!)).toBe(stop.type.slice("partial_".length));
       }
     });
 
@@ -123,7 +121,7 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
       }
     });
 
-    it("leaves an interrupted reply as fragments, ends its Request aborted, and closes the Task after the abort", () => {
+    it("closes an interrupted reply with what had arrived, ends its Request aborted, and closes the Task after the abort", () => {
       const abortAt = kinds.indexOf("abort");
       if (scenario.abortAfterMs === undefined) {
         expect(abortAt).toBe(-1);
@@ -137,16 +135,21 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
       expect(steps[stopAt]).toMatchObject({ record: { payload: { event_type: "stop" } } });
       expect(kinds.slice(stopAt)).toEqual([
         "partial_text",
+        "text",
         "request_end",
         "abort",
         "task_end",
         "[DONE]",
       ]);
-      expect(steps[stopAt + 1]).toMatchObject({ record: { payload: { status: "aborted" } } });
-      // The only text the run recorded is the input it echoed.
-      expect(records.filter((record) => kindOf(record) === "text")).toEqual([
-        expect.objectContaining({ payload: expect.objectContaining({ role: "user" }) }),
-      ]);
+      // The complete text holds what the fragments carried before the stop.
+      const said = records
+        .filter((record) => kindOf(record) === "partial_text")
+        .map((record) => (record.payload as { text: string }).text)
+        .join("");
+      expect(steps[stopAt + 1]).toMatchObject({
+        record: { payload: { type: "text", role: "assistant", text: said } },
+      });
+      expect(steps[stopAt + 2]).toMatchObject({ record: { payload: { status: "aborted" } } });
       expect(kinds).not.toContain("token_usage");
       expect(abortAt).toBeLessThan(kinds.indexOf("task_end"));
     });

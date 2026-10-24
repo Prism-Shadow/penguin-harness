@@ -2,9 +2,9 @@
  * The AMSP player's panes, as functions of how many steps of a run have arrived.
  *
  * - Given fragments of a message, they open an item that grows; given its complete record, the item
- *   closes with the record's own content, whatever the fragments said; given a message cut short,
- *   the item keeps what streamed and is marked as having no complete record, and a later attempt
- *   starts an item of its own.
+ *   closes with the record's own content, whatever the fragments said; an interrupted reply closes
+ *   with its complete record too, holding what had arrived; a later attempt starts an item of its
+ *   own.
  * - Given a tool's output that completes after its Request's `request_end`, it is shown under its
  *   call's Request, not the next one.
  * - Given a run before `[DONE]`, there is no outcome, usage or time; at `[DONE]` there are, and a new
@@ -12,13 +12,13 @@
  * - Given the Session's first message, the pane names the model; a later message names none.
  * - Given a finished run, the outcome is read from the records in the SDK's order: a `task_begin`
  *   left open (or none) is a failure, then an `abort` with its cause, then a terminal `request_end`
- *   (`truncated` included; one to be retried, or one a later Request went on from, is not), else
+ *   (one past its retries; one to be retried, or one a later Request went on from, is not), else
  *   completed.
  * - Given the run's timestamps, the replay waits the recorded gap, within its bounds.
- * - Given a finished run, its spans nest longest first: each Request inside the Task, each streamed
- *   message inside its Request, except a tool's output, which ends after its Request does and before
- *   the next one opens; a message that arrives whole (the echoed input) has no span, and a run whose
- *   Task never closed has none at all.
+ * - Given a finished run, its spans nest longest first: each Request inside the Task, its messages
+ *   tiling it from `request_begin` to `request_end`, a tool's output running on from its call into
+ *   the gap before the next Request; a message that arrives whole (the echoed input) has no span,
+ *   and a run whose Task never closed has none at all.
  * - Given a record of a kind the page does not read, it still gets a row, shaded by whether the Trace
  *   stores it; frames and the caller's request never are.
  */
@@ -49,10 +49,10 @@ const event = (payload: EventPayload): AmspRecord => ({
   type: "event_msg",
   payload,
 });
-const reply = (): AmspRecord => ({
+const reply = (said = "…"): AmspRecord => ({
   timestamp: at(0),
   type: "model_msg",
-  payload: { type: "text", role: "assistant", text: "…" },
+  payload: { type: "text", role: "assistant", text: said },
 });
 
 const run = (id: string) => SCENARIOS.find((scenario) => scenario.id === id)!.steps;
@@ -81,7 +81,7 @@ describe("the assembled run", () => {
     ]);
   });
 
-  it("keeps a reply cut short as what streamed, and starts a retried attempt afresh", () => {
+  it("closes an interrupted reply with its complete record, and starts the next attempt afresh", () => {
     const interrupted = run("interrupt");
     const cut = foldRun(interrupted, interrupted.length).items.find(
       (item) => item.kind === "text" && item.role === "assistant",
@@ -89,21 +89,21 @@ describe("the assembled run", () => {
     expect(cut).toMatchObject({
       body: "The first mechanical clocks appeared in European monasteries around",
       open: false,
-      recorded: false,
     });
 
     const steps = [
       text(0, "start", ""),
       text(10, "delta", "Cut"),
       text(20, "stop", ""),
+      reply("Cut"),
       text(30, "start", ""),
       text(40, "delta", "Whole"),
       text(50, "stop", ""),
-      reply(),
+      reply("Whole"),
     ].map(step);
     expect(foldRun(steps, steps.length).items).toEqual([
-      expect.objectContaining({ body: "Cut", recorded: false }),
-      expect.objectContaining({ body: "…", recorded: true }),
+      expect.objectContaining({ body: "Cut", open: false }),
+      expect.objectContaining({ body: "Whole", open: false }),
     ]);
   });
 
@@ -168,9 +168,18 @@ describe("a run's outcome", () => {
     ["an abort", [begin, event({ type: "abort", error_code: "user_abort" }), end], "aborted"],
     ["a terminal request_end", [begin, failed, end], "fatal"],
     [
-      "a truncated request past its retries",
-      [begin, event({ type: "request_end", status: "truncated", attempt: 3 }), end],
-      "truncated",
+      "a request cut at the output cap past its retries",
+      [
+        begin,
+        event({
+          type: "request_end",
+          status: "retryable",
+          error_code: "output_truncated",
+          attempt: 3,
+        }),
+        end,
+      ],
+      "retryable",
     ],
     [
       "a failure a later Request went on from",
@@ -229,14 +238,16 @@ describe("the message structure", () => {
       "text",
     ]);
     const [thinking, call, output, answer] = spans.messages;
-    for (const message of [thinking!, call!]) {
-      expect(message.begin).toBeGreaterThan(first!.begin);
-      expect(message.end).toBeLessThan(first!.end);
-    }
+    // The messages tile their Request: the first from request_begin, each from the one before.
+    expect(thinking!.begin).toBe(first!.begin);
+    expect(call!.begin).toBe(thinking!.end);
+    expect(call!.end).toBeLessThanOrEqual(first!.end);
+    expect(answer!.begin).toBe(second!.begin);
+    expect(answer!.end).toBeLessThanOrEqual(second!.end);
+    // The tool's output runs on from its call, past request_end, into the gap before the next.
+    expect(output!.begin).toBe(call!.end);
     expect(output!.end).toBeGreaterThan(first!.end);
-    expect(output!.end).toBeLessThan(second!.begin);
-    expect(answer!.begin).toBeGreaterThan(second!.begin);
-    expect(answer!.end).toBeLessThan(second!.end);
+    expect(output!.end).toBeLessThanOrEqual(second!.begin);
   });
 
   it("has no spans for a run whose Task never closed", () => {

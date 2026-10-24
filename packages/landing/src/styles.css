@@ -298,7 +298,7 @@ html.dark .amsp-code .shiki span {
 }
 /* The player's call: a tighter block, so the whole run fits beside the hero's copy. */
 .amsp-code-tight .site-code pre {
-  padding: 0.375rem 0.75rem 0.5rem;
+  padding: 0.25rem 0.75rem 0.375rem;
   line-height: 1.125rem;
 }
 /* The usage bars grow in when the run ends (the outcome mounts with [DONE]). Reduced motion stops

@@ -464,7 +464,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       request: (n: number) => `Request ${n}`,
       thinking: (level: string) => `thinking ${level}`,
       streaming: "streaming",
-      fragmentsOnly: "fragments only, no complete record",
       running: "The run is still going.",
       result: "Result",
       readFrom: (o: { closed: boolean; aborted: boolean; lastRequestEnd: string | null }) =>
@@ -476,20 +475,20 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     structure: {
       title: "Message structure",
       subtitle:
-        "A run nests three spans, longest first: the Task, each Request to the model, and each message from its first fragment to its complete record.",
+        "A run nests three spans, longest first: the Task, each Request to the model, and the messages that fill each Request, each one ending in its complete record.",
       figureLabel:
-        "The first-request run on one time axis, in three rows from longest to shortest. The Task runs from task_begin to task_end. Under it, two Requests each run from request_begin to request_end. Under them, each message runs from its first partial_* fragment to its complete record: the thinking and the tool call in the first Request, the tool's output completing after the first request_end, and the answer in the second Request.",
+        "The first-request run on one time axis, in three rows from longest to shortest. The Task runs from task_begin to task_end. Under it, two Requests each run from request_begin to request_end. Under them, the messages fill each Request, each ending in its complete record: the thinking and the tool call in the first, the answer in the second. Between the two Requests the tool runs, and its tool_call_output completes where the second Request begins.",
       levels: { task: "Task", request: "Request", message: "Message" },
       steps: [
         "task_begin opens a Task and task_end closes it; a task_begin still open at [DONE] means the run did not reach its end.",
         "Each Request opens with request_begin, which carries the thinking level, and closes with request_end.",
-        "A message streams as partial_* fragments (start, delta, stop), then its complete record replaces them.",
-        "A tool starts while its Request is open; its tool_call_output may complete after request_end.",
+        "A message streams as partial_* fragments (start, delta, stop), then its complete record follows, an interrupted message's included.",
+        "A tool runs once its call is complete; its tool_call_output completes after request_end, and the next Request starts from it.",
       ],
-      partial: "partial_* fragments, live only",
-      complete: "complete record, stored in the Trace",
-      caption: (ms: number) =>
-        `Drawn from the first-request run above: tool_call_output completes ${ms} ms after the first request_end, before the next request_begin.`,
+      boundaries: "event_msg: a Task or a Request, from its begin record to its end record",
+      partial:
+        "model_msg: a message as it is produced, streamed as partial_* fragments (live only)",
+      complete: "its complete record, stored in the Trace",
     },
 
     records: {
@@ -589,7 +588,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
             output: "What the tool returned, as text.",
             images: "Images the tool returned, as data URLs.",
             status:
-              "What the result is: completed (the tool ran to its end), fatal (the call failed) or aborted (it never ran: the user, the policy or a hook denied it).",
+              "What the result is: completed (the tool ran to its end), fatal (the call failed) or aborted (it never ran, denied by the user, the policy or a hook, or it was interrupted while running).",
           },
         },
         image_url: {
@@ -646,7 +645,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           summary: "Closes the request and says how it ended.",
           fields: {
             status:
-              "completed, aborted, retryable, fatal or truncated (the output was cut off; retried); the one record of why the request ended.",
+              "completed, aborted (the turn was not committed), retryable (retried while attempts remain; output cut at its cap reads error_code output_truncated) or fatal; the one record of why the request ended.",
             attempt: "The attempt's number among its retries; absent on a clean first try.",
             retry_in_ms:
               "The wait before the next attempt, present only when the engine will retry.",

@@ -18,7 +18,7 @@ const NAME = ["Agent", "Message", "Stream", "Protocol"];
 export function AmspHero() {
   return (
     <section className="relative overflow-hidden">
-      <div className="relative mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 px-4 pt-12 pb-14 sm:px-6 sm:pt-16 lg:pt-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:gap-12">
+      <div className="relative mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 px-4 pt-12 pb-14 sm:px-6 sm:pt-16 lg:pt-2 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:gap-12">
         <div className="min-w-0">
           <p className="anim-rise flex items-center gap-3">
             <AmspMark className="h-10 w-10 shrink-0" />

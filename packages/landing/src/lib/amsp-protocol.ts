@@ -3,9 +3,9 @@
  * (amsp-demo.ts) and the record reference's examples (amsp-records.ts) are typed on them, and the
  * replay fold (amsp-replay.ts) narrows on them. They mirror the AMSP record types
  * (packages/amsp/src/records/types.ts) as the protocol ships: no record carries a `stop_reason`;
- * a Request's end is `request_end.status`, which adds `truncated`; a tool result says what it is
- * in its own `status`; an item cut short streams its fragments and gets no complete record. The
- * control frames take the SDK's shape (`{ kind, … }`).
+ * a Request's end is `request_end.status`; a tool result says what it is in its own `status`;
+ * every streamed message has its complete record, an interrupted one's included. The control
+ * frames take the SDK's shape (`{ kind, … }`).
  *
  * Page-local on purpose: `@prismshadow/amsp` 0.2.16 still ships the old event types, and the
  * landing site depends on no protocol package. Once a release carries these, this file re-exports
@@ -16,10 +16,13 @@ import type { ControlKind } from "./amsp-vocabulary";
 /** How a compaction or an MCP connect phase ended. */
 export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 
-/** How a Request ended: the {@link StopReason} values plus `truncated` (cut off, retried). */
-export type RequestEndStatus = StopReason | "truncated";
+/**
+ * How a Request ended. Output cut at its cap is `retryable` with `error_code` `output_truncated`,
+ * retried like any retryable failure.
+ */
+export type RequestEndStatus = StopReason;
 
-/** What a tool result is: it ran to its end, it failed, or it never ran. */
+/** What a tool result is: it ran to its end, it failed, or it never ran or was interrupted. */
 export type ToolStatus = "completed" | "aborted" | "fatal";
 
 /** The phase of a streaming fragment. */

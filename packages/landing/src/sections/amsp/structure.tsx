@@ -2,27 +2,29 @@
  * A run's message structure as one bar chart on one time axis: the Task on top, its Requests under
  * it, their messages under those, longest-lived first, each row touching the one above so every
  * span reads as inside its parent. The bars are the scripted first-request run's own timestamps
- * (`runSpans`), so the chart, the caption's number and the player cannot drift apart. A message bar
- * is its `partial_*` fragments and ends in its complete record; the tool's output runs past its
- * Request's end, which the chart shows and the caption measures.
+ * (`runSpans`), so the chart and the player cannot drift apart. The messages of a Request tile it
+ * from `request_begin` to `request_end`, each from where the one before it ended to its complete
+ * record; the one blank stretch is between the Requests, where the tool runs, and the
+ * `tool_call_output` bar sits in it.
  *
- * One grid holds it all: the level names in a column of their own, then one lane per level, the
- * labels too long for their bar and the axis, every one placed on the same scale, and the legend
- * and caption starting where the lanes start. A bar wide enough holds its label; a narrow one is
- * named under the lane, beside its neighbour. On a phone the bars stay and the same steps in words
- * take the labels' place; a screen reader hears the figure's label and the steps at every width.
+ * Colour says the family, as everywhere on the page (lib/amsp-tones.ts): the Task and Request
+ * spans are bounded by `event_msg` records, in amber; the messages are `model_msg`, in blue, each
+ * ending in its complete record. One grid holds it all: the level names in a column of their own,
+ * then one lane per level, the names too long for their bar and the axis, every one on the same
+ * scale, and the legend starting where the lanes start. A bar wide enough holds its label; a
+ * narrow one is named under the lane, beside its neighbour. On a phone the bars stay and the same
+ * steps in words take the labels' place; a screen reader hears the figure's label and the steps at
+ * every width.
  */
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { recordsOf, SCENARIOS } from "../../lib/amsp-demo";
-import { resultAfterRequestEnd, runSpans } from "../../lib/amsp-replay";
+import { runSpans } from "../../lib/amsp-replay";
 import type { MessageSpan, RunSpans, Span } from "../../lib/amsp-replay";
+import { TONES } from "../../lib/amsp-tones";
 import { Section } from "../../components/section";
 
-const RECORDS = recordsOf(SCENARIOS[0]!.steps);
-const SPANS = runSpans(RECORDS);
-/** How long after `request_end` the first-request run's tool output completed. */
-const RESULT_AFTER_END_MS = resultAfterRequestEnd(RECORDS);
+const SPANS = runSpans(recordsOf(SCENARIOS[0]!.steps));
 
 /** One tick per second of the run. */
 const TICK_MS = 1000;
@@ -36,18 +38,17 @@ const LEVEL =
   "flex h-7 items-center justify-end text-[13px] font-medium text-gray-600 dark:text-gray-300";
 const LANE = "relative h-7";
 const BAR =
-  "absolute inset-y-0 flex items-center justify-between gap-2 overflow-hidden px-2 font-mono text-[12px] whitespace-nowrap text-gray-700 dark:text-gray-200";
+  "absolute inset-y-0 flex items-center justify-between gap-2 overflow-hidden px-2 font-mono text-[12px] whitespace-nowrap";
 /**
- * Light tints of the one accent, a step deeper per level; the two lightest keep a hairline edge so
- * they hold on any page ground.
+ * Light tints of each family, a step deeper for the Request than for the Task it sits in; the
+ * amber spans keep a hairline edge so they hold on any page ground.
  */
 const TONE = {
-  task: "bg-brand-50 ring-1 ring-brand-200/80 ring-inset dark:bg-brand-400/10 dark:ring-brand-400/25",
-  request:
-    "bg-brand-100 ring-1 ring-brand-200 ring-inset dark:bg-brand-400/20 dark:ring-brand-400/30",
-  message: "bg-brand-200 dark:bg-brand-400/35",
+  task: `${TONES.event.ground} ${TONES.event.ink} ring-1 ring-amber-200/80 ring-inset dark:ring-amber-400/15`,
+  request: `${TONES.event.fill} ${TONES.event.ink} ring-1 ring-amber-200 ring-inset dark:ring-amber-400/20`,
+  message: `${TONES.model.fill} ${TONES.model.ink}`,
 };
-/** The complete record that closes a message: its bar's end, in the accent. */
+/** The complete record that closes a message: its bar's end, in the deep blue. */
 const RECORD_CAP = "border-r-2 border-brand-600 dark:border-brand-300";
 
 const at = (ms: number, total: number) => `${(100 * ms) / total}%`;
@@ -186,6 +187,10 @@ export function AmspStructure() {
           <div className="col-span-2 space-y-3 sm:col-span-1 sm:col-start-2">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
               <span className="inline-flex items-center gap-2">
+                <span aria-hidden="true" className={`h-3 w-7 ${TONE.request}`} />
+                {M.boundaries}
+              </span>
+              <span className="inline-flex items-center gap-2">
                 <span aria-hidden="true" className={`h-3 w-7 ${TONE.message}`} />
                 {M.partial}
               </span>
@@ -199,11 +204,6 @@ export function AmspStructure() {
                 <li key={step}>{step}</li>
               ))}
             </ol>
-            {RESULT_AFTER_END_MS !== null && (
-              <p className="text-sm leading-6 text-pretty text-gray-600 dark:text-gray-300">
-                {M.caption(RESULT_AFTER_END_MS)}
-              </p>
-            )}
           </div>
         </div>
       </div>

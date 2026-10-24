@@ -6,7 +6,7 @@
  * The fold reads a run the way a client of the protocol does:
  * - fragments open an item and grow it; the complete record closes it with its own content, never
  *   compared with the fragments joined (two renderings of one message; only the complete one is
- *   stored); an item cut short closes at its `stop` with no complete record, and stays as streamed;
+ *   stored), an interrupted item's included;
  * - a tool's output belongs to its call's Request even when it completes after `request_end`;
  * - at `[DONE]` the outcome is read from the records (`runOutcome`, the SDK's `RunResult` rule):
  *   `task_end` carries no status.
@@ -35,12 +35,10 @@ export interface ReplayItem {
   name?: string;
   /** The text, thinking, arguments or output: the fragments so far, then the complete record's own. */
   body: string;
-  /** Fragments have arrived and the complete record has not, while the run goes on. */
+  /** Fragments have arrived and the complete record has not. */
   open: boolean;
   /** Its `stop` fragment arrived: no more fragments follow. */
   stopped: boolean;
-  /** Its complete record arrived: the item ran to its end. An item cut short never gets one. */
-  recorded: boolean;
   /** The Request it belongs to (a tool's output: its call's); 0 before the run's first. */
   request: number;
 }
@@ -181,7 +179,6 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
       body: piece,
       open: true,
       stopped: false,
-      recorded: false,
       request: extra.callId !== undefined ? callRequest(extra.callId) : current(),
       ...(extra.name ? { name: extra.name } : {}),
     });
@@ -200,7 +197,6 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
       found.body = body;
       found.open = false;
       found.stopped = true;
-      found.recorded = true;
       if (extra.name) found.name = extra.name;
       return;
     }
@@ -211,7 +207,6 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
       body,
       open: false,
       stopped: true,
-      recorded: true,
       request: extra.callId !== undefined ? callRequest(extra.callId) : current(),
       ...(extra.name ? { name: extra.name } : {}),
     });
@@ -447,7 +442,11 @@ export interface Span {
   end: number;
 }
 
-/** A streamed message: from its `start` fragment to its complete record. */
+/**
+ * A streamed message: from the moment the one before it ended (its Request's `request_begin`, or
+ * the previous message's complete record) to its own complete record, the wait for its first
+ * fragment included.
+ */
 export interface MessageSpan extends Span {
   kind: ItemKind;
 }
@@ -467,9 +466,10 @@ function streamKey(payload: Extract<ModelPayload, { type: ItemKind | `partial_${
 
 /**
  * The main Session's spans in a finished run: the Task from its first `task_begin` to its last
- * `task_end`, each Request from `request_begin` to `request_end`, each message from its `start`
- * fragment to its complete record. A message that arrives complete with no fragments (the echoed
- * input) spans no time and is left out; a run with no closed Task has no spans.
+ * `task_end`, each Request from `request_begin` to `request_end`, and each streamed message from
+ * where the one before it ended to its complete record, so the messages of a Request tile it and a
+ * tool's output runs on from its call. A message that arrives complete with no fragments (the
+ * echoed input) is not a span; a run with no closed Task has no spans.
  */
 export function runSpans(records: readonly AmspRecord[]): RunSpans | null {
   const main = records.filter((record) => record.origin === undefined);
@@ -481,12 +481,16 @@ export function runSpans(records: readonly AmspRecord[]): RunSpans | null {
 
   const requests: Span[] = [];
   const messages: MessageSpan[] = [];
-  const streaming = new Map<string, number>();
+  const streaming = new Set<string>();
   let request: number | null = null;
+  /** Where the next message's span starts: the last `request_begin` or complete message. */
+  let boundary = 0;
   for (const record of main) {
     if (record.type === "event_msg") {
-      if (record.payload.type === "request_begin") request = at(record);
-      else if (record.payload.type === "request_end" && request !== null) {
+      if (record.payload.type === "request_begin") {
+        request = at(record);
+        boundary = request;
+      } else if (record.payload.type === "request_end" && request !== null) {
         requests.push({ begin: request, end: at(record) });
         request = null;
       }
@@ -497,29 +501,19 @@ export function runSpans(records: readonly AmspRecord[]): RunSpans | null {
         case "partial_thinking":
         case "partial_tool_call":
         case "partial_tool_call_output":
-          if (p.event_type === "start") streaming.set(streamKey(p), at(record));
+          if (p.event_type === "start") streaming.add(streamKey(p));
           break;
         case "text":
         case "thinking":
         case "tool_call":
         case "tool_call_output": {
-          const begin = streaming.get(streamKey(p));
-          if (begin === undefined) break;
-          streaming.delete(streamKey(p));
-          messages.push({ kind: p.type, begin, end: at(record) });
+          if (!streaming.delete(streamKey(p))) break;
+          messages.push({ kind: p.type, begin: boundary, end: at(record) });
+          boundary = at(record);
           break;
         }
       }
     }
   }
   return { task: { begin: 0, end: at(last) }, requests, messages };
-}
-
-/** When a tool's output completed after its call's `request_end`: how long after, in ms. */
-export function resultAfterRequestEnd(records: readonly AmspRecord[]): number | null {
-  const output = records.findIndex((record) => kindOf(record) === "tool_call_output");
-  if (output < 0) return null;
-  const end = records.slice(0, output).findLastIndex((record) => kindOf(record) === "request_end");
-  if (end < 0) return null;
-  return Date.parse(records[output]!.timestamp) - Date.parse(records[end]!.timestamp);
 }

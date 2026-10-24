@@ -465,8 +465,6 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       request: (n: number) => `Request ${n}`,
       thinking: (level: string) => `思考等级 ${level}`,
       streaming: "传输中",
-      /** An item cut short: its fragments streamed, and no complete record followed. */
-      fragmentsOnly: "仅有片段，无完整记录",
       running: "运行仍在进行。",
       result: "结果",
       /** What the result was read from; protocol words stay as the protocol spells them. */
@@ -480,22 +478,21 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     structure: {
       title: "消息结构",
       subtitle:
-        "一次运行嵌套三层，从长到短依次是：Task、每次向模型发出的 Request，以及每条消息从第一个片段到完整记录的过程。",
+        "一次运行嵌套三层，从长到短依次是：Task、每次向模型发出的 Request，以及填满每个 Request 的各条消息，每条止于它的完整记录。",
       figureLabel:
-        "首次请求示例画在同一条时间轴上，按时长从长到短分三行。Task 从 task_begin 到 task_end。其下是两个 Request，各自从 request_begin 到 request_end。再下面是消息，每条从第一个 partial_* 片段到完整记录：第一个 Request 里的思考和工具调用，在第一个 request_end 之后才完整的工具输出，以及第二个 Request 里的回答。",
+        "首次请求示例画在同一条时间轴上，按时长从长到短分三行。Task 从 task_begin 到 task_end。其下是两个 Request，各自从 request_begin 到 request_end。再下面是填满各个 Request 的消息，每条止于它的完整记录：第一个 Request 里是思考和工具调用，第二个里是回答。两个 Request 之间工具在运行，它的 tool_call_output 在第二个 Request 开始处完成。",
       /** The chart's row names, top to bottom. */
       levels: { task: "Task", request: "Request", message: "消息" },
       /** The figure in words: read out with it, and shown under it on a phone. */
       steps: [
         "task_begin 打开一个 Task，task_end 关闭它；[DONE] 时仍未闭合的 task_begin 说明运行没有走到终点。",
         "每个 Request 以带思考等级的 request_begin 开始，以 request_end 结束。",
-        "消息先以 partial_* 片段流出（start、delta、stop），随后由完整记录取代。",
-        "工具在 Request 仍打开时开始运行，它的 tool_call_output 可以在 request_end 之后才完整。",
+        "消息先以 partial_* 片段流出（start、delta、stop），随后是它的完整记录，被打断的消息也一样。",
+        "工具在调用完整后开始运行；它的 tool_call_output 在 request_end 之后才完成，下一个 Request 从它开始。",
       ],
-      partial: "partial_* 片段，仅实时",
-      complete: "完整记录，写入 Trace",
-      caption: (ms: number) =>
-        `图中是上面的首次请求示例：tool_call_output 在第一个 request_end 之后 ${ms} ms 才完整，早于下一个 request_begin。`,
+      boundaries: "event_msg：Task 或 Request，从开始记录到结束记录",
+      partial: "model_msg：一条消息的生成过程，以 partial_* 片段流出（仅实时）",
+      complete: "它的完整记录，写入 Trace",
     },
 
     /** Every record field by field (sections/amsp/records.tsx), keyed by lib/amsp-vocabulary.ts and lib/amsp-records.ts. */
@@ -587,7 +584,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
             output: "工具返回的文本。",
             images: "工具返回的图片，data URL 形式。",
             status:
-              "结果的性质：completed（工具执行完毕）、fatal（调用失败）或 aborted（没有执行：被用户、策略或 Hook 拒绝）。",
+              "结果的性质：completed（工具执行完毕）、fatal（调用失败）或 aborted（没有执行：被用户、策略或 Hook 拒绝；或在运行中被打断）。",
           },
         },
         image_url: {
@@ -640,7 +637,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           summary: "关闭这次请求，并说明它如何结束。",
           fields: {
             status:
-              "completed、aborted、retryable、fatal 或 truncated（输出被截断，会重试）；这是请求结束原因的唯一记录。",
+              "completed、aborted（这一轮没有提交）、retryable（在重试次数内会重试；输出达到上限被截断时 error_code 为 output_truncated）或 fatal；这是请求结束原因的唯一记录。",
             attempt: "这次尝试在重试中的序号；一次就成功时缺省。",
             retry_in_ms: "距下一次尝试的等待时间，只在引擎会重试时出现。",
           },

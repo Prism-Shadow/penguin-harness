@@ -338,7 +338,7 @@ export const RECORD_DOCS: { [Id in DocId]: RecordDoc<Id> } = {
     }),
     [
       type("request_end"),
-      { path: "status", type: `${STOP} | "truncated"`, required: true },
+      { path: "status", type: STOP, required: true },
       { path: "error_code", type: "string", required: false },
       { path: "error_message", type: "string", required: false },
       { path: "attempt", type: "number", required: false },
