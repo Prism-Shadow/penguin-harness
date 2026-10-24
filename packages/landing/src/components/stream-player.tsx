@@ -2,8 +2,8 @@
  * The AMSP player: a scripted run replayed step by step, the way mmsp.penguin.ooo replays a model
  * call. Tabs pick the run (a Session's first request, a follow-up that continues it, a follow-up the
  * caller interrupts); the input block shows the call that starts it; the left pane lists the stream
- * as it arrives — the records (the ones the Trace stores on a faint ground), the caller's abort
- * beside the stream, `[DONE]`; the right pane is the run assembled from the records, under the
+ * as it arrives — the opening `ping`, the records (the ones the Trace stores on a faint ground),
+ * the caller's abort beside the stream, `[DONE]`; the right pane is the run assembled from the records, under the
  * agent the client names; the strip under both reads the run's outcome from them once `[DONE]`
  * arrives.
  *
@@ -16,7 +16,7 @@
  * replay. Sized so the whole player fits one screen beside the hero's copy at 1280 × 800.
  */
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { highlightSiteCode, SiteCodeBlock, SitePill } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { SCENARIOS } from "../lib/amsp-demo";
@@ -231,6 +231,16 @@ export function StreamPlayer() {
 }
 
 /**
+ * The kind column fits every kind but the longest (`partial_tool_call_output`, and the caller's
+ * abort path); those run on into the preview's column, their preview following on the same line and
+ * wrapping under the preview column. So the preview keeps the rest of the width and a row takes two
+ * lines at most.
+ */
+const KIND_CH = "partial_tool_call".length;
+/** The kind column and the gap after it: how far a long kind's continuation lines hang. */
+const HANG = "calc(var(--kind) + 0.5rem)";
+
+/**
  * One row of the stream: a record (on a faint ground when the Trace stores it), a control frame, the
  * caller's request beside the stream, or the closing `[DONE]` under a rule.
  */
@@ -242,11 +252,13 @@ function StreamRow({ line }: { line: StepLine }) {
       : line.stored
         ? "bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100"
         : "text-gray-500 dark:text-gray-400";
+  const long = line.name.length > KIND_CH;
   return (
     <li
-      className={`grid grid-cols-[24ch_minmax(0,1fr)] gap-x-2 rounded-sm px-2 sm:grid-cols-[10ch_24ch_minmax(0,1fr)] ${tone}`}
+      style={{ "--kind": `${KIND_CH}ch` } as CSSProperties}
+      className={`grid grid-cols-[var(--kind)_minmax(0,1fr)] gap-x-2 rounded-sm px-2 sm:grid-cols-[9ch_var(--kind)_minmax(0,1fr)] ${tone}`}
     >
-      {/* A record with no payload type (session_meta) lets its envelope run into the name's column. */}
+      {/* A record with no payload type (session_meta) lets its envelope run into the kind's column. */}
       <span
         className={`hidden text-[11px] text-gray-400 sm:block dark:text-gray-500 ${
           line.name ? "" : "sm:col-span-2"
@@ -254,8 +266,16 @@ function StreamRow({ line }: { line: StepLine }) {
       >
         {line.head}
       </span>
-      {line.name ? <span>{line.name}</span> : <span className="sm:hidden">{line.head}</span>}
-      <span className="[overflow-wrap:anywhere]">
+      {line.name ? (
+        !long && <span>{line.name}</span>
+      ) : (
+        <span className="sm:hidden">{line.head}</span>
+      )}
+      <span
+        className={`[overflow-wrap:anywhere] ${long ? "col-span-2" : ""}`}
+        style={long ? { paddingLeft: HANG, textIndent: `calc(-1 * ${HANG})` } : undefined}
+      >
+        {long && <>{line.name} </>}
         {line.kind === "request" ? (
           <span className="font-sans">{P.besideStream}</span>
         ) : (

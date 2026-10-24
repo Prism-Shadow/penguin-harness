@@ -505,7 +505,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       live: "live only",
       firstMessage: "sent on a first message only",
       meaning: {
-        meta: "A model context opened: its model, system prompt, Workspace and source. It opens the stream of a Session's first message and carries the session_id a later request passes to continue; later messages do not repeat it.",
+        meta: "A model context opened: its model, system prompt, Workspace and source. On a Session's first message it is the stream's first record, and its session_id names the new Session; later messages do not repeat it.",
         complete:
           "Complete messages, exactly what the model saw or said, with the provider's fidelity data.",
         partial:
@@ -519,7 +519,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         meaning: {
           resync_required:
             "The Last-Event-ID to resume from has left the buffer: read the history again, then keep reading the stream.",
-          ping: "The heartbeat, sent right after subscribing and every 20 seconds after.",
+          ping: "Sent as soon as a stream opens, so a run stream's first line, then every 20 seconds.",
           done: "A run stream's last line.",
         },
       },
@@ -535,7 +535,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       curl: {
         title: "Run it with curl",
         response: "response",
-        note: "The answer is the run itself: one event with an id per record, session_meta first on a Session's first message, and data: [DONE] last.",
+        note: "The answer is the run itself: a ping opens it, then one event with an id per record, and data: [DONE] ends it. On a Session's first message the first record is session_meta, whose session_id names the Session; to continue, send that id as session_id.",
         elided: "one event per record",
       },
       sdk: { title: "Or from TypeScript" },

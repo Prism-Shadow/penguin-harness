@@ -218,10 +218,9 @@ describe("the stream pane", () => {
       stored: false,
       preview: 'delta "Hi"',
     });
-    const ping: RunStep = { kind: "control", control: { kind: "ping" } };
     const besides = run("interrupt").filter((each) => each.kind !== "record");
-    expect(besides.map((each) => each.kind)).toEqual(["request", "done"]);
-    for (const frame of [ping, ...besides]) {
+    expect(besides.map((each) => each.kind)).toEqual(["control", "request", "done"]);
+    for (const frame of besides) {
       expect(stepLine(frame).stored).toBe(false);
     }
   });

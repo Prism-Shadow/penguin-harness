@@ -17,7 +17,7 @@ export interface VocabularyRow {
   kinds: readonly string[];
   /** Stored in the Trace on disk (a durable record), or live on the stream only. */
   stored: boolean;
-  /** Sent only on a Session's first message, first on its stream; not repeated on later ones. */
+  /** Sent only on a Session's first message, as its stream's first record; not repeated later. */
   firstMessageOnly?: true;
 }
 

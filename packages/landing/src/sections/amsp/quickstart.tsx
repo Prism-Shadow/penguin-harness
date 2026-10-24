@@ -29,7 +29,7 @@ function Step({ index, title, children }: { index: number; title: string; childr
 
 export function AmspQuickstart() {
   const Q = S.amsp.quickstart;
-  const response = responseExcerpt(SCENARIOS[0]!.steps, 2, 3, Q.curl.elided);
+  const response = responseExcerpt(SCENARIOS[0]!.steps, 3, 3, Q.curl.elided);
   return (
     <Section id="quickstart" title={Q.title}>
       <ol className="mx-auto max-w-4xl space-y-12">

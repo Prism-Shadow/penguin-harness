@@ -3,10 +3,10 @@
  * is what stops an edit (or the spec moving under them) from putting a stream on the page that no
  * server would send.
  *
- * - Given any run, it ends with `[DONE]` and its clock never runs backwards.
- * - Given the Session's first message, the stream opens with `session_meta` naming the new Session,
- *   then `task_begin`, then the echoed input; given a later message, it opens with `task_begin` and
- *   no `session_meta` comes.
+ * - Given any run, it opens with `ping`, ends with `[DONE]`, and its clock never runs backwards.
+ * - Given the Session's first message, its first record is `session_meta` naming the new Session,
+ *   then `task_begin`, then the echoed input; given a later message, its first record is
+ *   `task_begin` and no `session_meta` comes.
  * - Given any run, `task_begin` and `task_end` enclose its records and each `request_begin` is
  *   closed by a `request_end` before the next one opens.
  * - Given a streamed message, its fragments go start → delta* → stop before its complete record,
@@ -42,18 +42,19 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
     const kinds = sequence(steps);
     const records = recordsOf(steps);
 
-    it("ends with [DONE], and its clock never runs backwards", () => {
+    it("opens with ping, ends with [DONE], and its clock never runs backwards", () => {
+      expect(kinds[0]).toBe("event: ping");
       expect(kinds.at(-1)).toBe("[DONE]");
       const times = records.map((record) => Date.parse(record.timestamp));
       expect(times.every((time, i) => i === 0 || time >= times[i - 1]!)).toBe(true);
     });
 
-    it("opens with session_meta only on the Session's first message, then task_begin and the input", () => {
+    it("starts at session_meta only on the Session's first message, then task_begin and the input", () => {
       if (scenario.continues) {
         expect(kinds).not.toContain("session_meta");
-        expect(kinds.slice(0, 2)).toEqual(["task_begin", "text"]);
+        expect(kinds.slice(1, 3)).toEqual(["task_begin", "text"]);
       } else {
-        expect(kinds.slice(0, 3)).toEqual(["session_meta", "task_begin", "text"]);
+        expect(kinds.slice(1, 4)).toEqual(["session_meta", "task_begin", "text"]);
         expect(records[0]).toMatchObject({
           payload: { session_id: expect.stringMatching(/^session-/) },
         });
