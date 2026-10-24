@@ -1,9 +1,3 @@
-/**
- * API endpoint wrappers: one function per API.
- * DTO types come from @prismshadow/penguin-server/api (**type import only**, resolved via
- * tsconfig paths to the server contract file types.ts; must not be a value import — server
- * code must not enter the browser bundle).
- */
 import type {
   AdminPasswordResetRequest,
   AdminUserCreateRequest,
@@ -2792,7 +2786,7 @@ export const registryPluginArchiveUrl = (name: string): string =>
  */
 const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
 
-/** What the storage-clearing route takes (the shell's own clear-data command). */
+/** What the storage-clearing route takes (WebApp's own clear-data command). */
 export type BuiltinBrowserStorage = Extract<
   DesktopBrowserCommand,
   { op: "clear-data" }
@@ -2923,4 +2917,5 @@ export const clearBuiltinBrowserData = (
     server: null,
   });
 
+/** The existing server contributions route, read by the single frame provider. */
 export const getContributions = () => apiFetch<ContributionsResponse>("/api/contributions");

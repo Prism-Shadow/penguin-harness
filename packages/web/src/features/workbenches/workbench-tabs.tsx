@@ -19,6 +19,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import {
   forwardFrameKeys,
+  PAGE_FRAME_SANDBOX,
   readDocumentTheme,
   themeWorkbenchFrame,
 } from "../../lib/workbench-theme";
@@ -478,7 +479,7 @@ export function WorkbenchFrame({
         className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
           shownKey === frameKey ? "opacity-100" : "opacity-0"
         }`}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+        sandbox={PAGE_FRAME_SANDBOX}
       />
       <ConfirmModal
         open={restoring !== null}

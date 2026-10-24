@@ -8,7 +8,18 @@
  * in the frame's head, so the page's own rules still win — is written entirely in terms of
  * them. A page that hardcodes its colours keeps them; a page that writes plain HTML, or
  * uses the `--wb-*` tokens, follows the app into dark mode and through an accent change.
+ *
+ * A contributed page uses the same frame contract (web-app/frame-page.tsx).
  */
+
+/**
+ * What a framed page may do. Same-origin on purpose — it is what lets the theme and the key
+ * forwarding below reach into the frame — so this is no confinement: the page is trusted
+ * code the server serves (a workflow's `ui/`, an installed plugin's page), framed to keep
+ * its document apart from the app's, not to keep it from the app's API.
+ */
+export const PAGE_FRAME_SANDBOX =
+  "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads";
 
 /** Where the base stylesheet is served from (packages/web/public). */
 export const WORKBENCH_THEME_HREF = "/workbench-ui.css";
