@@ -51,6 +51,9 @@ export const WEB_MODULES: readonly WebModule[] = [
       "features/dock/dock-terminal",
       "features/dock/panel-context",
       "features/dock/panel-registry",
+      // The dock panel definition the module contributes (main-dock-panel.tsx) reaches
+      // the dock the way every cross-feature import must: through the dock's index.
+      "features/dock/index",
     ],
   },
 ];

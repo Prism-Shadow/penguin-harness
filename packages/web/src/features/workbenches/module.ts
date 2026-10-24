@@ -1,6 +1,10 @@
-/** One workflow's page as the whole app, outside the shell like the terminal (with and without a tab). */
+/**
+ * The Agent's workflow pages: as tabs beside the chat (session-tab.tsx), and one page as the whole
+ * app, outside the shell like the terminal (with and without a tab).
+ */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { WorkbenchAppPage } from "./workbench-app-page";
+import { WorkbenchSessionTab } from "./session-tab";
 
 @Module({
   contributes: {
@@ -26,9 +30,11 @@ import { WorkbenchAppPage } from "./workbench-app-page";
         order: 111,
       },
     ],
+    "ChatModule.sessionTabs": [{ id: "workbenches.tabs", order: 10 }],
   },
 })
 export class WorkbenchesModule {
   @Bind("workbenches.app") app = WorkbenchAppPage;
   @Bind("workbenches.app-tab") appTab = WorkbenchAppPage;
+  @Bind("workbenches.tabs") tabs = WorkbenchSessionTab;
 }

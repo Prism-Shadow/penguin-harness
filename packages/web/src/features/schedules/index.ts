@@ -12,7 +12,4 @@ export { scheduleExamples } from "./schedule-suggestions";
 
 export { toggleBody } from "./schedule-upsert";
 
-export { SchedulePanel } from "./schedule-panel";
-
-
 export { useSchedulesAcross } from "./schedule-store";

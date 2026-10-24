@@ -76,9 +76,10 @@ import { chordKeys } from "../../components/ui/chord-kbd";
 import { displayedBinding, useKeymap } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { invalidateSlotClips } from "../builtin-browser";
-import { confirmClose } from "../../lib/dock-close-guard";
+import { confirmClose } from "./close-guard";
 import { TERMINAL_PANEL } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
+import { DockPanelTitle } from "../../lib/dock-panel-empty";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
 
 import { panelGlyph, panelLabel } from "./panel-meta";
@@ -118,7 +119,7 @@ import {
   resetPanelWidth,
   setPanelWidth,
   usePanelWidthValue,
-} from "../chat";
+} from "./use-panel-width";
 
 /**
  * The picker's leading rows, each shown only where the registry offers it: the agents, the
@@ -182,7 +183,10 @@ function PanelBody({
   return (
     <DockPanelProvider handle={handle}>
       {Body !== undefined ? (
-        <Body active={active} />
+        // The panel's name, which a contributed body's draft placeholder wears as its title.
+        <DockPanelTitle.Provider value={panelLabel(id)}>
+          <Body active={active} />
+        </DockPanelTitle.Provider>
       ) : (
         <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
           <EmptyState title={S.dock.panelUnavailable} />
