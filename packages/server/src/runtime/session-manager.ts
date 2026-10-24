@@ -634,6 +634,11 @@ export interface RuntimeEntry {
   /** How the last LLM request of the latest run ended, for the failover decision above. */
   lastRequestEnd?: { rateLimited: boolean; errorCode?: string };
   /**
+   * Snapshot of `lastRequestEnd` taken at run end, before a queued follow-up can start
+   * its own Task and clear the field (see `drive`'s finally and `launchTask`).
+   */
+  lastRequestEndSnapshot?: { rateLimited: boolean; errorCode?: string };
+  /**
    * The running Task's input messages, held from launch until the run ends. The engine
    * writes these exact envelopes to the Trace only after the session bootstrap (MCP
    * connect + discovery on the first run), so a history read during that window would
@@ -1514,13 +1519,20 @@ export class SessionManager {
    * switching a Session closes its context and opens another, which is not something to do
    * from inside the run that just ended.
    */
-  private async afterRun(entry: RuntimeEntry, input: OmniMessage[]): Promise<void> {
+  private async afterRun(entry: RuntimeEntry, input: AmspRecord[]): Promise<void> {
     try {
-      const end = entry.lastRequestEnd;
+      const end = entry.lastRequestEndSnapshot ?? entry.lastRequestEnd;
+      entry.lastRequestEndSnapshot = undefined;
       entry.lastRequestEnd = undefined;
       if (!isFailoverEligibleEnd(end?.errorCode) || input.length === 0) return;
       const target = await this.nextFailoverTarget(entry);
-      if (target === undefined) return;
+      if (target === undefined) {
+        // The run's finally held the follow-up launcher for a move that never queued:
+        // start the ordinary queued input now so it is not stranded.
+        if (entry.status === "idle" && entry.followUps.length > 0)
+          void this.startQueuedFollowUp(entry.sessionId);
+        return;
+      }
       entry.pendingFailover = target;
       entry.failoverTried.add(`${target.provider}/${target.modelId}`);
       // The resent turn goes AHEAD of whatever the user queued: it is the turn that did not
@@ -1529,7 +1541,8 @@ export class SessionManager {
       this.log(
         `[failover] ${entry.sessionId} moves to ${target.provider}/${target.modelId} after ${end?.errorCode}`,
       );
-      // The run's own finally may have found an empty queue; there is one now.
+      // The move is queued at the queue's head; start it. The run's own finally held off
+      // the follow-up launcher for exactly this (the pending flag did not exist yet).
       if (entry.status === "idle") void this.startQueuedFollowUp(entry.sessionId);
     } catch (err) {
       this.log(`[failover] queueing failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -2636,14 +2649,29 @@ export class SessionManager {
       // normally awaits the drive first, so that only happens once its 5s wait times out.
       this.touchRow(ctx, (repo, at) => repo.touchLastActive(ctx.sessionId, at));
       this.publishState(entry, "idle");
+      // Snapshot the per-run request end BEFORE a queued follow-up can start its own
+      // Task below: launchTask clears lastRequestEnd, and the follow-up's Task is queued
+      // ahead of afterRun, which would then read undefined and never fail the Session
+      // over. Sessions with a permanently non-empty queue (company-mode triggers) would
+      // otherwise never fail over at all.
+      entry.lastRequestEndSnapshot = entry.lastRequestEnd;
+      entry.lastRequestEnd = undefined;
+      // When this run ended on a failover-eligible failure, do NOT auto-start a queued
+      // follow-up yet: afterRun runs as the .then() after this finally, and it owns the
+      // pendingFailover flag the follow-up launcher reads. Launching now would start the
+      // queued input as an ordinary Task on the dead model before the move was queued.
+      // afterRun queues the move (ahead of the follow-up) and starts the queue itself.
+      const failoverPending = isFailoverEligibleEnd(entry.lastRequestEndSnapshot?.errorCode);
       // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
       // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
       // revalidates under the session lock.
-      if (entry.followUps.length > 0) void this.state.current?.startQueuedFollowUp(entry.sessionId);
+      if (entry.followUps.length > 0 && !failoverPending)
+        void this.state.current?.startQueuedFollowUp(entry.sessionId);
       // Background completion notices that raced this run's exit (arrived after its last
       // input-assembly boundary): start their delivery task now. No-op when a follow-up
       // just launched — that run's engine drains the same queue.
-      else void this.state.current?.startBackgroundNoticeTask(entry.sessionId);
+      else if (entry.followUps.length === 0)
+        void this.state.current?.startBackgroundNoticeTask(entry.sessionId);
     }
   }
 

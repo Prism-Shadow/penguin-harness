@@ -145,6 +145,16 @@ export interface OpenContextOptions {
 }
 
 /** Result of one compaction run: a StopReason terminal state (completed / aborted / retryable — abandoned, made up at the next trigger / fatal — needs a config change first); carries the summary message when summarize succeeds. */
+/**
+ * What a public `compact()` ends with: the terminal status, and on a non-completed end the
+ * classified cause — what `switchContext` needs to tell "the old model is dead, move anyway"
+ * from "the switch should not go through".
+ */
+export interface CompactOutcome {
+  status: StopReason;
+  errorCode?: ErrorCode;
+}
+
 interface CompactionResult {
   status: StopReason;
   summary?: AmspRecord;
@@ -346,6 +356,18 @@ export interface ContextEngineDeps {
    */
   backgroundNotices?: { drain(): AmspRecord[]; pending(): number };
 }
+
+/**
+ * Classified causes that say the OLD model itself is unreachable, so a model switch whose
+ * summary failed on it should still move the Session to the target rather than strand it.
+ * Mirrors the host's failover-eligible set: transport/connection failures and a 429.
+ */
+const SWITCH_CONTEXT_DEAD_MODEL_CODES: ReadonlySet<ErrorCode> = new Set([
+  "timeout",
+  "network",
+  "connect_failed",
+  "rate_limited",
+]);
 
 const isImageMessage = (m: AmspRecord): boolean =>
   (m.payload as { type?: string }).type === "image_url";
@@ -1174,7 +1196,7 @@ export class ContextEngine {
     signal?: AbortSignal | undefined;
     /** Compacts in this mode whatever the settings say (a model switch always summarizes). */
     mode?: CompactionMode;
-  }): AsyncGenerator<AmspRecord, StopReason | undefined> {
+  }): AsyncGenerator<AmspRecord, CompactOutcome | undefined> {
     // The manual entry into a compaction, and the second place the live settings decide
     // something: the `mode` below, and the prompt summarizeContext reads from them.
     await this.refreshCompaction();
@@ -1190,7 +1212,7 @@ export class ContextEngine {
         (m) => (m.payload as { type?: string }).type !== "tool_call_output",
       );
       yield* this.discardContext("manual");
-      return "completed";
+      return { status: "completed" };
     }
     // The carry seam is a clean binary on whether the compaction committed anything to
     // MMSP (PR #87 review):
@@ -1210,7 +1232,10 @@ export class ContextEngine {
       this.pendingCarryOver = folded;
     }
     // committed but not completed: the carry-over is deliberately not restored.
-    return result.status;
+    return {
+      status: result.status,
+      ...(result.errorCode !== undefined ? { errorCode: result.errorCode } : {}),
+    };
   }
 
   /**
@@ -1234,13 +1259,32 @@ export class ContextEngine {
    * last. Returns the terminal status.
    */
   async *switchContext(signal?: AbortSignal): AsyncGenerator<AmspRecord, StopReason> {
+    let outcome: CompactOutcome | undefined;
     if (this.sessionTurns > 0) {
-      const status = yield* this.compact({ signal, mode: "summarize" });
-      if (status !== "completed") return status ?? "fatal";
+      outcome = yield* this.compact({ signal, mode: "summarize" });
     } else {
       yield* this.startNewContext();
       // A switch carries text alone: tool outputs pair with tool calls only the context left
       // behind holds, and images stay behind with them.
+      this.pendingCarryOver = this.pendingCarryOver.filter(
+        (m) => (m.payload as { type?: string }).type === "text",
+      );
+    }
+    if (outcome && outcome.status !== "completed") {
+      // The summary request runs on the OLD model. When that model is dead (the exact
+      // failure the host is switching for), a summary will never come back; refusing the
+      // whole switch here strands the Session on the dead model forever — the pending
+      // failover queue behind it never runs. Move anyway, like a discard: text carries
+      // over, tool outputs and images stay behind. Other failures (a user stop, a dead
+      // credential, a request the provider rejected) must NOT push the Session over with
+      // its context silently lost, so those end as they have.
+      if (
+        outcome.errorCode === undefined ||
+        !SWITCH_CONTEXT_DEAD_MODEL_CODES.has(outcome.errorCode)
+      ) {
+        return outcome.status;
+      }
+      yield* this.startNewContext();
       this.pendingCarryOver = this.pendingCarryOver.filter(
         (m) => (m.payload as { type?: string }).type === "text",
       );

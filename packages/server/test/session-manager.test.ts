@@ -1741,7 +1741,7 @@ describe("session-manager", () => {
       compactability: () => "ok" as const,
       steer: () => false,
       skipReconnectWait: () => false,
-      async *run(): AsyncGenerator<OmniMessage> {
+      async *run(): AsyncGenerator<AmspRecord> {
         runs.push(fake.modelId!);
         yield requestBegin();
         if (runs.length === 1) {
@@ -1753,11 +1753,11 @@ describe("session-manager", () => {
         yield assistantText("answered on the fallback");
         yield requestEnd("completed");
       },
-      async *compact(): AsyncGenerator<OmniMessage> {},
+      async *compact(): AsyncGenerator<AmspRecord> {},
       async *switchModel(opts: {
         provider: string;
         modelId: string;
-      }): AsyncGenerator<OmniMessage, StopReason> {
+      }): AsyncGenerator<AmspRecord, StopReason> {
         switched.push({ provider: opts.provider, modelId: opts.modelId });
         (fake as { provider: string; modelId: string }).provider = opts.provider;
         (fake as { provider: string; modelId: string }).modelId = opts.modelId;
@@ -1792,7 +1792,7 @@ describe("session-manager", () => {
       compactability: () => "ok" as const,
       steer: () => false,
       skipReconnectWait: () => false,
-      async *run(): AsyncGenerator<OmniMessage> {
+      async *run(): AsyncGenerator<AmspRecord> {
         runs.push(fake.modelId!);
         yield requestBegin();
         if (runs.length === 1) {
@@ -1804,11 +1804,11 @@ describe("session-manager", () => {
         yield assistantText("answered on the fallback");
         yield requestEnd("completed");
       },
-      async *compact(): AsyncGenerator<OmniMessage> {},
+      async *compact(): AsyncGenerator<AmspRecord> {},
       async *switchModel(opts: {
         provider: string;
         modelId: string;
-      }): AsyncGenerator<OmniMessage, StopReason> {
+      }): AsyncGenerator<AmspRecord, StopReason> {
         switched.push({ provider: opts.provider, modelId: opts.modelId });
         (fake as { provider: string; modelId: string }).provider = opts.provider;
         (fake as { provider: string; modelId: string }).modelId = opts.modelId;
@@ -1829,6 +1829,73 @@ describe("session-manager", () => {
     expect(manager.statusOf("session-1")).toBe("idle");
   });
 
+  it("a queued follow-up no longer hides the failed run's end: the Session still moves to the chain's next model, and the queued input runs there", async () => {
+    const runs: string[] = [];
+    const switched: Array<{ provider: string; modelId: string }> = [];
+    let releaseRun: (() => void) | undefined;
+    const fake = {
+      sessionId: "session-1",
+      provider: "custom",
+      modelId: "m-alpha",
+      toolPermission: () => "rw" as const,
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      async *run(): AsyncGenerator<AmspRecord> {
+        const modelId = fake.modelId!;
+        runs.push(modelId);
+        if (runs.length === 1) {
+          // The follow-up must already be queued while this run is still running: the
+          // ordering that used to make afterRun read an undefined request end. Hold the
+          // failed turn open until that queue has been populated.
+          const gate = new Promise<void>((resolve) => {
+            releaseRun = resolve;
+          });
+          yield requestBegin();
+          yield requestEnd("retryable", { errorCode: "timeout" });
+          await gate;
+          return;
+        }
+        // Runs after the switch: the resent turn, then the user's queued follow-up.
+        yield requestBegin();
+        yield assistantText(`answered on ${modelId}`);
+        yield requestEnd("completed");
+      },
+      async *compact(): AsyncGenerator<AmspRecord> {},
+      async *switchModel(opts: {
+        provider: string;
+        modelId: string;
+      }): AsyncGenerator<AmspRecord, StopReason> {
+        switched.push({ provider: opts.provider, modelId: opts.modelId });
+        (fake as { provider: string; modelId: string }).provider = opts.provider;
+        (fake as { provider: string; modelId: string }).modelId = opts.modelId;
+        return "completed";
+      },
+    } as unknown as RuntimeSession;
+    const manager = makeManager(loaderOf(fake), undefined, undefined, async () => [
+      { provider: "custom", modelId: "m-alpha" },
+      { provider: "custom", modelId: "m-beta" },
+    ]);
+
+    const task = manager.startTask("session-1", [userText("hi")]);
+    // The failed end is out and the run is held: queue the follow-up now, while running.
+    await waitFor(() => releaseRun !== undefined, 5000);
+    const queued = await manager.startTask("session-1", [userText("queued one")], {
+      queueIfBusy: true,
+    });
+    expect(queued.queued).toBe(true);
+    releaseRun!();
+    await task;
+    // The move, the resent turn and the queued follow-up all run on the fallback.
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runs.length === 3, 5000);
+
+    expect(switched).toEqual([{ provider: "custom", modelId: "m-beta" }]);
+    expect(fake.modelId).toBe("m-beta");
+    expect(runs).toEqual(["m-alpha", "m-beta", "m-beta"]);
+    expect(manager.pendingFollowUpCount("session-1")).toBe(0);
+  });
+
   it("a refused turn (rejected) ends without failover: the request fails identically on every model", async () => {
     const runs: string[] = [];
     const switched: Array<{ provider: string; modelId: string }> = [];
@@ -1841,16 +1908,16 @@ describe("session-manager", () => {
       compactability: () => "ok" as const,
       steer: () => false,
       skipReconnectWait: () => false,
-      async *run(): AsyncGenerator<OmniMessage> {
+      async *run(): AsyncGenerator<AmspRecord> {
         runs.push(fake.modelId!);
         yield requestBegin();
         yield requestEnd("fatal", { errorCode: "rejected" });
       },
-      async *compact(): AsyncGenerator<OmniMessage> {},
+      async *compact(): AsyncGenerator<AmspRecord> {},
       async *switchModel(opts: {
         provider: string;
         modelId: string;
-      }): AsyncGenerator<OmniMessage, StopReason> {
+      }): AsyncGenerator<AmspRecord, StopReason> {
         switched.push({ provider: opts.provider, modelId: opts.modelId });
         return "completed";
       },
@@ -1882,7 +1949,7 @@ describe("session-manager", () => {
       compactability: () => "ok" as const,
       steer: () => false,
       skipReconnectWait: () => false,
-      async *run(): AsyncGenerator<OmniMessage> {
+      async *run(): AsyncGenerator<AmspRecord> {
         runs.push(fake.modelId!);
         yield requestBegin();
         // An intermediate retryable end (a retry was planned), then the user stops
@@ -1891,11 +1958,11 @@ describe("session-manager", () => {
         manager.abortTask("session-1");
         yield abortEvent("user_abort");
       },
-      async *compact(): AsyncGenerator<OmniMessage> {},
+      async *compact(): AsyncGenerator<AmspRecord> {},
       async *switchModel(opts: {
         provider: string;
         modelId: string;
-      }): AsyncGenerator<OmniMessage, StopReason> {
+      }): AsyncGenerator<AmspRecord, StopReason> {
         switched.push({ provider: opts.provider, modelId: opts.modelId });
         return "completed";
       },
