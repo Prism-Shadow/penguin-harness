@@ -14,7 +14,8 @@
 
 - `request_end.status` 仍是四个 `StopReason` 取值。一次 Request 的条目是否进入模型历史，只看它：只有 `completed` 的 Request 才提交。
 - 被中断、失败或截断提前结束的条目，照旧以 partial `stop` 收束，并写出装着已到达内容的完整记录。这样收束的工具调用带原样的参数文本，且从不派发：`GenerativeModel` 在进程内以 `markInterruptedToolCall`（由 core 导出，不写入记录）标记它，引擎跳过带标记的调用。完整流出的调用照旧在记录到达时即派发。
-- 完整送达却停在输出上限的响应（`finish_reason` 为 `length`），不再以最后一项 `fatal` 的形式提交，而以 `retryable` 结束，带新的 `ErrorCode` `output_truncated`，`error_message` 写明输出达到了上限。MMSP 无法识别的结束原因（`unknown`）以 `retryable` 结束，错误码为 `malformed`。`GenerativeModel` 把这一轮移出 MMSP 的历史，但照常产出它的 `token_usage`（供应商已计费，成本中心照常计入；它不算作 Session 的一轮，也不新增失败记录）；引擎按重连阶梯重试，`[request_error]` 行写明原因。停在上限的尝试不让阶梯归零，连续停在上限会用尽 `maxReconnects`，此后运行与任何重试耗尽的 `retryable` 一样结束。
+- 完整送达却停在输出上限的响应（`finish_reason` 为 `length`），不再以最后一项 `fatal` 的形式提交，而以 `retryable` 结束，带新的 `ErrorCode` `output_truncated`，`error_message` 写明输出达到了上限。MMSP 无法识别的结束原因（`unknown`）以 `retryable` 结束，错误码为 `malformed`。`GenerativeModel` 把这一轮移出 MMSP 的历史，但照常产出它的 `token_usage`（供应商已计费，成本中心照常计入；它不算作 Session 的一轮，也不新增失败记录）；引擎按重连阶梯、与其他可重试失败相同的规则重试，`[request_error]` 行写明原因；重试用尽时，运行与任何重试耗尽的 `retryable` 一样结束。
+- 单轮尝试次数的绝对上限（`ContextEngineDeps.maxTurnAttempts`）缺省值由 20 改为 10，对所有可重试失败生效：收到过内容的尝试会让连续计数的阶梯归零，响应一再中途断开或停在输出上限的一轮，就由这条上限兜住。压缩请求不受影响，它们按自己的重连预算重试。
 - 单发请求把停在上限的回答当作完成的回答读取：会话标题、`read_file` 的读图模型与模型测速。
 - `tool_call_output.status` 必填：`completed`、`fatal`，或 `aborted`，后者表示调用没有运行到结束（被拒，或运行中被中断，此时输出为已产出的内容加上中断提示）。`retryable` 退出工具的词表。工具返回的 `ToolResult.stopReason` 改为 `ToolResult.status`（`ToolStatus`），构造函数 `toolCallOutput` 接收 `status`。`partial_*` 记录不带状态。
 - 达到 `max_turns` 的 Task 以一条 `abort` 记录结束（`error_code: "max_turns"`，`error_message` 为 `reached max turns (N)`），不再写一条 `fatal` 的 assistant 提示。运行的 `RunCutoff` 带同一个错误码。Web App 与 CLI 显示为「[已停止]：已达到单次任务最大轮数」，Web App 的这一行带「重试」。
@@ -27,6 +28,6 @@
 
 ## 兼容性
 
-- **API 调用方**：不要再读 `stop_reason`。Request 的结束看它的 `request_end.status`，工具结果看 `tool_call_output.status`，轮次上限看 `error_code` 为 `max_turns` 的 `abort`。停在输出上限的响应现在以 `retryable`、`error_code` 为 `output_truncated` 结束并重试，过去则会提交；轮次上限的 `RunResult` 是 `aborted` 而不是 `fatal`。所在 Request 没有完成的 `tool_call`，只有 `approval_decision` 出现在该 `request_end` 之前才执行过。
+- **API 调用方**：不要再读 `stop_reason`。一轮最多尝试 10 次后放弃，过去是 20 次。Request 的结束看它的 `request_end.status`，工具结果看 `tool_call_output.status`，轮次上限看 `error_code` 为 `max_turns` 的 `abort`。停在输出上限的响应现在以 `retryable`、`error_code` 为 `output_truncated` 结束并重试，过去则会提交；轮次上限的 `RunResult` 是 `aborted` 而不是 `fatal`。所在 Request 没有完成的 `tool_call`，只有 `approval_decision` 出现在该 `request_end` 之前才执行过。
 - **基于 core 编写的代码**：调用记录构造函数时去掉表示结束原因的参数，给 `toolCallOutput` 传 `status`，工具的 `execute` 返回 `{ status }` 而不是 `{ stopReason }`。自行实现的 `LLMInterface` 提前收束工具调用时，照常写出完整记录，并让它经过 `markInterruptedToolCall`。
 - **Trace 读者**：本版本之前写下的 Trace 在记录上保留 `stop_reason`，现已不再读取。没有 `status` 的 `tool_call_output` 读作 `completed`，因此旧 Trace 中失败、被拒或被中断的工具结果可能显示为完成。恢复旧 Trace 不受影响：重放本来就只按 `request_end.status` 判定一轮是否提交。不做迁移，也没有读取旧字段的兼容代码。

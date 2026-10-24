@@ -1921,12 +1921,12 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((engine as unknown as { sessionTurns: number }).sessionTurns).toBe(1);
   });
 
-  it("does not reset the ladder on an attempt cut off at its cap: consecutive cut-offs exhaust maxReconnects", async () => {
+  it("resets the ladder on an attempt cut off at its cap like any attempt that received content; the per-turn ceiling of 10 ends the run", async () => {
     let calls = 0;
     const llm: LLMInterface = {
       async *streamGenerate() {
         calls += 1;
-        // Every attempt received a whole response; none of it is progress.
+        // Every attempt received a whole response, cut off at the cap.
         yield assistantText(`Cut off again ${calls}`);
         return { status: "retryable", errorCode: "output_truncated", errorMessage: "cut" };
       },
@@ -1939,8 +1939,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     const { all, cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
 
-    // One attempt plus maxReconnects retries, then the run ends the way an exhausted ladder does.
-    expect(calls).toBe(3);
+    // maxReconnects never runs out (each attempt received content); the default ceiling does,
+    // and the run ends the way an exhausted ladder does.
+    expect(calls).toBe(10);
     expect(cutoff).toEqual({
       kind: "llm_failure",
       errorCode: "output_truncated",
@@ -1950,7 +1951,11 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       .map((m) => m.payload as { type?: string; status?: string; retry_in_ms?: number })
       .filter((p) => p.type === "request_end")
       .at(-1)!;
-    expect(last).toMatchObject({ status: "retryable", error_code: "output_truncated", attempt: 3 });
+    expect(last).toMatchObject({
+      status: "retryable",
+      error_code: "output_truncated",
+      attempt: 10,
+    });
     expect(last.retry_in_ms).toBeUndefined();
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });

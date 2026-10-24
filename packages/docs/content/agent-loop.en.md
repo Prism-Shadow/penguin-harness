@@ -272,7 +272,7 @@ A `fatal` failure stops the run at once, without retrying. It covers:
 
 An identical request can only fail the same way, so the ladder would only delay the actionable error.
 
-A response that arrives whole but stops at its output cap (`finish_reason` `length`) ends `retryable` with `error_code: "output_truncated"`; one that ends on a finish reason the client does not map (`unknown`) ends `retryable` coded `malformed`. Neither is committed: the LLM interface takes the turn back out of MMSP's history. Both are still metered: the provider billed the attempt and reported its usage, so its `token_usage` goes out, though it counts as no Session turn. The engine retries them on the same ladder, and the retry's `[request_error]` line names the cause, so the model can answer in a shorter way. An attempt stopped at its cap received content, but that is no sign of progress, so it climbs the ladder instead of resetting it.
+A response that arrives whole but stops at its output cap (`finish_reason` `length`) ends `retryable` with `error_code: "output_truncated"`; one that ends on a finish reason the client does not map (`unknown`) ends `retryable` coded `malformed`. Neither is committed: the LLM interface takes the turn back out of MMSP's history. Both are still metered: the provider billed the attempt and reported its usage, so its `token_usage` goes out, though it counts as no Session turn. The engine retries them on the same ladder, by the same rules as any other retryable failure, and the retry's `[request_error]` line names the cause, so the model can answer in a shorter way.
 
 One rejection is retried anyway: a provider 4xx on a request whose input carries images. Providers word such refusals too many ways to match reliably, so the engine takes any 4xx on an image-bearing input as a rejection of the images (`image_rejected`): it replaces each image with a fixed note saying the request was rejected while it carried the image (the provider's error reaches the model through the retry's `[request_error]` line, see below), records that attempt as `retryable` with `retry_in_ms: 0`, and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement. A 4xx on an input with no image is fatal like any other: a refused image already in the committed history is beyond the reach of a retry.
 
@@ -291,11 +291,11 @@ The default limits and waits:
 | Backoff cap | 30 s |
 | Wait sequence | 2 s, 4 s, 8 s, 16 s, 30 s |
 | Total patience | ≈ 60 s |
-| Absolute ceiling per turn | 20 attempts |
+| Absolute ceiling per turn | 10 attempts |
 
 There is one shared schedule for every retryable failure. It is sized so that transient provider failures such as restarts and rate limits get a real recovery window, and so every planned wait clears the Web App's 2 s countdown floor and stays visible.
 
-An attempt that **received content** before dropping — a `terminated: other side closed (UND_ERR_SOCKET)` mid-response, say — had a working connection and a model writing into it. Its failure restarts the ladder at 2 s instead of climbing it, because two socket drops in one turn should not add up to a reason to give up. The bound on that reset is the separate absolute ceiling of 20 attempts per turn, which only an endpoint that streams a little and drops every time ever reaches. `attempt` keeps counting every attempt and never rewinds when the ladder resets.
+An attempt that **received content** before dropping — a `terminated: other side closed (UND_ERR_SOCKET)` mid-response, say — had a working connection and a model writing into it. Its failure restarts the ladder at 2 s instead of climbing it, because two socket drops in one turn should not add up to a reason to give up. The bound on that reset is the separate absolute ceiling of 10 attempts per turn, which an endpoint that streams a little and drops every time reaches, as does a response that keeps stopping at its output cap. `attempt` keeps counting every attempt and never rewinds when the ladder resets.
 
 ### When the run gives up
 

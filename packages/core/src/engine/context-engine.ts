@@ -228,10 +228,11 @@ export interface ContextEngineDeps {
   maxReconnects?: number;
   /**
    * Absolute ceiling on the attempts a single turn may make, counting every attempt whether
-   * or not it received anything. Defaults to 20. It only binds once received content has
-   * reset the consecutive ladder (`maxReconnects`) at least once, and exists solely to keep
-   * that reset from turning an endpoint that streams a few tokens and drops into an endless
-   * retry loop.
+   * or not it received anything. Defaults to 10. It only binds once received content has
+   * reset the consecutive ladder (`maxReconnects`) at least once, and exists to keep that reset
+   * from turning an endpoint that streams a few tokens and drops — or a response that keeps
+   * stopping at its output cap, each attempt billed in full — into a long retry loop. The
+   * compaction loop does not use it: its requests run on `compactionMaxReconnects` alone.
    */
   maxTurnAttempts?: number;
   /**
@@ -446,13 +447,6 @@ interface TurnRetryState {
 const RETRY_STATUSES: readonly StopReason[] = ["retryable"];
 
 /**
- * Whether a failed attempt's content says nothing about progress: a whole response cut off at
- * its output cap always received content, but the same request may well hit the same cap again,
- * so it climbs the reconnect ladder like an attempt that received nothing.
- */
-const cutAtOutputCap = (outcome: LLMOutcome): boolean => outcome.errorCode === "output_truncated";
-
-/**
  * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
  * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (2s base, 30s ceiling,
  * 5 reconnects) the ladder is 2s, 4s, 8s, 16s, 30s ≈ 60s of total patience: one shared
@@ -585,7 +579,7 @@ export class ContextEngine {
     this.pendingBootstrapRecords = deps.bootstrapRecords ?? null;
     this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
-    this.maxTurnAttempts = deps.maxTurnAttempts ?? 20;
+    this.maxTurnAttempts = deps.maxTurnAttempts ?? 10;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 2000;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
     this.compactionMaxReconnects = deps.compactionMaxReconnects ?? this.maxReconnects;
@@ -968,8 +962,9 @@ export class ContextEngine {
         // `[turn_retried]` carries the accumulated output into every retry and the turn keeps
         // inching forward. What bounds this is the ceiling below, not the ladder: an endpoint
         // that streams a few tokens and drops, every single time, would otherwise be retried
-        // forever. An attempt cut off at its output cap is the exception (see cutAtOutputCap).
-        if (turn.receivedContent && !cutAtOutputCap(turn.outcome)) consecutive = 0;
+        // forever. A response cut off at its output cap is no exception: it received content
+        // like any other, and the same ceiling bounds how often it is asked again.
+        if (turn.receivedContent) consecutive = 0;
         // Exhausted: give up without an abort event — abort marks a user interruption or the
         // turn cap, and the last failure's request_end (status `retryable` with no
         // `retry_in_ms`, since no retry is planned) is the terminal record frontends and
@@ -1413,9 +1408,9 @@ export class ContextEngine {
             // engine will retry in-run, the planned backoff rides along as retry_in_ms
             // (the frontend's live countdown); absent on final failures and completions.
             // Mirrors the reconnect loop exactly, or the announced countdown is a lie: an
-            // attempt that received content (one cut off at its cap aside) restarts the ladder at its
-            // first rung, either budget running out means no retry is planned at all, and an
-            // image retry waits for nothing.
+            // attempt that received content restarts the ladder at its first rung, either
+            // budget running out means no retry is planned at all, and an image retry waits
+            // for nothing.
             const retryInMs =
               retry.attempts + 1 >= this.maxTurnAttempts
                 ? undefined
@@ -1423,7 +1418,7 @@ export class ContextEngine {
                   ? 0
                   : this.plannedRetryDelayMs(
                       outcome,
-                      receivedContent && !cutAtOutputCap(outcome) ? 0 : retry.consecutive,
+                      receivedContent ? 0 : retry.consecutive,
                       this.maxReconnects,
                       RETRY_STATUSES,
                     );

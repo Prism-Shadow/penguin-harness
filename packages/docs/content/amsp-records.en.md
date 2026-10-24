@@ -421,7 +421,7 @@ A status answers one question: should this be retried? The kind of failure rides
 | --- | --- | --- |
 | `completed` | finished normally; the turn is committed | continue |
 | `aborted` | user interruption or cancellation | stop, emit an `abort` event, hand back to the user |
-| `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, a response that arrived whole but stopped at its output cap (`error_code: "output_truncated"`), and anything unclassifiable | reconnect within the run on the backoff ladder; an attempt stopped at its cap is not committed and does not reset the ladder. When the retries run out, the last `request_end` (no `retry_in_ms`) is the terminal record |
+| `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, a response that arrived whole but stopped at its output cap (`error_code: "output_truncated"`), and anything unclassifiable | reconnect within the run on the backoff ladder; an attempt stopped at its cap is not committed. When the retries run out, the last `request_end` (no `retry_in_ms`) is the terminal record |
 | `fatal` | a failure no retry can fix: a definitive provider 4xx rejection (parameters, quota), rejected credentials, or a deterministic client-side rejection | stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record |
 
 A tool result's `status` says what the result is:

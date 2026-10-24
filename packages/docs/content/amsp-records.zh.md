@@ -421,7 +421,7 @@ type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call
 | --- | --- | --- |
 | `completed` | 正常完成，该轮已提交 | 继续 |
 | `aborted` | 用户中断或取消 | 停止，产出 `abort` 事件，交还用户 |
-| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败的响应、完整送达却停在输出上限的响应（`error_code` 为 `output_truncated`），以及一切无法归类的错误 | 同一次运行内按退避阶梯自动重连；停在输出上限的尝试不提交，也不使阶梯归零。重试用尽时，最后一条不带 `retry_in_ms` 的 `request_end` 即终局记录 |
+| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败的响应、完整送达却停在输出上限的响应（`error_code` 为 `output_truncated`），以及一切无法归类的错误 | 同一次运行内按退避阶梯自动重连；停在输出上限的尝试不提交。重试用尽时，最后一条不带 `retry_in_ms` 的 `request_end` 即终局记录 |
 | `fatal` | 重试也无法修复的失败：供应商确定性的 4xx 拒绝（参数、配额）、凭据被拒，或确定性的客户端拒绝 | 停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录 |
 
 工具结果的 `status` 说明结果是什么：
