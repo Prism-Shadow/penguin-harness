@@ -3,7 +3,7 @@
 [中文版](PRFC-0018-amsp.zh.md)
 
 > **Source**: `rfcs/PRFC-0018-amsp.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — landed (default branch `main`, commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)).
-> **Rev**: v1.0.0 (migrated into the main repository); the conventions for this document are in [README.md](README.md), with per-version changes recorded in `## Changes` at the end.
+> **Rev**: v1.1.0 (v1.0.0 migrated into the main repository); the conventions for this document are in [README.md](README.md), with per-version changes recorded in `## Changes` at the end.
 
 - Feature Name: `amsp`
 - Start Date: 2026-10-07
@@ -68,13 +68,13 @@ import { AgentClient } from "@prismshadow/amsp";
 
 const client = new AgentClient({ baseUrl: "http://localhost:7364/api/amsp/v1", agent: "demo/coder", apiKey: process.env.PENGUIN_AGENT_KEY });
 
-const run = client.run({ input: "Summarize README.md" });
+const run = client.stream({ input: "Summarize README.md" });
 for await (const event of run) {
   if (event.type === "text.delta") process.stdout.write(event.text);
 }
 const first = await run.result();
 
-const second = await client.ask({ sessionId: first.sessionId, input: "Now list its headings", onApproval: () => "allow" });
+const second = await client.run({ sessionId: first.sessionId, input: "Now list its headings", onApproval: () => "allow" });
 console.log(second.text, second.usage.total);
 ```
 
@@ -348,8 +348,8 @@ Under `packages/server/src/amsp/`: `module.ts` (contributes the public and manag
 `@prismshadow/amsp` (directory `packages/amsp`) is published publicly with zero runtime dependencies and works in both Node 24 and browsers (it uses only `fetch`, `ReadableStream`, `TextDecoder`, `AbortController`, `URL`). It exports all of AMSP's types, and the server imports it for types — this is the only copy of the protocol's types.
 
 - `new AgentClient({ baseUrl, agent, apiKey?, fetch?, headers? })`: no `apiKey` means keyless access; no environment variable is read implicitly.
-- `run({ input, sessionId?, signal?, onApproval? })` returns a run: events can be read one by one with `for await`; `session` resolves at `run.started`; `result()` summarizes into `{ status, error?, sessionId, text, items, usage, sessionUsage, requests }` — `text` is the main session's assistant `text.done`s joined with blank lines, and `items` is all `.done` items plus the non-item events (a streamed compaction summary has no `.done`, so it is not there, and it is not rebuilt from fragments); `abort()` goes through the abort route.
-- `ask(opts)` is run plus awaiting `result()`; there are also `agent()`, `session(id)`, `abort(id)`, `approve(id, toolCallId, decision)`, `parseArguments(toolCall)` (returns null on parse failure), and `readSse(body)`.
+- `stream({ input, sessionId?, signal?, onApproval? })` returns a run: events can be read one by one with `for await`; `session` resolves at `run.started`; `result()` summarizes into `{ status, error?, sessionId, text, items, usage, sessionUsage, requests }` — `text` is the main session's assistant `text.done`s joined with blank lines, and `items` is all `.done` items plus the non-item events (a streamed compaction summary has no `.done`, so it is not there, and it is not rebuilt from fragments); `abort()` goes through the abort route.
+- `run(opts)` starts a run and awaits its `result()`; there are also `agent()`, `session(id)`, `abort(id)`, `approve(id, toolCallId, decision)`, `parseArguments(toolCall)` (returns null on parse failure), and `readSse(body)`.
 - Behavior: `[DONE]` ends iteration; comment lines and non-`data:` fields are ignored, and multi-line `data:` is joined with newlines; a non-200 before the stream starts throws `AmspHttpError { status, code, message }`; a stream that ends without `run.done` throws `AmspStreamError`; unknown event types are handed over as-is; even when the caller only awaits `result()`, `onApproval` is awaited and POSTed on its behalf — a throwing callback answers `deny`, and no callback likewise answers `deny`; an aborted `signal` cancels the read and rejects with fetch's `AbortError`.
 - Published to npm by the release workflow (trusted publishing); the package name's very first publish is done once by hand by a maintainer, after which the trusted publisher can be configured.
 
@@ -408,3 +408,7 @@ Background-job-style runs (poll after `202`, or pick up the stream later); file 
 ### v1.0.0
 
 - Added: Migrated into the main repository; the body takes the landed version from the design repository's default branch, identical to the source file.
+
+### v1.1.0
+
+- Updated: The example in the Guide-level explanation and the SDK section use the two SDK entry points released in 0.2.16 (impl [#1111](https://github.com/Prism-Shadow/penguin-harness/pull/1111)): the old `run()`, which returns a run to iterate, is now `stream()`, and the old `ask()`, which runs and awaits the result, is now `run()`. The design repository records the same change as a Status note (design [#376](https://github.com/Prism-Shadow/penguin-harness-design/pull/376)).
