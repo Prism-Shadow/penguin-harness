@@ -36,5 +36,12 @@
     },
     "title": "Data Analysis",
     "title_zh": "数据分析"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^3.2.6"
   }
 }

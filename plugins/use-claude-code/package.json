@@ -37,5 +37,12 @@
     },
     "title": "Remote Claude Code",
     "title_zh": "远程操控 Claude Code"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^3.2.6"
   }
 }

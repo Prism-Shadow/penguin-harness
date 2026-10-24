@@ -37,5 +37,12 @@
     },
     "title": "External Plugin Porting",
     "title_zh": "外部插件移植"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^3.2.6"
   }
 }

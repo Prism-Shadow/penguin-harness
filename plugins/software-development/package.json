@@ -37,5 +37,12 @@
     },
     "title": "Software Development",
     "title_zh": "软件开发"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^3.2.6"
   }
 }
