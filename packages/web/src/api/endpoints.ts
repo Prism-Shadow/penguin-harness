@@ -258,8 +258,7 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
-import { activityCursorParam } from "../lib/session-grouping";
-import type { ActivityKey } from "../lib/session-grouping";
+import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -2923,3 +2922,6 @@ export const clearBuiltinBrowserData = (
     body: { storages, ...scope },
     server: null,
   });
+
+export const getContributions = () =>
+  apiFetch<import("@prismshadow/penguin-server/api").ContributionsResponse>("/api/contributions");

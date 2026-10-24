@@ -53,8 +53,9 @@ import {
   nextPointers,
   rowRef,
   toRow,
+  type RowState,
 } from "../src/features/models/models-page";
-import type { RowState } from "../src/features/models/models-page";
+
 import {
   DetailsFold,
   foldedErrors,

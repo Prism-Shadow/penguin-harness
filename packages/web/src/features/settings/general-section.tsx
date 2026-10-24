@@ -20,13 +20,14 @@ import {
   readNotificationsEnabled,
   subscribeNotificationsEnabled,
   writeNotificationsEnabled,
+  type NotificationAccess,
 } from "../../lib/notification-pref";
-import type { NotificationAccess } from "../../lib/notification-pref";
+
 import { useCompany } from "../../state/company";
-import { resolveSystemLocale, useLocale } from "../../state/locale";
-import type { LangPref } from "../../state/locale";
-import { useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
+import { resolveSystemLocale, useLocale, type LangPref } from "../../state/locale";
+
+import { useTheme, type Currency } from "../../state/theme";
+
 import { TraceImportRow } from "./trace-import-row";
 
 export function GeneralSection() {

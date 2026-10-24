@@ -29,7 +29,7 @@ async function modules() {
   vi.resetModules();
   stubLocalStorage();
   return {
-    list: await import("../src/features/terminal/terminal-list"),
+    list: await import("../src/features/terminal"),
     machines: await import("../src/lib/terminal-machines"),
   };
 }

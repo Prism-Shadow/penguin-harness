@@ -10,7 +10,7 @@
  * relay does) or answer every terminal request with one status: 404 is a runtime older than the
  * terminal API, 401 a sign-in that no longer holds (`/api/me` then answers 401 as well).
  */
-import type { TerminalInfo } from "../../src/features/terminal/terminal-view";
+import type { TerminalInfo } from "../../src/features/terminal";
 import { ADMIN_ME } from "./admin-settings";
 import { apiError, json, stubFetch } from "./fetch";
 import type { FakeFetch, FetchRequest } from "./fetch";

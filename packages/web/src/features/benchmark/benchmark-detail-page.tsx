@@ -33,7 +33,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
-import { downloadArchive } from "../agents/archive-download";
+import { downloadArchive } from "../agents";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { fetchBenchmarks } from "./benchmark-sources";

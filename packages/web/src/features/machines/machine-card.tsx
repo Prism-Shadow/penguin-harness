@@ -48,8 +48,9 @@ import {
   retryReading,
   stepLabel,
   useWaitsBecause,
+  type MachineReading,
+  type RetryReading,
 } from "./machines-view";
-import type { MachineReading, RetryReading } from "./machines-view";
 
 /**
  * The reason a machine's state gives beside its word, when it has one: the far side's own words,

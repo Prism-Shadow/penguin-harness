@@ -15,7 +15,7 @@
  */
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
-import { panelWidth } from "../chat/use-panel-width";
+import { panelWidth } from "../chat";
 import { DOCK_MIN_HEIGHT_PX, DOCK_RATIO_MAX, bottomRatio, type DockPosition } from "./dock-state";
 
 /** Fraction of the host's width/height that counts as an edge band for direct drops. */

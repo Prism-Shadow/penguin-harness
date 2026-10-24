@@ -41,7 +41,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk, type Tone } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { stdioServers } from "./plugin-status";
 
 /** One mark: a glyph in its tone, the sentence on hover and as its accessible name. */

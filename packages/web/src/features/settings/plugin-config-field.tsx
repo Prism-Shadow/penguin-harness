@@ -17,7 +17,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { Locale } from "../../state/locale";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { ConfigTable } from "./plugin-config-table";
 import type { TableDraft } from "./plugin-config-draft";
 

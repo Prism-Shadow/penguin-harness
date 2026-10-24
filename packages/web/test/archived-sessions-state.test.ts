@@ -46,10 +46,10 @@ import {
   shownGroups,
   shownRows,
   wholeGroupChosen,
+  type ArchiveFilters,
 } from "../src/features/settings/archived-sessions-state";
-import type { ArchiveFilters } from "../src/features/settings/archived-sessions-state";
-import { apiError, json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch, FetchRequest } from "./helpers/fetch";
+
+import { apiError, json, stubFetch, type FakeFetch, type FetchRequest } from "./helpers/fetch";
 
 const ALL: ArchiveFilters = { q: "", source: null, projectId: null };
 

@@ -5,8 +5,8 @@
  * so Escape cancels the recording without also closing the settings dialog. The state machine
  * is lib/shortcuts/recorder.ts; this component only draws it and wires the DOM.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+
 import { S } from "../../lib/strings";
 import { ChordKbd } from "../../components/ui/chord-kbd";
 import { isModifierCode } from "../../lib/shortcuts/chord";

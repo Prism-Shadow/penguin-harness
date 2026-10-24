@@ -35,8 +35,9 @@ import {
   retryReading,
   sshWords,
   stepLabel,
+  type MachineReading,
+  type RetryReading,
 } from "./machines-view";
-import type { MachineReading, RetryReading } from "./machines-view";
 
 /** The machine's state as one pill: one plain word in the state's tone. */
 export interface MachineChip {

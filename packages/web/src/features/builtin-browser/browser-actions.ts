@@ -8,7 +8,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { openPanel } from "../dock/dock-state";
+import { openPanel } from "../dock";
 import { browserState, dispatchBrowser } from "./browser-store";
 import { NO_BROWSER_SCOPE, type BrowserGuest } from "./browser-state";
 

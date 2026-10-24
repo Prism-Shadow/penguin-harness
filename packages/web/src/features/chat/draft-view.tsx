@@ -38,8 +38,7 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { browserState } from "../builtin-browser/browser-store";
-import { adoptBrowserSession } from "../builtin-browser/browser-actions";
+import { browserState, adoptBrowserSession } from "../builtin-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -55,16 +54,16 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
-import { AgentSelect } from "../agents/agent-select";
+import { AgentSelect } from "../agents";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { UNCONFINED, draftSandboxAfter } from "../../lib/permission-level";
-import type { PermissionPick } from "../../lib/permission-level";
+import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "../../lib/permission-level";
+
 import { apiErrorText } from "../../lib/api-error";
 import { rememberSessionMachine } from "../../lib/session-machines";
 import { cachedMachineAgents, rememberMachineAgents } from "../../lib/machine-cache";
-import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
-import type { MachineLink } from "../../lib/machine-link";
+import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../lib/machine-link";
+
 import { useMachines } from "../../state/machines";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
@@ -74,11 +73,10 @@ import type { ComposerControl } from "./chat-input";
 import { goalPluginGate } from "./goal-plugin-gate";
 import { discardUnstartedSession } from "./unstarted-session";
 import { APPROVAL_MODES } from "./approval-mode";
-import { adoptDockScope } from "../dock/dock-state";
-import { setDockConversation } from "../dock/dock-terminal";
+import { adoptDockScope, setDockConversation } from "../dock";
 import { StartDashboard } from "./start-dashboard";
-import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
-import type { DraftCache } from "./draft-cache";
+import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "./draft-cache";
+
 import {
   DRAFT_FLUSH_EVENT,
   getDraftSession,
@@ -96,7 +94,7 @@ import { effectiveThinkingLevel } from "./thinking-level";
 import { useAgentSkills } from "./use-agent-skills";
 import { WorkspaceSelect } from "./workspace-select";
 import { FilesPanelToggle } from "./dock-toggles";
-import { sameModelRef } from "../models/model-grouping";
+import { sameModelRef } from "../models";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;

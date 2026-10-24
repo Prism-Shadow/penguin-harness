@@ -67,21 +67,28 @@ import {
   MenuItem,
   ResizeHandle,
   usePointerDrag,
+  type DockPickerChoice,
+  type DockTabItem,
 } from "@prismshadow/penguin-ui";
-import type { DockPickerChoice, DockTabItem } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { chordKeys } from "../../components/ui/chord-kbd";
 import { displayedBinding, useKeymap } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
-import { invalidateSlotClips } from "../builtin-browser/slot-registry";
-import { confirmClose } from "./close-guard";
+import { invalidateSlotClips } from "../builtin-browser";
+import { confirmClose } from "../../lib/dock-close-guard";
 import { TERMINAL_PANEL } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
-import { DockPanelProvider } from "./panel-context";
-import type { DockPanelHandle } from "./panel-context";
+import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
+
 import { panelGlyph, panelLabel } from "./panel-meta";
-import { dockPanelDefinition, useDockPanels } from "./panel-registry";
-import type { DockPanelDefinition, PanelId } from "./panel-registry";
+import {
+  dockPanelDefinition,
+  useDockPanels,
+  type DockPanelDefinition,
+  type PanelId,
+} from "./panel-registry";
+
 import {
   DOCK_MIN_HEIGHT_PX,
   DOCK_RATIO_MAX,
@@ -111,7 +118,7 @@ import {
   resetPanelWidth,
   setPanelWidth,
   usePanelWidthValue,
-} from "../chat/use-panel-width";
+} from "../chat";
 
 /**
  * The picker's leading rows, each shown only where the registry offers it: the agents, the
