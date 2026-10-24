@@ -3,7 +3,7 @@
 - **Date:** 2026-10-24
 - **Type:** fix
 - **Scope:** `core`, `server`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#1313](https://github.com/Prism-Shadow/penguin-harness/pull/1313)
 
 [中文版](2026-10-24-failover-queued-followup.zh.md)
 
