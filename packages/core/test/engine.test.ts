@@ -3298,7 +3298,7 @@ describe("ContextEngine rate-limit failover (the host can finish the turn elsewh
     return { llm, calls: () => calls };
   };
 
-  const endOf = (all: OmniMessage[]): { status?: string; error_code?: string } => {
+  const endOf = (all: AmspRecord[]): { status?: string; error_code?: string } => {
     const end = all.findLast((m) => (m.payload as { type?: string }).type === "request_end");
     return (end?.payload ?? {}) as { status?: string; error_code?: string };
   };
