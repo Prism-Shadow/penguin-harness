@@ -24,13 +24,11 @@ import {
   clearDraftChatDefaults,
   clearDraftModelRef,
   dispatchChatDefaultsChanged,
-  ModelCatalogSelect,
-  modelLabel,
-  SELECTABLE_THINKING_LEVELS,
-  WorkspaceSelect,
   type ChatDefaultsChangedDetail,
 } from "../../chat";
 
+import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../../model-picker";
+import { WorkspaceSelect } from "../../workspace";
 import { sameModelRef } from "../../models";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 

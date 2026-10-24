@@ -33,7 +33,7 @@ import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
-import { localizedText } from "../../lib/skill-use";
+import { localizedText } from "../chat";
 import { apiErrorText } from "../../lib/api-error";
 import { useSessions } from "../../state/sessions";
 import { useProject } from "../../state/project";

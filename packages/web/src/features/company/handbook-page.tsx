@@ -19,7 +19,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { WorkspaceBrowser } from "../chat/workspace-browser";
+import { WorkspaceBrowser } from "../workspace/workspace-browser";
 import { useOrg } from "./org-layout";
 
 /** The index, `handbook/README.md`: opened on arrival, and kept where it is. */

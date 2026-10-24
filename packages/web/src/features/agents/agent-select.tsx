@@ -3,7 +3,7 @@ import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, PickerDialog } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
-import { pillClass } from "../chat";
+import { pillClass } from "../workspace";
 import { employeesLast, isEmployee } from "./agent-employment";
 
 /** A searchable Agent chooser; the dialog owns its background, scroll and focus. */
