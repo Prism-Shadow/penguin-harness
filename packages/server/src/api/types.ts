@@ -5376,6 +5376,12 @@ export interface MachineSkippedModel {
   /** The far side's error code (`model_not_addable`, `model_not_routable`). */
   code: string;
   reason: string;
+  /**
+   * The entry is one of this server's built-in models for its group, which the machine refused
+   * as not addable: the machine's build does not list it yet, so updating the machine, then
+   * syncing again, carries it. Absent for any other refusal.
+   */
+  builtInHere?: true;
 }
 
 /** A model entry that takes `variable` from this server's environment. */
