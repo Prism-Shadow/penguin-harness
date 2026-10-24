@@ -86,12 +86,9 @@ curl -N http://localhost:7364/api/amsp/v1/agents/demo/coder/runs \
   -d '{"input":"Summarize README.md"}'
 ```
 
-The answer is the run, streamed as it happens. `-N` turns off curl's buffering so events print as they arrive. The first event, `hello`, names the Session; the conversation's records follow, each with an `id:`, from `task_begin` to `task_end`; `data: [DONE]` ends the stream:
+The answer is the run, streamed as it happens. `-N` turns off curl's buffering so events print as they arrive. A `ping` opens it, the conversation's records follow, each with an `id:`, from `task_begin` to `task_end`, and `data: [DONE]` ends the stream. On a new conversation the first record is its `session_meta`, whose `session_id` names the conversation:
 
 ```text
-event: hello
-data: {"session_id":"session-2026-10-23-10-00-00-3f9a1c2e","agent":"demo/coder"}
-
 event: ping
 data: {}
 
@@ -119,7 +116,7 @@ data: [DONE]
 
 The `session_meta` comes only on a conversation's first message. How the run went is read from its records; see [A run's result](/amsp#a-runs-result).
 
-To continue the conversation, send the Session id with the next input:
+To continue the conversation, send that Session id with the next input:
 
 ```bash
 curl -N http://localhost:7364/api/amsp/v1/agents/demo/coder/runs \
@@ -162,7 +159,7 @@ type InputItem =
 
 - `input` must carry a non-empty text or an image.
 - An image is a `data:` URL of an image type, within the 20 MB inline-image cap and the server's attachment total, or an `http(s)` URL, which goes to the model as it is. Files are not accepted.
-- Without `session_id`, the run starts a new conversation and `hello` names it. With it, the run continues that conversation, which must be an API conversation of the same agent; any other id is `404` `session_not_found`.
+- Without `session_id`, the run starts a new conversation, and its `session_meta`, the stream's first record, names it. With it, the run continues that conversation, which must be an API conversation of the same agent; any other id is `404` `session_not_found`.
 
 ### Run without holding the connection
 
@@ -197,6 +194,7 @@ A request refused before the stream starts gets an HTTP status and one envelope,
 | 404 | `approval_not_found` | The approval was already answered, or never existed |
 | 404 | `not_found` | No route at this path |
 | 409 | `task_in_progress`, `compacting` | The conversation is busy |
+| 409 | `resync_required` | A Session stream's `Last-Event-ID` (or `lastEventId`) is no longer in the server's buffer; read the history and subscribe without it |
 | 413 | `payload_too_large` | The body exceeds the server's request size cap |
 | 415 | `unsupported_media_type` | A write without `Content-Type: application/json` |
 | 429 | `too_many_runs` | The agent has reached its configured concurrency limit; retry after `Retry-After` seconds |
@@ -239,7 +237,7 @@ const second = await client.run({
 console.log(second.text, second.usage.total);
 ```
 
-- `client.stream()` starts the run at once and returns it. Iterate it for the records as they arrive — once; records are kept until read. `run.session` resolves with the Session id as soon as `hello` arrives, before any record.
+- `client.stream()` starts the run at once and returns it. Iterate it for the records as they arrive — once; records are kept until read. `run.session` resolves with the Session id once the run is under way: the `sessionId` you passed, as soon as the stream opens, or a new conversation's, at its `session_meta`, the stream's first record.
 - `run.result()` resolves when the stream reaches `[DONE]`, with `status`, `error`, `sessionId`, `text`, `usage`, `sessionUsage` and `requests`; how each is read from the records is on [A run's result](/amsp#a-runs-result). `text` is the main conversation's assistant answers joined with a blank line; a subagent's texts, user messages and compaction summaries stay out of it.
 - `client.run()` runs to the end and returns the same result, keeping nothing for iteration.
 - Leaving the loop early stops the iteration, not the run: approvals are still answered and `result()` still resolves. To stop the run, see [Aborting](#aborting).
@@ -282,7 +280,7 @@ const result = await client.run({
 
 ### Following a conversation
 
-`SessionReader` follows one conversation through its history and its live records as one ordered sequence. It subscribes to the Session stream, reads the history's latest Tasks, weaves in the `live` tail, skips records the history already delivered, starts over on `resync_required`, and reconnects with `Last-Event-ID` when a stream that has pinged stays silent for 50 seconds. It sees every run, whoever started it.
+`SessionReader` follows one conversation through its history and its live records as one ordered sequence. It subscribes to the Session stream, reads the history's latest Tasks, weaves in the `live` tail, skips records the history already delivered, reconnects with `Last-Event-ID` when a stream that has pinged stays silent for 50 seconds. A reconnect refused `409` `resync_required` starts over as a first open does, after a `reset`. It sees every run, whoever started it.
 
 ```ts
 import { HttpTransport, SessionReader } from "@prismshadow/amsp";
@@ -408,13 +406,14 @@ function frameOf(event: { event: string | null; id: string | null; data: string 
 function readAmsp(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<AmspFrame>;
 type AmspFrame =
   | { kind: "record"; id: string | null; record: AmspRecord }
-  | { kind: "control"; control: AmspControl }   // hello, resync_required or ping
+  | { kind: "control"; control: AmspControl }   // ping
   | { kind: "done" }                            // data: [DONE]
   | { kind: "other"; name: string; data: string };
 class RunCollector {
-  hello(sessionId: string): void;
+  constructor(opts?: { sessionId?: string }); // the Session the run continued
+  readonly sessionId: string | null;          // that Session, or a new one's from its session_meta
   add(record: AmspRecord): void;
-  result(): RunResult;          // throws AmspStreamError when no hello named the Session
+  result(): RunResult;          // throws AmspStreamError when nothing named the Session
 }
 function parseArguments(call: { arguments: string }): Record<string, unknown> | null;
 class AmspHttpError extends Error { status: number; code: string }
@@ -426,11 +425,11 @@ class AmspStreamError extends Error {}
 ```ts
 import { readAmsp, RunCollector } from "@prismshadow/amsp";
 
-const collector = new RunCollector();
+// sessionId: the session_id the request sent, if any; a new Session is named by its session_meta.
+const collector = new RunCollector({ sessionId });
 let done = false;
 for await (const frame of readAmsp(response.body!)) {
   if (frame.kind === "done") { done = true; break; }
-  if (frame.kind === "control" && frame.control.kind === "hello") collector.hello(frame.control.session_id);
   if (frame.kind === "record") collector.add(frame.record);
 }
 if (!done) throw new Error("The stream ended before [DONE]: the connection broke.");
@@ -449,7 +448,7 @@ A program written against the client of 0.2.16 or earlier changes as follows. Pi
 | Events: `run.started`, `text.delta`, `run.done`, … | Records and control frames; see [From the earlier v1 events](/amsp#from-the-earlier-v1-events) |
 | `RunResult.items` | Removed: iterate the run, or read the history |
 | `readSse` yields each event's data | `readSse` yields `{event, id, data}`; `readAmsp` yields frames |
-| `RunCollector.add(event)`, `finished` | `hello(sessionId)`, then `add(record)`; `[DONE]` marks the end |
+| `RunCollector.add(event)`, `finished` | `new RunCollector({ sessionId })` for a continued Session, then `add(record)`; `[DONE]` marks the end |
 
 ## From the command line
 

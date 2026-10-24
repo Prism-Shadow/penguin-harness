@@ -160,13 +160,13 @@ importers:
         version: link:../../plugins/use-firecrawl
       '@prismshadow/mmsp':
         specifier: ^0.5.5
-        version: 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
       '@prismshadow/penguin-server':
         specifier: workspace:*
-        version: file:packages/server(supports-color@10.2.2)(zod@4.4.3)
+        version: file:packages/server(supports-color@10.2.2)(zod@4.6.7)
       commander:
         specifier: ^13.0.0
         version: 13.1.0
@@ -272,7 +272,7 @@ importers:
         version: link:../amsp
       '@prismshadow/mmsp':
         specifier: ^0.5.5
-        version: 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -309,7 +309,7 @@ importers:
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
       zod:
         specifier: ^4.2.0
-        version: 4.4.3
+        version: 4.6.7
 
   packages/desktop:
     dependencies:
@@ -535,7 +535,7 @@ importers:
         version: link:../amsp
       '@prismshadow/mmsp':
         specifier: ^0.5.5
-        version: 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -584,7 +584,7 @@ importers:
     devDependencies:
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
-        version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
@@ -2791,8 +2791,8 @@ packages:
   bluebird@3.7.2:
     resolution: {integrity: sha512-XpNj6GDQzdfW+r2Wnn7xiSAd7TM3jzkxGXBGTtWKuSXv1xUV+azxAm8jdWZN06QTQk+2N2XB9jRDkvbmQmcRtg==}
 
-  body-parser@1.20.6:
-    resolution: {integrity: sha512-p5tAzS57i5MV9fZFDj9LeIiTZEufbSe2eDozP+ElheSUq1m74CRq1jI4mYNDdVs9vQztXFLuk/Gd6BWTdwRJ5g==}
+  body-parser@1.20.9:
+    resolution: {integrity: sha512-FISIQxV5u91Y9gvuFq3q/tA/qTqLJn3AhRcEvyozyhJTh5OBFFtv827AdHU7Rbyct4r+Ba1/99oFa1Y3yuFsdw==}
     engines: {node: '>= 0.8', npm: 1.2.8000 || >= 1.4.16}
 
   boolean@3.2.0:
@@ -5331,8 +5331,8 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
   zustand@5.0.15:
     resolution: {integrity: sha512-MpSEjRiBkA9crSYeOUH32rJC7SVqAbm0Fqcqge/bUi2PPoLcBWKOsG+C8mevmpr8TwXHBVkChbbJiyvkE+i/3A==}
@@ -5362,9 +5362,9 @@ snapshots:
       package-manager-detector: 1.8.0
       tinyexec: 1.3.1
 
-  '@anthropic-ai/bedrock-sdk@0.26.4(zod@4.4.3)':
+  '@anthropic-ai/bedrock-sdk@0.26.4(zod@4.6.7)':
     dependencies:
-      '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
+      '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
       '@aws-crypto/sha256-js': 4.0.0
       '@aws-sdk/client-bedrock-runtime': 3.1068.0
       '@aws-sdk/credential-providers': 3.1068.0
@@ -5378,11 +5378,11 @@ snapshots:
     transitivePeerDependencies:
       - zod
 
-  '@anthropic-ai/sdk@0.91.1(zod@4.4.3)':
+  '@anthropic-ai/sdk@0.91.1(zod@4.6.7)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@ark/schema@0.56.2':
     dependencies:
@@ -6273,11 +6273,11 @@ snapshots:
       eventsource-parser: 3.1.0
       jose: 6.2.8
       pkce-challenge: 5.0.1
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@modelcontextprotocol/core@2.3.1':
     dependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@modelcontextprotocol/node@2.1.1(@modelcontextprotocol/server@2.3.1)':
     dependencies:
@@ -6288,7 +6288,7 @@ snapshots:
   '@modelcontextprotocol/server@2.3.1':
     dependencies:
       '@modelcontextprotocol/core': 2.3.1
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@noble/hashes@1.4.0': {}
 
@@ -6425,11 +6425,11 @@ snapshots:
 
   '@prismshadow/mmsp@0.5.5(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
-      '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
-      '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
+      '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
+      '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
       '@google/genai': 2.24.0(supports-color@10.2.2)
       express: 4.22.2(supports-color@10.2.2)
-      openai: 6.42.0(ws@8.21.0)(zod@4.4.3)
+      openai: 6.42.0(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -6438,13 +6438,13 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/mmsp@0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/mmsp@0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
-      '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
+      '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
+      '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
       '@google/genai': 2.24.0(supports-color@10.2.2)
       express: 4.22.2(supports-color@10.2.2)
-      openai: 6.42.0(ws@8.21.0)(zod@4.4.3)
+      openai: 6.42.0(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -6455,11 +6455,11 @@ snapshots:
 
   '@prismshadow/mmsp@0.5.5(ws@8.21.0)':
     dependencies:
-      '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
-      '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
+      '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
+      '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
       '@google/genai': 2.24.0(supports-color@10.2.2)
       express: 4.22.2(supports-color@10.2.2)
-      openai: 6.42.0(ws@8.21.0)(zod@4.4.3)
+      openai: 6.42.0(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -6587,7 +6587,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@penguinharness/a2ui': file:plugins/a2ui
@@ -6612,7 +6612,7 @@ snapshots:
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/mmsp': 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -6661,9 +6661,9 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -6730,13 +6730,13 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)(zod@4.4.3)':
+  '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)(zod@4.6.7)':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/mmsp': 0.5.5(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -7686,7 +7686,7 @@ snapshots:
 
   bluebird@3.7.2: {}
 
-  body-parser@1.20.6(supports-color@10.2.2):
+  body-parser@1.20.9(supports-color@10.2.2):
     dependencies:
       bytes: 3.1.2
       content-type: 1.0.5
@@ -8407,7 +8407,7 @@ snapshots:
     dependencies:
       accepts: 1.3.8
       array-flatten: 1.1.1
-      body-parser: 1.20.6(supports-color@10.2.2)
+      body-parser: 1.20.9(supports-color@10.2.2)
       content-disposition: 0.5.4
       content-type: 1.0.5
       cookie: 0.7.2
@@ -9685,10 +9685,10 @@ snapshots:
       regex: 6.1.0
       regex-recursion: 6.0.2
 
-  openai@6.42.0(ws@8.21.0)(zod@4.4.3):
+  openai@6.42.0(ws@8.21.0)(zod@4.6.7):
     optionalDependencies:
       ws: 8.21.0
-      zod: 4.4.3
+      zod: 4.6.7
 
   oxlint@1.81.0:
     optionalDependencies:
@@ -10690,7 +10690,7 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod@4.4.3: {}
+  zod@4.6.7: {}
 
   zustand@5.0.15(@types/react@19.2.17)(react@19.2.7):
     optionalDependencies:

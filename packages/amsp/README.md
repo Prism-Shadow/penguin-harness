@@ -1,6 +1,6 @@
 # @prismshadow/amsp
 
-AMSP (Agent Message Stream Protocol) is the stream of one PenguinHarness Session: its records exactly as the Trace holds them, the `partial_*` fragments streamed while a message is produced, and four control frames. This package defines it — the record types with their guards and builders (`@prismshadow/amsp/records`, also on the root), the message markers (`@prismshadow/amsp/markers`), the control frames, the shapes of the Agent API's requests and answers — and carries the client: `AgentClient` to run an agent, `SessionReader` to follow a conversation. No runtime dependencies; runs in Node 24 and in current browsers on `fetch`, `ReadableStream`, `TextDecoder` and `AbortController`.
+AMSP (Agent Message Stream Protocol) is the stream of one PenguinHarness Session: its records exactly as the Trace holds them, the `partial_*` fragments streamed while a message is produced, and the `ping` heartbeat. This package defines it — the record types with their guards and builders (`@prismshadow/amsp/records`, also on the root), the message markers (`@prismshadow/amsp/markers`), the control frames, the shapes of the Agent API's requests and answers — and carries the client: `AgentClient` to run an agent, `SessionReader` to follow a conversation. No runtime dependencies; runs in Node 24 and in current browsers on `fetch`, `ReadableStream`, `TextDecoder` and `AbortController`.
 
 The package is versioned with PenguinHarness. The versions after 0.2.16 read the stream PenguinHarness serves at `/api/amsp/v1` since the protocol was redefined around these records: they cannot read the events a server of 0.2.16 or earlier sends, and a client of 0.2.16 or earlier cannot read this stream. A dependency on `^0.2.16` picks up the new client on its next install; pin `0.2.16` to keep the old one.
 
@@ -9,9 +9,9 @@ The package is versioned with PenguinHarness. The versions after 0.2.16 read the
 A stream is SSE. Every event is one of two kinds:
 
 - a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` one record envelope, `{timestamp, type, payload, origin?}`, payloads snake_case as the Trace stores them. `origin` names the subagent Session chain a record came through; the main Session's records have none;
-- a **control frame**: `event: hello` (`{"session_id", "agent"}`, a run stream's first event), `event: resync_required` (`{}`, the id a Session stream resumed from has left the server's buffer), `event: ping` (`{}`, at once and every 20 seconds), and `data: [DONE]`, a run stream's last line.
+- a **control frame**: `event: ping` (`{}`, at once and every 20 seconds), and `data: [DONE]`, a run stream's last line.
 
-A reader ignores an event name and a `payload.type` it does not know. A run's records go from `task_begin` to `task_end`; a new Session's first run also carries its `session_meta` right after `hello`. There is no error frame: a run the server could not finish leaves its last `task_begin` unclosed before `[DONE]`, and a body that ends without `[DONE]` is a broken connection.
+A reader ignores an event name and a `payload.type` it does not know. A run's records go from `task_begin` to `task_end`. No frame names a run's Session: a new Session's first run opens with its `session_meta`, whose `session_id` names it, and a run that continues a Session is on the `session_id` its request sent. There is no error frame: a run the server could not finish leaves its last `task_begin` unclosed before `[DONE]`, and a body that ends without `[DONE]` is a broken connection.
 
 ## The routes
 
@@ -20,9 +20,9 @@ Relative to the Agent API's base URL, such as `http://localhost:7364/api/amsp/v1
 | Route | What it does |
 | --- | --- |
 | `GET /agents/:projectId/:agentId` | The agent's id, name and description |
-| `POST /agents/:projectId/:agentId/runs` | One run, `{session_id?, input}`, answered with its stream: `hello` … `[DONE]`. Disconnecting aborts it |
+| `POST /agents/:projectId/:agentId/runs` | One run, `{session_id?, input}`, answered with its stream: `ping` … `[DONE]`. Disconnecting aborts it |
 | `GET /sessions/:id` | An API Session's status and model |
-| `GET /sessions/:id/stream` | The Session stream: records and `ping`, across runs; resumes from `Last-Event-ID` or `?lastEventId=` |
+| `GET /sessions/:id/stream` | The Session stream: records and `ping`, across runs; resumes from `Last-Event-ID` or `?lastEventId=`, or answers `409` `resync_required` when the id has left the buffer |
 | `GET /sessions/:id/messages` | The history: whole, `?tailLimit=n`, or `?before=<cursor>&limit=n`; `live {cursor, fragments}` while it runs |
 | `GET /sessions/:id/trace-image` | An image a windowed history page references |
 | `GET /sessions/:id/approvals[?wait=1–60]` | The calls waiting for a decision, `{approvals: [{tool_call, origin?}]}`; `wait` holds the answer until one waits |
@@ -58,7 +58,7 @@ const second = await client.run({
 console.log(second.text, second.usage.total);
 ```
 
-- `stream()` starts the run and returns it: iterate it once for the records, await `session` for the Session id (resolved at `hello`), `result()` for the outcome, and call `abort()` to have the server abort it. `run()` returns the result alone.
+- `stream()` starts the run and returns it: iterate it once for the records, await `session` for the Session id (the `sessionId` you passed, once the stream opens, or a new Session's, at its `session_meta`), `result()` for the outcome, and call `abort()` to have the server abort it. `run()` returns the result alone.
 - `RunResult` is `{status, error?, sessionId, text, usage, sessionUsage, requests}`, read from the main Session's records. `status` is decided in order: the last `task_begin` unclosed, or no Task began, is `fatal` with code `internal`; an `abort` record is `aborted` (the turn cap's carries `max_turns`); a `request_end` or `compaction_end` that is not `completed`, carries no `retry_in_ms` and no later request followed gives its status (`truncated` included) and error; anything else is `completed`. `text` joins the main Session's assistant texts of the Requests that completed with a blank line, compaction summaries left out; `usage` sums every `token_usage.request`, subagents included; `sessionUsage` is the last main `token_usage.session`; `requests` counts the main `request_begin` records.
 - `result()` resolves for every run whose stream reached `[DONE]`. A refusal before the stream rejects with `AmspHttpError` (`status`, `code`, `message`); a stream that ends or breaks before `[DONE]` rejects with `AmspStreamError`; aborting the `signal` rejects with its reason.
 - `agent()`, `session(id)`, `messages(id, page?)`, `approvals(id, wait?)`, `abort(id)` and `approve(id, toolCallId, decision)` call the other routes; `parseArguments(toolCall)` reads a tool call's JSON arguments.
@@ -69,7 +69,7 @@ When the agent's approval mode makes a call wait, the client answers for you. Wh
 
 ## Follow a conversation
 
-`SessionReader` follows one Session as one ordered sequence: it subscribes to the Session stream, reads the history's latest Tasks, weaves in the `live` tail, skips what the history already delivered, starts over on `resync_required`, and reconnects with `Last-Event-ID` when a stream that has pinged goes silent.
+`SessionReader` follows one Session as one ordered sequence: it subscribes to the Session stream, reads the history's latest Tasks, weaves in the `live` tail, skips what the history already delivered, and reconnects with `Last-Event-ID` when a stream that has pinged goes silent. A reconnect the server refuses `409` `resync_required` (the id has left its buffer, or it restarted) starts over as a first open, after a `reset`.
 
 ```ts
 import { HttpTransport, SessionReader } from "@prismshadow/amsp";
@@ -97,15 +97,15 @@ The package also ships `dist/browser/amsp.js`, the root entry as one ES module w
 
 ## Reading a stream without the client
 
-`readSse` yields a body's events as `{event, id, data}`; `frameOf` sorts one into a record, a control frame, `[DONE]` or a name AMSP does not define; `readAmsp` does both. `RunCollector` folds a run's frames into the `RunResult` that `result()` returns:
+`readSse` yields a body's events as `{event, id, data}`; `frameOf` sorts one into a record, a control frame, `[DONE]` or a name AMSP does not define; `readAmsp` does both. `RunCollector` folds a run's records into the `RunResult` that `result()` returns:
 
 ```ts
 import { readAmsp, RunCollector } from "@prismshadow/amsp";
 
-const collector = new RunCollector();
+// sessionId: the session_id the request sent, if any; a new Session is named by its session_meta.
+const collector = new RunCollector({ sessionId });
 for await (const frame of readAmsp(response.body!)) {
   if (frame.kind === "done") break;
-  if (frame.kind === "control" && frame.control.kind === "hello") collector.hello(frame.control.session_id);
   if (frame.kind === "record") collector.add(frame.record);
 }
 const result = collector.result(); // a stream that ended without [DONE] broke: check for it first
@@ -117,7 +117,8 @@ const result = collector.result(); // a stream that ended without [DONE] broke: 
 | --- | --- |
 | `onApproval(request, ctx)` | `onApproval(toolCall, origin, ctx)` |
 | `RunResult.items` | Removed |
-| `run.started` / `run.done` | `event: hello` / `data: [DONE]`, the outcome read from the records |
+| `run.started` | No frame: a new Session is named by its `session_meta`, a continued one by the `session_id` sent |
+| `run.done` | `data: [DONE]`, the outcome read from the records |
 | `context.opened`, `tools.ready` | `session_meta`, `tool_list_ready` |
 | `request.started` / `request.done` | `request_begin` / `request_end`, usage from the `token_usage` before it |
 | `K.delta` / `K.done` | `partial_*` (`start` / `delta` / `stop`) / the complete record (`tool_result` → `tool_call_output`) |

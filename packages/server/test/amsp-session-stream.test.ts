@@ -4,9 +4,9 @@
  * `AgentClient`.
  *
  * Run streams:
- * - Given a Session's first message, the run stream is hello, ping, session_meta, task_begin, the
- *   input, …, task_end, [DONE]: the session_meta once, ahead of task_begin and the input, and not
- *   one of the Web App's server events.
+ * - Given a Session's first message, the run stream is ping, session_meta, task_begin, the input,
+ *   …, task_end, [DONE]: the session_meta once, ahead of task_begin and the input, naming the new
+ *   Session, and not one of the Web App's server events.
  * - Given a second message on that Session, its run stream carries no session_meta.
  * - Given a run after a completed Task-boundary compaction, its stream carries the new context's
  *   session_meta once, after its task_begin and before its input, as the new Trace file has them.
@@ -27,7 +27,8 @@
  *   wrong key 401, a Web App Session's id 404.
  * - A windowed history page's image references point at the key door's own trace-image route,
  *   which answers the bytes.
- * - A `Last-Event-ID` the buffer no longer holds is answered `event: resync_required`, id-less.
+ * - A `Last-Event-ID` the buffer no longer holds is refused 409 `resync_required` in JSON on both
+ *   doors, header or query parameter, before any stream; an id it holds still resumes.
  * - The cookie door's `/amsp` and the key door's `/stream` write the same bytes for the same
  *   channel events, and neither writes a server event.
  * - The approvals resource refuses a `wait` that is not a number.
@@ -64,10 +65,11 @@ const kindOf = (r: AmspRecord): string =>
 const recordsOf = (frames: AmspFrame[]): AmspRecord[] =>
   frames.flatMap((f) => (f.kind === "record" ? [f.record] : []));
 
-function helloOf(frames: AmspFrame[]): string {
-  const hello = frames.find((f) => f.kind === "control" && f.control.kind === "hello");
-  if (hello?.kind !== "control" || hello.control.kind !== "hello") throw new Error("no hello");
-  return hello.control.session_id;
+/** The new Session a run stream names: its main session_meta's. */
+function sessionOf(frames: AmspFrame[]): string {
+  const meta = recordsOf(frames).find((r) => r.type === "session_meta" && !r.origin?.length);
+  if (meta === undefined) throw new Error("no session_meta");
+  return (meta.payload as { session_id: string }).session_id;
 }
 
 /** A run's frames, to the end of the body, and its raw text. */
@@ -79,10 +81,9 @@ async function readAll(res: Response): Promise<{ frames: AmspFrame[]; text: stri
   return { frames, text };
 }
 
-/** The run's result, as the SDK folds it. */
-function resultOf(frames: AmspFrame[]): RunResult {
-  const collector = new RunCollector();
-  collector.hello(helloOf(frames));
+/** The run's result, as the SDK folds it; `sessionId` is the Session a run continued. */
+function resultOf(frames: AmspFrame[], sessionId?: string): RunResult {
+  const collector = new RunCollector(sessionId !== undefined ? { sessionId } : {});
   for (const r of recordsOf(frames)) collector.add(r);
   return collector.result();
 }
@@ -214,16 +215,13 @@ describe("AMSP on the wire", () => {
     await mock.close();
   });
 
-  it("a first message streams hello, its session_meta once, task_begin, the input, and no server event", async () => {
+  it("a first message streams ping, its session_meta once, task_begin, the input, and no server event", async () => {
     const res = await run(A, { input: "Say hello" });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
     const { frames, text } = await readAll(res);
-    expect(frames[0]).toMatchObject({
-      kind: "control",
-      control: { kind: "hello", agent: `${P}/${A}` },
-    });
-    expect(frames[1]).toEqual({ kind: "control", control: { kind: "ping" } });
+    expect(frames[0]).toEqual({ kind: "control", control: { kind: "ping" } });
+    expect(frames[1]).toMatchObject({ kind: "record", record: { type: "session_meta" } });
     expect(frames.at(-1)).toEqual({ kind: "done" });
     const kinds = recordsOf(frames).map(kindOf);
     expect(kinds.slice(0, 3)).toEqual(["session_meta", "task_begin", "text"]);
@@ -249,7 +247,7 @@ describe("AMSP on the wire", () => {
 
   it("after a completed compaction the next run streams the new session_meta once, after task_begin and before the input, as the new file has them", async () => {
     const first = await readAll(await run("compact_agent", { input: "Task one" }));
-    const sessionId = helloOf(first.frames);
+    const sessionId = sessionOf(first.frames);
     expect(recordsOf(first.frames).map(kindOf)).toContain("compaction_end");
 
     const second = await readAll(
@@ -271,7 +269,7 @@ describe("AMSP on the wire", () => {
 
   it("a model switch streams its session_meta on the Session stream at switch time, and the next run stream none", async () => {
     const first = await readAll(await run(A, { input: "Before the switch" }));
-    const sessionId = helloOf(first.frames);
+    const sessionId = sessionOf(first.frames);
     const live = follow(await amsp(keys[A]!, `/sessions/${sessionId}/stream`));
     await live.until((f) => f.kind === "control" && f.control.kind === "ping");
     const switched = await admin.post(`/api/sessions/${sessionId}/switch-model`, {
@@ -406,12 +404,15 @@ describe("AMSP on the wire", () => {
     );
     const { frames } = await readAll(await run(A, { session_id: sessionId, input: "hi" }));
     expect(frames.at(-1)).toEqual({ kind: "done" });
-    expect(resultOf(frames)).toMatchObject({ status: "fatal", error: { code: "internal" } });
+    expect(resultOf(frames, sessionId)).toMatchObject({
+      status: "fatal",
+      error: { code: "internal" },
+    });
   });
 
   it("tasks runs on an idle API Session and is read on its stream; a busy Session is 409", async () => {
     const first = await readAll(await run(A, { input: "Open a Session" }));
-    const sessionId = helloOf(first.frames);
+    const sessionId = sessionOf(first.frames);
     const live = follow(await amsp(keys[A]!, `/sessions/${sessionId}/stream`));
     await live.until((f) => f.kind === "control" && f.control.kind === "ping");
     let release!: () => void;
@@ -484,23 +485,32 @@ describe("AMSP on the wire", () => {
     expect(Buffer.from(await bytes.arrayBuffer()).toString("base64")).toBe(png);
   });
 
-  it("an evicted Last-Event-ID is answered with an id-less resync_required", async () => {
+  it("a Last-Event-ID the buffer no longer holds is refused 409 resync_required on both doors, and one it holds resumes", async () => {
     const { frames } = await readAll(await run(A, { input: "Make a Session" }));
-    const sessionId = helloOf(frames);
-    const res = await amsp(keys[A]!, `/sessions/${sessionId}/stream`, {
-      headers: { "last-event-id": "gone-1" },
+    const sessionId = sessionOf(frames);
+    // An epoch this channel never had, as an id from before a restart reads.
+    const stale = "gone-1";
+    const key = await amsp(keys[A]!, `/sessions/${sessionId}/stream`, {
+      headers: { "last-event-id": stale },
     });
-    const reader = res.body!.getReader();
-    let text = "";
-    while (!text.includes("event: ping"))
-      text += new TextDecoder().decode((await reader.read()).value);
-    await reader.cancel();
-    expect(text.startsWith("event: resync_required\ndata: {}\n\n")).toBe(true);
+    const cookie = await admin.get(`/api/sessions/${sessionId}/amsp?lastEventId=${stale}`);
+    for (const res of [key, cookie]) {
+      expect(res.status).toBe(409);
+      expect(res.headers.get("content-type")).toMatch(/^application\/json/);
+      expect(await res.json()).toMatchObject({ error: { code: "resync_required" } });
+    }
+    const held = frames.find((f) => f.kind === "record")!;
+    const resumed = await amsp(keys[A]!, `/sessions/${sessionId}/stream`, {
+      headers: { "last-event-id": held.kind === "record" ? held.id! : "" },
+    });
+    expect(resumed.status).toBe(200);
+    expect(resumed.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    await resumed.body!.cancel();
   });
 
   it("the cookie door and the key door write the same bytes for the same channel events, and no server event", async () => {
     const { frames } = await readAll(await run(A, { input: "One more Session" }));
-    const sessionId = helloOf(frames);
+    const sessionId = sessionOf(frames);
     const open = async (res: Response) => {
       const reader = res.body!.getReader();
       let text = "";
@@ -528,7 +538,7 @@ describe("AMSP on the wire", () => {
 
   it("the approvals resource refuses a wait that is not a number, and answers an empty list at once without one", async () => {
     const { frames } = await readAll(await run(A, { input: "Session for approvals" }));
-    const sessionId = helloOf(frames);
+    const sessionId = sessionOf(frames);
     expect((await amsp(keys[A]!, `/sessions/${sessionId}/approvals?wait=soon`)).status).toBe(400);
     const now = await amsp(keys[A]!, `/sessions/${sessionId}/approvals`);
     expect(await now.json()).toEqual({ approvals: [] });

@@ -3,7 +3,7 @@ title: AMSP
 description: The Agent Message Stream Protocol — a Session's records over SSE, the control frames, the run and Session streams, the approvals resource, how a run's result is read, and the earlier v1 events each record replaces.
 ---
 
-AMSP (Agent Message Stream Protocol) is the wire format of the [Agent API](/agent-api). It streams one Session: the Session's records exactly as its Trace holds them, the `partial_*` fragments streamed while a message is produced, and four control frames around them. Nothing is translated on the way: every line of a Trace is a valid AMSP record, and each payload is the one described field by field on the [AMSP Records](/amsp-records) page.
+AMSP (Agent Message Stream Protocol) is the wire format of the [Agent API](/agent-api). It streams one Session: the Session's records exactly as its Trace holds them, the `partial_*` fragments streamed while a message is produced, and around them the `ping` heartbeat and, on a run stream, a closing `data: [DONE]`. Nothing is translated on the way: every line of a Trace is a valid AMSP record, and each payload is the one described field by field on the [AMSP Records](/amsp-records) page.
 
 The Web App's server events (run state, approval requests, titles, goal progress and the rest) are not part of AMSP. A program reads what it needs from the records and from two resources: the Session, `GET …/sessions/:sessionId`, for its status and model, and its pending approvals, `GET …/sessions/:sessionId/approvals`.
 
@@ -46,7 +46,7 @@ The rules a reader can rely on:
 
 A main-Session `session_meta` streams once, when it is written. That happens at three moments:
 
-- **A new Session's first message.** It heads the Session's first Trace file, before that Task's `task_begin`, so the run stream that creates a Session gives it right after `hello`.
+- **A new Session's first message.** It heads the Session's first Trace file, before that Task's `task_begin`, so it is the first record of the run stream that creates a Session, and its `session_id` is how that stream names the new Session.
 - **The context a compaction opens.** The new file opens just before the first record written after the compaction, and its `session_meta` streams then. When the compaction ended the previous Task, the next Task's `task_begin` has already gone by, since Task records never open a file: the `session_meta` comes after that `task_begin` and before the Task's input.
 - **A model switch.** The switch opens the new file as it completes, between runs, so its `session_meta` is on the Session stream, not in the next run's stream.
 
@@ -62,16 +62,14 @@ No `session_meta` is sent again. A reader that needs the model later reads `GET 
 
 | Frame | Data | When |
 | --- | --- | --- |
-| `event: hello` | `{"session_id", "agent"}` | The run stream's first event: the Session the run is on, new or continued, and the agent as `<projectId>/<agentId>` |
-| `event: resync_required` | `{}` | The `Last-Event-ID` a Session stream resumed from has left the server's buffer. Read the history again, then keep reading this stream |
-| `event: ping` | `{}` | Right after `hello` on a run stream, right after any replay on a Session stream, then every 20 seconds. It replaces the earlier `: keep-alive` comment, which a browser never hands to a page |
+| `event: ping` | `{}` | First on a run stream, right after any replay on a Session stream, then every 20 seconds. It replaces the earlier `: keep-alive` comment, which a browser never hands to a page |
 | `data: [DONE]` | — | The run stream's last line, once the run is over |
 
 ## The run stream
 
 `POST <Base URL>/agents/:projectId/:agentId/runs` runs the agent once and answers with the run's stream; the body is described in [The run request](/agent-api#the-run-request). The stream reads, in order:
 
-1. `hello`, then `ping`;
+1. `ping`;
 2. on a new Session's first message, the Session's `session_meta`;
 3. `task_begin`, then the run's input as the Session records it: one user `text` per text item, then one `image_url` per image;
 4. the run's records;
@@ -81,9 +79,6 @@ No `session_meta` is sent again. A reader that needs the model later reads `GET 
 A plain answer on a new Session, with timestamps and long values elided:
 
 ```text
-event: hello
-data: {"session_id":"session-2026-10-23-10-00-00-3f9a1c2e","agent":"demo/coder"}
-
 event: ping
 data: {}
 
@@ -126,6 +121,7 @@ data: {"timestamp":"…","type":"event_msg","payload":{"type":"task_end"}}
 data: [DONE]
 ```
 
+- No frame names the Session. A new Session is named by its `session_meta`, the stream's first record; a run that continues a Session is on the `session_id` its request sent.
 - The server subscribes to the Session before it starts the Task, so nothing of the run is missed. A refusal, such as a busy conversation or a malformed body, is answered in JSON before any stream starts.
 - The stream starts at the run's first main-Session record: what the Session published before it, such as a background subagent's output, is not on this stream.
 - `[DONE]` is written when the Session goes back to idle. A body that ends without it means the connection broke, and the run's outcome is unknown: `GET …/sessions/:sessionId` gives its status, and the history its records.
@@ -139,9 +135,9 @@ data: [DONE]
 | Key | `GET /api/amsp/v1/sessions/:sessionId/stream` | The agent's key, or none when it allows keyless access. Only that agent's API conversations |
 | Cookie | `GET /api/sessions/:sessionId/amsp` | A sign-in cookie or the local API token, with the same Project access as the Web App |
 
-Both doors serve one handler. A Session stream follows the Session across runs, including the ones it did not start: a run started with `POST …/sessions/:sessionId/tasks`, one started from the Web App, or another caller's. It carries the records and `ping` and nothing else: no `hello`, no `[DONE]`, no snapshot on subscribe. It stays open until the caller closes it.
+Both doors serve one handler. A Session stream follows the Session across runs, including the ones it did not start: a run started with `POST …/sessions/:sessionId/tasks`, one started from the Web App, or another caller's. It carries the records and `ping` and nothing else: no `[DONE]`, no snapshot on subscribe. It stays open until the caller closes it.
 
-- **Resuming.** Send the last record id you saw as `Last-Event-ID`, or as the `lastEventId` query parameter where a header cannot be set; the header wins when both are present. The server keeps a bounded buffer per active Session: when the id is still in it, the records after it are replayed first; when it is not, the stream opens with `resync_required` and carries on live.
+- **Resuming.** Send the last record id you saw as `Last-Event-ID`, or as the `lastEventId` query parameter where a header cannot be set; the header wins when both are present. The server keeps a bounded buffer per active Session: when the id is still in it, the records after it are replayed first. When it is not, because the buffer has moved past it or the server restarted since, no stream opens: the request is answered `409` `resync_required` in the usual error envelope. Start over as on a first open: read the history and subscribe without an id.
 - **Joining.** Subscribe first, then read the history, so nothing falls in between: hold what arrives meanwhile, deliver it after the history, and skip the records the history already holds. The history's `live` field joins the two; see [History](#history). The client's `SessionReader` does all of this.
 - **Dead connections.** A stream that has carried a `ping` and then stays silent for 50 seconds is dead: close it and reopen it with `Last-Event-ID`.
 - The Web App's own `GET /api/sessions/:sessionId/stream` is a different channel: it carries the same records plus the Web App's server events; see [Streaming (SSE)](/server-api#streaming-sse).
@@ -173,7 +169,7 @@ interface MessagesResponse {
 ```
 
 - `page` comes with a windowed read, whose images are served by reference: a PNG, JPEG, GIF or WebP `data:` URL in a main-Session record is replaced with that door's `…/sessions/:sessionId/trace-image?file=&ordinal=[&i=]`, which answers the image.
-- `live` comes while the Session runs, except on a `before` page. `cursor` is the stream's last id when the history was read, and `fragments` holds each open streamed message so far as one `partial_*` `start` carrying all that has streamed. Drop the held `partial_*` records at or before the cursor (same epoch), deliver `fragments` in their place, then the rest. The cursor never drops a complete record: deduplicate those against the history. When the cursor's epoch differs from the stream's, skip `live` and let the resync cover it.
+- `live` comes while the Session runs, except on a `before` page. `cursor` is the stream's last id when the history was read, and `fragments` holds each open streamed message so far as one `partial_*` `start` carrying all that has streamed. Drop the held `partial_*` records at or before the cursor (same epoch), deliver `fragments` in their place, then the rest. The cursor never drops a complete record: deduplicate those against the history. When the cursor's epoch differs from the stream's, skip `live` and let the start-over after `resync_required` cover it.
 
 ## Approvals
 
@@ -208,7 +204,7 @@ The rest of the result:
 - `sessionUsage`: the main Session's last `token_usage.session`, or `null`;
 - `requests`: the number of main-Session `request_begin` records, retried attempts included.
 
-A program that reads the stream itself gets the same result by feeding `hello` and the records to the client's `RunCollector`.
+A program that reads the stream itself gets the same result by feeding the records to the client's `RunCollector`, with the `session_id` it sent when the run continued a Session.
 
 ## Errors
 
@@ -283,7 +279,7 @@ Up to PenguinHarness 0.2.16, `/api/amsp/v1` served a translation of these record
 
 | Earlier event | Now |
 | --- | --- |
-| `run.started` | `event: hello` |
+| `run.started` | No frame: a new Session is named by its `session_meta`, a continued one by the `session_id` the request sent, and the agent is the one the request named |
 | `run.done` | `data: [DONE]`; the status and counts are read from the records, by the same rules ([A run's result](#a-runs-result)) |
 | `context.opened` | `session_meta` |
 | `mcp_connect.started` / `mcp_connect.done` | `mcp_connect_begin` / `mcp_connect_end` |
@@ -313,4 +309,4 @@ New on the wire: `task_begin` / `task_end`, `abort`, `token_usage`, each fragmen
 
 A run is a POST that carries `Authorization`, so read it with `fetch`, not `EventSource`. A page on the server's own origin can open the cookie door's Session stream with `EventSource`, passing `lastEventId` in the URL when it reopens one itself. Read the body the way an `EventSource` would: lines end in LF, CRLF or a lone CR; a blank line ends an event; lines starting with `:` are comments; the `data:` lines of one event join with a newline. Then dispatch on the event name, and stop a run stream at `data: [DONE]`.
 
-`@prismshadow/amsp` exports each step: `readSse` yields a body's events as `{event, id, data}`, `frameOf` sorts one event into a record, a control frame, `[DONE]` or a name AMSP does not define, `readAmsp` does both, and `RunCollector` folds a run's frames into its result. See [Client reference](/agent-api#client-reference).
+`@prismshadow/amsp` exports each step: `readSse` yields a body's events as `{event, id, data}`, `frameOf` sorts one event into a record, a control frame, `[DONE]` or a name AMSP does not define, `readAmsp` does both, and `RunCollector` folds a run's records into its result. See [Client reference](/agent-api#client-reference).

@@ -86,12 +86,9 @@ curl -N http://localhost:7364/api/amsp/v1/agents/demo/coder/runs \
   -d '{"input":"Summarize README.md"}'
 ```
 
-响应就是这次运行，实时流式返回。`-N` 关闭 curl 的缓冲，事件到达即打印。第一个事件 `hello` 给出 Session；随后是会话的记录，各带一个 `id:`，从 `task_begin` 到 `task_end`；`data: [DONE]` 结束这条流：
+响应就是这次运行，实时流式返回。`-N` 关闭 curl 的缓冲，事件到达即打印。流以一个 `ping` 开头，随后是会话的记录，各带一个 `id:`，从 `task_begin` 到 `task_end`；`data: [DONE]` 结束这条流。新会话的第一条记录是它的 `session_meta`，其中的 `session_id` 即这个会话的 id：
 
 ```text
-event: hello
-data: {"session_id":"session-2026-10-23-10-00-00-3f9a1c2e","agent":"demo/coder"}
-
 event: ping
 data: {}
 
@@ -119,7 +116,7 @@ data: [DONE]
 
 `session_meta` 只在会话的第一条消息上出现。运行的情况从它的记录读出，见[运行的结果](/amsp#运行的结果)。
 
-要延续对话，把 Session id 和下一条输入一起发送：
+要延续对话，把这个 Session id 和下一条输入一起发送：
 
 ```bash
 curl -N http://localhost:7364/api/amsp/v1/agents/demo/coder/runs \
@@ -162,7 +159,7 @@ type InputItem =
 
 - `input` 至少要有一段非空文本或一张图片。
 - 图片可以是图片类型的 `data:` URL，大小不超过 20 MB 的内联图片上限和服务器的附件总量上限；也可以是 `http(s)` URL，原样交给模型。不接受文件。
-- 不带 `session_id` 时，运行开启一个新会话，由 `hello` 给出其 id。带上它，运行就延续那个会话；它必须是同一个 Agent 的 API 会话，其他 id 一律返回 `404` `session_not_found`。
+- 不带 `session_id` 时，运行开启一个新会话，由流的第一条记录 `session_meta` 给出其 id。带上它，运行就延续那个会话；它必须是同一个 Agent 的 API 会话，其他 id 一律返回 `404` `session_not_found`。
 
 ### 不占用连接的运行
 
@@ -197,6 +194,7 @@ type InputItem =
 | 404 | `approval_not_found` | 该审批已被回答，或从未存在 |
 | 404 | `not_found` | 该路径没有路由 |
 | 409 | `task_in_progress`、`compacting` | 会话正忙 |
+| 409 | `resync_required` | Session 流的 `Last-Event-ID`（或 `lastEventId`）已不在服务器的缓冲中；读取历史，再不带它订阅 |
 | 413 | `payload_too_large` | 请求体超过服务器的大小上限 |
 | 415 | `unsupported_media_type` | 写请求没有带 `Content-Type: application/json` |
 | 429 | `too_many_runs` | 该 Agent 已达到设置的并发上限；等 `Retry-After` 秒后重试 |
@@ -239,7 +237,7 @@ const second = await client.run({
 console.log(second.text, second.usage.total);
 ```
 
-- `client.stream()` 立即开始运行并返回它。迭代它即可按到达顺序取得记录，只能迭代一次；记录在被读取之前一直保留。`hello` 一到，`run.session` 就以 Session id 兑现，早于任何记录。
+- `client.stream()` 立即开始运行并返回它。迭代它即可按到达顺序取得记录，只能迭代一次；记录在被读取之前一直保留。运行开始后，`run.session` 以 Session id 兑现：延续会话时即传入的 `sessionId`，流一打开就兑现；新会话则在流的第一条记录 `session_meta` 到达时兑现。
 - 流读到 `[DONE]` 时 `run.result()` 兑现，内容为 `status`、`error`、`sessionId`、`text`、`usage`、`sessionUsage` 和 `requests`，各项如何从记录读出见[运行的结果](/amsp#运行的结果)。`text` 是主会话中助手的回答，以空行连接；子 Agent 的文本、用户消息和压缩摘要都不计入。
 - `client.run()` 运行到结束并返回同样的结果，不为迭代保留任何记录。
 - 提前退出循环只停止迭代，不停止运行：审批照常回答，`result()` 照常兑现。要停止运行，见[中止](#中止)。
@@ -282,7 +280,7 @@ const result = await client.run({
 
 ### 跟随会话
 
-`SessionReader` 把一个会话的历史与实时记录作为一个有序序列来跟随。它订阅 Session 流，读取历史中最新的若干 Task，接上 `live` 尾部，跳过历史已经交付的记录，收到 `resync_required` 时从头再来；收到过 `ping` 的流 50 秒没有动静时，带着 `Last-Event-ID` 重新连接。无论运行由谁发起，它都能看到。
+`SessionReader` 把一个会话的历史与实时记录作为一个有序序列来跟随。它订阅 Session 流，读取历史中最新的若干 Task，接上 `live` 尾部，跳过历史已经交付的记录；收到过 `ping` 的流 50 秒没有动静时，带着 `Last-Event-ID` 重新连接；重连被以 `409` `resync_required` 拒绝时，先发出 `reset`，再像第一次打开那样从头开始。无论运行由谁发起，它都能看到。
 
 ```ts
 import { HttpTransport, SessionReader } from "@prismshadow/amsp";
@@ -408,13 +406,14 @@ function frameOf(event: { event: string | null; id: string | null; data: string 
 function readAmsp(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<AmspFrame>;
 type AmspFrame =
   | { kind: "record"; id: string | null; record: AmspRecord }
-  | { kind: "control"; control: AmspControl }   // hello, resync_required or ping
+  | { kind: "control"; control: AmspControl }   // ping
   | { kind: "done" }                            // data: [DONE]
   | { kind: "other"; name: string; data: string };
 class RunCollector {
-  hello(sessionId: string): void;
+  constructor(opts?: { sessionId?: string }); // the Session the run continued
+  readonly sessionId: string | null;          // that Session, or a new one's from its session_meta
   add(record: AmspRecord): void;
-  result(): RunResult;          // throws AmspStreamError when no hello named the Session
+  result(): RunResult;          // throws AmspStreamError when nothing named the Session
 }
 function parseArguments(call: { arguments: string }): Record<string, unknown> | null;
 class AmspHttpError extends Error { status: number; code: string }
@@ -426,11 +425,11 @@ class AmspStreamError extends Error {}
 ```ts
 import { readAmsp, RunCollector } from "@prismshadow/amsp";
 
-const collector = new RunCollector();
+// sessionId: the session_id the request sent, if any; a new Session is named by its session_meta.
+const collector = new RunCollector({ sessionId });
 let done = false;
 for await (const frame of readAmsp(response.body!)) {
   if (frame.kind === "done") { done = true; break; }
-  if (frame.kind === "control" && frame.control.kind === "hello") collector.hello(frame.control.session_id);
   if (frame.kind === "record") collector.add(frame.record);
 }
 if (!done) throw new Error("The stream ended before [DONE]: the connection broke.");
@@ -449,7 +448,7 @@ const result = collector.result();
 | 事件：`run.started`、`text.delta`、`run.done` 等 | 记录与控制帧，见[从 v1 旧事件到记录](/amsp#从-v1-旧事件到记录) |
 | `RunResult.items` | 已移除：迭代这次运行，或读取历史 |
 | `readSse` 逐个产出事件的数据 | `readSse` 产出 `{event, id, data}`；`readAmsp` 产出帧 |
-| `RunCollector.add(event)`、`finished` | 先 `hello(sessionId)`，再 `add(record)`；以 `[DONE]` 为结束 |
+| `RunCollector.add(event)`、`finished` | 延续会话时 `new RunCollector({ sessionId })`，再 `add(record)`；以 `[DONE]` 为结束 |
 
 ## 命令行
 

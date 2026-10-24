@@ -6,8 +6,9 @@
  *                                                 same Project access as the Web App's `/stream`
  *
  * It subscribes to the Session's channel and writes what AMSP is made of: every record with its
- * `id:`, `event: ping` on the 20-second beat, and `event: resync_required` / `data: {}` when the
- * `Last-Event-ID` (or `lastEventId`) it resumes from has left the buffer. Nothing the Web App's
+ * `id:` and `event: ping` on the 20-second beat. A `Last-Event-ID` (or `lastEventId`) the buffer
+ * no longer holds is refused before any stream starts: 409 `resync_required`, the API's JSON
+ * error, after which the reader reads the history and subscribes afresh. Nothing the Web App's
  * internal stream adds is written: no `server_event` (task state, approval requests, titles, goal
  * progress), no initial snapshot, no replay of pending approvals — approvals are the
  * `…/approvals` resource. The internal stream, `GET /api/sessions/:sessionId/stream`, writes what

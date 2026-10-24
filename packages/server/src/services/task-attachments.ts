@@ -10,7 +10,7 @@
  *
  * The line format and its placement are not defined here: they are shared with core's
  * `[attached image: …]` producer and the Web renderer that parses both
- * (`@prismshadow/penguin-core/markers` → attachment-lines.ts, plus `appendAttachmentLines`),
+ * (`@prismshadow/amsp/markers` → attachment-lines.ts, plus `appendAttachmentLines`),
  * so the two conventions cannot drift apart.
  */
 import fs from "node:fs/promises";
