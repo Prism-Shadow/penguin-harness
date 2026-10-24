@@ -3,6 +3,7 @@
 - **Date:** 2026-10-24
 - **Type:** feature
 - **Scope:** `model-catalog`
+- **PR:** [#1307](https://github.com/Prism-Shadow/penguin-harness/pull/1307)
 
 [English](2026-10-24-catalog-kimi-k3-1-pro.md)
 
