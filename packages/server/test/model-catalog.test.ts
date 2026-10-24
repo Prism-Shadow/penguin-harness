@@ -950,6 +950,7 @@ describe("model-catalog", () => {
       ["glm-5.3-flashx", 1000000, true],
       ["hy4-preview", 1024000, false],
       ["kimi-k3", 1048576, true],
+      ["kimi-k3.1-pro", 1000000, true],
       ["ling-3.0-flash", 256000, false],
       ["ling-3.1-flash", 1000000, false],
       ["mimo-v2.6-flash", 1000000, true],
