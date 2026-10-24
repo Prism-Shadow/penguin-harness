@@ -42,6 +42,7 @@ A tool only yields incremental `partial_tool_call_output` deltas. The Environmen
 - streaming framing (start / stop) and `tool_call_id` threading;
 - timeouts, and head-and-tail truncation once output exceeds `maxOutputLength` (default 16000 characters);
 - the result's `status` priority: user interrupt > timeout > tool throw > tool self-report. A timeout or a throw ends the call as `fatal`;
+- a user interrupt streams the `[interrupted: tool aborted by user]` note and the `stop`, and writes no complete `tool_call_output`: the call did not run to its end, and the engine pairs it for the next request with an output it never records;
 - never-empty output: `[no output]` is substituted when a call produced no text and no note;
 - `note` (for example the exit code) and images are appended outside the output budget, so the terminal marker survives even when long output is cut.
 

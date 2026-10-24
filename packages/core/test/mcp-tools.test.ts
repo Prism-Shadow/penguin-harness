@@ -577,14 +577,20 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     }
   });
 
-  it("finalizes a user interruption as aborted", async () => {
+  it("closes a user interruption with its note and stop, and writes no complete output", async () => {
     const env = makeEnv({});
     try {
       const ac = new AbortController();
       setTimeout(() => ac.abort(), 150);
-      const final = finalPayload(await runTool(env, "mcp__fx__slow", { ms: 60_000 }, ac.signal));
-      expect(final.status).toBe("aborted");
-      expect(final.output).toContain("[interrupted: tool aborted by user]");
+      const messages = await runTool(env, "mcp__fx__slow", { ms: 60_000 }, ac.signal);
+      expect(finalPayload(messages)).toMatchObject({
+        type: "partial_tool_call_output",
+        event_type: "stop",
+      });
+      expect(
+        messages.some((m) => (m.payload as { type?: string }).type === "tool_call_output"),
+      ).toBe(false);
+      expect(streamedText(messages)).toContain("[interrupted: tool aborted by user]");
     } finally {
       env.dispose();
     }

@@ -434,13 +434,7 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
       L("顺便把 hooks.md 的导语也改写一下。", "Rewrite the intro of hooks.md while you're at it."),
     ),
     requestBegin(b(600.3)),
-    assistantText(
-      b(607),
-      L(
-        "导语现在先介绍各个钩子点，再引导读者去看",
-        "The intro now opens with the hook points and sends readers to",
-      ),
-    ),
+    // The reply was cut short: its fragments streamed live, and a Trace keeps no record of it.
     event(b(607.1), { type: "request_end", status: "aborted" }),
     abortEvent(b(607.1)),
     taskEnd(b(607.1)),

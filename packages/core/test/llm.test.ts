@@ -701,7 +701,7 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
     return out;
   }
 
-  it("closes an open text item with a stop and a complete text of what arrived, and emits no token_usage", () => {
+  it("closes an open text item with its partial stop alone: no complete record, no token_usage", () => {
     const tr = new EventTranslator();
     // Two fragments went out, then the stream broke (no done item, no stop event).
     const out = pushAll(tr, [
@@ -710,31 +710,21 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
     ]);
     for (const m of tr.finishInterrupted()) out.push(m);
 
+    // What arrived reached the live view as fragments; an item cut short writes no record.
     expect(out.map(typeOf)).toEqual([
       "partial_text", // start
       "partial_text", // delta Par
       "partial_text", // delta tial
       "partial_text", // stop (backfilled by finishInterrupted)
-      "text", // complete message
     ]);
     expect((out[3]!.payload as { event_type: string }).event_type).toBe("stop");
-    const complete = out[4]!.payload as TextPayload;
-    expect(complete.text).toBe("Partial");
-    expect(complete).not.toHaveProperty("stop_reason");
   });
 
-  it("closes an open thinking item with its partial stop and a complete message", () => {
+  it("closes an open thinking item with its partial stop alone", () => {
     const tr = new EventTranslator();
     const out = pushAll(tr, [delta({ type: "thinking.delta", thinking: "half a thought" })]);
     for (const m of tr.finishInterrupted()) out.push(m);
-    expect(out.map(typeOf)).toEqual([
-      "partial_thinking",
-      "partial_thinking",
-      "partial_thinking",
-      "thinking",
-    ]);
-    const complete = out.find((m) => typeOf(m) === "thinking")!.payload as ThinkingPayload;
-    expect(complete.thinking).toBe("half a thought");
+    expect(out.map(typeOf)).toEqual(["partial_thinking", "partial_thinking", "partial_thinking"]);
   });
 
   it("closes a tool call cut short with its partial stop alone: no complete record", () => {
@@ -1488,14 +1478,13 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("classifies a network drop as retryable, closing the open text segment, no token_usage", async () => {
+  it("classifies a network drop as retryable, closing the open text segment with no record, no token_usage", async () => {
     const model = new SeamModel(() => dropAfterText());
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome.status).toBe("retryable");
-    const complete = messages.find((m) => typeOf(m) === "text");
-    expect((complete!.payload as TextPayload).text).toBe("hi");
+    expect(messages.map(typeOf)).toEqual(["partial_text", "partial_text", "partial_text"]);
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
@@ -1517,8 +1506,8 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     );
     expect(outcome.status).toBe("retryable");
     expect(outcome.errorMessage).toContain("Unexpected token");
-    const complete = messages.find((m) => typeOf(m) === "text");
-    expect((complete!.payload as TextPayload).text).toBe("hi");
+    // The text was cut short: its fragments closed, and no complete record follows.
+    expect(messages.map(typeOf)).not.toContain("text");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
@@ -1843,8 +1832,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome.status).toBe("retryable");
-    const complete = messages.find((m) => typeOf(m) === "text");
-    expect((complete!.payload as TextPayload).text).toBe("hi");
+    expect(messages.map(typeOf)).not.toContain("text"); // cut short: fragments only
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 

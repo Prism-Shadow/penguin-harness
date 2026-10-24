@@ -114,8 +114,8 @@ Task 由若干连续的 Request（轮）组成。每一轮：
 
 | 场景 | 条件 | 补发内容 |
 | --- | --- | --- |
-| A | 模型输出已完成：该轮的 `tool_call` 已提交 | 已完成的工具结果按结构化 `tool_call_output` 补发；未执行完的调用补上 `[interrupted: tool aborted by user]` 占位，保证 `tool_call` 与输出严格配对。 |
-| B | 模型输出未完成 | 整轮压平为一段 `[turn_aborted]` 用户文本，携带已产生的部分输出。 |
+| A | 模型输出已完成：该轮的 `tool_call` 已提交 | 已完成的工具结果按结构化 `tool_call_output` 补发。执行中被中断的调用没有写出输出，因此补上一条 Trace 从不记录的输出：它已流出的内容，末尾是 `[interrupted: tool aborted by user]`；尚未开始的调用只有这一行。`tool_call` 与输出因此严格配对。 |
+| B | 模型输出未完成 | 整轮压平为一段 `[turn_aborted]` 用户文本，携带已产生的部分输出；被中断截断的那一项按其分片拼出。 |
 
 中断若发生在 Request 发出之前，输入原样保留为补发内容，不压平，多模态输入因此不会丢失。
 

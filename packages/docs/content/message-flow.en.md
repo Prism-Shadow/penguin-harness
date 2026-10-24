@@ -123,7 +123,7 @@ The cases below change the observable order on the stream:
 
 | Case | Observable order on the stream |
 | --- | --- |
-| User interrupt | (messages produced so far) → the `abort` event — the engine's last message of the run (only `hook` events from stop hooks and the Task's `task_end` can follow it); carry-over goes to the model context only, never streamed, never written to Trace |
+| User interrupt | (messages produced so far; an item cut short closes with its `stop` fragment and writes no complete record) → the `abort` event — the engine's last message of the run (only `hook` events from stop hooks and the Task's `task_end` can follow it); carry-over goes to the model context only, never streamed, never written to Trace |
 | Automatic reconnect | `request_end(retryable)` or `request_end(truncated)` carrying `retry_in_ms` → a fresh `request_begin` (up to 5 consecutive fruitless retries, exponential backoff with a 30s ceiling); the `[turn_retried]` block is model-visible only |
 | LLM failure that ends the run | `request_end(fatal)`, or a `request_end(retryable)` / `request_end(truncated)` without `retry_in_ms` once the retries run out, is the engine's last message of the run (only `hook` events from stop hooks and the Task's `task_end` can follow it); no `abort` event follows, because `abort` marks only a user interruption or the turn cap |
 | Compaction | `compaction_begin` → the compaction request runs against the old context (its raw messages are written to Trace only, except each attempt's `token_usage` and the thinking and summary being generated, which are forwarded as ordinary `partial_thinking`/`partial_text` or `thinking`/`text` inside the span) → `compaction_end(status)` |

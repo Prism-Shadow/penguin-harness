@@ -191,7 +191,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. A run of fragments whose item was fully generated ends with its complete message after the `stop`, so a consumer never has to reassemble fragments itself. A tool call the stream cut short (its arguments never fully arrived) closes with its `stop` alone and gets no complete record: it was never dispatched.
+Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. A run of fragments whose item was fully generated ends with its complete message after the `stop`, so a consumer never has to reassemble fragments itself. An item that was cut short closes with its `stop` alone and gets no complete record: a text or thinking the interruption cut off, a tool call whose arguments never fully arrived (it was never dispatched), and the output of a tool call interrupted while it ran. Such an item is visible only live; a reader of the Trace learns from the `abort` and the `request_end` that it was there.
 
 ## event_msg
 

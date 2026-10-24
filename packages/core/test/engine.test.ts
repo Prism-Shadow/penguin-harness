@@ -1560,16 +1560,31 @@ describe("ContextEngine abort during execution", () => {
 
     expect(elapsed).toBeLessThan(3000); // Did not wait the full 5s.
     expect(all.map((m) => (m.payload as { type?: string }).type)).toContain("abort");
+    // Interrupted while it ran: the call streamed its interruption note and wrote no complete
+    // output.
+    expect(all.some((m) => (m.payload as { type?: string }).type === "tool_call_output")).toBe(
+      false,
+    );
+    const streamed = all
+      .filter((m) => (m.payload as { type?: string }).type === "partial_tool_call_output")
+      .map((m) => (m.payload as { output?: string }).output ?? "")
+      .join("");
+    expect(streamed).toContain("[interrupted: tool aborted by user]");
 
-    // Case A: model output has completed -> the interrupted tool's result is backfilled as a
-    // structured tool_call_output, pairing with the already-committed tool_call.
+    // Case A: model output has completed -> the interrupted tool gets a structured
+    // tool_call_output the Trace never holds (what it streamed), pairing with the
+    // already-committed tool_call.
     await collectRun(engine, [userText("continue")], allowAll);
     expect(received).toHaveLength(2);
     const out = received[1]!.find(
       (m) => (m.payload as { type?: string }).type === "tool_call_output",
     );
     expect(out).toBeDefined();
-    expect((out!.payload as { tool_call_id?: string }).tool_call_id).toBe("slow");
+    expect(out!.payload).toMatchObject({
+      tool_call_id: "slow",
+      status: "aborted",
+      output: streamed,
+    });
     // Case A must be a structured backfill and must **not** be flattened into [turn_aborted]
     // (otherwise the already-committed tool_call would lose its pairing).
     const carriedText = received[1]!
@@ -1838,6 +1853,57 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       ),
     ).toBe(true);
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
+  });
+
+  it("carries the text an interruption cut short in the retry block, rebuilt from its fragments and never written", async () => {
+    let calls = 0;
+    const inputs: AmspRecord[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        calls += 1;
+        inputs.push(params.newMessages);
+        if (calls === 1) {
+          // The stream drops mid-text: fragments only, no complete record.
+          yield partialText("start");
+          yield partialText("delta", "half a rep");
+          yield partialText("delta", "ly");
+          yield partialText("stop");
+          return { status: "retryable", errorCode: "network", errorMessage: "socket hang up" };
+        }
+        yield assistantText("done");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const traces = await mkdtemp(join(tmpdir(), "penguin-tr-cut-"));
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_cut_text" });
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      trace,
+      maxReconnects: 1,
+      reconnectBackoffMs: 0,
+    });
+
+    await collectRun(engine, [userText("go")], allowAll);
+
+    expect(calls).toBe(2);
+    const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
+    expect(retried).toContain("[text]half a reply[/text]");
+    const texts = (await readTrace(trace.currentPath()))
+      .filter((m) => isCompleteModelMessage(m) && m.payload.type === "text")
+      .map((m) => (m.payload as TextPayload).text);
+    expect(texts).not.toContain("half a reply");
+    await rm(traces, { recursive: true, force: true });
   });
 
   it("retries a truncated response with its finish reason in the retry block", async () => {

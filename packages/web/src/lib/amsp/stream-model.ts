@@ -1922,9 +1922,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       model.openRequestBeginMs = null;
       model.openApprovalWaitMs = 0;
       // The Request is over: its texts learn whether it completed (the fork point needs a
-      // completed one), and a call it cut short will never get its complete record.
+      // completed one), and an item it cut short will never get its complete record — a call's
+      // card settles, and a text or thinking keeps what streamed, no longer waiting to be
+      // replaced (an interrupted item has no complete record, so a reload no longer shows it).
       markRequestTexts(model, p.status === "completed");
       settleCutShortCalls(model);
+      model.pendingText = null;
+      model.pendingThinking = null;
       // This is now the round's end (so far): update taskLastReqEndMs, with
       // the duration taken as "it − the first message". This also settles
       // compaction's Token attribution — reaching this point means a

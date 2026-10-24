@@ -1471,6 +1471,29 @@ describe("trace-service", () => {
     expect(a.toolCalls.find((c) => c.toolCallId === "t2")?.status).toBe("completed");
   });
 
+  it("a call interrupted while it ran ends at the abort, as aborted", async () => {
+    const T = (sec: string) => `2026-07-05T10:02:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 12, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), userText("q")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
+      at(T("02.500"), requestEnd("completed")),
+      // Interrupted while running: no tool_call_output, then the abort.
+      at(T("06.000"), abortEvent()),
+    ]);
+    const a = await service.analyze(P, A, S, 12);
+    expect(a.toolCalls.find((c) => c.toolCallId === "t1")).toMatchObject({
+      endTs: T("06.000"),
+      durationMs: 4000,
+      status: "aborted",
+    });
+    expect(a.toolSpans.find((sp) => sp.toolCallId === "t1")).toMatchObject({
+      outputTs: T("06.000"),
+      status: "aborted",
+    });
+  });
+
   it("each request carries the thinking level its request_begin records; a request written before the field carries none", async () => {
     const T = (sec: string) => `2026-07-05T10:03:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 11, [

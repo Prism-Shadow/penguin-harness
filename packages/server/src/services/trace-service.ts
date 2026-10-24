@@ -1341,6 +1341,23 @@ export class TraceService implements Traces {
               }
             }
           }
+        } else if (p.type === "abort") {
+          // A call interrupted while it ran writes no tool_call_output: the abort is where it
+          // ended, so its span closes there as aborted rather than staying open.
+          if (!hasOrigin) {
+            for (const span of openToolCalls.values()) {
+              if (span.endTs !== undefined) continue;
+              span.endTs = msg.timestamp;
+              const dur = Date.parse(msg.timestamp) - Date.parse(span.startTs);
+              if (Number.isFinite(dur)) span.durationMs = dur;
+              span.status = "aborted";
+            }
+            for (const timeline of openSpansById.values()) {
+              if (timeline.outputTs !== undefined) continue;
+              timeline.outputTs = msg.timestamp;
+              timeline.status = "aborted";
+            }
+          }
         } else if (p.type === "request_end") {
           const status = typeof p.status === "string" ? p.status : undefined;
           // A status core reconnects on within the same run (context-engine's retry

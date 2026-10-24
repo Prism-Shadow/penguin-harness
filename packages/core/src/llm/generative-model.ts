@@ -341,19 +341,16 @@ export class EventTranslator {
   }
 
   /**
-   * Interruption finalization: the item still streaming gets its partial `stop`. A text or
-   * thinking item is also written as a complete message holding what had arrived; a tool call
-   * cut short gets no complete record — its arguments never fully arrived, so it is neither a
-   * call the engine could dispatch nor one the model history holds. Produces no `token_usage`:
-   * an interrupted Request has no usage to report.
+   * Interruption finalization: the item still streaming gets its partial `stop` and nothing
+   * more. An item the stream cut short writes no complete record — not a text or thinking that
+   * never finished, and not a tool call whose arguments never fully arrived (neither a call the
+   * engine could dispatch nor one the model history holds). What arrived reached the live view
+   * as fragments. Produces no `token_usage`: an interrupted Request has no usage to report.
    */
   *finishInterrupted(): Generator<AmspRecord> {
     const open = this.open;
     this.open = null;
-    if (!open) return;
-    yield partial(open, "stop");
-    if (open.kind === "text") yield assistantText(open.content);
-    else if (open.kind === "thinking") yield thinkingMessage(open.content);
+    if (open) yield partial(open, "stop");
   }
 
   /** Whether the `stop` event arrived: a fully delivered response. */

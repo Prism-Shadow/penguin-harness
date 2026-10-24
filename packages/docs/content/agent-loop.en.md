@@ -114,8 +114,8 @@ What the carry-over contains depends on how far the turn had got:
 
 | Case | When | Carry-over |
 | --- | --- | --- |
-| A | The model's output had completed: the turn's `tool_call`s were committed | Finished tool results are re-sent as structured `tool_call_output`s. Unfinished calls get an `[interrupted: tool aborted by user]` placeholder, keeping `tool_call`/output pairing strictly intact. |
-| B | The model's output was incomplete | The whole turn is flattened into one `[turn_aborted]` user text carrying whatever partial output existed. |
+| A | The model's output had completed: the turn's `tool_call`s were committed | Finished tool results are re-sent as structured `tool_call_output`s. A call interrupted while it ran writes no output, so it gets one the Trace never records: what it had streamed, ending in `[interrupted: tool aborted by user]`; a call that never started gets that line alone. `tool_call`/output pairing stays strictly intact. |
+| B | The model's output was incomplete | The whole turn is flattened into one `[turn_aborted]` user text carrying whatever partial output existed, rebuilt from the fragments of the item the interruption cut short. |
 
 An interruption that lands before the Request is issued keeps the input as-is as carry-over, without flattening it, so multimodal input is not lost.
 

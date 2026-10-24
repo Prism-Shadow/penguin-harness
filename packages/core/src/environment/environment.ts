@@ -611,6 +611,9 @@ export class Environment implements EnvironmentInterface {
    * Executes an approved tool call, streaming `partial_tool_call_output` and a final
    * `tool_call_output`; nested messages carrying origin pass through unchanged. Dispatches by
    * looking up the tool name; any exception collapses into an explanatory output — never throws.
+   * A call the user interrupts (the `signal` aborted) streams its fragments and the interruption
+   * note, closes with its partial `stop`, and writes no complete `tool_call_output`: it did not
+   * run to its end, and the engine pairs it with an unrecorded placeholder.
    *
    * The priority for deciding the result's status is: user interruption > timeout > tool
    * throw > tool self-report. Interruption is determined by the `signal` held by Environment,
@@ -857,8 +860,9 @@ export class Environment implements EnvironmentInterface {
     }
     // Freeze the tool's terminal facts before auxiliary archive I/O. A user abort arriving
     // while the file is being written must not reclassify an already-finished tool.
+    const interrupted = signal?.aborted === true;
     const aborted =
-      signal?.aborted === true ||
+      interrupted ||
       (!timedOut &&
         (selfReported === "aborted" ||
           (thrown as { name?: string } | null)?.name === "AbortError"));
@@ -946,6 +950,9 @@ export class Environment implements EnvironmentInterface {
       yield partialToolCallOutput({ eventType: "delta", toolCallId, images });
     }
     yield partialToolCallOutput({ eventType: "stop", toolCallId });
+    // Interrupted: the fragments (the interruption note included) were all the live view needs,
+    // and no complete record is written for a call that did not run to its end.
+    if (interrupted) return;
     yield toolCallOutput({
       output: fullOutput,
       toolCallId,

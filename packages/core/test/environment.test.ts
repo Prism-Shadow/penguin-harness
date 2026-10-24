@@ -47,6 +47,26 @@ async function collect(gen: AsyncGenerator<AmspRecord>): Promise<AmspRecord[]> {
 }
 
 /**
+ * A call the user interrupted writes no complete tool_call_output: what it streamed — the
+ * interruption note included — is all there is, closed by its partial stop.
+ */
+function interruptedOutput(out: AmspRecord[]): string {
+  expect(out.some((m) => (m.payload as { type?: string }).type === "tool_call_output")).toBe(false);
+  expect(out.at(-1)!.payload).toMatchObject({
+    type: "partial_tool_call_output",
+    event_type: "stop",
+  });
+  return out
+    .filter(
+      (m) =>
+        (m.payload as { type?: string }).type === "partial_tool_call_output" &&
+        (m.payload as { event_type?: string }).event_type === "delta",
+    )
+    .map((m) => (m.payload as { output?: string }).output ?? "")
+    .join("");
+}
+
+/**
  * Reads a file the shell just wrote, retrying briefly until it holds `expected`.
  *
  * The tool completes when the shell process exits, which does not promise the write is visible
@@ -1200,12 +1220,7 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
     const messages = await messagesPromise;
     clearTimeout(abortTimer);
 
-    const last = messages[messages.length - 1]!.payload as {
-      output: string;
-      status?: string;
-    };
-    expect(last.status).toBe("aborted");
-    expect(last.output).toContain("[interrupted: tool aborted by user]");
+    expect(interruptedOutput(messages)).toContain("[interrupted: tool aborted by user]");
   });
 });
 
@@ -1409,11 +1424,8 @@ describe("Environment.executeTool — robustness", () => {
     clearTimeout(abortTimer);
 
     const elapsedMs = Date.now() - startedAt;
-    const last = messages[messages.length - 1]!;
-    const payload = last.payload as { output: string; status?: string };
     expect(elapsedMs).toBeLessThan(2000); // Did not wait the full 5s -> the process group was interrupted as a whole
-    expect(payload.output).toContain("[interrupted: tool aborted by user");
-    expect(payload.status).toBe("aborted");
+    expect(interruptedOutput(messages)).toContain("[interrupted: tool aborted by user");
   });
 });
 
@@ -1535,25 +1547,18 @@ describe("Environment abort handling (interrupt -> aborted, PRN-012)", () => {
           signal: controller.signal,
         }),
       );
-      // The structure is closed, and the interrupt maps to aborted (crucially: not failed).
-      const stop = out.find(
-        (m) =>
-          (m.payload as { type?: string }).type === "partial_tool_call_output" &&
-          (m.payload as { event_type?: string }).event_type === "stop",
-      )!.payload as { status?: string };
-      expect(stop).not.toHaveProperty("status");
-      const complete = out.find(
-        (m) => (m.payload as { type?: string }).type === "tool_call_output",
-      )!.payload as { status?: string; output?: string };
-      expect(complete.status).toBe("aborted");
-      expect(complete.output).toContain("interrupted");
-      expect(complete.output).toContain("partial"); // Keeps the partial content already streamed.
+      // The structure is closed and the interrupt is an interruption (crucially: no fatal
+      // output) — which writes no complete record.
+      const streamed = interruptedOutput(out);
+      expect(streamed).toContain("interrupted");
+      expect(streamed).toContain("partial"); // Keeps the partial content already streamed.
+      expect(streamed).not.toContain("[tool error]");
     } finally {
       delete BUILTIN_TOOL_FACTORIES[NAME];
     }
   });
 
-  it("relabels a completed output as aborted when the signal is aborted, even if the tool did not self-report it", async () => {
+  it("treats a call as interrupted when the signal is aborted, even if the tool did not self-report it", async () => {
     const NAME = "__abort_noselfreport_tool__";
     BUILTIN_TOOL_FACTORIES[NAME] = (definition) => ({
       name: NAME,
@@ -1583,25 +1588,12 @@ describe("Environment abort handling (interrupt -> aborted, PRN-012)", () => {
           signal: controller.signal,
         }),
       );
-      const complete = out.find(
-        (m) => (m.payload as { type?: string }).type === "tool_call_output",
-      )!.payload as { status?: string; output?: string };
-      // Environment finalizes aborted based on the signal it holds, keeping the tool's
-      // already-produced content and appending the interrupt notice.
-      expect(complete.status).toBe("aborted");
-      expect(complete.output).toContain("done anyway");
-      expect(complete.output).toContain("interrupted");
-      // Even when the tool yields only a complete message (no streaming), the whole content is
-      // backfilled as a stream: concatenating the streamed deltas == the complete content.
-      const streamed = out
-        .filter(
-          (m) =>
-            (m.payload as { type?: string }).type === "partial_tool_call_output" &&
-            (m.payload as { event_type?: string }).event_type === "delta",
-        )
-        .map((m) => (m.payload as { output?: string }).output ?? "")
-        .join("");
-      expect(streamed).toBe(complete.output);
+      // Environment finalizes the interruption from the signal it holds: the tool's own
+      // complete message is the content basis, streamed whole with the interrupt notice
+      // appended, and no complete record is written.
+      const streamed = interruptedOutput(out);
+      expect(streamed).toContain("done anyway");
+      expect(streamed).toContain("interrupted");
     } finally {
       delete BUILTIN_TOOL_FACTORIES[NAME];
     }
@@ -1639,23 +1631,10 @@ describe("Environment abort handling (interrupt -> aborted, PRN-012)", () => {
           signal: controller.signal,
         }),
       );
-      const complete = out.find(
-        (m) => (m.payload as { type?: string }).type === "tool_call_output",
-      )!.payload as { status?: string; output?: string };
-      expect(complete.status).toBe("aborted");
-      expect(complete.output).toContain("buffered result");
-      expect(complete.output).toContain("interrupted");
-      // Key point: tool content that was never streamed is backfilled as a whole; concatenating
-      // the streamed deltas == the complete content (no separator misalignment).
-      const streamed = out
-        .filter(
-          (m) =>
-            (m.payload as { type?: string }).type === "partial_tool_call_output" &&
-            (m.payload as { event_type?: string }).event_type === "delta",
-        )
-        .map((m) => (m.payload as { output?: string }).output ?? "")
-        .join("");
-      expect(streamed).toBe(complete.output);
+      // Key point: tool content that was never streamed is backfilled as a whole, then the
+      // interrupt notice (no separator misalignment), and no complete record follows.
+      const streamed = interruptedOutput(out);
+      expect(streamed).toMatch(/^buffered result\n\[interrupted/);
     } finally {
       delete BUILTIN_TOOL_FACTORIES[NAME];
     }

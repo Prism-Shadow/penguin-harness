@@ -270,7 +270,6 @@ data: {"type":"event_msg","payload":{"type":"request_begin",…}}
 data: {"type":"model_msg","payload":{"type":"partial_text","event_type":"delta","text":"Let me",…}}
             ← caller: POST …/sessions/<id>/abort → 202
 data: {"type":"model_msg","payload":{"type":"partial_text","event_type":"stop",…}}
-data: {"type":"model_msg","payload":{"type":"text","role":"assistant","text":"Let me"}}
 data: {"type":"event_msg","payload":{"type":"request_end","status":"aborted","attempt":2}}
 data: {"type":"event_msg","payload":{"type":"abort","error_code":"user_abort"}}
 data: {"type":"event_msg","payload":{"type":"task_end"}}

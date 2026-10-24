@@ -32,6 +32,7 @@
 import {
   abortEvent,
   approvalDecision,
+  assistantText,
   compactionBegin,
   compactionEnd,
   addTokenCounts,
@@ -42,6 +43,7 @@ import {
   requestBegin,
   requestEnd,
   subagentEvent,
+  thinkingMessage,
   toolCallOutput,
   userText,
 } from "@prismshadow/amsp/records";
@@ -445,6 +447,9 @@ interface TurnRetryState {
  * loop that re-asks a model already answering wrong, at maximum context, forever.
  */
 const RETRY_STATUSES: readonly RequestEndStatus[] = ["retryable", "truncated"];
+
+/** The output a tool call gets when it was interrupted before it produced any (memory only, never written). */
+const INTERRUPTED_TOOL_NOTE = "[interrupted: tool aborted by user]";
 
 /**
  * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
@@ -1341,9 +1346,13 @@ export class ContextEngine {
     const toolOutputs: AmspRecord[] = [];
     const toolCalls: AmspRecord<ToolCallPayload>[] = [];
     const callOrder: string[] = [];
-    // This turn's complete thinking/text segments produced by the model (including partial
-    // segments finalized on interruption), for carry-over flatten.
+    // This turn's thinking/text segments produced by the model, for carry-over flatten: the
+    // complete ones, and the one an interruption cut short (rebuilt from its fragments, below).
     const assistantSegments: AmspRecord[] = [];
+    // The text or thinking item streaming now, as its fragments carried it. An item the
+    // request's interruption cuts short writes no complete record, yet the carry-over still owes
+    // the model what it had written.
+    let openSegment: { kind: "text" | "thinking"; content: string } | null = null;
     // This turn's LLM terminal state: taken from streamGenerate's generator return value.
     let outcome: LLMOutcome = { status: "completed" };
     // Set by the first message the stream yields (see TurnResult.receivedContent).
@@ -1437,6 +1446,14 @@ export class ContextEngine {
             });
             queue.push(stopEvt);
             await this.write(stopEvt);
+            // The item cut short: kept for the carry-over only, never streamed or written.
+            if (openSegment !== null && openSegment.content !== "") {
+              assistantSegments.push(
+                openSegment.kind === "text"
+                  ? assistantText(openSegment.content)
+                  : thinkingMessage(openSegment.content),
+              );
+            }
             break;
           }
           const msg = res.value;
@@ -1450,13 +1467,30 @@ export class ContextEngine {
           if (this.observeTokenUsage(msg)) sawUsage = true;
           queue.push(msg);
           await this.write(msg);
-          // Collect complete thinking/text segments (including partial segments finalized on
-          // interruption), for carry-over flatten.
+          // Collect complete thinking/text segments for carry-over flatten, and follow the
+          // fragments of the one streaming now.
           if (
             isCompleteModelMessage(msg) &&
             (msg.payload.type === "thinking" || msg.payload.type === "text")
           ) {
             assistantSegments.push(msg);
+            openSegment = null;
+          } else if (isModelMessage(msg)) {
+            const fragment = msg.payload as {
+              type?: string;
+              event_type?: string;
+              text?: string;
+              thinking?: string;
+            };
+            if (fragment.type === "partial_text" || fragment.type === "partial_thinking") {
+              if (fragment.event_type === "start") {
+                const kind = fragment.type === "partial_text" ? "text" : "thinking";
+                openSegment = { kind, content: "" };
+              }
+              const piece =
+                (fragment.type === "partial_text" ? fragment.text : fragment.thinking) ?? "";
+              if (openSegment !== null) openSegment.content += piece;
+            }
           }
           // Approve as soon as each complete tool_call finishes streaming. Every complete
           // tool_call is a real one: a call the stream cut short closes with its partial `stop`
@@ -1578,10 +1612,11 @@ export class ContextEngine {
 
   /**
    * Executes a single approved tool: streams its partial/complete tool_call_output (through the
-   * queue), and collects the complete tool_call_output into toolOutputs.
+   * queue), and collects the complete tool_call_output into toolOutputs — or, for a call the
+   * user interrupted while it ran (which writes none), an unrecorded placeholder.
    *
-   * Environment is contracted to handle all errors internally: it guarantees exactly one
-   * complete `tool_call_output` to close out and never throws. But since
+   * Environment is contracted to handle all errors internally: it closes every call that runs
+   * to its end with exactly one complete `tool_call_output` and never throws. But since
    * EnvironmentInterface can be injected by consumers via a public API, if a contract-violating
    * exception escapes, this fire-and-forget promise would take down the process with an
    * unhandled rejection, and the missing output would leave the already-committed tool_use
@@ -1598,6 +1633,9 @@ export class ContextEngine {
     approve?: ApproveFn,
   ): Promise<void> {
     let completed = false;
+    // What the call streamed so far: an interrupted call writes no complete output, so its
+    // placeholder is rebuilt from this (see below).
+    let streamed = "";
     try {
       for await (const out of this.deps.environment.executeTool({
         toolCall,
@@ -1625,7 +1663,24 @@ export class ContextEngine {
         if (isCompleteModelMessage(out) && out.payload.type === "tool_call_output") {
           toolOutputs.push(out);
           completed = true;
+        } else {
+          const p = out.payload as { type?: string; output?: string };
+          if (p.type === "partial_tool_call_output") streamed += p.output ?? "";
         }
+      }
+      // Interrupted while it ran: the Environment closed the call's fragments and wrote no
+      // complete output. The committed tool_call still needs its pair in the next request, so
+      // this turn holds one that is never streamed or written — what the call had streamed (its
+      // interruption note included), the same text the live view showed. A resume finds no output
+      // in the Trace and synthesizes its own placeholder.
+      if (!completed && signal?.aborted) {
+        toolOutputs.push(
+          toolCallOutput({
+            output: streamed !== "" ? streamed : INTERRUPTED_TOOL_NOTE,
+            toolCallId: toolCall.payload.tool_call_id,
+            status: "aborted",
+          }),
+        );
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -2224,7 +2279,7 @@ export class ContextEngine {
         .filter((tc) => !haveIds.has(tc.payload.tool_call_id))
         .map((tc) =>
           toolCallOutput({
-            output: "[interrupted: tool aborted by user]",
+            output: INTERRUPTED_TOOL_NOTE,
             toolCallId: tc.payload.tool_call_id,
             status: "aborted",
           }),

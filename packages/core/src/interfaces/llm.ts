@@ -155,7 +155,7 @@ export interface LLMOutcome {
 /**
  * A stateful LLM object attached to a Session.
  * `streamGenerate` yields streaming `partial_*` messages as an async generator, and appends the
- * corresponding complete `model_msg` once each item ends (a tool call still streaming when the
+ * corresponding complete `model_msg` once each item ends (an item still streaming when the
  * request is interrupted closes with its `stop` fragment alone); Token usage is emitted as a
  * `token_usage` event_msg. **Never throws to `context_engine`**: any interruption/exception is
  * closed off in well-formed structure and returned normally, and **must** report the terminal

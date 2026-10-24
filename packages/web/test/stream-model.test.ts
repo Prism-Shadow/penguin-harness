@@ -1335,6 +1335,24 @@ describe("approvals and events", () => {
     expect(fresh.attempt).toBe(1);
   });
 
+  it("an interrupted reply keeps what streamed once its Request ends; a later complete text is an item of its own", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("Q"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, partialText("start"));
+    pushMessage(m, partialText("delta", "Half an ans"));
+    pushMessage(m, partialText("stop"));
+    // No complete text follows a reply cut short: its Request ends, then the run.
+    pushMessage(m, requestEnd("aborted", { attempt: 1 }));
+    pushMessage(m, abortEvent());
+    pushMessage(m, assistantText("Unrelated"));
+    const texts = items(m).filter((i) => i.kind === "assistant_text") as AssistantTextItem[];
+    expect(texts.map((t) => [t.text, t.streaming])).toEqual([
+      ["Half an ans", false],
+      ["Unrelated", false],
+    ]);
+  });
+
   it("a tool call the stream cut short settles as aborted once its Request ends, instead of showing as running", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());

@@ -42,6 +42,7 @@ interface ToolResult {
 - 流式分帧（start / stop），以及 `tool_call_id` 的全程传递；
 - 超时控制，以及输出超过 `maxOutputLength`（默认 16000 字符）后只保留头部和尾部的截断；
 - 结果 `status` 的优先级：用户中断 > 超时 > 工具抛错 > 工具自报。超时或抛错都会让调用以 `fatal` 结束；
+- 用户中断时只流出 `[interrupted: tool aborted by user]` 提示与 `stop`，不写完整 `tool_call_output`：该调用没有执行到底，引擎在下一次请求中为它配上一条从不落盘的输出；
 - 输出永不为空：调用既没有产出文本也没有 note 时，用 `[no output]` 代替；
 - `note`（例如退出码）和图片不计入输出预算、直接追加在末尾，因此截断长输出也不会丢掉终止标记。
 
