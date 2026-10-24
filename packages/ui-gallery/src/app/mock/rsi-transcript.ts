@@ -14,7 +14,7 @@
  * Skills prescribe (an evaluator's request and its YAML result) stays English in both languages,
  * as the Skills write it; the person's and the agents' prose follows the frame's language.
  */
-import { buildSkillsMessage } from "@prismshadow/penguin-core/markers";
+import { buildSkillsMessage } from "@prismshadow/amsp/markers";
 import { IDS } from "./ids";
 import {
   approvalDecision,

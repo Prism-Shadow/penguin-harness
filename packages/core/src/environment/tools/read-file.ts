@@ -52,8 +52,8 @@ import path from "node:path";
 import { realpath } from "node:fs/promises";
 import { describeFsError, errorCode, localFsPort } from "./fs-port.js";
 import type { FsPort } from "./fs-port.js";
-import { imageUrlMessage, partialToolCallOutput, userText } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { imageUrlMessage, partialToolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type {
   EnvironmentServices,
   LLMInterface,
@@ -298,8 +298,8 @@ async function* readImageSource(
   args: Record<string, unknown>,
   ctx: ToolExecutionContext,
   describer: VisionDescriberService | undefined,
-  delta: (output: string) => OmniMessage,
-): AsyncGenerator<OmniMessage, ToolResult | void> {
+  delta: (output: string) => AmspRecord,
+): AsyncGenerator<AmspRecord, ToolResult | void> {
   const { signal } = ctx;
   let proxy: ConfiguredDescriber | null = null;
   if (describer !== undefined) {
@@ -392,9 +392,9 @@ export function createReadFileTool(
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal } = ctx;
-      const delta = (output: string): OmniMessage =>
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       const filePath = args["file_path"];

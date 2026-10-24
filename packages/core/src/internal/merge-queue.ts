@@ -1,7 +1,7 @@
-import type { OmniMessage } from "../omnimessage/index.js";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 
 /**
- * Merge queue: lets multiple concurrent producers push OmniMessage entries; a single
+ * Merge queue: lets multiple concurrent producers push AmspRecord entries; a single
  * consumer pulls and yields them in push order. Finishes once all producers are done and
  * the queue is drained. It is the engine's merge point for a turn's concurrent streams
  * (the LLM consumer plus N tool executions — see /docs/message-flow § "The merge point:
@@ -10,7 +10,7 @@ import type { OmniMessage } from "../omnimessage/index.js";
  * first-run bootstrap deliver through one mechanism.
  */
 export class MergeQueue {
-  private items: OmniMessage[] = [];
+  private items: AmspRecord[] = [];
   private producers = 0;
   private wake: (() => void) | null = null;
 
@@ -26,7 +26,7 @@ export class MergeQueue {
   }
 
   /** Pushes a message and wakes the consumer. */
-  push(msg: OmniMessage): void {
+  push(msg: AmspRecord): void {
     this.items.push(msg);
     this.signal();
   }
@@ -40,7 +40,7 @@ export class MergeQueue {
   }
 
   /** Takes the next message; waits if empty but producers remain; returns null if empty and no producers remain. */
-  async next(): Promise<OmniMessage | null> {
+  async next(): Promise<AmspRecord | null> {
     for (;;) {
       if (this.items.length > 0) return this.items.shift()!;
       if (this.producers === 0) return null;
@@ -60,7 +60,7 @@ export class MergeQueue {
  * `result`. The engine's post-compaction open and the Session's first-run bootstrap are the
  * two pumps.
  */
-export function pumpOpener<T>(open: (emit: (msg: OmniMessage) => void) => T | Promise<T>): {
+export function pumpOpener<T>(open: (emit: (msg: AmspRecord) => void) => T | Promise<T>): {
   queue: MergeQueue;
   result: Promise<T>;
 } {

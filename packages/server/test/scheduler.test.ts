@@ -34,7 +34,7 @@ import { SessionsRepo } from "../src/db/repos/sessions.js";
 import { UsersRepo } from "../src/db/repos/users.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
 import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../src/runtime/scheduler.js";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Scheduler } from "../src/runtime/scheduler.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ScheduleServerEvent } from "../src/api/types.js";
@@ -100,7 +100,7 @@ describe("scheduler", () => {
       sessions,
       runner: {
         statusOf: (id: string) => (busy.has(id) ? "running" : "idle"),
-        startTask: async (sessionId: string, input: OmniMessage[]) => {
+        startTask: async (sessionId: string, input: AmspRecord[]) => {
           started.push({ sessionId, text: JSON.stringify(input[0]?.payload ?? "") });
           return { sessionId, queued: false };
         },

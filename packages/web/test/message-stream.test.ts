@@ -27,7 +27,7 @@ import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MessageStream } from "../src/features/chat/message-stream";
 import type { A2uiActions, StreamRenderContext } from "../src/features/chat/message-stream";
-import type { ChatItem } from "../src/lib/omni/stream-model";
+import type { ChatItem } from "../src/lib/amsp/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { LocaleProvider } from "../src/state/locale";

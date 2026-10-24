@@ -17,9 +17,9 @@ import {
   toolCall,
   userText,
   withOrigin,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { collectWindow } from "../src/environment/tools/subagent/collect.js";
-import type { MessageOrigin, OmniMessage } from "../src/omnimessage/index.js";
+import type { MessageOrigin, AmspRecord } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   RunCutoff,
@@ -58,26 +58,26 @@ interface LoosePayload {
   stop_reason?: string;
   tool_call_id?: string;
 }
-const pl = (m: OmniMessage): LoosePayload => m.payload as LoosePayload;
+const pl = (m: AmspRecord): LoosePayload => m.payload as LoosePayload;
 
 type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
 
 /**
- * Test fakes still talk in prompt strings; the contract now takes the OmniMessage list a
+ * Test fakes still talk in prompt strings; the contract now takes the AmspRecord list a
  * Session's `run` takes, so the adapters below unwrap it once (see SubagentHandle.run).
  */
-const promptOf = (messages: OmniMessage[]): string =>
+const promptOf = (messages: AmspRecord[]): string =>
   messages.map((m) => (m.payload as { text?: string }).text ?? "").join("");
 
-/** Adapts a prompt-string fake to SubagentHandle.run's OmniMessage input. */
+/** Adapts a prompt-string fake to SubagentHandle.run's AmspRecord input. */
 const asHandleRun =
-  <T extends RunInput>(run: (input: T) => AsyncGenerator<OmniMessage>): SubagentHandle["run"] =>
+  <T extends RunInput>(run: (input: T) => AsyncGenerator<AmspRecord>): SubagentHandle["run"] =>
   ({ messages, ...rest }) =>
     run({ prompt: promptOf(messages), ...rest } as unknown as T);
 
 /** Builds a SubagentRunner from a run implementation (spawn arguments observed via a spy). */
 function runnerOf(
-  run: (input: RunInput) => AsyncGenerator<OmniMessage>,
+  run: (input: RunInput) => AsyncGenerator<AmspRecord>,
   spawnSpy?: (input: {
     agentId?: string;
     modelId?: string;
@@ -119,9 +119,9 @@ async function until(cond: () => boolean, ms = 3000): Promise<void> {
 /** Collects yielded messages and captures the generator's return value (the tool reports its
  *  finish reason via the return value). */
 async function collectWithReturn(
-  gen: AsyncGenerator<OmniMessage, ToolResult | void>,
-): Promise<{ out: OmniMessage[]; result: ToolResult | void }> {
-  const out: OmniMessage[] = [];
+  gen: AsyncGenerator<AmspRecord, ToolResult | void>,
+): Promise<{ out: AmspRecord[]; result: ToolResult | void }> {
+  const out: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) return { out, result: res.value };
@@ -130,7 +130,7 @@ async function collectWithReturn(
 }
 
 /** Concatenates the tool's own (origin-free) output deltas. */
-const ownDeltas = (out: OmniMessage[]): string =>
+const ownDeltas = (out: AmspRecord[]): string =>
   out
     .filter(
       (m) =>
@@ -414,14 +414,14 @@ describe("run_subagent backgrounding + input_subagent", () => {
   /** A child Agent whose first-turn task is stuck on a gate: after backgrounding, the test
    *  controls when it finishes. */
   function gatedChild(): {
-    run: (input: RunInput) => AsyncGenerator<OmniMessage>;
+    run: (input: RunInput) => AsyncGenerator<AmspRecord>;
     release: () => void;
     prompts: string[];
   } {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const prompts: string[] = [];
-    const run = async function* ({ prompt, signal }: RunInput): AsyncGenerator<OmniMessage> {
+    const run = async function* ({ prompt, signal }: RunInput): AsyncGenerator<AmspRecord> {
       prompts.push(prompt);
       if (prompts.length === 1) {
         yield withOrigin(partialText("delta", `start:${prompt} `), HOP);
@@ -568,7 +568,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       const session = new ManagedSubagentSession({
         sessionId: `session-occupy-0000000${i}`,
         // eslint-disable-next-line require-yield
-        run: async function* ({ signal }): AsyncGenerator<OmniMessage> {
+        run: async function* ({ signal }): AsyncGenerator<AmspRecord> {
           await aborted(signal);
         },
         dispose() {},
@@ -615,7 +615,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     let emitSecond: (() => void) | null = null;
     const session = new ManagedSubagentSession({
       sessionId: HOP,
-      run: async function* ({ signal }): AsyncGenerator<OmniMessage> {
+      run: async function* ({ signal }): AsyncGenerator<AmspRecord> {
         yield withOrigin(partialText("delta", "first"), HOP);
         await new Promise<void>((resolve) => {
           emitSecond = resolve;
@@ -640,7 +640,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       for (;;) {
         const res = await gen.next();
         expect(res.done).toBe(false);
-        const p = pl(res.value as OmniMessage);
+        const p = pl(res.value as AmspRecord);
         if (p.type === "partial_text" || p.type === "partial_tool_call_output") {
           out += (res.value.payload as { text?: string; output?: string }).text ?? p.output ?? "";
         }
@@ -664,15 +664,15 @@ describe("subagent steering and per-run abort", () => {
     runner: SubagentRunner;
     prompts: string[];
     /** Each round's raw input messages (the contract's own shape — sender included). */
-    inputs: OmniMessage[][];
-    steers: OmniMessage[][];
+    inputs: AmspRecord[][];
+    steers: AmspRecord[][];
     /** Levels pinned on the child through the handle, in order. */
     pins: string[];
     release: () => void;
   } {
     const prompts: string[] = [];
-    const inputs: OmniMessage[][] = [];
-    const steers: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
+    const steers: AmspRecord[][] = [];
     const pins: string[] = [];
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -680,7 +680,7 @@ describe("subagent steering and per-run abort", () => {
       async spawn() {
         const handle: SubagentHandle = {
           sessionId: HOP,
-          async *run({ messages, signal }): AsyncGenerator<OmniMessage, RunCutoff | null> {
+          async *run({ messages, signal }): AsyncGenerator<AmspRecord, RunCutoff | null> {
             const prompt = promptOf(messages);
             inputs.push(messages);
             prompts.push(prompt);
@@ -821,7 +821,7 @@ describe("subagent steering and per-run abort", () => {
       env.setSubagentStateListener(() => {
         pings += 1;
       });
-      const forwarded: OmniMessage[] = [];
+      const forwarded: AmspRecord[] = [];
       env.setBackgroundMessageListener((msg) => forwarded.push(msg));
 
       // Spawn through the real tool path; the window expires with the child still running.
@@ -865,7 +865,7 @@ describe("subagent steering and per-run abort", () => {
       // The caller's own message reaches the child unchanged: a human's panel round records
       // no sender, exactly like the steering above — only the model's dispatch is
       // "parent_agent" (round one, through run_subagent).
-      const [dispatched, panelRound] = child.inputs as [OmniMessage[], OmniMessage[]];
+      const [dispatched, panelRound] = child.inputs as [AmspRecord[], AmspRecord[]];
       expect((dispatched[0]!.payload as { sender?: string }).sender).toBe("parent_agent");
       expect((panelRound[0]!.payload as { sender?: string }).sender).toBeUndefined();
       await until(() =>
@@ -915,7 +915,7 @@ describe("subagent steering and per-run abort", () => {
           toolCallId: "c_fallback",
         }),
       });
-      const out: OmniMessage[] = [];
+      const out: AmspRecord[] = [];
       for (;;) {
         const res = await gen.next();
         if (res.done) break;
@@ -932,7 +932,7 @@ describe("subagent steering and per-run abort", () => {
   it("revives a released child through the runner's resume and starts its next round", async () => {
     const prompts: string[] = [];
     const resumes: { agentId?: string; sessionId: string }[] = [];
-    const run = async function* ({ prompt }: RunInput): AsyncGenerator<OmniMessage> {
+    const run = async function* ({ prompt }: RunInput): AsyncGenerator<AmspRecord> {
       prompts.push(prompt);
       yield withOrigin(partialText("delta", `ran:${prompt}`), HOP);
     };
@@ -986,7 +986,7 @@ describe("subagent steering and per-run abort", () => {
   it("input_subagent revives a released id through the runner (a subagent is never destroyed)", async () => {
     const prompts: string[] = [];
     const resumes: { agentId?: string; sessionId: string }[] = [];
-    const run = async function* ({ prompt }: RunInput): AsyncGenerator<OmniMessage> {
+    const run = async function* ({ prompt }: RunInput): AsyncGenerator<AmspRecord> {
       prompts.push(prompt);
       yield withOrigin(assistantText(`ran:${prompt}`), HOP);
     };
@@ -1044,7 +1044,7 @@ describe("subagent steering and per-run abort", () => {
     const session = new ManagedSubagentSession({
       sessionId: HOP,
       // eslint-disable-next-line require-yield
-      async *run({ signal }): AsyncGenerator<OmniMessage> {
+      async *run({ signal }): AsyncGenerator<AmspRecord> {
         await aborted(signal);
       },
       dispose() {},

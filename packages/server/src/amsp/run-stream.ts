@@ -1,32 +1,33 @@
 /**
- * The run handler: `POST /api/amsp/v1/agents/:projectId/:agentId/runs` is the run and its
- * stream.
+ * The run handler: `POST /api/amsp/v1/agents/:projectId/:agentId/runs` is one run and its stream
+ * (the API tab's Try it runs the same handler, try-route.ts).
  *
  * 1. The gate (gate.ts) has resolved the Agent and the key before anything here runs.
- * 2. The body is read and validated: `input` (a string, or text / image_url items) becomes the
- *    run's input messages — texts first, then images, as the composer submits them.
+ * 2. The body is read and validated: `input` becomes the run's user messages (run-input.ts).
  * 3. The Session: without `session_id` a new one is created — source `api`, client `api`, the
- *    Agent's API model, thinking, workspace and approval defaults, and the server's sandbox; with one, it must be an API Session of this Agent. An Agent already running
- *    its configured concurrency limit of Sessions is refused 429 before a run would add one more.
+ *    Agent's API model, thinking, workspace and approval defaults, and the server's sandbox;
+ *    with one, it must be an API Session of this Agent. A busy Session (409) and an Agent at its
+ *    limit of running Sessions (429) are refused before anything starts (admission.ts).
  * 4. The handler subscribes to the Session's channel BEFORE the Task starts, so nothing of the
- *    run can be published unseen; a busy Session is refused (409) before admission, with
- *    `startTask` checking again before starting and nothing streamed on refusal.
- * 5. The stream: `run.started`, then every channel event through the translator, a
- *    `: keep-alive` comment after KEEPALIVE_MS of silence, and `run.done` — always the last
- *    event, a server failure included — followed by `data: [DONE]`.
+ *    run can be published unseen; a start that fails answers JSON, and nothing is streamed.
+ * 5. The stream is AMSP's run stream: `event: ping` at once and every 20 s, the channel's
+ *    records from this run's first main-Session record on — the Session's `session_meta` on its
+ *    first message, its `task_begin` otherwise — each with its `id:`, and `data: [DONE]` when the
+ *    run is over: when the Session's state goes back to idle. The Web App's server events on the
+ *    same channel are never written. No frame names the Session: a new one is named by that
+ *    first `session_meta`, a continued one by the `session_id` the caller sent.
+ *
+ * Nothing in the stream says how the run went; its records do. A run the server could not finish
+ * leaves its last `task_begin` unclosed before `[DONE]` (the manager records the failure).
  *
  * Disconnecting aborts the run: a run nobody is reading would only spend the Project's tokens,
- * and an approval asked of a caller that went away would never be answered. A server failure
- * that ends the stream aborts it for the same reason.
+ * and an approval asked of a caller that went away would never be answered.
  */
-import { imageUrlMessage, isValidId, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
-import type { AmspEvent, RunStarted } from "@prismshadow/amsp";
+import { isValidId } from "@prismshadow/penguin-core";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { Channels, Log } from "../hmr/capabilities.js";
-import { assertWorkspaceAllowed } from "../services/workspace-guard.js";
-import { HttpError } from "../http/errors.js";
+import { HEARTBEAT_MS } from "../http/sse.js";
 import { badRequest, readJson } from "../http/validate.js";
 import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
@@ -35,18 +36,13 @@ import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { ChannelEvent } from "../runtime/channel.js";
 import type { SessionManager } from "../runtime/session-manager.js";
+import { toAttachmentLimits } from "../services/attachment-limits.js";
 import type { SessionService } from "../services/session-service.js";
-import {
-  INLINE_IMAGE_MAX_BYTES,
-  INLINE_IMAGE_MAX_MB,
-  toAttachmentLimits,
-} from "../services/attachment-limits.js";
+import { assertWorkspaceAllowed } from "../services/workspace-guard.js";
+import { reserveStart } from "./admission.js";
 import { sessionNotFound } from "./gate.js";
 import type { AmspEnv } from "./gate.js";
-import { AmspTranslator } from "./translate.js";
-
-/** Silence after which a `: keep-alive` comment is written (MMSP's value). */
-export const KEEPALIVE_MS = 15_000;
+import { parseRunInput } from "./run-input.js";
 
 /** What the run handler reaches: the seams the messaging bridge and the web routes use. */
 export interface RunStreamDeps {
@@ -59,87 +55,6 @@ export interface RunStreamDeps {
   errors: Errors;
   log: Log;
   now: () => Date;
-}
-
-/**
- * A base64 `data:` URL of an image: an `image/*` MIME, the `;base64,` marker, a non-empty body.
- * The same shape the tasks route admits, narrowed to images: the API takes no files in v1.
- */
-const IMAGE_DATA_URL = /^data:image\/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+$/;
-
-/** Decoded size of a base64 data URL, from its length (padding and whitespace carry no bytes). */
-function dataUrlBytes(url: string): number {
-  const payload = url.slice(url.indexOf(",") + 1).replace(/[=\s]+/g, "");
-  return Math.floor((payload.length * 3) / 4);
-}
-
-/**
- * `input` as the run's messages: a string is one user text; items are texts and images, texts
- * first. At least one non-empty text or one image. A `data:` image must be an image MIME within
- * the inline-image cap, and all of them together within the admin's per-message total; an
- * http(s) URL is passed on untouched (the server does not fetch it).
- */
-export function parseRunInput(input: unknown, totalImageBytes: number): OmniMessage[] {
-  const empty = () =>
-    badRequest("input must be a non-empty string, or an array of text and image_url items.");
-  if (typeof input === "string") {
-    if (input.trim() === "") throw empty();
-    return [userText(input)];
-  }
-  if (!Array.isArray(input) || input.length === 0) throw empty();
-  const texts: OmniMessage[] = [];
-  const images: OmniMessage[] = [];
-  let imageBytes = 0;
-  input.forEach((item: unknown, i) => {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) {
-      throw badRequest(`input[${i}] must be an object.`);
-    }
-    const part = item as Record<string, unknown>;
-    if (part.type === "text") {
-      if (typeof part.text !== "string" || part.text.trim() === "") {
-        throw badRequest(`input[${i}].text must be a non-empty string.`);
-      }
-      texts.push(userText(part.text));
-      return;
-    }
-    if (part.type === "image_url") {
-      const url = part.image_url;
-      if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://"))) {
-        images.push(imageUrlMessage(url));
-        return;
-      }
-      if (typeof url !== "string" || !url.startsWith("data:image/")) {
-        throw badRequest(
-          `input[${i}].image_url must be an http(s) URL or a base64 data URL of an image (data:image/<type>;base64,<bytes>).`,
-        );
-      }
-      // Sized before it is pattern-checked: an oversized body is refused without a scan.
-      const bytes = dataUrlBytes(url);
-      if (bytes > INLINE_IMAGE_MAX_BYTES) {
-        throw badRequest(
-          `input[${i}].image_url exceeds the ${INLINE_IMAGE_MAX_MB}MB inline image limit.`,
-        );
-      }
-      if (!IMAGE_DATA_URL.test(url)) {
-        throw badRequest(
-          `input[${i}].image_url must be an http(s) URL or a base64 data URL of an image (data:image/<type>;base64,<bytes>).`,
-        );
-      }
-      imageBytes += bytes;
-      images.push(imageUrlMessage(url));
-      return;
-    }
-    if (part.type === "file") {
-      throw badRequest(`input[${i}]: the Agent API takes no files; send text and image_url items.`);
-    }
-    throw badRequest(`input[${i}].type must be text or image_url.`);
-  });
-  if (imageBytes > totalImageBytes) {
-    throw badRequest(
-      `input's images exceed the ${Math.floor(totalImageBytes / (1024 * 1024))}MB per-message limit.`,
-    );
-  }
-  return [...texts, ...images];
 }
 
 /** A FIFO the channel listener fills and the stream loop drains; `next` answers null once closed. */
@@ -177,76 +92,31 @@ class Inbox<T> {
   }
 }
 
-const tooManyRuns = (limit: number): HttpError =>
-  new HttpError(
-    429,
-    "too_many_runs",
-    `This Agent already has ${limit} conversations running or starting; try again shortly.`,
-    2,
-  );
+const PING = Symbol("ping");
 
-/**
- * Admission includes starts awaiting workspace checks, Session creation or loading. The public
- * and Try-it routes share their manager, so simultaneous requests cannot spend the same slot.
- * Once a reserved Session is running, the manager counts it and the reservation adds nothing.
- */
-interface PendingStart {
-  sessionId: string | undefined;
-}
-const pendingStarts = new WeakMap<RunStreamDeps["manager"], Map<string, Set<PendingStart>>>();
-
-function reserveStart(
-  deps: RunStreamDeps,
-  projectId: string,
-  agentId: string,
-  sessionId: string | undefined,
-  limit: number,
-) {
-  // Decide before awaiting startTask: a busy Session must not become idle during that await
-  // and start a new Task without ever acquiring capacity.
-  if (sessionId !== undefined) {
-    const status = deps.manager.statusOf(sessionId);
-    if (status === "running")
-      throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
-    if (status === "compacting")
-      throw new HttpError(
-        409,
-        "compacting",
-        "This Session is compacting its context; not accepting new input.",
-      );
+/** The run state a `task_state` server event reports; null for any other channel event. */
+function taskState(evt: ChannelEvent): string | null {
+  if (evt.event !== "server_event") return null;
+  try {
+    const data = JSON.parse(evt.data) as { type?: unknown; state?: unknown };
+    return data.type === "task_state" && typeof data.state === "string" ? data.state : null;
+  } catch {
+    return null;
   }
-  const agent = `${projectId}/${agentId}`;
-  let agents = pendingStarts.get(deps.manager);
-  if (!agents) {
-    agents = new Map();
-    pendingStarts.set(deps.manager, agents);
-  }
-  const pending = agents.get(agent) ?? new Set<PendingStart>();
-  if (sessionId !== undefined && [...pending].some((p) => p.sessionId === sessionId)) {
-    throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
-  }
-  const starting = [...pending].filter(
-    (p) => p.sessionId === undefined || deps.manager.statusOf(p.sessionId) === "idle",
-  ).length;
-  if (deps.manager.activeCountForAgent(projectId, agentId) + starting >= limit)
-    throw tooManyRuns(limit);
-  const reservation: PendingStart = { sessionId };
-  pending.add(reservation);
-  agents.set(agent, pending);
-  return {
-    reservation,
-    release() {
-      pending.delete(reservation);
-      if (pending.size === 0) agents.delete(agent);
-    },
-  };
 }
 
-const KEEPALIVE = Symbol("keep-alive");
+/** Whether a record is the main Session's own (no `origin`). */
+function isMainRecord(evt: ChannelEvent): boolean {
+  try {
+    const origin = (JSON.parse(evt.data) as { origin?: unknown }).origin;
+    return !Array.isArray(origin) || origin.length === 0;
+  } catch {
+    return false;
+  }
+}
 
 export async function runStream(c: Context<AmspEnv>, deps: RunStreamDeps): Promise<Response> {
   const { projectId, agentId, keyId } = c.var.amsp;
-  const agent = `${projectId}/${agentId}`;
   const body = await readJson(c);
   const sessionField = body.session_id;
   if (
@@ -275,10 +145,8 @@ export async function runStream(c: Context<AmspEnv>, deps: RunStreamDeps): Promi
     sessionId = row.sessionId;
   }
   const slot = reserveStart(deps, projectId, agentId, sessionId, limit);
-  const inbox = new Inbox<ChannelEvent | typeof KEEPALIVE>();
-  const translator = new AmspTranslator(input, { now: deps.now });
+  const inbox = new Inbox<ChannelEvent | typeof PING>();
   let unsubscribe = () => {};
-  let actual: string;
   try {
     if (sessionId === undefined) {
       const workspace =
@@ -300,106 +168,86 @@ export async function runStream(c: Context<AmspEnv>, deps: RunStreamDeps): Promi
     }
     if (keyId !== null) deps.agentApi.touchKey(keyId, deps.now().toISOString());
     unsubscribe = deps.channels.get(sessionId).subscribe((evt) => inbox.push(evt));
-    ({ sessionId: actual } = await deps.manager.startTask(sessionId, input));
+    await deps.manager.startTask(sessionId, input);
   } catch (err) {
     unsubscribe();
     throw err;
   } finally {
     slot.release();
   }
-  // A Session whose Trace was gone heals into a new id at load: its channel is a fresh one that
-  // received the input before this handler could subscribe. Follow it, unless the run already
-  // ended there unseen.
-  let rebuilt = false;
-  if (actual !== sessionId) {
-    unsubscribe();
-    unsubscribe = deps.channels.get(actual).subscribe((evt) => inbox.push(evt));
-    translator.begin();
-    rebuilt = deps.manager.statusOf(actual) === "idle";
-  }
+  const session = sessionId;
 
   const response = streamSSE(c, async (stream) => {
     let ended = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const arm = (): void => {
-      if (timer !== null) clearTimeout(timer);
-      timer = setTimeout(() => inbox.push(KEEPALIVE), KEEPALIVE_MS);
-    };
-    const write = async (event: AmspEvent): Promise<void> => {
-      await stream.writeSSE({ data: JSON.stringify(event) });
-      arm();
-    };
-    const end = async (event: AmspEvent): Promise<void> => {
-      ended = true;
-      await write(event);
-      await stream.writeSSE({ data: "[DONE]" });
-    };
+    const beat = setInterval(() => inbox.push(PING), HEARTBEAT_MS);
     stream.onAbort(() => {
-      if (!ended) deps.manager.abortTask(actual);
+      if (!ended) deps.manager.abortTask(session);
       inbox.close();
     });
     try {
-      const started: RunStarted = {
-        type: "run.started",
-        at: deps.now().toISOString(),
-        session_id: actual,
-        agent,
-      };
-      await write(started);
-      if (rebuilt) {
-        await end(
-          translator.fail({
-            code: "session_rebuilt",
-            message: `The Session was rebuilt as ${actual} and its run could not be followed.`,
-          }),
-        );
-        return;
-      }
+      await stream.writeSSE({ event: "ping", data: "{}" });
+      /** The run's own `task_state running` has gone by: an idle after it is the run's end. */
+      let running = false;
+      /** This run's first main-Session record has gone by: records are written from it on. */
+      let opened = false;
       for (;;) {
         const item = await inbox.next();
         if (item === null) return;
-        if (item === KEEPALIVE) {
-          await stream.write(": keep-alive\n\n");
-          arm();
+        if (item === PING) {
+          await stream.writeSSE({ event: "ping", data: "{}" });
           continue;
         }
-        for (const event of translator.feed(item)) {
-          if (event.type === "run.done") {
-            await end(event);
+        if (item.event !== undefined) {
+          // A server event: the Web App's, never written here. The run's start and end are
+          // read from it; an idle the Session re-published before this run began is not its end.
+          const state = taskState(item);
+          if (state === "running") running = true;
+          else if (state === "idle" && running) {
+            ended = true;
+            await stream.writeSSE({ data: "[DONE]" });
             return;
           }
-          await write(event);
+          continue;
         }
+        // What the Session published before this run's first record of its own (a background
+        // child's output) belongs to no run of this stream.
+        if (!opened) {
+          if (!isMainRecord(item)) continue;
+          opened = true;
+        }
+        await stream.writeSSE({ id: item.id, data: item.data });
       }
     } catch (err) {
       // A write the caller's departure broke is the disconnect, already handled by onAbort.
       if (stream.aborted) return;
       const message = err instanceof Error ? err.message : String(err);
-      deps.log.line(`[amsp] run stream of ${actual} failed: ${message}`);
+      deps.log.line(`[amsp] run stream of ${session} failed: ${message}`);
       deps.errors.record({
         source: "session",
         err,
-        ctx: { projectId, agentId, sessionId: actual },
+        ctx: { projectId, agentId, sessionId: session },
         code: "amsp_stream_failed",
         kind: "unexpected",
       });
       if (!ended) {
         // Nobody follows the run any more: stop it, as a disconnect would.
-        deps.manager.abortTask(actual);
+        deps.manager.abortTask(session);
+        ended = true;
         try {
-          await end(translator.fail({ code: "internal", message }));
+          await stream.writeSSE({ data: "[DONE]" });
         } catch {
           // Best effort: the connection may be gone as well.
         }
       }
     } finally {
-      if (timer !== null) clearTimeout(timer);
+      clearInterval(beat);
       unsubscribe();
       inbox.close();
     }
   });
   // streamSSE names the bare type; the stream is UTF-8 JSON, and says so.
   response.headers.set("Content-Type", "text/event-stream; charset=utf-8");
+  response.headers.set("Cache-Control", "no-cache");
   response.headers.set("X-Accel-Buffering", "no");
   return response;
 }

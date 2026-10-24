@@ -26,7 +26,7 @@ import {
   sessionMeta,
   taskBegin,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { MessagesResponse } from "../src/api/types.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
@@ -104,7 +104,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     // the streamed connect status — without the latter, a rebuilding page shows a silent
     // blank while a slow MCP server times out.
     const during = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     const texts = during.messages.map((m) => (m.payload as { text?: string }).text);
     expect(texts).toContain("hello mcp");
@@ -131,7 +131,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     // This fake never wrote a Trace, so with the holds gone the appended copies vanish —
     // proving the earlier appends came from the holds, not some other channel.
     const mid = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     expect(mid.messages.map((m) => (m.payload as { text?: string }).text)).not.toContain(
       "hello mcp",
@@ -140,7 +140,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     releaseRequest();
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
     const after = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     expect(after.messages.map((m) => (m.payload as { text?: string }).text)).not.toContain(
       "hello mcp",
@@ -154,7 +154,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     const seen: string[] = [];
     const unsubscribe = t.deps.channels.get(SID).subscribe((evt) => {
       if (evt.event !== undefined) return; // server events ride beside the records
-      const msg = JSON.parse(evt.data) as OmniMessage;
+      const msg = JSON.parse(evt.data) as AmspRecord;
       const p = msg.payload as { type?: string; text?: string };
       seen.push(p.type === "text" ? `text:${p.text}` : (p.type ?? msg.type));
     });
@@ -200,7 +200,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     const seen: string[] = [];
     const unsubscribe = t.deps.channels.get(FIRST).subscribe((evt) => {
       if (evt.event !== undefined) return;
-      const msg = JSON.parse(evt.data) as OmniMessage;
+      const msg = JSON.parse(evt.data) as AmspRecord;
       const p = msg.payload as { type?: string; text?: string };
       seen.push(
         msg.type === "session_meta"
@@ -241,7 +241,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     ]);
 
     const during = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     expect(
       during.messages.filter(
@@ -336,7 +336,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     // Idle after the aborted bootstrap: nothing reached the Trace, so the held input and
     // the aborted connect pair are the only copy a reload can show — they must survive.
     const afterAbort = (await (await api.get(`/api/sessions/${SID2}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     expect(afterAbort.messages.map((m) => (m.payload as { text?: string }).text)).toContain(
       "lost?",
@@ -353,7 +353,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     expect(second.status).toBe(202);
     await waitFor(() => t.deps.manager.pendingBootstrap(SID2).length === 1);
     const during = (await (await api.get(`/api/sessions/${SID2}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     const texts = during.messages.map((m) => (m.payload as { text?: string }).text);
     expect(texts.filter((x) => x === "lost?")).toHaveLength(1);

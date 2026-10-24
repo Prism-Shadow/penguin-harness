@@ -18,7 +18,7 @@
  */
 import type { A2uiActions } from "@prismshadow/penguin-ui";
 import { splitAttachments } from "../../lib/attachments";
-import type { ChatItem } from "../../lib/omni/stream-model";
+import type { ChatItem } from "../../lib/amsp/stream-model";
 import { parseUserMessageBody } from "./user-message-body";
 
 /** The fill of every reply whose blocks do not take input, where picking is disabled anyway. */

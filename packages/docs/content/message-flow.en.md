@@ -3,7 +3,7 @@ title: Message Flow & Ordering
 description: How messages travel between the five actors of a turn, which orderings are guaranteed and which are not, and why stream order differs from context order.
 ---
 
-[The OmniMessage Protocol](/omni-message) defines what messages are. This page explains how they move and in what order they become visible: the delivery paths within a turn, the merge mechanism behind them, and the observable timeline of a turn. It then states which orderings are guaranteed and which are not, and why order on the stream and order in the model context are two different things. Source: `packages/core/src/engine/context-engine.ts`.
+[AMSP Records](/amsp-records) defines what messages are. This page explains how they move and in what order they become visible: the delivery paths within a turn, the merge mechanism behind them, and the observable timeline of a turn. It then states which orderings are guaranteed and which are not, and why order on the stream and order in the model context are two different things. Source: `packages/core/src/engine/context-engine.ts`.
 
 ## Delivery paths within a turn
 

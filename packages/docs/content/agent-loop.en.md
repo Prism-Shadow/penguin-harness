@@ -3,7 +3,7 @@ title: The Agent Loop
 description: How session.run drives Tasks and turns: approval flow, concurrent tool execution, hooks, mid-run steering, automatic reconnect, and compaction.
 ---
 
-The SDK's single execution entry point is `session.run(newMessages, opts?)`. The input is the list of new OmniMessages, called the Prompt. The return value is an async generator that streams [OmniMessage](/omni-message) outputs. One `run` call drives one complete Task, which ends when the model produces a final answer with no tool calls. A [stop hook](#stop-hooks) can ask for more, in which case the same `run` call drives several Tasks in a row.
+The SDK's single execution entry point is `session.run(newMessages, opts?)`. The input is the list of new records, called the Prompt. The return value is an async generator that streams [AMSP records](/amsp-records). One `run` call drives one complete Task, which ends when the model produces a final answer with no tool calls. A [stop hook](#stop-hooks) can ask for more, in which case the same `run` call drives several Tasks in a row.
 
 This page shows the `context_engine`'s overall flow first, then breaks down each stage. The message-level observable timeline and the ordering guarantees are covered on [Message Flow & Ordering](/message-flow). Source: `packages/core/src/engine/context-engine.ts`.
 
@@ -153,8 +153,8 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 The rules:
 
 - Hooks run in registration order after every Task.
-- Every non-empty answer is recorded as one [`hook` event](/omni-message#eventmsg) with the fields `hook`, `name` (the package name), `decision`, `reason` and `output`. The event is streamed and written to the Trace. The injected input is not in the event; it is the user message that follows it.
-- The first `continue` wins. Its input is stamped [`sender: "harness"`](/omni-message#modelmsg-complete-payloads) and yielded onto the stream, and it drives the next Task inside the same `run` call. A plain run never yields its own input; hosts render the injected one from the stream, and the stamp — not the text — is what says the harness sent it. With no `continue`, the call returns.
+- Every non-empty answer is recorded as one [`hook` event](/amsp-records#eventmsg) with the fields `hook`, `name` (the package name), `decision`, `reason` and `output`. The event is streamed and written to the Trace. The injected input is not in the event; it is the user message that follows it.
+- The first `continue` wins. Its input is stamped [`sender: "harness"`](/amsp-records#modelmsg-complete-payloads) and yielded onto the stream, and it drives the next Task inside the same `run` call. A plain run never yields its own input; hosts render the injected one from the stream, and the stamp — not the text — is what says the harness sent it. With no `continue`, the call returns.
 - After a cutoff, or once the signal is aborted, a `continue` is recorded but never run. A user's interruption outranks every hook.
 - A `subagent` answer makes the Session spawn a detached background child Session. It runs the same agent, or the `agent_id` from the answer, and its first user message is the prompt. The child inherits the run's approval callback. Its stream is dropped; its own Trace is the record. Its Session id is recorded on the event as `output.session_id`.
 - A hook that fails — it crashes, prints something that is not JSON, or times out — is recorded with the error as its `reason` and treated as having no opinion. It never takes the run down.
@@ -200,7 +200,7 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 
 `prompt` is the user's text with its leading marker blocks, such as `[use_skills]`, stripped; several texts are joined with newlines. `trace_path` is absent for a Session without a Trace.
 
-Each non-empty `context` becomes a user text stamped [`sender: "harness"`](/omni-message#modelmsg-complete-payloads), right behind the user's own message and in hook order. It is yielded onto the stream, written to the Trace right behind the Prompt, and sent with the Prompt in the Task's first request; hosts render it as a compact collapsed card. That message is the record: a hook that succeeds leaves no `hook` event. A hook that fails — it exits non-zero, prints something that is not JSON, times out, or throws — is recorded at the same position as a `hook` event with `hook: "user_prompt"` and the error as its `reason`, and treated as having nothing to add. It never takes the run down.
+Each non-empty `context` becomes a user text stamped [`sender: "harness"`](/amsp-records#modelmsg-complete-payloads), right behind the user's own message and in hook order. It is yielded onto the stream, written to the Trace right behind the Prompt, and sent with the Prompt in the Task's first request; hosts render it as a compact collapsed card. That message is the record: a hook that succeeds leaves no `hook` event. A hook that fails — it exits non-zero, prints something that is not JSON, times out, or throws — is recorded at the same position as a `hook` event with `hook: "user_prompt"` and the error as its `reason`, and treated as having nothing to add. It never takes the run down.
 
 The scripts run on the hot path of every prompt. Keep them fast, set a tight `timeout` in the manifest, and keep the context short: the model reads it with every prompt.
 
@@ -210,7 +210,7 @@ The scripts run on the hot path of every prompt. Keep them fast, set a tight `ti
 
 ## Mid-run steering
 
-While a Task is running, the host can queue a user message with `session.steer(input)`. The input is a list of OmniMessages, the same shape `run` takes a Prompt in. Steering does not interrupt the loop. At the next input assembly, the engine delivers the queued input as part of that turn.
+While a Task is running, the host can queue a user message with `session.steer(input)`. The input is a list of records, the same shape `run` takes a Prompt in. Steering does not interrupt the loop. At the next input assembly, the engine delivers the queued input as part of that turn.
 
 ### How a steering message is delivered
 

@@ -1908,7 +1908,7 @@ export const en: Strings = {
     apiReadDocs: "Read the documentation",
     apiCopyAgentPrompt: "Copy prompt for Agent",
     apiAgentPrompt: (docsUrl: string, baseUrl: string, agentRef: string) =>
-      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call this Agent.\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\nUse the @prismshadow/amsp SDK: stream() for streamed events and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
+      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call this Agent.\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\nUse the @prismshadow/amsp SDK: stream() for the streamed records and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
     apiSessionSettings: "New session settings",
     apiSessionSettingsHint:
       "Applies to new API sessions. An unset model follows the Project default; an unset thinking level follows the Agent configuration; an unset workspace creates a temporary workspace.",
@@ -1964,7 +1964,8 @@ export const en: Strings = {
     apiTryCacheRead: "Cache read",
     apiTryCacheWrite: "Cache write",
     apiTryElapsed: "Elapsed",
-    apiTryStreamBroken: "The stream ended before run.done.",
+    apiTryStreamBroken: "The stream ended before data: [DONE].",
+    apiTryUnfinished: "The run did not reach its end: its last task_begin was never closed.",
   },
 
   models: {

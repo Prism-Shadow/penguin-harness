@@ -41,7 +41,7 @@ import {
   tracesDir,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
+import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import type {
   MessagesResponse,
   ProjectCreateResponse,
@@ -59,7 +59,7 @@ function counts(total: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: total, total };
 }
 
-function at(timestamp: string, message: OmniMessage): OmniMessage {
+function at(timestamp: string, message: AmspRecord): AmspRecord {
   return { ...message, timestamp };
 }
 

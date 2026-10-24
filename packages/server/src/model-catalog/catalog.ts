@@ -2157,6 +2157,22 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // Moonshot's Kimi K3.1 Pro (public catalog, read 2026-10-24): text, image and video input
+    // over a 1,000,000-token window, at CNY 13 input / 68 output / 1.3 cache hit, undiscounted
+    // and the same on both protocols the portal prices it on. Its supported_protocols are
+    // openai:chat-completions and anthropic:messages, so the openai-chat pin is the group's
+    // convention rather than the only shape the id serves; image parts go through this group's
+    // openai-chat client.
+    modelId: "kimi-k3.1-pro",
+    displayName: "Kimi K3.1 Pro",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(1.3, 13, 68),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
     // inclusionAI's Ling-3.0-flash: text only, with the 256,000-token window the listing gives
     // (the model's native length; its description says it extends to 1M). 65% off a CNY 0.4
     // input / 1.2 output / 0.08 cache hit list, so the gateway bills 0.14 / 0.42 / 0.028.

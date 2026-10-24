@@ -34,7 +34,7 @@ import type { FsPort } from "../src/environment/tools/fs-port.js";
 import { EDIT_FILE_NAME } from "../src/environment/tools/edit-file.js";
 import { READ_FILE_NAME } from "../src/environment/tools/read-file.js";
 import { WRITE_FILE_NAME } from "../src/environment/tools/write-file.js";
-import { toolCall } from "../src/omnimessage/index.js";
+import { toolCall } from "@prismshadow/amsp/records";
 import type { ConfinedSpawn, SpawnConfiner, ToolConfig } from "../src/interfaces/index.js";
 
 let tmp: string;

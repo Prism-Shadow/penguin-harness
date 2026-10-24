@@ -293,13 +293,13 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     subtitle: "When an agent improves, its files change and the model does not.",
     root: "PenguinHarness",
     diagramLabel:
-      "PenguinHarness branches into OmniMessage, the Penguin SDK and Agent State, each leading to one card below",
+      "PenguinHarness branches into AMSP, the Penguin SDK and Agent State, each leading to one card below",
     items: [
       {
-        concept: "OmniMessage",
+        concept: "AMSP",
         title: "Simplest is the best",
-        desc: "The engine streams OmniMessage, the Trace stores it and the Web App renders it, with no second format in between. Models are reached over MMSP. The Agent API streams each run as AMSP.",
-        link: "The OmniMessage protocol",
+        desc: "The engine streams AMSP records, the Trace stores them, the Web App renders them and the Agent API serves them to your programs, with no second format in between. Models are reached over MMSP.",
+        link: "AMSP records",
       },
       {
         concept: "Penguin SDK",

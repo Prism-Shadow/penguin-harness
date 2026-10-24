@@ -36,8 +36,8 @@ import {
   markerBlock,
   MARKER_TAGS,
   userSteeringText,
-} from "@prismshadow/penguin-core/markers";
-import type { BackgroundTaskDone } from "@prismshadow/penguin-core/markers";
+} from "@prismshadow/amsp/markers";
+import type { BackgroundTaskDone } from "@prismshadow/amsp/markers";
 import { IDS } from "./ids";
 import {
   abortEvent,
@@ -55,7 +55,7 @@ import {
   userText,
 } from "./transcripts";
 import type { ModelRef, Transcript } from "./transcripts";
-import type { Lang, OmniMessage } from "./types";
+import type { Lang, AmspRecord } from "./types";
 
 const DAY = 86_400_000;
 const MIN = 60_000;
@@ -120,7 +120,7 @@ function backgroundNotice(
   done: BackgroundTaskDone,
   cmd: string,
   output: string,
-): OmniMessage {
+): AmspRecord {
   const verb = done.status === "completed" ? "finished" : "failed";
   const head = `Background command ${verb}: \`${cmd}\` (process_id ${done.id}) — ${done.detail}`;
   return userText(ms, buildBackgroundTaskDoneMessage(done, `${head}\n\n${output}`), "harness");
@@ -170,7 +170,7 @@ function goalRound(objective: string, round: number, tokensUsed: number): string
 }
 
 /** The goal plugin's stop-hook record: its one line for people and its scalar output. */
-function goalHook(ms: number, round: number, tokensUsed: number, done: boolean): OmniMessage {
+function goalHook(ms: number, round: number, tokensUsed: number, done: boolean): AmspRecord {
   const tokens = `tokens ${tokensUsed} / ${GOAL_BUDGET}`;
   return event(ms, {
     type: "hook",
@@ -210,7 +210,7 @@ export function harnessTranscript(lang: Lang, now: number, ref: ModelRef): Trans
   );
   const checkLinks = (description: string) => ({ cmd: LINKS.cmd, description });
 
-  const history: OmniMessage[] = [
+  const history: AmspRecord[] = [
     // ---- The handoff, the prompt and the first run's bootstrap -------------------------------
     meta(a(0), id, ref, IDS.workspace),
     taskBegin(a(0)),
@@ -611,7 +611,7 @@ export function orgDeskTranscript(lang: Lang, now: number, ref: ModelRef): Trans
   const { startedAt } = orgDeskTimeline(now);
   const s = (sec: number) => startedAt + sec * 1000;
   const weekAgo = iso(startedAt - 7 * DAY).slice(0, 10);
-  const sessionMeta: OmniMessage = {
+  const sessionMeta: AmspRecord = {
     timestamp: iso(s(0)),
     type: "session_meta",
     payload: {

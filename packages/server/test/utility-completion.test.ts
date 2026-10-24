@@ -19,7 +19,7 @@ import {
   tokenUsage,
   emptyTokenCounts,
 } from "@prismshadow/penguin-core";
-import type { LLMOutcome, OmniMessage } from "@prismshadow/penguin-core";
+import type { LLMOutcome, AmspRecord } from "@prismshadow/penguin-core";
 import {
   ProjectConfigService,
   collectUtilityCompletion,
@@ -29,9 +29,9 @@ import { makeTempRoot } from "./helpers.js";
 
 /** A stream shaped the way the real translator shapes one: partial fragments, then the complete backfill. */
 async function* streamOf(
-  messages: OmniMessage[],
+  messages: AmspRecord[],
   outcome: LLMOutcome,
-): AsyncGenerator<OmniMessage, LLMOutcome> {
+): AsyncGenerator<AmspRecord, LLMOutcome> {
   for (const m of messages) yield m;
   return outcome;
 }

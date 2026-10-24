@@ -486,7 +486,7 @@ for (const project of projects) {
     if (!symbol) return null;
     const name = symbol.getName();
     if (name === "__type" || name === "__object" || name.startsWith("__")) return null;
-    // Instantiated generics (OmniMessage<OmniPayload>) are named by their instantiation.
+    // Instantiated generics (AmspRecord<AmspPayload>) are named by their instantiation.
     const args = alias ? type.aliasTypeArguments : checker.getTypeArguments?.(type);
     const decl = symbol.declarations?.[0];
     if (!decl) return null;

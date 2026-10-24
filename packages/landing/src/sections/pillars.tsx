@@ -1,6 +1,6 @@
 /**
  * What PenguinHarness is made of, as a radiating diagram: PenguinHarness fans out into
- * OmniMessage / Penguin SDK / Agent State, and each concept drops into the card under it that
+ * AMSP / Penguin SDK / Agent State, and each concept drops into the card under it that
  * says what it is and links to its docs page. Arrow paths carry slow-moving dots (SMIL
  * animateMotion). The diagram is hidden on small screens, where the three cards stack.
  */
@@ -11,7 +11,7 @@ import { Section } from "../components/section";
 import { ArrowRightIcon } from "../components/icons";
 
 /** Docs page per card, in the order of `S.pillars.items`. */
-const DOCS_PAGES = ["omni-message", "quickstart-sdk", "configuration"];
+const DOCS_PAGES = ["amsp-records", "quickstart-sdk", "configuration"];
 
 /**
  * Concept chip centers in viewBox units. The cards below sit in a grid of the same width with a

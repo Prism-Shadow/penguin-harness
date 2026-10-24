@@ -3,22 +3,17 @@
  * frontend SPA (single source of truth).
  *
  * These field definitions are authoritative for the Web API contract. Conventions:
- *   - DTO fields use camelCase; OmniMessage keeps the core protocol as-is (snake_case shell),
+ *   - DTO fields use camelCase; an AMSP record keeps its own shape as-is (snake_case envelope),
  *     no conversion;
  *   - This file holds only types, no implementation; exposed to the frontend via package
  *     exports `"./api"` for type-only import;
- *   - Types are taken only from core's pure subpaths (omnimessage / interfaces), so the
+ *   - Types are taken only from `@prismshadow/amsp` and core's pure `interfaces` subpath, so the
  *     frontend can safely reference them.
  *
  * Docs: packages/docs/content/server-api.{zh,en}.md (site path /docs/server-api) is the
  * public route/SSE reference for this contract — keep it in sync when changing DTOs.
  */
-import type {
-  CompactionMode,
-  OmniMessage,
-  SessionSource,
-  ToolCallPayload,
-} from "@prismshadow/penguin-core/omnimessage";
+import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
   MCPServerConfig,
   ThinkingLevelName,
@@ -2253,7 +2248,7 @@ export interface TracePosition {
 }
 
 /** History-only transport metadata; `tracePosition` is never persisted into Trace JSONL. */
-export type HistoryMessage = OmniMessage & { tracePosition?: TracePosition };
+export type HistoryMessage = AmspRecord & { tracePosition?: TracePosition };
 
 export interface SessionForkRequest {
   /** The final root assistant text record of the completed Task to keep. */
@@ -2302,7 +2297,7 @@ export interface SessionPatchRequest {
  *   - `cursor`: the Session channel's most recently assigned SSE event id
  *     (`<epoch>-<seq>`); every event published up to and including this id is already
  *     reflected in `fragments`.
- *   - `fragments`: one synthetic `partial_* start` OmniMessage per open streaming
+ *   - `fragments`: one synthetic `partial_* start` AmspRecord per open streaming
  *     fragment, whose payload carries the full accumulated content so far (text/thinking
  *     prefix, tool-call name + accumulated arguments, tool-output prefix + images), with
  *     the original `origin` chain preserved.
@@ -2317,7 +2312,7 @@ export interface SessionPatchRequest {
  */
 export interface MessagesLiveTail {
   cursor: string;
-  fragments: OmniMessage[];
+  fragments: AmspRecord[];
 }
 
 /**
@@ -3250,7 +3245,7 @@ export interface MessagingAccountHoldersResponse {
 }
 
 // ---------------------------------------------------------------------------
-// SSE server events (OmniMessage uses the default event, only server_event here)
+// SSE server events (records use the default event, only server_event here)
 // ---------------------------------------------------------------------------
 
 /** Docs: /docs/server-api § "Streaming (SSE)". */
@@ -3259,7 +3254,7 @@ export type ServerEvent =
    * Approval request escalated to a human: every call under always-ask, plus rw/unknown-permission
    * calls under read-only (see runtime/approvals.ts); pending approvals are resent on reconnect.
    */
-  | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
+  | { type: "approval_request"; toolCall: AmspRecord<ToolCallPayload>; origin?: string[] }
   /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
   | {
       type: "task_state";
@@ -3533,7 +3528,7 @@ export interface SessionContextResponse extends SessionContextParts {
 }
 
 export interface TraceEventsResponse {
-  events: OmniMessage[];
+  events: AmspRecord[];
   offset: number;
   limit: number;
   /**

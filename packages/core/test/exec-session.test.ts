@@ -6,8 +6,8 @@ import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
-import { toolCall } from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import { toolCall } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type {
   ProxyEnvPolicy,
   SpawnConfiner,
@@ -69,7 +69,7 @@ async function runTool(
   args: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<FinalOutput> {
-  let last: OmniMessage | null = null;
+  let last: AmspRecord | null = null;
   for await (const msg of env.executeTool({
     toolCall: toolCall({ name, arguments: JSON.stringify(args), toolCallId: `call_${name}` }),
     ...(signal ? { signal } : {}),

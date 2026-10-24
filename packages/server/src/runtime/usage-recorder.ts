@@ -14,7 +14,7 @@
  * model_id name across different vendors is attributed separately).
  */
 import { isEventMessage, isSessionMeta } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { formatLocalDate } from "../internal/dates.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
@@ -44,7 +44,7 @@ export class UsageRecorder implements UsageRecording {
   @Use() private readonly clock!: Clock;
 
   /** Consume one outgoing message; messages other than session_meta / token_usage are a no-op. */
-  async record(ctx: UsageContext, msg: OmniMessage): Promise<void> {
+  async record(ctx: UsageContext, msg: AmspRecord): Promise<void> {
     if (isSessionMeta(msg) && msg.origin && msg.origin.length > 0) {
       const originSessionId = msg.origin[msg.origin.length - 1]!;
       // Bounded mapping (avoids unbounded growth over a long-running process): re-inserting refreshes insertion order, over the limit evicts the oldest.

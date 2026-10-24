@@ -37,7 +37,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type {
   RequestSpan,
   TraceAnalysisResponse,
@@ -106,7 +106,7 @@ function analysisOf(rounds: number, extra: Partial<TraceAnalysisResponse> = {}) 
 
 /** A round's events as read: one row per event in its range, alternating the user's and the model's texts. */
 function readRound(r: TraceTaskStats): RoundEntry {
-  const rows: OmniMessage[] = [];
+  const rows: AmspRecord[] = [];
   for (let i = r.messageFrom; i <= r.messageTo; i++) {
     rows.push({
       timestamp: iso(r.taskIndex * 60_000 + (i - r.messageFrom) * 1000),

@@ -57,12 +57,12 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 ### 程序是怎样工作的
 
 - `createAgent` 按 id 载入 Agent 的配置：提示词、工具和运行参数。`default_agent` 是初始化数据目录时自带的 Agent。
-- `session.run()` 返回一个异步迭代器，逐条产出 OmniMessage。循环里的判断只挑出模型的完整文本消息；工具调用、思考块等其他内容也在同一个流里。
+- `session.run()` 返回一个异步迭代器，逐条产出 AMSP 记录。循环里的判断只挑出模型的完整文本消息；工具调用、思考块等其他内容也在同一个流里。
 - `approve` 是审批回调，返回 `"allow"` 即全部放行。四种审批模式与工具的对应关系见[工具与审批](/tools)。
 
 ## 下一步
 
 - [接口契约](/interfaces)：`createAgent`、`Session`、LLM 与 Environment 背后的接口契约。
-- [OmniMessage 协议](/omni-message)：`session.run()` 产出的消息结构。
+- [AMSP 记录](/amsp-records)：`session.run()` 产出的消息结构。
 - [Agent 运行循环](/agent-loop)：一个 Task 内部经历了什么。
 - [Session 与 Trace](/sessions-and-traces)：会话与执行记录如何存储。

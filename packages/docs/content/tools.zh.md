@@ -19,7 +19,7 @@ interface BuiltinTool {
   execute(
     args: Record<string, unknown>,
     ctx: ToolExecutionContext,
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }
 
 interface ToolExecutionContext {
@@ -54,7 +54,7 @@ interface ToolResult {
 - 从 schema 复述出来的工具参数；
 - 一次正确调用应有的结构。
 
-只凭这份输出，就足以修好这次调用。消息结构见 [OmniMessage 协议](/omni-message)。
+只凭这份输出，就足以修好这次调用。消息结构见 [AMSP 记录](/amsp-records)。
 
 ### 过长输出恢复
 
@@ -305,7 +305,7 @@ Web App 的子 Agent 面板用**与主对话相同的输入框**（子 Agent 变
 
 用户转入后台的调用，会在自己的结果里说明这一点。这条提示告诉模型不要再过问这项工作（不要轮询、不要输入），转去做别的工作或结束本轮。用户把它转入后台，正是为了让模型别再跟进；完成通知会自行送达。
 
-消息以一个 `[background_task_done]` 标记块开头（包含 kind、id、status 和一行细节），随后是执行的内容和输出，上限 4000 字符：命令取尚未送达输出的末尾；子 Agent 则取它最近一次完整回复的结尾。Web App 把这个块显示为可折叠的通知。消息的 `text` 载荷带有 `sender: "harness"`，在 Trace 中以此与真人输入区分（参见 [OmniMessage](/omni-message)）。
+消息以一个 `[background_task_done]` 标记块开头（包含 kind、id、status 和一行细节），随后是执行的内容和输出，上限 4000 字符：命令取尚未送达输出的末尾；子 Agent 则取它最近一次完整回复的结尾。Web App 把这个块显示为可折叠的通知。消息的 `text` 载荷带有 `sender: "harness"`，在 Trace 中以此与真人输入区分（参见 [AMSP 记录](/amsp-records)）。
 
 报告何时送达取决于 Session 的状态：
 
@@ -345,7 +345,7 @@ Web App 的子 Agent 面板用**与主对话相同的输入框**（子 Agent 变
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | 入口 | 行为 |
@@ -447,7 +447,7 @@ tools:
 ### 连接与工具发现
 
 - 连接是**惰性**的。创建 Session 立即返回；第一次 `run()` 会并行连接所有 Server，并一次性完成工具发现。
-- 这段等待以一对 `mcp_connect_begin` / `mcp_connect_end` 事件流式发出：前端据此显示「连接中」状态，结束事件携带总体状态和每个 Server 的结果。完整的工具定义随后以 `tool_list_ready` 事件发出（见 [OmniMessage](/omni-message)）。在 Trace 中，这三个事件都落在这次运行的输入之后，属于新的一轮。
+- 这段等待以一对 `mcp_connect_begin` / `mcp_connect_end` 事件流式发出：前端据此显示「连接中」状态，结束事件携带总体状态和每个 Server 的结果。完整的工具定义随后以 `tool_list_ready` 事件发出（见 [AMSP 记录](/amsp-records)）。在 Trace 中，这三个事件都落在这次运行的输入之后，属于新的一轮。
 - 连接期间中断会**取消**这次尝试，下一次 `run()` 会重新连接。
 - 发现的工具是模型上下文的一份快照：`tools/list_changed` 通知一律忽略。压缩开启下一个上下文时，配置条目未变的 Server 保留现有连接和工具，条目引用的 Vault 值也算条目的一部分；已移除或已变更的 Server 会断开连接，新增、变更或此前连接失败的 Server 会重新连接。连接事件对只在有 Server 需要连接时才出现，而 `tool_list_ready` 总是会发出（见[上下文压缩](/agent-loop)）。
 - Server 连不上或条目无效时，只会在 stderr 上输出一条警告并跳过。**Session 绝不会因此阻塞。** 按「待设置」或「需登录」跳过的 Server 从不会被连接，它的连接结果是一次失败，错误码为 `mcp_needs_setup` 或 `mcp_sign_in_required`。

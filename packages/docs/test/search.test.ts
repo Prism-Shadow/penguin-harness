@@ -162,16 +162,16 @@ describe("docs search", () => {
     expect(searchRecords(records, "partial_tool_call_output")).toHaveLength(1);
   });
 
-  it("finds identifier headings from the real OmniMessage documentation", () => {
+  it("finds identifier headings from the real AMSP records documentation", () => {
     for (const lang of ["en", "zh"] as const) {
       const { meta, body } = parseFrontmatter(
-        readFileSync(join(contentDir, `omni-message.${lang}.md`), "utf8"),
+        readFileSync(join(contentDir, `amsp-records.${lang}.md`), "utf8"),
       );
       const records = buildSearchRecords([
         {
-          slug: "omni-message",
+          slug: "amsp-records",
           lang,
-          title: meta.title ?? "OmniMessage",
+          title: meta.title ?? "AMSP Records",
           description: meta.description ?? "",
           body,
         },

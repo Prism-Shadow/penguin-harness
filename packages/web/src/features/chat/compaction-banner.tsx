@@ -56,8 +56,8 @@ import {
 import type { ActivityGroupRow } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import type { CompactionItem } from "../../lib/omni/stream-model";
-import { compactionResultVisible, compactionSummaryText } from "../../lib/omni/compaction-summary";
+import type { CompactionItem } from "../../lib/amsp/stream-model";
+import { compactionResultVisible, compactionSummaryText } from "../../lib/amsp/compaction-summary";
 
 /**
  * One body section: the thinking block's row (status icon + label + wall time + chevron) over

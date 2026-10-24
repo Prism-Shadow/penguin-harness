@@ -10,7 +10,7 @@
  * panel, and the file/preview surfaces a tool card draws. Searching what is on screen answers
  * all of them with one implementation, and it makes a hit *by construction* something that can
  * be shown and scrolled to. The price is stated plainly in the UI: only what is loaded can be
- * found — the transcript keeps a window (see lib/omni/stream-controller.ts), and a region that
+ * found — the transcript keeps a window (see lib/amsp/stream-controller.ts), and a region that
  * knows about more content says so with `data-find-more`, which is what the "load earlier
  * messages and keep searching" row is built on.
  *

@@ -17,7 +17,7 @@ Core's Session now writes a `task_begin` / `task_end` pair around every Task, to
 - The Session writes them through its own Trace sink, so a Task record never opens a new Trace file. When a Task ends on a completed compaction, its `task_end` and the next Task's `task_begin` land behind the `compaction_end` in the old file, and the next context's first message opens the new one.
 - Resume and the server's context composition decide whether a file was closed by a compaction from its last record that is not a Task record. A restart after such a Task still opens the next context with the pending `[context_summary]`.
 - Core exports the builders `taskBegin` and `taskEnd` and the readers `isTaskRecord`, `isTaskBegin` and `lastNonTaskRecord`.
-- The pair is the second stated exception to the rule that OmniMessage takes no new record (owner decision 2026-10-22).
+- The pair is the second stated exception to the rule that AMSP takes no new record type (owner decision 2026-10-22).
 
 ## Stream order
 
@@ -30,4 +30,4 @@ Core's Session now writes a `task_begin` / `task_end` pair around every Task, to
 - In the Trace analysis a `task_begin` opens the round its input starts, and no Task record moves a round's end time. A file that ends with Task records alone gains no round.
 - A fork cut stops before the next Task's `task_begin`, so a forked Session never ends on an unclosed Task.
 - The Trace view lists the two records as event rows with their own icons. The gallery's demo Session carries a pair around each of its Tasks.
-- The OmniMessage, Sessions & Traces, Message Flow and AMSP pages document the records and the new echo order.
+- The AMSP Records, Sessions & Traces, Message Flow and AMSP pages document the records and the new echo order.

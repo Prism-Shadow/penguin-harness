@@ -3,7 +3,7 @@ title: Agent 运行循环
 description: session.run 如何驱动 Task 与轮次：审批、工具并发执行、钩子、运行中插话、自动重连与上下文压缩。
 ---
 
-SDK 唯一的执行入口是 `session.run(newMessages, opts?)`：输入是本次新增的 OmniMessage 列表（Prompt），返回值是一个异步生成器，流式产出 [OmniMessage](/omni-message)。一次 `run` 驱动一个完整的 Task，直到模型给出不含工具调用的最终答复；若 [Stop hook](#stop-hook) 要求继续，同一次 `run` 会接连驱动多个 Task。
+SDK 唯一的执行入口是 `session.run(newMessages, opts?)`：输入是本次新增的记录列表（Prompt），返回值是一个异步生成器，流式产出 [AMSP 记录](/amsp-records)。一次 `run` 驱动一个完整的 Task，直到模型给出不含工具调用的最终答复；若 [Stop hook](#stop-hook) 要求继续，同一次 `run` 会接连驱动多个 Task。
 
 本页先给出 `context_engine` 的总体流程，再逐个环节拆解；逐条消息的可见时序与顺序保证见[消息流转与时序](/message-flow)。源码：`packages/core/src/engine/context-engine.ts`。
 
@@ -153,8 +153,8 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 规则如下：
 
 - 每个 Task 结束后，钩子按注册顺序逐个执行。
-- 每条非空回答都会记录为一条 [`hook` 事件](/omni-message#eventmsg)，字段包括 `hook`、`name`（包名）、`decision`、`reason` 和 `output`。事件推到流上并写入 Trace。注入的输入不在事件里，它是紧随其后的那条 user 消息。
-- 第一个 `continue` 生效。它的输入带上 [`sender: "harness"`](/omni-message#modelmsg完整消息) 标记先推到流上，再在同一次 `run` 调用内驱动下一个 Task。普通运行从不产出自己的输入，宿主据流渲染这条注入的输入；说明它来自 harness 的是这一标记，而不是文本内容。无人 `continue` 时调用返回。
+- 每条非空回答都会记录为一条 [`hook` 事件](/amsp-records#eventmsg)，字段包括 `hook`、`name`（包名）、`decision`、`reason` 和 `output`。事件推到流上并写入 Trace。注入的输入不在事件里，它是紧随其后的那条 user 消息。
+- 第一个 `continue` 生效。它的输入带上 [`sender: "harness"`](/amsp-records#modelmsg完整消息) 标记先推到流上，再在同一次 `run` 调用内驱动下一个 Task。普通运行从不产出自己的输入，宿主据流渲染这条注入的输入；说明它来自 harness 的是这一标记，而不是文本内容。无人 `continue` 时调用返回。
 - Task 被掐断之后，或 signal 已中止时，`continue` 只记录、不执行：用户的中断压过一切钩子。
 - `subagent` 回答让 Session 派生一个游离的后台子 Session（同一 Agent，或 `agent_id` 指定的 Agent），以该 prompt 为第一条 user 消息。它继承本次运行的审批回调，输出流被丢弃（它自己的 Trace 才是记录），其 Session id 以 `output.session_id` 记在事件上。
 - 钩子失败（崩溃、打印的不是 JSON，或超时）时，以错误信息为 `reason` 记录，按无意见处理，永远不会拖垮运行。
@@ -200,7 +200,7 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 
 `prompt` 是用户的文本，开头的标记块（例如 `[use_skills]`）已剥离，多条文本以换行相连。没有 Trace 的 Session 不带 `trace_path`。
 
-每个非空的 `context` 成为一条带 [`sender: "harness"`](/omni-message#modelmsg完整消息) 标记的 user 文本，按钩子顺序紧随用户自己的消息：推到流上，紧随 Prompt 写入 Trace，并与 Prompt 一起在 Task 的首个请求中发出；宿主把它渲染为紧凑的折叠卡片。这条消息本身就是记录，成功的钩子不留 `hook` 事件。钩子失败（退出码非零、打印的不是 JSON、超时或抛错）时，在同一位置记为一条 `hook: "user_prompt"` 的 `hook` 事件，以错误信息为 `reason`，并按无意见处理，永远不会拖垮运行。
+每个非空的 `context` 成为一条带 [`sender: "harness"`](/amsp-records#modelmsg完整消息) 标记的 user 文本，按钩子顺序紧随用户自己的消息：推到流上，紧随 Prompt 写入 Trace，并与 Prompt 一起在 Task 的首个请求中发出；宿主把它渲染为紧凑的折叠卡片。这条消息本身就是记录，成功的钩子不留 `hook` 事件。钩子失败（退出码非零、打印的不是 JSON、超时或抛错）时，在同一位置记为一条 `hook: "user_prompt"` 的 `hook` 事件，以错误信息为 `reason`，并按无意见处理，永远不会拖垮运行。
 
 脚本跑在每条 Prompt 的热路径上：要轻快，在清单里设置较小的 `timeout`，context 也要简短，因为每条 Prompt 模型都要读它。
 
@@ -210,7 +210,7 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 
 ## 运行中插话
 
-Task 运行期间，宿主可以用 `session.steer(input)` 排队一条用户消息（`input` 是 OmniMessage 列表，与 `run` 接收 Prompt 的形状一致），而不打断循环。到下一次组装输入时，引擎把它随那一轮送出。
+Task 运行期间，宿主可以用 `session.steer(input)` 排队一条用户消息（`input` 是记录列表，与 `run` 接收 Prompt 的形状一致），而不打断循环。到下一次组装输入时，引擎把它随那一轮送出。
 
 ### 插话消息如何送达
 

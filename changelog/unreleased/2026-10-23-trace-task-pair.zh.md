@@ -17,7 +17,7 @@ core 的 Session 现在在每个 Task 两侧写入一对 `task_begin` / `task_en
 - Session 经自己的 Trace 写入通道写这对记录，因此 Task 记录从不开启新的 Trace 文件。Task 以一次已完成的压缩收尾时，它的 `task_end` 与下一个 Task 的 `task_begin` 落在旧文件的 `compaction_end` 之后，新文件由下一个上下文的第一条消息开启。
 - 恢复与服务端的上下文构成以文件中最后一条非 Task 记录判定该文件是否已被压缩收尾。在这样的 Task 之后重启，下一个上下文仍带着待发的 `[context_summary]` 开启。
 - core 导出构造函数 `taskBegin`、`taskEnd`，以及读取函数 `isTaskRecord`、`isTaskBegin`、`lastNonTaskRecord`。
-- 这对记录是「OmniMessage 不新增记录」规则的第二处明示例外（2026-10-22 用户决定）。
+- 这对记录是「AMSP 不新增记录类型」规则的第二处明示例外（2026-10-22 用户决定）。
 
 ## 流上的顺序
 
@@ -30,4 +30,4 @@ core 的 Session 现在在每个 Task 两侧写入一对 `task_begin` / `task_en
 - Trace 分析中，`task_begin` 归入其输入开启的那一轮，Task 记录不改变任何一轮的结束时间。只以 Task 记录结尾的文件不会多出一轮。
 - fork 的截断点停在下一个 Task 的 `task_begin` 之前，fork 出的 Session 因此不会以未闭合的 Task 结尾。
 - Trace 视图把这两条记录列为事件行，各有图标。Gallery 的演示 Session 在每个 Task 两侧都带上了这对记录。
-- OmniMessage、Session 与 Trace、消息流与顺序、AMSP 四个文档页记录了这对记录与新的回显顺序。
+- AMSP 记录、Session 与 Trace、消息流与顺序、AMSP 四个文档页记录了这对记录与新的回显顺序。

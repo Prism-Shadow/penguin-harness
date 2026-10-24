@@ -282,14 +282,13 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     title: "以文件为中心的极简 Agent 架构",
     subtitle: "Agent 变强时，改的是它的文件，模型保持不变。",
     root: "PenguinHarness",
-    diagramLabel:
-      "PenguinHarness 分出 OmniMessage、Penguin SDK 和 Agent State 三支，各指向下方一张卡片",
+    diagramLabel: "PenguinHarness 分出 AMSP、Penguin SDK 和 Agent State 三支，各指向下方一张卡片",
     items: [
       {
-        concept: "OmniMessage",
+        concept: "AMSP",
         title: "Simplest Is the Best",
-        desc: "引擎流式输出 OmniMessage，Trace 逐条存下，Web App 直接渲染，中间没有第二种格式。模型经 MMSP 接入，Agent API 把每次运行以 AMSP 事件流返回。",
-        link: "OmniMessage 协议",
+        desc: "引擎流式输出 AMSP 记录，Trace 逐条存下，Web App 直接渲染，Agent API 原样交给你的程序，中间没有第二种格式。模型经 MMSP 接入。",
+        link: "AMSP 记录",
       },
       {
         concept: "Penguin SDK",

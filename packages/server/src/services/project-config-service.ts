@@ -83,7 +83,7 @@ import type {
   LLMOutcome,
   ModelRequestContext,
   ModelRef,
-  OmniMessage,
+  AmspRecord,
   ModelEntry,
   ProjectConfig,
   ProviderConnection,
@@ -749,7 +749,7 @@ export function utilityCompletionConfig(
  * terminal outcome is then what has something to say about why.
  */
 export async function collectUtilityCompletion(
-  stream: AsyncGenerator<OmniMessage, LLMOutcome>,
+  stream: AsyncGenerator<AmspRecord, LLMOutcome>,
 ): Promise<UtilityCompletion> {
   let text = "";
   for (;;) {
@@ -2401,7 +2401,7 @@ export class ProjectConfigService implements ProjectConfigStore {
  * or complete backfill) — the probe's "the endpoint really answered" signal. Tool calls and
  * event messages don't count (the probe declares no tools).
  */
-export function isProbeContent(msg: OmniMessage): boolean {
+export function isProbeContent(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; thinking?: string; text?: string };
   if (p.type === "partial_thinking" || p.type === "thinking") return Boolean(p.thinking);
   if (p.type === "partial_text" || p.type === "text") return Boolean(p.text);

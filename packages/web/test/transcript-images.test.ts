@@ -15,7 +15,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MessageStream } from "../src/features/chat/message-stream";
 import type { StreamRenderContext } from "../src/features/chat/message-stream";
-import type { ChatItem } from "../src/lib/omni/stream-model";
+import type { ChatItem } from "../src/lib/amsp/stream-model";
 import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
 import { LocaleProvider } from "../src/state/locale";
 import { stubLocalStorage } from "./helpers/storage";

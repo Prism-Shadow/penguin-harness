@@ -7,7 +7,7 @@
  * retrieval) only requires implementing this interface and registering it with the registry, with
  * no changes needed to Environment.
  */
-import type { OmniMessage, StopReason } from "../../omnimessage/index.js";
+import type { AmspRecord, StopReason } from "@prismshadow/amsp/records";
 import type { ApproveFn, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { ToolFs } from "./fs-port.js";
 
@@ -66,7 +66,7 @@ export interface ToolResult {
 
 /**
  * Builtin tool interface. `execute` receives the already-parsed tool argument object and the
- * execution context, streaming out OmniMessage as an async generator. Contract (a relaxed
+ * execution context, streaming out AmspRecord as an async generator. Contract (a relaxed
  * version — framing and close-out are handled uniformly by Environment):
  *
  * - **Own output**: yielding the **delta** of `partial_tool_call_output` is enough; `start`/`stop`
@@ -98,5 +98,5 @@ export interface BuiltinTool {
   execute(
     args: Record<string, unknown>,
     ctx: ToolExecutionContext,
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }

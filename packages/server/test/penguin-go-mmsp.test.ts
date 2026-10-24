@@ -26,7 +26,7 @@ import {
   toolCallOutput,
   inlineData,
 } from "@prismshadow/penguin-core";
-import type { LLMOutcome, OmniMessage } from "@prismshadow/penguin-core";
+import type { LLMOutcome, AmspRecord } from "@prismshadow/penguin-core";
 import type { ErrorBody, ModelsResponse } from "../src/api/types.js";
 import { PlatformAuthService, platformConnection } from "../src/services/platform-auth-service.js";
 import { migratePenguinGoRoutes } from "../src/services/project-config-migrations.js";
@@ -431,8 +431,8 @@ describe("Penguin Go stored projects", () => {
   });
 });
 
-async function drain(stream: AsyncGenerator<OmniMessage, LLMOutcome>) {
-  const messages: OmniMessage[] = [];
+async function drain(stream: AsyncGenerator<AmspRecord, LLMOutcome>) {
+  const messages: AmspRecord[] = [];
   for (;;) {
     const step = await stream.next();
     if (step.done) return { messages, outcome: step.value };

@@ -5,8 +5,8 @@
  * the published `@prismshadow/penguin-core/interfaces` entry and re-exports all three, so
  * every existing import path keeps working.
  *
- * `context_engine` only handles OmniMessage: the content crossing all three boundaries is
- * OmniMessage and nothing else. What crosses alongside it is the **control plane** —
+ * `context_engine` only handles AMSP records: the content crossing all three boundaries is
+ * records and nothing else. What crosses alongside them is the **control plane** —
  * `signal`, `thinkingLevel`, the `approve` callback, and the LLM's `LLMOutcome` return
  * value — deliberately not message-shaped, because none of it is conversation content.
  * Protocol conversion and concrete implementations are each interface's own responsibility.

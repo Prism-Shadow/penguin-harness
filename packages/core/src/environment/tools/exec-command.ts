@@ -19,8 +19,8 @@
  * Docs: /docs/tools § "Command sessions".
  */
 import path from "node:path";
-import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { DETACHED_TOOL_NOTE_PREFIX } from "../../interfaces/index.js";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
@@ -71,9 +71,9 @@ export function createExecCommandTool(
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal, detachSignal } = ctx;
-      const delta = (output: string): OmniMessage =>
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       if (!manager) {

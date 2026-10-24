@@ -15,7 +15,7 @@
 import { useEffect, useState } from "react";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
-import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
+import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
 import type { ScopeFiles } from "./memory-nav";
 import { scopeKey } from "../../lib/project-scope";
 

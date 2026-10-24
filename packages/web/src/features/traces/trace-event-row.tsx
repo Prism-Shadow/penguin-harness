@@ -25,7 +25,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
 import { S } from "../../lib/strings";
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import { formatTime, humanizeTokens } from "../../lib/format";
 import { stopReasonTone } from "../../lib/stop-reason-tone";
 import { SystemPromptBody } from "./trace-session";
@@ -85,7 +85,7 @@ function TypeIcon({ type }: { type: string }) {
 }
 
 /** One-line summary: pull key info per payload type (truncated to one line). */
-export function summarizeEvent(msg: OmniMessage): string {
+export function summarizeEvent(msg: AmspRecord): string {
   const p = msg.payload as Record<string, unknown> & { type?: string };
   switch (p.type) {
     case undefined:
@@ -172,7 +172,7 @@ export function summarizeEvent(msg: OmniMessage): string {
 }
 
 /** Stop reason (a model message's stop_reason / request_end's status); undefined if absent. */
-function stopReasonOf(msg: OmniMessage): string | undefined {
+function stopReasonOf(msg: AmspRecord): string | undefined {
   const p = msg.payload as { stop_reason?: string; status?: string };
   return p.stop_reason ?? p.status;
 }
@@ -344,7 +344,7 @@ function ToolListReadyBody({ p }: { p: Record<string, unknown> }) {
 }
 
 /** Expanded-area content: rendered per type (no raw JSON dump). */
-function EventBody({ msg }: { msg: OmniMessage }) {
+function EventBody({ msg }: { msg: AmspRecord }) {
   const p = msg.payload as Record<string, unknown> & { type?: string };
   if (msg.type === "session_meta") return <SessionMetaBody p={p} />;
   if (p.type === "tool_list_ready") return <ToolListReadyBody p={p} />;
@@ -422,7 +422,7 @@ export function EventRow({
   onHighlight,
   summary,
 }: {
-  msg: OmniMessage;
+  msg: AmspRecord;
   /** This row's unique identifier (the scroll target for timeline jumps, and also the basis for "only one row lights up"). */
   rowKey: string;
   matched: boolean;

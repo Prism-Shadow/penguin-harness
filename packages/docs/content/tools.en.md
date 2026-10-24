@@ -19,7 +19,7 @@ interface BuiltinTool {
   execute(
     args: Record<string, unknown>,
     ctx: ToolExecutionContext,
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }
 
 interface ToolExecutionContext {
@@ -54,7 +54,7 @@ Tools and the Environment never throw into the engine. Errors become `tool_call_
 - the tool's parameters, restated from its schema;
 - the shape of a correct call.
 
-That is enough to repair the call from the output alone. For message structure, see the [OmniMessage Protocol](/omni-message).
+That is enough to repair the call from the output alone. For message structure, see [AMSP Records](/amsp-records).
 
 ### Recovering oversized output
 
@@ -305,7 +305,7 @@ A task launched with `run_in_background: true`, and a running call the user [mov
 
 A call the user moved to the background says so in its own result. The note tells the model to leave the work alone (no polling, no input) and to move on to other work or end the turn. The user moved it precisely so the model would not follow it up, and the completion arrives on its own.
 
-The message opens with a `[background_task_done]` marker block (kind, id, status and a one-line detail), followed by what ran and the output, capped at 4000 characters: for a command, the tail of its not-yet-delivered output; for a subagent, the end of the child's latest complete reply. The Web App shows the block as a collapsible notice. The message's `text` payload carries `sender: "harness"`, which distinguishes it from human input in the Trace (see [OmniMessage](/omni-message)).
+The message opens with a `[background_task_done]` marker block (kind, id, status and a one-line detail), followed by what ran and the output, capped at 4000 characters: for a command, the tail of its not-yet-delivered output; for a subagent, the end of the child's latest complete reply. The Web App shows the block as a collapsible notice. The message's `text` payload carries `sender: "harness"`, which distinguishes it from human input in the Trace (see [AMSP Records](/amsp-records)).
 
 When the report is delivered depends on the Session:
 
@@ -345,7 +345,7 @@ Every complete `tool_call` gets exactly one approval decision:
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | Surface | Behavior |
@@ -447,7 +447,7 @@ An existing entry that holds a literal `${…}` in a value reads it as a referen
 ### Connection and discovery
 
 - Connecting is **lazy**. Creating a Session returns at once; the first `run()` connects all Servers in parallel and discovers their tools once.
-- The wait streams as one `mcp_connect_begin` / `mcp_connect_end` pair: frontends show a connecting status, and the end event carries the overall status plus per-Server results. The full tool definitions follow as a `tool_list_ready` event (see [OmniMessage](/omni-message)). In the Trace, all three land after the run's input, inside the new turn.
+- The wait streams as one `mcp_connect_begin` / `mcp_connect_end` pair: frontends show a connecting status, and the end event carries the overall status plus per-Server results. The full tool definitions follow as a `tool_list_ready` event (see [AMSP Records](/amsp-records)). In the Trace, all three land after the run's input, inside the new turn.
 - Aborting during the connect **cancels** the attempt, and the next `run()` connects again.
 - The discovered tools are a snapshot for the model context: `tools/list_changed` notifications are ignored. When a compaction opens the next context, a Server whose entry is unchanged keeps its live connection and tools; a Vault value the entry references counts as part of it. Removed or changed Servers are closed, and new, changed or previously failed ones connect again. The connect event pair appears only when some Server needs connecting, while `tool_list_ready` is always emitted (see [Compaction](/agent-loop)).
 - An unreachable Server or an invalid entry only produces a warning on stderr and is skipped. **The Session is never blocked.** A Server skipped as needs setup or sign-in required is never contacted, and its connect result is a failure with the `mcp_needs_setup` or `mcp_sign_in_required` code.

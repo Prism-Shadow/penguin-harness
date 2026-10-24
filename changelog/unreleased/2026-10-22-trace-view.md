@@ -13,7 +13,7 @@ Each `request_begin` record now carries the thinking level that request went out
 
 - `request_begin` gained an optional `thinking_level`: the level the engine sent for that request — the Session's pinned level, else the level the context opened with. Turns and compaction requests both carry it. When no level is sent at all (a subagent whose parent had none), the field is absent.
 - The engine resolves the level once per request and uses the same value for the record and for the request to the model. `LLMInterface` gained an optional `defaultThinkingLevel`, which `GenerativeModel` exposes; requests to the model are byte-identical to before.
-- This is an explicit, user-requested exception to the rule that OmniMessage takes no new fields: `session_meta` does not record the level, and the level can change in the middle of a context.
+- This is an explicit, user-requested exception to the rule that AMSP records take no new fields: `session_meta` does not record the level, and the level can change in the middle of a context.
 - The Trace analysis copies the field onto each request (`RequestSpan.thinkingLevel`). Traces written before this change have no level: nothing is migrated or rewritten, and the view shows no level for them.
 
 ## Trace view

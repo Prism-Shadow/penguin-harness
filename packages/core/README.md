@@ -1,8 +1,8 @@
 # @prismshadow/penguin-core
 
-The PenguinHarness SDK and execution engine: the ReAct loop (`context_engine`), the OmniMessage protocol, the LLM / Environment interface contracts, Agent State and append-only Traces.
+The PenguinHarness SDK and execution engine: the ReAct loop (`context_engine`), the LLM / Environment interface contracts, Agent State and append-only Traces. Its messages are AMSP records, defined in [`@prismshadow/amsp`](https://www.npmjs.com/package/@prismshadow/amsp) and re-exported from this package's root.
 
-The engine speaks only OmniMessage and delegates everything else through two swappable interfaces — `LLMInterface` (models, via the [`@prismshadow/mmsp`](https://www.npmjs.com/package/@prismshadow/mmsp) gateway) and `EnvironmentInterface` (tool execution). The SDK caller is the Human boundary: one entry point, `session.run`, streams the whole loop.
+The engine speaks only AMSP records and delegates everything else through two swappable interfaces — `LLMInterface` (models, via the [`@prismshadow/mmsp`](https://www.npmjs.com/package/@prismshadow/mmsp) gateway) and `EnvironmentInterface` (tool execution). The SDK caller is the Human boundary: one entry point, `session.run`, streams the whole loop.
 
 ```ts
 import { createAgent, isCompleteModelMessage, userText } from "@prismshadow/penguin-core";
@@ -24,7 +24,7 @@ A single `run` drives a complete Task: streaming output, per-call approvals, con
 ## Documentation
 
 - [Architecture](https://penguin.ooo/docs/architecture)
-- [The OmniMessage Protocol](https://penguin.ooo/docs/omni-message)
+- [AMSP Records](https://penguin.ooo/docs/amsp-records)
 - [Core Interfaces](https://penguin.ooo/docs/interfaces)
 - [The Agent Loop](https://penguin.ooo/docs/agent-loop)
 - [Sessions & Traces](https://penguin.ooo/docs/sessions-and-traces)

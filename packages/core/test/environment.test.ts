@@ -9,8 +9,8 @@ import {
   toolCall,
   toolCallOutput,
   withOrigin,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import type { ToolConfig, ToolDefinitionConfig } from "../src/interfaces/index.js";
 
@@ -37,9 +37,9 @@ function makeToolConfig(tool: ToolDefinitionConfig = execTool()): ToolConfig {
   return { customTools: [tool], mcpServers: [] };
 }
 
-/** Collects all OmniMessages produced by an async generator. */
-async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {
-  const out: OmniMessage[] = [];
+/** Collects all records produced by an async generator. */
+async function collect(gen: AsyncGenerator<AmspRecord>): Promise<AmspRecord[]> {
+  const out: AmspRecord[] = [];
   for await (const msg of gen) {
     out.push(msg);
   }
@@ -68,7 +68,7 @@ async function readFileEventually(
   }
 }
 
-function payloadTypes(messages: OmniMessage[]): string[] {
+function payloadTypes(messages: AmspRecord[]): string[] {
   return messages.map((m) => (m.payload as { type?: string }).type ?? "");
 }
 
@@ -620,7 +620,7 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       stderr.push(String(chunk));
       return true;
     });
-    let messages: OmniMessage[];
+    let messages: AmspRecord[];
     try {
       messages = await collect(
         env.executeTool({

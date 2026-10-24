@@ -811,7 +811,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
 - `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，Agent API 的运行新建的 Session 由服务器写入 `"api"`，这两个值客户端都不能发送。`excludeOrg` 用它剔除 `org` 行，Agent API 只延续 `api` 行；见 [Agent API](/agent-api#会话)。Trace 未记录 `source` 的 `"org"` 行（旧版本写下的，或尚未运行过的）读作 `company` 会话。
-- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/omni-message#sessionmeta)），它与用户的归档标记一起决定 Session 的类别。`subagent` 与 `company` 会话无论标记如何都不属于任何类别，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它们移出这一页和所有总数，只有不带这些参数的完整列表才返回它们。其余的会话，用户归档的，或 `source` 为 `api`、`schedule`、`cli`、`workbench` 且用户没有取消归档的，为 `archived`；否则为 `active`。取消归档会写入一个保留标记，之后的运行从不清除它，所以用户取消归档过的程序会话保持 `active`，直到再次被归档。这条规则在每次读取时计算，不改写磁盘上的任何内容；Session 信息中的 `archived` 就是它的结论。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
+- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/amsp-records#sessionmeta)），它与用户的归档标记一起决定 Session 的类别。`subagent` 与 `company` 会话无论标记如何都不属于任何类别，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它们移出这一页和所有总数，只有不带这些参数的完整列表才返回它们。其余的会话，用户归档的，或 `source` 为 `api`、`schedule`、`cli`、`workbench` 且用户没有取消归档的，为 `archived`；否则为 `active`。取消归档会写入一个保留标记，之后的运行从不清除它，所以用户取消归档过的程序会话保持 `active`，直到再次被归档。这条规则在每次读取时计算，不改写磁盘上的任何内容；Session 信息中的 `archived` 就是它的结论。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
 - 创建时 `source` 只接受 `"cli"`，由 `penguin run` 发送；其他来源只由服务器自己写入，省略时创建 `user` 会话。已停用的 `"benchmark"` 仍然接受，按 `"cli"` 处理。
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，系统隐藏的条目（带隐藏属性，如 `AppData`、`NTUSER.DAT`）另带 `hidden: true`，只写盘符如 `D:` 即视为其根目录 `D:\`。请求主目录并带 `places=1` 时，另附选择器左栏所需的两项：`standardFolders`（桌面、文档、下载、图片，按该机器自己的规则取得——Windows 的已知文件夹、Linux 的 XDG 用户目录；读取失败时省略）与 `locations`（Windows 的各盘符、macOS 的各卷、Linux 的根目录及 `/media`、`/run/media`、`/mnt` 下的挂载点，各带 `kind`，有名称时带 `label`）。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
 - `POST /dirs/access` 是桌面端 Workspace 选择器里的**允许访问**。macOS 只替它认定为读取责任方的应用询问桌面、文稿与下载的访问权限，因此由桌面 shell 的主进程把绝对路径 `path` 读一次，响应要等用户作答后才返回。`granted` 表示这次读取是否成功（非 macOS 平台不读取，恒为 `true`）。`packaged` 为 `false` 表示这是从终端启动的开发实例，macOS 把它的读取记在该终端名下。`path` 不是绝对路径时返回 `400` `dir_not_absolute`；服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`；shell 在 120 秒内没有应答时返回 `504` `timeout`。只有桌面应用自己的窗口可以调用，其他会话返回 `403` `desktop_shell_only`。
@@ -863,10 +863,12 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/` | Session 信息 |
 | PATCH | `/` | 更新 Session：`{approvalMode?, sandbox?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | 删除 Session，连同它的 Trace、暂存文件和子 Agent Session |
-| GET | `/messages` | OmniMessage 历史，全量或按 Task 窗口 |
+| GET | `/messages` | 记录历史，全量或按 Task 窗口 |
 | GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
 | POST | `/fork` | 在一条已完成的助手回复之后分叉空闲的 Session：`{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | SSE 事件流；见[流式传输（SSE）](#流式传输sse) |
+| GET | `/amsp` | 该 Session 的 AMSP 流：只有记录和 `ping`，不含 `/stream` 另加的服务器事件 |
+| GET | `/approvals[?wait=]` | 等待决定的工具调用：`{approvals: [{tool_call, origin?}]}` |
 | GET | `/context` | 当前模型上下文的组成，以及压缩将从哪里开始 |
 | GET | `/goal` | 当前 Session 最近一次目标运行 |
 
@@ -876,10 +878,12 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `PATCH /` 带 `archived: true` 归档 Session；带 `archived: false` 取消归档，并让它留在侧边栏：由程序打开的 Session 此后再运行也保持 `active`，直到再次被归档。两者都以 `session_archived` 宣告。`subagent` 与 `company` 会话不在任何列表中，对它们设置 `archived` 返回 `409` `session_not_listed`。运行、恢复、定时任务投递或消息接入都照常作用于已归档的 Session，且不会取消归档。
 - `DELETE /` 先中止运行中的 Task，再移除 Session 的 Trace 文件、暂存文件、索引行和消息渠道绑定。它派生的子 Agent Session（由其 Trace 中的 `subagent` 记录找出）按同样的方式一并删除。每删除一个 Session 都以 `session_deleted` 宣告。
-- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
 - `GET /goal` 返回 `{goal}`：Session 从未跑过目标时为 `null`，否则为 `{objective, status, budget, used, rounds}`。`status` 取值为 `active`、`complete`、`blocked`、`budget_limited` 或 `aborted`，`budget` 为 -1 表示不限制。目标只存活在它的运行期间，所以 Session 已停止运行、目标却仍是 active 时，会报告为 `aborted`。见[目标模式](/goal-mode)。
+- `GET /amsp` 为登录用户或本机 API token 提供 Agent API 的 Session 流，与 `GET /api/amsp/v1/sessions/:sessionId/stream` 是同一个处理器：每条记录带其 `id:`，`event: ping` 立即发出、此后每 20 秒一次。续传所用的 `Last-Event-ID`（或 `lastEventId`）已被挤出缓冲时，不开流，直接以 `409` `resync_required` 作答。它不写任何 `server_event`，没有初始的 `task_state` 快照，也不补发 `approval_request`。见 [Session 流](/amsp#session-流)。
+- `GET /approvals` 是 Agent API 的待决审批资源，与 `GET /api/amsp/v1/sessions/:sessionId/approvals` 是同一个处理器：列出每次调用的 `tool_call` 载荷，子 Agent 的调用另带 `origin`。带 `wait=<秒数>`（限制在 1–60 之间）时，列表为空就挂起，直到有调用进入等待或时间用完；`wait` 不是整数时返回 400。回答经 `POST /approvals/:toolCallId`。见[审批](/amsp#审批)。
 
 ### GET /messages 上的 `live` 字段
 
@@ -887,16 +891,16 @@ Trace 只存储完整的消息，流式的 `partial_*` 消息从不落盘，所�
 
 ```ts
 interface MessagesResponse {
-  messages: (OmniMessage & { tracePosition?: { fileIndex: number; ordinal: number } })[];
+  messages: (AmspRecord & { tracePosition?: { fileIndex: number; ordinal: number } })[];
   live?: {
     // The Session channel's most recently assigned SSE event id (`<epoch>-<seq>`):
     // every event published up to and including this id is already reflected in `fragments`.
     cursor: string;
-    // One synthetic `partial_* start` OmniMessage per open streaming fragment, whose
+    // One synthetic `partial_* start` AmspRecord per open streaming fragment, whose
     // payload carries the full accumulated content so far (text/thinking prefix,
     // tool-call name + accumulated arguments, tool-output prefix + images), with the
     // original `origin` chain preserved (subagent fragments included).
-    fragments: OmniMessage[];
+    fragments: AmspRecord[];
   };
 }
 ```
@@ -905,7 +909,7 @@ interface MessagesResponse {
 
 ### 分叉
 
-`tracePosition` 是历史响应的元数据，不属于持久化的 OmniMessage 信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
+`tracePosition` 是历史响应的元数据，不属于持久化的记录信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
 
 分叉会克隆保留的 Trace 文件，并把源暂存区按新 Session id 拍快照，同时改写系统生成的本地附件标记，因此以后无论删除哪个 Session，分叉都能继续工作。从同一个源 Session 的任意回复创建的分叉，共用一套与界面语言无关的持久标题序号（`Source title (1)`、`Source title (2)`）；删除较早的分叉也不会释放它的序号。源 Session 正在运行或压缩时返回 409。
 
@@ -1324,16 +1328,17 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
+| 每个 Session（AMSP） | `GET /api/sessions/:sessionId/amsp` | 只有 Session 的记录和 `ping`，与 Agent API 提供的相同；见 [Session 流](/amsp#session-流) |
 | 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_archived`、`session_deleted`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated`、公司模式的 `org_*` 事件，以及只发给管理员的 `machines_changed` |
 | 每个 Project 的机器 | `GET /api/projects/:projectId/machines/events` | 每台已连接机器自己的事件，各自带上来源机器的标记，由 hub 每台机器唯一的那次订阅合并而来（**socket hub 内每台机器一条事件流**） |
 
 ### 传输格式
 
-默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见 [OmniMessage 协议](/omni-message)）。名为 `ping` 的事件是心跳（见[投递保证](#投递保证)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
+默认（未命名）的 SSE 事件以单行 JSON 携带原始 AMSP 记录：SDK 产出、Trace 存储的就是这些记录（见 [AMSP 记录](/amsp-records)）。名为 `ping` 的事件是心跳（见[投递保证](#投递保证)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
 
 ```ts
 export type ServerEvent =
-  | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
+  | { type: "approval_request"; toolCall: AmspRecord<ToolCallPayload>; origin?: string[] }
   | {
       type: "task_state";
       state: "idle" | "running" | "compacting";
