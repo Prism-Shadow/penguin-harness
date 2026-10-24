@@ -2158,6 +2158,11 @@ export const en: Strings = {
     fastModeConfirmPreview:
       "Anthropic's fast mode is a limited research preview: until your organization is granted access, requests return a 429 rate-limit error.",
     fastModeBadge: "Fast",
+    promptCache1h: "1-hour cache",
+    promptCache1hHint:
+      "Keep the conversation's cached prefix for one hour instead of five minutes, at a higher cache-write price; coming back after a break reads it instead of paying for it again",
+    promptCache1hUnsupported:
+      "This model cannot carry the one-hour cache — turn it off, or its requests will fail",
     visionBadge: "Vision",
     freeBadge: "Free",
     /**

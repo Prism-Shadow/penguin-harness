@@ -114,6 +114,7 @@ Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-
 | `vision` | 布尔 | `true` | 模型是否接受图像输入 |
 | `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
 | `fast_mode` | 布尔 | 关闭 | 单个模型的快速模式（供应商收取溢价的快速服务档位） |
+| `prompt_cache_1h` | 布尔 | 关闭 | 单个模型的一小时提示缓存（Anthropic 协议更长的缓存保留时间） |
 | `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）。这里记的始终是牌价 |
 | `api_key` | 字符串 | 分组密钥（以能借给该条目为限）；没有时，若解析不出 `base_url` 或解析出的是客户端缺省端点，为客户端自己的环境变量 | 该模型自己的内联凭证 |
 | `base_url` | 字符串 | 分组的；两者都没有时为客户端的缺省端点 | 该模型自己的 base URL |
@@ -123,6 +124,7 @@ Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-
 
 - `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages`、`openai-chat`、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）。Web 对话框能根据 base URL 识别前三种中的哪一种；后两种需手动选择。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。MMSP 的其他客户端类型同样可用：厂商的官方客户端（`openai-official`、`anthropic-official`、`google-official`、`zai-official`、`moonshot-official`、`deepseek-official`、`minimax-official`），以及其余通用客户端（`openai-chat-vllm-adapter`、`openai-embedding`）。`gemini-official` 是 MMSP 0.5.2 之前 `google-official` 的名称，仍然可用，并按原样保留。不设置时，模型 id 路由到它开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）的官方客户端；其他系列的 id 必须设置 `client_type`。
 - `fast_mode`：只持久化 `true`。只有 MMSP 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
+- `prompt_cache_1h`：只持久化 `true`。只有路由到 MMSP `anthropic-official` 客户端的模型会携带它，其他客户端会拒绝携带它的请求。见[模型](/models#一小时提示缓存)。
 - `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
 - `base_url`：新建 Project 时，各网关的端点存在其分组上；预置条目只在与分组不同时才存自己的（OpenCode Go 的 Anthropic Messages 条目、custom 里的 Atria Dawn）。使用模型时不会补上缺少的值：直连厂商的条目没有 base URL，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
 - `api_key`：为空时使用分组密钥，除非条目自己的 `base_url` 与分组的不同 origin（见[分组连接信息](#分组连接信息)）。两者都没有时，只有解析不出 `base_url`、或解析出的是客户端缺省端点时，才使用客户端自己的环境变量（见[供应商凭证变量](#供应商凭证变量)）；其余条目需要自己的或分组的 key。

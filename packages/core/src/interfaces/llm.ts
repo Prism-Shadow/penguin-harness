@@ -62,6 +62,16 @@ export interface GenerativeModelConfig {
    * that as a `fatal` outcome so the engine surfaces it instead of retrying.
    */
   fastMode?: boolean;
+  /**
+   * Per-model one-hour prompt cache (from the model entry's `prompt_cache_1h` annotation): when
+   * true, every request asks the provider to keep its cached prefix for one hour instead of the
+   * default five minutes (MMSP UniConfig `prompt_caching: "enhance"`). Off by default. The
+   * provider bills a one-hour write at twice the base input price (a five-minute write is 1.25×),
+   * while a read is a tenth either way — which is why this is an opt-in annotation rather than
+   * the harness default. Only the Claude client carries it today; a client that rejects it
+   * (MMSP `UnsupportedParameterError`) ends the request as a `fatal` outcome.
+   */
+  promptCache1h?: boolean;
   /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
   thinkingLevel?: ThinkingLevelName;
   /**

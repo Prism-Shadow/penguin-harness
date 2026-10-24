@@ -1,6 +1,6 @@
 ---
 title: Models & Providers
-description: Add models to a Project, set API keys and the default model, and choose thinking levels and fast mode.
+description: Add models to a Project, set API keys and the default model, and choose thinking levels, fast mode and the one-hour prompt cache.
 ---
 
 Each Project has its own model table: the models its conversations can use, grouped by provider, with their credentials, limits, and prices. You manage the table on the **Models** page. An agent is never tied to a model; the model is chosen when a conversation starts.
@@ -9,7 +9,7 @@ Each Project has its own model table: the models its conversations can use, grou
 - To add models, see [Add a model group](#add-a-model-group), [Add a model](#add-a-model), or [Create a model group with AI](#create-a-model-group-with-ai).
 - To give models credentials, see [Set API keys](#set-api-keys) and [Group settings](#group-settings).
 - To choose which model new conversations use, see [Set the default model](#set-the-default-model).
-- To tune requests, see [Thinking levels](#thinking-levels) and [Fast mode](#fast-mode).
+- To tune requests, see [Thinking levels](#thinking-levels), [Fast mode](#fast-mode) and [One-hour prompt cache](#one-hour-prompt-cache).
 - For the full list of built-in providers and the file format, see [Built-in provider groups](#built-in-provider-groups) and [The per-Project model table](#the-per-project-model-table).
 
 ## The Models page
@@ -111,6 +111,7 @@ All of the group's models, their API keys and the group's settings are removed. 
    - **Cache read price**, **Cache write price**, and **Output price**: per million Tokens, in the display currency; they are stored in USD. Fill in all three or none.
    - **Vision support**, if the model accepts images, or **Detect**; see [Detect vision support](#detect-vision-support). New models in **Custom** and in groups you created start with vision off; models you add to **vLLM** start with it on.
    - **Fast mode**; see [Fast mode](#fast-mode).
+   - **1-hour cache**; see [One-hour prompt cache](#one-hour-prompt-cache).
    - **Test connection**; see [Test a connection](#test-a-connection).
 6. Select **Confirm**. If a required field inside **Details** is missing or invalid, for example a **Custom** model with no base URL of its own or its group's, **Confirm** opens **Details** and moves to that field.
 
@@ -133,7 +134,7 @@ Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance**
 
 Select the model's card to open **Model settings**. Change the fields, select **Confirm**, and confirm the save. From the same dialog you can **Test connection**, **Set as default model**, **Set as proxy vision model**, or **Delete model**.
 
-The API key, base URL and protocol stay in view. The context window, **Max output tokens**, prices, **Vision support** and **Fast mode** sit in **Details**, collapsed by default each time the dialog opens. An API key or base URL the model leaves to its group reads "Leave blank to use the group's setting", without the group's value.
+The API key, base URL and protocol stay in view. The context window, **Max output tokens**, prices, **Vision support**, **Fast mode** and **1-hour cache** sit in **Details**, collapsed by default each time the dialog opens. An API key or base URL the model leaves to its group reads "Leave blank to use the group's setting", without the group's value.
 
 Changing **Model ID** or **Group** renames the entry; its credential and its default or proxy vision role move with it. **Delete model** removes the model's configuration and API key.
 
@@ -310,7 +311,7 @@ The proxy vision role is cleared when that model is deleted or its vision is tur
 
 ## Test a connection
 
-In **Model settings**, select **Test connection** (owner only). The test uses what is in the dialog right now, including a key you typed, the base URL, the protocol, and the **Fast mode** switch, so problems show up before you save. The result reads "Connected ({ms} ms)" or "Failed: {msg}".
+In **Model settings**, select **Test connection** (owner only). The test uses what is in the dialog right now, including a key you typed, the base URL, the protocol, the **Fast mode** switch and the **1-hour cache** switch, so problems show up before you save. The result reads "Connected ({ms} ms)" or "Failed: {msg}".
 
 ### Measure speed
 
@@ -347,7 +348,7 @@ A catalog correction to a model the Project already has, such as a new price or 
 
 **Restore defaults**, beside **Add new models** and always available to the owner, gives the Project the model configuration a new Project gets and keeps only the API keys. It asks for confirmation first and cannot be undone.
 
-- The models become the catalog's presets in catalog order, with the catalog's context window, prices, vision flag, protocol and endpoint. Display names, **Max output tokens** and fast mode you set are cleared, and presets you deleted come back.
+- The models become the catalog's presets in catalog order, with the catalog's context window, prices, vision flag, protocol and endpoint. Display names, **Max output tokens**, fast mode and the one-hour cache you set are cleared, and presets you deleted come back.
 - Every model that is not a preset is deleted: the models you added, in any group, and those an earlier version added that the catalog has since dropped, retired rows included. Groups you created are deleted with their settings and key.
 - Built-in groups' settings return to the catalog's base URL and protocol: **Custom**'s base URL is cleared, and **vLLM**'s goes back to `http://127.0.0.1:8000/v1`.
 - Promotions return to the catalog's.
@@ -430,6 +431,46 @@ Two things the switch cannot check for you:
 An entry that stores `fast_mode = true` on a model that cannot serve it keeps its switch in the dialog, marked unsupported, so you can always turn it off.
 
 The connection test sends the dialog's current fast-mode state, so **Test connection** shows a fast-mode rejection before you save. Background requests, such as Session title generation and `read_file`'s proxy vision reads, never use fast mode. Only the conversation's own requests do.
+
+## One-hour prompt cache
+
+Prompt caching makes a conversation's repeated prefix cheap: the provider reads the tools, system prompt and earlier messages from its cache instead of processing them again. By default that cache entry lives for five minutes, counted from the last request that wrote or read it. A conversation you set aside for longer than that starts its next turn from nothing, and pays for the whole prefix again.
+
+The one-hour cache asks the provider for the longer lifetime. It is off by default, and existing configs are not affected.
+
+Turn it on or off per model in one of three ways:
+
+- The **1-hour cache** switch in the model dialog
+- `--prompt-cache-1h` / `--no-prompt-cache-1h` on `penguin config model add`
+- `prompt_cache_1h = true` in the entry
+
+With it on, conversation requests ask for the hour through MMSP's `prompt_caching` setting, which the Anthropic protocol client sends as `cache_control: { type: "ephemeral", ttl: "1h" }`.
+
+### What it changes about the bill
+
+Writing a cache entry is dearer than reading one. As a rule of thumb, on the Anthropic price list:
+
+- a default five-minute write costs 1.25x the base input token price;
+- a one-hour write costs 2x;
+- a cache read costs 0.1x either way.
+
+So the switch trades a dearer write for reads that survive a longer break. It pays for a conversation you come back to after more than five minutes, and costs extra for one that only ever runs within its default lifetime — or for one that never reaches the provider's minimum cacheable prefix at all. Leave it off for a model you use in short, uninterrupted bursts.
+
+> [!NOTE]
+> The two lifetimes are separate caches. The provider does not let a request asking for the hour read a five-minute entry, or the reverse. Switching the annotation on (or off) mid-conversation therefore pays one full write before the new lifetime starts being served.
+
+### Which models carry it
+
+Only MMSP's `anthropic-official` client carries the longer lifetime. It is offered on the switch wherever a model routes to that client — the entry's own `client_type`, else its group's, else the vendor family its `model_id` begins with (`claude-`) — including a Claude model behind your own Anthropic-compatible base URL.
+
+Every other client rejects the setting before any network request: `ant-messages` speaks the same wire protocol but only accepts the plain `enable` value, and the OpenAI, Gemini, MiniMax, GLM, Kimi and DeepSeek clients do not accept it at all. The `mmsp` client forwards it to the MMSP server, whose upstream client decides, so the switch is not offered there.
+
+> [!NOTE]
+> If a request still reaches a client that rejects the setting, MMSP refuses it before any network request. The conversation ends that turn immediately with the provider's message and a pointer to the setting. A rejection that will always repeat is never retried.
+
+An entry that stores `prompt_cache_1h = true` on a model that cannot carry it keeps its switch in the dialog, marked unsupported, so you can always turn it off.
+
+The connection test and the vision probe send the dialog's current state, so **Test connection** shows a rejection before you save. Background requests, such as Session title generation and `read_file`'s proxy vision reads, keep the provider's default lifetime; only the conversation's own requests ask for the hour.
 
 ## Connect a local or self-hosted endpoint
 
@@ -614,6 +655,7 @@ Each `ModelEntry` has these fields:
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
 | `fast_mode` | Optional fast mode (off by default): opts the model's Session requests into the provider's faster serving tier at premium pricing. Only `true` is ever persisted — omitting the field on a Web full-table save clears it. Models without a fast tier reject requests carrying it (see [Fast mode](#fast-mode)) |
+| `prompt_cache_1h` | Optional one-hour prompt cache (off by default): asks the provider to keep the conversation's cache entry for an hour instead of five minutes — a dearer write, reads that survive a longer break. Only `true` is ever persisted — omitting the field on a Web full-table save clears it. Only models routed to MMSP's `anthropic-official` client carry it, and the other clients reject requests carrying it (see [One-hour prompt cache](#one-hour-prompt-cache)) |
 | `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | The model's own key and endpoint, both optional; when blank, the model uses its group's (the key only when it reaches the model's endpoint), then its client's environment variables: the key with no base URL or the client's default endpoint, the base URL with none (see [Set API keys](#set-api-keys)) |
 

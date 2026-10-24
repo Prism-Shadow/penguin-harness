@@ -18,6 +18,8 @@ export {
   isAuthenticationError,
   isFastModeUnsupportedError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
+  isPromptCachingUnsupportedError,
+  PROMPT_CACHE_1H_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
   toolDefinitionsToSchemas,
   buildUniConfig,

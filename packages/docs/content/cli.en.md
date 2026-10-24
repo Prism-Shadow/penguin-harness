@@ -705,6 +705,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 | `--max-tokens <n>` | Maximum output tokens for this model, a positive integer. When set, it overrides the agent's `model.max_tokens`; lower it for small-context models. | The agent's `model.max_tokens` |
 | `--vision` / `--no-vision` | Marks image input as supported or unsupported. | Keeps the current value |
 | `--fast-mode` / `--no-fast-mode` | Turns fast mode (faster output at premium pricing) on or off. | Off; omitting both keeps the current value |
+| `--prompt-cache-1h` / `--no-prompt-cache-1h` | Asks for the one-hour prompt cache (a dearer write, reads that survive a longer break) or turns it off. | Off; omitting both keeps the current value |
 | `--price-cache-read <n>` | Cache-read price, in USD per million tokens. | — |
 | `--price-cache-write <n>` | Cache-write price, in USD per million tokens. | — |
 | `--price-output <n>` | Output price, in USD per million tokens. | — |
@@ -716,11 +717,12 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
 - `penguin-go`'s protocol is fixed to `mmsp`, as on the Models page and its API: any other `--client-type` is refused, unless it is the value the entry or group already stores, and so is `--clear-client-type` on the group.
 - Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
+- So does `--prompt-cache-1h` for a model that does not route to MMSP's `anthropic-official` client: the entry is written and a warning points at `--no-prompt-cache-1h`.
 - In both forms, a field you do not name is left as it is, each set/clear pair is exclusive, and an empty value is refused: remove a value with its `--clear-*` flag.
 
 Without `--model-id`:
 
-- The flags that describe one model — `--context-window`, `--max-tokens`, `--vision`, `--fast-mode`, the `--price-*` flags and `--set-default` — are refused, and nothing is written. So is a call that names no connection field.
+- The flags that describe one model — `--context-window`, `--max-tokens`, `--vision`, `--fast-mode`, `--prompt-cache-1h`, the `--price-*` flags and `--set-default` — are refused, and nothing is written. So is a call that names no connection field.
 - Any group but `penguin-go` takes a protocol: a model's own `client_type` wins over its group's, so the OpenCode Go models keep theirs.
 - The group key reaches only the models that go to the group's endpoint: those with no base URL of their own, or one on the group's origin (scheme, host and port).
 - The command reports how many of the group's models a changed field passes by, because they set their own value or the key does not reach them, and notes a user-defined group that has no models yet.

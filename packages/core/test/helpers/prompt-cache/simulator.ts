@@ -41,7 +41,12 @@
  *     the request's last position. The longest live match across the breakpoints is what the
  *     request reads, and reading refreshes that entry.
  *   - **TTL.** An entry expires {@link DEFAULT_TTL_MS} after it was last written or read; a
- *     read refreshes it. The clock is injected, so a test can advance it and show an expiry.
+ *     read refreshes it. A request that asks for the one-hour lifetime (`cache_control` with
+ *     `ttl: "1h"`, what MMSP's `prompt_caching: "enhance"` sends) writes to and reads from a
+ *     separate cache: the provider keeps the two lifetimes apart, so a five-minute entry is
+ *     not read by an enhanced request and an hour-long entry is not read by a plain one —
+ *     switching the annotation on mid-conversation therefore pays one full write. The clock is
+ *     injected, so a test can advance it and show an expiry.
  *
  * What it is not: a token counter (blocks are estimated at four characters per token, the ratio
  * the harness's own estimator uses for ASCII), a billing model, or a promise about any
@@ -56,6 +61,8 @@ import type { RecordedRequest } from "./recording.js";
 export const DEFAULT_MIN_CACHEABLE_TOKENS = 1024;
 /** Lifetime of an ephemeral cache entry (five minutes, MMSP's default). */
 export const DEFAULT_TTL_MS = 5 * 60 * 1000;
+/** Lifetime of an entry a request asked for explicitly with `cache_control.ttl: "1h"`. */
+export const ENHANCED_TTL_MS = 60 * 60 * 1000;
 /**
  * Positions checked per breakpoint. The documented wording is "up to 20 positions before the
  * breakpoint", which leaves the breakpoint's own position ambiguous; what is encoded here is the
@@ -281,6 +288,24 @@ interface PendingWrite {
   sums: number[];
   /** Prefix lengths this request's breakpoints close, in blocks. */
   offsets: number[];
+  /** Which of the provider's two caches this request reads and writes. */
+  ttl: CacheTtl;
+}
+
+/**
+ * The provider's two ephemeral lifetimes. They are modelled as separate caches, as the provider
+ * keeps them: an entry written for five minutes is not read by a request that asked for an hour,
+ * and an hour-long entry is not read by a plain one. A conversation that switches its annotation
+ * on therefore pays one full write, which is the cost the tests show.
+ */
+type CacheTtl = "5m" | "1h";
+
+const TTL_MS: Record<CacheTtl, number> = { "5m": DEFAULT_TTL_MS, "1h": ENHANCED_TTL_MS };
+
+/** Which cache a request belongs to, read off the breakpoint marker the client sent. */
+function ttlOf(request: RecordedRequest): CacheTtl {
+  const control = request.wireConfig.cache_control as { ttl?: unknown } | undefined;
+  return control?.ttl === "1h" ? "1h" : "5m";
 }
 
 /**
@@ -292,8 +317,11 @@ export class PromptCacheSim {
   private readonly minCacheableTokens: number;
   private readonly breakpoints: BreakpointPolicy;
   private readonly now: () => number;
-  /** Live entries: cumulative prefix hash -> expiry timestamp. */
-  private readonly entries = new Map<string, number>();
+  /** Live entries, one map per lifetime: cache TTL -> cumulative prefix hash -> expiry. */
+  private readonly entries: Record<CacheTtl, Map<string, number>> = {
+    "5m": new Map(),
+    "1h": new Map(),
+  };
   /** Writes staged by `begin`, readable only once `complete` lands them. */
   private readonly pending = new Map<RecordedRequest, PendingWrite>();
 
@@ -315,11 +343,12 @@ export class PromptCacheSim {
     const sums = cumulativeTokens(blocks);
     const total = sums[blocks.length]!;
     const offsets = this.breakpointOffsets(blocks);
+    const ttl = ttlOf(request);
 
-    const matchedBlocks = this.lookup(hashes, ends, offsets);
+    const matchedBlocks = this.lookup(hashes, ends, offsets, ttl);
     const read = sums[matchedBlocks]!;
     const wrote = total >= this.minCacheableTokens;
-    this.pending.set(request, { hashes, sums, offsets });
+    this.pending.set(request, { hashes, sums, offsets, ttl });
 
     const remainder = total - read;
     const creation = wrote ? remainder : 0;
@@ -341,10 +370,11 @@ export class PromptCacheSim {
     const staged = this.pending.get(request);
     if (!staged) throw new Error("PromptCacheSim.complete: the request was never begun");
     this.pending.delete(request);
-    const expiry = this.now() + DEFAULT_TTL_MS;
+    const expired = this.now() + TTL_MS[staged.ttl];
+    const entries = this.entries[staged.ttl];
     for (const offset of staged.offsets) {
       if (staged.sums[offset]! < this.minCacheableTokens) continue;
-      this.entries.set(staged.hashes[offset]!, expiry);
+      entries.set(staged.hashes[offset]!, expired);
     }
   }
 
@@ -376,8 +406,9 @@ export class PromptCacheSim {
    * an explicit breakpoint on the system block still reads at distance zero however many message
    * positions follow it. Reading refreshes the entry that won.
    */
-  private lookup(hashes: string[], ends: number[], offsets: number[]): number {
+  private lookup(hashes: string[], ends: number[], offsets: number[], ttl: CacheTtl): number {
     const now = this.now();
+    const entries = this.entries[ttl];
     let best = 0;
     for (const offset of offsets) {
       const anchor = ends.indexOf(offset);
@@ -387,17 +418,17 @@ export class PromptCacheSim {
         const end = ends[i]!;
         // Positions descend, so nothing left in this window can beat what another already won.
         if (end <= best) break;
-        const expiry = this.entries.get(hashes[end]!);
+        const expiry = entries.get(hashes[end]!);
         if (expiry === undefined) continue;
         if (expiry <= now) {
-          this.entries.delete(hashes[end]!);
+          entries.delete(hashes[end]!);
           continue;
         }
         best = end;
         break;
       }
     }
-    if (best > 0) this.entries.set(hashes[best]!, now + DEFAULT_TTL_MS);
+    if (best > 0) entries.set(hashes[best]!, now + TTL_MS[ttl]);
     return best;
   }
 }

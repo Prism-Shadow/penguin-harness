@@ -3772,3 +3772,27 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
   if (provider === "custom") return undefined;
   return providerInfo(provider)?.modelsUrl;
 }
+
+/**
+ * Whether a model's cached prefix can be kept for an hour at all — `false` means no.
+ *
+ * Like fast mode, the answer belongs to the **client MMSP routes to** (routedClientType), not
+ * to the catalog row. The one-hour lifetime is what MMSP's `prompt_caching: "enhance"` asks
+ * for, and the client that carries it is Claude's official one (the Messages API, Bedrock
+ * included — MMSP attaches `ttl: "1h"` to the last user message there). Every other client
+ * refuses the value with `UnsupportedParameterError` before any network I/O: the compatible
+ * `ant-messages` client accepts only `enable`, and the OpenAI / Gemini / MiniMax / Z.AI /
+ * Moonshot / DeepSeek / embedding clients refuse anything but `enable` as well (MiniMax
+ * refuses `enhance` alone, its cache being automatic). An `mmsp` server is refused too: it
+ * forwards the config to its own upstream, which the harness cannot promise anything about.
+ *
+ * The catch is the price. A one-hour write is billed at twice the base input price where a
+ * five-minute write is 1.25×, and a read is a tenth either way — so the setting is worth
+ * having only for a Session that expects to sit idle for more than five minutes, and is
+ * deliberately not the default. `false` here means "do not offer the toggle"; the runtime
+ * classification in llm/generative-model.ts still handles a rejection (a gateway or a server
+ * env var can still route the entry somewhere this pure function did not predict).
+ */
+export function promptCache1hSupported(modelId: string, clientType?: string): boolean {
+  return routedClientType(modelId, clientType) === "anthropic-official";
+}

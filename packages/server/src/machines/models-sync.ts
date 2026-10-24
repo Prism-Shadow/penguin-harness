@@ -112,6 +112,7 @@ function fromLocal(entry: ModelEntry): ModelUpdateEntry {
     ...(entry.vision !== undefined ? { vision: entry.vision } : {}),
     ...(entry.max_tokens !== undefined ? { maxTokens: entry.max_tokens } : {}),
     ...(entry.fast_mode === true ? { fastMode: true } : {}),
+    ...(entry.prompt_cache_1h === true ? { promptCache1h: true } : {}),
     ...(entry.pricing !== undefined
       ? {
           pricing: {
@@ -148,6 +149,7 @@ function fromRemote(info: ModelInfo): ModelUpdateEntry {
     ...(info.vision !== undefined ? { vision: info.vision } : {}),
     ...(info.maxTokens !== undefined ? { maxTokens: info.maxTokens } : {}),
     ...(info.fastMode === true ? { fastMode: true } : {}),
+    ...(info.promptCache1h === true ? { promptCache1h: true } : {}),
     ...(info.pricing !== undefined ? { pricing: info.pricing } : {}),
     ...(info.credential?.baseUrl !== undefined ? { baseUrl: info.credential.baseUrl } : {}),
   };

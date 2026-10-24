@@ -28,7 +28,7 @@
  * `context_engine` only consumes AMSP records; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
  */
-import { ThinkingLevel, UnsupportedParameterError } from "@prismshadow/mmsp";
+import { PromptCaching, ThinkingLevel, UnsupportedParameterError } from "@prismshadow/mmsp";
 import type {
   AutoLLMClient,
   ContentItem,
@@ -618,6 +618,30 @@ export const FAST_MODE_UNSUPPORTED_GUIDANCE =
   "Fast mode is enabled for this model; turn it off in the model settings to use this model.";
 
 /**
+ * Determines whether an error is MMSP's `UnsupportedParameterError` for `prompt_caching`:
+ * a client that does not take the value refuses it by throwing **before any network I/O**, so
+ * with the same frozen config the failure is deterministic and a retry can only repeat it.
+ * Scoped to `parameter === "prompt_caching"` like its fast-mode sibling, so other
+ * UnsupportedParameterError sources keep their default classification.
+ */
+export function isPromptCachingUnsupportedError(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const err = level as { name?: unknown; parameter?: unknown };
+    const isUnsupportedParameter =
+      level instanceof UnsupportedParameterError || err.name === "UnsupportedParameterError";
+    return isUnsupportedParameter && err.parameter === "prompt_caching";
+  });
+}
+
+/**
+ * Actionable tail appended to a one-hour-cache rejection's error text: MMSP names what the
+ * client does accept ("prompt_caching must be ENABLE for the Responses API."); this says
+ * where the switch that asked for the hour lives.
+ */
+export const PROMPT_CACHE_1H_UNSUPPORTED_GUIDANCE =
+  "The one-hour prompt cache is enabled for this model; turn it off in the model settings to use this model.";
+
+/**
  * Whether any level of the error chain is an HTTP **429** — the provider's rate limit, or a
  * quota that is exhausted for now. The outcome stays `retryable` (a short burst is exactly
  * what the reconnect ladder is for), but it is classified apart from a transport drop: the
@@ -1025,6 +1049,18 @@ export class GenerativeModel implements LLMInterface {
           errorCode: "unsupported",
           errorMessage: `${describeError(error)} ${FAST_MODE_UNSUPPORTED_GUIDANCE}`,
         };
+      } else if (
+        this.uniConfig.prompt_caching === PromptCaching.ENHANCE &&
+        isPromptCachingUnsupportedError(error)
+      ) {
+        // The same shape for the one-hour cache: only the client we asked for it on carries
+        // the value, and it refuses before any network I/O. Guarded on our own config, so a
+        // rejection the harness did not ask for keeps its default classification.
+        outcome = {
+          status: "fatal",
+          errorCode: "unsupported",
+          errorMessage: `${describeError(error)} ${PROMPT_CACHE_1H_UNSUPPORTED_GUIDANCE}`,
+        };
       } else if (isFatalProviderRejection(error)) {
         // A definitive provider 4xx rejection (408/429 excluded): the identical request
         // fails identically on every retry, so stop now with the provider's own message.
@@ -1205,6 +1241,13 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   // default (MMSP rejects the parameter wherever no fast tier exists).
   if (config.fastMode === true) {
     uniConfig.fast_mode = true;
+  }
+  // The one-hour prompt cache (the model entry's `prompt_cache_1h` annotation): the key goes on
+  // the wire only when enabled, exactly like fast_mode. `enable` is MMSP's own default for
+  // providers whose cache is automatic, so the harness never sends it; `enhance` is the value
+  // that asks for the hour, and it is the only one that changes anything.
+  if (config.promptCache1h === true) {
+    uniConfig.prompt_caching = PromptCaching.ENHANCE;
   }
   // Thought summaries, always requested. Two things ride on it: the user gets to watch the
   // model reason, and — because the request timeout is an idle budget between upstream events
