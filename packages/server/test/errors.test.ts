@@ -56,7 +56,7 @@ import {
   toolCallOutput,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, StopReason } from "@prismshadow/penguin-core";
+import type { AmspRecord, StopReason } from "@prismshadow/penguin-core";
 import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
@@ -447,7 +447,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     db.prepare("SELECT * FROM error_records ORDER BY id").all() as Array<Record<string, unknown>>;
 
   /** A legacy stream's abort: prose reason only (cores from before the unified error pair). */
-  function legacyAbort(reason: string): OmniMessage {
+  function legacyAbort(reason: string): AmspRecord {
     const msg = abortEvent();
     delete (msg.payload as { error_code?: string }).error_code;
     (msg.payload as { reason?: string }).reason = reason;
@@ -455,7 +455,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   }
 
   /** Feeds a sequence of messages and finalizes (close: persists any still-pending failure), returning the persisted rows. */
-  function feed(msgs: OmniMessage[]): Array<Record<string, unknown>> {
+  function feed(msgs: AmspRecord[]): Array<Record<string, unknown>> {
     const w = watcher();
     for (const m of msgs) w.observe(m);
     w.close();

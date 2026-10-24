@@ -1,18 +1,20 @@
 ---
-title: The OmniMessage Protocol
-description: OmniMessage is the unified message protocol that the SDK yields, the Trace stores, and the Server streams verbatim over SSE.
+title: AMSP 记录
+description: AMSP 记录是唯一的消息格式：SDK 产出它，Trace 存储它，Server 经 SSE 原样推送它。
 ---
 
-OmniMessage is PenguinHarness's unified message protocol. The SDK yields OmniMessage objects, the Trace stores them line by line, and the Server pushes them verbatim over SSE. What streams, what is stored, and what the model sees are one structure: there is no second format between front end, back end, and storage.
+AMSP 记录是 PenguinHarness 唯一的消息格式。SDK 产出记录，Trace 逐行存储，Server 经 SSE 原样推送。流出去的、存下来的和模型看到的是同一种结构，前端、后端与存储之间没有第二套格式。
 
-This page starts with the envelope and its three message types, then lists every payload field by field, and ends with the rules that span the whole protocol: the streaming discipline, `stop_reason`, `origin` and provider fidelity. The type definitions live in `packages/core/src/omnimessage/types.ts`.
+它们就是 [AMSP](/amsp) 的记录，即 [Agent API](/agent-api) 向 PenguinHarness 之外的程序提供的流：Trace 的每一行都是一条合法的 AMSP 记录，因此记录的改动就是这个公开协议的改动。
 
-## The envelope
+本页先讲信封和三类消息，再逐字段列出全部 payload，最后是贯穿所有记录的规则：流式纪律、`stop_reason`、`origin` 与保真字段。定义见 `packages/amsp/src/records/`（`@prismshadow/amsp` 包，入口 `@prismshadow/amsp/records`），`@prismshadow/penguin-core` 从包根原样再导出。
 
-Every message shares one envelope. Only the `payload` varies:
+## 信封
+
+每条消息共用同一个信封，只有 `payload` 不同：
 
 ```ts
-interface OmniMessage<P extends OmniPayload = OmniPayload> {
+interface AmspRecord<P extends AmspPayload = AmspPayload> {
   timestamp: string;        // ISO 8601 UTC
   type: "session_meta" | "model_msg" | "event_msg";
   payload: P;
@@ -20,19 +22,19 @@ interface OmniMessage<P extends OmniPayload = OmniPayload> {
 }
 ```
 
-Each `type` carries different content:
+三类消息各自承载的内容：
 
-| type | Meaning | Volume |
+| type | 含义 | 数量 |
 | --- | --- | --- |
-| `session_meta` | The full runtime configuration of one model context | exactly one per context |
-| `model_msg` | Content inside the model context (text, thinking, tool calls and results) | the bulk |
-| `event_msg` | Runtime events outside the context (approvals, usage, compaction, aborts, hook answers) | alongside |
+| `session_meta` | 一个模型上下文的完整运行时配置 | 每个上下文恰好一条 |
+| `model_msg` | 模型上下文内的内容（文本、思考、工具调用和结果） | 主体 |
+| `event_msg` | 上下文之外的运行时事件（审批、用量、压缩、中断、钩子回答） | 伴随出现 |
 
-The optional `origin` field routes Subagent messages. See [origin: the Subagent chain](#origin-the-subagent-chain).
+可选的 `origin` 字段用来路由子 Agent 的消息，见 [origin：子 Session 链](#origin子-session-链)。
 
 ## session_meta
 
-A `session_meta` message describes **one model context**:
+一条 `session_meta` 消息描述**一个模型上下文**：
 
 ```ts
 interface SessionMetaPayload {
@@ -47,34 +49,34 @@ interface SessionMetaPayload {
 }
 ```
 
-The Workspace is fixed for the Session's lifetime. The model and the system prompt are fixed per context: an in-session model switch opens its new context on another model, and this record is the only place that says so.
+Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上，所用模型只记在这条记录里。
 
-`source` says what kind of conversation the Session is, and is fixed for its lifetime too:
+`source` 表示这个 Session 是哪一类会话，同样在整个生命周期内不变：
 
-- `user`: a person's conversation, the Web App's composer, `penguin chat` and forks included;
-- `api`: one an external program opened through the Agent API;
-- `schedule`: a scheduled task's run;
-- `subagent`: a `run_subagent` child;
-- `cli`: one `penguin run` created;
-- `workbench`: a Session the Workbench host created for an application;
-- `company`: a desk or ticket Session that [company mode](/company-mode) opened.
+- `user`：人发起的对话，包括 Web App 的输入框、`penguin chat`，以及分叉出的会话；
+- `api`：外部程序经 Agent API 开出的会话；
+- `schedule`：定时任务的一次运行；
+- `subagent`：`run_subagent` 派生的子会话；
+- `cli`：`penguin run` 创建的会话；
+- `workbench`：Workbench 宿主为应用创建的会话；
+- `company`：[公司模式](/company-mode)开出的工位会话与工单会话。
 
-A Trace written by an older release may have no `source`, which reads as `user`, or as `company` when the server's index row says company mode opened the Session. It may also carry the retired `benchmark`, which reads as `cli`. The file itself is never rewritten.
+旧版本写下的 Trace 可能没有 `source`，读作 `user`；若服务器的索引行表明它由公司模式开出，则读作 `company`。也可能是已停用的 `benchmark`，读作 `cli`。文件本身从不改写。
 
-Every Trace file opens with a `session_meta`. When a compaction opens a new context, the new file's `session_meta` carries the system prompt assembled for that context from the Agent State as it stands at that moment (see [Compaction](/agent-loop#compaction)). On resume, the engine takes the latest file's `session_meta` as the runtime configuration. See [Sessions & Traces](/sessions-and-traces).
+每个 Trace 文件都以一条 `session_meta` 开头。压缩开启新上下文时，新文件的 `session_meta` 记录的系统提示词，按当时的 Agent State 为这个上下文重新装配（见[上下文压缩](/agent-loop#上下文压缩)）。恢复 Session 时，引擎以最新文件里的 `session_meta` 作为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。
 
-The thinking level is not part of the meta. It is a per-request parameter: each request takes the Session's pinned level, which can change mid-context and applies from the next request, or, without a pin, the agent config default read when the context opened. Nothing records the level. A `thinking_level` field found in older Traces is displayed but never read back.
+思考等级不在 meta 里，它是逐请求的参数：每次请求取 Session 钉住的等级，这个等级可以在上下文中途更换，从下一次请求起生效；没有钉住时，取上下文开启时读到的 Agent 配置缺省值。思考等级不作任何记录。旧 Trace 里出现的 `thinking_level` 字段只用于展示，不会被读回。
 
-The tool schema is **not in the meta** either. The toolset is only known after the MCP Servers connect, and the meta must not wait for that. The full tool definitions arrive as a standalone `tool_list_ready` event (see [event_msg](#eventmsg)):
+工具 schema 同样**不在 meta 里**。工具集要等 MCP Server 连接完成才能确定，而 meta 不应等待。完整的工具定义以独立的 `tool_list_ready` 事件下发（见 [event_msg](#eventmsg)）：
 
-- at the first run;
-- for every context a compaction opens, right after that context's `session_meta` at the head of its Trace file.
+- 首次运行时下发一次；
+- 压缩开启的每个上下文，在其 Trace 文件开头、紧随 `session_meta` 之后再发一次。
 
-Traces written before this split embedded a `tools` field in the meta. That field is no longer read, and the tool record of those Traces is not displayed.
+拆分之前写入的 Trace 在 meta 里内嵌了 `tools` 字段。这个字段已不再读取，这些 Trace 的工具记录也不再展示。
 
-## model_msg: complete payloads
+## model_msg：完整消息
 
-There are seven content payloads, discriminated by `payload.type`. Two optional fields are shared: `stop_reason` marks an abnormal terminal state (see [stop_reason](#stopreason)), and `fidelity` is an opaque provider-fidelity payload (see [Provider-fidelity fields](#provider-fidelity-fields)):
+内容 payload 共七种，以 `payload.type` 区分。两个可选字段各类共用：`stop_reason` 标注非正常收尾的终态（见 [stop_reason](#stopreason)），`fidelity` 是不透明的供应商保真负载（见[保真字段](#保真字段)）：
 
 ```ts
 type Fidelity = Record<string, unknown>;  // opaque provider-fidelity payload (see below)
@@ -141,13 +143,13 @@ interface InlineDataPayload {
 }
 ```
 
-`sender` separates the human user (`user`) from the parent agent driving a subagent (`parent_agent`), the harness's automatic injections such as background-task completion reports, stop-hook continues and user-prompt hook contexts (`harness`), and the server's own triggers such as scheduled tasks (`server`). It is never sent to the provider.
+`sender` 区分 user 角色文本的来源：真人用户（`user`）、驱动子 Agent 的父 Agent（`parent_agent`）、harness 的自动注入（`harness`，例如后台任务的完成回报、stop 钩子 `continue` 注入的输入，以及 `user_prompt` 钩子补充的 context），以及 Server 自己的触发（`server`，例如定时任务）。这个字段不会发给供应商。
 
-`tool_call` and `tool_call_output` pair strictly via `tool_call_id`. The calls of a turn form one batch, and outputs are re-fed in the original call order (see [The Agent Loop](/agent-loop)).
+`tool_call` 与 `tool_call_output` 通过 `tool_call_id` 严格配对。一轮内的调用构成一个批次，输出按原始调用顺序回填（见 [Agent 运行循环](/agent-loop)）。
 
-## model_msg: streaming partials
+## model_msg：流式分片
 
-Four `partial_*` payloads mirror their complete counterparts. Each carries an `event_type` phase marker:
+四种 `partial_*` payload 与完整消息一一对应，并携带 `event_type` 标记分片阶段：
 
 ```ts
 type StreamEventType = "start" | "delta" | "stop";
@@ -189,9 +191,9 @@ interface PartialToolCallOutputPayload {
 }
 ```
 
-### The streaming discipline
+### 流式纪律
 
-Every streamed segment follows one timing rule, and the complete message arrives immediately after the `stop`:
+每段流式内容都遵守同一条时序规则，`stop` 之后紧跟对应的完整消息：
 
 ```text
 partial_text(start) → partial_text(delta) → … → partial_text(stop) → text (complete)
@@ -199,34 +201,34 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. Each run of fragments ends with its complete message after the `stop`, so a consumer never has to reassemble fragments itself.
+因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。每组分片在 `stop` 之后都紧跟一条完整消息，使用方无需自己拼接分片。
 
 ## event_msg
 
-Fourteen event payloads record the runtime events outside the model context:
+十四种事件 payload 记录模型上下文之外的运行时事件：
 
-| Event `type` | What it records |
+| 事件 `type` | 记录的内容 |
 | --- | --- |
-| `tool_list_ready` | The complete tool schema sent to the model |
-| `mcp_connect_begin` | The MCP Servers being contacted |
-| `mcp_connect_end` | The overall connect status and the per-server results |
-| `task_begin` | The start of a Task |
-| `task_end` | The end of the Task the last `task_begin` opened |
-| `request_begin` | The start of a model request, with the thinking level it went out at |
-| `request_end` | The request's terminal status, plus the retry detail block (`error_code`, `error_message`, `attempt`, `retry_in_ms`) |
-| `approval_decision` | An approval decision, paired with its `tool_call_id` |
-| `token_usage` | Session-cumulative and per-request Token counts |
-| `compaction_begin` | The trigger reason and mode, with the context tokens and turn count at trigger time |
-| `compaction_end` | The reason, mode and terminal status of a compaction, plus the retry detail block |
-| `abort` | A user interruption and its cause code |
-| `subagent` | A pointer in the parent Trace to a direct child Session |
-| `hook` | A hook's answer: the hook point, name, decision and the hook's own record |
+| `tool_list_ready` | 发送给模型的完整工具 schema |
+| `mcp_connect_begin` | 正在连接的 MCP Server |
+| `mcp_connect_end` | 总体连接状态与逐个 Server 的结果 |
+| `task_begin` | 一个 Task 的开始 |
+| `task_end` | 最近一个 `task_begin` 所开启的 Task 的结束 |
+| `request_begin` | 一次模型请求的开始，带上该请求发出时的思考等级 |
+| `request_end` | 请求的终态，以及重试详情块（`error_code`、`error_message`、`attempt`、`retry_in_ms`） |
+| `approval_decision` | 一次审批决策，与对应的 `tool_call_id` 配对 |
+| `token_usage` | Session 累计与本次请求的 Token 计数 |
+| `compaction_begin` | 触发原因与模式，以及触发时的上下文 Token 数和累计轮数 |
+| `compaction_end` | 压缩的原因、模式与终态，以及重试详情块 |
+| `abort` | 一次用户中断及其原因码 |
+| `subagent` | 父 Trace 中指向直接子 Session 的指针 |
+| `hook` | 一次钩子回答：钩子点、名称、决策，以及钩子自己的记录 |
 
-The vocabulary is closed: a record or field is added only when no existing record carries the fact and no reader can derive it. `task_begin` / `task_end` are one of its two stated exceptions (the other is `request_begin.thinking_level`). Before them no record said where a Task starts or whether it reached its end, and every reader derived both from the user's prompts.
+这套词汇是封闭的：只有当既有记录都不承载某个事实、读端也推导不出来时，才新增记录或字段。`task_begin` / `task_end` 是两处明示例外之一（另一处是 `request_begin.thinking_level`）：此前没有任何记录说明一个 Task 从哪里开始、是否走到终点，各读端只能从用户的 Prompt 推导。
 
-The Session writes one pair around each Task: one prompt's run, followed by the `hook` records of the stop hooks it consults. A Task that a stop hook's `continue` drives, such as a goal round, gets a pair of its own. A manual compaction and a model switch are not Tasks and get none. The payload is the type alone. How the Task ended is read from the records inside the pair (`abort`, a terminal `request_end` or `compaction_end`, a `fatal` final reply), and who started it from its input. A Task that throws writes no `task_end`, so an unclosed `task_begin` means the Task never reached its end. Where the records sit in the Trace is covered under [Trace design](/sessions-and-traces#trace-design).
+Session 在每个 Task 两侧各写一条：一次 Prompt 的执行，加上随后 stop 钩子留下的 `hook` 记录。stop 钩子以 `continue` 续出的 Task（例如 goal 的一轮）各成一对。手动压缩与模型切换不是 Task，不写这对记录。载荷只有类型：Task 如何结束，由这对记录之间的记录读出（`abort`、终局的 `request_end` 或 `compaction_end`、以 `fatal` 收尾的回复）；由谁发起，由输入本身读出。抛出异常的 Task 不写 `task_end`，因此未闭合的 `task_begin` 表示该 Task 没有走到终点。这对记录在 Trace 中的位置见 [Trace 设计](/sessions-and-traces#trace-设计)。
 
-Every payload that reports a failure carries the same error pair: `error_code`, a stable machine-readable cause that render layers localize from, and `error_message`, the raw text of the failure, shown verbatim. The complete listing:
+凡是报告失败的 payload 都带同一对错误字段：`error_code` 是稳定、机器可读的原因码，渲染层据此做本地化；`error_message` 是失败的原始文本，原样展示。完整定义如下：
 
 ```ts
 type ErrorCode =
@@ -404,34 +406,34 @@ interface HookPayload {
 }
 ```
 
-A server that is skipped rather than contacted, because its entry references a vault key the agent lacks or because it needs an OAuth sign-in, appears in `results` as `fatal` with `mcp_needs_setup` or `mcp_sign_in_required`; its `error_message` names the missing keys, never a value. See [Vault references](/tools#vault-references).
+因条目引用了 Agent 的 Vault 中没有的键、或需要 OAuth 登录而被跳过、没有连接的 MCP Server，在 `results` 中记为 `fatal`，错误码为 `mcp_needs_setup` 或 `mcp_sign_in_required`；其 `error_message` 列出缺少的键名，从不包含值。见 [Vault 引用](/tools#vault-引用)。
 
-`compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
+`compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
 
 ## stop_reason
 
-A four-value enum shared by every record that carries a stop reason: model messages, tool results, and request, compaction and MCP-connect terminals. `LLMOutcome.status` uses the same set (see [Core Interfaces](/interfaces)):
+四值枚举，所有带终止原因的记录共用：模型消息、工具结果，以及请求、压缩和 MCP 连接的终态。`LLMOutcome.status` 使用同一组取值（见[核心接口](/interfaces)）：
 
 ```ts
 type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 ```
 
-A stop reason answers one question: should this be retried? The kind of failure rides on `error_code`, and its detail on `error_message`.
+终止原因只回答一个问题：要不要重试。失败属于哪一类看 `error_code`，具体细节看 `error_message`。
 
-| Value | Meaning | Engine reaction |
+| 取值 | 含义 | 引擎反应 |
 | --- | --- | --- |
-| `completed` | finished normally | continue |
-| `aborted` | user interruption or cancellation | stop, emit an `abort` event, hand back to the user |
-| `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed or truncated responses, and anything unclassifiable | LLM side: reconnect within the run on the backoff ladder |
-| `fatal` | a failure no retry can fix. LLM side: a definitive provider 4xx rejection (parameters, quota), rejected credentials, or a deterministic client-side rejection. Environment side: a tool error or timeout | LLM side: stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record. Environment side: the error is fed back to the model, never retried |
+| `completed` | 正常完成 | 继续 |
+| `aborted` | 用户中断或取消 | 停止，产出 `abort` 事件，交还用户 |
+| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败或被截断的响应，以及一切无法归类的错误 | LLM 侧：同一次运行内按退避阶梯自动重连 |
+| `fatal` | 重试也无法修复的失败。LLM 侧：供应商确定性的 4xx 拒绝（参数、配额）、凭据被拒，或确定性的客户端拒绝；Environment 侧：工具出错或超时 | LLM 侧：停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录。Environment 侧：错误回灌给模型，从不重试 |
 
-Tools rarely end `retryable`: a tool error or timeout is definitive for that call, and nothing in the harness retries a tool. Older Traces may still carry the retired values `failed`, `timeout`, `malformed` and `auth`. Replay only ever compares against `completed`, and renderers still display the old spellings.
+工具很少以 `retryable` 收尾：工具出错或超时对这次调用是确定的结果，harness 也不会重试任何工具。旧 Trace 里可能还有已废弃的 `failed`、`timeout`、`malformed` 和 `auth`；回放只与 `completed` 比较，渲染层照常展示这些旧取值。
 
-Errors never cross an interface boundary as exceptions. They *are* messages (see [The Agent Loop](/agent-loop)).
+错误从不以异常形式穿过接口边界，错误本身*就是*消息（见 [Agent 运行循环](/agent-loop)）。
 
-## origin: the Subagent chain
+## origin：子 Session 链
 
-`origin` serves Subagents. When a child Session's messages are forwarded to the parent, each hop prepends one child Session id, ordered outer to inner. Renderers read the chain to route each message into the right nested card:
+`origin` 服务于子 Agent。子 Session 的消息转发给父级时，每经过一层就在链首加上一个子 Session id，顺序由外到内。渲染层按这条链把消息归入对应的嵌套卡片：
 
 ```ts
 // message from the main Session: no origin
@@ -441,16 +443,16 @@ Errors never cross an interface boundary as exceptions. They *are* messages (see
 { timestamp: "…", type: "model_msg", origin: ["session-2026-07-18-…-a1b2c3d4"], payload: { … } }
 ```
 
-Messages tagged with `origin` are not written to the parent Trace. The child Session has its own Trace, and the parent keeps only the `subagent` pointer event.
+带 `origin` 的消息不写入父 Trace：子 Session 有自己的 Trace，父 Trace 只保留 `subagent` 指针事件。
 
-## Provider-fidelity fields
+## 保真字段
 
-Provider-specific wire data travels in a single optional field, `fidelity`. It is an arbitrary JSON object that the LLM client records so the original message can be reproduced on replay, for example:
+供应商特有的传输层数据统一放在一个可选字段 `fidelity` 里。它是 LLM 客户端记录的任意 JSON 对象，用于在回放时复原原始消息，例如：
 
-- thinking signatures;
-- `phase` segment labels;
-- GPT-5 encrypted reasoning;
-- the OpenAI-compatible upstream reasoning field name.
+- 思考签名；
+- `phase` 分段标签；
+- GPT-5 的加密推理；
+- OpenAI 兼容上游的推理字段名。
 
 ```ts
 // Claude: a thinking block closed by its signature
@@ -463,29 +465,29 @@ Provider-specific wire data travels in a single optional field, `fidelity`. It i
 { type: "thinking", thinking: "…", fidelity: { reasoning_field: "reasoning_content" } }
 ```
 
-The payload is opaque to PenguinHarness: it passes through and persists verbatim end to end. Some models require it byte for byte when history is replayed, so any rewriting or loss breaks compatibility. This is one of the preconditions for lossless Session recovery from the Trace.
+这个负载对 PenguinHarness 完全不透明：全链路原样透传、原样存储。部分模型回放历史时要求它逐字节一致，任何改写或丢失都会破坏兼容性。这也是 Trace 能无损恢复 Session 的前提之一。
 
-## Surfaces and their message subsets
+## 各通道的消息子集
 
-| Surface | Subset used |
+| 通道 | 使用的子集 |
 | --- | --- |
-| SDK boundary (`session.run` output) | complete `model_msg` + streaming `partial_*` + all `event_msg` |
-| Trace on disk | `session_meta` + complete `model_msg` + all `event_msg` (no partials, no `origin`-tagged messages) |
-| Server SSE stream | same as the SDK boundary, verbatim single-line JSON — see [Server API](/server-api) |
+| SDK 边界（`session.run` 的输出） | 完整 `model_msg` + 流式 `partial_*` + 全部 `event_msg` |
+| 落盘的 Trace | `session_meta` + 完整 `model_msg` + 全部 `event_msg`（不存分片，也不存带 `origin` 的消息） |
+| Server 的 SSE 推送 | 与 SDK 边界相同，原样的单行 JSON，见 [Server API](/server-api) |
 
-The [Agent API](/agent-api) does not stream OmniMessage: its stream is [AMSP](/amsp), a projection the server makes of the same live stream for programs outside PenguinHarness. Nothing in OmniMessage changes for it: no field, type or value is added.
+[Agent API](/agent-api) 以 [AMSP](/amsp) 记录的形式推送同样的消息，外加控制帧，不含 Web App 的服务器事件。
 
-How messages travel along these surfaces, and every ordering guarantee, is covered on [Message Flow & Ordering](/message-flow).
+消息沿这些通道传递的机制与各项顺序保证，见[消息流转与时序](/message-flow)。
 
-## Builders and guards
+## 构造与判别
 
-`@prismshadow/penguin-core` exports all protocol types, plus:
+`@prismshadow/amsp` 导出全部记录类型，此外还有以下内容，`@prismshadow/penguin-core` 全部再导出：
 
-- a builder per message kind in `builders.ts`: `userText`, `assistantText`, `toolCall`, `toolCallOutput`, `partialText`, `tokenUsage`, `withOrigin`, `emptyTokenCounts`, `addTokenCounts`, and more;
-- runtime guards: `isCompleteModelMessage`, `isPartialPayload`, `isModelMessage`, `isEventMessage`, `isSessionMeta`, `isTaskRecord`, and `lastNonTaskRecord`, which finds the record that decides whether a Trace file was closed by a compaction.
+- `records/builders.ts` 里每种消息的构造函数：`userText`、`assistantText`、`toolCall`、`toolCallOutput`、`partialText`、`tokenUsage`、`withOrigin`、`emptyTokenCounts`、`addTokenCounts` 等；
+- 运行时判别函数：`isCompleteModelMessage`、`isPartialPayload`、`isModelMessage`、`isEventMessage`、`isSessionMeta`、`isTaskRecord`，以及 `lastNonTaskRecord`——它找出判定一个 Trace 文件是否被压缩收尾时要看的那条记录。
 
 ```ts
-import { userText, isCompleteModelMessage } from "@prismshadow/penguin-core";
+import { userText, isCompleteModelMessage } from "@prismshadow/amsp";
 
 const prompt = userText("List the files in the current directory");
 // { timestamp: "…", type: "model_msg", payload: { type: "text", role: "user", text: "…" } }

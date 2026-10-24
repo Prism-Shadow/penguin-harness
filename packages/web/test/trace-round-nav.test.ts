@@ -14,7 +14,7 @@
  */
 import { act, createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type { TraceAnalysisResponse, TraceTaskStats } from "@prismshadow/penguin-server/api";
 import { TraceFileView } from "../src/features/traces/trace-file-view";
 import { S } from "../src/lib/strings";
@@ -56,7 +56,7 @@ const ANALYSIS: TraceAnalysisResponse = {
   usageTrend: [],
 };
 
-function event(i: number): OmniMessage {
+function event(i: number): AmspRecord {
   const k = Math.floor(i / PER_ROUND);
   return i % PER_ROUND === 0
     ? {

@@ -10,8 +10,8 @@ import "dotenv/config";
 import { describe, expect, it } from "vitest";
 
 import { GenerativeModel } from "../src/llm/index.js";
-import { toolCallOutput, userText } from "../src/omnimessage/index.js";
-import type { OmniMessage, ToolCallPayload } from "../src/omnimessage/index.js";
+import { toolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord, ToolCallPayload } from "@prismshadow/amsp/records";
 
 /** Picks a provider in order by available key; MMSP routes by modelId and auto-reads the matching env var. */
 const PROVIDERS = [
@@ -37,14 +37,14 @@ describe(`GenerativeModel live e2e (${provider?.modelId ?? "skipped"})`, () => {
         maxTokens: 2048,
       });
 
-      const out: OmniMessage[] = [];
+      const out: AmspRecord[] = [];
       for await (const msg of model.streamGenerate({
         newMessages: [userText("Say hello in exactly three words.")],
       })) {
         out.push(msg);
       }
 
-      const payloadType = (m: OmniMessage): string => (m.payload as { type: string }).type;
+      const payloadType = (m: AmspRecord): string => (m.payload as { type: string }).type;
 
       // At least 1 partial_text.
       const partialTexts = out.filter((m) => payloadType(m) === "partial_text");
@@ -99,7 +99,7 @@ describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquificatio
       });
 
       const round = async (
-        input: OmniMessage[],
+        input: AmspRecord[],
       ): Promise<{ calls: ToolCallPayload[]; text: string }> => {
         const calls: ToolCallPayload[] = [];
         let text = "";

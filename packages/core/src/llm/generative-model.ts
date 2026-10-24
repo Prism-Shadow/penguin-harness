@@ -2,9 +2,9 @@
  * GenerativeModel —— the SDK's LLM interface implementation.
  *
  * Responsibilities (protocol translation):
- *   1. Merge a group of OmniMessages that **share the same role** into a single MMSP `UniMessage`;
+ *   1. Merge a group of records that **share the same role** into a single MMSP `UniMessage`;
  *   2. Issue the request via `AutoLLMClient.streamingResponseStateful` (stateful — MMSP
- *      maintains history internally), translating streamed `UniEvent`s back into OmniMessages.
+ *      maintains history internally), translating streamed `UniEvent`s back into records.
  *      MMSP streams every item as `.delta` fragments closed by its `.done` item, one item at a
  *      time, and ends the stream with one `stop` event; the translation is one to one:
  *        - a text / thinking / tool-call `.delta` → `partial_*` (a `start` before the item's
@@ -25,7 +25,7 @@
  *      unclassifiable error — ends `retryable`, with the concrete failure on `errorMessage`.
  *      User interruption ends with `aborted`.
  *
- * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
+ * `context_engine` only consumes AMSP records; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
  */
 import { ThinkingLevel, UnsupportedParameterError } from "@prismshadow/mmsp";
@@ -53,14 +53,14 @@ import {
   thinkingMessage,
   tokenUsage,
   toolCall,
-} from "../omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   CompleteModelPayload,
   Fidelity,
-  OmniMessage,
+  AmspRecord,
   StopReason,
   TokenCounts,
-} from "../omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   GenerativeModelConfig,
   GenerativeModelParameters,
@@ -82,7 +82,7 @@ import {
 } from "./context-limits.js";
 
 // ---------------------------------------------------------------------------
-// Pure conversion function: OmniMessage[] → a single UniMessage (unit-testable, no network)
+// Pure conversion function: AmspRecord[] → a single UniMessage (unit-testable, no network)
 // ---------------------------------------------------------------------------
 
 /**
@@ -103,7 +103,7 @@ function fidelityProp(fidelity?: Fidelity): { fidelity?: Fidelity } {
 }
 
 /**
- * Maps a complete OmniMessage payload to an MMSP `ContentItem` — a message holds complete
+ * Maps a complete AmspRecord payload to an MMSP `ContentItem` — a message holds complete
  * items only, typed with the `.done` suffix. Only complete model_msg payloads are supported;
  * `partial_*` is an output-only protocol.
  */
@@ -141,7 +141,7 @@ function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
       return {
         type: "tool_call.done",
         name: payload.name,
-        // OmniMessage stores arguments as a JSON string; UniMessage uses an object.
+        // AmspRecord stores arguments as a JSON string; UniMessage uses an object.
         arguments: parseToolArguments(payload.arguments),
         // On the way back, strip the uniqueness suffix to restore the provider's original id (see tool-call-ids.ts).
         tool_call_id: stripToolCallIdSuffix(payload.tool_call_id),
@@ -168,13 +168,13 @@ function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
 }
 
 /**
- * Groups a replayed, complete OmniMessage history into a sequence of UniMessages by
+ * Groups a replayed, complete AmspRecord history into a sequence of UniMessages by
  * **adjacent same-role** runs (used for the setHistory injection during Session recovery).
  * One committed turn = a group of user-side input + a group of
  * assistant output, matching exactly the adjacent user / assistant UniMessages in MMSP history.
  */
-export function groupHistoryToUniMessages(history: OmniMessage[]): UniMessage[] {
-  const groups: OmniMessage[][] = [];
+export function groupHistoryToUniMessages(history: AmspRecord[]): UniMessage[] {
+  const groups: AmspRecord[][] = [];
   let currentRole: string | null = null;
   for (const msg of history) {
     const role = (msg.payload as { role?: string }).role;
@@ -187,17 +187,17 @@ export function groupHistoryToUniMessages(history: OmniMessage[]): UniMessage[] 
     }
     groups[groups.length - 1]!.push(msg);
   }
-  return groups.map(mergeOmniToUniMessage);
+  return groups.map(mergeRecordsToUniMessage);
 }
 
 /**
- * Merges a group of OmniMessages into **a single** UniMessage.
+ * Merges a group of records into **a single** UniMessage.
  *
  * Constraint: all messages in the array must share the same
  * role; the role of the first payload is used as the UniMessage's role (a tool_call_output
  * group has role "user"). Throws if roles are mixed.
  */
-export function mergeOmniToUniMessage(messages: OmniMessage[]): UniMessage {
+export function mergeRecordsToUniMessage(messages: AmspRecord[]): UniMessage {
   if (messages.length === 0) {
     throw new Error("streamGenerate requires at least one input message");
   }
@@ -226,7 +226,7 @@ export function mergeOmniToUniMessage(messages: OmniMessage[]): UniMessage {
 /**
  * Converts MMSP `UsageMetadata` into PenguinHarness `TokenCounts`.
  *
- * Conversion rules (MMSP UsageMetadata → OmniMessage TokenCounts, null treated as 0):
+ * Conversion rules (MMSP UsageMetadata → the records' TokenCounts, null treated as 0):
  *   - `cache_read  = cached_tokens` (input tokens served from cache hits);
  *   - `cache_write = prompt_tokens` (input tokens on a cache miss);
  *   - `output     = thoughts_tokens + response_tokens`;
@@ -251,7 +251,7 @@ export function usageToTokenCounts(usage: UsageMetadata): TokenCounts {
 }
 
 // ---------------------------------------------------------------------------
-// Pure translator: UniEvent[] → OmniMessage[] (unit-testable, no network)
+// Pure translator: UniEvent[] → AmspRecord[] (unit-testable, no network)
 // ---------------------------------------------------------------------------
 
 /** The item streaming now, from its first visible fragment: MMSP streams one item at a time. */
@@ -270,7 +270,7 @@ function partial(
   eventType: "start" | "delta" | "stop",
   content = "",
   stopReason: StopReason = "completed",
-): OmniMessage {
+): AmspRecord {
   if (open.kind === "tool_call") {
     const name = eventType === "start" ? open.name : "";
     return partialToolCall({
@@ -286,7 +286,7 @@ function partial(
 
 /**
  * Streaming translator. Feed `UniEvent`s one at a time into `pushEvent`, which yields the
- * OmniMessages they stand for. MMSP's grammar does the aggregation — an item streams as
+ * records they stand for. MMSP's grammar does the aggregation — an item streams as
  * `.delta` fragments closed by its `.done` item, items never interleave, and one `stop` event
  * ends the stream — so the mapping is one to one:
  *
@@ -295,7 +295,7 @@ function partial(
  *     item alone (the streamed fragments are never reconciled against it);
  *   - the `stop` event carries the request's usage and finish reason.
  *
- * Docs: /docs/omni-message § "The streaming discipline".
+ * Docs: /docs/amsp-records § "The streaming discipline".
  */
 export class EventTranslator {
   /**
@@ -315,8 +315,8 @@ export class EventTranslator {
   private stopSeen = false;
   private requestTokens: TokenCounts = emptyTokenCounts();
 
-  /** Consumes one UniEvent, yielding 0..n OmniMessages. */
-  *pushEvent(event: UniEvent): Generator<OmniMessage> {
+  /** Consumes one UniEvent, yielding 0..n records. */
+  *pushEvent(event: UniEvent): Generator<AmspRecord> {
     if (event.event_type === "stop") {
       this.stopSeen = true;
       if (event.usage_metadata) this.requestTokens = usageToTokenCounts(event.usage_metadata);
@@ -363,7 +363,7 @@ export class EventTranslator {
    * `context_engine` dispatches only tool calls that ended `completed`. Produces no
    * `token_usage`: an interrupted Request has no usage to report.
    */
-  *finishInterrupted(stopReason: StopReason): Generator<OmniMessage> {
+  *finishInterrupted(stopReason: StopReason): Generator<AmspRecord> {
     yield* this.close(stopReason);
   }
 
@@ -386,7 +386,7 @@ export class EventTranslator {
     kind: OpenItem["kind"],
     content: string,
     call?: ToolCallDeltaItem,
-  ): Generator<OmniMessage> {
+  ): Generator<AmspRecord> {
     if (!this.open) {
       if (kind === "tool_call" ? !call?.name : !content) return;
       const toolCallId = call ? this.toolCallIds.allocate(call.tool_call_id) : "";
@@ -406,7 +406,7 @@ export class EventTranslator {
   private *close(
     stopReason: StopReason,
     done: TextDoneItem | ThinkingDoneItem | ToolCallDoneItem | null = this.held,
-  ): Generator<OmniMessage> {
+  ): Generator<AmspRecord> {
     const open = this.open;
     this.open = this.held = null;
     if (open) yield partial(open, "stop", "", stopReason);
@@ -429,7 +429,7 @@ export class EventTranslator {
 }
 
 /**
- * One-shot translation: folds a batch of UniEvents into an OmniMessage sequence (including
+ * One-shot translation: folds a batch of UniEvents into an AmspRecord sequence (including
  * complete messages and token_usage). A pure function for easy unit testing; the live streaming
  * path is wired up by `GenerativeModel.streamGenerate`.
  *
@@ -441,12 +441,12 @@ export function translateEvents(
   events: UniEvent[],
   sessionTokensBefore: TokenCounts = emptyTokenCounts(),
 ): {
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   requestTokens: TokenCounts;
   sessionTokens: TokenCounts;
 } {
   const translator = new EventTranslator();
-  const out: OmniMessage[] = [];
+  const out: AmspRecord[] = [];
   for (const event of events) {
     for (const msg of translator.pushEvent(event)) out.push(msg);
   }
@@ -748,7 +748,7 @@ export class GenerativeModel implements LLMInterface {
 
     this.uniConfig = buildUniConfig(config);
     this.defaultThinkingLevel = config.thinkingLevel;
-    this.requestTimeoutMs = config.requestTimeoutMs ?? 300000;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? 600000;
     this.toolCallIds = config.toolCallIds ?? new ToolCallIdAllocator();
     this.configuredMaxTokens = config.maxTokens;
     this.contextWindow = resolveContextWindow(config.contextWindow);
@@ -782,7 +782,7 @@ export class GenerativeModel implements LLMInterface {
    */
   private requestConfig(
     override: ThinkingLevelName | undefined,
-    newMessages: OmniMessage[],
+    newMessages: AmspRecord[],
   ): UniConfig {
     const thinking = mapThinkingLevel(override ?? this.defaultThinkingLevel);
     const maxTokens = this.effectiveMaxTokens(newMessages);
@@ -817,7 +817,7 @@ export class GenerativeModel implements LLMInterface {
    * once per distinct value on stderr with the numbers involved, so a shaved `max_tokens`
    * is diagnosable from the log instead of surfacing only as an opaque failed/short turn.
    */
-  private effectiveMaxTokens(newMessages: OmniMessage[]): number | undefined {
+  private effectiveMaxTokens(newMessages: AmspRecord[]): number | undefined {
     const estimatedInput = this.lastRequestTotal + approximateMessagesTokens(newMessages);
     const derived = effectiveMaxOutputTokens(
       this.configuredMaxTokens,
@@ -842,7 +842,7 @@ export class GenerativeModel implements LLMInterface {
   /**
    * Streaming generation (a single attempt, no internal retry). Merges
    * `params.newMessages` into one UniMessage to issue a stateful request, translating streamed
-   * UniEvents into OmniMessages.
+   * UniEvents into records.
    *
    * **Never throws to `context_engine`**: whether it ends normally or is interrupted/errors out,
    * every `partial_*` segment is closed as `start → delta → stop → complete message`,
@@ -872,9 +872,7 @@ export class GenerativeModel implements LLMInterface {
    * `requestTimeoutMs`, the underlying stream is aborted and handled as needing reconnection
    * (merged with user interruption into a single internal AbortController).
    */
-  async *streamGenerate(
-    params: GenerativeModelParameters,
-  ): AsyncGenerator<OmniMessage, LLMOutcome> {
+  async *streamGenerate(params: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     const userSignal = params.signal;
 
     // Already interrupted before issuing: no streaming segment has been opened, so nothing to close out.
@@ -886,7 +884,7 @@ export class GenerativeModel implements LLMInterface {
     // and never throw to context_engine.
     let uniMessage: UniMessage;
     try {
-      uniMessage = mergeOmniToUniMessage(params.newMessages);
+      uniMessage = mergeRecordsToUniMessage(params.newMessages);
     } catch (err) {
       return { status: "fatal", errorCode: "invalid_input", errorMessage: describeError(err) };
     }
@@ -1100,14 +1098,14 @@ export class GenerativeModel implements LLMInterface {
 
   /**
    * Injects the replayed history in one shot when resuming a Session: converts the complete
-   * OmniMessage history, grouped by adjacent same role, into
+   * AmspRecord history, grouped by adjacent same role, into
    * MMSP UniMessages and calls MMSP's setHistory, so subsequent Requests continue from a
    * history exactly matching the original conversation. **Called only once, on a fresh context
    * object, during resumption**; not used during normal operation, where the incremental context
    * is maintained by MMSP itself.
    * Docs: /docs/sessions-and-traces § "Session recovery".
    */
-  setHistory(history: OmniMessage[]): void {
+  setHistory(history: AmspRecord[]): void {
     if (history.length === 0) return;
     // Resume seeding: register tool_call_ids already used in history into the uniqueness registry. A
     // name-as-id provider (e.g. Gemini) only gets a new suffix when it calls the same tool again after

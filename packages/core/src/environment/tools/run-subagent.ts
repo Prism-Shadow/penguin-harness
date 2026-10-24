@@ -27,8 +27,8 @@
  * a nonexistent agent are expressed by the runner as a throw, and collapsed to failed.
  * Docs: /docs/tools § "Subagents".
  */
-import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { DETACHED_TOOL_NOTE_PREFIX, SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
 import type {
   EnvironmentServices,
@@ -68,9 +68,9 @@ export function createSubagentTool(
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal, approve, detachSignal } = ctx;
-      const fail = function* (msg: string): Generator<OmniMessage> {
+      const fail = function* (msg: string): Generator<AmspRecord> {
         yield partialToolCallOutput({ eventType: "delta", output: msg, toolCallId });
       };
 

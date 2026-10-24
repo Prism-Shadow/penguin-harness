@@ -17,8 +17,8 @@
  * Pure: new messages are built and the originals are never mutated — the Trace and the
  * render view keep showing the image as it was sent.
  */
-import { userText } from "./builders.js";
-import type { ImageUrlPayload, OmniMessage, ToolCallOutputPayload } from "./types.js";
+import { userText } from "@prismshadow/amsp/records";
+import type { ImageUrlPayload, AmspRecord, ToolCallOutputPayload } from "@prismshadow/amsp/records";
 
 /**
  * The text that stands in for a rejected image: what happened, and nothing the harness would
@@ -30,14 +30,14 @@ export const REJECTED_IMAGE_NOTE =
   "so the request was sent again without the image.]";
 
 /** Whether a message carries an image: a tool output with `images`, or an `image_url` message. */
-function carriesImage(msg: OmniMessage): boolean {
+function carriesImage(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; images?: unknown };
   if (p.type === "image_url") return true;
   return p.type === "tool_call_output" && Array.isArray(p.images) && p.images.length > 0;
 }
 
 /** Whether any message of a request's input carries an image (see {@link replaceInputImages}). */
-export function hasInputImages(messages: readonly OmniMessage[]): boolean {
+export function hasInputImages(messages: readonly AmspRecord[]): boolean {
   return messages.some(carriesImage);
 }
 
@@ -47,8 +47,8 @@ export function hasInputImages(messages: readonly OmniMessage[]): boolean {
  * appended to its text, keeping its pairing id, stop reason and envelope; an `image_url`
  * message becomes a user text holding the note, keeping its timestamp and origin.
  */
-export function replaceInputImages(messages: readonly OmniMessage[]): OmniMessage[] {
-  return messages.map((msg): OmniMessage => {
+export function replaceInputImages(messages: readonly AmspRecord[]): AmspRecord[] {
+  return messages.map((msg): AmspRecord => {
     if (!carriesImage(msg)) return msg;
     const p = msg.payload as ToolCallOutputPayload | ImageUrlPayload;
     if (p.type === "image_url") {

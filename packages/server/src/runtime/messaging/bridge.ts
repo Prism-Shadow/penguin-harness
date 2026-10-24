@@ -73,7 +73,7 @@
  * messagingFilesNotSentRecords).
  */
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
 import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
@@ -790,7 +790,7 @@ function inboundKey(sessionId: string, channel: string): string {
  * this store names.
  */
 function inboundRecallStore(
-  input: OmniMessage[],
+  input: AmspRecord[],
   attachments: readonly TaskAttachment[],
   written: readonly string[],
 ): RecallStore {
@@ -809,7 +809,7 @@ export interface MessagingTaskRunnerShape {
   statusOf(sessionId: string): string;
   startTask(
     sessionId: string,
-    input: OmniMessage[],
+    input: AmspRecord[],
     /**
      * `recall` is what a queued follow-up hands back when the user withdraws it in the Web
      * App. It is optional because the manager derives one from the input for every caller
@@ -1552,7 +1552,7 @@ export class MessagingBridge {
    */
   private async writeInboundFiles(
     entry: BridgeEntry,
-    input: OmniMessage[],
+    input: AmspRecord[],
     attachments: readonly TaskAttachment[],
   ): Promise<AttachedFiles> {
     if (attachments.length === 0) return { input, written: [] };
@@ -1661,9 +1661,9 @@ export class MessagingBridge {
   private async inboundImageParts(
     entry: BridgeEntry,
     images: readonly MessagingInboundImage[],
-  ): Promise<{ parts: OmniMessage[] } | { notice: string }> {
+  ): Promise<{ parts: AmspRecord[] } | { notice: string }> {
     const budget = this.imageBudgetFor(entry);
-    const parts: OmniMessage[] = [];
+    const parts: AmspRecord[] = [];
     for (const image of images) {
       const remaining = budget.remaining(this.now(), this.inboundImageBudgetBytes);
       if (remaining <= 0) return { notice: messagingImageBudgetNotice() };
@@ -1758,7 +1758,7 @@ export class MessagingBridge {
       }
       return;
     }
-    const msg = data as OmniMessage;
+    const msg = data as AmspRecord;
     if (msg.origin !== undefined && msg.origin.length > 0) return; // subagent output is not the reply
     const payload = msg.payload as { type?: string; role?: string; text?: string };
     if (msg.type === "event_msg") {

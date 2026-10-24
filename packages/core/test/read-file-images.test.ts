@@ -16,8 +16,8 @@ import { READ_FILE_NAME, createReadFileTool } from "../src/environment/tools/rea
 import { MAX_IMAGE_BYTES } from "../src/environment/tools/image-source.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import { Environment } from "../src/environment/environment.js";
-import { assistantText, partialText, toolCall } from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import { assistantText, partialText, toolCall } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ToolResult } from "../src/environment/tools/types.js";
 import type {
   EnvironmentServices,
@@ -83,7 +83,7 @@ async function run(
 ) {
   const tool = createReadFileTool(definition, services);
   const gen = tool.execute(args, { workspaceDir, toolCallId: "c1" });
-  const messages: OmniMessage[] = [];
+  const messages: AmspRecord[] = [];
   let result: ToolResult | void;
   for (;;) {
     const res = await gen.next();
@@ -322,7 +322,7 @@ describe("read_file image branch — Environment assembly", () => {
     const factory = BUILTIN_TOOL_FACTORIES[READ_FILE_NAME]!;
     const { llm } = fakeLLM("delegated description result");
     const complete = async (env: Environment) => {
-      const out: OmniMessage[] = [];
+      const out: AmspRecord[] = [];
       for await (const m of env.executeTool({
         toolCall: toolCall({
           name: READ_FILE_NAME,

@@ -17,8 +17,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAgent } from "../src/index.js";
-import { sessionMeta, userText } from "../src/omnimessage/index.js";
-import type { OmniMessage, SessionSource } from "../src/omnimessage/index.js";
+import { sessionMeta, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord, SessionSource } from "@prismshadow/amsp/records";
 import { tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
 import { seedProject } from "./seeded-project.js";
@@ -65,7 +65,7 @@ async function writeTrace(source: unknown): Promise<string> {
     workspace,
     ...(source !== undefined ? { source } : {}),
   };
-  const records: OmniMessage[] = [
+  const records: AmspRecord[] = [
     sessionMeta(meta as Parameters<typeof sessionMeta>[0]),
     userText("hello"),
   ];
@@ -74,7 +74,7 @@ async function writeTrace(source: unknown): Promise<string> {
   return file;
 }
 
-const sourceOf = (session: { metaMessage: OmniMessage }) =>
+const sourceOf = (session: { metaMessage: AmspRecord }) =>
   (session.metaMessage.payload as { source?: unknown }).source;
 
 describe("creating a Session", () => {

@@ -31,7 +31,7 @@ import {
 import { EDIT_FILE_NAME, createEditFileTool } from "../src/environment/tools/edit-file.js";
 import { WRITE_FILE_NAME, createWriteFileTool } from "../src/environment/tools/write-file.js";
 import type { BuiltinTool, ToolResult } from "../src/environment/tools/types.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ToolDefinitionConfig } from "../src/interfaces/index.js";
 import { modelVisiblePath } from "../src/internal/model-visible-path.js";
 
@@ -42,7 +42,7 @@ function def(name: string, permission: "r" | "rw"): ToolDefinitionConfig {
 /** Runs one tool execution: concatenates text deltas and captures the generator's return value. */
 async function run(tool: BuiltinTool, args: Record<string, unknown>, workspaceDir: string) {
   const gen = tool.execute(args, { workspaceDir, toolCallId: "c1" });
-  const messages: OmniMessage[] = [];
+  const messages: AmspRecord[] = [];
   let result: ToolResult | void;
   for (;;) {
     const res = await gen.next();

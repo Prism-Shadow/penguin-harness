@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { interactiveReplyIndex } from "../src/features/chat/a2ui-reply";
-import type { ChatItem } from "../src/lib/omni/stream-model";
+import type { ChatItem } from "../src/lib/amsp/stream-model";
 
 /** The main conversation's origin chain; a subagent's conversation has its own ids in it. */
 const MAIN: readonly string[] = [];

@@ -17,7 +17,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { sessionMeta, userText } from "../src/omnimessage/index.js";
+import { sessionMeta, userText } from "@prismshadow/amsp/records";
 import type { ApproveFn } from "../src/interfaces/index.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";

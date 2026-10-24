@@ -24,8 +24,8 @@ import {
   humanizeDuration,
   humanizeDurationLive,
 } from "../../lib/format";
-import { liveSessionElapsedMs, sessionElapsedBreakdown } from "../../lib/omni/task-stats";
-import type { TaskStatsTracker } from "../../lib/omni/task-stats";
+import { liveSessionElapsedMs, sessionElapsedBreakdown } from "../../lib/amsp/task-stats";
+import type { TaskStatsTracker } from "../../lib/amsp/task-stats";
 import { S } from "../../lib/strings";
 import type { Currency } from "../../state/theme";
 

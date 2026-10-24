@@ -24,7 +24,7 @@ import {
   toolCall,
   userText,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import type { RetryNowResponse, TaskCreateResponse } from "../src/api/types.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
@@ -56,7 +56,7 @@ describe("retry-now route", () => {
         skips += 1;
         return true;
       },
-      async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
         const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-retry" });
         yield tc;
         yield approvalDecision(await opts.approve(tc), "tc-retry");
@@ -98,13 +98,13 @@ describe("retry-now route", () => {
   it("retry after the user stopped a run → 202, one more run with no input, no user message republished", async () => {
     // Stands in for core's carry-over: a stopped run leaves its turn held until the next run.
     let held = false;
-    const runs: OmniMessage[][] = [];
+    const runs: AmspRecord[][] = [];
     const stopped = uniqueSessionId();
     adoptSession(
       t.deps,
       fakeSession(stopped, {
         hasPendingInput: () => held,
-        async *run(input: OmniMessage[], opts: { signal: AbortSignal }) {
+        async *run(input: AmspRecord[], opts: { signal: AbortSignal }) {
           runs.push(input);
           held = false;
           if (runs.length > 1) {
@@ -119,9 +119,9 @@ describe("retry-now route", () => {
       }),
       { projectId: "retrier-default_project" },
     );
-    const published: OmniMessage[] = [];
+    const published: AmspRecord[] = [];
     const unsubscribe = t.deps.channels.get(stopped).subscribe((evt) => {
-      if (evt.event === undefined) published.push(JSON.parse(evt.data) as OmniMessage);
+      if (evt.event === undefined) published.push(JSON.parse(evt.data) as AmspRecord);
     });
 
     await api.post(`/api/sessions/${stopped}/tasks`, { input: [{ type: "text", text: "go" }] });

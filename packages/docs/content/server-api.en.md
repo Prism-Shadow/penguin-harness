@@ -811,7 +811,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 - On creation, `modelId` and `provider` go together: send the complete pair to pick a model, or omit both to use the Project's default model. Sending only one is a 400.
 - An explicit `workspace` must be an existing directory; it is never created. When omitted, the Workspace is a temporary one created automatically. The approval mode defaults to `allow-all`.
 - `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. The server itself writes `"org"` on an organization's desk and ticket sessions and `"api"` on a Session an Agent API run created, and a client can send neither. `excludeOrg` reads it to drop the `org` rows, and the Agent API continues only `api` Sessions; see [Agent API](/agent-api#conversations). An `"org"` row whose Trace records no `source` (written by an older release, or not run yet) reads as a `company` Session.
-- A Session's `source` says what kind of conversation it is (see [session_meta](/omni-message#sessionmeta)), and together with the user's archive marks it decides the Session's category. A `subagent` or `company` Session is in no category, whatever its marks, so a request with `category`, `workspaceGroup` or `counts=1` leaves it out of the page and every total; only the plain list serves it. Any other Session is `archived` when the user archived it, or when its source is `api`, `schedule`, `cli` or `workbench` and the user has not unarchived it; otherwise it is `active`. Unarchiving sets a keep mark that later runs never clear, so a program's Session the user unarchived stays `active` until it is archived again. The rule is applied on every read and rewrites nothing on disk; `archived` on the Session info is its answer. A row whose Trace head has not been read yet carries no `source` and counts as `active`.
+- A Session's `source` says what kind of conversation it is (see [session_meta](/amsp-records#sessionmeta)), and together with the user's archive marks it decides the Session's category. A `subagent` or `company` Session is in no category, whatever its marks, so a request with `category`, `workspaceGroup` or `counts=1` leaves it out of the page and every total; only the plain list serves it. Any other Session is `archived` when the user archived it, or when its source is `api`, `schedule`, `cli` or `workbench` and the user has not unarchived it; otherwise it is `active`. Unarchiving sets a keep mark that later runs never clear, so a program's Session the user unarchived stays `active` until it is archived again. The rule is applied on every read and rewrites nothing on disk; `archived` on the Session info is its answer. A row whose Trace head has not been read yet carries no `source` and counts as `active`.
 - On creation, `source` accepts only `"cli"`, which `penguin run` sends. Every other source is the server's own to write, and omitting it creates a `user` Session. The retired `"benchmark"` is still accepted, as `"cli"`.
 - `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries, platform}`: every entry carries its `kind` (`dir` or `file`) and `mtime`, and on Windows an entry the system hides (the hidden attribute: `AppData`, `NTUSER.DAT`) carries `hidden: true`. A bare drive such as `D:` is taken as its root `D:\`. The home request with `places=1` adds what the picker's sidebar shows: `standardFolders` (Desktop, Documents, Downloads and Pictures as the machine resolves them — Windows known folders, Linux XDG user directories — omitted when they could not be read) and `locations` (Windows drives, macOS volumes, the Linux root and its mounts under `/media`, `/run/media` and `/mnt`, each with its `kind` and, when it has one, its `label`). A directory the server may not read answers `403 dir_permission_denied` rather than an empty list — on macOS that is usually a Files and Folders permission the user has not granted.
 - `POST /dirs/access` is the Workspace picker's **Allow access** in the desktop app. macOS asks about Desktop, Documents and Downloads only on behalf of the app it holds responsible for the read, so the desktop shell's main process reads the absolute `path` once, and the answer waits for the user. `granted` says whether the read succeeded (always `true` off macOS, where nothing is read). `packaged` is `false` for a development instance started from a terminal, whose reads macOS charges to that terminal. The route returns `400` `dir_not_absolute` for a path that is not absolute, `503` `shell_unreachable` when the server has no desktop shell to ask, and `504` `timeout` when the shell has not answered within 120 seconds. Only the desktop app's own window may call it; any other session gets `403` `desktop_shell_only`.
@@ -863,10 +863,12 @@ Two conventions apply to every route here. A Session the caller cannot access al
 | GET | `/` | Session info |
 | PATCH | `/` | Updates the Session: `{approvalMode?, sandbox?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | Deletes the Session, with its Traces, scratch files and subagent Sessions |
-| GET | `/messages` | The OmniMessage history, in full or as a window of Tasks |
+| GET | `/messages` | The record history, in full or as a window of Tasks |
 | GET | `/trace-image?file=&ordinal=[&i=]` | One image of a Trace record, as a windowed `/messages` page references it |
 | POST | `/fork` | Forks an idle Session after a completed assistant reply: `{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | The SSE event stream; see [Streaming (SSE)](#streaming-sse) |
+| GET | `/amsp` | The Session's AMSP stream: its records and `ping`, without the server events `/stream` adds |
+| GET | `/approvals[?wait=]` | The tool calls waiting for a decision: `{approvals: [{tool_call, origin?}]}` |
 | GET | `/context` | What the current model context is made of, and where compaction will start |
 | GET | `/goal` | The Session's most recent goal run |
 
@@ -876,10 +878,12 @@ Two conventions apply to every route here. A Session the caller cannot access al
 - `PATCH /` with `thinkingLevel` pins the level on this Session durably, from its very next LLM request. The thinking level is soft-limited: it can change mid-context, at the cost of the provider's cached context, which is why the level picker advises compacting first. The pinned level comes back as `SessionInfo.thinkingLevel`; when that is absent, no level was ever pinned and the agent config applies.
 - `PATCH /` with `archived: true` archives the Session, and `archived: false` unarchives it and keeps it in the sidebar: a Session a program opened then lists as `active` through its later runs, until it is archived again. Either is announced as `session_archived`. A `subagent` or `company` Session is in no list, so `archived` on one is `409` `session_not_listed`. Running, resuming, scheduling into or messaging an archived Session works as usual and leaves it archived.
 - `DELETE /` aborts a running Task first, then removes the Session's Trace files, scratch files, index row and messaging binding. The subagent Sessions it spawned, found from the `subagent` records in its Trace, are deleted the same way. Each deleted Session is announced as `session_deleted`.
-- `GET /messages` without parameters returns the full OmniMessage history. `tailLimit=n` reads the newest n Task-aligned units instead, and `before=<cursor>&limit=n` reads the n units before a cursor. The two forms are exclusive, `n` is between 1 and 1000, and `limit` defaults to 200. A window also stays within 4 MiB of serialized messages: it stops before the unit that would pass that, but always holds at least one, so it can hold fewer units than asked for and still carry a `before` cursor. The bundled Web App opens a conversation on its latest 20 turns and loads 20 more each time you scroll to the top. A windowed response carries `page`, with the cursor for the next page (`before`), the number of turns before the window (`earlierTurns`), the cumulative stats before it (`prior`), and the model of the context the window starts in (`contextModel`): a Session can switch models between contexts, and a window that starts partway into one does not hold the `session_meta` that names its model. While a Task runs, the response also carries `live`; see [The live field on GET /messages](#the-live-field-on-get-messages).
+- `GET /messages` without parameters returns the full record history. `tailLimit=n` reads the newest n Task-aligned units instead, and `before=<cursor>&limit=n` reads the n units before a cursor. The two forms are exclusive, `n` is between 1 and 1000, and `limit` defaults to 200. A window also stays within 4 MiB of serialized messages: it stops before the unit that would pass that, but always holds at least one, so it can hold fewer units than asked for and still carry a `before` cursor. The bundled Web App opens a conversation on its latest 20 turns and loads 20 more each time you scroll to the top. A windowed response carries `page`, with the cursor for the next page (`before`), the number of turns before the window (`earlierTurns`), the cumulative stats before it (`prior`), and the model of the context the window starts in (`contextModel`): a Session can switch models between contexts, and a window that starts partway into one does not hold the `session_meta` that names its model. While a Task runs, the response also carries `live`; see [The live field on GET /messages](#the-live-field-on-get-messages).
 - A windowed page serves images by reference. In each record that carries a `tracePosition`, a PNG, JPEG, GIF or WebP `data:` URL, whether a user's `image_url` or an entry of a tool output's `images`, is replaced by `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`, with `&i=<k>` for the k-th entry of `images`. That route answers the decoded image with its own type, `Cache-Control: private, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`. It returns 404 `trace_image_not_found` when the record holds no such image, and 400 for a missing or malformed parameter. Subagent messages, other image types and the full read keep their `data:` URLs.
 - `GET /context` returns the parts the current model context is made of, plus `compactionThreshold`: the context size, in tokens, at which the Session's next request starts compaction. That threshold is the agent's `compaction.max_context_length`, capped by the room the model's context window leaves. It is `null` when compaction is disabled, when the agent's config cannot be read, or when the threshold is not below the window. The route reads the newest Trace file on every call, so the figures are a snapshot rather than a live counter.
 - `GET /goal` returns `{goal}`, which is `null` if the Session never ran a goal, or otherwise `{objective, status, budget, used, rounds}`. `status` is `active`, `complete`, `blocked`, `budget_limited` or `aborted`, and a `budget` of -1 means unlimited. A goal lives only inside its run, so a goal that still reads as active while the Session is not running is reported as `aborted`. See [Goal mode](/goal-mode).
+- `GET /amsp` serves the Agent API's Session stream, the same handler as `GET /api/amsp/v1/sessions/:sessionId/stream`, to a signed-in reader or the local API token: each record with its `id:`, `event: ping` at once and every 20 seconds, and `event: resync_required` with `data: {}` when the `Last-Event-ID` (or `lastEventId`) it resumes from has left the buffer. It writes no `server_event`, no initial `task_state` snapshot and no replayed `approval_request`. See [The Session stream](/amsp#the-session-stream).
+- `GET /approvals` is the Agent API's approvals resource, the same handler as `GET /api/amsp/v1/sessions/:sessionId/approvals`: each call's `tool_call` payload, with `origin` for a subagent's call. With `wait=<seconds>`, clamped to 1–60, an empty answer is held until a call waits or the time runs out; a `wait` that is not a whole number is 400. Answer through `POST /approvals/:toolCallId`. See [Approvals](/amsp#approvals).
 
 ### The `live` field on GET /messages
 
@@ -887,16 +891,16 @@ The Trace stores only complete messages, and streaming `partial_*` messages neve
 
 ```ts
 interface MessagesResponse {
-  messages: (OmniMessage & { tracePosition?: { fileIndex: number; ordinal: number } })[];
+  messages: (AmspRecord & { tracePosition?: { fileIndex: number; ordinal: number } })[];
   live?: {
     // The Session channel's most recently assigned SSE event id (`<epoch>-<seq>`):
     // every event published up to and including this id is already reflected in `fragments`.
     cursor: string;
-    // One synthetic `partial_* start` OmniMessage per open streaming fragment, whose
+    // One synthetic `partial_* start` AmspRecord per open streaming fragment, whose
     // payload carries the full accumulated content so far (text/thinking prefix,
     // tool-call name + accumulated arguments, tool-output prefix + images), with the
     // original `origin` chain preserved (subagent fragments included).
-    fragments: OmniMessage[];
+    fragments: AmspRecord[];
   };
 }
 ```
@@ -905,7 +909,7 @@ interface MessagesResponse {
 
 ### Forks
 
-`tracePosition` is metadata of the history response, not part of the persisted OmniMessage envelope. The Web App sends the immutable position of the reply's final assistant record to `/fork`, and the server checks that this record closes a completed Task.
+`tracePosition` is metadata of the history response, not part of the persisted record envelope. The Web App sends the immutable position of the reply's final assistant record to `/fork`, and the server checks that this record closes a completed Task.
 
 A fork clones the retained Trace files and snapshots the source scratchpad under the new Session id, rewriting the local attachment markers the system generated, so the fork keeps working if either Session is deleted later. Forks made from any reply of the same source Session share one persistent title sequence that does not depend on the interface language (`Source title (1)`, `Source title (2)`), and deleting an older fork does not free its number. A source Session that is running or compacting returns 409.
 
@@ -1324,16 +1328,17 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | `GET /api/sessions/:sessionId/stream` | The Session's message stream and run events, including `session_created` for its subagent Sessions and the goal-mode events |
+| Per Session, as AMSP | `GET /api/sessions/:sessionId/amsp` | The Session's records and `ping` only, as the Agent API serves them; see [The Session stream](/amsp#the-session-stream) |
 | Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_archived`, `session_deleted`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated`, company mode's `org_*` events, and for admins `machines_changed` |
 | Per Project's machines | `GET /api/projects/:projectId/machines/events` | Every connected machine's own events, each tagged with the machine it came from, merged from the hub's one subscription per machine (**One event stream per machine within the socket hub**) |
 
 ### Wire Format
 
-Default (unnamed) SSE events carry raw OmniMessage envelopes as single-line JSON: the same protocol the SDK yields and the Trace stores (see [OmniMessage Protocol](/omni-message)). Events named `ping` are the heartbeat (see [Delivery Guarantees](#delivery-guarantees)). Events named `server_event` carry the `ServerEvent` union:
+Default (unnamed) SSE events carry raw AMSP records as single-line JSON: the same records the SDK yields and the Trace stores (see [AMSP Records](/amsp-records)). Events named `ping` are the heartbeat (see [Delivery Guarantees](#delivery-guarantees)). Events named `server_event` carry the `ServerEvent` union:
 
 ```ts
 export type ServerEvent =
-  | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
+  | { type: "approval_request"; toolCall: AmspRecord<ToolCallPayload>; origin?: string[] }
   | {
       type: "task_state";
       state: "idle" | "running" | "compacting";

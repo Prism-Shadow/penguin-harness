@@ -1,7 +1,7 @@
 /**
- * OmniMessage stream → render view-model reducer. A
+ * Record stream → render view-model reducer. A
  * pure logic module, no React dependency: takes in an ordered sequence of
- * OmniMessage (history's complete messages + real-time partial/complete/
+ * records (history's complete messages + real-time partial/complete/
  * event), and produces a `ChatItem[]` view model (updated in place, with the caller triggering the re-render).
  *
  * Key points:
@@ -54,7 +54,7 @@
  *   - Overlap-dedup helpers: buildDedupIndex/isDuplicate
  *     judge duplicates by exact match of the envelope JSON; when a complete
  *     message hits the dedup check, discardFragmentFor also discards the corresponding in-flight fragment.
- * Docs: /docs/omni-message § "The streaming discipline".
+ * Docs: /docs/amsp-records § "The streaming discipline".
  */
 import {
   isEventMessage,
@@ -62,22 +62,21 @@ import {
   isPartialPayload,
   isTaskRecord,
   normalizeSessionSource,
-  parseBackgroundTaskDoneMessage,
-  parseUserSteeringText,
-} from "@prismshadow/penguin-core/omnimessage";
+} from "@prismshadow/amsp";
+import { parseBackgroundTaskDoneMessage, parseUserSteeringText } from "@prismshadow/amsp/markers";
 import type {
   ApprovalDecision,
   CompactionMode,
   CompactionReason,
   CompleteModelPayload,
   EventPayload,
-  OmniMessage,
+  AmspRecord,
   PartialModelPayload,
   SessionMetaPayload,
   SessionSource,
   StopReason,
   TokenUsagePayload,
-} from "@prismshadow/penguin-core/omnimessage";
+} from "@prismshadow/amsp";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
@@ -250,7 +249,7 @@ export interface SubagentItem {
 export interface AbortItem {
   kind: "abort";
   id: number;
-  /** Machine-readable cause (the omnimessage ErrorCode vocabulary); the banner localizes from it. */
+  /** Machine-readable cause (the records' ErrorCode vocabulary); the banner localizes from it. */
   errorCode?: string;
   /** Raw failure detail, shown verbatim (absent on live user interrupts). */
   errorMessage?: string;
@@ -720,12 +719,8 @@ function nextId(model: StreamModel): number {
 // Main entry point
 // ---------------------------------------------------------------------------
 
-/** Feed in one OmniMessage in order (history or live); nowMs is used for the Task's live timing (injectable for tests). */
-export function pushMessage(
-  model: StreamModel,
-  msg: OmniMessage,
-  nowMs: number = Date.now(),
-): void {
+/** Feed in one AmspRecord in order (history or live); nowMs is used for the Task's live timing (injectable for tests). */
+export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number = Date.now()): void {
   // Task records: no item, no Task change, no timestamp — checked before the origin routing so a
   // child's own pair leaves the parent's timing alone too.
   if (isTaskRecord(msg)) return;
@@ -795,7 +790,7 @@ export function pushMessage(
       msg.payload as CompleteModelPayload,
       msg.timestamp,
       nowMs,
-      (msg as OmniMessage & { tracePosition?: TracePosition }).tracePosition,
+      (msg as AmspRecord & { tracePosition?: TracePosition }).tracePosition,
     );
     advanceLastTs(model, msg.timestamp);
     return;
@@ -857,7 +852,7 @@ export function pushMessage(
  * ended the run, with no Task opened since (see StreamModel.runEnded). A compaction's own
  * requests never count — compaction is housekeeping, not a run.
  */
-function startsRetryRun(model: StreamModel, msg: OmniMessage): boolean {
+function startsRetryRun(model: StreamModel, msg: AmspRecord): boolean {
   return (
     model.runEnded &&
     !model.stats.compactionActive &&
@@ -866,7 +861,7 @@ function startsRetryRun(model: StreamModel, msg: OmniMessage): boolean {
 }
 
 /** Whether the message is a complete user image — the only kind that can join an open steering chip. */
-function isCompleteUserImage(msg: OmniMessage): boolean {
+function isCompleteUserImage(msg: AmspRecord): boolean {
   return msg.type === "model_msg" && (msg.payload as { type?: string }).type === "image_url";
 }
 
@@ -920,7 +915,7 @@ function advanceLastTs(model: StreamModel, timestamp: string): void {
  */
 export function pushMessages(
   model: StreamModel,
-  messages: OmniMessage[],
+  messages: AmspRecord[],
   nowMs: number = Date.now(),
   serverNowMs: number | null = null,
 ): void {
@@ -2117,7 +2112,7 @@ function findLastWaitingReconnect(model: StreamModel): ReconnectItem | null {
 // origin nested routing
 // ---------------------------------------------------------------------------
 
-function routeNested(model: StreamModel, msg: OmniMessage, nowMs: number): void {
+function routeNested(model: StreamModel, msg: AmspRecord, nowMs: number): void {
   const head = msg.origin![0]!;
   // Sub-session token_usage: the request delta counts toward this level's stats (at any depth, same convention as the CLI).
   if (isEventMessage(msg) && msg.payload.type === "token_usage") {
@@ -2155,7 +2150,7 @@ function routeNested(model: StreamModel, msg: OmniMessage, nowMs: number): void 
   }
   // Strip the first origin hop and recursively feed into the nested model.
   const rest = msg.origin!.slice(1);
-  const forwarded: OmniMessage = { ...msg };
+  const forwarded: AmspRecord = { ...msg };
   if (rest.length > 0) forwarded.origin = rest;
   else delete forwarded.origin;
   pushMessage(sub, forwarded, nowMs);
@@ -2225,7 +2220,7 @@ function moveToSpawningCard(
 }
 
 /** The opening prompt a child's first model message carries: a user text from its parent agent (or, in a Trace older than `sender`, from no one named). */
-function openingPrompt(msg: OmniMessage): string | null {
+function openingPrompt(msg: AmspRecord): string | null {
   const p = msg.payload as { type?: string; role?: string; text?: unknown; sender?: string };
   if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return null;
   return p.sender === undefined || p.sender === "parent_agent" ? p.text : null;
@@ -2315,8 +2310,8 @@ function imageInKey(value: unknown): unknown {
  * key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
  * appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
  */
-function dedupKey(msg: OmniMessage): string {
-  const { tracePosition: _tracePosition, ...envelope } = msg as OmniMessage & {
+function dedupKey(msg: AmspRecord): string {
+  const { tracePosition: _tracePosition, ...envelope } = msg as AmspRecord & {
     tracePosition?: TracePosition;
   };
   if (msg.type === "model_msg") {
@@ -2332,7 +2327,7 @@ function dedupKey(msg: OmniMessage): string {
 }
 
 /** Build a dedup index from the envelope JSON of history's **last `limit` messages**. */
-export function buildDedupIndex(messages: OmniMessage[], limit = 100): Set<string> {
+export function buildDedupIndex(messages: AmspRecord[], limit = 100): Set<string> {
   const index = new Set<string>();
   for (let i = Math.max(0, messages.length - limit); i < messages.length; i++) {
     index.add(dedupKey(messages[i]!));
@@ -2341,7 +2336,7 @@ export function buildDedupIndex(messages: OmniMessage[], limit = 100): Set<strin
 }
 
 /** Determine whether a complete message/event is exactly identical to history's envelope JSON (overlap dedup). */
-export function isDuplicate(index: Set<string>, msg: OmniMessage): boolean {
+export function isDuplicate(index: Set<string>, msg: AmspRecord): boolean {
   return index.has(dedupKey(msg));
 }
 
@@ -2351,12 +2346,12 @@ export function isDuplicate(index: Set<string>, msg: OmniMessage): boolean {
  * into the reducer before this complete message, its content duplicates
  * history and must be entirely removed/cleared. Routed recursively to nested models by origin.
  */
-export function discardFragmentFor(model: StreamModel, msg: OmniMessage): void {
+export function discardFragmentFor(model: StreamModel, msg: AmspRecord): void {
   if (msg.origin && msg.origin.length > 0) {
     const sub = model.subagents.get(msg.origin[0]!);
     if (!sub) return;
     const rest = msg.origin.slice(1);
-    const forwarded: OmniMessage = { ...msg };
+    const forwarded: AmspRecord = { ...msg };
     if (rest.length > 0) forwarded.origin = rest;
     else delete forwarded.origin;
     discardFragmentFor(sub, forwarded);

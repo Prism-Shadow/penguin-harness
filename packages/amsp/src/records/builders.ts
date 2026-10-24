@@ -1,8 +1,8 @@
 /**
- * OmniMessage builders. All modules create messages exclusively through these builders, avoiding
+ * Record builders. All modules create records exclusively through these builders, avoiding
  * ad hoc protocol structures scattered across the codebase.
  * Every builder writes an ISO 8601 UTC timestamp.
- * Docs: /docs/omni-message § "Builders and guards".
+ * Docs: /docs/amsp-records § "Builders and guards".
  */
 import type {
   ErrorCode,
@@ -24,7 +24,7 @@ import type {
   McpServerConnectResult,
   MessageOrigin,
   ModelMessage,
-  OmniMessage,
+  AmspRecord,
   PartialTextPayload,
   PartialThinkingPayload,
   PartialToolCallOutputPayload,
@@ -48,19 +48,19 @@ import type {
   ToolListReadyPayload,
   ToolCallPayload,
   ToolDefinition,
+  ThinkingLevelName,
 } from "./types.js";
-import type { ThinkingLevelName } from "../interfaces/shared.js";
 
 /** The current moment's ISO 8601 UTC timestamp. */
 function nowIso(): string {
   return new Date().toISOString();
 }
 
-function model<P extends ModelMessage["payload"]>(payload: P): OmniMessage<P> {
+function model<P extends ModelMessage["payload"]>(payload: P): AmspRecord<P> {
   return { timestamp: nowIso(), type: "model_msg", payload };
 }
 
-function event<P extends EventMessage["payload"]>(payload: P): OmniMessage<P> {
+function event<P extends EventMessage["payload"]>(payload: P): AmspRecord<P> {
   return { timestamp: nowIso(), type: "event_msg", payload };
 }
 
@@ -88,7 +88,7 @@ export function textMessage(
   text: string,
   stopReason: StopReason = "completed",
   fidelity?: Fidelity,
-): OmniMessage<TextPayload> {
+): AmspRecord<TextPayload> {
   return model({
     type: "text",
     role,
@@ -99,7 +99,7 @@ export function textMessage(
 }
 
 /** User-role text. `sender` marks non-human origins (the parent agent's subagent prompt, a harness or server injection); omitted = the human user, and the field stays absent. */
-export const userText = (text: string, sender?: TextSender): OmniMessage<TextPayload> => {
+export const userText = (text: string, sender?: TextSender): AmspRecord<TextPayload> => {
   const msg = textMessage("user", text);
   if (sender !== undefined && sender !== "user") msg.payload.sender = sender;
   return msg;
@@ -109,9 +109,9 @@ export const assistantText = (
   text: string,
   stopReason: StopReason = "completed",
   fidelity?: Fidelity,
-): OmniMessage<TextPayload> => textMessage("assistant", text, stopReason, fidelity);
+): AmspRecord<TextPayload> => textMessage("assistant", text, stopReason, fidelity);
 
-export function imageUrlMessage(imageUrl: string): OmniMessage<ImageUrlPayload> {
+export function imageUrlMessage(imageUrl: string): AmspRecord<ImageUrlPayload> {
   return model({
     type: "image_url",
     role: "user",
@@ -125,7 +125,7 @@ export function inlineData(
   data: string,
   mimeType: string,
   fidelity?: Fidelity,
-): OmniMessage<InlineDataPayload> {
+): AmspRecord<InlineDataPayload> {
   return model({
     type: "inline_data",
     role,
@@ -140,7 +140,7 @@ export function thinkingMessage(
   thinking: string,
   stopReason: StopReason = "completed",
   fidelity?: Fidelity,
-): OmniMessage<ThinkingPayload> {
+): AmspRecord<ThinkingPayload> {
   return model({
     type: "thinking",
     role: "assistant",
@@ -154,7 +154,7 @@ export function inlineThinking(
   data: string,
   mimeType: string,
   fidelity?: Fidelity,
-): OmniMessage<InlineThinkingPayload> {
+): AmspRecord<InlineThinkingPayload> {
   return model({
     type: "inline_thinking",
     role: "assistant",
@@ -171,7 +171,7 @@ export function toolCall(args: {
   toolCallId: string;
   stopReason?: StopReason;
   fidelity?: Fidelity;
-}): OmniMessage<ToolCallPayload> {
+}): AmspRecord<ToolCallPayload> {
   return model({
     type: "tool_call",
     role: "assistant",
@@ -189,7 +189,7 @@ export function toolCallOutput(args: {
   stopReason?: StopReason;
   /** Images carried by the tool output (array of data URLs); images aren't incremental — a single delta carries the whole set in the streaming path, and the complete message carries them too. */
   images?: string[];
-}): OmniMessage<ToolCallOutputPayload> {
+}): AmspRecord<ToolCallOutputPayload> {
   return model({
     type: "tool_call_output",
     role: "user",
@@ -206,7 +206,7 @@ export function partialText(
   eventType: StreamEventType,
   text = "",
   stopReason: StopReason = "completed",
-): OmniMessage<PartialTextPayload> {
+): AmspRecord<PartialTextPayload> {
   return model({
     type: "partial_text",
     role: "assistant",
@@ -220,7 +220,7 @@ export function partialThinking(
   eventType: StreamEventType,
   thinking = "",
   stopReason: StopReason = "completed",
-): OmniMessage<PartialThinkingPayload> {
+): AmspRecord<PartialThinkingPayload> {
   return model({
     type: "partial_thinking",
     role: "assistant",
@@ -236,7 +236,7 @@ export function partialToolCall(args: {
   arguments?: string;
   toolCallId: string;
   stopReason?: StopReason;
-}): OmniMessage<PartialToolCallPayload> {
+}): AmspRecord<PartialToolCallPayload> {
   return model({
     type: "partial_tool_call",
     role: "assistant",
@@ -255,7 +255,7 @@ export function partialToolCallOutput(args: {
   stopReason?: StopReason;
   /** Images carried by the tool output (array of data URLs); images aren't incremental — a single delta carries the whole set. */
   images?: string[];
-}): OmniMessage<PartialToolCallOutputPayload> {
+}): AmspRecord<PartialToolCallOutputPayload> {
   return model({
     type: "partial_tool_call_output",
     role: "user",
@@ -272,23 +272,23 @@ export function partialToolCallOutput(args: {
 export function approvalDecision(
   decision: ApprovalDecision,
   toolCallId: string,
-): OmniMessage<ApprovalDecisionPayload> {
+): AmspRecord<ApprovalDecisionPayload> {
   return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
 }
 
 export function abortEvent(
   errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted" = "user_abort",
-): OmniMessage<AbortPayload> {
+): AmspRecord<AbortPayload> {
   return event({ type: "abort", error_code: errorCode });
 }
 
 /** Task begin event: opens one Task's pair (produced by the Session; see TaskBeginPayload). */
-export function taskBegin(): OmniMessage<TaskBeginPayload> {
+export function taskBegin(): AmspRecord<TaskBeginPayload> {
   return event({ type: "task_begin" });
 }
 
 /** Task end event: closes the Task the last `task_begin` opened (see TaskBeginPayload). */
-export function taskEnd(): OmniMessage<TaskEndPayload> {
+export function taskEnd(): AmspRecord<TaskEndPayload> {
   return event({ type: "task_end" });
 }
 
@@ -296,7 +296,7 @@ export function taskEnd(): OmniMessage<TaskEndPayload> {
  * request begin event: marks the start of one LLM Request, stamped with the effective thinking
  * level the request goes out at (omitted when none is sent).
  */
-export function requestBegin(thinkingLevel?: ThinkingLevelName): OmniMessage<RequestBeginPayload> {
+export function requestBegin(thinkingLevel?: ThinkingLevelName): AmspRecord<RequestBeginPayload> {
   return event({
     type: "request_begin",
     ...(thinkingLevel !== undefined ? { thinking_level: thinkingLevel } : {}),
@@ -318,7 +318,7 @@ export function requestEnd(
     attempt?: number;
     retryInMs?: number;
   } = {},
-): OmniMessage<RequestEndPayload> {
+): AmspRecord<RequestEndPayload> {
   return event({
     type: "request_end",
     status,
@@ -335,7 +335,7 @@ export function compactionBegin(args: {
   mode: CompactionMode;
   context: number;
   turns: number;
-}): OmniMessage<CompactionBeginPayload> {
+}): AmspRecord<CompactionBeginPayload> {
   return event({
     type: "compaction_begin",
     reason: args.reason,
@@ -353,7 +353,7 @@ export function compactionEnd(args: {
   attempt?: number;
   errorCode?: ErrorCode;
   errorMessage?: string;
-}): OmniMessage<CompactionEndPayload> {
+}): AmspRecord<CompactionEndPayload> {
   return event({
     type: "compaction_end",
     reason: args.reason,
@@ -366,12 +366,12 @@ export function compactionEnd(args: {
 }
 
 /** Hook result event: what one hook answered at a hook point (produced by the Session's hook loop; see hooks/stop-hook.ts). */
-export function hookEvent(payload: Omit<HookPayload, "type">): OmniMessage<HookPayload> {
+export function hookEvent(payload: Omit<HookPayload, "type">): AmspRecord<HookPayload> {
   return event({ type: "hook", ...payload });
 }
 
 /** subagent derivation pointer event: records only the direct child session's Session id (written to the parent Trace by context_engine). */
-export function subagentEvent(sessionId: string): OmniMessage<SubagentPayload> {
+export function subagentEvent(sessionId: string): AmspRecord<SubagentPayload> {
   return event({ type: "subagent", session_id: sessionId });
 }
 
@@ -382,17 +382,17 @@ export function emptyTokenCounts(): TokenCounts {
 export function tokenUsage(
   session: TokenCounts,
   request: TokenCounts,
-): OmniMessage<TokenUsagePayload> {
+): AmspRecord<TokenUsagePayload> {
   return event({ type: "token_usage", session, request });
 }
 
 /** tool_list_ready event: the Session's full tool definitions, emitted once the toolset is known (first run, after MCP discovery). */
-export function toolListReady(tools: ToolDefinition[]): OmniMessage<ToolListReadyPayload> {
+export function toolListReady(tools: ToolDefinition[]): AmspRecord<ToolListReadyPayload> {
   return event({ type: "tool_list_ready", tools });
 }
 
 /** mcp_connect begin event: brackets open on an MCP connect + discovery phase — the first run's, or a new context's after compaction (emitted only when servers are configured). */
-export function mcpConnectBegin(servers: string[]): OmniMessage<McpConnectBeginPayload> {
+export function mcpConnectBegin(servers: string[]): AmspRecord<McpConnectBeginPayload> {
   return event({ type: "mcp_connect_begin", servers });
 }
 
@@ -402,7 +402,7 @@ export function mcpConnectEnd(args: {
   results: McpServerConnectResult[];
   errorCode?: ErrorCode;
   errorMessage?: string;
-}): OmniMessage<McpConnectEndPayload> {
+}): AmspRecord<McpConnectEndPayload> {
   return event({
     type: "mcp_connect_end",
     status: args.status,
@@ -428,6 +428,6 @@ export function addTokenCounts(a: TokenCounts, b: TokenCounts): TokenCounts {
  * Used by host tools (e.g. run_subagent) when forwarding child-session messages; an absent
  * `origin` means the message comes from the main Session.
  */
-export function withOrigin<M extends OmniMessage>(msg: M, sessionId: MessageOrigin): M {
+export function withOrigin<M extends AmspRecord>(msg: M, sessionId: MessageOrigin): M {
   return { ...msg, origin: [sessionId, ...(msg.origin ?? [])] };
 }

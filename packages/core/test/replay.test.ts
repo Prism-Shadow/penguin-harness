@@ -16,14 +16,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { REJECTED_IMAGE_NOTE, replaceInputImages } from "../src/engine/rejected-images.js";
 import {
-  REJECTED_IMAGE_NOTE,
   assistantText,
   compactionBegin,
   compactionEnd,
   emptyTokenCounts,
   imageUrlMessage,
-  replaceInputImages,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -32,8 +31,8 @@ import {
   toolCall,
   toolCallOutput,
   userText,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord, TokenCounts } from "@prismshadow/amsp/records";
 import { parseTraceLines, readTraceTolerant, resumeTrace } from "../src/trace/resume.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Environment } from "../src/environment/index.js";
@@ -47,7 +46,7 @@ const usage = (total: number): TokenCounts => ({
   total,
 });
 
-function meta(): OmniMessage {
+function meta(): AmspRecord {
   return sessionMeta({
     session_id: "session-2026-07-06-10-00-00-abcdef01",
     provider: "anthropic",
@@ -60,7 +59,7 @@ function meta(): OmniMessage {
   });
 }
 
-function textsOf(msgs: OmniMessage[]): string[] {
+function textsOf(msgs: AmspRecord[]): string[] {
   return msgs.map((m) => {
     const p = m.payload as {
       type?: string;
@@ -136,7 +135,7 @@ describe("resumeTrace", () => {
       images: [image],
     });
     const errorMessage = "400 Could not process image";
-    const upToRequest: OmniMessage[] = [
+    const upToRequest: AmspRecord[] = [
       meta(),
       userText("look at the screenshot"),
       requestBegin(),
@@ -411,7 +410,7 @@ describe("parseTraceLines", () => {
    * append, with a complete small record and a newline landing in the middle. Line 2
    * (big prefix + small record) and line 3 (big suffix) are both unparseable.
    */
-  function tornContent(): { content: string; survivors: OmniMessage[] } {
+  function tornContent(): { content: string; survivors: AmspRecord[] } {
     const before = userText("before");
     const after = userText("after");
     const big = JSON.stringify(imageUrlMessage(`data:image/png;base64,${"A".repeat(2048)}`));

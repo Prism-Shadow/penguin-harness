@@ -10,8 +10,8 @@
  */
 import { dualFormPatterns, markerBlock, matchDualForm } from "./block.js";
 import { MARKER_TAGS, TITLE_NOISE_TAGS } from "./tags.js";
-import { isHarnessInput } from "../types.js";
-import type { OmniMessage } from "../types.js";
+import { isHarnessInput } from "../records/types.js";
+import type { AmspRecord } from "../records/types.js";
 
 /**
  * Strips every **leading** machine-prefixed block (a skill invocation, a handoff /
@@ -344,7 +344,7 @@ function isOrgTriggerKind(value: string | undefined): value is OrgTriggerKind {
 export interface ModelSwitchOrigin {
   sessionId: string;
   sessionTitle?: string;
-  /** Absolute path of the source session's latest Trace file (JSONL of OmniMessage envelopes). */
+  /** Absolute path of the source session's latest Trace file (JSONL of AMSP records). */
   tracePath?: string;
   workspace?: string;
   /** The source session's model reference pair (never concatenated — two separate fields). */
@@ -532,7 +532,7 @@ export function isWholeOriginBlock(text: string): boolean {
  * follows. A consumer counting rounds takes the first one of a run and, after that, only
  * the ones a stop hook's `continue` event announced (see {@link isHookContinue}).
  */
-export function isHookInput(msg: OmniMessage): boolean {
+export function isHookInput(msg: AmspRecord): boolean {
   if (!isHarnessInput(msg)) return false;
   return parseBackgroundTaskDoneMessage((msg.payload as { text: string }).text) === null;
 }
@@ -542,7 +542,7 @@ export function isHookInput(msg: OmniMessage): boolean {
  * puts on the stream right before the input it injects for the next Task. What follows it
  * is a round boundary; a harness-stamped input nothing announced is not.
  */
-export function isHookContinue(msg: OmniMessage): boolean {
+export function isHookContinue(msg: AmspRecord): boolean {
   if (msg.origin && msg.origin.length > 0) return false;
   if (msg.type !== "event_msg") return false;
   const p = msg.payload as { type?: string; hook?: string; decision?: string };

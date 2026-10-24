@@ -29,8 +29,8 @@
  *   the buffer replays on top — so the in-progress message survives a refresh
  *   with its streamed prefix intact and keeps streaming.
  */
-import { isEventMessage, isPartialPayload } from "@prismshadow/penguin-core/omnimessage";
-import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core/omnimessage";
+import { isEventMessage, isPartialPayload } from "@prismshadow/amsp";
+import type { AmspRecord, ToolCallPayload } from "@prismshadow/amsp";
 import type {
   GoalServerEvent,
   MessagesLiveTail,
@@ -59,13 +59,13 @@ import { seedPriorStats } from "./task-stats";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */
 export interface PendingApproval {
-  toolCall: OmniMessage<ToolCallPayload>;
+  toolCall: AmspRecord<ToolCallPayload>;
   origin?: string[];
 }
 
 /** Buffered stream event; `id` is the SSE event id (`<epoch>-<seq>`, null when unknown); `seeded` marks a live-tail fragment injected at replay time (never carried over into a later round's buffer — the new round refetches fresh fragments). */
 type BufferedEvent =
-  | { kind: "omni"; msg: OmniMessage; id: string | null; seeded?: boolean }
+  | { kind: "record"; msg: AmspRecord; id: string | null; seeded?: boolean }
   | { kind: "server"; ev: ServerEvent; id: string | null };
 
 /** Parse a channel event id (`<epoch>-<seq>`); null when malformed (same split rule as the server's Channel.replayAfter). */
@@ -114,7 +114,7 @@ export interface StreamControllerDeps {
    * WINDOW (the response then carries `page`); omitted = the legacy full transcript.
    */
   loadMessages: (page?: MessagesPageQuery) => Promise<{
-    messages: OmniMessage[];
+    messages: AmspRecord[];
     live?: MessagesLiveTail;
     serverNowMs?: number | null;
     page?: MessagesPageInfo;
@@ -177,9 +177,9 @@ export interface StreamController {
   retry: () => Promise<void>;
   /** Prepend the previous window (scroll-up backfill); no-op while loading, failed, at the beginning, or before the initial load settled. */
   loadOlder: () => Promise<void>;
-  /** SSE OmniMessage entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
-  handleOmni: (msg: OmniMessage, eventId?: string | null) => void;
-  /** SSE server-event entry point (`eventId`: same as handleOmni). */
+  /** SSE AmspRecord entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
+  handleRecord: (msg: AmspRecord, eventId?: string | null) => void;
+  /** SSE server-event entry point (`eventId`: same as handleRecord). */
   handleServer: (ev: ServerEvent, eventId?: string | null) => void;
   /** Register that this end clicked an approval ("manual" label, persists across resync rebuilds). */
   markLocalDecision: (toolCallId: string) => void;
@@ -272,7 +272,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     if (dropped) deps.onPendingChange();
   };
 
-  const feedOmni = (msg: OmniMessage, dedup: Set<string> | null): void => {
+  const feedRecord = (msg: AmspRecord, dedup: Set<string> | null): void => {
     // The SDK has already produced an approval_decision: sync the pending-approvals table (keyed by the origin composite key).
     if (isEventMessage(msg) && msg.payload.type === "approval_decision") {
       if (pending.delete(approvalKey(msg.origin, msg.payload.tool_call_id))) {
@@ -298,7 +298,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         // aren't in the parent Trace, so the tool card can be missing —
         // feed the event's toolCall (with origin) to the reducer to rebuild the nested card, so the approval button is visible.
         if (!findToolCard(model, ev.origin, toolCallId)) {
-          const msg: OmniMessage = { ...ev.toolCall };
+          const msg: AmspRecord = { ...ev.toolCall };
           if (ev.origin && ev.origin.length > 0) msg.origin = [...ev.origin];
           else delete msg.origin;
           pushMessage(model, msg, now());
@@ -409,13 +409,13 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     for (const e of replay) {
       const eid = e.id === null ? null : parseEventId(e.id);
       if (eid !== null && eid.epoch === cursor.epoch && eid.seq <= cursor.seq) {
-        if (e.kind !== "omni" || !isPartialPayload(e.msg.payload)) pre.push(e);
+        if (e.kind !== "record" || !isPartialPayload(e.msg.payload)) pre.push(e);
       } else {
         post.push(e);
       }
     }
     const seeds: BufferedEvent[] = live.fragments.map((msg) => ({
-      kind: "omni",
+      kind: "record",
       msg,
       id: null,
       seeded: true,
@@ -482,7 +482,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       buffer = [];
       for (let i = 0; i < replay.length; i += 1) {
         const e = replay[i]!;
-        if (e.kind === "omni") feedOmni(e.msg, dedup);
+        if (e.kind === "record") feedRecord(e.msg, dedup);
         else handleServer(e.ev);
         if (disposed) return;
         if (currentEpoch !== epoch) {
@@ -491,7 +491,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           // the new round's buffer — phase is left unchanged and the old buffer is never
           // fed to the new model. Seeded fragments are snapshot-bound to THIS round and
           // are dropped instead of carried over (the new round refetches fresh ones).
-          buffer.push(...replay.slice(i + 1).filter((r) => r.kind !== "omni" || !r.seeded));
+          buffer.push(...replay.slice(i + 1).filter((r) => r.kind !== "record" || !r.seeded));
           return;
         }
       }
@@ -604,14 +604,14 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       });
     },
     loadOlder,
-    handleOmni: (msg, eventId = null) => {
+    handleRecord: (msg, eventId = null) => {
       if (disposed) return;
       if (eventId !== null) lastEventId = eventId;
       if (phase === "buffering") {
-        buffer.push({ kind: "omni", msg, id: eventId });
+        buffer.push({ kind: "record", msg, id: eventId });
         return;
       }
-      feedOmni(msg, null);
+      feedRecord(msg, null);
       deps.onModelChange();
     },
     handleServer: (ev, eventId = null) => {

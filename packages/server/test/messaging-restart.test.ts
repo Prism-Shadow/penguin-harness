@@ -15,7 +15,7 @@
  *   the bot to the chat that wrote, and the binding still names the Session.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   MessagesResponse,
   MessagingBindingsResponse,
@@ -105,7 +105,7 @@ function fakeBotApi() {
 }
 
 /** The main-session assistant texts among `messages`. */
-function assistantTexts(messages: readonly OmniMessage[]): string[] {
+function assistantTexts(messages: readonly AmspRecord[]): string[] {
   return messages.flatMap((m) => {
     const p = m.payload as { type?: string; role?: string; text?: string };
     return m.type === "model_msg" &&

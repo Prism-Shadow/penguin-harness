@@ -115,8 +115,13 @@ export function agentApiExamples(baseUrl: string, agentRef: string): { curl: str
     `  apiKey: process.env.PENGUIN_AGENT_KEY,`,
     `});`,
     ``,
-    `const result = await client.run({ input: "Hello" });`,
-    `console.log(result.text);`,
+    `// The Session's records as they stream; run() returns the result alone.`,
+    `const run = client.stream({ input: "Hello" });`,
+    `for await (const record of run) {`,
+    `  const p = record.payload;`,
+    `  if ("type" in p && p.type === "partial_text") process.stdout.write(p.text);`,
+    `}`,
+    `const { text, sessionId } = await run.result();`,
   ].join("\n");
   return { curl, sdk };
 }

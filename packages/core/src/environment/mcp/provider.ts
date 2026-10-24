@@ -44,8 +44,8 @@ import {
 } from "@modelcontextprotocol/client";
 import type { CallToolResult, FetchLike, Tool, Transport } from "@modelcontextprotocol/client";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/client/stdio";
-import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { McpServerConnectResult, OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput } from "@prismshadow/amsp/records";
+import type { McpServerConnectResult, AmspRecord } from "@prismshadow/amsp/records";
 import { VERSION, userAgent } from "../../index.js";
 import type {
   ConfinedSpawn,
@@ -652,7 +652,7 @@ export class McpToolProvider {
           ? { maxOutputLength: server.maxOutputLength }
           : {}),
       },
-      execute: async function* (args, ctx): AsyncGenerator<OmniMessage, ToolResult> {
+      execute: async function* (args, ctx): AsyncGenerator<AmspRecord, ToolResult> {
         const result = await client
           .callTool(
             { name: tool.name, arguments: args },

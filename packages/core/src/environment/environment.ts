@@ -28,8 +28,8 @@
  * Docs: /docs/tools § "Execution contract".
  */
 import path from "node:path";
-import { partialToolCallOutput, toolCallOutput, userText } from "../omnimessage/index.js";
-import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
+import { partialToolCallOutput, toolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { McpServerConnectResult, AmspRecord, StopReason } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   BackgroundCommandInfo,
@@ -215,7 +215,7 @@ export class Environment implements EnvironmentInterface {
       // the single consumer via setBackgroundTaskListener (events before that are buffered).
       backgroundDone: (event: BackgroundTaskDoneEvent) => this.emitBackgroundDone(event),
       // Live-forwarded background-subagent messages, same single-consumer pattern.
-      backgroundForward: (msg: OmniMessage) => this.emitBackgroundForward(msg),
+      backgroundForward: (msg: AmspRecord) => this.emitBackgroundForward(msg),
     };
     this.equip(config.toolConfig);
     this.mcp = this.newMcpProvider(config.toolConfig.mcpServers, config.vault ?? {});
@@ -374,17 +374,17 @@ export class Environment implements EnvironmentInterface {
 
   // Live-forwarded background-subagent messages: same single-listener + buffer-until-attach
   // pattern as the completion reports above.
-  private bgFwdListener: ((msg: OmniMessage) => void) | null = null;
-  private bgFwdBuffer: OmniMessage[] = [];
+  private bgFwdListener: ((msg: AmspRecord) => void) | null = null;
+  private bgFwdBuffer: AmspRecord[] = [];
 
-  private emitBackgroundForward(msg: OmniMessage): void {
+  private emitBackgroundForward(msg: AmspRecord): void {
     if (this.bgDisposed) return;
     if (this.bgFwdListener) this.bgFwdListener(msg);
     else this.bgFwdBuffer.push(msg);
   }
 
   /** Attaches the single background-message listener, flushing buffered messages (see EnvironmentInterface). */
-  setBackgroundMessageListener(listener: (msg: OmniMessage) => void): void {
+  setBackgroundMessageListener(listener: (msg: AmspRecord) => void): void {
     this.bgFwdListener = listener;
     const buffered = this.bgFwdBuffer;
     this.bgFwdBuffer = [];
@@ -425,7 +425,7 @@ export class Environment implements EnvironmentInterface {
    * Host-initiated message to one child session — a user's input on the child, whatever its
    * state: steering mid-run, a follow-up run when idle, a revival through the runner when the
    * session is no longer live (see EnvironmentInterface.sendToBackgroundSubagent). Converges
-   * on the same managed-session channel input_subagent uses, taking the same OmniMessage list;
+   * on the same managed-session channel input_subagent uses, taking the same AmspRecord list;
    * the caller's messages carry no sender (human origin), unlike the model path's
    * "parent_agent" — and they reach both branches unchanged, so a steered round and a started
    * round record the same author. The child runs every round at its own context's thinking
@@ -433,7 +433,7 @@ export class Environment implements EnvironmentInterface {
    */
   async sendToBackgroundSubagent(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     const session = this.subagentSessions.bySessionId(childSessionId);
@@ -459,7 +459,7 @@ export class Environment implements EnvironmentInterface {
    */
   private async resumeAndRun(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     const agentId = opts?.resume?.agentId;
@@ -528,7 +528,7 @@ export class Environment implements EnvironmentInterface {
    */
   private attachHostTap(session: {
     hasMessageTap: boolean;
-    setMessageTap(tap: (msg: OmniMessage) => void): void;
+    setMessageTap(tap: (msg: AmspRecord) => void): void;
   }): void {
     if (session.hasMessageTap) return;
     session.setMessageTap((msg) => this.emitBackgroundForward(msg));
@@ -619,7 +619,7 @@ export class Environment implements EnvironmentInterface {
    * it's finalized as failed, with the timeout reason written into the output.
    * Docs: /docs/tools § "Execution contract".
    */
-  async *executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage> {
+  async *executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord> {
     const payload = request.toolCall.payload;
     // tool_call_id is passed through unchanged, so context_engine and the LLM can associate the
     // request with its result.
@@ -956,7 +956,7 @@ export class Environment implements EnvironmentInterface {
 }
 
 /** Upfront failure (unknown tool/argument parse failure): delta(explanation) -> stop -> full failed output (start already emitted by the caller). */
-function* emitFailure(toolCallId: string, message: string): Generator<OmniMessage> {
+function* emitFailure(toolCallId: string, message: string): Generator<AmspRecord> {
   yield partialToolCallOutput({ eventType: "delta", output: message, toolCallId });
   yield partialToolCallOutput({ eventType: "stop", toolCallId, stopReason: "fatal" });
   yield toolCallOutput({ output: message, toolCallId, stopReason: "fatal" });

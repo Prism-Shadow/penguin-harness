@@ -22,24 +22,26 @@ import { ContextEngine } from "../src/engine/context-engine.js";
 import {
   requestEnd,
   assistantText,
-  buildBackgroundTaskDoneMessage,
   emptyTokenCounts,
-  isSteeredBackgroundNotice,
   isTaskRecord,
-  parseBackgroundTaskDoneMessage,
   partialText,
-  stripLeadingMarkerBlocks,
   toolCall,
   tokenUsage,
   userText,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import {
+  buildBackgroundTaskDoneMessage,
+  isSteeredBackgroundNotice,
+  parseBackgroundTaskDoneMessage,
+  stripLeadingMarkerBlocks,
+} from "@prismshadow/amsp/markers";
 import { Session } from "../src/index.js";
 import type {
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
   TextPayload,
   ToolCallPayload,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   BackgroundTaskDoneEvent,
@@ -87,7 +89,7 @@ async function runTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<FinalOutput> {
-  let last: OmniMessage | null = null;
+  let last: AmspRecord | null = null;
   for await (const msg of env.executeTool({
     toolCall: toolCall({ name, arguments: JSON.stringify(args), toolCallId: `call_${name}` }),
   })) {
@@ -111,7 +113,7 @@ async function runToolDetachedOn(
   let detach: ToolDetachResult | null = null;
   let seen = "";
   let completeOutputs = 0;
-  let last: OmniMessage | null = null;
+  let last: AmspRecord | null = null;
   for await (const msg of env.executeTool({
     toolCall: toolCall({ name, arguments: JSON.stringify(args), toolCallId }),
   })) {
@@ -551,13 +553,13 @@ const HOP = "session-child-12ab34cd";
 type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
 
 /**
- * Test fakes still talk in prompt strings; the contract now takes the OmniMessage list a
+ * Test fakes still talk in prompt strings; the contract now takes the AmspRecord list a
  * Session's `run` takes, so the adapters below unwrap it once (see SubagentHandle.run).
  */
-const promptOf = (messages: OmniMessage[]): string =>
+const promptOf = (messages: AmspRecord[]): string =>
   messages.map((m) => (m.payload as { text?: string }).text ?? "").join("");
 
-function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): SubagentRunner {
+function runnerOf(run: (input: RunInput) => AsyncGenerator<AmspRecord>): SubagentRunner {
   return {
     async spawn() {
       // Mirrors the composition layer's one-shot meta seam (SubagentHandle.takeMeta).
@@ -571,7 +573,7 @@ function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): Subage
             timestamp: new Date().toISOString(),
             type: "session_meta",
             payload: { session_id: HOP },
-          } as unknown as OmniMessage);
+          } as unknown as AmspRecord);
         },
         run: ({ messages, ...rest }) => run({ prompt: promptOf(messages), ...rest }),
         dispose() {},
@@ -585,10 +587,10 @@ async function drive(
   tool: ReturnType<typeof createSubagentTool>,
   args: Record<string, unknown>,
   ctx: ToolExecutionContext = CTX,
-): Promise<{ output: string; stopReason?: string; note: string; yielded: OmniMessage[] }> {
+): Promise<{ output: string; stopReason?: string; note: string; yielded: AmspRecord[] }> {
   const gen = tool.execute(args, ctx);
   let output = "";
-  const yielded: OmniMessage[] = [];
+  const yielded: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) {
@@ -757,12 +759,12 @@ describe("run_subagent run_in_background", () => {
       };
     });
     const events: BackgroundTaskDoneEvent[] = [];
-    const tapped: OmniMessage[] = [];
+    const tapped: AmspRecord[] = [];
     const services = {
       subagentRunner: runner,
       subagentSessions: manager,
       backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
-      backgroundForward: (m: OmniMessage) => tapped.push(m),
+      backgroundForward: (m: AmspRecord) => tapped.push(m),
     };
     const tool = createSubagentTool(SUB_DEF, services);
     const res = await drive(tool, { prompt: "will fail", run_in_background: true });
@@ -780,7 +782,7 @@ describe("run_subagent run_in_background", () => {
     const decisions: string[] = [];
     const runner = runnerOf(async function* ({ approve }) {
       const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
-      const d = await approve!(tc as OmniMessage<ToolCallPayload>);
+      const d = await approve!(tc as AmspRecord<ToolCallPayload>);
       decisions.push(d);
       yield withHop(partialText("delta", `approved:${d}`));
     });
@@ -815,17 +817,17 @@ describe("run_subagent run_in_background", () => {
       // Parked until the test releases it, so the detach lands mid-round.
       await new Promise<void>((r) => gates.set(prompt, r));
       const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
-      decisions.push(await approve!(tc as OmniMessage<ToolCallPayload>));
+      decisions.push(await approve!(tc as AmspRecord<ToolCallPayload>));
       yield withHop(partialText("delta", "child answer"));
       yield withHop(assistantText("child answer"));
     });
     const events: BackgroundTaskDoneEvent[] = [];
-    const tapped: OmniMessage[] = [];
+    const tapped: AmspRecord[] = [];
     const services = {
       subagentRunner: runner,
       subagentSessions: manager,
       backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
-      backgroundForward: (m: OmniMessage) => tapped.push(m),
+      backgroundForward: (m: AmspRecord) => tapped.push(m),
     };
     const tool = createSubagentTool(SUB_DEF, services);
     const approveSpy: ApproveFn = async () => "allow";
@@ -862,7 +864,7 @@ describe("run_subagent run_in_background", () => {
     const decisions: string[] = [];
     const runner = runnerOf(async function* ({ approve }) {
       const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
-      decisions.push(await approve!(tc as OmniMessage<ToolCallPayload>));
+      decisions.push(await approve!(tc as AmspRecord<ToolCallPayload>));
       yield withHop(assistantText("child answer"));
     });
     const tool = createSubagentTool(SUB_DEF, {
@@ -906,7 +908,7 @@ describe("run_subagent run_in_background", () => {
 });
 
 /** Tags a message with the child hop, as the SubagentHandle contract requires. */
-function withHop<M extends OmniMessage>(msg: M): M {
+function withHop<M extends AmspRecord>(msg: M): M {
   return { ...msg, origin: [HOP] };
 }
 
@@ -917,10 +919,8 @@ function withHop<M extends OmniMessage>(msg: M): M {
 /** A fake LLM that always answers with a plain final reply (no tool calls). */
 class ReplyLLM implements LLMInterface {
   calls = 0;
-  inputs: OmniMessage[][] = [];
-  async *streamGenerate(
-    params: GenerativeModelParameters,
-  ): AsyncGenerator<OmniMessage, LLMOutcome> {
+  inputs: AmspRecord[][] = [];
+  async *streamGenerate(params: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     this.calls += 1;
     this.inputs.push(params.newMessages);
     yield assistantText(`reply ${this.calls}`);
@@ -942,13 +942,13 @@ const allow: ApproveFn = async () => "allow";
 describe("ContextEngine background-notice delivery", () => {
   it("delivers notices queued before the run with the first request input", async () => {
     const llm = new ReplyLLM();
-    const queue: OmniMessage[] = [userText("[notice] task one done", "harness")];
+    const queue: AmspRecord[] = [userText("[notice] task one done", "harness")];
     const engine = new ContextEngine({
       llm,
       environment: idleEnvironment,
       backgroundNotices: { drain: () => queue.splice(0), pending: () => queue.length },
     });
-    const streamed: OmniMessage[] = [];
+    const streamed: AmspRecord[] = [];
     for await (const msg of engine.run([userText("hello")], { approve: allow })) streamed.push(msg);
     expect(llm.calls).toBe(1);
     const texts = llm.inputs[0]!.map((m) => (m.payload as { text?: string }).text);
@@ -961,7 +961,7 @@ describe("ContextEngine background-notice delivery", () => {
 
   it("a notice arriving mid-run extends the task by one turn to react to it", async () => {
     const llm = new ReplyLLM();
-    const queue: OmniMessage[] = [];
+    const queue: AmspRecord[] = [];
     const engine = new ContextEngine({
       llm,
       environment: idleEnvironment,
@@ -1085,7 +1085,7 @@ describe("Session background notices", () => {
       environment,
     });
     fire(DONE_EVENT); // no listener registered: stays queued
-    const streamed: OmniMessage[] = [];
+    const streamed: AmspRecord[] = [];
     for await (const msg of session.run([userText("hi")])) streamed.push(msg);
     expect(llm.calls).toBe(1);
     const texts = llm.inputs[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
@@ -1111,7 +1111,7 @@ function gatedRunner(gates: Map<string, () => void>): SubagentRunner {
     async spawn() {
       spawned += 1;
       const hop = `session-child-${String(spawned).padStart(8, "0")}`;
-      const tag = <M extends OmniMessage>(msg: M): M => ({ ...msg, origin: [hop] });
+      const tag = <M extends AmspRecord>(msg: M): M => ({ ...msg, origin: [hop] });
       let metaSent = false;
       const handle: SubagentHandle = {
         sessionId: hop,
@@ -1122,11 +1122,11 @@ function gatedRunner(gates: Map<string, () => void>): SubagentRunner {
             timestamp: new Date().toISOString(),
             type: "session_meta",
             payload: { session_id: hop },
-          } as unknown as OmniMessage);
+          } as unknown as AmspRecord);
         },
         // Typed like the contract: a round's return value is its cutoff, and these rounds
         // always run to completion.
-        async *run({ messages }): AsyncGenerator<OmniMessage, null> {
+        async *run({ messages }): AsyncGenerator<AmspRecord, null> {
           const prompt = promptOf(messages);
           await new Promise<void>((resolve) => gates.set(prompt, resolve));
           yield tag(assistantText(`answer to: ${prompt}`));
@@ -1165,7 +1165,7 @@ describe("sibling background subagents survive a completion notice (issue #581)"
     });
     const running = () =>
       env.listBackgroundSubagents().filter((s) => s.running && s.subagentId !== null);
-    const statusOf = (msg: OmniMessage): string =>
+    const statusOf = (msg: AmspRecord): string =>
       parseBackgroundTaskDoneMessage((msg.payload as TextPayload).text)!.done.status;
 
     for (const prompt of ["alpha", "beta", "gamma"]) {

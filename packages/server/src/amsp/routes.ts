@@ -5,9 +5,17 @@
  *   GET  /agents/:projectId/:agentId                  the Agent's name and description
  *   POST /agents/:projectId/:agentId/runs             one run, streamed (run-stream.ts)
  *   GET  /sessions/:sessionId                         an API Session's state and model
+ *   GET  /sessions/:sessionId/stream                  the Session stream (session-stream.ts)
+ *   GET  /sessions/:sessionId/messages                its history (services/session-history.ts)
+ *   GET  /sessions/:sessionId/trace-image             an image a history page references
+ *   GET  /sessions/:sessionId/approvals               the calls waiting on a decision (approvals.ts)
+ *   POST /sessions/:sessionId/tasks                   a run that does not hold the connection
  *   POST /sessions/:sessionId/abort                   202 interrupted / 204 nothing running
  *   POST /sessions/:sessionId/approvals/:toolCallId   answer a pending approval
  *   *    anything else                                404 not_found (JSON, never the SPA)
+ *
+ * The Session routes serve the same handlers as the Web App's `/api/sessions/:sessionId/…`, for
+ * an API Session of the key's Agent; a history page's image references point at this prefix.
  *
  * CORS (cors.ts): a preflight is always answered; `Access-Control-Allow-Origin: *` goes only on
  * requests that carry `Authorization`, the global 413/415 refusals included. The `/api/*` CSRF
@@ -18,17 +26,26 @@
  * handler for the Project owner's sign-in in place of a key.
  */
 import { Hono } from "hono";
-import type { AgentResponse, SessionResponse } from "@prismshadow/amsp";
+import type { AgentResponse, SessionResponse, TaskResponse } from "@prismshadow/amsp";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 import { readJson, requireEnum } from "../http/validate.js";
+import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Settings } from "../mechanisms/settings.js";
+import { toAttachmentLimits } from "../services/attachment-limits.js";
+import { sessionMessages, sessionTraceImage } from "../services/session-history.js";
+import type { SessionHistoryDeps } from "../services/session-history.js";
+import { reserveStart } from "./admission.js";
+import { pendingApprovals } from "./approvals.js";
+import type { ApprovalsDeps } from "./approvals.js";
 import { AMSP_PREFIX, amspCors } from "./cors.js";
 import { amspGate } from "./gate.js";
 import type { AmspEnv, AmspGateDeps } from "./gate.js";
+import { parseRunInput } from "./run-input.js";
 import { runStream } from "./run-stream.js";
 import type { RunStreamDeps } from "./run-stream.js";
+import { amspSessionStream } from "./session-stream.js";
 
 export interface AmspRouteDeps
   extends
@@ -36,10 +53,16 @@ export interface AmspRouteDeps
     Omit<RunStreamDeps, "settings" | "manager"> {
   settings: Pick<Settings, "getAgentApiEnabled" | "getAttachmentLimitsMb">;
   agentConfig: Pick<AgentConfig, "exists" | "readCardMeta">;
-  manager: RunStreamDeps["manager"] & {
-    decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean;
-  };
+  traceService: SessionHistoryDeps["traceService"];
+  manager: RunStreamDeps["manager"] &
+    SessionHistoryDeps["manager"] &
+    ApprovalsDeps["manager"] & {
+      decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean;
+    };
 }
+
+/** Where this group serves a Session's routes: a history page's image references point here. */
+const SESSIONS_BASE = `${AMSP_PREFIX}/sessions`;
 
 export function amspRoutes(deps: AmspRouteDeps): Hono<AppEnv> {
   const app = new Hono<AmspEnv>();
@@ -80,10 +103,49 @@ export function amspRoutes(deps: AmspRouteDeps): Hono<AppEnv> {
     return c.json(body);
   });
 
+  app.get("/sessions/:sessionId/stream", (c) =>
+    amspSessionStream(c, deps.channels.get(c.var.amsp.session!.sessionId)),
+  );
+
+  app.get("/sessions/:sessionId/messages", (c) =>
+    sessionMessages(c, deps, c.var.amsp.session!, SESSIONS_BASE),
+  );
+
+  app.get("/sessions/:sessionId/trace-image", (c) =>
+    sessionTraceImage(c, deps, c.var.amsp.session!),
+  );
+
+  app.get("/sessions/:sessionId/approvals", (c) =>
+    pendingApprovals(c, deps, c.var.amsp.session!.sessionId),
+  );
+
+  // A run on the Session that does not hold the connection: read it on the Session stream.
+  // Admission is the runs route's (409 when busy, never queued; 429 at the Agent's limit), and
+  // it takes the same `input`. A goal is not offered here.
+  app.post("/sessions/:sessionId/tasks", async (c) => {
+    const { projectId, agentId, keyId, session } = c.var.amsp;
+    const sessionId = session!.sessionId;
+    const body = await readJson(c);
+    const input = parseRunInput(
+      body.input,
+      toAttachmentLimits(deps.settings.getAttachmentLimitsMb()).totalBytes,
+    );
+    const limit =
+      deps.agentApi.get(projectId, agentId)?.maxConcurrentRuns ?? DEFAULT_API_CONCURRENT_RUNS;
+    const slot = reserveStart(deps, projectId, agentId, sessionId, limit);
+    try {
+      if (keyId !== null) deps.agentApi.touchKey(keyId, deps.now().toISOString());
+      await deps.manager.startTask(sessionId, input);
+    } finally {
+      slot.release();
+    }
+    return c.json({ session_id: sessionId } satisfies TaskResponse, 202);
+  });
+
   app.post("/sessions/:sessionId/abort", (c) => {
     const sessionId = c.var.amsp.session!.sessionId;
-    // Pending approvals are denied first, then the run is signalled; the run's own stream stays
-    // open until it ends with run.done "aborted".
+    // Pending approvals are denied first, then the run is signalled; a run stream stays open
+    // until it ends with [DONE], the run's records saying it was aborted.
     return c.body(null, deps.manager.abortTask(sessionId) ? 202 : 204);
   });
 

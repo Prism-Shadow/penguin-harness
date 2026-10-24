@@ -40,7 +40,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { useStore } from "zustand/react";
 import { formatDateTime } from "../../lib/format";
-import { subscribeUserEvents } from "../../lib/omni/user-events";
+import { subscribeUserEvents } from "../../lib/amsp/user-events";
 import { revealPlan, workspaceLabel } from "../../lib/session-grouping";
 import { programSource } from "../../lib/session-source-mark";
 import { nameOnMachine } from "../../lib/workspace-machines";

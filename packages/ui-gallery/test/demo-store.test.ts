@@ -13,7 +13,7 @@ import {
   parseOrgTriggerMessage,
   parseScheduledMessage,
   parseSkillsMessage,
-} from "@prismshadow/penguin-core/markers";
+} from "@prismshadow/amsp/markers";
 import { catalogEntryFor } from "../../server/dist/model-catalog.js";
 import { catalogDelta } from "../../web/src/features/models/catalog-sync";
 import { splitAttachments } from "../../web/src/lib/attachments";
@@ -21,14 +21,14 @@ import {
   createStreamModel,
   finalizeHistory,
   pushMessages,
-} from "../../web/src/lib/omni/stream-model";
+} from "../../web/src/lib/amsp/stream-model";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { ALL_SESSION_IDS, IDS } from "../src/app/mock/ids";
 import { REPLY_CLOSE_MS, REPLY_HOLD_MS, REPLY_LEAD_MS, resetStore } from "../src/app/mock/store";
 import { scriptDuration, streamScript } from "../src/app/mock/stream-script";
 import { streamingAnswer, TOOL_CALL_IDS } from "../src/app/mock/transcripts";
 import { payloadOf } from "../src/app/mock/types";
-import type { OmniMessage, StreamHandlers } from "../src/app/mock/types";
+import type { AmspRecord, StreamHandlers } from "../src/app/mock/types";
 
 const NOW = Date.parse("2026-09-29T08:00:00Z");
 
@@ -48,23 +48,23 @@ function shape(value: unknown): unknown {
 }
 
 /** A message's payload type, the session_meta record reading as its own kind. */
-const typeOf = (m: OmniMessage): string => payloadOf(m)?.type ?? "session_meta";
+const typeOf = (m: AmspRecord): string => payloadOf(m)?.type ?? "session_meta";
 
 /** The text deltas among `messages`, in order. */
-const textDeltas = (messages: OmniMessage[]): string[] =>
+const textDeltas = (messages: AmspRecord[]): string[] =>
   messages.flatMap((m) => {
     const p = payloadOf(m);
     return p?.type === "partial_text" && p.event_type === "delta" ? [p.text] : [];
   });
 
 /** A subscriber that keeps what it is sent. */
-function collector(): StreamHandlers & { messages: OmniMessage[]; events: ServerEvent[] } {
-  const messages: OmniMessage[] = [];
+function collector(): StreamHandlers & { messages: AmspRecord[]; events: ServerEvent[] } {
+  const messages: AmspRecord[] = [];
   const events: ServerEvent[] = [];
   return {
     messages,
     events,
-    onOmniMessage: (msg) => messages.push(msg),
+    onRecord: (msg) => messages.push(msg),
     onServerEvent: (ev) => events.push(ev),
   };
 }

@@ -11,7 +11,7 @@
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
 
-export { buildSkillsMessage, parseSkillsMessage } from "@prismshadow/penguin-core/markers";
+export { buildSkillsMessage, parseSkillsMessage } from "@prismshadow/amsp/markers";
 
 /** Book icon (24×24 line path): the mark of skills as a kind — the composer's skills button, the "using skills" banner, the agents page's skill count, and what a skill draws when it carries no plugin icon (skill-icon-view.tsx). */
 export const BOOK_ICON = ICONS.bookOpen;

@@ -14,13 +14,10 @@
  *   arriving replaces only the answered reply's, and a language change replaces them all.
  */
 import { describe, expect, it } from "vitest";
-import {
-  buildBackgroundTaskDoneMessage,
-  buildScheduledMessage,
-} from "@prismshadow/penguin-core/markers";
+import { buildBackgroundTaskDoneMessage, buildScheduledMessage } from "@prismshadow/amsp/markers";
 import { readOnlyActions, replyAnswers } from "../src/features/chat/a2ui-answered";
 import { buildSkillsMessage } from "../src/features/chat/skill-use";
-import type { ChatItem } from "../src/lib/omni/stream-model";
+import type { ChatItem } from "../src/lib/amsp/stream-model";
 
 let nextId = 0;
 const user = (text: string): ChatItem => ({ kind: "user_text", id: nextId++, text });

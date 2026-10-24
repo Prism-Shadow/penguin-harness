@@ -1,7 +1,7 @@
 /**
  * Event streams: a Session's output, the user-level server events, and the machines aggregate.
  *
- * - OmniMessage uses the default event (no `event:` line); data is the message envelope as
+ * - Records use the default event (no `event:` line); data is the message envelope as
  *   raw JSON;
  * - Server events use `event: server_event` (approval_request / task_state / resync_required /
  *   credentials_updated / hello, and `heartbeat` — the stream's own beat);
@@ -16,7 +16,7 @@
  *   without any frame of its own ends it and re-issues it from its last event id.
  * Docs: /docs/server-api § "Streaming (SSE)".
  */
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type { MachineEvent, ServerEvent } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "../lib/server-context";
 import { machineForSession } from "../lib/session-machines";
@@ -34,19 +34,19 @@ export const STREAM_HEARTBEAT_MS = 20_000;
 
 export interface StreamHandlers {
   /**
-   * A single OmniMessage (full/streaming/event, envelope as-is). `eventId` is the SSE
+   * A single AmspRecord (full/streaming/event, envelope as-is). `eventId` is the SSE
    * event id assigned by the server channel (`<epoch>-<seq>`; null if the event carried
    * none) — stream-controller uses it to align buffered events with the live-tail cursor
    * that GET /messages returns.
    */
-  onOmniMessage: (msg: OmniMessage, eventId: string | null) => void;
-  /** A single server event (`eventId`: same as onOmniMessage). */
+  onRecord: (msg: AmspRecord, eventId: string | null) => void;
+  /** A single server event (`eventId`: same as onRecord). */
   onServerEvent: (event: ServerEvent, eventId: string | null) => void;
   /**
    * A frame whose `event:` name this module does not dispatch by itself — the machines
    * aggregate's `machine_event` is the one caller today (openMachineEvents below). `data` is
    * the parsed JSON, `eventId` as on the two handlers above. A stream that supplies none keeps
-   * reading such a frame as an OmniMessage, which is what every stream did before named
+   * reading such a frame as a record, which is what every stream did before named
    * dispatch existed; `heartbeat` never reaches here either way, it is liveness only.
    */
   onEvent?: (name: string, data: unknown, eventId: string | null) => void;
@@ -132,9 +132,9 @@ export function openMachineEvents(
 ): StreamConnection {
   const path = `/api/projects/${encodeURIComponent(projectId)}/machines/events`;
   const streamHandlers: StreamHandlers = {
-    // No unnamed frames on this stream: a machine's `message` would be an OmniMessage from a
+    // No unnamed frames on this stream: a machine's `message` would be a record from a
     // Session, which the aggregate does not carry (`machine_event` carries server events only).
-    onOmniMessage: () => undefined,
+    onRecord: () => undefined,
     onServerEvent: (event, eventId) => handlers.onHubEvent?.(event, eventId),
     onEvent: (name, data, eventId) => {
       if (name !== "machine_event") return;

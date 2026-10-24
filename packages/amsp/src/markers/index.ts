@@ -1,7 +1,7 @@
 /**
  * Special message markers — one module for every marker the product writes into message text.
  *
- * A marker is a block of the form `[tag]…[/tag]` embedded in an OmniMessage's text: it tells
+ * A marker is a block of the form `[tag]…[/tag]` embedded in a record's text: it tells
  * the model (and the render layers) that this part of the conversation is machine-inserted
  * rather than something the user typed. They come in three families:
  *
@@ -34,7 +34,7 @@
  * pending text is carried on to the next Trace file, so a user text that happens to start
  * with the tag is kept where it would have stayed behind — never the reverse.
  *
- * Everything here is pure string work: no OmniMessage envelopes, no I/O — the callers wrap
+ * Everything here is pure string work: no record envelopes, no I/O — the callers wrap
  * the result in `userText(...)` (or match against a payload's text) themselves.
  */
 export * from "./block.js";

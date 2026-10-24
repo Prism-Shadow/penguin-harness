@@ -29,7 +29,7 @@ import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
 import { attachmentFileName, splitAttachments } from "../../lib/attachments";
 import { routedUrl } from "../../lib/session-machines";
-import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
+import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
 import { SessionThinking } from "./thinking-block";

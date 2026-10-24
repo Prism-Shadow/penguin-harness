@@ -5,7 +5,7 @@
   "engines": {
     "node": ">=24"
   },
-  "description": "PenguinHarness core SDK: context_engine, OmniMessage protocol, LLM/Environment interfaces.",
+  "description": "PenguinHarness core SDK: context_engine, the AMSP records it speaks, LLM/Environment interfaces.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -16,14 +16,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./omnimessage": {
-      "types": "./dist/omnimessage/index.d.ts",
-      "import": "./dist/omnimessage/index.js"
-    },
-    "./markers": {
-      "types": "./dist/omnimessage/markers/index.d.ts",
-      "import": "./dist/omnimessage/markers/index.js"
     },
     "./interfaces": {
       "types": "./dist/interfaces/index.d.ts",
@@ -82,6 +74,7 @@
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
+    "@prismshadow/amsp": "workspace:*",
     "@prismshadow/mmsp": "^0.5.5",
     "arktype": "^2.2.3",
     "smol-toml": "^1.9.1",

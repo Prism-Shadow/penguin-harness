@@ -25,7 +25,7 @@ import {
   toolListReady,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, SessionMetaPayload, ToolDefinition } from "@prismshadow/penguin-core";
+import type { AmspRecord, SessionMetaPayload, ToolDefinition } from "@prismshadow/penguin-core";
 import {
   buildContextBreakdown,
   compactionThresholdFor,
@@ -103,7 +103,7 @@ describe("buildContextBreakdown", () => {
   });
 
   it("ranks tools by their calls plus their results, capped at five", () => {
-    const messages: OmniMessage[] = [];
+    const messages: AmspRecord[] = [];
     // Sizes are engineered so the ranking is unambiguous: exec_command's single result dwarfs
     // everything else, and read_file's three small calls still beat the one-off tools.
     messages.push(
@@ -213,7 +213,7 @@ describe("buildContextBreakdown", () => {
   });
 
   it("names at most five files", () => {
-    const messages: OmniMessage[] = [sessionMeta(metaPayload("prompt"))];
+    const messages: AmspRecord[] = [sessionMeta(metaPayload("prompt"))];
     for (let i = 0; i < 6; i++) {
       messages.push(
         toolCall({
@@ -243,8 +243,8 @@ describe("buildContextBreakdown", () => {
   });
 
   it("excludes the compaction request's own messages from the composition", () => {
-    const base: OmniMessage[] = [userText("hi"), assistantText("hello")];
-    const withCompaction: OmniMessage[] = [
+    const base: AmspRecord[] = [userText("hi"), assistantText("hello")];
+    const withCompaction: AmspRecord[] = [
       ...base,
       compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 4 }),
       requestBegin(),

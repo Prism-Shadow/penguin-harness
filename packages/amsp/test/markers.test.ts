@@ -1,11 +1,11 @@
 /**
- * Message-marker module tests (packages/core/src/omnimessage/markers): the canonical
- * `[tag]…[/tag]` producers, their inverse parsers, and the compatibility rule that every
+ * Message-marker module tests (packages/amsp/src/markers, which core re-exports):
+ * the canonical `[tag]…[/tag]` producers, their inverse parsers, and the compatibility rule that every
  * parser also accepts the legacy `<tag>…</tag>` form (markers persist in Traces and in each
  * agent's stored compaction prompt) while producers only ever emit the square form.
  *
  * Behavior covered here used to live next to each call site — engine (`extractSummary`),
- * omnimessage (`userSteeringText`), web (`skill-use` / `agent-handoff`) — and moved with the
+ * the records module (`userSteeringText`), web (`skill-use` / `agent-handoff`) — and moved with the
  * consolidation; the host-side tests keep covering the rendering/wiring around them.
  */
 import { describe, expect, it } from "vitest";
@@ -40,7 +40,7 @@ import {
   transcribeUserInput,
   unwrapSyntheticBlock,
   userSteeringText,
-} from "../src/omnimessage/markers/index.js";
+} from "../src/markers/index.js";
 
 describe("marker block primitives", () => {
   it("builds the canonical paired form and matches both forms, square first", () => {

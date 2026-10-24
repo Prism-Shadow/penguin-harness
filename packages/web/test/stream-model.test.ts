@@ -1,5 +1,5 @@
 /**
- * The chat stream's model (lib/omni/stream-model.ts): OmniMessages in, the items the chat
+ * The chat stream's model (lib/amsp/stream-model.ts): records in, the items the chat
  * renders out, and the same items whether a conversation arrives live or is rebuilt from
  * history.
  *
@@ -42,13 +42,14 @@
  * - The Trace's Task records (task_begin / task_end) render nothing and move no Task: history
  *   with them rebuilds the items a history without them does, a Task stopped before any
  *   request included.
+ * - A Session's first message streams its session_meta ahead of task_begin: it renders nothing
+ *   and marks no model change.
  */
 import { describe, expect, it } from "vitest";
 import {
   abortEvent,
   approvalDecision,
   assistantText,
-  buildBackgroundTaskDoneMessage,
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
@@ -70,12 +71,9 @@ import {
   toolCallOutput,
   userText,
   withOrigin,
-} from "@prismshadow/penguin-core/omnimessage";
-import type {
-  OmniMessage,
-  SessionMetaPayload,
-  TokenCounts,
-} from "@prismshadow/penguin-core/omnimessage";
+} from "@prismshadow/amsp";
+import { buildBackgroundTaskDoneMessage } from "@prismshadow/amsp/markers";
+import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/amsp";
 import {
   approvalKey,
   buildDedupIndex,
@@ -88,8 +86,8 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
-} from "../src/lib/omni/stream-model";
-import { liveSessionElapsedMs } from "../src/lib/omni/task-stats";
+} from "../src/lib/amsp/stream-model";
+import { liveSessionElapsedMs } from "../src/lib/amsp/task-stats";
 import type {
   AssistantTextItem,
   BackgroundNoticeItem,
@@ -103,7 +101,7 @@ import type {
   ToolCallItem,
   UserSteeringItem,
   UserTextItem,
-} from "../src/lib/omni/stream-model";
+} from "../src/lib/amsp/stream-model";
 
 /** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
 function noticeText(delivery?: "steering"): string {
@@ -120,7 +118,7 @@ function noticeText(delivery?: "steering"): string {
 }
 
 /** Override a message timestamp (constructor defaults to the current time). */
-function at<M extends OmniMessage>(msg: M, ts: string): M {
+function at<M extends AmspRecord>(msg: M, ts: string): M {
   return { ...msg, timestamp: ts };
 }
 
@@ -133,7 +131,7 @@ function out(n: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: n, total: n };
 }
 
-function meta(sessionId: string): OmniMessage<SessionMetaPayload> {
+function meta(sessionId: string): AmspRecord<SessionMetaPayload> {
   return sessionMeta({
     session_id: sessionId,
     model_id: "m",
@@ -484,6 +482,16 @@ describe("approvals and events", () => {
     expect(banner.running).toBe(false);
     expect(banner.status).toBe("retryable");
     expect(banner.errorMessage).toBe("the response contained no usable summary");
+  });
+
+  it("a Session's first message streams its session_meta ahead of task_begin, and nothing renders for it", () => {
+    const m = createStreamModel();
+    pushMessage(m, meta("s1"));
+    pushMessage(m, taskBegin());
+    pushMessage(m, userText("first question"));
+    expect(items(m).map((i) => i.kind)).not.toContain("model_change");
+    expect(items(m)).toHaveLength(1);
+    expect(m.contextModel).toMatchObject({ sessionId: "s1" });
   });
 
   it("a main-session session_meta on another model pushes a model_change item after the compaction row; the window's first meta, a same-pair rewrite and a nested child's meta push none", () => {
@@ -1527,7 +1535,7 @@ describe("Task segmentation and stats triggering", () => {
     expect(stats.stats!.tokens).toBe(800);
   });
 
-  it.each<[string, OmniMessage[], string]>([
+  it.each<[string, AmspRecord[], string]>([
     [
       "failed",
       [
@@ -2918,7 +2926,7 @@ describe("task_stats memory changes", () => {
 describe("Task records", () => {
   it("render nothing and move no Task: history with the pair rebuilds the items history without it does", () => {
     const ts = (mmss: string) => `2026-07-20T10:${mmss}Z`;
-    const tasks: OmniMessage[][] = [
+    const tasks: AmspRecord[][] = [
       [
         at(userText("q1"), ts("00:00.000")),
         at(requestBegin(), ts("00:01.000")),

@@ -2029,7 +2029,7 @@ export const zh = {
     apiReadDocs: "查看使用文档",
     apiCopyAgentPrompt: "复制给 Agent 的提示词",
     apiAgentPrompt: (docsUrl: string, baseUrl: string, agentRef: string) =>
-      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用此 Agent 的代码。\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\n使用 @prismshadow/amsp SDK：stream() 读取事件流，await run() 获取完整结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
+      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用此 Agent 的代码。\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\n使用 @prismshadow/amsp SDK：stream() 逐条读取记录，await run() 获取完整结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
     apiSessionSettings: "新会话设置",
     apiSessionSettingsHint:
       "应用于之后新建的 API 会话。模型留空使用 Project 默认模型，思考等级留空使用 Agent 配置，工作区留空则创建临时工作区。",
@@ -2091,7 +2091,8 @@ export const zh = {
     apiTryCacheRead: "缓存读",
     apiTryCacheWrite: "缓存写",
     apiTryElapsed: "用时",
-    apiTryStreamBroken: "事件流在 run.done 之前结束。",
+    apiTryStreamBroken: "事件流在 data: [DONE] 之前结束。",
+    apiTryUnfinished: "运行没有走到终点：最后一个 task_begin 没有闭合。",
   },
 
   models: {

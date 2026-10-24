@@ -76,11 +76,11 @@ import {
   createStreamModel,
   finalizeHistory,
   pushMessage,
-} from "../../lib/omni/stream-model";
-import type { StreamModel } from "../../lib/omni/stream-model";
-import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
-import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { bucketCostUsd } from "../../lib/omni/task-stats";
+} from "../../lib/amsp/stream-model";
+import type { StreamModel } from "../../lib/amsp/stream-model";
+import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/amsp/memory-changes";
+import type { MemoryLocateTarget } from "../../lib/amsp/memory-changes";
+import { bucketCostUsd } from "../../lib/amsp/task-stats";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";

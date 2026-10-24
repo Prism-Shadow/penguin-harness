@@ -13,7 +13,7 @@
  * (`@prismshadow/penguin-core/markers`) alongside every other message marker, and are
  * re-exported below under this feature's existing names.
  */
-import { buildHandoffMessage, buildModelSwitchMessage } from "@prismshadow/penguin-core/markers";
+import { buildHandoffMessage, buildModelSwitchMessage } from "@prismshadow/amsp/markers";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 
 export {
@@ -21,13 +21,13 @@ export {
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
-} from "@prismshadow/penguin-core/markers";
+} from "@prismshadow/amsp/markers";
 export type {
   BackgroundTaskDone,
   HandoffOrigin,
   ModelSwitchOrigin,
   ScheduledOrigin,
-} from "@prismshadow/penguin-core/markers";
+} from "@prismshadow/amsp/markers";
 
 /** First message of an `/agent` handoff conversation (core's `[handoff_from]` origin block). */
 export const handoffMessage = buildHandoffMessage;

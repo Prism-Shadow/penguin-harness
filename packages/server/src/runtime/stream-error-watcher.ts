@@ -65,7 +65,7 @@
  */
 import { isEventMessage, isModelMessage, isSessionMeta } from "@prismshadow/penguin-core";
 import path from "node:path";
-import type { OmniMessage, SessionMetaMessage, StopReason } from "@prismshadow/penguin-core";
+import type { AmspRecord, SessionMetaMessage, StopReason } from "@prismshadow/penguin-core";
 import { MESSAGE_MAX } from "./error-recorder.js";
 import type { ErrorContext, ErrorKind, ErrorSink } from "./error-recorder.js";
 
@@ -186,7 +186,7 @@ function isUserAbortReason(reason: string): boolean {
 }
 
 /** The session a message belongs to (last origin element; empty string for the main session) — both pending state and the tool-name cache are bucketed by it. */
-function originKey(msg: OmniMessage): string {
+function originKey(msg: AmspRecord): string {
   const origin = msg.origin;
   return origin && origin.length > 0 ? origin[origin.length - 1]! : "";
 }
@@ -220,7 +220,7 @@ export class StreamErrorWatcher {
   ) {}
 
   /** Consume one outgoing message; messages irrelevant to this watcher are a no-op. */
-  observe(msg: OmniMessage): void {
+  observe(msg: AmspRecord): void {
     if (isSessionMeta(msg)) {
       this.registerOrigin(msg);
       return;
@@ -279,7 +279,7 @@ export class StreamErrorWatcher {
 
   // —— LLM ——
 
-  private observeLlm(msg: OmniMessage): void {
+  private observeLlm(msg: AmspRecord): void {
     const p = msg.payload as {
       type?: string;
       status?: StopReason;
@@ -389,7 +389,7 @@ export class StreamErrorWatcher {
    * human changes something. The message carries the attempts and the last error detail
    * (compaction_end's share of the RetryDetail block) so the cost center shows what failed.
    */
-  private observeCompactionEnd(msg: OmniMessage, key: string): void {
+  private observeCompactionEnd(msg: AmspRecord, key: string): void {
     const p = msg.payload as {
       mode?: string;
       reason?: string;
@@ -418,7 +418,7 @@ export class StreamErrorWatcher {
 
   // —— Environment (tool execution) ——
 
-  private observeTool(msg: OmniMessage): void {
+  private observeTool(msg: AmspRecord): void {
     const p = msg.payload as {
       type?: string;
       name?: string;

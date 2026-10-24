@@ -21,9 +21,9 @@ import {
   toolCall,
   toolListReady,
   userText,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { mcpConnectOutcome } from "../src/internal/session-support.js";
-import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
+import type { AmspRecord, SessionMetaPayload } from "@prismshadow/amsp/records";
 import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces/index.js";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/mcp-stdio-server.mjs", import.meta.url));
@@ -33,8 +33,8 @@ function fixtureEntry(extra: Record<string, unknown> = {}): MCPServerConfig {
   return { name: "fx", config: { command: process.execPath, args: [FIXTURE], ...extra } };
 }
 
-async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {
-  const out: OmniMessage[] = [];
+async function collect(gen: AsyncGenerator<AmspRecord>): Promise<AmspRecord[]> {
+  const out: AmspRecord[] = [];
   for await (const msg of gen) out.push(msg);
   return out;
 }
@@ -46,12 +46,12 @@ interface FinalPayload {
   images?: string[];
 }
 
-function finalPayload(messages: OmniMessage[]): FinalPayload {
+function finalPayload(messages: AmspRecord[]): FinalPayload {
   return messages[messages.length - 1]!.payload as FinalPayload;
 }
 
 /** Joins the streamed content deltas (to compare against the complete message). */
-function streamedText(messages: OmniMessage[]): string {
+function streamedText(messages: AmspRecord[]): string {
   return messages
     .map((m) => m.payload as { type?: string; event_type?: string; output?: string })
     .filter((p) => p.type === "partial_tool_call_output" && p.event_type === "delta")
@@ -64,7 +64,7 @@ function runTool(
   name: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
-): Promise<OmniMessage[]> {
+): Promise<AmspRecord[]> {
   const call = toolCall({ name, arguments: JSON.stringify(args), toolCallId: "mcp-call-1" });
   return collect(env.executeTool({ toolCall: call, ...(signal ? { signal } : {}) }));
 }
@@ -722,13 +722,13 @@ describe("Session first-run bootstrap events", () => {
   });
 
   const fakeLLM: LLMInterface = {
-    async *streamGenerate(): AsyncGenerator<OmniMessage, LLMOutcome> {
+    async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
       yield assistantText("done");
       return { status: "completed" };
     },
   };
 
-  function makeSession(env: Environment, written: OmniMessage[]): Session {
+  function makeSession(env: Environment, written: AmspRecord[]): Session {
     const meta: SessionMetaPayload = {
       session_id: "s-mcp",
       provider: "custom",
@@ -767,30 +767,31 @@ describe("Session first-run bootstrap events", () => {
       workspaceDir: tmp,
       toolConfig: { customTools: [], mcpServers: [fixtureEntry()] },
     });
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const session = makeSession(env, written);
     try {
-      const streamed: OmniMessage[] = [];
+      const streamed: AmspRecord[] = [];
       for await (const msg of session.run([userText("go")])) streamed.push(msg);
-      const types = streamed.map((m) => (m.payload as { type?: string }).type);
-      // The Task opens first, then the bootstrap streams as it happens.
-      expect(types.slice(0, 4)).toEqual([
+      const types = streamed.map((m) => (m.payload as { type?: string }).type ?? "session_meta");
+      // The Session's meta and the Task's opening first, then the bootstrap as it happens.
+      expect(types.slice(0, 5)).toEqual([
+        "session_meta",
         "task_begin",
         "mcp_connect_begin",
         "mcp_connect_end",
         "tool_list_ready",
       ]);
       expect(types).toContain("text");
-      const begin = streamed[1]!.payload as { servers?: string[] };
+      const begin = streamed[2]!.payload as { servers?: string[] };
       expect(begin.servers).toEqual(["fx"]);
-      const end = streamed[2]!.payload as {
+      const end = streamed[3]!.payload as {
         status?: string;
         results?: { server: string; status: string; tools?: number; duration_ms: number }[];
       };
       expect(end.status).toBe("completed");
       expect(end.results).toHaveLength(1);
       expect(end.results![0]).toMatchObject({ server: "fx", status: "completed", tools: 6 });
-      const toolsMsg = streamed[3]!.payload as { tools?: { name: string }[] };
+      const toolsMsg = streamed[4]!.payload as { tools?: { name: string }[] };
       expect(toolsMsg.tools!.map((t) => t.name)).toContain("mcp__fx__echo");
       // Trace ordering: the engine writes the bootstrap records AFTER the run's input, so
       // the connect phase belongs to the new turn — meta, the Task's opening record, the user
@@ -807,7 +808,7 @@ describe("Session first-run bootstrap events", () => {
         "tool_list_ready",
       ]);
       // Second run: the bootstrap already happened — no repeated events.
-      const second: OmniMessage[] = [];
+      const second: AmspRecord[] = [];
       for await (const msg of session.run([userText("again")])) second.push(msg);
       const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
       expect(secondTypes).not.toContain("mcp_connect_begin");
@@ -822,13 +823,13 @@ describe("Session first-run bootstrap events", () => {
       workspaceDir: tmp,
       toolConfig: { customTools: [], mcpServers: [] },
     });
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const session = makeSession(env, written);
     try {
-      const streamed: OmniMessage[] = [];
+      const streamed: AmspRecord[] = [];
       for await (const msg of session.run([userText("go")])) streamed.push(msg);
-      const types = streamed.map((m) => (m.payload as { type?: string }).type);
-      expect(types.slice(0, 2)).toEqual(["task_begin", "tool_list_ready"]);
+      const types = streamed.map((m) => (m.payload as { type?: string }).type ?? "session_meta");
+      expect(types.slice(0, 3)).toEqual(["session_meta", "task_begin", "tool_list_ready"]);
       expect(types).not.toContain("mcp_connect_begin");
     } finally {
       session.dispose();
@@ -845,11 +846,11 @@ describe("Session first-run bootstrap events", () => {
       workspaceDir: tmp,
       toolConfig: { customTools: [], mcpServers: [] },
     });
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     // Capturing LLM: the carry-over assertion below reads what the request delivered.
-    const requests: OmniMessage[][] = [];
+    const requests: AmspRecord[][] = [];
     const capturingLLM: LLMInterface = {
-      async *streamGenerate(parameters): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate(parameters): AsyncGenerator<AmspRecord, LLMOutcome> {
         requests.push(parameters.newMessages);
         yield assistantText("done");
         return { status: "completed" };
@@ -886,7 +887,7 @@ describe("Session first-run bootstrap events", () => {
     });
     try {
       const ac = new AbortController();
-      const first: OmniMessage[] = [];
+      const first: AmspRecord[] = [];
       const run = (async () => {
         for await (const msg of session.run([userText("go")], { signal: ac.signal })) {
           first.push(msg);
@@ -900,16 +901,17 @@ describe("Session first-run bootstrap events", () => {
       }
       ac.abort();
       await run;
-      const firstTypes = first.map((m) => (m.payload as { type?: string }).type);
+      const firstTypes = first.map((m) => (m.payload as { type?: string }).type ?? "session_meta");
       // A stopped Task still closes its pair.
       expect(firstTypes).toEqual([
+        "session_meta",
         "task_begin",
         "mcp_connect_begin",
         "mcp_connect_end",
         "abort",
         "task_end",
       ]);
-      expect((first[2]!.payload as { status?: string }).status).toBe("aborted");
+      expect((first[3]!.payload as { status?: string }).status).toBe("aborted");
       // The aborted turn is RECORDED: the Session itself writes the input, the aborted
       // connect pair and the abort event (no engine exists to do it) — the analysis page
       // shows the interruption and a reload/restart keeps the message.
@@ -928,7 +930,7 @@ describe("Session first-run bootstrap events", () => {
       expect((written.at(-3)!.payload as { status?: string }).status).toBe("aborted");
 
       release();
-      const second: OmniMessage[] = [];
+      const second: AmspRecord[] = [];
       for await (const msg of session.run([userText("again")])) second.push(msg);
       const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
       expect(secondTypes.slice(0, 4)).toEqual([

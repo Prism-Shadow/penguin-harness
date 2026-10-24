@@ -85,7 +85,7 @@ import {
   publishBuiltinBrowserResync,
 } from "../features/builtin-browser/browser-events";
 import { WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
-import { publishUserEvent } from "../lib/omni/user-events";
+import { publishUserEvent } from "../lib/amsp/user-events";
 import { mergeCounts, mostRecentFirst } from "../lib/session-merge";
 import {
   forgetSessionMachines,
@@ -1897,7 +1897,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // over them.
   useEffect(() => {
     const conn = openUserEvents({
-      onOmniMessage: () => undefined,
+      onRecord: () => undefined,
       onServerEvent: (ev) => {
         applyUserEvent(store, ev, () => window.location.reload());
         // The surfaces that list this server's Sessions apart from the sidebar (the archive

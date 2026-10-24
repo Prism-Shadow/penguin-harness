@@ -28,7 +28,7 @@
  * Without a socket — the browser cannot open one, or the handshake keeps failing — calls
  * fall back to fetch, and streams wait in silence until one comes or the page reloads.
  */
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import type { StreamConnection, StreamHandlers } from "./sse";
 
@@ -574,24 +574,24 @@ export class ApiSocket {
           return; // single-line JSON by protocol; anything else is skipped unread
         }
         // SSE names a frame by its `event:` line, and sse-text.ts defaults an absent one to
-        // `message` — the OmniMessage shape. Everything else is named dispatch, with the
+        // `message` — the AmspRecord shape. Everything else is named dispatch, with the
         // handlers this module knows by name first and `onEvent` for the rest.
         const name = typeof frame.event === "string" ? frame.event : "message";
         if (name === "server_event") {
           stream.handlers.onServerEvent(data as ServerEvent, eventId);
         } else if (name === "message") {
-          stream.handlers.onOmniMessage(data as OmniMessage, eventId);
+          stream.handlers.onRecord(data as AmspRecord, eventId);
         } else if (name === "heartbeat" || name === "ping") {
           // Liveness only, and it has already been banked above: the beat is never an
           // application event, so it reaches no handler. `ping` is the session and user
           // streams' own beat; over HTTP the SSE reader drops it by the same name — and
-          // here it is a frame whose `{}` payload must not be read as an OmniMessage.
+          // here it is a frame whose `{}` payload must not be read as a record.
         } else if (stream.handlers.onEvent !== undefined) {
           stream.handlers.onEvent(name, data, eventId);
         } else {
-          // No named-event handler: an unlisted name is an OmniMessage, exactly as every name
+          // No named-event handler: an unlisted name is a record, exactly as every name
           // but `server_event` was treated before `onEvent` existed.
-          stream.handlers.onOmniMessage(data as OmniMessage, eventId);
+          stream.handlers.onRecord(data as AmspRecord, eventId);
         }
       } else if ("stream" in frame) {
         stream.failures = 0;

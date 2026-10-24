@@ -16,7 +16,7 @@
  *   opens only when the reader was following the newest one.
  */
 import { describe, expect, it } from "vitest";
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type { TraceEventsResponse } from "@prismshadow/penguin-server/api";
 import {
   TRACE_EVENT_PAGE_SIZE,
@@ -30,13 +30,13 @@ import {
 import type { RoundRange } from "../src/features/traces/trace-rounds";
 
 /** One synthetic event, identified by its index in the file so a read's slice can be checked exactly. */
-const event = (i: number): OmniMessage => ({
+const event = (i: number): AmspRecord => ({
   timestamp: "2026-10-02T00:00:00.000Z",
   type: "model_msg",
   payload: { type: "text", role: "assistant", text: `m${i}` },
 });
 
-const textsOf = (events: readonly OmniMessage[]): string[] =>
+const textsOf = (events: readonly AmspRecord[]): string[] =>
   events.map((m) => (m.payload as { text: string }).text);
 
 const indexes = (from: number, to: number): string[] =>
@@ -60,7 +60,7 @@ function fakeFile(size: number, opts: { serverLimit?: number; total?: number } =
   const fetchPage = (offset: number, limit: number): Promise<TraceEventsResponse> => {
     calls.push({ offset, limit });
     const capped = Math.min(limit, opts.serverLimit ?? limit);
-    const events: OmniMessage[] = [];
+    const events: AmspRecord[] = [];
     for (let i = offset; i < Math.min(offset + capped, size); i++) events.push(event(i));
     return Promise.resolve({ events, offset, limit: capped, total: opts.total ?? size });
   };

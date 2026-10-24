@@ -27,8 +27,8 @@ import {
   toolCall,
   toolListReady,
   userText,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord, TokenCounts } from "@prismshadow/amsp/records";
 import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js";
 import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { agentsMdPath, tracesDir } from "../src/state/paths.js";
@@ -72,7 +72,7 @@ const usage = (total: number): TokenCounts => ({
 async function writeTraceFile(
   root: string,
   sessionId: string,
-  messages: OmniMessage[],
+  messages: AmspRecord[],
   opts?: { dateDir?: string; index?: string },
 ): Promise<string> {
   const dir = path.join(
@@ -85,7 +85,7 @@ async function writeTraceFile(
   return file;
 }
 
-function metaFor(sessionId: string, workspaceDir: string, model = MODEL): OmniMessage {
+function metaFor(sessionId: string, workspaceDir: string, model = MODEL): AmspRecord {
   return sessionMeta({
     session_id: sessionId,
     provider: model.provider,
@@ -427,7 +427,7 @@ describe("setHistory injection", () => {
           tool_call_id: "tc1",
           stop_reason: "completed",
         },
-      } as OmniMessage,
+      } as AmspRecord,
       userText("next"),
       assistantText("done"),
     ]);
@@ -447,7 +447,7 @@ describe("setHistory injection", () => {
 
 describe("agent.resumeSession system prompt per context", () => {
   const SID = "session-2026-07-06-13-00-00-abcdef11";
-  const promptOf = (session: { metaMessage: OmniMessage }): string =>
+  const promptOf = (session: { metaMessage: AmspRecord }): string =>
     (session.metaMessage.payload as { system_prompt: string }).system_prompt;
 
   it("opens a context closed by a completed compaction with the current AGENTS.md, not the closed file's recorded prompt", async () => {
@@ -484,14 +484,14 @@ describe("agent.resumeSession system prompt per context", () => {
   });
 
   it("ignores a legacy recorded thinking level on resume: the level is a per-request parameter", async () => {
-    const withLevel = (level: string): OmniMessage => {
+    const withLevel = (level: string): AmspRecord => {
       const meta = metaFor(SID, workspace);
       return {
         ...meta,
         payload: { ...meta.payload, thinking_level: level },
-      } as unknown as OmniMessage;
+      } as unknown as AmspRecord;
     };
-    const traceRecords = (meta: OmniMessage): OmniMessage[] => [
+    const traceRecords = (meta: AmspRecord): AmspRecord[] => [
       meta,
       userText("hello"),
       requestBegin(),
@@ -547,9 +547,9 @@ describe("agent.resumeSession after an in-session model switch", () => {
       session as {
         engineDeps: {
           initialState?: {
-            pendingSummary?: OmniMessage;
-            openingSummary?: OmniMessage;
-            carryOver?: OmniMessage[];
+            pendingSummary?: AmspRecord;
+            openingSummary?: AmspRecord;
+            carryOver?: AmspRecord[];
             sessionTurns?: number;
             pendingTraceRotation?: boolean;
           };
@@ -617,13 +617,13 @@ describe("agent.resumeSession after an in-session model switch", () => {
       [metaFor(SID, workspace, MODEL), toolListReady([]), userText(SUMMARY)],
       { index: "002" },
     );
-    const kind = (m: OmniMessage): string | undefined =>
+    const kind = (m: AmspRecord): string | undefined =>
       m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type;
 
     const session = await agent.resumeSession({ sessionId: SID });
     try {
       // Nothing ran since the restart: the engine is built by the switch itself.
-      const streamed: OmniMessage[] = [];
+      const streamed: AmspRecord[] = [];
       for await (const msg of session.switchModel({
         provider: ORIGINAL.provider,
         modelId: ORIGINAL.model_id,

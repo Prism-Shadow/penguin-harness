@@ -221,7 +221,7 @@
 .site-ui-language-option[aria-checked="true"] {
   background: var(--site-pill);
 }
-.site-ui-language-option .ui-glyph {
+.site-ui-language-check {
   color: var(--site-accent);
 }
 .site-ui .ui-glyph > [data-set] {

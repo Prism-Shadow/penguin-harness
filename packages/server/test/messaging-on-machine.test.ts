@@ -17,7 +17,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { MessagingBindingsResponse } from "../src/api/types.js";
 import type {
   TelegramTransportOpts,
@@ -130,7 +130,7 @@ describe("a machine's Session keeps its bot on the machine", () => {
     sessionId = adoptSession(
       machine.deps,
       fakeSession(uniqueSessionId(), {
-        async *run(input: OmniMessage[]) {
+        async *run(input: AmspRecord[]) {
           runs.push(JSON.stringify(input.map((m) => m.payload)));
           yield assistantText(REPLY);
         },

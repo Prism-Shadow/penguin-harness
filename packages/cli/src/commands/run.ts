@@ -7,7 +7,7 @@
  *               [--background] [--goal [budget]] [--json] [--server <url>]
  *
  * The CLI is a thin client: it creates a Session over the API (or reuses `--session`),
- * POSTs the task, subscribes to the SSE stream and renders OmniMessages until the task
+ * POSTs the task, subscribes to the SSE stream and renders records until the task
  * ends, then prints the stats line. Exit 0 on completed; a goal run exits 0 only when
  * the goal outcome is `complete`.
  *
