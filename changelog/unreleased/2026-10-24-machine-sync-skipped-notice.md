@@ -3,7 +3,7 @@
 - **Date:** 2026-10-24
 - **Type:** fix
 - **Scope:** `web`, `ui`, `server`, `docs`, `ui-gallery`
-- **PR:** PR_URL
+- **PR:** [#1317](https://github.com/Prism-Shadow/penguin-harness/pull/1317)
 
 [中文版](2026-10-24-machine-sync-skipped-notice.zh.md)
 
