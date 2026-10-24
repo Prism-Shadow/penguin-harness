@@ -143,6 +143,7 @@ jobs:
           fetch-depth: 0
       - name: Changed plugins carry a new version
         run: node scripts/check-plugin-versions.mjs '${{ github.event.pull_request.base.sha }}'
+      # No plugin-tree .test.mjs suites remain. Restore their strict runner when suites return.
 
   # The npm publishing path, walked without publishing. CI used to prove only that the sources
   # typecheck and the tests pass, and the release workflow built a different, narrower set -- so a
