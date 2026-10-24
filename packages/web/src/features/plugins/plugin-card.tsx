@@ -12,10 +12,12 @@
  * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
  *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
  *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
- *   Update: this server's and each connected machine's own in one list, a machine's named
- *   `[SSH: alias]` after the Agent's name, every action on such a row going to that machine. Installing a plugin with a
- *   stdio MCP server on an Agent that lacks it asks first, showing the command it runs on the
- *   Agent's server, and an update's confirmation shows it too (the
+ *   Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
+ *   after the Agent's name, every action on such a row going to that machine. A machine out of
+ *   reach keeps its rows, greyed and inert with the reason, as it last answered; an Agent whose
+ *   installs have not been answered yet keeps its row too, its Install held until they are.
+ *   Installing a plugin with a stdio MCP server on an Agent that lacks it asks first, showing the
+ *   command it runs on the Agent's server, and an update's confirmation shows it too (the
  *   reinstall writes the servers again). Beside an Agent whose copy of the plugin's MCP
  *   servers waits for vault values or a sign-in, marks say so, and the Project owner gets Set up,
  *   which writes those values into the Agent's vault.
@@ -25,6 +27,10 @@
  * The dialog's footer repeats the same actions with their words, after Export — the package as
  * a zip another server imports, for any member whenever its package is on this server — and,
  * for an admin, Delete on a package an admin installed on the server.
+ *
+ * Until this server has said what its own Agents hold (or, for a module, what its tables list),
+ * the status and "used by" on the metadata line are fixed-width placeholders, so the first answer
+ * replaces a bar rather than a word.
  */
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
@@ -38,6 +44,7 @@ import {
   ICONS,
   ICON_SIZE,
   Modal,
+  Skeleton,
   StatusIcon,
   UpdateDot,
   toastError,
@@ -78,15 +85,29 @@ import {
 const INSTALL_ICON = ICONS.download;
 
 /**
- * An Agent a library plugin can be installed on: one of this server's, or a connected machine's
- * own. `key` is what the page's install map and a usage's lists name it by (lib/agent-location.ts
+ * An Agent a library plugin can be installed on: one of this server's, or a machine's own.
+ * `key` is what the page's install map and a usage's lists name it by (lib/agent-location.ts
  * `agentKey`): the id for this server's, so two machines' `default_agent`s stay two rows.
  */
 export interface InstallTarget {
   key: string;
   agent: AgentSummary;
   /** The machine the Agent lives on, where installing it runs; null for this server. */
-  machine: { machineId: string; label: string } | null;
+  machine: InstallMachine | null;
+}
+
+/** The machine an install target lives on, as the dialog reads it. */
+export interface InstallMachine {
+  machineId: string;
+  /** Its ssh alias, written after the Agent's name. */
+  label: string;
+  /**
+   * Whether its Agents can be acted on right now: connected, and its list answered in this page
+   * load (lib/machine-agent-lists.ts). Absent reads as live.
+   */
+  live?: boolean;
+  /** Why it is not live, in words; null while a connected machine's first answer is awaited. */
+  reason?: string | null;
 }
 
 /**
@@ -129,6 +150,15 @@ export interface PluginCardProps {
   /** Every Agent a library plugin can go on, for the manage-installs dialog, in the Agents page's order. */
   targets: readonly InstallTarget[];
   installed: InstalledMap;
+  /** Targets whose installs are not known yet (not answered, or failed): their rows wait. */
+  unknown?: ReadonlySet<string>;
+  /** Targets whose installs could not be read, with the failure in words. */
+  failed?: ReadonlyMap<string, string>;
+  /**
+   * This server has not said yet what its own Agents (or, for a module, its tables) hold: the
+   * status and "used by" are placeholders rather than a guess that the answer would overturn.
+   */
+  pending?: boolean;
   /** Whether there is a current Agent for quick start to open a draft on. */
   canQuickStart: boolean;
   /** Only an admin changes what the server runs. */
@@ -405,6 +435,7 @@ export function PluginCard(props: PluginCardProps) {
     <Card
       padding="md"
       framed={props.framed}
+      data-plugin={row.name}
       interactive
       onClick={cardBodyClick(() => setDetailOpen(true))}
       className="@container flex items-center gap-3"
@@ -452,12 +483,19 @@ export function PluginCard(props: PluginCardProps) {
         <div className="mt-2.5">
           <MetaLine>
             {version !== undefined && <span className="shrink-0 font-mono">v{version}</span>}
-            <StatusMark status={status} hint={hint} />
-            {usage !== null && (
-              <span className="min-w-0 truncate">
-                {S.plugins.usedByAgents(usage.usedBy.length)}
-              </span>
+            {props.pending === true ? (
+              <Skeleton className="h-3 w-16 shrink-0" />
+            ) : (
+              <StatusMark status={status} hint={hint} />
             )}
+            {usage !== null &&
+              (props.pending === true ? (
+                <Skeleton className="h-3 w-24 shrink-0" />
+              ) : (
+                <span className="min-w-0 truncate" data-testid="plugin-used-by">
+                  {S.plugins.usedByAgents(usage.usedBy.length)}
+                </span>
+              ))}
           </MetaLine>
         </div>
         {tags.length > 0 && (
@@ -505,6 +543,7 @@ export function PluginCard(props: PluginCardProps) {
                 installed={usage?.usedBy.includes(t.key) ?? false}
                 outdated={behind.includes(t.key)}
                 mcp={pluginMcpState(plugin, installed.get(t.key))}
+                held={heldRow(t, props.unknown, props.failed)}
                 isOwner={props.isOwner}
                 onToggle={(on) => {
                   // Install runs directly, unless it brings a stdio server: that runs a command on
@@ -664,6 +703,39 @@ export function PluginCard(props: PluginCardProps) {
   );
 }
 
+/** Why a target's row cannot act right now, or null when it can (see {@link InstallRow}'s `held`). */
+function heldRow(
+  target: InstallTarget,
+  unknown: ReadonlySet<string> | undefined,
+  failed: ReadonlyMap<string, string> | undefined,
+): RowHold | null {
+  const machine = target.machine;
+  if (machine !== null && machine.live === false) {
+    return {
+      reason: machine.reason ?? S.plugins.waitingFor(machine.label),
+      off: true,
+      busy: false,
+    };
+  }
+  if (unknown?.has(target.key) !== true) return null;
+  const failure = failed?.get(target.key);
+  if (failure !== undefined) return { reason: failure, off: false, busy: false };
+  return {
+    reason: machine === null ? S.common.loading : S.plugins.waitingFor(machine.label),
+    off: false,
+    busy: true,
+  };
+}
+
+/** A row held from acting: why, whether its machine is out of reach, and whether it is being asked. */
+export interface RowHold {
+  reason: string;
+  /** The machine cannot be acted on: the row is greyed, as the Agents page greys its cards. */
+  off: boolean;
+  /** The Agent's installs are being asked for: the Install button says it is busy. */
+  busy: boolean;
+}
+
 /**
  * One Agent row in the "manage installs" dialog: an Agent without the plugin shows "Install";
  * one with it shows "Installed", switching to "Uninstall" on hover (the same button carries the
@@ -672,6 +744,10 @@ export function PluginCard(props: PluginCardProps) {
  * failure. Where the Agent carries the plugin's MCP servers, marks beside its name say what
  * they wait for — vault values, a sign-in — and a Project owner gets Set up for the values. A
  * machine's Agent names its machine after its name, the way a machine's Workspace group does.
+ *
+ * A held row keeps its place and its last state, every button disabled with the reason as its
+ * hint: a machine out of reach greys the row; an Agent whose installs are still unknown shows
+ * Install, held, until they are answered — never "not installed" on the strength of no answer.
  */
 export function InstallRow({
   agentId,
@@ -680,6 +756,7 @@ export function InstallRow({
   installed,
   outdated,
   mcp,
+  held = null,
   isOwner,
   onToggle,
   onUpdate,
@@ -693,6 +770,8 @@ export function InstallRow({
   outdated: boolean;
   /** What the plugin's MCP servers on this Agent wait for; null when it carries none. */
   mcp: { missingKeys: string[]; signIn: boolean } | null;
+  /** Why the row cannot act right now; null when it can. */
+  held?: RowHold | null;
   isOwner: boolean;
   onToggle: (on: boolean) => void;
   onUpdate: () => void;
@@ -700,8 +779,15 @@ export function InstallRow({
 }) {
   /** Who the row's buttons act on, for their names: two machines' Agents can share an id. */
   const who = machine === null ? agentId : `${agentId} ${S.chat.machineTag(machine)}`;
+  /** A held row's buttons: disabled, the reason as their hint. */
+  const hold =
+    held === null
+      ? {}
+      : { disabled: true, title: held.reason, "data-tooltip-extra": true as const };
   return (
-    <div className="flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60">
+    <div
+      className={`flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
+    >
       <AgentAvatar id={agentId} name={name} size={22} className="shrink-0 rounded" />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span
@@ -732,6 +818,7 @@ export function InstallRow({
           className="shrink-0"
           aria-label={`${S.plugins.setUp} ${who}`}
           onClick={onSetUp}
+          {...hold}
         >
           {S.plugins.setUp}
         </Button>
@@ -743,23 +830,28 @@ export function InstallRow({
           className="shrink-0"
           aria-label={`${S.skills.updateAction} ${who}`}
           onClick={onUpdate}
+          {...hold}
         >
           {S.skills.updateAction}
         </Button>
       )}
       {installed ? (
-        // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button carries the uninstall action).
+        // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button
+        // carries the uninstall action) — not on a held row, whose button does nothing.
         <Button
           size="sm"
           variant="ghost"
-          className="group shrink-0"
+          className={`shrink-0 ${held === null ? "group" : ""}`}
           aria-label={`${S.skills.uninstall} ${who}`}
           onClick={() => onToggle(false)}
+          {...hold}
         >
           <span className="group-hover:hidden">{S.skills.installed}</span>
-          <span className="hidden text-red-600 group-hover:inline dark:text-red-400">
-            {S.skills.uninstall}
-          </span>
+          {held === null && (
+            <span className="hidden text-red-600 group-hover:inline dark:text-red-400">
+              {S.skills.uninstall}
+            </span>
+          )}
         </Button>
       ) : (
         <Button
@@ -767,6 +859,8 @@ export function InstallRow({
           className="shrink-0"
           aria-label={`${S.skills.install} ${who}`}
           onClick={() => onToggle(true)}
+          {...hold}
+          {...(held?.busy === true ? { "aria-busy": true } : {})}
         >
           {S.skills.install}
         </Button>

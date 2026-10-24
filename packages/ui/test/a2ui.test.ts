@@ -29,6 +29,15 @@
  *   form writes no draft.
  * - Given Mod+Enter in a textarea the form submits; a bare Enter is a new line.
  * - Given no host actions, every control is disabled and there is no fill button.
+ *
+ * Answered (read-only, handed the message that answered the reply)
+ * - Given the form's fill text, in either language, each field shows its answer over the
+ *   model's defaults; a field with no line shows unanswered, and a slider or a switch with none
+ *   stands at its starting answer.
+ * - Given a message that is not the form's answer, the form shows as asked.
+ * - Given the open question, the message is ignored: the form shows its own answers.
+ * - Given a pick's text, a single choice shows that option pressed and a multiple choice its
+ *   boxes ticked; an answer the reader wrote, or the open question, picks nothing.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -444,6 +453,90 @@ describe("FormBlock", () => {
       const controls = loose.match(/<(?:input|textarea|button)\b[^>]*>/g) ?? [];
       expect(controls.length).toBeGreaterThan(0);
       for (const tag of controls) expect(tag).toContain('disabled=""');
+    }
+  });
+});
+
+describe("answered blocks", () => {
+  const answered = (answeredWith: string): A2uiActions => ({
+    interactive: false,
+    fill: () => {},
+    lang: "en",
+    answeredWith,
+  });
+
+  it("show a form's answers from its fill text, over the model's defaults", () => {
+    const deploy = block(
+      DEPLOY,
+      answered(
+        [
+          "Service name: billing-api",
+          "Notes:",
+          "  Keep the old pods",
+          "  for a day",
+          "Replicas: 5 pods",
+          "Region: us-east",
+          "Add-ons: WAF, Backups",
+        ].join("\n"),
+      ),
+    );
+    expect(tags(deploy, "input", 'value="billing-api"')).toHaveLength(1);
+    expect(deploy).toContain(">Keep the old pods\nfor a day</textarea>");
+    expect(tags(deploy, "input", 'value="5"')).toHaveLength(1);
+    expect(tags(deploy, "input", 'value="3"')).toHaveLength(0);
+    // us-east among the segments, WAF and Backups among the chips.
+    expect(tags(deploy, "button", 'aria-pressed="true"')).toHaveLength(3);
+    // No line for the slider: it stands at its starting answer, its minimum.
+    expect(tags(deploy, "input", 'type="range"', 'value="0"')).toHaveLength(1);
+    expect(deploy).not.toContain('type="submit"');
+
+    const schedule = block(
+      SCHEDULE,
+      answered("Machine size：Large\nNotify me：否\nDay：2026-10-21\nRun until：2026-10-21 18:00"),
+    );
+    expect(schedule).not.toContain(DEFAULT_UI_STRINGS.a2ui.choose);
+    expect(tags(schedule, "button", 'role="switch"', 'aria-checked="false"')).toHaveLength(1);
+    expect(tags(schedule, "input", 'type="date"', 'value="2026-10-21"')).toHaveLength(1);
+    expect(
+      tags(schedule, "input", 'type="datetime-local"', 'value="2026-10-21T18:00"'),
+    ).toHaveLength(1);
+    // The time has a default, but the message has no line for it: it was not answered.
+    expect(tags(schedule, "input", 'type="time"', 'value=""')).toHaveLength(1);
+    // A switch with no line cannot show no answer: it stands at its starting answer, on.
+    const edited = block(SCHEDULE, answered("Day: 2026-10-21"));
+    expect(tags(edited, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
+    expect(tags(edited, "input", 'type="time"', 'value=""')).toHaveLength(1);
+  });
+
+  it("show the form as asked for a message that is not its answer", () => {
+    const html = block(SCHEDULE, answered("Sounds good, go ahead."));
+    expect(tags(html, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
+    expect(tags(html, "input", 'type="time"', 'value="09:30"')).toHaveLength(1);
+    expect(html).toContain(DEFAULT_UI_STRINGS.a2ui.choose);
+  });
+
+  it("leave the open question to its own answers", () => {
+    const html = block(SCHEDULE, { ...LIVE, answeredWith: "Notify me: No\nTime: 10:15" });
+    expect(tags(html, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
+    expect(tags(html, "input", 'type="time"', 'value="09:30"')).toHaveLength(1);
+    expect(tags(html, "button", 'type="submit"')).toHaveLength(1);
+  });
+
+  it("pick a choice's options from its fill text, and nothing for an answer of the reader's own", () => {
+    const single = buttons(block(CHOICE, answered("SQLite, one file beside the service")));
+    expect(single.map((tag) => tag.includes('aria-pressed="true"'))).toEqual([true, false, false]);
+    const several = block(
+      { ...CHOICE, multiple: true },
+      answered("SQLite, one file beside the service、MongoDB"),
+    );
+    expect(tags(several, "input", 'type="checkbox"', 'checked=""')).toHaveLength(2);
+    for (const html of [
+      block(CHOICE, answered("Redis, please")),
+      block(CHOICE, { ...LIVE, answeredWith: "PostgreSQL" }),
+      block({ ...CHOICE, multiple: true }, { ...LIVE, answeredWith: "PostgreSQL" }),
+    ]) {
+      expect(html).not.toContain('aria-pressed="true"');
+      expect(tags(html, "input", 'checked=""')).toHaveLength(0);
     }
   });
 });

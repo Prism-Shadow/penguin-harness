@@ -228,9 +228,11 @@ describe("envHintFor (the dialog promises only what MMSP's routed client reads)"
   });
 
   it("names the vendor's variables for a first-party row with no base URL anywhere", () => {
+    // And where the requests go while that base URL variable is unset: the client's default.
     expect(envHintFor("anthropic", "claude-sonnet-4-6", "", "", presetGroup("anthropic"))).toEqual({
       apiKeyEnv: "ANTHROPIC_API_KEY",
       baseUrlEnv: "ANTHROPIC_BASE_URL",
+      defaultBaseUrl: "https://api.anthropic.com",
     });
     expect(keyHint("google", "gemini-3.1-pro", "", "", presetGroup("google"))).toBe(
       "GEMINI_API_KEY",
@@ -276,18 +278,34 @@ describe("envHintFor (the dialog promises only what MMSP's routed client reads)"
   it("names a custom-like row's protocol client's variables with no base URL anywhere — the protocol it will be saved on, never the id's family", () => {
     // `claude-sonnet-5` typed into a custom group is saved on the custom default client, so the
     // hint names OPENAI_API_KEY, not the Anthropic variable its id's family would read, and its
-    // requests go to OPENAI_BASE_URL or the client's default.
+    // requests go to OPENAI_BASE_URL or the client's default, OpenAI's own endpoint.
     expect(envHintFor("custom", "claude-sonnet-5", "", "")).toEqual({
       apiKeyEnv: "OPENAI_API_KEY",
       baseUrlEnv: "OPENAI_BASE_URL",
+      defaultBaseUrl: "https://api.openai.com/v1",
     });
     expect(keyHint("my-group", "claude-sonnet-5", "", "")).toBe("OPENAI_API_KEY");
     // A protocol the user chose is honoured.
     expect(keyHint("custom", "whatever", "ant-messages", "")).toBe("ANTHROPIC_API_KEY");
-    // A group protocol wins over the id: vLLM's preset table pins its client.
-    expect(keyHint("vllm", "deepseek-ai/DeepSeek-V4-Pro", "", "", presetGroup("vllm"))).toBe(
-      "OPENAI_API_KEY",
-    );
+    // A group protocol wins over the id: a `deepseek-ai/` id in a group pinned to Chat
+    // Completions reads that client's variable, not DeepSeek's.
+    expect(
+      keyHint("my-group", "deepseek-ai/DeepSeek-V4-Pro", "", "", { clientType: "openai-chat" }),
+    ).toBe("OPENAI_API_KEY");
+    // A vLLM row with no base URL anywhere reads vLLM's own variables, never OPENAI_*, and its
+    // requests go to the local server unless VLLM_BASE_URL is set.
+    expect(
+      envHintFor("vllm", "Qwen/Qwen3.8-27B", "", "", { clientType: "openai-chat-vllm-adapter" }),
+    ).toEqual({
+      apiKeyEnv: "VLLM_API_KEY",
+      baseUrlEnv: "VLLM_BASE_URL",
+      defaultBaseUrl: "http://127.0.0.1:8000/v1",
+    });
+    // vLLM's preset table names the local server, whose client takes no key from the
+    // environment for it.
+    expect(
+      keyHint("vllm", "deepseek-ai/DeepSeek-V4-Pro", "", "", presetGroup("vllm")),
+    ).toBeUndefined();
     // A vendor group still routes by id, which is how it really works.
     expect(keyHint("anthropic", "claude-sonnet-5", "", "")).toBe("ANTHROPIC_API_KEY");
   });

@@ -1,11 +1,11 @@
 /**
  * `@prismshadow/penguin-core/a2ui`: the grammar of A2UI blocks — catalog types and limits, fence
  * discovery, L1 validation, a form field's answer rule, the mermaid checks, the whole-reply check
- * with its score, the reply's language, the text fallback, the composer fill texts, the
- * self-review rubric, and the pure helpers the renderers share with the fallback (formatting, a
- * series' extent, the resource board's tiles and judgement). Pure TypeScript with no
- * dependencies, safe to bundle into the browser; the checker CLI (cli.ts) is the one Node-only
- * file and is not exported here.
+ * with its score, the reply's language, the text fallback, the composer fill texts and their
+ * inverse (an answered block's answers read back from the message), the self-review rubric, and
+ * the pure helpers the renderers share with the fallback (formatting, a series' extent, the
+ * resource board's tiles and judgement). Pure TypeScript with no dependencies, safe to bundle
+ * into the browser; the checker CLI (cli.ts) is the one Node-only file and is not exported here.
  */
 export type {
   A2uiBlock,
@@ -80,6 +80,7 @@ export {
   toFallbackMarkdown,
   type A2uiFallbackContext,
 } from "./fallback.js";
+export { parseChoicePick, parseFormFill } from "./fill-parse.js";
 export {
   conditionName,
   countdownParts,

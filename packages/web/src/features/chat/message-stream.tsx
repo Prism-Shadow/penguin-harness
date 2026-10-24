@@ -7,7 +7,7 @@
  * own context menu (Copy / Add to conversation; open the link or copy its address — see
  * stream-selection-menu.tsx).
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ComponentProps, ReactNode, RefObject } from "react";
 import {
   A2uiActionsProvider,
@@ -24,6 +24,7 @@ import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
 import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
+import { readOnlyActions } from "./a2ui-answered";
 import { WorkspaceLinksProvider } from "./workspace-links";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
@@ -40,8 +41,8 @@ import { FindRevealContext, useRegionRevealed } from "../../lib/find-expand";
  */
 export type A2uiActions = ComponentProps<typeof A2uiActionsProvider>["value"];
 
-/** The fill of every reply whose blocks do not take input, where picking is disabled anyway. */
-const NO_FILL = (): void => {};
+/** No reply yet: the read-only actions a first render starts from. */
+const NO_ACTIONS: ReadonlyMap<number, A2uiActions> = new Map();
 
 /** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
 export interface StreamRenderContext {
@@ -108,11 +109,12 @@ export interface StreamRenderContext {
    * The actions of the reply whose blocks take input: `interactive` set, `fill` putting the
    * picked text in this conversation's composer (an empty fill, a choice's "Other…", empties
    * it), `lang` the interface language, and `drafts` + `draftScope` keeping a form's or a
-   * multi-select's answers in progress across a reload. Honored for the main conversation only, and there for the latest
-   * reply with nothing said after it (see a2ui-reply.ts); every other reply gets the same
-   * language with input off and no drafts. Must keep its identity while its inputs do: the
-   * blocks read it through context, past the memoized Markdown, so a fresh object per render
-   * would re-render every block on every stream frame.
+   * multi-select's answers in progress across a reload. Honored for the main conversation only,
+   * and there for the latest reply with nothing said after it (see a2ui-reply.ts); every other
+   * reply gets the same language with input off, no drafts, and the text of the message that
+   * answered it, which its blocks read their answers back from (a2ui-answered.ts). Must keep its
+   * identity while its inputs do: the blocks read it through context, past the memoized
+   * Markdown, so a fresh object per render would re-render every block on every stream frame.
    */
   a2uiActions?: A2uiActions;
 }
@@ -163,15 +165,17 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
 
   // A reply's choice or form takes input only as the main conversation's open question
   // (a2ui-reply.ts; the subagent panel spreads this ctx under its own origin). Every other
-  // reply gets the same language with input off, derived once per actions object so both
-  // values keep their identity across stream frames.
+  // reply gets the same language with input off and the message that answered it
+  // (a2ui-answered.ts). The model mutates the items in place, so this is derived on every
+  // render; each reply keeps last render's actions object while its answer and language do,
+  // so its blocks do not re-render on every stream frame.
   const live = ctx.a2uiActions;
   const liveReply =
     live !== undefined ? items[interactiveReplyIndex(items, ctx.origin)] : undefined;
-  const still = useMemo<A2uiActions | undefined>(
-    () => (live === undefined ? undefined : { interactive: false, fill: NO_FILL, lang: live.lang }),
-    [live],
-  );
+  const keptActions = useRef(NO_ACTIONS);
+  const still =
+    live === undefined ? undefined : readOnlyActions(keptActions.current, items, live.lang);
+  if (still !== undefined) keptActions.current = still;
 
   // The stream's last item, the one place the line a run ended on may offer Retry. The ended
   // Task's own stats row can settle after it; anything else that follows — a message, a new
@@ -193,7 +197,10 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
       // answers, the question's reply changes a context value rather than its place in the
       // tree, so it is not remounted (no Markdown re-parse, no diagram re-render), and only
       // the blocks of a reply whose value changed re-render.
-      <A2uiActionsProvider key={seg.item.id} value={seg.item === liveReply ? live : still}>
+      <A2uiActionsProvider
+        key={seg.item.id}
+        value={seg.item === liveReply ? live : still.get(seg.item.id)!}
+      >
         <MessageItem item={seg.item} ctx={ctx} />
       </A2uiActionsProvider>
     ) : (

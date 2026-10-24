@@ -10,14 +10,17 @@
  *   and the row reads Installed from the machine's answer; this server's `helper` gets nothing.
  * - A plugin the machine's library does not have is refused there, and the row goes back to
  *   Install.
- * - A machine being brought back offers no row: nothing could be installed there.
+ * - A machine being brought back keeps the rows of the Agents it was last seen with, in their
+ *   place, every button held with the reason; nothing is asked of it. With nothing remembered of
+ *   it, it has no row.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
-import type { PluginItem } from "@prismshadow/penguin-server/api";
+import type { AgentSummary, PluginItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { rememberMachineAgents } from "../src/lib/machine-cache";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, topDialog } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
 import { button, click, unmountAll, waitFor } from "./helpers/dom";
@@ -82,6 +85,7 @@ describe("installing a library plugin on a machine's Agent", () => {
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {
     await unmountAll();
+    localStorage.clear();
   });
 
   it("lists the machine's Agents after this server's, each named with its machine", async () => {
@@ -93,7 +97,9 @@ describe("installing a library plugin on a machine's Agent", () => {
 
   it("installs on the machine's Agent from its library, and nothing on this server's", async () => {
     const server = await openInstalls([GPU]);
-    await waitFor(() => rows().length === 2);
+    await waitFor(
+      () => rows().length === 2 && !button(`${en.skills.install} ${MACHINE_HELPER}`).disabled,
+    );
     await click(button(`${en.skills.install} ${MACHINE_HELPER}`));
     await waitFor(() => server.skillsOn("gpu1", AGENT_ID).length === 1);
     const installsSent = server.fetch.requests.filter(
@@ -108,7 +114,9 @@ describe("installing a library plugin on a machine's Agent", () => {
 
   it("goes back to Install when the machine's library does not have the plugin", async () => {
     const server = await openInstalls([{ ...GPU, library: [] }]);
-    await waitFor(() => rows().length === 2);
+    await waitFor(
+      () => rows().length === 2 && !button(`${en.skills.install} ${MACHINE_HELPER}`).disabled,
+    );
     await click(button(`${en.skills.install} ${MACHINE_HELPER}`));
     await waitFor(() =>
       server.fetch.requests.some((r) => r.machine === "gpu1" && r.method === "POST"),
@@ -117,7 +125,25 @@ describe("installing a library plugin on a machine's Agent", () => {
     expect(server.skillsOn("gpu1", AGENT_ID)).toEqual([]);
   });
 
-  it("offers no row on a machine being brought back", async () => {
+  it("keeps a machine's last-seen rows while it is brought back, held with the reason", async () => {
+    rememberMachineAgents(PROJECT_ID, "gpu1", [
+      {
+        agentId: AGENT_ID,
+        createdAt: "2026-10-01T00:00:00Z",
+        pluginUpdates: [],
+      } as unknown as AgentSummary,
+    ]);
+    const server = await openInstalls([{ ...GPU, reconnecting: true }]);
+    await waitFor(() => rows().length === 2);
+    expect(rows()).toEqual([AGENT_ID, MACHINE_HELPER]);
+    const held = button(`${en.skills.install} ${MACHINE_HELPER}`);
+    expect(held.disabled).toBe(true);
+    expect(held.getAttribute("data-tooltip")).toBe(en.machines.composer.reconnecting);
+    expect(button(`${en.skills.install} ${AGENT_ID}`).disabled).toBe(false);
+    expect(server.fetch.requests.filter((r) => r.machine === "gpu1")).toEqual([]);
+  });
+
+  it("offers no row on a machine being brought back that nothing is remembered of", async () => {
     const server = await openInstalls([{ ...GPU, reconnecting: true }]);
     await waitFor(() => rows().length === 1);
     expect(rows()).toEqual([AGENT_ID]);

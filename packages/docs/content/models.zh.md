@@ -215,7 +215,7 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 - **整个分组。** 在[分组设置](#分组设置)（分组标题栏上的齿轮）里填写，或由[连接账户](#连接账户)写入。两种方式写的都是分组密钥；单个模型上设置的 key 不受影响。
 - **单个模型。** 在**模型配置**里，把 key 填入 **API key**。保存后 key 会打码显示；输入框留空即保留原 key，点击**清除已存 API key** 可删除它，此后该模型重新使用分组密钥。使用分组密钥的模型同样打码显示这把 key。
 - **其他端点。** key 属于签发它的端点：分组密钥只借给没有自己 base URL 的模型，或自己的 base URL 与分组 base URL 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 模型位于分组主机的另一条路径上，照样使用分组密钥。指向别的主机的模型取不到分组密钥，需要自己的 key，例如经代理访问的某个 OpenRouter 模型，或 **Custom** 里自带端点的预置模型 Atria Dawn——**Custom** 的 key 因此不会发往它的主机。这样的模型卡片显示**未配置 key**，**模型配置**的 key 输入框会说明分组密钥不适用。
-- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只有模型与分组都不带 base URL，或带的就是其客户端自己的缺省端点**时才使用服务端的环境变量（见[供应商凭证变量](/configuration#供应商凭证变量)）：它路由到的 MMSP 客户端自行读取 `*_API_KEY`，不带 base URL 时连 `*_BASE_URL` 一起读取，key 与端点都来自服务端环境。新建 Project 不给七个一方厂商分组写 base URL：DeepSeek、Google、OpenAI、Anthropic、Z.AI、Moonshot 与 MiniMax。要用环境 key 访问厂商的第二个主机（bigmodel.cn、moonshot.ai）、代理或 Bedrock，就让 base URL 留空，在 key 旁一并设置厂商的 `*_BASE_URL`；一旦在分组或模型设置里填了其他 base URL，组内模型就必须在文件里有 key。**Custom**、**vLLM** 或你创建的分组里任何一层都不带 base URL 的模型，读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（api.openai.com），设置了 `OPENAI_BASE_URL` 时发往它；弹窗会在 key 字段旁说明这一点。其余带 base URL 的模型都必须有自己的 key 或分组密钥：网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、Atlas Cloud、OpenCode Go、两个 Qwen 网关）、Penguin Go、ModelScope，以及任何被你指向某个端点的模型或分组。在这些情况下对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。协议为 `mmsp`、有 base URL 而没有 key 的模型不带 key 发出请求，开放的 MMSP 服务器就是这样调用的。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
+- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只有模型与分组都不带 base URL，或带的就是其客户端自己的缺省端点**时才使用服务端的环境变量（见[供应商凭证变量](/configuration#供应商凭证变量)）：它路由到的 MMSP 客户端自行读取 `*_API_KEY`，不带 base URL 时连 `*_BASE_URL` 一起读取，key 与端点都来自服务端环境。新建 Project 不给七个一方厂商分组写 base URL：DeepSeek、Google、OpenAI、Anthropic、Z.AI、Moonshot 与 MiniMax。要用环境 key 访问厂商的第二个主机（bigmodel.cn、moonshot.ai）、代理或 Bedrock，就让 base URL 留空，在 key 旁一并设置厂商的 `*_BASE_URL`；一旦在分组或模型设置里填了其他 base URL，组内模型就必须在文件里有 key。**Custom** 或你创建的分组里任何一层都不带 base URL 的模型，读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（`https://api.openai.com/v1`），设置了 `OPENAI_BASE_URL` 时发往它；弹窗会在 key 字段旁写明这个端点。**vLLM** 模型读取 vLLM 自己的那对变量 `VLLM_API_KEY` 与 `VLLM_BASE_URL`，从不读取 `OPENAI_*`（见[连接本地或自托管端点](#连接本地或自托管端点)）。其余带 base URL 的模型都必须有自己的 key 或分组密钥：网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、Atlas Cloud、OpenCode Go、两个 Qwen 网关）、Penguin Go、ModelScope，以及任何被你指向某个端点的模型或分组。在这些情况下对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。协议为 `mmsp` 或 `openai-chat-vllm-adapter`、有 base URL 而没有 key 的模型不带 key 发出请求，未设置 key 启动的服务器就是这样调用的；vLLM 客户端发送 vLLM 的占位 key `EMPTY`。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
 
 你填写的 key 存在 Project 的隐藏配置文件里，文件权限为 0600。Web App 里它始终打码显示。
 
@@ -280,7 +280,7 @@ Penguin Go 在授权所用的 `PENGUIN_GO_ORIGIN` 上调用 `/api/me/by-key`，�
 各字段显示的是分组存的值：
 
 - **API key**：即分组密钥，与连接时写入的是同一把；标题栏上没有别处可以填写它。已存的 key 打码显示，并附设置时间；留空即保留原值，勾选**清除分组密钥**可删除它。分组的客户端读取的环境变量已设置时（见[设置 API key](#设置-api-key)），占位文字会说明留空即使用该环境变量；填写客户端缺省端点以外的 base URL 后提示即消失，因为环境里的 key 只发往那个端点。供应商的密钥控制台链接在标签旁。
-- **自定义 base URL**：占位文字为「未设置：使用客户端默认端点」。整个分组回到目录的端点请用**恢复默认**。右上角的**检测协议**用所填的 base URL（未填则用已存的），以及输入框里的 key（没有则用分组密钥）探测；两个 URL 都没有时不可用。见[检测自定义模型的协议](#检测自定义模型的协议)。
+- **自定义 base URL**：留空时，占位文字写明请求发往的端点，即分组所用客户端的缺省端点，例如「未设置：默认发往 https://api.deepseek.com」；组内模型按 id 路由的分组（未设置协议的网关、custom 与你创建的分组）只显示「未设置：使用客户端默认端点」。整个分组回到目录的端点请用**恢复默认**。右上角的**检测协议**用所填的 base URL（未填则用已存的），以及输入框里的 key（没有则用分组密钥）探测；两个 URL 都没有时不可用。见[检测自定义模型的协议](#检测自定义模型的协议)。
 - **协议**：首项**未设置**把协议交给各模型，模型也没有时按模型 id 路由；其余选项是各通用协议。模型上保存的协议优先于分组默认值。Penguin Go 没有协议菜单，也没有**检测协议**：它的协议固定为 MMSP，由 base URL 下方的一行注明，见 [Penguin Go 分组](#penguin-go-分组)。
 
 字段下方的**前往模型列表**在新标签页中打开供应商的模型列表；**Custom** 和你创建的分组没有这个链接。
@@ -348,7 +348,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 - 模型恢复为目录的预置模型，按目录顺序排列，上下文窗口、价格、视觉标志、协议与端点都回到目录值。你设置的显示名、**最大输出长度**和快速模式清除，删掉的预置模型补回。
 - 不属于预置的模型一律删除：你在任何分组里添加的模型，以及旧版本添加、后来被目录撤下的模型，退役条目也在内。你新建的分组连同其设置和 key 一并删除。
-- 内置分组的设置回到目录的 base URL 与协议，**Custom** 和 **vLLM** 的 base URL 也一样。
+- 内置分组的设置回到目录的 base URL 与协议：**Custom** 的 base URL 被清空，**vLLM** 的回到 `http://127.0.0.1:8000/v1`。
 - 促销折扣回到目录值。
 - 与新建 Project 一样，默认模型改为目录默认，不设视觉代理模型。
 - 内置分组和预置模型上的 API key 原样保留。内置分组没有分组密钥、组内带 key 的模型（包括要删除的）都用同一把 key，且这把 key 放到分组上仍能借给它们全部时，它移到分组上，模型上的副本随之删除。被删除模型上的其他 key 随模型一起删除。
@@ -436,7 +436,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 ### 把模型添加到 vLLM 分组
 
-把模型添加到 **vLLM** 分组。分组设置里存着协议 `openai-chat-vllm-adapter`，没有 base URL，所以要设置你的服务器地址：在分组的[设置](#分组设置)里填一次，组内所有模型共用，或者填在模型上。API key 同样如此：服务器的 key，服务器不校验 key 时随便填一个占位值也行。自带 base URL 的条目不会由服务端的 `OPENAI_API_KEY` 覆盖，没有 key 的条目会被拒绝。**恢复默认**会保留分组的 base URL。
+把模型添加到 **vLLM** 分组。新建 Project 的分组设置里存着协议 `openai-chat-vllm-adapter` 和 base URL `http://127.0.0.1:8000/v1`，即 `vllm serve` 在同一台机器上以默认端口运行时的地址。服务器在别处时，在分组的[设置](#分组设置)里改一次 base URL，组内所有模型共用，或者填在模型上。未用 `--api-key` 启动的服务器不需要 key：没有 key 的模型发送 vLLM 的占位 key `EMPTY`。用 key 启动的服务器，同样在分组或模型上填它的 key。该分组从不读取 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`；任何一层都不带 base URL 的模型改为读取 `VLLM_API_KEY` 与 `VLLM_BASE_URL`。**恢复默认**会把分组的 base URL 改回 `http://127.0.0.1:8000/v1`。
 
 分组自带八个预置模型，价格均为 0：
 
@@ -493,14 +493,14 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | atlascloud | — | Atlas Cloud（OpenAI 兼容网关），预置 base URL `https://api.atlascloud.ai/v1`；模型 id 带厂商前缀（如 `deepseek-ai/deepseek-v4.1-flash`） |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
-| minimax | `MINIMAX_API_KEY` | `MiniMax-M3`，上下文窗口 1,000,000 Token，支持视觉，按 id 路由到 MiniMax 官方的 Responses 客户端（`minimax-official`）；无预置 base URL，请求发往 `https://api.minimax.io/v1`，除非 `MINIMAX_BASE_URL` 另有指定；接受 Token Plan 订阅密钥或按量付费 API key |
+| minimax | `MINIMAX_API_KEY` | `MiniMax-M3.1-Flash` 与 `MiniMax-M3`，上下文窗口均为 1,000,000 Token，支持视觉，按 id 路由到 MiniMax 官方的 Responses 客户端（`minimax-official`）；无预置 base URL，请求发往 `https://api.minimax.io/v1`，除非 `MINIMAX_BASE_URL` 另有指定；接受 Token Plan 订阅密钥或按量付费 API key |
 | qwen-pay-as-you-go | — | Qwen 按量付费（DashScope 的 OpenAI 兼容端点），预置 base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`；转售的第三方模型保留供应商前缀 id（如 `kimi/kimi-k3`） |
 | qwen-token-plan | — | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；价格取自各模型页面的官方牌价（预览模型只有配额倍率优惠，没有牌价） |
 | modelscope | — | 魔搭的 OpenAI 兼容 api-inference 网关，预置 base URL `https://api-inference.modelscope.cn/v1`；id 就是上游仓库名（如 `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）；分组标题栏可以经授权中转层为你自动授权一把 token，也可以手动设置。见 [ModelScope 分组](#modelscope-分组) |
-| vllm | — | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，无预置 base URL，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
+| vllm | — | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，新建 Project 的 base URL 为 `http://127.0.0.1:8000/v1`，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
 | custom | — | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn（Anthropic Messages API，地址 `api.atria-asi.ai`，需要自己的 key，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组里自身或分组带 base URL 的条目同样如此，除非那正是其协议客户端自己的缺省端点；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
+OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom 和自建分组里自身或分组带 base URL 的条目同样如此，除非那正是其协议客户端自己的缺省端点；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。vLLM 条目带 base URL 而没有 key 时则不带 key 发出请求，因为 vLLM 服务器只有用 key 启动时才校验 key。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
@@ -550,7 +550,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 预置模型目录包含以下模型：
 
 - `deepseek-flash` / `deepseek-v4-pro`
-- `MiniMax-M3`
+- `MiniMax-M3.1-Flash` / `MiniMax-M3`
 - `gemini-4-argon` / `gemini-3.8-flash`
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
@@ -579,8 +579,8 @@ Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图
 - **没有价格的条目。** 价格字段可以整体缺席，含义是「没人查过这家的价格」，而不是免费：这类条目在**模型库**页面不显示价格徽标，成本中心把它的用量报为未计价。目录里目前只有 ModelScope 的预置条目是这样——魔搭的 api-inference 是计费的，但它的模型页面是客户端渲染的，读不到费率。写成三个 0 反而更糟：那会被当作免费档，给一个计费网关打上「Free」徽标。
 - **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）、Gemini 3.1 Pro（200K 以上）和 Claude Haiku 5.5（100K 以上，每项费率为 5 倍）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
-  - 十条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813`，OpenRouter 的 `deepseek/deepseek-v4.1-flash`，Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
-  - TokenDance 还在高峰时段对这三条再打 8 折，`deepseek-v4.1-flash` 在空闲时段也打。这一条把 8 折作为促销与时段规则并列声明，卡片在高峰时段显示 `省 20%`、空闲时段显示 `省 60%`，成本中心按 TokenDance 实收计费。`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813` 的 8 折只在高峰时段生效，与时段规则并列的促销表达不了，所以它们的高峰时段按牌价计费，比 TokenDance 实收高 25%。
+  - 十二条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、`deepseek-v4.1-flash-1017`、`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813`，OpenRouter 的 `deepseek/deepseek-v4.1-flash` 和 `deepseek/deepseek-v4.1-flash-1017`，Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
+  - TokenDance 还在高峰时段对这四条再打 8 折，`deepseek-v4.1-flash` 与 `deepseek-v4.1-flash-1017` 在空闲时段也打。这两条把 8 折作为促销与时段规则并列声明，卡片在高峰时段显示 `省 20%`、空闲时段显示 `省 60%`，成本中心按 TokenDance 实收计费。`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813` 的 8 折只在高峰时段生效，与时段规则并列的促销表达不了，所以它们的高峰时段按牌价计费，比 TokenDance 实收高 25%。
   - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
 - **固定折扣。** 目前有八个 TokenDance 模型在打折：

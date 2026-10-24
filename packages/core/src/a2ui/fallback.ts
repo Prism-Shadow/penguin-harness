@@ -2,10 +2,11 @@
  * Readable text for a surface that cannot render a block — the CLI, a messaging channel, a raw
  * Trace — and the plain text a rendered choice or form fills into the composer. The fill text is
  * deliberately just the answer (the option's `value`, or `label: answer` lines): the model reads
- * it next turn as ordinary user text, so nothing here is a marker the core would have to parse.
- * A widget becomes its reading as lines of text; what is live on screen (the clock's time, a
- * countdown's time left) and every relative time ("as of") is printed for one moment and zone,
- * the call's `now` and `timeZone`.
+ * it next turn as ordinary user text, so nothing here is a marker the core would have to parse;
+ * only the renderer reads it back, to show an answered block's answers (fill-parse.ts). A widget
+ * becomes its reading as lines of text; what is live on screen (the clock's time, a countdown's
+ * time left) and every relative time ("as of") is printed for one moment and zone, the call's
+ * `now` and `timeZone`.
  */
 import { parseA2ui } from "./catalog.js";
 import { chartMarkdown } from "./chart.js";
@@ -124,6 +125,13 @@ const STR = {
 
 /** The separator between several picked values: 「、」 in zh, ", " in en. */
 export const listSeparator = (lang: A2uiLang): string => STR[lang].sep;
+
+/** What sits between a form field's label and its answer in the fill text: 「：」 in zh, ": " in en. */
+export const answerColon = (lang: A2uiLang): string => STR[lang].colon;
+
+/** A switch's answer as the fill text writes it: 「是」 / 「否」 in zh, "Yes" / "No" in en. */
+export const switchAnswer = (on: boolean, lang: A2uiLang): string =>
+  on ? STR[lang].yes : STR[lang].no;
 
 function choiceMarkdown(spec: A2uiChoice, lang: A2uiLang): string[] {
   const t = STR[lang];
@@ -426,7 +434,7 @@ export function choiceFillText(spec: A2uiChoice, picked: string[], lang: A2uiLan
 /** One field's answer as the fill text writes it, or undefined when the field has none. */
 function fillAnswer(field: A2uiFormField, raw: A2uiFormAnswer, lang: A2uiLang): string | undefined {
   if (field.kind === "switch") {
-    return typeof raw === "boolean" ? (raw ? STR[lang].yes : STR[lang].no) : undefined;
+    return typeof raw === "boolean" ? switchAnswer(raw, lang) : undefined;
   }
   if (typeof raw === "boolean") return undefined;
   const byLabel = new Map((field.options ?? []).map((o) => [o.label, o.value ?? o.label] as const));
@@ -450,7 +458,7 @@ function fillAnswer(field: A2uiFormField, raw: A2uiFormAnswer, lang: A2uiLang): 
  * so a switch and a slider always hold one and always fill a line.
  */
 export function formFillText(spec: A2uiForm, answers: A2uiFormAnswers, lang: A2uiLang): string {
-  const t = STR[lang];
+  const colon = answerColon(lang);
   const lines: string[] = [];
   for (const field of spec.fields) {
     const raw = answers[field.id];
@@ -458,10 +466,10 @@ export function formFillText(spec: A2uiForm, answers: A2uiFormAnswers, lang: A2u
     const answer = fillAnswer(field, raw, lang);
     if (answer === undefined) continue;
     if (!answer.includes("\n")) {
-      lines.push(`${field.label}${t.colon}${answer}`);
+      lines.push(`${field.label}${colon}${answer}`);
       continue;
     }
-    lines.push(`${field.label}${t.colon.trimEnd()}`);
+    lines.push(`${field.label}${colon.trimEnd()}`);
     for (const line of answer.split("\n"))
       lines.push(line.trim() === "" ? "" : `  ${line.trimEnd()}`);
   }

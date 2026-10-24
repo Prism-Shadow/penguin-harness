@@ -2298,7 +2298,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    *   vision model. Everything else goes: every row that is not a preset (the user's own,
    *   and those an older catalog added, retired rows included), every user-defined group,
    *   every override on a preset row, and every group setting the catalog does not write
-   *   (custom's and vLLM's base URLs included). Promotions become the catalog's.
+   *   (custom's base URL included; vLLM's returns to the catalog's local address). Promotions
+   *   become the catalog's.
    *
    *   Penguin Go gets no exception. Its rows beyond the presets and its promotions came from
    *   the platform, which prices against its own list: keeping a promotion on a row whose price

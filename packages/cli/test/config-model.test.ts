@@ -190,8 +190,9 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       tmpRoot,
     ]);
     await runModel(["add", "--model-id", "in-house-1", "--provider", "mylab", "--root", tmpRoot]);
-    // A new Project's [providers.vllm] sets the adapter for every entry, the models a user
-    // serves included, and no endpoint: the entry stores neither, and resolves to the group's.
+    // A new Project's [providers.vllm] sets the adapter and the local server's address for every
+    // entry, the models a user serves included: the entry stores neither, and resolves to the
+    // group's.
     await runModel([
       "add",
       "--model-id",
@@ -227,7 +228,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     const list = await runModel(["list", "--root", tmpRoot]);
     const vllmLine = list.out.split("\n").find((l) => l.includes("my-served-model"));
     expect(vllmLine).toContain("client_type=openai-chat-vllm-adapter (provider)");
-    expect(vllmLine).not.toContain("base_url=");
+    expect(vllmLine).toContain("base_url=http://127.0.0.1:8000/v1 (provider)");
   });
 
   it("refuses a NEW vendor-group entry whose id MMSP cannot route, and leaves the config untouched", async () => {
