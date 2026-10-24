@@ -4799,11 +4799,13 @@ Scenarios:
     zoomIn: "Zoom in",
     linkHint:
       "Hover a timeline segment or event row to cross-highlight, click a segment to jump to its message; legend highlights its kind; drag the bar below to pan/zoom",
+    /** The Trace file picker's panel: its title, and how many files it lists. */
     filesTitle: "Trace files",
+    fileCount: (n: number) => (n === 1 ? "1 file" : `${n} files`),
     toolCalls: "Tool calls",
-    taskInput: "Input tokens this turn",
-    taskOutput: "Output tokens this turn",
     cacheHit: "Cache hits",
+    /** The uncached part of the input, beside its cache hits (a round's readings). */
+    cacheMiss: "Cache misses",
     hitRate: "Hit rate",
     avgToolCalls: "Avg tools / turn",
     inProgress: "in progress",
@@ -4816,25 +4818,8 @@ Scenarios:
     /** The navigator's number box: its accessible name and its placeholder. */
     jumpToRound: "Jump to turn",
     jumpToRoundPlaceholder: "Turn",
-    /** A navigator row's hint where a Trace first states a thinking level, and where it changes. */
-    levelFirst: (level: string) => `Thinking level ${level}`,
-    levelChanged: (from: string, to: string) => `Thinking level ${from} → ${to}`,
-    /** The Session section at the top of a Trace file: the file's session_meta, field by field. */
-    session: "Session",
-    model: "Model",
-    contextWindow: "Context window",
-    source: "Source",
-    workspace: "Workspace",
-    agentState: "Agent State",
-    /** The level an old Trace's session_meta recorded (current ones record it per request). */
-    thinkingLevelLabel: "Thinking level",
-    /** Beside the system prompt's fold: how long the prompt is. */
-    promptLength: (n: number) =>
-      n === 1 ? "1 character" : `${n.toLocaleString("en-US")} characters`,
     /** The panel a round's ring opens, and the name of the button standing in for a ring on a round with no context snapshot. */
     roundReadings: "Turn readings",
-    /** The round's own cache hits (summed over its requests), set apart from the context snapshot's. */
-    taskCacheHit: "Cache hits this turn",
   },
 
   benchmark: {

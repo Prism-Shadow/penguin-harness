@@ -1,10 +1,10 @@
 /**
  * A round's readings on demand: the context ring at the end of a round's row is a button, and the
- * panel it opens lists the exact figures — the round's own throughput first (input, its cache
- * hits and rate, output, output speed, summed over the round's requests), then the context
- * snapshot the ring draws (used against the window, and its three segments). Each block's labels
- * name their scope, because the two cache figures are different quantities: the round's cache
- * hits count every request of the round, the snapshot's only the last one.
+ * panel it opens lists the exact figures, each once — input, cache hits with their rate, cache
+ * misses, output and output speed (the round's throughput, summed over its requests, as the
+ * global summary sums them), then the context usage the ring draws (the snapshot at the round's
+ * last request, against the window). The panel names the round, so its labels are the global
+ * summary's own.
  *
  * No token figure is printed on the row itself. Hovering the ring gives the percentage; the
  * figures are a click away. A pure compaction round has no snapshot: a tokens glyph stands where
@@ -29,8 +29,8 @@ import type { Buckets } from "./round-facts";
 
 /** Panel geometry in real pixels: usePortalPanel clamps the left edge with this width. */
 const PANEL_WIDTH = 264;
-/** Only decides whether the panel opens up or down: two blocks of four rows. */
-const PANEL_HEIGHT = 220;
+/** Only decides whether the panel opens up or down: six rows. */
+const PANEL_HEIGHT = 160;
 
 export interface ReadingRow {
   label: string;
@@ -38,10 +38,8 @@ export interface ReadingRow {
 }
 
 export interface RoundReadings {
-  /** The round's throughput, summed over its requests. */
-  round: ReadingRow[];
-  /** The context snapshot at the round's last request; null for a round with none. */
-  context: ReadingRow[] | null;
+  /** The panel's rows, in order; the context usage last, and only with a snapshot. */
+  rows: ReadingRow[];
   /** The snapshot's share of the window (0–1); null with no snapshot. */
   usage: number | null;
 }
@@ -53,43 +51,24 @@ export function roundReadingRows(
   ctx: Buckets | null | undefined,
   contextMax: number,
 ): RoundReadings {
-  const round: ReadingRow[] = [
-    { label: S.traces.taskInput, value: humanizeTokens(inputOf(tokens)) },
+  const rows: ReadingRow[] = [
+    { label: S.chat.statInput, value: humanizeTokens(inputOf(tokens)) },
     {
-      label: S.traces.taskCacheHit,
+      label: S.traces.cacheHit,
       value: `${humanizeTokens(tokens.cacheRead)} · ${formatPercent(hitRateOf(tokens))}`,
     },
-    { label: S.traces.taskOutput, value: humanizeTokens(tokens.output) },
+    { label: S.traces.cacheMiss, value: humanizeTokens(tokens.cacheWrite) },
+    { label: S.chat.statOutput, value: humanizeTokens(tokens.output) },
     { label: S.chat.statTps, value: formatTps(computeTps(tokens.output, llmMs)) },
   ];
-  if (ctx === null || ctx === undefined) return { round, context: null, usage: null };
+  if (ctx === null || ctx === undefined) return { rows, usage: null };
   const used = ctx.cacheRead + ctx.cacheWrite + ctx.output;
   const usage = contextMax > 0 ? used / contextMax : null;
-  return {
-    round,
-    context: [
-      {
-        label: S.chat.contextUsage,
-        value: `${humanizeTokens(used)} / ${humanizeTokens(contextMax)} · ${formatPercent(usage)}`,
-      },
-      { label: S.usage.colCacheRead, value: humanizeTokens(ctx.cacheRead) },
-      { label: S.usage.colCacheWrite, value: humanizeTokens(ctx.cacheWrite) },
-      { label: S.usage.colOutput, value: humanizeTokens(ctx.output) },
-    ],
-    usage,
-  };
-}
-
-function Rows({ rows }: { rows: ReadingRow[] }) {
-  return (
-    <KeyValue size="xs">
-      {rows.map((r) => (
-        <KeyValueRow key={r.label} label={r.label}>
-          {r.value}
-        </KeyValueRow>
-      ))}
-    </KeyValue>
-  );
+  rows.push({
+    label: S.chat.contextUsage,
+    value: `${humanizeTokens(used)} / ${humanizeTokens(contextMax)} · ${formatPercent(usage)}`,
+  });
+  return { rows, usage };
 }
 
 /**
@@ -172,12 +151,13 @@ export function ContextRingButton({
             }}
             className="anim-pop z-[60] max-h-[70vh] overflow-y-auto rounded-md border border-line bg-overlay p-3 text-xs shadow-lg"
           >
-            <Rows rows={readings.round} />
-            {readings.context !== null && (
-              <div className="mt-2 border-t border-line-muted pt-2">
-                <Rows rows={readings.context} />
-              </div>
-            )}
+            <KeyValue size="xs">
+              {readings.rows.map((r) => (
+                <KeyValueRow key={r.label} label={r.label}>
+                  {r.value}
+                </KeyValueRow>
+              ))}
+            </KeyValue>
           </div>,
           document.body,
         )}

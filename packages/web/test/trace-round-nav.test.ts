@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The round navigator in use (features/traces/trace-round-nav.tsx in the toolbar of
- * trace-file-view.tsx), on the real Trace view against a fake of the Trace endpoints, inside the
+ * The round navigator in use (features/traces/trace-round-nav.tsx, on the toolbar's dropdown in
+ * trace-picker.tsx), on the real Trace view against a fake of the Trace endpoints, inside the
  * panel's scroll box. A 60-round file, so the view draws the newest 50 rounds and the early ones
  * are reachable only through the navigator.
  *
@@ -13,7 +13,7 @@
  * - ArrowDown and ArrowUp walk the rows; Home and End jump to the first and the last.
  * - A round number and Enter in the box jump to that round; a number past the last round does
  *   nothing.
- * - A row whose round switched the thinking level says so in muted text; the others say nothing.
+ * - No row names a thinking level, not even where the round switched it.
  * - As the panel scrolls, the button follows the first round fully under the toolbar; scrolled
  *   to the end, it names the last round drawn.
  */
@@ -81,25 +81,10 @@ function event(i: number): AmspRecord {
       };
 }
 
-const META: OmniMessage = {
-  timestamp: iso(0),
-  type: "session_meta",
-  payload: {
-    session_id: "s",
-    provider: "custom",
-    model_id: "m",
-    model_context_window: 200_000,
-    system_prompt: "",
-    agent_state: "/a",
-    workspace: "/w",
-    source: "user",
-  },
-};
-
 const navButton = (): HTMLButtonElement =>
   document.querySelector<HTMLButtonElement>('[data-slot="nav-button"]')!;
 const navRow = (k: number): HTMLButtonElement | null =>
-  document.querySelector<HTMLButtonElement>(`[data-nav-round="${k}"] button`);
+  document.querySelector<HTMLButtonElement>(`[data-pick-row="${k}"] button`);
 const roundRow = (k: number): HTMLElement | null =>
   document.querySelector<HTMLElement>(`[data-round="${k}"]`);
 const toggleOf = (k: number): HTMLElement | null =>
@@ -154,8 +139,6 @@ describe("the round navigator", () => {
       const offset = Number(req.query.get("offset"));
       const limit = Number(req.query.get("limit"));
       const total = ROUNDS * PER_ROUND;
-      // The Session section reads the file's head record alone.
-      if (offset === 0 && limit === 1) return json({ events: [META], offset, limit, total });
       const events = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, j) =>
         event(offset + j),
       );
@@ -190,7 +173,7 @@ describe("the round navigator", () => {
 
     await openList();
 
-    expect(document.querySelectorAll("[data-nav-round]")).toHaveLength(ROUNDS);
+    expect(document.querySelectorAll("[data-pick-row]")).toHaveLength(ROUNDS);
     expect(navButton().getAttribute("aria-expanded")).toBe("true");
     expect(navRow(59)?.getAttribute("aria-current")).toBe("true");
     expect(document.activeElement).toBe(navRow(59));
@@ -247,13 +230,15 @@ describe("the round navigator", () => {
     expect(document.activeElement).toBe(toggleOf(2));
   });
 
-  it("a row whose round switched the thinking level says so; the others say nothing", async () => {
+  it("no row names a thinking level, not even where the round switched it", async () => {
     await openList();
-    const names = S.chat.thinkingLevelNames;
+    const names = Object.values(S.chat.thinkingLevelNames);
 
-    expect(navRow(0)?.textContent).toContain(names.medium!);
-    expect(navRow(1)?.textContent).toContain(`${names.medium!} → ${names.high!}`);
-    expect(navRow(2)?.textContent).not.toContain("→");
+    for (const k of [0, 1, 2]) {
+      const text = navRow(k)?.textContent ?? "";
+      expect(text).not.toContain("→");
+      for (const name of names) expect(text).not.toContain(name);
+    }
   });
 
   /**

@@ -1,7 +1,7 @@
 /**
  * The Trace file view as drawn (features/traces/trace-file-view.tsx, `TraceFileBody`): what a
- * long file puts on screen once its analysis and its head record are in and its newest round is
- * read. Rendered to static markup, so each scenario hands the view the state it would hold.
+ * long file puts on screen once its analysis is in and its newest round is read. Rendered to
+ * static markup, so each scenario hands the view the state it would hold.
  *
  * - A 1200-round file draws at most 50 round rows, and the messages of exactly one round — the
  *   open newest one.
@@ -20,10 +20,8 @@
  * - A file of two or more rounds puts a rounds button in the toolbar naming the round in view —
  *   the newest one before the panel scrolls — and draws no navigator list until it is opened; a
  *   one-round file has no rounds button; no round head carries a control back to a navigator.
- * - The Session section lists the head record's provider and model, context window, source,
- *   Session id (with a copy button), Workspace and Agent State; the thinking level only where an
- *   old meta carries one; and the system prompt behind a toggle that names its length. While the
- *   record is being read it is a placeholder; a file whose first record is not one shows dashes.
+ * - Under the toolbar the first section is the global summary: the Session's fields are the
+ *   session_meta row's, not a section of their own.
  * - Where the thinking level changes, the request_begin row's summary says so as text, the first
  *   level stated alone and a switch as `from → to`; a Trace written before the field says
  *   nothing, and no row wears a level pill.
@@ -127,29 +125,16 @@ function readRound(r: TraceTaskStats): RoundEntry {
   };
 }
 
-const META = {
-  session_id: "session-2026-10-01-00-00-00-abcdef12",
-  provider: "custom",
-  model_id: "claude-4-8",
-  model_context_window: 200_000,
-  system_prompt: "You are an agent.",
-  agent_state: "/data/agents/default_agent/agent_state",
-  workspace: "/data/workspaces/demo",
-  source: "user",
-};
-
 function render(opts: {
   analysis: TraceAnalysisResponse | null;
   expanded?: number[];
   rounds?: RoundEntry[];
   shownRounds?: number;
-  meta?: Record<string, unknown> | null;
   inView?: number | null;
 }): string {
   return renderToStaticMarkup(
     createElement(TraceFileBody, {
       analysis: opts.analysis,
-      meta: opts.meta === undefined ? META : opts.meta,
       currency: "USD",
       expanded: new Set(opts.expanded ?? []),
       rounds: new Map((opts.rounds ?? []).map((e) => [e.taskIndex, e])),
@@ -189,15 +174,10 @@ function headOf(html: string, k: number): string {
   const body = row.indexOf('data-slot="body"');
   return body < 0 ? row : row.slice(0, body);
 }
-/** The Session section: from its title to the global summary's. */
-function sessionOf(html: string): string {
-  const start = html.indexOf(S.traces.session);
-  return html.slice(start, html.indexOf(S.traces.globalSummary, start));
-}
-/** The toolbar's markup. */
+/** The toolbar's markup: up to the first section under it. */
 function toolbarOf(html: string): string {
   const start = html.indexOf('data-slot="toolbar"');
-  return html.slice(start, html.indexOf(S.traces.session, start));
+  return html.slice(start, html.indexOf("<section", start));
 }
 /** The accessible names in a piece of markup, in order. */
 const names = (html: string): string[] =>
@@ -333,7 +313,7 @@ describe("the rounds button", () => {
 
   it("lists nothing until it is opened, and no round head carries a way back to a navigator", () => {
     const html = render({ analysis: analysisOf(60), expanded: [59] });
-    expect(html).not.toContain("data-nav-round");
+    expect(html).not.toContain("data-pick-row");
     // A head holds its toggle and its ring, and nothing else.
     for (let k = 10; k < 60; k++) expect(count(headOf(html, k), /<button/g)).toBe(2);
   });
@@ -344,42 +324,11 @@ describe("the rounds button", () => {
   });
 });
 
-describe("the Session section", () => {
-  it("lists every field of the file's head record", () => {
-    const section = sessionOf(render({ analysis: analysisOf(2) }));
-    for (const value of [
-      "custom / claude-4-8",
-      `${S.traces.contextWindow} 200k`,
-      META.session_id,
-      META.workspace,
-      META.agent_state,
-      ">user<",
-    ]) {
-      expect(section).toContain(value);
-    }
-    expect(names(section)).toContain(S.chat.copySessionId);
-    expect(section).toContain(S.traces.promptLength(META.system_prompt.length));
-    // The prompt itself is behind its toggle.
-    expect(section).not.toContain(META.system_prompt);
-  });
-
-  it("shows the thinking level only where an old meta records one", () => {
-    expect(sessionOf(render({ analysis: analysisOf(2) }))).not.toContain(
-      S.traces.thinkingLevelLabel,
-    );
-    const old = sessionOf(
-      render({ analysis: analysisOf(2), meta: { ...META, thinking_level: "high" } }),
-    );
-    expect(old).toContain(S.traces.thinkingLevelLabel);
-    expect(old).toContain(S.chat.thinkingLevelNames.high!);
-  });
-
-  it("is a placeholder while the record is being read, and dashes for a file without one", () => {
-    expect(sessionOf(render({ analysis: null, meta: null }))).toContain('aria-busy="true"');
-    const bare = sessionOf(render({ analysis: analysisOf(2), meta: {} }));
-    expect(bare).not.toContain('aria-busy="true"');
-    expect(count(bare, /—/g)).toBeGreaterThanOrEqual(5);
-    expect(bare).not.toContain(S.chat.copySessionId);
+describe("the top of the view", () => {
+  it("is the global summary, the first section under the toolbar", () => {
+    const html = render({ analysis: analysisOf(2) });
+    const titles = [...html.matchAll(/<h3[^>]*><span[^>]*>([^<]*)</g)].map((m) => m[1]);
+    expect(titles).toEqual([S.traces.globalSummary, S.traces.tasksLabel]);
   });
 });
 
@@ -392,7 +341,7 @@ describe("the thinking level", () => {
       timestamp: beginTs,
       type: "event_msg",
       payload: { type: "request_begin", ...(level !== undefined ? { thinking_level: level } : {}) },
-    } as OmniMessage;
+    } as AmspRecord;
     return entry;
   }
   const beginOf = (k: number): string => iso(k * 60_000 + 1000);

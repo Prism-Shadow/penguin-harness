@@ -2,11 +2,12 @@
  * Trace panel — the current conversation's Trace files as a dock tab, wrapping the shared
  * file view (performance timeline + event list) around one Session. The view's sticky toolbar
  * carries the panel's two controls: the file — a picker over the files, newest first, when the
- * Session has more than one, else the one file's label — and the export icon, which downloads
- * the selected file raw. This is the ONLY way to read a Trace: the standalone cross-Session
- * browsing page is gone, so a Trace is read where it was produced, as the "what did this
- * conversation do" view. Importing a Trace from another install is the one thing that outlived
- * the page — it moved to System settings, beside the CLI-sessions filter.
+ * Session has more than one (the toolbar's dropdown, the same one the round navigator is), else
+ * the one file's label — and the export icon, which downloads the selected file raw. This is the
+ * ONLY way to read a Trace: the standalone cross-Session browsing page is gone, so a Trace is
+ * read where it was produced, as the "what did this conversation do" view. Importing a Trace
+ * from another install is the one thing that outlived the page — it moved to System settings,
+ * beside the CLI-sessions filter.
  *
  * Loading is gated on `active` (the dock keeps inactive tabs mounted): the listing is
  * fetched on the first show, re-fetched on every re-show, and re-fetched again whenever a
@@ -19,9 +20,10 @@ import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   DownloadIcon,
   EmptyState,
+  GlyphIcon,
+  ICONS,
   ICON_SIZE,
   NoticeStrip,
-  Select,
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -29,6 +31,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
 import { TraceFileView } from "./trace-file-view";
+import { TracePicker } from "./trace-picker";
 import {
   activeTraceFile,
   advanceTraceRefresh,
@@ -134,30 +137,36 @@ export function TracePanel({
     return <EmptyState title={S.tracePanel.empty} description={S.tracePanel.emptyHint} />;
   }
 
-  /** A file as the picker and the label name it: its number, its date and its size. */
-  const fileLabel = (f: FileRef): string =>
-    `#${String(f.index).padStart(3, "0")} · ${f.date} · ${formatBytes(f.sizeBytes)}`;
-  // One file has nothing to pick from: its label says which it is. A width given to the picker
-  // itself loses to its own w-full, so the box holds it.
+  /** A file as the picker names it: its number and its date (its size is the row's note). */
+  const fileName = (f: FileRef): string => `#${String(f.index).padStart(3, "0")} · ${f.date}`;
+  // One file has nothing to pick from: its label says which it is, with its size, in the
+  // picker's glyph and padding so the toolbar reads the same either way.
   const fileControl =
     files.length > 1 ? (
-      <span className="w-52 min-w-0 shrink">
-        <Select
-          size="sm"
-          aria-label={S.traces.filesTitle}
-          value={String(activeFile.index)}
-          onChange={(e) => setFileIndex(Number(e.target.value))}
-        >
-          {files.map((f) => (
-            <option key={f.index} value={String(f.index)}>
-              {fileLabel(f)}
-            </option>
-          ))}
-        </Select>
-      </span>
+      <TracePicker
+        slot="file-button"
+        glyph={ICONS.file}
+        label={fileName(activeFile)}
+        title={S.traces.filesTitle}
+        count={S.traces.fileCount(files.length)}
+        align="left"
+        width="18rem"
+        rows={files.map((f) => ({
+          key: f.index,
+          label: fileName(f),
+          trailing: (
+            <span className="shrink-0 text-fg-muted tabular-nums">{formatBytes(f.sizeBytes)}</span>
+          ),
+        }))}
+        current={activeFile.index}
+        onPick={setFileIndex}
+      />
     ) : (
-      <span className="min-w-0 truncate font-mono text-xs text-fg-muted">
-        {fileLabel(activeFile)}
+      <span className="flex min-w-0 items-center gap-1 px-2.5 py-1 text-xs text-fg-muted">
+        <GlyphIcon d={ICONS.file} size={ICON_SIZE.rowLead} />
+        <span className="min-w-0 truncate tabular-nums">
+          {fileName(activeFile)} · {formatBytes(activeFile.sizeBytes)}
+        </span>
       </span>
     );
   // Raw-file download for the selected Trace file: a flat icon, named by its tooltip.

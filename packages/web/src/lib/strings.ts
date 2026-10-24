@@ -4999,11 +4999,13 @@ Benchmark：
     zoomIn: "放大",
     linkHint:
       "鼠标移到时间线段或消息行即可联动高亮，点击时间线段跳转到对应消息；图例可高亮同类；拖动下方滑块平移/缩放",
+    /** The Trace file picker's panel: its title, and how many files it lists. */
     filesTitle: "Trace 文件",
+    fileCount: (n: number) => `${n} 个文件`,
     toolCalls: "工具调用",
-    taskInput: "本轮输入 tokens",
-    taskOutput: "本轮输出 tokens",
     cacheHit: "命中缓存",
+    /** The uncached part of the input, beside its cache hits (a round's readings). */
+    cacheMiss: "未命中缓存",
     hitRate: "命中率",
     avgToolCalls: "每轮平均工具调用",
     /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空) and is the stem of the conversation row's state titles (压缩中 / 压缩完毕), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
@@ -5017,24 +5019,8 @@ Benchmark：
     /** The navigator's number box: its accessible name and its placeholder. */
     jumpToRound: "跳转到轮次",
     jumpToRoundPlaceholder: "轮次",
-    /** A navigator row's hint where a Trace first states a thinking level, and where it changes. */
-    levelFirst: (level: string) => `思考等级 ${level}`,
-    levelChanged: (from: string, to: string) => `思考等级 ${from} → ${to}`,
-    /** The Session section at the top of a Trace file: the file's session_meta, field by field. */
-    session: "会话",
-    model: "模型",
-    contextWindow: "上下文窗口",
-    source: "来源",
-    workspace: "Workspace",
-    agentState: "Agent State",
-    /** The level an old Trace's session_meta recorded (current ones record it per request). */
-    thinkingLevelLabel: "思考等级",
-    /** Beside the system prompt's fold: how long the prompt is. */
-    promptLength: (n: number) => `${n.toLocaleString("en-US")} 字符`,
     /** The panel a round's ring opens, and the name of the button standing in for a ring on a round with no context snapshot. */
     roundReadings: "本轮读数",
-    /** The round's own cache hits (summed over its requests), set apart from the context snapshot's. */
-    taskCacheHit: "本轮命中缓存",
   },
 
   benchmark: {

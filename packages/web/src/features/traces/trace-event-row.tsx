@@ -1,11 +1,12 @@
 /**
- * Trace event row (shared): timestamp + type icon + one neutral pill naming the record (its kind,
- * and the role where a kind's role varies: `text (user)`, `text (assistant)`) + one-line summary;
- * expanding **renders** the content (text/thinking and session_meta's system prompt go through
- * Markdown, tool arguments/output go through a code block, token_usage goes through a bucket
- * table, session_meta goes through a field table + tool definitions) instead of dumping raw JSON;
- * a stop reason other than `completed` (stop_reason / status) is shown in the bottom-right of the
- * expanded area — a record that completed carries no mark.
+ * Trace event row (shared): timestamp + type icon + one pill naming the record (its kind, and the
+ * role where a kind's role varies: `text (user)`, `text (assistant)`), toned by the record's
+ * family (a `model_msg` neutral, an `event_msg` attention) + one-line summary; expanding
+ * **renders** the content (text/thinking and session_meta's system prompt go through Markdown,
+ * tool arguments/output go through a code block, token_usage goes through a bucket table,
+ * session_meta goes through a field table — the Session's every field — and its system prompt)
+ * instead of dumping raw JSON; a stop reason other than `completed` (stop_reason / status) is
+ * shown in the bottom-right of the expanded area — a record that completed carries no mark.
  * Linked highlighting with the timeline — a matched row only gets a
  * background color, never an outline; only one row lights up at a time (each
  * row has its own unique rowKey, so adjacent messages at the same timestamp
@@ -23,12 +24,20 @@ import {
   RequiredMark,
   ZoomableImage,
 } from "@prismshadow/penguin-ui";
+import type { ToneName } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
 import { S } from "../../lib/strings";
 import type { AmspRecord } from "@prismshadow/amsp";
 import { formatTime, humanizeTokens } from "../../lib/format";
 import { stopReasonTone } from "../../lib/stop-reason-tone";
-import { SystemPromptBody } from "./trace-session";
+
+/**
+ * A record family's pill tone, so the two families read apart at a glance down a round's rows:
+ * the model's conversation (`model_msg`) neutral, the harness's events (`event_msg`) attention.
+ */
+function familyTone(type: AmspRecord["type"]): ToneName {
+  return type === "event_msg" ? "attention" : "neutral";
+}
 
 /** The kinds whose role varies, so their pill names it: a text or an image is the user's or the model's. */
 const ROLE_KINDS: ReadonlySet<string> = new Set(["text", "inline_data"]);
@@ -37,7 +46,7 @@ const ROLE_KINDS: ReadonlySet<string> = new Set(["text", "inline_data"]);
  * What a row's pill says: the record's kind, plus its role for the kinds whose role varies —
  * `text (user)`, `text (assistant)`, `inline_data (user)`; every other kind is bare.
  */
-function kindLabel(msg: OmniMessage): string {
+function kindLabel(msg: AmspRecord): string {
   const p = msg.payload as { type?: string; role?: unknown };
   const kind = p.type ?? msg.type;
   return ROLE_KINDS.has(kind) && typeof p.role === "string" ? `${kind} (${p.role})` : kind;
@@ -253,7 +262,11 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
       {prompt.trim() && (
         <details>
           <summary className={summaryClass}>{S.traces.systemPrompt}</summary>
-          <SystemPromptBody prompt={prompt} />
+          <div className="md-body mt-1.5 max-h-96 overflow-auto rounded bg-gray-100 px-2.5 py-2 text-sm leading-relaxed text-gray-700 dark:bg-gray-800/70 dark:text-gray-300">
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS}>
+              {prompt}
+            </ReactMarkdown>
+          </div>
         </details>
       )}
     </div>
@@ -457,7 +470,7 @@ export function EventRow({
               {payloadType}
             </Badge>
           ) : (
-            <Pill>{kindLabel(msg)}</Pill>
+            <Pill tone={familyTone(msg.type)}>{kindLabel(msg)}</Pill>
           )}
         </span>
         {msg.origin && msg.origin.length > 0 && (

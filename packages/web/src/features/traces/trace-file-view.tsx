@@ -1,26 +1,26 @@
 /**
  * Trace file view: one Trace file grouped by **round (Task)**, under the panel's sticky toolbar
- * (trace-toolbar.tsx — the file, the rounds button, the export). Three ruled sections follow:
- * the **Session** (every field of the file's head record, trace-session.tsx), the **global
- * summary**, and the **rounds** as ruled rows. A round's row is one line: its number, its
- * compaction badge, four readings — tool calls, cache hit rate, cost, duration (round-facts.tsx)
- * — and the **context ring** at its end (upper bound = the session's context window, default
- * 128000; the three segments are cacheRead / cacheWrite / output). The ring is a button: its
- * panel lists the exact figures (round-readings.tsx), and no token figure is printed on the row
- * or in the round's body. Opened, the round shows its execution timeline and all of its
- * messages, one neutral pill per record; a `request_begin` row where the thinking level changes
- * says so in its summary (trace-levels.ts).
+ * (trace-toolbar.tsx — the file, the rounds button, the export). Two ruled sections follow: the
+ * **global summary** at the top, then the **rounds** as ruled rows. A round's row is one line:
+ * its number, its compaction badge, four readings — tool calls, cache hit rate, cost, duration
+ * (round-facts.tsx) — and the **context ring** at its end (upper bound = the session's context
+ * window, default 128000; the three segments are cacheRead / cacheWrite / output). The ring is a
+ * button: its panel lists the exact figures (round-readings.tsx), and no token figure is printed
+ * on the row or in the round's body. Opened, the round shows its execution timeline and all of
+ * its messages, one pill per record toned by its family; the Session's own fields are the
+ * `session_meta` row's, the first row of round 1. A `request_begin` row where the thinking level
+ * changes says so in its summary (trace-levels.ts).
  *
  * The rounds button names the round in view (round-in-view.ts, re-read on the scroll box's
  * scroll) and opens the navigator over every round (trace-round-nav.tsx); a jump draws, opens
  * and scrolls to the round, landing its head just under the toolbar.
  *
  * Loading is per round: opening a file reads only its analysis — every number on the panel and
- * every round's message index range — and its head record, and the file's newest round is open,
- * read and scrolled into view. The other rounds show their readings collapsed; opening one reads
- * that round's range alone (trace-rounds.ts). Round rows are drawn from the newest end,
- * TRACE_ROUNDS_PAGE at a time, behind an "earlier rounds" control, so a file of thousands of
- * rounds is still a short list.
+ * every round's message index range — and the file's newest round is open, read and scrolled
+ * into view. The other rounds show their readings collapsed; opening one reads that round's
+ * range alone (trace-rounds.ts). Round rows are drawn from the newest end, TRACE_ROUNDS_PAGE at
+ * a time, behind an "earlier rounds" control, so a file of thousands of rounds is still a short
+ * list.
  *
  * Token usage is **broken down by category** rather than given as one lump sum (a total alone
  * doesn't show where the money went): input, the portion that was a **cache hit**, output, plus
@@ -92,7 +92,6 @@ import type { Buckets } from "./round-facts";
 import { ContextRingButton } from "./round-readings";
 import { roundInView } from "./round-in-view";
 import { ROUND_NAV_MIN_ROUNDS, RoundNavButton } from "./trace-round-nav";
-import { SessionSection } from "./trace-session";
 import { TraceToolbar } from "./trace-toolbar";
 import { levelChangeText, thinkingLevelChanges } from "./trace-levels";
 import type { LevelChanges } from "./trace-levels";
@@ -260,8 +259,6 @@ export function TraceFileView({
 }) {
   const { currency } = useTheme();
   const [file, setFile] = useState<FileState>(EMPTY_FILE);
-  /** The file's head record (`session_meta` payload); null until read, `{}` when the file opens without one. */
-  const [meta, setMeta] = useState<Record<string, unknown> | null>(null);
   const [rounds, setRounds] = useState<ReadonlyMap<number, RoundEntry>>(new Map());
   const [shownRounds, setShownRounds] = useState(TRACE_ROUNDS_PAGE);
   const [error, setError] = useState<string | null>(null);
@@ -294,7 +291,6 @@ export function TraceFileView({
   if (renderedFileKey !== fileKey) {
     setRenderedFileKey(fileKey);
     setFile(EMPTY_FILE);
-    setMeta(null);
     setRounds(new Map());
     setShownRounds(TRACE_ROUNDS_PAGE);
     setError(null);
@@ -304,17 +300,13 @@ export function TraceFileView({
   }
 
   // Round reads belong to the file they were issued for: switching files (or unmounting)
-  // cancels them all, and the registry of reads in flight starts over with the new file — and
-  // so does the file whose head record is held, which the reset above dropped.
+  // cancels them all, and the registry of reads in flight starts over with the new file.
   const fileSignal = useRef<TraceEventsSignal>({ cancelled: false });
   const inflight = useRef(new Map<number, string>());
-  /** The file whose head record `meta` holds. */
-  const metaOf = useRef<string | null>(null);
   useEffect(() => {
     const signal = { cancelled: false };
     fileSignal.current = signal;
     inflight.current = new Map();
-    metaOf.current = null;
     return () => {
       signal.cancelled = true;
     };
@@ -341,30 +333,6 @@ export function TraceFileView({
       signal.cancelled = true;
     };
   }, [projectId, agentId, sessionId, index, reloadSignal]);
-
-  // The Session section's record: the file's first record, which every file opens with. It never
-  // changes once written, so it is read once per file; a read that failed is tried again on the
-  // panel's next signal, and the section shows dashes meanwhile.
-  useEffect(() => {
-    if (metaOf.current === fileKey) return;
-    const signal = { cancelled: false };
-    api
-      .getAgentTraceEvents(projectId, agentId, sessionId, index, 0, 1)
-      .then((res) => {
-        if (signal.cancelled) return;
-        metaOf.current = fileKey;
-        const head = res.events[0];
-        setMeta(
-          head?.type === "session_meta" ? (head.payload as unknown as Record<string, unknown>) : {},
-        );
-      })
-      .catch(() => {
-        if (!signal.cancelled) setMeta((held) => held ?? {});
-      });
-    return () => {
-      signal.cancelled = true;
-    };
-  }, [projectId, agentId, sessionId, index, reloadSignal, fileKey]);
 
   // Read the open rounds that need it: a round opened for the first time, and an open round
   // whose range the latest analysis moved (the running round, which grows every turn). A
@@ -401,7 +369,7 @@ export function TraceFileView({
   }, [analysis, expanded, shownRounds, rounds, projectId, agentId, sessionId, index]);
 
   // Opening a file brings its open newest round into view: it is the last row, under the
-  // sections and the collapsed rounds drawn before it, so without this the panel opens on
+  // global summary and the collapsed rounds drawn before it, so without this the panel opens on
   // everything but the round it just opened. The row's top goes to just under the toolbar (its
   // scroll margin), so its body — still being read — unfolds below it without moving it.
   // Instant, not smooth: a smooth scroll would sweep past every row above it. Only the analysis
@@ -519,7 +487,6 @@ export function TraceFileView({
     <TraceFileBody
       rootRef={rootRef}
       analysis={analysis}
-      meta={meta}
       currency={currency}
       expanded={expanded}
       rounds={rounds}
@@ -540,15 +507,14 @@ export function TraceFileView({
 }
 
 /**
- * The file as drawn from what the view holds: the analysis, the head record, which rounds are
- * open, which have been read. Separate from the loading so it renders to static markup with a
+ * The file as drawn from what the view holds: the analysis, which rounds are open, which have
+ * been read. Separate from the loading so it renders to static markup with a
  * given state. The toolbar is drawn in every state, so the file picker stays reachable while a
  * file loads or fails to.
  */
 export function TraceFileBody({
   rootRef,
   analysis,
-  meta,
   currency,
   expanded,
   rounds,
@@ -568,8 +534,6 @@ export function TraceFileBody({
   rootRef?: RefObject<HTMLDivElement | null>;
   /** null while the file's analysis is being read. */
   analysis: TraceAnalysisResponse | null;
-  /** The file's head record; null while it is being read. */
-  meta: Record<string, unknown> | null;
   currency: Currency;
   expanded: ReadonlySet<number>;
   rounds: ReadonlyMap<number, RoundEntry>;
@@ -640,7 +604,7 @@ export function TraceFileBody({
     return { timelines: byTask, toolCallsByRound: calls, global: g, globalLlmMs: gLlm };
   }, [analysis]);
 
-  // Where the thinking level changes: the request_begin rows and the navigator rows that say so.
+  // Where the thinking level changes: the request_begin rows that say so.
   const levelChanges = useMemo(() => thinkingLevelChanges(analysis?.requests ?? []), [analysis]);
   const allRounds = useMemo(
     () => (analysis === null ? [] : visibleRounds(analysis.tasks, analysis.tasks.length)),
@@ -668,7 +632,6 @@ export function TraceFileBody({
             <RoundNavButton
               tasks={allRounds}
               toolCalls={toolCallsByRound}
-              levelChanges={levelChanges}
               badgeOf={compactionBadgeLabel}
               currency={currency}
               current={inView ?? newest}
@@ -683,120 +646,116 @@ export function TraceFileBody({
           succeeded, so it may be a turn or two behind; without one, it is all there is. */}
       {error !== null && <p className={`mb-3 text-xs ${toneInk.danger}`}>{error}</p>}
 
-      <div className="space-y-6">
-        <SessionSection meta={meta} />
-
-        {analysis === null ? (
-          error === null && <Skeleton className="h-40" />
-        ) : (
-          <>
-            {/* Global summary: split into three groups by nature (count / Token usage /
+      {analysis === null ? (
+        error === null && <Skeleton className="h-40" />
+      ) : (
+        <div className="space-y-6">
+          {/* Global summary: split into three groups by nature (count / Token usage /
                 duration·cost·TPS), each item within a group taking its own row (name on the
                 left, value on the right) — a dozen metrics in one row would read as a blur of
                 digits. Side by side only where the section itself has the room: it is the
                 container queried, not the viewport, since the Trace tab is a dock panel a few
                 hundred pixels wide on a wide screen. `@2xl` leaves each column about a third
                 wider than its longest label and value need; narrower, the groups stack. */}
-            <RuledSection level={3} title={S.traces.globalSummary} className="@container">
-              <div className="grid grid-cols-1 gap-x-6 gap-y-4 @2xl:grid-cols-3">
-                {/* Counts. Rounds = every round in the file (a compaction round counts as a
+          <RuledSection level={3} title={S.traces.globalSummary} className="@container">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 @2xl:grid-cols-3">
+              {/* Counts. Rounds = every round in the file (a compaction round counts as a
                     round too), drawn or not: the summary and the rows share **the same scope**.
                     The average is the two rows above it divided, so a reader can check it. */}
-                <div>
-                  <SummaryRow label={S.traces.tasksLabel} value={String(analysis.tasks.length)} />
-                  <SummaryRow label={S.traces.toolCalls} value={String(global.toolCalls)} />
-                  <SummaryRow
-                    label={S.traces.avgToolCalls}
-                    value={formatAverage(global.toolCalls, analysis.tasks.length)}
-                  />
-                </div>
-                {/* Token usage: broken down by category (input / of which cache hit + hit rate / output), never given as a lump sum. */}
-                <div>
-                  <SummaryRow
-                    label={S.chat.statInput}
-                    value={humanizeTokens(inputOf(global.buckets))}
-                  />
-                  <SummaryRow
-                    label={S.traces.cacheHit}
-                    value={`${humanizeTokens(global.buckets.cacheRead)} · ${formatPercent(hitRateOf(global.buckets))}`}
-                  />
-                  <SummaryRow
-                    label={S.chat.statOutput}
-                    value={humanizeTokens(global.buckets.output)}
-                  />
-                </div>
-                {/* Cost · duration · TPS (cost above duration, same order as the conversation
+              <div>
+                <SummaryRow label={S.traces.tasksLabel} value={String(analysis.tasks.length)} />
+                <SummaryRow label={S.traces.toolCalls} value={String(global.toolCalls)} />
+                <SummaryRow
+                  label={S.traces.avgToolCalls}
+                  value={formatAverage(global.toolCalls, analysis.tasks.length)}
+                />
+              </div>
+              {/* Token usage: broken down by category (input / of which cache hit + hit rate / output), never given as a lump sum. */}
+              <div>
+                <SummaryRow
+                  label={S.chat.statInput}
+                  value={humanizeTokens(inputOf(global.buckets))}
+                />
+                <SummaryRow
+                  label={S.traces.cacheHit}
+                  value={`${humanizeTokens(global.buckets.cacheRead)} · ${formatPercent(hitRateOf(global.buckets))}`}
+                />
+                <SummaryRow
+                  label={S.chat.statOutput}
+                  value={humanizeTokens(global.buckets.output)}
+                />
+              </div>
+              {/* Cost · duration · TPS (cost above duration, same order as the conversation
                     page's stats row). Cost and duration carry their breakdowns behind a "?": the
                     cost's priced parts whenever the file has a cost, the duration's two
                     components once either of them has any time. Global TPS = every round's
                     output ÷ the sum of LLM generation time, the same scope as the rest. */}
-                <div>
-                  <SummaryRow
-                    label={S.common.cost}
-                    value={formatMoney(analysis.cost ?? null, currency)}
-                    hint={
-                      analysis.costParts !== undefined ? (
-                        <CostPartsRows parts={analysis.costParts} currency={currency} />
-                      ) : undefined
-                    }
-                  />
-                  <SummaryRow
-                    label={S.chat.statElapsed}
-                    value={humanizeDuration(Math.max(0, analysis.elapsedMs))}
-                    hint={
-                      analysis.apiMs > 0 || analysis.toolMs > 0 ? (
-                        <ElapsedSplitRows
-                          apiMs={analysis.apiMs}
-                          toolMs={analysis.toolMs}
-                          totalMs={Math.max(0, analysis.elapsedMs)}
-                        />
-                      ) : undefined
-                    }
-                  />
-                  <SummaryRow
-                    label={S.chat.statTps}
-                    value={formatTps(computeTps(global.buckets.output, globalLlmMs))}
-                  />
-                </div>
+              <div>
+                <SummaryRow
+                  label={S.common.cost}
+                  value={formatMoney(analysis.cost ?? null, currency)}
+                  hint={
+                    analysis.costParts !== undefined ? (
+                      <CostPartsRows parts={analysis.costParts} currency={currency} />
+                    ) : undefined
+                  }
+                />
+                <SummaryRow
+                  label={S.chat.statElapsed}
+                  value={humanizeDuration(Math.max(0, analysis.elapsedMs))}
+                  hint={
+                    analysis.apiMs > 0 || analysis.toolMs > 0 ? (
+                      <ElapsedSplitRows
+                        apiMs={analysis.apiMs}
+                        toolMs={analysis.toolMs}
+                        totalMs={Math.max(0, analysis.elapsedMs)}
+                      />
+                    ) : undefined
+                  }
+                />
+                <SummaryRow
+                  label={S.chat.statTps}
+                  value={formatTps(computeTps(global.buckets.output, globalLlmMs))}
+                />
               </div>
-            </RuledSection>
+            </div>
+          </RuledSection>
 
-            <RuledSection level={3} title={S.traces.tasksLabel} count={analysis.tasks.length}>
-              {/* The rounds before the drawn ones: each click draws the next page of them above. */}
-              {earlier > 0 && (
-                <button
-                  type="button"
-                  data-slot="earlier"
-                  onClick={onShowEarlier}
-                  className="mb-1 w-full rounded-md py-1 text-center text-xs text-fg-muted transition-colors duration-150 hover:bg-control-hover hover:text-fg"
-                >
-                  {S.traces.earlierRounds(earlier)}
-                </button>
-              )}
-              <ol className="divide-y divide-line-muted">
-                {shown.map((st) => (
-                  <RoundRow
-                    key={st.taskIndex}
-                    round={st}
-                    open={expanded.has(st.taskIndex)}
-                    timeline={timelines.get(st.taskIndex)}
-                    entry={rounds.get(st.taskIndex)}
-                    contextMax={contextMax}
-                    currency={currency}
-                    levelChanges={levelChanges}
-                    highlight={highlight}
-                    hoveredRow={hoveredRow}
-                    pinnedRow={pinnedRow}
-                    onHighlight={onHighlight}
-                    onToggle={onToggle}
-                    onJump={onJump}
-                  />
-                ))}
-              </ol>
-            </RuledSection>
-          </>
-        )}
-      </div>
+          <RuledSection level={3} title={S.traces.tasksLabel} count={analysis.tasks.length}>
+            {/* The rounds before the drawn ones: each click draws the next page of them above. */}
+            {earlier > 0 && (
+              <button
+                type="button"
+                data-slot="earlier"
+                onClick={onShowEarlier}
+                className="mb-1 w-full rounded-md py-1 text-center text-xs text-fg-muted transition-colors duration-150 hover:bg-control-hover hover:text-fg"
+              >
+                {S.traces.earlierRounds(earlier)}
+              </button>
+            )}
+            <ol className="divide-y divide-line-muted">
+              {shown.map((st) => (
+                <RoundRow
+                  key={st.taskIndex}
+                  round={st}
+                  open={expanded.has(st.taskIndex)}
+                  timeline={timelines.get(st.taskIndex)}
+                  entry={rounds.get(st.taskIndex)}
+                  contextMax={contextMax}
+                  currency={currency}
+                  levelChanges={levelChanges}
+                  highlight={highlight}
+                  hoveredRow={hoveredRow}
+                  pinnedRow={pinnedRow}
+                  onHighlight={onHighlight}
+                  onToggle={onToggle}
+                  onJump={onJump}
+                />
+              ))}
+            </ol>
+          </RuledSection>
+        </div>
+      )}
     </div>
   );
 }

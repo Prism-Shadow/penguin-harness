@@ -21,34 +21,25 @@ export interface LevelChange {
 export interface LevelChanges {
   /** By the request's `beginTs`: the `request_begin` row that marks a change. */
   byBeginTs: ReadonlyMap<string, LevelChange>;
-  /** By taskIndex: the last change inside that round, for the round's navigator row. */
-  byRound: ReadonlyMap<number, LevelChange>;
 }
 
 /**
- * A change as text: the level alone where the file states its first, `from → to` where it
- * switches. `name` spells each level — the recorded value on a request row
- * (`thinking_level=medium → high`), the display name on a navigator row.
+ * A change as the request row's summary spells it, in recorded values: the level alone where the
+ * file states its first, `from → to` where it switches (`thinking_level=medium → high`).
  */
-export function levelChangeText(
-  change: LevelChange,
-  name: (level: string) => string = (level) => level,
-): string {
-  return change.from === null ? name(change.to) : `${name(change.from)} → ${name(change.to)}`;
+export function levelChangeText(change: LevelChange): string {
+  return change.from === null ? change.to : `${change.from} → ${change.to}`;
 }
 
 export function thinkingLevelChanges(requests: readonly RequestSpan[]): LevelChanges {
   const byBeginTs = new Map<string, LevelChange>();
-  const byRound = new Map<number, LevelChange>();
   let prev: string | undefined;
   for (const r of requests) {
     const level = r.thinkingLevel;
     if (level !== undefined && level !== prev) {
-      const change: LevelChange = { from: prev ?? null, to: level };
-      byBeginTs.set(r.beginTs, change);
-      byRound.set(r.taskIndex, change);
+      byBeginTs.set(r.beginTs, { from: prev ?? null, to: level });
     }
     prev = level;
   }
-  return { byBeginTs, byRound };
+  return { byBeginTs };
 }
