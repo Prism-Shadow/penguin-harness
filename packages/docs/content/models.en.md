@@ -557,7 +557,7 @@ The preset catalog includes, among others:
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
 - `glm-5.3` / `glm-5.3-flash`
-- `kimi-k3` / `kimi-k3.1-pro` (K3.1 Pro on TokenDance)
+- `kimi-k3.1-pro` / `kimi-k3.1-pro-highspeed` / `kimi-k3` (the high-speed variant on Moonshot only)
 - `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
 - `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash` (TokenDance)
