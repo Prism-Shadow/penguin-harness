@@ -3,7 +3,7 @@
 - **Date:** 2026-10-24
 - **Type:** refactor
 - **Scope:** `core`, `server`, `web`, `docs`
-- **PR:** [#1310](https://github.com/Prism-Shadow/penguin-harness/pull/1310)
+- **PR:** [#1311](https://github.com/Prism-Shadow/penguin-harness/pull/1311)
 - **Breaking:** yes — 被截断的条目不写完整记录：被中断截断的文本或思考，以及执行中被中断的工具调用的输出。
 
 [English](2026-10-24-interrupted-items-leave-no-record.md)

@@ -3,7 +3,7 @@
 - **Date:** 2026-10-24
 - **Type:** refactor
 - **Scope:** `core`, `server`, `web`, `docs`
-- **PR:** [#1310](https://github.com/Prism-Shadow/penguin-harness/pull/1310)
+- **PR:** [#1311](https://github.com/Prism-Shadow/penguin-harness/pull/1311)
 - **Breaking:** yes — an item cut short writes no complete record: a text or thinking an interruption cut off, and the output of a tool call interrupted while it ran.
 
 [中文版](2026-10-24-interrupted-items-leave-no-record.zh.md)
