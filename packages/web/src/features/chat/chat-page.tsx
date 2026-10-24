@@ -170,6 +170,7 @@ import { toneInk } from "../../lib/tone";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 import { ArchivedSessionStub } from "./archived-session-stub";
+import { DRAFT_SESSION_ID } from "./draft-session-id";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
@@ -243,7 +244,10 @@ function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
  * Real session ids always start with `session-`, so there's no collision with this constant —
  * nor with parked draft conversations, whose route ids start with `draft-` (draft-sessions.ts).
  */
-export const DRAFT_SESSION_ID = "new";
+// The value moved to its own module so the app shell (sidebar, layout) does not have to pull
+// this whole page in to read one string. It is re-exported here as well, so every module that
+// already imported it from this path keeps working.
+export { DRAFT_SESSION_ID };
 
 /** Parked-draft route id (`/chat/draft-…` — a draft conversation row in the sidebar list), or null. */
 export const parkedDraftIdOf = (routeSessionId: string | null): string | null =>
