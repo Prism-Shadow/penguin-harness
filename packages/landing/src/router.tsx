@@ -1,11 +1,11 @@
 /**
- * Router: home + blog list + blog post inside a shared Nav/Footer layout.
- * basename comes from Vite's BASE_URL so the site works under the GitHub Pages
+ * Router: home, blog list, blog post, download and the AMSP page inside a shared Nav/Footer
+ * layout. basename comes from Vite's BASE_URL so the site works under the GitHub Pages
  * project subpath; a route change scrolls to the top or to its hash target
  * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry).
  *
- * The post page is the one route loaded on demand: it carries the Markdown renderer, which the
- * home page, the list and the download page never use.
+ * Two routes load on demand: the post page carries the Markdown renderer, and the AMSP page its
+ * player, scripted runs and code samples, none of which the other pages use.
  */
 import { lazy, Suspense, useEffect } from "react";
 import {
@@ -28,6 +28,10 @@ import { PostPending } from "./components/post-pending";
 import { HomePage } from "./pages/home";
 import { BlogListPage } from "./pages/blog-list";
 import { DownloadPage } from "./pages/download";
+
+const AmspPage = lazy(() =>
+  import("./pages/amsp").then((module) => ({ default: module.AmspPage })),
+);
 
 const BlogPostPage = lazy(() =>
   import("./pages/blog-post").then((page) => ({ default: page.BlogPostPage })),
@@ -94,6 +98,15 @@ export function AppRouter() {
           <Route path="/blog" element={<BlogListPage />} />
           <Route path="/blog/:slug" element={<BlogPostRoute />} />
           <Route path="/download" element={<DownloadPage />} />
+          <Route
+            path="/amsp"
+            element={
+              // A screen of empty space while the chunk loads, as for a post.
+              <Suspense fallback={<PostPending />}>
+                <AmspPage />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
         {/* Outside Layout: pure redirects, no nav/footer flash. */}

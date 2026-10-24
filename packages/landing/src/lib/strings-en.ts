@@ -22,6 +22,7 @@ export const en: Strings = {
     home: "Home",
     blog: "Blog",
     download: "Download",
+    amsp: "AMSP",
     docs: "Docs",
     gallery: "Gallery",
     github: "GitHub",
@@ -434,5 +435,352 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     references: "References",
     backToRef: (n: number, k: number) =>
       k > 1 ? `Back to reference ${n}, citation ${k}` : `Back to reference ${n}`,
+  },
+
+  amsp: {
+    title: "AMSP — Agent Message Stream Protocol | PenguinHarness",
+    description:
+      "AMSP is a PenguinHarness agent's Session stream: the model's text and thinking, tool calls and results, approvals, usage and Task boundaries, live over SSE in the records the Trace stores.",
+    headline: "One protocol for every agent message",
+    subline:
+      "The model's text and thinking as they stream, each tool call and its result, approvals, token usage and the Task boundaries, delivered live over SSE in the very records the Trace stores.",
+    lineage: " streams one model call; AMSP streams an agent's Session.",
+    reference: "Protocol reference",
+    copyPrompt: "Copy prompt for a coding agent",
+    copied: "Copied",
+    agentPrompt: (docsUrl: string) =>
+      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call an agent.\n\nBase URL and Agent ID: from the agent's API tab in PenguinHarness.\n\nUse the @prismshadow/amsp SDK: stream() for the records as they arrive and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
+
+    player: {
+      label: "Example runs",
+      scenarios: { first: "First request", continue: "Continue", interrupt: "Interrupt" },
+      pause: "Pause",
+      play: "Play",
+      input: "One client",
+      events: "The stream as it arrives",
+      stored: "Stored in the Trace",
+      besideStream: "beside the stream",
+      assembled: "The run, assembled",
+      request: (n: number) => `Request ${n}`,
+      thinking: (level: string) => `thinking ${level}`,
+      streaming: "streaming",
+      running: "The run is still going.",
+      result: "Result",
+      readFrom: (o: { closed: boolean; aborted: boolean; lastRequestEnd: string | null }) =>
+        `Read from the records: ${o.closed ? "the task_begin closed" : "a task_begin left open"}, ${o.aborted ? "an abort" : "no abort"}, the last request_end ${o.lastRequestEnd ?? "absent"}.`,
+      requests: (n: number) => (n === 1 ? "1 Request" : `${n} Requests`),
+      tokens: (n: string) => `${n} tokens`,
+    },
+
+    structure: {
+      title: "Message structure",
+      subtitle:
+        "A run nests three spans, longest first: the Task, each Request to the model, and the messages that fill each Request, each one ending in its complete record.",
+      figureLabel:
+        "The first-request run on one time axis, in three rows from longest to shortest. The Task runs from task_begin to task_end. Under it, two Requests each run from request_begin to request_end. Under them, the messages fill each Request, each ending in its complete record: the thinking and the tool call in the first, the answer in the second. Between the two Requests the tool runs, and its tool_call_output completes where the second Request begins.",
+      levels: { task: "Task", request: "Request", message: "Message" },
+      steps: [
+        "task_begin opens a Task and task_end closes it; a task_begin still open at [DONE] means the run did not reach its end.",
+        "Each Request opens with request_begin, which carries the thinking level, and closes with request_end.",
+        "A message streams as partial_* fragments (start, delta, stop), then its complete record follows, an interrupted message's included.",
+        "A tool runs once its call is complete; its tool_call_output completes after request_end, and the next Request starts from it.",
+      ],
+      boundaries: "event_msg: a Task or a Request, from its begin record to its end record",
+      partial:
+        "model_msg: a message as it is produced, streamed as partial_* fragments (live only)",
+      complete: "its complete record, stored in the Trace",
+    },
+
+    records: {
+      title: "Every record, field by field",
+      subtitle:
+        "Each record is a line of the Trace, byte for byte; only the partial_* fragments are live only. Pick one to see an example and all of its fields. A client ignores a type or a field it does not know.",
+      choose: "Choose a record",
+      families: {
+        envelope: "Envelope",
+        session: "Session",
+        complete: "Complete messages",
+        partial: "Fragments",
+        boundaries: "Task and Request",
+        interventions: "Aborts, approvals, hooks",
+        context: "Context and tools",
+        control: "Control frames",
+      },
+      stored: "stored in the Trace",
+      live: "live only",
+      firstMessage: "sent with a Session's first message",
+      frame: "control frame, not a record",
+      example: "Example",
+      wire: "On the wire",
+      envelopeFields: "Envelope fields",
+      payloadFields: "Payload fields",
+      head: {
+        field: "Field",
+        type: "Type",
+        required: "Required",
+        meaning: "Meaning",
+        example: "Example",
+      },
+      required: "required",
+      optional: "optional",
+      frameNote:
+        "A control frame carries no id: it moves no resume position and is never replayed.",
+      frames: {
+        ping: "Sent as soon as a stream opens, so a run stream's first line, then every 20 seconds.",
+        done: "A run stream's last line.",
+      },
+      common: {
+        type: "Which payload this is.",
+        role: "Who the message is from.",
+        event_type: "The fragment's phase: start, delta or stop.",
+        tool_call_id: "The id of the call it belongs to; pairs a call with its output.",
+        fidelity: "Data the provider needs back on replay, kept as it came.",
+        error_code:
+          "The machine-readable cause, stable across versions; what a client localizes from.",
+        error_message: "The raw failure text, shown as it came.",
+      },
+      items: {
+        envelope: {
+          summary: "Every record has the same envelope; only the payload varies.",
+          fields: {
+            timestamp: "When the record was made, ISO 8601 in UTC.",
+            type: "session_meta, model_msg or event_msg.",
+            payload: "The record itself, told apart by its own type.",
+            origin:
+              "The chain of child Sessions a subagent's record came through, outer to inner; absent on the main Session's own records.",
+          },
+        },
+        session_meta: {
+          summary:
+            "A model context opened: the model, the system prompt, the paths and the source. It is the first record on a Session's first message, and the first line of every Trace file.",
+          fields: {
+            session_id: "The Session's id; a later request sends it to continue.",
+            provider: "The provider group of the model.",
+            model_id: "The model id sent to the provider.",
+            model_context_window:
+              'The model\'s context window in tokens, or "unknown" when none is set.',
+            system_prompt: "The assembled system prompt this context runs with.",
+            agent_state: "The Agent State's absolute path.",
+            workspace: "The Workspace's absolute path.",
+            source:
+              "What opened the Session: user, api, schedule, subagent, cli, company or workbench.",
+          },
+        },
+        text: {
+          summary: "A complete text: the user's input or the model's reply.",
+          fields: {
+            text: "The text.",
+            sender:
+              "Who wrote a user-role text: the user, a parent agent, the harness or the server. Absent means the user.",
+          },
+        },
+        thinking: {
+          summary: "The model's complete thinking.",
+          fields: { thinking: "The thinking text." },
+        },
+        tool_call: {
+          summary:
+            "A complete tool call the model made. One whose Request was cut short holds the raw arguments, which may not parse, and never runs.",
+          fields: { name: "The tool's name.", arguments: "The arguments, as a JSON string." },
+        },
+        tool_call_output: {
+          summary: "A tool's result, fed back to the model.",
+          fields: {
+            output: "What the tool returned, as text.",
+            images: "Images the tool returned, as data URLs.",
+            status:
+              "What the result is: completed (the tool ran to its end), fatal (the call failed) or aborted (it never ran, denied by the user, the policy or a hook, or it was interrupted while running).",
+          },
+        },
+        image_url: {
+          summary: "An image the user sent by URL.",
+          fields: { image_url: "A web URL or a base64 data URL." },
+        },
+        inline_data: {
+          summary: "Inline bytes, such as an image or audio, from the user or the model.",
+          fields: { data: "The bytes, base64-encoded.", mime_type: "The bytes' media type." },
+        },
+        inline_thinking: {
+          summary: "Thinking as inline bytes, such as an image an image model thinks with.",
+          fields: { data: "The bytes, base64-encoded.", mime_type: "The bytes' media type." },
+        },
+        partial_text: {
+          summary: "A piece of a reply as it streams.",
+          fields: { text: "The text this fragment adds." },
+        },
+        partial_thinking: {
+          summary: "A piece of thinking as it streams.",
+          fields: { thinking: "The thinking this fragment adds." },
+        },
+        partial_tool_call: {
+          summary: "A piece of a tool call as it streams.",
+          fields: {
+            name: "The tool's name, on the start fragment.",
+            arguments: "The piece of the arguments' JSON this fragment adds.",
+          },
+        },
+        partial_tool_call_output: {
+          summary: "A piece of a tool's output as it streams.",
+          fields: {
+            output: "The output this fragment adds.",
+            images: "Images the tool returned, carried whole by one fragment.",
+          },
+        },
+        task_begin: {
+          summary: "Opens a Task, one input's whole run; every record of the Task comes after it.",
+          fields: {},
+        },
+        task_end: {
+          summary:
+            "Closes the Task. A task_begin with no task_end means the run did not reach its end.",
+          fields: {},
+        },
+        request_begin: {
+          summary: "Opens one request to the model.",
+          fields: {
+            thinking_level:
+              "The thinking level the request went out at; absent when none was sent.",
+          },
+        },
+        request_end: {
+          summary: "Closes the request and says how it ended.",
+          fields: {
+            status:
+              "completed, aborted (the turn was not committed), retryable (retried while attempts remain; output cut at its cap reads error_code output_truncated) or fatal; the one record of why the request ended.",
+            attempt: "The attempt's number among its retries; absent on a clean first try.",
+            retry_in_ms:
+              "The wait before the next attempt, present only when the engine will retry.",
+          },
+        },
+        token_usage: {
+          summary: "The tokens counted for the latest request and for the Session so far.",
+          fields: {
+            session: "The Session's running totals.",
+            "session.cache_read": "Input tokens read from the provider's cache.",
+            "session.cache_write": "Input tokens written to the cache.",
+            "session.output": "Output tokens, thinking included.",
+            "session.total": "Every token counted.",
+            request: "This request's counts.",
+            "request.cache_read": "Input tokens this request read from the cache.",
+            "request.cache_write": "Input tokens this request wrote to the cache.",
+            "request.output": "This request's output tokens, thinking included.",
+            "request.total": "Every token this request counted.",
+          },
+        },
+        abort: {
+          summary:
+            "The run was stopped: the caller interrupted it, or the Task reached its turn cap.",
+          fields: {
+            error_code: "user_abort for an interruption, max_turns for the turn cap.",
+            error_message: "The detail, such as the cap that was reached.",
+            reason: "The prose cause in older Traces; read only when there is no error_code.",
+          },
+        },
+        approval_decision: {
+          summary: "The answer to a tool call that needed approval.",
+          fields: {
+            decision: "allow, deny, or forbidden (the project's command policy refused it).",
+          },
+        },
+        hook: {
+          summary: "What a hook answered at a hook point.",
+          fields: {
+            hook: "The hook point: stop, pre_tool_use or user_prompt.",
+            name: "The hook's registered name.",
+            decision: "continue or stop at the stop point; allow or deny before a tool call.",
+            reason: "One line from the hook, for people.",
+            output: "The hook's own record, scalars only.",
+          },
+        },
+        compaction_begin: {
+          summary: "The context starts being compacted.",
+          fields: {
+            reason: "Why: context, turns or manual.",
+            mode: "summarize or discard.",
+            context: "The context's tokens when it began.",
+            turns: "The Session's turn count when it began.",
+          },
+        },
+        compaction_end: {
+          summary: "The compaction ended.",
+          fields: {
+            reason: "Why: context, turns or manual.",
+            mode: "summarize or discard.",
+            status:
+              "completed, or how it was given up: aborted, retryable or fatal; unless completed, the original context is kept.",
+            attempt: "The last attempt's number.",
+          },
+        },
+        tool_list_ready: {
+          summary: "The Session's tools as sent to the model, once its MCP servers have connected.",
+          fields: {
+            tools: "Every tool definition.",
+            "tools[].name": "The tool's name.",
+            "tools[].description": "What the tool does.",
+            "tools[].parameters": "Its arguments, as a JSON Schema.",
+          },
+        },
+        mcp_connect_begin: {
+          summary: "MCP servers start connecting.",
+          fields: { servers: "The servers being contacted." },
+        },
+        mcp_connect_end: {
+          summary: "The MCP servers have connected, or some failed.",
+          fields: {
+            status: "completed, fatal (a server failed and was skipped) or aborted.",
+            results: "One result per server.",
+            "results[].server": "The server's name.",
+            "results[].transport": "stdio, http or sse.",
+            "results[].status": "completed, fatal or aborted.",
+            "results[].duration_ms": "How long its connect and tool discovery took.",
+            "results[].tools": "The tools discovered, on completed.",
+            "results[].error_code":
+              "Why it failed: connect_failed, mcp_needs_setup or mcp_sign_in_required.",
+            "results[].error_message": "The raw failure text.",
+          },
+        },
+        subagent: {
+          summary:
+            "Points the parent Session's Trace at a child Session it started; written to the Trace, not streamed.",
+          fields: { session_id: "The child Session's id." },
+        },
+      },
+    },
+
+    quickstart: {
+      title: "From zero to the first run",
+      enable: {
+        title: "Turn the agent's API on",
+        text: "In PenguinHarness, open Agents, pick an agent, go to its API tab, switch on Enable API access, then click New key.",
+        link: "Agent API guide",
+      },
+      run: {
+        title: "Run it",
+        label: "How to run it",
+        typescript: "TypeScript",
+        curl: "curl",
+        sdkNote:
+          "stream() starts the run and returns it: iterate it for the records, then await result() for the outcome. run() returns the outcome alone.",
+      },
+      curl: {
+        response: "response",
+        note: "The answer is the run itself: a ping opens it, then one event with an id per record, and data: [DONE] ends it. On a Session's first message the first record is session_meta, whose session_id names the Session; to continue, send that id as session_id.",
+        elided: "one event per record",
+      },
+    },
+
+    links: {
+      title: "Read on",
+      items: {
+        reference: {
+          name: "AMSP reference",
+          text: "Every record and control frame, field by field",
+        },
+        records: { name: "AMSP records", text: "The payload fields of every record kind" },
+        guide: { name: "Agent API guide", text: "Keys, approval modes, routes and errors" },
+        npm: { name: "@prismshadow/amsp", text: "The SDK on npm, for Node 24 and browsers" },
+        source: { name: "Source", text: "packages/amsp, Apache-2.0" },
+      },
+    },
   },
 };

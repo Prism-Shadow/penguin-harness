@@ -266,6 +266,53 @@
   }
 }
 
+/* ---------- The AMSP page (pages/amsp.tsx) ----------
+   Code blocks outside article prose: the shared block (SiteCodeBlock) on its container's surface,
+   which only scrolls and pads; the highlighter writes its theme background inline, which only
+   !important can drop, and dark mode reads the dual-theme variables it baked in. */
+.amsp-code .site-code pre {
+  margin: 0;
+  overflow-x: auto;
+  padding: 0.625rem 0.75rem;
+  background: transparent !important;
+  font-size: 12.5px;
+  line-height: 1.25rem;
+  /* A line longer than its column wraps rather than scrolling out of it (on a phone). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* The quickstart's command and response cards wrap the same way, a long `data:` line hanging past
+   its field name. */
+.amsp-wrap .site-code-card-line {
+  padding-left: 6ch;
+  text-indent: -6ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+html.dark .amsp-code .shiki,
+html.dark .amsp-code .shiki span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+/* The player's call: a tighter block, so the whole run fits beside the hero's copy. */
+.amsp-code-tight .site-code pre {
+  padding: 0.25rem 0.75rem 0.375rem;
+  line-height: 1.125rem;
+}
+/* The usage bars grow in when the run ends (the outcome mounts with [DONE]). Reduced motion stops
+   the animation and leaves them at full length. */
+.amsp-bar {
+  transform-origin: left;
+  animation: amsp-bar-grow 700ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes amsp-bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
 /* Printing never scrolls, so scroll-reveal must not hide content on paper/PDF. */
 @media print {
   .reveal {

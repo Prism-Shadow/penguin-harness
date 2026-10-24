@@ -22,6 +22,7 @@ export const zh = {
     home: "主页",
     blog: "博客",
     download: "下载",
+    amsp: "AMSP",
     docs: "文档",
     gallery: "画廊",
     github: "GitHub",
@@ -424,6 +425,348 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     /** A citation's back-link, for screen readers: the k-th place in the text that cites source n. */
     backToRef: (n: number, k: number) =>
       k > 1 ? `返回正文中引用 ${n} 的第 ${k} 处` : `返回正文中的引用 ${n}`,
+  },
+
+  /**
+   * The AMSP page (pages/amsp.tsx, sections/amsp/*): AMSP, the Session stream, on one page, with
+   * scripted runs replayed. Protocol names (record kinds, fields, routes) stay as the protocol
+   * spells them; the Web App's labels are quoted verbatim from its dictionary.
+   */
+  amsp: {
+    /** The tab title and description while the page is open; the static shell carries the English pair (scripts/site-routes.mjs). */
+    title: "AMSP — Agent Message Stream Protocol | PenguinHarness",
+    description:
+      "AMSP 是 PenguinHarness Agent 的 Session 流：模型的文本与思考、工具调用与结果、审批、用量和 Task 边界，经 SSE 实时送达，与 Trace 存下的记录一致。",
+    /** No-break spaces keep 「所有 Agent 消息」 on one line: the headline breaks at its comma. */
+    headline: "所有\u00a0Agent\u00a0消息，同一种协议",
+    subline:
+      "模型的文本和思考、每次工具调用及其结果、审批、Token 用量和 Task 边界，经 SSE 实时送达，用的就是 Trace 存下的那些记录。",
+    /** The sentence after the "MMSP" link, which opens it. */
+    lineage: " 传输一次模型调用；AMSP 传输 Agent 的一个 Session。",
+    reference: "协议参考",
+    copyPrompt: "复制给编码 Agent 的提示词",
+    copied: "已复制",
+    /** The Web App's API-tab prompt (apiAgentPrompt), with the per-Agent lines pointing at that tab. */
+    agentPrompt: (docsUrl: string) =>
+      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用 Agent 的代码。\n\nBase URL 与 Agent ID：在 PenguinHarness 中该 Agent 的 API 标签页查看。\n\n使用 @prismshadow/amsp SDK：stream() 逐条读取记录，await run() 获取完整结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
+
+    player: {
+      label: "示例运行",
+      scenarios: { first: "首次请求", continue: "继续对话", interrupt: "打断" },
+      pause: "暂停",
+      play: "播放",
+      input: "同一个客户端",
+      events: "流依次到达",
+      /** The legend of the faint ground under the records the Trace stores. */
+      stored: "写入 Trace",
+      /** A request the caller sends beside the stream (the interrupt). */
+      besideStream: "流之外的请求",
+      assembled: "这次运行的全貌",
+      request: (n: number) => `Request ${n}`,
+      thinking: (level: string) => `思考等级 ${level}`,
+      streaming: "传输中",
+      running: "运行仍在进行。",
+      result: "结果",
+      /** What the result was read from; protocol words stay as the protocol spells them. */
+      readFrom: (o: { closed: boolean; aborted: boolean; lastRequestEnd: string | null }) =>
+        `由记录读出：${o.closed ? "task_begin 已闭合" : "task_begin 未闭合"}，${o.aborted ? "有 abort" : "没有 abort"}，最后一个 request_end 为 ${o.lastRequestEnd ?? "无"}。`,
+      requests: (n: number) => `${n} 次 Request`,
+      tokens: (n: string) => `${n} Token`,
+    },
+
+    /** A run's three levels as one bar chart (sections/amsp/structure.tsx). */
+    structure: {
+      title: "消息结构",
+      subtitle:
+        "一次运行嵌套三层，从长到短依次是：Task、每次向模型发出的 Request，以及填满每个 Request 的各条消息，每条止于它的完整记录。",
+      figureLabel:
+        "首次请求示例画在同一条时间轴上，按时长从长到短分三行。Task 从 task_begin 到 task_end。其下是两个 Request，各自从 request_begin 到 request_end。再下面是填满各个 Request 的消息，每条止于它的完整记录：第一个 Request 里是思考和工具调用，第二个里是回答。两个 Request 之间工具在运行，它的 tool_call_output 在第二个 Request 开始处完成。",
+      /** The chart's row names, top to bottom. */
+      levels: { task: "Task", request: "Request", message: "消息" },
+      /** The figure in words: read out with it, and shown under it on a phone. */
+      steps: [
+        "task_begin 打开一个 Task，task_end 关闭它；[DONE] 时仍未闭合的 task_begin 说明运行没有走到终点。",
+        "每个 Request 以带思考等级的 request_begin 开始，以 request_end 结束。",
+        "消息先以 partial_* 片段流出（start、delta、stop），随后是它的完整记录，被打断的消息也一样。",
+        "工具在调用完整后开始运行；它的 tool_call_output 在 request_end 之后才完成，下一个 Request 从它开始。",
+      ],
+      boundaries: "event_msg：Task 或 Request，从开始记录到结束记录",
+      partial: "model_msg：一条消息的生成过程，以 partial_* 片段流出（仅实时）",
+      complete: "它的完整记录，写入 Trace",
+    },
+
+    /** Every record field by field (sections/amsp/records.tsx), keyed by lib/amsp-vocabulary.ts and lib/amsp-records.ts. */
+    records: {
+      title: "每种记录，逐个字段",
+      subtitle:
+        "每条记录都是 Trace 里的一行，逐字节相同；只有 partial_* 片段只在实时流中出现。选一种记录，查看示例和它的全部字段。客户端忽略不认识的类型与字段。",
+      choose: "选择一种记录",
+      families: {
+        envelope: "外壳",
+        session: "Session",
+        complete: "完整消息",
+        partial: "片段",
+        boundaries: "Task 与 Request",
+        interventions: "中止、审批与 Hook",
+        context: "上下文与工具",
+        control: "控制帧",
+      },
+      stored: "写入 Trace",
+      live: "仅实时",
+      firstMessage: "随 Session 的首条消息送出",
+      frame: "控制帧，不是记录",
+      example: "示例",
+      wire: "线上的样子",
+      envelopeFields: "外壳字段",
+      payloadFields: "payload 字段",
+      head: { field: "字段", type: "类型", required: "必填", meaning: "含义", example: "示例值" },
+      required: "必填",
+      optional: "可选",
+      frameNote: "控制帧不带 id：它不推进续传位置，也不会被重放。",
+      frames: {
+        ping: "流一打开即发送，因此是运行流的第一行；此后每 20 秒一次。",
+        done: "运行流的最后一行。",
+      },
+      /** What a field means wherever it appears, unless the record has its own words for it. */
+      common: {
+        type: "payload 的种类。",
+        role: "消息出自谁。",
+        event_type: "片段所处的阶段：start、delta 或 stop。",
+        tool_call_id: "所属工具调用的 id，用来把调用和它的输出配对。",
+        fidelity: "提供方在回放时需要原样拿回的数据，按原样保存。",
+        error_code: "机器可读的失败原因，跨版本稳定，客户端据此本地化。",
+        error_message: "失败的原始文字，按原样展示。",
+      },
+      items: {
+        envelope: {
+          summary: "每条记录都套着同一个外壳，变化的只有 payload。",
+          fields: {
+            timestamp: "记录产生的时间，ISO 8601，UTC。",
+            type: "session_meta、model_msg 或 event_msg。",
+            payload: "记录本身，以它自己的 type 区分。",
+            origin:
+              "Subagent 的记录经过的子 Session 链，由外到内；主 Session 自己的记录没有这个字段。",
+          },
+        },
+        session_meta: {
+          summary:
+            "一个模型上下文开启：模型、系统提示词、路径和来源。它是 Session 首条消息的流中第一条记录，也是每个 Trace 文件的第一行。",
+          fields: {
+            session_id: "Session 的 id；之后的请求带上它即可延续。",
+            provider: "模型所属的提供方分组。",
+            model_id: "发给提供方的模型 id。",
+            model_context_window: '模型的上下文窗口，单位 Token；未配置时为 "unknown"。',
+            system_prompt: "这个上下文使用的完整系统提示词。",
+            agent_state: "Agent State 的绝对路径。",
+            workspace: "Workspace 的绝对路径。",
+            source:
+              "谁开启了这个 Session：user、api、schedule、subagent、cli、company 或 workbench。",
+          },
+        },
+        text: {
+          summary: "一段完整文本：用户的输入，或模型的回复。",
+          fields: {
+            text: "文本内容。",
+            sender: "用户侧文本的来源：用户、父 Agent、Harness 或服务器；缺省即用户。",
+          },
+        },
+        thinking: {
+          summary: "模型完整的一段思考。",
+          fields: { thinking: "思考的文本。" },
+        },
+        tool_call: {
+          summary:
+            "模型发出的一次完整工具调用。若它所在的 Request 被提前截断，记录里是原样的参数，可能无法解析，这次调用也不会执行。",
+          fields: { name: "工具名。", arguments: "参数，JSON 字符串。" },
+        },
+        tool_call_output: {
+          summary: "工具的结果，会回传给模型。",
+          fields: {
+            output: "工具返回的文本。",
+            images: "工具返回的图片，data URL 形式。",
+            status:
+              "结果的性质：completed（工具执行完毕）、fatal（调用失败）或 aborted（没有执行：被用户、策略或 Hook 拒绝；或在运行中被打断）。",
+          },
+        },
+        image_url: {
+          summary: "用户以 URL 发送的一张图片。",
+          fields: { image_url: "网址，或 base64 的 data URL。" },
+        },
+        inline_data: {
+          summary: "内联的字节，例如用户或模型给出的图片、音频。",
+          fields: { data: "base64 编码的字节。", mime_type: "字节的媒体类型。" },
+        },
+        inline_thinking: {
+          summary: "以内联字节表示的思考，例如图像模型用来思考的图片。",
+          fields: { data: "base64 编码的字节。", mime_type: "字节的媒体类型。" },
+        },
+        partial_text: {
+          summary: "回复在流式传输中的一段。",
+          fields: { text: "这个片段新增的文本。" },
+        },
+        partial_thinking: {
+          summary: "思考在流式传输中的一段。",
+          fields: { thinking: "这个片段新增的思考。" },
+        },
+        partial_tool_call: {
+          summary: "工具调用在流式传输中的一段。",
+          fields: {
+            name: "工具名，在 start 片段上出现。",
+            arguments: "这个片段新增的那段参数 JSON。",
+          },
+        },
+        partial_tool_call_output: {
+          summary: "工具输出在流式传输中的一段。",
+          fields: {
+            output: "这个片段新增的输出。",
+            images: "工具返回的图片，由一个片段整体带上。",
+          },
+        },
+        task_begin: {
+          summary: "开启一个 Task，即一次输入的整个运行；Task 的每条记录都在它之后。",
+          fields: {},
+        },
+        task_end: {
+          summary: "关闭这个 Task。只有 task_begin 没有 task_end，说明运行没有走到终点。",
+          fields: {},
+        },
+        request_begin: {
+          summary: "开启对模型的一次请求。",
+          fields: { thinking_level: "这次请求实际使用的思考等级；没有传思考等级时缺省。" },
+        },
+        request_end: {
+          summary: "关闭这次请求，并说明它如何结束。",
+          fields: {
+            status:
+              "completed、aborted（这一轮没有提交）、retryable（在重试次数内会重试；输出达到上限被截断时 error_code 为 output_truncated）或 fatal；这是请求结束原因的唯一记录。",
+            attempt: "这次尝试在重试中的序号；一次就成功时缺省。",
+            retry_in_ms: "距下一次尝试的等待时间，只在引擎会重试时出现。",
+          },
+        },
+        token_usage: {
+          summary: "最近一次请求和整个 Session 到目前为止计入的 Token。",
+          fields: {
+            session: "Session 的累计数。",
+            "session.cache_read": "从提供方缓存读取的输入 Token。",
+            "session.cache_write": "写入缓存的输入 Token。",
+            "session.output": "输出 Token，含思考。",
+            "session.total": "计入的全部 Token。",
+            request: "这次请求的计数。",
+            "request.cache_read": "这次请求从缓存读取的输入 Token。",
+            "request.cache_write": "这次请求写入缓存的输入 Token。",
+            "request.output": "这次请求的输出 Token，含思考。",
+            "request.total": "这次请求计入的全部 Token。",
+          },
+        },
+        abort: {
+          summary: "运行被中止：调用方打断，或 Task 到达轮数上限。",
+          fields: {
+            error_code: "user_abort 表示被打断，max_turns 表示到达轮数上限。",
+            error_message: "细节，例如到达的上限。",
+            reason: "旧 Trace 里的文字原因；没有 error_code 时才读它。",
+          },
+        },
+        approval_decision: {
+          summary: "对一次需要审批的工具调用的答复。",
+          fields: { decision: "allow、deny，或 forbidden（被项目的命令策略拒绝）。" },
+        },
+        hook: {
+          summary: "Hook 在某个挂载点给出的答复。",
+          fields: {
+            hook: "挂载点：stop、pre_tool_use 或 user_prompt。",
+            name: "Hook 注册的名字。",
+            decision: "stop 点上为 continue 或 stop，工具调用前为 allow 或 deny。",
+            reason: "Hook 写给人看的一行说明。",
+            output: "Hook 自己的记录，只含标量。",
+          },
+        },
+        compaction_begin: {
+          summary: "上下文开始压缩。",
+          fields: {
+            reason: "原因：context、turns 或 manual。",
+            mode: "summarize 或 discard。",
+            context: "开始时上下文的 Token 数。",
+            turns: "开始时 Session 累计的轮数。",
+          },
+        },
+        compaction_end: {
+          summary: "压缩结束。",
+          fields: {
+            reason: "原因：context、turns 或 manual。",
+            mode: "summarize 或 discard。",
+            status: "completed，或放弃的方式：aborted、retryable、fatal；未完成时保留原上下文。",
+            attempt: "最后一次尝试的序号。",
+          },
+        },
+        tool_list_ready: {
+          summary: "Session 的工具定义，与发给模型的一致；在 MCP 服务器连接完成后送出。",
+          fields: {
+            tools: "全部工具定义。",
+            "tools[].name": "工具名。",
+            "tools[].description": "工具的用途。",
+            "tools[].parameters": "参数，JSON Schema 形式。",
+          },
+        },
+        mcp_connect_begin: {
+          summary: "开始连接 MCP 服务器。",
+          fields: { servers: "正在连接的服务器。" },
+        },
+        mcp_connect_end: {
+          summary: "MCP 服务器连接结束，可能有部分失败。",
+          fields: {
+            status: "completed、fatal（有服务器失败并被跳过）或 aborted。",
+            results: "每个服务器一条结果。",
+            "results[].server": "服务器名。",
+            "results[].transport": "stdio、http 或 sse。",
+            "results[].status": "completed、fatal 或 aborted。",
+            "results[].duration_ms": "连接与发现工具所用的时间。",
+            "results[].tools": "发现的工具数，在 completed 时出现。",
+            "results[].error_code":
+              "失败原因：connect_failed、mcp_needs_setup 或 mcp_sign_in_required。",
+            "results[].error_message": "失败的原始文字。",
+          },
+        },
+        subagent: {
+          summary: "在父 Session 的 Trace 里指向它启动的子 Session；只写入 Trace，不在流中发送。",
+          fields: { session_id: "子 Session 的 id。" },
+        },
+      },
+    },
+
+    /** Two steps to a first run (sections/amsp/quickstart.tsx); the code is lib/amsp-quickstart.ts. */
+    quickstart: {
+      title: "从零到第一次运行",
+      enable: {
+        title: "打开 Agent 的 API",
+        /** The Web App's labels, verbatim from packages/web's zh dictionary. */
+        text: "在 PenguinHarness 中打开「智能体」，选中一个 Agent，进入「API」标签页，打开「开启 API 访问」，再点「新建密钥」。",
+        link: "Agent API 使用指南",
+      },
+      run: {
+        title: "运行它",
+        label: "运行方式",
+        typescript: "TypeScript",
+        curl: "curl",
+        sdkNote:
+          "stream() 发起运行并返回它：遍历它拿到每条记录，再 await result() 得到结果。run() 只返回结果。",
+      },
+      curl: {
+        response: "响应",
+        note: "响应就是这次运行本身：先是一个 ping，随后每条记录一个带 id 的事件，最后以 data: [DONE] 结束。Session 的首条消息里，第一条记录是 session_meta，其 session_id 即这个 Session 的 id；延续对话时把它作为 session_id 传回。",
+        elided: "每条记录一个事件",
+      },
+    },
+
+    links: {
+      title: "继续阅读",
+      items: {
+        reference: { name: "AMSP 协议参考", text: "逐条说明每种记录与控制帧" },
+        records: { name: "AMSP 记录", text: "每种记录的 payload 字段" },
+        guide: { name: "Agent API 使用指南", text: "密钥、审批模式、路由与错误" },
+        npm: { name: "@prismshadow/amsp", text: "npm 上的 SDK，适用于 Node 24 与浏览器" },
+        source: { name: "源码", text: "packages/amsp，Apache-2.0" },
+      },
+    },
   },
 };
 

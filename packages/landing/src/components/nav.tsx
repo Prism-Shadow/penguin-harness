@@ -38,6 +38,13 @@ export function Nav() {
       active: pathname === "/download",
       render: routeLink,
     },
+    {
+      id: "amsp",
+      href: "/amsp",
+      label: S.nav.amsp,
+      active: pathname === "/amsp" || pathname === "/amsp/",
+      render: routeLink,
+    },
     { id: "docs", href: DOCS_URL, label: S.nav.docs },
     { id: "gallery", href: galleryUrl(locale), label: S.nav.gallery },
   ];

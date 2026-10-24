@@ -34,6 +34,11 @@ export function galleryUrl(locale: "zh" | "en"): string {
   return `${GALLERY_URL}?lang=${locale}`;
 }
 
+/** The AMSP page's outside links: the SDK on npm and its source, and MMSP's own site. */
+export const AMSP_NPM_URL = "https://www.npmjs.com/package/@prismshadow/amsp";
+export const AMSP_SOURCE_URL = `${REPO_URL}/tree/main/packages/amsp`;
+export const MMSP_URL = "https://mmsp.penguin.ooo/";
+
 /**
  * One-line installer (Linux / macOS, x64 / arm64, bundled Node runtime).
  * penguin.ooo/install.sh is this site's own public/install.sh — a thin forwarder
