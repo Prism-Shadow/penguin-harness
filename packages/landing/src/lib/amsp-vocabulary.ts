@@ -95,14 +95,13 @@ export function kindEntry(id: RecordKind): KindEntry {
 }
 
 /**
- * The control frames: SSE events with a name and no id, which move no resume position and are
- * never replayed. `ping` opens a run stream and beats every 20 seconds; `[DONE]` is a run
- * stream's last line. One line each: removing a frame here removes it from the page and from the
- * protocol type.
+ * The control frames: `ping`, an SSE event with a name and no id, which moves no resume
+ * position and is never replayed, opens a run stream and beats every 20 seconds; `[DONE]` is a
+ * run stream's last line. One line each: a frame removed here leaves the page and the protocol
+ * type.
  */
 export const CONTROL_FRAMES = [
   { id: "ping", wire: "event: ping\ndata: {}" },
-  { id: "resync_required", wire: "event: resync_required\ndata: {}" },
   { id: "done", wire: "data: [DONE]" },
 ] as const;
 

@@ -525,10 +525,9 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       head: { field: "字段", type: "类型", required: "必填", meaning: "含义", example: "示例值" },
       required: "必填",
       optional: "可选",
-      frameNote: "控制帧是带名字、不带 id 的 SSE 事件：它不推进续传位置，也不会被重放。",
+      frameNote: "控制帧不带 id：它不推进续传位置，也不会被重放。",
       frames: {
         ping: "流一打开即发送，因此是运行流的第一行；此后每 20 秒一次。",
-        resync_required: "续传用的 Last-Event-ID 已被挤出缓冲：重读历史后继续读这条流。",
         done: "运行流的最后一行。",
       },
       /** What a field means wherever it appears, unless the record has its own words for it. */

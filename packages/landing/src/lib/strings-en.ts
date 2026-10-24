@@ -525,11 +525,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       required: "required",
       optional: "optional",
       frameNote:
-        "A control frame is a named SSE event with no id: it moves no resume position and is never replayed.",
+        "A control frame carries no id: it moves no resume position and is never replayed.",
       frames: {
         ping: "Sent as soon as a stream opens, so a run stream's first line, then every 20 seconds.",
-        resync_required:
-          "The Last-Event-ID to resume from has left the buffer: read the history again, then keep reading the stream.",
         done: "A run stream's last line.",
       },
       common: {

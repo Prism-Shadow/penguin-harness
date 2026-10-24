@@ -273,7 +273,7 @@ export function foldRun(steps: readonly RunStep[], count: number): ReplayState {
   for (const step of steps.slice(0, count)) {
     switch (step.kind) {
       case "control":
-        // A heartbeat or a resync notice: it adds nothing to the run.
+        // The heartbeat: it adds nothing to the run.
         break;
       case "record":
         fold(step.record);
