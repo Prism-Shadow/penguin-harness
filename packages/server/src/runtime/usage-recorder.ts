@@ -18,7 +18,7 @@ import type { OmniMessage } from "@prismshadow/penguin-core";
 import { formatLocalDate } from "../internal/dates.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { UsageRecording, UsageStore } from "../mechanisms/observability.js";
+import type { UsageQueries, UsageRecording, UsageStore } from "../mechanisms/observability.js";
 
 /** Attribution context for one record (top-level Session scope). */
 export interface UsageContext {
@@ -41,6 +41,8 @@ export class UsageRecorder implements UsageRecording {
   private readonly originModels = new Map<string, { provider: string; modelId: string }>();
 
   @Use() private readonly usage!: UsageStore;
+  /** Optional: the row-cache invalidation hook. A missing figure costs nothing; a failed run costs everything. */
+  @Use() private readonly queries?: UsageQueries;
   @Use() private readonly clock!: Clock;
 
   /** Consume one outgoing message; messages other than session_meta / token_usage are a no-op. */
@@ -98,6 +100,10 @@ export class UsageRecorder implements UsageRecording {
         output: r.output,
         total: r.total,
       });
+      // The aggregated rows are cached for a short TTL; new tokens have landed, so those rows
+      // are now behind. Optional-chained on purpose — telemetry must never fail a run over a
+      // cache, and the TTL alone bounds how stale a figure can be.
+      this.queries?.invalidate(base.projectId);
       return;
     }
     // A failed request (request_end and not completed, usually with no token_usage):
@@ -112,6 +118,7 @@ export class UsageRecorder implements UsageRecording {
         total: 0,
         status: payload.status,
       });
+      this.queries?.invalidate(base.projectId);
     }
   }
 }

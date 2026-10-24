@@ -129,6 +129,120 @@ describe("usage-recorder", () => {
   });
 });
 
+/**
+ * The pre-aggregated read path. usage_daily_rollup exists so a page does not re-scan every usage
+ * row per request, and it is only allowed to answer where folding a day's rows changes no figure
+ * — so both halves are pinned here: a rollup that is merely fast is a wrong cost, and one that is
+ * merely correct is the thing it replaces.
+ */
+describe("usage rollup (the pre-aggregated read path)", () => {
+  let db: DatabaseSync;
+  let repo: UsageRepo;
+
+  beforeEach(() => {
+    db = openDatabase(":memory:");
+    repo = wire(UsageRepo, { db: db });
+  });
+  afterEach(() => db.close());
+
+  function insert(date: string, opts: Partial<Parameters<UsageRepo["insert"]>[0]> = {}): void {
+    repo.insert({
+      ts: `${date}T00:00:00.000Z`,
+      date,
+      projectId: "p1",
+      agentId: "a1",
+      sessionId: "s1",
+      originSessionId: null,
+      modelId: "m1",
+      provider: "custom",
+      cacheRead: 10,
+      cacheWrite: 1,
+      output: 5,
+      total: 100,
+      ...opts,
+    });
+  }
+
+  /** Row identity for comparison, so GROUP BY's own row order cannot decide the test. */
+  const byKey = <T>(rows: T[], id: (r: T) => string): T[] =>
+    [...rows].sort((a, b) => id(a).localeCompare(id(b)));
+  const byRef = (r: { provider: string; modelId: string }): string => `${r.provider}|${r.modelId}`;
+
+  it("the rollup answers exactly what usage_records answers, without reading it", () => {
+    insert("2026-07-06");
+    insert("2026-07-06"); // same key as the row above: these two fold into one
+    insert("2026-07-06", { modelId: "m2" });
+    insert("2026-07-06", { sessionId: "s2" });
+    insert("2026-07-05", { agentId: "a2" });
+    const day = { from: "2026-07-05", to: "2026-07-06" };
+
+    // Writes fold as they land (an UPSERT, not a rebuild later): five records, four keys.
+    expect(db.prepare("SELECT COUNT(*) AS n FROM usage_records").get()!.n).toBe(5);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM usage_daily_rollup").get()!.n).toBe(4);
+
+    // Every shape the service reads has a rollup counterpart, and each has to return the figures
+    // the raw table returns — otherwise a page's cost would depend on which path answered it.
+    const rawBucket = byKey(repo.bucketByModel("p1", day, []), byRef);
+    const rollupBucket = byKey(repo.rollupBucketByModel("p1", day), byRef);
+    expect(rollupBucket).toEqual(rawBucket);
+    const byGroup = (r: { key: string; provider: string; modelId: string }): string =>
+      `${r.key}|${byRef(r)}`;
+    for (const groupBy of ["date", "agent", "model", "session"] as const) {
+      expect(byKey(repo.rollupGroupsByModel("p1", groupBy, day), byGroup)).toEqual(
+        byKey(repo.groupsByModel("p1", groupBy, day, []), byGroup),
+      );
+    }
+    expect(byKey(repo.rollupSeriesByModel("p1", day), byGroup)).toEqual(
+      byKey(repo.seriesByModel("p1", "day", day, []), byGroup),
+    );
+    const byAgent = (r: { key: string; agentId: string }): string => `${r.key}|${r.agentId}`;
+    expect(byKey(repo.rollupAgentSeries("p1", day), byAgent)).toEqual(
+      byKey(repo.agentSeries("p1", "day", day), byAgent),
+    );
+    // `requests` is the one figure a fold can silently move — five requests live in four rollup
+    // rows, so a reader that counts rows instead of summing the stored count reports 4.
+    const requests = (rows: Array<{ requests: number }>) =>
+      rows.reduce((n, r) => n + r.requests, 0);
+    expect(requests(rollupBucket)).toBe(5);
+
+    // The observable that says a rollup read is not a scan of the table: with usage_records
+    // emptied, the rollup still answers the same figures, while the raw read is correctly empty.
+    db.prepare("DELETE FROM usage_records").run();
+    expect(byKey(repo.rollupBucketByModel("p1", day), byRef)).toEqual(rawBucket);
+    expect(repo.bucketByModel("p1", day, [])).toEqual([]);
+  });
+
+  it("an emptied rollup is refilled by the next read, from usage_records", () => {
+    insert("2026-07-06");
+    const raw = byKey(repo.bucketByModel("p1"), byRef);
+    // No data lives only in the rollup, so dropping it is recoverable: the next read rebuilds it
+    // from usage_records, which is the whole point of it being a cache.
+    db.prepare("DELETE FROM usage_daily_rollup").run();
+    expect(repo.rollupSafeFor({}, [])).toBe(true);
+    expect(byKey(repo.rollupBucketByModel("p1"), byRef)).toEqual(raw);
+  });
+
+  it("a timestamp window or a session subset is refused rather than folded", () => {
+    insert("2026-07-06");
+    // Both cuts are finer than the rollup's key (a day, and the Session set), so the answer would
+    // be wrong; the caller is told to read usage_records instead.
+    expect(repo.rollupSafeFor({ fromTs: "2026-07-06T00:00:00.000Z" }, [])).toBe(false);
+    expect(repo.rollupSafeFor({ sessionIds: ["s1"] }, [])).toBe(false);
+    // A price tier is decided per record from its own ts, which the day-grained rollup does not
+    // carry, so any tier in play disqualifies it too.
+    expect(
+      repo.rollupSafeFor({}, [
+        {
+          refs: [{ provider: "custom", modelId: "m1" }],
+          utcOffsetMinutes: 480,
+          peakDays: [1, 2, 3, 4, 5],
+          peakHours: [[9, 12]],
+        },
+      ]),
+    ).toBe(false);
+  });
+});
+
 describe("usage-service (cost computed on the fly)", () => {
   let db: DatabaseSync;
   let repo: UsageRepo;
@@ -247,6 +361,115 @@ describe("usage-service (cost computed on the fly)", () => {
     expect(res.summary.total.cost).toBeCloseTo(ROW_COST * 2, 12);
     expect(res.summary.total.hasUncosted).toBe(true);
     expect(res.summary.last7d.hasUncosted).toBe(false);
+  });
+
+  // ---- The row cache: it must never make a PRICE look stale, and must never outlive the
+  // tokens behind it. Both halves are asserted here, because the bug they guard against is
+  // silent: a cost figure that lags its rate is plausible-looking and wrong.
+  it("a price added after a query shows up on the NEXT one, with no TTL wait", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    insert("2026-07-06", { modelId: "m-fresh" });
+    const svc = service(now);
+
+    // First read prices nothing: no rate configured yet.
+    const before = await svc.query("p1", { groupBy: "date" });
+    expect(before.summary.total.cost).toBeNull();
+    expect(before.summary.total.hasUncosted).toBe(true);
+
+    // The rate arrives. The cached ROWS are still reused (that is the point), but the pricing
+    // runs again on every read — so the very next call already sees it.
+    pricing["m-fresh"] = { cacheRead: 1, cacheWrite: 1, output: 1 };
+    const after = await svc.query("p1", { groupBy: "date" });
+    expect(after.summary.total.hasUncosted).toBe(false);
+    expect(after.summary.total.cost).toBeCloseTo((10 + 1 + 5) / 1e6, 12);
+  });
+
+  it("an edited price replaces the old figure immediately", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    insert("2026-07-06", { modelId: "m-edit" });
+    pricing["m-edit"] = { cacheRead: 0, cacheWrite: 0, output: 1 };
+    const svc = service(now);
+    const first = await svc.query("p1", { groupBy: "date" });
+    const firstCost = first.summary.total.cost;
+    expect(firstCost).not.toBeNull();
+
+    // Same rows, new rate: the token sums are unchanged, so only a re-priced read can tell.
+    pricing["m-edit"] = { cacheRead: 0, cacheWrite: 0, output: 1000 };
+    const second = await svc.query("p1", { groupBy: "date" });
+    expect(second.summary.total.cost).toBeGreaterThan(firstCost as number);
+  });
+
+  it("usage arriving through the recorder drops the cached rows immediately", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    insert("2026-07-06", { modelId: "m-live" });
+    pricing["m-live"] = { cacheRead: 1, cacheWrite: 1, output: 1 };
+    const svc = service(now);
+    const first = await svc.query("p1", { groupBy: "date" });
+    const firstTotal = first.summary.total.total;
+
+    // A request lands after the first read, recorded the way production records one — the
+    // recorder invalidating the cache being what ends the staleness. Without that step the
+    // cached rows would keep answering with the earlier sum until the TTL expired.
+    svc.invalidate("p1");
+    insert("2026-07-06", { modelId: "m-live", total: 777 });
+    const second = await svc.query("p1", { groupBy: "date" });
+    expect(second.summary.total.total).toBe((firstTotal as number) + 777);
+  });
+
+  it("a cached row-set is never reused across a different window", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    insert("2026-07-06", { modelId: "m-w" });
+    const svc = service(now);
+    // Prime the cache with one window...
+    await svc.query("p1", { groupBy: "date" });
+    // ...then ask about a range that excludes that day. If the key missed the range, the
+    // primed answer would come back and the excluded day would appear in the total.
+    const other = await svc.query("p1", { groupBy: "date", from: "2026-07-20", to: "2026-07-25" });
+    expect(other.summary.total.total).toBe(0);
+  });
+
+  it("two different windows never share a cached answer", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    insert("2026-07-06", { modelId: "m-k" });
+    const svc = service(now);
+    const today = await svc.query("p1", { groupBy: "date" });
+    const ranged = await svc.query("p1", { groupBy: "date", from: "2026-07-01", to: "2026-07-31" });
+    // Same underlying rows here, but the two queries are separate keys; a leak would show up
+    // as one response silently answering for the other's parameters.
+    expect(today.groups.length).toBeGreaterThan(0);
+    expect(ranged.groups.length).toBeGreaterThanOrEqual(today.groups.length);
+  });
+
+  // ---- groupLimit: the caller asks only for what it renders.
+  it("groupLimit returns only the most recent groups, newest first", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    for (let i = 1; i <= 5; i++) {
+      insert("2026-07-06", {
+        modelId: "m-g",
+        sessionId: `session-2026-07-06-00-00-0${i}-aaaaaaa${i}`,
+      });
+    }
+    const svc = service(now);
+    const all = await svc.query("p1", { groupBy: "session" });
+    const capped = await svc.query("p1", { groupBy: "session", groupLimit: 2 });
+    expect(capped.groups).toHaveLength(2);
+    // Session ids embed their creation timestamp, so string order IS chronological order.
+    expect(capped.groups.map((g) => g.key)).toEqual(
+      [...all.groups.map((g) => g.key)].sort().reverse().slice(0, 2),
+    );
+  });
+
+  it("omitting groupLimit still returns every group (the export and cost page rely on it)", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    for (let i = 1; i <= 4; i++) {
+      insert("2026-07-06", {
+        modelId: "m-a",
+        sessionId: `session-2026-07-06-00-00-0${i}-bbbbbbb${i}`,
+      });
+    }
+    const svc = service(now);
+    const all = await svc.query("p1", { groupBy: "session" });
+    expect(all.groups.length).toBe(4);
   });
 
   it("price added later: no pricing at insert time; once configured, queries price it immediately", async () => {
