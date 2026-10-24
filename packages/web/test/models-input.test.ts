@@ -652,7 +652,7 @@ describe("connectionPlaceholders (what a blank API key or base URL field says)",
   });
 
   it("falls back to the field's own hint where the group sets nothing", () => {
-    // The routed client's default endpoint is named where it is known.
+    // A variable the server reports set covers a blank key; a blank base URL uses the default.
     expect(
       connectionPlaceholders(
         draft({ provider: "deepseek", modelId: "deepseek-flash" }),
@@ -660,13 +660,9 @@ describe("connectionPlaceholders (what a blank API key or base URL field says)",
         {
           envKey: "DEEPSEEK_API_KEY",
           baseUrlRequired: false,
-          defaultBaseUrl: "https://api.deepseek.com",
         },
       ),
-    ).toEqual({
-      apiKey: S.models.apiKeyEnvHint("DEEPSEEK_API_KEY"),
-      baseUrl: S.models.baseUrlDefault("https://api.deepseek.com"),
-    });
+    ).toEqual({ apiKey: S.models.apiKeyDefault, baseUrl: S.models.baseUrlDefault });
     expect(
       connectionPlaceholders(draft({ provider: "my-group" }), undefined, {
         baseUrlRequired: true,
@@ -675,7 +671,7 @@ describe("connectionPlaceholders (what a blank API key or base URL field says)",
     // A table with a key but no URL lends the key to models without one of their own.
     expect(connectionPlaceholders(draft(), { apiKeyMasked: "sk-g…2222" }, plain)).toEqual({
       apiKey: S.models.inheritFromGroup,
-      baseUrl: S.models.baseUrlNone,
+      baseUrl: S.models.baseUrlDefault,
     });
   });
 });
