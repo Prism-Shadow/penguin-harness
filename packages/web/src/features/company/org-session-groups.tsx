@@ -56,7 +56,7 @@ import { sessionActivityLabel } from "../../lib/session-activity";
 import { apiErrorText } from "../../lib/api-error";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { writeClipboard } from "../../lib/clipboard";

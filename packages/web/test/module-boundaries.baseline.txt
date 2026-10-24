@@ -7,11 +7,9 @@ components/layout/app-layout.tsx -> features/chat/chat-page.tsx
 components/layout/app-layout.tsx -> features/chat/use-new-chat.ts
 components/layout/app-layout.tsx -> features/company/channel-sidebar.tsx
 components/layout/app-layout.tsx -> features/company/company-nav-icons.ts
+components/layout/app-layout.tsx -> features/company/index.ts
 components/layout/app-layout.tsx -> features/company/org-session-groups.tsx
 components/layout/app-layout.tsx -> features/dock/dock-state.ts
-components/layout/app-layout.tsx -> features/palette/app-palette.tsx
-components/layout/app-layout.tsx -> features/settings/shortcut-runtime.tsx
-components/layout/app-layout.tsx -> features/terminal/index.ts
 components/layout/project-dialogs.tsx -> features/chat/chat-defaults-event.ts
 components/layout/project-dialogs.tsx -> features/chat/draft-cache.ts
 components/layout/project-dialogs.tsx -> features/chat/model-select.tsx
@@ -28,6 +26,7 @@ components/layout/sidebar.tsx -> features/chat/workspace-select.tsx
 components/layout/sidebar.tsx -> features/company/channel-sidebar.tsx
 components/layout/sidebar.tsx -> features/company/company-beta.tsx
 components/layout/sidebar.tsx -> features/company/company-nav-icons.ts
+components/layout/sidebar.tsx -> features/company/index.ts
 components/layout/sidebar.tsx -> features/company/org-session-groups.tsx
 components/layout/sidebar.tsx -> features/company/org-switcher.tsx
 components/layout/sidebar.tsx -> features/dock/dock-state.ts
@@ -70,6 +69,7 @@ cycle: features/schedules -> features/ai-create
 cycle: features/schedules -> features/chat
 cycle: features/schedules -> features/models
 cycle: features/settings -> features/builtin-browser
+cycle: features/settings -> features/company
 cycle: features/settings -> features/dock
 cycle: features/terminal -> features/dock
 features/chat/history-load-failed.tsx -> features/machines/machine-card.tsx
@@ -80,8 +80,3 @@ features/terminal/terminal-panel.tsx -> features/dock/dock-terminal.ts
 features/terminal/terminal-panel.tsx -> features/dock/panel-context.tsx
 features/terminal/terminal-panel.tsx -> features/dock/panel-registry.ts
 lib/strings.ts -> features/models/model-sort.ts
-state/company.tsx -> features/company/channel-list.ts
-state/company.tsx -> features/company/company-beta.tsx
-state/company.tsx -> features/company/org-sessions.ts
-state/sessions.tsx -> features/builtin-browser/browser-events.ts
-state/sessions.tsx -> features/schedules/schedule-store.ts

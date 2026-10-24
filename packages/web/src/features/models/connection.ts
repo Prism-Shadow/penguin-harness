@@ -16,6 +16,7 @@ import {
   type EffectiveConnection,
   type ProviderConnectionShape,
 } from "@prismshadow/penguin-core/model-connection";
+
 import type {
   CredentialInfo,
   ProviderConnectionDto,
