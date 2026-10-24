@@ -3,7 +3,7 @@
 - **Date:** 2026-10-24
 - **Type:** refactor
 - **Scope:** `amsp`, `core`, `server`, `web`, `cli`
-- **PR:** [#1307](https://github.com/Prism-Shadow/penguin-harness/pull/1307)
+- **PR:** [#1309](https://github.com/Prism-Shadow/penguin-harness/pull/1309)
 - **Breaking:** yes — 记录都不再带 `stop_reason`；`request_end.status` 新增 `truncated`，每条 `tool_call_output` 都带必填的 `status`，轮次上限以 `abort` 记录结束 Task。
 
 [English](2026-10-24-stop-reason-request-end-status.md)

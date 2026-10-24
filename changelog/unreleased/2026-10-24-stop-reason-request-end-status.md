@@ -3,7 +3,7 @@
 - **Date:** 2026-10-24
 - **Type:** refactor
 - **Scope:** `amsp`, `core`, `server`, `web`, `cli`
-- **PR:** [#1307](https://github.com/Prism-Shadow/penguin-harness/pull/1307)
+- **PR:** [#1309](https://github.com/Prism-Shadow/penguin-harness/pull/1309)
 - **Breaking:** yes — no record carries `stop_reason` any more; `request_end.status` gained `truncated`, every `tool_call_output` carries a required `status`, and the turn cap ends a Task with an `abort` record.
 
 [中文版](2026-10-24-stop-reason-request-end-status.zh.md)
