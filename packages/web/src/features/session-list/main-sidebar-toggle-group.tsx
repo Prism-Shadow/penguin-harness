@@ -14,7 +14,7 @@ import { GroupPager } from "../../components/ui/group-list";
 import { saveGroupSet } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarWorkspaceGroupCounts } from "./main-sidebar-workspace-group-counts";
 
-/** Consecutive live main statements 83..99, called once in original hook order. */
+/** Consecutive live main statements 90..106, called once in original hook order. */
 export function useMainSidebarToggleGroup(
   scope: ReturnType<typeof useMainSidebarWorkspaceGroupCounts>,
 ) {

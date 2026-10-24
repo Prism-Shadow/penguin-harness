@@ -2,7 +2,7 @@ import { S } from "../../lib/strings";
 import { newEntityForGroupMode } from "../../components/ui/group-list";
 import type { useMainSidebarArchiveSession } from "./main-sidebar-archive-session";
 
-/** Consecutive live main statements 116..117, called once in original hook order. */
+/** Consecutive live main statements 123..124, called once in original hook order. */
 export function useMainSidebarNewEntity(scope: ReturnType<typeof useMainSidebarArchiveSession>) {
   const { groupMode } = scope;
 

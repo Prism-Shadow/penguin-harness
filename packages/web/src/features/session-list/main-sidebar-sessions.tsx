@@ -10,7 +10,7 @@ import {
 } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarInputs } from "./main-sidebar-inputs";
 
-/** Consecutive live main statements 12..22, called once in original hook order. */
+/** Consecutive live main statements 19..29, called once in original hook order. */
 export function useMainSidebarSessions(scope: ReturnType<typeof useMainSidebarInputs>) {
   const { currentProject, allSessions, allByAgent, activeSessionId, machineIds } = scope;
 

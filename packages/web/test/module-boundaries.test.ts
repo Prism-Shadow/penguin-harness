@@ -3,12 +3,13 @@
  * ratchet. The module tree checks the dependencies it can see (slots, `@Use`); a plain `import`
  * is invisible to it, so these rules are held here, over every file under `src/`:
  *
- * 1. A library — anything outside `features/` (`lib/`, `api/`, `state/`, `components/`, the root
- *    files) — imports nothing under `features/`. The one exception is the composition root,
- *    `web-root.ts`, which imports each feature's `module.ts` to list it in the tree.
- * 2. A file under `features/<a>/` reaches `features/<b>/` only through `features/<b>/index.ts`
- *    (or `index.tsx`), never one of its inner files.
- * 3. No import cycle between feature directories. An edge `features/a -> features/b` is reported
+ * 1. A library — anything outside `features/` and `web-app/` (`lib/`, `api/`, `state/`,
+ *    `components/`, the root files) — imports nothing under `features/`. The one exception is the
+ *    composition root, `web-root.ts`, which imports each feature's `module.ts` to list it in the
+ *    tree.
+ * 2. A file of one module directory — `features/<a>/`, or `web-app/`, the frame's module — reaches
+ *    another only through its `index.ts` (or `index.tsx`), never one of its inner files.
+ * 3. No import cycle between module directories. An edge `features/a -> features/b` is reported
  *    when it lies on a cycle, i.e. both ends sit in the same strongly connected component.
  * 4. A `module.ts` or `<name>.module.ts` (a module class) is imported by the composition root
  *    and nothing else: a module reaches another through slots and interfaces, never through its
@@ -67,8 +68,12 @@ const COMPOSITION_ROOT = "web-root.ts";
 /** Whether a file declares a module class. */
 const isModuleFile = (file: string): boolean => /(^|\/|\.)module\.ts$/.test(file);
 
-/** `features/<name>` for a file under it, else null (the file is a library). */
-function featureOf(file: string): string | null {
+/**
+ * The module directory a file belongs to: `features/<name>`, or `web-app` for the frame, whose
+ * modules (the web-app and its sidebar) reach features through their index files like any feature;
+ * null for a library.
+ */
+function moduleDirOf(file: string): string | null {
   if (file.startsWith("web-app/")) return "web-app";
   const match = /^features\/([^/]+)\//.exec(file);
   return match === null ? null : `features/${match[1]}`;
@@ -130,7 +135,7 @@ function scan(
   const unresolved: string[] = [];
   const featureEdges = new Map<string, Set<string>>();
   for (const file of files) {
-    const own = featureOf(file);
+    const own = moduleDirOf(file);
     for (const spec of specifiers(read(file))) {
       const target = resolveImport(file, spec, isFile);
       if (target === undefined) unresolved.push(`${file}: ${spec}`);
@@ -139,16 +144,17 @@ function scan(
         violations.add(`${file} -> ${target}`);
         continue;
       }
-      const other = featureOf(target);
+      const other = moduleDirOf(target);
       if (other === null || other === own) continue;
       if (file === COMPOSITION_ROOT && isModuleFile(target)) continue;
       if (own === null) {
-        if (other === "web-app") continue;
-        violations.add(`${file} -> ${target}`);
+        // A library may use WebApp's public surface (the router's types); never a feature.
+        if (other !== "web-app") violations.add(`${file} -> ${target}`);
         continue;
       }
-      if (!/^(features\/[^/]+|web-app)\/index\.tsx?$/.test(target))
+      if (!/^(features\/[^/]+|web-app)\/index\.tsx?$/.test(target)) {
         violations.add(`${file} -> ${target}`);
+      }
       const set = featureEdges.get(own) ?? new Set<string>();
       set.add(other);
       featureEdges.set(own, set);
@@ -236,6 +242,33 @@ describe("the import scan", () => {
       "state/sessions.tsx -> state/sessions.module.ts",
       "web-app/router.tsx -> web-app/module.ts",
       "web-root.ts -> features/chat/chat-page.tsx",
+    ]);
+  });
+
+  it("holds the web-app to a module's rules: other modules only through their index files", () => {
+    const tree: Record<string, string> = {
+      "web-app/sidebar/rail.tsx": [
+        'import { ChatDrafts } from "../../features/chat";',
+        'import { DRAFT } from "../../features/chat/chat-page";',
+      ].join("\n"),
+      "web-app/index.ts": "",
+      "web-app/router.tsx": "",
+      "features/chat/index.ts": "",
+      "features/chat/chat-page.tsx": "",
+      "features/list/list.tsx": [
+        'import { useWebAppPages } from "../../web-app";',
+        'import { AppRouter } from "../../web-app/router";',
+      ].join("\n"),
+      "main.tsx": 'import type { AppRouterProps } from "./web-app/router";',
+    };
+    const result = scan(
+      Object.keys(tree),
+      (rel) => tree[rel]!,
+      (rel) => rel in tree,
+    );
+    expect(result.violations).toEqual([
+      "features/list/list.tsx -> web-app/router.tsx",
+      "web-app/sidebar/rail.tsx -> features/chat/chat-page.tsx",
     ]);
   });
 

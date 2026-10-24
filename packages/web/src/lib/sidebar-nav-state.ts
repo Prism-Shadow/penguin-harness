@@ -16,18 +16,12 @@
  */
 
 /**
- * Page entries of the nav, in rendered order: the shell's main-nav pages (web-app/page-table.ts,
- * `navPagesOf`), passed in by the caller since they are module contributions read from the
- * booted tree. Each key names its route (`/<key>`), its S.nav label, and its NAV_ICONS glyph.
- * Some entries are admin-only and some not yet released (see below), so the sidebar renders
+ * A main-nav page as the nav reads it: WebApp's main-nav pages (web-app/page-table.ts,
+ * `navPagesOf`), passed in by the caller since they are module contributions read from the booted
+ * tree. Each key names its route (`/<key>`); its title and glyph are the page's own data. Some
+ * entries are admin-only and some not yet released (see below), so the sidebar renders
  * navKeysFor(pages, user.isAdmin), not the raw list. Traces is deliberately absent: reading a
  * Trace happens in the chat toolbar's panel switcher, which is the only place it happens.
- */
-export type NavGroupKey = "agents" | "plugins" | "models" | "machines" | "usage" | "benchmark";
-
-/**
- * A main-nav page as the nav reads it. The literal key type above is the set the strings and
- * icons are typed against; web-root.test.ts pins that no main-nav page names a key outside it.
  *
  * `admin`: the server refuses the page to a non-admin, so the sidebar does not offer it.
  * Machines installs software on another machine over ssh with the SERVER account's keys, which
@@ -45,9 +39,9 @@ export interface NavPage {
   released: boolean;
 }
 
-/** The nav as this user sees it. */
-export function navKeysFor(pages: readonly NavPage[], isAdmin: boolean): readonly NavGroupKey[] {
-  return pages.filter((p) => p.released && (isAdmin || !p.admin)).map((p) => p.key as NavGroupKey);
+/** The nav as this user sees it: page keys, in table order. */
+export function navKeysFor(pages: readonly NavPage[], isAdmin: boolean): readonly string[] {
+  return pages.filter((p) => p.released && (isAdmin || !p.admin)).map((p) => p.key);
 }
 
 /**
@@ -55,19 +49,22 @@ export function navKeysFor(pages: readonly NavPage[], isAdmin: boolean): readonl
  * route, so it is not a page; it is the one entry that is always pinned (see
  * isNavPinnable), while every page is pinned or collapsible at the user's choice.
  */
-export type NavEntryKey = "newChat" | NavGroupKey;
+export type NavEntryKey = string;
+
+/** New chat's entry key: no page is keyed so. */
+export const NEW_CHAT_ENTRY = "newChat";
 
 /** Every entry this user sees, in rendered order: New chat first, then their pages. */
 export function navEntryKeysFor(
   pages: readonly NavPage[],
   isAdmin: boolean,
 ): readonly NavEntryKey[] {
-  return ["newChat", ...navKeysFor(pages, isAdmin)];
+  return [NEW_CHAT_ENTRY, ...navKeysFor(pages, isAdmin)];
 }
 
 /** Entries pinned until the user says otherwise; every other entry, a page added later included, starts collapsible. */
 export const DEFAULT_PINNED_NAV_KEYS: ReadonlySet<NavEntryKey> = new Set<NavEntryKey>([
-  "newChat",
+  NEW_CHAT_ENTRY,
   "agents",
   "models",
   "plugins",
@@ -82,7 +79,7 @@ export type NavPinOverrides = Readonly<Partial<Record<NavEntryKey, boolean>>>;
 
 /** Whether the user may move an entry between the areas: every page may; New chat never folds away. */
 export function isNavPinnable(key: NavEntryKey): boolean {
-  return key !== "newChat";
+  return key !== NEW_CHAT_ENTRY;
 }
 
 export function isNavPinned(key: NavEntryKey, overrides: NavPinOverrides): boolean {
