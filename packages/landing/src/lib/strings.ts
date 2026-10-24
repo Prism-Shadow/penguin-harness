@@ -575,7 +575,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           fields: { thinking: "思考的文本。" },
         },
         tool_call: {
-          summary: "模型发出的一次完整工具调用。",
+          summary:
+            "模型发出的一次完整工具调用。若它所在的 Request 被提前截断，记录里是原样的参数，可能无法解析，这次调用也不会执行。",
           fields: { name: "工具名。", arguments: "参数，JSON 字符串。" },
         },
         tool_call_output: {

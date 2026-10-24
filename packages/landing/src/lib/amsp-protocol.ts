@@ -13,14 +13,12 @@
  */
 import type { ControlKind } from "./amsp-vocabulary";
 
-/** How a compaction or an MCP connect phase ended. */
-export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
-
 /**
- * How a Request ended. Output cut at its cap is `retryable` with `error_code` `output_truncated`,
- * retried like any retryable failure.
+ * How an operation ended: a Request (`request_end.status`, the one record of why it ended), a
+ * compaction, an MCP connect phase. A response cut off at its output cap is `retryable` with
+ * `error_code` `output_truncated`, retried like any retryable failure.
  */
-export type RequestEndStatus = StopReason;
+export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
 
 /** What a tool result is: it ran to its end, it failed, or it never ran or was interrupted. */
 export type ToolStatus = "completed" | "aborted" | "fatal";
@@ -189,7 +187,7 @@ export interface RequestBeginPayload {
 
 export interface RequestEndPayload extends RetryDetail {
   type: "request_end";
-  status: RequestEndStatus;
+  status: StopReason;
 }
 
 export interface TokenUsagePayload {

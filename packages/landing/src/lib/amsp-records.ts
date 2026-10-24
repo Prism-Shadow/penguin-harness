@@ -374,7 +374,7 @@ export const RECORD_DOCS: { [Id in DocId]: RecordDoc<Id> } = {
     asEvent(40, {
       type: "abort",
       error_code: "max_turns",
-      error_message: "The Task reached its turn cap (max_turns: 50).",
+      error_message: "reached max turns (50)",
     }),
     [
       type("abort"),

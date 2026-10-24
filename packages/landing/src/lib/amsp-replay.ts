@@ -17,7 +17,7 @@
 import type {
   AmspRecord,
   ModelPayload,
-  RequestEndStatus,
+  StopReason,
   StreamPhase,
   ThinkingLevel,
   TokenCounts,
@@ -50,14 +50,14 @@ export interface ReplayRequest {
 
 /** A run's outcome, and the facts in the records it was read from. */
 export interface RunOutcome {
-  status: RequestEndStatus;
+  status: StopReason;
   /** `internal` for a run that did not reach its end; else the abort's or the terminal record's. */
   errorCode?: string;
   /** The last `task_begin` has its `task_end`. */
   closed: boolean;
   aborted: boolean;
   /** How the main Session's last `request_end` ended. */
-  lastRequestEnd: RequestEndStatus | null;
+  lastRequestEnd: StopReason | null;
 }
 
 export interface ReplayState {
@@ -69,7 +69,7 @@ export interface ReplayState {
   outcome: RunOutcome | null;
   /**
    * The run's usage, summed over its `token_usage` records, once `[DONE]` has arrived; none when
-   * no Request completed (an interrupted Request reports none).
+   * no record reported usage.
    */
   usage: TokenCounts | null;
   /** From the first `task_begin` to the last `task_end`. */
@@ -99,8 +99,8 @@ export function runOutcome(records: readonly AmspRecord[]): RunOutcome {
   const main = records.filter((record) => record.origin === undefined);
   let task: "none" | "open" | "closed" = "none";
   let abort: { errorCode?: string } | null = null;
-  let terminal: { status: RequestEndStatus; errorCode?: string } | null = null;
-  let lastRequestEnd: RequestEndStatus | null = null;
+  let terminal: { status: StopReason; errorCode?: string } | null = null;
+  let lastRequestEnd: StopReason | null = null;
   for (const record of main) {
     if (record.type !== "event_msg") continue;
     const p = record.payload;

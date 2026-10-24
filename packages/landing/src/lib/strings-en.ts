@@ -579,7 +579,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           fields: { thinking: "The thinking text." },
         },
         tool_call: {
-          summary: "A complete tool call the model made.",
+          summary:
+            "A complete tool call the model made. One whose Request was cut short holds the raw arguments, which may not parse, and never runs.",
           fields: { name: "The tool's name.", arguments: "The arguments, as a JSON string." },
         },
         tool_call_output: {
