@@ -2923,5 +2923,4 @@ export const clearBuiltinBrowserData = (
     server: null,
   });
 
-export const getContributions = () =>
-  apiFetch<import("@prismshadow/penguin-server/api").ContributionsResponse>("/api/contributions");
+export const getContributions = () => apiFetch<ContributionsResponse>("/api/contributions");

@@ -30,7 +30,8 @@
  * themes restyle the page through them: the counts' `Card` is squared and unfilled in Console and
  * softened in Frost, the section title is the theme's eyebrow, the h1 is its display title.
  */
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useState } from "react";
+import type { ReactNode } from "react";
 
 import { Link } from "react-router";
 import {
@@ -47,7 +48,9 @@ import {
 import { VersionStamp } from "../../components/account/version-stamp";
 import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { S } from "../../lib/strings";
-import { NAV_ICONS } from "../../lib/nav-icons";
+import { NAV_ICONS, glyphOf } from "../../lib/nav-icons";
+import { formatMonthDay } from "../../lib/format";
+
 import { versionBadgeFor } from "../../lib/update-flow";
 import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { useVersionInfo } from "../../lib/use-version-info";
@@ -106,7 +109,7 @@ export function StartDashboard({
                 each as wide as the widest count needs, so the panel reads as one even strip. */}
             <ul className="grid grid-cols-3 divide-x divide-line-muted">
               <StatCount
-                glyph={NAV_ICONS.agents}
+                glyph={glyphOf("robot")}
                 label={S.chat.start.metrics.agents}
                 to="/agents"
                 value={agentsLoading ? null : agents.length}
@@ -119,7 +122,7 @@ export function StartDashboard({
                 value={toolkits.value?.length ?? null}
               />
               <StatCount
-                glyph={NAV_ICONS.benchmark}
+                glyph={glyphOf("trophy")}
                 label={S.chat.start.metrics.benchmarks}
                 to="/benchmark"
                 value={benchmarks.benchmarks?.length ?? null}

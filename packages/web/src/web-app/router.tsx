@@ -38,7 +38,7 @@ import { useRuntimeLanguages } from "../lib/use-runtime-languages";
 import { ProjectProvider } from "../state/project";
 import { MachinesProvider } from "../state/machines";
 import { SessionsProvider } from "../state/sessions";
-import { AppLayout } from "../components/layout/app-layout";
+import { AppLayout } from "./app-layout";
 import { LoginPage } from "../pages/login";
 import { webAppDeps } from "./deps";
 function RequireAuth() {

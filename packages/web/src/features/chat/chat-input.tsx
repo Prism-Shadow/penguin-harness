@@ -139,7 +139,6 @@ import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "../../lib/permission-level";
 import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
-
 import { sameModelRef } from "../models";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { employeesLast, isEmployee } from "../agents";

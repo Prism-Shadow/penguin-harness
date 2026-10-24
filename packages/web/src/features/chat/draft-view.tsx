@@ -74,7 +74,6 @@ import { goalPluginGate } from "./goal-plugin-gate";
 import { discardUnstartedSession } from "./unstarted-session";
 import { APPROVAL_MODES } from "./approval-mode";
 import { adoptDockScope, setDockConversation } from "../dock";
-
 import { StartDashboard } from "./start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "./draft-cache";
 

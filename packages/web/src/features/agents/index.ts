@@ -1,3 +1,7 @@
+export { dropsEmployeeGroup } from "./agent-employment";
+
+export { employmentsOf } from "./agent-employment";
+
 export { downloadArchive } from "./archive-download";
 
 export { classifyImportSource } from "./skill-import-source";

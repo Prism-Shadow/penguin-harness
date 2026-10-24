@@ -1,5 +1,5 @@
 /**
- * The sidebar's manual order of its groups (Workspace folders / Agents), lib/group-order.ts.
+ * The sidebar's manual order of its groups (Workspace folders / Agents), features/session-list/group-order.ts.
  *
  * - Given time mode, an order is neither stored nor read back: its buckets are a fixed ladder.
  * - Given no Project or nothing stored, the order is empty and reading writes nothing.
@@ -22,7 +22,7 @@ import {
   orderGroups,
   saveGroupOrder,
   type GroupOrderStorage,
-} from "../src/lib/group-order";
+} from "../src/features/session-list/group-order";
 
 import { TEMP_WORKSPACE_GROUP_KEY, groupSessionsByWorkspace } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
