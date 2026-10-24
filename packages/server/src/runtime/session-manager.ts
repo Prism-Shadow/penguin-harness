@@ -48,6 +48,7 @@ import {
   parseUserSteeringText,
   tracesDir,
   userText,
+  loadProjectConfig,
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
@@ -157,6 +158,47 @@ function compactUnavailable(why: Exclude<CompactAvailability, "ok">): HttpError 
  * that broke — and is rethrown, so it reaches the 500 path and its logging instead of being
  * dressed up as a target problem.
  */
+/**
+ * Request-end codes worth moving models over: the transport said no, not the request —
+ * a 429, or a reconnect ladder the retries did not recover (`timeout`/`network`/
+ * `connect_failed`). Config/content codes (`auth`, `rejected`, `malformed`,
+ * `unsupported`, `image_rejected`) are deliberately absent: a model that refuses the
+ * request refuses it on every model, so moving changes nothing for them.
+ */
+const FAILOVER_ELIGIBLE_CODES: ReadonlySet<string> = new Set([
+  "rate_limited",
+  "timeout",
+  "network",
+  "connect_failed",
+]);
+
+/**
+ * Whether a run's last request end is worth moving models over (see
+ * FAILOVER_ELIGIBLE_CODES).
+ */
+export function isFailoverEligibleEnd(errorCode: string | undefined): boolean {
+  return errorCode !== undefined && FAILOVER_ELIGIBLE_CODES.has(errorCode);
+}
+
+/**
+ * The next model a failed-over Session should run on: the first entry of the Project's
+ * fallback chain that is neither the model the Session is already on nor one it has already
+ * been moved onto. Undefined when the chain is unset or exhausted, which is when the turn
+ * ends as it always has rather than cycling.
+ */
+export function nextFailoverTarget(
+  chain: readonly ModelRefDto[],
+  current: { provider: string; modelId: string },
+  tried: ReadonlySet<string>,
+): { provider: string; modelId: string } | undefined {
+  for (const ref of chain) {
+    if (ref.provider === current.provider && ref.modelId === current.modelId) continue;
+    if (tried.has(`${ref.provider}/${ref.modelId}`)) continue;
+    return { provider: ref.provider, modelId: ref.modelId };
+  }
+  return undefined;
+}
+
 function switchRefusal(err: unknown, ref: ModelRefDto): HttpError {
   if (!(err instanceof ModelSwitchRefusedError)) throw err;
   const message =
@@ -334,6 +376,21 @@ export interface SessionLoader {
  * `opts.pathPrepend` the directories every command of a resumed Session finds at the front
  * of its PATH (the harness's own CLI shim — see CreateAgentOptions.pathPrepend).
  */
+/**
+ * Whether the Project's config carries a fallback chain: only then is a rate limit worth
+ * ending a turn for, since only then is there somewhere else to run it (see
+ * ProjectConfig.model_fallback_chain). A config that cannot be read answers false — a
+ * Session that cannot be loaded is a bigger problem than how it handles a 429.
+ */
+async function projectHasFallbackChain(root: string, projectId: string): Promise<boolean> {
+  try {
+    const cfg = await loadProjectConfig(root, projectId);
+    return (cfg.model_fallback_chain?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function createCoreSessionLoader(
   root: string,
   sources?: SessionOrigins,
@@ -368,7 +425,10 @@ export function createCoreSessionLoader(
         // config / Trace missing session_meta, etc.) are converged to 409, preserving
         // the original message rather than bubbling up as 500.
         try {
-          const session = await agent.resumeSession({ sessionId: row.sessionId });
+          const session = await agent.resumeSession({
+            sessionId: row.sessionId,
+            failoverOnRateLimit: await projectHasFallbackChain(root, row.projectId),
+          });
           // The row's stored level — the knob position the user last chose — restored onto
           // the runtime as a plain assignment: it rides the resumed Session's requests.
           if (row.thinkingLevel) session.thinkingLevel = row.thinkingLevel;
@@ -404,6 +464,7 @@ export function createCoreSessionLoader(
           workspaceDir: row.workspace,
           modelId: row.modelId,
           provider: row.provider,
+          failoverOnRateLimit: await projectHasFallbackChain(root, row.projectId),
           // The rebuilt Session records that source in its fresh session_meta (an unknown one
           // is core's default, `user`), and starts its first context at the row's pinned level.
           ...(knownSource !== undefined ? { source: knownSource } : {}),
@@ -476,6 +537,12 @@ export interface SessionManagerDeps {
    * the desk. Optional; unit tests that do not wire it get nothing.
    */
   onHumanInput?: (sessionId: string) => void;
+  /**
+   * The Project's model fallback chain, in priority order: where a failed-over Session is
+   * moved next (see `RuntimeEntry.pendingFailover`). Absent = no failover, which is what an
+   * assembly that predates it gets.
+   */
+  fallbackChainOf?: (projectId: string) => Promise<ModelRefDto[]>;
 }
 
 /**
@@ -556,6 +623,21 @@ export interface RuntimeEntry {
    * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
    */
   followUps: QueuedFollowUp[];
+  /**
+   * The model move this Session owes itself: set when a turn ended on a transport failure
+   * and the Project's fallback chain still has somewhere to run it (see queueFailover). The
+   * move happens at a Task boundary, and the resent turn rides the queue behind it.
+   */
+  pendingFailover?: { provider: string; modelId: string };
+  /** Models this Session has already been moved onto by failover, so a chain that fails everywhere stops. */
+  failoverTried: Set<string>;
+  /** How the last LLM request of the latest run ended, for the failover decision above. */
+  lastRequestEnd?: { rateLimited: boolean; errorCode?: string };
+  /**
+   * Snapshot of `lastRequestEnd` taken at run end, before a queued follow-up can start
+   * its own Task and clear the field (see `drive`'s finally and `launchTask`).
+   */
+  lastRequestEndSnapshot?: { rateLimited: boolean; errorCode?: string };
   /**
    * The running Task's input messages, held from launch until the run ends. The engine
    * writes these exact envelopes to the Trace only after the session bootstrap (MCP
@@ -965,6 +1047,7 @@ export class SessionManager {
       generation: this.generationOf(row.projectId, row.agentId),
       followUps: [],
       pendingInputs: [],
+      failoverTried: new Set(),
       pendingBootstrap: [],
       pendingSteering: [],
       returnedSteering: [],
@@ -1406,6 +1489,9 @@ export class SessionManager {
     // its own connect phase, and a stale aborted pair would render as an extra row.
     entry.pendingInputs = [...entry.pendingInputs, ...input];
     entry.pendingBootstrap = [];
+    // Fresh run, fresh failover decision: a switch/compaction drive may have left its own
+    // last request end behind (only Task runs consume it in afterRun).
+    entry.lastRequestEnd = undefined;
     this.publishState(entry, "running");
 
     const approve = this.entryApprove(entry);
@@ -1420,7 +1506,78 @@ export class SessionManager {
       .filter(isPlainText("user"))
       .map((m) => m.payload.text)
       .join("\n");
-    entry.running = this.drive(entry, gen, { userExcerpt, echo: input });
+    entry.running = this.drive(entry, gen, { userExcerpt, echo: input }).then(() =>
+      this.afterRun(entry, input),
+    );
+  }
+
+  /**
+   * A run just ended: when the turn came back on a transport failure and the Project's
+   * fallback chain still has somewhere to run it, queue the move and the resent turn.
+   *
+   * The move itself happens at the next Task boundary (`startQueuedFollowUp` → `runFailover`):
+   * switching a Session closes its context and opens another, which is not something to do
+   * from inside the run that just ended.
+   */
+  private async afterRun(entry: RuntimeEntry, input: AmspRecord[]): Promise<void> {
+    try {
+      const end = entry.lastRequestEndSnapshot ?? entry.lastRequestEnd;
+      entry.lastRequestEndSnapshot = undefined;
+      entry.lastRequestEnd = undefined;
+      if (!isFailoverEligibleEnd(end?.errorCode) || input.length === 0) return;
+      const target = await this.nextFailoverTarget(entry);
+      if (target === undefined) {
+        // The run's finally held the follow-up launcher for a move that never queued:
+        // start the ordinary queued input now so it is not stranded.
+        if (entry.status === "idle" && entry.followUps.length > 0)
+          void this.startQueuedFollowUp(entry.sessionId);
+        return;
+      }
+      entry.pendingFailover = target;
+      entry.failoverTried.add(`${target.provider}/${target.modelId}`);
+      // The resent turn goes AHEAD of whatever the user queued: it is the turn that did not
+      // finish, not a new one.
+      entry.followUps.unshift({ id: randomUUID(), input, recall: recallStoreOf(input) });
+      this.log(
+        `[failover] ${entry.sessionId} moves to ${target.provider}/${target.modelId} after ${end?.errorCode}`,
+      );
+      // The move is queued at the queue's head; start it. The run's own finally held off
+      // the follow-up launcher for exactly this (the pending flag did not exist yet).
+      if (entry.status === "idle") void this.startQueuedFollowUp(entry.sessionId);
+    } catch (err) {
+      this.log(`[failover] queueing failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Where a failed-over Session should run next: the Project's fallback chain, minus the
+   * model it is already on and anything this Session has been moved onto before. Undefined
+   * when the chain is unset or exhausted — the turn then ends as it always has.
+   */
+  private async nextFailoverTarget(
+    entry: RuntimeEntry,
+  ): Promise<{ provider: string; modelId: string } | undefined> {
+    if (entry.session.switchModel === undefined) return undefined;
+    const chain = await (this.deps.fallbackChainOf?.(entry.projectId) ?? Promise.resolve([]));
+    return nextFailoverTarget(chain, entry, entry.failoverTried);
+  }
+
+  /**
+   * Carry out the queued move, at a Task boundary and through the same drive the manual switch
+   * uses (`POST /switch-model`), so the switch's events reach the channel and the Trace and its
+   * end starts the resent turn out of the queue.
+   */
+  private async runFailover(entry: RuntimeEntry): Promise<void> {
+    const target = entry.pendingFailover;
+    entry.pendingFailover = undefined;
+    if (target === undefined || entry.session.switchModel === undefined) return;
+    const ac = new AbortController();
+    entry.status = "running";
+    entry.abort = ac;
+    this.publishState(entry, "running");
+    const gen = entry.session.switchModel({ ...target, signal: ac.signal });
+    entry.running = this.drive(entry, gen);
+    await entry.running;
   }
 
   /**
@@ -1439,6 +1596,11 @@ export class SessionManager {
         if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
         const entry = this.entries.get(sessionId);
         if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
+        if (entry.pendingFailover !== undefined) {
+          // The move runs first, and the drive behind it starts the queued turn itself.
+          await this.runFailover(entry);
+          return;
+        }
         const next = entry.followUps.shift()!;
         this.launchTask(entry, next.input);
       });
@@ -2175,6 +2337,7 @@ export class SessionManager {
       generation,
       followUps: [],
       pendingInputs: [],
+      failoverTried: new Set(),
       pendingBootstrap: [],
       pendingSteering: [],
       returnedSteering: [],
@@ -2395,6 +2558,20 @@ export class SessionManager {
           if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
             entry.pendingBootstrap.push(msg);
           }
+          // The failover decision reads this after the run: a turn that ended on a
+          // transport failure is one the Project's fallback chain may be able to finish
+          // somewhere else.
+          const endPayload = msg.payload as {
+            type?: string;
+            status?: StopReason;
+            error_code?: string;
+          };
+          if (endPayload.type === "request_end") {
+            entry.lastRequestEnd = {
+              rateLimited: endPayload.error_code === "rate_limited",
+              ...(endPayload.error_code !== undefined ? { errorCode: endPayload.error_code } : {}),
+            };
+          }
           // First request of the run: the engine writes input → bootstrap records → tool
           // list to the Trace BEFORE issuing the request, so both holds are persisted by
           // now — end them here rather than at idle. Holding for the whole run would
@@ -2431,6 +2608,11 @@ export class SessionManager {
       );
       this.deps.errors?.record({ source: "session", err, ctx, code: "session_run_failed" });
     } finally {
+      // A stopped run never fails over: the last request end may be an intermediate
+      // retryable one (a stop during the reconnect backoff leaves no terminal end),
+      // and resending the turn the user just stopped — on another model — would defy
+      // the stop. Read before the teardown below nulls the controller.
+      if (entry.abort?.signal.aborted === true) entry.lastRequestEnd = undefined;
       // A stream that yielded nothing still echoes its input, ahead of the idle flip.
       echo.flush();
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
@@ -2467,14 +2649,29 @@ export class SessionManager {
       // normally awaits the drive first, so that only happens once its 5s wait times out.
       this.touchRow(ctx, (repo, at) => repo.touchLastActive(ctx.sessionId, at));
       this.publishState(entry, "idle");
+      // Snapshot the per-run request end BEFORE a queued follow-up can start its own
+      // Task below: launchTask clears lastRequestEnd, and the follow-up's Task is queued
+      // ahead of afterRun, which would then read undefined and never fail the Session
+      // over. Sessions with a permanently non-empty queue (company-mode triggers) would
+      // otherwise never fail over at all.
+      entry.lastRequestEndSnapshot = entry.lastRequestEnd;
+      entry.lastRequestEnd = undefined;
+      // When this run ended on a failover-eligible failure, do NOT auto-start a queued
+      // follow-up yet: afterRun runs as the .then() after this finally, and it owns the
+      // pendingFailover flag the follow-up launcher reads. Launching now would start the
+      // queued input as an ordinary Task on the dead model before the move was queued.
+      // afterRun queues the move (ahead of the follow-up) and starts the queue itself.
+      const failoverPending = isFailoverEligibleEnd(entry.lastRequestEndSnapshot?.errorCode);
       // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
       // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
       // revalidates under the session lock.
-      if (entry.followUps.length > 0) void this.state.current?.startQueuedFollowUp(entry.sessionId);
+      if (entry.followUps.length > 0 && !failoverPending)
+        void this.state.current?.startQueuedFollowUp(entry.sessionId);
       // Background completion notices that raced this run's exit (arrived after its last
       // input-assembly boundary): start their delivery task now. No-op when a follow-up
       // just launched — that run's engine drains the same queue.
-      else void this.state.current?.startBackgroundNoticeTask(entry.sessionId);
+      else if (entry.followUps.length === 0)
+        void this.state.current?.startBackgroundNoticeTask(entry.sessionId);
     }
   }
 
@@ -2936,6 +3133,7 @@ export class SessionsModule {
       onHumanInput: (sessionId) => {
         if (orgCache.ownerOfSession(sessionId) !== null) orgCache.setTriggerHop(sessionId, 0);
       },
+      fallbackChainOf: (projectId) => this.projectConfig.getFallbackChain(projectId),
       now: () => this.clock.now(),
     });
     const sessionService = new SessionService({

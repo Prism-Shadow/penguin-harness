@@ -1044,6 +1044,61 @@ describe("in-session model switch", () => {
     expect(h.trace.currentPath()).toBe(oldPath);
   });
 
+  it("when the summary cannot come back because the OLD model is unreachable, the switch still lands on the target: no summary, text carries over, tool outputs stay behind", async () => {
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        // Ladder exhausted: the compaction request dies on A, the model the host flees.
+        {
+          messages: [],
+          outcome: { status: "fatal", errorCode: "network", errorMessage: "A is down" },
+        },
+      ],
+      "A",
+    );
+    const llmB = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 50)] }], "B");
+    const h = harness(traces, { llmA, llms: { [MODEL_B.model_id]: [llmB] } });
+    sessions.push(h.session);
+
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
+
+    expect(result).toBe("completed");
+    // The failed compaction pair stays on the stream and the closed file; then the target's
+    // opener records and meta follow anyway.
+    expect(compactionEvents(all)[1]).toMatchObject({ status: "fatal", error_code: "network" });
+    expect(h.opens).toEqual([MODEL_B]);
+    expectEndsWithMetaOn(all, MODEL_B);
+    expect(h.session.modelId).toBe(MODEL_B.model_id);
+
+    // The new file holds NO summary: B continues from whatever text carried over, and the
+    // turn is not resent as a duplicate.
+    const opened = await readTrace(h.trace.currentPath());
+    expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready"]);
+    expect(modelOf(opened[0]!)).toEqual(MODEL_B);
+    const resumed = resumeTrace(opened);
+    expect(resumed.carryOver).toEqual([]);
+  });
+
+  it("a compaction that fails without a classified cause does NOT move the Session: the old model is kept as on any other failure", async () => {
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        { messages: [], outcome: { status: "fatal", errorMessage: "unknown failure" } },
+      ],
+      "A",
+    );
+    const h = harness(traces, { llmA, llms: { [MODEL_B.model_id]: [new ScriptedLLM([], "B")] } });
+    sessions.push(h.session);
+
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+    const { result } = await collectWithReturn(switchTo(h.session, MODEL_B));
+
+    expect(result).toBe("fatal");
+    expect(h.opens).toEqual([]);
+    expect(h.session.modelId).toBe(MODEL_A.model_id);
+  });
+
   it("an aborted compaction request keeps the old model too, and the compaction after it opens on that model", async () => {
     const llmA = new ScriptedLLM(
       [
