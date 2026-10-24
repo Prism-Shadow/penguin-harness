@@ -1352,15 +1352,32 @@ describe("approvals and events", () => {
       }),
     );
     pushMessage(m, partialToolCall({ eventType: "stop", name: "", toolCallId: "tc-broken" }));
+    // The call is written whole with the arguments that arrived, and never dispatched.
+    pushMessage(
+      m,
+      toolCall({ name: "exec_command", arguments: '{"cmd": "ec', toolCallId: "tc-broken" }),
+    );
     const card = findToolCard(m, undefined, "tc-broken")!;
-    expect(card.callComplete).toBe(false);
+    expect(card.callComplete).toBe(true);
     expect(card.outputComplete).toBe(false);
-    // No complete tool_call follows a call cut short: when its Request ends it will never run,
-    // so the card closes rather than spin its timer.
+    // Its Request ends without completing and with no decision on it: it will never run, so the
+    // card closes rather than spin its timer.
     pushMessage(m, requestEnd("retryable", { retryInMs: 2000 }));
     expect(card.callStreaming).toBe(false);
     expect(card.outputComplete).toBe(true);
     expect(card.outputStatus).toBe("aborted");
+  });
+
+  it("a call its unfinished Request dispatched keeps running until its output arrives", () => {
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "t1" }));
+    pushMessage(m, approvalDecision("allow", "t1"));
+    pushMessage(m, requestEnd("retryable", { retryInMs: 2000 }));
+    const card = findToolCard(m, undefined, "t1")!;
+    expect(card.outputComplete).toBe(false);
+    pushMessage(m, toolCallOutput({ output: "a.txt", toolCallId: "t1", status: "completed" }));
+    expect(card.outputStatus).toBe("completed");
   });
 
   it("request events inside a compaction span produce no retry notice (history rebuild exposes only the event pair for compaction)", () => {
@@ -1521,17 +1538,22 @@ describe("Task segmentation and stats triggering", () => {
     expect(stats.forkPosition).toEqual({ fileIndex: 2, ordinal: 17 });
   });
 
-  it("a reply whose Request did not complete is no fork point, and a truncated Request gets a retry line", () => {
+  it("a reply whose Request did not complete is no fork point, and a Request cut off at its cap gets a retry line", () => {
     const m = createStreamModel();
     pushMessages(m, [
       at(userText("Q"), "2026-07-05T00:00:00.000Z"),
       requestBegin(),
       at(assistantText("Half an ans"), "2026-07-05T00:00:01.000Z"),
-      requestEnd("truncated", { errorMessage: "cut", attempt: 6 }),
+      requestEnd("retryable", { errorCode: "output_truncated", errorMessage: "cut", attempt: 6 }),
     ]);
     finalizeHistory(m);
     const line = items(m).find((i) => i.kind === "reconnect") as ReconnectItem;
-    expect(line).toMatchObject({ status: "truncated", attempt: 6, gaveUp: true });
+    expect(line).toMatchObject({
+      status: "retryable",
+      errorCode: "output_truncated",
+      attempt: 6,
+      gaveUp: true,
+    });
     const stats = items(m).find((item) => item.kind === "task_stats") as TaskStatsItem;
     expect(stats.forkable).toBe(false);
   });

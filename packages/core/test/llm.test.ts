@@ -28,6 +28,7 @@ import type {
   UsageMetadata,
 } from "@prismshadow/mmsp";
 import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces/index.js";
+import { isInterruptedToolCall } from "../src/interfaces/index.js";
 
 import {
   EventTranslator,
@@ -578,9 +579,10 @@ describe("translateEvents", () => {
     ).toHaveLength(3);
   });
 
-  it("a `length` finish truncates the request; the records carry no trace of it", () => {
+  it("a `length` finish cuts the request off; the records carry no trace of it", () => {
     // A reply cut at the output cap: the stream arrived whole, so every item is complete, and
-    // the finish reason is the request's alone (GenerativeModel turns it into `truncated`).
+    // the finish reason is the request's alone (GenerativeModel turns it into a `retryable`
+    // outcome coded `output_truncated`).
     const tr = new EventTranslator();
     const messages: AmspRecord[] = [];
     for (const e of [...thinking(["plan"]), ...text(["cut off mid-sen"]), stop("length")]) {
@@ -604,7 +606,7 @@ describe("translateEvents", () => {
     );
   });
 
-  it("a normal finish truncates nothing", () => {
+  it("a normal finish cuts nothing off", () => {
     const tr = new EventTranslator();
     for (const e of [...text(["done"]), stop("stop")]) Array.from(tr.pushEvent(e));
     expect(tr.truncatedBy).toBeNull();
@@ -737,7 +739,7 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
     expect(complete.thinking).toBe("half a thought");
   });
 
-  it("closes a tool call cut short with its partial stop alone: no complete record", () => {
+  it("closes a tool call cut short with a complete record of its raw arguments, marked never to dispatch", () => {
     const tr = new EventTranslator();
     const out = pushAll(tr, [
       delta({ type: "tool_call.delta", name: "exec_command", arguments: "", tool_call_id: "c1" }),
@@ -745,17 +747,42 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
     ]);
     for (const m of tr.finishInterrupted()) out.push(m);
 
-    // Half its arguments arrived: it is no call the engine could dispatch, and no call the
-    // model history holds — so it never gets a complete record.
+    // Half its arguments arrived: the complete record holds them as they arrived, and the
+    // in-process mark (never part of the record) keeps the engine from dispatching it.
     expect(out.map(typeOf)).toEqual([
       "partial_tool_call", // start
       "partial_tool_call", // delta
       "partial_tool_call", // stop
+      "tool_call",
     ]);
-    expect((out[2]!.payload as { event_type: string; tool_call_id: string }).tool_call_id).toBe(
-      "c1",
-    );
+    const tc = out[3]!;
+    expect(tc.payload).toMatchObject({
+      name: "exec_command",
+      arguments: '{"cmd":"ls',
+      tool_call_id: "c1",
+    });
+    expect(isInterruptedToolCall(tc)).toBe(true);
+    // The mark stays with this object in this process: the serialized record carries none.
+    expect(isInterruptedToolCall(JSON.parse(JSON.stringify(tc)) as AmspRecord)).toBe(false);
     expect(out.map(typeOf)).not.toContain("token_usage");
+  });
+
+  it("a call still open at the stop event: a normal finish closes it for dispatch, a cut-off closes it early", () => {
+    const open = [
+      delta({ type: "tool_call.delta", name: "exec_command", arguments: "", tool_call_id: "c1" }),
+      delta({ type: "tool_call.delta", name: "", arguments: '{"cmd":"ls"}', tool_call_id: "" }),
+    ];
+    const finished = new EventTranslator();
+    const a = pushAll(finished, [...open, stop("tool_call")]);
+    const callA = a.find((m) => typeOf(m) === "tool_call")!;
+    expect((callA.payload as ToolCallPayload).arguments).toBe('{"cmd":"ls"}');
+    expect(isInterruptedToolCall(callA)).toBe(false);
+
+    const cut = new EventTranslator();
+    const b = pushAll(cut, [...open, stop("length")]);
+    const callB = b.find((m) => typeOf(m) === "tool_call")!;
+    expect(isInterruptedToolCall(callB)).toBe(true);
+    expect(cut.truncatedBy).toBe("length");
   });
 
   it("does not re-emit a tool_call already completed by its done item", () => {
@@ -1566,7 +1593,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect((messages.find((m) => typeOf(m) === "text")!.payload as TextPayload).text).toBe("hi");
   });
 
-  it("a response cut off at its cap is truncated: metered, and taken back out of the stateful history", async () => {
+  it("a response cut off at its cap is retryable, coded output_truncated: metered, and taken back out of the stateful history", async () => {
     // MMSP records the turn before it yields the stop event; this seam does the same, so the
     // test sees what GenerativeModel does with a turn MMSP already committed.
     class RecordingSeam extends GenerativeModel {
@@ -1588,7 +1615,8 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       cut.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome).toEqual({
-      status: "truncated",
+      status: "retryable",
+      errorCode: "output_truncated",
       errorMessage: "the response stopped at the output limit (finish_reason: length)",
     });
     // The provider billed the attempt and reported its usage: it is metered like any other.
@@ -1600,7 +1628,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
 
     const odd = new RecordingSeam("unknown");
     const unknown = await drain(odd.streamGenerate({ newMessages: [userText("go")] }));
-    expect(unknown.outcome.status).toBe("truncated");
+    expect(unknown.outcome).toMatchObject({ status: "retryable", errorCode: "malformed" });
     expect(unknown.outcome.errorMessage).toContain("finish_reason: unknown");
     expect(historyOf(odd)).toHaveLength(0);
 

@@ -1451,24 +1451,29 @@ describe("trace-service", () => {
     expect(a.toolSpans.map((s) => s.taskIndex)).toEqual([0]);
   });
 
-  it("every complete tool_call gets a timeline lane; one without an output has no status", async () => {
+  it("a call its unfinished Request never dispatched gets no timeline lane; one it ran keeps its lane", async () => {
     const T = (sec: string) => `2026-07-05T10:00:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 8, [
       sessionMeta(metaPayload()),
       at(T("00.000"), userText("q")),
       at(T("01.000"), requestBegin()),
-      at(T("02.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
+      at(T("02.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t0" })),
+      at(T("02.100"), approvalDecision("allow", "t0")),
+      // Written whole with the arguments that arrived when the stream dropped.
+      at(T("02.200"), toolCall({ name: "exec_command", arguments: '{"cmd":', toolCallId: "t1" })),
       at(T("02.500"), requestEnd("retryable")),
+      at(T("02.700"), toolCallOutput({ output: "ok", toolCallId: "t0", status: "completed" })),
       at(T("03.000"), requestBegin()),
       at(T("04.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t2" })),
+      at(T("04.200"), approvalDecision("allow", "t2")),
       at(T("04.500"), toolCallOutput({ output: "ok", toolCallId: "t2", status: "completed" })),
       at(T("05.000"), requestEnd("completed")),
     ]);
     const a = await service.analyze(P, A, S, 8);
-    // A call cut short leaves no complete tool_call, so every complete one was dispatched.
-    expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t1", "t2"]);
+    expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t0", "t2"]);
+    expect(a.toolCalls.map((c) => c.toolCallId)).toEqual(["t0", "t1", "t2"]);
     expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.status).toBeUndefined();
-    expect(a.toolCalls.find((c) => c.toolCallId === "t2")?.status).toBe("completed");
+    expect(a.toolCalls.find((c) => c.toolCallId === "t0")?.status).toBe("completed");
   });
 
   it("each request carries the thinking level its request_begin records; a request written before the field carries none", async () => {

@@ -1119,6 +1119,8 @@ export class TraceService implements Traces {
     /** Inside the image run that follows a `[user_steering]` text (see the turn-start rule below). */
     let steeringImages = false;
     let sawToolCallThisRequest = false;
+    /** The main Request's tool calls so far (cleared at its request_begin). */
+    let requestCallIds: string[] = [];
     // Compaction interval (compaction_begin..compaction_end): the compaction
     // request's request_begin/request_end and token_usage all fall inside it (see
     // core context-engine's summarize flow), which is used to exclude the
@@ -1283,6 +1285,7 @@ export class TraceService implements Traces {
             prevSerialTs = msg.timestamp;
             if (!continuation) taskIndex++; // Not a continuation -> a new Task
             sawToolCallThisRequest = false;
+            requestCallIds = [];
           }
           // Settle taskIndex before opening the span: the span belongs directly to
           // the current Task. Nearest-neighbor pairing: if the previous begin was
@@ -1348,21 +1351,32 @@ export class TraceService implements Traces {
           // continue the turn, otherwise a single blip would split that turn's
           // Tokens/duration/TPS across two Tasks and inflate the Task count.
           //
-          // This list must track the engine's: `retryable` and `truncated` are the
-          // reconnecting statuses (both loops share RETRY_STATUSES). The legacy spellings keep
+          // This list must track the engine's: `retryable` is the one reconnecting
+          // status today (both loops share RETRY_STATUSES). The legacy spellings keep
           // pre-convergence Traces analyzable — in that era timeout/malformed always
           // reconnected, while `failed` reconnected in the turn loop but ended a
           // compaction attempt (the then fail-fast compaction policy), hence the
           // compactionActive guard on it.
           const retryable =
             status === "retryable" ||
-            status === "truncated" ||
             status === "timeout" ||
             status === "malformed" ||
             (status === "failed" && !compactionActive);
           if (!hasOrigin) {
             prevSerialTs = null;
             continuation = sawToolCallThisRequest || retryable;
+            // A Request that did not complete: a call of it with no approval decision was
+            // closed with it and never dispatched (the engine decides every call it dispatches
+            // before the Request ends), so it gets no timeline lane — one would render as an
+            // execution spanning the rest of the timeline.
+            if (status !== undefined && status !== "completed") {
+              for (const id of requestCallIds) {
+                const lane = openSpansById.get(id);
+                if (lane === undefined || lane.approvalTs !== undefined) continue;
+                openSpansById.delete(id);
+                toolSpans.splice(toolSpans.indexOf(lane), 1);
+              }
+            }
           }
           if (retryable) reconnectCount++;
           if (openRequest) {
@@ -1517,9 +1531,10 @@ export class TraceService implements Traces {
         };
         openToolCalls.set(p.tool_call_id, span);
         toolCalls.push(span);
-        // Every complete tool_call is one the engine dispatched (a call the stream cut short
-        // has no complete record), so each gets a timeline lane.
+        // A timeline lane, until the call's Request ends without completing and without having
+        // dispatched it (see request_end).
         if (!hasOrigin) {
+          requestCallIds.push(p.tool_call_id);
           const timeline: TraceToolSpan = {
             toolCallId: p.tool_call_id,
             name: typeof p.name === "string" ? p.name : "",

@@ -63,7 +63,7 @@ export const assistantText = (text: string, origin?: string[]) =>
   model({ type: "text", role: "assistant", text }, origin);
 export const toolCall = (id: string, args = '{"cmd":"ls"}', origin?: string[]) =>
   model({ type: "tool_call", name: "exec_command", arguments: args, tool_call_id: id }, origin);
-/** A streamed fragment of a call: what a call cut short leaves, since it gets no complete record. */
+/** A streamed fragment of a call. */
 export const partialToolCall = (
   id: string,
   eventType: "start" | "delta" | "stop",

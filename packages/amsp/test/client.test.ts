@@ -13,13 +13,13 @@
  *   are left out and the second is read like any record.
  * - Given a run's records, `result()` decides the status in the rule's order — an unclosed last
  *   `task_begin` or no Task at all, then an `abort` (the turn cap's included), then an
- *   unrecovered terminal record (`truncated` included) — and nothing a subagent records decides
- *   it.
+ *   unrecovered terminal record (an output cap the retries never got past included) — and nothing
+ *   a subagent records decides it.
  * - Given a run with a compaction and a subagent, `text` is the main Session's answers without
  *   the summary or the child's, `usage` counts every request the child's included, and
  *   `sessionUsage` is the main Session's last count.
- * - Given an attempt that was truncated and retried, `text` keeps only the completed Request's
- *   answer.
+ * - Given a Request cut off at its output cap and retried, and one interrupted, `text` keeps only
+ *   the completed Request's answer, though the others' texts have their records.
  *
  * Failures:
  * - Given a refusal before the stream, the run rejects with AmspHttpError and `session` with it.
@@ -36,7 +36,8 @@
  * - Given a call the server decides itself, the open look is closed when its decision arrives and
  *   nothing is posted.
  * - Given no callback, or one that throws, the answer posted is `deny`.
- * - Given a call cut short (fragments only, no complete record), no look opens.
+ * - Given a call cut short (written whole, then its Request ends without completing), the look
+ *   it opened closes at that `request_end`.
  * - Given a call someone else answered first (`approval_not_found`), the run goes on.
  *
  * The rest: `agent()`, `session()`, `messages()` with a page, `approvals()` with a wait,
@@ -244,11 +245,15 @@ describe("a run", () => {
       { status: "aborted", error: { code: "max_turns", message: "reached max turns (1)" } },
     ],
     [
-      "a truncated attempt retried, then an answer: completed",
+      "an attempt cut off at its output cap retried, then an answer: completed",
       [
         ...main,
         assistantText("Half an ans"),
-        requestEnd("truncated", { error_message: "cut", retry_in_ms: 2000 }),
+        requestEnd("retryable", {
+          error_code: "output_truncated",
+          error_message: "cut",
+          retry_in_ms: 2000,
+        }),
         requestBegin(),
         assistantText("The answer."),
         requestEnd(),
@@ -257,9 +262,17 @@ describe("a run", () => {
       { status: "completed" },
     ],
     [
-      "truncation the retries never got past: truncated, with its detail",
-      [...main, requestEnd("truncated", { error_message: "cut", attempt: 6 }), taskEnd()],
-      { status: "truncated", error: { code: "unknown", message: "cut" } },
+      "an output cap the retries never got past: retryable, output_truncated",
+      [
+        ...main,
+        requestEnd("retryable", {
+          error_code: "output_truncated",
+          error_message: "cut",
+          attempt: 6,
+        }),
+        taskEnd(),
+      ],
+      { status: "retryable", error: { code: "output_truncated", message: "cut" } },
     ],
     [
       "a subagent's abort and failure: completed",
@@ -280,6 +293,32 @@ describe("a run", () => {
     expect({ status: result.status, ...(result.error ? { error: result.error } : {}) }).toEqual(
       expected,
     );
+  });
+
+  it("keeps the text of a Request that did not complete out of the answer", async () => {
+    const fake = createFetchFake();
+    fake.stream(
+      "POST",
+      RUNS,
+      runBody([
+        taskBegin(),
+        userText("go"),
+        requestBegin(),
+        assistantText("Half an ans"),
+        requestEnd("retryable", { error_code: "output_truncated", retry_in_ms: 0 }),
+        requestBegin(),
+        assistantText("The answer."),
+        requestEnd(),
+        requestBegin(),
+        assistantText("Interrupted mid-"),
+        requestEnd("aborted"),
+        abort(),
+        taskEnd(),
+      ]),
+    );
+    const result = await clientOf(fake).run({ input: "go", sessionId: SID });
+    expect(result.status).toBe("aborted");
+    expect(result.text).toBe("The answer.");
   });
 
   it("keeps a summary and a subagent's text out of the answer, and counts every request's usage", async () => {
@@ -484,22 +523,37 @@ describe("approvals", () => {
     });
   });
 
-  it("opens no look for a call cut short", async () => {
+  it("closes the open look when the call's Request ends without completing", async () => {
+    // A call the stream cut short is written whole with the arguments that arrived; its Request
+    // then ends without completing, so it was never dispatched and no decision follows it.
     const fake = createFetchFake();
-    fake.stream(
-      "POST",
-      RUNS,
-      runBody([
-        taskBegin(),
-        partialToolCall("call_1", "start"),
-        partialToolCall("call_1", "delta", '{"cmd":'),
-        partialToolCall("call_1", "stop"),
-        abort(),
-        taskEnd(),
-      ]),
+    fake.json("GET", APPROVALS, 200, { approvals: [] }, never());
+    const lookClosed = () =>
+      new Promise<void>((resolve) => {
+        const signal = fake.calls.find((c) => c.path === APPROVALS)!.signal!;
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    fake.stream("POST", RUNS, [
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      frame(partialToolCall("call_1", "start"), "ep-2"),
+      frame(partialToolCall("call_1", "delta", '{"cmd":'), "ep-3"),
+      frame(partialToolCall("call_1", "stop"), "ep-4"),
+      frame(toolCall("call_1", '{"cmd":'), "ep-5"),
+      () => fake.requested("GET", APPROVALS),
+      frame(requestEnd("aborted"), "ep-6"),
+      lookClosed,
+      frame(abort(), "ep-7"),
+      frame(taskEnd(), "ep-8"),
+      DONE,
+    ]);
+    const result = await clientOf(fake).run({ input: "x", onApproval: () => "allow" });
+    expect(result.status).toBe("aborted");
+    expect(fake.calls.filter((c) => c.path === APPROVALS)).toHaveLength(1);
+    expect(fake.calls.some((c) => c.method === "POST" && c.path.includes("/approvals/"))).toBe(
+      false,
     );
-    await clientOf(fake).run({ input: "x", sessionId: SID, onApproval: () => "allow" });
-    expect(fake.calls.some((c) => c.path === APPROVALS)).toBe(false);
   });
 
   it("goes on when someone else answered first", async () => {

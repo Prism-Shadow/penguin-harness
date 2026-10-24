@@ -3883,11 +3883,11 @@ Benchmark：
     },
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `retryable` and `truncated` are the live statuses; the finer spellings only
-     * appear when replaying Traces written before the status convergence.
+     * wording. `retryable` is the live status; the finer spellings only appear when
+     * replaying Traces written before the stop-reason convergence.
      */
     reconnect: (
-      status: "retryable" | "truncated" | "failed" | "timeout" | "malformed",
+      status: "retryable" | "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
@@ -3906,8 +3906,8 @@ Benchmark：
               ? "网络或服务暂时不可用"
               : kind === "image_rejected"
                 ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-                : kind === "truncated"
-                  ? "模型输出被截断（达到输出上限或未正常结束）"
+                : kind === "output_truncated"
+                  ? "模型输出达到输出上限，被截断"
                   : kind === "failed"
                     ? "模型服务返回错误"
                     : "请求失败";

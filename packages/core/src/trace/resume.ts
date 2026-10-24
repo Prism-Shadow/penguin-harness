@@ -420,9 +420,9 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
         }
         history.push(...(eligible as CompleteModelMessage[]), ...outputs);
         for (const id of snapshotOutputIds) answeredIds.add(id);
-        // Every complete tool_call of a committed request is a committed call (a call the
-        // stream cut short has no complete record). A `stop_reason` on records written before
-        // that change is not read.
+        // Every complete tool_call of a committed request is a committed call: a call closed
+        // early belongs to a request that did not complete, which never reaches here. A
+        // `stop_reason` on records written by older versions is not read.
         for (const m of outputs) {
           const p = m.payload as Partial<ToolCallPayload>;
           if (p.type === "tool_call" && p.tool_call_id) committedCallIds.add(p.tool_call_id);

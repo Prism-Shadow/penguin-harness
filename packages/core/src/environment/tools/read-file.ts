@@ -361,8 +361,9 @@ async function* readImageSource(
     }
   }
   if (signal?.aborted) return { status: "aborted" };
-  // A truncated description is still the text that streamed: the model reads what arrived.
-  if (!outcome || (outcome.status !== "completed" && outcome.status !== "truncated")) {
+  // A description stopped at its output cap is still the text that streamed: the model reads
+  // what arrived.
+  if (!outcome || (outcome.status !== "completed" && outcome.errorCode !== "output_truncated")) {
     const detail =
       outcome && "errorMessage" in outcome && outcome.errorMessage
         ? `: ${outcome.errorMessage}`

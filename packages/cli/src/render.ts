@@ -481,8 +481,7 @@ export class StreamRenderer {
   private taskFirstTsMs: number | null = null;
   private taskLastReqEndMs: number | null = null;
   /** Retryable terminal state of the previous request (legacy Traces carry the finer pre-convergence spellings): the next request_begin is a retry, at which point a notice is printed. */
-  private pendingRetry: "retryable" | "truncated" | "failed" | "timeout" | "malformed" | null =
-    null;
+  private pendingRetry: "retryable" | "failed" | "timeout" | "malformed" | null = null;
   /** The pending failure's classified cause (request_end.error_code), for the retry line's wording. */
   private pendingRetryCode: string | undefined;
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
@@ -858,12 +857,9 @@ export class StreamRenderer {
           this.finishLine();
           this.out.write(`${dim(this.t.llmFatalLabel(p.error_message), this.c)}\n`);
           this.lastLineKey = null;
-        } else if (
-          (endStatus === "retryable" || endStatus === "truncated") &&
-          p.retry_in_ms === undefined
-        ) {
-          // A live-protocol retryable / truncated with no planned wait is the ladder giving up —
-          // the run ends on it. The legacy spellings never take this branch: their era stamped
+        } else if (endStatus === "retryable" && p.retry_in_ms === undefined) {
+          // A live-protocol retryable with no planned wait is the ladder giving up — the
+          // run ends on it. The legacy spellings never take this branch: their era stamped
           // no retry_in_ms mid-ladder, and their exhaustion printed from the abort event.
           this.pendingRetry = null;
           this.pendingRetryAttempt = undefined;
@@ -875,7 +871,6 @@ export class StreamRenderer {
           this.lastLineKey = null;
         } else if (
           endStatus === "retryable" ||
-          endStatus === "truncated" ||
           endStatus === "failed" ||
           endStatus === "timeout" ||
           endStatus === "malformed"

@@ -42,34 +42,27 @@ export type AmspRecordType = "session_meta" | "model_msg" | "event_msg";
 export type Role = "user" | "assistant";
 
 /**
- * How an operation ended, shared by the compaction terminal and the MCP connect results:
+ * How an operation ended — an LLM Request (`request_end.status`, the only record of why a
+ * Request ended), a compaction, an MCP connect:
  *   - `completed`: it ended normally;
  *   - `aborted`: user-initiated interruption or cancellation;
  *   - `retryable`: a failure worth retrying — transport drops, timeouts, 408/429/5xx,
- *     malformed responses, and anything unclassifiable. The specific error rides on
- *     `error_message`, never on the value;
+ *     malformed responses, a response cut off at its output cap (`output_truncated`), and
+ *     anything unclassifiable. The classified cause rides on `error_code` and the specific
+ *     error on `error_message`, never on the value;
  *   - `fatal`: a failure no retry can fix — a provider 4xx rejection (invalid request,
  *     quota, and the credential failures of `isAuthenticationError`) or a deterministic
  *     client-side rejection (fast mode on a model without a fast tier). The fix is a
  *     config/credential change, then a new request.
  *
- * No record carries a per-item end reason: an item that has its complete record was fully
- * generated, whether it entered the model history is its Request's `request_end.status`, and
- * a tool result's nature is its own `status` (see ToolStatus). Records written before that
- * change carry a `stop_reason` field on every model payload; readers ignore it.
+ * No record carries a per-item end reason. Every streamed item has its complete record, one an
+ * interruption cut off included (it holds what arrived); whether an item entered the model
+ * history is its Request's `request_end.status`, and a tool result's nature is its own `status`
+ * (see ToolStatus). Records written before that change carry a `stop_reason` field on every
+ * model payload; readers ignore it.
  * Docs: /docs/amsp-records § "End reasons".
  */
 export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
-
-/**
- * How one LLM Request ended — `request_end.status`, and the only record of a Request's end
- * reason. The {@link StopReason} values, plus `truncated`: the stream arrived whole, but the
- * provider did not report a normal finish (MMSP `finish_reason` `length` — the output hit its
- * cap — or `unknown`). A truncated attempt is never committed to the model history and is
- * retried on the same ladder as `retryable`; `error_message` names the finish reason.
- * `truncated` exists only here: compaction and MCP statuses never take it.
- */
-export type RequestEndStatus = StopReason | "truncated";
 
 /**
  * What a tool result is — `tool_call_output.status`:
@@ -77,9 +70,9 @@ export type RequestEndStatus = StopReason | "truncated";
  *     the output);
  *   - `fatal`: the call failed — an unknown tool, unparseable arguments, a tool error, an
  *     execution-environment error, or a timeout;
- *   - `aborted`: the call never ran — the user, the command policy or a pre_tool_use hook
- *     denied it.
- * A call interrupted while it runs writes no complete `tool_call_output`.
+ *   - `aborted`: the call did not run to its end — the user, the command policy or a
+ *     pre_tool_use hook denied it, or the user interrupted it while it ran (the output holds
+ *     what it had produced, then the interruption note).
  */
 export type ToolStatus = "completed" | "aborted" | "fatal";
 
@@ -365,6 +358,7 @@ export type ErrorCode =
   | "network" // transport drops, provider 4xx/5xx and anything unclassifiable
   | "rate_limited" // the provider answered 429: its rate limit or an exhausted quota
   | "malformed" // response failed parsing/validation, or the stream was truncated
+  | "output_truncated" // the response stopped at its output cap; retried, never committed
   | "auth" // the provider rejected the credentials
   | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "image_rejected" // a provider 4xx on an input holding images, retried with them replaced
@@ -479,7 +473,7 @@ export interface RetryDetail extends ErrorInfo {
   attempt?: number;
   /**
    * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
-   * within the same run (status `retryable` or `truncated` with attempts remaining under the
+   * within the same run (status `retryable` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
    * (`reconnectDelayMs`), so the announced wait and the real one cannot drift — except
    * `image_rejected`, retried at once with the images replaced, which announces 0; the Web App
@@ -492,8 +486,8 @@ export interface RetryDetail extends ErrorInfo {
 
 export interface RequestEndPayload extends RetryDetail {
   type: "request_end";
-  /** Terminal state of this Request (see RequestEndStatus; taken from LLMOutcome): the one record of why it ended. `fatal` carries the no-retry failures — credentials included — with the detail on `error_message`. */
-  status: RequestEndStatus;
+  /** Terminal state of this Request (taken from LLMOutcome): the one record of why it ended. `fatal` carries the no-retry failures — credentials included — with the detail on `error_message`; a response cut off at its output cap is `retryable` with the code `output_truncated`. */
+  status: StopReason;
 }
 
 /** Compaction trigger reason: context threshold / turn-count threshold / user-initiated request. */

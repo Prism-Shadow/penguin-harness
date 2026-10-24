@@ -275,20 +275,16 @@ export interface LlmErrorItem {
   errorMessage?: string;
 }
 
-/** `retryable` and `truncated` are the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
-export type ReconnectStatus = "retryable" | "truncated" | "failed" | "timeout" | "malformed";
+/** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
+export type ReconnectStatus = "retryable" | "failed" | "timeout" | "malformed";
 
 function isReconnectStatus(status: string | undefined): status is ReconnectStatus {
   return (
-    status === "retryable" ||
-    status === "truncated" ||
-    status === "failed" ||
-    status === "timeout" ||
-    status === "malformed"
+    status === "retryable" || status === "failed" || status === "timeout" || status === "malformed"
   );
 }
 
-/** An LLM Request ending retryable or truncated → the engine retries carrying the content already produced. */
+/** An LLM Request ending retryable → the engine retries carrying the content already produced. */
 export interface ReconnectItem {
   kind: "reconnect";
   id: number;
@@ -298,7 +294,7 @@ export interface ReconnectItem {
   attempt: number;
   /** The retry request has been sent (set true by the next request_begin). */
   retrying: boolean;
-  /** Retries exhausted: set at creation when the request_end announced no retry (`retryable` / `truncated` with no retry_in_ms — the run ends there), or by an abort event in legacy Traces. */
+  /** Retries exhausted: set at creation when the request_end announced no retry (`retryable` with no retry_in_ms — the run ends there), or by an abort event in legacy Traces. */
   gaveUp?: boolean;
   /** Machine-readable cause (request_end.error_code); the cause wording localizes from it. */
   errorCode?: string;
@@ -1590,14 +1586,19 @@ function closeExecutingToolCards(model: StreamModel): void {
 }
 
 /**
- * Settle the cards a Request left with a call that never completed: a call the stream cut short
- * closes with its partial `stop` and gets no complete tool_call, so once its Request has ended
- * (request_end) it never will — it was never dispatched and will never get a result. Settled as
+ * Settle the cards a Request left with a call that will never run, once its request_end
+ * arrives: a call still streaming then (a join that missed its complete record), and — when the
+ * Request did not complete — a call with no approval decision. The engine decides every call it
+ * dispatches before the call's Request ends, so an undecided one was closed with the Request
+ * (written whole with the arguments that arrived) and will never get a result. Settled as
  * aborted, so the timer doesn't keep spinning.
  */
-function settleCutShortCalls(model: StreamModel): void {
+function settleCutShortCalls(model: StreamModel, completed: boolean): void {
   for (const card of model.toolCards.values()) {
-    if (!card.callComplete && !card.outputComplete) settleUnfinishedCard(card);
+    if (card.outputComplete) continue;
+    if (!card.callComplete || (!completed && card.decision === undefined)) {
+      settleUnfinishedCard(card);
+    }
   }
 }
 
@@ -1922,9 +1923,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       model.openRequestBeginMs = null;
       model.openApprovalWaitMs = 0;
       // The Request is over: its texts learn whether it completed (the fork point needs a
-      // completed one), and a call it cut short will never get its complete record.
+      // completed one), and a call it cut short will never run.
       markRequestTexts(model, p.status === "completed");
-      settleCutShortCalls(model);
+      settleCutShortCalls(model, p.status === "completed");
       // This is now the round's end (so far): update taskLastReqEndMs, with
       // the duration taken as "it − the first message". This also settles
       // compaction's Token attribution — reaching this point means a
@@ -1936,11 +1937,10 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // round, so the pending compaction usage never reaches this step and is discarded at finalization (not counted into this round).
       if (tsMs !== undefined) model.taskLastReqEndMs = tsMs;
       commitPendingCompaction(model.stats);
-      // Whether this end ended the run: a fatal, or a retryable / truncated the ladder gave up
-      // on (no retry_in_ms; `0` is an immediate retry). A request after it opens a new Task.
+      // Whether this end ended the run: a fatal, or a retryable the ladder gave up on (no
+      // retry_in_ms; `0` is an immediate retry). A request after it opens a new Task.
       model.runEnded =
-        p.status === "fatal" ||
-        ((p.status === "retryable" || p.status === "truncated") && p.retry_in_ms === undefined);
+        p.status === "fatal" || (p.status === "retryable" && p.retry_in_ms === undefined);
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
@@ -1973,11 +1973,8 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         if (typeof p.retry_in_ms === "number" && p.retry_in_ms > 0) {
           item.plannedDelayMs = p.retry_in_ms;
           item.arrivedAtMs = nowMs ?? Date.now();
-        } else if (
-          (p.status === "retryable" || p.status === "truncated") &&
-          p.retry_in_ms === undefined
-        ) {
-          // A live-protocol retryable / truncated without `retry_in_ms` is the ladder giving up — the run
+        } else if (p.status === "retryable" && p.retry_in_ms === undefined) {
+          // A live-protocol retryable without `retry_in_ms` is the ladder giving up — the run
           // ends on it (an abort follows only in legacy Traces). `retry_in_ms: 0` is a retry
           // with no wait (a rejected image replaced with a note), not a give-up. The legacy
           // spellings never self-settle here: their era stamped no retry_in_ms mid-ladder,

@@ -31,7 +31,6 @@ import type {
   PartialToolCallPayload,
   RequestBeginPayload,
   RequestEndPayload,
-  RequestEndStatus,
   Role,
   SessionMetaMessage,
   SessionMetaPayload,
@@ -274,7 +273,7 @@ export function requestBegin(thinkingLevel?: ThinkingLevelName): AmspRecord<Requ
  * App as a live countdown). This builder is the one place the block is stamped.
  */
 export function requestEnd(
-  status: RequestEndStatus,
+  status: StopReason,
   retry: {
     errorCode?: ErrorCode;
     errorMessage?: string;

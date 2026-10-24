@@ -11,13 +11,15 @@
  *          first fragment, a `stop` when it ends);
  *        - a `.done` item → the full `model_msg` (thinking / text / tool_call);
  *        - the `stop` event → a `token_usage` event_msg, produced **only on normal
- *          completion** (observability/Token) and on a truncation; a finish reason other than
- *          `stop` / `tool_call` makes the request `truncated` — still metered, but the turn MMSP
- *          had already recorded is taken back out of its history.
- *   3. Interruption/error handling: `finishInterrupted` closes the item still streaming, then
- *      the output ends — never leaking a malformed structure. This interface **never retries
+ *          completion** (observability/Token) and on a response cut off; a finish reason other
+ *          than `stop` / `tool_call` makes the request `retryable` (`output_truncated` at the
+ *          output cap) — still metered, but the turn MMSP had already recorded is taken back out
+ *          of its history.
+ *   3. Interruption/error handling: `finishInterrupted` closes the item still streaming and
+ *      backfills its complete message, then the output ends — never leaking a malformed
+ *      structure. This interface **never retries
  *      internally** — it only classifies, and `context_engine` owns the retry policy:
- *      `retryable` and `truncated` ride the engine's reconnect ladder, `fatal` stops the run.
+ *      `retryable` rides the engine's reconnect ladder, `fatal` stops the run.
  *      The split is an allowlist of certainty: only failures a retry provably cannot fix are
  *      `fatal` — a provider 4xx rejection (408/429 excluded, see
  *      `isFatalProviderRejection`), a credentials failure (`isAuthenticationError`), MMSP's
@@ -70,6 +72,7 @@ import type {
   ThinkingLevelName,
   ToolDefinition,
 } from "../interfaces/index.js";
+import { markInterruptedToolCall } from "../interfaces/llm.js";
 import { userAgent } from "../index.js";
 import { attributionHeaders } from "./app-attribution.js";
 import { newAutoLLMClient } from "./model-client.js";
@@ -284,8 +287,8 @@ function partial(open: OpenItem, eventType: "start" | "delta" | "stop", content 
  *   - a `.done` becomes the partial `stop` and the complete `model_msg`, read off the done
  *     item alone (the streamed fragments are never reconciled against it);
  *   - the `stop` event carries the request's usage and finish reason. No record carries the
- *     finish reason: a finish other than `stop` / `tool_call` makes the request `truncated`,
- *     which the request's `request_end` records.
+ *     finish reason: a finish other than `stop` / `tool_call` makes the request `retryable`,
+ *     which the request's `request_end` records with its code.
  *
  * Docs: /docs/amsp-records § "The streaming discipline".
  */
@@ -309,11 +312,13 @@ export class EventTranslator {
       this.stopSeen = true;
       if (event.usage_metadata) this.requestTokens = usageToTokenCounts(event.usage_metadata);
       // "length" and "unknown" mean the provider did not finish the response the normal way:
-      // the request is truncated (see `truncatedBy`), retried rather than committed.
+      // the response was cut off (see `truncatedBy`), retried rather than committed.
       const normal = event.finish_reason === "stop" || event.finish_reason === "tool_call";
       if (!normal) this.cutBy = event.finish_reason ?? "unknown";
-      // Every item closed with its done item before the stop; one still open never finished.
-      yield* this.finishInterrupted();
+      // Every item closes with its done item before the stop. One still open ends with the
+      // response: a normal finish closes it as its done item would (the turn MMSP records holds
+      // it), a cut-off closes it early.
+      yield* this.closeOpen(!normal);
       return;
     }
     for (const item of event.content_items) {
@@ -341,19 +346,36 @@ export class EventTranslator {
   }
 
   /**
-   * Interruption finalization: the item still streaming gets its partial `stop`. A text or
-   * thinking item is also written as a complete message holding what had arrived; a tool call
-   * cut short gets no complete record — its arguments never fully arrived, so it is neither a
-   * call the engine could dispatch nor one the model history holds. Produces no `token_usage`:
-   * an interrupted Request has no usage to report.
+   * Interruption finalization: even when interrupted or on error, the structure closes as
+   * `start → delta → stop → complete message` — every streamed item has its complete record.
+   * The item still streaming gets its partial `stop` and a complete message holding what had
+   * arrived (a tool call's raw argument text, which may not parse). No later item of the
+   * response follows it, and the request ends without `completed`: its `request_end` says how,
+   * the model history never holds it, and the engine never dispatches a call closed this way.
+   * Produces no `token_usage` (a cut-off request's comes after it): an interrupted Request
+   * has no usage to report.
    */
   *finishInterrupted(): Generator<AmspRecord> {
+    yield* this.closeOpen(true);
+  }
+
+  /**
+   * Closes the open item from its fragments: its partial `stop`, then a complete message holding
+   * what had arrived. `early` marks a tool call closed this way with `markInterruptedToolCall`,
+   * so the engine never dispatches it.
+   */
+  private *closeOpen(early: boolean): Generator<AmspRecord> {
     const open = this.open;
     this.open = null;
     if (!open) return;
     yield partial(open, "stop");
     if (open.kind === "text") yield assistantText(open.content);
     else if (open.kind === "thinking") yield thinkingMessage(open.content);
+    else {
+      const { name, content, toolCallId } = open;
+      const call = toolCall({ name, arguments: content, toolCallId });
+      yield early ? markInterruptedToolCall(call) : call;
+    }
   }
 
   /** Whether the `stop` event arrived: a fully delivered response. */
@@ -829,14 +851,15 @@ export class GenerativeModel implements LLMInterface {
    * UniEvents into records.
    *
    * **Never throws to `context_engine`**: whether it ends normally or is interrupted/errors out,
-   * every `partial_*` segment is closed with its `stop` (an item fully generated also gets its
-   * complete message), and the terminal state is then returned as `LLMOutcome`:
+   * every `partial_*` segment is closed as `start → delta → stop → complete message`, and the
+   * terminal state is then returned as `LLMOutcome`:
    *   - **Normal completion**: the `stop` event closed every item; `token_usage` is produced
    *     (only in this case) → `completed`;
-   *   - **Truncation**: the `stop` event arrived with a finish reason other than `stop` /
-   *     `tool_call` (`length`, `unknown`): the turn MMSP recorded is removed from its history,
-   *     its `token_usage` is produced (the provider billed it) → `truncated` (its `errorMessage`
-   *     names the finish reason), which the engine retries like `retryable`;
+   *   - **Cut off**: the `stop` event arrived with a finish reason other than `stop` /
+   *     `tool_call`: the turn MMSP recorded is removed from its history, its `token_usage` is
+   *     produced (the provider billed it) → `retryable`, coded `output_truncated` for `length`
+   *     (the output cap) and `malformed` for a finish reason MMSP does not map, with an
+   *     `errorMessage` naming it — retried on the ladder like any other `retryable`;
    *   - **User interruption**: `finishInterrupted()` closes out, produces no usage →
    *     `aborted`;
    *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`),
@@ -924,7 +947,7 @@ export class GenerativeModel implements LLMInterface {
     // Terminal-state classification: retryable (transport/parse failures) / fatal (definitive
     // rejections) / aborted (user). null means it ended normally.
     let outcome: LLMOutcome | null = null;
-    // The stateful history's length before this request: a truncated response is cut back to it.
+    // The stateful history's length before this request: a response cut off is cut back to it.
     let historyLength = 0;
     try {
       await this.refreshApiKey();
@@ -1084,13 +1107,17 @@ export class GenerativeModel implements LLMInterface {
       if (history.length > historyLength) this.client.setHistory(history.slice(0, historyLength));
       const cutTokens = translator.getRequestTokens();
       yield tokenUsage(cutTokens, cutTokens);
-      return {
-        status: "truncated",
-        errorMessage:
-          cutBy === "length"
-            ? "the response stopped at the output limit (finish_reason: length)"
-            : `the response ended without a normal finish (finish_reason: ${cutBy})`,
-      };
+      return cutBy === "length"
+        ? {
+            status: "retryable",
+            errorCode: "output_truncated",
+            errorMessage: "the response stopped at the output limit (finish_reason: length)",
+          }
+        : {
+            status: "retryable",
+            errorCode: "malformed",
+            errorMessage: `the response ended without a normal finish (finish_reason: ${cutBy})`,
+          };
     }
 
     // Normal completion: the `stop` event closed every item; produce token_usage.

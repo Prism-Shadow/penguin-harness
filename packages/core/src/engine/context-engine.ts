@@ -67,7 +67,6 @@ import type {
   CompactionMode,
   CompactionReason,
   AmspRecord,
-  RequestEndStatus,
   StopReason,
   TextPayload,
   TextSender,
@@ -89,6 +88,7 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../interfaces/index.js";
+import { isInterruptedToolCall } from "../interfaces/llm.js";
 import { MergeQueue, pumpOpener } from "../internal/merge-queue.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
@@ -425,12 +425,11 @@ interface TurnRetryState {
 }
 
 /**
- * LLM outcomes that reconnect in-run: `retryable` and `truncated`. The classification lives in
- * the LLM interface (see LLMOutcome) — transport drops, timeouts, 408/429/5xx, malformed
- * responses and everything unclassifiable come back `retryable`, a response the provider did
- * not finish the normal way (the output cap) comes back `truncated`, while definitive provider
- * rejections and credential failures come back `fatal` and the turn loop aborts on them
- * before consulting this set.
+ * LLM outcomes that reconnect in-run: exactly `retryable`. The classification lives in the LLM
+ * interface (see LLMOutcome) — transport drops, timeouts, 408/429/5xx, malformed responses, a
+ * response cut off at its output cap (`output_truncated`) and everything unclassifiable come
+ * back `retryable`, while definitive provider rejections and credential failures come back
+ * `fatal` and the turn loop aborts on them before consulting this set.
  *
  * Both loops retry the same set on the same backoff ladder, and by default with the same
  * budget: compaction runs on `compactionMaxReconnects`, which follows `maxReconnects` unless
@@ -444,7 +443,14 @@ interface TurnRetryState {
  * not evidence of progress at all, and resetting on it would turn issue #83's guard into a
  * loop that re-asks a model already answering wrong, at maximum context, forever.
  */
-const RETRY_STATUSES: readonly RequestEndStatus[] = ["retryable", "truncated"];
+const RETRY_STATUSES: readonly StopReason[] = ["retryable"];
+
+/**
+ * Whether a failed attempt's content says nothing about progress: a whole response cut off at
+ * its output cap always received content, but the same request may well hit the same cap again,
+ * so it climbs the reconnect ladder like an attempt that received nothing.
+ */
+const cutAtOutputCap = (outcome: LLMOutcome): boolean => outcome.errorCode === "output_truncated";
 
 /**
  * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
@@ -857,7 +863,7 @@ export class ContextEngine {
       // continues from there instead of re-running tools; the tag is distinct from the
       // user-interruption `[turn_aborted]`. (The one attempt MMSP does record — a fully
       // delivered response whose finish reason was not a normal one — is taken back out of its
-      // history by GenerativeModel before it returns `truncated`, so it holds the same way.)
+      // history by GenerativeModel before it returns `retryable`, so it holds the same way.)
       const failedTurns: TurnResult[] = [];
       let attemptInput = nextInput;
       // Two counters, because the ladder and the ceiling answer different questions (see
@@ -946,8 +952,8 @@ export class ContextEngine {
         // deliberately wide — the LLM interface sends every unclassifiable error here,
         // because its fatal detector is an allowlist and a gateway phrasing a transient
         // fault its own way (`Upstream HTTP/2 stream failed (upstream_http2_stream_error)`)
-        // must keep its retries; the concrete failure rides on errorMessage. `truncated` (a
-        // response the provider cut off, never committed) takes the same path.
+        // must keep its retries; the concrete failure rides on errorMessage. A response cut off
+        // at its output cap (`output_truncated`, never committed) takes the same path.
         //
         // When retries are exhausted or the backoff is interrupted, the retry input is held
         // as-is as carry-over (the original input is already written to Trace, so it isn't
@@ -962,13 +968,11 @@ export class ContextEngine {
         // `[turn_retried]` carries the accumulated output into every retry and the turn keeps
         // inching forward. What bounds this is the ceiling below, not the ladder: an endpoint
         // that streams a few tokens and drops, every single time, would otherwise be retried
-        // forever. A truncated attempt is the exception: it always received content (a whole
-        // response), but that is no evidence of progress — the same request may well hit the
-        // same cap again — so it climbs the ladder like an attempt that received nothing.
-        if (turn.receivedContent && turn.outcome.status !== "truncated") consecutive = 0;
+        // forever. An attempt cut off at its output cap is the exception (see cutAtOutputCap).
+        if (turn.receivedContent && !cutAtOutputCap(turn.outcome)) consecutive = 0;
         // Exhausted: give up without an abort event — abort marks a user interruption or the
-        // turn cap, and the last failure's request_end (status `retryable` / `truncated` with
-        // no `retry_in_ms`, since no retry is planned) is the terminal record frontends and
+        // turn cap, and the last failure's request_end (status `retryable` with no
+        // `retry_in_ms`, since no retry is planned) is the terminal record frontends and
         // observability read; `attempt` and `error_message` ride on it.
         if (consecutive >= this.maxReconnects || attempts >= this.maxTurnAttempts) {
           this.pendingCarryOver = attemptInput;
@@ -1254,7 +1258,7 @@ export class ContextEngine {
     outcome: LLMOutcome,
     reconnectsSoFar: number,
     cap: number,
-    retries: readonly RequestEndStatus[],
+    retries: readonly StopReason[],
   ): number | undefined {
     if (!retries.includes(outcome.status)) return undefined;
     if (reconnectsSoFar >= cap) return undefined;
@@ -1348,7 +1352,8 @@ export class ContextEngine {
     let outcome: LLMOutcome = { status: "completed" };
     // Set by the first message the stream yields (see TurnResult.receivedContent).
     let receivedContent = false;
-    // Whether this attempt reported its usage (a completed or a truncated request does).
+    // Whether this attempt reported its usage (a completed request does, and so does one cut off
+    // at its output cap).
     let sawUsage = false;
 
     // Driver task: consumes the LLM stream + approves one at a time + dispatches tool
@@ -1408,7 +1413,7 @@ export class ContextEngine {
             // engine will retry in-run, the planned backoff rides along as retry_in_ms
             // (the frontend's live countdown); absent on final failures and completions.
             // Mirrors the reconnect loop exactly, or the announced countdown is a lie: an
-            // attempt that received content (a truncated one aside) restarts the ladder at its
+            // attempt that received content (one cut off at its cap aside) restarts the ladder at its
             // first rung, either budget running out means no retry is planned at all, and an
             // image retry waits for nothing.
             const retryInMs =
@@ -1418,7 +1423,7 @@ export class ContextEngine {
                   ? 0
                   : this.plannedRetryDelayMs(
                       outcome,
-                      receivedContent && outcome.status !== "truncated" ? 0 : retry.consecutive,
+                      receivedContent && !cutAtOutputCap(outcome) ? 0 : retry.consecutive,
                       this.maxReconnects,
                       RETRY_STATUSES,
                     );
@@ -1441,12 +1446,12 @@ export class ContextEngine {
           }
           const msg = res.value;
           receivedContent = true;
-          // token_usage reports a Request the provider finished (completed, or truncated and
-          // billed all the same): record the context usage / Session cumulative counts —
+          // token_usage reports a Request the provider finished (completed, or cut off at its
+          // output cap and billed all the same): record the context usage / Session cumulative counts —
           // stamped onto the message BEFORE it is yielded or written, so the stream and the
           // Trace carry the Session series rather than the LLM's per-request stand-in. The
           // Session turn count (per committed LLM Request, across Tasks; used for compaction
-          // threshold checks) waits for the outcome: a truncated attempt is no turn.
+          // threshold checks) waits for the outcome: an attempt cut off at its cap is no turn.
           if (this.observeTokenUsage(msg)) sawUsage = true;
           queue.push(msg);
           await this.write(msg);
@@ -1458,11 +1463,15 @@ export class ContextEngine {
           ) {
             assistantSegments.push(msg);
           }
-          // Approve as soon as each complete tool_call finishes streaming. Every complete
-          // tool_call is a real one: a call the stream cut short closes with its partial `stop`
-          // alone (see finishInterrupted) and never reaches here, so nothing is dispatched on
-          // half its arguments.
+          // Approve as soon as each complete tool_call finishes streaming. A tool call the LLM
+          // closed early — its request was interrupted, failed or cut off before the call's
+          // own end arrived — is written whole with the arguments that arrived, but marked (see
+          // markInterruptedToolCall): it is never dispatched, isn't added to this turn's ledger,
+          // and gets no paired output, since the request holding it is never committed. Its
+          // Request's request_end says so; the reconnect (retryable) resends the
+          // flattened carry-over, and the run-ending outcomes (aborted / fatal) exit directly.
           if (isCompleteModelMessage(msg) && msg.payload.type === "tool_call") {
+            if (isInterruptedToolCall(msg)) continue;
             const tc = msg as AmspRecord<ToolCallPayload>;
             const toolCallId = tc.payload.tool_call_id;
             callOrder.push(toolCallId);
@@ -1894,8 +1903,9 @@ export class ContextEngine {
           ...(attempt.errorMessage !== undefined ? { errorMessage: attempt.errorMessage } : {}),
         };
       } else {
-        // Retryable failure, or a truncated response (taken back out of MMSP's history, so
-        // nothing was committed): keep its cause and detail as the last error of record.
+        // Retryable failure, a response cut off at its cap included (taken back out of MMSP's
+        // history, so nothing was committed): keep its cause and detail as the last error of
+        // record.
         lastError = attempt.errorMessage;
         lastErrorCode = attempt.errorCode;
       }
@@ -1988,7 +1998,7 @@ export class ContextEngine {
   ): AsyncGenerator<
     AmspRecord,
     {
-      status: RequestEndStatus;
+      status: StopReason;
       text: string;
       toolCalls: AmspRecord<ToolCallPayload>[];
       usage: AmspRecord | null;
@@ -2101,9 +2111,9 @@ export class ContextEngine {
           const body = (msg.payload as ThinkingPayload).thinking;
           if (!sawPartialThinking && body !== "") yield msg;
         } else if (msg.payload.type === "tool_call") {
-          // Every complete tool_call is a real request (a call cut short has no complete
-          // record), so each one needs its paired output.
-          toolCalls.push(msg as AmspRecord<ToolCallPayload>);
+          // Same rule as the turn loop: a tool call closed early (its request ended before the
+          // call did) is no real request and gets no paired output; every other one needs one.
+          if (!isInterruptedToolCall(msg)) toolCalls.push(msg as AmspRecord<ToolCallPayload>);
         }
       }
     }
@@ -2371,13 +2381,12 @@ export class ContextEngine {
 
 /** Transcribes the model's produced thinking/text and tool calls/results into tagged lines (shared by `[turn_aborted]`/`[turn_retried]`). */
 /**
- * The `[request_error]` line for a failed attempt's outcome (`fatal`, `retryable` or
- * `truncated`, with whatever code and text it carries — an idle timeout has a code and no text,
- * a truncation the finish reason and no code), or null for an outcome that is no failure: a
- * completed request, or a user interruption.
+ * The `[request_error]` line for a failed attempt's outcome (`fatal` or `retryable`, with
+ * whatever code and text it carries — an idle timeout has a code and no text), or null for an
+ * outcome that is no failure: a completed request, or a user interruption.
  */
 function requestErrorLine(outcome: LLMOutcome): string | null {
-  if (outcome.status === "completed" || outcome.status === "aborted") return null;
+  if (outcome.status !== "fatal" && outcome.status !== "retryable") return null;
   if (outcome.errorCode === undefined && outcome.errorMessage === undefined) return null;
   return transcribeRequestError(outcome.errorCode, outcome.errorMessage);
 }

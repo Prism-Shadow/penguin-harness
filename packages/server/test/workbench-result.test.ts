@@ -62,14 +62,25 @@ describe("workbench task results", () => {
       workbenchResult("idle", [
         ask("q"),
         answer("Half an ans"),
-        message({ type: "request_end", status: "truncated", error_message: "cut", attempt: 6 }),
+        message({
+          type: "request_end",
+          status: "retryable",
+          error_code: "output_truncated",
+          error_message: "cut",
+          attempt: 6,
+        }),
       ]),
     ).toEqual({ status: "failed", text: "", error: "cut" });
     expect(
       workbenchResult("idle", [
         ask("q"),
         answer("Half an ans"),
-        message({ type: "request_end", status: "truncated", retry_in_ms: 2000 }),
+        message({
+          type: "request_end",
+          status: "retryable",
+          error_code: "output_truncated",
+          retry_in_ms: 2000,
+        }),
         answer("The answer."),
         message({ type: "request_end", status: "completed" }),
       ]),

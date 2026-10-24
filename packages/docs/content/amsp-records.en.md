@@ -119,7 +119,7 @@ interface ToolCallOutputPayload {
   output: string;
   images?: string[];          // data:<mime>;base64,… URLs (e.g. read_file's image results)
   tool_call_id: string;
-  status: ToolStatus;         // completed / aborted (denied, never ran) / fatal
+  status: ToolStatus;         // completed / aborted (denied, or interrupted while running) / fatal
 }
 
 interface ImageUrlPayload {
@@ -191,7 +191,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. A run of fragments whose item was fully generated ends with its complete message after the `stop`, so a consumer never has to reassemble fragments itself. A tool call the stream cut short (its arguments never fully arrived) closes with its `stop` alone and gets no complete record: it was never dispatched.
+Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. Each run of fragments ends with its complete message after the `stop`, so a consumer never has to reassemble fragments itself. That holds for an item an interruption, a failure or a cut-off ended early, too: its complete record holds what arrived (a tool call's raw argument text, which may not parse). Whether it entered the model history is its Request's `request_end.status`. A tool call of a Request that did not complete ran only if its `approval_decision` came before that `request_end`; one closed early never runs.
 
 ## event_msg
 
@@ -231,6 +231,7 @@ type ErrorCode =
   | "timeout"                 // idle timeout / connection went silent
   | "network"                 // transport drops, provider 429/5xx, and anything unclassifiable
   | "malformed"               // response failed parsing/validation, or the stream was truncated
+  | "output_truncated"        // the response stopped at its output cap; retried, never committed
   | "auth"                    // the provider rejected the credentials
   | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
@@ -307,7 +308,7 @@ interface RequestBeginPayload {
 
 interface RequestEndPayload {
   type: "request_end";
-  status: RequestEndStatus;   // the one record of why the Request ended (see End reasons);
+  status: StopReason;         // the one record of why the Request ended (see End reasons);
                               // "completed" is the mechanical commit criterion for replay
   // The unified RetryDetail block below is stamped in one place by the builders; every
   // field is additive — old Traces replay unchanged. compaction_end reuses the same block.
@@ -405,13 +406,12 @@ A server that is skipped rather than contacted, because its entry references a v
 
 ## End reasons
 
-No record carries a per-item end reason. A complete record means its item was fully generated; whether it entered the model history is its Request's `request_end.status`; how the run ended is read from `abort` and the terminal `request_end` / `compaction_end`. Records written by older versions carry a `stop_reason` field on every model payload; it is no longer read.
+No record carries a per-item end reason. Every streamed item has its complete record, one an interruption cut off included; whether it entered the model history is its Request's `request_end.status`; how the run ended is read from `abort` and the terminal `request_end` / `compaction_end`. Records written by older versions carry a `stop_reason` field on every model payload; it is no longer read.
 
-A Request ends with a `RequestEndStatus`. `LLMOutcome.status` uses the same set (see [Core Interfaces](/interfaces)):
+A Request ends with a `StopReason`. `LLMOutcome.status` uses the same set (see [Core Interfaces](/interfaces)):
 
 ```ts
-type StopReason = "completed" | "aborted" | "retryable" | "fatal";  // also compaction_end and MCP connect results
-type RequestEndStatus = StopReason | "truncated";                   // request_end only
+type StopReason = "completed" | "aborted" | "retryable" | "fatal";  // request_end, compaction_end, MCP connect results
 type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call_output
 ```
 
@@ -421,11 +421,8 @@ A status answers one question: should this be retried? The kind of failure rides
 | --- | --- | --- |
 | `completed` | finished normally; the turn is committed | continue |
 | `aborted` | user interruption or cancellation | stop, emit an `abort` event, hand back to the user |
-| `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, and anything unclassifiable | reconnect within the run on the backoff ladder |
-| `truncated` | the response arrived whole, but the provider did not finish it the normal way (`finish_reason` `length`, the output cap, or `unknown`); `error_message` names which | not committed; retried like `retryable`, except that a truncated attempt does not reset the ladder. When the retries run out, this `request_end` (no `retry_in_ms`) is the terminal record |
+| `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, a response that arrived whole but stopped at its output cap (`error_code: "output_truncated"`), and anything unclassifiable | reconnect within the run on the backoff ladder; an attempt stopped at its cap is not committed and does not reset the ladder. When the retries run out, the last `request_end` (no `retry_in_ms`) is the terminal record |
 | `fatal` | a failure no retry can fix: a definitive provider 4xx rejection (parameters, quota), rejected credentials, or a deterministic client-side rejection | stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record |
-
-`truncated` exists only on `request_end`: a truncated compaction request counts toward the compaction's retry budget, and its `compaction_end` stays within `StopReason`.
 
 A tool result's `status` says what the result is:
 
@@ -433,7 +430,7 @@ A tool result's `status` says what the result is:
 | --- | --- |
 | `completed` | the tool ran to its end; whatever it reported (a non-zero exit code, say) is in the output |
 | `fatal` | the call failed: an unknown tool, unparseable arguments, a tool error, an execution-environment error, or a timeout. The error is fed back to the model, never retried |
-| `aborted` | the call never ran: the user, the command policy or a pre_tool_use hook denied it (`approval_decision` names who) |
+| `aborted` | the call did not run to its end: the user, the command policy or a pre_tool_use hook denied it (`approval_decision` names who), or the user interrupted it while it ran (the output holds what it had produced, then the interruption note) |
 
 A `tool_call_output` written before the field reads as `completed`. Older Traces may still carry the retired `request_end` values `failed`, `timeout`, `malformed` and `auth`. Replay only ever compares against `completed`, and renderers still display the old spellings.
 

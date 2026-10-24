@@ -13,8 +13,8 @@
  * - `fatal` → unexpected (`llm_fatal`): a definitive rejection (provider 4xx, credentials,
  *   fast mode on a model without a fast tier) the engine never retries; the run stopped on
  *   it and only a human changing config or credentials can fix it.
- * - `retryable` and `truncated` (a response the provider cut off, retried the same way) →
- *   depend on whether the retry ladder carried them:
+ * - `retryable` (a response cut off at its output cap, `output_truncated`, included) → depends
+ *   on whether the retry ladder carried it:
  *     - another attempt followed (a `request_begin` resolved the pending record) → expected
  *       (`llm_retried`): recorded for the record, not raised at an operator;
  *     - nothing followed but the end of the run (an `abort`, or close) → unexpected
@@ -41,7 +41,7 @@
  *
  * Environment (source = `environment`): reads `tool_call_output`'s `status` —
  * `fatal` → expected (the error is fed back to the model, and the Agent adjusts on its own;
- * `aborted` is a denial, not recorded). Exactly one shape is
+ * `aborted` is a denial or an interruption, not recorded). Exactly one shape is
  * dropped: a command tool's ordinary non-zero exit, which is how a shell command reports
  * information rather than a fault — see isOrdinaryCommandExit; the same tools' environment
  * faults (killed by a signal, spawn failure, tool timeout) still record.
@@ -67,7 +67,6 @@ import { isEventMessage, isModelMessage, isSessionMeta } from "@prismshadow/peng
 import path from "node:path";
 import type {
   AmspRecord,
-  RequestEndStatus,
   SessionMetaMessage,
   StopReason,
   ToolStatus,
@@ -89,7 +88,7 @@ export const TOOL_NAMES_MAX = 1000;
 export const ORIGIN_CTX_MAX = 200;
 
 /** Recorded LLM failure states (`aborted` / `completed` are not errors and aren't included here). */
-type LlmFailure = "retryable" | "truncated" | "fatal";
+type LlmFailure = "retryable" | "fatal";
 
 /** Error code, classification, and fallback message (the last used when no abort reason is available). */
 interface FailureSpec {
@@ -108,13 +107,6 @@ const LLM_FAILURES: Record<LlmFailure, FailureSpec> = {
     kind: "unexpected",
     text: "LLM request failed and the retries did not recover it.",
   },
-  // A response the provider kept cutting off (its output cap, or an abnormal finish) until the
-  // ladder ran out: the same lost turn as an exhausted `retryable`, under the same code.
-  truncated: {
-    code: "llm_failed",
-    kind: "unexpected",
-    text: "LLM response was truncated and the retries did not recover it.",
-  },
   // Its own code, not the failed bucket: dedup is `(source, code, Project)` over a short
   // window, and `llm_retried` can fire on any recovered blip — sharing a bucket would let
   // a genuine run-ending failure be dropped as a duplicate of one. The engine never
@@ -127,7 +119,7 @@ const LLM_FAILURES: Record<LlmFailure, FailureSpec> = {
 };
 
 /**
- * A `retryable` (or `truncated`) the engine went on to retry: expected — the engine's defined handling path
+ * A `retryable` the engine went on to retry: expected — the engine's defined handling path
  * absorbed it and the user never lost anything, so it belongs in the record but not in an
  * operator's queue. Its own code so the exhausted case keeps `llm_failed` to itself and
  * neither can dedup the other away.
@@ -139,7 +131,7 @@ const LLM_RETRIED: FailureSpec = {
 };
 
 function isLlmFailure(s: unknown): s is LlmFailure {
-  return s === "retryable" || s === "truncated" || s === "fatal";
+  return s === "retryable" || s === "fatal";
 }
 
 /**
@@ -288,7 +280,7 @@ export class StreamErrorWatcher {
   private observeLlm(msg: AmspRecord): void {
     const p = msg.payload as {
       type?: string;
-      status?: RequestEndStatus;
+      status?: StopReason;
       reason?: string | null;
       error_message?: string;
       attempt?: number;
@@ -348,7 +340,7 @@ export class StreamErrorWatcher {
     const entry = this.pending.get(key);
     if (entry === undefined) return;
     this.pending.delete(key);
-    const spec = retried && entry.status !== "fatal" ? LLM_RETRIED : LLM_FAILURES[entry.status];
+    const spec = retried && entry.status === "retryable" ? LLM_RETRIED : LLM_FAILURES[entry.status];
     const trimmed = reason?.trim();
     // Message priority: a legacy abort reason (old cores' failure prose) → a sentence
     // composed from the staged request_end's own detail and attempt — the terminal
@@ -450,7 +442,7 @@ export class StreamErrorWatcher {
 
     const name = this.toolNames.get(key);
     this.toolNames.delete(key); // This call has settled: dequeue it, the cache only keeps in-flight calls
-    if (p.status !== "fatal") return; // completed / aborted (a denial) are not errors
+    if (p.status !== "fatal") return; // completed / aborted (a denial, an interruption) are not errors
     const output = p.output ?? "";
     if (isOrdinaryCommandExit(name, output)) return; // a shell's exit status is information, not a fault
     this.errors.record({

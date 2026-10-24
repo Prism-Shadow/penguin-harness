@@ -9,12 +9,12 @@
  * 2. the main Session recorded an `abort`: `aborted`, with its cause (the turn cap's is
  *    `max_turns`);
  * 3. the main Session's last `request_end` or `compaction_end` that is not `completed` and plans
- *    no retry (no `retry_in_ms`), unless a later request went on: its status (`truncated`
- *    included) and error;
+ *    no retry (no `retry_in_ms`), unless a later request went on: its status and error (a
+ *    response the retries never got past its output cap is `retryable`, `output_truncated`);
  * 4. otherwise `completed`.
  *
- * The text is the main Session's assistant text of the Requests that completed: an attempt that
- * was retried, cut off or failed contributes none. Child Sessions' records (with `origin`) never
+ * The text is the main Session's assistant text of the Requests that completed: a Request that
+ * was retried, interrupted or failed contributes none, though its texts have their records. Child Sessions' records (with `origin`) never
  * decide the outcome; their usage counts.
  */
 import { AmspStreamError } from "./errors.js";
@@ -24,8 +24,8 @@ import type {
   AmspRecord,
   CompactionEndPayload,
   RequestEndPayload,
-  RequestEndStatus,
   SessionMetaPayload,
+  StopReason,
   TextPayload,
   TokenCounts,
   TokenUsagePayload,
@@ -35,7 +35,7 @@ import type {
 /** A finished run, as `Run.result()` and `AgentClient.run()` return it. */
 export interface RunResult {
   /** `completed`, or how the run stopped. */
-  status: RequestEndStatus;
+  status: StopReason;
   /** Why the run did not complete, when a record says. */
   error?: AmspError;
   /** The Session the run ran on; pass it as `sessionId` to continue the conversation. */
@@ -74,7 +74,7 @@ export class RunCollector {
   /** The main Session's Task state: none begun yet, one open, or the last one closed. */
   #task: "none" | "open" | "closed" = "none";
   #abort: AmspError | null = null;
-  #terminal: { status: RequestEndStatus; error?: AmspError } | null = null;
+  #terminal: { status: StopReason; error?: AmspError } | null = null;
   #compacting = false;
   readonly #texts: string[] = [];
   /** The open Request's assistant texts: kept once its request_end is `completed`. */
@@ -190,7 +190,7 @@ export class RunCollector {
     };
   }
 
-  #outcome(): { status: RequestEndStatus; error?: AmspError } {
+  #outcome(): { status: StopReason; error?: AmspError } {
     if (this.#task !== "closed") {
       return {
         status: "fatal",
@@ -210,11 +210,11 @@ export class RunCollector {
 }
 
 /**
- * A tool call's arguments as an object. A record carries them as a JSON string: the engine's
- * serialization of the parsed arguments, which the streamed fragments need not match character
- * for character but parse to the same object (a call cut short has no complete record). An empty
- * string is a call without arguments (`{}`), and anything that does not parse to a JSON object is
- * `null`.
+ * A tool call's arguments as an object. A record carries them as a JSON string: for a completed
+ * call the engine's serialization of the parsed arguments, which the streamed fragments need not
+ * match character for character but parse to the same object; for a call cut short, the text
+ * received so far. An empty string is a call without arguments (`{}`), and anything that does not
+ * parse to a JSON object is `null`.
  */
 export function parseArguments(
   toolCall: Pick<ToolCallPayload, "arguments">,

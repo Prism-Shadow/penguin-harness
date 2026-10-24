@@ -39,8 +39,13 @@ describe("probeVerdict", () => {
     expect(probeVerdict({ status: "completed" }, false)).toEqual({ ok: true });
   });
 
-  it("passes a truncated probe: a whole answer the tiny cap cut off", () => {
-    expect(probeVerdict({ status: "truncated", errorMessage: "cut" }, true)).toEqual({ ok: true });
+  it("passes a probe cut off at its output cap: a whole answer the tiny cap cut off", () => {
+    expect(
+      probeVerdict(
+        { status: "retryable", errorCode: "output_truncated", errorMessage: "cut" },
+        false,
+      ),
+    ).toEqual({ ok: true });
   });
 
   it("passes a retryable ending when content was streamed (e.g. a reasoning model burned the tiny cap)", () => {

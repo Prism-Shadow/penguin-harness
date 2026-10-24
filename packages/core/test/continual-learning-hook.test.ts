@@ -137,11 +137,11 @@ describe("continual-learning stop.mjs", () => {
     expect(prompt).toContain("YYYY.MM.DD.N");
   });
 
-  it("counts only Requests that completed: a truncated attempt reports usage but is no turn", async () => {
+  it("counts only Requests that completed: an attempt cut off at its cap reports usage but is no turn", async () => {
     await append([meta(), user("long answer")]);
     for (let i = 1; i <= 30; i++) await append(turn(i));
     // Cut at the output cap and retried: billed (its usage lands), not committed.
-    await append([assistant("Half an ans"), usage(), requestEnd("truncated")]);
+    await append([assistant("Half an ans"), usage(), requestEnd("retryable")]);
     expect(stop()).toBeUndefined();
     await append(turn(31));
     expect(stop()).toMatchObject({ output: { turns: 31 } });

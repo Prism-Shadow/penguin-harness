@@ -194,12 +194,12 @@ POST …/sessions/:sessionId/approvals/:toolCallId   {"decision": "allow" | "den
 
 1. The last `task_begin` has no `task_end`, or no Task began: `fatal`, with error code `internal`. The server failed while driving the run.
 2. An `abort` record: `aborted`, with its error. The turn limit ends a Task this way too, with error code `max_turns`.
-3. The last `request_end` or `compaction_end` that is not `completed` and carries no `retry_in_ms`, unless a later `request_begin` followed: its status and error. A response the provider kept cutting off ends `truncated`.
+3. The last `request_end` or `compaction_end` that is not `completed` and carries no `retry_in_ms`, unless a later `request_begin` followed: its status and error. A response the retries never got past its output cap ends `retryable`, with error code `output_truncated`.
 4. Otherwise `completed`.
 
 The rest of the result:
 
-- `text`: the assistant texts of the main Session's Requests that completed, joined with a blank line, leaving out what falls between `compaction_begin` and `compaction_end` (an attempt that was retried contributes none);
+- `text`: the assistant texts of the main Session's Requests that completed, joined with a blank line, leaving out what falls between `compaction_begin` and `compaction_end` (a Request that was retried or interrupted contributes none, though its texts have their records);
 - `usage`: the sum of every `token_usage.request`, subagents included;
 - `sessionUsage`: the main Session's last `token_usage.session`, or `null`;
 - `requests`: the number of main-Session `request_begin` records, retried attempts included.
@@ -208,7 +208,7 @@ A program that reads the stream itself gets the same result by feeding the recor
 
 ## Errors
 
-Before a stream starts, a refusal is an HTTP status and `{"error": {"code", "message"}}`; the statuses are listed under [Errors](/agent-api#errors). A run that ends `fatal`, `retryable` or `truncated` is still answered `200`: the HTTP status covers only the request.
+Before a stream starts, a refusal is an HTTP status and `{"error": {"code", "message"}}`; the statuses are listed under [Errors](/agent-api#errors). A run that ends `fatal` or `retryable` is still answered `200`: the HTTP status covers only the request.
 
 Inside the stream, a failure is a record's `error_code` and `error_message`: on `request_end` and `compaction_end`, on `abort`, and on `mcp_connect_end` and each of its `results`. The codes:
 
@@ -216,10 +216,12 @@ Inside the stream, a failure is a record's `error_code` and `error_message`: on 
 | --- | --- |
 | `user_abort` | The run was aborted: by `POST …/abort`, the run stream's caller disconnecting, or someone in the Web App |
 | `backoff_interrupted`, `compaction_interrupted` | An abort arrived while the engine waited to retry, or during a compaction |
+| `max_turns` | The Task reached its turn limit; `error_message` names the limit |
 | `timeout` | The model's connection went silent |
 | `network` | A dropped connection, a provider error with no more specific code, or a failure that fits nowhere else |
 | `rate_limited` | The provider answered `429`: its rate limit, or an exhausted quota |
 | `malformed` | The model's response failed to parse or was cut short |
+| `output_truncated` | The model's response stopped at its output limit: not committed, and retried |
 | `auth` | The provider refused the credentials |
 | `rejected` | The provider refused the request for good (parameters, quota) |
 | `image_rejected` | The provider rejected (4xx) a request whose input holds images; the engine takes any such rejection as the images' and reads nothing out of the wording. The images are replaced with a fixed note and the request retried at once, the provider's error quoted in the retry's `[request_error]` line (`retryable` with `retry_in_ms: 0`) |

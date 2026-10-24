@@ -5,16 +5,12 @@
  * back: the yielded AmspRecord stream, and the generator's `LLMOutcome` return value (the
  * request's terminal state; see the docs page's "control plane"). Besides that it reads one
  * optional property, `defaultThinkingLevel`, to know which level a request with no pin goes
- * out at. Protocol conversion to and from the provider is the implementation's own business.
+ * out at, and one in-process mark on a yielded tool call (`markInterruptedToolCall`). Protocol
+ * conversion to and from the provider is the implementation's own business.
  *
  * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
-import type {
-  ErrorCode,
-  AmspRecord,
-  RequestEndStatus,
-  ToolDefinition,
-} from "@prismshadow/amsp/records";
+import type { ErrorCode, AmspRecord, StopReason, ToolDefinition } from "@prismshadow/amsp/records";
 import type { ThinkingLevelName } from "./shared.js";
 // Concrete class, used only as a type annotation (type-only import; no runtime dependency, no circular reference).
 import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
@@ -117,23 +113,23 @@ export interface GenerativeModelParameters {
  *     malformed or truncated responses, and anything unclassifiable. `context_engine`
  *     reconnects on its backoff ladder; `errorMessage` names the concrete failure.
  *     Unclassifiable errors land here on purpose: the fatal detector is an allowlist, and a
- *     gateway phrasing a transient fault its own way must keep its retries;
+ *     gateway phrasing a transient fault its own way must keep its retries. A response that
+ *     arrived whole but stopped at its output cap is `retryable` too, coded `output_truncated`
+ *     (one that ended on a finish reason the client does not map is coded `malformed`): the
+ *     implementation takes the turn back out of its stateful history but still emits its
+ *     `token_usage`, since the provider billed it. A one-shot caller may read the text of an
+ *     `output_truncated` answer as it would a completed one;
  *   - `fatal`: a failure no retry can fix — a provider 4xx rejection (invalid request or
  *     quota; 408/429 stay retryable), a credentials failure (see `isAuthenticationError`),
  *     or a deterministic client-side rejection thrown before any network I/O (fast mode on
  *     a model without a fast tier). The engine stops the run and surfaces `errorMessage`;
  *     the fix is a config or credential change, then a new request (only the model
  *     reference is fixed at Session creation — credentials come from the current Project
- *     config, so a key update lets the Session continue);
- *   - `truncated`: the stream arrived whole but the provider did not report a normal finish
- *     (finish reason `length` — the output cap — or `unknown`). The attempt is not committed
- *     (removed from the stateful history; its `token_usage` still goes out, since it was billed)
- *     and the engine retries it on the `retryable` ladder; `errorMessage` names the finish
- *     reason. A one-shot caller reads the text that arrived, as for `completed`.
+ *     config, so a key update lets the Session continue).
  * Docs: /docs/interfaces § "LLMOutcome semantics".
  */
 export interface LLMOutcome {
-  status: RequestEndStatus;
+  status: StopReason;
   /**
    * Classified cause (the records' ErrorCode vocabulary): present on every
    * non-completed failure outcome. Carried onto the `request_end` event as `error_code`,
@@ -142,21 +138,42 @@ export interface LLMOutcome {
    */
   errorCode?: ErrorCode;
   /**
-   * Error detail (`describeError` text): present on `fatal` and `truncated`, and on
-   * `retryable` when a concrete transport/provider error was caught (a plain idle timeout has
-   * none). Carried
-   * onto the `request_end` event as `error_message` — one name across the internal outcome
+   * Error detail (`describeError` text): present on `fatal`, and on `retryable` when a
+   * concrete transport/provider error was caught or the response was cut off (a plain idle
+   * timeout has none). Carried onto the `request_end` event as `error_message` — one name across the internal outcome
    * and the wire — so observability (the Cost center's errors panel) can show the real
    * reason behind a retried request.
    */
   errorMessage?: string;
 }
 
+/** Complete tool calls an implementation closed because their request ended early (see `markInterruptedToolCall`). */
+const interruptedToolCalls = new WeakSet<AmspRecord>();
+
+/**
+ * Marks a complete `tool_call` the implementation closed because its request was interrupted,
+ * failed or cut off before the call's own end arrived: the record holds the raw argument
+ * text that did arrive, and the engine never dispatches it. The mark lives on this record
+ * object in this process only — it is not part of the record and is never serialized; a
+ * reader of the stream or the Trace tells such a call from its Request's `request_end.status`.
+ * Returns the record, for `yield markInterruptedToolCall(call)`.
+ */
+export function markInterruptedToolCall<T extends AmspRecord>(record: T): T {
+  interruptedToolCalls.add(record);
+  return record;
+}
+
+/** Whether `record` is a tool call its implementation closed early (`markInterruptedToolCall`). */
+export function isInterruptedToolCall(record: AmspRecord): boolean {
+  return interruptedToolCalls.has(record);
+}
+
 /**
  * A stateful LLM object attached to a Session.
  * `streamGenerate` yields streaming `partial_*` messages as an async generator, and appends the
- * corresponding complete `model_msg` once each item ends (a tool call still streaming when the
- * request is interrupted closes with its `stop` fragment alone); Token usage is emitted as a
+ * corresponding complete `model_msg` once each item ends — an item still streaming when the
+ * request ends early is closed with what had arrived, and such a tool call is marked with
+ * `markInterruptedToolCall` so the engine never dispatches it; Token usage is emitted as a
  * `token_usage` event_msg. **Never throws to `context_engine`**: any interruption/exception is
  * closed off in well-formed structure and returned normally, and **must** report the terminal
  * state via `LLMOutcome` — error handling happens entirely inside the LLM interface, and

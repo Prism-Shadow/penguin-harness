@@ -119,7 +119,7 @@ interface ToolCallOutputPayload {
   output: string;
   images?: string[];          // data:<mime>;base64,… URLs (e.g. read_file's image results)
   tool_call_id: string;
-  status: ToolStatus;         // completed / aborted (denied, never ran) / fatal
+  status: ToolStatus;         // completed / aborted (denied, or interrupted while running) / fatal
 }
 
 interface ImageUrlPayload {
@@ -191,7 +191,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。条目完整生成时，这组分片在 `stop` 之后紧跟一条完整消息，使用方无需自己拼接分片。被流截断的工具调用（参数没有完整到达）只以 `stop` 收束、没有完整记录，它也从未被派发。
+因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。每组分片在 `stop` 之后都紧跟一条完整消息，使用方无需自己拼接分片。被中断、失败或截断提前结束的条目也一样：它的完整记录装着已经到达的内容（工具调用则是原样的参数文本，未必能解析）。它是否进入模型历史，看所在 Request 的 `request_end.status`。所在 Request 没有完成的工具调用，只有 `approval_decision` 出现在该 `request_end` 之前才执行过；被提前收束的调用从不执行。
 
 ## event_msg
 
@@ -231,6 +231,7 @@ type ErrorCode =
   | "timeout"                 // idle timeout / connection went silent
   | "network"                 // transport drops, provider 429/5xx, and anything unclassifiable
   | "malformed"               // response failed parsing/validation, or the stream was truncated
+  | "output_truncated"        // the response stopped at its output cap; retried, never committed
   | "auth"                    // the provider rejected the credentials
   | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
@@ -307,7 +308,7 @@ interface RequestBeginPayload {
 
 interface RequestEndPayload {
   type: "request_end";
-  status: RequestEndStatus;   // the one record of why the Request ended (see End reasons);
+  status: StopReason;         // the one record of why the Request ended (see End reasons);
                               // "completed" is the mechanical commit criterion for replay
   // The unified RetryDetail block below is stamped in one place by the builders; every
   // field is additive — old Traces replay unchanged. compaction_end reuses the same block.
@@ -405,13 +406,12 @@ interface HookPayload {
 
 ## 结束原因
 
-记录不携带逐条的结束原因。有完整记录，说明该条目完整生成了；它是否进入模型历史，看所在 Request 的 `request_end.status`；运行如何结束，看 `abort` 与终局的 `request_end` / `compaction_end`。旧版本写下的记录在每种模型 payload 上都带 `stop_reason` 字段，现已不再读取。
+记录不携带逐条的结束原因。每个流式条目都有完整记录，被中断截断的也不例外；它是否进入模型历史，看所在 Request 的 `request_end.status`；运行如何结束，看 `abort` 与终局的 `request_end` / `compaction_end`。旧版本写下的记录在每种模型 payload 上都带 `stop_reason` 字段，现已不再读取。
 
-一次 Request 以 `RequestEndStatus` 收尾，`LLMOutcome.status` 使用同一组取值（见[核心接口](/interfaces)）：
+一次 Request 以 `StopReason` 收尾，`LLMOutcome.status` 使用同一组取值（见[核心接口](/interfaces)）：
 
 ```ts
-type StopReason = "completed" | "aborted" | "retryable" | "fatal";  // also compaction_end and MCP connect results
-type RequestEndStatus = StopReason | "truncated";                   // request_end only
+type StopReason = "completed" | "aborted" | "retryable" | "fatal";  // request_end, compaction_end, MCP connect results
 type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call_output
 ```
 
@@ -421,11 +421,8 @@ type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call
 | --- | --- | --- |
 | `completed` | 正常完成，该轮已提交 | 继续 |
 | `aborted` | 用户中断或取消 | 停止，产出 `abort` 事件，交还用户 |
-| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败的响应，以及一切无法归类的错误 | 同一次运行内按退避阶梯自动重连 |
-| `truncated` | 响应完整送达，但供应商没有正常结束它（`finish_reason` 为 `length` 即达到输出上限，或 `unknown`），`error_message` 写明是哪一种 | 不提交，按 `retryable` 同样重试，只是截断的尝试不使退避阶梯归零。重试用尽时，这条不带 `retry_in_ms` 的 `request_end` 即终局记录 |
+| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败的响应、完整送达却停在输出上限的响应（`error_code` 为 `output_truncated`），以及一切无法归类的错误 | 同一次运行内按退避阶梯自动重连；停在输出上限的尝试不提交，也不使阶梯归零。重试用尽时，最后一条不带 `retry_in_ms` 的 `request_end` 即终局记录 |
 | `fatal` | 重试也无法修复的失败：供应商确定性的 4xx 拒绝（参数、配额）、凭据被拒，或确定性的客户端拒绝 | 停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录 |
-
-`truncated` 只出现在 `request_end` 上：截断的压缩请求计入压缩自己的重试预算，`compaction_end` 的取值仍在 `StopReason` 之内。
 
 工具结果的 `status` 说明结果是什么：
 
@@ -433,7 +430,7 @@ type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call
 | --- | --- |
 | `completed` | 工具运行到结束；它报告的情况（比如非零退出码）都在输出里 |
 | `fatal` | 调用失败：未知工具、参数无法解析、工具出错、执行环境出错或超时。错误回灌给模型，从不重试 |
-| `aborted` | 调用没有执行：被用户、命令策略或 pre_tool_use 钩子拒绝（由谁拒绝见 `approval_decision`） |
+| `aborted` | 调用没有运行到结束：被用户、命令策略或 pre_tool_use 钩子拒绝（由谁拒绝见 `approval_decision`），或运行中被用户中断（输出里是它已产出的内容，末尾是中断提示） |
 
 没有这个字段的旧 `tool_call_output` 读作 `completed`。旧 Trace 的 `request_end` 里可能还有已废弃的 `failed`、`timeout`、`malformed` 和 `auth`；回放只与 `completed` 比较，渲染层照常展示这些旧取值。
 

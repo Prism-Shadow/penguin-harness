@@ -3710,11 +3710,11 @@ Scenarios:
     },
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `retryable` and `truncated` are the live statuses; the finer spellings only
-     * appear when replaying Traces written before the status convergence.
+     * wording. `retryable` is the live status; the finer spellings only appear when
+     * replaying Traces written before the stop-reason convergence.
      */
     reconnect: (
-      status: "retryable" | "truncated" | "failed" | "timeout" | "malformed",
+      status: "retryable" | "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
@@ -3733,8 +3733,8 @@ Scenarios:
               ? "Network or service temporarily unavailable"
               : kind === "image_rejected"
                 ? "The model provider rejected an image in this turn's input (replaced with a note)"
-                : kind === "truncated"
-                  ? "The model's output was cut off (it hit the output limit or did not finish normally)"
+                : kind === "output_truncated"
+                  ? "The model's output was cut off at the output limit"
                   : kind === "failed"
                     ? "The model provider returned an error"
                     : "The request failed";

@@ -189,8 +189,8 @@ const skills = installedSkills(skillsDir);
 if (skills.length === 0) process.exit(0);
 
 const window = taskWindow(records);
-// A turn is a Request that completed: a truncated attempt reports its usage too, and a retried or
-// failed one is no turn.
+// A turn is a Request that completed: an attempt cut off at its output cap reports its usage too,
+// and it is retried, so it is no turn; nor is an interrupted or failed one.
 const turns = window.filter(
   (r) => isEvent(r, "request_end") && r.payload.status === "completed",
 ).length;

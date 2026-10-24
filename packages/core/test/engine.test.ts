@@ -38,6 +38,7 @@ import type {
   EnvironmentInterface,
   ToolPermission,
 } from "../src/interfaces/index.js";
+import { markInterruptedToolCall } from "../src/interfaces/index.js";
 import type {
   AmspRecord,
   TextPayload,
@@ -1714,10 +1715,10 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("a tool call the stream cut short is never dispatched and gets no paired output", async () => {
-    // A call whose arguments never fully arrived closes with its partial stop alone: there is
-    // no complete tool_call, so nothing to dispatch, nothing in this turn's ledger and no
-    // paired output; the broken turn is cleaned up by reconnect.
+  it("a tool call closed early is written whole but never dispatched and gets no paired output", async () => {
+    // A call whose arguments never fully arrived is closed with what arrived and marked: its
+    // complete record goes out, but nothing is dispatched, nothing enters this turn's ledger
+    // and no output is paired; the broken turn is cleaned up by reconnect.
     let calls = 0;
     const inputs: AmspRecord[][] = [];
     const llm: LLMInterface = {
@@ -1737,6 +1738,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
             toolCallId: "tc-broken",
           });
           yield partialToolCall({ eventType: "stop", name: "", toolCallId: "tc-broken" });
+          yield markInterruptedToolCall(
+            toolCall({ name: "exec_command", arguments: '{"cmd": "ec', toolCallId: "tc-broken" }),
+          );
           return { status: "retryable", errorMessage: "incomplete stream" };
         }
         yield assistantText("done");
@@ -1761,7 +1765,16 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(calls).toBe(2);
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
 
-    // No output pointing to that tool_call is produced; the tool is also never approved/executed.
+    // The call's complete record went out with the arguments that arrived...
+    const written = all.filter(
+      (m) =>
+        isCompleteModelMessage(m) &&
+        m.payload.type === "tool_call" &&
+        m.payload.tool_call_id === "tc-broken",
+    );
+    expect(written).toHaveLength(1);
+    expect((written[0]!.payload as { arguments?: string }).arguments).toBe('{"cmd": "ec');
+    // ...but no output pointing to it is produced; the tool is never approved or executed.
     const paired = all.find(
       (m) =>
         isCompleteModelMessage(m) &&
@@ -1840,7 +1853,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("retries a truncated response with its finish reason in the retry block", async () => {
+  it("retries a response cut off at its output cap with its cause in the retry block", async () => {
     let calls = 0;
     const inputs: AmspRecord[][] = [];
     const cut = "the response stopped at the output limit (finish_reason: length)";
@@ -1850,14 +1863,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
         inputs.push(params.newMessages);
         if (calls === 1) {
           yield assistantText("Half an ans");
-          // A truncated attempt was billed: it reports its usage like a finished request.
+          // The cut-off attempt was billed: it reports its usage like a finished request.
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
             cache_write: 0,
             output: 64,
             total: 100,
           });
-          return { status: "truncated", errorMessage: cut };
+          return { status: "retryable", errorCode: "output_truncated", errorMessage: cut };
         }
         yield assistantText("A shorter answer.");
         yield tokenUsage(emptyTokenCounts(), {
@@ -1885,11 +1898,20 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
     expect(retried).toContain("[turn_retried]");
     expect(retried).toContain("Half an ans");
-    expect(retried).toContain(`[request_error]${cut}[/request_error]`);
+    expect(retried).toContain(`[request_error code="output_truncated"]${cut}[/request_error]`);
     const ends = all
-      .map((m) => m.payload as { type?: string; status?: string; retry_in_ms?: number })
+      .map(
+        (m) =>
+          m.payload as {
+            type?: string;
+            status?: string;
+            error_code?: string;
+            retry_in_ms?: number;
+          },
+      )
       .filter((p) => p.type === "request_end");
-    expect(ends.map((p) => p.status)).toEqual(["truncated", "completed"]);
+    expect(ends.map((p) => p.status)).toEqual(["retryable", "completed"]);
+    expect(ends[0]!.error_code).toBe("output_truncated");
     expect(ends[0]!.retry_in_ms).toBe(0);
     // Both attempts are metered, but only the completed one is a Session turn.
     const usages = all
@@ -1899,14 +1921,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((engine as unknown as { sessionTurns: number }).sessionTurns).toBe(1);
   });
 
-  it("does not reset the ladder on a truncated attempt: consecutive truncations exhaust maxReconnects", async () => {
+  it("does not reset the ladder on an attempt cut off at its cap: consecutive cut-offs exhaust maxReconnects", async () => {
     let calls = 0;
     const llm: LLMInterface = {
       async *streamGenerate() {
         calls += 1;
         // Every attempt received a whole response; none of it is progress.
         yield assistantText(`Cut off again ${calls}`);
-        return { status: "truncated", errorMessage: "cut" };
+        return { status: "retryable", errorCode: "output_truncated", errorMessage: "cut" };
       },
     };
     const environment = new Environment({
@@ -1919,12 +1941,16 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     // One attempt plus maxReconnects retries, then the run ends the way an exhausted ladder does.
     expect(calls).toBe(3);
-    expect(cutoff).toEqual({ kind: "llm_failure", errorMessage: "cut" });
+    expect(cutoff).toEqual({
+      kind: "llm_failure",
+      errorCode: "output_truncated",
+      errorMessage: "cut",
+    });
     const last = all
       .map((m) => m.payload as { type?: string; status?: string; retry_in_ms?: number })
       .filter((p) => p.type === "request_end")
       .at(-1)!;
-    expect(last).toMatchObject({ status: "truncated", attempt: 3 });
+    expect(last).toMatchObject({ status: "retryable", error_code: "output_truncated", attempt: 3 });
     expect(last.retry_in_ms).toBeUndefined();
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });

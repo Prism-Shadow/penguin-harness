@@ -64,6 +64,7 @@ export class UsageRecorder implements UsageRecording {
       type?: string;
       request?: { cache_read: number; cache_write: number; output: number; total: number };
       status?: string;
+      error_code?: string;
     };
 
     const originSessionId =
@@ -102,13 +103,14 @@ export class UsageRecorder implements UsageRecording {
     }
     // A failed request (request_end and not completed, with no token_usage): persist 0 tokens
     // + status, feeding the "model success rate" stat. A successful request is already counted
-    // once via the token_usage branch above, not repeated here — and so is a truncated one: the
-    // provider delivered and billed it (its token_usage came first), it was only cut at a cap.
+    // once via the token_usage branch above, not repeated here — and so is one cut off at its
+    // output cap (`output_truncated`): the provider delivered and billed it (its token_usage
+    // came first), it was only cut at the cap.
     if (
       payload.type === "request_end" &&
       payload.status &&
       payload.status !== "completed" &&
-      payload.status !== "truncated"
+      payload.error_code !== "output_truncated"
     ) {
       this.usage.insert({
         ...base,

@@ -7,7 +7,7 @@ export function workbenchResult(status: string, messages: readonly AmspRecord[])
   let text = "";
   let error: string | null = null;
   // Walking backward, a Request's request_end comes before its texts: the text of a Request
-  // that did not complete (a retried, truncated or failed attempt) is no answer.
+  // that did not complete (a retried, interrupted or failed attempt) is no answer.
   let inCompletedRequest = true;
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]!;

@@ -88,10 +88,17 @@ describe("usage-recorder", () => {
     expect(row.cache_read).toBe(100);
   });
 
-  it("a truncated request is metered by its token_usage and adds no failure row; a failed one adds a 0-token row", async () => {
+  it("a request cut off at its output cap is metered by its token_usage and adds no failure row; a failed one adds a 0-token row", async () => {
     const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, tokenUsage(counts(500), counts(500)));
-    await rec.record(CTX, requestEnd("truncated", { errorMessage: "cut", retryInMs: 2000 }));
+    await rec.record(
+      CTX,
+      requestEnd("retryable", {
+        errorCode: "output_truncated",
+        errorMessage: "cut",
+        retryInMs: 2000,
+      }),
+    );
     await rec.record(CTX, requestEnd("retryable", { errorCode: "network", retryInMs: 2000 }));
     const rows = db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all();
     expect(rows).toEqual([
