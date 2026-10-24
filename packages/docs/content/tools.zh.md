@@ -155,7 +155,7 @@ exec_command(cmd)
      input_command(process_id, kill: true) ──► SIGTERM the process group (SIGKILL after a grace period)
 ```
 
-正常退出的命令不附加任何注记。非零退出会附加 `[exit code: N]`，因信号终止会附加 `[terminated by signal S]`；两种情况都以 `fatal` 结束调用。
+正常退出的命令不附加任何注记。非零退出会附加 `[exit code: N]`，因信号终止会附加 `[terminated by signal S]`；两种情况都以 `completed` 结束调用，因为退出状态是命令的结果，不是工具的失败。`fatal` 留给工具自身的失败：超时、spawn 出错、抛出异常。
 
 工具参数（显式键）：
 

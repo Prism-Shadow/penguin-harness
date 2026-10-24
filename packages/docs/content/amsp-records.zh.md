@@ -428,7 +428,7 @@ type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call
 
 | `tool_call_output.status` | 含义 |
 | --- | --- |
-| `completed` | 工具运行到结束；它报告的情况（比如非零退出码）都在输出里 |
+| `completed` | 工具运行到结束；它报告的情况都在输出里。命令跑完即为完成，与退出状态无关：非零退出码或信号是命令的结果，写在输出末行（`[exit code: N]`、`[terminated by signal X]`） |
 | `fatal` | 调用失败：未知工具、参数无法解析、工具出错、执行环境出错或超时。错误回灌给模型，从不重试 |
 | `aborted` | 调用没有运行到结束：被用户、命令策略或 pre_tool_use 钩子拒绝（由谁拒绝见 `approval_decision`），或运行中被用户中断（输出里是它已产出的内容，末尾是中断提示） |
 

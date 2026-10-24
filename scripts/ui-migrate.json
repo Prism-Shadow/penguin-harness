@@ -211,9 +211,9 @@
         },
         {
           "owner": "WP-B",
-          "target": "packages/web/src/lib/stop-reason-tone",
-          "dest": "packages/web/src/lib/stop-reason-tone.ts",
-          "names": ["stopReasonTone"]
+          "target": "packages/web/src/lib/status-tone",
+          "dest": "packages/web/src/lib/status-tone.ts",
+          "names": ["statusTone"]
         }
       ],
       "packages/web/src/components/ui/skeleton": [

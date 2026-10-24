@@ -18,7 +18,7 @@ import { StreamText } from "../stream-text/stream-text";
 export interface ThinkingBlockProps {
   /** Running while the text streams, failed when it stopped short, done otherwise. */
   state: Extract<RunState, "running" | "done" | "failed">;
-  /** The status icon's accessible name and tooltip ("Running", "Done", the stop reason). */
+  /** The status icon's accessible name and tooltip ("Running", "Done", why a failed step stopped). */
   stateLabel?: string;
   /** The row's label ("Thinking"). */
   label: string;
@@ -28,8 +28,6 @@ export interface ThinkingBlockProps {
   startedAtMs?: number;
   /** The settled duration, once finished. */
   durationMs?: number;
-  /** Why a failed step stopped, shown in brackets after the duration. */
-  stopReason?: string;
 }
 
 export function ThinkingBlock({
@@ -39,7 +37,6 @@ export function ThinkingBlock({
   text,
   startedAtMs,
   durationMs,
-  stopReason,
 }: ThinkingBlockProps) {
   const streaming = state === "running";
   return (
@@ -49,18 +46,13 @@ export function ThinkingBlock({
       icon={<StatusIcon state={state} label={stateLabel} />}
       label={label}
       trailing={
-        <>
-          <span data-slot="detail" className="shrink-0 font-mono text-xs text-fg-muted">
-            {streaming ? (
-              <LiveDuration sinceMs={startedAtMs} />
-            ) : durationMs !== undefined ? (
-              formatDuration(durationMs)
-            ) : null}
-          </span>
-          {state === "failed" && stopReason !== undefined && (
-            <span className="font-mono text-xs text-fg-subtle">[{stopReason}]</span>
-          )}
-        </>
+        <span data-slot="detail" className="shrink-0 font-mono text-xs text-fg-muted">
+          {streaming ? (
+            <LiveDuration sinceMs={startedAtMs} />
+          ) : durationMs !== undefined ? (
+            formatDuration(durationMs)
+          ) : null}
+        </span>
       }
     >
       <StreamText className={DISCLOSURE_BODY_MD_CLASS} text={text} streaming={streaming} />

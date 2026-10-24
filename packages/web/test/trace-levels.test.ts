@@ -1,28 +1,28 @@
 /**
  * Where a Trace's thinking level changes (features/traces/trace-levels.ts), as the request rows
- * and the round navigator mark it.
+ * mark it.
  *
  * - The first level a file states is a change, from nothing.
  * - Requests at the same level as the one before mark nothing; a switch marks the request that
  *   went out at the new level, naming the old and the new.
  * - A file of requests with no level (written before the field) marks nothing, and a known level
  *   followed by an unknown one is not a switch.
- * - A switch on a compaction request lands on the compaction round.
- * - A round with two switches keeps the last for its navigator row; every request row keeps its own.
+ * - A round with two switches marks each request at its own.
+ * - A change reads as the level alone where the file states its first, and as `from → to` where
+ *   it switches.
  */
 import { describe, expect, it } from "vitest";
 import type { RequestSpan } from "@prismshadow/penguin-server/api";
-import { thinkingLevelChanges } from "../src/features/traces/trace-levels";
+import { levelChangeText, thinkingLevelChanges } from "../src/features/traces/trace-levels";
 
 let clock = 0;
 /** One request of round `taskIndex`, at `level` (undefined: none recorded). */
-function req(taskIndex: number, level?: string, compaction = false): RequestSpan {
+function req(taskIndex: number, level?: string): RequestSpan {
   clock += 1000;
   return {
     beginTs: new Date(Date.UTC(2026, 9, 22) + clock).toISOString(),
     taskIndex,
     ...(level !== undefined ? { thinkingLevel: level } : {}),
-    ...(compaction ? { compaction: true } : {}),
   };
 }
 
@@ -53,20 +53,19 @@ describe("thinking level change points", () => {
     expect(marked([req(0, "high"), req(1)])).toEqual([[0, null, "high"]]);
   });
 
-  it("a switch on a compaction request lands on the compaction round", () => {
-    const requests = [req(0, "medium"), req(1, "high", true)];
-    const { byRound } = thinkingLevelChanges(requests);
-    expect(byRound.get(1)).toEqual({ from: "medium", to: "high" });
-  });
-
-  it("a round switched twice keeps the last switch for its row, and each request its own", () => {
+  it("a round switched twice marks each request at its own", () => {
     const requests = [req(0, "low"), req(0, "high"), req(0, "max")];
-    const { byRound } = thinkingLevelChanges(requests);
-    expect(byRound.get(0)).toEqual({ from: "high", to: "max" });
     expect(marked(requests)).toEqual([
       [0, null, "low"],
       [1, "low", "high"],
       [2, "high", "max"],
     ]);
+  });
+});
+
+describe("a level change as text", () => {
+  it("is the level alone where the file states its first, and from → to at a switch", () => {
+    expect(levelChangeText({ from: null, to: "medium" })).toBe("medium");
+    expect(levelChangeText({ from: "medium", to: "high" })).toBe("medium → high");
   });
 });

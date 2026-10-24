@@ -155,7 +155,7 @@ exec_command(cmd)
      input_command(process_id, kill: true) ──► SIGTERM the process group (SIGKILL after a grace period)
 ```
 
-A command that exits cleanly adds no note. A non-zero exit adds `[exit code: N]` and a signal adds `[terminated by signal S]`; both end the call as `fatal`.
+A command that exits cleanly adds no note. A non-zero exit adds `[exit code: N]` and a signal adds `[terminated by signal S]`; either way the call ends `completed`, because the exit status is the command's result, not the tool's failure. `fatal` is kept for the tool's own failures: a timeout, a spawn error, a throw.
 
 The tools' arguments (explicit keys):
 

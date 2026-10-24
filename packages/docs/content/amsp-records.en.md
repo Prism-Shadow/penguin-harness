@@ -428,7 +428,7 @@ A tool result's `status` says what the result is:
 
 | `tool_call_output.status` | Meaning |
 | --- | --- |
-| `completed` | the tool ran to its end; whatever it reported (a non-zero exit code, say) is in the output |
+| `completed` | the tool ran to its end; whatever it reported is in the output. A command that ran completes whatever its exit status: a non-zero exit or a signal is the command's result, written on the output's last line (`[exit code: N]`, `[terminated by signal X]`) |
 | `fatal` | the call failed: an unknown tool, unparseable arguments, a tool error, an execution-environment error, or a timeout. The error is fed back to the model, never retried |
 | `aborted` | the call did not run to its end: the user, the command policy or a pre_tool_use hook denied it (`approval_decision` names who), or the user interrupted it while it ran (the output holds what it had produced, then the interruption note) |
 

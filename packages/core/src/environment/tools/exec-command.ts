@@ -201,7 +201,9 @@ export function createExecCommandTool(
  * SIGTERM" they read like a crash, and the model's reasonable response to a crashed dev
  * server is to start it again, undoing the stop somebody just asked for. Outcomes nobody
  * asked for stay `failed`: a spawn error, a non-zero exit, a hard kill or a fault signal (an
- * OOM kill, a segfault).
+ * OOM kill, a segfault). The report is a notice about a detached job, not a tool result, so its
+ * wording is its own: the same non-zero exit in the foreground ends a completed tool call with
+ * the exit status as its last note (resultForExit).
  */
 export function armCommandDoneReport(
   session: ManagedSession,

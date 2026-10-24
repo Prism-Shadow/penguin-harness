@@ -4118,7 +4118,7 @@ Scenarios:
     pinnedSession: "Pinned",
     /** The hover ellipsis button that opens the row's full context menu. */
     moreActions: "More actions",
-    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default, the Trace panel's file pills). */
+    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default). */
     loadMore: "More",
     /** A list's one reveal row (a sidebar group, time mode's whole list, an archive group): n = conversations that list still hides; a click shows ten more, fetching when the loaded ones run out. */
     expandRestSessions: (n: number) => `Show ${n} more ${n === 1 ? "chat" : "chats"}`,
@@ -4803,28 +4803,27 @@ Scenarios:
     zoomIn: "Zoom in",
     linkHint:
       "Hover a timeline segment or event row to cross-highlight, click a segment to jump to its message; legend highlights its kind; drag the bar below to pan/zoom",
+    /** The Trace file picker's panel: its title, and how many files it lists. */
     filesTitle: "Trace files",
+    fileCount: (n: number) => (n === 1 ? "1 file" : `${n} files`),
     toolCalls: "Tool calls",
-    taskInput: "Input tokens this turn",
-    taskOutput: "Output tokens this turn",
     cacheHit: "Cache hits",
+    /** The uncached part of the input, beside its cache hits (a round's readings). */
+    cacheMiss: "Cache misses",
     hitRate: "Hit rate",
     avgToolCalls: "Avg tools / turn",
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
     exportFile: "Export",
-    /** The round navigator under the global summary: its title, and how many rounds it lists. */
+    /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
     roundNav: "Turn index",
     roundCount: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
-    /** A round head's control that returns to the navigator, on that round's row. */
-    backToNav: "Back to the turn index",
     /** The navigator's number box: its accessible name and its placeholder. */
     jumpToRound: "Jump to turn",
     jumpToRoundPlaceholder: "Turn",
-    /** A level pill's hint where a Trace first states a thinking level, and where it changes. */
-    levelFirst: (level: string) => `Thinking level ${level}`,
-    levelChanged: (from: string, to: string) => `Thinking level ${from} → ${to}`,
+    /** The panel a round's ring opens, and the name of the button standing in for a ring on a round with no context snapshot. */
+    roundReadings: "Turn readings",
   },
 
   benchmark: {
