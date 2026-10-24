@@ -3,6 +3,7 @@
 - **Date:** 2026-10-23
 - **Type:** fix
 - **Scope:** `core`, `server`, `cli`
+- **PR:** [#1306](https://github.com/Prism-Shadow/penguin-harness/pull/1306)
 
 [English](2026-10-23-deps-body-parser-zod.md)
 
