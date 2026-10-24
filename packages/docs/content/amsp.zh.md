@@ -3,7 +3,7 @@ title: AMSP
 description: Agent Message Stream Protocol：一个 Session 的记录经 SSE 上线，包括控制帧、运行流与 Session 流、待决审批资源、运行结果的读法，以及每条记录取代的 v1 旧事件。
 ---
 
-AMSP（Agent Message Stream Protocol）是 [Agent API](/agent-api) 的传输格式。它流式传输一个 Session：该 Session 的记录，与 Trace 中保存的完全相同；消息产出过程中流式发出的 `partial_*` 分片；以及围绕它们的少量控制帧。线上不做任何翻译：Trace 的每一行都是一条合法的 AMSP 记录，每种载荷的字段都以 [AMSP 记录](/amsp-records)页面的说明为准。
+AMSP（Agent Message Stream Protocol）是 [Agent API](/agent-api) 的传输格式。它流式传输一个 Session：该 Session 的记录，与 Trace 中保存的完全相同；消息产出过程中流式发出的 `partial_*` 分片；以及围绕它们的心跳 `ping`，运行流还以 `data: [DONE]` 收尾。线上不做任何翻译：Trace 的每一行都是一条合法的 AMSP 记录，每种载荷的字段都以 [AMSP 记录](/amsp-records)页面的说明为准。
 
 Web App 的服务器事件（运行状态、审批请求、标题、goal 进度等）不属于 AMSP。程序需要的信息从记录和两个资源中读取：Session 本身 `GET …/sessions/:sessionId`，给出状态与模型；它的待决审批 `GET …/sessions/:sessionId/approvals`。
 
@@ -62,7 +62,6 @@ Web App 的服务器事件（运行状态、审批请求、标题、goal 进度�
 
 | 帧 | 数据 | 何时 |
 | --- | --- | --- |
-| `event: resync_required` | `{}` | Session 流续传所用的 `Last-Event-ID` 已被挤出服务器的缓冲。重新读取历史，再继续读这条流 |
 | `event: ping` | `{}` | 运行流上最先发出，Session 流上紧跟在补发的记录之后，此后每 20 秒一次。它取代了早先的 `: keep-alive` 注释，浏览器从不把注释交给页面 |
 | `data: [DONE]` | — | 运行流的最后一行，运行结束时写出 |
 
@@ -138,7 +137,7 @@ data: [DONE]
 
 两个入口用同一个处理器。Session 流跨运行跟随该 Session，也包括不是由它发起的运行：经 `POST …/sessions/:sessionId/tasks` 发起的、在 Web App 中发起的，或其他调用方发起的。它只携带记录和 `ping`：没有 `[DONE]`，订阅时也没有状态快照。流一直保持打开，直到调用方关闭它。
 
-- **续传。** 把最后见到的记录 id 作为 `Last-Event-ID` 发送；无法设置请求头时，改用查询参数 `lastEventId`，两者同在时以请求头为准。服务器为每个活跃 Session 保留有界的缓冲：id 仍在缓冲中时，先补发它之后的记录；不在时，流以 `resync_required` 开头，然后继续实时推送。
+- **续传。** 把最后见到的记录 id 作为 `Last-Event-ID` 发送；无法设置请求头时，改用查询参数 `lastEventId`，两者同在时以请求头为准。服务器为每个活跃 Session 保留有界的缓冲：id 仍在缓冲中时，先补发它之后的记录。不在时（缓冲已越过它，或服务器在此期间重启过），不开流：请求以 `409` `resync_required` 作答，错误信封与其他错误相同。此时像第一次打开那样从头开始：读取历史，并不带 id 订阅。
 - **加入。** 先订阅、再读历史，中间就不会漏掉记录：把这期间到达的记录暂存起来，在历史之后交付，并跳过历史中已有的记录。历史的 `live` 字段把两者接起来，见[历史](#历史)。客户端的 `SessionReader` 做的正是这些。
 - **死连接。** 收到过 `ping` 的流此后 50 秒毫无动静，即为死连接：关闭它，带着 `Last-Event-ID` 重新打开。
 - Web App 自己的 `GET /api/sessions/:sessionId/stream` 是另一条通道：它携带同样的记录，另外还有 Web App 的服务器事件，见[流式传输（SSE）](/server-api#流式传输sse)。
@@ -170,7 +169,7 @@ interface MessagesResponse {
 ```
 
 - 分窗读取带 `page`，其中的图片按引用下发：主 Session 记录里 PNG、JPEG、GIF 或 WebP 的 `data:` URL 会被替换为所在入口的 `…/sessions/:sessionId/trace-image?file=&ordinal=[&i=]`，由它返回图片。
-- Session 运行期间带 `live`，`before` 页除外。`cursor` 是读取历史时流的最后一个 id，`fragments` 把每条仍在流式产出的消息表示为一条 `partial_*` `start`，携带到此为止流出的全部内容。丢弃暂存的、id 不晚于 cursor（同一 epoch）的 `partial_*` 记录，以 `fragments` 代替，再交付其余记录。cursor 从不丢弃完整记录，完整记录与历史去重即可。cursor 的 epoch 与流不同时，跳过 `live`，交给随后的 resync 处理。
+- Session 运行期间带 `live`，`before` 页除外。`cursor` 是读取历史时流的最后一个 id，`fragments` 把每条仍在流式产出的消息表示为一条 `partial_*` `start`，携带到此为止流出的全部内容。丢弃暂存的、id 不晚于 cursor（同一 epoch）的 `partial_*` 记录，以 `fragments` 代替，再交付其余记录。cursor 从不丢弃完整记录，完整记录与历史去重即可。cursor 的 epoch 与流不同时，跳过 `live`，交给 `resync_required` 之后的从头开始处理。
 
 ## 审批
 

@@ -11,9 +11,9 @@
  *   events that arrived.
  * - Given a caller that stops after the first event, the body is cancelled: the connection
  *   closes rather than being read on.
- * - Given an AMSP body, an unnamed event is a record with its id, `resync_required` and `ping`
- *   are control frames, `[DONE]` is the end, any other name is a host's own event, and an
- *   unnamed event that is not an envelope breaks the stream.
+ * - Given an AMSP body, an unnamed event is a record with its id, `ping` is a control frame,
+ *   `[DONE]` is the end, any other name is a host's own event, and an unnamed event that is not
+ *   an envelope breaks the stream.
  */
 import { describe, expect, it } from "vitest";
 import { AmspStreamError, readAmsp, readSse } from "../src/index.js";
@@ -143,14 +143,12 @@ describe("readAmsp", () => {
       "event: ping\ndata: {}\n\n",
       `id: e-1\ndata: ${JSON.stringify(record)}\n\n`,
       'event: server_event\nid: e-2\ndata: {"type":"task_state"}\n\n',
-      "event: resync_required\ndata: {}\n\n",
       "data: [DONE]\n\n",
     ].join("");
     expect(await frames(text)).toEqual([
       { kind: "control", control: { kind: "ping" } },
       { kind: "record", id: "e-1", record },
       { kind: "other", name: "server_event", data: '{"type":"task_state"}' },
-      { kind: "control", control: { kind: "resync_required" } },
       { kind: "done" },
     ]);
   });

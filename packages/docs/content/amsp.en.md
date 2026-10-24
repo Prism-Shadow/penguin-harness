@@ -3,7 +3,7 @@ title: AMSP
 description: The Agent Message Stream Protocol — a Session's records over SSE, the control frames, the run and Session streams, the approvals resource, how a run's result is read, and the earlier v1 events each record replaces.
 ---
 
-AMSP (Agent Message Stream Protocol) is the wire format of the [Agent API](/agent-api). It streams one Session: the Session's records exactly as its Trace holds them, the `partial_*` fragments streamed while a message is produced, and a few control frames around them. Nothing is translated on the way: every line of a Trace is a valid AMSP record, and each payload is the one described field by field on the [AMSP Records](/amsp-records) page.
+AMSP (Agent Message Stream Protocol) is the wire format of the [Agent API](/agent-api). It streams one Session: the Session's records exactly as its Trace holds them, the `partial_*` fragments streamed while a message is produced, and around them the `ping` heartbeat and, on a run stream, a closing `data: [DONE]`. Nothing is translated on the way: every line of a Trace is a valid AMSP record, and each payload is the one described field by field on the [AMSP Records](/amsp-records) page.
 
 The Web App's server events (run state, approval requests, titles, goal progress and the rest) are not part of AMSP. A program reads what it needs from the records and from two resources: the Session, `GET …/sessions/:sessionId`, for its status and model, and its pending approvals, `GET …/sessions/:sessionId/approvals`.
 
@@ -62,7 +62,6 @@ No `session_meta` is sent again. A reader that needs the model later reads `GET 
 
 | Frame | Data | When |
 | --- | --- | --- |
-| `event: resync_required` | `{}` | The `Last-Event-ID` a Session stream resumed from has left the server's buffer. Read the history again, then keep reading this stream |
 | `event: ping` | `{}` | First on a run stream, right after any replay on a Session stream, then every 20 seconds. It replaces the earlier `: keep-alive` comment, which a browser never hands to a page |
 | `data: [DONE]` | — | The run stream's last line, once the run is over |
 
@@ -138,7 +137,7 @@ data: [DONE]
 
 Both doors serve one handler. A Session stream follows the Session across runs, including the ones it did not start: a run started with `POST …/sessions/:sessionId/tasks`, one started from the Web App, or another caller's. It carries the records and `ping` and nothing else: no `[DONE]`, no snapshot on subscribe. It stays open until the caller closes it.
 
-- **Resuming.** Send the last record id you saw as `Last-Event-ID`, or as the `lastEventId` query parameter where a header cannot be set; the header wins when both are present. The server keeps a bounded buffer per active Session: when the id is still in it, the records after it are replayed first; when it is not, the stream opens with `resync_required` and carries on live.
+- **Resuming.** Send the last record id you saw as `Last-Event-ID`, or as the `lastEventId` query parameter where a header cannot be set; the header wins when both are present. The server keeps a bounded buffer per active Session: when the id is still in it, the records after it are replayed first. When it is not, because the buffer has moved past it or the server restarted since, no stream opens: the request is answered `409` `resync_required` in the usual error envelope. Start over as on a first open: read the history and subscribe without an id.
 - **Joining.** Subscribe first, then read the history, so nothing falls in between: hold what arrives meanwhile, deliver it after the history, and skip the records the history already holds. The history's `live` field joins the two; see [History](#history). The client's `SessionReader` does all of this.
 - **Dead connections.** A stream that has carried a `ping` and then stays silent for 50 seconds is dead: close it and reopen it with `Last-Event-ID`.
 - The Web App's own `GET /api/sessions/:sessionId/stream` is a different channel: it carries the same records plus the Web App's server events; see [Streaming (SSE)](/server-api#streaming-sse).
@@ -170,7 +169,7 @@ interface MessagesResponse {
 ```
 
 - `page` comes with a windowed read, whose images are served by reference: a PNG, JPEG, GIF or WebP `data:` URL in a main-Session record is replaced with that door's `…/sessions/:sessionId/trace-image?file=&ordinal=[&i=]`, which answers the image.
-- `live` comes while the Session runs, except on a `before` page. `cursor` is the stream's last id when the history was read, and `fragments` holds each open streamed message so far as one `partial_*` `start` carrying all that has streamed. Drop the held `partial_*` records at or before the cursor (same epoch), deliver `fragments` in their place, then the rest. The cursor never drops a complete record: deduplicate those against the history. When the cursor's epoch differs from the stream's, skip `live` and let the resync cover it.
+- `live` comes while the Session runs, except on a `before` page. `cursor` is the stream's last id when the history was read, and `fragments` holds each open streamed message so far as one `partial_*` `start` carrying all that has streamed. Drop the held `partial_*` records at or before the cursor (same epoch), deliver `fragments` in their place, then the rest. The cursor never drops a complete record: deduplicate those against the history. When the cursor's epoch differs from the stream's, skip `live` and let the start-over after `resync_required` cover it.
 
 ## Approvals
 

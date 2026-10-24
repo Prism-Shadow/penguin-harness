@@ -194,6 +194,7 @@ type InputItem =
 | 404 | `approval_not_found` | 该审批已被回答，或从未存在 |
 | 404 | `not_found` | 该路径没有路由 |
 | 409 | `task_in_progress`、`compacting` | 会话正忙 |
+| 409 | `resync_required` | Session 流的 `Last-Event-ID`（或 `lastEventId`）已不在服务器的缓冲中；读取历史，再不带它订阅 |
 | 413 | `payload_too_large` | 请求体超过服务器的大小上限 |
 | 415 | `unsupported_media_type` | 写请求没有带 `Content-Type: application/json` |
 | 429 | `too_many_runs` | 该 Agent 已达到设置的并发上限；等 `Retry-After` 秒后重试 |
@@ -279,7 +280,7 @@ const result = await client.run({
 
 ### 跟随会话
 
-`SessionReader` 把一个会话的历史与实时记录作为一个有序序列来跟随。它订阅 Session 流，读取历史中最新的若干 Task，接上 `live` 尾部，跳过历史已经交付的记录，收到 `resync_required` 时从头再来；收到过 `ping` 的流 50 秒没有动静时，带着 `Last-Event-ID` 重新连接。无论运行由谁发起，它都能看到。
+`SessionReader` 把一个会话的历史与实时记录作为一个有序序列来跟随。它订阅 Session 流，读取历史中最新的若干 Task，接上 `live` 尾部，跳过历史已经交付的记录；收到过 `ping` 的流 50 秒没有动静时，带着 `Last-Event-ID` 重新连接；重连被以 `409` `resync_required` 拒绝时，先发出 `reset`，再像第一次打开那样从头开始。无论运行由谁发起，它都能看到。
 
 ```ts
 import { HttpTransport, SessionReader } from "@prismshadow/amsp";
@@ -405,7 +406,7 @@ function frameOf(event: { event: string | null; id: string | null; data: string 
 function readAmsp(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<AmspFrame>;
 type AmspFrame =
   | { kind: "record"; id: string | null; record: AmspRecord }
-  | { kind: "control"; control: AmspControl }   // resync_required or ping
+  | { kind: "control"; control: AmspControl }   // ping
   | { kind: "done" }                            // data: [DONE]
   | { kind: "other"; name: string; data: string };
 class RunCollector {

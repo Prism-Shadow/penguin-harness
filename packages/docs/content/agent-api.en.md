@@ -194,6 +194,7 @@ A request refused before the stream starts gets an HTTP status and one envelope,
 | 404 | `approval_not_found` | The approval was already answered, or never existed |
 | 404 | `not_found` | No route at this path |
 | 409 | `task_in_progress`, `compacting` | The conversation is busy |
+| 409 | `resync_required` | A Session stream's `Last-Event-ID` (or `lastEventId`) is no longer in the server's buffer; read the history and subscribe without it |
 | 413 | `payload_too_large` | The body exceeds the server's request size cap |
 | 415 | `unsupported_media_type` | A write without `Content-Type: application/json` |
 | 429 | `too_many_runs` | The agent has reached its configured concurrency limit; retry after `Retry-After` seconds |
@@ -279,7 +280,7 @@ const result = await client.run({
 
 ### Following a conversation
 
-`SessionReader` follows one conversation through its history and its live records as one ordered sequence. It subscribes to the Session stream, reads the history's latest Tasks, weaves in the `live` tail, skips records the history already delivered, starts over on `resync_required`, and reconnects with `Last-Event-ID` when a stream that has pinged stays silent for 50 seconds. It sees every run, whoever started it.
+`SessionReader` follows one conversation through its history and its live records as one ordered sequence. It subscribes to the Session stream, reads the history's latest Tasks, weaves in the `live` tail, skips records the history already delivered, reconnects with `Last-Event-ID` when a stream that has pinged stays silent for 50 seconds. A reconnect refused `409` `resync_required` starts over as a first open does, after a `reset`. It sees every run, whoever started it.
 
 ```ts
 import { HttpTransport, SessionReader } from "@prismshadow/amsp";
@@ -405,7 +406,7 @@ function frameOf(event: { event: string | null; id: string | null; data: string 
 function readAmsp(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<AmspFrame>;
 type AmspFrame =
   | { kind: "record"; id: string | null; record: AmspRecord }
-  | { kind: "control"; control: AmspControl }   // resync_required or ping
+  | { kind: "control"; control: AmspControl }   // ping
   | { kind: "done" }                            // data: [DONE]
   | { kind: "other"; name: string; data: string };
 class RunCollector {

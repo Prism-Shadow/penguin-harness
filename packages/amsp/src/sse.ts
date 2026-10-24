@@ -16,7 +16,7 @@ export interface SseEvent {
 /**
  * What one event of an AMSP stream is:
  * - `record`: an unnamed event, its data one record envelope, with the event's id;
- * - `control`: `resync_required` or `ping`;
+ * - `control`: `ping`;
  * - `done`: `data: [DONE]`, the end of a run stream;
  * - `other`: a named event AMSP does not define. A host may add its own (the Web App's internal
  *   channel carries `server_event`); a reader ignores them.
@@ -121,7 +121,7 @@ export async function* readSse(
   }
 }
 
-const CONTROL_KINDS = new Set(["resync_required", "ping"]);
+const CONTROL_KINDS = new Set(["ping"]);
 
 /** Parses an event's data as JSON; anything that is not breaks the stream. */
 function json(data: string): unknown {

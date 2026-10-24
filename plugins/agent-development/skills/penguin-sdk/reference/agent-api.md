@@ -137,7 +137,7 @@ curl -X POST "$BASE/sessions/<session_id>/approvals/<tool_call_id>" \
 
 To read the stream in your own code:
 
-- It is SSE. An event without an `event:` name is a record: its `id:` is `<epoch>-<seq>` and its `data:` one JSON envelope `{timestamp, type, payload, origin?}`. A named event is a control frame: `ping` first and every 20 seconds; `resync_required` only on a resumed Session stream. The run ends with `data: [DONE]`. Skip every event name and `payload.type` you do not know.
+- It is SSE. An event without an `event:` name is a record: its `id:` is `<epoch>-<seq>` and its `data:` one JSON envelope `{timestamp, type, payload, origin?}`. A named event is a control frame: `ping`, first and every 20 seconds. The run ends with `data: [DONE]`. Skip every event name and `payload.type` you do not know.
 - The run's records go from `task_begin` to `task_end`. A new conversation's first run opens with its `session_meta`, whose `session_id` is the id to continue it with; a run that continues a conversation carries none. The answer is the assistant `text` records without an `origin`, or their `partial_text` fragments as they arrive.
 - How the run went is in the records: an `abort` record means it was aborted; a `request_end` that is not `completed` and has no `retry_in_ms` gives its failure in `error_code` and `error_message`; a last `task_begin` with no `task_end` before `[DONE]` means the server failed. A body that ends without `[DONE]` means the connection broke.
 - `POST <Base URL>/sessions/<session_id>/abort` aborts a run and keeps its stream open until `[DONE]`.
@@ -155,6 +155,7 @@ A request refused before the stream gets an HTTP status and `{"error": {"code": 
 | 404 | `agent_not_found` | API access is off, the Agent ID is wrong, or the key belongs to another Agent | Check with `penguin agent api status`, then ask the owner |
 | 404 | `session_not_found` | The `session_id` is not one of this Agent's API conversations | Start a new conversation |
 | 409 | `task_in_progress`, `compacting` | The conversation is still busy | Wait for its `[DONE]`: one run per conversation at a time |
+| 409 | `resync_required` | A Session stream reopened with a `Last-Event-ID` the server no longer holds (it restarted, or moved past it) | Read the history again and reopen the stream without `Last-Event-ID`; `SessionReader` does this itself |
 | 429 | `too_many_runs` | The Agent already has as many conversations running as its limit allows (4 by default), Web App ones included | Retry after `Retry-After` seconds |
 
 ## 6. Verify before you hand over

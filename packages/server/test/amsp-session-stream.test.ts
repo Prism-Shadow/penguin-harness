@@ -27,7 +27,8 @@
  *   wrong key 401, a Web App Session's id 404.
  * - A windowed history page's image references point at the key door's own trace-image route,
  *   which answers the bytes.
- * - A `Last-Event-ID` the buffer no longer holds is answered `event: resync_required`, id-less.
+ * - A `Last-Event-ID` the buffer no longer holds is refused 409 `resync_required` in JSON on both
+ *   doors, header or query parameter, before any stream; an id it holds still resumes.
  * - The cookie door's `/amsp` and the key door's `/stream` write the same bytes for the same
  *   channel events, and neither writes a server event.
  * - The approvals resource refuses a `wait` that is not a number.
@@ -484,18 +485,27 @@ describe("AMSP on the wire", () => {
     expect(Buffer.from(await bytes.arrayBuffer()).toString("base64")).toBe(png);
   });
 
-  it("an evicted Last-Event-ID is answered with an id-less resync_required", async () => {
+  it("a Last-Event-ID the buffer no longer holds is refused 409 resync_required on both doors, and one it holds resumes", async () => {
     const { frames } = await readAll(await run(A, { input: "Make a Session" }));
     const sessionId = sessionOf(frames);
-    const res = await amsp(keys[A]!, `/sessions/${sessionId}/stream`, {
-      headers: { "last-event-id": "gone-1" },
+    // An epoch this channel never had, as an id from before a restart reads.
+    const stale = "gone-1";
+    const key = await amsp(keys[A]!, `/sessions/${sessionId}/stream`, {
+      headers: { "last-event-id": stale },
     });
-    const reader = res.body!.getReader();
-    let text = "";
-    while (!text.includes("event: ping"))
-      text += new TextDecoder().decode((await reader.read()).value);
-    await reader.cancel();
-    expect(text.startsWith("event: resync_required\ndata: {}\n\n")).toBe(true);
+    const cookie = await admin.get(`/api/sessions/${sessionId}/amsp?lastEventId=${stale}`);
+    for (const res of [key, cookie]) {
+      expect(res.status).toBe(409);
+      expect(res.headers.get("content-type")).toMatch(/^application\/json/);
+      expect(await res.json()).toMatchObject({ error: { code: "resync_required" } });
+    }
+    const held = frames.find((f) => f.kind === "record")!;
+    const resumed = await amsp(keys[A]!, `/sessions/${sessionId}/stream`, {
+      headers: { "last-event-id": held.kind === "record" ? held.id! : "" },
+    });
+    expect(resumed.status).toBe(200);
+    expect(resumed.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    await resumed.body!.cancel();
   });
 
   it("the cookie door and the key door write the same bytes for the same channel events, and no server event", async () => {
