@@ -452,8 +452,7 @@ export function isStopSignal(signal: NodeJS.Signals | null | undefined): boolean
  */
 export function resultForExit(exit: ProcessExit | null): ToolResult {
   if (!exit) return { status: "completed" };
-  if (exit.signal)
-    return { status: "completed", note: `[terminated by signal ${exit.signal}]` };
+  if (exit.signal) return { status: "completed", note: `[terminated by signal ${exit.signal}]` };
   if (exit.code !== 0)
     return { status: "completed", note: `[exit code: ${exit.code ?? "unknown"}]` };
   return { status: "completed" };
