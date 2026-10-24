@@ -1,10 +1,10 @@
 /**
  * AMSP's records and control frames, as far as the /amsp page reads them: the scripted runs
  * (amsp-demo.ts) are typed on them and the replay fold (amsp-replay.ts) narrows on them. The
- * payloads the page reads field by field are spelled out, mirroring core's record types
- * (packages/core/src/omnimessage/types.ts) plus PRFC-0021's additions — `task_begin` / `task_end`
- * and `request_begin.thinking_level`; every other kind of the vocabulary is accepted with its
- * fields unread. The control frames take the SDK's shape (`{ kind, … }`).
+ * payloads the page reads field by field are spelled out, mirroring the AMSP record types
+ * (packages/amsp/src/records/types.ts), `task_begin` / `task_end` and `request_begin.thinking_level`
+ * included; every other kind of the vocabulary is accepted with its fields unread. The control
+ * frames take the SDK's shape (`{ kind, … }`).
  *
  * Page-local on purpose: `@prismshadow/amsp` 0.2.16 still ships the old event types. Once the
  * release after it carries these, this file re-exports them from there and the scripted runs are
