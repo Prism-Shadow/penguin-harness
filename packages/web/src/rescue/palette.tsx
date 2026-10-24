@@ -1,5 +1,5 @@
-import { useAddedPaletteActions } from "../../lib/palette-actions";
-import { setSafeMode, useSafeMode } from "../../rescue/safe-mode";
+import { useAddedPaletteActions } from "../lib/palette-actions";
+import { setSafeMode, useSafeMode } from "./safe-mode";
 /**
  * The app's command palette: which actions exist, the shortcut that opens it (the
  * `palette.toggle` command, ⌥⌘P / Ctrl+Alt+P by default), and its words. Mounted once in
@@ -10,10 +10,10 @@ import { setSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useEffect, useMemo, useState } from "react";
 import { CommandPalette, type PaletteAction } from "@prismshadow/penguin-ui";
 
-import { onCommand } from "../../lib/shortcuts/dispatcher";
-import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
-import { S } from "../../lib/strings";
-import { HarnessHistoryOverlay } from "../harness";
+import { onCommand } from "../lib/shortcuts/dispatcher";
+import { useShortcutLabel } from "../lib/shortcuts/use-keymap";
+import { S } from "../lib/strings";
+import { HarnessHistoryOverlay } from "./harness-history-overlay";
 
 /** A mount point with nothing to add shares one empty list, so the action memo stays put. */
 const NO_EXTRA: readonly PaletteAction[] = [];

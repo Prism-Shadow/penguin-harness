@@ -14,7 +14,7 @@ import { useState, type ComponentType } from "react";
 import { Button, NoticeStrip } from "@prismshadow/penguin-ui";
 import { useShortcutLabel } from "../lib/shortcuts/use-keymap";
 import { S } from "../lib/strings";
-import { HarnessHistoryOverlay } from "../web-app";
+import { HarnessHistoryOverlay } from "./harness-history-overlay";
 import { isSafeMode, setSafeMode } from "./safe-mode";
 
 function messageOf(error: unknown): string {
