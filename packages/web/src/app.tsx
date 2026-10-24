@@ -7,6 +7,10 @@
  * (features/chat/code-highlight.ts).
  * LocaleScope (a remount boundary) sits inside AuthProvider: switching language rebuilds the UI tree without
  * re-fetching auth, avoiding a full-screen white flash from RequireAuth briefly seeing user=undefined.
+ * The shell's root renders inside an error boundary whose fallback is the rescue panel
+ * (rescue/rescue-panel.tsx); the command palette and the safe-mode marker mount beside it, each
+ * in its own boundary, so a page that throws leaves the way back — the palette's harness
+ * history, safe mode — on screen.
  * Also installs the app-wide file-drop guard: a file dropped outside the chat area — the only
  * region that claims file drags (features/chat/drop-zone.tsx) — must not trigger the browser's
  * default navigate-to-file, which would silently replace the running app and any unsent draft.
@@ -30,6 +34,13 @@ import { UnsavedPrompt } from "./lib/unsaved/unsaved-prompt";
 import { writeClipboard } from "./lib/clipboard";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 import { highlightCode } from "./lib/code-highlight";
+import { ErrorBoundary } from "./rescue/error-boundary";
+import { RescuePalette } from "./web-app";
+import { RescuePanel } from "./rescue/rescue-panel";
+import { SafeModeMarker } from "./rescue/safe-mode-marker";
+
+const rescuePanel = (error: unknown) => <RescuePanel error={error} />;
+const nothing = () => null;
 
 /**
  * `Root`: the shell's root component, which `bootWeb()` returns. `initialPath`: mount the app on
@@ -63,7 +74,15 @@ export function App({
             <BackgroundProvider>
               <AuthProvider>
                 <LocaleScope>
-                  <Root {...(initialPath === undefined ? {} : { initialPath })} />
+                  <ErrorBoundary fallback={rescuePanel}>
+                    <Root {...(initialPath === undefined ? {} : { initialPath })} />
+                  </ErrorBoundary>
+                  <ErrorBoundary fallback={nothing}>
+                    <RescuePalette />
+                  </ErrorBoundary>
+                  <ErrorBoundary fallback={nothing}>
+                    <SafeModeMarker />
+                  </ErrorBoundary>
                   {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
                   <Toaster />
                   {/* The one "discard unsaved changes?" prompt every leave asks through, and the
