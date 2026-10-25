@@ -1,5 +1,5 @@
 ---
-title: "PenguinHarness 0.2.17：Agent API 流式输出 Session 记录"
+title: "PenguinHarness 0.2.17：统一 Agentic 通信协议，优化远程机器和轨迹观测"
 date: 2026-10-26
 category: news
 excerpt: "Agent API 现在流式输出 Session 记录，回复里可以出现统计图和表单，「轨迹观测」面板已重做，远程机器上的对话会读取那台机器上的数据。"

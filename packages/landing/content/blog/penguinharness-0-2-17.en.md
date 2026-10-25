@@ -1,5 +1,5 @@
 ---
-title: "PenguinHarness 0.2.17: the Agent API streams Session records"
+title: "PenguinHarness 0.2.17: Unified agentic communication protocol, improved remote machines and Trajectories"
 date: 2026-10-26
 category: news
 excerpt: "The Agent API now streams a Session's records, replies can carry charts and forms, the Trajectories panel is rebuilt, and conversations on a remote machine read that machine."
