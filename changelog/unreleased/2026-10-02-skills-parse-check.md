@@ -7,7 +7,7 @@
 
 [中文版](2026-10-02-skills-parse-check.zh.md)
 
-A new workspace package, `@prismshadow/skills` (`packages/skills`, publishable to npm), was added: `validateSkillDir(dir)` passes a skill directory when its `SKILL.md` is accepted by the parser vendored from [vercel-labs/skills](https://github.com/vercel-labs/skills) at `18f96ea1` (`frontmatter.ts` and `parseSkillMd`, MIT): the YAML frontmatter parses and `name` and `description` are present strings. Its only runtime dependency is `yaml`. Every plugin that ships skills was given a `test/skills.test.ts` that runs it over each of its skills, so `pnpm -r test` covers them.
+A new workspace package, `@prismshadow/skills` (`packages/skills`, private and not published to npm), was added: `validateSkillDir(dir)` passes a skill directory when its `SKILL.md` is accepted by the parser vendored from [vercel-labs/skills](https://github.com/vercel-labs/skills) at `18f96ea1` (`frontmatter.ts` and `parseSkillMd`, MIT): the YAML frontmatter parses and `name` and `description` are present strings. Its only runtime dependency is `yaml`. Every plugin that ships skills was given a `test/skills.test.ts` that runs it over each of its skills, so `pnpm -r test` covers them.
 
 ## Details
 

@@ -7,7 +7,7 @@
 
 [English](2026-10-02-skills-parse-check.md)
 
-新增 workspace 包 `@prismshadow/skills`（`packages/skills`，可发布到 npm）：`validateSkillDir(dir)` 在技能目录的 `SKILL.md` 能被 vendor 自 [vercel-labs/skills](https://github.com/vercel-labs/skills)（`18f96ea1`，`frontmatter.ts` 与 `parseSkillMd`，MIT）的解析器接受时判为通过：YAML frontmatter 能解析，且 `name`、`description` 存在并为字符串。它唯一的运行时依赖是 `yaml`。每个带技能的插件都新增了 `test/skills.test.ts`，对自己的每个技能跑这道检查，`pnpm -r test` 因而覆盖到它们。
+新增 workspace 包 `@prismshadow/skills`（`packages/skills`，私有包，不发布到 npm）：`validateSkillDir(dir)` 在技能目录的 `SKILL.md` 能被 vendor 自 [vercel-labs/skills](https://github.com/vercel-labs/skills)（`18f96ea1`，`frontmatter.ts` 与 `parseSkillMd`，MIT）的解析器接受时判为通过：YAML frontmatter 能解析，且 `name`、`description` 存在并为字符串。它唯一的运行时依赖是 `yaml`。每个带技能的插件都新增了 `test/skills.test.ts`，对自己的每个技能跑这道检查，`pnpm -r test` 因而覆盖到它们。
 
 ## 细节
 
