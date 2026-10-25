@@ -91,11 +91,11 @@ Trace 是只追加的 JSON Lines 文件，每行是一条 AMSP 记录，详见 [
 {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Create hello.txt"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"tool_list_ready","tools":[…]}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
-{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0","stop_reason":"completed"}}
+{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"approval_decision","decision":"allow","tool_call_id":"call_0"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"token_usage","session":{…},"request":{…}}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"request_end","status":"completed"}}
-{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"[no output]","tool_call_id":"call_0","stop_reason":"completed"}}
+{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"[no output]","tool_call_id":"call_0","status":"completed"}}
 ```
 
 ### 截断的工具输出

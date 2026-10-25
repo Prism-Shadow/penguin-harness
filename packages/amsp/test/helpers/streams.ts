@@ -47,8 +47,7 @@ export const meta = (sessionId: string) =>
   });
 export const taskBegin = () => ev({ type: "task_begin" });
 export const taskEnd = () => ev({ type: "task_end" });
-export const userText = (text: string) =>
-  model({ type: "text", role: "user", text, stop_reason: "completed" });
+export const userText = (text: string) => model({ type: "text", role: "user", text });
 export const requestBegin = (origin?: string[]) =>
   ev({ type: "request_begin", thinking_level: "medium" }, origin);
 export const requestEnd = (
@@ -60,29 +59,34 @@ export const usage = (request: TokenCounts, session: TokenCounts, origin?: strin
   ev({ type: "token_usage", request, session }, origin);
 export const partialText = (eventType: "start" | "delta" | "stop", text = "", origin?: string[]) =>
   model({ type: "partial_text", role: "assistant", event_type: eventType, text }, origin);
-export const assistantText = (text: string, stop = "completed", origin?: string[]) =>
-  model({ type: "text", role: "assistant", text, stop_reason: stop }, origin);
-export const toolCall = (
+export const assistantText = (text: string, origin?: string[]) =>
+  model({ type: "text", role: "assistant", text }, origin);
+export const toolCall = (id: string, args = '{"cmd":"ls"}', origin?: string[]) =>
+  model({ type: "tool_call", name: "exec_command", arguments: args, tool_call_id: id }, origin);
+/** A streamed fragment of a call. */
+export const partialToolCall = (
   id: string,
-  args = '{"cmd":"ls"}',
-  stop = "completed",
+  eventType: "start" | "delta" | "stop",
+  args = "",
   origin?: string[],
 ) =>
   model(
     {
-      type: "tool_call",
-      name: "exec_command",
+      type: "partial_tool_call",
+      role: "assistant",
+      event_type: eventType,
+      name: eventType === "start" ? "exec_command" : "",
       arguments: args,
       tool_call_id: id,
-      stop_reason: stop,
     },
     origin,
   );
 export const toolOutput = (id: string, output: string, origin?: string[]) =>
-  model({ type: "tool_call_output", output, tool_call_id: id, stop_reason: "completed" }, origin);
+  model({ type: "tool_call_output", output, tool_call_id: id, status: "completed" }, origin);
 export const decision = (id: string, decided: "allow" | "deny", origin?: string[]) =>
   ev({ type: "approval_decision", decision: decided, tool_call_id: id }, origin);
-export const abort = () => ev({ type: "abort", error_code: "user_abort" });
+export const abort = (errorCode = "user_abort", extra: Record<string, unknown> = {}) =>
+  ev({ type: "abort", error_code: errorCode, ...extra });
 export const compactionBegin = () =>
   ev({ type: "compaction_begin", reason: "context", mode: "summarize", context: 900, turns: 2 });
 export const compactionEnd = (status = "completed", extra: Record<string, unknown> = {}) =>

@@ -4,7 +4,7 @@
  *
  * Environment parses the argument JSON and hands each tool a plain object; whether that
  * object fits is the tool's own check, and a failed check ends the call with
- * `stop_reason: fatal` and the explanation built here as its whole output. The explanation
+ * `status: fatal` and the explanation built here as its whole output. The explanation
  * is written for the model that made the call, which has to repair the call from the tool
  * output alone: it names the fault, lists the argument names actually received and calls
  * out the ones the tool does not know, restates the tool's parameters from the schema the

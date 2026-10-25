@@ -99,12 +99,12 @@ id: 7c41d0a2-2
 data: {"timestamp":"…","type":"event_msg","payload":{"type":"task_begin"}}
 
 id: 7c41d0a2-4
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Summarize README.md","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Summarize README.md"}}
 
 …
 
 id: 7c41d0a2-9
-data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"delta","text":"README.md describes","stop_reason":"completed"}}
+data: {"timestamp":"…","type":"model_msg","payload":{"type":"partial_text","role":"assistant","event_type":"delta","text":"README.md describes"}}
 
 …
 

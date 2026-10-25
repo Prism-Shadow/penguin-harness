@@ -522,7 +522,6 @@ describe("session-manager", () => {
               run_in_background: true,
             }),
             toolCallId: "tc_bg",
-            stopReason: "completed",
           });
         } else {
           yield assistantText(`reply ${this.calls}`);
@@ -597,7 +596,7 @@ describe("session-manager", () => {
         yield toolCallOutput({
           output: "ls: /nope\n[tool error] exit code 2",
           toolCallId: "tc-1",
-          stopReason: "fatal",
+          status: "fatal",
         });
         // The ladder's terminal failure: no retry planned (no retry_in_ms), the run ends
         // on this record — no abort event follows.

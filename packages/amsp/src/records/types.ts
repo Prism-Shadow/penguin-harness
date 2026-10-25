@@ -42,37 +42,39 @@ export type AmspRecordType = "session_meta" | "model_msg" | "event_msg";
 export type Role = "user" | "assistant";
 
 /**
- * The reason a model response or message generation ended. Only six protocol values are
- * allowed:
- *   - `completed`: finished normally, including completed text, thinking, tool requests, or
- *     tool output;
- *   - `completed`: the request (or the segment it closed) ended normally;
+ * How an operation ended — an LLM Request (`request_end.status`, the only record of why a
+ * Request ended), a compaction, an MCP connect:
+ *   - `completed`: it ended normally;
  *   - `aborted`: user-initiated interruption or cancellation;
  *   - `retryable`: a failure worth retrying — transport drops, timeouts, 408/429/5xx,
- *     malformed or truncated responses, and anything unclassifiable. The engine reconnects
- *     on its backoff ladder; the specific error rides on `error_message`
- *     (`LLMOutcome.errorMessage` / `request_end.error_message`), never on the reason value;
+ *     malformed responses, a response cut off at its output cap (`output_truncated`), and
+ *     anything unclassifiable. The classified cause rides on `error_code` and the specific
+ *     error on `error_message`, never on the value;
  *   - `fatal`: a failure no retry can fix — a provider 4xx rejection (invalid request,
  *     quota, and the credential failures of `isAuthenticationError`) or a deterministic
- *     client-side rejection (fast mode on a model without a fast tier). The engine stops
- *     the run and surfaces the error; the fix is a config/credential change, then a new
- *     request. The one exception is a provider 4xx on an input that holds images: the
- *     engine takes it as a rejection of the images, replaces them with a note quoting the
- *     provider and retries at once, recording that attempt's `request_end` as `retryable`
- *     with the code `image_rejected`.
+ *     client-side rejection (fast mode on a model without a fast tier). The fix is a
+ *     config/credential change, then a new request.
  *
- * The one vocabulary every stop_reason-carrying record shares — model messages, tool
- * results, request and compaction terminals alike. Tool executions rarely have a
- * retryable failure: a tool error or timeout is definitive for that call and is fed back
- * to the model as a `fatal` result (nothing in the harness retries it), with `retryable`
- * available for genuinely transient tool situations.
- *
- * Legacy Traces may still carry the retired values `failed` / `timeout` / `malformed` /
- * `auth` on their records; replay logic only ever compares against `completed`, and render
- * layers keep read-only handling for the old spellings.
- * Docs: /docs/amsp-records § "stop_reason".
+ * No record carries a per-item end reason. Every streamed item has its complete record, one an
+ * interruption cut off included (it holds what arrived); whether an item entered the model
+ * history is its Request's `request_end.status`, and a tool result's nature is its own `status`
+ * (see ToolStatus). Records written before that change carry a `stop_reason` field on every
+ * model payload; readers ignore it.
+ * Docs: /docs/amsp-records § "End reasons".
  */
 export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
+
+/**
+ * What a tool result is — `tool_call_output.status`:
+ *   - `completed`: the tool ran to its end (whatever it reported, e.g. a non-zero exit, is in
+ *     the output);
+ *   - `fatal`: the call failed — an unknown tool, unparseable arguments, a tool error, an
+ *     execution-environment error, or a timeout;
+ *   - `aborted`: the call did not run to its end — the user, the command policy or a
+ *     pre_tool_use hook denied it, or the user interrupted it while it ran (the output holds
+ *     what it had produced, then the interruption note).
+ */
+export type ToolStatus = "completed" | "aborted" | "fatal";
 
 /** The event phase of a streaming fragment. `stop` marks the end of a fragment and usually carries no incremental content. */
 export type StreamEventType = "start" | "delta" | "stop";
@@ -216,7 +218,6 @@ export interface TextPayload {
   text: string;
   /** Origin of a user-role text (never sent to the provider); absent = the human user. See {@link TextSender}. */
   sender?: TextSender;
-  stop_reason?: StopReason;
   /** Provider-fidelity payload (e.g. `phase` for GPT-5 segment markers, `signature`), kept as-is and restored verbatim. */
   fidelity?: Fidelity;
 }
@@ -226,7 +227,6 @@ export interface ImageUrlPayload {
   role: "user";
   /** A web URL or a base64 data URL. */
   image_url: string;
-  stop_reason?: StopReason;
 }
 
 export interface InlineDataPayload {
@@ -235,7 +235,6 @@ export interface InlineDataPayload {
   /** Base64-encoded bytes. */
   data: string;
   mime_type: string;
-  stop_reason?: StopReason;
   /** Provider-fidelity payload, kept as-is and restored verbatim. */
   fidelity?: Fidelity;
 }
@@ -244,7 +243,6 @@ export interface ThinkingPayload {
   type: "thinking";
   role: "assistant";
   thinking: string;
-  stop_reason?: StopReason;
   /**
    * Provider-fidelity payload closing the thinking block (Claude thinking signatures / redacted
    * thinking, GPT-5 encrypted reasoning, the OpenAI-compatible reasoning field name, etc. —
@@ -260,7 +258,6 @@ export interface InlineThinkingPayload {
   /** Base64-encoded bytes. */
   data: string;
   mime_type: string;
-  stop_reason?: StopReason;
   /** Provider-fidelity payload, kept as-is and restored verbatim. */
   fidelity?: Fidelity;
 }
@@ -272,7 +269,6 @@ export interface ToolCallPayload {
   /** Tool arguments as a JSON string. */
   arguments: string;
   tool_call_id: string;
-  stop_reason?: StopReason;
   /** Provider-fidelity payload, kept as-is and restored verbatim. */
   fidelity?: Fidelity;
 }
@@ -290,7 +286,8 @@ export interface ToolCallOutputPayload {
    */
   images?: string[];
   tool_call_id: string;
-  stop_reason?: StopReason;
+  /** What the result is (see ToolStatus). Records written before the field read as `completed`. */
+  status: ToolStatus;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +300,6 @@ export interface PartialTextPayload {
   role: "assistant";
   event_type: StreamEventType;
   text: string;
-  stop_reason?: StopReason;
 }
 
 export interface PartialThinkingPayload {
@@ -311,7 +307,6 @@ export interface PartialThinkingPayload {
   role: "assistant";
   event_type: StreamEventType;
   thinking: string;
-  stop_reason?: StopReason;
 }
 
 export interface PartialToolCallPayload {
@@ -322,7 +317,6 @@ export interface PartialToolCallPayload {
   /** Incremental fragment of the arguments JSON. */
   arguments: string;
   tool_call_id: string;
-  stop_reason?: StopReason;
 }
 
 export interface PartialToolCallOutputPayload {
@@ -333,7 +327,6 @@ export interface PartialToolCallOutputPayload {
   /** Images carried by the tool output (optional): images aren't incremental, carried as a whole by a single delta (consistent with the complete message). */
   images?: string[];
   tool_call_id: string;
-  stop_reason?: StopReason;
 }
 
 // ---------------------------------------------------------------------------
@@ -354,16 +347,18 @@ export interface ApprovalDecisionPayload {
  * output, exception prose), shown verbatim because it is not translatable.
  */
 export type ErrorCode =
-  // Abort causes (a user interruption, the only thing an abort event marks).
+  // Abort causes: a user interruption, or the Task reaching its turn cap.
   | "user_abort"
   | "backoff_interrupted"
   | "compaction_interrupted"
+  | "max_turns" // the Task reached max_turns; error_message names the cap
   // LLM request failures (request_end / compaction_end; the status carries the retry
   // decision, the code carries the classified cause).
   | "timeout" // idle timeout / connection went silent
   | "network" // transport drops, provider 4xx/5xx and anything unclassifiable
   | "rate_limited" // the provider answered 429: its rate limit or an exhausted quota
   | "malformed" // response failed parsing/validation, or the stream was truncated
+  | "output_truncated" // the response stopped at its output cap; retried, never committed
   | "auth" // the provider rejected the credentials
   | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "image_rejected" // a provider 4xx on an input holding images, retried with them replaced
@@ -419,8 +414,8 @@ export interface TokenUsagePayload {
  * later file.
  *
  * The payload is the type alone: how the Task ended is read from the records inside the pair
- * (`abort`, a terminal `request_end` / `compaction_end`, a `fatal` final assistant text) and who
- * started it from its input (`sender`, origin blocks). A Task that ends by throwing (a host
+ * (`abort`, a terminal `request_end` / `compaction_end`) and who started it from its input
+ * (`sender`, origin blocks). A Task that ends by throwing (a host
  * failure that left none of those records) writes no `task_end`: an unclosed `task_begin` is
  * "did not reach its end" — a process exit reads the same. The stated exception to the
  * closed-vocabulary rule above (owner decision 2026-10-22): before this pair no record said where
@@ -484,14 +479,14 @@ export interface RetryDetail extends ErrorInfo {
    * `image_rejected`, retried at once with the images replaced, which announces 0; the Web App
    * renders it as a live countdown to the next attempt. Absent on completed requests and on
    * final failures — a non-completed request_end without `retry_in_ms` is the run's
-   * terminal record (no abort event follows: abort marks a user interruption).
+   * terminal record (no abort event follows: abort marks a user interruption or the turn cap).
    */
   retry_in_ms?: number;
 }
 
 export interface RequestEndPayload extends RetryDetail {
   type: "request_end";
-  /** Terminal state of this Request (the four StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `fatal` carries the no-retry failures — credentials included — with the detail on `error_message`). */
+  /** Terminal state of this Request (taken from LLMOutcome): the one record of why it ended. `fatal` carries the no-retry failures — credentials included — with the detail on `error_message`; a response cut off at its output cap is `retryable` with the code `output_truncated`. */
   status: StopReason;
 }
 

@@ -3861,11 +3861,13 @@ Benchmark：
     subagent: "子会话",
     subagentRunning: "运行中",
     /**
-     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
-     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
-     * renders its English `reason` prose as-is.
+     * Abort banner (user interruptions, and the turn cap). The cause localizes from
+     * `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim. The turn cap's line is
+     * localized whole (its message only restates the cap in English). A legacy Trace without a
+     * code renders its English `reason` prose as-is.
      */
     aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      if (item?.errorCode === "max_turns") return "[已停止]：已达到单次任务最大轮数";
       const cause =
         item?.errorCode === "user_abort"
           ? "用户中断"
@@ -3902,9 +3904,11 @@ Benchmark：
               ? "网络或服务暂时不可用"
               : kind === "image_rejected"
                 ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-                : kind === "failed"
-                  ? "模型服务返回错误"
-                  : "请求失败";
+                : kind === "output_truncated"
+                  ? "模型输出达到输出上限，被截断"
+                  : kind === "failed"
+                    ? "模型服务返回错误"
+                    : "请求失败";
       const action =
         state === "gaveUp"
           ? `第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`
@@ -4326,7 +4330,7 @@ Benchmark：
     pinnedSession: "已置顶",
     /** The hover ellipsis button that opens the row's full context menu. */
     moreActions: "更多操作",
-    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default, the Trace panel's file pills). */
+    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default). */
     loadMore: "更多",
     /** A list's one reveal row (a sidebar group, time mode's whole list, an archive group): n = conversations that list still hides; a click shows ten more, fetching when the loaded ones run out. */
     expandRestSessions: (n: number) => `展开其余 ${n} 个对话`,
@@ -4997,11 +5001,13 @@ Benchmark：
     zoomIn: "放大",
     linkHint:
       "鼠标移到时间线段或消息行即可联动高亮，点击时间线段跳转到对应消息；图例可高亮同类；拖动下方滑块平移/缩放",
+    /** The Trace file picker's panel: its title, and how many files it lists. */
     filesTitle: "Trace 文件",
+    fileCount: (n: number) => `${n} 个文件`,
     toolCalls: "工具调用",
-    taskInput: "本轮输入 tokens",
-    taskOutput: "本轮输出 tokens",
     cacheHit: "命中缓存",
+    /** The uncached part of the input, beside its cache hits (a round's readings). */
+    cacheMiss: "未命中缓存",
     hitRate: "命中率",
     avgToolCalls: "每轮平均工具调用",
     /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空) and is the stem of the conversation row's state titles (压缩中 / 压缩完毕), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
@@ -5009,17 +5015,14 @@ Benchmark：
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
-    /** The round navigator under the global summary: its title, and how many rounds it lists. */
+    /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
     roundNav: "轮次导航",
     roundCount: (n: number) => `${n} 轮`,
-    /** A round head's control that returns to the navigator, on that round's row. */
-    backToNav: "回到导航",
     /** The navigator's number box: its accessible name and its placeholder. */
     jumpToRound: "跳转到轮次",
     jumpToRoundPlaceholder: "轮次",
-    /** A level pill's hint where a Trace first states a thinking level, and where it changes. */
-    levelFirst: (level: string) => `思考等级 ${level}`,
-    levelChanged: (from: string, to: string) => `思考等级 ${from} → ${to}`,
+    /** The panel a round's ring opens, and the name of the button standing in for a ring on a round with no context snapshot. */
+    roundReadings: "本轮读数",
   },
 
   benchmark: {

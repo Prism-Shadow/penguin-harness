@@ -42,7 +42,7 @@ async function collect(gen: AsyncGenerator<AmspRecord>): Promise<AmspRecord[]> {
 interface FinalPayload {
   type?: string;
   output?: string;
-  stop_reason?: string;
+  status?: string;
   images?: string[];
 }
 
@@ -128,7 +128,7 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
     expect(env.mcpConnectResults()).toEqual([]);
     expect(await env.listTools()).toEqual([]);
     const gone = finalPayload(await runTool(env, "mcp__fx__echo", { text: "x" }));
-    expect(gone.stop_reason).toBe("fatal");
+    expect(gone.status).toBe("fatal");
     expect(gone.output).toContain("Unknown tool: mcp__fx__echo");
 
     // A context with the server under a new name: connected afresh, lazily, on listTools —
@@ -144,7 +144,7 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
       expect.objectContaining({ server: "fx2", status: "completed" }),
     ]);
     const echoed = finalPayload(await runTool(env, "mcp__fx2__echo", { text: "hi" }));
-    expect(echoed.stop_reason).toBe("completed");
+    expect(echoed.status).toBe("completed");
     expect(echoed.output).toBe("echo: hi");
 
     // The same entry again — a Session compacting every turn must not respawn its servers:
@@ -359,7 +359,7 @@ describe("MCP servers whose failures repeat what they were sent", () => {
     try {
       expect((await env.listTools()).map((t) => t.name)).toEqual(["mcp__web__add"]);
       const final = finalPayload(await runTool(env, "mcp__web__add", { a: 2, b: 3 }));
-      expect(final.stop_reason).toBe("fatal");
+      expect(final.status).toBe("fatal");
       expect(final.output).toContain("/mcp?team=${TEAM} for Bearer ${ECHO_TOKEN}");
       expect(final.output).not.toContain(token);
       expect(final.output).not.toContain(team);
@@ -412,20 +412,20 @@ describe("MCP over stdio through Environment", () => {
     expect(first.event_type).toBe("start");
     const final = finalPayload(messages);
     expect(final.type).toBe("tool_call_output");
-    expect(final.stop_reason).toBe("completed");
+    expect(final.status).toBe("completed");
     expect(final.output).toBe("echo: hi");
     expect(streamedText(messages)).toBe(final.output);
   });
 
   it("maps a tool-level isError result to failed with the server's message", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__fail", {}));
-    expect(final.stop_reason).toBe("fatal");
+    expect(final.status).toBe("fatal");
     expect(final.output).toBe("boom");
   });
 
   it("carries image content as data-URL images alongside the text", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__pic", {}));
-    expect(final.stop_reason).toBe("completed");
+    expect(final.status).toBe("completed");
     expect(final.output).toBe("a tiny image");
     expect(final.images).toHaveLength(1);
     expect(final.images![0]).toMatch(/^data:image\/png;base64,/);
@@ -450,7 +450,7 @@ describe("MCP over stdio through Environment", () => {
 
   it("collapses an unknown MCP name into the unknown-tool reply", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__nope", {}));
-    expect(final.stop_reason).toBe("fatal");
+    expect(final.status).toBe("fatal");
     expect(final.output).toContain("Unknown tool: mcp__fx__nope");
   });
 });
@@ -557,7 +557,7 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     const env = makeEnv({ maxOutputLength: 100 });
     try {
       const final = finalPayload(await runTool(env, "mcp__fx__spam", {}));
-      expect(final.stop_reason).toBe("completed");
+      expect(final.status).toBe("completed");
       expect(final.output).toBe(
         `${"x".repeat(50)}\n[output truncated: kept first 50 and last 50 of 500 chars]\n${"x".repeat(50)}`,
       );
@@ -570,7 +570,7 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     const env = makeEnv({ timeoutMs: 300 });
     try {
       const final = finalPayload(await runTool(env, "mcp__fx__slow", { ms: 60_000 }));
-      expect(final.stop_reason).toBe("fatal");
+      expect(final.status).toBe("fatal");
       expect(final.output).toContain("[tool timeout: exceeded 300ms]");
     } finally {
       env.dispose();
@@ -583,7 +583,7 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
       const ac = new AbortController();
       setTimeout(() => ac.abort(), 150);
       const final = finalPayload(await runTool(env, "mcp__fx__slow", { ms: 60_000 }, ac.signal));
-      expect(final.stop_reason).toBe("aborted");
+      expect(final.status).toBe("aborted");
       expect(final.output).toContain("[interrupted: tool aborted by user]");
     } finally {
       env.dispose();
@@ -1079,7 +1079,7 @@ describe("MCP over Streamable HTTP", () => {
       const tools = await env.listTools();
       expect(tools.map((t) => t.name)).toEqual(["mcp__web__add"]);
       const final = finalPayload(await runTool(env, "mcp__web__add", { a: 2, b: 3 }));
-      expect(final.stop_reason).toBe("completed");
+      expect(final.status).toBe("completed");
       expect(final.output).toBe("5");
       expect(seenHeaders.length).toBeGreaterThan(0);
       expect(seenHeaders.every((h) => h["x-penguin-test"] === "yes")).toBe(true);

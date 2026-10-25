@@ -208,7 +208,10 @@ describe("trace-service", () => {
         toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" }),
       ),
       at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
-      at("2026-07-05T10:00:06.500Z", toolCallOutput({ output: "done", toolCallId: "tc-1" })),
+      at(
+        "2026-07-05T10:00:06.500Z",
+        toolCallOutput({ output: "done", toolCallId: "tc-1", status: "completed" }),
+      ),
       at("2026-07-05T10:00:07.000Z", tokenUsage(counts(1000), counts(400))),
       at(
         "2026-07-05T10:00:08.000Z",
@@ -238,7 +241,7 @@ describe("trace-service", () => {
     expect(analysis.toolCalls).toHaveLength(1);
     expect(analysis.toolCalls[0]!.name).toBe("exec_command");
     expect(analysis.toolCalls[0]!.durationMs).toBe(2500);
-    expect(analysis.toolCalls[0]!.stopReason).toBe("completed");
+    expect(analysis.toolCalls[0]!.status).toBe("completed");
 
     expect(analysis.reconnectCount).toBe(1);
     expect(analysis.compactionCount).toBe(1);
@@ -409,7 +412,10 @@ describe("trace-service", () => {
       ),
       at("2026-07-05T10:00:03.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:03.100Z", tokenUsage(counts(60_000), buckets(50_000, 8_000, 2_000))),
-      at("2026-07-05T10:00:03.500Z", toolCallOutput({ output: "ok", toolCallId: "tc-1" })),
+      at(
+        "2026-07-05T10:00:03.500Z",
+        toolCallOutput({ output: "ok", toolCallId: "tc-1", status: "completed" }),
+      ),
       // Continuation round (same Task): context grows to 65k
       at("2026-07-05T10:00:04.000Z", requestBegin()),
       at("2026-07-05T10:00:06.000Z", requestEnd("completed")),
@@ -539,8 +545,14 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:03.000Z", approvalDecision("allow", "tc-1")),
       at("2026-07-05T10:00:04.000Z", approvalDecision("allow", "tc-2")),
       at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
-      at("2026-07-05T10:00:09.000Z", toolCallOutput({ output: "a", toolCallId: "tc-1" })),
-      at("2026-07-05T10:00:11.000Z", toolCallOutput({ output: "b", toolCallId: "tc-2" })),
+      at(
+        "2026-07-05T10:00:09.000Z",
+        toolCallOutput({ output: "a", toolCallId: "tc-1", status: "completed" }),
+      ),
+      at(
+        "2026-07-05T10:00:11.000Z",
+        toolCallOutput({ output: "b", toolCallId: "tc-2", status: "completed" }),
+      ),
       at("2026-07-05T10:00:11.000Z", requestBegin()),
       at("2026-07-05T10:00:13.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:13.100Z", tokenUsage(counts(1000), buckets(0, 0, 1_000))),
@@ -1087,15 +1099,15 @@ describe("trace-service", () => {
       sessionMeta(metaPayload()),
       at(T("00.000"), userText("q")), // the user input is sent instantly, so it occupies no segment
       at(T("01.000"), requestBegin()),
-      at(T("03.000"), thinkingMessage("think", "completed")),
+      at(T("03.000"), thinkingMessage("think")),
       at(T("04.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
       // Two async tools: t1 is already in approval/execution while the model keeps decoding t2
       at(T("04.500"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t2" })),
       at(T("05.000"), requestEnd("completed")),
       at(T("05.500"), approvalDecision("allow", "t1")),
       at(T("06.000"), approvalDecision("allow", "t2")),
-      at(T("07.000"), toolCallOutput({ output: "o1", toolCallId: "t1" })),
-      at(T("08.000"), toolCallOutput({ output: "o2", toolCallId: "t2" })),
+      at(T("07.000"), toolCallOutput({ output: "o1", toolCallId: "t1", status: "completed" })),
+      at(T("08.000"), toolCallOutput({ output: "o2", toolCallId: "t2", status: "completed" })),
       // The model starts the next round only after all outputs are back: the new segment is anchored on request_begin
       at(T("08.500"), requestBegin()),
       at(T("10.000"), assistantText("answer")),
@@ -1133,7 +1145,7 @@ describe("trace-service", () => {
         approvalTs: T("05.500"),
         decision: "allow",
         outputTs: T("07.000"),
-        stopReason: "completed",
+        status: "completed",
         taskIndex: 0,
       },
       {
@@ -1143,7 +1155,7 @@ describe("trace-service", () => {
         approvalTs: T("06.000"),
         decision: "allow",
         outputTs: T("08.000"),
-        stopReason: "completed",
+        status: "completed",
         taskIndex: 0,
       },
     ]);
@@ -1158,7 +1170,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       at(T("03.500"), requestBegin()),
       at(T("04.000"), assistantText("answer 1")),
       at(T("04.500"), requestEnd("completed")),
@@ -1217,7 +1229,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       at(T("03.200"), userText("[user_steering]\nalso check the tests\n[/user_steering]")),
       at(T("03.500"), requestBegin()),
       at(T("04.000"), assistantText("answer 1")),
@@ -1298,7 +1310,10 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "launched", toolCallId: "t1" })),
+      at(
+        T("03.000"),
+        toolCallOutput({ output: "launched", toolCallId: "t1", status: "completed" }),
+      ),
       at(T("08.000"), userText(plain, "harness")),
       at(T("08.500"), requestBegin()),
       at(T("09.000"), assistantText("finished cleanly")),
@@ -1354,7 +1369,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       // Steering with two images: core delivers them right behind the text, and the whole
       // batch stays inside Task 0 — an image is a turn starter everywhere except here.
       at(T("03.200"), userText("[user_steering]\nlike this mock\n[/user_steering]")),
@@ -1389,7 +1404,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       // Task 1: the compaction request.
       at(
         T("04.000"),
@@ -1418,7 +1433,7 @@ describe("trace-service", () => {
       at(T("01.000"), requestBegin()),
       at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
       at(T("02.500"), requestEnd("completed")),
-      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1", status: "completed" })),
       at(
         T("04.000"),
         compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }),
@@ -1436,32 +1451,29 @@ describe("trace-service", () => {
     expect(a.toolSpans.map((s) => s.taskIndex)).toEqual([0]);
   });
 
-  it("interrupt-compensation tool_calls (stop_reason not completed) stay out of the timeline lanes (no phantom execution segments)", async () => {
+  it("a call its unfinished Request never dispatched gets no timeline lane; one it ran keeps its lane", async () => {
     const T = (sec: string) => `2026-07-05T10:00:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 8, [
       sessionMeta(metaPayload()),
       at(T("00.000"), userText("q")),
       at(T("01.000"), requestBegin()),
-      at(
-        T("02.000"),
-        toolCall({
-          name: "exec_command",
-          arguments: "{}",
-          toolCallId: "t1",
-          stopReason: "retryable",
-        }),
-      ),
+      at(T("02.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t0" })),
+      at(T("02.100"), approvalDecision("allow", "t0")),
+      // Written whole with the arguments that arrived when the stream dropped.
+      at(T("02.200"), toolCall({ name: "exec_command", arguments: '{"cmd":', toolCallId: "t1" })),
       at(T("02.500"), requestEnd("retryable")),
+      at(T("02.700"), toolCallOutput({ output: "ok", toolCallId: "t0", status: "completed" })),
       at(T("03.000"), requestBegin()),
       at(T("04.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t2" })),
-      at(T("04.500"), toolCallOutput({ output: "ok", toolCallId: "t2" })),
+      at(T("04.200"), approvalDecision("allow", "t2")),
+      at(T("04.500"), toolCallOutput({ output: "ok", toolCallId: "t2", status: "completed" })),
       at(T("05.000"), requestEnd("completed")),
     ]);
     const a = await service.analyze(P, A, S, 8);
-    // A phantom call gets no lane: only t2 goes into toolSpans.
-    expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t2"]);
-    // But the duration list still records t1 (flagged with the interrupted status).
-    expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.stopReason).toBe("retryable");
+    expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t0", "t2"]);
+    expect(a.toolCalls.map((c) => c.toolCallId)).toEqual(["t0", "t1", "t2"]);
+    expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.status).toBeUndefined();
+    expect(a.toolCalls.find((c) => c.toolCallId === "t0")?.status).toBe("completed");
   });
 
   it("each request carries the thinking level its request_begin records; a request written before the field carries none", async () => {

@@ -21,14 +21,14 @@ describe("isProbeContent", () => {
   it("counts thinking and text content, partial or complete", () => {
     expect(isProbeContent(partialThinking("delta", "let me think"))).toBe(true);
     expect(isProbeContent(partialText("delta", "pong"))).toBe(true);
-    expect(isProbeContent(thinkingMessage("burned the whole budget", "retryable"))).toBe(true);
+    expect(isProbeContent(thinkingMessage("burned the whole budget"))).toBe(true);
     expect(isProbeContent(assistantText("pong"))).toBe(true);
   });
 
   it("ignores empty segments, events, and tool calls", () => {
     expect(isProbeContent(partialThinking("start"))).toBe(false);
-    expect(isProbeContent(partialThinking("stop", "", "retryable"))).toBe(false);
-    expect(isProbeContent(thinkingMessage("", "retryable", { id: "rs_1" }))).toBe(false);
+    expect(isProbeContent(partialThinking("stop", ""))).toBe(false);
+    expect(isProbeContent(thinkingMessage("", { id: "rs_1" }))).toBe(false);
     expect(isProbeContent(tokenUsage(emptyTokenCounts(), emptyTokenCounts()))).toBe(false);
     expect(isProbeContent(toolCall({ name: "t", arguments: "{}", toolCallId: "tc1" }))).toBe(false);
   });
@@ -37,6 +37,15 @@ describe("isProbeContent", () => {
 describe("probeVerdict", () => {
   it("passes a completed probe", () => {
     expect(probeVerdict({ status: "completed" }, false)).toEqual({ ok: true });
+  });
+
+  it("passes a probe cut off at its output cap: a whole answer the tiny cap cut off", () => {
+    expect(
+      probeVerdict(
+        { status: "retryable", errorCode: "output_truncated", errorMessage: "cut" },
+        false,
+      ),
+    ).toEqual({ ok: true });
   });
 
   it("passes a retryable ending when content was streamed (e.g. a reasoning model burned the tiny cap)", () => {

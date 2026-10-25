@@ -127,7 +127,11 @@ describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquificatio
       // Round 2: after returning the result the model checks Paris next — the same-name call must get a new suffixed id.
       const r2 = await round(
         r1.calls.map((c) =>
-          toolCallOutput({ output: "10:00 AM (mock)", toolCallId: c.tool_call_id }),
+          toolCallOutput({
+            output: "10:00 AM (mock)",
+            toolCallId: c.tool_call_id,
+            status: "completed",
+          }),
         ),
       );
       expect(r2.calls.length).toBeGreaterThanOrEqual(1);
@@ -138,7 +142,11 @@ describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquificatio
       // pairing was accepted; some models may keep appending calls, so don't hard-assert the body.
       const r3 = await round(
         r2.calls.map((c) =>
-          toolCallOutput({ output: "3:00 AM (mock)", toolCallId: c.tool_call_id }),
+          toolCallOutput({
+            output: "3:00 AM (mock)",
+            toolCallId: c.tool_call_id,
+            status: "completed",
+          }),
         ),
       );
       expect(r3.calls.length + r3.text.length).toBeGreaterThan(0);

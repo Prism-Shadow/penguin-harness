@@ -203,8 +203,8 @@ function buildGroups(
       callMs,
       approvalMs: msOf(t.approvalTs),
       outputMs: msOf(t.outputTs),
-      failed: t.stopReason !== undefined && t.stopReason !== "completed",
-      ...(t.stopReason !== undefined ? { status: t.stopReason } : {}),
+      failed: t.status !== undefined && t.status !== "completed",
+      ...(t.status !== undefined ? { status: t.status } : {}),
       ...(t.decision !== undefined ? { decision: t.decision } : {}),
     });
   }
@@ -647,7 +647,7 @@ export function TimelineChart({
                                         }${s.failed ? ` · ${s.status}` : ""}`,
                                       )}
                                       className={`cursor-pointer ${
-                                        s.failed ? "ring-1 ring-red-500" : ""
+                                        s.failed ? "ring-1 ring-tone-danger-line" : ""
                                       } ${running ? "opacity-70" : dim}`}
                                       paint={kindPaint("exec")}
                                       place={placeExact(execStart, endMs, g.t0, g.total)}
@@ -677,7 +677,7 @@ export function TimelineChart({
                         {...namedHint(
                           `${o.name} · ${S.traces.legendOther} · ${humanizeDuration(o.endMs - o.startMs)}`,
                         )}
-                        className={`cursor-pointer ${o.failed ? "ring-1 ring-red-500" : ""} ${dim}`}
+                        className={`cursor-pointer ${o.failed ? "ring-1 ring-tone-danger-line" : ""} ${dim}`}
                         paint={kindPaint("other")}
                         place={placeExact(o.startMs, o.endMs, g.t0, g.total)}
                       />
@@ -746,10 +746,6 @@ export function TimelineChart({
           {zoom.toFixed(2)}×
         </span>
       </div>
-
-      {onHighlight && (
-        <p className="text-xs text-gray-400 dark:text-gray-600">{S.traces.linkHint}</p>
-      )}
     </div>
   );
 }

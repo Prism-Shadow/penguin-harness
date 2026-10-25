@@ -63,7 +63,7 @@ describe("buildContextBreakdown", () => {
       thinkingMessage("the config lives in the workspace root"),
       assistantText("reading it now"),
       toolCall({ name: "read_file", arguments: '{"path":"config.toml"}', toolCallId: "c1" }),
-      toolCallOutput({ output: "port = 8080", toolCallId: "c1" }),
+      toolCallOutput({ output: "port = 8080", toolCallId: "c1", status: "completed" }),
     ]);
 
     expect(b.systemPrompt).toBe(approximateTokens("You are a helpful agent."));
@@ -108,18 +108,18 @@ describe("buildContextBreakdown", () => {
     // everything else, and read_file's three small calls still beat the one-off tools.
     messages.push(
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "e1" }),
-      toolCallOutput({ output: "x".repeat(4000), toolCallId: "e1" }),
+      toolCallOutput({ output: "x".repeat(4000), toolCallId: "e1", status: "completed" }),
     );
     for (let i = 0; i < 3; i++) {
       messages.push(
         toolCall({ name: "read_file", arguments: "{}", toolCallId: `r${i}` }),
-        toolCallOutput({ output: "y".repeat(400), toolCallId: `r${i}` }),
+        toolCallOutput({ output: "y".repeat(400), toolCallId: `r${i}`, status: "completed" }),
       );
     }
     for (const name of ["grep", "write_file", "list_dir", "web_fetch"]) {
       messages.push(
         toolCall({ name, arguments: "{}", toolCallId: `${name}-1` }),
-        toolCallOutput({ output: "z".repeat(40), toolCallId: `${name}-1` }),
+        toolCallOutput({ output: "z".repeat(40), toolCallId: `${name}-1`, status: "completed" }),
       );
     }
 
@@ -138,23 +138,23 @@ describe("buildContextBreakdown", () => {
       sessionMeta(metaPayload("prompt")),
       // Three spellings of one file: relative, explicitly relative, absolute inside the Workspace.
       toolCall({ name: "read_file", arguments: '{"file_path":"src/a.ts"}', toolCallId: "a1" }),
-      toolCallOutput({ output: "x".repeat(4000), toolCallId: "a1" }),
+      toolCallOutput({ output: "x".repeat(4000), toolCallId: "a1", status: "completed" }),
       toolCall({
         name: "edit_file",
         arguments: '{"file_path":"./src/a.ts","old_string":"1","new_string":"2"}',
         toolCallId: "a2",
       }),
-      toolCallOutput({ output: "edited", toolCallId: "a2" }),
+      toolCallOutput({ output: "edited", toolCallId: "a2", status: "completed" }),
       toolCall({
         name: "write_file",
         arguments: '{"file_path":"/data/ws/src/a.ts","content":"3"}',
         toolCallId: "a3",
       }),
-      toolCallOutput({ output: "written", toolCallId: "a3" }),
+      toolCallOutput({ output: "written", toolCallId: "a3", status: "completed" }),
       toolCall({ name: "read_file", arguments: '{"file_path":"README.md"}', toolCallId: "r1" }),
-      toolCallOutput({ output: "y".repeat(400), toolCallId: "r1" }),
+      toolCallOutput({ output: "y".repeat(400), toolCallId: "r1", status: "completed" }),
       toolCall({ name: "read_file", arguments: '{"file_path":"README.md"}', toolCallId: "r2" }),
-      toolCallOutput({ output: "y".repeat(400), toolCallId: "r2" }),
+      toolCallOutput({ output: "y".repeat(400), toolCallId: "r2", status: "completed" }),
     ]);
     expect(b.topFiles.map((f) => f.path)).toEqual([path.join("src", "a.ts"), "README.md"]);
     expect(b.topFiles[0]!.ops).toEqual({ read: 1, edit: 1, write: 1 });
@@ -174,7 +174,7 @@ describe("buildContextBreakdown", () => {
         arguments: JSON.stringify({ file_path: filePath }),
         toolCallId: id,
       }),
-      toolCallOutput({ output: "1", toolCallId: id }),
+      toolCallOutput({ output: "1", toolCallId: id, status: "completed" }),
     ];
     const b = buildContextBreakdown([
       sessionMeta(metaPayload("prompt")),
@@ -198,13 +198,13 @@ describe("buildContextBreakdown", () => {
     const b = buildContextBreakdown([
       sessionMeta(metaPayload("prompt")),
       toolCall({ name: "read_file", arguments: "{", toolCallId: "x1" }),
-      toolCallOutput({ output: "…", toolCallId: "x1" }),
+      toolCallOutput({ output: "…", toolCallId: "x1", status: "completed" }),
       toolCall({ name: "read_file", arguments: "{}", toolCallId: "x2" }),
-      toolCallOutput({ output: "…", toolCallId: "x2" }),
+      toolCallOutput({ output: "…", toolCallId: "x2", status: "completed" }),
       toolCall({ name: "edit_file", arguments: '{"file_path":""}', toolCallId: "x3" }),
       toolCall({ name: "write_file", arguments: '{"file_path":7}', toolCallId: "x4" }),
       toolCall({ name: "exec_command", arguments: '{"file_path":"src/a.ts"}', toolCallId: "x5" }),
-      toolCallOutput({ output: "…", toolCallId: "x5" }),
+      toolCallOutput({ output: "…", toolCallId: "x5", status: "completed" }),
     ]);
     expect(b.topFiles).toEqual([]);
     // The calls still count as tool traffic: only the file attribution is dropped.
@@ -221,7 +221,11 @@ describe("buildContextBreakdown", () => {
           arguments: JSON.stringify({ file_path: `f${i}.ts` }),
           toolCallId: `f${i}`,
         }),
-        toolCallOutput({ output: "z".repeat(100 * (i + 1)), toolCallId: `f${i}` }),
+        toolCallOutput({
+          output: "z".repeat(100 * (i + 1)),
+          toolCallId: `f${i}`,
+          status: "completed",
+        }),
       );
     }
     const b = buildContextBreakdown(messages);

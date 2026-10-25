@@ -82,7 +82,7 @@ describe("TraceService.readMessages — sub-session expansion", () => {
       userText("run a sub-agent"),
       toolCall({ name: "run_subagent", arguments: "{}", toolCallId: "c1" }),
       subagentEvent(CHILD), // pointer: holds only the child Session id
-      toolCallOutput({ output: "done", toolCallId: "c1" }),
+      toolCallOutput({ output: "done", toolCallId: "c1", status: "completed" }),
     ]);
     await writeTrace(root, CHILD_AGENT, CHILD, [
       meta(CHILD, CHILD_AGENT),

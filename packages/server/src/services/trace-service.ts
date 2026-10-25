@@ -1119,6 +1119,8 @@ export class TraceService implements Traces {
     /** Inside the image run that follows a `[user_steering]` text (see the turn-start rule below). */
     let steeringImages = false;
     let sawToolCallThisRequest = false;
+    /** The main Request's tool calls so far (cleared at its request_begin). */
+    let requestCallIds: string[] = [];
     // Compaction interval (compaction_begin..compaction_end): the compaction
     // request's request_begin/request_end and token_usage all fall inside it (see
     // core context-engine's summarize flow), which is used to exclude the
@@ -1283,6 +1285,7 @@ export class TraceService implements Traces {
             prevSerialTs = msg.timestamp;
             if (!continuation) taskIndex++; // Not a continuation -> a new Task
             sawToolCallThisRequest = false;
+            requestCallIds = [];
           }
           // Settle taskIndex before opening the span: the span belongs directly to
           // the current Task. Nearest-neighbor pairing: if the previous begin was
@@ -1362,6 +1365,18 @@ export class TraceService implements Traces {
           if (!hasOrigin) {
             prevSerialTs = null;
             continuation = sawToolCallThisRequest || retryable;
+            // A Request that did not complete: a call of it with no approval decision was
+            // closed with it and never dispatched (the engine decides every call it dispatches
+            // before the Request ends), so it gets no timeline lane — one would render as an
+            // execution spanning the rest of the timeline.
+            if (status !== undefined && status !== "completed") {
+              for (const id of requestCallIds) {
+                const lane = openSpansById.get(id);
+                if (lane === undefined || lane.approvalTs !== undefined) continue;
+                openSpansById.delete(id);
+                toolSpans.splice(toolSpans.indexOf(lane), 1);
+              }
+            }
           }
           if (retryable) reconnectCount++;
           if (openRequest) {
@@ -1509,21 +1524,17 @@ export class TraceService implements Traces {
       }
       if (p.type === "tool_call" && typeof p.tool_call_id === "string") {
         if (!hasOrigin) sawToolCallThisRequest = true; // This turn called a tool -> the next turn continues the same Task
-        const callStop = typeof p.stop_reason === "string" ? p.stop_reason : undefined;
         const span: ToolCallSpan = {
           toolCallId: p.tool_call_id,
           name: typeof p.name === "string" ? p.name : "",
           startTs: msg.timestamp,
         };
-        if (callStop !== undefined) span.stopReason = callStop;
         openToolCalls.set(p.tool_call_id, span);
         toolCalls.push(span);
-        // The timeline lane only accepts calls that "will actually be executed":
-        // an interrupt-compensation tool_call (stop_reason other than completed)
-        // never gets an approval/output, and putting it on a lane would render as
-        // a phantom "executing" state spanning the whole timeline — so it's
-        // skipped outright.
-        if (!hasOrigin && (callStop === undefined || callStop === "completed")) {
+        // A timeline lane, until the call's Request ends without completing and without having
+        // dispatched it (see request_end).
+        if (!hasOrigin) {
+          requestCallIds.push(p.tool_call_id);
           const timeline: TraceToolSpan = {
             toolCallId: p.tool_call_id,
             name: typeof p.name === "string" ? p.name : "",
@@ -1539,12 +1550,13 @@ export class TraceService implements Traces {
           span.endTs = msg.timestamp;
           const dur = Date.parse(msg.timestamp) - Date.parse(span.startTs);
           if (Number.isFinite(dur)) span.durationMs = dur;
-          if (typeof p.stop_reason === "string") span.stopReason = p.stop_reason;
+          // A result written before tool results carried a status reads as completed.
+          span.status = typeof p.status === "string" ? p.status : "completed";
         }
         const timeline = openSpansById.get(p.tool_call_id);
         if (timeline && timeline.outputTs === undefined) {
           timeline.outputTs = msg.timestamp;
-          if (typeof p.stop_reason === "string") timeline.stopReason = p.stop_reason;
+          timeline.status = typeof p.status === "string" ? p.status : "completed";
         }
       }
     }

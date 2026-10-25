@@ -650,7 +650,6 @@ describe("Session pre-tool-use hooks", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd }),
             toolCallId: "c1",
-            stopReason: "completed",
           });
           yield tokenUsage(usage(1), usage(1));
           return { status: "completed" };
@@ -674,7 +673,7 @@ describe("Session pre-tool-use hooks", () => {
       yield toolCallOutput({
         output: "ran",
         toolCallId: tc.payload.tool_call_id,
-        stopReason: "completed",
+        status: "completed",
       });
     },
     toolPermission: () => undefined,

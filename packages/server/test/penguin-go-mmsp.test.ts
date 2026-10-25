@@ -489,10 +489,10 @@ describe("Penguin Go MMSP HTTP transport", () => {
     const client = llm();
     client.setHistory([
       userText("previous"),
-      thinkingMessage("saved", "completed", { signature: "history-signature" }),
+      thinkingMessage("saved", { signature: "history-signature" }),
       assistantText("past"),
       toolCall({ name: "lookup", arguments: "{}", toolCallId: "old-call" }),
-      toolCallOutput({ toolCallId: "old-call", output: "result" }),
+      toolCallOutput({ toolCallId: "old-call", output: "result", status: "completed" }),
     ]);
     const result = await drain(
       client.streamGenerate({

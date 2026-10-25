@@ -93,7 +93,7 @@ A Task consists of consecutive Requests, also called turns. Each turn proceeds a
 2. The LLM streams back `partial_*` fragments, followed by complete messages.
 3. Every complete `tool_call` is first offered to the installed `pre_tool_use` hooks, then triggers exactly one `approve` callback, unless a hook already decided. The decision is recorded as an `approval_decision` event.
 4. Approved calls run concurrently in the Environment. The approvals themselves happen one at a time. Tool outputs stream out in completion order.
-5. When the LLM stream ends, a completed request emits its final `token_usage`, and `request_end(status)` follows at once. This happens **without waiting for tools**: a tool that is still running may emit output after `request_end`. A request that did not complete emits no `token_usage`.
+5. When the LLM stream ends, a completed request (or one cut off at its output cap) emits its final `token_usage`, and `request_end(status)` follows at once. This happens **without waiting for tools**: a tool that is still running may emit output after `request_end`. A request that did not complete emits no `token_usage`.
 6. Once the whole batch of tool calls is terminal, the tool results are **reordered to the original call order** and become the next turn's input. The next Request never fires before that.
 
 The Task ends when a turn produces no `tool_call`.
@@ -114,7 +114,7 @@ What the carry-over contains depends on how far the turn had got:
 
 | Case | When | Carry-over |
 | --- | --- | --- |
-| A | The model's output had completed: the turn's `tool_call`s were committed | Finished tool results are re-sent as structured `tool_call_output`s. Unfinished calls get an `[interrupted: tool aborted by user]` placeholder, keeping `tool_call`/output pairing strictly intact. |
+| A | The model's output had completed: the turn's `tool_call`s were committed | Tool results are re-sent as structured `tool_call_output`s; a call interrupted while it ran has its own `aborted` result, holding the output so far and the interruption note. Calls that got no result get an `[interrupted: tool aborted by user]` placeholder, keeping `tool_call`/output pairing strictly intact. |
 | B | The model's output was incomplete | The whole turn is flattened into one `[turn_aborted]` user text carrying whatever partial output existed. |
 
 An interruption that lands before the Request is issued keeps the input as-is as carry-over, without flattening it, so multimodal input is not lost.
@@ -272,6 +272,8 @@ A `fatal` failure stops the run at once, without retrying. It covers:
 
 An identical request can only fail the same way, so the ladder would only delay the actionable error.
 
+A response that arrives whole but stops at its output cap (`finish_reason` `length`) ends `retryable` with `error_code: "output_truncated"`; one that ends on a finish reason the client does not map (`unknown`) ends `retryable` coded `malformed`. Neither is committed: the LLM interface takes the turn back out of MMSP's history. Both are still metered: the provider billed the attempt and reported its usage, so its `token_usage` goes out, though it counts as no Session turn. The engine retries them on the same ladder, by the same rules as any other retryable failure, and the retry's `[request_error]` line names the cause, so the model can answer in a shorter way.
+
 One rejection is retried anyway: a provider 4xx on a request whose input carries images. Providers word such refusals too many ways to match reliably, so the engine takes any 4xx on an image-bearing input as a rejection of the images (`image_rejected`): it replaces each image with a fixed note saying the request was rejected while it carried the image (the provider's error reaches the model through the retry's `[request_error]` line, see below), records that attempt as `retryable` with `retry_in_ms: 0`, and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement. A 4xx on an input with no image is fatal like any other: a refused image already in the committed history is beyond the reach of a retry.
 
 ### How a turn is retried
@@ -289,15 +291,15 @@ The default limits and waits:
 | Backoff cap | 30 s |
 | Wait sequence | 2 s, 4 s, 8 s, 16 s, 30 s |
 | Total patience | ≈ 60 s |
-| Absolute ceiling per turn | 20 attempts |
+| Absolute ceiling per turn | 10 attempts |
 
 There is one shared schedule for every retryable failure. It is sized so that transient provider failures such as restarts and rate limits get a real recovery window, and so every planned wait clears the Web App's 2 s countdown floor and stays visible.
 
-An attempt that **received content** before dropping — a `terminated: other side closed (UND_ERR_SOCKET)` mid-response, say — had a working connection and a model writing into it. Its failure restarts the ladder at 2 s instead of climbing it, because two socket drops in one turn should not add up to a reason to give up. The bound on that reset is the separate absolute ceiling of 20 attempts per turn, which only an endpoint that streams a little and drops every time ever reaches. `attempt` keeps counting every attempt and never rewinds when the ladder resets.
+An attempt that **received content** before dropping — a `terminated: other side closed (UND_ERR_SOCKET)` mid-response, say — had a working connection and a model writing into it. Its failure restarts the ladder at 2 s instead of climbing it, because two socket drops in one turn should not add up to a reason to give up. The bound on that reset is the separate absolute ceiling of 10 attempts per turn, which an endpoint that streams a little and drops every time reaches, as does a response that keeps stopping at its output cap. `attempt` keeps counting every attempt and never rewinds when the ladder resets.
 
 ### When the run gives up
 
-A run gives up in two cases: a `fatal` failure, and a `retryable` failure whose retries ran out. In both, the run ends without an `abort` event, because `abort` marks only a user interruption. The `request_end` is the terminal record, and the turn's pending state is kept as carry-over for the next run.
+A run gives up in two cases: a `fatal` failure, and a `retryable` failure whose retries ran out. In both, the run ends without an `abort` event, because `abort` marks only a user interruption or the turn cap. The `request_end` is the terminal record, and the turn's pending state is kept as carry-over for the next run.
 
 - A `fatal` failure's terminal `request_end` carries status `fatal` with `error_code` and `error_message`.
 - When the retries run out, the terminal `request_end` is `retryable`, with `attempt` and the error pair but no `retry_in_ms`. The retry input — the original input plus its `[turn_retried]` block — is kept as carry-over.

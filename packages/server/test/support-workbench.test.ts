@@ -19,7 +19,7 @@ const message = (role: string, text: string): AmspRecord =>
   ({
     timestamp: "2026-10-14T00:00:00Z",
     type: "model_msg",
-    payload: { type: "text", role, text, stop_reason: "completed" },
+    payload: { type: "text", role, text },
   }) as AmspRecord;
 interface Ticket {
   id: string;

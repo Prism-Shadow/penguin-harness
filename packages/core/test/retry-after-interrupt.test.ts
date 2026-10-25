@@ -90,7 +90,7 @@ describe("Retry after an interruption", () => {
     const llm = scriptedLLM([
       // The user stops the stream half-way through the reply.
       async function* () {
-        yield assistantText("Here are the rel", "aborted");
+        yield assistantText("Here are the rel");
         return { status: "aborted" };
       },
       answer,
@@ -153,7 +153,7 @@ describe("Retry after an interruption", () => {
   it("a message sent after the stop takes the held turn along, leaving nothing to retry", async () => {
     const llm = scriptedLLM([
       async function* () {
-        yield assistantText("Here are", "aborted");
+        yield assistantText("Here are");
         return { status: "aborted" };
       },
       answer,

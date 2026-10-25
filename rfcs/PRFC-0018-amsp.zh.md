@@ -3,7 +3,7 @@
 [English](PRFC-0018-amsp.md)
 
 > **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0018-amsp.md`——落地于默认分支 `main`（提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)）。
-> **修订**：v1.0.0（迁入主仓）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **修订**：v1.1.0（v1.0.0 迁入主仓）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `amsp`
 - Start Date: 2026-10-07
@@ -68,13 +68,13 @@ import { AgentClient } from "@prismshadow/amsp";
 
 const client = new AgentClient({ baseUrl: "http://localhost:7364/api/amsp/v1", agent: "demo/coder", apiKey: process.env.PENGUIN_AGENT_KEY });
 
-const run = client.run({ input: "Summarize README.md" });
+const run = client.stream({ input: "Summarize README.md" });
 for await (const event of run) {
   if (event.type === "text.delta") process.stdout.write(event.text);
 }
 const first = await run.result();
 
-const second = await client.ask({ sessionId: first.sessionId, input: "Now list its headings", onApproval: () => "allow" });
+const second = await client.run({ sessionId: first.sessionId, input: "Now list its headings", onApproval: () => "allow" });
 console.log(second.text, second.usage.total);
 ```
 
@@ -348,8 +348,8 @@ Agent 列表的每一项另带 `apiEnabled`（一次查询得出），供 Agents
 `@prismshadow/amsp`（目录 `packages/amsp`）公开发布、零运行时依赖，Node 24 与浏览器通用（只用 `fetch`、`ReadableStream`、`TextDecoder`、`AbortController`、`URL`）。它导出 AMSP 的全部类型，服务端以类型引用它——协议的类型只有这一份。
 
 - `new AgentClient({ baseUrl, agent, apiKey?, fetch?, headers? })`：不给 `apiKey` 即无密钥访问；不隐式读取任何环境变量。
-- `run({ input, sessionId?, signal?, onApproval? })` 返回一次运行：可以 `for await` 逐个读事件；`session` 在 `run.started` 时兑现；`result()` 汇总为 `{ status, error?, sessionId, text, items, usage, sessionUsage, requests }`——`text` 为主会话 assistant `text.done` 以空行连接，`items` 为全部 `.done` 条目与非条目事件（流式产出的压缩摘要没有 `.done`，因此不在其中，也不由片段重建）；`abort()` 走中止路由。
-- `ask(opts)` 即运行并等 `result()`；另有 `agent()`、`session(id)`、`abort(id)`、`approve(id, toolCallId, decision)`、`parseArguments(toolCall)`（解析失败返回 null）与 `readSse(body)`。
+- `stream({ input, sessionId?, signal?, onApproval? })` 返回一次运行：可以 `for await` 逐个读事件；`session` 在 `run.started` 时兑现；`result()` 汇总为 `{ status, error?, sessionId, text, items, usage, sessionUsage, requests }`——`text` 为主会话 assistant `text.done` 以空行连接，`items` 为全部 `.done` 条目与非条目事件（流式产出的压缩摘要没有 `.done`，因此不在其中，也不由片段重建）；`abort()` 走中止路由。
+- `run(opts)` 即运行并等 `result()`；另有 `agent()`、`session(id)`、`abort(id)`、`approve(id, toolCallId, decision)`、`parseArguments(toolCall)`（解析失败返回 null）与 `readSse(body)`。
 - 行为：`[DONE]` 结束迭代；注释行与非 `data:` 字段忽略，多行 `data:` 以换行连接；流开始之前的非 200 抛 `AmspHttpError { status, code, message }`；没有 `run.done` 就结束的流抛 `AmspStreamError`；未知事件类型原样交出；即使调用方只等 `result()`，`onApproval` 也会被等待并代为 POST，回调抛错即答 `deny`，没有回调同样答 `deny`；`signal` 中止即取消读取，以 fetch 的 `AbortError` 拒绝。
 - 随 release workflow 发布到 npm（trusted publishing）；包名首次发布由维护者手工完成一次，之后才能配置 trusted publisher。
 
@@ -408,3 +408,7 @@ Agent 列表的每一项另带 `apiEnabled`（一次查询得出），供 Agents
 ### v1.0.0
 
 - 新增：迁入主仓；正文取设计仓的同一版本，与英文版逐节对应。
+
+### v1.1.0
+
+- 更新：Guide-level explanation 的示例与「SDK」一节改用 0.2.16 发布的两个 SDK 入口（impl [#1111](https://github.com/Prism-Shadow/penguin-harness/pull/1111)）：原先返回可迭代运行的 `run()` 改称 `stream()`，原先运行并等结果的 `ask()` 改称 `run()`。设计仓以一条 Status 补记记下同一改动（design [#376](https://github.com/Prism-Shadow/penguin-harness-design/pull/376)）。
