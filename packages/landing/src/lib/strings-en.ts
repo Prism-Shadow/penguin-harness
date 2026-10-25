@@ -438,10 +438,10 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   amsp: {
-    title: "AMSP — Agent Message Stream Protocol | PenguinHarness",
+    title: "AMSP: Agent Message Stream Protocol",
     description:
       "AMSP is a PenguinHarness agent's Session stream: the model's text and thinking, tool calls and results, approvals, usage and Task boundaries, live over SSE in the records the Trace stores.",
-    headline: "One protocol for every agent message",
+    headline: "One protocol for agent communication",
     subline:
       "The model's text and thinking as they stream, each tool call and its result, approvals, token usage and the Task boundaries, delivered live over SSE in the very records the Trace stores.",
     lineage: " streams one model call; AMSP streams an agent's Session.",
@@ -456,18 +456,15 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       scenarios: { first: "First request", continue: "Continue", interrupt: "Interrupt" },
       pause: "Pause",
       play: "Play",
-      input: "One client",
-      events: "The stream as it arrives",
+      input: "Just one codebase",
+      events: "Streamed events",
       stored: "Stored in the Trace",
       besideStream: "beside the stream",
-      assembled: "The run, assembled",
+      assembled: "Parsed message",
       request: (n: number) => `Request ${n}`,
       thinking: (level: string) => `thinking ${level}`,
       streaming: "streaming",
-      running: "The run is still going.",
       result: "Result",
-      readFrom: (o: { closed: boolean; aborted: boolean; lastRequestEnd: string | null }) =>
-        `Read from the records: ${o.closed ? "the task_begin closed" : "a task_begin left open"}, ${o.aborted ? "an abort" : "no abort"}, the last request_end ${o.lastRequestEnd ?? "absent"}.`,
       requests: (n: number) => (n === 1 ? "1 Request" : `${n} Requests`),
       tokens: (n: string) => `${n} tokens`,
     },
@@ -477,7 +474,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       subtitle:
         "A run nests three spans, longest first: the Task, each Request to the model, and the messages that fill each Request, each one ending in its complete record.",
       figureLabel:
-        "The first-request run on one time axis, in three rows from longest to shortest. The Task runs from task_begin to task_end. Under it, two Requests each run from request_begin to request_end. Under them, the messages fill each Request, each ending in its complete record: the thinking and the tool call in the first, the answer in the second. Between the two Requests the tool runs, and its tool_call_output completes where the second Request begins.",
+        "A run with two tool rounds on one time axis, in three rows from longest to shortest. The Task runs from task_begin to task_end. Under it, three Requests each run from request_begin to request_end. Under them, the messages fill each Request, each ending in its complete record: the thinking and a tool call in the first, a second tool call in the second, the answer in the third. Between two Requests a tool runs, and its tool_call_output completes where the next Request begins.",
       levels: { task: "Task", request: "Request", message: "Message" },
       steps: [
         "task_begin opens a Task and task_end closes it; a task_begin still open at [DONE] means the run did not reach its end.",

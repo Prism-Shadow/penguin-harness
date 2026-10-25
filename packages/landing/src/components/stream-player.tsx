@@ -1,10 +1,11 @@
 /**
  * The AMSP player: a scripted run replayed step by step, the way mmsp.penguin.ooo replays a model
- * call. Tabs pick the run (a Session's first request, a follow-up that continues it, a follow-up the
- * caller interrupts); the code above the panes is the call that starts it; the left pane lists the
- * stream as it arrives — the opening `ping`, the records, the caller's abort beside the stream,
- * `[DONE]`; the right pane is the run assembled from the records, under the agent the client
- * names, and once `[DONE]` arrives the outcome read from them.
+ * call, in its panel's chrome and words. Tabs pick the run (a Session's first request, a follow-up
+ * that continues it, a follow-up the caller interrupts); the code panel holds the import and the
+ * call that starts it; the left pane lists the stream as it arrives — the opening `ping`, the
+ * records, the caller's abort beside the stream, `[DONE]`; the right pane is the run assembled from
+ * the records, under the agent the client names, and once `[DONE]` arrives the outcome read from
+ * them.
  *
  * Colour says the family (lib/amsp-tones.ts, with a legend in the pane's header): `model_msg` in
  * blue, `event_msg` in amber, `session_meta` and the frames in gray; a record the Trace stores sits
@@ -17,8 +18,8 @@
  * Nothing scrolls: the stream pane lists every step of the run, one 20-pixel line each (a preview
  * is shortened to its column), and the tab panel holds the height of the tallest finished run
  * (every one is rendered invisibly in the same grid cell, its code and both panes), so nothing
- * below moves during a replay or on a tab change. Sized so the whole player, every row of every
- * run, fits one screen beside the hero's copy at 1280 × 800.
+ * below moves during a replay or on a tab change. At 1440 × 900 the whole player, every row of
+ * every run, fits one screen beside the hero's copy.
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
@@ -111,8 +112,8 @@ export function StreamPlayer() {
 
   return (
     <div ref={rootRef}>
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white text-left dark:border-gray-800 dark:bg-gray-950">
-        <div className="flex flex-wrap items-center gap-1 border-b border-gray-200 px-2 pt-1 dark:border-gray-800">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 text-left dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex flex-wrap items-center gap-1 border-b border-gray-200 px-2 pt-2 dark:border-gray-800">
           <div
             ref={tabsRef}
             role="tablist"
@@ -130,7 +131,7 @@ export function StreamPlayer() {
                 aria-selected={i === index}
                 tabIndex={i === index ? 0 : -1}
                 onClick={() => choose(i)}
-                className="rounded-t-md border-b-2 border-transparent px-2.5 py-1 text-[13px] text-gray-500 transition-colors hover:text-gray-900 aria-selected:border-brand-600 aria-selected:font-medium aria-selected:text-brand-700 dark:text-gray-400 dark:hover:text-gray-100 dark:aria-selected:border-brand-400 dark:aria-selected:text-brand-300"
+                className="rounded-t-md border-b-2 border-transparent px-2.5 py-1.5 text-[13px] text-gray-500 transition-colors hover:text-gray-900 aria-selected:border-brand-600 aria-selected:font-medium aria-selected:text-brand-700 dark:text-gray-400 dark:hover:text-gray-100 dark:aria-selected:border-brand-400 dark:aria-selected:text-brand-300"
               >
                 {P.scenarios[candidate.id]}
               </button>
@@ -185,23 +186,25 @@ function Panel({
   const P = S.amsp.player;
   return (
     <div className="flex h-full flex-col">
-      <div className="amsp-code amsp-code-tight border-b border-gray-200 dark:border-gray-800">
-        <h3 className="sr-only">{P.input}</h3>
-        <SiteCodeBlock code={CODE[index]!} language="typescript" highlight={highlightSiteCode} />
+      <div className="border-b border-gray-200 px-3 pt-2.5 dark:border-gray-800">
+        <h3 className={PANE_LABEL}>{P.input}</h3>
+        <div className="amsp-code amsp-code-panel -mx-3">
+          <SiteCodeBlock code={CODE[index]!} language="typescript" highlight={highlightSiteCode} />
+        </div>
       </div>
-      <div className="grid flex-1 gap-px bg-gray-200 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] dark:bg-gray-800">
-        <section className="min-w-0 bg-white px-2.5 pt-1.5 pb-1 dark:bg-gray-950">
+      <div className="grid flex-1 gap-px bg-gray-200 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] dark:bg-gray-800">
+        <section className="min-w-0 bg-gray-50 px-3 pt-2.5 pb-2 dark:bg-gray-900">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <h3 className={PANE_LABEL}>{P.events}</h3>
             <StreamLegend />
           </div>
-          <ol aria-live="off" className="mt-0.5 font-mono text-[12px]">
+          <ol aria-live="off" className="mt-1.5 font-mono text-[12px]">
             {lines.map((line, i) => (
               <StreamRow key={live ? i : `${index}-${i}`} line={line} />
             ))}
           </ol>
         </section>
-        <section className="min-w-0 bg-white px-2.5 pt-1.5 pb-1 dark:bg-gray-950">
+        <section className="min-w-0 bg-gray-50 px-3 pt-2.5 pb-2 dark:bg-gray-900">
           <h3 className={PANE_LABEL}>{P.assembled}</h3>
           <div className="mt-1.5">
             <Assembled state={state} />
@@ -237,7 +240,7 @@ function StreamLegend() {
  */
 const KIND_CH = "partial_tool_call".length;
 /** What the preview column holds at the width the player has beside the hero's copy. */
-const PREVIEW_CH = 30;
+const PREVIEW_CH = 24;
 
 /** A preview shortened to fit its column, ending in an ellipsis when it had more. */
 function fit(text: string, chars: number): string {
@@ -333,11 +336,7 @@ function Assembled({ state }: { state: ReplayState }) {
           </div>
         );
       })}
-      {state.done ? (
-        <Outcome state={state} />
-      ) : (
-        <p className="mt-2 font-sans text-[12px] text-gray-500 dark:text-gray-400">{P.running}</p>
-      )}
+      {state.done && <Outcome state={state} />}
     </div>
   );
 }
@@ -370,8 +369,7 @@ function AssembledItem({ item }: { item: ReplayItem }) {
 
 /**
  * The run's outcome as a client reads it at `[DONE]` (`task_end` carries no status): the status,
- * the Request count, the time taken and the tokens, the facts in the records it was read from,
- * then the usage as bars.
+ * the Request count, the time taken and the tokens, then the usage as bars.
  */
 function Outcome({ state }: { state: ReplayState }) {
   const P = S.amsp.player;
@@ -389,9 +387,6 @@ function Outcome({ state }: { state: ReplayState }) {
         <SitePill tone="neutral">{outcome.status}</SitePill>
         <span className="text-gray-600 tabular-nums dark:text-gray-300">{facts.join(" · ")}</span>
       </div>
-      <p className="mt-1 text-[11px] leading-4 text-gray-500 dark:text-gray-400">
-        {P.readFrom(outcome)}
-      </p>
       {usage && <UsageBars usage={usage} />}
     </div>
   );

@@ -1,11 +1,11 @@
 /**
  * A run's message structure as one bar chart on one time axis: the Task on top, its Requests under
  * it, their messages under those, longest-lived first, each row touching the one above so every
- * span reads as inside its parent. The bars are the scripted first-request run's own timestamps
- * (`runSpans`), so the chart and the player cannot drift apart. The messages of a Request tile it
- * from `request_begin` to `request_end`, each from where the one before it ended to its complete
- * record; the one blank stretch is between the Requests, where the tool runs, and the
- * `tool_call_output` bar sits in it.
+ * span reads as inside its parent. The bars are a scripted run's own timestamps (`runSpans` over
+ * `CHART_SCENARIO`, two tool rounds in three Requests), on the same records and timings as the
+ * player's. The messages of a Request tile it from `request_begin` to `request_end`, each from
+ * where the one before it ended to its complete record; the only blank stretches are between the
+ * Requests, where a tool runs, and each `tool_call_output` bar sits in its own.
  *
  * Colour says the family, as everywhere on the page (lib/amsp-tones.ts): the Task and Request
  * spans are bounded by `event_msg` records, in amber; the messages are `model_msg`, in blue, each
@@ -18,13 +18,13 @@
  */
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
-import { recordsOf, SCENARIOS } from "../../lib/amsp-demo";
+import { CHART_SCENARIO, recordsOf } from "../../lib/amsp-demo";
 import { runSpans } from "../../lib/amsp-replay";
 import type { MessageSpan, RunSpans, Span } from "../../lib/amsp-replay";
 import { TONES } from "../../lib/amsp-tones";
 import { Section } from "../../components/section";
 
-const SPANS = runSpans(recordsOf(SCENARIOS[0]!.steps));
+const SPANS = runSpans(recordsOf(CHART_SCENARIO.steps));
 
 /** One tick per second of the run. */
 const TICK_MS = 1000;
@@ -119,8 +119,8 @@ function StructureChart({ spans }: { spans: RunSpans }) {
             className={TONE.request}
             title={`request_begin … request_end · ${duration(span)}`}
           >
-            <span className="hidden md:inline">request_begin</span>
-            <span className="hidden md:inline">request_end</span>
+            <span className="hidden lg:inline">request_begin</span>
+            <span className="hidden lg:inline">request_end</span>
           </Bar>
         ))}
       </div>

@@ -25,13 +25,13 @@ export function CopyPromptButton({ compact = false }: { compact?: boolean }) {
     if (await writeSiteClipboard(S.amsp.agentPrompt(guide))) setCopied(true);
   };
 
-  const size = compact ? "h-8 px-3 text-xs" : "h-11 px-5 text-sm";
+  const size = compact ? "h-8 px-3 text-xs font-semibold" : "h-11 px-5 text-[15px] font-medium";
   return (
     <>
       <button
         type="button"
         onClick={() => void copy()}
-        className={`inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white font-semibold whitespace-nowrap text-gray-900 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 ${size}`}
+        className={`inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white whitespace-nowrap text-gray-900 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 ${size}`}
       >
         {copied ? (
           <CheckIcon className="site-copy-done h-4 w-4" />

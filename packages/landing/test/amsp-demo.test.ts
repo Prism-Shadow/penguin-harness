@@ -1,5 +1,5 @@
 /**
- * The runs the AMSP page replays keep the protocol's promises. They are scripted by hand, so this
+ * The runs the AMSP page replays, and the one its message chart draws, keep the protocol's promises. They are scripted by hand, so this
  * is what stops an edit (or the spec moving under them) from putting a stream on the page that no
  * server would send.
  *
@@ -19,7 +19,7 @@
  *   reported, and the `abort` record comes before `task_end`.
  */
 import { describe, expect, it } from "vitest";
-import { recordsOf, SCENARIOS } from "../src/lib/amsp-demo";
+import { CHART_SCENARIO, recordsOf, SCENARIOS } from "../src/lib/amsp-demo";
 import type { RunStep } from "../src/lib/amsp-demo";
 import type { AmspRecord } from "../src/lib/amsp-protocol";
 
@@ -39,7 +39,7 @@ const sequence = (steps: readonly RunStep[]) =>
 const indicesOf = (kinds: readonly string[], kind: string) =>
   kinds.flatMap((each, i) => (each === kind ? [i] : []));
 
-describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
+describe.each([...SCENARIOS, CHART_SCENARIO].map((scenario) => [scenario.id, scenario] as const))(
   "the %s run",
   (_id, scenario) => {
     const { steps } = scenario;
@@ -113,7 +113,7 @@ describe.each(SCENARIOS.map((scenario) => [scenario.id, scenario] as const))(
 
     it("completes a tool's output after its call and before the next Request, with its status", () => {
       for (const call of indicesOf(kinds, "tool_call")) {
-        const output = kinds.indexOf("tool_call_output");
+        const output = kinds.indexOf("tool_call_output", call);
         expect(output).toBeGreaterThan(call);
         expect(steps[output]).toMatchObject({ record: { payload: { status: "completed" } } });
         const nextRequest = indicesOf(kinds, "request_begin").find((i) => i > call);

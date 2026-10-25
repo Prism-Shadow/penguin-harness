@@ -15,15 +15,15 @@
  *   (one past its retries; one to be retried, or one a later Request went on from, is not), else
  *   completed.
  * - Given the run's timestamps, the replay waits the recorded gap, within its bounds.
- * - Given a finished run, its spans nest longest first: each Request inside the Task, its messages
- *   tiling it from `request_begin` to `request_end`, a tool's output running on from its call into
- *   the gap before the next Request; a message that arrives whole (the echoed input) has no span,
- *   and a run whose Task never closed has none at all.
+ * - Given a finished run with two tool rounds, its spans nest longest first: each Request inside the
+ *   Task, its messages tiling it from `request_begin` to `request_end`, each tool's output running
+ *   on from its call into the gap before the next Request; a message that arrives whole (the echoed
+ *   input) has no span, and a run whose Task never closed has none at all.
  * - Given a record of a kind the page does not read, it still gets a row, shaded by whether the Trace
  *   stores it; frames and the caller's request never are.
  */
 import { describe, expect, it } from "vitest";
-import { recordsOf, SCENARIOS } from "../src/lib/amsp-demo";
+import { CHART_SCENARIO, recordsOf, SCENARIOS } from "../src/lib/amsp-demo";
 import type { RunStep } from "../src/lib/amsp-demo";
 import type { AmspRecord, EventPayload, TokenCounts } from "../src/lib/amsp-protocol";
 import {
@@ -149,7 +149,7 @@ describe("the assembled run", () => {
   it("reads the interrupted run as aborted, with no usage reported", () => {
     const interrupted = run("interrupt");
     expect(foldRun(interrupted, interrupted.length)).toMatchObject({
-      outcome: { status: "aborted", closed: true, aborted: true, lastRequestEnd: "aborted" },
+      outcome: { status: "aborted", errorCode: "user_abort" },
       usage: null,
     });
   });
@@ -200,10 +200,9 @@ describe("a run's outcome", () => {
   });
 
   it("names a server failure internal, and does not end a run on a request it will retry", () => {
-    expect(runOutcome([begin, completedRequest])).toMatchObject({
+    expect(runOutcome([begin, completedRequest])).toEqual({
       status: "fatal",
       errorCode: "internal",
-      closed: false,
     });
     const retried = event({ type: "request_end", status: "retryable", retry_in_ms: 2000 });
     expect(runOutcome([begin, retried, completedRequest, reply(), end]).status).toBe("completed");
@@ -223,10 +222,9 @@ describe("the replay's pace", () => {
 });
 
 describe("the message structure", () => {
-  it("nests the Requests in the Task and the messages in their Requests, the tool's output ending late", () => {
-    const spans = runSpans(recordsOf(firstRun))!;
-    const [first, second] = spans.requests;
-    expect(spans.requests).toHaveLength(2);
+  it("tiles each Request with its messages and puts each tool's output in the gap after it", () => {
+    const spans = runSpans(recordsOf(CHART_SCENARIO.steps))!;
+    expect(spans.requests).toHaveLength(3);
     for (const request of spans.requests) {
       expect(request.begin).toBeGreaterThanOrEqual(spans.task.begin);
       expect(request.end).toBeLessThanOrEqual(spans.task.end);
@@ -235,19 +233,31 @@ describe("the message structure", () => {
       "thinking",
       "tool_call",
       "tool_call_output",
+      "thinking",
+      "tool_call",
+      "tool_call_output",
       "text",
     ]);
-    const [thinking, call, output, answer] = spans.messages;
+    const [first, second, third] = spans.requests;
+    const [thinking, call1, output1, thinking2, call2, output2, answer] = spans.messages;
     // The messages tile their Request: the first from request_begin, each from the one before.
     expect(thinking!.begin).toBe(first!.begin);
-    expect(call!.begin).toBe(thinking!.end);
-    expect(call!.end).toBeLessThanOrEqual(first!.end);
-    expect(answer!.begin).toBe(second!.begin);
-    expect(answer!.end).toBeLessThanOrEqual(second!.end);
-    // The tool's output runs on from its call, past request_end, into the gap before the next.
-    expect(output!.begin).toBe(call!.end);
-    expect(output!.end).toBeGreaterThan(first!.end);
-    expect(output!.end).toBeLessThanOrEqual(second!.begin);
+    expect(call1!.begin).toBe(thinking!.end);
+    expect(call1!.end).toBeLessThanOrEqual(first!.end);
+    expect(thinking2!.begin).toBe(second!.begin);
+    expect(call2!.begin).toBe(thinking2!.end);
+    expect(call2!.end).toBeLessThanOrEqual(second!.end);
+    expect(answer!.begin).toBe(third!.begin);
+    expect(answer!.end).toBeLessThanOrEqual(third!.end);
+    // Each output runs on from its call, past request_end, into the gap before the next Request.
+    for (const [call, output, ended, next] of [
+      [call1!, output1!, first!, second!],
+      [call2!, output2!, second!, third!],
+    ] as const) {
+      expect(output.begin).toBe(call.end);
+      expect(output.end).toBeGreaterThan(ended.end);
+      expect(output.end).toBeLessThanOrEqual(next.begin);
+    }
   });
 
   it("has no spans for a run whose Task never closed", () => {

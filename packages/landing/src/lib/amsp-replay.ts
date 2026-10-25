@@ -48,16 +48,11 @@ export interface ReplayRequest {
   thinkingLevel: ThinkingLevel | null;
 }
 
-/** A run's outcome, and the facts in the records it was read from. */
+/** A run's outcome, read from its records. */
 export interface RunOutcome {
   status: StopReason;
   /** `internal` for a run that did not reach its end; else the abort's or the terminal record's. */
   errorCode?: string;
-  /** The last `task_begin` has its `task_end`. */
-  closed: boolean;
-  aborted: boolean;
-  /** How the main Session's last `request_end` ended. */
-  lastRequestEnd: StopReason | null;
 }
 
 export interface ReplayState {
@@ -100,7 +95,6 @@ export function runOutcome(records: readonly AmspRecord[]): RunOutcome {
   let task: "none" | "open" | "closed" = "none";
   let abort: { errorCode?: string } | null = null;
   let terminal: { status: StopReason; errorCode?: string } | null = null;
-  let lastRequestEnd: StopReason | null = null;
   for (const record of main) {
     if (record.type !== "event_msg") continue;
     const p = record.payload;
@@ -120,7 +114,6 @@ export function runOutcome(records: readonly AmspRecord[]): RunOutcome {
         break;
       case "request_end":
       case "compaction_end":
-        if (p.type === "request_end") lastRequestEnd = p.status;
         if (p.status !== "completed" && p.retry_in_ms === undefined) {
           terminal = {
             status: p.status,
@@ -130,11 +123,10 @@ export function runOutcome(records: readonly AmspRecord[]): RunOutcome {
         break;
     }
   }
-  const facts = { closed: task === "closed", aborted: abort !== null, lastRequestEnd };
-  if (task !== "closed") return { status: "fatal", errorCode: "internal", ...facts };
-  if (abort !== null) return { status: "aborted", ...abort, ...facts };
-  if (terminal !== null) return { ...terminal, ...facts };
-  return { status: "completed", ...facts };
+  if (task !== "closed") return { status: "fatal", errorCode: "internal" };
+  if (abort !== null) return { status: "aborted", ...abort };
+  if (terminal !== null) return terminal;
+  return { status: "completed" };
 }
 
 /** The panes after the first `count` steps of a run. */

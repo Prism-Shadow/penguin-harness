@@ -17,6 +17,9 @@
  * reads `aborted` (the turn was not committed; no `token_usage`), the `abort` record follows, and
  * the Task still closes with `task_end` before `[DONE]`.
  *
+ * A fourth run, `CHART_RUN`, is not replayed: the message chart draws it, two tool rounds in three
+ * Requests, so each Request and each tool's run between them shows.
+ *
  * The timings are those of a real agent run: the first token a second or more after the request,
  * a few seconds of thinking, a `date` call that runs for a fifth of a second, a second Request of
  * a few seconds; records that follow one another at once are a millisecond apart. Each message is
@@ -52,8 +55,8 @@ export type RunStep =
 
 export type ScenarioId = "first" | "continue" | "interrupt";
 
-export interface AmspScenario {
-  id: ScenarioId;
+export interface AmspScenario<Id extends string = ScenarioId> {
+  id: Id;
   input: string;
   /** The run continues the Session an earlier run opened: no `session_meta` on its stream. */
   continues?: boolean;
@@ -353,6 +356,142 @@ export const SCENARIOS: readonly AmspScenario[] = [
     steps: INTERRUPT_RUN,
   },
 ];
+
+/** A tool call as the model streams it: its `start`, one `delta` of arguments, `stop`, the call. */
+const toolCall = (id: string, name: string, args: string, gaps: readonly number[]): Script[] => {
+  const [start = 0, delta = 0, stop = 0] = gaps;
+  const fragment = (event_type: StreamPhase, piece: string): Draft =>
+    model({
+      type: "partial_tool_call",
+      role: "assistant",
+      event_type,
+      name: event_type === "start" ? name : "",
+      arguments: piece,
+      tool_call_id: id,
+    });
+  return [
+    [start, fragment("start", "")],
+    [delta, fragment("delta", args)],
+    [stop, fragment("stop", "")],
+    [1, model({ type: "tool_call", role: "assistant", name, arguments: args, tool_call_id: id })],
+  ];
+};
+
+/** A tool's run once its call is complete: its output streamed, then the complete result. */
+const toolRun = (id: string, output: string, runMs: number): Script[] => [
+  [
+    1,
+    model({
+      type: "partial_tool_call_output",
+      role: "user",
+      event_type: "start",
+      output: "",
+      tool_call_id: id,
+    }),
+  ],
+  [
+    runMs - 30,
+    model({
+      type: "partial_tool_call_output",
+      role: "user",
+      event_type: "delta",
+      output,
+      tool_call_id: id,
+    }),
+  ],
+  [
+    28,
+    model({
+      type: "partial_tool_call_output",
+      role: "user",
+      event_type: "stop",
+      output: "",
+      tool_call_id: id,
+    }),
+  ],
+  [
+    1,
+    model({
+      type: "tool_call_output",
+      role: "user",
+      output,
+      tool_call_id: id,
+      status: "completed",
+    }),
+  ],
+];
+
+const VERSION_CALL = "call_51d2e0";
+const RELEASE_CALL = "call_8b4c71";
+const VERSION_ARGS = '{"cmd":"curl -s localhost:7364/api/version"}';
+const RELEASE_ARGS =
+  '{"cmd":"curl -s https://api.github.com/repos/Prism-Shadow/penguin-harness/releases/latest | jq -r .tag_name"}';
+const CHECK_THINKING = [
+  [900, "Read the server's version first, then compare it with the latest release."],
+] as const;
+const RELEASE_THINKING = [[500, "0.2.15 here. Now the latest release on GitHub."]] as const;
+const VERDICT = [[700, "The server runs 0.2.15; the latest release is v0.2.16."]] as const;
+const CHART_REQUEST_1 = counts(0, 3104, 182, 3286);
+const CHART_REQUEST_2 = counts(3104, 214, 64, 3382);
+const CHART_REQUEST_3 = counts(3318, 96, 27, 3441);
+
+/**
+ * The chart's run: "Is the server on the latest release?" The model thinks and reads the server's
+ * version; the next Request thinks again and asks GitHub for the latest release; the third
+ * answers. Each tool runs
+ * between two Requests, the next one opening on its output.
+ */
+const CHART_RUN = timed(
+  "2026-10-21T09:42:00.000Z",
+  EPOCH,
+  [
+    ping,
+    ...taskOpening("Is the server on the latest release?"),
+    ...streamed("partial_thinking", 1240, CHECK_THINKING, 860),
+    [1, model({ type: "thinking", role: "assistant", thinking: joined(CHECK_THINKING) })],
+    ...toolCall(VERSION_CALL, "exec_command", VERSION_ARGS, [90, 150, 30]),
+    [1, record({ type: "token_usage", session: CHART_REQUEST_1, request: CHART_REQUEST_1 })],
+    [1, record({ type: "request_end", status: "completed" })],
+    ...toolRun(VERSION_CALL, '{"version":"0.2.15"}\n', 320),
+    [1, record({ type: "request_begin", thinking_level: "medium" })],
+    ...streamed("partial_thinking", 1080, RELEASE_THINKING, 560),
+    [1, model({ type: "thinking", role: "assistant", thinking: joined(RELEASE_THINKING) })],
+    ...toolCall(RELEASE_CALL, "exec_command", RELEASE_ARGS, [90, 260, 30]),
+    [
+      1,
+      record({
+        type: "token_usage",
+        session: add(CHART_REQUEST_1, CHART_REQUEST_2),
+        request: CHART_REQUEST_2,
+      }),
+    ],
+    [1, record({ type: "request_end", status: "completed" })],
+    ...toolRun(RELEASE_CALL, "v0.2.16\n", 760),
+    [1, record({ type: "request_begin", thinking_level: "medium" })],
+    ...streamed("partial_text", 1020, VERDICT, 560),
+    [1, model({ type: "text", role: "assistant", text: joined(VERDICT) })],
+    [
+      1,
+      record({
+        type: "token_usage",
+        session: add(add(CHART_REQUEST_1, CHART_REQUEST_2), CHART_REQUEST_3),
+        request: CHART_REQUEST_3,
+      }),
+    ],
+    [1, record({ type: "request_end", status: "completed" })],
+    [1, record({ type: "task_end" })],
+    [2, { done: true }],
+  ],
+  1,
+);
+
+/** The run the message chart draws: a later message on the same Session, two tool rounds. */
+export const CHART_SCENARIO: AmspScenario<"chart"> = {
+  id: "chart",
+  input: "Is the server on the latest release?",
+  continues: true,
+  steps: CHART_RUN,
+};
 
 /** The records of a run, in order. */
 export const recordsOf = (steps: readonly RunStep[]): AmspRecord[] =>

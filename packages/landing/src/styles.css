@@ -296,10 +296,9 @@ html.dark .amsp-code .shiki span {
   font-weight: var(--shiki-dark-font-weight) !important;
   text-decoration: var(--shiki-dark-text-decoration) !important;
 }
-/* The player's call: a tighter block, so the whole run fits beside the hero's copy. */
-.amsp-code-tight .site-code pre {
-  padding: 0.25rem 0.75rem 0.375rem;
-  line-height: 1.125rem;
+/* The player's code panel, as mmsp.penguin.ooo's: on the panel's own ground, under its label. */
+.amsp-code-panel .site-code pre {
+  padding: 0.375rem 0.75rem 0.625rem;
 }
 /* The usage bars grow in when the run ends (the outcome mounts with [DONE]). Reduced motion stops
    the animation and leaves them at full length. */

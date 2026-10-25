@@ -434,11 +434,11 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
    */
   amsp: {
     /** The tab title and description while the page is open; the static shell carries the English pair (scripts/site-routes.mjs). */
-    title: "AMSP — Agent Message Stream Protocol | PenguinHarness",
+    title: "AMSP：Agent Message Stream Protocol",
     description:
       "AMSP 是 PenguinHarness Agent 的 Session 流：模型的文本与思考、工具调用与结果、审批、用量和 Task 边界，经 SSE 实时送达，与 Trace 存下的记录一致。",
     /** No-break spaces keep 「所有 Agent 消息」 on one line: the headline breaks at its comma. */
-    headline: "所有\u00a0Agent\u00a0消息，同一种协议",
+    headline: "Agent\u00a0通信统一协议",
     subline:
       "模型的文本和思考、每次工具调用及其结果、审批、Token 用量和 Task 边界，经 SSE 实时送达，用的就是 Trace 存下的那些记录。",
     /** The sentence after the "MMSP" link, which opens it. */
@@ -455,21 +455,17 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       scenarios: { first: "首次请求", continue: "继续对话", interrupt: "打断" },
       pause: "暂停",
       play: "播放",
-      input: "同一个客户端",
-      events: "流依次到达",
+      input: "只需要一份代码",
+      events: "流式事件传输",
       /** The legend of the faint ground under the records the Trace stores. */
       stored: "写入 Trace",
       /** A request the caller sends beside the stream (the interrupt). */
       besideStream: "流之外的请求",
-      assembled: "这次运行的全貌",
+      assembled: "消息解析结果",
       request: (n: number) => `Request ${n}`,
       thinking: (level: string) => `思考等级 ${level}`,
       streaming: "传输中",
-      running: "运行仍在进行。",
       result: "结果",
-      /** What the result was read from; protocol words stay as the protocol spells them. */
-      readFrom: (o: { closed: boolean; aborted: boolean; lastRequestEnd: string | null }) =>
-        `由记录读出：${o.closed ? "task_begin 已闭合" : "task_begin 未闭合"}，${o.aborted ? "有 abort" : "没有 abort"}，最后一个 request_end 为 ${o.lastRequestEnd ?? "无"}。`,
       requests: (n: number) => `${n} 次 Request`,
       tokens: (n: string) => `${n} Token`,
     },
@@ -480,7 +476,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       subtitle:
         "一次运行嵌套三层，从长到短依次是：Task、每次向模型发出的 Request，以及填满每个 Request 的各条消息，每条止于它的完整记录。",
       figureLabel:
-        "首次请求示例画在同一条时间轴上，按时长从长到短分三行。Task 从 task_begin 到 task_end。其下是两个 Request，各自从 request_begin 到 request_end。再下面是填满各个 Request 的消息，每条止于它的完整记录：第一个 Request 里是思考和工具调用，第二个里是回答。两个 Request 之间工具在运行，它的 tool_call_output 在第二个 Request 开始处完成。",
+        "一次包含两轮工具调用的运行画在同一条时间轴上，按时长从长到短分三行。Task 从 task_begin 到 task_end。其下是三个 Request，各自从 request_begin 到 request_end。再下面是填满各个 Request 的消息，每条止于它的完整记录：第一个 Request 里是思考和一次工具调用，第二个里是第二次工具调用，第三个里是回答。相邻两个 Request 之间工具在运行，它的 tool_call_output 在下一个 Request 开始处完成。",
       /** The chart's row names, top to bottom. */
       levels: { task: "Task", request: "Request", message: "消息" },
       /** The figure in words: read out with it, and shown under it on a phone. */
