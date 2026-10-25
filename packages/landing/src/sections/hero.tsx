@@ -1,14 +1,16 @@
 /**
- * Product-first hero: the positioning line with its badge, two direct installation paths, three
- * stat tiles (the small label over the big value), three catalogue rows (supported models,
+ * Product-first hero: the slogan, the subtitle in grey, two direct installation paths, three stat
+ * tiles (the small label over the big value), three catalogue rows (supported models,
  * self-evolution algorithms, Benchmarks) each led by its count, whose outside links confirm
- * before they open, and then the app itself, live: the start page in a frame. What the rows list,
- * and where each entry links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those
- * lists' lengths.
+ * before they open (the models row's closing "and more" links to MMSP's model index), and then
+ * the app itself, live: the start page in a frame. What the rows list, and where each entry
+ * links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those lists' lengths.
  */
 import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
+import { mmspModelsUrl } from "../lib/links";
 import { RELEASE_VERSION } from "../lib/version";
 import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
 import {
@@ -73,6 +75,7 @@ function CatalogRow({
 }
 
 export function Hero() {
+  const { locale } = useSiteLocale();
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
@@ -92,22 +95,14 @@ export function Hero() {
           className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word]"
           style={{ animationDelay: "70ms" }}
         >
-          {/* The badge is a superscript on the line's top-right corner, set as type rather than a
-              chip: brand colour, no box. On a phone it sits above the corner instead, inside the
-              column, where the line already reaches the edge. */}
-          <span className="relative inline-block">
-            {S.hero.positioning}
-            <span className="absolute right-0 bottom-full mb-1 text-sm leading-none font-semibold tracking-normal whitespace-nowrap text-brand-600 sm:right-auto sm:bottom-auto sm:top-[0.1em] sm:left-full sm:mb-0 sm:ml-[0.3em] sm:text-[0.42em] dark:text-brand-300">
-              {S.hero.badge}
-            </span>
-          </span>
+          {S.hero.positioning}
         </p>
 
         <p
           className="hero-automation anim-rise mt-5 leading-6 text-balance break-keep text-gray-600 [overflow-wrap:break-word] sm:leading-8 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
-          {S.hero.automation}
+          {S.hero.subtitle}
         </p>
 
         <div
@@ -169,8 +164,11 @@ export function Hero() {
                   </ExternalLink>
                 </li>
               ))}
-              <li className="ml-1 text-sm font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">
-                {S.hero.supportedModelsMore}
+              <li className="ml-1">
+                <ExternalLink href={mmspModelsUrl(locale)} className={ENTRY_LINK}>
+                  {S.hero.supportedModelsMore}
+                  <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                </ExternalLink>
               </li>
             </CatalogRow>
 

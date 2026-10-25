@@ -97,6 +97,9 @@ export async function* readSse(
             name = null;
             id = null;
             yield event;
+            // The caller can abort while the generator is suspended, even when the
+            // next event (or [DONE]) has already arrived in this chunk.
+            if (signal?.aborted) throw signal.reason;
           } else {
             name = null;
             id = null;

@@ -40,6 +40,14 @@ export const AMSP_SOURCE_URL = `${REPO_URL}/tree/main/packages/amsp`;
 export const MMSP_URL = "https://mmsp.penguin.ooo/";
 
 /**
+ * MMSP's model index in the site's language. MMSP serves Chinese under `/zh/` and English at its
+ * root, with no `/en/` prefix (`/en/models/` is a 404).
+ */
+export function mmspModelsUrl(locale: "zh" | "en"): string {
+  return locale === "zh" ? `${MMSP_URL}zh/models/` : `${MMSP_URL}models/`;
+}
+
+/**
  * One-line installer (Linux / macOS, x64 / arm64, bundled Node runtime).
  * penguin.ooo/install.sh is this site's own public/install.sh — a thin forwarder
  * to the latest GitHub release installer (Pages cannot serve real redirects).

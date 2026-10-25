@@ -4106,7 +4106,9 @@ const OAUTH_POLL_MS = 2000;
  * The dialog never handles the key, and never handles the PKCE verifier either: it opens a
  * flow, sends the user to the provider's page, and asks the server how that flow ended. Two
  * routes back — the provider redirects to the server (polled here), or, when that redirect
- * cannot reach the harness, the user carries a one-time code across by hand.
+ * cannot reach the harness, the user carries a one-time code across by hand. The server has
+ * the last word on which: it opens a manual flow when the provider would refuse to redirect to
+ * the address this page is served from, and the dialog follows the flow it was given.
  */
 function ModelOAuthDialog({
   projectId,
@@ -4122,7 +4124,16 @@ function ModelOAuthDialog({
   onClose: () => void;
   onApplied: (applied: number) => void;
 }) {
+  /** The route back the user picked. */
   const [manual, setManual] = useState(false);
+  /**
+   * Set once a redirect was asked for and the server opened a manual flow: the provider does not
+   * redirect to this address (plain HTTP to anything but loopback), so the code is the only way
+   * back for as long as the dialog is open, and the switch to the redirect is withdrawn.
+   */
+  const [redirectRefused, setRedirectRefused] = useState(false);
+  /** Whether the flow in hand takes the code by hand rather than through the redirect. */
+  const byHand = manual || redirectRefused;
   const [phase, setPhase] = useState<OAuthPhase>("starting");
   const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -4152,6 +4163,7 @@ function ModelOAuthDialog({
           mode: manual ? "manual" : "callback",
         });
         if (cancelled) return;
+        if (!manual && res.mode === "manual") setRedirectRefused(true);
         setFlow(res);
         setPhase("ready");
       } catch (e) {
@@ -4168,7 +4180,7 @@ function ModelOAuthDialog({
   // Redirect mode: the outcome lands on the server, so this tab only learns of it by asking.
   // A flow that has expired answers 404, which reads the same as never coming back.
   useEffect(() => {
-    if (phase !== "waiting" || manual || flow === null) return;
+    if (phase !== "waiting" || byHand || flow === null) return;
     let stopped = false;
     const tick = async (): Promise<void> => {
       try {
@@ -4198,12 +4210,12 @@ function ModelOAuthDialog({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [phase, manual, flow, projectId, count]);
+  }, [phase, byHand, flow, projectId, count]);
 
   const openAuthorizePage = (): void => {
     if (flow === null) return;
     window.open(flow.authorizeUrl, "_blank", "noopener,noreferrer");
-    if (!manual) setPhase("waiting");
+    if (!byHand) setPhase("waiting");
   };
 
   const submitCode = async (): Promise<void> => {
@@ -4232,7 +4244,7 @@ function ModelOAuthDialog({
       <Button size="sm" variant="primary" onClick={() => setAttempt((n) => n + 1)}>
         {S.models.oauthRetry}
       </Button>
-    ) : manual ? (
+    ) : byHand ? (
       <Button
         size="sm"
         variant="primary"
@@ -4279,7 +4291,7 @@ function ModelOAuthDialog({
             {S.models.oauthIntro(provider.label, count)}
           </p>
         )}
-        {phase !== "done" && manual && (
+        {phase !== "done" && byHand && (
           <>
             {/* In the dialog body, directly above the code Input: it takes the same rung the
                 field does, not the page-level md. */}
@@ -4298,14 +4310,14 @@ function ModelOAuthDialog({
             />
           </>
         )}
-        {phase === "waiting" && !manual && (
+        {phase === "waiting" && !byHand && (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
             <Spinner size="xs" label={S.common.loading} />
             {S.models.oauthWaiting}
           </p>
         )}
         {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-        {phase !== "done" && (
+        {phase !== "done" && !redirectRefused && (
           <Button variant="link" size="sm" onClick={() => setManual((v) => !v)}>
             {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
           </Button>

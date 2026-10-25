@@ -44,11 +44,10 @@ export const zh = {
   },
 
   hero: {
-    positioning: "统一、稳定的 Agent 自进化框架",
-    /** The badge on the positioning line's top-right corner. */
-    badge: "免费开源",
-    /** A no-break space before each dot keeps it at the end of its line when a phone wraps. */
-    automation: "全自动优化：任意模型\u00a0· 任意算法\u00a0· 任意 Benchmark",
+    /** The slogan, in the positioning line's place and style. */
+    positioning: "让软件持续成长，让进化触手可及",
+    /** The grey line under the slogan. */
+    subtitle: "免费、稳定的 Agent 自进化框架",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
@@ -171,13 +170,13 @@ export const zh = {
       frame: "一轮自进化的对话（实时演示）",
     },
     evaluate: {
-      title: "每个版本都有分数",
-      text: "同一套 Benchmark 上的每次评测，按智能体和模型连成一条线，哪一版更好一眼可见。",
+      title: "可观测的自进化",
+      text: "六类能力的 Benchmark 为每个版本打分，附成本和耗时，按智能体和模型连成一条线，哪一版更好一眼可见。",
       link: "了解评估中心",
       frame: "评估中心里的一套 Benchmark（实时演示）",
     },
     toolkits: {
-      title: "自进化算法通过插件接入",
+      title: "前沿的自进化算法，提高准确率，降低成本",
       /** `names`: the paper toolkits, already listed (OPRO、APE、…). */
       text: (names: string) => `除了默认循环，${names} 各自是一个工具包，按原论文的流程运行。`,
       link: "浏览插件库",
@@ -205,7 +204,7 @@ export const zh = {
       { label: "成本", hint: "每次运行" },
       { label: "耗时", hint: "每次运行" },
     ],
-    trendsNote: "记分板会记录每个版本的分数、成本和耗时。这里的数值仅为示意。",
+    trendsNote: "记分板会记录每个版本的分数、成本和耗时。",
     demo: {
       caption: "演示：决策智能体经过评测、一次工作方法改进和同模型复测，分数从 84 提升到 100。",
       cost: "被测 Agent 的 6 次运行花费 $0.0373，不含出题、评分和优化的成本。",
@@ -264,7 +263,10 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    title: "一句话 + 0.6 元构建法务应用",
+    title: "A2APP：一句话 + 0.6 元构建法务应用",
+    /** The subtitle's first line, saying what A2APP is; `subtitle` is its second. */
+    a2app:
+      "A2APP 是智能体自己的小应用，就是聊天旁边的一个标签页，会调用智能体完成工作。在聊天里说一句话就能修改它，改完立即重新加载，旧版本也会保留。",
     subtitle:
       "用一句话描述需求，PenguinHarness 就能构建法务智能体应用：上传合同、识别风险并生成审阅报告。",
     prompt:
@@ -390,7 +392,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   footer: {
-    tagline: "统一、稳定的 Agent 自进化框架",
+    tagline: "免费、稳定的 Agent 自进化框架",
     product: "产品",
     resources: "资源",
     quickstart: "快速开始",

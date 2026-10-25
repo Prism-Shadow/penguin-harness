@@ -36,6 +36,11 @@ is a labelled pill or an icon plus a tooltip, never a bare coloured dot; section
 boxed. Run `node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs <what you touched>`
 and triage every hit. `reference/ai-slop.md` has the repo's own decisions and the full catalogue.
 
+**A copy request changes words, in place.** When the owner asks for new copy, swap the words
+inside the existing layout: removing or restyling a section, element, type size, number or
+animation needs the owner's explicit say, and a feature demo is the real software (a capture of
+the running Web App or a live gallery frame), never an imitation UI or a scripted replay.
+
 ## Repo shape — read before your first edit
 
 Two repositories sit side by side: the implementation repo (`penguin-harness`) and the design repo
