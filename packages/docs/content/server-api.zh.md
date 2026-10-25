@@ -41,7 +41,7 @@ packages/server/src
 
 API 接受两种凭证：Cookie 会话和本地 API token。
 
-- Cookie 会话：`penguin_session`（HttpOnly，SameSite=Lax）。普通登录会话有效期为 30 天并滑动续期；由 CLI 和 Remote 铸造的短期会话保持签发时设置的到期时间。
+- Cookie 会话：浏览器（通过带 `Origin` 的登录请求）拿到的会话 Cookie 名为 `penguin_session_<port>`（HttpOnly，SameSite=Lax），`<port>` 是它访问服务器所用地址的端口。地址里没有端口，或客户端（CLI、curl）不发送 `Origin` 时，名字是 `penguin_session`；浏览器沿用旧名的 Cookie 仍被接受。普通登录会话有效期为 30 天，并采用滑动续期；由 CLI 和 Remote 铸造的短期会话保持签发时设置的到期时间。
 - 密码以 scrypt 哈希存储。会话是 `auth_sessions` 表中的一行，以随机 Cookie token 的 sha256 为键；原始 token 从不存储。会话重启后依然有效，符合条件的会话会在原地续期；登出则删除这一行。
 - 不开放注册。启动时，服务器会用一个随机密码初始化内置管理员 `admin`：密码哈希后保存，明文随即丢弃，没有任何人见过它。在设置密码之前，每次启动都会打印一条首次登录链接，用来认领账号。自动化场景可以改用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定一个已知密码。其余所有账号都由管理员创建。
 - 仅限同源：未启用任何 CORS 中间件。例外是 Agent API 的 `/api/amsp/v1`：它应答任何来源的预检，并在带 `Authorization` 的请求上返回 `Access-Control-Allow-Origin: *`。这组路由不接受上面两种凭证：请求出示的是该 Agent 的 API 密钥；Agent 允许无密钥访问时，也可以不出示。见 [Agent API](/agent-api)。

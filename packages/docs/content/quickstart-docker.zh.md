@@ -156,13 +156,13 @@ USER penguin
 | `HOST` | `0.0.0.0`，作用于容器自己的网络命名空间。宿主机一侧由 `-p` 决定，示例都保持在回环接口上 |
 | `PORT` | `7364`。修改后，健康检查会随之改用新端口 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 固定初始管理员密码，仅在首次启动时生效，见[提前设置密码](#提前设置密码) |
-| `PENGUIN_TRUST_PROXY` | 放在终结 TLS 的反向代理之后时设为 `1`，会话 Cookie 才会带上 `Secure` 标记 |
+| `PENGUIN_TRUST_PROXY` | 部署在终结 TLS 的反向代理之后时设为 `1`；不设置则 Web App 的写请求会被 `403` `cross_origin_write` 拒绝 |
 | `PENGUIN_PREVIEW_ORIGIN` | 路由到同一容器的第二个主机名，用于 Workspace 中的 HTML 预览 |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭自动的版本检查。模型请求、远程控制连接、Key 授权和代理测试照常出站 |
 
 ### 在反向代理后运行
 
-把容器发布在回环接口上，在它前面终结 TLS，并设置 `PENGUIN_TRUST_PROXY=1`。反向代理必须自己设置或清除 `x-forwarded-proto`：这个请求头由调用方提供，服务端正因如此，在你明确开启之前一直不采信它。HTTPS 部署如果不设置 `PENGUIN_TRUST_PROXY`，签发的会话 Cookie 就不带 `Secure` 标记。
+把容器发布在回环接口上，在其前面终结 TLS，并设置 `PENGUIN_TRUST_PROXY=1`。反向代理必须原样转发外部的 `Host` 请求头，并把 `x-forwarded-proto` 覆盖为 `https`：这个请求头由调用方提供，因此在你明确开启之前，服务端不会采信它。HTTPS 部署如果不设置 `PENGUIN_TRUST_PROXY`，Web App 的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝，签发的会话 Cookie 也不带 `Secure` 标记。如果代理改写了 `Host` 请求头，或没有把 `x-forwarded-proto` 覆盖为 `https`，写请求同样会被拒绝。
 
 ### 提供 Workspace 预览
 

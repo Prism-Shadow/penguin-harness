@@ -29,7 +29,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 
 Notes:
 
-- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS and sets or strips the header itself. Session cookies are then marked `Secure`, and the hot-update network gate sees HTTPS.
+- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS. The proxy must keep the external `Host` header unchanged and overwrite `x-forwarded-proto` with the single value `https`. Session cookies are then marked `Secure`, and the hot-update network gate sees HTTPS. Without the setting, every write the Web App makes, signing in included, is refused with `403` `cross_origin_write`.
 - `PENGUIN_SEED_ADMIN_PASSWORD`: without it, the seed generates a random password that is hashed and discarded unseen, and you claim the account through the first-login link.
 - `PENGUIN_GO_ORIGIN`: server configuration, not an endpoint the browser can name. It must be a bare HTTPS origin; plain HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`, for integration environments. A path, credentials, a query string or a fragment is rejected at startup. See [Connect an account](/models#connect-an-account).
 - `MODELSCOPE_BRIDGE_URL`: server configuration like `PENGUIN_GO_ORIGIN`, not an endpoint the browser can name. It must be an HTTPS address with no credentials, query string or fragment. Unlike `PENGUIN_GO_ORIGIN`, a path prefix **is** allowed, because the production bridge lives under `https://go.penguin.ooo/modelscope`. See [Connect an account](/models#connect-an-account).
