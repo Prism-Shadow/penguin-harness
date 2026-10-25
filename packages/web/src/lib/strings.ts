@@ -2398,6 +2398,8 @@ export const zh = {
     clearGroupKey: "清除分组密钥",
     /** The base URL placeholder where no group setting fills a blank field and none is required; it names no URL. */
     baseUrlDefault: "留空使用默认 base URL",
+    /** The base URL placeholder where the field is required and empty: a blank one cannot be saved. */
+    baseUrlEnterHint: "请填写 base URL",
     /** The group settings' Detect while neither the field nor the group holds a base URL. */
     detectNeedsBaseUrl: "先填写 base URL",
     /** The protocol menu's first row in the group settings: the group sets none. */

@@ -17,7 +17,7 @@
  * - The add-group dialog says a taken group name as it is typed, holds Confirm while it is
  *   taken, and asks before Esc drops a typed name.
  * - Its import holds Detect and Import while the base URL is blank and says the URL is required
- *   under the field; the field carries no placeholder, like every required base URL.
+ *   under the field, whose placeholder asks for one, like every required base URL.
  * - A model with no key anywhere names the variable its client reads when the server reports it
  *   set, and otherwise asks for a key; the key field is never left without a placeholder.
  */
@@ -338,14 +338,14 @@ describe("the model config dialog", () => {
     );
   });
 
-  it("holds an import while its base URL is blank, and says so under a field with no placeholder", async () => {
+  it("holds an import while its base URL is blank, and says so under a field that asks for one", async () => {
     await openModelsPage();
     await type(document.querySelector(`input[placeholder="${en.models.searchPlaceholder}"]`)!, "");
     await click(button(`＋ ${en.models.addGroup}`));
     await type(field(en.models.groupNameLabel), "acme");
     await click(button(en.models.groupModeImport));
     const url = field(en.models.baseUrl);
-    expect(url.hasAttribute("placeholder")).toBe(false);
+    expect(url.getAttribute("placeholder")).toBe(en.models.baseUrlEnterHint);
     expect(document.body.textContent).toContain(en.models.baseUrlRequired);
     expect(button(en.models.detectProtocol).disabled).toBe(true);
 

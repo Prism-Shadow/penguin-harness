@@ -672,7 +672,7 @@ describe("connectionPlaceholders (what a blank API key or base URL field says)",
       connectionPlaceholders(draft({ provider: "my-group" }), undefined, {
         baseUrlRequired: true,
       }),
-    ).toEqual({ apiKey: S.models.apiKeyEnterHint, baseUrl: undefined });
+    ).toEqual({ apiKey: S.models.apiKeyEnterHint, baseUrl: S.models.baseUrlEnterHint });
     // A table with a key but no URL lends the key to models without one of their own.
     expect(connectionPlaceholders(draft(), { apiKeyMasked: "sk-g…2222" }, plain)).toEqual({
       apiKey: S.models.inheritFromGroup,

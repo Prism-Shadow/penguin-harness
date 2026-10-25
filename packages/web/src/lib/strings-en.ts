@@ -2232,6 +2232,7 @@ export const en: Strings = {
     groupSettingsTitle: (label: string): string => `${label} group settings`,
     clearGroupKey: "Clear the group key",
     baseUrlDefault: "Leave blank to use the default base URL",
+    baseUrlEnterHint: "Enter a base URL",
     detectNeedsBaseUrl: "Enter a base URL first",
     protocolNone: "Not set",
     protocolRoutedById: "Routed by model ID",

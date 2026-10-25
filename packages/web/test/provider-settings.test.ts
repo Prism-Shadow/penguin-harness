@@ -28,8 +28,8 @@
  * - Given a group whose catalog names a model list (OpenRouter, TokenDance), the dialog links
  *   to it in a new tab; custom and a user-defined group have none, and no link.
  * - A blank group base URL says it uses the default and names no endpoint. Where the group
- *   needs one, the field shows the base URL the group stores and carries no placeholder; a blank
- *   one is refused (see "a blank group base URL").
+ *   needs one, the field shows the base URL the group stores, asks for one while empty, and a
+ *   blank one is refused (see "a blank group base URL").
  * - A blank group key promises an environment variable only for a group with no base URL — the
  *   vendor's own endpoint included — and only one the server proved is set. A stored key says it
  *   is kept; with neither, the key field asks for a key.
@@ -445,7 +445,7 @@ describe("what the group settings dialog shows", () => {
     expect(keyPlaceholder(dialog("my-group", undefined))).toBe(S.models.apiKeyEnterHint);
   });
 
-  it("shows the stored base URL where the group needs one, and never offers to leave it blank", () => {
+  it("shows the stored base URL where the group needs one, and asks for one instead of offering to leave it blank", () => {
     // A user-defined group with a model that stores no base URL of its own.
     const stored = dialog("my-group", { baseUrl: "http://a.example/v1" }, [row()]);
     expect(stored).toContain('value="http://a.example/v1"');
@@ -454,7 +454,7 @@ describe("what the group settings dialog shows", () => {
       const baseUrlInput = html.match(/<input[^>]*aria-label="[^"]*base URL"[^>]*>/)?.[0];
       expect(baseUrlInput).toBeDefined();
       expect(baseUrlInput).toContain("required");
-      expect(baseUrlInput).not.toContain("placeholder=");
+      expect(baseUrlInput).toContain(`placeholder="${S.models.baseUrlEnterHint}"`);
     }
   });
 

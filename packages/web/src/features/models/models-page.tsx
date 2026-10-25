@@ -766,15 +766,15 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *   holds (`envKey`, only where nothing else covers the model) means the environment answers; a
  *   group key that does NOT reach the model — its own base URL is on another origin — is said
  *   outright, since the card will read "not configured"; otherwise the field asks for a key.
- * - Base URL: the group's setting where it has one; else nothing where the field is required
- *   (it cannot be saved blank, which its asterisk and error say); else that a blank one uses
- *   the default, without naming it.
+ * - Base URL: the group's setting where it has one; else, where the field is required (it
+ *   cannot be saved blank), a request to enter one; else that a blank one uses the default,
+ *   without naming it.
  */
 export function connectionPlaceholders(
   draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
   group: ProviderConnectionDto | undefined,
   { envKey, baseUrlRequired }: { envKey?: string | undefined; baseUrlRequired: boolean },
-): { apiKey: string; baseUrl: string | undefined } {
+): { apiKey: string; baseUrl: string } {
   const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
   const apiKey = draft.credential?.apiKeyMasked
     ? S.models.apiKeyKeepHint
@@ -789,7 +789,7 @@ export function connectionPlaceholders(
     inherited.baseUrl !== undefined
       ? S.models.inheritFromGroup
       : baseUrlRequired
-        ? undefined
+        ? S.models.baseUrlEnterHint
         : S.models.baseUrlDefault;
   return { apiKey, baseUrl };
 }
@@ -2401,6 +2401,7 @@ function AddGroupDialog({
                   className="font-mono"
                   style={{ paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + 2.25rem)` }}
                   title={S.models.baseUrlSuffixTitle}
+                  placeholder={S.models.baseUrlEnterHint}
                 />
                 <div className="absolute inset-y-0 right-1 flex items-center">
                   <ProtocolSuffixMenu

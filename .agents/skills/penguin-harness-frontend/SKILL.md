@@ -143,6 +143,16 @@ character, and the placeholder says what blank means, so a visible line would on
 Already-disclosed text does not move: `title=` tooltips, `OptionMenu` row descriptions, confirm
 dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
 
+### Placeholders: what blank does, or what to do
+
+A placeholder says what happens if the field is left as it is, or the next step to take (owner,
+2026-10-24): 「留空则使用环境变量 DEEPSEEK_API_KEY」 says what blank does, 「请填写 API key」 what
+to do, 「留空使用默认 base URL」 both. A field whose blank state means something, or that must be
+filled, never has an empty placeholder. No bare status word (「未设置」) and no value dump
+(「默认发往 <url>」): the placeholder speaks to the reader's next move, not to the configuration.
+A required field with a stored value shows the value itself; the placeholder covers the empty
+state only.
+
 ### Tooltips: when a mark gets one
 
 A hover hint shows where its words are not on screen (`hintAllowedFor` in the UI package's
