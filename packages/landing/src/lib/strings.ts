@@ -47,12 +47,8 @@ export const zh = {
   hero: {
     /** The slogan, in the positioning line's place and style. */
     positioning: "让软件持续成长，让进化触手可及",
-    /** The badge on the positioning line's top-right corner. */
-    badge: "免费开源",
-    /** The first line of the grey paragraph under the slogan, above the automation tagline. */
+    /** The grey line under the slogan. */
     subtitle: "免费、稳定的 Agent 自进化框架",
-    /** A no-break space before each dot keeps it at the end of its line when a phone wraps. */
-    automation: "全自动优化：任意模型\u00a0· 任意算法\u00a0· 任意 Benchmark",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [

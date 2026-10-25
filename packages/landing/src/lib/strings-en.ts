@@ -46,14 +46,7 @@ export const en: Strings = {
 
   hero: {
     positioning: "Software that keeps growing. Evolution within reach.",
-    badge: "for free",
     subtitle: "Free and Stable RSI Framework",
-    /**
-     * No-break spaces keep each "any …" pair on one line, and each dot at the end of its line,
-     * when a phone wraps the tagline.
-     */
-    automation:
-      "Fully automatic optimization: any\u00a0model\u00a0· any\u00a0algorithm\u00a0· any\u00a0benchmark",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [

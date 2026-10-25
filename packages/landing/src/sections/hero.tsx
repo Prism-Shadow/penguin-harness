@@ -1,11 +1,10 @@
 /**
- * Product-first hero: the slogan with its badge, the subtitle and the automation tagline in grey,
- * two direct installation paths, three stat tiles (the small label over the big value), three
- * catalogue rows (supported models, self-evolution algorithms, Benchmarks) each led by its count,
- * whose outside links confirm before they open (the model count itself links to MMSP's model
- * index), and then the app itself, live: the start page in a frame. What the rows list, and where
- * each entry links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those lists'
- * lengths.
+ * Product-first hero: the slogan, the subtitle in grey, two direct installation paths, three stat
+ * tiles (the small label over the big value), three catalogue rows (supported models,
+ * self-evolution algorithms, Benchmarks) each led by its count, whose outside links confirm
+ * before they open (the models row's closing "and more" links to MMSP's model index), and then
+ * the app itself, live: the start page in a frame. What the rows list, and where each entry
+ * links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those lists' lengths.
  */
 import type { ReactNode } from "react";
 import { Link } from "react-router";
@@ -33,55 +32,35 @@ const ENTRY = "inline-flex items-center gap-1 text-sm font-medium text-gray-700 
 const ENTRY_LINK = `${ENTRY} underline-offset-4 decoration-gray-300 transition-colors hover:text-gray-950 hover:underline dark:decoration-gray-600 dark:hover:text-white`;
 
 /**
- * A row's count and label as one outside link: the term's own inline layout, so at rest it looks
- * the same as a row without a link, and only hover underlines it.
- */
-const COUNT_LINK =
-  "inline-flex items-baseline gap-2 underline-offset-4 decoration-gray-300 hover:underline dark:decoration-gray-600";
-
-/**
  * One row of the catalogue, led by its count: the count and label above the items on phones;
  * from `sm` up, they share the catalogue's two columns (subgrid), the count-and-label column
- * aligned left so the three counts line up. With `href`, the count and label link out together.
+ * aligned left so the three counts line up.
  */
 function CatalogRow({
   count,
   label,
-  href,
   delay,
   listClassName,
   children,
 }: {
   count: string;
   label: string;
-  href?: string;
   delay: number;
   listClassName: string;
   children: ReactNode;
 }) {
-  const term = (
-    <>
-      <span className="text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
-        {count}
-      </span>
-      <span className="text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
-    </>
-  );
   return (
     <div
       className="anim-rise flex flex-col items-center sm:col-span-2 sm:grid sm:grid-cols-subgrid sm:items-center"
       style={{ animationDelay: `${delay}ms` }}
     >
       <dt className="flex items-baseline gap-2 sm:text-left">
-        {href === undefined ? (
-          term
-        ) : (
-          <ExternalLink href={href} className={COUNT_LINK}>
-            {term}
-          </ExternalLink>
-        )}
+        <span className="text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
+          {count}
+        </span>
+        <span className="text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400">
+          {label}
+        </span>
       </dt>
       {/* Spaced by margin, not `gap`: a gap on the subgrid would override the catalogue's own. */}
       <dd className="mt-2.5 sm:mt-0">
@@ -116,23 +95,14 @@ export function Hero() {
           className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word]"
           style={{ animationDelay: "70ms" }}
         >
-          {/* The badge is a superscript on the line's top-right corner, set as type rather than a
-              chip: brand colour, no box. On a phone it sits above the corner instead, inside the
-              column, where the line already reaches the edge. */}
-          <span className="relative inline-block">
-            {S.hero.positioning}
-            <span className="absolute right-0 bottom-full mb-1 text-sm leading-none font-semibold tracking-normal whitespace-nowrap text-brand-600 sm:right-auto sm:bottom-auto sm:top-[0.1em] sm:left-full sm:mb-0 sm:ml-[0.3em] sm:text-[0.42em] dark:text-brand-300">
-              {S.hero.badge}
-            </span>
-          </span>
+          {S.hero.positioning}
         </p>
 
         <p
           className="hero-automation anim-rise mt-5 leading-6 text-balance break-keep text-gray-600 [overflow-wrap:break-word] sm:leading-8 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
-          <span className="block">{S.hero.subtitle}</span>
-          {S.hero.automation}
+          {S.hero.subtitle}
         </p>
 
         <div
@@ -179,7 +149,6 @@ export function Hero() {
             <CatalogRow
               count={S.hero.supportedModelsCount}
               label={S.hero.supportedModelsLabel}
-              href={mmspModelsUrl(locale)}
               delay={300}
               listClassName="gap-x-2 gap-y-1"
             >
@@ -195,8 +164,11 @@ export function Hero() {
                   </ExternalLink>
                 </li>
               ))}
-              <li className="ml-1 text-sm font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">
-                {S.hero.supportedModelsMore}
+              <li className="ml-1">
+                <ExternalLink href={mmspModelsUrl(locale)} className={ENTRY_LINK}>
+                  {S.hero.supportedModelsMore}
+                  <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                </ExternalLink>
               </li>
             </CatalogRow>
 
