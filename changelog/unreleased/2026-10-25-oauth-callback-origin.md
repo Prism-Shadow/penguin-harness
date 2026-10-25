@@ -3,6 +3,7 @@
 - **Date:** 2026-10-25
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#1328](https://github.com/Prism-Shadow/penguin-harness/pull/1328)
 
 [中文版](2026-10-25-oauth-callback-origin.zh.md)
 
