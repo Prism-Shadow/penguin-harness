@@ -143,6 +143,7 @@ import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { deletedChangeKeys } from "./memory-nav";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
+import { measureComposer } from "../dock/composer-height";
 import { DockLauncher } from "../dock/dock-launcher";
 import { useDockMount } from "../dock/use-dock-mount";
 // importing it registers the built-in panels (their definitions and bodies) with the dock
@@ -2751,7 +2752,12 @@ export function ChatPage() {
                               while that dock is hidden, and opens its panels in one click. */}
                           <DockLauncher agentsPending={anySubagentPending} />
                         </div>
-                        <WallpaperSurface className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+                        {/* Measured: the bottom dock's docked height stops where this box would
+                            be covered, and gives way as it grows. */}
+                        <WallpaperSurface
+                          ref={measureComposer}
+                          className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800"
+                        >
                           <div className="mx-auto max-w-3xl">
                             {/* Goal banner docked above the composer: an in-flight goal's progress
                                 (restored on load while still active), or the terminal state reached

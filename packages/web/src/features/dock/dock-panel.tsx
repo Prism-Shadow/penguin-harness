@@ -82,9 +82,9 @@ import type { DockPanelHandle } from "./panel-context";
 import { panelGlyph, panelLabel } from "./panel-meta";
 import { dockPanelDefinition, useDockPanels } from "./panel-registry";
 import type { DockPanelDefinition, PanelId } from "./panel-registry";
+import { bottomDockHeight, bottomDockMaxHeight } from "./bottom-dock-size";
+import { composerHeight, useComposerHeight } from "./composer-height";
 import {
-  DOCK_MIN_HEIGHT_PX,
-  DOCK_RATIO_MAX,
   activateTab,
   bottomRatio,
   dockVersion,
@@ -128,6 +128,19 @@ const PICKER_LEAD: readonly PanelId[] = ["agents", TERMINAL_PANEL, "builtin-brow
  * notch rather than a separate journey.
  */
 const FULLSCREEN_SNAP_PX = 40;
+
+/**
+ * The chat page column ([data-dock-host]) and the part of it below the toolbar that the
+ * conversation row and the bottom dock share ([data-dock-area]), in px; 0 before they are in the
+ * DOM (the app's very first commit).
+ */
+function measureColumn(): { host: number; area: number } {
+  const height = (selector: string): number => {
+    const element = document.querySelector(selector);
+    return element instanceof HTMLElement ? element.getBoundingClientRect().height : 0;
+  };
+  return { host: height("[data-dock-host]"), area: height("[data-dock-area]") };
+}
 
 /**
  * A panel tab's body: the registry's component for its id, inside the provider that tells the
@@ -387,14 +400,21 @@ export function DockPanel({
     // button — so its drag simply stops at the maximum.
     const canSnap = tabs.length > 0;
     if (horizontal) {
-      // The ratio's basis is the chat page column ([data-dock-host]), the same box the
-      // rendered height is computed from below; the ratio clamps at its ceiling, which is the
-      // maximum the snap measures against.
+      // The ratio's basis is the chat page column ([data-dock-host]), and the ceiling is the
+      // one the rendered height below clamps to: what the area under the toolbar leaves once the
+      // composer has its room. What is stored is what the dock shows, the ceiling for a pull past
+      // it, so the dock does not come back taller than it was left once the composer shrinks.
       const host = document.querySelector("[data-dock-host]")?.getBoundingClientRect();
-      if (!host || host.height === 0) return;
+      const area = document.querySelector("[data-dock-area]")?.getBoundingClientRect();
+      if (!host || host.height === 0 || !area) return;
+      const max = bottomDockMaxHeight({
+        host: host.height,
+        area: area.height,
+        composer: composerHeight(),
+      });
       const asked = pane.bottom - event.clientY;
-      setBottomRatio(asked / host.height);
-      if (canSnap && asked > DOCK_RATIO_MAX * host.height + FULLSCREEN_SNAP_PX) snapTo(position);
+      setBottomRatio(Math.min(asked, max) / host.height);
+      if (canSnap && asked > max + FULLSCREEN_SNAP_PX) snapTo(position);
     } else {
       const asked = pane.right - event.clientX;
       setPanelWidth(asked); // clamps at the maximum
@@ -415,7 +435,8 @@ export function DockPanel({
   };
 
   // The bottom dock's height in PIXELS: ratio × the measured chat column, with the same
-  // clamps the drag applies. Pixels rather than a CSS percentage so the expand/collapse
+  // clamps the drag applies — the ceiling among them leaves the composer whole, measured as it
+  // grows and shrinks. Pixels rather than a CSS percentage so the expand/collapse
   // transition interpolates cleanly to 0 and the INNER content can sit at the settled
   // height while the outer box animates past it (no reflow mid-transition; xterm would
   // refit its grid on every intermediate height).
@@ -425,23 +446,27 @@ export function DockPanel({
   // unasked-for slide (and an instant mount is exactly the case that must not slide).
   // On the first commit the host is not attached yet; that mount is the animated initial
   // restore, whose entrance starts at 0 by design.
-  const [hostHeight, setHostHeight] = useState(() => {
-    const host = document.querySelector("[data-dock-host]");
-    return host instanceof HTMLElement ? host.getBoundingClientRect().height : 0;
-  });
+  const [column, setColumn] = useState(measureColumn);
   useLayoutEffect(() => {
     if (!horizontal) return;
     const host = document.querySelector("[data-dock-host]");
-    if (!(host instanceof HTMLElement)) return;
-    const measure = () => setHostHeight(host.getBoundingClientRect().height);
+    const area = document.querySelector("[data-dock-area]");
+    if (!(host instanceof HTMLElement) || !(area instanceof HTMLElement)) return;
+    const measure = () =>
+      setColumn((last) => {
+        const next = measureColumn();
+        return next.host === last.host && next.area === last.area ? last : next;
+      });
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(host);
+    observer.observe(area);
     return () => observer.disconnect();
   }, [horizontal]);
-  const bottomHeight = Math.round(
-    Math.min(DOCK_RATIO_MAX * hostHeight, Math.max(DOCK_MIN_HEIGHT_PX, bottomRatio() * hostHeight)),
-  );
+  const composer = useComposerHeight();
+  const bottomSpace = { ...column, composer };
+  const bottomMax = bottomDockMaxHeight(bottomSpace);
+  const bottomHeight = bottomDockHeight(bottomRatio(), bottomSpace);
 
   // A double click on the handle: back to the default size — or, on the cover's leading edge,
   // back out of fullscreen, which is what "back" means for a surface grown past every size.
@@ -540,6 +565,15 @@ export function DockPanel({
   if (lastOpen.current !== open) {
     lastOpen.current = open;
     if (!animateEntrance) setSnap(true);
+  }
+  // A ceiling that comes down past the bottom dock (the composer grew a line, the window got
+  // shorter) is room the composer needs now: the dock gives it up in the same commit rather than
+  // through the layout motion, under which the composer would sit beneath the dock's edge until
+  // the motion ended. A dock growing back, or resized on purpose, still moves.
+  const [lastBottom, setLastBottom] = useState({ max: bottomMax, height: bottomHeight });
+  if (horizontal && (lastBottom.max !== bottomMax || lastBottom.height !== bottomHeight)) {
+    setLastBottom({ max: bottomMax, height: bottomHeight });
+    if (bottomMax < lastBottom.max && bottomHeight < lastBottom.height) setSnap(true);
   }
   useEffect(() => {
     if (!snap) return;

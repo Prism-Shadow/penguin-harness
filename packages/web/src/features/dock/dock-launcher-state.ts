@@ -32,6 +32,13 @@ export const DEFAULT_LAUNCHER_RATIO = 0.5;
  * caption would be the first thing the composer covers.
  */
 export const LAUNCHER_CAPTION_HEIGHT = 30;
+/**
+ * The shortest body that holds the ball and its caption whole with the margin above and below
+ * (px). In a shorter one the bounds pin the ball at the top margin and the caption hangs onto
+ * the composer.
+ */
+export const LAUNCHER_BODY_MIN_HEIGHT =
+  LAUNCHER_SIZE + LAUNCHER_CAPTION_HEIGHT + 2 * LAUNCHER_EDGE_MARGIN;
 
 /** A fan entry's diameter (px), one rung under the ball so the fan reads as its offspring. */
 export const FAN_ENTRY_SIZE = 46;

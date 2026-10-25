@@ -399,6 +399,10 @@ test("a whole dock moves to the other edge; a single tab moves by drag onto the 
 });
 
 test("sizes and the arrangement survive a reload; hidden stays hidden", async ({ page }) => {
+  // Tall enough that the bottom dock's default height sits well below its ceiling, which keeps
+  // the composer whole (with the right dock open the composer wraps taller): the drag below has
+  // room to grow it.
+  await page.setViewportSize({ width: 1280, height: 1100 });
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);
   await killAllTerminals(page.request);

@@ -50,6 +50,7 @@
  * scope at the route's conversation, and the chat page renders the docks.
  */
 import type { PanelId } from "./panel-registry";
+import { DOCK_RATIO_MAX } from "./bottom-dock-size";
 import { foldLegacyTerminalTabs } from "./legacy-terminal-tabs";
 
 const LAYOUT_KEY = "penguin.dock.layout";
@@ -90,15 +91,13 @@ function parseTabKey(key: string): DockTab | null {
 }
 
 /**
- * The bottom dock's HEIGHT is a ratio of the chat page column. The px minimum (and the
- * ratio ceiling, which also leaves the chat room) are enforced both by the dock's CSS and
- * by the resize drag. The right dock's WIDTH is not here: it is the shared side-panel
- * width (use-panel-width.ts), unchanged from the pre-dock panels.
+ * The bottom dock's HEIGHT is stored as a ratio of the chat page column; the height drawn from
+ * it, clamped so the composer stays whole, is bottom-dock-size.ts's. The right dock's WIDTH is
+ * not here: it is the shared side-panel width (use-panel-width.ts), unchanged from the pre-dock
+ * panels.
  */
 export const DEFAULT_DOCK_HEIGHT_RATIO = 0.4;
 const DOCK_RATIO_MIN = 0.15;
-export const DOCK_RATIO_MAX = 0.85;
-export const DOCK_MIN_HEIGHT_PX = 140;
 
 function clampRatio(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_DOCK_HEIGHT_RATIO;
