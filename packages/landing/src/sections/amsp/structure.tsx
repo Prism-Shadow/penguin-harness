@@ -9,11 +9,11 @@
  *
  * The Task and Request spans are bounded by `event_msg` records, in that family's amber tints, as
  * everywhere on the page (lib/amsp-tones.ts). The messages take the colours the Web App's Trace
- * view gives each kind (its default theme's chart series, light and dark): thinking violet, the
- * reply sky, a tool call as the model writes it amber, a tool's run up to its output emerald; each
- * ends in its complete record, a rule in the page's ink at the bar's end. One grid holds it all:
- * the level names in a column of their own, then one lane per level, the names too long for their
- * bar and the axis, every one on the same scale, and the legend starting where the lanes start.
+ * view gives each kind, as light tints: thinking violet, the reply sky, a tool call as the model
+ * writes it orange, a tool's run up to its output emerald; each ends in its complete record, the
+ * bar's end in the hue's strong shade. One grid holds it all: the level names in a column of their
+ * own, then one lane per level, the names too long for their bar and the axis, every one on the
+ * same scale, and the legend starting where the lanes start.
  * A bar wide enough holds its label; a narrow one is named under the lane, beside its neighbour.
  * On a phone the bars stay and the same steps in words take the labels' place; a screen reader
  * hears the figure's label and the steps at every width.
@@ -50,22 +50,34 @@ const TONE = {
   request: `${TONES.event.fill} ${TONES.event.ink} ring-1 ring-amber-200 ring-inset dark:ring-amber-400/20`,
 };
 /**
- * Each kind of message in the Trace view's colour for it, in the legend's order. The ink is dark
- * on every one: it reads at 4.5 : 1 or better on all four, in both themes.
+ * Each kind of message in the Trace view's hue for it, in the legend's order (tool-call generation
+ * on the orange side of its amber, a step redder in the dark theme, so it stays apart from the
+ * amber Request it sits under). A pale fill at the weight of the page's other tints (a low-alpha
+ * one in the dark theme), the label in a deep shade of the hue (a light one in the dark theme),
+ * and the complete record that closes the message as the bar's end, in the hue's strong shade.
+ * `mark` is that strong shade as a fill, for the legend.
  */
-const KIND_TONE: Record<ItemKind, string> = {
-  thinking: "bg-violet-500",
-  text: "bg-sky-600",
-  tool_call: "bg-amber-600",
-  tool_call_output: "bg-emerald-600 dark:bg-emerald-400",
+const KIND_TONE: Record<ItemKind, { bar: string; mark: string }> = {
+  thinking: {
+    bar: "border-violet-600 bg-violet-200 text-violet-800 dark:border-violet-400 dark:bg-violet-400/25 dark:text-violet-200",
+    mark: "bg-violet-600 dark:bg-violet-400",
+  },
+  text: {
+    bar: "border-sky-600 bg-sky-200 text-sky-800 dark:border-sky-400 dark:bg-sky-400/25 dark:text-sky-200",
+    mark: "bg-sky-600 dark:bg-sky-400",
+  },
+  tool_call: {
+    bar: "border-orange-600 bg-orange-200 text-orange-800 dark:border-orange-400 dark:bg-orange-500/25 dark:text-orange-200",
+    mark: "bg-orange-600 dark:bg-orange-400",
+  },
+  tool_call_output: {
+    bar: "border-emerald-600 bg-emerald-200 text-emerald-800 dark:border-emerald-400 dark:bg-emerald-400/25 dark:text-emerald-200",
+    mark: "bg-emerald-600 dark:bg-emerald-400",
+  },
 };
 const KINDS = Object.keys(KIND_TONE) as ItemKind[];
-const MESSAGE_INK = "text-gray-950";
-/**
- * The complete record that closes a message: its bar's end, dark on a light page, light on a dark
- * one.
- */
-const RECORD_CAP = "border-r-2 border-gray-950 dark:border-white";
+/** The complete record that closes a message: its bar's end, in the bar's own strong shade. */
+const RECORD_CAP = "border-r-2";
 
 const at = (ms: number, total: number) => `${(100 * ms) / total}%`;
 
@@ -148,7 +160,7 @@ function StructureChart({ spans }: { spans: RunSpans }) {
             key={span.begin}
             span={span}
             total={total}
-            className={`${KIND_TONE[span.kind]} ${MESSAGE_INK} ${RECORD_CAP}`}
+            className={`${KIND_TONE[span.kind].bar} ${RECORD_CAP}`}
             title={`${span.kind} · ${duration(span)}`}
           >
             {fits(span, total) && <span className="hidden sm:inline">{span.kind}</span>}
@@ -210,13 +222,20 @@ export function AmspStructure() {
               <p className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 {KINDS.map((kind) => (
                   <span key={kind} className="inline-flex items-center gap-2">
-                    <span aria-hidden="true" className={`h-3 w-7 shrink-0 ${KIND_TONE[kind]}`} />
+                    <span
+                      aria-hidden="true"
+                      className={`h-3 w-7 shrink-0 ${KIND_TONE[kind].bar} ${RECORD_CAP}`}
+                    />
                     {M.kinds[kind]}
                   </span>
                 ))}
               </p>
               <p className="flex items-center gap-2">
-                <span aria-hidden="true" className={`h-3 w-0 shrink-0 ${RECORD_CAP}`} />
+                <span aria-hidden="true" className="inline-flex shrink-0 gap-[3px]">
+                  {KINDS.map((kind) => (
+                    <span key={kind} className={`h-3 w-0.5 ${KIND_TONE[kind].mark}`} />
+                  ))}
+                </span>
                 {M.complete}
               </p>
             </div>
