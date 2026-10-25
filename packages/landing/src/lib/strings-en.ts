@@ -45,8 +45,9 @@ export const en: Strings = {
   },
 
   hero: {
-    positioning: "Unified and Stable RSI Framework",
+    positioning: "Software that keeps growing. Evolution within reach.",
     badge: "for free",
+    subtitle: "Free and Stable RSI Framework",
     /**
      * No-break spaces keep each "any …" pair on one line, and each dot at the end of its line,
      * when a phone wraps the tagline.
@@ -179,13 +180,13 @@ export const en: Strings = {
       frame: "A self-evolution round in a conversation (live demo)",
     },
     evaluate: {
-      title: "Every version gets a score",
-      text: "Each evaluation on a Benchmark adds a point to its agent and model's line, so the better version is plain to see.",
+      title: "Observable self-evolution",
+      text: "Benchmarks covering six kinds of capability score every version of an agent, with cost and duration recorded beside the score; each agent and model gets its own line, making the better version plain to see.",
       link: "About the Evaluation Center",
       frame: "A Benchmark in the Evaluation Center (live demo)",
     },
     toolkits: {
-      title: "Self-evolution algorithms are added as plugins",
+      title: "State-of-the-art self-evolution algorithms for higher accuracy, lower cost",
       text: (names: string) =>
         `Besides the default loop, ${names} each come as a toolkit that runs the algorithm the way its paper describes.`,
       link: "Browse the plugin library",
@@ -211,8 +212,7 @@ export const en: Strings = {
       { label: "Cost", hint: "per run" },
       { label: "Duration", hint: "per run" },
     ],
-    trendsNote:
-      "The scoreboard records each version's score, cost and duration. The values here are illustrative.",
+    trendsNote: "The scoreboard records each version's score, cost and duration.",
     demo: {
       caption:
         "Demo: a decision agent is evaluated, revises its working method once and is retested on the same model. Its score goes from 84 to 100.",
@@ -279,7 +279,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    title: "One sentence and $0.10 build a legal agent app",
+    title: "A2APP: one sentence and $0.10 build a legal agent app",
+    a2app:
+      "A2APP is the agent's own small app, a tab beside the chat; the app calls the agent to do the work. One sentence in chat, and the agent changes it; it reloads at once and keeps earlier versions.",
     subtitle:
       "Describe what you need in one request. PenguinHarness builds a legal agent app that takes contract uploads, identifies risks and produces review reports to download.",
     prompt:
@@ -403,7 +405,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   footer: {
-    tagline: "Unified and Stable RSI Framework.",
+    tagline: "Free and Stable RSI Framework.",
     product: "Product",
     resources: "Resources",
     quickstart: "Quick start",

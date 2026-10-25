@@ -1,14 +1,17 @@
 /**
- * Product-first hero: the positioning line with its badge, two direct installation paths, three
- * stat tiles (the small label over the big value), three catalogue rows (supported models,
- * self-evolution algorithms, Benchmarks) each led by its count, whose outside links confirm
- * before they open, and then the app itself, live: the start page in a frame. What the rows list,
- * and where each entry links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those
- * lists' lengths.
+ * Product-first hero: the slogan with its badge, the subtitle and the automation tagline in grey,
+ * two direct installation paths, three stat tiles (the small label over the big value), three
+ * catalogue rows (supported models, self-evolution algorithms, Benchmarks) each led by its count,
+ * whose outside links confirm before they open (the model count itself links to MMSP's model
+ * index), and then the app itself, live: the start page in a frame. What the rows list, and where
+ * each entry links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those lists'
+ * lengths.
  */
 import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
+import { mmspModelsUrl } from "../lib/links";
 import { RELEASE_VERSION } from "../lib/version";
 import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
 import {
@@ -30,35 +33,55 @@ const ENTRY = "inline-flex items-center gap-1 text-sm font-medium text-gray-700 
 const ENTRY_LINK = `${ENTRY} underline-offset-4 decoration-gray-300 transition-colors hover:text-gray-950 hover:underline dark:decoration-gray-600 dark:hover:text-white`;
 
 /**
+ * A row's count and label as one outside link: the term's own inline layout, so at rest it looks
+ * the same as a row without a link, and only hover underlines it.
+ */
+const COUNT_LINK =
+  "inline-flex items-baseline gap-2 underline-offset-4 decoration-gray-300 hover:underline dark:decoration-gray-600";
+
+/**
  * One row of the catalogue, led by its count: the count and label above the items on phones;
  * from `sm` up, they share the catalogue's two columns (subgrid), the count-and-label column
- * aligned left so the three counts line up.
+ * aligned left so the three counts line up. With `href`, the count and label link out together.
  */
 function CatalogRow({
   count,
   label,
+  href,
   delay,
   listClassName,
   children,
 }: {
   count: string;
   label: string;
+  href?: string;
   delay: number;
   listClassName: string;
   children: ReactNode;
 }) {
+  const term = (
+    <>
+      <span className="text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
+        {count}
+      </span>
+      <span className="text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </span>
+    </>
+  );
   return (
     <div
       className="anim-rise flex flex-col items-center sm:col-span-2 sm:grid sm:grid-cols-subgrid sm:items-center"
       style={{ animationDelay: `${delay}ms` }}
     >
       <dt className="flex items-baseline gap-2 sm:text-left">
-        <span className="text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
-          {count}
-        </span>
-        <span className="text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400">
-          {label}
-        </span>
+        {href === undefined ? (
+          term
+        ) : (
+          <ExternalLink href={href} className={COUNT_LINK}>
+            {term}
+          </ExternalLink>
+        )}
       </dt>
       {/* Spaced by margin, not `gap`: a gap on the subgrid would override the catalogue's own. */}
       <dd className="mt-2.5 sm:mt-0">
@@ -73,6 +96,7 @@ function CatalogRow({
 }
 
 export function Hero() {
+  const { locale } = useSiteLocale();
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
@@ -107,6 +131,7 @@ export function Hero() {
           className="hero-automation anim-rise mt-5 leading-6 text-balance break-keep text-gray-600 [overflow-wrap:break-word] sm:leading-8 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
+          <span className="block">{S.hero.subtitle}</span>
           {S.hero.automation}
         </p>
 
@@ -154,6 +179,7 @@ export function Hero() {
             <CatalogRow
               count={S.hero.supportedModelsCount}
               label={S.hero.supportedModelsLabel}
+              href={mmspModelsUrl(locale)}
               delay={300}
               listClassName="gap-x-2 gap-y-1"
             >
