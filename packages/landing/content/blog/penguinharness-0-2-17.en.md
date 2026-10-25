@@ -2,10 +2,10 @@
 title: "PenguinHarness 0.2.17: Agent API record streams, A2UI charts and forms, remote machines"
 date: 2026-10-26
 category: news
-excerpt: "The Agent API now streams a Session's own records, and the old v1 events are gone. Charts and forms appear in replies, the Trace view is rebuilt, and a conversation on a remote machine reads that machine."
+excerpt: "The Agent API now streams a Session's own records, and the old v1 events are gone. Replies gain charts, forms gain new field kinds, the Trajectories panel is rebuilt, and a conversation on a remote machine reads that machine."
 ---
 
-PenguinHarness 0.2.17 is out — an open-source TypeScript harness for AI agents: a Web App, a CLI, a desktop app, a server and an SDK. The Agent API streams a Session's own records, replies can draw `chart`, `resources` and form blocks, the "Trajectories" panel is rebuilt, and a conversation on a remote machine reads that machine. If you call the Agent API, start with Upgrading.
+PenguinHarness 0.2.17 is out — an open-source TypeScript harness for AI agents: a Web App, a CLI, a desktop app, a server and an SDK. The Agent API streams a Session's own records, replies can draw `chart`, `resources` and form blocks, the "Trajectories" panel is rebuilt, and a conversation on a remote machine reads that machine. **If you call the Agent API, start with Upgrading**.
 
 **TL;DR**
 - The Agent API stream is now the Session's records; `run.*`, `K.delta` and `K.done` are gone — upgrade the server and the SDK together
@@ -15,13 +15,13 @@ PenguinHarness 0.2.17 is out — an open-source TypeScript harness for AI agents
 
 ## The Agent API streams the Session's records
 
-The path `/api/amsp/v1` is unchanged, and the stream is the Session's records as the Trace stores them. Each record is the envelope `{timestamp, type, payload, origin?}`, with `partial_*` fragments while a message streams. The old v1 events `run.*`, `K.delta` and `K.done` are gone, and nothing translates records into them any more.
+**The path `/api/amsp/v1` is unchanged, and the stream is the Session's records as the Trace stores them**. Each record is the envelope `{timestamp, type, payload, origin?}`, with `partial_*` fragments while a message streams. The old v1 events `run.*`, `K.delta` and `K.done` are gone, and nothing translates records into them any more.
 
 The control frames are `event: ping` (data `{}`, sent at once and every 20 s) and the closing `data: [DONE]` of a run stream. On a new Session's first message, the first record is `session_meta`, and its `session_id` names the new Session.
 
 A caller with an agent key (sent as `Bearer`) gains routes under `/api/amsp/v1`. `GET sessions/:id/stream` resumes from `Last-Event-ID`; when that id has left the buffer or the server restarted, it answers `409 resync_required`. `GET sessions/:id/messages` serves the history, `GET sessions/:id/trace-image` an image the history references, and `GET sessions/:id/approvals[?wait=1–60]` long-polls the tool calls waiting on a decision. `POST sessions/:id/tasks` starts a run that does not hold the connection; it answers 202 or 409 when the Session is busy, and it is never queued.
 
-The SDK `@prismshadow/amsp` ships at 0.2.17: `AgentClient.stream()` and `AgentClient.run()` keep their 0.2.16 meaning, and `RunResult` is read from the records. The SDK hands each waiting tool call to `onApproval`; with no callback the answer is `deny`. The SDK adds `messages()`, `approvals()`, `SessionReader`, `HttpTransport` and the `Transport` interface, `readSse`, `readAmsp`, and a browser bundle (`@prismshadow/amsp/browser`).
+`@prismshadow/amsp` ships at 0.2.17: `AgentClient.stream()` and `AgentClient.run()` keep their 0.2.16 meaning, and `RunResult` is read from the records. The SDK hands each waiting tool call to `onApproval`; with no callback the answer is `deny`. It adds `messages()`, `approvals()`, `SessionReader`, `HttpTransport` and the `Transport` interface, `readSse`, `readAmsp`, and a browser bundle (`@prismshadow/amsp/browser`).
 
 In the Web App, "Try it" on an agent's "API" tab now runs through the SDK and lists the run's records.
 
@@ -31,7 +31,7 @@ The record set changed too: every Task is wrapped in a `task_begin` / `task_end`
 
 ## Charts and forms in replies
 
-A2UI is the set of blocks an agent writes into a reply and the chat draws as interface elements; it comes from the `a2ui` plugin. This release adds a `chart` block and a `resources` block.
+This release adds a `chart` block and a `resources` block to A2UI, the set of blocks an agent writes into a reply and the chat draws as interface elements; it comes from the `a2ui` plugin.
 
 The `chart` block has seven kinds: `line`, `area` (optionally stacked), `bar` (grouped, stacked or horizontal), `pie` (optionally a donut), `scatter`, `histogram` and `gauge`. All kinds share one data model: categories × 1–6 series, with units on the axes.
 
@@ -39,23 +39,23 @@ The `chart` block has seven kinds: `line`, `area` (optionally stacked), `bar` (g
 
 The `resources` block shows one machine's CPU, memory, swap, disks, network, load and uptime.
 
-Forms have eleven field kinds: `text`, `textarea`, `number`, `slider`, `single`, `multiple`, `select`, `switch`, `date`, `time` and `datetime`. One rule decides whether an answer is valid, and the form's button stays off until every required field is answered and every answer is valid.
+Forms, the blocks that ask the reader several questions at once, now have eleven field kinds: `text`, `textarea`, `number`, `slider`, `single`, `multiple`, `select`, `switch`, `date`, `time` and `datetime`. One rule decides whether an answer is valid, and the form's button stays off until every required field is answered and every answer is valid.
 
 An answered form or choice shows the answers that were sent, also after a page reload and in older conversations. The answers are read back from the message that followed the reply; nothing new is stored.
 
 ![A form block answered and then reloaded, showing the answers read-only](/blog-assets/penguinharness-0-2-17-a2ui-form-en.png)
 
-Updating the `a2ui` plugin gives agents the new blocks (see Upgrading); the same update stops the A2UI checker from grading the prose outside the blocks.
+**Updating the `a2ui` plugin gives agents the new blocks (see Upgrading); the same update stops the A2UI checker from grading the prose outside the blocks**.
 
 ## A rebuilt Trajectories panel
 
-A conversation's "Trajectories" panel is rebuilt around one sticky toolbar: the Trace file picker, the turn button, and an export icon.
+**A conversation's "Trajectories" panel is rebuilt around one sticky toolbar: the Trace file picker, the turn button, and an export icon**.
 
 The turn button names the turn in view and opens the turn navigator ("Turn index"); picking a turn opens it and scrolls to it.
 
 Turns are ruled rows (number, tool calls, cache hit rate, cost, duration), each ending in a context ring. Clicking the ring opens "Turn readings", the turn's token figures and context use.
 
-Each event row shows one pill naming the record's kind, toned by its record family. Each request's thinking level is now recorded on `request_begin` (`thinking_level`), and the view shows it as text where it changes, for example `thinking_level=medium → high`.
+Each event row shows one pill naming the record's kind, toned by its record family. The thinking level of each request is now recorded on `request_begin` (`thinking_level`), and the view shows it as text where it changes, for example `thinking_level=medium → high`.
 
 ![The "Trajectories" panel: toolbar, ruled turn rows with context rings, event rows with pills](/blog-assets/penguinharness-0-2-17-trace-en.png)
 
@@ -63,7 +63,7 @@ A command that exits non-zero, or is killed by a signal, now ends as an ordinary
 
 ## Agents and conversations on remote machines
 
-Agents and conversations on a remote machine are now that machine's own. A remote machine is another computer this server reaches over ssh (the "Machines" page). The "Agents" page lists every connected machine's agents beside this server's, each card named `[SSH: <alias>]`. A machine's agents are opened, edited, chatted with, deleted and given plugins as that machine's own. The create dialog asks for a location: this server or a connected machine.
+**Agents and conversations on a remote machine are now that machine's own**. A remote machine is another computer this server reaches over ssh (the "Machines" page). The "Agents" page lists every connected machine's agents beside this server's, each card named `[SSH: <alias>]`. A machine's agents can be opened, edited, chatted with, deleted and given plugins. The create dialog asks for a location: this server or a connected machine.
 
 ![The "Agents" page listing a machine's agents beside this server's](/blog-assets/penguinharness-0-2-17-machines-en.png)
 
