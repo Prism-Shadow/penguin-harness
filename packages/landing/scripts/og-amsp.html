@@ -4,8 +4,9 @@
   `node scripts/capture-og-cover.mjs amsp`. Static and dependency-free, like og-cover.html, whose
   ground and glows it shares. Edit this file, re-run the script, commit the PNG.
 
-  Composed like MMSP's card (mmsp.penguin.ooo): the mark above the name on the left, the stream
-  as stacked rows on the right. The mark is src/components/amsp-mark.tsx in its dark-mode colours.
+  Composed like MMSP's card (mmsp.penguin.ooo): the mark above the name, the page's headline and
+  subline on the left, the stream as stacked rows on the right. In English only: the shell that
+  carries the card is the English one. The mark is src/components/amsp-mark.tsx in its dark-mode colours.
   The rows are a Session's first message as the page's player shows it: the ones the Trace stores
   on a lighter ground, the fragment muted, the closing task_end in blue. Change them with the
   vocabulary.
@@ -94,8 +95,15 @@
         color: #8ab4f8;
       }
       .tagline {
-        margin: 12px 0 0;
-        font-size: 25px;
+        margin: 14px 0 0;
+        font-size: 27px;
+        font-weight: 600;
+        color: #f0f0f0;
+      }
+      .subline {
+        margin: 8px 0 0;
+        font-size: 20px;
+        line-height: 1.35;
         color: #ababab;
       }
       .stream {
@@ -180,7 +188,8 @@
             </svg>
             <h1>AMSP</h1>
             <p class="name"><b>A</b>gent <b>M</b>essage <b>S</b>tream <b>P</b>rotocol</p>
-            <p class="tagline">One protocol for every agent message</p>
+            <p class="tagline">One protocol for agent communication</p>
+            <p class="subline">Stream, parse and store agent messages with one protocol</p>
           </div>
           <div class="stream">
             <div class="row"><span>event: ping</span><span>{}</span></div>
