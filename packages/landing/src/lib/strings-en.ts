@@ -440,10 +440,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   amsp: {
     title: "AMSP: Agent Message Stream Protocol",
     description:
-      "AMSP is a PenguinHarness agent's Session stream: the model's text and thinking, tool calls and results, approvals, usage and Task boundaries, live over SSE in the records the Trace stores.",
+      "Stream, parse and store agent messages with one protocol: AMSP, the Session stream of a PenguinHarness agent.",
     headline: "One protocol for agent communication",
-    subline:
-      "The model's text and thinking as they stream, each tool call and its result, approvals, token usage and the Task boundaries, delivered live over SSE in the very records the Trace stores.",
+    subline: "Stream, parse and store agent messages with one protocol",
     lineage: " streams one model call; AMSP streams an agent's Session.",
     reference: "Protocol reference",
     copyPrompt: "Copy prompt for a coding agent",
@@ -483,9 +482,15 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         "A tool runs once its call is complete; its tool_call_output completes after request_end, and the next Request starts from it.",
       ],
       boundaries: "event_msg: a Task or a Request, from its begin record to its end record",
-      partial:
-        "model_msg: a message as it is produced, streamed as partial_* fragments (live only)",
-      complete: "its complete record, stored in the Trace",
+      /** What each colour is, in the terms of the Web App Trace view's legend. */
+      kinds: {
+        thinking: "thinking",
+        text: "text, the reply",
+        tool_call: "tool_call, the call being written",
+        tool_call_output: "tool_call_output, the tool running",
+      },
+      complete:
+        "model_msg: a message streams as partial_* fragments (live only) and ends in its complete record, stored in the Trace",
     },
 
     records: {

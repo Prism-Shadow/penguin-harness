@@ -404,10 +404,14 @@ export function stepLine(step: RunStep): StepLine {
   }
 }
 
-/** The pace of the replay: the recorded gap between two steps, held within these bounds. */
-export const FIRST_STEP_MS = 300;
-export const MIN_STEP_MS = 120;
-export const MAX_STEP_MS = 900;
+/**
+ * The pace of the replay: each step waits its recorded gap, held within these bounds. Steps the
+ * server sent together (a millisecond apart) arrive one by one, slowly enough to read each row;
+ * a longer wait the run really had (the first token, a tool running) is kept up to the cap.
+ */
+export const FIRST_STEP_MS = 400;
+export const MIN_STEP_MS = 400;
+export const MAX_STEP_MS = 1200;
 
 /** When a step happened: a record's timestamp, a request's time; frames carry none. */
 const timeOf = (step: RunStep): number | null =>

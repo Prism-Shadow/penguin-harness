@@ -7,20 +7,22 @@
  * where the one before it ended to its complete record; the only blank stretches are between the
  * Requests, where a tool runs, and each `tool_call_output` bar sits in its own.
  *
- * Colour says the family, as everywhere on the page (lib/amsp-tones.ts): the Task and Request
- * spans are bounded by `event_msg` records, in amber; the messages are `model_msg`, in blue, each
- * ending in its complete record. One grid holds it all: the level names in a column of their own,
- * then one lane per level, the names too long for their bar and the axis, every one on the same
- * scale, and the legend starting where the lanes start. A bar wide enough holds its label; a
- * narrow one is named under the lane, beside its neighbour. On a phone the bars stay and the same
- * steps in words take the labels' place; a screen reader hears the figure's label and the steps at
- * every width.
+ * The Task and Request spans are bounded by `event_msg` records, in that family's amber tints, as
+ * everywhere on the page (lib/amsp-tones.ts). The messages take the colours the Web App's Trace
+ * view gives each kind (its default theme's chart series, light and dark): thinking violet, the
+ * reply sky, a tool call as the model writes it amber, a tool's run up to its output emerald; each
+ * ends in its complete record, a rule in the page's ink at the bar's end. One grid holds it all:
+ * the level names in a column of their own, then one lane per level, the names too long for their
+ * bar and the axis, every one on the same scale, and the legend starting where the lanes start.
+ * A bar wide enough holds its label; a narrow one is named under the lane, beside its neighbour.
+ * On a phone the bars stay and the same steps in words take the labels' place; a screen reader
+ * hears the figure's label and the steps at every width.
  */
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { CHART_SCENARIO, recordsOf } from "../../lib/amsp-demo";
 import { runSpans } from "../../lib/amsp-replay";
-import type { MessageSpan, RunSpans, Span } from "../../lib/amsp-replay";
+import type { ItemKind, MessageSpan, RunSpans, Span } from "../../lib/amsp-replay";
 import { TONES } from "../../lib/amsp-tones";
 import { Section } from "../../components/section";
 
@@ -40,16 +42,30 @@ const LANE = "relative h-7";
 const BAR =
   "absolute inset-y-0 flex items-center justify-between gap-2 overflow-hidden px-2 font-mono text-[12px] whitespace-nowrap";
 /**
- * Light tints of each family, a step deeper for the Request than for the Task it sits in; the
+ * Light tints of `event_msg`, a step deeper for the Request than for the Task it sits in; the
  * amber spans keep a hairline edge so they hold on any page ground.
  */
 const TONE = {
   task: `${TONES.event.ground} ${TONES.event.ink} ring-1 ring-amber-200/80 ring-inset dark:ring-amber-400/15`,
   request: `${TONES.event.fill} ${TONES.event.ink} ring-1 ring-amber-200 ring-inset dark:ring-amber-400/20`,
-  message: `${TONES.model.fill} ${TONES.model.ink}`,
 };
-/** The complete record that closes a message: its bar's end, in the deep blue. */
-const RECORD_CAP = "border-r-2 border-brand-600 dark:border-brand-300";
+/**
+ * Each kind of message in the Trace view's colour for it, in the legend's order. The ink is dark
+ * on every one: it reads at 4.5 : 1 or better on all four, in both themes.
+ */
+const KIND_TONE: Record<ItemKind, string> = {
+  thinking: "bg-violet-500",
+  text: "bg-sky-600",
+  tool_call: "bg-amber-600",
+  tool_call_output: "bg-emerald-600 dark:bg-emerald-400",
+};
+const KINDS = Object.keys(KIND_TONE) as ItemKind[];
+const MESSAGE_INK = "text-gray-950";
+/**
+ * The complete record that closes a message: its bar's end, dark on a light page, light on a dark
+ * one.
+ */
+const RECORD_CAP = "border-r-2 border-gray-950 dark:border-white";
 
 const at = (ms: number, total: number) => `${(100 * ms) / total}%`;
 
@@ -132,7 +148,7 @@ function StructureChart({ spans }: { spans: RunSpans }) {
             key={span.begin}
             span={span}
             total={total}
-            className={`${TONE.message} ${RECORD_CAP}`}
+            className={`${KIND_TONE[span.kind]} ${MESSAGE_INK} ${RECORD_CAP}`}
             title={`${span.kind} · ${duration(span)}`}
           >
             {fits(span, total) && <span className="hidden sm:inline">{span.kind}</span>}
@@ -185,19 +201,24 @@ export function AmspStructure() {
         {SPANS !== null && <StructureChart spans={SPANS} />}
         <div className="mt-4 grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 sm:grid-cols-[5.5rem_minmax(0,1fr)]">
           <div className="col-span-2 space-y-3 sm:col-span-1 sm:col-start-2">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
-              <span className="inline-flex items-center gap-2">
-                <span aria-hidden="true" className={`h-3 w-7 ${TONE.request}`} />
+            {/* One line per level: the spans, the kinds of message, the record that ends one. */}
+            <div className="space-y-2 text-xs text-gray-500 dark:text-gray-400">
+              <p className="flex items-center gap-2">
+                <span aria-hidden="true" className={`h-3 w-7 shrink-0 ${TONE.request}`} />
                 {M.boundaries}
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <span aria-hidden="true" className={`h-3 w-7 ${TONE.message}`} />
-                {M.partial}
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <span aria-hidden="true" className={`h-3 w-0 ${RECORD_CAP}`} />
+              </p>
+              <p className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                {KINDS.map((kind) => (
+                  <span key={kind} className="inline-flex items-center gap-2">
+                    <span aria-hidden="true" className={`h-3 w-7 shrink-0 ${KIND_TONE[kind]}`} />
+                    {M.kinds[kind]}
+                  </span>
+                ))}
+              </p>
+              <p className="flex items-center gap-2">
+                <span aria-hidden="true" className={`h-3 w-0 shrink-0 ${RECORD_CAP}`} />
                 {M.complete}
-              </span>
+              </p>
             </div>
             <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-gray-600 sm:sr-only dark:text-gray-300">
               {M.steps.map((step) => (

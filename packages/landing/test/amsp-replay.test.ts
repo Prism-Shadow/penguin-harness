@@ -214,10 +214,10 @@ describe("the replay's pace", () => {
     const steps = [
       text(0, "start", ""),
       text(5, "delta", "a"),
-      text(405, "delta", "b"),
-      text(9405, "stop", ""),
+      text(705, "delta", "b"),
+      text(9705, "stop", ""),
     ].map(step);
-    expect(stepDelays(steps)).toEqual([FIRST_STEP_MS, MIN_STEP_MS, 400, MAX_STEP_MS]);
+    expect(stepDelays(steps)).toEqual([FIRST_STEP_MS, MIN_STEP_MS, 700, MAX_STEP_MS]);
   });
 });
 

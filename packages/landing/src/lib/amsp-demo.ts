@@ -22,9 +22,11 @@
  *
  * The timings are those of a real agent run: the first token a second or more after the request,
  * a few seconds of thinking, a `date` call that runs for a fifth of a second, a second Request of
- * a few seconds; records that follow one another at once are a millisecond apart. Each message is
- * shown as one `delta` (a real stream sends many), so a whole run fits the player at once. The
- * model is a script (`mock/scripted-model`), so its words and token counts are illustrative.
+ * a few seconds; records that follow one another at once are a millisecond apart. The first run's
+ * answer streams as two `delta`s, its text split mid-sentence, so a reader sees what a delta is: a
+ * piece of the message, the complete record holding them joined. Every other message is one
+ * `delta` (a real stream sends many), so a whole run fits the player at once. The model is a
+ * script (`mock/scripted-model`), so its words and token counts are illustrative.
  *
  * Typed on amsp-protocol.ts, so a kind the vocabulary does not list fails to typecheck.
  * test/amsp-demo.test.ts holds the runs to the protocol's ordering rules.
@@ -184,8 +186,10 @@ const joined = (pieces: readonly (readonly [number, string])[]) =>
 const THINKING = [
   [1300, "The user wants the current time. I'll read the server's clock with date."],
 ] as const;
+/** Two pieces, split mid-sentence: the reply as it streams. */
 const ANSWER = [
-  [600, "It's 09:41 UTC on Wednesday, October 21, 2026, by the server's clock."],
+  [600, "It's 09:41 UTC"],
+  [380, " on Wednesday, October 21, 2026, by the server's clock."],
 ] as const;
 const CLOCK = "Wed Oct 21 09:41:11 UTC 2026\n";
 
@@ -273,7 +277,7 @@ const FIRST_RUN = timed("2026-10-21T09:41:07.000Z", EPOCH, [
   ],
   // The next Request opens on the tool's output.
   [1, record({ type: "request_begin", thinking_level: "medium" })],
-  ...streamed("partial_text", 1250, ANSWER, 620),
+  ...streamed("partial_text", 1250, ANSWER, 240),
   [1, model({ type: "text", role: "assistant", text: joined(ANSWER) })],
   [1, record({ type: "token_usage", session: add(REQUEST_1, REQUEST_2), request: REQUEST_2 })],
   [1, record({ type: "request_end", status: "completed" })],

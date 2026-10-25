@@ -298,7 +298,7 @@ html.dark .amsp-code .shiki span {
 }
 /* The player's code panel, as mmsp.penguin.ooo's: on the panel's own ground, under its label. */
 .amsp-code-panel .site-code pre {
-  padding: 0.375rem 0.75rem 0.625rem;
+  padding: 0.375rem 0.75rem 0.5rem;
 }
 /* The usage bars grow in when the run ends (the outcome mounts with [DONE]). Reduced motion stops
    the animation and leaves them at full length. */

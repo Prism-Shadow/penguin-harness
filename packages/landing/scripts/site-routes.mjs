@@ -69,7 +69,7 @@ function newestDate(dir, slug) {
 const AMSP_META = {
   title: "AMSP: Agent Message Stream Protocol",
   description:
-    "AMSP is the event stream of a PenguinHarness agent: the model's text and thinking, tool calls and results, approvals, usage and run boundaries, live over SSE in the records the Trace stores.",
+    "Stream, parse and store agent messages with one protocol: AMSP, the Session stream of a PenguinHarness agent.",
   image: "/og-amsp.png",
   imageAlt: "AMSP: Agent Message Stream Protocol",
 };

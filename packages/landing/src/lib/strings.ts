@@ -436,11 +436,11 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     /** The tab title and description while the page is open; the static shell carries the English pair (scripts/site-routes.mjs). */
     title: "AMSP：Agent Message Stream Protocol",
     description:
-      "AMSP 是 PenguinHarness Agent 的 Session 流：模型的文本与思考、工具调用与结果、审批、用量和 Task 边界，经 SSE 实时送达，与 Trace 存下的记录一致。",
-    /** No-break spaces keep 「所有 Agent 消息」 on one line: the headline breaks at its comma. */
+      "用同一种协议流式传输、解析和存储 Agent 消息：AMSP，PenguinHarness Agent 的 Session 流。",
+    /** A no-break space keeps 「Agent 通信」 together where the headline wraps. */
     headline: "Agent\u00a0通信统一协议",
-    subline:
-      "模型的文本和思考、每次工具调用及其结果、审批、Token 用量和 Task 边界，经 SSE 实时送达，用的就是 Trace 存下的那些记录。",
+    /** No full stop, like MMSP's subtitle. */
+    subline: "用同一种协议流式传输、解析和存储 Agent 消息",
     /** The sentence after the "MMSP" link, which opens it. */
     lineage: " 传输一次模型调用；AMSP 传输 Agent 的一个 Session。",
     reference: "协议参考",
@@ -487,8 +487,14 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         "工具在调用完整后开始运行；它的 tool_call_output 在 request_end 之后才完成，下一个 Request 从它开始。",
       ],
       boundaries: "event_msg：Task 或 Request，从开始记录到结束记录",
-      partial: "model_msg：一条消息的生成过程，以 partial_* 片段流出（仅实时）",
-      complete: "它的完整记录，写入 Trace",
+      /** The Web App Trace view's names for the same colours, verbatim from packages/web's zh dictionary. */
+      kinds: {
+        thinking: "thinking：思考",
+        text: "text：模型回复",
+        tool_call: "tool_call：工具调用生成",
+        tool_call_output: "tool_call_output：工具调用执行",
+      },
+      complete: "model_msg：消息先以 partial_* 片段流出（仅实时），止于它的完整记录，写入 Trace",
     },
 
     /** Every record field by field (sections/amsp/records.tsx), keyed by lib/amsp-vocabulary.ts and lib/amsp-records.ts. */

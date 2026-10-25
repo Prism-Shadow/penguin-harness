@@ -11,9 +11,10 @@
  * blue, `event_msg` in amber, `session_meta` and the frames in gray; a record the Trace stores sits
  * on its family's light tint, a `partial_*` fragment, live only, has none.
  *
- * Paced by the run's own timestamps (lib/amsp-replay.ts `stepDelays`, faster than real time), one
- * timer at a time, only while the player is on screen and not paused; after the last event it
- * rests, then plays again. Under reduced motion it shows each run finished and never plays.
+ * Paced by the run's own timestamps (lib/amsp-replay.ts `stepDelays`: records sent together arrive
+ * a readable beat apart, long waits are capped), one timer at a time, only while the player is on
+ * screen and not paused; after the last event it rests, then plays again. Under reduced motion it
+ * shows each run finished and never plays.
  *
  * Nothing scrolls: the stream pane lists every step of the run, one 20-pixel line each (a preview
  * is shortened to its column), and the tab panel holds the height of the tallest finished run
@@ -113,7 +114,7 @@ export function StreamPlayer() {
   return (
     <div ref={rootRef}>
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 text-left dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex flex-wrap items-center gap-1 border-b border-gray-200 px-2 pt-2 dark:border-gray-800">
+        <div className="flex flex-wrap items-center gap-1 border-b border-gray-200 px-2 pt-1.5 dark:border-gray-800">
           <div
             ref={tabsRef}
             role="tablist"
@@ -131,7 +132,7 @@ export function StreamPlayer() {
                 aria-selected={i === index}
                 tabIndex={i === index ? 0 : -1}
                 onClick={() => choose(i)}
-                className="rounded-t-md border-b-2 border-transparent px-2.5 py-1.5 text-[13px] text-gray-500 transition-colors hover:text-gray-900 aria-selected:border-brand-600 aria-selected:font-medium aria-selected:text-brand-700 dark:text-gray-400 dark:hover:text-gray-100 dark:aria-selected:border-brand-400 dark:aria-selected:text-brand-300"
+                className="rounded-t-md border-b-2 border-transparent px-2.5 py-1 text-[13px] text-gray-500 transition-colors hover:text-gray-900 aria-selected:border-brand-600 aria-selected:font-medium aria-selected:text-brand-700 dark:text-gray-400 dark:hover:text-gray-100 dark:aria-selected:border-brand-400 dark:aria-selected:text-brand-300"
               >
                 {P.scenarios[candidate.id]}
               </button>
@@ -186,27 +187,27 @@ function Panel({
   const P = S.amsp.player;
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-gray-200 px-3 pt-2.5 dark:border-gray-800">
+      <div className="border-b border-gray-200 px-3 pt-2 dark:border-gray-800">
         <h3 className={PANE_LABEL}>{P.input}</h3>
         <div className="amsp-code amsp-code-panel -mx-3">
           <SiteCodeBlock code={CODE[index]!} language="typescript" highlight={highlightSiteCode} />
         </div>
       </div>
       <div className="grid flex-1 gap-px bg-gray-200 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] dark:bg-gray-800">
-        <section className="min-w-0 bg-gray-50 px-3 pt-2.5 pb-2 dark:bg-gray-900">
+        <section className="min-w-0 bg-gray-50 px-3 pt-2 pb-1.5 dark:bg-gray-900">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <h3 className={PANE_LABEL}>{P.events}</h3>
             <StreamLegend />
           </div>
-          <ol aria-live="off" className="mt-1.5 font-mono text-[12px]">
+          <ol aria-live="off" className="mt-1 font-mono text-[12px]">
             {lines.map((line, i) => (
               <StreamRow key={live ? i : `${index}-${i}`} line={line} />
             ))}
           </ol>
         </section>
-        <section className="min-w-0 bg-gray-50 px-3 pt-2.5 pb-2 dark:bg-gray-900">
+        <section className="min-w-0 bg-gray-50 px-3 pt-2 pb-1.5 dark:bg-gray-900">
           <h3 className={PANE_LABEL}>{P.assembled}</h3>
-          <div className="mt-1.5">
+          <div className="mt-1">
             <Assembled state={state} />
           </div>
         </section>

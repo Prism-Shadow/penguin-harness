@@ -11,7 +11,8 @@
  * - Given any run, `task_begin` and `task_end` enclose its records and each `request_begin` is
  *   closed by a `request_end` before the next one opens.
  * - Given a streamed message, its fragments go start → delta* → stop, and its complete record
- *   follows the stop at once, an interrupted message's included.
+ *   follows the stop at once, holding what the deltas carried, an interrupted message's included;
+ *   the first run's answer streams as more than one delta.
  * - Given a tool call, its output completes after its call and before the next Request, and says
  *   what it is in its `status`.
  * - Given the interrupted run, the caller's abort comes while the reply streams, the reply closes
@@ -109,6 +110,20 @@ describe.each([...SCENARIOS, CHART_SCENARIO].map((scenario) => [scenario.id, sce
       for (const stop of fragments.filter((fragment) => fragment.phase === "stop")) {
         expect(kindOf(records[stop.at + 1]!)).toBe(stop.type.slice("partial_".length));
       }
+      // …holding its deltas joined.
+      const content = (record: AmspRecord): string => {
+        if (record.type !== "model_msg") return "";
+        const p = record.payload;
+        if ("text" in p) return p.text;
+        if ("thinking" in p) return p.thinking;
+        if ("arguments" in p) return p.arguments;
+        return "output" in p ? p.output : "";
+      };
+      for (const stop of fragments.filter((fragment) => fragment.phase === "stop")) {
+        const start = fragments.findLast((f) => f.phase === "start" && f.at < stop.at)!;
+        const said = records.slice(start.at, stop.at).map(content).join("");
+        expect(content(records[stop.at + 1]!)).toBe(said);
+      }
     });
 
     it("completes a tool's output after its call and before the next Request, with its status", () => {
@@ -155,3 +170,18 @@ describe.each([...SCENARIOS, CHART_SCENARIO].map((scenario) => [scenario.id, sce
     });
   },
 );
+
+describe("the first run's answer", () => {
+  it("streams as more than one delta, the text split mid-sentence", () => {
+    const first = SCENARIOS.find((scenario) => scenario.id === "first")!;
+    const pieces = recordsOf(first.steps).flatMap((record) =>
+      record.type === "model_msg" &&
+      record.payload.type === "partial_text" &&
+      record.payload.event_type === "delta"
+        ? [record.payload.text]
+        : [],
+    );
+    expect(pieces.length).toBeGreaterThan(1);
+    expect(pieces[0]).not.toMatch(/[.!?]$/);
+  });
+});
