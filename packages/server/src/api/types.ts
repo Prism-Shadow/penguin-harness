@@ -1018,7 +1018,8 @@ export interface ModelBalanceFailure {
 /**
  * How the authorization code travels back. `callback` sends the browser to a harness URL
  * the provider redirects to; `manual` asks the provider for a one-time code the user copies
- * back by hand, for the case where that redirect cannot reach the harness.
+ * back by hand, for the case where that redirect cannot reach the harness — or where the
+ * provider would refuse it: only an HTTPS or loopback HTTP origin can be redirected to.
  */
 export type ModelOAuthMode = "callback" | "manual";
 
@@ -1030,7 +1031,7 @@ export type ModelOAuthMode = "callback" | "manual";
 export interface ModelOAuthStartRequest {
   /** Provider group id (must be a catalog group that publishes a key-minting flow). */
   provider: string;
-  /** Defaults to `callback`. */
+  /** Defaults to `callback`; the response says which mode the flow was opened in. */
   mode?: ModelOAuthMode;
 }
 
@@ -1038,6 +1039,12 @@ export interface ModelOAuthStartRequest {
 export interface ModelOAuthStartResponse {
   flowId: string;
   authorizeUrl: string;
+  /**
+   * The mode the flow was opened in: `manual` for a `callback` request when the origin the
+   * request reached this server on is neither HTTPS nor loopback HTTP, which the provider's
+   * authorization page refuses as a callback.
+   */
+  mode: ModelOAuthMode;
 }
 
 /** Why a flow failed, as a code the frontend phrases; never carries a code, a verifier or a key. */

@@ -93,10 +93,44 @@ export type ModelOAuthErrorCode =
   /** A key was minted but could not be written into the Project's models. */
   | "apply_failed";
 
-/** What `start` hands back to the Web App: an opaque id plus the page to send the user to. */
+/**
+ * What `start` hands back to the Web App: an opaque id, the page to send the user to, and the
+ * mode the flow was actually opened in, which is `manual` whenever the redirect could not be.
+ */
 export interface ModelOAuthStartResult {
   flowId: string;
   authorizeUrl: string;
+  mode: ModelOAuthMode;
+}
+
+/**
+ * The mode a flow opens in, given the one asked for and the origin the redirect would return
+ * to.
+ *
+ * The authorization page refuses the whole request as invalid when its `callback_url` is
+ * anything but HTTPS or plain HTTP to a loopback host — `localhost`, `[::1]` or a `127.x.x.x`
+ * address, the set it accepts. A Web App reached over plain HTTP on a LAN address, a hostname
+ * or `0.0.0.0` therefore cannot be redirected back to, and offering the redirect there only
+ * strands the user on an error page. Such a request opens a manual flow instead: no callback
+ * URL, the same S256 challenge, the one-time code carried back by hand.
+ */
+export function openedMode(asked: ModelOAuthMode, callbackOrigin: string): ModelOAuthMode {
+  if (asked === "manual") return "manual";
+  let origin: URL;
+  try {
+    origin = new URL(callbackOrigin);
+  } catch {
+    // A forwarded host that does not parse names nowhere a browser can be sent.
+    return "manual";
+  }
+  if (origin.protocol === "https:") return "callback";
+  // The URL parser has already lowercased the host and normalized IPv4 shorthand (`127.1`)
+  // and IPv6 (`[0:0:0:0:0:0:0:1]`) to the forms the page compares against.
+  const loopback =
+    origin.hostname === "localhost" ||
+    origin.hostname === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(origin.hostname);
+  return origin.protocol === "http:" && loopback ? "callback" : "manual";
 }
 
 /**
@@ -221,13 +255,17 @@ export class ModelOAuthService implements ModelOAuth {
    * that declares no `oauth` cannot be talked into one, and the authorize/exchange
    * endpoints are always the catalog's, so client input never chooses who receives the
    * challenge or who is asked for a key.
+   *
+   * A redirect that the authorization page would refuse is not asked for: the flow opens in
+   * manual mode instead (see {@link openedMode}) and the result says so.
    */
   start(input: {
     projectId: string;
     userId: string;
     provider: string;
+    /** The mode asked for; `callback` can still open as `manual`. */
     mode: ModelOAuthMode;
-    /** Where the provider should send the browser back to; ignored in manual mode. */
+    /** Where the provider should send the browser back to; unused by a manual flow. */
     callbackOrigin: string;
   }): ModelOAuthStartResult {
     const oauth = providerInfo(input.provider)?.oauth;
@@ -240,10 +278,11 @@ export class ModelOAuthService implements ModelOAuth {
     const flowId = randomBytes(32).toString("base64url");
     const verifier = createVerifier();
     const createdAt = this.now();
+    const mode = openedMode(input.mode, input.callbackOrigin);
     // The callback keeps its own query string: the provider appends `code=` to whatever
     // path and parameters it was given, so the flow id rides back with the code.
     const callbackUrl =
-      input.mode === "callback"
+      mode === "callback"
         ? `${input.callbackOrigin}/api/projects/${encodeURIComponent(input.projectId)}/model-oauth/callback?flow=${encodeURIComponent(flowId)}`
         : undefined;
     this.flows.set(flowId, {
@@ -251,7 +290,7 @@ export class ModelOAuthService implements ModelOAuth {
       projectId: input.projectId,
       userId: input.userId,
       provider: input.provider,
-      mode: input.mode,
+      mode,
       exchangeUrl: oauth.exchangeUrl,
       verifier,
       code: null,
@@ -266,6 +305,7 @@ export class ModelOAuthService implements ModelOAuth {
         challenge: codeChallenge(verifier),
         ...(callbackUrl !== undefined ? { callbackUrl } : {}),
       }),
+      mode,
     };
   }
 
