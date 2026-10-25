@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** process
 - **Scope:** `docs`, `landing`, `skills`, `tooling`
+- **PR:** [#1323](https://github.com/Prism-Shadow/penguin-harness/pull/1323)
 
 [English](2026-10-26-docs-corrections-0-2-17.md)
 
