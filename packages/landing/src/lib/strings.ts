@@ -13,8 +13,7 @@ export const zh = {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    geminiArgon: "Gemini 4 Argon 已上线，查看 0.2.16 更新日志",
-    tokenDanceChallenge: "TokenDance Agent 冲榜赛：15,000 元 Token 奖池，10 月 23 日截止",
+    release0217: "PenguinHarness 0.2.17 已发布：Agent API 记录流、统计图、表单，查看更新日志",
     penguinGo: "Penguin Go 官方 Token 包上线，Gemini 全系列模型 5 折",
   },
 

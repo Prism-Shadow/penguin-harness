@@ -141,6 +141,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("filters by the news category, newest first", () => {
     expect(postsFor("en", "news").map((p) => p.slug)).toEqual([
       "introducing-penguinharness",
+      "penguinharness-0-2-17",
       "penguinharness-0-2-16",
       "tokendance-agent-challenge",
       "penguinharness-0-2-15",

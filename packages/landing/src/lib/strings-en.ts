@@ -13,8 +13,7 @@ export const en: Strings = {
     label: "Announcements",
     prev: "Previous announcement",
     next: "Next announcement",
-    geminiArgon: "Gemini 4 Argon is now available — see the 0.2.16 release notes",
-    tokenDanceChallenge: "TokenDance Agent Challenge: ¥15,000 in token credits, through October 23",
+    release0217: "PenguinHarness 0.2.17: Agent API record streams, charts and forms — see release notes",
     penguinGo: "Penguin Go official Token packs are live: 50% off every Gemini model",
   },
 
