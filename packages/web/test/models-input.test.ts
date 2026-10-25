@@ -667,11 +667,12 @@ describe("connectionPlaceholders (what a blank API key or base URL field says)",
       apiKey: S.models.apiKeyEnvHint("DEEPSEEK_API_KEY"),
       baseUrl: S.models.baseUrlDefault,
     });
+    // Nothing covers a blank key here (no key, no group, no variable set): the field asks for one.
     expect(
       connectionPlaceholders(draft({ provider: "my-group" }), undefined, {
         baseUrlRequired: true,
       }),
-    ).toEqual({ apiKey: undefined, baseUrl: undefined });
+    ).toEqual({ apiKey: S.models.apiKeyEnterHint, baseUrl: undefined });
     // A table with a key but no URL lends the key to models without one of their own.
     expect(connectionPlaceholders(draft(), { apiKeyMasked: "sk-g…2222" }, plain)).toEqual({
       apiKey: S.models.inheritFromGroup,

@@ -345,7 +345,7 @@ export function ProviderSettingsDialog({
     ? S.models.apiKeyKeepHint
     : envKey !== undefined
       ? S.models.apiKeyEnvHint(envKey)
-      : undefined;
+      : S.models.apiKeyEnterHint;
   const required = providerBaseUrlRequired(id, rows);
   /** Why the base URL as typed cannot be saved, or null; said under the field once something changed. */
   const urlProblem = providerBaseUrlError(id, rows, draft);

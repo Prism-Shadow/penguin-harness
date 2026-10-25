@@ -2360,6 +2360,8 @@ export const zh = {
     apiKey: "API key",
     apiKeyKeepHint: "留空保留现有 key",
     apiKeyEnvHint: (envKey: string): string => `留空则使用环境变量 ${envKey}`,
+    /** The API key placeholder where nothing covers a blank field: no stored key, no group key that reaches the model, no environment variable the server reports set. */
+    apiKeyEnterHint: "请填写 API key",
     keyConfigured: "已配置 key",
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",

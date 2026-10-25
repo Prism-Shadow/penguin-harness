@@ -31,7 +31,8 @@
  *   needs one, the field shows the base URL the group stores and carries no placeholder; a blank
  *   one is refused (see "a blank group base URL").
  * - A blank group key promises an environment variable only for a group with no base URL — the
- *   vendor's own endpoint included — and only one the server proved is set.
+ *   vendor's own endpoint included — and only one the server proved is set. A stored key says it
+ *   is kept; with neither, the key field asks for a key.
  * - A model with nothing of its own follows the group's table field by field, and a field the
  *   table leaves blank is the client's default — never the catalog's value.
  * - A group key reaches a model with no base URL of its own or one on the group's origin; a
@@ -378,6 +379,7 @@ describe("what the group settings dialog shows", () => {
     id: string,
     group: ProviderConnectionDto | undefined,
     rows: ReturnType<typeof row>[] = [],
+    detectedEnvKeys: ReadonlySet<string> = new Set<string>(),
   ) =>
     renderToStaticMarkup(
       createElement(ProviderSettingsDialog, {
@@ -385,7 +387,7 @@ describe("what the group settings dialog shows", () => {
         provider: providerInfo(id) ?? userProviderInfo(id),
         group,
         rows,
-        detectedEnvKeys: new Set<string>(),
+        detectedEnvKeys,
         onClose: () => {},
         onSaved: () => {},
       }),
@@ -426,6 +428,21 @@ describe("what the group settings dialog shows", () => {
     const deepseek = dialog("deepseek", undefined);
     expect(deepseek).toContain(`placeholder="${S.models.baseUrlDefault}"`);
     expect(deepseek).not.toContain("api.deepseek.com");
+  });
+
+  it("names a variable the server reports set, says a stored key is kept, and otherwise asks for a key", () => {
+    const keyPlaceholder = (html: string) =>
+      html.match(/<input[^>]*aria-label="API key"[^>]*>/)?.[0]?.match(/placeholder="([^"]*)"/)?.[1];
+    const set = new Set(["DEEPSEEK_API_KEY"]);
+    expect(keyPlaceholder(dialog("deepseek", undefined, [], set))).toBe(
+      S.models.apiKeyEnvHint("DEEPSEEK_API_KEY"),
+    );
+    expect(keyPlaceholder(dialog("deepseek", undefined))).toBe(S.models.apiKeyEnterHint);
+    expect(keyPlaceholder(dialog("deepseek", { apiKeyMasked: "sk-d…1111" }, [], set))).toBe(
+      S.models.apiKeyKeepHint,
+    );
+    // A user-defined group's client reads no variable of its own.
+    expect(keyPlaceholder(dialog("my-group", undefined))).toBe(S.models.apiKeyEnterHint);
   });
 
   it("shows the stored base URL where the group needs one, and never offers to leave it blank", () => {

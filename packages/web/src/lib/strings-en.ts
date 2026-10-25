@@ -2205,6 +2205,7 @@ export const en: Strings = {
     apiKey: "API key",
     apiKeyKeepHint: "Leave empty to keep the current key",
     apiKeyEnvHint: (envKey: string): string => `Leave empty to use the ${envKey} env var`,
+    apiKeyEnterHint: "Enter an API key",
     keyConfigured: "Key configured",
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",

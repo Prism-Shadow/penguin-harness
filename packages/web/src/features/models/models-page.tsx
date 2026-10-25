@@ -765,7 +765,7 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *   reaches the model (connection.ts) means it follows the group; a variable the environment
  *   holds (`envKey`, only where nothing else covers the model) means the environment answers; a
  *   group key that does NOT reach the model — its own base URL is on another origin — is said
- *   outright, since the card will read "not configured"; otherwise nothing truthful can be said.
+ *   outright, since the card will read "not configured"; otherwise the field asks for a key.
  * - Base URL: the group's setting where it has one; else nothing where the field is required
  *   (it cannot be saved blank, which its asterisk and error say); else that a blank one uses
  *   the default, without naming it.
@@ -774,7 +774,7 @@ export function connectionPlaceholders(
   draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
   group: ProviderConnectionDto | undefined,
   { envKey, baseUrlRequired }: { envKey?: string | undefined; baseUrlRequired: boolean },
-): { apiKey: string | undefined; baseUrl: string | undefined } {
+): { apiKey: string; baseUrl: string | undefined } {
   const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
   const apiKey = draft.credential?.apiKeyMasked
     ? S.models.apiKeyKeepHint
@@ -784,7 +784,7 @@ export function connectionPlaceholders(
         ? S.models.apiKeyEnvHint(envKey)
         : groupKeyMissesRow(draft.baseUrl, group)
           ? S.models.keyNotReachedNote
-          : undefined;
+          : S.models.apiKeyEnterHint;
   const baseUrl =
     inherited.baseUrl !== undefined
       ? S.models.inheritFromGroup
