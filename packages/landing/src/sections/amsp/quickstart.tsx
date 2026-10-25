@@ -107,15 +107,11 @@ export function AmspQuickstart() {
                     highlight={highlightSiteCode}
                   />
                 </div>
-                <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
-                  {Q.run.sdkNote}
-                </p>
               </>
             ) : (
               <>
                 <CodeCard code={CURL_RUN} label="curl" className="amsp-wrap" />
                 <CodeCard code={response} label={Q.curl.response} className="amsp-wrap" />
-                <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">{Q.curl.note}</p>
               </>
             )}
           </div>

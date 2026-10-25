@@ -756,12 +756,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         label: "How to run it",
         typescript: "TypeScript",
         curl: "curl",
-        sdkNote:
-          "stream() starts the run and returns it: iterate it for the records, then await result() for the outcome. run() returns the outcome alone.",
       },
       curl: {
         response: "response",
-        note: "The answer is the run itself: a ping opens it, then one event with an id per record, and data: [DONE] ends it. On a Session's first message the first record is session_meta, whose session_id names the Session; to continue, send that id as session_id.",
         elided: "one event per record",
       },
     },

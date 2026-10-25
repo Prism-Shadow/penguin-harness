@@ -743,12 +743,9 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         label: "运行方式",
         typescript: "TypeScript",
         curl: "curl",
-        sdkNote:
-          "stream() 发起运行并返回它：遍历它拿到每条记录，再 await result() 得到结果。run() 只返回结果。",
       },
       curl: {
         response: "响应",
-        note: "响应就是这次运行本身：先是一个 ping，随后每条记录一个带 id 的事件，最后以 data: [DONE] 结束。Session 的首条消息里，第一条记录是 session_meta，其 session_id 即这个 Session 的 id；延续对话时把它作为 session_id 传回。",
         elided: "每条记录一个事件",
       },
     },
