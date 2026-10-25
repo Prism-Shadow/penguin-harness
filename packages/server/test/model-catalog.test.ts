@@ -37,6 +37,7 @@ import {
   fastModeProtocol,
   isAddableGroup,
   isVendorGroup,
+  modelCalledKeyless,
   modelEnvPreviewKey,
   modelEnvironment,
   modelHomepageUrl,
@@ -45,6 +46,7 @@ import {
   presetModelEntries,
   presetPromotions,
   presetProviderTable,
+  providerCalledKeyless,
   providerClientType,
   providerEnvFallbackKey,
   providerInfo,
@@ -2423,6 +2425,46 @@ describe("environment variable names (what MMSP's routed client reads)", () => {
     ).toEqual({});
     expect(modelEnvironment({ provider: "deepseek", modelId: "qwen/qwen3.8" }, undefined)).toEqual(
       {},
+    );
+  });
+
+  it("a blank key is sent as none only to an open server's client, never to a sign-in-keyed relay", () => {
+    const vllm = { clientType: "openai-chat-vllm-adapter" };
+    // vLLM handed a base URL, its own default included, or none (its variable unset); an MMSP
+    // server.
+    expect(providerCalledKeyless("vllm", { ...vllm, baseUrl: "http://127.0.0.1:8000/v1" })).toBe(
+      true,
+    );
+    expect(providerCalledKeyless("vllm", { ...vllm, baseUrl: "http://gpu-box.lan:8000/v1" })).toBe(
+      true,
+    );
+    expect(providerCalledKeyless("vllm", vllm)).toBe(true);
+    expect(
+      providerCalledKeyless("my-group", { clientType: "mmsp", baseUrl: "http://mmsp.lan/v1" }),
+    ).toBe(true);
+    // Penguin Go speaks MMSP too, but its relay takes the signed-in key only.
+    expect(
+      providerCalledKeyless("penguin-go", { clientType: "mmsp", baseUrl: PENGUIN_GO_BASE_URL }),
+    ).toBe(false);
+    // A vendor's client refuses a keyless call; a group with no one client cannot say.
+    expect(providerCalledKeyless("deepseek", undefined)).toBe(false);
+    expect(providerCalledKeyless("custom", undefined)).toBe(false);
+
+    const row = { provider: "vllm", modelId: "Qwen/Qwen3.8-27B", ...vllm };
+    expect(modelCalledKeyless(row, { baseUrl: "http://127.0.0.1:8000/v1" })).toBe(true);
+    // A key of its own or its group's is sent, not none.
+    expect(modelCalledKeyless({ ...row, apiKey: "sk-row" }, undefined)).toBe(false);
+    expect(
+      modelCalledKeyless(row, { baseUrl: "http://127.0.0.1:8000/v1", apiKey: "sk-group" }),
+    ).toBe(false);
+    expect(
+      modelCalledKeyless(
+        { provider: "penguin-go", modelId: "gemini-3.8-flash" },
+        { baseUrl: PENGUIN_GO_BASE_URL, clientType: "mmsp" },
+      ),
+    ).toBe(false);
+    expect(modelCalledKeyless({ provider: "deepseek", modelId: "deepseek-flash" }, undefined)).toBe(
+      false,
     );
   });
 });

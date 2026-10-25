@@ -32,7 +32,8 @@
  *   blank one is refused (see "a blank group base URL").
  * - A blank group key promises an environment variable only for a group with no base URL — the
  *   vendor's own endpoint included — and only one the server proved is set. A stored key says it
- *   is kept; with neither, the key field asks for a key.
+ *   is kept. With neither, a group whose client calls its endpoint without a key (vLLM, an open
+ *   MMSP server, never Penguin Go's relay) says a blank sends none; any other asks for a key.
  * - A model with nothing of its own follows the group's table field by field, and a field the
  *   table leaves blank is the client's default — never the catalog's value.
  * - A group key reaches a model with no base URL of its own or one on the group's origin; a
@@ -443,6 +444,18 @@ describe("what the group settings dialog shows", () => {
     );
     // A user-defined group's client reads no variable of its own.
     expect(keyPlaceholder(dialog("my-group", undefined))).toBe(S.models.apiKeyEnterHint);
+    // vLLM's client calls the base URL it is handed without a key. With none, it reads
+    // VLLM_API_KEY, and calls its default endpoint without one while that is unset.
+    expect(keyPlaceholder(dialog("vllm", presetGroup("vllm")))).toBe(S.models.apiKeyKeylessHint);
+    const noUrl = { clientType: "openai-chat-vllm-adapter" };
+    expect(keyPlaceholder(dialog("vllm", noUrl))).toBe(S.models.apiKeyKeylessHint);
+    expect(keyPlaceholder(dialog("vllm", noUrl, [], new Set(["VLLM_API_KEY"])))).toBe(
+      S.models.apiKeyEnvHint("VLLM_API_KEY"),
+    );
+    // Penguin Go speaks MMSP, but its relay needs the signed-in key.
+    expect(keyPlaceholder(dialog("penguin-go", presetGroup("penguin-go")))).toBe(
+      S.models.apiKeyEnterHint,
+    );
   });
 
   it("shows the stored base URL where the group needs one, and asks for one instead of offering to leave it blank", () => {

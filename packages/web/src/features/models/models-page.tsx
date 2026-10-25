@@ -160,6 +160,7 @@ import {
   detectableBaseUrl,
   displayWidthCh,
   envHintFor,
+  keylessFor,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -765,7 +766,9 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *   reaches the model (connection.ts) means it follows the group; a variable the environment
  *   holds (`envKey`, only where nothing else covers the model) means the environment answers; a
  *   group key that does NOT reach the model — its own base URL is on another origin — is said
- *   outright, since the card will read "not configured"; otherwise the field asks for a key.
+ *   outright, since the card will read "not configured"; a model its client calls without a key
+ *   (`keyless`: an open MMSP or vLLM server) says a blank sends none; otherwise the field asks
+ *   for a key.
  * - Base URL: the group's setting where it has one; else, where the field is required (it
  *   cannot be saved blank), a request to enter one; else that a blank one uses the default,
  *   without naming it.
@@ -773,7 +776,11 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
 export function connectionPlaceholders(
   draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
   group: ProviderConnectionDto | undefined,
-  { envKey, baseUrlRequired }: { envKey?: string | undefined; baseUrlRequired: boolean },
+  {
+    envKey,
+    keyless = false,
+    baseUrlRequired,
+  }: { envKey?: string | undefined; keyless?: boolean; baseUrlRequired: boolean },
 ): { apiKey: string; baseUrl: string } {
   const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
   const apiKey = draft.credential?.apiKeyMasked
@@ -784,7 +791,9 @@ export function connectionPlaceholders(
         ? S.models.apiKeyEnvHint(envKey)
         : groupKeyMissesRow(draft.baseUrl, group)
           ? S.models.keyNotReachedNote
-          : S.models.apiKeyEnterHint;
+          : keyless
+            ? S.models.apiKeyKeylessHint
+            : S.models.apiKeyEnterHint;
   const baseUrl =
     inherited.baseUrl !== undefined
       ? S.models.inheritFromGroup
@@ -3456,6 +3465,14 @@ function ModelDialog({
       : undefined;
   const { apiKey: apiKeyHint, baseUrl: baseUrlHint } = connectionPlaceholders(form, group, {
     envKey: envHintKey,
+    // A blank key sent as none (an open MMSP or vLLM server); the variable, where set, wins.
+    keyless: keylessFor(
+      form.provider,
+      form.modelId,
+      form.clientType,
+      form.baseUrl,
+      groupShape(group),
+    ),
     baseUrlRequired,
   });
   // Where a blank key's requests go, shown only beside the env fallback hint (hence keyed off
@@ -3769,6 +3786,7 @@ function ModelDialog({
               onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
               className="text-right font-mono"
               affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
+              placeholder={S.models.priceBlankHint}
             />
           ))}
         </div>

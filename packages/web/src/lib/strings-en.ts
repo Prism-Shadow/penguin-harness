@@ -2197,6 +2197,7 @@ export const en: Strings = {
     priceCacheRead: "Cache read price",
     priceCacheWrite: "Cache write price",
     priceOutput: "Output price",
+    priceBlankHint: "Empty = not costed",
     promotionPriceHint: (pct: number): string =>
       `These are list prices. A running promotion takes ${pct}% off them; changing a price cancels it`,
     currency: "Currency",
@@ -2206,6 +2207,7 @@ export const en: Strings = {
     apiKeyKeepHint: "Leave empty to keep the current key",
     apiKeyEnvHint: (envKey: string): string => `Leave empty to use the ${envKey} env var`,
     apiKeyEnterHint: "Enter an API key",
+    apiKeyKeylessHint: "Leave blank to use no API key",
     keyConfigured: "Key configured",
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",

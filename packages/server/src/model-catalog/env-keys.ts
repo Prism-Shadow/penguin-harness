@@ -17,7 +17,7 @@ import type {
   ModelCredentialShape,
   ProviderConnectionShape,
 } from "@prismshadow/penguin-core/model-connection";
-import { vendorClientType } from "./catalog.js";
+import { providerInfo, vendorClientType } from "./catalog.js";
 
 /**
  * The variable MMSP's client of this type reads its key from when handed none at this base URL
@@ -27,6 +27,29 @@ import { vendorClientType } from "./catalog.js";
 export function clientEnvKey(clientType: string, baseUrl: string | undefined): string | undefined {
   const credential = environmentCredential(clientType, baseUrl?.trim() || undefined);
   return credential?.kind === "env" ? credential.apiKeyEnv : undefined;
+}
+
+/**
+ * Whether MMSP's client of this type, handed no key at this base URL and with the variable it
+ * would read unset, calls the endpoint without a key. `environmentCredential` says so outright
+ * for an open server's client (`mmsp`, `openai-chat-vllm-adapter`) handed any base URL; handed
+ * none, such a client reads its `*_API_KEY` and, finding it unset, calls keyless too. vLLM's
+ * client then sends vLLM's placeholder key `EMPTY`.
+ */
+function calledKeyless(clientType: string, baseUrl: string | undefined): boolean {
+  const credential = environmentCredential(clientType, baseUrl?.trim() || undefined);
+  if (credential?.kind === "keyless") return true;
+  if (credential?.kind !== "env") return false;
+  const routed = routedClientType("", clientType);
+  return routed !== null && CLIENT_CREDENTIALS[routed]?.openServer === true;
+}
+
+/**
+ * A group whose key comes from a sign-in flow (the catalog's `bridgeAuth`: Penguin Go's relay)
+ * serves an endpoint that takes no call without that key, whatever its client would do.
+ */
+function signInKeyed(providerId: string): boolean {
+  return providerInfo(providerId)?.bridgeAuth !== undefined;
 }
 
 /** The variables MMSP's routed client reads for a row as configured (see modelEnvironment). */
@@ -110,4 +133,36 @@ export function providerEnvFallbackKey(
 ): string | undefined {
   const clientType = groupClientType(providerId, group);
   return clientType === undefined ? undefined : clientEnvKey(clientType, group?.baseUrl);
+}
+
+/**
+ * Whether a group with no key, and its client's variable unset, has its rows called without a
+ * key — the group dialog's "send no key" hint: MMSP's client for the group (groupClientType) at
+ * the group's base URL calls it keyless (calledKeyless). A group with no one client, and one
+ * keyed by a sign-in flow, answers no.
+ */
+export function providerCalledKeyless(
+  providerId: string,
+  group: Pick<ProviderConnectionShape, "baseUrl" | "clientType"> | undefined,
+): boolean {
+  if (signInKeyed(providerId)) return false;
+  const clientType = groupClientType(providerId, group);
+  return clientType !== undefined && calledKeyless(clientType, group?.baseUrl);
+}
+
+/**
+ * Whether a row with no key of its own or its group's, and its client's variable unset, is
+ * called without a key — the model dialog's "send no key" hint: its routed client at its
+ * effective base URL calls it keyless (calledKeyless). A row of a sign-in-keyed group, and one
+ * nothing routes, answers no. `entry` is the row's OWN values, and `group` its table.
+ */
+export function modelCalledKeyless(
+  entry: ModelCredentialShape & { apiKey?: string | undefined },
+  group: ProviderConnectionShape | undefined,
+): boolean {
+  if (signInKeyed(entry.provider)) return false;
+  const effective = effectiveConnection(entry, group);
+  if (effective.apiKey !== undefined) return false;
+  const routed = routedClientType(entry.modelId, effective.clientType ?? null);
+  return routed !== null && calledKeyless(routed, effective.baseUrl);
 }

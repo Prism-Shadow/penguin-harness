@@ -1,4 +1,4 @@
-# base URL 与 API key 留空时说明会发生什么
+# base URL、API key 与价格留空时说明会发生什么
 
 - **Date:** 2026-10-24
 - **Type:** fix
@@ -9,7 +9,9 @@
 
 模型弹窗和分组设置里，空着的 base URL 字段不再在占位文字里写出端点。分组设置没有填上时，占位文字改为「留空使用默认 base URL」（英文 "Leave blank to use the default base URL"），原先是「未设置：默认发往 https://api.deepseek.com」或「未设置：使用客户端默认端点」。
 
-API key 字段不再留空。留空的 key 无从兜底时，占位文字为「请填写 API key」（英文 "Enter an API key"）。无从兜底指没有已存的 key、分组密钥借不到，服务端也没有报告对应的环境变量已设置。此前这样的字段没有占位文字，例如服务端没有设置 `DEEPSEEK_API_KEY` 时的 DeepSeek。
+API key 字段不再留空。留空的 key 无从兜底时，占位文字为「请填写 API key」（英文 "Enter an API key"）。无从兜底指没有已存的 key、分组密钥借不到，服务端也没有报告对应的环境变量已设置。此前这样的字段没有占位文字，例如服务端没有设置 `DEEPSEEK_API_KEY` 时的 DeepSeek。模型的客户端不带 key 也能调用其端点时，占位文字改为「留空则不使用 API key」（英文 "Leave blank to use no API key"）。这包括 vLLM 服务器（发送 vLLM 的占位 key `EMPTY`）和自建的 MMSP 服务器，不包括 Penguin Go 的中转。目录的 `providerCalledKeyless` 与 `modelCalledKeyless` 依据 MMSP 的凭证表判断这一点。
+
+模型弹窗的三项价格字段，占位文字为「留空则不计算费用」（英文 "Empty = not costed"）。不带价格保存的模型不计入任何费用。
 
 ## 细节
 

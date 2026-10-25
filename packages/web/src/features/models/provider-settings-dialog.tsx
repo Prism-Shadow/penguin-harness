@@ -52,7 +52,11 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-server/model-catalog";
+import {
+  fixedClientType,
+  providerCalledKeyless,
+  providerEnvFallbackKey,
+} from "@prismshadow/penguin-server/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
@@ -345,7 +349,12 @@ export function ProviderSettingsDialog({
     ? S.models.apiKeyKeepHint
     : envKey !== undefined
       ? S.models.apiKeyEnvHint(envKey)
-      : S.models.apiKeyEnterHint;
+      : providerCalledKeyless(id, {
+            baseUrl: draft.baseUrl.trim() || undefined,
+            clientType: draft.clientType ?? undefined,
+          })
+        ? S.models.apiKeyKeylessHint
+        : S.models.apiKeyEnterHint;
   const required = providerBaseUrlRequired(id, rows);
   /** Why the base URL as typed cannot be saved, or null; said under the field once something changed. */
   const urlProblem = providerBaseUrlError(id, rows, draft);

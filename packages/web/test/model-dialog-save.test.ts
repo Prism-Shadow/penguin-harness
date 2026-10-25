@@ -20,6 +20,7 @@
  *   under the field, whose placeholder asks for one, like every required base URL.
  * - A model with no key anywhere names the variable its client reads when the server reports it
  *   set, and otherwise asks for a key; the key field is never left without a placeholder.
+ * - The price fields say a model left without prices is not costed.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -320,6 +321,19 @@ describe("the model config dialog", () => {
     expect(promptOpen()).toBe(true);
     await click(button(en.common.keepEditing));
     expect(field(en.models.groupNameLabel).value).toBe("acme");
+  });
+
+  it("says on each price field that a model without prices is not costed", async () => {
+    await openModelsPage();
+    await click(button(`${en.models.addToGroup} ${providerInfo("custom")!.label}`));
+    await click(button(en.models.details));
+    for (const label of [
+      en.models.priceCacheRead,
+      en.models.priceCacheWrite,
+      en.models.priceOutput,
+    ]) {
+      expect(field(label).getAttribute("placeholder")).toBe(en.models.priceBlankHint);
+    }
   });
 
   it("asks for a key where the variable the model's client reads is not set", async () => {

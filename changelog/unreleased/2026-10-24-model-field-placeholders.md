@@ -1,4 +1,4 @@
-# Blank base URL and API key fields say what a blank field does
+# Blank base URL, API key and price fields say what a blank field does
 
 - **Date:** 2026-10-24
 - **Type:** fix
@@ -9,7 +9,9 @@
 
 The model dialogs and the group settings stopped naming the endpoint in a blank base URL field. Where no group setting fills it, the placeholder reads "Leave blank to use the default base URL" (zh: 「留空使用默认 base URL」). It used to read "Not set: requests go to https://api.deepseek.com by default" or "Not set: the client's default endpoint".
 
-An API key field is never left blank any more. Where nothing covers a blank key, it reads "Enter an API key" (zh: 「请填写 API key」). That means no stored key, no group key that reaches the model, and no environment variable the server reports set. Before, such a field had no placeholder, for example DeepSeek on a server without `DEEPSEEK_API_KEY`.
+An API key field is never left blank any more. Where nothing covers a blank key, it reads "Enter an API key" (zh: 「请填写 API key」). That means no stored key, no group key that reaches the model, and no environment variable the server reports set. Before, such a field had no placeholder, for example DeepSeek on a server without `DEEPSEEK_API_KEY`. Where the model's client calls its endpoint without a key, it reads "Leave blank to use no API key" (zh: 「留空则不使用 API key」) instead. That covers a vLLM server, which is sent vLLM's placeholder key `EMPTY`, and a self-hosted MMSP server, but not Penguin Go's relay. The catalog's `providerCalledKeyless` and `modelCalledKeyless` decide this from MMSP's credentials table.
+
+The model dialog's three price fields read "Empty = not costed" (zh: 「留空则不计算费用」). A model saved without prices is left out of every cost.
 
 ## Details
 
