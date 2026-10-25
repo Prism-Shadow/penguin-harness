@@ -344,7 +344,7 @@ export function ProviderSettingsDialog({
   const keyPlaceholder = group?.apiKeyMasked
     ? S.models.apiKeyKeepHint
     : envKey !== undefined
-      ? S.models.apiKeyDefault
+      ? S.models.apiKeyEnvHint(envKey)
       : undefined;
   const required = providerBaseUrlRequired(id, rows);
   /** Why the base URL as typed cannot be saved, or null; said under the field once something changed. */

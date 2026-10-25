@@ -2204,7 +2204,7 @@ export const en: Strings = {
     currencyCny: "CNY ¥",
     apiKey: "API key",
     apiKeyKeepHint: "Leave empty to keep the current key",
-    apiKeyDefault: "Leave blank to use the default API key",
+    apiKeyEnvHint: (envKey: string): string => `Leave empty to use the ${envKey} env var`,
     keyConfigured: "Key configured",
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",

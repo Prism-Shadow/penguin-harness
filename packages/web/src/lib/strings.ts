@@ -2359,8 +2359,7 @@ export const zh = {
     currencyCny: "人民币 ¥",
     apiKey: "API key",
     apiKeyKeepHint: "留空保留现有 key",
-    /** The API key placeholder where a blank key is covered by an environment variable the server reports set; it names no variable. */
-    apiKeyDefault: "留空使用默认 API key",
+    apiKeyEnvHint: (envKey: string): string => `留空则使用环境变量 ${envKey}`,
     keyConfigured: "已配置 key",
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",

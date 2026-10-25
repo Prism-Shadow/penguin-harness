@@ -763,10 +763,9 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *
  * - API key, most specific first: a key of the model's own means keep it; a group key that
  *   reaches the model (connection.ts) means it follows the group; a variable the environment
- *   holds (`envKey`, only where nothing else covers the model) means a blank field uses the
- *   default key; a group key that does NOT reach the model — its own base URL is on another
- *   origin — is said outright, since the card will read "not configured"; otherwise nothing
- *   truthful can be said.
+ *   holds (`envKey`, only where nothing else covers the model) means the environment answers; a
+ *   group key that does NOT reach the model — its own base URL is on another origin — is said
+ *   outright, since the card will read "not configured"; otherwise nothing truthful can be said.
  * - Base URL: the group's setting where it has one; else the shape a required one takes; else
  *   that a blank one uses the default, without naming it.
  */
@@ -781,7 +780,7 @@ export function connectionPlaceholders(
     : inherited.apiKeySource === "provider"
       ? S.models.inheritFromGroup
       : envKey !== undefined
-        ? S.models.apiKeyDefault
+        ? S.models.apiKeyEnvHint(envKey)
         : groupKeyMissesRow(draft.baseUrl, group)
           ? S.models.keyNotReachedNote
           : undefined;
