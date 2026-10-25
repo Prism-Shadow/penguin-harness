@@ -60,36 +60,32 @@ const SUFFIX = `${DARK ? "-dark" : ""}${HOVER ? "-hover" : ""}`;
 const LANGS = (process.env.SHOT_LANGS ?? "en,zh").split(",");
 
 // ---------------------------------------------------------------------------
-// The Agents on each side, per language (renamed in place before each language's shot).
+// The Agents on each side, per language: the one a reader names is named in that language.
 // ---------------------------------------------------------------------------
 
 /**
  * Every Project's built-in Agents, on this server and on the machine alike: two servers' Agents
- * of one id are two cards. Their stored names are English; the zh shot names them in Chinese, as
- * a reader can, and the en shot puts the preset names back.
+ * of one id are two cards. They keep the names the preset stores, in English, in either interface
+ * language, as a reader sees them; each shot puts those names back.
  */
-const BUILTIN_AGENTS = [
+const BUILTIN_PRESETS = [
   {
     agentId: "default_agent",
-    en: {
-      name: "General Agent",
-      description: "General-purpose agent that completes the user's requests with its tools.",
-    },
-    zh: { name: "通用 Agent", description: "用自带的工具完成用户请求的通用 Agent。" },
+    name: "General Agent",
+    description: "General-purpose agent that completes the user's requests with its tools.",
   },
   {
     agentId: "penguin_support",
-    en: {
-      name: "PenguinHarness Support",
-      description:
-        "Product support with questions, follow-ups and answers grounded in the official docs and source code.",
-    },
-    zh: {
-      name: "PenguinHarness 产品支持",
-      description: "解答产品问题，必要时追问，答案以官方文档和源码为据。",
-    },
+    name: "PenguinHarness Support",
+    description:
+      "Product support with questions, follow-ups and answers grounded in the official docs and source code.",
   },
 ];
+const BUILTIN_AGENTS = BUILTIN_PRESETS.map(({ agentId, name, description }) => ({
+  agentId,
+  en: { name, description },
+  zh: { name, description },
+}));
 /** An Agent only the machine has. */
 const MACHINE_AGENTS = [
   {
@@ -336,8 +332,9 @@ async function shots() {
   let lastPage = null;
   try {
     for (const lang of LANGS) {
-      // Each language's shot names its Agents in that language, on both sides; an Agent an
-      // earlier run left on either side goes first.
+      // Each language's shot sets the Agents' names for that language on both sides (the
+      // built-ins keep their preset names); an Agent an earlier run left on either side goes
+      // first.
       const sides = [
         { prefix: "", wanted: BUILTIN_AGENTS },
         { prefix: `/server/${machine.machineId}`, wanted: [...BUILTIN_AGENTS, ...MACHINE_AGENTS] },

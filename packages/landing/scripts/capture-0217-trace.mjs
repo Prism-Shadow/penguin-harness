@@ -1,8 +1,10 @@
 /**
  * Capture the 0.2.17 release-post screenshot of the rebuilt Trace view: a conversation's Trace
- * panel with its sticky toolbar, the round navigator open over it, the ruled round rows with their
- * context rings, and the newest round open on its event rows, where the thinking level the Session
- * was switched to reads as text on the first `request_begin`.
+ * panel with its sticky toolbar (the rounds button naming the round in view), the summary, the
+ * ruled round rows with their context rings, and the newest round open on its event rows, where
+ * the thinking level the Session was switched to reads as text on the first `request_begin`.
+ * The round navigator stays closed: open, it lies over the summary and leaves the ends of the
+ * figures it covers showing beside it.
  *
  *   penguinharness-0-2-17-trace-{en,zh}.png
  *
@@ -22,8 +24,8 @@
  *   node packages/landing/scripts/capture-0217-trace.mjs
  * Env: SHOT_SCRATCH (srv/, out/, debug/), SHOT_SRV_PORT (19217), SHOT_MOCK_PORT (19218),
  * SHOT_FONTCONFIG, SHOT_FAKETIME_LIB, SHOT_NOW, SHOT_BIND_SRV, SHOT_LANGS (en,zh), and for review
- * only SHOT_DARK=1 (dark theme) and SHOT_HOVER=1 (the navigator closed and the newest round's
- * context ring opened instead).
+ * only SHOT_DARK=1 (dark theme), SHOT_HOVER=1 (the newest round's context ring opened on its
+ * readings) and SHOT_NAV=1 (the round navigator open).
  */
 import http from "node:http";
 import { spawn } from "node:child_process";
@@ -46,7 +48,8 @@ const NOW = new Date(process.env.SHOT_NOW ?? "2026-10-26T10:30:00+08:00");
 const BIND_SRV = process.env.SHOT_BIND_SRV === "1";
 const DARK = process.env.SHOT_DARK === "1";
 const HOVER = process.env.SHOT_HOVER === "1";
-const SUFFIX = `${DARK ? "-dark" : ""}${HOVER ? "-hover" : ""}`;
+const NAV = process.env.SHOT_NAV === "1";
+const SUFFIX = `${DARK ? "-dark" : ""}${HOVER ? "-hover" : ""}${NAV ? "-nav" : ""}`;
 const LANGS = (process.env.SHOT_LANGS ?? "en,zh").split(",");
 
 // ---------------------------------------------------------------------------
@@ -616,7 +619,9 @@ try {
       const ring = dock.locator("[data-round]").last().locator('[data-slot="ring"]').first();
       await ring.click();
       await page.waitForTimeout(800);
-    } else {
+    }
+    if (NAV) {
+      // Review only: the round navigator open from the toolbar.
       await dock.locator('[data-slot="nav-button"]').first().click();
       await page.waitForTimeout(900);
     }
