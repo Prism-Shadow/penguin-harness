@@ -29,7 +29,7 @@
  */
 import path from "node:path";
 import { partialToolCallOutput, toolCallOutput, userText } from "@prismshadow/amsp/records";
-import type { McpServerConnectResult, AmspRecord, StopReason } from "@prismshadow/amsp/records";
+import type { McpServerConnectResult, AmspRecord, ToolStatus } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   BackgroundCommandInfo,
@@ -612,9 +612,9 @@ export class Environment implements EnvironmentInterface {
    * `tool_call_output`; nested messages carrying origin pass through unchanged. Dispatches by
    * looking up the tool name; any exception collapses into an explanatory output — never throws.
    *
-   * The priority for deciding stop_reason is: user interruption > timeout > tool throw > tool
-   * self-report. Interruption is determined by the `signal` held by Environment, and is
-   * compatible with both a tool self-reporting aborted and an AbortError raised by the
+   * The priority for deciding the result's status is: user interruption > timeout > tool
+   * throw > tool self-report. Interruption is determined by the `signal` held by Environment,
+   * and is compatible with both a tool self-reporting aborted and an AbortError raised by the
    * interruption. An internal abort raised by a timeout does not count as a user interruption —
    * it's finalized as failed, with the timeout reason written into the output.
    * Docs: /docs/tools § "Execution contract".
@@ -696,7 +696,7 @@ export class Environment implements EnvironmentInterface {
     let withheld = ""; // Rolling buffer of text past the head window (<= withheldCapacity)
     let contentLen = 0; // Total length of content produced by the tool (including evicted parts)
     let toolOutput: string | null = null; // Fallback: content basis when the tool produces a full message itself
-    let selfReported: StopReason | undefined; // Tool's self-reported stop reason (return value takes priority over the full message)
+    let selfReported: ToolStatus | undefined; // Tool's self-reported status (return value takes priority over the full message)
     let selfNote: string | null = null; // Tool's self-reported end marker (e.g. exit code), appended outside truncation
     let selfImages: string[] | undefined; // Tool's self-reported images (data URL), carried via a single streamed delta and the full message
     let thrown: unknown = null;
@@ -721,7 +721,7 @@ export class Environment implements EnvironmentInterface {
         const res = await gen.next();
         if (res.done) {
           const result: ToolResult | void = res.value;
-          if (result?.stopReason) selfReported = result.stopReason;
+          if (result?.status) selfReported = result.status;
           if (result?.note) selfNote = result.note;
           if (result?.images && result.images.length > 0) selfImages = result.images;
           break;
@@ -734,7 +734,7 @@ export class Environment implements EnvironmentInterface {
         const p = out.payload as {
           type?: string;
           event_type?: string;
-          stop_reason?: string;
+          status?: string;
           output?: string;
         };
         if (p.type === "partial_tool_call_output") {
@@ -797,7 +797,7 @@ export class Environment implements EnvironmentInterface {
             }
           }
         } else if (p.type === "tool_call_output") {
-          // Fallback: if the tool still produces a full message, use it as the basis for content and stop reason (not needed under the new contract).
+          // Fallback: if the tool still produces a full message, use it as the basis for content and status (not needed under the new contract).
           toolOutput = p.output ?? "";
           if (
             maxOutputLength > 0 &&
@@ -811,8 +811,8 @@ export class Environment implements EnvironmentInterface {
             // also becomes the recovery basis instead of any deltas it happened to emit.
             archiveCapture.replace(toolOutput);
           }
-          if (selfReported === undefined && p.stop_reason) {
-            selfReported = p.stop_reason as StopReason;
+          if (selfReported === undefined && p.status) {
+            selfReported = p.status as ToolStatus;
           }
         } else {
           // Other message types without origin: protocol misuse, ignore and warn (keep the parent stream clean).
@@ -872,7 +872,7 @@ export class Environment implements EnvironmentInterface {
       archiveCapture?.cancel();
     }
 
-    let stopReason: StopReason;
+    let status: ToolStatus;
     const notes: string[] = [];
     if (truncated) {
       if (archiveResult?.status === "saved") {
@@ -896,18 +896,18 @@ export class Environment implements EnvironmentInterface {
       notes.push(selfNote);
     }
     if (aborted) {
-      stopReason = "aborted";
+      status = "aborted";
       notes.push(TOOL_ABORTED_NOTE);
     } else if (timedOut) {
       // A tool timeout or error is definitive for this call — nothing in the harness
       // retries a tool, so the result is fed back to the model as fatal.
-      stopReason = "fatal";
+      status = "fatal";
       notes.push(`[tool timeout: exceeded ${timeoutMs}ms]`);
     } else if (thrown != null) {
-      stopReason = "fatal";
+      status = "fatal";
       notes.push(`[tool error] ${thrown instanceof Error ? thrown.message : String(thrown)}`);
     } else {
-      stopReason = selfReported ?? "completed";
+      status = selfReported ?? "completed";
     }
     // The tool's reply must never be empty: an empty tool_result leaves the model unable to
     // tell "silent success" apart from "call failed", and some Providers outright reject empty
@@ -941,15 +941,15 @@ export class Environment implements EnvironmentInterface {
     // "streamed concatenation == full message" the same way text does (truncation only applies
     // to text, never touches images).
     // Only carried on normal completion; interruption/timeout/error paths carry no images, to keep finalization simple.
-    const images = stopReason === "completed" ? selfImages : undefined;
+    const images = status === "completed" ? selfImages : undefined;
     if (images) {
       yield partialToolCallOutput({ eventType: "delta", toolCallId, images });
     }
-    yield partialToolCallOutput({ eventType: "stop", toolCallId, stopReason });
+    yield partialToolCallOutput({ eventType: "stop", toolCallId });
     yield toolCallOutput({
       output: fullOutput,
       toolCallId,
-      stopReason,
+      status,
       ...(images ? { images } : {}),
     });
   }
@@ -958,6 +958,6 @@ export class Environment implements EnvironmentInterface {
 /** Upfront failure (unknown tool/argument parse failure): delta(explanation) -> stop -> full failed output (start already emitted by the caller). */
 function* emitFailure(toolCallId: string, message: string): Generator<AmspRecord> {
   yield partialToolCallOutput({ eventType: "delta", output: message, toolCallId });
-  yield partialToolCallOutput({ eventType: "stop", toolCallId, stopReason: "fatal" });
-  yield toolCallOutput({ output: message, toolCallId, stopReason: "fatal" });
+  yield partialToolCallOutput({ eventType: "stop", toolCallId });
+  yield toolCallOutput({ output: message, toolCallId, status: "fatal" });
 }

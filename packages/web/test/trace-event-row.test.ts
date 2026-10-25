@@ -7,7 +7,7 @@
  *   summary is its text alone.
  * - The pill's tone tells the families apart: a `model_msg` neutral, an `event_msg` attention.
  * - Opened, the `session_meta` row lists the Session's fields, the provider among them.
- * - Opened, a record that completed carries no stop badge; one that did not names its reason.
+ * - Opened, a record that completed carries no status badge; one that did not names its status.
  * - A summary the row's context computed (a thinking-level change) replaces the record's own.
  */
 import { createElement as h } from "react";
@@ -96,14 +96,14 @@ describe("a Trace event row", () => {
     }
   });
 
-  it("opened, shows a stop badge only for a record that did not complete", async () => {
+  it("opened, shows a status badge only for a record that did not complete", async () => {
     const [done, nonZero, denied] = await rows([
       record("model_msg", {
         type: "tool_call_output",
         role: "user",
         tool_call_id: "c1",
         output: "a.txt",
-        stop_reason: "completed",
+        status: "completed",
       }),
       // A command that exited non-zero ran: its status is the output's last note, not a failure.
       record("model_msg", {
@@ -111,14 +111,14 @@ describe("a Trace event row", () => {
         role: "user",
         tool_call_id: "c2",
         output: "ls: cannot access\n[exit code: 2]",
-        stop_reason: "completed",
+        status: "completed",
       }),
       record("model_msg", {
         type: "tool_call_output",
         role: "user",
         tool_call_id: "c3",
         output: "denied",
-        stop_reason: "aborted",
+        status: "aborted",
       }),
     ]);
     for (const row of [done!, nonZero!, denied!]) await click(row.querySelector("button")!);

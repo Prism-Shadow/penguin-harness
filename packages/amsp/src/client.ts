@@ -92,8 +92,9 @@ const approvalPath = (sessionId: string, toolCallId: string) =>
 const APPROVAL_WAIT_S = 30;
 
 /** One tool call, as approvals are told apart: its Session chain and its id. */
+const originKey = (origin: MessageOrigin[] | undefined): string => origin?.join("/") ?? "";
 const approvalKey = (origin: MessageOrigin[] | undefined, toolCallId: string): string =>
-  `${origin?.join("/") ?? ""} ${toolCallId}`;
+  `${originKey(origin)} ${toolCallId}`;
 
 type Outcome = { ok: true } | { ok: false; error: unknown };
 
@@ -103,8 +104,9 @@ const END: IteratorResult<AmspRecord> = { value: undefined, done: true };
  * The approval loop of one run. While the run is open and some completed `tool_call` on the stream
  * has no `approval_decision` yet, it keeps one look open on `GET …/sessions/:id/approvals?wait=30`
  * and hands every call that look returns to `onApproval` once, posting the answer. It stops when
- * every call it saw has its decision, or the run ends. The engine records a decision for every
- * call it runs, the automatic ones included, so the loop always comes to rest.
+ * every call it saw has its decision or ended with a Request that did not complete, or the run
+ * ends. The engine records a decision for every call it runs, the automatic ones included,
+ * before the call's Request ends, so the loop always comes to rest.
  *
  * No look is opened while an answer is being decided or posted: the server still lists that call
  * until the answer lands, and the look would come back with it at once, over and over.
@@ -115,8 +117,8 @@ class ApprovalLoop {
   readonly #fail: (error: unknown) => void;
   readonly #runSignal: AbortSignal;
   #sessionId: string | null = null;
-  /** Completed calls seen on the stream with no decision yet, by approvalKey. */
-  readonly #undecided = new Set<string>();
+  /** Completed calls seen on the stream with no decision yet: approvalKey → originKey. */
+  readonly #undecided = new Map<string, string>();
   /** Calls this loop has answered, or is answering. */
   readonly #answered = new Set<string>();
   #inFlight = 0;
@@ -141,14 +143,19 @@ class ApprovalLoop {
   }
 
   record(rec: AmspRecord): void {
-    const p = rec.payload as { type?: string; tool_call_id?: string; stop_reason?: string };
+    const p = rec.payload as { type?: string; tool_call_id?: string; status?: string };
     if (rec.type === "model_msg" && p.type === "tool_call") {
-      // A call cut short is never run, so no decision follows it.
-      if ((p.stop_reason ?? "completed") !== "completed") return;
-      this.#undecided.add(approvalKey(rec.origin, p.tool_call_id ?? ""));
+      // A decision follows every call the server dispatches, before its Request ends.
+      this.#undecided.set(approvalKey(rec.origin, p.tool_call_id ?? ""), originKey(rec.origin));
       this.#kick();
     } else if (rec.type === "event_msg" && p.type === "approval_decision") {
       this.#undecided.delete(approvalKey(rec.origin, p.tool_call_id ?? ""));
+      if (!this.#wanted()) this.#look?.abort();
+    } else if (rec.type === "event_msg" && p.type === "request_end" && p.status !== "completed") {
+      // A Request that did not complete: a call of its Session still undecided was closed with
+      // it (an interruption or a failure cut the call short) and is never dispatched.
+      const origin = originKey(rec.origin);
+      for (const [key, from] of this.#undecided) if (from === origin) this.#undecided.delete(key);
       if (!this.#wanted()) this.#look?.abort();
     }
   }
@@ -163,7 +170,7 @@ class ApprovalLoop {
   #wanted(): boolean {
     if (!this.#open || this.#runSignal.aborted) return false;
     if (this.#sessionId === null || this.#inFlight > 0) return false;
-    for (const key of this.#undecided) if (!this.#answered.has(key)) return true;
+    for (const key of this.#undecided.keys()) if (!this.#answered.has(key)) return true;
     return false;
   }
 

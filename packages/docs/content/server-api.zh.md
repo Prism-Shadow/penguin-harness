@@ -259,7 +259,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 
 - `elsewhere`：这台主机已由其他 Project 安装，可以直接接管，而不必重新安装。
 - `keepConnected`：本服务器保持这台机器连接期间为 `true`（见上文）；只添加过、已停止、已删除或已断开的机器没有这个字段。
-- `configSync`：最近一次向这台机器下发配置的结果，只存在内存中，本服务器启动后第一次下发之前没有这个字段：`{at, ok, detail?, envOnly, skipped}`。`detail` 逐行列出没有下发成功的部分。`envOnly` 为模型条目取自本服务器环境变量、因而无法下发的每个值列出 `{projectId, provider, modelId, variable}`；`skipped` 为对端拒绝的每个模型条目列出 `{projectId, provider, modelId, code, reason}`。两者都只含本 Project 的条目。
+- `configSync`：最近一次向这台机器下发配置的结果，只存在内存中，本服务器启动后第一次下发之前没有这个字段：`{at, ok, detail?, envOnly, skipped}`。`detail` 逐行列出没有下发成功的部分。`envOnly` 为模型条目取自本服务器环境变量、因而无法下发的每个值列出 `{projectId, provider, modelId, variable}`；`skipped` 为对端拒绝的每个模型条目列出 `{projectId, provider, modelId, code, reason, builtInHere?}`；`builtInHere: true` 表示这是本服务器的内置模型、却被对端以 `model_not_addable` 拒绝，说明对端的构建还没有这个模型，更新那台机器后即可同步过去。两者都只含本 Project 的条目。
 - `reconnect`：服务器正在把一台保持连接的机器连回来时出现：`{since, attempts, maxAttempts, nextAt, gaveUp?, lastError, sshReason?, diagnosis, waitsForPassword?}`——这一轮从何时开始、已失败几次与失败几次即停止、下次何时尝试（正在尝试时与停止后为 `null`）、停止的原因（`attempts` 或 `ssh`，重试后清除）、最近一次失败的对端原话、ssh 拒绝时的原因、连续失败 3 次后运行的连接检查（此前为 `null`），以及保存的密码被拒后的 `waitsForPassword: true`——此后在密码改变之前不再尝试。
 - `passwordSaved`：本服务器用自己保存的密码登录这台机器时为 `true`（见上文）。
 - `member`：机器在本 Project 的列表中时为 `true`，机器管理页为它显示一张卡片。`POST …/add` 只把它加入列表而不安装；`POST …/use` 在被要求时就把它加入列表，因此首次安装失败的机器连同它的任务留在列表中，直到被删除。

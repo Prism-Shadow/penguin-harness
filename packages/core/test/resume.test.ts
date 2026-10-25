@@ -129,7 +129,7 @@ describe("agent.resumeSession", () => {
       metaFor(SID, workspace),
       userText("long task"),
       requestBegin(),
-      assistantText("partial answer", "aborted"),
+      assistantText("partial answer"),
       requestEnd("aborted"),
       abortEvent(),
     ]);
@@ -425,7 +425,7 @@ describe("setHistory injection", () => {
           role: "user",
           output: "out",
           tool_call_id: "tc1",
-          stop_reason: "completed",
+          status: "completed",
         },
       } as AmspRecord,
       userText("next"),

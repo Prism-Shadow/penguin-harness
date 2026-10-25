@@ -417,7 +417,6 @@ describe("Session applies the policy at the approval boundary", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "rm -rf /tmp/definitely-not-run" }),
             toolCallId: "call_veto",
-            stopReason: "completed",
           });
           return { status: "completed" };
         }
@@ -463,7 +462,7 @@ describe("Session applies the policy at the approval boundary", () => {
     // The denial is the fixed line: "by policy" (not "by user") is what tells the model to
     // change course instead of treating it as a person's cancellation; both read `aborted`.
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
-    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("aborted");
+    expect((output.payload as { status?: string }).status).toBe("aborted");
     expect((output.payload as { output: string }).output).toBe("Tool call denied by policy.");
     // The denial is fed back to the model, so the next turn can route around it.
     expect(
@@ -484,7 +483,6 @@ describe("Session applies the policy at the approval boundary", () => {
             name: "exec_command",
             arguments: JSON.stringify({ cmd: "rm -rf ./build" }),
             toolCallId: "call_ok",
-            stopReason: "completed",
           });
           return { status: "completed" };
         }

@@ -6,13 +6,16 @@
  *
  * 1. the main Session's last `task_begin` has no `task_end` (or the run began no Task at all) —
  *    the run did not reach its end, which is a failure of the server's: `fatal`, `internal`;
- * 2. the main Session recorded an `abort`: `aborted`, with its cause;
+ * 2. the main Session recorded an `abort`: `aborted`, with its cause (the turn cap's is
+ *    `max_turns`);
  * 3. the main Session's last `request_end` or `compaction_end` that is not `completed` and plans
- *    no retry (no `retry_in_ms`), unless a later request went on: its status and error;
- * 4. the main Session's last assistant text ended `fatal` (the turn cap's notice): `fatal`;
- * 5. otherwise `completed`.
+ *    no retry (no `retry_in_ms`), unless a later request went on: its status and error (a
+ *    response the retries never got past its output cap is `retryable`, `output_truncated`);
+ * 4. otherwise `completed`.
  *
- * Child Sessions' records (with `origin`) never decide the outcome; their usage counts.
+ * The text is the main Session's assistant text of the Requests that completed: a Request that
+ * was retried, interrupted or failed contributes none, though its texts have their records. Child Sessions' records (with `origin`) never
+ * decide the outcome; their usage counts.
  */
 import { AmspStreamError } from "./errors.js";
 import type {
@@ -37,7 +40,7 @@ export interface RunResult {
   error?: AmspError;
   /** The Session the run ran on; pass it as `sessionId` to continue the conversation. */
   sessionId: string;
-  /** The main Session's assistant texts, joined with a blank line; a compaction's summary is not among them. */
+  /** The main Session's assistant texts of the Requests that completed, joined with a blank line; a compaction's summary is not among them. */
   text: string;
   /** The tokens every Request of the run counted, its subagents' included: the sum of `token_usage.request`. */
   usage: TokenCounts;
@@ -72,9 +75,10 @@ export class RunCollector {
   #task: "none" | "open" | "closed" = "none";
   #abort: AmspError | null = null;
   #terminal: { status: StopReason; error?: AmspError } | null = null;
-  #lastMainText: StopReason | null = null;
   #compacting = false;
   readonly #texts: string[] = [];
+  /** The open Request's assistant texts: kept once its request_end is `completed`. */
+  #requestTexts: string[] = [];
   #usage = zero();
   #sessionUsage: TokenCounts | null = null;
   #requests = 0;
@@ -128,11 +132,14 @@ export class RunCollector {
       }
       case "request_begin":
         this.#requests += 1;
+        this.#requestTexts = [];
         // The run went on: a failure that was not its end (a compaction at a Task boundary).
         this.#terminal = null;
         return;
       case "request_end": {
         const p = rec.payload as RequestEndPayload;
+        if (p.status === "completed") this.#texts.push(...this.#requestTexts);
+        this.#requestTexts = [];
         if (p.status !== "completed" && p.retry_in_ms === undefined) {
           const error = errorOf(p);
           this.#terminal = { status: p.status, ...(error ? { error } : {}) };
@@ -154,8 +161,7 @@ export class RunCollector {
       case "text": {
         const p = rec.payload as TextPayload;
         if (p.role !== "assistant" || this.#compacting) return;
-        this.#lastMainText = p.stop_reason ?? "completed";
-        if (p.text !== "") this.#texts.push(p.text);
+        if (p.text !== "") this.#requestTexts.push(p.text);
         return;
       }
     }
@@ -199,7 +205,6 @@ export class RunCollector {
     }
     if (this.#abort !== null) return { status: "aborted", error: this.#abort };
     if (this.#terminal !== null) return this.#terminal;
-    if (this.#lastMainText === "fatal") return { status: "fatal" };
     return { status: "completed" };
   }
 }

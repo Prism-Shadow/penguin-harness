@@ -818,7 +818,10 @@ describe("memory updates in paginated history", () => {
           }),
           1 + i * 2,
         ),
-        stamp(toolCallOutput({ output: "updated", toolCallId: `${file}-${i}` }), 2 + i * 2),
+        stamp(
+          toolCallOutput({ output: "updated", toolCallId: `${file}-${i}`, status: "completed" }),
+          2 + i * 2,
+        ),
       ]),
       stamp(assistantText("remembered"), 7),
     ];

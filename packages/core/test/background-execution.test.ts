@@ -81,7 +81,7 @@ function commandToolConfig(): ToolConfig {
 
 interface FinalOutput {
   output: string;
-  stopReason?: string;
+  status?: string;
 }
 
 async function runTool(
@@ -95,8 +95,8 @@ async function runTool(
   })) {
     if ((msg.payload as { type?: string }).type === "tool_call_output") last = msg;
   }
-  const p = (last?.payload ?? {}) as { output?: string; stop_reason?: string };
-  return { output: p.output ?? "", stopReason: p.stop_reason };
+  const p = (last?.payload ?? {}) as { output?: string; status?: string };
+  return { output: p.output ?? "", status: p.status };
 }
 
 /**
@@ -126,8 +126,8 @@ async function runToolDetachedOn(
     }
     if (detach === null && when(seen)) detach = env.detachToolCall(toolCallId);
   }
-  const p = (last?.payload ?? {}) as { output?: string; stop_reason?: string };
-  return { output: p.output ?? "", stopReason: p.stop_reason, detach, completeOutputs };
+  const p = (last?.payload ?? {}) as { output?: string; status?: string };
+  return { output: p.output ?? "", status: p.status, detach, completeOutputs };
 }
 
 function extractProcessId(output: string): string {
@@ -259,7 +259,7 @@ describe("exec_command run_in_background", () => {
       cmd: "printf 'bg output'; exit 0",
       run_in_background: true,
     });
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
     const id = extractProcessId(res.output);
     expect(res.output).toContain("will arrive as a user message");
     await waitFor(() => events.length === 1);
@@ -309,7 +309,7 @@ describe("exec_command run_in_background", () => {
     // proves the line is already buffered.
     await waitFor(() => env.listBackgroundCommands().some((p) => p.serviceUrl !== undefined));
     const killed = await runTool(env, "input_command", { process_id: id, kill: true });
-    expect(killed.stopReason).toBe("completed");
+    expect(killed.status).toBe("completed");
     expect(killed.output).toContain("pre");
     expect(killed.output).toContain(`process ${id} killed`);
     // The kill-caused exit must not masquerade as a task completion.
@@ -317,18 +317,18 @@ describe("exec_command run_in_background", () => {
     expect(events).toHaveLength(0);
     // And the session is gone from the registry.
     const again = await runTool(env, "input_command", { process_id: id, kill: true });
-    expect(again.stopReason).toBe("fatal");
+    expect(again.status).toBe("fatal");
   });
 
   it("input_command kill fails on an unknown process_id; the legacy kill_command name is an unknown tool", async () => {
     const { env } = await makeEnv();
     const res = await runTool(env, "input_command", { process_id: "proc-deadbeef", kill: true });
-    expect(res.stopReason).toBe("fatal");
+    expect(res.status).toBe("fatal");
     expect(res.output).toContain("unknown process_id");
     // A stale stored config may still carry the removed tool; the registry no longer
     // assembles it, so a model call collapses to the standard unknown-tool failure.
     const legacy = await runTool(env, "kill_command", { process_id: "proc-deadbeef" });
-    expect(legacy.stopReason).toBe("fatal");
+    expect(legacy.status).toBe("fatal");
     expect(legacy.output).toContain("Unknown tool: kill_command");
   });
 
@@ -406,7 +406,7 @@ describe("detaching an executing tool call", () => {
     );
     expect(res.detach).toBe("detached");
     // A detach is not an interruption: no aborted stop reason, no interruption marker.
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
     expect(res.output).not.toContain("[interrupted");
     expect(res.output).toContain(DETACHED_TOOL_NOTE_PREFIX);
     // Exactly one complete tool_call_output, so the engine's loop closes normally.
@@ -456,7 +456,7 @@ describe("detaching an executing tool call", () => {
       (seen) => seen.includes("poll me"),
     );
     expect(polled.detach).toBe("not_detachable");
-    expect(polled.stopReason).toBe("completed");
+    expect(polled.status).toBe("completed");
     // The call is over: its detach channel is gone with it.
     expect(env.detachToolCall("call_input_command_detach")).toBe("not_running");
   });
@@ -487,7 +487,7 @@ describe("background-state listener", () => {
     // A deliberate kill disarms the completion report but not this: the registry removal
     // pings synchronously, and the group's later exit adds nothing the host has to act on.
     const killed = await runTool(env, "input_command", { process_id: id, kill: true });
-    expect(killed.stopReason).toBe("completed");
+    expect(killed.status).toBe("completed");
     expect(pings).toBeGreaterThan(settled + 1);
     expect(env.listBackgroundCommands().find((p) => p.processId === id)).toBeUndefined();
   });
@@ -513,7 +513,7 @@ describe("background-state listener", () => {
       pings += 1;
     });
     const res = await runTool(env, "run_subagent", { prompt: "bg task", run_in_background: true });
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
     expect(pings).toBeGreaterThanOrEqual(1);
     // Promoted (it holds a subagent_id) and mid-round: what a host counts as a background subagent.
     expect(env.listBackgroundSubagents()).toMatchObject([{ running: true }]);
@@ -587,7 +587,7 @@ async function drive(
   tool: ReturnType<typeof createSubagentTool>,
   args: Record<string, unknown>,
   ctx: ToolExecutionContext = CTX,
-): Promise<{ output: string; stopReason?: string; note: string; yielded: AmspRecord[] }> {
+): Promise<{ output: string; status?: string; note: string; yielded: AmspRecord[] }> {
   const gen = tool.execute(args, ctx);
   let output = "";
   const yielded: AmspRecord[] = [];
@@ -595,7 +595,7 @@ async function drive(
     const res = await gen.next();
     if (res.done) {
       const r = res.value ?? undefined;
-      return { output, stopReason: r?.stopReason, note: r?.note ?? "", yielded };
+      return { output, status: r?.status, note: r?.note ?? "", yielded };
     }
     yielded.push(res.value);
     const p = res.value.payload as { type?: string; event_type?: string; output?: string };
@@ -633,7 +633,7 @@ describe("run_subagent run_in_background", () => {
       prompt: "long analysis task",
       run_in_background: true,
     });
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
     const id = extractSubagentId(res.note);
     expect(res.note).toContain("will arrive as a user message");
     // The child's session_meta is forwarded at launch (origin-tagged), so the frontend's
@@ -661,7 +661,7 @@ describe("run_subagent run_in_background", () => {
       prompt: "second round",
       yield_time_ms: 250,
     });
-    expect(follow.stopReason).toBe("completed");
+    expect(follow.status).toBe("completed");
     expect(follow.note).toContain("still running");
     await waitFor(() => gates.has("second round"));
     gates.get("second round")!();
@@ -708,7 +708,7 @@ describe("run_subagent run_in_background", () => {
       prompt: "model round",
       yield_time_ms: 250,
     });
-    expect(follow.stopReason).toBe("completed");
+    expect(follow.status).toBe("completed");
     await waitFor(() => gates.has("model round"));
     gates.get("model round")!();
     await waitFor(() => events.length === 2);
@@ -841,7 +841,7 @@ describe("run_subagent run_in_background", () => {
     );
     clearTimeout(timer);
     // Not an interruption: the call completes with a handle, and the child is still alive.
-    expect(res.stopReason).toBe("completed");
+    expect(res.status).toBe("completed");
     expect(res.note).toContain(DETACHED_TOOL_NOTE_PREFIX);
     const id = extractSubagentId(res.note);
     expect(manager.hasRunning()).toBe(true);
@@ -902,7 +902,7 @@ describe("run_subagent run_in_background", () => {
     cleanups.push(() => manager.dispose());
     const input = createInputSubagentTool(SUB_INPUT_DEF, { subagentSessions: manager });
     const res = await drive(input, { subagent_id: "subagent-deadbeef" });
-    expect(res.stopReason).toBe("fatal");
+    expect(res.status).toBe("fatal");
     expect(res.output).toContain("unknown subagent_id");
   });
 });
@@ -1170,7 +1170,7 @@ describe("sibling background subagents survive a completion notice (issue #581)"
 
     for (const prompt of ["alpha", "beta", "gamma"]) {
       const res = await runTool(env, "run_subagent", { prompt, run_in_background: true });
-      expect(res.stopReason).toBe("completed");
+      expect(res.status).toBe("completed");
     }
     await waitFor(() => gates.size === 3);
     expect(running()).toHaveLength(3);

@@ -7,7 +7,7 @@ AMSP 记录是 PenguinHarness 唯一的消息格式。SDK 产出记录，Trace �
 
 它们就是 [AMSP](/amsp) 的记录，即 [Agent API](/agent-api) 向 PenguinHarness 之外的程序提供的流：Trace 的每一行都是一条合法的 AMSP 记录，因此记录的改动就是这个公开协议的改动。
 
-本页先讲信封和三类消息，再逐字段列出全部 payload，最后是贯穿所有记录的规则：流式纪律、`stop_reason`、`origin` 与保真字段。定义见 `packages/amsp/src/records/`（`@prismshadow/amsp` 包，入口 `@prismshadow/amsp/records`），`@prismshadow/penguin-core` 从包根原样再导出。
+本页先讲信封和三类消息，再逐字段列出全部 payload，最后是贯穿所有记录的规则：流式纪律、结束原因、`origin` 与保真字段。定义见 `packages/amsp/src/records/`（`@prismshadow/amsp` 包，入口 `@prismshadow/amsp/records`），`@prismshadow/penguin-core` 从包根原样再导出。
 
 ## 信封
 
@@ -76,7 +76,7 @@ Workspace 在整个 Session 生命周期内不变，模型与系统提示词则�
 
 ## model_msg：完整消息
 
-内容 payload 共七种，以 `payload.type` 区分。两个可选字段各类共用：`stop_reason` 标注非正常收尾的终态（见 [stop_reason](#stopreason)），`fidelity` 是不透明的供应商保真负载（见[保真字段](#保真字段)）：
+内容 payload 共七种，以 `payload.type` 区分。各类共用一个可选字段 `fidelity`，即不透明的供应商保真负载（见[保真字段](#保真字段)）。内容 payload 都不携带结束原因，工具结果带自己的 `status`（见[结束原因](#结束原因)）：
 
 ```ts
 type Fidelity = Record<string, unknown>;  // opaque provider-fidelity payload (see below)
@@ -87,7 +87,6 @@ interface TextPayload {
   text: string;
   sender?: "user" | "parent_agent" | "harness" | "server"; // who produced a user-role text; absent = the human user
   fidelity?: Fidelity;        // e.g. { phase } segment marker (GPT-5), { signature }
-  stop_reason?: StopReason;
 }
 
 interface ThinkingPayload {
@@ -95,7 +94,6 @@ interface ThinkingPayload {
   role: "assistant";
   thinking: string;
   fidelity?: Fidelity;        // required by some models to replay history
-  stop_reason?: StopReason;
 }
 
 interface InlineThinkingPayload {
@@ -104,7 +102,6 @@ interface InlineThinkingPayload {
   data: string;               // reasoning content as base64-encoded bytes
   mime_type: string;
   fidelity?: Fidelity;
-  stop_reason?: StopReason;
 }
 
 interface ToolCallPayload {
@@ -114,7 +111,6 @@ interface ToolCallPayload {
   arguments: string;          // arguments as a JSON string
   tool_call_id: string;
   fidelity?: Fidelity;
-  stop_reason?: StopReason;
 }
 
 interface ToolCallOutputPayload {
@@ -123,14 +119,13 @@ interface ToolCallOutputPayload {
   output: string;
   images?: string[];          // data:<mime>;base64,… URLs (e.g. read_file's image results)
   tool_call_id: string;
-  stop_reason?: StopReason;
+  status: ToolStatus;         // completed / aborted (denied, or interrupted while running) / fatal
 }
 
 interface ImageUrlPayload {
   type: "image_url";
   role: "user";
   image_url: string;          // web URL or base64 data URL
-  stop_reason?: StopReason;
 }
 
 interface InlineDataPayload {
@@ -139,7 +134,6 @@ interface InlineDataPayload {
   data: string;               // other binary content, base64-encoded
   mime_type: string;
   fidelity?: Fidelity;
-  stop_reason?: StopReason;
 }
 ```
 
@@ -159,7 +153,6 @@ interface PartialTextPayload {
   role: "assistant";
   event_type: StreamEventType;
   text: string;                 // the text added by this fragment
-  stop_reason?: StopReason;
 }
 
 interface PartialThinkingPayload {
@@ -167,7 +160,6 @@ interface PartialThinkingPayload {
   role: "assistant";
   event_type: StreamEventType;
   thinking: string;
-  stop_reason?: StopReason;
 }
 
 interface PartialToolCallPayload {
@@ -177,7 +169,6 @@ interface PartialToolCallPayload {
   name: string;
   arguments: string;            // incremental fragment of the arguments JSON
   tool_call_id: string;
-  stop_reason?: StopReason;
 }
 
 interface PartialToolCallOutputPayload {
@@ -187,7 +178,6 @@ interface PartialToolCallOutputPayload {
   output: string;
   images?: string[];            // images are not incremental — one delta carries the whole set
   tool_call_id: string;
-  stop_reason?: StopReason;
 }
 ```
 
@@ -201,7 +191,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。每组分片在 `stop` 之后都紧跟一条完整消息，使用方无需自己拼接分片。
+因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。每组分片在 `stop` 之后都紧跟一条完整消息，使用方无需自己拼接分片。被中断、失败或截断提前结束的条目也一样：它的完整记录装着已经到达的内容（工具调用则是原样的参数文本，未必能解析）。它是否进入模型历史，看所在 Request 的 `request_end.status`。所在 Request 没有完成的工具调用，只有 `approval_decision` 出现在该 `request_end` 之前才执行过；被提前收束的调用从不执行。
 
 ## event_msg
 
@@ -220,26 +210,28 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 | `token_usage` | Session 累计与本次请求的 Token 计数 |
 | `compaction_begin` | 触发原因与模式，以及触发时的上下文 Token 数和累计轮数 |
 | `compaction_end` | 压缩的原因、模式与终态，以及重试详情块 |
-| `abort` | 一次用户中断及其原因码 |
+| `abort` | 一次用户中断，或 Task 达到轮次上限而停止，及其原因码 |
 | `subagent` | 父 Trace 中指向直接子 Session 的指针 |
 | `hook` | 一次钩子回答：钩子点、名称、决策，以及钩子自己的记录 |
 
 这套词汇是封闭的：只有当既有记录都不承载某个事实、读端也推导不出来时，才新增记录或字段。`task_begin` / `task_end` 是两处明示例外之一（另一处是 `request_begin.thinking_level`）：此前没有任何记录说明一个 Task 从哪里开始、是否走到终点，各读端只能从用户的 Prompt 推导。
 
-Session 在每个 Task 两侧各写一条：一次 Prompt 的执行，加上随后 stop 钩子留下的 `hook` 记录。stop 钩子以 `continue` 续出的 Task（例如 goal 的一轮）各成一对。手动压缩与模型切换不是 Task，不写这对记录。载荷只有类型：Task 如何结束，由这对记录之间的记录读出（`abort`、终局的 `request_end` 或 `compaction_end`、以 `fatal` 收尾的回复）；由谁发起，由输入本身读出。抛出异常的 Task 不写 `task_end`，因此未闭合的 `task_begin` 表示该 Task 没有走到终点。这对记录在 Trace 中的位置见 [Trace 设计](/sessions-and-traces#trace-设计)。
+Session 在每个 Task 两侧各写一条：一次 Prompt 的执行，加上随后 stop 钩子留下的 `hook` 记录。stop 钩子以 `continue` 续出的 Task（例如 goal 的一轮）各成一对。手动压缩与模型切换不是 Task，不写这对记录。载荷只有类型：Task 如何结束，由这对记录之间的记录读出（`abort`、终局的 `request_end` 或 `compaction_end`）；由谁发起，由输入本身读出。抛出异常的 Task 不写 `task_end`，因此未闭合的 `task_begin` 表示该 Task 没有走到终点。这对记录在 Trace 中的位置见 [Trace 设计](/sessions-and-traces#trace-设计)。
 
 凡是报告失败的 payload 都带同一对错误字段：`error_code` 是稳定、机器可读的原因码，渲染层据此做本地化；`error_message` 是失败的原始文本，原样展示。完整定义如下：
 
 ```ts
 type ErrorCode =
-  // abort causes (a user interruption, the only thing an abort event marks)
+  // abort causes (a user interruption, or the turn cap)
   | "user_abort"
   | "backoff_interrupted"
   | "compaction_interrupted"
+  | "max_turns"               // the Task reached max_turns; error_message names the cap
   // LLM request failures (request_end / compaction_end)
   | "timeout"                 // idle timeout / connection went silent
   | "network"                 // transport drops, provider 429/5xx, and anything unclassifiable
   | "malformed"               // response failed parsing/validation, or the stream was truncated
+  | "output_truncated"        // the response stopped at its output cap; retried, never committed
   | "auth"                    // the provider rejected the credentials
   | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
@@ -316,7 +308,8 @@ interface RequestBeginPayload {
 
 interface RequestEndPayload {
   type: "request_end";
-  status: StopReason;         // "completed" is the mechanical commit criterion for replay
+  status: StopReason;         // the one record of why the Request ended (see End reasons);
+                              // "completed" is the mechanical commit criterion for replay
   // The unified RetryDetail block below is stamped in one place by the builders; every
   // field is additive — old Traces replay unchanged. compaction_end reuses the same block.
   error_code?: ErrorCode;     // classified cause, non-completed only
@@ -378,8 +371,9 @@ interface CompactionEndPayload {
 
 interface AbortPayload {
   type: "abort";
-  error_code?: ErrorCode;     // user_abort / backoff_interrupted / compaction_interrupted
-  error_message?: string;
+  error_code?: ErrorCode;     // user_abort / backoff_interrupted / compaction_interrupted /
+                              // max_turns (the turn cap)
+  error_message?: string;     // the turn cap's names the cap: "reached max turns (40)"
   reason?: string | null;     // legacy: older Traces carry the cause as English prose here;
                               // the engine no longer writes it
 }
@@ -410,24 +404,37 @@ interface HookPayload {
 
 `compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
 
-## stop_reason
+## 结束原因
 
-四值枚举，所有带终止原因的记录共用：模型消息、工具结果，以及请求、压缩和 MCP 连接的终态。`LLMOutcome.status` 使用同一组取值（见[核心接口](/interfaces)）：
+记录不携带逐条的结束原因。每个流式条目都有完整记录，被中断截断的也不例外；它是否进入模型历史，看所在 Request 的 `request_end.status`；运行如何结束，看 `abort` 与终局的 `request_end` / `compaction_end`。旧版本写下的记录在每种模型 payload 上都带 `stop_reason` 字段，现已不再读取。
+
+一次 Request 以 `StopReason` 收尾，`LLMOutcome.status` 使用同一组取值（见[核心接口](/interfaces)）：
 
 ```ts
-type StopReason = "completed" | "aborted" | "retryable" | "fatal";
+type StopReason = "completed" | "aborted" | "retryable" | "fatal";  // request_end, compaction_end, MCP connect results
+type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call_output
 ```
 
-终止原因只回答一个问题：要不要重试。失败属于哪一类看 `error_code`，具体细节看 `error_message`。
+状态只回答一个问题：要不要重试。失败属于哪一类看 `error_code`，具体细节看 `error_message`。
 
-| 取值 | 含义 | 引擎反应 |
+| `request_end.status` | 含义 | 引擎反应 |
 | --- | --- | --- |
-| `completed` | 正常完成。Environment 侧：命令跑完即为完成，与退出状态无关——非零退出码或信号是命令的结果，写在输出末行（`[exit code: N]`、`[terminated by signal X]`） | 继续 |
+| `completed` | 正常完成，该轮已提交 | 继续 |
 | `aborted` | 用户中断或取消 | 停止，产出 `abort` 事件，交还用户 |
-| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败或被截断的响应，以及一切无法归类的错误 | LLM 侧：同一次运行内按退避阶梯自动重连 |
-| `fatal` | 重试也无法修复的失败。LLM 侧：供应商确定性的 4xx 拒绝（参数、配额）、凭据被拒，或确定性的客户端拒绝；Environment 侧：工具出错或超时 | LLM 侧：停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录。Environment 侧：错误回灌给模型，从不重试 |
+| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败的响应、完整送达却停在输出上限的响应（`error_code` 为 `output_truncated`），以及一切无法归类的错误 | 同一次运行内按退避阶梯自动重连；停在输出上限的尝试不提交。重试用尽时，最后一条不带 `retry_in_ms` 的 `request_end` 即终局记录 |
+| `fatal` | 重试也无法修复的失败：供应商确定性的 4xx 拒绝（参数、配额）、凭据被拒，或确定性的客户端拒绝 | 停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录 |
 
-工具很少以 `retryable` 收尾：工具出错或超时对这次调用是确定的结果，harness 也不会重试任何工具。旧 Trace 里可能还有已废弃的 `failed`、`timeout`、`malformed` 和 `auth`；回放只与 `completed` 比较，渲染层照常展示这些旧取值。
+工具结果的 `status` 说明结果是什么：
+
+| `tool_call_output.status` | 含义 |
+| --- | --- |
+| `completed` | 工具运行到结束；它报告的情况都在输出里。命令跑完即为完成，与退出状态无关：非零退出码或信号是命令的结果，写在输出末行（`[exit code: N]`、`[terminated by signal X]`） |
+| `fatal` | 调用失败：未知工具、参数无法解析、工具出错、执行环境出错或超时。错误回灌给模型，从不重试 |
+| `aborted` | 调用没有运行到结束：被用户、命令策略或 pre_tool_use 钩子拒绝（由谁拒绝见 `approval_decision`），或运行中被用户中断（输出里是它已产出的内容，末尾是中断提示） |
+
+没有这个字段的旧 `tool_call_output` 读作 `completed`。旧 Trace 的 `request_end` 里可能还有已废弃的 `failed`、`timeout`、`malformed` 和 `auth`；回放只与 `completed` 比较，渲染层照常展示这些旧取值。
+
+轮次上限不是一次 Request：Task 达到 `max_turns` 时，引擎写一条 `error_code` 为 `max_turns` 的 `abort`，然后结束这个 Task。
 
 错误从不以异常形式穿过接口边界，错误本身*就是*消息（见 [Agent 运行循环](/agent-loop)）。
 

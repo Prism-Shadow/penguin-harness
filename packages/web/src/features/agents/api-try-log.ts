@@ -196,8 +196,9 @@ function messageRow(
     row.open = false;
     // An image input is the user's by definition; elsewhere a user-role message is the exception.
     if (p.role === "user" && label !== "image_url") row.tags.push(str(p.sender) || "user");
-    const stop = str(p.stop_reason);
-    if (stop !== "" && stop !== "completed") row.tags.push(stop);
+    // A tool result's status, when it is not an ordinary one.
+    const status = label === "tool_call_output" ? str(p.status) : "";
+    if (status !== "" && status !== "completed") row.tags.push(status);
   }
   return row;
 }

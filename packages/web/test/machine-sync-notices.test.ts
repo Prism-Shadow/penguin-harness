@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 /**
- * The Machine dialog's notice about model keys only this server's environment holds
- * (features/machines/machine-detail-dialog.tsx, lib/notice-dismissals.ts), through the real dialog,
- * the real prefs client and a fake server that outlives each page.
+ * The Machine dialog's two notices on what the last config sync could not carry — the model keys
+ * only this server's environment holds, and the models the machine refused
+ * (features/machines/machine-detail-dialog.tsx, lib/notice-dismissals.ts) — through the real
+ * dialog, the real prefs client and a fake server that outlives each page.
+ *
+ * The env-only keys notice:
  *
  * - Given a sync that left env-only keys, the notice stays off screen until the account's
  *   preferences are read, then shows with a close cross beside the skipped-models list.
@@ -13,10 +16,22 @@
  * - Given another machine with the same keys, its notice is its own.
  * - Given preferences that cannot be read, the notice shows (fail-open), and closing it hides it
  *   for this page without writing a map that was never read.
+ *
+ * The skipped-models notice, kept by the same store per machine and per Project:
+ *
+ * - Given the person closes it, it goes at once, the env-only notice stays, and a fresh page keeps
+ *   it closed for the same refusals.
+ * - Given another refused model, or the same model refused for another reason, it comes back; a
+ *   refusal that went away does not bring it back, and another Project's list is its own.
  */
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MachineEnvOnly, MachineInfo, UiPrefs } from "@prismshadow/penguin-server/api";
+import type {
+  MachineEnvOnly,
+  MachineInfo,
+  MachineSkippedModel,
+  UiPrefs,
+} from "@prismshadow/penguin-server/api";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { button, click, hasButton, mount, settle, unmountAll, waitFor } from "./helpers/dom";
 
@@ -33,7 +48,27 @@ const DEEPSEEK: MachineEnvOnly = {
   variable: "DEEPSEEK_API_KEY",
 };
 
-const machine = (id: string, envOnly: MachineEnvOnly[]): MachineInfo => ({
+const HAND_ADDED: MachineSkippedModel = {
+  projectId: "p1",
+  provider: "penguin-go",
+  modelId: "gemini-3.7-flash",
+  code: "model_not_addable",
+  reason: "cannot be added",
+};
+const BUILT_IN: MachineSkippedModel = {
+  projectId: "p1",
+  provider: "minimax",
+  modelId: "MiniMax-M3.1-Flash",
+  code: "model_not_addable",
+  reason: "cannot be added",
+  builtInHere: true,
+};
+
+const machine = (
+  id: string,
+  envOnly: MachineEnvOnly[],
+  skipped: MachineSkippedModel[] = [HAND_ADDED],
+): MachineInfo => ({
   id,
   alias: id.replace(/^ssh:/, ""),
   installed: { version: "0.2.16", at: "2026-10-01T08:00:00.000Z" },
@@ -49,15 +84,7 @@ const machine = (id: string, envOnly: MachineEnvOnly[]): MachineInfo => ({
     at: "2026-10-15T08:00:00.000Z",
     ok: true,
     envOnly,
-    skipped: [
-      {
-        projectId: "p1",
-        provider: "penguin-go",
-        modelId: "gemini-3.7-flash",
-        code: "model_not_addable",
-        reason: "cannot be added",
-      },
-    ],
+    skipped,
   },
 });
 
@@ -88,8 +115,8 @@ function server(initial: UiPrefs, { unreadable = false } = {}) {
   };
 }
 
-/** A fresh page: new modules (an unread store), the dialog open on `info`. */
-async function page(info: MachineInfo) {
+/** A fresh page: new modules (an unread store), the dialog open on `info` in `projectId`. */
+async function page(info: MachineInfo, projectId = "p1") {
   vi.resetModules();
   const { MachineDetailDialog } = await import("../src/features/machines/machine-detail-dialog");
   const { setActiveStrings } = await import("../src/lib/strings");
@@ -97,7 +124,7 @@ async function page(info: MachineInfo) {
   setActiveStrings(en);
   await mount(
     h(MachineDetailDialog, {
-      projectId: "p1",
+      projectId,
       hostEpoch: 0,
       machine: info,
       job: null,
@@ -114,6 +141,19 @@ async function page(info: MachineInfo) {
   return { notice, envOnlyText: en.machines.detail.configSync.envOnly };
 }
 
+/** Whether the skipped-models notice is on screen. */
+const skippedShown = () => document.querySelector("[data-skipped]") !== null;
+
+/** The close cross of the notice holding `marker`. */
+function crossOf(marker: string): HTMLButtonElement {
+  const cross = document
+    .querySelector(marker)
+    ?.closest(".ui-notice")
+    ?.querySelector<HTMLButtonElement>('[data-slot="actions"] button');
+  if (cross === null || cross === undefined) throw new Error(`no close cross by ${marker}`);
+  return cross;
+}
+
 afterEach(async () => {
   await unmountAll();
 });
@@ -125,9 +165,10 @@ describe("the env-only keys notice", () => {
     const shown = await page(machine("ssh:gpu-a100", [OPENAI]));
     await settle();
     expect(shown.notice()).toBe(false);
-    expect(document.querySelector("[data-skipped]")).not.toBeNull();
+    expect(skippedShown()).toBe(false);
     srv.release();
     await waitFor(shown.notice);
+    expect(skippedShown()).toBe(true);
     expect(document.body.textContent).toContain(shown.envOnlyText);
     expect(hasButton("Dismiss")).toBe(true);
   });
@@ -194,5 +235,63 @@ describe("the env-only keys notice", () => {
     expect(shown.notice()).toBe(false);
     await settle();
     expect(srv.writes()).toHaveLength(0);
+  });
+});
+
+describe("the skipped-models notice", () => {
+  it("closes at once over its refusals, leaves the env-only notice up, and stays closed on a fresh page", async () => {
+    const srv = server({});
+    const first = await page(machine("ssh:gpu-a100", [OPENAI], [HAND_ADDED, BUILT_IN]));
+    await waitFor(skippedShown);
+    await click(crossOf("[data-skipped]"));
+    expect(skippedShown()).toBe(false);
+    expect(first.notice()).toBe(true);
+    await waitFor(() => srv.writes().length === 1);
+    expect(srv.prefs().noticesDismissed).toEqual({
+      "machine-skipped:ssh:gpu-a100:p1": [
+        "p1/minimax/MiniMax-M3.1-Flash:model_not_addable:built-in",
+        "p1/penguin-go/gemini-3.7-flash:model_not_addable",
+      ].join("\n"),
+    });
+
+    await unmountAll();
+    const again = await page(machine("ssh:gpu-a100", [OPENAI], [BUILT_IN, HAND_ADDED]));
+    await waitFor(again.notice);
+    expect(skippedShown()).toBe(false);
+  });
+
+  it("comes back for another refused model or another reason, not for one that went away, and is its own per Project", async () => {
+    const closed = {
+      "machine-skipped:ssh:gpu-a100:p1": [
+        "p1/minimax/MiniMax-M3.1-Flash:model_not_addable:built-in",
+        "p1/penguin-go/gemini-3.7-flash:model_not_addable",
+      ].join("\n"),
+    };
+    const srv = server({ noticesDismissed: closed });
+    const fewer = await page(machine("ssh:gpu-a100", [OPENAI], [BUILT_IN]));
+    await waitFor(fewer.notice);
+    expect(skippedShown()).toBe(false);
+
+    await unmountAll();
+    const another = { ...HAND_ADDED, modelId: "gemini-9.9-flash" };
+    await page(machine("ssh:gpu-a100", [], [BUILT_IN, another]));
+    await waitFor(skippedShown);
+
+    await unmountAll();
+    await page(machine("ssh:gpu-a100", [], [{ ...HAND_ADDED, code: "model_not_routable" }]));
+    await waitFor(skippedShown);
+
+    expect(srv.writes()).toHaveLength(0);
+
+    // Closing another Project's list keeps this Project's closed.
+    await unmountAll();
+    await page(machine("ssh:gpu-a100", [], [{ ...BUILT_IN, projectId: "p2" }]), "p2");
+    await waitFor(skippedShown);
+    await click(crossOf("[data-skipped]"));
+    await waitFor(() => srv.writes().length === 1);
+    expect(srv.prefs().noticesDismissed).toEqual({
+      ...closed,
+      "machine-skipped:ssh:gpu-a100:p2": "p2/minimax/MiniMax-M3.1-Flash:model_not_addable:built-in",
+    });
   });
 });

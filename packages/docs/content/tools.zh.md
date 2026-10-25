@@ -31,7 +31,7 @@ interface ToolExecutionContext {
 }
 
 interface ToolResult {
-  stopReason?: StopReason; // the tool's self-reported terminal state (lowest priority, see below)
+  status?: ToolStatus; // the tool's self-reported result status (lowest priority, see below)
   note?: string; // terminal marker appended outside the output budget (e.g. exit code)
   images?: string[]; // data-URL images, appended after the text output
 }
@@ -41,7 +41,7 @@ interface ToolResult {
 
 - 流式分帧（start / stop），以及 `tool_call_id` 的全程传递；
 - 超时控制，以及输出超过 `maxOutputLength`（默认 16000 字符）后只保留头部和尾部的截断；
-- `stop_reason` 的优先级：用户中断 > 超时 > 工具抛错 > 工具自报。超时或抛错都会让调用以 `fatal` 结束；
+- 结果 `status` 的优先级：用户中断 > 超时 > 工具抛错 > 工具自报。用户中断让调用以 `aborted` 结束，输出为已产出的内容加上中断提示；超时或抛错让调用以 `fatal` 结束；
 - 输出永不为空：调用既没有产出文本也没有 note 时，用 `[no output]` 代替；
 - `note`（例如退出码）和图片不计入输出预算、直接追加在末尾，因此截断长输出也不会丢掉终止标记。
 
@@ -87,7 +87,7 @@ core 为模型拼出的每一条路径都遵循同一写法规则：
 
 Trace 不会再存一份这些内容，但会记录展示给模型、Web App 和 CLI 的同一个绝对 Session 路径，这会暴露宿主的数据根目录布局。
 
-归档写入失败不会改变原工具的 `stop_reason`。可见 note 和 stderr 警告只带一个简短的错误码（stderr 上另有工具名），从不带路径，也不带原始错误信息。
+归档写入失败不会改变原工具的 `status`。可见 note 和 stderr 警告只带一个简短的错误码（stderr 上另有工具名），从不带路径，也不带原始错误信息。
 
 ## 配置字段
 
@@ -155,7 +155,7 @@ exec_command(cmd)
      input_command(process_id, kill: true) ──► SIGTERM the process group (SIGKILL after a grace period)
 ```
 
-正常退出的命令不附加任何注记。非零退出会附加 `[exit code: N]`，因信号终止会附加 `[terminated by signal S]`；两种情况都以 `fatal` 结束调用。
+正常退出的命令不附加任何注记。非零退出会附加 `[exit code: N]`，因信号终止会附加 `[terminated by signal S]`；两种情况都以 `completed` 结束调用，因为退出状态是命令的结果，不是工具的失败。`fatal` 留给工具自身的失败：超时、spawn 出错、抛出异常。
 
 工具参数（显式键）：
 
@@ -465,5 +465,5 @@ tools:
 - 文本块合并进输出文本，图片块以图片形式附带（data URL）。
 - 音频和二进制资源变成占位行；文本资源贡献自身的文本；`resource_link` 变成 `[resource: <uri>]` 加上其描述；未知块类型变成 `[unsupported content type: <type>]`。
 - 合并后的文本为空时，`structuredContent` 序列化为 JSON。
-- Server 报告 `isError` 时，调用以 `stop_reason: "fatal"` 结束，内容为 Server 的错误文本；若 Server 未发送错误文本，则为 `[tool reported an error with no message]`。
+- Server 报告 `isError` 时，调用以 `status: "fatal"` 结束，内容为 Server 的错误文本；若 Server 未发送错误文本，则为 `[tool reported an error with no message]`。
 - Session 结束时（`Environment.dispose`）会关闭所有 MCP 客户端，stdio 子进程也随之退出。

@@ -45,3 +45,5 @@ pnpm --filter @prismshadow/penguin-core test        # loader, README tables, the
 ```
 
 `penguin-support` supplies the default Project's customer support agent with a documentation Skill and the `workbenches/support/` app. It is not installed on General Agent. Workbench code is copied through the same plugin install path as Skills; updates preserve `state.json` and workbench history. Each workbench declares a dated `penguin.version` in its own package.json. A workbench-only package can also be installed from the library.
+
+Each plugin that ships skills also has its own `test/skills.test.ts`: it runs every `skills/<name>/` through [`@prismshadow/skills`](../packages/skills) (its `SKILL.md` must pass the parser vendored from vercel-labs/skills), so `pnpm -r test` covers them. The loader's own rules on top of that — a one-line description, skill names unique across the library — are core's test.

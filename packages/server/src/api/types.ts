@@ -3680,7 +3680,8 @@ export interface ToolCallSpan {
   startTs: string;
   endTs?: string;
   durationMs?: number;
-  stopReason?: string;
+  /** The paired tool_call_output's `status` (completed / aborted / fatal); absent while the call has no output. */
+  status?: string;
 }
 
 /** Workspace file entry (Files tab). */
@@ -3813,7 +3814,8 @@ export interface TraceToolSpan {
   approvalTs?: string;
   decision?: string;
   outputTs?: string;
-  stopReason?: string;
+  /** The tool_call_output's `status` (completed / aborted / fatal); absent while unclosed. */
+  status?: string;
   /** The Task that initiated this tool (grouped with its tool_call segment): async output belongs to this Task even if it arrives after request_end. */
   taskIndex: number;
 }
@@ -5376,6 +5378,12 @@ export interface MachineSkippedModel {
   /** The far side's error code (`model_not_addable`, `model_not_routable`). */
   code: string;
   reason: string;
+  /**
+   * The entry is one of this server's built-in models for its group, which the machine refused
+   * as not addable: the machine's build does not list it yet, so updating the machine, then
+   * syncing again, carries it. Absent for any other refusal.
+   */
+  builtInHere?: true;
 }
 
 /** A model entry that takes `variable` from this server's environment. */

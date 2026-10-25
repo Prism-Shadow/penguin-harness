@@ -45,6 +45,7 @@ describe("builders", () => {
     const msg = toolCallOutput({
       output: "image/png, 4 B",
       toolCallId: "call_img",
+      status: "completed",
       images: [dataUrl],
     });
     expect(msg.payload).toMatchObject({
@@ -53,17 +54,20 @@ describe("builders", () => {
       output: "image/png, 4 B",
       images: [dataUrl],
       tool_call_id: "call_img",
-      stop_reason: "completed",
+      status: "completed",
     });
     // A JSON serialization round-trip preserves images (same shape as Trace persistence / replay).
     const revived = JSON.parse(JSON.stringify(msg)) as { payload: ToolCallOutputPayload };
     expect(revived.payload.images).toEqual([dataUrl]);
     // The images field is not produced when omitted or given an empty array (absence means no
     // images; serialization does not carry an empty field).
-    expect("images" in toolCallOutput({ output: "x", toolCallId: "c" }).payload).toBe(false);
-    expect("images" in toolCallOutput({ output: "x", toolCallId: "c", images: [] }).payload).toBe(
-      false,
-    );
+    expect(
+      "images" in toolCallOutput({ output: "x", toolCallId: "c", status: "completed" }).payload,
+    ).toBe(false);
+    expect(
+      "images" in
+        toolCallOutput({ output: "x", toolCallId: "c", status: "completed", images: [] }).payload,
+    ).toBe(false);
   });
 
   it("partialToolCallOutput delta carries optional images (whole image in one delta)", () => {

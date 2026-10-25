@@ -5,8 +5,9 @@
  * **renders** the content (text/thinking and session_meta's system prompt go through Markdown,
  * tool arguments/output go through a code block, token_usage goes through a bucket table,
  * session_meta goes through a field table — the Session's every field — and its system prompt)
- * instead of dumping raw JSON; a stop reason other than `completed` (stop_reason / status) is
- * shown in the bottom-right of the expanded area — a record that completed carries no mark.
+ * instead of dumping raw JSON; a `status` other than `completed` (a request's end, a tool
+ * result, a compaction or MCP connect end) is shown in the bottom-right of the expanded area — a
+ * record that completed carries no mark.
  * Linked highlighting with the timeline — a matched row only gets a
  * background color, never an outline; only one row lights up at a time (each
  * row has its own unique rowKey, so adjacent messages at the same timestamp
@@ -29,7 +30,7 @@ import ReactMarkdown from "react-markdown";
 import { S } from "../../lib/strings";
 import type { AmspRecord } from "@prismshadow/amsp";
 import { formatTime, humanizeTokens } from "../../lib/format";
-import { stopReasonTone } from "../../lib/stop-reason-tone";
+import { statusTone } from "../../lib/status-tone";
 
 /**
  * A record family's pill tone, so the two families read apart at a glance down a round's rows:
@@ -180,10 +181,9 @@ export function summarizeEvent(msg: AmspRecord): string {
   }
 }
 
-/** Stop reason (a model message's stop_reason / request_end's status); undefined if absent. */
-function stopReasonOf(msg: AmspRecord): string | undefined {
-  const p = msg.payload as { stop_reason?: string; status?: string };
-  return p.stop_reason ?? p.status;
+/** The record's `status` (request_end, tool_call_output, compaction_end, mcp_connect_end); undefined if absent. */
+function statusOf(msg: AmspRecord): string | undefined {
+  return (msg.payload as { status?: string }).status;
 }
 
 const codeBlock =
@@ -445,7 +445,7 @@ export function EventRow({
 }) {
   const [open, setOpen] = useState(false);
   const payloadType = (msg.payload as { type?: string }).type ?? msg.type;
-  const stopReason = stopReasonOf(msg);
+  const status = statusOf(msg);
   return (
     <li data-trace-row={rowKey}>
       <button
@@ -489,11 +489,11 @@ export function EventRow({
         {() => (
           <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/40">
             <EventBody msg={msg} />
-            {/* Stop reason, bottom-right, only when the record did not complete: completed is the
+            {/* Status, bottom-right, only when the record did not complete: completed is the
                 absence of a mark. */}
-            {stopReason !== undefined && stopReason !== "completed" && (
+            {status !== undefined && status !== "completed" && (
               <div className="mt-1.5 flex justify-end">
-                <Badge tone={stopReasonTone(stopReason)}>{stopReason}</Badge>
+                <Badge tone={statusTone(status)}>{status}</Badge>
               </div>
             )}
           </div>

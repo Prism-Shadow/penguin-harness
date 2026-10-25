@@ -451,10 +451,9 @@ export function isStopSignal(signal: NodeJS.Signals | null | undefined): boolean
  * Environment's own failures — a timeout, a throw, a spawn error — and never comes from here.
  */
 export function resultForExit(exit: ProcessExit | null): ToolResult {
-  if (!exit) return { stopReason: "completed" };
-  if (exit.signal)
-    return { stopReason: "completed", note: `[terminated by signal ${exit.signal}]` };
+  if (!exit) return { status: "completed" };
+  if (exit.signal) return { status: "completed", note: `[terminated by signal ${exit.signal}]` };
   if (exit.code !== 0)
-    return { stopReason: "completed", note: `[exit code: ${exit.code ?? "unknown"}]` };
-  return { stopReason: "completed" };
+    return { status: "completed", note: `[exit code: ${exit.code ?? "unknown"}]` };
+  return { status: "completed" };
 }

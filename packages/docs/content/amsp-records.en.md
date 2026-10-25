@@ -7,7 +7,7 @@ An AMSP record is PenguinHarness's one message format. The SDK yields records, t
 
 They are the records of [AMSP](/amsp), the stream the [Agent API](/agent-api) serves to programs outside PenguinHarness: every line of a Trace is a valid AMSP record, so a change to the records is a change to that public protocol.
 
-This page starts with the envelope and its three message types, then lists every payload field by field, and ends with the rules that span every record: the streaming discipline, `stop_reason`, `origin` and provider fidelity. The definitions live in `packages/amsp/src/records/` (the `@prismshadow/amsp` package, entry `@prismshadow/amsp/records`), and `@prismshadow/penguin-core` re-exports them from its root.
+This page starts with the envelope and its three message types, then lists every payload field by field, and ends with the rules that span every record: the streaming discipline, end reasons, `origin` and provider fidelity. The definitions live in `packages/amsp/src/records/` (the `@prismshadow/amsp` package, entry `@prismshadow/amsp/records`), and `@prismshadow/penguin-core` re-exports them from its root.
 
 ## The envelope
 
@@ -76,7 +76,7 @@ Traces written before this split embedded a `tools` field in the meta. That fiel
 
 ## model_msg: complete payloads
 
-There are seven content payloads, discriminated by `payload.type`. Two optional fields are shared: `stop_reason` marks an abnormal terminal state (see [stop_reason](#stopreason)), and `fidelity` is an opaque provider-fidelity payload (see [Provider-fidelity fields](#provider-fidelity-fields)):
+There are seven content payloads, discriminated by `payload.type`. One optional field is shared: `fidelity`, an opaque provider-fidelity payload (see [Provider-fidelity fields](#provider-fidelity-fields)). No content payload carries an end reason; a tool result carries its `status` (see [End reasons](#end-reasons)):
 
 ```ts
 type Fidelity = Record<string, unknown>;  // opaque provider-fidelity payload (see below)
@@ -87,7 +87,6 @@ interface TextPayload {
   text: string;
   sender?: "user" | "parent_agent" | "harness" | "server"; // who produced a user-role text; absent = the human user
   fidelity?: Fidelity;        // e.g. { phase } segment marker (GPT-5), { signature }
-  stop_reason?: StopReason;
 }
 
 interface ThinkingPayload {
@@ -95,7 +94,6 @@ interface ThinkingPayload {
   role: "assistant";
   thinking: string;
   fidelity?: Fidelity;        // required by some models to replay history
-  stop_reason?: StopReason;
 }
 
 interface InlineThinkingPayload {
@@ -104,7 +102,6 @@ interface InlineThinkingPayload {
   data: string;               // reasoning content as base64-encoded bytes
   mime_type: string;
   fidelity?: Fidelity;
-  stop_reason?: StopReason;
 }
 
 interface ToolCallPayload {
@@ -114,7 +111,6 @@ interface ToolCallPayload {
   arguments: string;          // arguments as a JSON string
   tool_call_id: string;
   fidelity?: Fidelity;
-  stop_reason?: StopReason;
 }
 
 interface ToolCallOutputPayload {
@@ -123,14 +119,13 @@ interface ToolCallOutputPayload {
   output: string;
   images?: string[];          // data:<mime>;base64,… URLs (e.g. read_file's image results)
   tool_call_id: string;
-  stop_reason?: StopReason;
+  status: ToolStatus;         // completed / aborted (denied, or interrupted while running) / fatal
 }
 
 interface ImageUrlPayload {
   type: "image_url";
   role: "user";
   image_url: string;          // web URL or base64 data URL
-  stop_reason?: StopReason;
 }
 
 interface InlineDataPayload {
@@ -139,7 +134,6 @@ interface InlineDataPayload {
   data: string;               // other binary content, base64-encoded
   mime_type: string;
   fidelity?: Fidelity;
-  stop_reason?: StopReason;
 }
 ```
 
@@ -159,7 +153,6 @@ interface PartialTextPayload {
   role: "assistant";
   event_type: StreamEventType;
   text: string;                 // the text added by this fragment
-  stop_reason?: StopReason;
 }
 
 interface PartialThinkingPayload {
@@ -167,7 +160,6 @@ interface PartialThinkingPayload {
   role: "assistant";
   event_type: StreamEventType;
   thinking: string;
-  stop_reason?: StopReason;
 }
 
 interface PartialToolCallPayload {
@@ -177,7 +169,6 @@ interface PartialToolCallPayload {
   name: string;
   arguments: string;            // incremental fragment of the arguments JSON
   tool_call_id: string;
-  stop_reason?: StopReason;
 }
 
 interface PartialToolCallOutputPayload {
@@ -187,7 +178,6 @@ interface PartialToolCallOutputPayload {
   output: string;
   images?: string[];            // images are not incremental — one delta carries the whole set
   tool_call_id: string;
-  stop_reason?: StopReason;
 }
 ```
 
@@ -201,7 +191,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
                           (truncation applies to both alike)
 ```
 
-Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. Each run of fragments ends with its complete message after the `stop`, so a consumer never has to reassemble fragments itself.
+Renderers can therefore paint deltas as they arrive and swap in the complete message in place. The Trace records only complete messages, never fragments. Interface implementations close their structures internally and never leak an unclosed fragment upward. Each run of fragments ends with its complete message after the `stop`, so a consumer never has to reassemble fragments itself. That holds for an item an interruption, a failure or a cut-off ended early, too: its complete record holds what arrived (a tool call's raw argument text, which may not parse). Whether it entered the model history is its Request's `request_end.status`. A tool call of a Request that did not complete ran only if its `approval_decision` came before that `request_end`; one closed early never runs.
 
 ## event_msg
 
@@ -220,26 +210,28 @@ Fourteen event payloads record the runtime events outside the model context:
 | `token_usage` | Session-cumulative and per-request Token counts |
 | `compaction_begin` | The trigger reason and mode, with the context tokens and turn count at trigger time |
 | `compaction_end` | The reason, mode and terminal status of a compaction, plus the retry detail block |
-| `abort` | A user interruption and its cause code |
+| `abort` | A user interruption, or the Task stopped at its turn cap, and its cause code |
 | `subagent` | A pointer in the parent Trace to a direct child Session |
 | `hook` | A hook's answer: the hook point, name, decision and the hook's own record |
 
 The vocabulary is closed: a record or field is added only when no existing record carries the fact and no reader can derive it. `task_begin` / `task_end` are one of its two stated exceptions (the other is `request_begin.thinking_level`). Before them no record said where a Task starts or whether it reached its end, and every reader derived both from the user's prompts.
 
-The Session writes one pair around each Task: one prompt's run, followed by the `hook` records of the stop hooks it consults. A Task that a stop hook's `continue` drives, such as a goal round, gets a pair of its own. A manual compaction and a model switch are not Tasks and get none. The payload is the type alone. How the Task ended is read from the records inside the pair (`abort`, a terminal `request_end` or `compaction_end`, a `fatal` final reply), and who started it from its input. A Task that throws writes no `task_end`, so an unclosed `task_begin` means the Task never reached its end. Where the records sit in the Trace is covered under [Trace design](/sessions-and-traces#trace-design).
+The Session writes one pair around each Task: one prompt's run, followed by the `hook` records of the stop hooks it consults. A Task that a stop hook's `continue` drives, such as a goal round, gets a pair of its own. A manual compaction and a model switch are not Tasks and get none. The payload is the type alone. How the Task ended is read from the records inside the pair (`abort`, a terminal `request_end` or `compaction_end`), and who started it from its input. A Task that throws writes no `task_end`, so an unclosed `task_begin` means the Task never reached its end. Where the records sit in the Trace is covered under [Trace design](/sessions-and-traces#trace-design).
 
 Every payload that reports a failure carries the same error pair: `error_code`, a stable machine-readable cause that render layers localize from, and `error_message`, the raw text of the failure, shown verbatim. The complete listing:
 
 ```ts
 type ErrorCode =
-  // abort causes (a user interruption, the only thing an abort event marks)
+  // abort causes (a user interruption, or the turn cap)
   | "user_abort"
   | "backoff_interrupted"
   | "compaction_interrupted"
+  | "max_turns"               // the Task reached max_turns; error_message names the cap
   // LLM request failures (request_end / compaction_end)
   | "timeout"                 // idle timeout / connection went silent
   | "network"                 // transport drops, provider 429/5xx, and anything unclassifiable
   | "malformed"               // response failed parsing/validation, or the stream was truncated
+  | "output_truncated"        // the response stopped at its output cap; retried, never committed
   | "auth"                    // the provider rejected the credentials
   | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
@@ -316,7 +308,8 @@ interface RequestBeginPayload {
 
 interface RequestEndPayload {
   type: "request_end";
-  status: StopReason;         // "completed" is the mechanical commit criterion for replay
+  status: StopReason;         // the one record of why the Request ended (see End reasons);
+                              // "completed" is the mechanical commit criterion for replay
   // The unified RetryDetail block below is stamped in one place by the builders; every
   // field is additive — old Traces replay unchanged. compaction_end reuses the same block.
   error_code?: ErrorCode;     // classified cause, non-completed only
@@ -378,8 +371,9 @@ interface CompactionEndPayload {
 
 interface AbortPayload {
   type: "abort";
-  error_code?: ErrorCode;     // user_abort / backoff_interrupted / compaction_interrupted
-  error_message?: string;
+  error_code?: ErrorCode;     // user_abort / backoff_interrupted / compaction_interrupted /
+                              // max_turns (the turn cap)
+  error_message?: string;     // the turn cap's names the cap: "reached max turns (40)"
   reason?: string | null;     // legacy: older Traces carry the cause as English prose here;
                               // the engine no longer writes it
 }
@@ -410,24 +404,37 @@ A server that is skipped rather than contacted, because its entry references a v
 
 `compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
 
-## stop_reason
+## End reasons
 
-A four-value enum shared by every record that carries a stop reason: model messages, tool results, and request, compaction and MCP-connect terminals. `LLMOutcome.status` uses the same set (see [Core Interfaces](/interfaces)):
+No record carries a per-item end reason. Every streamed item has its complete record, one an interruption cut off included; whether it entered the model history is its Request's `request_end.status`; how the run ended is read from `abort` and the terminal `request_end` / `compaction_end`. Records written by older versions carry a `stop_reason` field on every model payload; it is no longer read.
+
+A Request ends with a `StopReason`. `LLMOutcome.status` uses the same set (see [Core Interfaces](/interfaces)):
 
 ```ts
-type StopReason = "completed" | "aborted" | "retryable" | "fatal";
+type StopReason = "completed" | "aborted" | "retryable" | "fatal";  // request_end, compaction_end, MCP connect results
+type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call_output
 ```
 
-A stop reason answers one question: should this be retried? The kind of failure rides on `error_code`, and its detail on `error_message`.
+A status answers one question: should this be retried? The kind of failure rides on `error_code`, and its detail on `error_message`.
 
-| Value | Meaning | Engine reaction |
+| `request_end.status` | Meaning | Engine reaction |
 | --- | --- | --- |
-| `completed` | finished normally. Environment side: a command that ran, whatever its exit status: a non-zero exit or a signal is the command's result, written on the output's last line (`[exit code: N]`, `[terminated by signal X]`) | continue |
+| `completed` | finished normally; the turn is committed | continue |
 | `aborted` | user interruption or cancellation | stop, emit an `abort` event, hand back to the user |
-| `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed or truncated responses, and anything unclassifiable | LLM side: reconnect within the run on the backoff ladder |
-| `fatal` | a failure no retry can fix. LLM side: a definitive provider 4xx rejection (parameters, quota), rejected credentials, or a deterministic client-side rejection. Environment side: a tool error or timeout | LLM side: stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record. Environment side: the error is fed back to the model, never retried |
+| `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, a response that arrived whole but stopped at its output cap (`error_code: "output_truncated"`), and anything unclassifiable | reconnect within the run on the backoff ladder; an attempt stopped at its cap is not committed. When the retries run out, the last `request_end` (no `retry_in_ms`) is the terminal record |
+| `fatal` | a failure no retry can fix: a definitive provider 4xx rejection (parameters, quota), rejected credentials, or a deterministic client-side rejection | stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record |
 
-Tools rarely end `retryable`: a tool error or timeout is definitive for that call, and nothing in the harness retries a tool. Older Traces may still carry the retired values `failed`, `timeout`, `malformed` and `auth`. Replay only ever compares against `completed`, and renderers still display the old spellings.
+A tool result's `status` says what the result is:
+
+| `tool_call_output.status` | Meaning |
+| --- | --- |
+| `completed` | the tool ran to its end; whatever it reported is in the output. A command that ran completes whatever its exit status: a non-zero exit or a signal is the command's result, written on the output's last line (`[exit code: N]`, `[terminated by signal X]`) |
+| `fatal` | the call failed: an unknown tool, unparseable arguments, a tool error, an execution-environment error, or a timeout. The error is fed back to the model, never retried |
+| `aborted` | the call did not run to its end: the user, the command policy or a pre_tool_use hook denied it (`approval_decision` names who), or the user interrupted it while it ran (the output holds what it had produced, then the interruption note) |
+
+A `tool_call_output` written before the field reads as `completed`. Older Traces may still carry the retired `request_end` values `failed`, `timeout`, `malformed` and `auth`. Replay only ever compares against `completed`, and renderers still display the old spellings.
+
+The turn cap is no Request: when a Task reaches `max_turns`, the engine writes an `abort` with `error_code: "max_turns"` and ends the Task.
 
 Errors never cross an interface boundary as exceptions. They *are* messages (see [The Agent Loop](/agent-loop)).
 

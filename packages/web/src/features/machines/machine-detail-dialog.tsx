@@ -10,9 +10,9 @@
  *   (Enable when nothing is installed), Stop or Start its server, Restart it, Sync config while it
  *   is connected on this server's build, Configure SSH, Uninstall. A verb that cannot run now
  *   stays in place, greyed, and ONE muted sentence under the row says why and names them.
- * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and an
- *   attention notice listing what it could not carry: models keyed from this server's
- *   environment, and models the machine would not take.
+ * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and
+ *   attention notices, each of which the person may close, saying what it could not carry:
+ *   models keyed from this server's environment, and models the machine would not take.
  * - Reconnecting, while the server brings a machine it keeps connected back or has stopped trying:
  *   the shared retry status (the attempt of how many, the countdown to the next with Retry now,
  *   where it stopped with Retry — none for a refused password), for how long, the last failure —
@@ -62,7 +62,12 @@ import {
   Spinner,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { dismissNotice, envOnlyNoticeId, useNoticeDismissed } from "../../lib/notice-dismissals";
+import {
+  dismissNotice,
+  envOnlyNoticeId,
+  skippedNoticeId,
+  useNoticeDismissed,
+} from "../../lib/notice-dismissals";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -74,6 +79,7 @@ import {
   machineFacts,
   machineToolbar,
   reconnectView,
+  skippedItems,
 } from "./machine-detail-view";
 import type {
   CheckLine,
@@ -132,6 +138,10 @@ export interface MachineDetailBodyProps {
   envOnlyDismissed?: boolean | null;
   /** Closes that notice; without it the notice has no close cross. */
   onDismissEnvOnly?: () => void;
+  /** The same for the "models not synced to this machine" notice, over the refusals it lists. */
+  skippedDismissed?: boolean | null;
+  /** Closes that notice; without it the notice has no close cross. */
+  onDismissSkipped?: () => void;
   /**
    * Asks the page for a verb. The page may answer with the request's promise (the reconnect's
    * Retry does), which rejects when the server refused it.
@@ -421,19 +431,23 @@ export function MachineToolbar({
 
 /**
  * The last config sync: one quiet line — a check, or the danger cross on a failure, beside the
- * words — and, when the sync left anything behind, attention notices saying what and why: the
- * shared notice for the model keys only this server's environment holds, which the person may
- * close (as the initial-password banner can be) and which comes back when another such key
- * appears, and the models the machine would not take.
+ * words — and, when the sync left anything behind, attention notices saying what and why, both
+ * the shared notice the person may close (as the initial-password banner can be): the model keys
+ * only this server's environment holds, back when another such key appears, and the models the
+ * machine would not take, back when another model is refused or one is refused for another reason.
  */
 function ConfigSync({
   view,
   envOnlyDismissed = false,
   onDismissEnvOnly,
+  skippedDismissed = false,
+  onDismissSkipped,
 }: {
   view: ConfigSyncView;
   envOnlyDismissed?: boolean | null;
   onDismissEnvOnly?: () => void;
+  skippedDismissed?: boolean | null;
+  onDismissSkipped?: () => void;
 }) {
   const c = S.machines.detail.configSync;
   return (
@@ -458,21 +472,19 @@ function ConfigSync({
           <span data-env-only="">{c.envOnly}</span>
         </Notice>
       )}
-      {view.skipped.length > 0 && (
-        <NoticeStrip
+      {view.skipped.length > 0 && skippedDismissed === false && (
+        <Notice
           tone="attention"
-          data-config-sync-notice=""
-          className="mt-3 rounded-md border px-3 py-2 text-sm"
+          className="mt-3"
+          title={c.skippedTitle}
+          {...(onDismissSkipped !== undefined ? { dismiss: { onClick: onDismissSkipped } } : {})}
         >
-          <div data-skipped="">
-            <p>{c.skippedTitle}</p>
-            <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
-              {view.skipped.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </div>
-        </NoticeStrip>
+          <ul data-skipped="" className="mt-1 list-disc space-y-1 pl-5 break-words">
+            {view.skipped.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </Notice>
       )}
     </>
   );
@@ -490,6 +502,8 @@ export function MachineDetailBody({
   now = Date.now(),
   envOnlyDismissed = false,
   onDismissEnvOnly,
+  skippedDismissed = false,
+  onDismissSkipped,
   onAct,
 }: MachineDetailBodyProps) {
   const m = S.machines;
@@ -542,6 +556,8 @@ export function MachineDetailBody({
                 view={configSync}
                 envOnlyDismissed={envOnlyDismissed}
                 {...(onDismissEnvOnly !== undefined ? { onDismissEnvOnly } : {})}
+                skippedDismissed={skippedDismissed}
+                {...(onDismissSkipped !== undefined ? { onDismissSkipped } : {})}
               />
             )}
           </div>
@@ -707,10 +723,14 @@ export function MachineDetailDialog({
   const { alias, local } = body.machine;
   const [host, setHost] = useState<SshHostResponse | null>(null);
   // The "keys from this server's environment" notice, closed per account and per machine over
-  // the keys it names (lib/notice-dismissals.ts).
+  // the keys it names, and the "models not synced" one, per account, machine and Project over
+  // the refusals it lists (lib/notice-dismissals.ts).
   const envOnly = envOnlyItems(body.machine);
   const envOnlyId = envOnlyNoticeId(body.machine.id);
   const envOnlyDismissed = useNoticeDismissed(envOnlyId, envOnly);
+  const skipped = skippedItems(body.machine);
+  const skippedId = skippedNoticeId(body.machine.id, projectId);
+  const skippedDismissed = useNoticeDismissed(skippedId, skipped);
   useEffect(() => {
     setHost(null);
     if (local) return;
@@ -742,6 +762,8 @@ export function MachineDetailDialog({
         now={Date.now()}
         envOnlyDismissed={envOnlyDismissed}
         onDismissEnvOnly={() => dismissNotice(envOnlyId, envOnly)}
+        skippedDismissed={skippedDismissed}
+        onDismissSkipped={() => dismissNotice(skippedId, skipped)}
       />
     </Modal>
   );

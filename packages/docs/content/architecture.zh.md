@@ -165,12 +165,12 @@ AMSP 记录同时是 SDK 的对外接口、Trace 的落盘格式和引擎内部�
 
 ### 错误收敛为消息
 
-LLM 与 Environment 从不向引擎抛异常。它们的结果携带四值 `stop_reason`，具体原因由 `error_code` 和 `error_message` 承载：
+LLM 与 Environment 从不向引擎抛异常。Request 的结束记在 `request_end.status` 上，工具结果带自己的 `status`（`completed`、调用被拒或运行中被中断时的 `aborted`、`fatal`），具体原因由 `error_code` 和 `error_message` 承载：
 
-| `stop_reason` | 含义与引擎行为 |
+| `request_end.status` | 含义与引擎行为 |
 | --- | --- |
 | `completed` | 正常完成；循环继续或 Task 结束 |
-| `retryable` | 值得重试的 LLM 失败：引擎在同一次运行内自动重连，最多连续 5 次无进展的重试，指数退避并设上限 |
+| `retryable` | 值得重试的 LLM 失败，停在输出上限的响应（`output_truncated`）也在其中：引擎在同一次运行内自动重连，最多连续 5 次无进展的重试，指数退避并设上限 |
 | `fatal` | 确定性的失败，例如凭据被拒：运行立即停止，因为重试也不可能成功 |
 | `aborted` | 用户中断 |
 

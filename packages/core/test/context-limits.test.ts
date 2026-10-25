@@ -70,7 +70,7 @@ describe("approximateMessagesTokens", () => {
     const big = toolCallOutput({
       output: "y".repeat(120_000),
       toolCallId: "c1",
-      stopReason: "completed",
+      status: "completed",
     });
     expect(approximateMessagesTokens([big])).toBeGreaterThanOrEqual(30_000);
   });
@@ -98,7 +98,7 @@ describe("approximateMessagesTokens", () => {
     const withImage = toolCallOutput({
       output: "Read image OK (1024x768).",
       toolCallId: "c1",
-      stopReason: "completed",
+      status: "completed",
       images: [`data:image/png;base64,${"A".repeat(1_000_000)}`],
     });
     const est = approximateMessagesTokens([withImage]);
@@ -108,7 +108,7 @@ describe("approximateMessagesTokens", () => {
     const twoImages = toolCallOutput({
       output: "ok",
       toolCallId: "c2",
-      stopReason: "completed",
+      status: "completed",
       images: [
         `data:image/png;base64,${"A".repeat(500_000)}`,
         `data:image/jpeg;base64,${"B".repeat(500_000)}`,

@@ -76,6 +76,7 @@ import type {
   SessionSource,
   StopReason,
   TokenUsagePayload,
+  ToolStatus,
 } from "@prismshadow/amsp";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
@@ -164,7 +165,8 @@ export interface AssistantTextItem {
   text: string;
   /** The streamed fragment is still accumulating. */
   streaming: boolean;
-  stopReason?: StopReason;
+  /** Its Request ended `completed` (set at that request_end): only such a reply is a fork point. */
+  requestCompleted?: boolean;
   /**
    * Message timestamp (milliseconds): shown on footer hover. During
    * streaming it's a placeholder using the partial start's timestamp;
@@ -181,7 +183,6 @@ export interface ThinkingItem {
   id: number;
   thinking: string;
   streaming: boolean;
-  stopReason?: StopReason;
   /** Start timestamp in milliseconds (the partial start's message time; approximated by the previous message's time when history has no fragments). */
   startedAtMs?: number;
   /** Thinking duration (settled when the complete message arrives: message time - start time). */
@@ -198,14 +199,18 @@ export interface ToolCallItem {
   callStreaming: boolean;
   /** A complete tool_call message has been received (all streamed copies after this are ignored). */
   callComplete: boolean;
-  callStopReason?: StopReason;
   /** Tool output (appended via streaming, replaced once the complete message arrives; truncation/timeout/interruption markers are already in the text). */
   output: string;
   /** Images carried by the tool output (an array of data URLs; a streamed delta carries the whole array at once, and the complete message converges it again). */
   images?: string[];
   outputStreaming: boolean;
   outputComplete: boolean;
-  outputStopReason?: StopReason;
+  /**
+   * The result's `status` (tool_call_output.status; a record written before the field reads as
+   * completed). `aborted` also marks a card that will never get a result — the call was cut
+   * short while streaming, or interrupted while it ran.
+   */
+  outputStatus?: ToolStatus;
   /** Approval decision (annotated by the approval_decision event). */
   decision?: ApprovalDecision;
   decisionSource?: DecisionSource;
@@ -583,6 +588,12 @@ export interface StreamModel {
    */
   openRequestBeginMs: number | null;
   /**
+   * The first item id the main session's currently unclosed Request could have produced
+   * (`nextItemId` at its request_begin; null before one is seen): its request_end marks the
+   * assistant texts from there on with whether the Request completed.
+   */
+  openRequestFirstItemId: number | null;
+  /**
    * Total human approval wait time (milliseconds) within the currently
    * unclosed Request: deducted from the wall-clock duration at request_end,
    * so only the time the LLM is actually generating counts toward the
@@ -693,6 +704,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     pendingDecisionTs: new Map(),
     lastTsMs: 0,
     openRequestBeginMs: null,
+    openRequestFirstItemId: null,
     openApprovalWaitMs: 0,
     taskOpen: false,
     taskStartLocalMs: 0,
@@ -1130,7 +1142,7 @@ function collectTaskAssistant(model: StreamModel): {
       if (atMs === undefined) {
         atMs = it.atMs; // walking backward: the first hit is the last one
         tracePosition = it.tracePosition;
-        completed = it.stopReason === "completed";
+        completed = it.requestCompleted === true;
       }
     }
   }
@@ -1155,8 +1167,7 @@ function collectTaskMemoryChanges(model: StreamModel): MemoryChangeRow[] {
   for (let i = model.items.length - 1; i >= 0; i--) {
     const it = model.items[i]!;
     if (it.kind === "task_stats") break;
-    if (it.kind !== "tool_call" || !it.outputComplete || it.outputStopReason !== "completed")
-      continue;
+    if (it.kind !== "tool_call" || !it.outputComplete || it.outputStatus !== "completed") continue;
     if (it.name !== "write_file" && it.name !== "edit_file") continue;
     let args: unknown;
     try {
@@ -1204,7 +1215,6 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.text) open.text += p.text;
       if (p.event_type === "stop") {
         open.streaming = false;
-        if (p.stop_reason !== undefined) open.stopReason = p.stop_reason;
         model.pendingText = open;
         model.openText = null;
       }
@@ -1229,7 +1239,6 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.thinking) open.thinking += p.thinking;
       if (p.event_type === "stop") {
         open.streaming = false;
-        if (p.stop_reason !== undefined) open.stopReason = p.stop_reason;
         settleThinkingDuration(open, tsMs);
         model.pendingThinking = open;
         model.openThinking = null;
@@ -1263,7 +1272,6 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.arguments) card.argumentsText += p.arguments;
       if (p.event_type === "stop") {
         card.callStreaming = false;
-        if (p.stop_reason !== undefined) card.callStopReason = p.stop_reason;
         // Execution start = the call's closing timestamp (same convention as Trace analysis: tool_call → tool_call_output).
         if (tsMs !== undefined) card.callStartedAtMs = tsMs;
       }
@@ -1287,7 +1295,6 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.images && p.images.length > 0) card.images = p.images;
       if (p.event_type === "stop") {
         card.outputStreaming = false;
-        if (p.stop_reason !== undefined) card.outputStopReason = p.stop_reason;
         settleToolDuration(card, tsMs, model.stats);
       }
       return;
@@ -1405,7 +1412,6 @@ function handleComplete(
         const doneMs = tsOf(timestamp);
         if (doneMs !== undefined) target.atMs = doneMs; // the completion timestamp overrides the start placeholder
         if (tracePosition !== undefined) target.tracePosition = tracePosition;
-        if (p.stop_reason !== undefined) target.stopReason = p.stop_reason;
         if (target === model.openText) model.openText = null;
         model.pendingText = null;
         return;
@@ -1431,7 +1437,6 @@ function handleComplete(
         ...(doneMs !== undefined ? { atMs: doneMs } : {}),
         ...(tracePosition !== undefined ? { tracePosition } : {}),
       };
-      if (p.stop_reason !== undefined) item.stopReason = p.stop_reason;
       model.items.push(item);
       return;
     }
@@ -1467,7 +1472,6 @@ function handleComplete(
         }
         target.thinking = p.thinking;
         target.streaming = false;
-        if (p.stop_reason !== undefined) target.stopReason = p.stop_reason;
         settleThinkingDuration(target, tsMs);
         if (target === model.openThinking) model.openThinking = null;
         model.pendingThinking = null;
@@ -1482,7 +1486,6 @@ function handleComplete(
         thinking: p.thinking,
         streaming: false,
       };
-      if (p.stop_reason !== undefined) item.stopReason = p.stop_reason;
       // History rebuild (no fragment): approximate the thinking start with the previous message's time.
       if (model.lastTsMs > 0) item.startedAtMs = model.lastTsMs;
       settleThinkingDuration(item, tsMs);
@@ -1504,10 +1507,8 @@ function handleComplete(
         card.argumentsText = p.arguments;
         card.callStreaming = false;
         card.callComplete = true;
-        if (p.stop_reason !== undefined) card.callStopReason = p.stop_reason;
         if (tsMs !== undefined) card.callStartedAtMs = tsMs;
         noteApprovalWait(model, card); // Approval arrived first (mid-stream join): only here do both timestamps come together
-        settleUndispatchedCall(card);
         return;
       }
       if (existing && !existing.outputComplete) {
@@ -1516,7 +1517,7 @@ function handleComplete(
         // the running timer (same behavior as closeExecutingToolCards).
         existing.outputComplete = true;
         existing.outputStreaming = false;
-        existing.outputStopReason ??= "aborted";
+        existing.outputStatus ??= "aborted";
       }
       const created = createToolCard(model, {
         toolCallId: p.tool_call_id,
@@ -1525,7 +1526,6 @@ function handleComplete(
         callStreaming: false,
       });
       created.callComplete = true;
-      if (p.stop_reason !== undefined) created.callStopReason = p.stop_reason;
       if (tsMs !== undefined) created.callStartedAtMs = tsMs;
       noteApprovalWait(model, created); // createToolCard may have already backfilled a pending approval timestamp
       // History rebuild (no partial_tool_call start): approximate "argument
@@ -1533,7 +1533,6 @@ function handleComplete(
       // convention as thinking. Otherwise the tool duration would lose its
       // argument-generation segment (often the bulk of it) after a refresh, for no reason.
       if (model.lastTsMs > 0) created.argStartedAtMs = model.lastTsMs;
-      settleUndispatchedCall(created);
       return;
     }
     case "tool_call_output": {
@@ -1553,7 +1552,8 @@ function handleComplete(
       if (p.images && p.images.length > 0) card.images = p.images;
       card.outputStreaming = false;
       card.outputComplete = true;
-      if (p.stop_reason !== undefined) card.outputStopReason = p.stop_reason;
+      // A result written before tool results carried a status reads as completed.
+      card.outputStatus = p.status ?? "completed";
       settleToolDuration(card, tsOf(timestamp), model.stats);
       // This turn owes the model its results, so a compaction triggering now is mid-Task
       // and the round is not over (see turnToolOutputs).
@@ -1573,32 +1573,57 @@ function handleComplete(
  * arrived): after an interruption or Task finalization, these cards will
  * never get a tool_call_output, so mark output complete to stop the view
  * layer's rolling timer; the duration stays unset and isn't shown. The
- * stop reason is recorded as aborted — these tools **never produced a
- * result**, and leaving it unset would render as a "completed" checkmark,
- * visually indistinguishable from "executed successfully but with empty output".
+ * status is recorded as aborted — these tools **never produced a
+ * result** (a call interrupted while it runs writes none), and leaving it
+ * unset would render as a "completed" checkmark, visually
+ * indistinguishable from "executed successfully but with empty output".
  * A late-arriving complete tool_call_output (if any) still overrides unconditionally, unaffected by this.
  */
 function closeExecutingToolCards(model: StreamModel): void {
   for (const card of model.toolCards.values()) {
-    if (card.callComplete && !card.outputComplete) {
-      card.outputComplete = true;
-      card.outputStreaming = false;
-      card.outputStopReason ??= "aborted";
-    }
+    if (!card.outputComplete) settleUnfinishedCard(card);
   }
 }
 
 /**
- * A tool_call that closed with a non-completed status (produced by an interrupt closure)
- * was never dispatched for execution and will never get a tool_call_output: settle the
- * card by its closing reason as soon as it arrives, so the execution timer doesn't keep
- * spinning forever.
+ * Settle the cards a Request left with a call that will never run, once its request_end
+ * arrives: a call still streaming then (a join that missed its complete record), and — when the
+ * Request did not complete — a call with no approval decision. The engine decides every call it
+ * dispatches before the call's Request ends, so an undecided one was closed with the Request
+ * (written whole with the arguments that arrived) and will never get a result. Settled as
+ * aborted, so the timer doesn't keep spinning.
  */
-function settleUndispatchedCall(card: ToolCallItem): void {
-  if (!card.callStopReason || card.callStopReason === "completed" || card.outputComplete) return;
+function settleCutShortCalls(model: StreamModel, completed: boolean): void {
+  for (const card of model.toolCards.values()) {
+    if (card.outputComplete) continue;
+    if (!card.callComplete || (!completed && card.decision === undefined)) {
+      settleUnfinishedCard(card);
+    }
+  }
+}
+
+function settleUnfinishedCard(card: ToolCallItem): void {
+  card.callStreaming = false;
   card.outputComplete = true;
   card.outputStreaming = false;
-  card.outputStopReason ??= card.callStopReason;
+  card.outputStatus ??= "aborted";
+}
+
+/**
+ * Marks the assistant texts the main session's closing Request produced with whether it
+ * completed: the items appended since its request_begin (or, on a mid-stream join that missed
+ * it, those back to the previous Task's stats row) that no earlier request_end marked.
+ */
+function markRequestTexts(model: StreamModel, completed: boolean): void {
+  const from = model.openRequestFirstItemId;
+  model.openRequestFirstItemId = null;
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const it = model.items[i]!;
+    if (it.kind === "task_stats" || (from !== null && it.id < from)) break;
+    if (it.kind === "assistant_text" && it.requestCompleted === undefined) {
+      it.requestCompleted = completed;
+    }
+  }
 }
 
 /** Settle the thinking duration: end time - start time (skipped if either is missing; negative values clamp to 0). */
@@ -1872,6 +1897,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // Record this Request's start (for output TPS timing); compaction requests aren't timed.
       if (!model.stats.compactionActive) {
         model.openRequestBeginMs = tsMs ?? null;
+        model.openRequestFirstItemId = model.nextItemId;
         model.openApprovalWaitMs = 0;
         // A new turn: whatever the previous one owed the model has been sent with it.
         model.turnToolOutputs = false;
@@ -1896,6 +1922,10 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       }
       model.openRequestBeginMs = null;
       model.openApprovalWaitMs = 0;
+      // The Request is over: its texts learn whether it completed (the fork point needs a
+      // completed one), and a call it cut short will never run.
+      markRequestTexts(model, p.status === "completed");
+      settleCutShortCalls(model, p.status === "completed");
       // This is now the round's end (so far): update taskLastReqEndMs, with
       // the duration taken as "it − the first message". This also settles
       // compaction's Token attribution — reaching this point means a

@@ -1420,6 +1420,15 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               code: "model_not_addable",
               reason: "cannot be added",
             },
+            // A built-in model here that the machine's older build does not list yet.
+            {
+              projectId: IDS.project,
+              provider: "minimax",
+              modelId: "MiniMax-M3.1-Flash",
+              code: "model_not_addable",
+              reason: "cannot be added",
+              builtInHere: true,
+            },
           ],
         },
       },
@@ -2004,7 +2013,6 @@ export function amspTryStream(body: unknown, run: { lang: Lang; now: number }): 
     type: "text",
     role: "user",
     text: question,
-    stop_reason: "completed",
   });
   let records: AmspRecord[];
   if (typeof sessionField === "string") {
@@ -2017,7 +2025,7 @@ export function amspTryStream(body: unknown, run: { lang: Lang; now: number }): 
       ev(0, { type: "task_begin" }),
       userInput,
       ev(120, { type: "request_begin", thinking_level: "medium" }),
-      msg(1400, { type: "text", role: "assistant", text, stop_reason: "completed" }),
+      msg(1400, { type: "text", role: "assistant", text }),
       ev(10, { type: "token_usage", session: usage(124, 5848, 5184), request: answer }),
       ev(10, { type: "request_end", status: "completed" }),
       ev(10, { type: "task_end" }),
@@ -2091,7 +2099,6 @@ export function amspTryStream(body: unknown, run: { lang: Lang; now: number }): 
         name: "exec_command",
         arguments: '{"cmd":"date"}',
         tool_call_id: id,
-        stop_reason: "completed",
       }),
       ev(10, { type: "approval_decision", decision: "allow", tool_call_id: id }),
       ev(10, { type: "token_usage", session: call, request: call }),
@@ -2100,7 +2107,7 @@ export function amspTryStream(body: unknown, run: { lang: Lang; now: number }): 
         type: "tool_call_output",
         output: `${clockText}\n`,
         tool_call_id: id,
-        stop_reason: "completed",
+        status: "completed",
       }),
       ev(30, { type: "request_begin", thinking_level: "medium" }),
       msg(10, { type: "partial_text", role: "assistant", event_type: "start", text: "" }),
@@ -2108,7 +2115,7 @@ export function amspTryStream(body: unknown, run: { lang: Lang; now: number }): 
         msg(400, { type: "partial_text", role: "assistant", event_type: "delta", text }),
       ),
       msg(10, { type: "partial_text", role: "assistant", event_type: "stop", text: "" }),
-      msg(10, { type: "text", role: "assistant", text: answerText, stop_reason: "completed" }),
+      msg(10, { type: "text", role: "assistant", text: answerText }),
       ev(10, { type: "token_usage", session: usage(86, 2728, 2240), request: answer }),
       ev(20, { type: "request_end", status: "completed" }),
       ev(10, { type: "task_end" }),

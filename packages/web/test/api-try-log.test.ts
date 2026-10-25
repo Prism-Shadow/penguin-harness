@@ -72,14 +72,8 @@ const ev = (payload: object, origin?: string[]) => rec("event_msg", payload, ori
 const msg = (payload: object, origin?: string[]) => rec("model_msg", payload, origin);
 const partial = (type: string, eventType: string, fields: object, origin?: string[]) =>
   msg({ type, event_type: eventType, ...fields }, origin);
-const call = (id: string, args: string, stop = "completed") =>
-  msg({
-    type: "tool_call",
-    name: "exec_command",
-    arguments: args,
-    tool_call_id: id,
-    stop_reason: stop,
-  });
+const call = (id: string, args: string) =>
+  msg({ type: "tool_call", name: "exec_command", arguments: args, tool_call_id: id });
 
 /** The new Session's session_meta: what names it on its first run's stream. */
 const meta = () =>
@@ -96,7 +90,7 @@ function timeRun(): AmspRecord[] {
   return [
     meta(),
     ev({ type: "task_begin" }),
-    msg({ type: "text", role: "user", text: "What time is it now?", stop_reason: "completed" }),
+    msg({ type: "text", role: "user", text: "What time is it now?" }),
     ev({ type: "request_begin", thinking_level: "medium" }),
     partial("partial_tool_call", "start", {
       name: "exec_command",
@@ -116,13 +110,13 @@ function timeRun(): AmspRecord[] {
       type: "tool_call_output",
       output: "Fri Oct  9 09:30:00 UTC 2026\n",
       tool_call_id: "call_1",
-      stop_reason: "completed",
+      status: "completed",
     }),
     ev({ type: "request_begin", thinking_level: "medium" }),
     partial("partial_text", "start", { role: "assistant", text: "" }),
     partial("partial_text", "delta", { role: "assistant", text: "It is " }),
     partial("partial_text", "delta", { role: "assistant", text: "09:30 UTC." }),
-    msg({ type: "text", role: "assistant", text: "It is 09:30 UTC.", stop_reason: "completed" }),
+    msg({ type: "text", role: "assistant", text: "It is 09:30 UTC." }),
     ev({ type: "token_usage", session: usage(86, 2728), request: usage(55, 1352) }),
     ev({ type: "request_end", status: "completed" }),
     ev({ type: "task_end" }),
@@ -272,7 +266,7 @@ describe("the rendered view's rows", () => {
   it("shows the complete record's content in place of the fragments, whatever they said", () => {
     const rows = rowsOf([
       partial("partial_text", "delta", { role: "assistant", text: "It's 9:30" }),
-      msg({ type: "text", role: "assistant", text: "It is 09:30 UTC.", stop_reason: "completed" }),
+      msg({ type: "text", role: "assistant", text: "It is 09:30 UTC." }),
     ]);
     expect(rows).toMatchObject([{ label: "text", text: "It is 09:30 UTC.", open: false }]);
   });

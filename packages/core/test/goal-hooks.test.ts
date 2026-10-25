@@ -64,9 +64,9 @@ const harness = (text: string) => ({
   type: "model_msg",
   payload: { type: "text", role: "user", text, sender: "harness" },
 });
-const assistant = (text: string, stop_reason?: string) => ({
+const assistant = (text: string) => ({
   type: "model_msg",
-  payload: { type: "text", role: "assistant", text, ...(stop_reason ? { stop_reason } : {}) },
+  payload: { type: "text", role: "assistant", text },
 });
 const usage = (total: number, cacheRead = 0) => ({
   type: "event_msg",
@@ -185,11 +185,11 @@ describe("stop.mjs", () => {
     expect(await readGoal()).toMatchObject({ status: "complete", tokens_used: 50 });
   });
 
-  it("a cut-off Task ends the goal as aborted: a user abort, a failed request, or the max_turns notice", async () => {
+  it("a cut-off Task ends the goal as aborted: a user abort, a failed request, or the max_turns cap", async () => {
     for (const tail of [
       [abort()],
       [requestEnd("fatal")],
-      [assistant("[reached max turns (10); stopping]", "fatal")],
+      [{ type: "event_msg", payload: { type: "abort", error_code: "max_turns" } }],
     ]) {
       const { out: started } = start("obj");
       await writeTrace([

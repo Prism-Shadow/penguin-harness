@@ -2500,7 +2500,11 @@ export class MachinesService {
     if (models.created.length > 0) say(`Created there: ${models.created.join(", ")}.`);
     for (const entry of models.skipped) {
       skipped.push(entry);
-      say(`Skipped ${entry.provider}/${entry.modelId} — ${entry.reason}`);
+      say(
+        entry.builtInHere === true
+          ? `Skipped ${entry.provider}/${entry.modelId} — a built-in model here that the build on that machine does not include yet; update that machine, then sync again.`
+          : `Skipped ${entry.provider}/${entry.modelId} — ${entry.reason}`,
+      );
       const config = await configOf(entry.projectId).catch(() => null);
       const names = (ref: ModelRef | undefined) =>
         ref?.provider === entry.provider && ref.model_id === entry.modelId;

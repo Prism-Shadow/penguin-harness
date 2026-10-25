@@ -871,7 +871,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   expect(await textOverlapCount(page), "finished @390 no overlapping text").toBe(0);
 
   // A DENIED call must state its outcome once, not twice: the deny path itself reports
-  // stop_reason "aborted", so the left status icon alone carries "Denied · manual"
+  // status "aborted", so the left status icon alone carries "Denied · manual"
   // (title/aria-label) and the redundant "aborted" badge is dropped. Fresh session: the mock
   // answers with plain text once any tool_result exists in the history.
   const sess2 = await (

@@ -249,6 +249,8 @@ export const en: Strings = {
           "Model keys from environment variables can't be synced to this machine. Set the keys by hand first.",
         skippedTitle: "These models were not synced to this machine:",
         skippedModel: (model: string, reason: string) => `${model}: ${reason}`,
+        notInMachineBuild:
+          "This machine's version doesn't include this built-in model yet; update the machine, then sync config again.",
       },
       held: {
         moving: "Another action is running on this machine.",
@@ -3690,11 +3692,13 @@ Scenarios:
     subagent: "Subagent",
     subagentRunning: "Running",
     /**
-     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
-     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
-     * renders its English `reason` prose as-is.
+     * Abort banner (user interruptions, and the turn cap). The cause localizes from
+     * `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim. The turn cap's line is
+     * localized whole (its message only restates the cap in English). A legacy Trace without a
+     * code renders its English `reason` prose as-is.
      */
     aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      if (item?.errorCode === "max_turns") return "[Stopped]: reached the maximum turns per task";
       const cause =
         item?.errorCode === "user_abort"
           ? "aborted by user"
@@ -3731,9 +3735,11 @@ Scenarios:
               ? "Network or service temporarily unavailable"
               : kind === "image_rejected"
                 ? "The model provider rejected an image in this turn's input (replaced with a note)"
-                : kind === "failed"
-                  ? "The model provider returned an error"
-                  : "The request failed";
+                : kind === "output_truncated"
+                  ? "The model's output was cut off at the output limit"
+                  : kind === "failed"
+                    ? "The model provider returned an error"
+                    : "The request failed";
       const action =
         state === "gaveUp"
           ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`

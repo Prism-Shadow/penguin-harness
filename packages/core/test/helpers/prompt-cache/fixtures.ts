@@ -212,7 +212,11 @@ export const fakeEnvironmentWith = (tools: ToolDefinition[]): EnvironmentInterfa
     return tools;
   },
   async *executeTool({ toolCall: call }) {
-    yield toolCallOutput({ output: "tool ran", toolCallId: call.payload.tool_call_id });
+    yield toolCallOutput({
+      output: "tool ran",
+      toolCallId: call.payload.tool_call_id,
+      status: "completed",
+    });
   },
   toolPermission() {
     return "rw";
