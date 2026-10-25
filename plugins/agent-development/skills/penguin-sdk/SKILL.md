@@ -1,7 +1,7 @@
 ---
 name: penguin-sdk
 description: Use to build a standalone external program with an agent in it, or connect an external program to a Penguin agent. For an app inside PenguinHarness with its own Agent and workbench tab, use agent-initialization and penguin-plugin directly; no SDK/API question applies. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Workbenches — the tabs and pages beside the chat that an Agent keeps for itself inside PenguinHarness — are the penguin-plugin skill's.
-version: 2026.10.24.2
+version: 2026.10.25.1
 ---
 
 # Penguin Harness SDK and Agent API
@@ -179,7 +179,7 @@ session.run([userText(question), ...images.map(imageUrlMessage)], { ... });
 
 Browser flow: `<input type="file" accept="image/*">` plus paste/drag-drop → `FileReader.readAsDataURL` → POST `{ question, images: [dataUrl] }` → the server maps each entry to `imageUrlMessage`. Reject non-image MIME types and cap size (a data URL rides the context window; a few MB is plenty). Whether the session model actually sees pixels is the model config's `vision` flag (`penguin config model list` prints `vision=Y/-`; set via `--vision/--no-vision` on `model add`, default supported): with `vision=false` the core folds the image into an `[attached image: <path>]` line and the built-in `read_file` tool reads it through the project's configured `vision_model` (`penguin config model vision --provider <group> --model-id <id> --root <data_dir>`) — the app still works, through a description instead of direct sight.
 
-**Other payloads worth handling** (always narrow with the guards first): `partial_tool_call` / `partial_tool_call_output` — surface as an activity line ("running `search`…") in apps that grant tools; `request_end` (event) — a non-`completed` `status` is the error signal (`auth` → ask for a key; `message` carries the failure detail; `retry_in_ms` announces a planned in-run retry, renderable as a countdown); `token_usage` (event) — session-cumulative and last-request counts, if the app shows cost; `compaction_begin` / `compaction_end` (events) — long-lived chats only, show a brief "context being compacted" notice. Everything else is safe to ignore.
+**Other payloads worth handling** (always narrow with the guards first): `partial_tool_call` / `partial_tool_call_output` — surface as an activity line ("running `search`…") in apps that grant tools; `request_end` (event) — a non-`completed` `status` is the error signal (`error_code` `auth` → ask for a key; `error_message` carries the failure detail; `retry_in_ms` announces a planned in-run retry, renderable as a countdown); `token_usage` (event) — session-cumulative and last-request counts, if the app shows cost; `compaction_begin` / `compaction_end` (events) — long-lived chats only, show a brief "context being compacted" notice. Everything else is safe to ignore.
 
 ### Wiring in the user's tools
 
