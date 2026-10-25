@@ -27,8 +27,9 @@
  *   line under the fields, no count of the models' own values.
  * - Given a group whose catalog names a model list (OpenRouter, TokenDance), the dialog links
  *   to it in a new tab; custom and a user-defined group have none, and no link.
- * - A blank group base URL says it uses the default and names no endpoint; where the group
- *   needs one, the field shows the shape a URL takes instead.
+ * - A blank group base URL says it uses the default and names no endpoint. Where the group
+ *   needs one, the field shows the base URL the group stores and carries no placeholder; a blank
+ *   one is refused (see "a blank group base URL").
  * - A blank group key promises an environment variable only for a group with no base URL — the
  *   vendor's own endpoint included — and only one the server proved is set.
  * - A model with nothing of its own follows the group's table field by field, and a field the
@@ -421,14 +422,23 @@ describe("what the group settings dialog shows", () => {
     }
   });
 
-  it("says a blank base URL uses the default without naming it, and shows a URL's shape where one is required", () => {
+  it("says a blank base URL uses the default without naming it, where the group may leave it blank", () => {
     const deepseek = dialog("deepseek", undefined);
     expect(deepseek).toContain(`placeholder="${S.models.baseUrlDefault}"`);
     expect(deepseek).not.toContain("api.deepseek.com");
-    // A user-defined group with a model that stores no base URL cannot save a blank one.
-    const required = dialog("my-group", undefined, [row()]);
-    expect(required).toContain('placeholder="https://…"');
-    expect(required).not.toContain(`placeholder="${S.models.baseUrlDefault}"`);
+  });
+
+  it("shows the stored base URL where the group needs one, and never offers to leave it blank", () => {
+    // A user-defined group with a model that stores no base URL of its own.
+    const stored = dialog("my-group", { baseUrl: "http://a.example/v1" }, [row()]);
+    expect(stored).toContain('value="http://a.example/v1"');
+    const unset = dialog("my-group", undefined, [row()]);
+    for (const html of [stored, unset]) {
+      const baseUrlInput = html.match(/<input[^>]*aria-label="[^"]*base URL"[^>]*>/)?.[0];
+      expect(baseUrlInput).toBeDefined();
+      expect(baseUrlInput).toContain("required");
+      expect(baseUrlInput).not.toContain("placeholder=");
+    }
   });
 
   it("offers Penguin Go no protocol menu and no Detect, and names its fixed protocol", () => {

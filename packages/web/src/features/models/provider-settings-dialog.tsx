@@ -562,8 +562,9 @@ export function ProviderSettingsDialog({
                 paddingRight: `calc(${displayWidthCh(suffix)}ch + ${fixed === undefined ? "2.25rem" : "1.25rem"})`,
               }}
               title={S.models.baseUrlSuffixTitle}
-              // A required field cannot be saved blank, so it shows the URL's shape instead.
-              placeholder={required ? "https://…" : S.models.baseUrlDefault}
+              // A required field cannot be saved blank, so it carries no placeholder: its
+              // asterisk and the error under it say so.
+              placeholder={required ? undefined : S.models.baseUrlDefault}
             />
             {fixed === undefined ? (
               <div className="absolute inset-y-0 right-1 flex items-center">

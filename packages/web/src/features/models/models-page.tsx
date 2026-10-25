@@ -766,14 +766,15 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *   holds (`envKey`, only where nothing else covers the model) means the environment answers; a
  *   group key that does NOT reach the model — its own base URL is on another origin — is said
  *   outright, since the card will read "not configured"; otherwise nothing truthful can be said.
- * - Base URL: the group's setting where it has one; else the shape a required one takes; else
- *   that a blank one uses the default, without naming it.
+ * - Base URL: the group's setting where it has one; else nothing where the field is required
+ *   (it cannot be saved blank, which its asterisk and error say); else that a blank one uses
+ *   the default, without naming it.
  */
 export function connectionPlaceholders(
   draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
   group: ProviderConnectionDto | undefined,
   { envKey, baseUrlRequired }: { envKey?: string | undefined; baseUrlRequired: boolean },
-): { apiKey: string | undefined; baseUrl: string } {
+): { apiKey: string | undefined; baseUrl: string | undefined } {
   const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
   const apiKey = draft.credential?.apiKeyMasked
     ? S.models.apiKeyKeepHint
@@ -788,7 +789,7 @@ export function connectionPlaceholders(
     inherited.baseUrl !== undefined
       ? S.models.inheritFromGroup
       : baseUrlRequired
-        ? "https://…"
+        ? undefined
         : S.models.baseUrlDefault;
   return { apiKey, baseUrl };
 }
