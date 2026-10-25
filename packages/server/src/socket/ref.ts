@@ -1,45 +1,30 @@
 /**
- * The API socket's address on the terminal-stream upgrade seam (PRFC-0011).
+ * The API socket's reference on the runtime's websocket seam.
  *
- * The runtime's WebSocket seam is `GET /api/terminals/<id>/stream`: it authenticates the
- * cookie, asks the platform's terminal manager for `<id>`, checks the owner is the signed-in
- * user, and hands the socket to the platform's `attachStream`. The API socket is one more
- * kind of id that lookup answers — `api-socket@<userId>` — the way a machine's pty already
- * is: the manager's `beyond` hook returns a reference carrying that owner, the runtime's
- * owner check holds it to the signed-in user, and `attachStream` serves the API socket
- * protocol for it instead of a pty. No terminal is created, listed or touched.
+ * The runtime owns the handshake: `GET /api/socket` (Upgrade, api/types.ts's
+ * `API_SOCKET_PATH`) authenticates the session cookie, checks the Origin, and hands the live
+ * socket to the platform's `attachStream`. What it hands over is one of two references: a
+ * pty's `TerminalSession`, or this one — the API socket's, naming the user the cookie proved
+ * and saying that is what it is. It carries no terminal id and stands for no terminal, so
+ * nothing downstream can mistake it for one.
  */
 import type { TerminalSession } from "../terminal/session.js";
-import { API_SOCKET_ID_PREFIX as PREFIX } from "../api/types.js";
 
 export { apiSocketPath } from "../api/types.js";
 
-/** The reference `attachStream` receives for a socket handshake, in the shape the runtime's owner check reads. */
+/** The API socket's reference: the user the handshake authenticated, and that this is that socket. */
 export interface ApiSocketRef {
-  id: string;
-  ownerUserId: string;
   apiSocket: true;
+  ownerUserId: string;
 }
 
-/** `api-socket@<userId>` → the reference; null for any other id. */
-export function parseApiSocketRef(id: string): ApiSocketRef | null {
-  let text = id;
-  try {
-    text = decodeURIComponent(id);
-  } catch {
-    return null;
-  }
-  if (!text.startsWith(PREFIX)) return null;
-  const ownerUserId = text.slice(PREFIX.length);
-  if (ownerUserId === "" || ownerUserId.includes("@")) return null;
-  return { id: text, ownerUserId, apiSocket: true };
+/** What the platform's websocket seam is handed: a pty's session, or the API socket's user. */
+export type AttachedStream = TerminalSession | ApiSocketRef;
+
+/** The reference for a handshake authenticated as `userId`. */
+export function apiSocketRef(userId: string): ApiSocketRef {
+  return { apiSocket: true, ownerUserId: userId };
 }
 
-export const isApiSocketRef = (session: object): session is ApiSocketRef =>
-  "apiSocket" in session && (session as { apiSocket: unknown }).apiSocket === true;
-
-/** The reference typed as what the terminal manager's `beyond` hook returns. */
-export function apiSocketSession(id: string): TerminalSession | undefined {
-  const ref = parseApiSocketRef(id);
-  return ref === null ? undefined : (ref as unknown as TerminalSession);
-}
+export const isApiSocketRef = (attached: object): attached is ApiSocketRef =>
+  "apiSocket" in attached && (attached as { apiSocket: unknown }).apiSocket === true;

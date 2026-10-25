@@ -29,7 +29,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 
 说明：
 
-- `PENGUIN_TRUST_PROXY`：只在反向代理终结 TLS、并由代理自己设置或清除这个请求头时启用。启用后，会话 Cookie 会带上 `Secure` 标记，热更新的网络检查也能识别出 HTTPS。
+- `PENGUIN_TRUST_PROXY`：当部署在终结 TLS 的反向代理之后时设置；代理必须原样保留外部的 `Host` 请求头，并把 `x-forwarded-proto` 统一覆盖为 `https`。启用后，会话 Cookie 会带上 `Secure` 标记，热更新的网络检查也能识别出 HTTPS。不设置的话，Web App 的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝。
 - `PENGUIN_SEED_ADMIN_PASSWORD`：不设置时，预置管理员时会生成一个随机密码，哈希后立即丢弃，没有人见过；账号通过首次登录链接认领。
 - `PENGUIN_GO_ORIGIN`：它是服务端配置，不接受浏览器指定的端点。取值必须是不带路径的 HTTPS 源；只有 `localhost`、`127.0.0.1` 和 `[::1]` 这类集成环境可以用明文 HTTP。带路径、凭据、查询参数或 fragment 的取值会在启动时被拒绝。见[连接账户](/models#连接账户)。
 - `MODELSCOPE_BRIDGE_URL`：与 `PENGUIN_GO_ORIGIN` 一样是服务端配置，不接受浏览器指定的端点。它必须是不带凭据、查询参数或 fragment 的 HTTPS 地址。不同之处是**它允许带路径前缀**，因为生产环境的中转层就挂在 `https://go.penguin.ooo/modelscope` 下。见[连接账户](/models#连接账户)。

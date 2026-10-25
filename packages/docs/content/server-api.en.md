@@ -41,7 +41,7 @@ packages/server/src
 
 The API accepts two credentials: a cookie session and the local API token.
 
-- Cookie session: `penguin_session` (HttpOnly, SameSite=Lax). Ordinary login sessions are valid for 30 days with sliding renewal; short CLI- and Remote-minted sessions keep the expiry set when they were issued.
+- Cookie session: a browser is given `penguin_session_<port>` (HttpOnly, SameSite=Lax), where `<port>` is the port of the address it reached the server on. A client without `Origin` (the CLI, curl) and an address without a port get `penguin_session`; a browser's cookie under the plain name is still accepted. Ordinary login sessions are valid for 30 days with sliding renewal; short CLI- and Remote-minted sessions keep the expiry set when they were issued.
 - Passwords are stored as scrypt hashes. A session is a row in `auth_sessions`, keyed by the sha256 of a random cookie token; the raw token is never stored. A session survives a restart, eligible sessions renew in place, and logout deletes the row.
 - There is no open registration. At startup the server seeds the built-in admin `admin` with a random password, which it hashes and discards without anyone seeing it. Until a password is set, every start prints a first-login link that claims the account. For automation, `PENGUIN_SEED_ADMIN_PASSWORD` pins a known password instead. An admin creates all other accounts.
 - Same-origin only: no CORS middleware is enabled, except on the Agent API's `/api/amsp/v1`, which answers a preflight from any origin and sends `Access-Control-Allow-Origin: *` on a request that carries `Authorization`. That group takes neither credential above: a request presents the agent's API key, or none when the agent allows keyless access. See [Agent API](/agent-api).
@@ -1440,7 +1440,7 @@ The bundled Web App connects in this order:
 
 The API socket is a second transport of the same API, for the bundled Web App (PRFC-0011): one socket per tab, every frame a call to an existing endpoint, every long-lived stream a call that does not end. Nothing above is specific to it — HTTP and the socket enter the same routes, so a call is authorized, validated and answered exactly as its HTTP twin.
 
-It is opened on the terminal-stream upgrade path under a reserved id naming the signed-in user: `GET /api/terminals/api-socket@<userId>/stream` (Upgrade; `apiSocketPath(userId)` in `@prismshadow/penguin-server/api` spells it). The handshake is the terminal stream's — the session cookie, a same-origin `Origin` (or none), and the id's owner held to the signed-in user, so admin's cookie cannot open `api-socket@alice` — and the socket then serves calls as that user. The runtime-owned prefixes (`/api/auth`, `/api/hmr`, `/api/desktop`) answer `421 not_on_socket`; a client makes those over HTTP.
+It has its own upgrade route: `GET /api/socket` (Upgrade; `apiSocketPath()` in `@prismshadow/penguin-server/api` spells it). The handshake is the terminal stream's — the session cookie and a same-origin `Origin` (or none) — and the socket then serves calls as the user that cookie names. No terminal is created, listed or touched and no terminal id is involved, so there is nothing to forge. The runtime-owned prefixes (`/api/auth`, `/api/hmr`, `/api/desktop`) answer `421 not_on_socket`; a client makes those over HTTP.
 
 Frames are JSON text frames, ids are the client's and unique for the socket's life:
 

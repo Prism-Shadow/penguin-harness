@@ -199,8 +199,10 @@ Cookie 设置为 HttpOnly 和 SameSite=Lax。请求确实是 https，或者**受
 
 ### 网络暴露面
 
-服务器默认绑定 `127.0.0.1`。要对外暴露（`HOST=0.0.0.0`），那是部署层面的决定，必须放在 TLS 终结之后，并由代理设置 `x-forwarded-proto`。
+服务器默认绑定 `127.0.0.1`。对外暴露（`HOST=0.0.0.0`）属于部署层面的决定，必须放在 TLS 终结之后。这样的部署需要设置 `PENGUIN_TRUST_PROXY=1`，代理必须原样转发外部的 `Host` 请求头，并把 `x-forwarded-proto` 统一覆盖为 `https`。缺任何一条，浏览器的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝。
 
 API 只在规范的应用主机名下应答，这样用户生成的预览内容与应用的 cookie 就处于不同的浏览器源（origin）。
 
-跨站请求伪造要面对两层相互独立的防线：SameSite=Lax 的 cookie，以及 Content-Type 检查：凡是 HTML 表单能产生的 Content-Type，对应的写请求一律拒绝。
+针对跨站请求伪造，共有三层相互独立的防线：SameSite=Lax 的 Cookie、写请求的来源检查，以及 Content-Type 检查。SameSite=Lax 的 Cookie 阻止其他站点上的页面借用会话。来源检查用 `403` `cross_origin_write` 拒绝来自其他源的写请求。之所以需要这项检查，是因为 `SameSite` 把同一主机的另一个端口视为同一站点，否则本机其他程序提供的页面就能借用会话。Content-Type 检查会拒绝 HTML 表单能产生的那些类型的写请求，也会拒绝带请求体却没有 `Content-Type` 的写请求；两种拒绝都返回 `415` `unsupported_media_type`。
+
+有两种写请求不受来源检查的约束：`/api/amsp/v1` 下携带 `Authorization: Bearer …` 密钥的 Agent API 写请求，由 Agent API 自己的校验判定；浏览器扩展的配对请求，服务器只对来自扩展自身来源的请求作答。

@@ -199,8 +199,10 @@ Model API keys are the one secret that cannot be reduced further: they must reac
 
 ### Network surface
 
-The server binds `127.0.0.1` by default. Exposing it (`HOST=0.0.0.0`) is a deployment decision that belongs behind TLS termination, with the proxy setting `x-forwarded-proto`.
+The server binds `127.0.0.1` by default. Exposing it (`HOST=0.0.0.0`) is a deployment decision that belongs behind TLS termination. Such a deployment needs `PENGUIN_TRUST_PROXY=1`, the external `Host` header passed through unchanged, and `x-forwarded-proto` overwritten with the single value `https`. If any of these is missing, every browser write, signing in included, is refused with `403` `cross_origin_write`.
 
 The API answers only under its canonical application host, which keeps user-generated preview content in a different browser origin from the application's cookies.
 
-Two independent layers block cross-site request forgery: the SameSite=Lax cookie, and a Content-Type check that rejects any write request whose content type an HTML form could produce.
+Three independent layers block cross-site request forgery: the SameSite=Lax cookie, an origin check on writes, and a Content-Type check. The SameSite=Lax cookie stops a page on another site from riding the session. The origin check refuses a write from another origin with `403` `cross_origin_write`. This check is needed because `SameSite` treats another port of the same host as the same site, so a page served by another program on this machine could otherwise ride the session. The Content-Type check refuses a write whose content type an HTML form could produce, and a write with a body and no `Content-Type`; both refusals answer `415` `unsupported_media_type`.
+
+Two writes are exempt from the origin check: an Agent API write under `/api/amsp/v1` that presents a key as `Authorization: Bearer …`, which the Agent API's own gate judges; and the browser extension's pairing request, which the server answers for the extension's own origin only.

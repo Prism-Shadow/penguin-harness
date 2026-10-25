@@ -1,12 +1,14 @@
 /**
- * Terminal stream transport: `GET /api/terminals/:id/stream` (Upgrade).
+ * The runtime's two WebSocket upgrade routes: a terminal's stream,
+ * `GET /api/terminals/:id/stream`, and the API socket, `GET /api/socket` (the whole API over
+ * one socket, PRFC-0011 — api/types.ts's `API_SOCKET_PATH`).
  *
  * Runtime, and only the transport. A WebSocket cannot cross the platform seam — a seam
  * handler returns one whole Response — so the runtime keeps what an upgrade needs: the
  * handshake itself, the Origin check, and the session-cookie authentication it already
  * owns. The moment the socket is live it is handed to the platform, which owns the
- * protocol that flows over it (terminal/stream.ts): frames, coalescing, restore
- * and backpressure are all pushable, the socket plumbing is not.
+ * protocol that flows over it: frames, coalescing, restore and backpressure for a terminal
+ * (terminal/stream.ts), calls and their answers for the API socket (socket/serve.ts).
  *
  * Auth: the session cookie rides along on the upgrade request, so the same credential as
  * the REST API is used, plus an Origin check — a WebSocket handshake is not subject to
@@ -25,6 +27,8 @@ import {
 } from "../auth/middleware.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
+import { API_SOCKET_PATH } from "../api/types.js";
+import { apiSocketRef } from "../socket/ref.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
@@ -57,9 +61,10 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const match = STREAM_PATH.exec(url.pathname);
+    const apiSocket = url.pathname === API_SOCKET_PATH;
     // Not ours: leave the socket alone so another upgrade handler (or the default
     // "no handler -> destroy" behaviour) can deal with it.
-    if (!match) return;
+    if (!match && !apiSocket) return;
 
     let target: URL;
     try {
@@ -98,8 +103,15 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     void deps.hmr
       .ensure()
       .then((platform) => {
+        if (apiSocket) {
+          // No terminal lookup: the socket carries the whole API as the cookie's user.
+          const ref = apiSocketRef(authed.user.userId);
+          return wss.handleUpgrade(req, socket, head, (ws) => {
+            platform.api.attachStream?.(ws, ref, url, deps.log);
+          });
+        }
         const manager = platform.api.terminals?.();
-        const session = manager?.get(match[1] as string);
+        const session = manager?.get(match![1] as string);
         if (!session || session.ownerUserId !== authed.user.userId) {
           return refuse(socket, 404, "Not Found");
         }

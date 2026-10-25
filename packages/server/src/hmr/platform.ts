@@ -57,6 +57,7 @@ import type { RemoteTerminals } from "../machines/terminal-relay.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
 import { isApiSocketRef } from "../socket/ref.js";
+import type { AttachedStream } from "../socket/ref.js";
 import { serveApiSocket } from "../socket/serve.js";
 import { carryStreamAnswer } from "../socket/stream-answer.js";
 import { Hono } from "hono";
@@ -116,11 +117,12 @@ export interface PlatformApi extends Park {
   http(request: Request): Promise<Response | null>;
   /**
    * In-process accessors for the one thing the seam cannot carry: a live socket. The
-   * runtime's ws transport authenticates an upgrade, then asks for the session and hands
-   * the socket back for the platform's protocol to drive.
+   * runtime's ws transport authenticates an upgrade, then hands the socket over with the
+   * reference it authenticated — a pty's session, or the API socket's user — for the
+   * platform's protocol to drive.
    */
   terminals(): TerminalManager;
-  attachStream(ws: WebSocket, session: TerminalSession, url: URL, log: (l: string) => void): void;
+  attachStream(ws: WebSocket, ref: AttachedStream, url: URL, log: (l: string) => void): void;
   /**
    * The module tree this App built (null on a declared bare kernel). In-process member,
    * NOT a registry entry: the runtime holds this instance already (hmr.ensure()), so a
@@ -660,15 +662,15 @@ async function createInner(
     }),
     http,
     terminals: () => terminals,
-    attachStream: (ws, session, url, log) => {
-      // The runtime handed the socket over exactly as for a local pty, owner checked. Three
-      // things it can be: the API socket (its reserved id — served as the owner the runtime
-      // just held it to), a reference to a machine's pty (the relay takes it), or a local pty.
-      // The API socket is the shell's (platformImpl below): it outlives this App, so its
-      // calls must resolve the App of the moment, which only the shell knows.
-      if (isApiSocketRef(session)) return ws.close(1013, "served by the platform shell");
-      if (remote?.attach(ws, session, url, log) === true) return;
-      bindTerminalStream(ws, session, url, log);
+    attachStream: (ws, ref, url, log) => {
+      // The runtime handed the socket over with the reference it authenticated. Three things
+      // it can be: the API socket (served as the user its cookie named at the handshake), a
+      // reference to a machine's pty (the relay takes it), or a local pty. The API socket is
+      // the shell's (platformImpl below): it outlives this App, so its calls must resolve the
+      // App of the moment, which only the shell knows.
+      if (isApiSocketRef(ref)) return ws.close(1013, "served by the platform shell");
+      if (remote?.attach(ws, ref, url, log) === true) return;
+      bindTerminalStream(ws, ref, url, log);
     },
     business: () => business,
     // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
@@ -819,13 +821,13 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       info: () => inner.api.info(),
       http: (request) => inner.api.http(request),
       terminals: () => inner.api.terminals(),
-      attachStream: (ws, session, url, log) => {
-        if (!isApiSocketRef(session)) return inner.api.attachStream(ws, session, url, log);
-        // The API socket: served here, as the owner the runtime held it to, with every call
-        // entering the inner App of the moment — a re-assembly under an open socket is
+      attachStream: (ws, ref, url, log) => {
+        if (!isApiSocketRef(ref)) return inner.api.attachStream(ws, ref, url, log);
+        // The API socket: served here, as the user the handshake authenticated, with every
+        // call entering the inner App of the moment — a re-assembly under an open socket is
         // invisible to it. A bare kernel has no routes to enter.
         if (inner.api.business() === null) return ws.close(1013, "no business surface");
-        const userId = session.ownerUserId;
+        const userId = ref.ownerUserId;
         apiSockets.add(ws);
         ws.once("close", () => apiSockets.delete(ws));
         // One entry per call into the App of the moment; a stream call's answer rides its

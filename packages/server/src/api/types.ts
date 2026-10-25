@@ -5057,12 +5057,12 @@ export interface DesktopTrayCommandMessage {
 
 /**
  * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
- * endpoint. It is opened on the terminal-stream upgrade path under a reserved id naming the
- * signed-in user — `api-socket@<userId>` — which the server's terminal lookup answers with a
- * reference the socket protocol is served for (server: socket/ref.ts). Shared here so the
- * Web App and the machine relay spell the address the same way.
+ * endpoint. It has its own upgrade route, {@link API_SOCKET_PATH}: the runtime's websocket
+ * seam authenticates the cookie and the Origin there and hands the socket to the platform,
+ * which serves the protocol as the signed-in user (server: socket/ref.ts). Shared so the Web
+ * App and anything else that speaks to another server spell the address the same way.
  */
-export const API_SOCKET_ID_PREFIX = "api-socket@";
+export const API_SOCKET_PATH = "/api/socket";
 
 /**
  * Paths whose answer depends on the KIND of session behind the request — the desktop shell's
@@ -5080,8 +5080,9 @@ export function sessionKindPath(pathname: string): boolean {
     (pathname.startsWith("/api/") && pathname.endsWith("/reveal"))
   );
 }
-export function apiSocketPath(userId: string): string {
-  return `/api/terminals/${encodeURIComponent(`${API_SOCKET_ID_PREFIX}${userId}`)}/stream`;
+/** The API socket's address. No id is involved: the handshake's cookie names the user. */
+export function apiSocketPath(): string {
+  return API_SOCKET_PATH;
 }
 
 // Desktop folder access (desktop mode, macOS)
