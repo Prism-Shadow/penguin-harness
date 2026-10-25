@@ -16,6 +16,8 @@
  *   price alone saves at once.
  * - The add-group dialog says a taken group name as it is typed, holds Confirm while it is
  *   taken, and asks before Esc drops a typed name.
+ * - Its import holds Detect and Import while the base URL is blank and says the URL is required
+ *   under the field; the field carries no placeholder, like every required base URL.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -305,5 +307,30 @@ describe("the model config dialog", () => {
     expect(promptOpen()).toBe(true);
     await click(button(en.common.keepEditing));
     expect(field(en.models.groupNameLabel).value).toBe("acme");
+  });
+
+  it("holds an import while its base URL is blank, and says so under a field with no placeholder", async () => {
+    await openModelsPage();
+    await type(document.querySelector(`input[placeholder="${en.models.searchPlaceholder}"]`)!, "");
+    await click(button(`＋ ${en.models.addGroup}`));
+    await type(field(en.models.groupNameLabel), "acme");
+    await click(button(en.models.groupModeImport));
+    const url = field(en.models.baseUrl);
+    expect(url.hasAttribute("placeholder")).toBe(false);
+    expect(document.body.textContent).toContain(en.models.baseUrlRequired);
+    expect(button(en.models.detectProtocol).disabled).toBe(true);
+
+    // A protocol picked by hand brings Import, which still waits for the base URL.
+    await click(button(`${en.models.protocol}: ${en.models.protocolUnset}`));
+    const chat = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((r) =>
+      r.textContent?.startsWith(en.models.protocolNames["openai-chat"]!),
+    );
+    await click(chat!);
+    expect(button(en.models.groupImportAll).disabled).toBe(true);
+
+    await type(url, "https://acme.example/v1");
+    expect(button(en.models.groupImportAll).disabled).toBe(false);
+    expect(button(en.models.detectProtocol).disabled).toBe(false);
+    expect(document.body.textContent).not.toContain(en.models.baseUrlRequired);
   });
 });

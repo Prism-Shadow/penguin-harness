@@ -2275,6 +2275,12 @@ function AddGroupDialog({
   };
 
   const busy = importing !== null;
+  /**
+   * An import needs an endpoint: a blank base URL holds Import and Detect, and is said under the
+   * field once something is typed (the other required base URL fields' rule).
+   */
+  const baseUrlMissing = baseUrl.trim() === "";
+  const baseUrlError = form.dirty && baseUrlMissing ? S.models.baseUrlRequired : null;
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const suffixLabel =
     clientType === null ? S.models.protocolUnset : protocolPathForModel(trimmed, clientType);
@@ -2302,7 +2308,7 @@ function AddGroupDialog({
               <Button
                 size="sm"
                 variant="primary"
-                disabled={busy || !nameValid}
+                disabled={busy || !nameValid || baseUrlMissing}
                 onClick={() => void runImport()}
               >
                 {S.models.groupImportAll}
@@ -2366,9 +2372,9 @@ function AddGroupDialog({
                   variant="link"
                   size="sm"
                   loading={detecting}
-                  disabled={busy}
+                  disabled={busy || baseUrlMissing}
                   onClick={() => void detect()}
-                  title={S.models.detectProtocolHint}
+                  title={baseUrlMissing ? S.models.detectNeedsBaseUrl : S.models.detectProtocolHint}
                   data-tooltip-extra
                   className="shrink-0"
                 >
@@ -2382,6 +2388,7 @@ function AddGroupDialog({
                   required
                   value={baseUrl}
                   disabled={busy}
+                  invalid={baseUrlError !== null}
                   onChange={(e) => {
                     // An edited URL retires the previous verdict: protocol and failure tone
                     // both described the old endpoint.
@@ -2394,7 +2401,6 @@ function AddGroupDialog({
                   className="font-mono"
                   style={{ paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + 2.25rem)` }}
                   title={S.models.baseUrlSuffixTitle}
-                  placeholder="https://…"
                 />
                 <div className="absolute inset-y-0 right-1 flex items-center">
                   <ProtocolSuffixMenu
@@ -2406,6 +2412,7 @@ function AddGroupDialog({
                   />
                 </div>
               </div>
+              {baseUrlError && <FieldError>{baseUrlError}</FieldError>}
             </div>
             {importing !== null && (
               <p className="text-xs text-gray-500 dark:text-gray-400">{importing}</p>

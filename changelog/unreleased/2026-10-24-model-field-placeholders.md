@@ -11,7 +11,7 @@ The model dialogs and the group settings stopped naming the endpoint in a blank 
 
 ## Details
 
-- A required base URL field has no placeholder. This covers the group settings of a Custom or user-created group that has a model without a base URL of its own, and the model dialogs of a model whose group sets none. The field shows the stored value, and a blank one cannot be saved: Save stays disabled and "A base URL is required" appears under the field. Before, the model dialogs showed `https://…` in an empty required field, and the group settings showed the "Not set" text.
+- No required base URL field on the Models page has a placeholder any more. That covers three places: the group settings of a Custom or user-created group that has a model without a base URL of its own, the model dialogs of a model whose group sets none, and the Add group dialog's import. Each field shows the stored value where there is one. A blank one cannot be saved, and "A base URL is required" appears under the field. In the group settings and model dialogs, Save stays disabled. In the import, Detect and Import stay disabled. Before, the model dialogs and the import showed `https://…` in an empty required field, and the group settings showed the "Not set" text.
 - The API key placeholders are unchanged, including the one that names the environment variable a blank key uses.
 - The catalog's `providerDefaultBaseUrl` was removed. It was added for the old placeholder in [vLLM reads its own variables](2026-10-22-vllm-local-default.md).
 - The Models docs page quotes the new wording.
