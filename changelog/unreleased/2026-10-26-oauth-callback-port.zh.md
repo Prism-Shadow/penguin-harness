@@ -3,7 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#1336](https://github.com/Prism-Shadow/penguin-harness/pull/1336)
 
 [English](2026-10-26-oauth-callback-port.md)
 
