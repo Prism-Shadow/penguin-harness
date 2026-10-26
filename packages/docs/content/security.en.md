@@ -36,8 +36,8 @@ Each authentication source has a `via` value recording how it was established:
 - `desktop`: the desktop app's own window
 - `setup`: the sign-in link on a fresh server
 - `cli`: the internal source stored for a session minted by `penguin auth token`
-- `remote`: a one-hour browser session issued to Penguin Remote from the local API token
-- `token`: the local API token’s authority, presented as a Bearer header or an exchanged Remote cookie
+- `remote`: a one-hour browser session issued to Penguin Remote from the local API token; it counts as a person's sign-in
+- `token`: the local API token itself, presented as a Bearer header
 
 ## Claim a fresh server
 
@@ -121,7 +121,7 @@ Penguin Remote may exchange that local ownership for a browser session by sendin
 
 The response contains a new raw `penguin_session` token for the built-in administrator, with a fixed one-hour expiry and an internal `via: remote` marker. It is returned with `Cache-Control: no-store`; the Harness response does not set a Cookie. Penguin Remote's local proxy must set the Cookie on its public-domain response and must treat the returned token as a credential: do not log, cache, or expose it elsewhere. The endpoint does not enable CORS.
 
-The public API reports this session as `token`: exchanging a token preserves its restrictions on human-only writes and its Agent identity rules. To change an Agent’s exposure, browser backend, or browser pairing, sign out and sign in with a password. The Remote proxy must preserve that password login instead of replacing it with another exchanged session.
+The public API reports this session as `remote`, and it counts as a person's sign-in: like a password sign-in, it can change an agent's exposure, choose the browser backend and pair a browser. It opens nothing reserved for the desktop app's own window, and changing the password from it still asks for the current one. Because the session is minted from the local API token, an agent that holds the token can exchange it for one and make those changes too. As above, the token's limits are not a boundary; the sandbox is.
 
 A script that needs a session of its own mints one. A session is a row in the data root's `web.db`, so the CLI writes one:
 

@@ -36,8 +36,8 @@ PenguinHarness 用真实凭据在真实机器上运行 Agent，所以值得弄�
 - `desktop`：桌面应用自己的窗口
 - `setup`：新服务器上的登录链接
 - `cli`：由 `penguin auth token` 铸造的会话在内部存储的来源
-- `remote`：由本地 API token 为 Penguin Remote 签发的一小时浏览器会话
-- `token`：本地 API token 所代表的权限，通过 Bearer 头或兑换后的 Remote Cookie 认证
+- `remote`：由本地 API token 为 Penguin Remote 签发的一小时浏览器会话，算作人的登录
+- `token`：本地 API token 本身，通过 Bearer 头出示
 
 ## 认领新服务器
 
@@ -121,7 +121,7 @@ Penguin Remote 可以凭这种本地所有权，通过 `POST /api/remote/session
 
 响应会返回一个以内置管理员身份创建的全新原始 `penguin_session` token，有效期固定为一小时，内部标记为 `via: remote`。响应带有 `Cache-Control: no-store`，Harness 本身不设置 Cookie。Penguin Remote 的本地代理必须在公网域名的响应中设置 Cookie，并把返回的 token 当作凭据处理：不得记录、缓存或暴露到其他位置。该接口不会开放 CORS。
 
-公开 API 将这个会话标记为 `token`：兑换会话保留原 token 的人工操作限制和 Agent 身份规则。修改 Agent 的对外暴露、浏览器后端或浏览器配对时，需要退出登录后使用密码登录。Remote 代理应保留这次密码登录，不能用新兑换的会话覆盖它。
+公开 API 将这个会话标记为 `remote`，并把它算作人的登录：与密码登录一样，它可以修改 Agent 的对外暴露、选择浏览器后端、配对浏览器。只属于桌面应用自己窗口的功能它打不开，用它修改密码仍需输入当前密码。这个会话由本地 API token 兑换而来，所以持有 token 的 Agent 也能先兑换一个会话，再做这些修改。如上文所说，token 的这些限制不是边界，约束 Agent 的是沙盒。
 
 脚本需要自己的会话时，就自己铸造一个。会话是数据根目录下 `web.db` 里的一行记录，所以 CLI 直接写入一行：
 

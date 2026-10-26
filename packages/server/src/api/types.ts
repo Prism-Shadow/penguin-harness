@@ -139,11 +139,11 @@ export interface MeResponse {
    * "desktop" is the shell's own window (one-shot token); "setup" was claimed through the
    * first-login link on a server whose admin password has never been set. Both may set a
    * password without the old one (it is random and was never shown); only "desktop" opens
-   * desktop-only routes. "token" marks the local API token's authority, carried by a Bearer
-   * header or an exchanged Remote cookie; neither can perform writes requiring a person's
-   * sign-in.
+   * desktop-only routes. "remote" is the one-hour session Penguin Remote exchanged the local
+   * API token for; it counts as the person's sign-in. "token" marks the local API token itself,
+   * sent as a Bearer header; it cannot perform writes requiring a person's sign-in.
    */
-  sessionVia: "password" | "desktop" | "setup" | "token";
+  sessionVia: "password" | "desktop" | "setup" | "remote" | "token";
   /**
    * The upload limits currently in force, so the composer can refuse an oversize pick before
    * reading it and can name the real number in the message. They are admin-settable and ride

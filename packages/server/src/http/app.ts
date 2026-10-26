@@ -171,8 +171,8 @@ export class HttpModule {
       (c.var.user as AppEnv["Variables"]["user"] | undefined) === undefined
         ? authenticate(c, next)
         : next();
-    // A Remote cookie carries token authority too, but only an actual Bearer may exchange
-    // credentials. An earlier user gate must not let that cookie skip this transport check.
+    // Only an actual Bearer may exchange credentials: a cookie an earlier user gate already
+    // authenticated (a Remote one included) must not skip this transport check.
     const tokenGate: MiddlewareHandler<AppEnv> = (c, next) =>
       c.var.sessionVia === "token" && bearerToken(c.req.header("authorization")) !== null
         ? next()

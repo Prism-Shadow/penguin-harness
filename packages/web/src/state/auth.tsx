@@ -60,7 +60,8 @@ interface AuthContextValue {
   /**
    * How THIS session was established — a browser signed into a desktop-mode server holds a
    * "password" session. "desktop" and "setup" may change the password without the old one
-   * (see omitsOldPassword in lib/account-menu). ("token" marks Bearer-authenticated API
+   * (see omitsOldPassword in lib/account-menu). "remote" is a page reached through Penguin
+   * Remote and is treated like "password" everywhere. ("token" marks Bearer-authenticated API
    * callers and never occurs in a browser session; it is carried for type parity with the
    * server.)
    */
