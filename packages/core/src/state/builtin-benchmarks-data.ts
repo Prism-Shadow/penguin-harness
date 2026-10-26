@@ -1,8 +1,21 @@
 /**
- * The Benchmarks seeded into new Projects: Sec A–E and six independent GDPEVO domains.
- * Sec A–E retain their calibrated Harbor task metadata. GDPEVO uses plain Markdown cases
- * pointing to the benchmark repository's main branch for current tasks and instructions.
- * A definition's date version names its packaged Markdown, not a task-source revision.
+ * The built-in Benchmarks as data: what each one is, and which upstream tasks it runs.
+ *
+ * PenguinHarness Benchmark Sec A to Sec E, then six GDPEVO domains, in that order. Each Sec
+ * names the original benchmark it is drawn from in its description, and `repoDir` is that
+ * benchmark's directory in the benchmark repository, which keeps the source's name. Every case is
+ * a Harbor task directory there (`task` names it), written here as text only — see
+ * builtin-benchmarks.ts for how a row becomes a statement and a rubric. Each list is the tasks
+ * marked `final` in that benchmark's `selection.json` in the repository, in its order, and the
+ * caps and the time-budget note are its `job.yaml`'s; a later change to the set is a row edit,
+ * and the case numbers (`CASE-001-…`) follow the rows' order.
+ * GDPEVO's domain cases supply their statement and rubric directly, referencing the benchmark
+ * repository's main branch for current tasks and instructions.
+ * A Project keeps the case list it was created with (project-benchmarks.ts writes a Benchmark
+ * once, when the Project is created). Summaries say what a task asks and what it delivers, never
+ * how to solve it: they are public to every agent that reads the Benchmark, an optimizer
+ * included. Each row's `version` is its manifest's date version: an edit to a row, or to anything
+ * this file holds that its statements repeat, moves the version of every Benchmark it changes.
  */
 import type { BuiltinBenchmark } from "./builtin-benchmarks.js";
 
