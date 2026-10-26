@@ -1,10 +1,22 @@
 /**
  * The ticket board: five columns in lifecycle order (shaping in ticket-board.ts), each with
  * its colour bar and count, a card per ticket — title, priority, due date (danger once
- * passed), the blocked badge, a muted line naming its parent, and its owner — a search box
- * and a blocked-only switch, moving a card between columns by dragging it, which
- * confirms the move (a move into rejected asks for a one-line reason) before posting it, the
- * create form, and the tickets and files the server could not accept.
+ * passed), the blocked badge, a muted line naming its parent, and its owner — moving a card
+ * between columns by dragging it, which confirms the move (a move into rejected asks for a
+ * one-line reason) before posting it, the create form, and the tickets and files the server
+ * could not accept.
+ *
+ * Above the columns sits one toolbar, and the page header keeps only what makes something new:
+ * quick-filter chips (everything, the approval queue, blocked, overdue, mine) each carrying the
+ * count it would leave on the board, the search box — `/` puts the caret in it — the priority
+ * chips, the grouping and the sort. The chips are one at a time; a search or a chip narrows the
+ * counts too, so a number never promises cards that are not there. `N` opens the create form and
+ * Escape leaves select mode (or clears the search) — plain keys, only while this page is on
+ * screen and no field has focus.
+ *
+ * Every column scrolls under its own fixed header and keeps its full height, so the five
+ * columns stay side by side however long one of them grows, and a group heading sticks to the
+ * top of its column while its cards pass under it.
  * The whole card is one button — the board's one exception to the company pages' rule against
  * whole-area click targets, and it holds no control of its own. A click anywhere on it (Enter
  * and Space too) opens the detail dialog in place (the shell's one host renders it, so the
@@ -14,9 +26,13 @@
  * scrolls the page as usual (ticket-press.ts, ticket-drag.ts). The dialog's move control is the
  * way to move a ticket without dragging. The create form's Create is live once a title is typed
  * and the slug, if any, keeps its rule; closing it with anything typed asks first.
- * The priority rides on the title's line, one size under it. What a card deliberately does
- * not carry is the session count, the cost and any live session status — those are the
- * dialog's, and a ticket is not the place to watch a session run.
+ * A blocked card hangs an unblock shortcut under it, outside the card's own button (which holds
+ * no control of its own), so one press plus a confirmation clears it without opening the detail;
+ * the bulk bar does the same for the blocked ones of a selection and says how many it skipped.
+ * The priority rides on the title's line, one size under it. The owner line's far end carries
+ * the session count with the run mark — live-corrected, so a ticket whose sessions all went
+ * quiet reads quiet on the board (asked by the board on 2026-10-18; before that the card
+ * deliberately carried neither). Only the cost stays the dialog's.
  * The board is always on screen: a skeleton of it until the first fetch, the empty columns
  * as drop zones — with a one-line note above them while the organization has no tickets at
  * all, dismissible and repeated in the page's "?" — the board plus an error strip when a
@@ -26,7 +42,7 @@
  * being read can be linked to and survives a reload. No other page writes it — the dialog is
  * shell state, not a route.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearchParams } from "react-router";
 import type {
@@ -38,6 +54,8 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  Chevron,
+  ConfirmModal,
   Count,
   FieldLabel,
   GlyphIcon,
@@ -50,7 +68,6 @@ import {
   Segmented,
   Select,
   Skeleton,
-  Switch,
   Textarea,
   discardUnsaved,
   toastError,
@@ -62,10 +79,13 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { bareKey, isTypingTarget } from "../../lib/shortcuts/page-keys";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
+import { useLiveSessionStatuses } from "../../state/sessions";
 import { OrgPage, useOrg } from "./org-layout";
+import { ticketLiveRunning } from "./org-sessions";
 import {
   BlockedBadge,
   INVALID_ICON,
@@ -76,17 +96,23 @@ import {
   titledHint,
 } from "./shared";
 import {
+  BOARD_QUICK_FILTERS,
   TICKET_COLUMNS,
   allTickets,
   boardColumns,
+  boardCounts,
   canMove,
+  groupTickets,
   invalidTickets,
   isBlocked,
   isOverdue,
   isTicketSlug,
   isTicketStatus,
+  matchesTicketQuery,
   moveNeedsReason,
+  ticketAgeDays,
 } from "./ticket-board";
+import type { BoardQuickFilter, TicketGroupBy, TicketSort } from "./ticket-board";
 import { MoveTicketConfirm } from "./ticket-dialog";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
@@ -94,6 +120,155 @@ import { dayKey } from "./calendar-geom";
 import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
+
+/** Group-by choices in toolbar order; mirrors TicketGroupBy. */
+const GROUP_BY_VALUES: readonly TicketGroupBy[] = [
+  "none",
+  "owner",
+  "priority",
+  "parent",
+  "module",
+  "project",
+];
+
+/** Sort choices in toolbar order; mirrors TicketSort. */
+const SORT_VALUES: readonly TicketSort[] = ["priority", "due", "age"];
+
+function readSort(value: string | null): TicketSort {
+  return value === "due" || value === "age" ? value : "priority";
+}
+
+/**
+ * The sort off the query, falling back to the organization's stored choice. A stored value that
+ * no longer names a real choice reads as the default rather than as a broken toolbar.
+ */
+function sortFromParams(params: URLSearchParams, orgId: string | null | undefined): TicketSort {
+  const url = readSort(params.get("sort"));
+  if (url !== "priority") return url;
+  const stored = readPrefs(orgId).sort;
+  return stored === "due" || stored === "age" ? stored : "priority";
+}
+
+/** The grouping off the query, falling back the same way the sort does. */
+function groupFromParams(
+  params: URLSearchParams,
+  orgId: string | null | undefined,
+): TicketGroupBy {
+  const url = readGroupBy(params.get("group"));
+  if (url !== "project") return url;
+  const stored = readPrefs(orgId).group;
+  return GROUP_BY_VALUES.includes(stored as TicketGroupBy)
+    ? (stored as TicketGroupBy)
+    : "project";
+}
+
+/**
+ * The active quick filter off the query. `?blocked=1` and `?queue=approve` are the deep links the
+ * overview has always written — they read as the chips of the same name, and writing the chip
+ * back writes `?quick=`.
+ */
+function readQuick(params: URLSearchParams): BoardQuickFilter {
+  const raw = params.get("quick");
+  if (raw !== null && (BOARD_QUICK_FILTERS as readonly string[]).includes(raw)) {
+    return raw as BoardQuickFilter;
+  }
+  if (params.get("blocked") === "1") return "blocked";
+  if (params.get("queue") === "approve") return "queue";
+  return "all";
+}
+
+function readGroupBy(value: string | null): TicketGroupBy {
+  if (value === null) return "project";
+  return (
+    value === "owner" ||
+    value === "priority" ||
+    value === "parent" ||
+    value === "module" ||
+    value === "project" ||
+    value === "none"
+      ? value
+      : "project"
+  );
+}
+
+/** localStorage key for collapsed columns and groups (org-scoped inside one shared object). */
+const COLLAPSE_KEY = "tickets.collapsed.v1";
+
+function readCollapsed(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, boolean>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The board's own shape — which grouping and which sort it keeps between visits. One object per
+ * organization in a single localStorage entry, so a person who sits in two companies does not
+ * inherit one company's arrangement into the other. The URL still wins over the stored value
+ * (readSort/readGroupBy are asked first): a link that says `?group=owner` opens the owner view
+ * whether or not it was the last one the board showed.
+ */
+const PREFS_KEY = "tickets.board-prefs.v1";
+
+/** What the stored entry is allowed to say: a real grouping and a real sort, nothing else. */
+type BoardPrefs = { group?: TicketGroupBy; sort?: TicketSort };
+
+function readPrefs(orgId: string | null | undefined): BoardPrefs {
+  if (!orgId) return {};
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    const bucket =
+      typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+    const own = bucket[orgId];
+    if (typeof own !== "object" || own === null) return {};
+    const value = own as Record<string, unknown>;
+    return {
+      ...(typeof value.group === "string" ? { group: value.group as TicketGroupBy } : {}),
+      ...(typeof value.sort === "string" ? { sort: value.sort as TicketSort } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writePrefs(orgId: string | null | undefined, prefs: BoardPrefs): void {
+  if (!orgId) return;
+  /**
+   * A bucket that will not parse is treated as empty rather than as a reason to give up: one
+   * malformed value in localStorage would otherwise keep this feature silent forever, since the
+   * read never sees past it either.
+   */
+  let bucket: Record<string, unknown> = {};
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null) {
+      bucket = parsed as Record<string, unknown>;
+    }
+  } catch {
+    bucket = {};
+  }
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...bucket, [orgId]: prefs }));
+  } catch {
+    // Private mode: the arrangement lasts the visit.
+  }
+}
+
+/** Where an approval moves a card, and where a rejection sends it back to. */
+function approveTarget(status: OrgTicketStatus): OrgTicketStatus {
+  return status === "review" ? "done" : "in_progress";
+}
+
+function rejectTarget(status: OrgTicketStatus): OrgTicketStatus {
+  return status === "review" ? "in_progress" : "rejected";
+}
 
 /**
  * The colour bar atop each column. Proposed is neutral, in-progress takes the accent (it is
@@ -108,12 +283,26 @@ const COLUMN_BAR: Record<OrgTicketStatus, string> = {
   rejected: toneDot.danger,
 };
 
+/**
+ * A column: full height, and no taller than the viewport — a long column scrolls under its own
+ * header instead of pushing its neighbours off the screen, so the five of them stay side by side
+ * whatever the work looks like. The height is capped against the viewport minus what the shell,
+ * the page header and the toolbar take.
+ */
 const columnClass =
-  "flex min-h-[26rem] flex-col rounded-md border border-gray-200 bg-gray-50/60 transition-colors duration-150 dark:border-gray-800 dark:bg-gray-900/40";
+  "flex min-h-[26rem] max-h-[calc(100vh-17rem)] flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50/60 transition-colors duration-150 dark:border-gray-800 dark:bg-gray-900/40";
+
+/** The hairline down a card's edge, by priority — the tone recedes as the priority drops. */
+const PRIORITY_ACCENT: Record<OrgTicketPriority, string> = {
+  P0: toneDot.danger,
+  P1: toneDot.attention,
+  P2: toneDot.muted,
+};
 
 export function TicketsPage() {
   const { projectId, orgId, org } = useOrg();
   const company = useCompany();
+  const liveStatuses = useLiveSessionStatuses();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const location = useLocation();
@@ -121,11 +310,117 @@ export function TicketsPage() {
   const [board, setBoard] = useState<OrgTicketsResponse | null>(null);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [blockedOnly, setBlockedOnly] = useState(params.get("blocked") === "1");
+  /**
+   * The squad vote-gate switches (LOCAL-ONLY): one row per registry, read once per
+   * visit — null until the fetch lands, and the review column's button stays hidden
+   * when the server has no such route yet (an older build answers 404).
+   */
+  const [reviewVote, setReviewVote] = useState<api.SquadReviewVoteTable[] | null>(null);
+  const [reviewVoteBusy, setReviewVoteBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api
+      .getSquadReviewVote()
+      .then((r) => {
+        if (alive) setReviewVote(r.tables);
+      })
+      .catch(() => {
+        if (alive) setReviewVote(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  /** One press flips every registry: on only when all of them already are. */
+  const flipReviewVote = useCallback(async () => {
+    if (reviewVote === null || reviewVote.length === 0 || reviewVoteBusy) return;
+    const next = !reviewVote.every((t) => t.reviewVote);
+    setReviewVoteBusy(true);
+    try {
+      const r = await api.putSquadReviewVote(next);
+      setReviewVote(r.tables);
+      toastSuccess(
+        next ? S.company.tickets.reviewVoteOn : S.company.tickets.reviewVoteOff,
+      );
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setReviewVoteBusy(false);
+    }
+  }, [reviewVote, reviewVoteBusy]);
+  const [quick, setQuick] = useState<BoardQuickFilter>(() => readQuick(params));
+  const [sort, setSort] = useState<TicketSort>(() => sortFromParams(params, orgId));
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const [groupBy, setGroupBy] = useState<TicketGroupBy>(() => groupFromParams(params, orgId));
+  /**
+   * A move of the grouping or the sort is the person's arrangement, so it is stored back for the
+   * next visit — but only once the board has settled on what the URL and the stored entry ask
+   * for, so an arriving `?group=owner` link is not written back over the stored choice by the
+   * effect's first run.
+   */
+  const prefsDirty = useRef(false);
+  /** A person's move of the sort: the toolbar, the address bar, and the stored arrangement all take it. */
+  const moveSort = (next: TicketSort) => {
+    prefsDirty.current = true;
+    setSort(next);
+    setQueryParams({ sort: next === "priority" ? null : next });
+  };
+  /** The grouping, the same way. */
+  const moveGroupBy = (next: TicketGroupBy) => {
+    prefsDirty.current = true;
+    setGroupBy(next);
+    setQueryParams({ group: next });
+  };
+  useEffect(() => {
+    if (!prefsDirty.current) return;
+    prefsDirty.current = false;
+    writePrefs(orgId, { group: groupBy, sort });
+  }, [orgId, groupBy, sort]);
+  const [priFilter, setPriFilter] = useState<readonly OrgTicketPriority[]>(() => {
+    const raw = params.get("pri");
+    if (raw === null || raw === "") return [];
+    return raw.split(",").filter((p): p is OrgTicketPriority =>
+      p === "P0" || p === "P1" || p === "P2",
+    );
+  });
+  const queueOnly = quick === "queue";
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(readCollapsed);
+  const isCollapsed = (section: string): boolean =>
+    collapsed[`${orgId}:${section}`] === true;
+  const toggleCollapsed = (section: string) => {
+    const key = `${orgId}:${section}`;
+    setCollapsed((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+      } catch {
+        // Private mode: the fold lasts the visit.
+      }
+      return next;
+    });
+  };
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [bulkTarget, setBulkTarget] = useState("");
+  const [bulkOwner, setBulkOwner] = useState("");
+  const [bulkNote, setBulkNote] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const toggleSelect = (ticketId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(ticketId)) next.delete(ticketId);
+      else next.add(ticketId);
+      return next;
+    });
+  };
   const [move, setMove] = useState<{ ticket: OrgTicketItem; to: OrgTicketStatus } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** The card whose unblock shortcut was pressed, waiting for its confirmation. */
+  const [unblockOne, setUnblockOne] = useState<OrgTicketItem | null>(null);
+  /** The bulk bar's unblock confirmation, open while the reader checks the list. */
+  const [bulkUnblockOpen, setBulkUnblockOpen] = useState(false);
   const highlightColumn = params.get("column");
   // The empty-board note goes away for good once read; the page's "?" carries the same
   // sentence. The key holds the organization, so switching to another one — which does not
@@ -160,6 +455,41 @@ export function TicketsPage() {
     (board === null ? [] : allTickets(board)).map((t) => [t.ticketId, t.title]),
   );
   const todayKey = dayKey(Date.now());
+  /** The reader's own principal, spelled as the organization files spell it (`user:<id>`). */
+  const me = user ? `user:${user.userId}` : undefined;
+
+  /**
+   * Two plain keys while the board is on screen: `/` puts the caret in the search box, `N` opens
+   * the create form (bareKey — a chord belongs to the shortcut registry, and Escape is the
+   * browser's own way out of a field). Both stand aside for a field being typed in and for a
+   * dialog already open — a keystroke aimed at the detail dialog must not also rebuild the
+   * board behind it. Escape leaves select mode, then a search, and goes no further.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const key = bareKey(e);
+      if (key === "Escape") {
+        if (selectMode) {
+          setSelectMode(false);
+          setSelected(new Set());
+        } else if (query !== "" && !isTypingTarget(e.target)) {
+          setQuery("");
+        }
+        return;
+      }
+      if (key === null || isTypingTarget(document.activeElement)) return;
+      if (company.ticketDialog !== null || createOpen) return;
+      if (key === "/") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (key === "n" || key === "N") {
+        e.preventDefault();
+        setCreateOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [createOpen, query, selectMode, company]);
 
   const setQueryParams = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -217,7 +547,7 @@ export function TicketsPage() {
     );
   }, [urlTicket, dialogTicket, projectId, orgId, openTicketInShell, setParams, routedPath]);
 
-  const confirmMove = async (reason: string) => {
+  const confirmMove = async (reason: string, note?: string) => {
     if (move === null) return;
     setBusy(true);
     try {
@@ -225,6 +555,12 @@ export function TicketsPage() {
         status: move.to,
         ...(moveNeedsReason(move.to) ? { reason: reason.trim() } : {}),
       });
+      const trimmed = (note ?? "").trim();
+      if (trimmed !== "") {
+        await api.progressOrgTicket(projectId, orgId, move.ticket.ticketId, {
+          text: trimmed,
+        });
+      }
       toastSuccess(S.company.tickets.moved);
       setMove(null);
       // One signal for a ticket written here: this board, the open dialog and the
@@ -237,9 +573,108 @@ export function TicketsPage() {
     }
   };
 
+  /** A card's unblock shortcut, once its confirmation is answered. */
+  const doUnblockOne = async () => {
+    if (unblockOne === null || busy) return;
+    const t = unblockOne;
+    setBusy(true);
+    try {
+      await api.unblockOrgTicket(projectId, orgId, t.ticketId);
+      toastSuccess(S.company.tickets.unblocked);
+      setUnblockOne(null);
+      company.ticketsChanged();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Bulk bar: one target, owner and note applied to every selected card, in order. */
+  const applyBulk = async () => {
+    if (selected.size === 0 || bulkBusy) return;
+    if (bulkTarget === "" && bulkOwner === "" && bulkNote.trim() === "") return;
+    setBulkBusy(true);
+    let ok = 0;
+    let failed = 0;
+    for (const id of selected) {
+      try {
+        if (bulkNote.trim() !== "") {
+          await api.progressOrgTicket(projectId, orgId, id, { text: bulkNote.trim() });
+        }
+        if (bulkTarget !== "") {
+          const to = bulkTarget as OrgTicketStatus;
+          await api.moveOrgTicket(projectId, orgId, id, {
+            status: to,
+            ...(moveNeedsReason(to) ? { reason: bulkNote.trim() } : {}),
+          });
+        }
+        if (bulkOwner !== "") {
+          await api.updateOrgTicket(projectId, orgId, id, { owner: bulkOwner });
+        }
+        ok += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    setSelected(new Set());
+    setBulkTarget("");
+    setBulkOwner("");
+    setBulkNote("");
+    if (failed === 0) toastSuccess(S.company.tickets.bulkDone(ok));
+    else toastError(S.company.tickets.bulkPartial(ok, failed));
+    company.ticketsChanged();
+  };
+
+  /** The selected cards as tickets, and the blocked ones of them the bulk unblock acts on. */
+  const selectedTickets =
+    board === null ? [] : allTickets(board).filter((t) => selected.has(t.ticketId));
+  const blockedSelected = selectedTickets.filter(isBlocked);
+
+  /**
+   * Bulk bar: unblock the blocked ones of the selection, in order. Cards that are not blocked
+   * are skipped, never failed — mixing them into a selection is the normal way to clear a
+   * blocked column, not a mistake. A note in the bar's field rides along as progress on each.
+   */
+  const applyBulkUnblock = async () => {
+    if (blockedSelected.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    const skipped = selected.size - blockedSelected.length;
+    const note = bulkNote.trim();
+    let ok = 0;
+    let failed = 0;
+    for (const t of blockedSelected) {
+      try {
+        if (note !== "") {
+          await api.progressOrgTicket(projectId, orgId, t.ticketId, { text: note });
+        }
+        await api.unblockOrgTicket(projectId, orgId, t.ticketId);
+        ok += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    setBulkUnblockOpen(false);
+    setSelected(new Set());
+    setBulkTarget("");
+    setBulkOwner("");
+    setBulkNote("");
+    if (failed === 0) toastSuccess(S.company.tickets.bulkUnblockDone(ok, skipped));
+    else toastError(S.company.tickets.bulkPartial(ok, failed));
+    company.ticketsChanged();
+  };
+
   /** A card's face: the title with its priority first, then what decides its urgency, then where it hangs and who holds it. */
   const cardBody = (t: OrgTicketItem) => {
     const overdue = isOverdue(t.due, todayKey) && t.status !== "done" && t.status !== "rejected";
+    const running = ticketLiveRunning(t.sessions, t.running, liveStatuses);
+    const age =
+      t.status === "proposed" || t.status === "review"
+        ? ticketAgeDays(t.ticketId, todayKey)
+        : null;
+    const showAge = age !== null && age >= 1;
     return (
       <>
         <span className="flex items-start gap-1.5">
@@ -260,8 +695,17 @@ export function TicketsPage() {
         </span>
         {/* The time-bound line, drawn only when there is something on it: the priority has
             moved up to the title and an empty row would leave a gap under it. */}
-        {(t.due !== undefined || isBlocked(t)) && (
+        {(t.due !== undefined || isBlocked(t) || showAge) && (
           <span className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+            {showAge && (
+              <span
+                className="inline-flex items-center gap-1 font-mono tabular-nums"
+                data-tooltip={S.company.tickets.ageHint}
+              >
+                <GlyphIcon d={ICONS.clockCompact} size={ICON_SIZE.inlineGlyph} />
+                {S.company.tickets.ageDays(age ?? 0)}
+              </span>
+            )}
             {t.due !== undefined && (
               <span
                 className={`inline-flex items-center gap-1 font-mono tabular-nums ${overdue ? toneInk.danger : ""}`}
@@ -301,41 +745,156 @@ export function TicketsPage() {
           >
             <PrincipalChip principal={t.owner} names={names} size={ICON_SIZE.rowLead} />
           </span>
+          {t.sessions.length > 0 && (
+            <span
+              className="ml-auto inline-flex shrink-0 items-center gap-1.5"
+              data-tooltip={
+                running ? S.company.tickets.sessionRunning : S.company.tickets.sessionIdle
+              }
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${running ? `${toneDot.busy} ui-live animate-pulse` : toneDot.muted}`}
+              >
+                <span className="sr-only">
+                  {running ? S.company.tickets.sessionRunning : S.company.tickets.sessionIdle}
+                </span>
+              </span>
+              <span className="tabular-nums">
+                {running
+                  ? `${S.company.tickets.sessionRunning} · ${S.company.tickets.sessionsCount(t.sessions.length)}`
+                  : S.company.tickets.sessionsCount(t.sessions.length)}
+              </span>
+            </span>
+          )}
         </span>
       </>
     );
   };
 
-  /** The card's frame: a hairline box, danger-edged when the server flagged the ticket. */
+  /**
+   * The card's frame: a hairline box whose edge and shadow answer the pointer — the board's way
+   * of saying the whole face is one target, without moving the card (a hover that shifts what
+   * is under the cursor is the kind of tween this codebase keeps off surfaces). Danger-edged
+   * when the server flagged the ticket, and opaque in both themes so a card passing under a
+   * sticky group heading is covered rather than blended through.
+   */
   const cardFrame = (t: OrgTicketItem) =>
-    `block w-full rounded-md border bg-white p-3 text-left text-xs dark:bg-gray-900 ${
+    `relative block w-full overflow-hidden rounded-lg border bg-white p-3 pl-3.5 text-left text-xs transition-[border-color,box-shadow] duration-150 hover:shadow-sm dark:bg-gray-900 ${
       t.invalid !== undefined
         ? "border-red-300 dark:border-red-800"
-        : "border-gray-200 dark:border-gray-800"
+        : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
     }`;
 
   /**
    * A card: one button over the whole face. Unselectable and without the platform's long-press
    * callout, so dragging it never selects its words and holding it on a touch screen never raises
-   * a menu; dimmed in place while its ghost is being carried.
+   * a menu; dimmed in place while its ghost is being carried. In select mode the whole face
+   * toggles a visual checkbox instead (dragging is off); in queue mode an approval row hangs
+   * under the button, outside it — a button holds no control of its own.
    */
-  const card = (t: OrgTicketItem) => (
-    <button
-      key={t.ticketId}
-      type="button"
-      data-ticket-card={t.ticketId}
-      data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
-      {...drag.cardProps(t)}
-      className={`${cardFrame(t)} select-none transition-[border-color,opacity] duration-150 [-webkit-touch-callout:none] hover:border-gray-300 dark:hover:border-gray-600 ${
-        lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
-      }`}
-    >
-      {cardBody(t)}
-    </button>
-  );
+  const card = (t: OrgTicketItem) => {
+    const isSel = selected.has(t.ticketId);
+    const showActions =
+      queueOnly && !selectMode && (t.status === "proposed" || t.status === "review");
+    return (
+      <Fragment key={t.ticketId}>
+        {/* In select mode the face toggles the checkbox; otherwise the drag machine's
+            props own the press AND the click that opens the ticket. The onClick must ride
+            inside the spread below — a separate onClick after it would shadow the
+            machine's opener with undefined and no card would ever open (this exact
+            regression shipped in board v1). */}
+        <button
+          type="button"
+          data-ticket-card={t.ticketId}
+          data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
+          {...(selectMode
+            ? { "aria-pressed": isSel, onClick: () => toggleSelect(t.ticketId) }
+            : drag.cardProps(t))}
+          className={`${cardFrame(t)} cursor-pointer select-none [-webkit-touch-callout:none] ${
+            lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
+          }${isSel ? " border-accent ring-1 ring-accent" : ""}`}
+        >
+          {/* What to reach for first, before a word is read: a hairline down the card's edge,
+              the priority's own tone. It is a mark next to the priority badge, never the only
+              carrier of it. */}
+          <span
+            aria-hidden
+            className={`absolute inset-y-0 left-0 w-0.5 ${PRIORITY_ACCENT[t.priority] ?? toneDot.muted}`}
+          />
+          {selectMode ? (
+            <span className="flex items-start gap-2">
+              <span
+                aria-hidden
+                className={`mt-0.5 h-4 w-4 shrink-0 rounded border ${
+                  isSel ? "border-accent bg-accent" : "border-gray-300 dark:border-gray-600"
+                }`}
+              />
+              <span className="sr-only">
+                {isSel ? S.company.tickets.unselect : S.company.tickets.select}
+              </span>
+              <span className="min-w-0 flex-1">{cardBody(t)}</span>
+            </span>
+          ) : (
+            cardBody(t)
+          )}
+        </button>
+        {showActions && (
+          <span className="mt-1 flex gap-1.5">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => setMove({ ticket: t, to: approveTarget(t.status) })}
+            >
+              {S.company.tickets.approve}
+            </Button>
+            <Button size="sm" onClick={() => setMove({ ticket: t, to: rejectTarget(t.status) })}>
+              {S.company.tickets.reject}
+            </Button>
+          </span>
+        )}
+        {/* A blocked card's way out without opening the detail: one quiet shortcut under the
+            card — outside its button, like the approval row above — asking the same question
+            the dialog's own unblock asks. In select mode the face belongs to the checkbox. */}
+        {!selectMode && isBlocked(t) && (
+          <span className="mt-1 flex gap-1.5">
+            <Button size="sm" variant="ghost" onClick={() => setUnblockOne(t)}>
+              {S.company.tickets.unblock}
+            </Button>
+          </span>
+        )}
+      </Fragment>
+    );
+  };
 
-  const columns = board === null ? null : boardColumns(board, { blockedOnly, query, names });
-  const narrowed = blockedOnly || query.trim() !== "";
+  const columns =
+    board === null
+      ? null
+      : boardColumns(board, {
+          query,
+          names,
+          priorities: priFilter,
+          quick,
+          todayKey,
+          ...(me !== undefined ? { me } : {}),
+          sort,
+        });
+  const visibleColumns =
+    columns === null
+      ? null
+      : queueOnly
+        ? columns.filter((c) => c.status === "proposed" || c.status === "review")
+        : columns;
+  /** The chips' counts, over what the search box and the priority chips already left. */
+  const searched =
+    board === null
+      ? []
+      : allTickets(board).filter(
+          (t) =>
+            (priFilter.length === 0 || priFilter.includes(t.priority)) &&
+            matchesTicketQuery(t, query, names),
+        );
+  const counts = boardCounts(searched, { todayKey, ...(me !== undefined ? { me } : {}) });
+  const narrowed = quick !== "all" || query.trim() !== "" || priFilter.length > 0;
   const invalids = board === null ? [] : invalidTickets(board);
 
   return (
@@ -345,24 +904,18 @@ export function TicketsPage() {
       wide
       actions={
         <>
-          <SearchInput
+          <Button
             size="sm"
-            className="w-44"
-            aria-label={S.company.tickets.searchPlaceholder}
-            placeholder={S.company.tickets.searchPlaceholder}
-            value={query}
-            onChange={setQuery}
-          />
-          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-            {S.company.tickets.blockedOnly}
-            <Switch
-              checked={blockedOnly}
-              onChange={(v) => {
-                setBlockedOnly(v);
-                setQueryParams({ blocked: v ? "1" : null });
-              }}
-            />
-          </label>
+            variant={selectMode ? "primary" : "secondary"}
+            aria-pressed={selectMode}
+            data-tooltip={S.company.tickets.selectHint}
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelected(new Set());
+            }}
+          >
+            {S.company.tickets.select}
+          </Button>
           <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
             {S.company.tickets.create}
           </Button>
@@ -399,11 +952,175 @@ export function TicketsPage() {
           </Notice>
         )}
 
+      {/* One toolbar over the board. The quick chips come first because they are the question a
+          reader arrives with ("what is waiting on me?"); each carries the count it would leave,
+          so a chip that would show nothing says so before it is pressed. The rest — search,
+          priorities, grouping, sort — narrow or reshape what the chips left. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white/70 px-2 py-1.5 dark:border-gray-800 dark:bg-gray-900/50">
+        <span
+          className="flex flex-wrap items-center gap-1"
+          role="group"
+          aria-label={S.company.tickets.quickFilter}
+        >
+          {BOARD_QUICK_FILTERS.map((q) => {
+            // "Mine" needs a signed-in reader to mean anything.
+            if (q === "mine" && me === undefined) return null;
+            const n =
+              q === "all"
+                ? counts.total
+                : q === "queue"
+                  ? counts.queue
+                  : q === "blocked"
+                    ? counts.blocked
+                    : q === "overdue"
+                      ? counts.overdue
+                      : counts.mine;
+            const on = quick === q;
+            return (
+              <Button
+                key={q}
+                size="sm"
+                variant={on ? "primary" : "secondary"}
+                aria-pressed={on}
+                title={S.company.tickets.quickHint[q] ?? ""}
+                onClick={() => {
+                  setQuick(q);
+                  // The two legacy deep-link params fold into `quick` once a chip is pressed.
+                  setQueryParams({ quick: q === "all" ? null : q, blocked: null, queue: null });
+                }}
+              >
+                {S.company.tickets.quick[q] ?? q}
+                <Count n={n} />
+              </Button>
+            );
+          })}
+        </span>
+        <span aria-hidden className="h-5 w-px bg-gray-200 dark:bg-gray-700" />
+        <SearchInput
+          ref={searchRef}
+          size="sm"
+          icon
+          className="w-44 min-w-36 flex-1"
+          aria-label={S.company.tickets.searchPlaceholder}
+          placeholder={S.company.tickets.searchPlaceholder}
+          value={query}
+          onChange={setQuery}
+        />
+        <span
+          className="flex items-center gap-1"
+          role="group"
+          aria-label={S.company.tickets.priority}
+        >
+          {PRIORITIES.map((p) => {
+            const on = priFilter.includes(p);
+            return (
+              <Button
+                key={p}
+                size="sm"
+                variant={on ? "primary" : "secondary"}
+                aria-pressed={on}
+                onClick={() => {
+                  const next = on ? priFilter.filter((x) => x !== p) : [...priFilter, p];
+                  setPriFilter(next);
+                  setQueryParams({ pri: next.length === 0 ? null : next.join(",") });
+                }}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </span>
+        <label className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+          {S.company.tickets.sort}
+          <Select
+            size="sm"
+            className="min-w-[7rem]"
+            value={sort}
+            aria-label={S.company.tickets.sortHint}
+            onChange={(e) => moveSort(readSort(e.target.value))}
+          >
+            {SORT_VALUES.map((v) => (
+              <option key={v} value={v}>
+                {S.company.tickets.sortBy[v] ?? v}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+          {S.company.tickets.group}
+          <Select
+            size="sm"
+            className="min-w-[7rem]"
+            value={groupBy}
+            aria-label={S.company.tickets.group}
+            onChange={(e) => moveGroupBy(readGroupBy(e.target.value))}
+          >
+            {GROUP_BY_VALUES.map((v) => (
+              <option key={v} value={v}>
+                {S.company.tickets.groupByName[v] ?? v}
+              </option>
+            ))}
+          </Select>
+        </label>
+        {narrowed && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setQuick("all");
+              setQuery("");
+              setPriFilter([]);
+              setQueryParams({ quick: null, blocked: null, queue: null, pri: null });
+            }}
+          >
+            {S.company.tickets.clearFilters}
+          </Button>
+        )}
+      </div>
+
+      {/* A column never narrows past a readable card: with no room for five of them the board
+          scrolls sideways rather than squeezing the titles down to a few characters. */}
       <div ref={drag.boardRef} className="overflow-x-auto pb-2">
-        <div className="grid min-w-[50rem] grid-cols-5 gap-3">
-          {columns === null
+        <div
+          className={`grid gap-3 ${
+            queueOnly
+              ? "grid-cols-[repeat(2,minmax(20rem,1fr))]"
+              : "grid-cols-[repeat(5,minmax(15rem,1fr))]"
+          }`}
+        >
+          {visibleColumns === null
             ? TICKET_COLUMNS.map((status) => <ColumnSkeleton key={status} status={status} />)
-            : columns.map((col) => (
+            : visibleColumns.map((col) => {
+                const shut = isCollapsed(`col:${col.status}`);
+                const visibleIds = col.tickets.map((t) => t.ticketId);
+                const allSel =
+                  visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+                const toggleColumn = () => toggleCollapsed(`col:${col.status}`);
+                const toggleAll = () => {
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    if (allSel) {
+                      for (const id of visibleIds) next.delete(id);
+                    } else {
+                      for (const id of visibleIds) next.add(id);
+                    }
+                    return next;
+                  });
+                };
+                const moduleNames = new Map<string, string>([
+                  ["req", S.company.tickets.moduleName.req ?? "req"],
+                  ["resp", S.company.tickets.moduleName.resp ?? "resp"],
+                  ["demo", S.company.tickets.moduleName.demo ?? "demo"],
+                ]);
+                const groups =
+                  groupBy === "none"
+                    ? null
+                    : groupTickets(col.tickets, groupBy, {
+                        names,
+                        titles,
+                        moduleNames,
+                        sort,
+                      });
+                return (
                 <div
                   key={col.status}
                   role="group"
@@ -418,14 +1135,82 @@ export function TicketsPage() {
                   }`}
                 >
                   <div className={`h-1 rounded-t-md ${COLUMN_BAR[col.status]}`} />
-                  <div className="flex items-center justify-between gap-2 px-2.5 py-2">
-                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                  <div className="flex items-center gap-2 px-2.5 py-2">
+                    <button
+                      type="button"
+                      onClick={toggleColumn}
+                      aria-expanded={!shut}
+                      aria-label={shut ? S.company.tickets.expand : S.company.tickets.collapse}
+                      className="rounded text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+                    >
+                      <Chevron open={!shut} size={ICON_SIZE.chevronDense} />
+                    </button>
+                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700 dark:text-gray-200">
                       {S.company.tickets.columns[col.status] ?? col.status}
                     </span>
+                    {selectMode && col.tickets.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={toggleAll}
+                        className="shrink-0 text-xs text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+                      >
+                        {allSel ? S.company.tickets.deselectAll : S.company.tickets.selectAll}
+                      </button>
+                    )}
                     <Count n={col.tickets.length} />
+                    {col.status === "review" &&
+                      reviewVote !== null &&
+                      reviewVote.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant={
+                            reviewVote.every((t) => t.reviewVote)
+                              ? "primary"
+                              : "secondary"
+                          }
+                          aria-pressed={reviewVote.every((t) => t.reviewVote)}
+                          title={S.company.tickets.reviewVoteHint}
+                          disabled={reviewVoteBusy}
+                          onClick={() => void flipReviewVote()}
+                        >
+                          {reviewVote.every((t) => t.reviewVote)
+                            ? S.company.tickets.reviewVoteOn
+                            : reviewVote.some((t) => t.reviewVote)
+                              ? S.company.tickets.reviewVoteMixed
+                              : S.company.tickets.reviewVoteOff}
+                        </Button>
+                      )}
                   </div>
-                  <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
-                    {col.tickets.map(card)}
+                  {!shut && (
+                    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
+                      {groups === null
+                        ? col.tickets.map(card)
+                        : groups.map((g) => {
+                            const gkey = `group:${col.status}:${g.key === "" ? "(none)" : g.key}`;
+                            const gshut = isCollapsed(gkey);
+                            return (
+                              <div key={g.key === "" ? "(none)" : g.key}>
+                                {/* The heading holds at the top of the column while its own cards
+                                    pass under it — an opaque band, or the card behind shows
+                                    through the label. */}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCollapsed(gkey)}
+                                  aria-expanded={!gshut}
+                                  className="sticky top-0 z-[1] flex w-full items-center gap-1.5 rounded bg-gray-50 px-1 py-1 text-left text-xs text-gray-600 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                                >
+                                  <Chevron open={!gshut} size={ICON_SIZE.chevronDense} />
+                                  <span className="min-w-0 flex-1 truncate font-medium">
+                                    {g.label === ""
+                                      ? S.company.tickets.noGroup
+                                      : g.label}
+                                  </span>
+                                  <Count n={g.tickets.length} />
+                                </button>
+                                {!gshut && g.tickets.map(card)}
+                              </div>
+                            );
+                          })}
                     {col.tickets.length === 0 && (
                       <div
                         className={`flex min-h-20 flex-1 items-center justify-center rounded-md border border-dashed px-2 text-center text-xs ${
@@ -441,11 +1226,97 @@ export function TicketsPage() {
                             : S.company.tickets.columnEmpty}
                       </div>
                     )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
         </div>
       </div>
+
+      {selected.size > 0 && (
+        <div className="sticky bottom-2 z-10 mt-2 flex flex-wrap items-center gap-2 rounded-md border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+            {S.company.tickets.selectedCount(selected.size)}
+          </span>
+          {/* A dropdown's trigger fills its host, and its panel takes the trigger's width — so
+              each one is hosted in a box of its own. Left as a bare flex child the trigger fills
+              the whole bar, one dropdown to a row, and its choices ellipsise. */}
+          <span className="w-40 shrink-0">
+            <Select
+              value={bulkTarget}
+              onChange={(e) => setBulkTarget(e.target.value)}
+              aria-label={S.company.tickets.bulkMoveTo}
+            >
+              <option value="">{S.company.tickets.bulkMoveTo}</option>
+              {TICKET_COLUMNS.map((s) => (
+                <option key={s} value={s}>
+                  {S.company.tickets.columns[s] ?? s}
+                </option>
+              ))}
+            </Select>
+          </span>
+          <span className="w-44 shrink-0">
+            <Select
+              value={bulkOwner}
+              onChange={(e) => setBulkOwner(e.target.value)}
+              aria-label={S.company.tickets.bulkAssignTo}
+            >
+              <option value="">{S.company.tickets.bulkAssignTo}</option>
+              {employees.map((e) => (
+                <option key={e.agentId} value={`agent:${e.agentId}`}>
+                  {e.name}
+                </option>
+              ))}
+            </Select>
+          </span>
+          <Input
+            size="sm"
+            className="min-w-44 flex-1"
+            placeholder={S.company.tickets.bulkNote}
+            aria-label={S.company.tickets.bulkNote}
+            value={bulkNote}
+            onChange={(e) => setBulkNote(e.target.value)}
+          />
+          <Button
+            size="sm"
+            title={
+              blockedSelected.length === 0 ? S.company.tickets.bulkUnblockNone : ""
+            }
+            disabled={bulkBusy || blockedSelected.length === 0}
+            onClick={() => setBulkUnblockOpen(true)}
+          >
+            {S.company.tickets.bulkUnblock(blockedSelected.length, selected.size)}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            title={
+              bulkTarget === "rejected" && bulkNote.trim() === ""
+                ? S.company.tickets.bulkRejectHint
+                : ""
+            }
+            disabled={
+              bulkBusy ||
+              (bulkTarget === "" && bulkOwner === "" && bulkNote.trim() === "") ||
+              (bulkTarget === "rejected" && bulkNote.trim() === "")
+            }
+            onClick={() => void applyBulk()}
+          >
+            {S.company.tickets.bulkApply}
+          </Button>
+          <Button size="sm" disabled={bulkBusy} onClick={() => setSelected(new Set())}>
+            {S.company.tickets.bulkClear}
+          </Button>
+          {/* The one combination the bar refuses, said where the button is: rejected takes a
+              reason, and the note field above is where it goes. */}
+          {bulkTarget === "rejected" && bulkNote.trim() === "" && (
+            <span className="text-xs text-amber-600 dark:text-amber-400">
+              {S.company.tickets.bulkRejectHint}
+            </span>
+          )}
+        </div>
+      )}
 
       {(invalids.length > 0 || (board !== null && board.invalidFiles.length > 0)) && (
         <Notice tone="danger" className="mt-2">
@@ -518,6 +1389,71 @@ export function TicketsPage() {
         onClose={() => (busy ? undefined : setMove(null))}
         onConfirm={(reason) => void confirmMove(reason)}
       />
+
+      {/* A card's shortcut asks the same question the dialog's own unblock asks, with the
+          reason on screen so the press can still back out when it was the wrong card. */}
+      <ConfirmModal
+        open={unblockOne !== null}
+        title={S.company.tickets.unblock}
+        tone="primary"
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
+        busy={busy}
+        onClose={() => (busy ? undefined : setUnblockOne(null))}
+        onConfirm={() => void doUnblockOne()}
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {unblockOne !== null ? S.company.tickets.unblockConfirm(unblockOne.title) : ""}
+          </p>
+          {unblockOne?.blocked !== undefined && unblockOne.blocked !== "" && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {S.company.tickets.blockedReason}：{unblockOne.blocked}
+            </p>
+          )}
+        </div>
+      </ConfirmModal>
+
+      {/* Bulk unblock: the blocked ones by name (five, then a count), what is skipped, and
+          where the bar's note goes — everything the press changes is on screen first. */}
+      <ConfirmModal
+        open={bulkUnblockOpen}
+        title={S.company.tickets.bulkUnblockTitle}
+        tone="primary"
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
+        busy={bulkBusy}
+        onClose={() => (bulkBusy ? undefined : setBulkUnblockOpen(false))}
+        onConfirm={() => void applyBulkUnblock()}
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.company.tickets.bulkUnblockConfirm(blockedSelected.length)}
+          </p>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-gray-800 dark:text-gray-100">
+            {blockedSelected.slice(0, 5).map((t) => (
+              <li key={t.ticketId} className="truncate">
+                {t.title}
+              </li>
+            ))}
+            {blockedSelected.length > 5 && (
+              <li className="text-gray-500 dark:text-gray-400">
+                {S.company.tickets.bulkUnblockMore(blockedSelected.length - 5)}
+              </li>
+            )}
+          </ul>
+          {selected.size - blockedSelected.length > 0 && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {S.company.tickets.bulkUnblockSkip(selected.size - blockedSelected.length)}
+            </p>
+          )}
+          {bulkNote.trim() !== "" && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {S.company.tickets.bulkUnblockNoteHint}
+            </p>
+          )}
+        </div>
+      </ConfirmModal>
 
       <CreateTicketDialog
         open={createOpen}

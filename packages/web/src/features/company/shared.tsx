@@ -39,6 +39,7 @@ import { toStoredUsd, unitLabel } from "./budget-input";
 import { budgetTone } from "./finance-tree";
 import type { BudgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";
+import type { InboxRow } from "./overview-summary";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
 import type { OrgStatusKind } from "./shell-org-status";
 
@@ -77,6 +78,26 @@ export function JumpButton({
     >
       <GlyphIcon d={ICONS.arrowUpRight} size={ICON_SIZE.inlineGlyph} />
     </button>
+  );
+}
+
+/**
+ * An inbox row's state dot: attention while the row needs the reader, muted once it is only
+ * news. A row the reader has already seen wears a hollow ring instead of a filled dot, which is
+ * what "nothing here is new" looks like without a second colour — flipping the mark back brings
+ * the filled dot back. Nothing here rests on the colour alone — every row wears the chip that
+ * names its category beside it, and the row's own read button says which way the mark goes.
+ */
+export function InboxDot({ row }: { row: InboxRow }) {
+  return (
+    <span className="flex shrink-0 items-center" data-read={row.read ? "1" : undefined}>
+      <span
+        aria-hidden
+        className={`block h-1.5 w-1.5 rounded-full ${
+          row.read ? "bg-control ring-1 ring-line-emphasis" : toneDot[row.tone]
+        }`}
+      />
+    </span>
   );
 }
 
@@ -467,6 +488,8 @@ export function principalLabel(principal: string, names: ReadonlyMap<string, str
       return names.get(p.id) ?? p.id;
     case "user":
       return p.id;
+    case "squad":
+      return names.get(principal) ?? p.id;
     case "all":
       return S.company.principalAll;
     case "system":

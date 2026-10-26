@@ -10,8 +10,9 @@
  * queue, actions) are nowrap, long text cells (name, target) truncate with the
  * full value on hover, and the existing overflow-x-auto container takes over
  * below the table's min width.
- * Readable by any member; toggle/edit/delete are owner-only — PUT has whole-file
- * replace semantics, so toggling also resends every field and only flips `enabled`.
+ * Readable by any member; fire-now/toggle/edit/delete are owner-only — PUT has whole-file
+ * replace semantics, so toggling also resends every field and only flips `enabled`,
+ * while firing is an extra run that never consumes the schedule (fireSchedule).
  *
  * Prompt-injection controls (usePromptInjection): the schedules.enabled switch, the
  * {{SCHEDULES}}-placeholder alert and the editable schedules.prompt section, mirroring the
@@ -51,18 +52,21 @@ import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { ScheduleFormModal } from "../schedules/schedule-form-modal";
+import { autoPauseReasonOf } from "../schedules/schedule-panel-state";
+import { fireErrorText, shortSession } from "../schedules/schedule-fire";
 import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
 import { toggleBody } from "../schedules/schedule-upsert";
 import { usePromptInjection } from "./prompt-injection-controls";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
-const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
+const STATUS_BADGE: Record<ScheduleStatus | "auto_paused", BadgeStyle> = {
   active: { tone: "success" },
   disabled: { tone: "neutral" },
   expired: { tone: "attention" },
   done: { tone: "neutral", variant: "solid" },
   missed: { tone: "attention" },
   invalid: { tone: "danger" },
+  auto_paused: { tone: "attention" },
 };
 
 export function SchedulesTab({
@@ -147,6 +151,22 @@ export function SchedulesTab({
     }
   };
 
+  /** Fire once now: an extra run (queued when the target is busy), then reload so the last-fired time agrees. */
+  const fire = async (item: ScheduleItem) => {
+    if (!projectId) return;
+    setBusy(true);
+    try {
+      const fired = await api.fireSchedule(projectId, agentId, item.name);
+      const short = shortSession(fired.sessionId);
+      toastSuccess(fired.queued ? S.schedule.toastQueued(short) : S.schedule.toastFired(short));
+      await load();
+    } catch (e) {
+      toastError(fireErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /** Confirm modal's "Confirm": closes the modal after deletion; if the deleted task is currently being edited, close the form too. */
   const confirmRemove = async () => {
     if (!projectId || deleting === null) return;
@@ -222,8 +242,11 @@ export function SchedulesTab({
                   {item.name}
                 </TableCell>
                 <TableCell nowrap>
-                  {/* invalid reason is folded into the hover title. */}
-                  <span data-tooltip={item.invalidReason} data-tooltip-extra>
+                  {/* invalid/auto-pause reason is folded into the hover title. */}
+                  <span
+                    data-tooltip={item.invalidReason ?? autoPauseReasonOf(item)}
+                    data-tooltip-extra
+                  >
                     <Badge {...STATUS_BADGE[item.status]}>
                       {S.schedule.statusNames[item.status] ?? item.status}
                     </Badge>
@@ -262,6 +285,15 @@ export function SchedulesTab({
                 </TableCell>
                 {isOwner && (
                   <TableCell align="right" nowrap>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy || item.status === "invalid"}
+                      title={item.status === "invalid" ? S.schedule.fireInvalidHint : undefined}
+                      onClick={() => void fire(item)}
+                    >
+                      {S.schedule.fireNow}
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"

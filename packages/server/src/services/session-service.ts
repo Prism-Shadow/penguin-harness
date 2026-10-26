@@ -14,11 +14,13 @@
  * added to session-manager's active table (state idle).
  */
 import fs from "node:fs/promises";
+import path from "node:path";
 import {
   agentsDir,
   createAgent,
   isSessionMeta,
   normalizeSessionSource,
+  tracesDir,
 } from "@prismshadow/penguin-core";
 import type {
   AgentAssembly,
@@ -288,7 +290,28 @@ export interface SessionServiceDeps {
   sandboxDefaultApproval?: () => ApprovalMode | undefined;
 }
 
+/** Shard file name: `<sessionId>_<NNN>.jsonl`. Mirrors services/trace-index.ts. */
+const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
+
+/**
+ * Upper bound on the "probed, no Trace on disk" memo. Sessions that later grow a Trace are
+ * stamped by the write-time path (markHasTrace), not by re-probing, so this only has to cover
+ * the current population of never-run sessions.
+ */
+const TRACELESS_MEMO_LIMIT = 8192;
+
 export class SessionService {
+  /**
+   * Session ids already probed on disk and found to have no Trace file, so the list hydration
+   * gate stops re-probing them. See walkRows for why the gate cannot rely on `has_trace` alone.
+   */
+  private readonly tracelessMemo = new Set<string>();
+
+  /**
+   * In-flight shard probes, keyed `${projectId}\0${agentId}`, so a burst of concurrent list
+   * calls shares one sweep instead of each issuing its own.
+   */
+  private readonly probesInFlight = new Map<string, Promise<Set<string>>>();
   constructor(private readonly deps: SessionServiceDeps) {}
 
   /** The policy a new Session starts with: the server's Sandbox settings. */
@@ -404,6 +427,8 @@ export class SessionService {
       ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
+      ...(row.parentSessionId ? { parentSessionId: row.parentSessionId } : {}),
+      ...(row.squad ? { squad: row.squad } : {}),
       createdAt: row.createdAt,
       lastActiveAt: row.lastActiveAt,
       status: this.deps.manager.statusOf(row.sessionId),
@@ -694,18 +719,50 @@ export class SessionService {
       for (const [id, row] of rows) if (row.client === "org" || orgIds.has(id)) rows.delete(id);
     }
 
+    // Discovery answers exactly one question per row: does this Session have Trace files on
+    // disk that the index has not stamped yet?
+    //
+    // Neither the in-process origins registry nor a DB flag can decide that on its own, because
+    // both leave this gate permanently open on a real install:
+    //   - "is this row missing from `sources`" is true for every Session created before this
+    //     process started, i.e. for the whole sidebar, forever. That was upstream v0.2.15's
+    //     condition, and it means every single list request pays a reconcile.
+    //   - "is any row still has_trace = 0" is kept true forever by Sessions created in the UI
+    //     but never sent (79 of 4117 rows on the install this was measured on): there is
+    //     nothing on disk for discovery to find and stamp, so the flag can never flip.
+    // And the pass an open gate triggers is not a cheap walk: the trace index's mtime gate
+    // cannot settle while the tree is being written to (the newest date dir is always fresher
+    // than FRESH_MS, so its cached mtime is the never-matching sentinel), which turns
+    // reconcileAgent into a full re-diff of every date dir -- thousands of shards, each upserted
+    // in AUTOCOMMIT against a WAL database with synchronous = FULL, so one fsync per row
+    // (measured on that host: 579ms vs 4ms per 100 upserts, autocommit vs transaction).
+    // That is seconds of synchronous work per sidebar load, and it blocks the event loop, so it
+    // delays unrelated routes too -- a plain list load surfaced as a 125s `sessions/batch`.
+    //
+    // So: answer the question directly and read-only. Shard names start with the session id, so
+    // one readdir per date dir tells us which of the still-unstamped sessions have Traces --
+    // no stat, no upsert, no fsync -- and all of them are answered in a single sweep. Sessions
+    // found to have none are remembered so they stop being re-probed; ones that do have shards
+    // fall back to the authoritative reconcile, which is what classifies them, and that now
+    // happens once per newly discovered Session instead of on every request.
     let traces: ReadonlySet<string> | undefined;
-    if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
-      // Hydration pass: some rows predate this process and are unclassified — one
-      // reconciled index read supplies discovery so sourceOf's facts lookups and the
-      // has_trace cache need no per-row work.
-      traces = await this.discoverTraces(projectId, agentId);
-      for (const row of rows.values()) {
-        if (!row.hasTrace && traces.has(row.sessionId)) {
-          row.hasTrace = true;
-          this.deps.sessions.markHasTrace(row.sessionId);
-        }
+    const unstamped = [...rows.values()]
+      .filter((r) => !r.hasTrace && !this.tracelessMemo.has(r.sessionId))
+      .map((r) => r.sessionId);
+    if (unstamped.length > 0) {
+      const discovered = await this.probeSessionsOnDisk(projectId, agentId, unstamped);
+      for (const sessionId of discovered) {
+        const row = rows.get(sessionId);
+        if (row === undefined) continue;
+        row.hasTrace = true;
+        this.deps.sessions.markHasTrace(sessionId);
       }
+      this.rememberTraceless(unstamped.filter((sessionId) => !discovered.has(sessionId)));
+      // Publish the stamped view so callers reading `traces` stay authoritative for this
+      // response instead of re-reading the DB flag per row.
+      const stamped = new Set<string>();
+      for (const row of rows.values()) if (row.hasTrace) stamped.add(row.sessionId);
+      traces = stamped;
     }
     return { rows, orgIds, traces };
   }
@@ -833,6 +890,10 @@ export class SessionService {
       session = await agent.createSession({
         modelId,
         provider,
+        // A rate limit ends the turn only where there is somewhere else to run it: the
+        // Project's fallback chain is the host's answer to that (see SessionManager).
+        failoverOnRateLimit:
+          (await this.deps.projectConfig.getFallbackChain(args.projectId)).length > 0,
         ...(args.workspace !== undefined ? { workspaceDir: args.workspace } : {}),
         ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
         // The source is recorded in core session_meta (Trace); the index row stores none.
@@ -976,6 +1037,91 @@ export class SessionService {
    * registration-time facts (the reconciler head-read the earliest shard's session_meta
    * once when the file first appeared — adoption itself reads no file).
    */
+  /**
+   * Remembers that these Sessions have no Trace file on disk so the hydration gate stops
+   * re-probing them. Bounded: cleared wholesale when over the limit, which is safe because a
+   * Session that later grows a Trace is stamped by the write-time path, not by re-probing.
+   */
+  private rememberTraceless(sessionIds: Iterable<string>): void {
+    for (const sessionId of sessionIds) {
+      if (this.tracelessMemo.size >= TRACELESS_MEMO_LIMIT) this.tracelessMemo.clear();
+      this.tracelessMemo.add(sessionId);
+    }
+  }
+
+  /**
+   * Answers, for each candidate, whether Trace shards for it exist on disk -- one read-only
+   * sweep of the Agent's date directories for all candidates together.
+   *
+   * This is deliberately not `traceIndex.reconcileAgent`: that walks and upserts every shard of
+   * the Agent, one fsync per shard, which is what made the sidebar expensive. Matching the
+   * `<sessionId>_<NNN>.jsonl` prefix against the directory listing costs no IO per shard and no
+   * writes at all.
+   *
+   * Concurrent callers asking about the same Agent share one sweep.
+   */
+  private async probeSessionsOnDisk(
+    projectId: string,
+    agentId: string,
+    candidates: readonly string[],
+  ): Promise<Set<string>> {
+    const key = `${projectId}\0${agentId}`;
+    const existing = this.probesInFlight.get(key);
+    if (existing !== undefined) {
+      const found = await existing;
+      return new Set(candidates.filter((id) => found.has(id)));
+    }
+    const run = this.doProbeSessionsOnDisk(projectId, agentId, candidates).finally(() => {
+      this.probesInFlight.delete(key);
+    });
+    this.probesInFlight.set(key, run);
+    return run;
+  }
+
+  private async doProbeSessionsOnDisk(
+    projectId: string,
+    agentId: string,
+    candidates: readonly string[],
+  ): Promise<Set<string>> {
+    const wanted = new Set(candidates);
+    const found = new Set<string>();
+    if (wanted.size === 0) return found;
+    const dir = tracesDir(this.deps.root, projectId, agentId);
+    let dates: string[];
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      dates = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch {
+      return found; // no traces directory for this Agent: nothing on disk to find
+    }
+    for (const date of dates) {
+      let names: string[];
+      try {
+        names = await fs.readdir(path.join(dir, date));
+      } catch {
+        continue; // vanished mid-sweep; a tree walk would not see it either
+      }
+      for (const name of names) {
+        const m = TRACE_FILE_RE.exec(name);
+        if (m === null) continue;
+        const sessionId = m[1];
+        if (sessionId === undefined) continue;
+        if (!wanted.has(sessionId)) continue;
+        if (found.has(sessionId)) continue;
+        found.add(sessionId);
+        if (found.size === wanted.size) return found; // every candidate answered
+      }
+    }
+    if (found.size > 0) {
+      // Shards exist that the index does not know about. This is the rare path: hand over to
+      // the authoritative reconcile, which registers them and head-reads their facts (origin,
+      // workspace, title, model ref) -- the work `sourceOf` needs to classify the row. Doing it
+      // here, once per newly discovered Session, is what keeps it off the common path.
+      await this.deps.traceIndex.reconcileAgent(projectId, agentId, { force: true });
+    }
+    return found;
+  }
+
   private adoptTraceSession(
     projectId: string,
     agentId: string,

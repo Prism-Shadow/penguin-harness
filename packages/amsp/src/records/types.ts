@@ -371,6 +371,35 @@ export type ErrorCode =
   | "mcp_needs_setup"
   | "mcp_sign_in_required";
 
+/** The abort-event causes (see ErrorCode): what an `abort` record's `error_code` carries. */
+export type AbortErrorCode =
+  | "user_abort"
+  | "backoff_interrupted"
+  | "compaction_interrupted"
+  | "server_restart";
+
+/**
+ * AbortSignal.reason the server aborts runs with when it interrupts them for its OWN
+ * restart/shutdown (SessionManager.shutdown) — as opposed to a person stopping the run
+ * (a reason-less abort). Core maps a signal carrying this reason to the `server_restart`
+ * abort code (see abortCodeForInterruption), so the Trace — and the restart auto-resume
+ * that follows — can tell the two apart. The first abort wins: a run the person already
+ * stopped keeps `user_abort` even if a shutdown lands while it winds down.
+ */
+export const SERVER_SHUTDOWN_ABORT_REASON = "server_shutdown";
+
+/**
+ * Which abort code an interruption carries: `server_restart` when the signal's reason is
+ * the server's own shutdown (see SERVER_SHUTDOWN_ABORT_REASON), else the run's ordinary
+ * interruption code (`user_abort` at the emission sites that only a person reaches).
+ */
+export function abortCodeForInterruption(
+  signal: AbortSignal | null | undefined,
+  normalCode: AbortErrorCode = "user_abort",
+): AbortErrorCode {
+  return signal?.reason === SERVER_SHUTDOWN_ABORT_REASON ? "server_restart" : normalCode;
+}
+
 /** The shared error-reporting block (see ErrorCode). */
 export interface ErrorInfo {
   /** Machine-readable cause; render layers localize from it. */

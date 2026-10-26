@@ -4,17 +4,30 @@
  * Single process, single writer: a synchronous API is sufficient and avoids a connection
  * pool; WAL mode and foreign key constraints are enabled. Table-creation SQL runs on open
  * (idempotent), with no migration branches (product not yet released).
+ *
+ * PG MODE (PENGUIN_DB=pg): the same open path runs against a PostgreSQL-backed
+ * DatabaseSync-compatible shim (./pg/shim.js). The PRAGMAs below are no-ops there,
+ * SCHEMA_SQL / ensureColumn / migrate are translated statement-by-statement, and the
+ * schema lives in one PG schema (PENGUIN_PG_SCHEMA, default `penguin`). The switch is
+ * an environment variable so the sqlite path remains the default for every other
+ * deployment and for the CLI.
  */
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { migrate } from "./migrations/index.js";
 import { SCHEMA_SQL } from "./schema.js";
+import { openPgDatabase } from "./pg/shim.js";
 
 // Fetch the runtime module via process.getBuiltinModule (node >=22.3): avoids static
 // resolution of `node:sqlite` by bundlers/vite (some tools' builtin lists don't yet
 // recognize this experimental module).
 const sqlite = process.getBuiltinModule("node:sqlite");
+
+/** Whether this process talks to PostgreSQL instead of SQLite (see module doc). */
+export function pgMode(): boolean {
+  return process.env.PENGUIN_DB === "pg";
+}
 
 /**
  * Opens an EXISTING database for a narrow write, without running any schema work.
@@ -26,6 +39,7 @@ const sqlite = process.getBuiltinModule("node:sqlite");
  * token mint should do. The caller has already established that the file exists.
  */
 export function openExistingDatabase(dbPath: string): DatabaseSync {
+  if (pgMode()) return openPgDatabase() as unknown as DatabaseSync;
   const db = new sqlite.DatabaseSync(dbPath);
   db.exec("PRAGMA foreign_keys = ON;");
   // Wait for the live server's write lock instead of failing SQLITE_BUSY at once.
@@ -37,10 +51,14 @@ export function openExistingDatabase(dbPath: string): DatabaseSync {
  * Opens an EXISTING database for reading only — SQLite refuses every write on the connection,
  * so a reader cannot change the file even by mistake. For a question asked of a database some
  * other process owns (`penguin server status`, run over ssh by a controller): the answer must
- * not reshape that server's schema, and must not be able to. The caller has established that
- * the file exists; a read-only open of a missing file is an error, not a creation.
+ * not reshape that server's schema, and must not be able to. The caller has established that the
+ * file exists; a read-only open of a missing file is an error, not a creation.
+ *
+ * Under PG the handle is the same shim: the reader's questions are SELECTs, and PG roles
+ * per-connection are not modeled here (the whole instance is the platform's).
  */
 export function openDatabaseReadOnly(dbPath: string): DatabaseSync {
+  if (pgMode()) return openPgDatabase() as unknown as DatabaseSync;
   const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
   db.exec("PRAGMA busy_timeout = 5000;");
   return db;
@@ -48,11 +66,10 @@ export function openDatabaseReadOnly(dbPath: string): DatabaseSync {
 
 /** Open (creating if necessary) the database: ensure the parent directory exists, set PRAGMAs, run table creation. */
 export function openDatabase(dbPath: string): DatabaseSync {
-  if (dbPath !== ":memory:") {
-    mkdirSync(path.dirname(dbPath), { recursive: true });
-  }
-  const db = new sqlite.DatabaseSync(dbPath);
-  db.exec("PRAGMA journal_mode = WAL;");
+  const db = pgMode()
+    ? (openPgDatabase() as unknown as DatabaseSync)
+    : openSqliteDatabase(dbPath);
+  db.exec("PRAGMA journal_mode = WAL;"); // no-op under PG (translated away)
   // A second connection (the CLI minting a token while the server runs) waits for the write
   // lock rather than failing SQLITE_BUSY at once.
   db.exec("PRAGMA busy_timeout = 5000;");
@@ -87,8 +104,8 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // connection is the binding now, so exclusivity is checked per enable (the state route's
   // 409 account_enabled_elsewhere) and the same account may sit saved on many Sessions —
   // which this index would reject. SCHEMA_SQL has just created idx_messaging_by_account
-  // over the same columns, so the by-account lookup stays indexed. Dropping is safe: an
-  // index is derived, never data. It is however ONE-WAY — an older build recreates the
+  // over the same columns, so the by-account lookup stays indexed. Dropping is safe:
+  // an index is derived, never data. It is however ONE-WAY — an older build recreates the
   // unique index on open, which fails outright once duplicate (channel, account_id) rows
   // exist, so a downgrade after two Sessions saved the same bot needs those rows removed.
   db.exec("DROP INDEX IF EXISTS idx_messaging_account");
@@ -97,6 +114,14 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // process, so there is no boot to roll back out from under it.
   migrate(db);
   return db;
+}
+
+/** The original sqlite open: mkdir + handle. */
+function openSqliteDatabase(dbPath: string): DatabaseSync {
+  if (dbPath !== ":memory:") {
+    mkdirSync(path.dirname(dbPath), { recursive: true });
+  }
+  return new sqlite.DatabaseSync(dbPath);
 }
 
 /**

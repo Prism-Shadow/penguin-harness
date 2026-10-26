@@ -528,7 +528,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 ### OpenCode Go 分组
 
-`opencode-go` 按型号预置 OpenCode Go 支持的最新一代，包括 GPT-6 Luna、Claude Haiku 5.5、Gemini 4 Argon Contributor、Grok 4.7、MiMo-V2.6 Flash/Pro、LongCat 2.5 Preview Free、Step 5 Preview Free、Cat Jam Free 和 Space Bunny。DeepSeek V4 Pro 与 V4.1 Flash 分别保留，GLM-5.3 与 GLM-5.3 Flash、Kimi K3 与 K2.7 Code、Qwen 的 Max、Flash、Plus 也各自保留最新型号。它们共用一把 key：按 [OpenCode 认证说明](https://opencode.ai/v2/docs/console/api/inference/#authentication)创建后，在分组设置里填写一次即可。
+`opencode-go` 按型号预置 OpenCode Go 支持的最新一代，包括 GPT-6 Luna、Claude Haiku 5.5、Gemini 4 Argon Contributor、Grok 4.7、MiMo-V2.6 Flash/Pro、LongCat 2.5 Preview Free、Cat Jam Free 和 Space Bunny。DeepSeek V4 Pro 与 V4.1 Flash 分别保留，GLM-5.3 与 GLM-5.3 Flash、Kimi K3 与 K2.7 Code、Qwen 的 Max、Flash、Plus 也各自保留最新型号。它们共用一把 key：按 [OpenCode 认证说明](https://opencode.ai/v2/docs/console/api/inference/#authentication)创建后，在分组设置里填写一次即可。
 
 - **协议。** OpenCode 为每个模型指定四种协议之一。新建 Project 时，分组 base URL 写为 `https://opencode.ai/zen/go/v1`，供 Chat Completions（`openai-chat`）和 Responses（`openai-responses`）模型使用，每个模型各自存着 `client_type`；Anthropic Messages（`ant-messages`）模型另在条目上存 `https://opencode.ai/zen/go`，因为客户端会自行加上 `/v1/messages`。Gemini 4 Argon Contributor 使用 `google-genai`，base URL 为 `https://opencode.ai/inference/go/google`，SDK 会加上 `/v1beta/models/<id>:streamGenerateContent`。这些端点都在同一主机上，因此共用分组密钥。与所有网关的条目一样，它们都不会回退到厂商的环境变量密钥：key 要设在分组上。
 - **价格。** Go 按月订阅，用量上限是按模型计的美元额度：每月一份额度，每 5 小时最多用掉其中 20%，每周最多 50%。条目记录的是每次请求从额度中扣除的每 Token 价格，因此对这个分组而言，成本中心显示的是你用掉了多少额度，而不是一张账单。`gpt-6-luna`、`claude-haiku-5-5`、`grok-4.7` 和 `qwen3.7-plus` 记录基础档，分别覆盖 272K、100K、200K 和 256K 输入 Token 以内。DeepSeek 模型遵循 DeepSeek 的空闲时段，见[价格与促销](#价格与促销)。

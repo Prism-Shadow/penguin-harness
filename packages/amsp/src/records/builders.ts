@@ -6,6 +6,7 @@
  */
 import type {
   ErrorCode,
+  AbortErrorCode,
   AbortPayload,
   ApprovalDecision,
   ApprovalDecisionPayload,

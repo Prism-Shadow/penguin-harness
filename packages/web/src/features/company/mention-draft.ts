@@ -1,8 +1,9 @@
 /**
  * The channel composer's draft (pure, unit tested): the text the box shows, with a picked
  * mention written as `@<display name>`, and the mentions tracked as ranges over that text so
- * the message that is sent still carries the token the server resolves (`@ceo`,
- * `@user:alice`, `@all` — see channel-mentions.ts).
+ * the message that is sent still carries the exact markdown the server resolves
+ * (`[@Name](mention://agent|<user|squad>/<id>)`, `[@All](mention://all)` — see
+ * channel-mentions.ts).
  *
  * Why ranges rather than matching names on send: names are not unique and may hold spaces or
  * CJK, so `@Alice Chen` cannot be read back to an id from the text alone. A range remembers
@@ -16,24 +17,23 @@
  *   own edit — whatever made the edit, the mention goes in one piece.
  * - The caret never rests inside a mention, and a selection holds a mention whole or not at all
  *   (draftSnapSelection), so typing lands before or after one.
- * - Text typed or pasted anywhere else only moves the mentions after it. A pasted `@Name` is
- *   plain text; a typed or pasted `@id` is left as it is and the server resolves it as always.
+ * - Text typed or pasted anywhere else only moves the mentions after it. Pasted `@Name` is
+ *   plain text; typed or pasted `@id` is left as it is and pages nobody (only markdown does).
  * - A copy, a cut or a drag of text that holds mentions carries them beside its plain text, in a
  *   clipboard type of this app's own (draftSlice, serializeClip), so pasting or dropping that
  *   text into a composer brings them back (parseClip, draftApplyClip). The plain text is the
  *   names, which is what every other app gets and what would otherwise notify nobody.
- * - On send, a mention that touches text the server would read into its token gets a space on
- *   that side (draftWireText), so both `x@Ada` and a typed `@id` right after a mention
- *   (`@张三@ceo`) are delivered.
+ * - On send the markdown spans splice straight in (draftWireText): a complete link needs no
+ *   spacing — neighbours cannot extend or swallow it, since the match opens at `[@` and
+ *   closes at the first `)`.
  */
-import { mentionRuns } from "./channel-mentions";
 
 export interface DraftMention {
   /** Offset of the `@` in the draft text. */
   start: number;
   /** The display name shown after the `@`, as it was when the mention was picked. */
   label: string;
-  /** What the sent message carries after the `@`: a bare id, `user:<id>` or `all`. */
+  /** The exact markdown span the sent message carries for it (`[@..](mention://..)`). */
   wire: string;
 }
 
@@ -328,28 +328,17 @@ export function mentionCovers(draft: MentionDraft, offset: number): boolean {
 }
 
 /**
- * The text the send button posts: every mention as its token, everything else verbatim, with a
- * space wherever a token would otherwise not read as itself under the server's grammar
- * (mentionRuns mirrors it).
- *
- * - Before the `@`, when what precedes would glue it: a word character (`x@Ada`), or the tail
- *   of another token that swallows the character the `@` needs in front of it (`@bob.@Ada`).
- * - After the token, when the draft goes on with characters that would extend the id
- *   (`@Ada.md`), or with an `@` the converted id would glue — a typed `@id` right after a
- *   CJK name reads as a mention in the draft, and must still read as one once the name is an id.
+ * The text the send button posts: every mention as its markdown span, everything else
+ * verbatim. No spacing: a complete link opens at `[@` and closes at the first `)`, so
+ * neighbours can neither extend it nor swallow it.
  */
 export function draftWireText(draft: MentionDraft): string {
   let out = "";
   let last = 0;
   for (const m of draft.mentions) {
     out += draft.text.slice(last, m.start);
-    if (mentionRuns(`${out}@${m.wire}`).at(-1)?.mention !== m.wire) out += " ";
-    out += `@${m.wire}`;
+    out += m.wire;
     last = mentionEnd(m);
-    const rest = draft.text.slice(last);
-    if (mentionRuns(`@${m.wire}${rest}`)[0]?.mention !== m.wire || /^[.-]*@/.test(rest)) {
-      out += " ";
-    }
   }
   return out + draft.text.slice(last);
 }

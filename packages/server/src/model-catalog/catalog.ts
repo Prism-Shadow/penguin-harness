@@ -2859,16 +2859,6 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
-  {
-    modelId: "step-5-preview-free",
-    displayName: "Step 5 Preview Free",
-    provider: "opencode-go",
-    contextWindow: 1000000,
-    pricing: usd(0, 0, 0),
-    supportsVision: true,
-    clientType: "openai-chat",
-    baseUrl: OPENCODE_GO_BASE_URL,
-  },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
   // table, and for the rows added 2026-09-16 per their model pages' input modalities).
   // Pricing and context windows from each model's page at www.qianwenai.com/models/<id>

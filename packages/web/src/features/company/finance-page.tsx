@@ -27,7 +27,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import type {
   OrgBudgetAlert,
   OrgEmployeeState,
@@ -295,6 +295,7 @@ function AlertRow({
 
 export function FinancePage() {
   const { projectId, orgId, org } = useOrg();
+  const navigate = useNavigate();
   const company = useCompany();
   const { currency } = useTheme();
   const [params, setParams] = useSearchParams();
@@ -587,6 +588,24 @@ export function FinancePage() {
                           <span className="truncate text-gray-400 dark:text-gray-500">
                             {employee.title}
                           </span>
+                          {/* The employee's own usage: the cost center with this agent
+                              preselected, the same ?agentId= deep link the Agents page
+                              uses. A control inside an inert row, like the budget
+                              pencil in the next cell. */}
+                          <Button
+                            size="icon"
+                            title={S.nav.usage}
+                            aria-label={`${S.nav.usage} · ${employee.name}`}
+                            onClick={() =>
+                              navigate(`/usage?agentId=${encodeURIComponent(employee.agentId)}`)
+                            }
+                          >
+                            <GlyphIcon
+                              d={NAV_ICONS.usage}
+                              size={15}
+                              className="text-gray-600 dark:text-gray-300"
+                            />
+                          </Button>
                         </span>
                       </TableCell>
                       {/* How the employee stands: what it is doing right now, and what its

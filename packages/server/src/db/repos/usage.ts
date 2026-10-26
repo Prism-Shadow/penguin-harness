@@ -123,12 +123,13 @@ const BUCKET_EXPRS: Record<UsageSeriesGranularity, string> = {
   month: "substr(date, 1, 7)",
 };
 
-/** groupBy dimension -> column name allowlist (prevents injection; only these four columns can be group keys). */
+/** groupBy dimension -> column name allowlist (prevents injection; only these columns can be group keys). `squad` resolves through the origin child session's index row (see groupsByModel's FROM clause). */
 const GROUP_COLUMNS: Record<UsageGroupBy, string> = {
   date: "date",
   agent: "agent_id",
   model: "model_id",
   session: "session_id",
+  squad: "squad_key",
 };
 
 /**
@@ -188,8 +189,11 @@ function toSums(r: Record<string, unknown>): UsageModelSums {
 @Component()
 export class UsageRepo implements UsageStore {
   @Use() private readonly db!: Db;
+  /** Whether the daily rollup has been found or filled (see ensureRollup). */
+  private rollupReady = false;
 
   insert(r: UsageRecordInsert): void {
+    const status = r.status ?? "completed";
     this.db
       .prepare(
         `INSERT INTO usage_records
@@ -210,8 +214,235 @@ export class UsageRepo implements UsageStore {
         r.cacheWrite,
         r.output,
         r.total,
-        r.status ?? "completed",
+        status,
       );
+    // Fold the same row into the daily rollup (an UPSERT, so it accumulates). The rollup is a
+    // pure cache of usage_records — same rows, same SUMs, grouped finer by (date, agent, session,
+    // reference) — so any aggregate that does NOT split by price tier reads from it identically,
+    // on ~3.4k rows instead of ~161k.
+    //
+    // `peak` is always written 1 here, which is NOT the same as "this row ran at the peak rate":
+    // which tier a request ran in is decided from its own `ts` against a per-schedule window, and
+    // a whole day's rows straddle those windows. So the rollup is only usable by a query that
+    // prices a day's tokens at ONE rate. Tier-split queries (any reference in the catalog's
+    // off-peak schedules — 18 of the 69 in use here) therefore still read usage_records, where
+    // each row's own ts decides. See rollupSafeFor(). Writing 1 is not a guess about the tier: it
+    // is the marker that says "tier unknown here", and the queries that need it never ask.
+    this.db
+      .prepare(
+        `INSERT INTO usage_daily_rollup
+           (project_id, date, agent_id, session_id, origin_session_id, provider, model_id, peak,
+            cache_read, cache_write, output, total, requests, completed, denominator)
+         VALUES (:pid, :date, :agentId, :sessionId, :originSessionId, :provider, :modelId, 1,
+                 :cacheRead, :cacheWrite, :output, :total, 1, :completed, :denominator)
+         ON CONFLICT (project_id, date, agent_id, session_id, origin_session_id, provider, model_id, peak) DO UPDATE SET
+           cache_read  = cache_read  + :cacheRead,
+           cache_write = cache_write + :cacheWrite,
+           output      = output      + :output,
+           total       = total       + :total,
+           requests    = requests    + 1,
+           completed   = completed   + :completed,
+           denominator = denominator + :denominator`,
+      )
+      .run({
+        pid: r.projectId,
+        date: r.date,
+        agentId: r.agentId,
+        sessionId: r.sessionId,
+        originSessionId: r.originSessionId,
+        provider: r.provider,
+        modelId: r.modelId,
+        cacheRead: r.cacheRead,
+        cacheWrite: r.cacheWrite,
+        output: r.output,
+        total: r.total,
+        completed: status === "completed" ? 1 : 0,
+        // The success-rate denominator excludes aborted requests, matching seriesByModel.
+        denominator: status !== "aborted" ? 1 : 0,
+      });
+  }
+
+  /**
+   * Rebuilds `usage_daily_rollup` from `usage_records` for one Project (or every Project when
+   * none is named). The table is a rebuildable cache, so this is its whole recovery story: a
+   * truncated or half-written rollup is repaired by running it again, and no data lives only
+   * there — every figure in it is derivable from usage_records.
+   *
+   * Run on open. It costs one scan of usage_records, which is exactly what the per-query
+   * aggregation was doing ~50 times an hour.
+   */
+  rebuildRollup(projectId?: string): void {
+    const del = this.db.prepare(
+      `DELETE FROM usage_daily_rollup${projectId === undefined ? "" : " WHERE project_id = :pid"}`,
+    );
+    const fill = this.db.prepare(
+      `INSERT INTO usage_daily_rollup
+         (project_id, date, agent_id, session_id, origin_session_id, provider, model_id, peak,
+          cache_read, cache_write, output, total, requests, completed, denominator)
+       SELECT project_id, date, agent_id, session_id, origin_session_id, provider, model_id, 1,
+              COALESCE(SUM(cache_read), 0), COALESCE(SUM(cache_write), 0),
+              COALESCE(SUM(output), 0), COALESCE(SUM(total), 0), COUNT(*),
+              COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0),
+              COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0)
+       FROM usage_records${projectId === undefined ? "" : " WHERE project_id = :pid"}
+       GROUP BY project_id, date, agent_id, session_id, origin_session_id, provider, model_id`,
+    );
+    // node:sqlite's named-parameter overload rejects an object whose values may be undefined, so
+    // the unscoped pass binds nothing at all — a separate call, not a `{pid: undefined}`.
+    if (projectId === undefined) {
+      del.run({});
+      fill.run({});
+    } else {
+      del.run({ pid: projectId });
+      fill.run({ pid: projectId });
+    }
+  }
+
+  /**
+   * Whether a rollup read can answer a query EXACTLY.
+   *
+   * The rollup folds a day's rows together, so it can only stand in where folding changes
+   * nothing:
+   *
+   *   - No price tier in play. A tier is decided per request from its own `ts`, so a filter or
+   *     grouping that spans several tiers would need the raw rows. With tiers non-empty the
+   *     answer is therefore always "no" — the rollup's `peak` column is a placeholder, not a
+   *     tier (see insert).
+   *   - No timestamp window. `ts` filters (the trailing-hour ranges) and sub-day buckets
+   *     (hour / minute) need the instant, which the day-grained rollup does not carry.
+   *   - No session-id list. A named subset of Sessions is a finer cut than the rollup's key.
+   *
+   * Everything else — a project, a date range, an agent / provider / model filter, and any
+   * group-by dimension — is exactly reproducible from the fold, because every one of them is a
+   * component of the rollup's key.
+   */
+  /**
+   * Rebuilds the rollup if it has never been filled for this database.
+   *
+   * Lazy, not in the constructor: a `@Component` is instantiated by the kernel BEFORE its
+   * `@Use()` fields are injected, so a constructor here would run against an undefined `db` — which
+   * fails silently (the catch swallows it) and leaves the table permanently empty, which looks
+   * exactly like the optimization not existing.
+   *
+   * Once per process, on the first rollup read: usage_records holds every row ever written,
+   * including all the ones from before the rollup existed, so the first query after a restart
+   * fills it and every query after that reads ~4k rows instead of ~162k. An operator who truncated
+   * the table recovers on the next restart.
+   *
+   * Best-effort and never fatal: if this fails, `rollupReady` stays false, every query falls back
+   * to usage_records (correct, just slower), and the failure is logged rather than swallowed —
+   * a silent fallback is indistinguishable from "the optimization never worked".
+   */
+  private ensureRollup(): boolean {
+    if (this.rollupReady) return true;
+    // Probe first: the table may already be filled (a restart after a clean shutdown, or rows
+    // that arrived through `insert` since), and re-filling it on every restart would cost a full
+    // scan for nothing.
+    try {
+      const row = this.db
+        .prepare("SELECT EXISTS(SELECT 1 FROM usage_daily_rollup LIMIT 1) AS present")
+        .get() as { present?: number } | undefined;
+      if (row?.present === 1) {
+        this.rollupReady = true;
+        return true;
+      }
+      this.rebuildRollup();
+      this.rollupReady = true;
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[usage] daily rollup unavailable; reading usage_records directly: ${message}\n`);
+      return false;
+    }
+  }
+
+  rollupSafeFor(f: UsageFilter, tiers: readonly PeakTier[]): boolean {
+    // The rollup has to actually be there: this is the single gate every rollup read passes
+    // through, so asking here is what turns "not filled yet" into "read usage_records instead".
+    if (!this.ensureRollup()) return false;
+    if (tiers.length > 0) return false;
+    if (f.fromTs !== undefined || f.toTs !== undefined) return false;
+    if (f.sessionIds !== undefined) return false;
+    return true;
+  }
+
+  /** Sums from the daily rollup: the `bucketByModel` shape, priced at the single rate. */
+  rollupBucketByModel(projectId: string, f: UsageFilter = {}): UsageModelSums[] {
+    const { where, params } = this.conds(projectId, f);
+    const rows = this.db
+      .prepare(
+        `SELECT provider, model_id, 1 AS peak, ${SUM_COLUMNS}
+         FROM usage_daily_rollup WHERE ${where}
+         GROUP BY provider, model_id`,
+      )
+      .all(params);
+    return rows.map(toSums);
+  }
+
+  /** Grouped sums from the daily rollup (any dimension the allowlist names). */
+  rollupGroupsByModel(
+    projectId: string,
+    groupBy: UsageGroupBy,
+    f: UsageFilter = {},
+  ): UsageGroupModelSums[] {
+    const col = GROUP_COLUMNS[groupBy];
+    const { where, params } = this.conds(projectId, f);
+    // The squad tag lives on the origin child's sessions row; the rollup keeps origin_session_id,
+    // so the same scalar subquery resolves it here too (never a JOIN: the unqualified WHERE
+    // conditions would become ambiguous).
+    const keyExpr =
+      groupBy === "squad"
+        ? "COALESCE((SELECT squad FROM sessions WHERE session_id = usage_daily_rollup.origin_session_id), '(none)')"
+        : col;
+    const rows = this.db
+      .prepare(
+        `SELECT ${keyExpr} AS key, provider, model_id, 1 AS peak, ${SUM_COLUMNS}
+         FROM usage_daily_rollup WHERE ${where}
+         GROUP BY key, provider, model_id`,
+      )
+      .all(params);
+    return rows.map((r) => ({ key: r.key as string, ...toSums(r) }));
+  }
+
+  /** Daily-granularity series from the rollup, carrying the success-rate counts. */
+  rollupSeriesByModel(projectId: string, f: UsageFilter = {}): UsageSeriesModelSums[] {
+    const { where, params } = this.conds(projectId, f);
+    const rows = this.db
+      .prepare(
+        `SELECT date AS key, provider, model_id, 1 AS peak, ${SUM_COLUMNS},
+                COALESCE(SUM(completed), 0) AS completed,
+                COALESCE(SUM(denominator), 0) AS denominator
+         FROM usage_daily_rollup WHERE ${where}
+         GROUP BY key, provider, model_id`,
+      )
+      .all(params);
+    return rows.map((r) => ({
+      key: r.key as string,
+      ...toSums(r),
+      completed: r.completed as number,
+      denominator: r.denominator as number,
+    }));
+  }
+
+  /** Per-Agent daily counts from the rollup (the by-Agent requests chart). */
+  rollupAgentSeries(projectId: string, f: UsageFilter = {}): UsageAgentBucketCount[] {
+    const { where, params } = this.conds(projectId, f);
+    const rows = this.db
+      .prepare(
+        `SELECT date AS key, agent_id, SUM(requests) AS requests,
+                COALESCE(SUM(completed), 0) AS completed,
+                COALESCE(SUM(denominator), 0) AS denominator
+         FROM usage_daily_rollup WHERE ${where}
+         GROUP BY key, agent_id`,
+      )
+      .all(params);
+    return rows.map((r) => ({
+      key: r.key as string,
+      agentId: r.agent_id as string,
+      requests: r.requests as number,
+      completed: r.completed as number,
+      denominator: r.denominator as number,
+    }));
   }
 
   /** WHERE fragment (project + optional date/agent/model) plus named params. */
@@ -284,7 +515,7 @@ export class UsageRepo implements UsageStore {
     return rows.map(toSums);
   }
 
-  /** Grouped aggregation (group key x paired reference breakdown): date range + optional agent/model filter. */
+  /** Grouped aggregation (group key x paired reference breakdown): date range + optional agent/model filter. `squad` groups by the origin child session's tag (COALESCE '(none)' for main-session rows with no child), so a leader's own tokens stay out of every squad bucket. */
   groupsByModel(
     projectId: string,
     groupBy: UsageGroupBy,
@@ -294,11 +525,18 @@ export class UsageRepo implements UsageStore {
     const col = GROUP_COLUMNS[groupBy];
     const { where, params } = this.conds(projectId, f);
     const peak = peakExpr(tiers);
+    // The squad tag lives on the sessions row of the ORIGIN child (usage rows carry
+    // only session/origin ids). A scalar subquery (not a JOIN) resolves it, so the
+    // shared unqualified WHERE conditions (project_id, agent_id, ...) stay unambiguous.
+    const keyExpr =
+      groupBy === "squad"
+        ? "COALESCE((SELECT squad FROM sessions WHERE session_id = usage_records.origin_session_id), '(none)')"
+        : col;
     const rows = this.db
       .prepare(
-        `SELECT ${col} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
+        `SELECT ${keyExpr} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
          FROM usage_records WHERE ${where}
-         GROUP BY ${col}, provider, model_id, peak`,
+         GROUP BY key, provider, model_id, peak`,
       )
       .all({ ...params, ...peak.params });
     return rows.map((r) => ({ key: r.key as string, ...toSums(r) }));

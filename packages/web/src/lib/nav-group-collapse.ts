@@ -3,7 +3,7 @@
  * mode every entry — New chat, then the page manifest below — is either PINNED, always
  * shown, or COLLAPSIBLE, inside the area a nav-row-wide chevron button under it folds away
  * (arrow up = collapse; collapsed, the button stays — arrow down — as the way back). New
- * chat, Agents, Models and Plugins are pinned by default; the user moves an entry across
+ * chat, Agents, Scheduled tasks, Models and Plugins are pinned by default; the user moves an entry across
  * with the row's pin button or by dragging it into or out of the collapsible area. Both
  * areas keep manifest order, and with nothing collapsible there is no chevron. Company
  * mode's six entries stay outside the split: they fold as one group behind the same button.
@@ -25,7 +25,8 @@
  */
 import { NAV_PAGE_KEYS, PAGES } from "./pages";
 
-export type NavGroupKey = "agents" | "plugins" | "models" | "machines" | "usage" | "benchmark";
+export type NavGroupKey =
+  "agents" | "schedules" | "archived" | "plugins" | "models" | "machines" | "usage" | "benchmark";
 /**
  * The manifest, derived from the app's own module.json (lib/pages.ts): every page whose
  * `nav` is "main", in manifest order. The literal key type above is the set the strings
@@ -76,10 +77,16 @@ export function navEntryKeysFor(isAdmin: boolean): readonly NavEntryKey[] {
   return ["newChat", ...navKeysFor(isAdmin)];
 }
 
-/** Entries pinned until the user says otherwise; every other entry, a page added later included, starts collapsible. */
+/**
+ * Entries pinned until the user says otherwise; every other entry, a page added later included, starts collapsible.
+ * Archived chats is pinned: a conversation filed away must be findable again without hunting
+ * through a fold.
+ */
 export const DEFAULT_PINNED_NAV_KEYS: ReadonlySet<NavEntryKey> = new Set<NavEntryKey>([
   "newChat",
   "agents",
+  "schedules",
+  "archived",
   "models",
   "plugins",
 ]);

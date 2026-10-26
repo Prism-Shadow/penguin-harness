@@ -248,3 +248,27 @@ export function liveEmployeeStates<
   }
   return out;
 }
+
+/**
+ * Whether any of a ticket's sessions is working right now — what the board card's run mark
+ * and the detail dialog's session fold read. Judged the way the desk rows judge theirs: a
+ * session the live channel has named reads live, and the board's own snapshot stands in for
+ * the rest. A ticket with no sessions is never running; one whose every session is live-known
+ * and settled is idle for certain, even when the snapshot still claims a run (a run ending
+ * publishes no organization event, so the snapshot lags exactly there).
+ */
+export function ticketLiveRunning(
+  sessionIds: readonly string[],
+  snapshotRunning: boolean,
+  live?: LiveSessionStatuses,
+): boolean {
+  if (sessionIds.length === 0) return false;
+  let named = 0;
+  for (const id of sessionIds) {
+    const status = live?.get(id);
+    if (status === undefined) continue;
+    named += 1;
+    if (status === "running" || status === "compacting") return true;
+  }
+  return named === sessionIds.length ? false : snapshotRunning;
+}

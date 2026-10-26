@@ -15,6 +15,8 @@ export const en: Strings = {
     chat: "Chat",
     newChat: "New chat",
     agents: "Agents",
+    schedules: "Scheduled tasks",
+    archived: "Archived chats",
     models: "Models",
     machines: "Machines",
     plugins: "Plugins",
@@ -37,6 +39,7 @@ export const en: Strings = {
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "Overview",
+      inbox: "Inbox",
       chart: "Org Chart",
       calendar: "Calendar",
       tickets: "Tickets",
@@ -697,6 +700,16 @@ export const en: Strings = {
     empty: "No archived chats",
     noMatches: "No matching chats",
     running: "Running",
+    /** A row's own archive time, when the server says it: when it was filed away. */
+    archivedAt: (time: string) => `Archived ${time}`,
+    /** A row's last activity, beside the archive time. */
+    lastActive: (time: string) => `Last active ${time}`,
+    /** The page's line above the list: how many conversations it holds. */
+    total: (n: number): string => `${n} chats in all`,
+    /** After a restore: the conversation is back in the sidebar. */
+    restored: "Back in the sidebar",
+    /** After a delete: the conversation is gone for good. */
+    deleted: "Deleted",
     loadFailed: (reason: string): string => `Could not read the archived chats: ${reason}`,
     actionFailed: (reason: string): string => `That did not finish: ${reason}`,
     deleteTitle: (n: number): string => (n === 1 ? "Delete chat" : `Delete ${n} chats`),
@@ -706,6 +719,17 @@ export const en: Strings = {
         : `Delete these ${n} chats? Their messages and Traces will be removed permanently.`,
     unreachable: (machines: string[]): string =>
       `These machines can't be reached right now, so their archived chats aren't listed: ${machines.join(", ")}`,
+  },
+
+  /**
+   * The top-level Archived chats page (/archived): the archive list one click from the nav, so
+   * a conversation that was filed away is never lost.
+   */
+  archivedPage: {
+    title: "Archived chats",
+    description:
+      "Archived chats are not in the sidebar; find them here, bring them back, or delete them.",
+    info: "Archiving only files a conversation away from the sidebar — its messages and Trace are still there. This list shows the chats you archived by hand; the ones a program opened (the Agent API, a scheduled task, the CLI) are behind the source filter.",
   },
 
   tracePanel: {
@@ -1270,6 +1294,53 @@ export const en: Strings = {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
+    /** Company push groups (lib/company-notify.ts): one toggle each under the master switch. */
+    groups: {
+      mention: "Someone @s me",
+      mentionInfo: "Pop up for messages that name you in a channel.",
+      channel: "Channel messages",
+      channelInfo: "Pop up for every new message; leave off for busy channels.",
+      ticket: "Ticket activity",
+      ticketInfo: "Ticket creates, progress, blocks and similar changes.",
+      run: "Employee runs",
+      runInfo: "A desk or ticket session starting a run.",
+      budget: "Budget alerts",
+      budgetInfo: "Warnings, pauses and resumes — rare and important.",
+    },
+    companyMentionTitle: (channel: string): string => `You were mentioned in #${channel}`,
+    companyMentionBody: (sender: string, text: string): string => `${sender}: ${text}`,
+    companyChannelTitle: (channel: string): string => `New messages in #${channel}`,
+    companyChannelBody: (sender: string, text: string): string =>
+      text === "" ? sender : `${sender}: ${text}`,
+    companyTicketTitle: (ticket: string): string => `Ticket ${ticket} moved`,
+    companyTicketBody: (change: string): string =>
+      (
+        ({
+          created: "created",
+          progress: "made progress",
+          updated: "updated",
+          attached: "linked a new session",
+          archived: "archived",
+        }) as Record<string, string>
+      )[change] ?? change,
+    companyRunTitle: (agent: string): string => `${agent} started a run`,
+    companyRunBody: (kind: string): string =>
+      (
+        ({
+          init: "initialization run",
+          event: "scheduled",
+          mention: "woken by a mention",
+          ticket_notice: "ticket notice",
+          ticket_work: "ticket work",
+        }) as Record<string, string>
+      )[kind] ?? kind,
+    companyBudgetTitle: (agent: string): string => `Budget for ${agent}`,
+    companyBudgetBody: (state: string, ratio: number): string => {
+      const pct = `${Math.round(ratio * 100)}%`;
+      if (state === "paused") return `paused (${pct})`;
+      if (state === "resumed") return "resumed";
+      return `warning (${pct})`;
+    },
   },
 
   find: {
@@ -2558,6 +2629,56 @@ export const en: Strings = {
     },
   },
 
+  /** The Scheduled tasks page (/schedules): every agent's tasks of this Project on one page. */
+  schedulesPage: {
+    title: "Scheduled tasks",
+    subtitle:
+      "Every agent's scheduled tasks in this Project: the prompt goes to the target Session on schedule. Grouped by agent; open a row for its details and edit it there, or create a task for an agent from its group's header.",
+    refresh: "Refresh",
+    /** The group header's create button: a task for that agent, in the shared form. */
+    newTask: "New task",
+    filterStatus: "Status",
+    filterType: "Type",
+    typeAll: "All types",
+    /** The type chips (schedule-category.ts): what the task's interval means in words. */
+    typeNames: {
+      once: "One-off",
+      minutes: "Every few minutes",
+      hours: "Hourly",
+      days: "Daily",
+      weeks: "Weekly",
+      custom: "Custom",
+    } as Record<string, string>,
+    searchPlaceholder: "Search task name or prompt…",
+    noMatch: "No scheduled task matches these filters",
+    clearFilters: "Clear filters",
+    detailTitle: "Task details",
+    detailAgent: "Agent",
+    detailPrompt: "Prompt",
+    detailStart: "Start",
+    detailEnd: "End",
+    detailWorkspace: "Workspace",
+    detailModel: "Model",
+    detailEditHint:
+      "Editing opens the full form: the prompt, the interval, the target Session, the model and the Workspace are all changed there.",
+    refreshed: "Scheduled tasks refreshed",
+    loadFailed: "Could not load scheduled tasks",
+    colAgent: "Agent",
+    colTask: "Task",
+    colPlan: "Plan",
+    colTarget: "Target",
+    colNext: "Next fire",
+    colLast: "Last fired",
+    openAgent: "Open this agent's scheduled tasks",
+    countAll: (n: number): string => `${n} in total`,
+    /** While a filter is on: how much of the schedule is on screen. */
+    filteredCount: (shown: number, all: number): string => `${shown} of ${all} shown`,
+    emptyTitle: "No scheduled tasks yet",
+    emptyHint:
+      "Create one in an agent's Settings › Schedules, or ask the agent to schedule it itself.",
+    invalidFiles: "Files that failed to parse (skipped from scheduling)",
+  },
+
   schedule: {
     desc: "Scheduled tasks (agent_state/schedule/*.toml): the prompt is sent to the target Session on schedule; files can also be edited by hand, and changes made here take effect immediately.",
     readOnlyHint: "Members are read-only; only the owner can modify schedules",
@@ -2573,6 +2694,7 @@ export const en: Strings = {
       done: "Done",
       missed: "Missed",
       invalid: "Invalid",
+      auto_paused: "Auto-paused",
     } as Record<string, string>,
     queued: "Queued",
     once: "One-off",
@@ -2608,6 +2730,72 @@ export const en: Strings = {
     toastSaved: "Scheduled task saved",
     toastEnabled: "Scheduled task enabled",
     toastDisabled: "Scheduled task disabled",
+    resume: "Resume",
+    toastResumed: "Scheduled task resumed",
+    /** Manual fire (fireSchedule): an extra run now; queued when the target Session is busy. */
+    fireNow: "Run now",
+    toastFired: (session: string): string => `Fired once by hand into session ${session}`,
+    toastQueued: (session: string): string => `Session ${session} is busy; the firing is queued`,
+    /** Hover hint on a disabled fire button: invalid tasks cannot fire. */
+    fireInvalidHint: "This task is invalid and cannot fire",
+    /** A fire that 404s without the server's error envelope: this page is newer than the deployed server. */
+    fireStaleServer: "The server predates manual firing; it takes effect after a restart",
+    /** Webhook trigger section of the schedule detail dialog (schedule-webhook-section.tsx). */
+    webhook: {
+      title: "Webhook trigger",
+      info: "An outside system POSTs this URL to fire one run (the same path as a hand trigger); redeliveries with an idempotency key never fire twice.",
+      enable: "Enable webhook",
+      provider: "Convention",
+      providerGeneric: "Generic (Idempotency-Key dedupe)",
+      providerGithub: "GitHub (X-GitHub-Delivery + signature)",
+      secret: "Signing secret",
+      secretPlaceholder: "8–500 chars; blank means signatures stay off",
+      create: "Create",
+      createdTitle: "Trigger URL (shown once)",
+      createdHint: "Copy it now — it cannot be shown again. Lost it? Rotate.",
+      copyUrl: "Copy URL",
+      copied: "URL copied",
+      copyFailed: "Copy failed; select it by hand",
+      enabledState: "Enabled",
+      disabledState: "Disabled",
+      setEnabled: "Enable",
+      setDisabled: "Disable",
+      secretSet: (hint: string): string => `Set (…${hint})`,
+      secretUnset: "Not set",
+      changeSecret: "Set secret",
+      clearSecret: "Clear secret",
+      saveSecret: "Save secret",
+      lastFired: "Last fired",
+      rotate: "Rotate token",
+      rotateTitle: "Rotate the webhook token",
+      rotateConfirm:
+        "The old URL dies the moment you rotate; callers must move to the new one. Continue?",
+      deleteTitle: "Delete the webhook trigger",
+      deleteConfirm: "The URL stops firing (deliveries stay on record). Continue?",
+      deliveries: "Deliveries",
+      deliveriesEmpty: "No deliveries yet",
+      replay: "Replay",
+      statusNames: {
+        accepted: "Fired",
+        duplicate: "Duplicate",
+        ignored: "Ignored",
+        rejected: "Rejected",
+        queued: "Queued",
+        skipped: "Skipped",
+      } as Record<string, string>,
+      signatureNames: {
+        verified: "Signed",
+        invalid: "Bad signature",
+        missing: "Missing signature",
+        not_required: "No signature",
+      } as Record<string, string>,
+      toastCreated: "Webhook created",
+      toastRotated: "Token rotated; the old URL is dead",
+      toastDeleted: "Webhook deleted",
+      toastReplayed: (session: string): string => `Replayed into session ${session}`,
+      toastEnabled: "Webhook enabled",
+      toastDisabled: "Webhook disabled",
+    },
     /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "This conversation",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -3642,6 +3830,8 @@ Scenarios:
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "Loading earlier messages…",
+    /** Top-of-stream affordance while more history exists but nothing is in flight: click to fetch the previous window (also triggered by scrolling near the top). */
+    loadEarlier: "Load earlier messages",
     /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
     loadEarlierRetry: "Failed to load earlier messages — click to retry",
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
@@ -3715,7 +3905,9 @@ Scenarios:
             ? "aborted during reconnect backoff"
             : item?.errorCode === "compaction_interrupted"
               ? "aborted during compaction"
-              : (item?.errorCode ?? item?.reason ?? "");
+              : item?.errorCode === "server_restart"
+                ? "interrupted by a server restart"
+                : (item?.errorCode ?? item?.reason ?? "");
       const text = cause ? `${cause}${item?.errorMessage ? `: ${item.errorMessage}` : ""}` : "";
       return `[Aborted]${text ? `: ${text}` : ""}`;
     },
@@ -4128,6 +4320,18 @@ Scenarios:
       `Delete draft "${title}"? Unsent content will be discarded.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
+    /**
+     * The receipt that rises after a conversation is archived: what happened, and the two ways
+     * back (undo here, or the archive page).
+     */
+    archiveReceipt: {
+      archived: (title: string) => `Archived "${title}"`,
+      undo: "Undo",
+      undone: "Back in the sidebar",
+      view: "View archived",
+      undoFailed: (reason: string) => `The undo did not finish: ${reason}`,
+      archiveFailed: (reason: string) => `The archive did not finish: ${reason}`,
+    },
     /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
     pinSession: "Pin",
     unpinSession: "Unpin",
@@ -5485,6 +5689,8 @@ Scenarios:
       closeTemporary: "Remove from Temporary",
       closeAllTemporary: "Close all",
       agentMissing: "Agent deleted; its desk cannot be opened",
+      /** The desk row menu's entry that sets the employee's own model. */
+      setModel: "Set model",
     },
     overview: {
       title: "Overview",
@@ -5556,6 +5762,41 @@ Scenarios:
       inboxCategories: { mention: "@me", blocked: "Blocked", done: "Done" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `${n} more — open the calendar`,
+      /** The jump beside the inbox chips, to the notification center. */
+      inboxAll: "All notifications",
+    },
+    /** The notification center: the inbox as a page of its own, with per-category preferences. */
+    inbox: {
+      /** The page's own info line: what the center shows and where a row leads. */
+      info: "Everything the organization has to tell you: messages naming you, blocked tickets, tickets closed as done. A title jumps to its channel or ticket; mute a category below to stop seeing it.",
+      /** The preferences block: which categories feed the inbox at all. */
+      prefsTitle: "Categories",
+      prefsInfo:
+        "A muted category leaves the inbox (on the overview and here alike); the channel and the board themselves are untouched.",
+      /** One line per category: what turning it off hides. */
+      prefHint: {
+        mention: "Messages naming you (or everyone) in the all-hands channel",
+        blocked: "Blocked tickets",
+        done: "Tickets closed as done this period",
+      } as Record<string, string>,
+      /** Every category muted: the list is empty by choice, not by luck. */
+      emptyAllOff: "Every category is muted, so the inbox is empty by choice",
+      /** The chip in force matches nothing (its category feeds rows, just not this one). */
+      emptyFilter: "No notifications under this filter",
+      /** Row actions: the read mark both ways, and archiving. */
+      markRead: "Mark as read",
+      markUnread: "Mark as unread",
+      markAllRead: "Mark all read",
+      archive: "Archive",
+      /** The row's own state, for readers who hear the list rather than see the dot. */
+      readRow: "Read",
+      unreadRow: "Unread",
+      /** The archived list below the inbox: rows kept out of sight, restorable one by one. */
+      archivedTitle: "Archived",
+      archivedInfo:
+        "An archived row leaves the inbox and can be restored at any time. An archived message is kept as it was when it was archived; a ticket is still resolved against the board.",
+      unarchive: "Restore",
+      archivedEmpty: "Nothing archived",
     },
     calendarOutcomes: {
       fired: "Fired",
@@ -5583,6 +5824,13 @@ Scenarios:
       leave: "Leave the organization",
       ceoCannotLeave: "The CEO cannot leave",
       setThinkingLevel: "Set thinking level",
+      setModel: "Set model",
+      setMachine: "Set machine",
+      machineTitle: (name: string): string => `Change ${name}'s machine`,
+      machineLabel: "Machine",
+      machineInfo: "Which machine this employee's sessions run on. Local only in single-machine builds.",
+      machineLocal: (alias: string): string => `This server (${alias}, default)`,
+      machineRemoteNote: " (multi-machine builds only)",
       agentMissing: "Agent deleted",
       ceoMissing: (ceoId: string): string =>
         `The CEO's Agent was deleted, so the organization cannot run: create an Agent with the id ${ceoId} again to restore it.`,
@@ -5662,6 +5910,16 @@ Scenarios:
       thinkingLevelDefault: (level: string): string => `Project default (${level})`,
       thinkingLevelPinned: (level: string): string =>
         `The current desk session is pinned to "${level}" on its own; this setting reaches the desk from its next desk session.`,
+      /** The employee-model dialog: it writes the chart entry, then moves the current desk onto the model at once. */
+      employeeModelTitle: (name: string): string => `Set ${name}'s model`,
+      employeeModelInfo:
+        "Written to the employee entry: every desk and ticket session opened later uses this model. The current desk moves to it at once and its context resets; with no desk yet, it takes effect when the desk opens. Empty follows the organization default, and when the organization names none, the Project default.",
+      /** No model of the employee's own: the organization's default applies (then the Project's). */
+      employeeModelFollowDefault: "Follow the organization default",
+      employeeModelClear: "Back to the organization default",
+      /** The desk moved under the dialog (another renewal won the race): the chart write still landed, the lists re-read it. */
+      employeeModelDeskMoved:
+        "The desk changed while this was open; the model is written to the employee entry and the current desk is left alone",
     },
     calendar: {
       title: "Calendar",
@@ -5788,6 +6046,7 @@ Scenarios:
       blockedTooltip: (reason: string, by: string): string =>
         `Blocked: ${reason} (waiting on ${by})`,
       unblock: "Unblock",
+      unblocked: "Unblocked",
       unblockConfirm: (title: string): string => `Unblock "${title}"?`,
       block: "Mark blocked",
       blockTitle: "Mark blocked",
@@ -5795,6 +6054,9 @@ Scenarios:
       blockByHint: "The ticket or principal it waits on",
       sessions: "Ticket sessions",
       sessionsCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
+      sessionsRunning: (n: number): string => `${n} running`,
+      sessionRunning: "Running",
+      sessionIdle: "Idle",
       progress: "Progress",
       progressEmpty: "No progress recorded yet",
       addProgress: "Add progress",
@@ -5822,6 +6084,88 @@ Scenarios:
       searchNoMatch: "No matching tickets",
       dropHere: "Drop here",
       overdue: "Overdue",
+      groupByName: {
+        none: "No grouping",
+        owner: "Owner",
+        priority: "Priority",
+        parent: "Parent",
+        module: "Module",
+        project: "Project",
+      } as Record<string, string>,
+      moduleName: {
+        req: "Analysis",
+        resp: "Response docs",
+        demo: "Demos",
+      } as Record<string, string>,
+      queueOnly: "Needs approval only",
+      select: "Select",
+      unselect: "Deselect",
+      selectAll: "Select all",
+      deselectAll: "Deselect all",
+      expand: "Expand",
+      collapse: "Collapse",
+      noGroup: "Ungrouped",
+      ageDays: (n: number): string => `${n}d waiting`,
+      ageHint: "Days since the ticket was created",
+      approve: "Approve",
+      reject: "Send back",
+      /** The review column's vote-gate button (LOCAL-ONLY squad switch, one button for all registries). */
+      reviewVoteOn: "Auto review · on",
+      reviewVoteOff: "Auto review · off",
+      reviewVoteMixed: "Auto review · mixed",
+      reviewVoteHint:
+        "Squad three-expert vote gate: on = in-review tickets close by expert vote (2 accepts pass / 2 rejects send back), off = a human confirms each one; one press flips every registry",
+      selectedCount: (n: number): string => `${n} selected`,
+      bulkMoveTo: "Move to…",
+      bulkAssignTo: "Assign to…",
+      bulkNote: "Note (recorded as progress; blank skips)",
+      bulkApply: "Apply",
+      bulkClear: "Clear selection",
+      bulkDone: (n: number): string => `${n} tickets processed`,
+      bulkPartial: (ok: number, failed: number): string => `${ok} processed, ${failed} failed`,
+      /** The bulk bar's unblock button: n blocked of m selected; disabled while n is 0. */
+      bulkUnblock: (n: number, m: number): string => `Unblock ${n}/${m}`,
+      bulkUnblockNone: "None of the selected tickets is blocked",
+      bulkUnblockTitle: "Unblock in bulk",
+      bulkUnblockConfirm: (n: number): string => `Unblock the following ${n} tickets?`,
+      bulkUnblockMore: (n: number): string => `and ${n} more`,
+      bulkUnblockSkip: (n: number): string =>
+        `${n} not blocked, will be skipped`,
+      bulkUnblockNoteHint: "A note above is recorded as progress on each ticket",
+      bulkUnblockDone: (ok: number, skipped: number): string =>
+        skipped > 0 ? `${ok} unblocked, ${skipped} skipped (not blocked)` : `${ok} unblocked`,
+      moveNote: "Note",
+      moveNoteHint: "Left blank, only moves",
+      /** The board's quick filters, one at a time; the counts ride on the same chips. */
+      quickFilter: "Quick filters",
+      quick: {
+        all: "All",
+        queue: "Awaiting review",
+        blocked: "Blocked",
+        overdue: "Overdue",
+        mine: "Mine",
+      } as Record<string, string>,
+      quickHint: {
+        all: "Every ticket",
+        queue: "Proposed and in review: the queue waiting on a person",
+        blocked: "Tickets marked blocked",
+        overdue: "Past the due date and not finished",
+        mine: "Tickets I own",
+      } as Record<string, string>,
+      clearFilters: "Clear filters",
+      group: "Group",
+      sort: "Sort",
+      sortBy: {
+        none: "Default",
+        priority: "Priority",
+        due: "Due date",
+        age: "Waiting time",
+      } as Record<string, string>,
+      sortHint: "How cards order inside a column",
+      /** The keyboard: two plain keys while the board is on screen, no modifier. */
+      keyboardHint: "/ to search, N for a new ticket",
+      bulkRejectHint: "Moving into Rejected needs a note, used as the reason",
+      selectHint: "Selected cards move, get assigned, take a note or unblock together; press again to leave",
       summary: "Details",
       history: "History",
       historyEmpty: "No history yet",
@@ -5997,6 +6341,7 @@ Scenarios:
       mentionAllDesc: "Every member of the channel",
       employees: "Employees",
       members: "Members",
+      squads: "Squads",
       earlierDays: "Earlier days",
       ticketRef: (id: string): string => `Ticket ${id}`,
       sessionRef: "View session",
@@ -6109,6 +6454,10 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
+      schedule_invalid: "This scheduled task's file is invalid, so it cannot fire.",
+      schedule_session_missing:
+        "The Session this task is bound to no longer exists; the task is marked invalid. Editing the task file recovers it.",
+      schedule_fire_failed: "The firing failed: no Session could be opened for it.",
       model_not_addable:
         "This group carries its built-in models only; add the model under a custom group.",
       penguin_go_protocol_fixed: "Penguin Go always uses the MMSP protocol; it cannot be changed.",

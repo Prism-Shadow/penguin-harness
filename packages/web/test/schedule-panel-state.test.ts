@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { ProjectScheduleItem, ScheduleItem } from "@prismshadow/penguin-server/api";
 import {
   SCHEDULE_FILTERS,
+  autoPauseReasonOf,
   pendingScheduleSessions,
   filterBucket,
   filterSchedules,
@@ -93,10 +94,11 @@ describe("filterBucket / scheduleGlyph", () => {
   it("puts an armed task under 'active' and a switched-off one under 'paused'; a settled task or an invalid file fits no chip", () => {
     expect(filterBucket("active")).toBe("active");
     expect(filterBucket("disabled")).toBe("paused");
-    // The scheduler archives settled tasks; one still listed shows under "all" only.
-    for (const status of ["done", "expired", "missed", "invalid"] as const) {
-      expect(filterBucket(status), status).toBeNull();
-    }
+    expect(filterBucket("auto_paused")).toBe("paused");
+    expect(filterBucket("done")).toBe("completed");
+    expect(filterBucket("expired")).toBe("completed");
+    expect(filterBucket("missed")).toBe("completed");
+    expect(filterBucket("invalid")).toBeNull();
     // Every non-"all" chip is a bucket some status lands in.
     const landed = (["active", "disabled"] as const).map((s) => filterBucket(s));
     for (const chip of SCHEDULE_FILTERS.filter((f) => f !== "all")) {
@@ -107,9 +109,20 @@ describe("filterBucket / scheduleGlyph", () => {
   it("gives the glyph the same grouping as the chips, plus the alert for an invalid file", () => {
     expect(scheduleGlyph("active")).toBe("play");
     expect(scheduleGlyph("disabled")).toBe("pause");
+    expect(scheduleGlyph("auto_paused")).toBe("pause");
     expect(scheduleGlyph("done")).toBe("check");
     expect(scheduleGlyph("missed")).toBe("check");
     expect(scheduleGlyph("invalid")).toBe("alert");
+  });
+
+  it("reads the auto-pause reason defensively: older servers omit the field", () => {
+    expect(autoPauseReasonOf({ autoPauseReason: "schedule_send_failed" })).toBe(
+      "schedule_send_failed",
+    );
+    expect(autoPauseReasonOf({})).toBeUndefined();
+    expect(autoPauseReasonOf({ autoPauseReason: "" })).toBeUndefined();
+    expect(autoPauseReasonOf({ autoPauseReason: 42 })).toBeUndefined();
+    expect(autoPauseReasonOf(null)).toBeUndefined();
   });
 });
 

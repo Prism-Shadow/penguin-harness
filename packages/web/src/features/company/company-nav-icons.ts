@@ -8,6 +8,7 @@ import type { CompanyNavKey } from "./company-nav";
 
 export const COMPANY_NAV_ICONS: Record<CompanyNavKey, string> = {
   overview: NAV_ICONS.orgOverview,
+  inbox: NAV_ICONS.orgInbox,
   chart: NAV_ICONS.orgChart,
   calendar: NAV_ICONS.orgCalendar,
   tickets: NAV_ICONS.orgTickets,

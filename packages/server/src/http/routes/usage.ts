@@ -33,7 +33,7 @@ export interface UsageRouteDeps {
   usageService: UsageQueries;
 }
 
-const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session"];
+const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session", "squad"];
 
 const GRANULARITIES: readonly UsageGranularity[] = ["minute", "hour", "day", "week", "month"];
 
@@ -111,6 +111,21 @@ export function usageRoutes(deps: UsageRouteDeps): Hono<AppEnv> {
     const agentId = c.req.query("agentId");
     const provider = c.req.query("provider");
     const modelId = c.req.query("modelId");
+    // Optional cap on the returned group count (see UsageQuery.groupLimit), bounded like the
+    // series bucket cap. Refused for a dimension with no server-verifiable order rather than
+    // returning an arbitrary subset the caller would present as "the top N".
+    const groupLimitRaw = c.req.query("groupLimit");
+    let groupLimit: number | undefined;
+    if (groupLimitRaw !== undefined && groupLimitRaw !== "") {
+      const n = Number(groupLimitRaw);
+      if (!Number.isInteger(n) || n <= 0 || n > 5000) {
+        throw badRequest("groupLimit must be an integer in 1..5000.");
+      }
+      if (groupByRaw === "model" || groupByRaw === "squad") {
+        throw badRequest(`groupLimit is not supported for groupBy=${groupByRaw}.`);
+      }
+      groupLimit = n;
+    }
     return c.json(
       await deps.usageService.query(projectId, {
         groupBy: groupByRaw as UsageGroupBy,
@@ -127,6 +142,7 @@ export function usageRoutes(deps: UsageRouteDeps): Hono<AppEnv> {
         ...(agentId !== undefined && agentId !== "" ? { agentId } : {}),
         ...(provider !== undefined && provider !== "" ? { provider } : {}),
         ...(modelId !== undefined && modelId !== "" ? { modelId } : {}),
+        ...(groupLimit !== undefined ? { groupLimit } : {}),
       }),
     );
   });

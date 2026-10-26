@@ -1,14 +1,15 @@
 /**
  * channel-mentions.ts unit tests: the candidate list, its narrowing to a channel's own
- * membership, its filter and its ranking, what a pick types, the @-token at the caret,
- * splicing a pick into the draft, splitting a stored message into plain and mention runs by
- * the server's own token grammar, and what a mention run displays and whom it addresses.
+ * membership, its filter and its ranking, what a pick sends (the exact markdown span), the
+ * @-token at the caret, splicing a pick into the draft, splitting a stored message into plain
+ * and mention runs — the exact spans first, then the legacy bare handles in the gaps — and
+ * what a mention run displays and whom it addresses.
  */
 import { describe, expect, it } from "vitest";
 import {
   channelMentionCandidates,
   mentionCandidates,
-  mentionInsertId,
+  mentionInsertWire,
   mentionIsMe,
   mentionLabel,
   mentionNote,
@@ -16,6 +17,7 @@ import {
   mentionQueryAt,
   mentionRuns,
   rankMentionCandidates,
+  wireToken,
 } from "../src/features/company/channel-mentions";
 
 const candidates = mentionCandidates(
@@ -78,6 +80,53 @@ describe("mentionRuns", () => {
   });
 });
 
+describe("mentionRuns over exact markdown", () => {
+  it("finds markdown spans anywhere — even glued — with the URL's kind:id as the token", () => {
+    const span = "[@Ada](mention://agent/ceo)";
+    expect(mentionRuns(`hi ${span} there`)).toEqual([
+      { text: "hi ", mention: null },
+      { text: span, mention: "agent:ceo" },
+      { text: " there", mention: null },
+    ]);
+    // Neighbours can neither extend the link nor swallow it: no boundary is needed.
+    expect(mentionRuns(`x${span}y`).filter((r) => r.mention)).toEqual([
+      { text: span, mention: "agent:ceo" },
+    ]);
+  });
+
+  it("reads user, squad and all spans by the same rule", () => {
+    expect(mentionRuns("[@bob](mention://user/bob)").map((r) => r.mention)).toEqual(["user:bob"]);
+    expect(mentionRuns("[@Demo Builders](mention://squad/demo-builders)").map((r) => r.mention)).toEqual([
+      "squad:demo-builders",
+    ]);
+    expect(mentionRuns("[@Everyone](mention://all)").map((r) => r.mention)).toEqual(["all"]);
+  });
+
+  it("still chips legacy bare handles in the gaps between markdown spans", () => {
+    const span = "[@Ada](mention://agent/ceo)";
+    expect(mentionRuns(`@ceo ping ${span} and @all`)).toEqual([
+      { text: "@ceo", mention: "ceo" },
+      { text: " ping ", mention: null },
+      { text: span, mention: "agent:ceo" },
+      { text: " and ", mention: null },
+      { text: "@all", mention: "all" },
+    ]);
+  });
+
+  it("leaves an ordinary link alone but still chips the legacy handle beside it", () => {
+    expect(mentionRuns("[spec](https://example.com) cc @ceo")).toEqual([
+      { text: "[spec](https://example.com) cc ", mention: null },
+      { text: "@ceo", mention: "ceo" },
+    ]);
+  });
+
+  it("does not chip a mention:// link whose label does not start with @", () => {
+    expect(mentionRuns("[Ada](mention://agent/ceo)")).toEqual([
+      { text: "[Ada](mention://agent/ceo)", mention: null },
+    ]);
+  });
+});
+
 describe("mentionCandidates with titles", () => {
   it("carries an employee's title as the detail and leaves a blank one out", () => {
     const list = mentionCandidates(
@@ -133,14 +182,34 @@ describe("rankMentionCandidates", () => {
   });
 });
 
-describe("mentionInsertId", () => {
-  it("sends a bare id, and disambiguates a member who shares an employee's id", () => {
+describe("mentionInsertWire", () => {
+  it("sends the exact markdown for an employee, a member, and all — a shared id needs no disambiguation", () => {
     const list = mentionCandidates([{ agentId: "alice", name: "Alice" }], ["alice", "bob"], "All");
-    // The draft shows the name (mention-draft.ts); the wire keeps the id.
-    expect(mentionInsertId(list[0]!, list)).toBe("alice");
-    expect(mentionInsertId(list[1]!, list)).toBe("user:alice");
-    expect(mentionInsertId(list[2]!, list)).toBe("bob");
-    expect(mentionInsertId(list[3]!, list)).toBe("all");
+    // The draft shows the name (mention-draft.ts); the wire carries the exact span.
+    expect(mentionInsertWire(list[0]!, list)).toBe("[@Alice](mention://agent/alice)");
+    expect(mentionInsertWire(list[1]!, list)).toBe("[@alice](mention://user/alice)");
+    expect(mentionInsertWire(list[2]!, list)).toBe("[@bob](mention://user/bob)");
+    expect(mentionInsertWire(list[3]!, list)).toBe("[@All](mention://all)");
+  });
+
+  it("strips brackets from the label, so the span never breaks", () => {
+    const list = mentionCandidates([{ agentId: "x", name: "A[li]ce (dev)" }], [], "All");
+    expect(mentionInsertWire(list[0]!, list)).toBe("[@Alice (dev)](mention://agent/x)");
+  });
+});
+
+describe("wireToken", () => {
+  it("reads the kind:id (or all) out of a pick's markdown wire", () => {
+    expect(wireToken("[@Alice](mention://agent/alice)")).toBe("agent:alice");
+    expect(wireToken("[@alice](mention://user/alice)")).toBe("user:alice");
+    expect(wireToken("[@Demo Builders](mention://squad/demo-builders)")).toBe("squad:demo-builders");
+    expect(wireToken("[@All](mention://all)")).toBe("all");
+  });
+
+  it("leaves a legacy bare wire and any other text alone", () => {
+    expect(wireToken("ceo")).toBe("ceo");
+    expect(wireToken("user:alice")).toBe("user:alice");
+    expect(wireToken("[x](https://example.com)")).toBe("[x](https://example.com)");
   });
 });
 
@@ -283,5 +352,95 @@ describe("mentionNote", () => {
     expect(mentionNote("all", titles)).toBe("");
     expect(mentionNote("agent:dev", titles)).toBe("");
     expect(mentionNote("nobody", titles)).toBe("");
+  });
+});
+
+describe("squad mentions", () => {
+  const squads = [
+    { id: "demo-builders", name: "Demo Builders", leader: "agent:ceo" },
+    { id: "doc-crew", name: "Doc Crew", leader: "agent:pm" },
+  ];
+  const list = mentionCandidates(
+    [{ agentId: "ceo", name: "Alice" }],
+    ["bob"],
+    "Everyone",
+    squads,
+  );
+
+  it("lists squads after members and before all, carrying their leaders", () => {
+    expect(list.map((c) => c.principal)).toEqual([
+      "agent:ceo",
+      "user:bob",
+      "squad:demo-builders",
+      "squad:doc-crew",
+      "all",
+    ]);
+    expect(list[2]).toMatchObject({ kind: "squad", label: "Demo Builders", leader: "agent:ceo" });
+  });
+
+  it("inserts the exact squad markdown, since a bare squad id resolves to nothing", () => {
+    expect(mentionInsertWire(list[2]!, list)).toBe("[@Demo Builders](mention://squad/demo-builders)");
+  });
+
+  it("keeps a squad only when its leader sits in the channel", () => {
+    expect(
+      channelMentionCandidates(list, new Set(["agent:ceo"])).map((c) => c.principal),
+    ).toEqual(["agent:ceo", "squad:demo-builders", "all"]);
+    expect(channelMentionCandidates(list, new Set(["user:bob"])).map((c) => c.principal)).toEqual([
+      "user:bob",
+      "all",
+    ]);
+  });
+
+  it("drops a squad whose leader is unknown, and keeps every squad when membership is null", () => {
+    const leaderless = mentionCandidates([], [], "Everyone", [
+      { id: "x", name: "X", leader: "" },
+    ]);
+    delete leaderless[0]!.leader;
+    expect(channelMentionCandidates(leaderless, new Set(["agent:ceo"])).map((c) => c.principal)).toEqual([
+      "all",
+    ]);
+    expect(channelMentionCandidates(list, null).map((c) => c.principal)).toContain(
+      "squad:demo-builders",
+    );
+  });
+
+  it("still chips a legacy squad token in the gaps, like the old grammar", () => {
+    expect(mentionRuns("ping @squad:demo-builders.")).toEqual([
+      { text: "ping ", mention: null },
+      { text: "@squad:demo-builders", mention: "squad:demo-builders" },
+      { text: ".", mention: null },
+    ]);
+    // A bare `@squad` reads as an id-shaped token, exactly as `@agent`/`@user` do —
+    // a legacy chip; only the exact markdown pages anyone.
+    expect(mentionRuns("@squad: alone")).toEqual([
+      { text: "@squad", mention: "squad" },
+      { text: ": alone", mention: null },
+    ]);
+  });
+
+  it("labels a squad token by the squad name map, and never addresses the reader", () => {
+    const names = new Map([
+      ["ceo", "Alice"],
+      ["squad:demo-builders", "Demo Builders"],
+    ]);
+    expect(mentionLabel("squad:demo-builders", names, "Everyone")).toBe("Demo Builders");
+    expect(mentionLabel("squad:unknown", names, "Everyone")).toBe("squad:unknown");
+    expect(mentionIsMe("squad:demo-builders", "bob", new Set(["ceo"]))).toBe(false);
+  });
+
+  it("never turns a squad name into a name-handle, and still matches squads by query", () => {
+    const names = new Map([
+      ["ceo", "Alice"],
+      ["squad:demo-builders", "Demo Builders"],
+    ]);
+    expect([...mentionNameHandles(names).keys()]).toEqual(["Alice"]);
+    expect(rankMentionCandidates(list, "squad").map((c) => c.principal)).toEqual([
+      "squad:demo-builders",
+      "squad:doc-crew",
+    ]);
+    expect(rankMentionCandidates(list, "demo").map((c) => c.principal)).toEqual([
+      "squad:demo-builders",
+    ]);
   });
 });

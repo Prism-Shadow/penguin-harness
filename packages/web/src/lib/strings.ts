@@ -22,6 +22,8 @@ export const zh = {
     chat: "对话",
     newChat: "新建对话",
     agents: "智能体",
+    schedules: "定时任务",
+    archived: "已归档对话",
     models: "模型库",
     machines: "机器管理",
     plugins: "插件市场",
@@ -44,6 +46,7 @@ export const zh = {
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "概览",
+      inbox: "通知",
       chart: "组织图",
       calendar: "日历",
       tickets: "工单",
@@ -828,6 +831,16 @@ export const zh = {
     noMatches: "没有匹配的对话",
     /** The busy glyph's tooltip on a row whose Session is running. */
     running: "运行中",
+    /** A row's own archive time, when the server says it: when it was filed away. */
+    archivedAt: (time: string) => `归档于 ${time}`,
+    /** A row's last activity, beside the archive time. */
+    lastActive: (time: string) => `最后活动 ${time}`,
+    /** The page's line above the list: how many conversations it holds. */
+    total: (n: number): string => `共 ${n} 条对话`,
+    /** After a restore: the conversation is back in the sidebar. */
+    restored: "已放回侧栏",
+    /** After a delete: the conversation is gone for good. */
+    deleted: "已删除",
     loadFailed: (reason: string): string => `无法读取已归档对话：${reason}`,
     actionFailed: (reason: string): string => `操作没有完成：${reason}`,
     /** The confirm before a batch or group delete (a single row uses the chat's own confirm). */
@@ -839,6 +852,16 @@ export const zh = {
     /** Above the list: machines whose archived chats could not be read this time, by alias. */
     unreachable: (machines: string[]): string =>
       `这些机器暂时连不上，其上的已归档对话未列出：${machines.join("、")}`,
+  },
+
+  /**
+   * The top-level Archived chats page (/archived): the archive list one click from the nav, so
+   * a conversation that was filed away is never lost.
+   */
+  archivedPage: {
+    title: "已归档对话",
+    description: "归档的对话不在侧栏里；在这里找回来、恢复，或彻底删除。",
+    info: "「归档」只是把对话从侧栏收起来，消息与 Trace 都还在。这份清单默认只列你手动归档的对话；程序（接口、定时任务、命令行）打开的会话，换一个来源筛选就能看到。",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */
@@ -1389,6 +1412,53 @@ export const zh = {
     taskCompleteTitle: "任务完成",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
+    /** Company push groups (lib/company-notify.ts): one toggle each under the master switch. */
+    groups: {
+      mention: "有人 @ 我",
+      mentionInfo: "频道里点名你的消息弹窗提醒。",
+      channel: "频道新消息",
+      channelInfo: "每条新消息都弹窗；消息量大的频道建议关掉。",
+      ticket: "工单动态",
+      ticketInfo: "工单的创建、进度、阻塞等变更。",
+      run: "员工开工",
+      runInfo: "工位或工单会话启动一次运行。",
+      budget: "预算预警",
+      budgetInfo: "员工预算的警告、暂停与恢复，金额不多但重要。",
+    },
+    companyMentionTitle: (channel: string): string => `有人在 #${channel} @ 你`,
+    companyMentionBody: (sender: string, text: string): string => `${sender}：${text}`,
+    companyChannelTitle: (channel: string): string => `#${channel} 有新消息`,
+    companyChannelBody: (sender: string, text: string): string =>
+      text === "" ? sender : `${sender}：${text}`,
+    companyTicketTitle: (ticket: string): string => `工单 ${ticket} 有动态`,
+    companyTicketBody: (change: string): string =>
+      (
+        ({
+          created: "刚创建",
+          progress: "有新进展",
+          updated: "有更新",
+          attached: "关联了新会话",
+          archived: "已归档",
+        }) as Record<string, string>
+      )[change] ?? change,
+    companyRunTitle: (agent: string): string => `${agent} 开工了`,
+    companyRunBody: (kind: string): string =>
+      (
+        ({
+          init: "初始化运行",
+          event: "日程触发",
+          mention: "被点名唤醒",
+          ticket_notice: "工单通知",
+          ticket_work: "工单工作",
+        }) as Record<string, string>
+      )[kind] ?? kind,
+    companyBudgetTitle: (agent: string): string => `${agent} 的预算`,
+    companyBudgetBody: (state: string, ratio: number): string => {
+      const pct = `${Math.round(ratio * 100)}%`;
+      if (state === "paused") return `已暂停（${pct}）`;
+      if (state === "resumed") return "已恢复";
+      return `预警（${pct}）`;
+    },
   },
 
   /**
@@ -2747,6 +2817,54 @@ export const zh = {
     },
   },
 
+  /** The Scheduled tasks page (/schedules): every agent's tasks of this Project on one page. */
+  schedulesPage: {
+    title: "定时任务",
+    subtitle:
+      "本 Project 全部智能体的定时任务：到点自动向目标会话发送 prompt。按智能体分组；点任意一行看明细，明细里可直接编辑，每组右上角可为该智能体新建。",
+    refresh: "刷新",
+    /** The group header's create button: a task for that agent, in the shared form. */
+    newTask: "新建任务",
+    filterStatus: "状态",
+    filterType: "类型",
+    typeAll: "全部类型",
+    /** The type chips (schedule-category.ts): what the task's interval means in words. */
+    typeNames: {
+      once: "一次性",
+      minutes: "分钟级",
+      hours: "小时级",
+      days: "每日",
+      weeks: "每周",
+      custom: "自定义",
+    } as Record<string, string>,
+    searchPlaceholder: "搜索任务名或 prompt…",
+    noMatch: "没有符合筛选条件的定时任务",
+    clearFilters: "清除筛选",
+    detailTitle: "任务明细",
+    detailAgent: "所属智能体",
+    detailPrompt: "Prompt",
+    detailStart: "开始时间",
+    detailEnd: "结束时间",
+    detailWorkspace: "Workspace",
+    detailModel: "Model",
+    detailEditHint: "编辑会打开完整表单：prompt、周期、目标会话、模型与 Workspace 都在那里改。",
+    refreshed: "已刷新定时任务",
+    loadFailed: "定时任务加载失败",
+    colAgent: "智能体",
+    colTask: "任务",
+    colPlan: "计划",
+    colTarget: "目标",
+    colNext: "下次触发",
+    colLast: "最近触发",
+    openAgent: "打开该智能体的定时任务",
+    countAll: (n: number): string => `共 ${n} 条`,
+    /** While a filter is on: how much of the schedule is on screen. */
+    filteredCount: (shown: number, all: number): string => `已筛选 ${shown} / 共 ${all} 条`,
+    emptyTitle: "还没有任何定时任务",
+    emptyHint: "到某个智能体的设置 › 定时任务里新建，或直接让智能体自己安排。",
+    invalidFiles: "解析失败的文件（已跳过调度）",
+  },
+
   schedule: {
     desc: "定时任务（agent_state/schedule/*.toml）：到点自动向目标 Session 发送 prompt；文件亦可手工编辑，Web 端修改后即时生效。",
     readOnlyHint: "member 只读；定时任务修改仅 owner 可执行",
@@ -2762,6 +2880,7 @@ export const zh = {
       done: "已完成",
       missed: "已错过",
       invalid: "无效",
+      auto_paused: "自动暂停",
     } as Record<string, string>,
     queued: "排队中",
     once: "一次性",
@@ -2797,6 +2916,71 @@ export const zh = {
     toastSaved: "已保存定时任务",
     toastEnabled: "已启用定时任务",
     toastDisabled: "已停用定时任务",
+    resume: "恢复",
+    toastResumed: "已恢复定时任务",
+    /** Manual fire (fireSchedule): an extra run now; queued when the target Session is busy. */
+    fireNow: "立即触发",
+    toastFired: (session: string): string => `已手工触发，会话 ${session}`,
+    toastQueued: (session: string): string => `会话 ${session} 正忙，触发已排队`,
+    /** Hover hint on a disabled fire button: invalid tasks cannot fire. */
+    fireInvalidHint: "任务无效，无法触发",
+    /** A fire that 404s without the server's error envelope: this page is newer than the deployed server. */
+    fireStaleServer: "服务端版本过旧，尚无手工触发接口，重启后生效",
+    /** Webhook trigger section of the schedule detail dialog (schedule-webhook-section.tsx). */
+    webhook: {
+      title: "Webhook 触发",
+      info: "外部系统 POST 这个 URL 即触发一次运行（与手工触发同一路径）；幂等键重复投递不重跑。",
+      enable: "启用 Webhook",
+      provider: "约定",
+      providerGeneric: "通用（Idempotency-Key 去重）",
+      providerGithub: "GitHub（X-GitHub-Delivery + 签名）",
+      secret: "签名密钥",
+      secretPlaceholder: "8~500 字符；留空表示不启用签名",
+      create: "创建",
+      createdTitle: "触发 URL（只显示一次）",
+      createdHint: "关闭后无法再看，请现在复制；丢了就轮换。",
+      copyUrl: "复制 URL",
+      copied: "已复制 URL",
+      copyFailed: "复制失败，请手工选中复制",
+      enabledState: "已启用",
+      disabledState: "已停用",
+      setEnabled: "启用",
+      setDisabled: "停用",
+      secretSet: (hint: string): string => `已设置（…${hint}）`,
+      secretUnset: "未设置",
+      changeSecret: "设置密钥",
+      clearSecret: "清除密钥",
+      saveSecret: "保存密钥",
+      lastFired: "上次触发",
+      rotate: "轮换 Token",
+      rotateTitle: "轮换 Webhook Token",
+      rotateConfirm: "轮换后旧 URL 立即失效，调用方必须换新 URL。继续？",
+      deleteTitle: "删除 Webhook 触发器",
+      deleteConfirm: "删除后该 URL 不再触发（投递记录保留备查）。继续？",
+      deliveries: "投递记录",
+      deliveriesEmpty: "暂无投递",
+      replay: "重放",
+      statusNames: {
+        accepted: "已触发",
+        duplicate: "去重",
+        ignored: "已忽略",
+        rejected: "已拒绝",
+        queued: "排队中",
+        skipped: "已跳过",
+      } as Record<string, string>,
+      signatureNames: {
+        verified: "验签通过",
+        invalid: "签名错",
+        missing: "缺签名",
+        not_required: "免签",
+      } as Record<string, string>,
+      toastCreated: "Webhook 已创建",
+      toastRotated: "Token 已轮换，旧 URL 已失效",
+      toastDeleted: "Webhook 已删除",
+      toastReplayed: (session: string): string => `已重放，会话 ${session}`,
+      toastEnabled: "Webhook 已启用",
+      toastDisabled: "Webhook 已停用",
+    },
     /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "本对话",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -3824,6 +4008,8 @@ Benchmark：
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "正在加载更早的对话…",
+    /** Top-of-stream affordance while more history exists but nothing is in flight: click to fetch the previous window (also triggered by scrolling near the top). */
+    loadEarlier: "加载更早的对话",
     /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
     loadEarlierRetry: "更早的对话加载失败，点击重试",
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
@@ -3893,7 +4079,9 @@ Benchmark：
             ? "重试等待中被中断"
             : item?.errorCode === "compaction_interrupted"
               ? "压缩过程中被中断"
-              : (item?.errorCode ?? item?.reason ?? "");
+              : item?.errorCode === "server_restart"
+                ? "服务重启导致中断"
+                : (item?.errorCode ?? item?.reason ?? "");
       const text = cause ? `${cause}${item?.errorMessage ? `：${item.errorMessage}` : ""}` : "";
       return `[已中断]${text ? `：${text}` : ""}`;
     },
@@ -4348,6 +4536,18 @@ Benchmark：
     deleteDraftConfirm: (title: string) => `确定删除草稿「${title}」？未发送的内容将被丢弃。`,
     archiveSession: "归档",
     unarchiveSession: "取消归档",
+    /**
+     * The receipt that rises after a conversation is archived: what happened, and the two ways
+     * back (undo here, or the archive page).
+     */
+    archiveReceipt: {
+      archived: (title: string) => `已归档「${title}」`,
+      undo: "撤销",
+      undone: "已放回侧栏",
+      view: "查看已归档",
+      undoFailed: (reason: string) => `撤销没有完成：${reason}`,
+      archiveFailed: (reason: string) => `归档没有完成：${reason}`,
+    },
     /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
     pinSession: "置顶",
     unpinSession: "取消置顶",
@@ -5712,6 +5912,8 @@ Benchmark：
       closeAllTemporary: "全部关闭",
       /** A desk row whose employee's Agent was deleted: dimmed, never opened. */
       agentMissing: "Agent 已删除，无法打开工位",
+      /** The desk row menu's entry that sets the employee's own model. */
+      setModel: "设置模型",
     },
     overview: {
       title: "概览",
@@ -5779,6 +5981,40 @@ Benchmark：
       inboxCategories: { mention: "@我", blocked: "阻塞", done: "已完成" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `还有 ${n} 项，打开日历查看`,
+      /** The jump beside the inbox chips, to the notification center. */
+      inboxAll: "全部通知",
+    },
+    /** The notification center: the inbox as a page of its own, with per-category preferences. */
+    inbox: {
+      /** The page's own info line: what the center shows and where a row leads. */
+      info: "组织要对你说的全部事情：@我的消息、被阻塞的工单、已完成的工单。点标题直达频道或工单；在下面关掉不想看的类别。",
+      /** The preferences block: which categories feed the inbox at all. */
+      prefsTitle: "通知类别",
+      prefsInfo: "关掉的类别不再出现在收件箱里（概览页与本页都不再列出），频道与看板本身不受影响。",
+      /** One line per category: what turning it off hides. */
+      prefHint: {
+        mention: "全员频道里 @我（或 @所有人）的消息",
+        blocked: "被阻塞的工单",
+        done: "本周期已完成的工单",
+      } as Record<string, string>,
+      /** Every category muted: the list is empty by choice, not by luck. */
+      emptyAllOff: "三个类别都关掉了，收件箱自然是空的",
+      /** The chip in force matches nothing (its category feeds rows, just not this one). */
+      emptyFilter: "这个筛选下没有通知",
+      /** Row actions: the read mark both ways, and archiving. */
+      markRead: "标记已读",
+      markUnread: "标记未读",
+      markAllRead: "全部已读",
+      archive: "归档",
+      /** The row's own state, for readers who hear the list rather than see the dot. */
+      readRow: "已读",
+      unreadRow: "未读",
+      /** The archived list below the inbox: rows kept out of sight, restorable one by one. */
+      archivedTitle: "已归档",
+      archivedInfo:
+        "归档的行离开收件箱，随时可以恢复。归档的消息按归档时的内容保留；工单仍按看板实时解析。",
+      unarchive: "恢复",
+      archivedEmpty: "没有已归档的通知",
     },
     calendarOutcomes: {
       fired: "已触发",
@@ -5806,6 +6042,13 @@ Benchmark：
       leave: "离任",
       ceoCannotLeave: "CEO 不能离任",
       setThinkingLevel: "设思考等级",
+      setModel: "设模型",
+      setMachine: "设运行机器",
+      machineTitle: (name: string): string => `调整 ${name} 的运行机器`,
+      machineLabel: "运行机器",
+      machineInfo: "该员工的会话在哪台机器上运行。本机是默认值；远程机器需要多机版，当前构建只读不选。",
+      machineLocal: (alias: string): string => `本机（${alias}，默认）`,
+      machineRemoteNote: "（需多机版）",
       /** An entry whose Agent no longer exists: the card's flag, and the chart's notice when it is the CEO. */
       agentMissing: "Agent 已删除",
       ceoMissing: (ceoId: string): string =>
@@ -5882,6 +6125,15 @@ Benchmark：
       thinkingLevelDefault: (level: string): string => `Project 默认（${level}）`,
       thinkingLevelPinned: (level: string): string =>
         `当前工位会话已单独固定为「${level}」，此设置自下次换工位起对工位生效。`,
+      /** The employee-model dialog: it writes the chart entry, then moves the current desk onto the model at once. */
+      employeeModelTitle: (name: string): string => `设置 ${name} 的模型`,
+      employeeModelInfo:
+        "写入员工条目：之后新开的工位和工单会话都用这个模型。当前工位会立刻换过去，上下文重置；还没有工位时下次打开生效。不填则跟随组织默认，组织没填则跟随 Project 默认。",
+      /** No model of the employee's own: the organization's default applies (then the Project's). */
+      employeeModelFollowDefault: "跟随组织默认",
+      employeeModelClear: "恢复组织默认",
+      /** The desk moved under the dialog (another renewal won the race): the chart write still landed, the lists re-read it. */
+      employeeModelDeskMoved: "工位在此期间已更新，模型已写入员工条目，当前工位保持不动",
     },
     calendar: {
       title: "日历",
@@ -5991,6 +6243,7 @@ Benchmark：
       blockedBy: "等谁",
       blockedTooltip: (reason: string, by: string): string => `被阻塞：${reason}（等 ${by}）`,
       unblock: "解除阻塞",
+      unblocked: "已解除阻塞",
       unblockConfirm: (title: string): string => `解除「${title}」的阻塞？`,
       block: "标记阻塞",
       blockTitle: "标记阻塞",
@@ -5998,6 +6251,11 @@ Benchmark：
       blockByHint: "等哪张工单或哪位主体",
       sessions: "关联工单会话",
       sessionsCount: (n: number): string => `${n} 个会话`,
+      /** The session fold's summary while any of them is working: "8 个会话 · 1 运行中". */
+      sessionsRunning: (n: number): string => `${n} 运行中`,
+      /** A session row's run dot, and the board card's mark: what each state reads as. */
+      sessionRunning: "运行中",
+      sessionIdle: "空闲",
       progress: "进度",
       progressEmpty: "还没有进度记录",
       addProgress: "追加进度",
@@ -6026,6 +6284,87 @@ Benchmark：
       searchNoMatch: "没有匹配的工单",
       dropHere: "拖到这里",
       overdue: "已逾期",
+      groupByName: {
+        none: "不分组",
+        owner: "负责人",
+        priority: "优先级",
+        parent: "父工单",
+        module: "模块",
+        project: "项目",
+      } as Record<string, string>,
+      moduleName: {
+        req: "需求分析",
+        resp: "响应文件",
+        demo: "演示",
+      } as Record<string, string>,
+      queueOnly: "只看待审批",
+      select: "选择",
+      unselect: "取消选择",
+      selectAll: "全选",
+      deselectAll: "取消全选",
+      expand: "展开",
+      collapse: "折叠",
+      noGroup: "未分组",
+      ageDays: (n: number): string => `待${n}天`,
+      ageHint: "从建单到今天的天数",
+      approve: "批准",
+      reject: "打回",
+      /** The review column's vote-gate button (LOCAL-ONLY squad switch, one button for all registries). */
+      reviewVoteOn: "自动审核·开",
+      reviewVoteOff: "自动审核·关",
+      reviewVoteMixed: "自动审核·半",
+      reviewVoteHint:
+        "squad 三专家投票门：开 = 审核中工单由三专家投票自动关闭（2 票接受通过 / 2 票拒绝打回），关 = 人工逐张确认；点一下同时切换全部注册表",
+      selectedCount: (n: number): string => `已选 ${n} 张`,
+      bulkMoveTo: "移到…",
+      bulkAssignTo: "指派给…",
+      bulkNote: "附言（写入进度，留空跳过）",
+      bulkApply: "执行",
+      bulkClear: "清空选择",
+      bulkDone: (n: number): string => `已处理 ${n} 张`,
+      bulkPartial: (ok: number, failed: number): string => `已处理 ${ok} 张，${failed} 张失败`,
+      /** The bulk bar's unblock button: n blocked of m selected; disabled while n is 0. */
+      bulkUnblock: (n: number, m: number): string => `解除阻塞 ${n}/${m}`,
+      bulkUnblockNone: "选中的工单都没有被阻塞",
+      bulkUnblockTitle: "批量解除阻塞",
+      bulkUnblockConfirm: (n: number): string => `确定解除以下 ${n} 张工单的阻塞？`,
+      bulkUnblockMore: (n: number): string => `等 ${n} 张`,
+      bulkUnblockSkip: (n: number): string => `另有 ${n} 张未阻塞，将跳过`,
+      bulkUnblockNoteHint: "上方附言有字时，会逐张写入进度",
+      bulkUnblockDone: (ok: number, skipped: number): string =>
+        skipped > 0 ? `已解除 ${ok} 张阻塞，跳过 ${skipped} 张未阻塞` : `已解除 ${ok} 张阻塞`,
+      moveNote: "附言",
+      moveNoteHint: "留空则只移列",
+      /** The board's quick filters, one at a time; the counts ride on the same chips. */
+      quickFilter: "快捷筛选",
+      quick: {
+        all: "全部",
+        queue: "待审批",
+        blocked: "被阻塞",
+        overdue: "已逾期",
+        mine: "我的",
+      } as Record<string, string>,
+      quickHint: {
+        all: "全部工单",
+        queue: "提议与审核中的工单：等人拍板的那一队",
+        blocked: "被标为阻塞的工单",
+        overdue: "过了截止日期还没结束的工单",
+        mine: "负责人是我的工单",
+      } as Record<string, string>,
+      clearFilters: "清除筛选",
+      group: "分组",
+      sort: "排序",
+      sortBy: {
+        none: "默认",
+        priority: "优先级",
+        due: "截止日期",
+        age: "等待时长",
+      } as Record<string, string>,
+      sortHint: "每列卡片的排列方式",
+      /** The keyboard: two plain keys while the board is on screen, no modifier. */
+      keyboardHint: "按 / 搜索，按 N 新建工单",
+      bulkRejectHint: "移入「已拒绝」需要填写附言作为原因",
+      selectHint: "选中后可批量移列、指派、附言或解除阻塞；再按一次退出",
       summary: "基本信息",
       history: "操作历史",
       historyEmpty: "还没有操作记录",
@@ -6207,6 +6546,7 @@ Benchmark：
       mentionAllDesc: "频道全部成员",
       employees: "员工",
       members: "成员",
+      squads: "Squad",
       earlierDays: "更早的记录",
       ticketRef: (id: string): string => `工单 ${id}`,
       sessionRef: "查看会话",
@@ -6331,6 +6671,9 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
+      schedule_invalid: "该定时任务文件无效，无法触发。",
+      schedule_session_missing: "该任务绑定的会话已不存在，任务已标为无效；改一下任务文件可恢复。",
+      schedule_fire_failed: "触发失败，未能为这次触发打开会话。",
       model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
       penguin_go_protocol_fixed: "Penguin Go 固定使用 MMSP 协议，不能改为其他协议。",
       model_not_routable:

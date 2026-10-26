@@ -9,6 +9,10 @@ import { ICONS } from "@prismshadow/penguin-ui";
 export const NAV_ICONS = {
   /** Agents: the robot head, the one glyph in the app that means "agent". */
   agents: ICONS.robot,
+  /** Scheduled tasks: the same alarm clock the session list marks a task-bearing conversation with. */
+  schedules: ICONS.alarmClock,
+  /** Archived chats: the same box the row's own archive action wears. */
+  archived: ICONS.archive,
   /** Plugin library (the puzzle piece). */
   plugins: ICONS.puzzle,
   /** Model library (a chip). */
@@ -24,6 +28,8 @@ export const NAV_ICONS = {
   terminal: ICONS.terminalWindow,
   /** Company mode's overview. */
   orgOverview: ICONS.dashboard,
+  /** The notification center: a bell, the one glyph that means "for you". */
+  orgInbox: ICONS.bell,
   /** The org chart. */
   orgChart: ICONS.network,
   /** The organization calendar: the same calendar the sidebar's time grouping wears. */

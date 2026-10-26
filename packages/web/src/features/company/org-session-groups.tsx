@@ -18,12 +18,13 @@
  * open — a click must never land in somebody else's conversation instead.
  *
  * A row that names a desk session carries the development list's row menu (right-click, and
- * the hover ellipsis), pared down to the two actions an organization leaves to the reader:
- * copy the Session id, and bind the desk to a messaging bot. A desk's title and its lifecycle are
- * the organization's — the employee names it, hiring and firing open and close it — so
- * rename, archive, delete and pin are not offered here. The binding's own indicator is read
- * from the organization's sessions route, which marks a desk the way the Session's own row is
- * marked; the session list store never holds a desk, so it cannot say.
+ * the hover ellipsis), pared down to the three actions an organization leaves to the reader:
+ * copy the Session id, set the employee's own model (which renews the desk onto it), and bind
+ * the desk to a messaging bot. A desk's title and its lifecycle are the organization's — the
+ * employee names it, hiring and firing open and close it — so rename, archive, delete and pin
+ * are not offered here. The binding's own indicator is read from the organization's sessions
+ * route, which marks a desk the way the Session's own row is marked; the session list store
+ * never holds a desk, so it cannot say.
  *
  * The group reads the company store's caches (the organization's chart and its sessions
  * route), so opening it costs no request; the session the shell is on is marked in place. The
@@ -50,6 +51,7 @@ import {
   toastSuccess,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
+import type { OrgEmployeeItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { sessionActivityLabel } from "../../lib/session-activity";
@@ -70,6 +72,7 @@ import {
 import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
+import { EmployeeModelDialog } from "./employee-model-dialog";
 import { orgKey } from "./company-nav";
 import { INVALID_ICON } from "./shared";
 import { deskRowLabel, deskRows, orgRowActivity, ticketSessionTitles } from "./org-sessions";
@@ -148,7 +151,8 @@ function useOpenDesk(projectId: string, orgId: string, onNavigate?: () => void) 
 /**
  * One desk row. The menu hangs off a desk this list knows the id of; while it does not (the
  * caches have not caught up with a hire, or the desk has yet to be provisioned) there is no
- * Session to copy or bind, so the row stays a plain button until a click opens one.
+ * Session to copy, set the model of, or bind, so the row stays a plain button until a click
+ * opens one.
  */
 function DeskRow({
   row,
@@ -156,6 +160,7 @@ function DeskRow({
   opening,
   onOpen,
   onMessaging,
+  onModel,
 }: {
   row: OrgDeskRow;
   active: boolean;
@@ -163,6 +168,7 @@ function DeskRow({
   opening: boolean;
   onOpen: () => void;
   onMessaging: (sessionId: string) => void;
+  onModel: (agentId: string, sessionId: string) => void;
 }) {
   const ctx = useRowContextMenu();
   const sessionId = row.sessionId;
@@ -183,6 +189,10 @@ function DeskRow({
     if (sessionId === null) return;
     if (action === "messaging") {
       onMessaging(sessionId);
+      return;
+    }
+    if (action === "model") {
+      onModel(row.agentId, sessionId);
       return;
     }
     if (action === "copy") {
@@ -462,6 +472,11 @@ export function OrgSessionGroups({
   const [tempOpen, setTempOpen] = useState(true);
   /** The desk whose messaging binding is open in the dialog; null when none is. */
   const [messagingSessionId, setMessagingSessionId] = useState<string | null>(null);
+  /** The employee whose own model is open in the dialog; null when none is. */
+  const [modelFor, setModelFor] = useState<{
+    employee: OrgEmployeeItem;
+    sessionId: string;
+  } | null>(null);
   const live = useLiveSessionStatuses();
   const orgSessions = company.orgSessions.get(orgKey(projectId, orgId));
   const desks = deskRows(company.orgChart, orgSessions, live);
@@ -501,6 +516,15 @@ export function OrgSessionGroups({
                 opening={opening === d.agentId}
                 onOpen={() => void openDesk(d.agentId, d.sessionId)}
                 onMessaging={setMessagingSessionId}
+                onModel={(agentId, sessionId) => {
+                  // The dialog reads the stored model off the chart row; the row is there —
+                  // the desks are drawn from it — but a hire the cache has not learned yet
+                  // opens no dialog rather than a wrong one.
+                  const employee = company.orgChart?.employees.find(
+                    (e) => e.agentId === agentId,
+                  );
+                  if (employee !== undefined) setModelFor({ employee, sessionId });
+                }}
               />
             ))}
           </ul>
@@ -551,6 +575,31 @@ export function OrgSessionGroups({
           // editor's own toast has already said why the dialog closed.
           onLoadFailed={() => void company.reloadOrgSessions()}
           onChanged={company.setDeskMessagingChannel}
+        />
+      )}
+      {/* The employee-model dialog (the row menu's "Set model"): the desk is renewed onto the
+          picked model, so when the reader is sitting in that desk they follow it to the new
+          session; from anywhere else the lists just re-read. */}
+      {modelFor !== null && (
+        <EmployeeModelDialog
+          open
+          projectId={projectId}
+          orgId={orgId}
+          employee={modelFor.employee}
+          deskSessionId={modelFor.sessionId}
+          onClose={() => setModelFor(null)}
+          onChartChanged={() => {
+            void company.reloadOrgChart();
+            void company.reloadOrgSessions();
+          }}
+          onSwitched={(sessionId) => {
+            const prev = modelFor.sessionId;
+            const agentId = modelFor.employee.agentId;
+            setModelFor(null);
+            void company.reloadOrgChart();
+            void company.reloadOrgSessions();
+            if (sessionId !== null && activeSessionId === prev) openSession(sessionId, agentId);
+          }}
         />
       )}
     </div>

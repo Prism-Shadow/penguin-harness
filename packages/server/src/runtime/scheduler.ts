@@ -518,6 +518,7 @@ export class Scheduler implements Scheduling {
         source: "schedule",
       });
       await this.send(projectId, agentId, def, state, info.sessionId);
+      return { sessionId: info.sessionId, queued: false };
     } catch (err) {
       this.errors.record({
         source: "schedule",
@@ -525,6 +526,7 @@ export class Scheduler implements Scheduling {
         code: "schedule_create_session_failed",
         ctx: { projectId, agentId },
       });
+      return null;
     }
   }
 

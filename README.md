@@ -325,3 +325,29 @@ See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for their licenses.
 - Ming Lu (Qinghe Dynamic)
 
 Built with ❤️
+
+---
+
+## Local optimizations (Jingchuang Helian fork)
+
+This branch (`pg-migration`) is upstream v0.2.17 plus a set of on-premises enterprise enhancements, merged cleanly on top of upstream main (no rebase).
+
+**Optimization footprint** (vs the v0.2.17 merge-base, 34 commits):
+
+- **Files touched**: 111, of which **32 are new files**
+- **Line delta**: **+11,741 / −505** (net ≈ 1.12k LOC added)
+- **Commits**: 34 (including one upstream merge)
+
+**Areas of optimization**:
+
+| Module | Focus | Commits |
+| --- | --- | --- |
+| Database | PostgreSQL backend shim (`PENGUIN_DB=pg`), FTS5→tsvector translation, UPSERT/GREATEST dialect fixes, 21/21 tests green | 3 |
+| Web · Ticket board | Group by project/module/tender, bulk ops, approval queue, sort/toolbar/scroll columns, priority edge, single-card unblock | 9 |
+| Web · Schedules | Project-level schedules page (nav entry), manual-fire buttons, auto-paused status + resume button, webhook trigger section, invalid-files hint | 7 |
+| Web · Company/Org | Notification center + finance usage drill-down, per-employee model, per-group push switches, squad @-menu, exact-grammar mention markdown, read-marks/archive | 8 |
+| Web · Archived chats | Nav-level archived page, archive receipt (undo/view/deeplink), link titles, source pill | 4 |
+| Web · Misc | Employee machine pin picker (single-machine slice), message-stream fix, ticket-dialog guard | 3 |
+| Core | Context-engine improvements, abort-event error_message extension, 429 rate-limit failover chain (`pendingFailover`) | 2 |
+
+These changes have been running on the internal production instance; upstream changes are pulled in via merge (never rebase) so the branch can keep tracking main.

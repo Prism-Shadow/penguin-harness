@@ -93,7 +93,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   fork_count    INTEGER NOT NULL DEFAULT 0,          -- monotonically allocated child-fork number for this source Session; never decremented when a fork is deleted
   sandbox       TEXT,                                -- the Session's sandbox policy snapshot (JSON SandboxSettings); NULL = legacy row, snapshotted at its next command
   last_active_at TEXT,                               -- last activity this server drove for the session (ISO; stamped once when a run starts and once when it ends, initialized to created_at); monotonic, never moves backwards; NULL only before openDatabase's one-time backfill
-  created_at    TEXT NOT NULL
+  created_at    TEXT NOT NULL,
+  parent_session_id TEXT,                          -- direct parent that spawned this Session (NULL = top-level / legacy); written at subagent registration, the single source for squad parentage
+  squad         TEXT                               -- multi-agent work group tag from the child's session_meta (the run_subagent squad argument); NULL = no squad. Cost groups on it through usage_records.origin_session_id
 );                                            -- the Session's SOURCE (user/api/schedule/subagent/cli/company) is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row), read for the source only where the Trace records none ('org' → company)
 CREATE INDEX IF NOT EXISTS idx_sessions_agent_created ON sessions(project_id, agent_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS usage_records (
@@ -113,6 +115,30 @@ CREATE TABLE IF NOT EXISTS usage_records (
   status            TEXT NOT NULL DEFAULT 'completed'  -- request outcome: completed=success (with tokens); others=failure (0 tokens, for success rate)
 );                                            -- cost is not stored: computed at query time from current pricing
 CREATE INDEX IF NOT EXISTS idx_usage_project_date ON usage_records(project_id, date);
+CREATE INDEX IF NOT EXISTS idx_usage_project_ts ON usage_records(project_id, ts);  -- today / last-7d filter on ts; idx_usage_project_date covers date, which is a DIFFERENT column (local yyyy-mm-dd vs the ISO instant), so those range scans were reading the table
+CREATE TABLE IF NOT EXISTS usage_daily_rollup (  -- rebuildable cache: usage_records pre-summed by (date, agent, session, provider, model, peak). Pure SUMs, so every figure is exactly the aggregate over the same rows — nothing is lost by folding, and cost is still priced at query time from current pricing.
+  project_id      TEXT NOT NULL,
+  date            TEXT NOT NULL,
+  agent_id        TEXT NOT NULL,
+  session_id      TEXT NOT NULL,
+  origin_session_id TEXT,                -- the squad group key resolves through this; kept so the rollup answers squad grouping without touching sessions
+  provider        TEXT NOT NULL,
+  model_id        TEXT NOT NULL,
+  peak            INTEGER NOT NULL,      -- 1 = the row's own ts fell in the reference's peak window at rollup time; 0 = off-peak
+  cache_read      INTEGER NOT NULL,
+  cache_write     INTEGER NOT NULL,
+  output          INTEGER NOT NULL,
+  total           INTEGER NOT NULL,
+  requests        INTEGER NOT NULL,
+  completed       INTEGER NOT NULL,      -- requests with status='completed' (the success-rate numerator)
+  denominator     INTEGER NOT NULL,      -- requests with status <> 'aborted' (the denominator)
+  -- origin_session_id is part of the key, not a carried attribute: one Session's rows can name
+  -- different origin sessions (its subagents attach to different children), and the squad
+  -- grouping resolves through that column. Folding them into one row would either collide on the
+  -- key or lose the distinction the squad view is asking for.
+  PRIMARY KEY (project_id, date, agent_id, session_id, origin_session_id, provider, model_id, peak)
+);
+CREATE INDEX IF NOT EXISTS idx_usage_rollup_project_date ON usage_daily_rollup(project_id, date);
 CREATE INDEX IF NOT EXISTS idx_usage_session_ts ON usage_records(session_id, ts);  -- (session_id) alone was idx_usage_session (dropped on open): ts makes the last_active_at backfill's MAX(ts) a covering index scan instead of a random row lookup per usage record
 CREATE TABLE IF NOT EXISTS error_records (     -- server-side error capture (the Costs page's "Errors" tab)
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -351,4 +377,43 @@ CREATE TABLE IF NOT EXISTS org_desk_notices (   -- DERIVED CACHE (company mode):
   at         TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_org_desk_notices_agent ON org_desk_notices(project_id, org_id, agent_id);
+
+-- Session full-text search: one row per INDEXABLE message, the searchable projection of
+-- that message in \`body\`, and everything needed to report WHERE the hit was.
+--
+-- DERIVED CACHE like trace_files: the Trace tree stays the single source of truth, every
+-- row is rebuildable by re-indexing a shard, and a row is never authority for absence (an
+-- unindexed shard is scanned again, so a stale index costs one pass, never a false "no
+-- results"). The identity columns are UNINDEXED FTS5 columns rather than a companion table:
+-- the index and its row key cannot then drift apart, and a hit answers with the message it
+-- matched in the same SELECT.
+--
+-- \`body\` is NOT the original string: it is the CJK-segmented projection described in
+-- services/search-text.ts (one extra control character between tokens), because FTS5's
+-- default tokenizer treats a whole CJK run as ONE token, which would make a two-character
+-- Chinese query unmatchable. The projection is lossy by construction (it repeats characters
+-- to form its bigrams), so the original travels beside it in the UNINDEXED \`raw\` column and
+-- snippets are cut from that.
+CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(
+  project_id UNINDEXED,
+  agent_id    UNINDEXED,
+  session_id  UNINDEXED,
+  file_index  UNINDEXED,
+  line_no     UNINDEXED,
+  role        UNINDEXED,
+  at          UNINDEXED,
+  body,
+  raw UNINDEXED
+);
+CREATE TABLE IF NOT EXISTS session_search_shards (  -- DERIVED CACHE: how much of each shard the indexer has consumed
+  project_id    TEXT NOT NULL,
+  agent_id      TEXT NOT NULL,
+  session_id    TEXT NOT NULL,
+  file_index    INTEGER NOT NULL,
+  indexed_bytes INTEGER NOT NULL DEFAULT 0,  -- bytes consumed, always a record boundary
+  size_bytes    INTEGER NOT NULL DEFAULT 0,  -- shard size when last consumed
+  message_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (project_id, agent_id, session_id, file_index)
+);
+CREATE INDEX IF NOT EXISTS idx_session_search_shards_session ON session_search_shards(session_id);
 `;

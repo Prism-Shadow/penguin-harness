@@ -25,8 +25,10 @@
  * A parent or a child swaps the dialog's own ticket. Only a session leaves the page, since a
  * conversation has no in-place form: it opens as the full conversation page and joins the
  * company sidebar's Temporary group (temp-session.ts).
- * A session's live status is not drawn: a ticket reports its own work, not what a session is
- * doing this second.
+ * Each session row draws its run dot — live first, the ticket's own snapshot for a session no
+ * event has named — and the folded summary counts the working ones, so a ticket whose sessions
+ * all went quiet reads quiet without opening the fold. (The board asked for this on 2026-10-18:
+ * in-progress tickets with long-dead sessions looked alive.)
  */
 import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useNavigate } from "react-router";
@@ -37,6 +39,7 @@ import type {
   OrgTicketPriority,
   OrgTicketStatus,
   OrgTicketUpdateRequest,
+  SessionStatus,
 } from "@prismshadow/penguin-server/api";
 import type { ReactNode } from "react";
 import {
@@ -70,10 +73,11 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney } from "../../lib/format";
-import { toneInk } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
+import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { PathMarkdown, PathText } from "./path-capsule";
 import {
@@ -240,6 +244,7 @@ function TicketDialog({
   /** Whether the board and roster on hand are this organization's, so the fields can read names. */
   const contextReady = contextOrg === `${projectId}/${orgId}`;
   const { tickets: ticketsVersion, runs: runsVersion } = company.versions;
+  const liveStatuses = useLiveSessionStatuses();
   /** The open section's update: what Save would send; empty while nothing changed. */
   const pendingUpdate =
     detail === null || editing === null
@@ -348,8 +353,8 @@ function TicketDialog({
     });
   };
 
-  /** The move the footer asked for, once its confirmation (a reason, when rejecting) is answered. */
-  const commitMove = (reason: string) => {
+  /** The move the footer asked for, once its confirmation (a reason when rejecting, an optional note otherwise) is answered. */
+  const commitMove = (reason: string, note?: string) => {
     if (detail === null || pendingMove === null) return;
     const to = pendingMove;
     setPendingMove(null);
@@ -358,6 +363,12 @@ function TicketDialog({
         status: to,
         ...(moveNeedsReason(to) ? { reason: reason.trim() } : {}),
       });
+      const trimmed = (note ?? "").trim();
+      if (trimmed !== "") {
+        await api.progressOrgTicket(projectId, orgId, detail.ticketId, {
+          text: trimmed,
+        });
+      }
       setMoveTarget("");
     }, S.company.tickets.moved);
   };
@@ -370,6 +381,14 @@ function TicketDialog({
   const created = detail === null ? null : ticketCreatedDate(detail.ticketId);
   const counts = detail === null ? null : ticketSummaryCounts(detail);
   const history = detail === null ? [] : ticketHistoryRows(detail.history);
+  /** Sessions working right now (live first, snapshot fallback) — the fold's summary reads it. */
+  const runningSessions =
+    detail === null
+      ? 0
+      : detail.sessionItems.filter((s) => {
+          const status = liveStatuses.get(s.sessionId) ?? s.status;
+          return status === "running" || status === "compacting";
+        }).length;
   /** A history line's principal: the employee's name, "you" for the reader, else the user id. */
   const historyPrincipal = (principal: string) =>
     me !== null && principal === `user:${me}`
@@ -828,7 +847,9 @@ function TicketDialog({
                 summary={
                   counts === null || counts.sessionsEmpty
                     ? S.common.none
-                    : S.company.tickets.sessionsCount(counts.sessions)
+                    : runningSessions > 0
+                      ? `${S.company.tickets.sessionsCount(counts.sessions)} · ${S.company.tickets.sessionsRunning(runningSessions)}`
+                      : S.company.tickets.sessionsCount(counts.sessions)
                 }
               >
                 {detail.sessionItems.length === 0 ? (
@@ -837,6 +858,7 @@ function TicketDialog({
                   <ul className="space-y-1">
                     {detail.sessionItems.map((s) => (
                       <li key={s.sessionId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                        <SessionRunDot status={liveStatuses.get(s.sessionId) ?? s.status} />
                         <PrincipalChip principal={agentPrincipal(s.agentId)} names={names} />
                         <span className="flex min-w-0 flex-1">
                           {s.agentId === "" ? (
@@ -1097,15 +1119,17 @@ export function MoveTicketConfirm({
   move: { title: string; to: OrgTicketStatus } | null;
   busy: boolean;
   onClose: () => void;
-  onConfirm: (reason: string) => void;
+  onConfirm: (reason: string, note: string) => void;
 }) {
   const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
   // Emptied on the move itself, never on the object carrying it: the callers build that inline,
   // so a dependency on its identity would clear the box on every keystroke's render.
   const movedTitle = move?.title ?? null;
   const movedTo = move?.to ?? null;
   useEffect(() => {
     setReason("");
+    setNote("");
   }, [movedTitle, movedTo]);
   const needsReason = move !== null && moveNeedsReason(move.to);
   return (
@@ -1118,7 +1142,7 @@ export function MoveTicketConfirm({
       confirmDisabled={needsReason && reason.trim() === ""}
       busy={busy}
       onClose={onClose}
-      onConfirm={() => onConfirm(reason)}
+      onConfirm={() => onConfirm(reason, note)}
     >
       <div className="space-y-2">
         <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -1138,6 +1162,15 @@ export function MoveTicketConfirm({
             info={S.company.tickets.rejectReasonHint}
             autoFocus
             onChange={(e) => setReason(e.target.value)}
+          />
+        )}
+        {!needsReason && move !== null && (
+          <Input
+            size="sm"
+            label={S.company.tickets.moveNote}
+            value={note}
+            info={S.company.tickets.moveNoteHint}
+            onChange={(e) => setNote(e.target.value)}
           />
         )}
       </div>
@@ -1189,5 +1222,23 @@ function Fold({
         {children}
       </div>
     </section>
+  );
+}
+
+/**
+ * A ticket session's run dot: emerald and pulsing while it works, receding gray once settled.
+ * Never the only carrier — its tooltip and accessible name spell the state out (the muted
+ * tone's WCAG rule in lib/tone.ts).
+ */
+function SessionRunDot({ status }: { status: SessionStatus }) {
+  const on = status === "running" || status === "compacting";
+  const label = on ? S.company.tickets.sessionRunning : S.company.tickets.sessionIdle;
+  return (
+    <span
+      className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? `${toneDot.busy} ui-live animate-pulse` : toneDot.muted}`}
+      data-tooltip={label}
+    >
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }

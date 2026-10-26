@@ -36,6 +36,7 @@ import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
+import { useCompanyNotifications } from "../../state/use-company-notifications";
 import { useTrayLocale } from "../../state/use-tray-locale";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { useCompany } from "../../state/company";
@@ -57,6 +58,7 @@ import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-laye
 import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
+import { ArchiveReceiptHost } from "../../features/archived/archive-receipt";
 
 /**
  * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
@@ -135,7 +137,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   }> = inCompany
     ? COMPANY_NAV_KEYS.map((key) => ({
         key,
-        // The six entries keep their places with no organization, disabled: a rail that
+        // The seven entries keep their places with no organization, disabled: a rail that
         // empties itself reads as a broken shell rather than as an empty one.
         to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
         label: S.nav.org[key],
@@ -327,6 +329,9 @@ export function AppLayout() {
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
+  // Company push types (lib/company-notify.ts): one system notification per enabled
+  // group while the window is unfocused; the settings switches decide the groups.
+  useCompanyNotifications();
   // Desktop shell only: keeps the tray menu in the language this window is in.
   useTrayLocale();
   // The single eager owner of the update checks (use-update-badges.ts): one request per
@@ -508,6 +513,10 @@ export function AppLayout() {
           reloads, so navigating the app must never re-parent one. */}
       <BuiltinBrowserLayer />
       <AppPalette />
+      {/* The receipt that rises after a conversation is archived: what happened, and the two
+          ways back (undo here, or the archive page). It is mounted here, inside the shell's
+          router and session context, so both its actions work from any page. */}
+      <ArchiveReceiptHost />
     </AppShell>
   );
 }

@@ -630,14 +630,26 @@ function storedKey(table: RawTable): RawTable | undefined {
 }
 
 /**
- * Connectivity probe prompt: asks for one word, so the whole exchange fits in a
- * single-digit output budget. The wording discourages reasoning and the trailing empty
- * <think></think> makes many reasoning models treat their thinking phase as already
- * closed - keeping the probe's tiny budget on actual output instead of burning it on
- * thinking.
+ * Connectivity probe prompt: asks for one word, so the exchange costs almost nothing.
+ * The wording discourages reasoning and the trailing empty <think></think> makes many
+ * reasoning models treat their thinking phase as already closed - keeping the probe's
+ * budget on actual output instead of burning it on thinking.
  */
 const PROBE_PROMPT =
   'ping - reply with the single word "pong" and nothing else. Do not think or explain.\n<think></think>';
+
+/**
+ * Connectivity probe output budget. A single-digit budget is spent ENTIRELY on hidden
+ * thinking by a reasoning model — it returns
+ * `finish_reason: "length"` with no visible content and the probe reports a false
+ * failure although the endpoint is fine (measured: Muse Spark 1.2/1.3 Contributor and
+ * `deepseek-v4-flash-fast` need ~1024 tokens on this prompt to answer at all). Override
+ * with `PENGUIN_MODEL_PROBE_MAX_TOKENS`; speed mode keeps its own raised cap.
+ */
+const MODEL_PROBE_MAX_TOKENS =
+  Number(process.env.PENGUIN_MODEL_PROBE_MAX_TOKENS) > 0
+    ? Number(process.env.PENGUIN_MODEL_PROBE_MAX_TOKENS)
+    : 1024;
 
 /**
  * Endpoint model-listing bound: the SDK paginates `/models` under the hood, so one slow
@@ -1063,6 +1075,30 @@ export class ProjectConfigService implements ProjectConfigStore {
     return { provider: ref.provider, modelId: ref.modelId };
   }
 
+  /** The Project's ordered fallback chain; empty when the key is absent (see core's ProjectConfig). */
+  async getFallbackChain(projectId: string): Promise<ModelRefDto[]> {
+    const raw = await this.readRaw(projectId);
+    return asArray(raw.model_fallback_chain)
+      .map((v) => optRef(v))
+      .filter((ref): ref is ModelRef => ref !== undefined)
+      .map((ref) => ({ provider: ref.provider, modelId: ref.model_id }));
+  }
+
+  /**
+   * Replaces the fallback chain wholesale (the models page's PUT). An empty list clears the
+   * key rather than storing `[]`: absent and empty mean the same thing — no failover — and
+   * one spelling keeps the file honest.
+   */
+  async setFallbackChain(projectId: string, refs: readonly ModelRefDto[]): Promise<ModelRefDto[]> {
+    const raw = await this.readRaw(projectId);
+    const next = { ...raw };
+    if (refs.length === 0) delete next.model_fallback_chain;
+    else
+      next.model_fallback_chain = refs.map((r) => ({ provider: r.provider, model_id: r.modelId }));
+    await this.writeRaw(projectId, next);
+    return refs.map((r) => ({ provider: r.provider, modelId: r.modelId }));
+  }
+
   /**
    * New-chat defaults (`[default_chat]`): read leniently — same tolerance as core's
    * loadProjectConfig (an invalid value drops that key; a missing/malformed block reads as
@@ -1225,8 +1261,10 @@ export class ProjectConfigService implements ProjectConfigStore {
    *
    * Never throws: the LLM layer collapses auth/parameter/network errors into an
    * `LLMOutcome`, which is translated here into ok / message. Consumes very few
-   * Tokens (single-digit output; speed mode spends up to its 64-token cap to have a
-   * window worth timing), and writes no Trace and records no usage.
+   * Tokens (a few, on a model that answers directly; a reasoning model may spend the
+   * whole `MODEL_PROBE_MAX_TOKENS` on hidden thinking, and speed mode spends up to its
+   * 64-token cap to have a window worth timing), and writes no Trace and records no
+   * usage.
    */
   /**
    * Vision capability probe: sends one 1x1 PNG plus a one-word prompt and reports whether
@@ -1383,9 +1421,10 @@ export class ProjectConfigService implements ProjectConfigStore {
         thinkingLevel: "low",
         // Speed mode pairs a raised cap with a prompt that keeps generating (see
         // SPEED_PROBE_PROMPT), so the stream lasts long enough for TTFT/TPS to describe
-        // decoding rather than one round trip; the plain connectivity test keeps the
-        // single-digit-token budget.
-        maxTokens: req.speed ? 64 : 16,
+        // decoding rather than one round trip; the plain connectivity test uses
+        // MODEL_PROBE_MAX_TOKENS, because a reasoning model needs ~1024 tokens on its
+        // own prompt to answer at all (see the constant's note).
+        maxTokens: req.speed ? 64 : MODEL_PROBE_MAX_TOKENS,
         requestTimeoutMs: 20_000,
       });
       const gen = llm.streamGenerate({
@@ -1539,6 +1578,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    */
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
+    const fallbackChain = await this.getFallbackChain(projectId);
     const defaultRef = optRef(raw.default_model);
     const visionRef = optRef(raw.vision_model);
     const providers = providerTableOf(raw);
@@ -1656,6 +1696,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       ...(defaultRef !== undefined ? { defaultModel: toDto(defaultRef) } : {}),
       ...(visionRef !== undefined ? { visionModel: toDto(visionRef) } : {}),
       ...(updatedAt !== undefined ? { updatedAt } : {}),
+      fallbackChain,
       providers: Object.fromEntries(
         Object.entries(providers).map(([id, connection]) => [id, providerDto(connection)]),
       ),
@@ -1996,6 +2037,15 @@ export class ProjectConfigService implements ProjectConfigStore {
       model_id: ref.modelId,
     });
     const next: RawTable = { ...raw, providers: providersTable, models: nextModels };
+    if (req.fallbackChain !== undefined) {
+      // The chain names models, never dangling references: an entry whose model this same
+      // request removed — or one that was never there — drops out rather than being stored.
+      const chain = req.fallbackChain
+        .filter((ref) => nextModels.some((m) => entryMatches(m, ref.provider, ref.modelId)))
+        .map(toRaw);
+      if (chain.length === 0) delete next.model_fallback_chain;
+      else next.model_fallback_chain = chain;
+    }
     if (defaultModel !== undefined) next.default_model = toRaw(defaultModel);
     else delete next.default_model;
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);

@@ -37,8 +37,10 @@ import {
   SkeletonList,
   Spinner,
   toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import { useStore } from "zustand/react";
+import { Link } from "react-router";
 import { formatDateTime } from "../../lib/format";
 import { subscribeUserEvents } from "../../lib/amsp/user-events";
 import { revealPlan, workspaceLabel } from "../../lib/session-grouping";
@@ -47,6 +49,7 @@ import { nameOnMachine } from "../../lib/workspace-machines";
 import { S } from "../../lib/strings";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
+import { archivedAtOf } from "../archived/archive-row-meta";
 import {
   ARCHIVE_ROW_PAGE,
   createArchiveStore,
@@ -79,14 +82,36 @@ interface PendingDelete {
   title?: string;
 }
 
-export function ArchivedSessionsSection() {
+export function ArchivedSessionsSection({
+  initialSource = null,
+  initialQuery = "",
+  variant = "settings",
+}: {
+  /**
+   * The source filter's first value: `user` (the chats a person archived by hand) on the
+   * top-level page, where the thousands of program-opened sessions would bury them; null
+   * (every source) in the settings page, whose job is the whole archive.
+   */
+  initialSource?: ArchiveFilters["source"];
+  /**
+   * The search box's first value — the title query the page was opened with (the archive
+   * receipt's "View archived" carries the conversation's title, so the page lands on that
+   * one row instead of on the whole archive).
+   */
+  initialQuery?: string;
+  /**
+   * `settings` fills the dialog's pane and scrolls its own list inside it; `page` lets the
+   * page scroll, the way the other pages do.
+   */
+  variant?: "settings" | "page";
+}) {
   const { projects } = useProject();
   const [store] = useState<ArchiveStore>(() =>
     createArchiveStore((reason) => toastError(S.archivedSessions.actionFailed(reason))),
   );
   const state = useStore(store);
-  const [q, setQ] = useState("");
-  const [source, setSource] = useState<ArchiveFilters["source"]>(null);
+  const [q, setQ] = useState(initialQuery);
+  const [source, setSource] = useState<ArchiveFilters["source"]>(initialSource);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   // Focus the search on open where a keyboard is the likely way in; on a phone a focused box
@@ -129,13 +154,23 @@ export function ArchivedSessionsSection() {
     void store
       .getState()
       .remove(pendingDelete.target)
-      .then(() => setPendingDelete(null));
+      .then((done) => {
+        if (done) toastSuccess(S.archivedSessions.deleted);
+        setPendingDelete(null);
+      });
   };
+
+  /** A restore: the conversation goes back to the sidebar, and the page says so. */
+  const restore = (target: ArchiveTarget) =>
+    void store.getState().unarchive(target).then((done) => {
+      if (done) toastSuccess(S.archivedSessions.restored);
+    });
 
   return (
     // The page fills the dialog's pane and scrolls its list itself, below the controls; the
     // list's 4px inset keeps the focus rings of its edge controls inside the box that clips it.
-    <section className="flex h-full min-h-0 flex-col gap-4">
+    // On the top-level page the page itself scrolls, so the list grows with it.
+    <section className={`flex flex-col gap-4 ${variant === "settings" ? "h-full min-h-0" : ""}`}>
       <div className="shrink-0 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <SearchInput
@@ -187,7 +222,7 @@ export function ArchivedSessionsSection() {
               <Button
                 size="sm"
                 disabled={state.busy}
-                onClick={() => void store.getState().unarchive({ kind: "selection" })}
+                onClick={() => restore({ kind: "selection" })}
               >
                 {S.chat.unarchiveSession}
               </Button>
@@ -216,7 +251,16 @@ export function ArchivedSessionsSection() {
         )}
       </div>
 
-      <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-1">
+      <div
+        className={
+          variant === "settings"
+            ? "-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-1"
+            : "-mx-1 px-1 pb-1"
+        }
+      >
+        {variant === "page" && state.groups !== null && state.total > 0 && (
+          <p className="pb-2 text-xs text-fg-muted">{S.archivedSessions.total(state.total)}</p>
+        )}
         {state.groups === null ? (
           <SkeletonList rows={4} />
         ) : state.groups.length === 0 ? (
@@ -238,11 +282,12 @@ export function ArchivedSessionsSection() {
                 chosen={(id) => isChosen(state, groupKey(group), id)}
                 choosing={choosing}
                 busy={state.busy}
+                linkTitles={variant === "page"}
                 onMore={() => void store.getState().showMoreRows(groupKey(group))}
                 onLess={() => store.getState().showLessRows(groupKey(group))}
                 onToggle={(id) => store.getState().toggle(groupKey(group), id)}
                 onToggleAll={() => store.getState().toggleGroup(groupKey(group))}
-                onUnarchive={(target) => void store.getState().unarchive(target)}
+                onUnarchive={(target) => restore(target)}
                 onDelete={askDelete}
               />
             ))}
@@ -290,6 +335,7 @@ function ArchiveGroup({
   chosen,
   choosing,
   busy,
+  linkTitles,
   onMore,
   onLess,
   onToggle,
@@ -305,6 +351,8 @@ function ArchiveGroup({
   chosen: (sessionId: string) => boolean;
   choosing: boolean;
   busy: boolean;
+  /** The titles open their conversation: only on the page, where the route can change. */
+  linkTitles: boolean;
   onMore: () => void;
   onLess: () => void;
   onToggle: (sessionId: string) => void;
@@ -382,6 +430,7 @@ function ArchiveGroup({
               selected={chosen(s.sessionId)}
               choosing={choosing}
               busy={busy}
+              linkTitle={linkTitles}
               onToggle={() => onToggle(s.sessionId)}
               onUnarchive={() => onUnarchive(rowTarget(s.sessionId))}
               onDelete={() =>
@@ -426,6 +475,7 @@ function ArchiveRow({
   selected,
   choosing,
   busy,
+  linkTitle,
   onToggle,
   onUnarchive,
   onDelete,
@@ -434,6 +484,8 @@ function ArchiveRow({
   selected: boolean;
   choosing: boolean;
   busy: boolean;
+  /** The title opens the conversation (the page only: in the settings dialog the route must not change under it). */
+  linkTitle: boolean;
   onToggle: () => void;
   onUnarchive: () => void;
   onDelete: () => void;
@@ -441,6 +493,7 @@ function ArchiveRow({
   const title = s.title ?? S.chat.defaultSessionTitle;
   // Every row names where it came from: a program's source, or a person's conversation.
   const source = programSource(s) ?? "user";
+  const archivedAt = archivedAtOf(s as { archivedAt?: string | null });
   return (
     <li className="group flex items-center gap-3 py-2.5">
       <Checkbox
@@ -451,7 +504,15 @@ function ArchiveRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
-          <Truncated text={title} className="min-w-0" />
+          {/* The title opens the conversation: an archived one shows what it is (its title,
+              its time, who opened it) and offers the restore in place. */}
+          {linkTitle ? (
+            <Link to={`/chat/${s.sessionId}`} className="min-w-0 hover:underline">
+              <Truncated text={title} className="min-w-0" />
+            </Link>
+          ) : (
+            <Truncated text={title} className="min-w-0" />
+          )}
           <Pill tone="neutral">{S.chat.sessionSource[source]}</Pill>
           {(s.status === "running" || s.status === "compacting") && (
             <span className="shrink-0" data-tooltip={S.archivedSessions.running}>
@@ -459,7 +520,17 @@ function ArchiveRow({
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-xs text-fg-muted">{formatDateTime(s.lastActiveAt)}</p>
+        <p className="mt-0.5 text-xs text-fg-muted">
+          {archivedAt !== null ? (
+            <>
+              {S.archivedSessions.archivedAt(formatDateTime(archivedAt))}
+              {" · "}
+              {S.archivedSessions.lastActive(formatDateTime(s.lastActiveAt))}
+            </>
+          ) : (
+            formatDateTime(s.lastActiveAt)
+          )}
+        </p>
       </div>
       <button
         type="button"

@@ -317,6 +317,29 @@ describe("inboxRows", () => {
     expect(inbox()).toEqual([]);
   });
 
+  it("carries the server's read mark, and reads a server without one as all unread", () => {
+    // The rows as the server sends them once it remembers read state: `inboxRead` per row, which
+    // the mirrored type in this tree may not name yet — read through a check, not off the type.
+    const seen = inbox({
+      mentions: [
+        { ...message("m1", "2026-09-01T08:00:00Z"), inboxRead: true } as OrgChannelMessage,
+        message("m2", "2026-09-02T08:00:00Z"),
+      ],
+      blockedTickets: [
+        { ...ticket("2026-09-03-b", { blocked: "waiting" }), inboxRead: true } as OrgTicketItem,
+      ],
+      doneTickets: [{ ...ticket("2026-09-04-d", { status: "done" }) }],
+    });
+    expect(seen.map((r) => [r.key, r.read])).toEqual([
+      ["done/2026-09-04-d", false],
+      ["blocked/2026-09-03-b", true],
+      ["mention/m2", false],
+      ["mention/m1", true],
+    ]);
+    // A build that sends no mark at all: every row is unread, never undefined.
+    expect(mixed().every((r) => r.read === false)).toBe(true);
+  });
+
   it("keeps the newest rows when there are more than the cap", () => {
     const many = Array.from({ length: INBOX_ROWS + 20 }, (_, i) =>
       message(`m${i}`, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()),

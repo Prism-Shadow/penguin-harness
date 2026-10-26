@@ -133,6 +133,7 @@ import type {
   OrgHandbookFilesResponse,
   OrgHandbookResponse,
   OrgHireRequest,
+  OrgInbox,
   OrgSessionsResponse,
   OrgTicketAttachRequest,
   OrgTicketBlockRequest,
@@ -1849,6 +1850,122 @@ export const deleteSchedule = (
     { method: "DELETE", server: machineId },
   );
 
+/** Lift an auto-pause: the ticks run again and the count behind the pause is forgotten. */
+export const resumeSchedule = (projectId: string, agentId: string, name: string) =>
+  apiFetch<{ resumed: boolean }>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/schedules/${encodeURIComponent(name)}/resume`,
+    { method: "POST" },
+  );
+
+/**
+ * Fire one scheduled task right now (an extra run; the schedule itself is untouched).
+ * Answers where the firing went — the session, sent or queued behind a busy target.
+ * The shape is inline: the server's ScheduleFireResponse rides the deployed server,
+ * which may lag this page (see fireErrorText).
+ */
+export const fireSchedule = (projectId: string, agentId: string, name: string) =>
+  apiFetch<{ sessionId: string; queued: boolean }>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/schedules/${encodeURIComponent(name)}/fire`,
+    { method: "POST" },
+  );
+
+/**
+ * Schedule webhook triggers — LOCAL-ONLY mirrors of the server contract in
+ * `packages/server/src/api/types.ts` (ScheduleWebhook*), for the same reason the inbox
+ * requests above are mirrored: the published server package in this tree may lag the
+ * server tree, so new contracts are mirrored here rather than imported.
+ */
+export type ScheduleWebhookProvider = "generic" | "github";
+
+export interface ScheduleWebhookView {
+  provider: ScheduleWebhookProvider;
+  enabled: boolean;
+  /** Empty except at creation/rotation: the path embeds the bearer token. */
+  path: string;
+  hasSecret: boolean;
+  secretHint: string | null;
+  lastFiredAt: string | null;
+}
+
+export interface ScheduleWebhookSecretView extends ScheduleWebhookView {
+  token: string;
+}
+
+export type ScheduleWebhookDeliveryStatus =
+  | "queued"
+  | "accepted"
+  | "skipped"
+  | "ignored"
+  | "duplicate"
+  | "rejected";
+
+export interface ScheduleWebhookDeliveryView {
+  id: string;
+  dedupeKey: string | null;
+  event: string;
+  signatureStatus: string;
+  status: ScheduleWebhookDeliveryStatus;
+  firingId: number | null;
+  payload: string;
+  createdAt: string;
+  attemptCount: number;
+}
+
+const webhookBase = (projectId: string, agentId: string, name: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/schedules/${encodeURIComponent(name)}/webhook`;
+
+/** Creates the trigger; the only answer (besides rotation) that carries the token. */
+export const createScheduleWebhook = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  body: { provider?: ScheduleWebhookProvider; secret?: string },
+) => apiFetch<ScheduleWebhookSecretView>(webhookBase(projectId, agentId, name), { method: "POST", body });
+
+/** Reads the trigger; the token stays redacted (path reads empty). */
+export const getScheduleWebhook = (projectId: string, agentId: string, name: string) =>
+  apiFetch<ScheduleWebhookView>(webhookBase(projectId, agentId, name));
+
+export const updateScheduleWebhook = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  body: { provider?: ScheduleWebhookProvider; secret?: string | null; enabled?: boolean },
+) => apiFetch<ScheduleWebhookView>(webhookBase(projectId, agentId, name), { method: "PUT", body });
+
+/** Mints a fresh token (the old URL dies); the only other answer carrying it. */
+export const rotateScheduleWebhook = (projectId: string, agentId: string, name: string) =>
+  apiFetch<ScheduleWebhookSecretView>(`${webhookBase(projectId, agentId, name)}/rotate`, { method: "POST" });
+
+export const deleteScheduleWebhook = (projectId: string, agentId: string, name: string) =>
+  apiFetch<void>(webhookBase(projectId, agentId, name), { method: "DELETE" });
+
+export const listScheduleWebhookDeliveries = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  limit = 10,
+) =>
+  apiFetch<{ deliveries: ScheduleWebhookDeliveryView[] }>(
+    `${webhookBase(projectId, agentId, name)}/deliveries`,
+    { query: { limit } },
+  );
+
+/** Replays a delivery: a deliberate second firing of the same payload. */
+export const replayScheduleWebhookDelivery = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  deliveryId: string,
+) =>
+  apiFetch<{ status: string; delivery_id: string; run_id: string; queued: boolean }>(
+    `${webhookBase(projectId, agentId, name)}/deliveries/${encodeURIComponent(deliveryId)}/replay`,
+    { method: "POST" },
+  );
+
 // Plugin library, and an Agent's installed skills and hook packages ----------------------------
 
 /** Plugin library (available to any logged-in user): groups, each plugin's manifest and the metadata of its skills — never SKILL.md bodies or hook scripts. */
@@ -2382,6 +2499,70 @@ export const deleteOrganization = (projectId: string, orgId: string) =>
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
 
+/**
+ * Live squads for the composer's @-menu — LOCAL-ONLY mirror of the server contract in
+ * `packages/server/src/api/types.ts` (OrgSquad), for the same reason the inbox requests
+ * above are mirrored: the published server package in this tree may lag the server tree,
+ * so new contracts are mirrored here rather than imported.
+ */
+export interface OrgSquad {
+  id: string;
+  name: string;
+  /** `agent:<id>` of an employee; always a member too. */
+  leader: string;
+  /** `agent:<id>` / `user:<id>` principals. */
+  members: string[];
+  archived: boolean;
+}
+
+/** Every squad of the org, archived included (the menu keeps the live ones). */
+export const listOrgSquads = (projectId: string, orgId: string) =>
+  apiFetch<OrgSquad[]>(`${orgBase(projectId, orgId)}/squads`);
+
+/**
+ * Inbox row state — LOCAL-ONLY mirrors of the server contract in
+ * `packages/server/src/api/types.ts` (OrgInboxReadRequest / OrgInboxArchiveRequest), for the same
+ * reason the squad tables below are mirrored: the published server package in this tree may
+ * predate them, and an older server answers the routes with 404.
+ */
+export interface OrgInboxReadRequest {
+  keys: string[];
+  read: boolean;
+}
+
+/** Archiving a mention sends the message the client is showing: the server has no lookup by id. */
+export interface OrgInboxArchiveRequest {
+  keys: string[];
+  archived: boolean;
+  snapshots?: Record<string, OrgChannelMessage>;
+}
+
+/** Marks rows read (or unread) for the signed-in user. */
+export const markOrgInboxRead = (
+  projectId: string,
+  orgId: string,
+  body: OrgInboxReadRequest,
+): Promise<{ updated: number }> =>
+  apiFetch<{ updated: number }>(`${orgBase(projectId, orgId)}/inbox/read`, {
+    method: "POST",
+    body,
+  });
+
+/** Archives rows out of the inbox, or brings them back with `archived: false`. */
+export const archiveOrgInbox = (
+  projectId: string,
+  orgId: string,
+  body: OrgInboxArchiveRequest,
+): Promise<{ updated: number }> =>
+  apiFetch<{ updated: number }>(`${orgBase(projectId, orgId)}/inbox/archive`, {
+    method: "POST",
+    body,
+  });
+
+/** The user's archived rows, the same three lists the inbox carries. */
+export const getArchivedOrgInbox = (projectId: string, orgId: string) =>
+  apiFetch<OrgInbox>(`${orgBase(projectId, orgId)}/inbox/archived`);
+
 export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
   apiFetch<OrgEmployeeItem>(`${orgBase(projectId, orgId)}/employees`, { method: "POST", body });
 
@@ -2410,9 +2591,21 @@ export const patchOrgEmployee = (
   projectId: string,
   orgId: string,
   agentId: string,
-  body: OrgEmployeePatchRequest,
+  body: OrgEmployeePatchRequest & {
+    /**
+     * LOCAL-ONLY mirror: the published server package in this tree predates the
+     * employee `machine` pin, so the field rides beside the mirrored contract until
+     * the snapshot catches up. null (or "local", or "") runs here.
+     */
+    machine?: string | null;
+  },
 ) =>
-  apiFetch<OrgEmployeeItem>(
+  apiFetch<
+    OrgEmployeeItem & {
+      /** LOCAL-ONLY mirror, same reason: absent = this server. */
+      machine?: string;
+    }
+  >(
     `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}`,
     { method: "PATCH", body },
   );
@@ -2523,6 +2716,33 @@ export const updateOrgTicket = (
     `${orgBase(projectId, orgId)}/tickets/${encodeURIComponent(ticketId)}`,
     { method: "PUT", body },
   );
+
+/**
+ * Squad review vote (LOCAL-ONLY mirror of the server contract in
+ * `packages/server/src/api/types.ts`: SquadReviewVoteTable/Response/Update —
+ * the two must stay identical; this tree's server dist is not rebuilt for web).
+ */
+export interface SquadReviewVoteTable {
+  key: string;
+  label: string;
+  path: string;
+  reviewVote: boolean;
+}
+
+export interface SquadReviewVoteResponse {
+  tables: SquadReviewVoteTable[];
+}
+
+/** The vote-gate switches of every squad registry (the review column's button reads this). */
+export const getSquadReviewVote = () =>
+  apiFetch<SquadReviewVoteResponse>("/api/squad/review-vote");
+
+/** Flips one registry (`key`) or all of them (`key` omitted) at once. */
+export const putSquadReviewVote = (reviewVote: boolean, key?: string) =>
+  apiFetch<SquadReviewVoteResponse>("/api/squad/review-vote", {
+    method: "PUT",
+    body: key === undefined ? { reviewVote } : { reviewVote, key },
+  });
 
 /** `…/tickets/:ticketId/<action>` POST helper shared by the six ticket actions. */
 const ticketAction = <T>(

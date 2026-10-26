@@ -126,6 +126,8 @@ export function ChannelView() {
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [joining, setJoining] = useState(false);
   const [confirmJoin, setConfirmJoin] = useState(false);
+  /** Message the composer is currently quoting as a reply. */
+  const [replyTo, setReplyTo] = useState<OrgChannelMessage | null>(null);
   /** Messages that arrived while the view was scrolled up; shown on the pill. */
   const [pendingNew, setPendingNew] = useState(0);
   const [showJump, setShowJump] = useState(false);
@@ -161,6 +163,7 @@ export function ChannelView() {
     setDetailError(null);
     setPendingNew(0);
     setConfirmJoin(false);
+    setReplyTo(null);
     markedRef.current = null;
     firstDayRef.current = null;
     listedMemberRef.current = null;
@@ -193,6 +196,12 @@ export function ChannelView() {
     void api
       .listMembers(projectId)
       .then((res) => setMembers(res.members.map((m) => m.userId)))
+      .catch(() => undefined);
+    void api
+      .listOrgSquads(projectId, orgId)
+      .then((res) => {
+        if (current()) setSquads(res);
+      })
       .catch(() => undefined);
     void loadDetail();
     try {
@@ -360,12 +369,16 @@ export function ChannelView() {
 
   const send = async (text: string): Promise<boolean> => {
     try {
-      const msg = await api.sendOrgChannelMessage(projectId, orgId, channelId, { text });
+      const msg = await api.sendOrgChannelMessage(projectId, orgId, channelId, {
+        text,
+        ...(replyTo !== null ? { refs: { replyTo: replyTo.id } } : {}),
+      });
       draft.discard();
       follow.resume();
       setDays((prev) =>
         prev === null ? prev : appendMessage(prev, meta?.today ?? msg.time.slice(0, 10), msg),
       );
+      setReplyTo(null);
       return true;
     } catch (e) {
       toastError(apiErrorText(e));
@@ -389,7 +402,15 @@ export function ChannelView() {
     }
   };
 
-  const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
+  /** The org's squads for the @-menu (live ones offered) and for labelling `squad:` chips. */
+  const [squads, setSquads] = useState<api.OrgSquad[]>([]);
+  const names = useMemo(() => {
+    const map = new Map(employees.map((e) => [e.agentId, e.name]));
+    // `squad:<id>` → squad name, so chips and the @-menu label squads by name; agent
+    // lookups never collide with these keys, and mentionNameHandles skips them.
+    for (const squad of squads) map.set(`squad:${squad.id}`, squad.name);
+    return map;
+  }, [employees, squads]);
   const titles = useMemo(() => new Map(employees.map((e) => [e.agentId, e.title])), [employees]);
   const nameHandles = useMemo(() => mentionNameHandles(names), [names]);
   const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
@@ -406,10 +427,17 @@ export function ChannelView() {
   const candidates = useMemo(
     () =>
       channelMentionCandidates(
-        mentionCandidates(employees, members, S.company.channels.mentionAll),
+        mentionCandidates(
+          employees,
+          members,
+          S.company.channels.mentionAll,
+          squads
+            .filter((s) => !s.archived)
+            .map((s) => ({ id: s.id, name: s.name, leader: s.leader })),
+        ),
         memberPrincipals,
       ),
-    [employees, members, memberPrincipals],
+    [employees, members, squads, memberPrincipals],
   );
   const stream = useMemo(
     () => (days === null ? [] : buildStream(days, { unreadAfterId: meta?.unreadAfterId ?? null })),
@@ -570,12 +598,20 @@ export function ChannelView() {
         }
         avatar={
           p.kind === "agent" ? (
-            <EmployeeAvatar
-              id={p.id}
-              name={sender.name}
-              size={FACE_PX.message}
-              className="shrink-0 rounded-lg"
-            />
+            <span
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setReplyTo(first);
+              }}
+              className="inline-flex"
+            >
+              <EmployeeAvatar
+                id={p.id}
+                name={sender.name}
+                size={FACE_PX.message}
+                className="shrink-0 rounded-lg"
+              />
+            </span>
           ) : undefined
         }
       >
@@ -703,6 +739,8 @@ export function ChannelView() {
                 initialText={draft.initial}
                 onTextChange={draft.onTextChange}
                 onSend={send}
+                replyTo={replyTo}
+                onCancelReply={() => setReplyTo(null)}
               />
             ) : detail !== null && detail.archived ? (
               <NoticeStrip
