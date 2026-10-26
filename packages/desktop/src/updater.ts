@@ -177,24 +177,36 @@ function scheduleChecks(): void {
 
 /**
  * The automatic schedule waits for the main window: the update feed is chosen over the network
- * (the OSS mirror, GitHub), and nothing of that may run while the app is launching. A
+ * (the OSS mirror, GitHub), and nothing of that may run while the app is launching. An app
+ * started straight into the tray shows no window, so the schedule starts anyway once this
+ * long has passed since the updater was wired. Whichever comes first starts it, once. A
  * "Check for Updates…" the person asks for runs whenever it is asked.
  */
-let windowShown = false;
-let startAfterShown: (() => void) | null = null;
+const START_WITHOUT_WINDOW_MS = 10 * 60 * 1000;
+
+let scheduleReleased = false;
+let startAfterRelease: (() => void) | null = null;
+let releaseFallback: ReturnType<typeof setTimeout> | null = null;
 
 function whenWindowShown(start: () => void): void {
-  if (windowShown) start();
-  else startAfterShown = start;
+  if (scheduleReleased) start();
+  else startAfterRelease = start;
 }
 
-/** The main window is on screen: the automatic update schedule may start. Only the first call counts. */
-export function noteMainWindowShown(): void {
-  if (windowShown) return;
-  windowShown = true;
-  const start = startAfterShown;
-  startAfterShown = null;
+/** Lets the automatic schedule start: the window was shown, or the wait for it ran out. Only the first call counts. */
+function releaseSchedule(): void {
+  if (scheduleReleased) return;
+  scheduleReleased = true;
+  if (releaseFallback !== null) clearTimeout(releaseFallback);
+  releaseFallback = null;
+  const start = startAfterRelease;
+  startAfterRelease = null;
   start?.();
+}
+
+/** The main window is on screen: the automatic update schedule may start. */
+export function noteMainWindowShown(): void {
+  releaseSchedule();
 }
 
 // --- status relay (the account-menu row's data source) -----------------------
@@ -326,8 +338,9 @@ export function updatesAvailableInThisForm(): boolean {
 
 /**
  * Wires the updater, and starts the automatic schedule once the main window is shown
- * ({@link noteMainWindowShown}). Safe to call in any form: an unsupported one (dev run, deb
- * install) only logs why it is standing down.
+ * ({@link noteMainWindowShown}) — or, with no window shown, once the wait for one runs out.
+ * Safe to call in any form: an unsupported one (dev run, deb install) only logs why it is
+ * standing down.
  */
 export function initUpdater(getWindow: () => BrowserWindow | null): void {
   const support = updateSupport({
@@ -340,6 +353,10 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     log(`disabled (${support.reason})`);
     emitStatus({ kind: "unsupported", reason: support.reason });
     return;
+  }
+  if (!scheduleReleased && releaseFallback === null) {
+    releaseFallback = setTimeout(releaseSchedule, START_WITHOUT_WINDOW_MS);
+    releaseFallback.unref();
   }
 
   // Explicit download, explicit install: the user decides both when to fetch and when to
