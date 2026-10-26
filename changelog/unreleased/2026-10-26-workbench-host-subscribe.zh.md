@@ -3,7 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** feature
 - **Scope:** `server`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#1349](https://github.com/Prism-Shadow/penguin-harness/pull/1349)
 
 [English](2026-10-26-workbench-host-subscribe.md)
 
