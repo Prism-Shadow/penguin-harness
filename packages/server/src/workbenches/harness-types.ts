@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import { renderDts } from "../plugin/iface-check.js";
+import { IDLE_RELEASE_MS } from "./subscribe.js";
 
 export const HARNESS_DIR = ".harness";
 const TYPES_FILE = "plugin.d.ts";
@@ -110,6 +111,24 @@ snapshot: \`running\`, \`completed\` with the final \`text\`, or \`failed\` with
 Persist the Session id with \`host.setState\`, then poll from GET requests until terminal. Do not
 mark a running snapshot failed because its text is empty. Store small reports in host state;
 keep uploaded files outside this watched source directory. Never edit state.json by hand.
+
+## Following a Session live
+
+\`host.subscribe(sessionId, listener)\` hands \`listener\` every record the Session publishes from
+now on: the AMSP records \`GET /api/sessions/<id>/amsp\` streams, partial deltas and a subagent's
+records (\`origin\` set) included. Nothing is replayed, so subscribe before \`host.run\`. A record
+(\`WorkbenchRecord\`) is \`{ timestamp, type, payload, origin? }\`, and \`payload.type\` names it:
+\`task_begin\`, \`partial_text\`, \`tool_call\`, \`task_end\`, … A \`task_end\` without \`origin\` ends a
+task of the Session itself. The Session reads idle only after it, and until then
+\`host.sessionResult\` answers \`running\`: once \`host.sessionStatus(id)\` reads \`idle\`, take the
+answer and call the function \`subscribe\` returned (a second call does nothing). Listeners run
+after the record is published, in order; one that throws is logged and keeps its subscription.
+
+Reloading or removing this workbench ends all of its subscriptions, so \`create()\` subscribes
+again to the Sessions its state says are still running. A subscription whose Session stays idle
+with nothing published for ${IDLE_RELEASE_MS / 60_000} minutes ends by itself, and a server restart ends them all,
+so keep polling from GET requests as above. A \`plugin.d.ts\` here without \`subscribe\` predates
+it; delete \`.harness/\` to take it.
 
 ## Did it load
 

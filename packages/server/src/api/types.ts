@@ -4997,6 +4997,7 @@ export type {
   WorkbenchVersion,
   WorkbenchRequest,
   WorkbenchResponse,
+  WorkbenchRecord,
 } from "../mechanisms/workbenches.js";
 
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
