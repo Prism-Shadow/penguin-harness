@@ -1257,7 +1257,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       ...command,
       "```",
       "",
-      `Caps: the agent is stopped at ${bench.runTimeout} and after ${bench.maxTurns} turns. Run at ` +
+      (bench.runTimeout === "task"
+        ? "Caps: the agent uses the solving time limit from `task.toml`"
+        : `Caps: the agent is stopped at ${bench.runTimeout}`) +
+        (bench.maxTurns === -1
+          ? ", with no turn limit. Run at "
+          : ` and after ${bench.maxTurns} turns. Run at `) +
         "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
         `with Compose v2; uv; network access to ${bench.downloads !== undefined ? `${bench.downloads}, ` : ""}nodejs.org, the npm registry and ` +
         "the model provider; the model under test configured in this machine's PenguinHarness with " +
