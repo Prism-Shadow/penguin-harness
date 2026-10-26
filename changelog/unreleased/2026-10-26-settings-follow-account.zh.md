@@ -3,7 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** feature
 - **Scope:** `server`, `web`, `ui-gallery`, `docs`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#1339](https://github.com/Prism-Shadow/penguin-harness/pull/1339)
 
 [English](2026-10-26-settings-follow-account.md)
 
