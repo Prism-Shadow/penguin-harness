@@ -1344,6 +1344,41 @@ export interface AgentCreateResponse {
   agent: AgentSummary;
 }
 
+/**
+ * Where a deleted Agent's files stand. The Agent itself is gone the moment DELETE answers: its
+ * folder was moved out of the Project's agents directory in one rename, and every list and route
+ * stopped seeing it. What follows is the removal of that folder's contents in the background,
+ * which this reports.
+ */
+export interface AgentDeletionInfo {
+  /** Names this deletion (GET /api/projects/:projectId/agent-deletions/:deletionId). */
+  deletionId: string;
+  agentId: string;
+  /**
+   * `counting`: the folder is walked to learn how many entries it holds (`total` grows);
+   * `removing`: they are removed (`removed` grows towards `total`); `done`: nothing is left;
+   * `failed`: some entries could not be removed (`error` says why). What is left is tried again
+   * when the server next starts.
+   */
+  phase: "counting" | "removing" | "done" | "failed";
+  /** Entries found: so far while counting, then in all. Files and folders alike. */
+  total: number;
+  /** Entries removed so far. */
+  removed: number;
+  /** The first error the removal met, as the operating system worded it (`failed` only). */
+  error?: string;
+}
+
+/** DELETE /api/projects/:projectId/agents/:agentId (202). */
+export interface AgentDeleteResponse {
+  deletion: AgentDeletionInfo;
+}
+
+/** GET /api/projects/:projectId/agent-deletions/:deletionId. */
+export interface AgentDeletionResponse {
+  deletion: AgentDeletionInfo;
+}
+
 export interface AgentModelConfigDto {
   maxTokens?: number;
   thinkingLevel?: ThinkingLevelName;

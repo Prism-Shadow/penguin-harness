@@ -508,7 +508,8 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET / POST | `/agents` | 列出 Agent / 创建 Agent |
-| DELETE | `/agents/:agentId` | 删除一个 Agent（仅所有者） |
+| DELETE | `/agents/:agentId` | 删除一个 Agent（仅所有者）：目录以一次 rename 移出 agents 目录，文件在后台删除 → `202 {deletion}`；其他程序打开着目录里的文件时返回 `409 agent_folder_busy`，什么都不删 |
+| GET | `/agent-deletions/:deletionId` | 一次删除在后台进行到哪一步（仅所有者）：`{deletion: {phase: counting\|removing\|done\|failed, total, removed, error?}}` |
 | GET / PUT | `/agents/:agentId/config` | 读取 / 写入配置（`AGENTS.md` 和 `system_config.yaml`；PUT 保留 YAML 注释） |
 | POST | `/agents/:agentId/config/mcp-test` | 测试一条 MCP 服务器配置：`{name, config}` → `{ok, tools?, error?, latencyMs?, saveFirst?}` |
 | POST | `/agents/:agentId/config/kernel-update` | 将配置合并升级到当前默认值：→ `{advanced, kept, kernelVersion}` |

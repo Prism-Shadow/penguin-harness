@@ -16,6 +16,7 @@ import { useEffect } from "react";
 import {
   ClipboardWriterProvider,
   CodeHighlighterProvider,
+  ProgressToasts,
   Toaster,
   TooltipLayer,
 } from "@prismshadow/penguin-ui";
@@ -57,6 +58,8 @@ export function App({ initialPath }: { initialPath?: string } = {}) {
                   <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
                   {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
                   <Toaster />
+                  {/* Long operations' progress cards, bottom right (an Agent's files being removed). */}
+                  <ProgressToasts />
                   {/* The one "discard unsaved changes?" prompt every leave asks through, and the
                     unload guard while a form is dirty. Inside LocaleScope, so it reads the
                     dictionary of the language on screen. */}

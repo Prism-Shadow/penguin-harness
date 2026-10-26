@@ -31,7 +31,9 @@
  * load (lib/machine-agent-lists.ts); back on the page later they are live at once.
  *
  * The list is read again after a delete or a kernel update with the old one on screen: the
- * skeleton only stands in while no list of the Project has arrived yet.
+ * skeleton only stands in while no list of the Project has arrived yet. A delete answers once the
+ * Agent has left every list; its files are removed in the background, on a progress card that
+ * appears when that takes a while (agent-deletion-progress.ts).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -84,6 +86,7 @@ import type { PlacedAgent } from "../../lib/machine-agent-lists";
 import { toneInk } from "../../lib/tone";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
+import { followAgentDeletion } from "./agent-deletion-progress";
 import type { PluginPickItem } from "./create-agent-dialog";
 
 /** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
@@ -359,8 +362,18 @@ export function AgentsPage() {
     setBusy(true);
     setDeleteError(null);
     try {
-      await api.deleteAgent(projectId, deleting.agentId, machineId);
+      const answer = await api.deleteAgent(projectId, deleting.agentId, machineId);
       setDeleting(null);
+      // The Agent is gone from every list already; its files go in the background, on a card
+      // that shows once that takes a while (an older server answered after removing them).
+      if (answer !== undefined) {
+        void followAgentDeletion({
+          projectId,
+          machineId,
+          name: deleting.name,
+          deletion: answer.deletion,
+        });
+      }
       if (machineId !== null) reloadMachine(machineId);
       else await reloadAgents();
     } catch (e) {

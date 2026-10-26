@@ -101,7 +101,7 @@ describe("deleting an Agent an organization employs", () => {
   async function deleteAgent(agentId: string) {
     const res = await api.delete(`${agentsPath}/${agentId}`);
     const body =
-      res.status === 204
+      res.status === 202
         ? null
         : ((await res.json()) as { error: { code: string; message: string } });
     return { status: res.status, error: body?.error };
@@ -168,7 +168,7 @@ describe("deleting an Agent an organization employs", () => {
     await createAgent("solo_helper");
     const sessionId = insertSession("solo_helper");
 
-    expect((await deleteAgent("solo_helper")).status).toBe(204);
+    expect((await deleteAgent("solo_helper")).status).toBe(202);
     expect((await listAgents()).map((a) => a.agentId)).not.toContain("solo_helper");
     expect(t.deps.sessionsRepo.findById(sessionId)).toBeNull();
   });
@@ -190,7 +190,7 @@ describe("deleting an Agent an organization employs", () => {
     );
     expect(left.status).toBeLessThan(300);
 
-    expect((await deleteAgent("leaving_temp")).status).toBe(204);
+    expect((await deleteAgent("leaving_temp")).status).toBe(202);
     expect((await listAgents()).map((a) => a.agentId)).not.toContain("leaving_temp");
   });
 

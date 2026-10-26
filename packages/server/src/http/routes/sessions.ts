@@ -131,7 +131,7 @@ import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
 import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
 import { Messaging } from "../../runtime/messaging/bridge.js";
 
-import { agentsRoutes } from "./agents.js";
+import { agentDeletionsRoutes, agentsRoutes } from "./agents.js";
 import { agentConfigRoutes } from "./agent-config.js";
 import { vaultRoutes } from "./vault.js";
 import { modelsRoutes } from "./models.js";
@@ -168,6 +168,7 @@ import type { Settings } from "../../mechanisms/settings.js";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { Auth } from "../../mechanisms/identity.js";
 import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
@@ -1731,6 +1732,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 140,
       },
       {
+        id: "session-api.agent-deletions",
+        prefix: "/api/projects/:projectId/agent-deletions",
+        auth: "user",
+        order: 141,
+      },
+      {
         id: "session-api.agent-config",
         prefix: "/api/projects/:projectId/agents/:agentId/config",
         auth: "user",
@@ -1814,6 +1821,7 @@ export class SessionApiRoutes {
   @Use() private readonly drivers!: SessionDrivers;
   @Use() private readonly agentApi!: AgentApi;
   @Use() private readonly orgService!: OrgService;
+  @Use() private readonly workbenches!: Workbenches;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1822,6 +1830,7 @@ export class SessionApiRoutes {
   @Bind("session-api.chat-defaults") chatDefaultsRoutes!: Hono<AppEnv>;
   @Bind("session-api.command-policy") commandPolicyRoutes!: Hono<AppEnv>;
   @Bind("session-api.agents") agentsRoutes!: Hono<AppEnv>;
+  @Bind("session-api.agent-deletions") agentDeletionsRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-config") agentConfigRoutes!: Hono<AppEnv>;
   @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
@@ -1915,7 +1924,9 @@ export class SessionApiRoutes {
       sessionService,
       sessionsRepo,
       traceIndex: this.traceIndex,
+      workbenches: this.workbenches,
     });
+    this.agentDeletionsRoutes = agentDeletionsRoutes({ access, agentService: this.agents });
     this.agentConfigRoutes = agentConfigRoutes({
       agentConfigService,
       manager,

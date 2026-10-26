@@ -1,10 +1,14 @@
 /**
  * Agent service.
  *
- * The list is the union of "DB index ∪ directory scan": a subdirectory under
- * `<project>/` containing `agent_state/system_config.yaml` is treated as an Agent;
- * unmanaged ones found are backfilled into the DB — this handles Agents created
- * directly via the CLI.
+ * The list is the union of "DB index ∪ directory scan", held to the one rule every Agent route
+ * applies: an Agent exists while `agents/<id>/agent_state/system_config.yaml` does. Unmanaged
+ * directories found are backfilled into the DB — this handles Agents created directly via the
+ * CLI — and an index row whose folder no longer has that file is not listed, so a listed Agent
+ * can always be opened and deleted.
+ * Delete: the folder is renamed into `agents/.deleting/` (one rename, so it leaves every list
+ * and route at once) and its contents are removed in the background, the removal reporting how
+ * far it got; a server that stops mid-removal resumes it at its next start.
  * Create: generate agent-<8hex>, initialize Agent State via core's `createAgent`,
  * then write name/description into system_config.yaml (parseDocument preserves the
  * template's comments).
@@ -13,6 +17,7 @@ import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
 import { HttpError } from "../http/errors.js";
+import { countEntries, FsLimiter, purgeTree } from "./tree-purge.js";
 import {
   agentDir,
   agentsDir,
@@ -40,10 +45,11 @@ import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "./memory-service.js";
-import type { PluginUpdateRef } from "../api/types.js";
+import type { AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
 import type { AgentIndex } from "../mechanisms/projects.js";
@@ -67,6 +73,51 @@ async function readHead(file: string, bytes: number): Promise<string> {
     return buffer.toString("utf8", 0, bytesRead);
   } finally {
     await handle.close();
+  }
+}
+
+/**
+ * `agents/.deleting/`: where a deleted Agent's folder waits while its contents are removed. A
+ * sibling of the Agents, so moving one in is a rename within one directory — never a copy across
+ * filesystems — and a dot-name, which no Agent id can be, so nothing that walks `agents/` takes
+ * it for one.
+ */
+export const DELETING_DIR = ".deleting";
+
+/** `<agentsDir>/.deleting`. */
+export function deletingDir(root: string, projectId: string): string {
+  return path.join(agentsDir(root, projectId), DELETING_DIR);
+}
+
+/** A deletion's name, which is its folder's name under `.deleting/`: the Agent id and when. */
+const DELETION_NAME = /^(.+)-(\d+)$/;
+
+/**
+ * Filesystem calls the background removal keeps in flight, across every deletion at once. libuv
+ * gives file I/O four threads by default; holding two leaves the others free for the requests
+ * the server is answering meanwhile.
+ */
+const PURGE_SLOTS = 2;
+
+/** How long a finished deletion stays readable, for a page that polls it a little late. */
+const FINISHED_DELETION_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Windows refuses to move a folder while a program holds a file in it open; the hold is often
+ * momentary (an indexer, an antivirus scan), so the move is tried a few times before giving up.
+ */
+const MOVE_RETRIES = 4;
+const MOVE_RETRY_STEP_MS = 100;
+const MOVE_BUSY = new Set(["EBUSY", "EPERM", "EACCES"]);
+
+/** Refuses deleting a built-in Agent: they are provisioned with the Project. */
+export function refuseBuiltinDeletion(agentId: string): void {
+  if (BUILTIN_AGENT_IDS.includes(agentId)) {
+    throw new HttpError(
+      409,
+      "cannot_delete_builtin_agent",
+      "Built-in Agents are provisioned with the Project and cannot be deleted from the web.",
+    );
   }
 }
 
@@ -109,7 +160,23 @@ export class AgentService implements AgentLifecycle {
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly snapshots!: Snapshots;
 
-  /** Union of DB index ∪ directory scan; unmanaged directory Agents are backfilled into the DB. */
+  /** Deletions this process knows, by `${projectId}/${deletionId}`. */
+  private readonly deletions = new Map<string, AgentDeletionInfo>();
+  /** The removals in flight, by the same key. */
+  private readonly running = new Map<string, Promise<void>>();
+  /** Shared by every removal, so two deletions at once still hold only PURGE_SLOTS calls. */
+  private readonly limiter = new FsLimiter(PURGE_SLOTS);
+  /** Ends this generation's removals when it is disposed; the next one resumes them from disk. */
+  private readonly stopping = new AbortController();
+
+  setup(ctx: ClassCtx) {
+    ctx.effect(() => this.stopping.abort());
+  }
+
+  /**
+   * Union of DB index ∪ directory scan; unmanaged directory Agents are backfilled into the DB.
+   * Only what `AgentConfig.exists` accepts is listed — the rule every route checks.
+   */
   async listAgents(projectId: string): Promise<AgentListItem[]> {
     const known = new Map(this.agents.list(projectId).map((r) => [r.agentId, r]));
 
@@ -139,13 +206,22 @@ export class AgentService implements AgentLifecycle {
     // same files). Meta reads and mtime stats for each Agent run in parallel (Promise.all
     // preserves the sorted order).
     const library = loadLibraryPlugins();
-    const sorted = [...known.values()].sort((a, b) =>
-      a.createdAt === b.createdAt
-        ? a.agentId.localeCompare(b.agentId)
-        : a.createdAt < b.createdAt
-          ? -1
-          : 1,
+    // An index row is listed only while its folder is an Agent by the routes' own rule: a row
+    // whose folder has lost its system_config.yaml would be a card that neither opens nor deletes.
+    const present = await Promise.all(
+      [...known.values()].map(async (row) =>
+        (await this.agentConfig.exists(projectId, row.agentId)) ? row : null,
+      ),
     );
+    const sorted = present
+      .filter((row) => row !== null)
+      .sort((a, b) =>
+        a.createdAt === b.createdAt
+          ? a.agentId.localeCompare(b.agentId)
+          : a.createdAt < b.createdAt
+            ? -1
+            : 1,
+      );
     return Promise.all(
       sorted.map(async (row) => {
         const [meta, updatedAt, vaultKeyCount, scheduleCount, installed, memoryCount] =
@@ -428,23 +504,149 @@ export class AgentService implements AgentLifecycle {
   }
 
   /**
-   * Delete an Agent: the sole built-in Agent
-   * default_agent (shared with the CLI, the default conversation Agent) cannot be
-   * deleted; callers must first drain any active run via manager.abortAgent.
-   * The directory is deleted recursively (including Trace), and the DB's
-   * agents/sessions index rows are removed along with it; usage records are kept
-   * (historical stats are unaffected).
+   * Delete an Agent: the built-in Agents cannot be deleted; callers must first drain any active
+   * run (the session manager's `beginAgentDeletion`) and let go of what holds the folder open.
+   *
+   * The folder (Agent State, Traces, scratchpads, temporary Workspaces) is moved to
+   * `agents/.deleting/<id>-<time>` in one rename and the index row dropped: from then on no list
+   * shows the Agent and no route accepts it, and a new Agent may take its id. The move is the
+   * whole of what the caller waits for — the contents are removed in the background, reported by
+   * the deletion returned (and by `agentDeletion` as it goes). A folder that cannot be moved is
+   * refused with nothing deleted (409 `agent_folder_busy`). Usage records are kept (historical
+   * stats are unaffected); the caller drops the Agent's other index rows.
    */
-  async deleteAgent(projectId: string, agentId: string): Promise<void> {
-    if (BUILTIN_AGENT_IDS.includes(agentId)) {
-      throw new HttpError(
-        409,
-        "cannot_delete_builtin_agent",
-        "Built-in Agents are provisioned with the Project and cannot be deleted from the web.",
-      );
-    }
-    await fs.rm(agentDir(this.root, projectId, agentId), { recursive: true, force: true });
+  async deleteAgent(projectId: string, agentId: string): Promise<AgentDeletionInfo> {
+    refuseBuiltinDeletion(agentId);
+    const deletionId = await this.moveAside(projectId, agentId);
     this.agents.delete(projectId, agentId);
+    if (deletionId === null) {
+      // The folder was already gone: there is nothing to remove.
+      return { deletionId: `${agentId}-0`, agentId, phase: "done", total: 0, removed: 0 };
+    }
+    return this.startPurge(projectId, deletionId, agentId);
+  }
+
+  agentDeletion(projectId: string, deletionId: string): AgentDeletionInfo | null {
+    const known = this.deletions.get(`${projectId}/${deletionId}`);
+    return known ? { ...known } : null;
+  }
+
+  /**
+   * Every folder left under a Project's `agents/.deleting/` — a deletion the last process did
+   * not finish, or one that met an entry it could not remove — is removed again, one after
+   * another. Folders a deletion of this process is already removing are left to it.
+   */
+  async resumeDeletions(): Promise<void> {
+    let projects: Dirent[] = [];
+    try {
+      projects = await fs.readdir(this.root, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const project of projects) {
+      if (!project.isDirectory() || !isValidId(project.name)) continue;
+      let entries: string[] = [];
+      try {
+        entries = await fs.readdir(deletingDir(this.root, project.name));
+      } catch {
+        continue;
+      }
+      for (const name of entries) {
+        if (this.stopping.signal.aborted) return;
+        if (!isValidId(name)) continue;
+        const known = this.deletions.get(`${project.name}/${name}`);
+        if (known && (known.phase === "counting" || known.phase === "removing")) continue;
+        const agentId = DELETION_NAME.exec(name)?.[1] ?? name;
+        this.startPurge(project.name, name, agentId);
+        await this.running.get(`${project.name}/${name}`);
+      }
+    }
+  }
+
+  /**
+   * Renames the Agent's folder into `.deleting/`. Null when there was no folder to move; a
+   * folder a program keeps holding is refused with nothing moved.
+   */
+  private async moveAside(projectId: string, agentId: string): Promise<string | null> {
+    const from = agentDir(this.root, projectId, agentId);
+    const trash = deletingDir(this.root, projectId);
+    await fs.mkdir(trash, { recursive: true });
+    const deletionId = `${agentId}-${Date.now()}`;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await fs.rename(from, path.join(trash, deletionId));
+        return deletionId;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code ?? "";
+        if (code === "ENOENT") return null;
+        if (!MOVE_BUSY.has(code)) throw err;
+        if (attempt >= MOVE_RETRIES) {
+          throw new HttpError(
+            409,
+            "agent_folder_busy",
+            `The agent's folder could not be moved aside (${code}): another program may have a file in it open. Nothing was deleted.`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, MOVE_RETRY_STEP_MS * (attempt + 1)));
+      }
+    }
+  }
+
+  /** Starts removing `.deleting/<deletionId>` in the background; answers its first reading. */
+  private startPurge(projectId: string, deletionId: string, agentId: string): AgentDeletionInfo {
+    const key = `${projectId}/${deletionId}`;
+    const info: AgentDeletionInfo = {
+      deletionId,
+      agentId,
+      phase: "counting",
+      total: 0,
+      removed: 0,
+    };
+    this.deletions.set(key, info);
+    const dir = path.join(deletingDir(this.root, projectId), deletionId);
+    const signal = this.stopping.signal;
+    const run = (async () => {
+      try {
+        const total = await countEntries(dir, {
+          limiter: this.limiter,
+          signal,
+          onCount: (n) => {
+            info.total = n;
+          },
+        });
+        if (signal.aborted) return;
+        info.total = total;
+        info.phase = "removing";
+        const failure = await purgeTree(dir, {
+          limiter: this.limiter,
+          signal,
+          onRemoved: () => {
+            info.removed += 1;
+          },
+        });
+        if (signal.aborted) return;
+        if (failure === null) {
+          info.phase = "done";
+          // Something added under the folder after it was counted would read past the total.
+          info.total = Math.max(info.total, info.removed);
+        } else {
+          info.phase = "failed";
+          info.error = failure.error;
+        }
+      } catch (err) {
+        info.phase = "failed";
+        info.error = err instanceof Error ? err.message : String(err);
+      } finally {
+        this.running.delete(key);
+        if (info.phase === "done" || info.phase === "failed") {
+          setTimeout(() => {
+            if (this.deletions.get(key) === info) this.deletions.delete(key);
+          }, FINISHED_DELETION_TTL_MS).unref?.();
+        }
+      }
+    })();
+    this.running.set(key, run);
+    return { ...info };
   }
 
   /**

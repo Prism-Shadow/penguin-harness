@@ -1983,6 +1983,22 @@ export const zh = {
       `公司模式员工：${employments.map((e) => `${e.orgName} · ${e.title}`).join("、")}`,
     deleteConfirm: (name: string): string =>
       `确认删除 Agent「${name}」？其目录（含全部 Trace）将被递归删除，不可恢复。`,
+    /**
+     * The delete's progress card: its title while the Agent's files are removed in the
+     * background, once they are all gone, and when some could not be removed.
+     */
+    deletingAgent: (name: string): string => `正在删除 Agent「${name}」`,
+    deletedAgent: (name: string): string => `已删除 Agent「${name}」`,
+    deleteIncomplete: (name: string): string => `Agent「${name}」有文件未能删除`,
+    /** The card's line: while the folder is walked, while it is removed, and at the end (files and folders alike). */
+    deleteCounting: (found: number): string =>
+      `正在统计，已找到 ${found.toLocaleString("zh-CN")} 项`,
+    deleteRemoving: (removed: number, total: number): string =>
+      `已删除 ${removed.toLocaleString("zh-CN")} / ${total.toLocaleString("zh-CN")} 项`,
+    deleteRemoved: (total: number): string => `共删除 ${total.toLocaleString("zh-CN")} 项`,
+    /** A removal that stopped short: the operating system's reason, and when the rest goes. */
+    deleteRetryOnRestart: (error: string): string =>
+      `${error}。其余文件会在服务端下次启动时再删除。`,
     /** Agent State section: the State version with the snapshot transfer actions, plus the copyable State path. */
     stateTitle: "Agent State",
     stateVersion: "Agent State 版本",
@@ -6412,6 +6428,8 @@ Benchmark：
       calendar_event_not_found: "该日程已不存在。",
       desk_unavailable: "无法打开工位会话。",
       agent_employed: "该 Agent 仍是组织的员工：先在公司模式让其离任，再删除。",
+      agent_folder_busy:
+        "其他程序正占用该 Agent 目录中的文件，目录无法移走，未删除任何内容。关闭该程序后重试。",
       ticket_not_found: "该工单已不存在。",
       ticket_invalid: "该工单文件需要修复，修好前不接受改动。",
       ticket_session_failed: "无法发起工单会话。",

@@ -187,4 +187,10 @@ export abstract class Workbenches {
   ): Promise<WorkbenchInfo>;
   /** Deletes the folder and its recorded versions; the instance goes with them. */
   abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
+  /**
+   * Lets go of everything held for one Agent before its folder is deleted: the folder watcher,
+   * pending reloads, loads in flight and the loaded instances. A later listing takes them up
+   * again, so an Agent whose deletion is then refused loses nothing.
+   */
+  abstract releaseAgent(projectId: string, agentId: string): Promise<void>;
 }

@@ -427,6 +427,29 @@ export class WorkbenchService implements Workbenches {
     this.forget(projectId, agentId, workbenchId);
   }
 
+  async releaseAgent(projectId: string, agentId: string): Promise<void> {
+    const agentKey = `${projectId}/${agentId}`;
+    // On Windows a recursive watcher holds its folder open, and a folder held open cannot be
+    // moved; everywhere, a reload or a load finishing late would write `.build/` back into it.
+    this.watchers.get(agentKey)?.close();
+    this.watchers.delete(agentKey);
+    const prefix = key(projectId, agentId, "");
+    for (const [k, t] of this.pending) {
+      if (!k.startsWith(prefix)) continue;
+      clearTimeout(t);
+      this.pending.delete(k);
+    }
+    await Promise.all(
+      [...this.loading].filter(([k]) => k.startsWith(prefix)).map(([, p]) => p.catch(() => {})),
+    );
+    for (const [k, l] of this.loaded) {
+      if (!k.startsWith(prefix)) continue;
+      l.tree?.dispose();
+      this.loaded.delete(k);
+    }
+    this.migrations.delete(agentKey);
+  }
+
   // ---- internals ------------------------------------------------------------------
 
   private async folder(

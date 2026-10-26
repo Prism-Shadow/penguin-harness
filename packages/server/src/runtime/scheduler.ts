@@ -324,7 +324,8 @@ export class Scheduler implements Scheduling {
       const items = await fs.readdir(agentsDir(this.root, projectId), {
         withFileTypes: true,
       });
-      ids = items.filter((d) => d.isDirectory()).map((d) => d.name);
+      // A dot-directory (`.deleting/`, where a deleted Agent's files wait) is never an Agent.
+      ids = items.filter((d) => d.isDirectory() && !d.name.startsWith(".")).map((d) => d.name);
     } catch {
       this.agentDirs.delete(projectId);
       return [];

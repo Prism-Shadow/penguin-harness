@@ -109,6 +109,7 @@ export * from "./motion/use-arrived";
 // (with the `toast*` functions and their store).
 export * from "./components/feedback/notice/notice-strip";
 export * from "./components/overlays/toaster/toaster";
+export * from "./components/overlays/progress-toasts/progress-toasts";
 
 // W5 — content: Markdown as reading text and its pipeline, the code surface and block with the
 // language tables, the type roles, and the diff viewer. The Shiki engine is not here: it is the

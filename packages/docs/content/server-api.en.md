@@ -508,7 +508,8 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 | Method | Path | Description |
 | --- | --- | --- |
 | GET / POST | `/agents` | Lists agents / creates one |
-| DELETE | `/agents/:agentId` | Deletes an agent (owner only) |
+| DELETE | `/agents/:agentId` | Deletes an agent (owner only): its folder leaves the agents directory in one rename and its files are removed in the background → `202 {deletion}`; `409 agent_folder_busy` when another program holds a file in the folder open, with nothing deleted |
+| GET | `/agent-deletions/:deletionId` | How far a delete's background removal has got (owner only): `{deletion: {phase: counting\|removing\|done\|failed, total, removed, error?}}` |
 | GET / PUT | `/agents/:agentId/config` | Reads / writes the config (`AGENTS.md` and `system_config.yaml`; PUT preserves YAML comments) |
 | POST | `/agents/:agentId/config/mcp-test` | Tests one MCP server entry: `{name, config}` → `{ok, tools?, error?, latencyMs?, saveFirst?}` |
 | POST | `/agents/:agentId/config/kernel-update` | Merges the config up to the current defaults: → `{advanced, kept, kernelVersion}` |

@@ -209,6 +209,7 @@ export class Startup {
   @Use() private readonly machines!: Machines;
   @Use() private readonly errors!: Errors;
   @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly agents!: AgentLifecycle;
 
   async setup() {
     // Every Project's config through the server's read path once, before anything opens one:
@@ -228,6 +229,11 @@ export class Startup {
     // a broken trace shard must not block the boot.
     void this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "trace_adoption_failed" });
+    });
+    // Deleted Agents whose files a stopped process had not finished removing: removed now, in
+    // the background, the way the delete itself removes them.
+    void this.agents.resumeDeletions().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "agent_purge_failed" });
     });
     // Machines, in one sweep (machines/service.ts start()): a push here is a push everywhere,
     // so this App booting hands the same build on to any machine still carrying a different

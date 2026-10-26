@@ -1864,6 +1864,18 @@ export const en: Strings = {
       `Company employee: ${employments.map((e) => `${e.orgName} · ${e.title}`).join(", ")}`,
     deleteConfirm: (name: string): string =>
       `Delete agent "${name}"? Its directory (including all Traces) will be removed recursively and cannot be recovered.`,
+    deletingAgent: (name: string): string => `Deleting agent "${name}"`,
+    deletedAgent: (name: string): string => `Deleted agent "${name}"`,
+    deleteIncomplete: (name: string): string =>
+      `Some files of agent "${name}" could not be removed`,
+    deleteCounting: (found: number): string =>
+      `Counting: ${found.toLocaleString("en-US")} ${found === 1 ? "item" : "items"} found`,
+    deleteRemoving: (removed: number, total: number): string =>
+      `${removed.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} ${total === 1 ? "item" : "items"} removed`,
+    deleteRemoved: (total: number): string =>
+      `${total.toLocaleString("en-US")} ${total === 1 ? "item" : "items"} removed`,
+    deleteRetryOnRestart: (error: string): string =>
+      `${error}. The rest is removed when the server next starts.`,
     stateTitle: "Agent State",
     stateVersion: "Agent State version",
     transferDesc:
@@ -6207,6 +6219,8 @@ Scenarios:
       desk_unavailable: "The desk session could not be opened.",
       agent_employed:
         "This agent is still an employee of an organization: make it leave in company mode, then delete it.",
+      agent_folder_busy:
+        "Another program has a file in this agent's folder open, so the folder could not be moved and nothing was deleted. Close that program and try again.",
       ticket_not_found: "That ticket no longer exists.",
       ticket_invalid: "This ticket file needs repair; it accepts no changes until then.",
       ticket_session_failed: "The ticket session could not be started.",

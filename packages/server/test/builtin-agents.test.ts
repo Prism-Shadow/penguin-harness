@@ -247,6 +247,6 @@ describe("built-in Agent provisioning", () => {
     });
     expect(created.status).toBe(201);
     const res = await owner.delete(`/api/projects/${projectId}/agents/agent_creator`);
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(202);
   });
 });
