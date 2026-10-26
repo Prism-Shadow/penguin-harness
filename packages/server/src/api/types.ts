@@ -5213,10 +5213,17 @@ export interface RestartResponse {
 export interface MachineSocketFact {
   /**
    * `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused`
-   * when the machine answered the handshake with a status (a program predating the socket), and
-   * `failed` when the dial did not complete or a socket that was up closed.
+   * when the machine answered the handshake with a status (a program predating the socket),
+   * `unanswered` when its server answers HTTP and never answered the handshake, and `failed` when
+   * the dial did not complete or a socket that was up closed.
+   *
+   * `unanswered` is a server PROCESS older than the socket: an update handed to a running server
+   * swaps its platform and never the process that takes the upgrade, so the machine reports the
+   * current build and still has no socket. Restarting that machine's server mends it, and the
+   * Machines page reads the state as needing a restart. It lasts until a handshake completes: a
+   * machine dialled again keeps it while the dial is outstanding, instead of reading `dialling`.
    */
-  state: "connected" | "dialling" | "refused" | "failed";
+  state: "connected" | "dialling" | "refused" | "unanswered" | "failed";
   /** When that state was entered (ISO). */
   since: string;
   /** The transport's own words where there are any: a refusal's status, a dial's error. */

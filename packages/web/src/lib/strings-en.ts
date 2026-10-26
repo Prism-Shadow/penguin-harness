@@ -120,6 +120,7 @@ export const en: Strings = {
       failed: "Failed",
       installedOnly: "Installed",
       behind: "Update available",
+      restartNeeded: "Restart needed",
       notConnected: "Not connected",
       unreachable: "Unreachable",
       stopped: "Stopped",
@@ -174,8 +175,11 @@ export const en: Strings = {
       connected: "Connected",
       dialling: "Dialling",
       refused: "Refused",
+      unanswered: "Unanswered",
       failed: "Failed",
     },
+    restartNeededReason:
+      "Its server answers requests but not the live link: that server process was started before its current build. Restart the server to bring live updates from its conversations back.",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
@@ -3836,6 +3840,11 @@ Scenarios:
       missing: "This conversation's machine is not on this Project's machine list",
       hint: "The conversation is kept on that machine and loads as soon as the connection is back.",
       details: "Technical details",
+    },
+    machineRestartNeeded: {
+      body: (alias: string) =>
+        `Live updates from ${alias} aren't reaching this page: its server process was started before its current build. Restart its server on the Machines page.`,
+      open: "Open Machines",
     },
     statsLabel: "Stats",
     removeImage: "Remove image",

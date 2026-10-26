@@ -26,6 +26,7 @@ export const MACHINE_STATES = [
   "signInRefused",
   "installedOnly",
   "behind",
+  "restartNeeded",
   "notConnected",
   "unreachable",
   "stopped",
@@ -46,6 +47,8 @@ export const MACHINE_STATE_TONE: Readonly<Record<MachineState, ToneName>> = {
   signInRefused: "danger",
   installedOnly: "neutral",
   behind: "attention",
+  // Its server answers and its live updates do not arrive until a person restarts it.
+  restartNeeded: "attention",
   notConnected: "attention",
   unreachable: "attention",
   stopped: "attention",

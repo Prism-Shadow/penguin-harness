@@ -1802,6 +1802,7 @@ export const en: GalleryStrings = {
         signInRefused: "Sign-in refused",
         installedOnly: "Installed",
         behind: "Update available",
+        restartNeeded: "Restart needed",
         notConnected: "Not connected",
         unreachable: "Unreachable",
         stopped: "Stopped",
@@ -1816,6 +1817,8 @@ export const en: GalleryStrings = {
         reconnectStopped:
           "lab-2 refused the connection: no ssh server listens at that address and port.",
         behind: "Version 0.2.16 is available",
+        restartNeeded:
+          "Its server answers requests but not the live link: that server process was started before its current build.",
       },
       cards: "Machine cards",
       cardsHint:

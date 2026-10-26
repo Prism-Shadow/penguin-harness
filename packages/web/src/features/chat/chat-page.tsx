@@ -120,6 +120,7 @@ import {
 import { RouteProbe } from "./route-probe";
 import { machineForSession } from "../../lib/session-machines";
 import { HistoryLoadFailed } from "./history-load-failed";
+import { MachineRestartNotice } from "./machine-restart-notice";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
@@ -2763,6 +2764,12 @@ export function ChatPage() {
                                 (restored on load while still active), or the terminal state reached
                                 during this page's lifetime. The stop button is the composer's
                                 regular stop (one abort ends the whole goal loop). */}
+                            {/* A conversation on a machine whose server needs a restart: its live
+                                updates stay away until then, and this says so instead of the
+                                stream retrying in silence. */}
+                            {!draft && pageMachineId !== null && (
+                              <MachineRestartNotice machineId={pageMachineId} />
+                            )}
                             {stream.goal && <GoalStatusBanner goal={stream.goal} />}
                             {input}
                           </div>

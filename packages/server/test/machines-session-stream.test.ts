@@ -1,15 +1,18 @@
 /**
- * A machine's Session stream, live, through this server, with nothing scripted on the way: the
- * browser's API socket asks this server for `/server/<machineId>/api/sessions/<id>/stream`, the
- * proxy relays it over the API socket this server holds to the machine, and the machine is a
- * real server whose runtime's upgrade seam is attached as index.ts attaches it. A record the
- * machine publishes on the Session's channel after the stream opened reaches the browser as a
- * frame of that stream.
+ * A machine's Session stream through this server, with nothing scripted on the way: the machine
+ * is a real server App, served behind its runtime's upgrade seam as index.ts attaches it, and this
+ * server reaches it through its `/server/<machineId>` proxy and the API socket it holds there.
  *
- * The same machine App behind a runtime whose upgrade listener predates `/api/socket` (what a hot
- * hand-over leaves running: a push replaces the platform, never the runtime that listens) answers
- * every HTTP request, while the socket the relay dials is never answered: the stream is refused
- * with the dial's reason and nothing of the Session reaches the browser.
+ * - Given a stream the browser's socket asked for, when the machine publishes a record on the
+ *   Session's channel after the stream opened, then the browser's socket carries it as a frame of
+ *   that stream.
+ * - Given the same App behind a runtime whose upgrade listener predates `/api/socket` (what an
+ *   update handed to a running server leaves: a push replaces the platform, never the process
+ *   that takes the upgrade), when the history and the stream are asked for, then the history
+ *   answers, the stream is refused with words that name the restart, and the socket reads
+ *   `unanswered` — told once, and not re-dated or told again by the next refused stream.
+ * - Given that machine restarted onto a runtime with the socket, when a stream is asked for
+ *   again, then it opens and the socket reads `connected`, told as the end of the restart reading.
  */
 import http from "node:http";
 import type { Server as HttpServer } from "node:http";
@@ -152,30 +155,54 @@ describe("a machine's Session stream", () => {
     }
   });
 
-  it("is refused for a machine whose runtime predates the API socket, while its HTTP answers", async () => {
-    const sockets = new MachineSockets(() => undefined, { dialTimeoutMs: 300 });
+  it("is refused with the restart named for a machine whose runtime predates the socket, until it restarts", async () => {
+    const told: (string | undefined)[] = [];
+    const sockets: MachineSockets = new MachineSockets(() => undefined, {
+      dialTimeoutMs: 300,
+      announce: () => told.push(sockets.fact(MACHINE)?.state),
+    });
     const proxy = machinesProxy(
       async () => ({ agent: new http.Agent(), port: oldPort, cookie, adoptedAt: null, session: 1 }),
       undefined,
       () => undefined,
       { sockets },
     );
+    const stream = () =>
+      proxy(
+        new Request(`http://localhost/server/${MACHINE}/api/sessions/${SID}/stream`, {
+          headers: { accept: "text/event-stream" },
+        }),
+      );
     try {
       const history = await proxy(
         new Request(`http://localhost/server/${MACHINE}/api/sessions/${SID}/messages`),
       );
       expect(history!.status).toBe(200);
 
-      const stream = await proxy(
-        new Request(`http://localhost/server/${MACHINE}/api/sessions/${SID}/stream`, {
-          headers: { accept: "text/event-stream" },
-        }),
-      );
-      expect(stream!.status).toBe(502);
-      expect(await stream!.json()).toMatchObject({
-        error: { code: "machine_socket_unavailable" },
+      const refused = await stream();
+      expect(refused!.status).toBe(502);
+      const { error } = (await refused!.json()) as { error: { code: string; message: string } };
+      expect(error.code).toBe("machine_socket_unavailable");
+      expect(error.message).toContain("Restart that machine from the Machines page");
+      const fact = sockets.fact(MACHINE);
+      expect(fact).toMatchObject({ state: "unanswered" });
+      expect(told).toEqual(["unanswered"]);
+
+      expect((await stream())!.status).toBe(502);
+      expect(sockets.fact(MACHINE)).toEqual(fact);
+      expect(told).toEqual(["unanswered"]);
+
+      // The restart: the process that takes the upgrade is now one that knows the socket.
+      attachTerminalWebSocket(oldRuntime as unknown as HttpServer, {
+        hmr: machine.deps.hmr,
+        authService: machine.deps.authService,
+        log: () => undefined,
       });
-      expect(sockets.fact(MACHINE)).toMatchObject({ state: "failed" });
+      const opened = await stream();
+      expect(opened!.status).toBe(200);
+      await opened!.body?.cancel();
+      expect(sockets.fact(MACHINE)).toMatchObject({ state: "connected" });
+      expect(told).toEqual(["unanswered", "connected"]);
     } finally {
       sockets.close();
     }

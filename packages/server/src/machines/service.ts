@@ -3171,7 +3171,12 @@ export class MachinesModule {
     // The generation's one socket cache and the event hub over it (PRFC-0011): the proxy's
     // streams and the machines' aggregate event stream share both, so the hub holds ONE
     // subscription per machine however many tabs read it.
-    const sockets = new MachineSockets((line) => console.log(line));
+    // A machine whose server answers HTTP and never the socket's handshake reads as needing a
+    // restart on the Machines page: that reading arrives with the list, so its start and its end
+    // are told like any other change to it.
+    const sockets = new MachineSockets((line) => console.log(line), {
+      announce: () => toAdmins({ type: "machines_changed" }),
+    });
     const events = new MachineEventHub(sockets, (line) => console.log(line));
     const machines = new MachinesService(
       this.paths.root,

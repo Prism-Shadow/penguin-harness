@@ -179,9 +179,16 @@ describe("the machine socket relay", () => {
 
   it("gives up on a dial the machine accepts and never answers, and dials again next time", async () => {
     // A machine that takes the connection and never answers the upgrade: without a deadline
-    // the dial's promise stays pending and every later stream waits behind it.
+    // the dial's promise stays pending and every later stream waits behind it. It answers no
+    // HTTP either, so it reads as a dial that failed, not as a server to restart.
     const held: net.Socket[] = [];
-    const silent = net.createServer((sock) => held.push(sock));
+    let upgrades = 0;
+    const silent = net.createServer((sock) => {
+      held.push(sock);
+      sock.once("data", (data: Buffer) => {
+        if (/^upgrade: websocket/im.test(data.toString())) upgrades += 1;
+      });
+    });
     await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
     const port = (silent.address() as { port: number }).port;
     stop = () =>
@@ -201,7 +208,7 @@ describe("the machine socket relay", () => {
     expect(lines.some((l) => l.includes("no socket handshake in 100 ms"))).toBe(true);
     // Not remembered as a refusal: the next stream dials again.
     await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
-    expect(held.length).toBe(2);
+    expect(upgrades).toBe(2);
   });
 
   it("answers a machine that refuses the handshake with its reason, and does not ask again for a while", async () => {
