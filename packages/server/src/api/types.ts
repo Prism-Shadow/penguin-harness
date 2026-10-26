@@ -139,11 +139,11 @@ export interface MeResponse {
    * "desktop" is the shell's own window (one-shot token); "setup" was claimed through the
    * first-login link on a server whose admin password has never been set. Both may set a
    * password without the old one (it is random and was never shown); only "desktop" opens
-   * desktop-only routes. "token" marks the local API token's authority, carried by a Bearer
-   * header or an exchanged Remote cookie; neither can perform writes requiring a person's
-   * sign-in.
+   * desktop-only routes. "remote" is the one-hour session Penguin Remote exchanged the local
+   * API token for; it counts as the person's sign-in. "token" marks the local API token itself,
+   * sent as a Bearer header; it cannot perform writes requiring a person's sign-in.
    */
-  sessionVia: "password" | "desktop" | "setup" | "token";
+  sessionVia: "password" | "desktop" | "setup" | "remote" | "token";
   /**
    * The upload limits currently in force, so the composer can refuse an oversize pick before
    * reading it and can name the real number in the message. They are admin-settable and ride
@@ -5316,10 +5316,19 @@ export interface RestartResponse {
 export interface MachineSocketFact {
   /**
    * `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused`
-   * when the machine answered the handshake with a status (a program predating the socket), and
-   * `failed` when the dial did not complete or a socket that was up closed.
+   * when the machine answered the handshake with a status (a program predating the socket),
+   * `unanswered` when its server answers HTTP and never answered the handshake, and `failed` when
+   * the dial did not complete or a socket that was up closed.
+   *
+   * `unanswered` is a server PROCESS older than the socket: an update handed to a running server
+   * swaps its platform and never the process that takes the upgrade, so the machine reports the
+   * current build and still has no socket: it is not running this server's version, which a remote
+   * machine must. A restart of its server, and failing that an update or a reinstall, brings it
+   * there; the Machines page reads the state as needing a restart. It lasts until a handshake
+   * completes: a
+   * machine dialled again keeps it while the dial is outstanding, instead of reading `dialling`.
    */
-  state: "connected" | "dialling" | "refused" | "failed";
+  state: "connected" | "dialling" | "refused" | "unanswered" | "failed";
   /** When that state was entered (ISO). */
   since: string;
   /** The transport's own words where there are any: a refusal's status, a dial's error. */
@@ -7159,7 +7168,12 @@ export interface BrowserExtensionPairingResponse {
   code: string;
   /** ISO time the code stops working. */
   expiresAt: string;
-  /** The request's Origin, when it carried one: the address the browser reaches this server at. */
+  /**
+   * The address the browser reaches this server at, which the extension pairs with: the public
+   * origin (scheme, host and port; from the forwarded headers when the server trusts a proxy).
+   * Null only from an older server, which echoed the request's `Origin` and had none to echo for
+   * a call that carried no `Origin`.
+   */
   origin: string | null;
 }
 

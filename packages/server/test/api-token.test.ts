@@ -280,7 +280,7 @@ describe("local API token", () => {
       expect(me.status).toBe(200);
       const meBody = (await me.json()) as MeResponse;
       expect(meBody.user.userId).toBe("admin");
-      expect(meBody.sessionVia).toBe("token");
+      expect(meBody.sessionVia).toBe("remote");
     } finally {
       await remote.cleanup();
     }

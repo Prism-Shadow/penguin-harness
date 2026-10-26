@@ -200,6 +200,7 @@
 .site-ui-header.ui-glass {
   background: color-mix(in srgb, var(--site-canvas) 85%, transparent);
   backdrop-filter: blur(8px);
+  border-color: var(--site-line);
 }
 .site-ui-language-panel {
   width: 144px;

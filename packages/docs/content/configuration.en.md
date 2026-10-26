@@ -19,7 +19,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | Unset: the loopback counterpart is derived per request |
 | `PENGUIN_GO_ORIGIN` | Trusted origin for Penguin Go key authorization and account balance queries | `https://go.penguin.ooo` |
 | `MODELSCOPE_BRIDGE_URL` | Address of the authorization bridge the server-side ModelScope key authorization calls | `https://go.penguin.ooo/modelscope` |
-| `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` header | Unset: the header is ignored |
+| `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` and `x-forwarded-host` headers | Unset: both are ignored. The desktop app's server sets it |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | Unset: a random password is generated |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set with `penguin config lang` | `en` |
 | `PENGUIN_UPDATE_CHECK` | `off` disables the Web App's new-release check | Enabled |
@@ -29,7 +29,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 
 Notes:
 
-- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS. The proxy must keep the external `Host` header unchanged and overwrite `x-forwarded-proto` with the single value `https`. Session cookies are then marked `Secure`, and the hot-update network gate sees HTTPS. Without the setting, every write the Web App makes, signing in included, is refused with `403` `cross_origin_write`.
+- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS. The proxy must overwrite `x-forwarded-proto` with `https`, and either keep the external `Host` header unchanged or overwrite `x-forwarded-host` with it; the server reads the first value of each. From them it takes the address the browser is on, its [public origin](/security#network-surface): session cookies are marked `Secure`, a write's `Origin` is checked against it, the hot-update network gate sees HTTPS, and a model provider's authorization redirects back to it. Without the setting, every write the Web App makes, signing in included, is refused with `403` `cross_origin_write`. The desktop app's embedded server sets it itself, because it listens on loopback only and is reached from outside only through the Penguin Remote relay, whose client should overwrite `x-forwarded-proto` with `https` and `x-forwarded-host` with the public host, each as a single value.
 - `PENGUIN_SEED_ADMIN_PASSWORD`: without it, the seed generates a random password that is hashed and discarded unseen, and you claim the account through the first-login link.
 - `PENGUIN_GO_ORIGIN`: server configuration, not an endpoint the browser can name. It must be a bare HTTPS origin; plain HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`, for integration environments. A path, credentials, a query string or a fragment is rejected at startup. See [Connect an account](/models#connect-an-account).
 - `MODELSCOPE_BRIDGE_URL`: server configuration like `PENGUIN_GO_ORIGIN`, not an endpoint the browser can name. It must be an HTTPS address with no credentials, query string or fragment. Unlike `PENGUIN_GO_ORIGIN`, a path prefix **is** allowed, because the production bridge lives under `https://go.penguin.ooo/modelscope`. See [Connect an account](/models#connect-an-account).

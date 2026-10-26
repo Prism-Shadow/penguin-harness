@@ -19,7 +19,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的源，例如 `https://preview.example.com` | 未设置：每次请求推导对应的回环地址 |
 | `PENGUIN_GO_ORIGIN` | 服务端发起 Penguin Go Key 授权和余额查询时调用的可信源 | `https://go.penguin.ooo` |
 | `MODELSCOPE_BRIDGE_URL` | 服务端发起 ModelScope Key 授权时调用的授权中转层地址 | `https://go.penguin.ooo/modelscope` |
-| `PENGUIN_TRUST_PROXY` | 设为 `1` 时信任 `x-forwarded-proto` 请求头 | 未设置：忽略请求头 |
+| `PENGUIN_TRUST_PROXY` | 设为 `1` 时信任 `x-forwarded-proto` 与 `x-forwarded-host` 请求头 | 未设置：两者都忽略。桌面应用的服务端会设置它 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 预置内置管理员的固定初始密码（自动化测试 / e2e） | 未设置：生成随机密码 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 时关闭 Web App 的新版本检查 | 启用 |
@@ -29,7 +29,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 
 说明：
 
-- `PENGUIN_TRUST_PROXY`：当部署在终结 TLS 的反向代理之后时设置；代理必须原样保留外部的 `Host` 请求头，并把 `x-forwarded-proto` 统一覆盖为 `https`。启用后，会话 Cookie 会带上 `Secure` 标记，热更新的网络检查也能识别出 HTTPS。不设置的话，Web App 的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝。
+- `PENGUIN_TRUST_PROXY`：当部署在终结 TLS 的反向代理之后时设置。代理必须把 `x-forwarded-proto` 覆盖为 `https`，并且要么原样保留外部的 `Host` 请求头，要么用它覆盖 `x-forwarded-host`；服务端各取第一个值。服务端据此得出浏览器所在的地址，即[公共源](/security#网络暴露面)：会话 Cookie 带上 `Secure` 标记，写请求的 `Origin` 与它比对，热更新的网络检查能识别出 HTTPS，模型厂商的授权也跳回这个地址。不设置的话，Web App 的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝。桌面应用内嵌的服务端会自己设置它：它只监听回环地址，从外部只能经 Penguin Remote 中继访问，中继的客户端应当把 `x-forwarded-proto` 覆盖为 `https`、把 `x-forwarded-host` 覆盖为公网主机名，各只带一个值。
 - `PENGUIN_SEED_ADMIN_PASSWORD`：不设置时，预置管理员时会生成一个随机密码，哈希后立即丢弃，没有人见过；账号通过首次登录链接认领。
 - `PENGUIN_GO_ORIGIN`：它是服务端配置，不接受浏览器指定的端点。取值必须是不带路径的 HTTPS 源；只有 `localhost`、`127.0.0.1` 和 `[::1]` 这类集成环境可以用明文 HTTP。带路径、凭据、查询参数或 fragment 的取值会在启动时被拒绝。见[连接账户](/models#连接账户)。
 - `MODELSCOPE_BRIDGE_URL`：与 `PENGUIN_GO_ORIGIN` 一样是服务端配置，不接受浏览器指定的端点。它必须是不带凭据、查询参数或 fragment 的 HTTPS 地址。不同之处是**它允许带路径前缀**，因为生产环境的中转层就挂在 `https://go.penguin.ooo/modelscope` 下。见[连接账户](/models#连接账户)。

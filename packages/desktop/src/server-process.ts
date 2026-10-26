@@ -138,6 +138,12 @@ export async function startEmbeddedServer(opts: {
       ...(opts.webDist !== null ? { PENGUIN_WEB_DIST: opts.webDist } : {}),
       ...(opts.cliEntry !== null ? { PENGUIN_CLI_ENTRY: opts.cliEntry } : {}),
       HOST: "127.0.0.1",
+      // Reached from outside only through a relay (Penguin Remote), whose hops set the forwarded
+      // headers: trusting them is how the server knows the browser's https origin.
+      // Safe on this bind alone: only processes on this machine reach the port, and a web page
+      // can set none of these headers on a cross-origin request (it would need a preflight the
+      // server never grants) or on a WebSocket handshake.
+      PENGUIN_TRUST_PROXY: "1",
       PORT: String(requestedPort),
       PENGUIN_DESKTOP_TOKEN: token,
       PENGUIN_PORT_FILE: opts.portFile,

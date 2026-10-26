@@ -29,6 +29,7 @@ import {
   canSyncConfig,
   failureText,
   isPhase,
+  needsRestart,
   outOfDate,
   readMachine,
   readingTone,
@@ -400,7 +401,10 @@ export function machineToolbar(
     items.push(
       kept ? item("stop", t.stop, reachHeld) : item("start", t.start, moving ? "moving" : null),
     );
-    items.push(item("restart", t.restart, reachHeld ?? (kept ? null : "stopped")));
+    // The primary when the machine's server is older than its build: the one verb that mends it,
+    // unless an update is on offer, which restarts the server along the way.
+    const restartFirst = needsRestart(machine) && !outOfDate(machine, imageVersion);
+    items.push(item("restart", t.restart, reachHeld ?? (kept ? null : "stopped"), restartFirst));
     if (canSyncConfig(machine, imageVersion)) {
       items.push(item("syncConfig", t.syncConfig, moving ? "moving" : null));
     }

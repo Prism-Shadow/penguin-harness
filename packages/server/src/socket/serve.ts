@@ -70,7 +70,7 @@ export interface ApiSocketDeps {
   fetch: (request: Request) => Promise<Response>;
   /** The same routes, for a call that asks for an event stream: its answer rides the Request in (stream-answer.ts). */
   fetchStream: (request: Request, answer: StreamAnswer) => Promise<Response>;
-  /** The origin in-process requests are addressed to (the canonical App host, as HTTP requests carry it). */
+  /** The origin in-process requests are addressed to: the public origin the client opened the socket on (http/public-origin.ts), port included. */
   origin: string;
   log: (line: string) => void;
 }

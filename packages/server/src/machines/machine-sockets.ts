@@ -14,8 +14,15 @@
  * is let go and the next caller dials over the new one. Nothing waits without a deadline — a
  * dial that neither opens nor fails in time is torn down, so one stuck handshake can never hold
  * every later stream to that machine behind it.
+ *
+ * A handshake that goes unanswered is told apart by asking the same port for HTTP. A machine
+ * whose server answers HTTP and never the handshake is running a server process older than the
+ * socket — an update handed to a running server swaps its platform, never the process that takes
+ * the upgrade — so it is not running this server's version, and its streams stay out of reach
+ * until it does. Its fact says so (`unanswered`) and the answer every stream gets names the way
+ * on: a restart, and failing that an update or a reinstall. Nothing here restarts it.
  */
-import type http from "node:http";
+import http from "node:http";
 import { WebSocket } from "ws";
 import type { MachineSocketFact } from "../api/types.js";
 import type { EventFrame, ServerFrame } from "../socket/frames.js";
@@ -26,6 +33,27 @@ import { HEARTBEAT_MS } from "../socket/serve.js";
 export class HandshakeRefused extends Error {
   constructor(readonly status: number) {
     super(`machine answered ${status}`);
+  }
+}
+
+/** Nothing answered the handshake in time: the channel never came up, or the server never took the upgrade. */
+export class HandshakeTimeout extends Error {
+  constructor(timeoutMs: number) {
+    super(`no socket handshake in ${timeoutMs} ms`);
+  }
+}
+
+/**
+ * The handshake went unanswered while the machine's server answers HTTP on the same port: the
+ * server process predates the socket, so the machine is not running this server's version. Its
+ * words are the whole answer a stream gets, a page may show them as they are, and so they are
+ * said for whoever uses the page: what is wrong and what to click.
+ */
+export class ServerPredatesSocket extends Error {
+  constructor() {
+    super(
+      "This machine is on a different version, so its conversations won't update by themselves. On the Machines page, click Restart server; if that doesn't help, reinstall it.",
+    );
   }
 }
 
@@ -45,6 +73,45 @@ const REFUSED_FOR_MS = 60_000;
  * upgrade would otherwise hold every later stream to it behind one promise.
  */
 export const SOCKET_DIAL_TIMEOUT_MS = 10_000;
+/**
+ * The HTTP check after an unanswered handshake waits at most this long, and never longer than the
+ * dial did: on a healthy channel a server answers in milliseconds, and the stream that asked is
+ * still waiting for its answer, inside the browser's own open deadline.
+ */
+const HTTP_CHECK_TIMEOUT_MS = 2_000;
+
+/** Whether the machine's server answers an HTTP request through `target` within `timeoutMs`: any status counts. */
+function answersHttp(target: MachineSocketTarget, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        agent: target.agent,
+        host: "127.0.0.1",
+        port: target.port,
+        path: "/api/version",
+        method: "GET",
+        headers: { host: `localhost:${target.port}`, cookie: target.cookie },
+      },
+      (res) => {
+        clearTimeout(deadline);
+        res.resume();
+        resolve(true);
+      },
+    );
+    // Its own timer rather than the request's `timeout`: that one arms only once a socket is
+    // assigned, and a channel that never comes up assigns none.
+    const deadline = setTimeout(() => {
+      req.destroy();
+      resolve(false);
+    }, timeoutMs);
+    deadline.unref?.();
+    req.on("error", () => {
+      clearTimeout(deadline);
+      resolve(false);
+    });
+    req.end();
+  });
+}
 
 /** Why no stream could be relayed, as the proxy answers it. */
 export function unavailable(status: number, code: string, message: string): Response {
@@ -132,7 +199,7 @@ export class MachineSocket {
         perMessageDeflate: false,
       });
       const deadline = setTimeout(() => {
-        reject(new Error(`no socket handshake in ${timeoutMs} ms`));
+        reject(new HandshakeTimeout(timeoutMs));
         ws.terminate();
       }, timeoutMs);
       deadline.unref?.();
@@ -212,13 +279,23 @@ export class MachineSockets {
   /** The failure each machine's dials have been repeating since its last good one. */
   readonly #failing = new Map<string, string>();
   readonly #dialTimeoutMs: number;
+  readonly #announce: () => void;
   #closed = false;
 
   constructor(
     private readonly log: (line: string) => void,
-    options: { dialTimeoutMs?: number } = {},
+    options: {
+      dialTimeoutMs?: number;
+      /**
+       * Told when a machine starts or stops reading `unanswered` — the one socket fact the
+       * Machines page shows as the machine's own state, which must not wait for the page's
+       * next read of the list.
+       */
+      announce?: () => void;
+    } = {},
   ) {
     this.#dialTimeoutMs = options.dialTimeoutMs ?? SOCKET_DIAL_TIMEOUT_MS;
+    this.#announce = options.announce ?? (() => undefined);
   }
 
   /** Ends this generation's sockets, including a dial that settles after disposal. */
@@ -243,11 +320,28 @@ export class MachineSockets {
 
   /** Marks a state change; `since` is now, so the page can say how long it has been in it. */
   #state(machineId: string, state: MachineSocketFact["state"], detail?: string): void {
+    const was = this.#facts.get(machineId)?.state;
     this.#facts.set(machineId, {
       state,
       since: new Date().toISOString(),
       ...(detail !== undefined ? { detail } : {}),
     });
+    if ((was === "unanswered") !== (state === "unanswered")) this.#announce();
+  }
+
+  /**
+   * One dial, with an unanswered handshake told apart: the same port answering HTTP means the
+   * server is up and older than the socket, which no amount of dialling again will change.
+   */
+  async #dial(target: MachineSocketTarget): Promise<MachineSocket> {
+    try {
+      return await MachineSocket.open(target, this.#dialTimeoutMs);
+    } catch (err) {
+      if (!(err instanceof HandshakeTimeout) || this.#closed) throw err;
+      const checkMs = Math.min(this.#dialTimeoutMs, HTTP_CHECK_TIMEOUT_MS);
+      if (await answersHttp(target, checkMs)) throw new ServerPredatesSocket();
+      throw err;
+    }
   }
 
   /**
@@ -279,10 +373,12 @@ export class MachineSockets {
       cached = undefined;
     }
     if (cached === undefined) {
-      this.#state(machineId, "dialling");
+      // A machine read as needing a restart keeps that reading while it is dialled again: only a
+      // handshake that completes clears it, so the page does not blink at every re-dial.
+      if (this.#facts.get(machineId)?.state !== "unanswered") this.#state(machineId, "dialling");
       const entry: CachedSocket = {
         session: target.session,
-        pending: MachineSocket.open(target, this.#dialTimeoutMs),
+        pending: this.#dial(target),
       };
       entry.pending.then(
         (socket) => {
@@ -318,6 +414,15 @@ export class MachineSockets {
             this.log(
               `[machines] no socket on ${machineId} (${err.message}); its streams are refused until it is updated`,
             );
+          } else if (err instanceof ServerPredatesSocket) {
+            this.#failing.delete(machineId);
+            // Entered once per run: a dial again that meets the same server re-dates nothing
+            // and logs nothing, so `since` says when the machine first read this way.
+            if (this.#facts.get(machineId)?.state === "unanswered") return;
+            this.#state(machineId, "unanswered", err.message);
+            this.log(
+              `[machines] socket to ${machineId}: its server answers HTTP and never the handshake — a server process older than the socket, so not this server's version; it needs a restart, or else a reinstall`,
+            );
           } else {
             const detail = err instanceof Error ? err.message : String(err);
             this.#state(machineId, "failed", detail);
@@ -343,6 +448,9 @@ export class MachineSockets {
       return { socket };
     } catch (err) {
       if (err instanceof HandshakeRefused) return { answer: refusedAnswer(machineId, err.status) };
+      if (err instanceof ServerPredatesSocket) {
+        return { answer: unavailable(502, "machine_socket_unavailable", err.message) };
+      }
       return {
         answer: unavailable(
           502,

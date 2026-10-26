@@ -2,19 +2,22 @@
  * advancePanelTaskScope unit tests: the subagents panel's AUTO-OPEN rule — the current task's
  * first live spawn opens the panel once, re-armed at every boundary (Session switch or new
  * Task) so a manual close is respected until the next one; boundaries themselves never close
- * the panel (an open panel survives a switch, like the Files panel); a taskCount decrease is a
- * defensive re-baseline that consumes the attempt instead of arming it. The chat page feeds
- * observations per render (session id + taskStartCount + live-spawn flag) and applies the
- * returned action under its own layout guards.
+ * the panel (which docks show it is each conversation's own arrangement); a taskCount decrease is
+ * a defensive re-baseline that consumes the attempt instead of arming it. The chat page feeds
+ * observations per render (session id + whose stream data it is + taskStartCount + live-spawn
+ * flag) and applies the returned action under its own layout guards. Right after a switch the
+ * stream is still the previous Session's for a render: that observation counts for nothing, so
+ * the previous Session's live spawn never opens the panel in the one switched to.
  */
 import { describe, expect, it } from "vitest";
 import { advancePanelTaskScope, createPanelTaskScope } from "../src/features/chat/panel-task-scope";
 
-const obs = (sessionId: string | null, taskCount: number, liveSpawn = false) => ({
-  sessionId,
-  taskCount,
-  liveSpawn,
-});
+const obs = (
+  sessionId: string | null,
+  taskCount: number,
+  liveSpawn = false,
+  streamSessionId = sessionId,
+) => ({ sessionId, streamSessionId, taskCount, liveSpawn });
 
 describe("advancePanelTaskScope (subagents panel auto-open)", () => {
   it("entering a session does nothing on its own; a mid-run entry with a live spawn auto-opens", () => {
@@ -44,8 +47,17 @@ describe("advancePanelTaskScope (subagents panel auto-open)", () => {
   it("a session switch resets the per-task guard but leaves visibility alone", () => {
     const s = createPanelTaskScope();
     expect(advancePanelTaskScope(s, obs("A", 1, true))).toBe("autoOpen"); // consumed for A's task 1
-    expect(advancePanelTaskScope(s, obs("B", 1))).toBeNull(); // B inherits the open state
+    expect(advancePanelTaskScope(s, obs("B", 1))).toBeNull(); // a switch alone opens nothing
     expect(advancePanelTaskScope(s, obs("B", 1, true))).toBe("autoOpen"); // B's task 1 arms fresh
+  });
+
+  it("ignores the previous Session's stream while it trails a switch", () => {
+    const s = createPanelTaskScope();
+    advancePanelTaskScope(s, obs("A", 2));
+    // B on screen, the stream still A's: A's running spawn is no spawn of B's.
+    expect(advancePanelTaskScope(s, obs("B", 2, true, "A"))).toBeNull();
+    expect(advancePanelTaskScope(s, obs("B", 1))).toBeNull(); // B's own stream arrives
+    expect(advancePanelTaskScope(s, obs("B", 1, true))).toBe("autoOpen"); // B's own spawn
   });
 
   it("steady observations (steering, more output within the same task) do nothing", () => {

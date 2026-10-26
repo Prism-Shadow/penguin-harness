@@ -8,8 +8,10 @@
  * for outstanding opens and moves only their original scope; a draft without browser pages
  * sends no adoption request (the server may not offer a built-in browser).
  * Returning pages after a failed first send restores the draft's selection and storage.
+ * Leaving a Session whose docks show the browser for one whose docks do not opens no page there
+ * (which would bring the panel up with it), and going back shows it again.
  */
-import { act, createElement, Fragment } from "react";
+import { act, createElement, Fragment, useSyncExternalStore } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
@@ -20,6 +22,13 @@ import {
 } from "../src/features/builtin-browser/browser-actions";
 import { browserState, dispatchBrowser } from "../src/features/builtin-browser/browser-store";
 import { guestKey } from "../src/features/builtin-browser/browser-state";
+import {
+  dockVersion,
+  isTabShown,
+  openPanel,
+  setDockScope,
+  subscribeDock,
+} from "../src/features/dock/dock-state";
 import { mount, unmountAll } from "./helpers/dom";
 import { json, stubFetch } from "./helpers/fetch";
 
@@ -192,4 +201,51 @@ it("returns the first send's pages to the draft without reloading or changing st
   expect(browserState().tabs[0]?.sessionId).toBe("draft");
   expect(browserState().activeByScope.draft).toBe(20);
   expect(browserState().guests[0]).toEqual(original);
+});
+
+it("opens no page in the Session switched to when the one left showed the browser", async () => {
+  const get = customElements.get.bind(customElements);
+  vi.spyOn(customElements, "get").mockImplementation((name) =>
+    name === "webview" ? HTMLElement : get(name),
+  );
+  const wire = stubFetch((request) =>
+    request.path.endsWith("/status")
+      ? json({ available: true, backend: "builtin", tabs: [], activeTabId: null })
+      : request.path.endsWith("/settings")
+        ? json({ homepage: null })
+        : new Response(null, { status: 204 }),
+  );
+  dispatchBrowser({ type: "supported", supported: true });
+  dispatchBrowser({ type: "scope", scope: "shown", projectId: "p" });
+  setDockScope("shown");
+  openPanel("builtin-browser");
+  open(30, "shown");
+  snapshot([tab(30, "shown")], 30);
+  // The chat page's docks, reduced to the one panel: rendered while the arrangement shows it.
+  function Docks() {
+    useSyncExternalStore(subscribeDock, dockVersion);
+    return isTabShown("builtin-browser")
+      ? createElement(BuiltinBrowserPanel, { active: true })
+      : null;
+  }
+  await mount(
+    createElement(Fragment, null, createElement(BuiltinBrowserLayer), createElement(Docks)),
+  );
+  // AppLayout moves both stores together when the route names another Session; the panel leaves
+  // with the outgoing arrangement in the render that follows.
+  await act(async () => {
+    dispatchBrowser({ type: "scope", scope: "other", projectId: "p" });
+    setDockScope("other");
+  });
+  const opens = wire.requests.filter((r) => r.method === "POST" && r.path.endsWith("/tabs"));
+  expect(opens).toEqual([]);
+  expect(isTabShown("builtin-browser")).toBe(false);
+  await act(async () => {
+    dispatchBrowser({ type: "scope", scope: "shown", projectId: "p" });
+    setDockScope("shown");
+  });
+  expect(isTabShown("builtin-browser")).toBe(true);
+  await act(async () => {
+    setDockScope(null);
+  });
 });

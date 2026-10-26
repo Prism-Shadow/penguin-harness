@@ -74,7 +74,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 `POST /api/remote/session` 将当前本地 API token 所代表的权限兑换为一个以内置管理员身份创建的短期浏览器会话。接口只接受 `Authorization: Bearer <本地 API token>`：未提供或提供错误的 Bearer token 返回 `401`；已通过密码、桌面、首次登录或 Remote Cookie 认证的请求返回 `403`。请求必须使用 `Content-Type: application/json`，请求体为空对象（`{}`）。该接口不会新增任何 CORS 开放。
 
-有效期固定为一小时，调用方不能自行指定。持久化的会话来源在内部标记为 `remote`，不会进入 30 天滑动续期路径。它保留本地 API token 的权限（`/api/me` 返回 `sessionVia: "token"`），因此 `human_required` 限制和 Agent 身份规则也适用于这个 Cookie。需要人工授权的写操作必须另行使用密码登录。Remote Cookie 不能再次兑换会话；兑换请求必须在 Bearer 头中携带真正的本地 API token。成功响应带有 `Cache-Control: no-store`，不包含 `Set-Cookie`，并返回：
+有效期固定为一小时，调用方不能自行指定。持久化的会话来源在内部标记为 `remote`，不会进入 30 天滑动续期路径。`/api/me` 对它返回 `sessionVia: "remote"`，它算作人的登录：以 `human_required` 拒绝本地 API token 的写操作接受它；Agent 身份规则也把它当作普通的 Cookie 会话，它携带的 `sessionId` 或 `agentId` 不会被当作 Agent 的身份声明。它打不开只属于桌面应用自己窗口的路由，用它修改密码仍需提供当前密码。持有本地 API token 的 Agent 同样能兑换这样的会话，所以这也不是边界，边界是沙盒。Remote Cookie 不能再次兑换会话；兑换请求必须在 Bearer 头中携带真正的本地 API token。成功响应带有 `Cache-Control: no-store`，不包含 `Set-Cookie`，并返回：
 
 ```json
 {
@@ -86,6 +86,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 ```
 
 `sessionToken` 是原始管理员凭据。Penguin Remote 的本地代理负责在公网域名的响应中把它写入上述名称的 Cookie。客户端不得记录或缓存本地 API token 以及返回的会话 token。
+
+桌面端的服务端信任转发头，并据此得出浏览器所在的地址（见[安全](/security#网络暴露面)）。因此本地代理转发每个请求时（含 WebSocket 升级），都应当把 `X-Forwarded-Proto` 覆盖为 `https`、把 `X-Forwarded-Host` 覆盖为公网主机名，各只带一个值。对于在此之前发布的桌面端，它还把浏览器的 `Origin` 由 `https://<公网主机名>` 改写为 `http://<公网主机名>`；0.3.0 之前它不再改写 `Origin`，只发送这两个头；从 0.3.0 起，服务端不再接受改写后的 `http://` Origin。
 
 ## 认证与账号
 
@@ -272,7 +274,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `installed`：本服务器最近一次在那台机器上执行的安装，格式为 `{version, at}`；从未安装过则为 `null`。它保存在数据根目录下，因此重启、热推送和其他机器上的安装都不会使它丢失。它记录的是实际执行过的操作，并不核对远端状态，所以手动清空过的机器仍会显示为已安装，直到下一次安装把它纠正过来。安装失败不会留下任何记录。
 - `machineId`：机器自身的 id，由运行在那台机器上的服务器生成（记录在它的 `machine` 表中），共 16 个 base64url 字符。重命名、修改别名和重新安装都不会改变它，持久化引用应指向它。在那台机器上启动过服务器之前，它为 `null`，因为还没有任何东西生成过它。本服务器在与 `status` 同一次往返中获知它，并把它与安装记录存放在一起。同一主机的两个别名报告相同的 `machineId`。
 - `local`：标记本服务器所在的机器。由于应答请求的正是它，这条记录始终在列表中，始终显示为已安装且正在运行；它也永远不会成为安装目标：对它调用 `POST …/install` 返回 `409` `self_install`。
-- `socket`：本服务器对那台机器持有的 API 套接字，形如 `{state, since, detail?}`——握手完成后为 `connected`，拨号尚未结束时为 `dialling`，机器对握手回了状态码时为 `refused`，拨号本身失败时为 `failed`——`since` 是进入该状态的时刻，`detail` 在有话可说时携带传输层自己的原话。本地这条记录为 `null`；在有任何流索要过套接字之前同样为 `null`。它与 `connection` 一样，是关于本侧某个进程的事实；Machines 页读它，卡住的流就不必再去浏览器控制台里找。
+- `socket`：本服务器对那台机器持有的 API 套接字，形如 `{state, since, detail?}`——握手完成后为 `connected`，拨号尚未结束时为 `dialling`，机器对握手回了状态码时为 `refused`，它的服务端应答 HTTP 却始终不应答握手时为 `unanswered`，拨号本身失败时为 `failed`——`since` 是进入该状态的时刻，`detail` 在有话可说时携带传输层自己的原话。本地这条记录为 `null`；在有任何流索要过套接字之前同样为 `null`。它与 `connection` 一样，是关于本侧某个进程的事实；Machines 页读它，卡住的流就不必再去浏览器控制台里找。`unanswered` 说明那台机器的服务进程早于套接字：交给运行中服务端的更新只替换它的平台，从不替换接收升级请求的那个进程，于是机器报告的是当前构建，却仍然没有套接字：它运行的不是本服务器的版本，而远程机器必须与本服务器运行同一版本。Machines 页把它读作需要重启；再次拨号期间保持不变，一次握手完成后清除。
 - `status`：`{state, checkedAt, port?, detail?}`，其中 `state` 为 `running`、`stopped` 或 `unreachable`；从未探测过的机器为 `null`。没有单独的 ssh 状态。ssh 就是传输通道，连不上的机器即为 `unreachable`，`detail` 携带 OpenSSH 自己的报错信息。`GET` 从不主动探测，只报告最近一次的结果，因为每探测一台机器都要花费一次 ssh 往返，而列表本身只是配置文本。只有 `POST …/machines/probe` 会付出这些往返开销，而且只针对已安装的机器。
 
 ### 已连接机器的 API
@@ -296,7 +298,7 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 **流只走套接字。** `accept` 要求 `text/event-stream` 的请求，经本服务器对该机器持有的那条套接字转发；若把流经 HTTP 转发，每条流都要占住一条永不结束的响应——即 ssh 会话内的一条通道——每台机器、每条流各一条，正是套接字本应消除的那堆被占住的连接。因此当没有套接字能承载一条流时，代理自己作答，形状即上文的错误形状，浏览器随后按该流自己的退避（1 s 起倍增到 30 s，流打开后归零）重新发起它，而不是去要一个 HTTP 孪生：
 
 - `502` `machine_socket_refused`——机器对套接字握手回了状态码。这正是构建早于套接字的程序，或拒绝了本服务器的程序；该拒绝会被记住一分钟，这一分钟内的流直接作答而不再拨号，旧程序需要 API socket 能力才能使用这些 socket 代理流。
-- `502` `machine_socket_unavailable`——拨号失败。既未打开、也未在 10 s 内失败的拨号会被拆掉而不是继续等待，因此一次卡住的握手永远不能把它之后该机器的所有流堵在后面。此回答不被记忆：下一条流会重新拨号。
+- `502` `machine_socket_unavailable`——拨号失败。既未打开、也未在 10 s 内失败的拨号会被拆掉而不是继续等待，因此一次卡住的握手永远不能把它之后该机器的所有流堵在后面。此回答不被记忆：下一条流会重新拨号。拨号超时而机器的服务端在同一端口上应答 HTTP 时，错误信息是写给使用页面的人看的，前面不带机器 id：这台机器的版本不一致，请在 Machines 页点 Restart server，还不行就重新安装它。
 - `504` `machine_stream_not_opened`——套接字在，但机器 8 s 内未打开该流。那是热推把这条套接字留在了已 dispose 的 App 上：心跳让它看起来还活着，实则什么都不答。此时套接字在这里被拆掉，其上每一条流随之结束、由浏览器重新发起，下一条流拨向机器当前的程序。
 
 套接字属于拨出它的那条 ssh 会话，而不只属于机器 id：传输层重开会话时——掉线、重连——旧套接字被关闭，下一条流重新拨号，因此没有哪条套接字能比它所在的连接活得更久。机器自己的非流式回答（`403`、`404`）原样透传；只有上述三个码是代理自己的。
@@ -472,7 +474,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/projects/:projectId/model-oauth/start` | 发起流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
+| POST | `/api/projects/:projectId/model-oauth/start` | 发起流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl, mode}` |
 | GET | `/api/projects/:projectId/model-oauth/callback` | 供应商跳转回来的地址（`?flow=&code=`）：把授权码存到流程上，并返回一个 HTML 页面。`HEAD` 返回 405 |
 | GET | `/api/projects/:projectId/model-oauth/:flowId` | 轮询流程，兑换已存下的授权码并写入 key：`{status: pending\|done\|error, provider, error?}` |
 | POST | `/api/projects/:projectId/model-oauth/:flowId/code` | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
@@ -482,6 +484,8 @@ PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发�
 `GET /callback` 必须是例外。回环地址上的 OAuth 跳转，由供应商跳转到的那个浏览器接收，而它未必是发起流程的浏览器。比如桌面 shell 会在*系统*浏览器中打开授权页，而系统浏览器没有这个应用的源的 Cookie。因此只有这一条路径挂在会话校验之外，改用 flow id 鉴权：32 个随机字节，10 分钟内有效，且只允许存入一次。授权码只能存入发起这个流程的 Project，而且只有要求过回调的流程才接受：`manual` 流程一律拒绝，因为它从未拿到过回调 URL。
 
 回调能做的事还有第二重限制：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、写入 Project 模型，都发生在 `GET /:flowId`，也就是所有者自己的轮询里，仍在会话校验之后。除非所有者主动查询流程状态，否则任何 key 都进不了 Project；兑换失败也在那里以 `{status: error, error}` 报告，而不是显示在跳转页面上。回调周边的一切同样不在豁免之列：更长的路径、其他任何请求方法（这一路径本身的 `HEAD` 返回 405），以及另外三条同组路由，都仍然需要会话。
+
+回调 URL 以浏览器的[公共源](/security#网络暴露面)为准：浏览器访问服务器时用的地址，在受信任的代理之后则是代理报告的地址，因此经 Penguin Remote 访问的桌面端会跳回它的 `https://` 中继地址。供应商只会跳转到 HTTPS，或 `localhost`、`[::1]`、`127.x.x.x` 上的明文 HTTP；来自其他明文 HTTP 源的 `callback` 请求会以 `manual` 打开，返回中的 `mode` 写明流程实际以哪种模式打开。
 
 `mode: manual` 不发送回调 URL，授权页会显示一个一次性授权码，由用户手动粘贴回来，适用于跳转回不来的部署。无论由哪条路由兑换授权码，流程完成后都会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
 
@@ -1288,6 +1292,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 - `PUT /backend` 和 `POST /extension/pairings` 只能由已登录的本人操作：本机 API token 得到 `403` `human_required`。调用者不能选择的后端返回 `405` `not_supported`（普通成员要求 `builtin` 时返回 `403` `admin_required`），Agent 正在操作浏览器时切换返回 `409` `action_in_flight`。切换不会关闭任何标签页。
 - Agent 的调用使用本机 API token，其身份是管理员。这样的调用带有 `sessionId`（在请求体里，或 `GET`、`DELETE` 的查询参数里）时，服务器改按正在驱动该会话的那个人行事：发起该会话当前这轮运行的人，或定时任务的创建者，再不然是 Project 的所有者。Agent 驱动的就是这个人的 Chrome，从不使用其他用户的 Chrome。
 - `GET /extension` 和 `DELETE /extension/:id` 只能看到调用者自己的配对。配对码只能用一次，10 分钟内有效，输错五次即作废；新生成的配对码会取代调用者之前的那个。
+- 配对码附带的 `origin` 是扩展配对时连接的地址：浏览器的[公共源](/security#网络暴露面)，而不是请求的 `Origin` 头。
 
 后端无法驱动时，操作返回 `503` `browser_unavailable`，错误码旁带一个 `reason`。内置后端：`not_desktop`（没有桌面 shell）、`shell_unsupported`（shell 版本过旧，无法承载浏览器）或 `no_window`（没有窗口认领新标签页）。Chrome 后端：`extension_not_paired`、`extension_disconnected` 或 `extension_disabled`。不带 `reason` 时，错误信息会说明原因，例如用户暂停了扩展。在 `chrome` 上，用户收回的标签页返回 `409` `tab_released`；超出标签页范围的原始 CDP 返回 `403` `cdp_refused`，包括 `Target`、`Browser`、`Storage`、`Fetch`、`Extensions`、`Tethering` 和 `Security` 域，读写 Cookie、清除缓存或拦截请求的 `Network` 方法，以及 `DOM.setFileInputFiles` 和 `Page.setDownloadBehavior`。
 
@@ -1444,7 +1449,7 @@ export type ServerEvent =
 
 API 套接字是同一个 API 的第二种传输，供自带的 Web App 使用（PRFC-0011）：一个标签页一条套接字，每一帧是对既有端点的一次调用，每个长期的流是一次不结束的调用。上文没有任何东西是它特有的——HTTP 与套接字进入同一批路由，一次调用的授权、校验与应答与它的 HTTP 孪生完全一致。
 
-它有自己的 upgrade 路由：`GET /api/socket`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath()` 负责拼写）。握手沿用终端流的那一套——会话 Cookie 与同源的 `Origin`（或没有）——之后套接字以该 Cookie 命名的用户身份服务每次调用。它不创建、不列出、也不触碰任何终端，不涉及终端 id，因此也没有可伪造的 id。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
+它有自己的 upgrade 路由：`GET /api/socket`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath()` 负责拼写）。握手沿用终端流的那一套——会话 Cookie 与同源的 `Origin`（或没有）——之后套接字以该 Cookie 命名的用户身份服务每次调用，每次调用都以建立套接字时的[公共源](/security#网络暴露面)为地址，与 HTTP 请求一致。它不创建、不列出、也不触碰任何终端，不涉及终端 id，因此也没有可伪造的 id。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
 
 帧是 JSON 文本帧，id 由客户端分配、在套接字生命周期内唯一：
 

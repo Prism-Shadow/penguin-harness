@@ -1,13 +1,18 @@
 /**
- * Router + layout: sticky top bar, left sidebar (sticky column on desktop, overlay
- * panel on mobile), doc content, slim footer. basename comes from Vite's BASE_URL so
+ * Router + layout: sticky top bar, left sidebar (sticky column on desktop; on mobile an
+ * overlay panel under the site's links), doc content, slim footer. basename comes from Vite's BASE_URL so
  * the site works under the GitHub Pages subpath ("/<repo>/docs/"); a route change
  * scrolls to the top or to its hash target (useRouteScroll).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router";
-import { SiteFooter, useRouteScroll, useSearchHotkey } from "@prismshadow/penguin-ui/site";
-import { Nav } from "./components/nav";
+import {
+  SiteFooter,
+  useEscapeToClose,
+  useRouteScroll,
+  useSearchHotkey,
+} from "@prismshadow/penguin-ui/site";
+import { Nav, SiteMenu } from "./components/nav";
 import { Sidebar } from "./components/sidebar";
 import { DocSearch } from "./components/doc-search";
 import { S } from "./lib/strings";
@@ -37,10 +42,11 @@ function Layout() {
   useSearchHotkey(searchOpen, openSearchByKey);
   useRouteScroll(location);
 
-  // Any navigation closes the mobile sidebar.
+  // Any navigation closes the mobile sidebar, and so does Escape.
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname, hash, key]);
+  useEscapeToClose(menuOpen, () => setMenuOpen(false));
 
   return (
     <div className="flex min-h-full flex-col">
@@ -51,8 +57,11 @@ function Layout() {
       />
 
       {menuOpen && (
-        <div className="anim-fade fixed inset-x-0 top-14 bottom-0 z-30 overflow-y-auto border-t border-gray-200 bg-white px-6 py-6 lg:hidden dark:border-gray-800 dark:bg-gray-950">
-          <Sidebar onNavigate={() => setMenuOpen(false)} onOpenSearch={openSearch} />
+        <div className="anim-fade fixed inset-x-0 top-14 bottom-0 z-30 overflow-y-auto bg-white lg:hidden dark:bg-gray-950">
+          <SiteMenu onNavigate={() => setMenuOpen(false)} />
+          <div className="px-6 py-6">
+            <Sidebar onNavigate={() => setMenuOpen(false)} onOpenSearch={openSearch} />
+          </div>
         </div>
       )}
 

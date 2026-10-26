@@ -44,5 +44,6 @@ PenguinHarness 0.2.17 发布了。**Agent API 的流现在就是 Session 自己�
 - **Windows 桌面应用**：安装包现在用新证书签名，0.2.16 及更早版本的应用会拒绝这次更新。请先从 penguin.ooo/download 手动安装一次 0.2.17，之后的更新照常进行。
 - **Agent API 和 SDK 调用方**：流的格式变了，记录类型也改了名。服务器和 `@prismshadow/amsp` 要一起升级；[发布说明](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.17)写明了改动内容和应对方法。
 - **负责 TLS 终止的反向代理**：设置 `PENGUIN_TRUST_PROXY=1`，否则 Web App 的所有写操作都会被拒绝。代理配置见[发布说明](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.17)。
+- **远程机器**：远程机器必须和服务器是同一版本。版本不一致时，服务器连不上这台机器，机器上的对话也不会实时更新。升级服务器后，请在**机器管理**页面用**更新**或**全部更新**把每台机器升到同一版本。如果机器显示的版本已经一致却仍然连不上，先重启它的服务，还不行就重新安装。
 
 安装包见 [penguin.ooo/download](https://penguin.ooo/download)，完整变更见 [0.2.17 更新日志](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.17)。

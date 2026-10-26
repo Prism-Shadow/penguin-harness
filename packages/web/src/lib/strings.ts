@@ -149,6 +149,7 @@ export const zh = {
       failed: "失败",
       installedOnly: "已安装",
       behind: "有新版本",
+      restartNeeded: "需要重启",
       notConnected: "未连接",
       unreachable: "连不上",
       stopped: "已停止",
@@ -211,8 +212,12 @@ export const zh = {
       connected: "已连接",
       dialling: "拨号中",
       refused: "被拒绝",
+      unanswered: "连接不上",
       failed: "失败",
     },
+    /** Why a machine reads as needing a restart: the status pill's hover. */
+    restartNeededReason:
+      "这台机器的版本和当前不一致，对话不会自动刷新。请点「重启服务」；还不行就重新安装。",
     agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
@@ -4021,6 +4026,12 @@ Benchmark：
       missing: "这个对话所在的机器不在当前 Project 的机器列表中",
       hint: "对话保存在那台机器上，连接恢复后会自动加载。",
       details: "技术细节",
+    },
+    /** Above the composer while the conversation's machine reads as needing a restart. */
+    machineRestartNeeded: {
+      body: (alias: string) =>
+        `${alias} 的版本和当前不一致，这里的对话不会自动刷新。请到「机器管理」重启这台机器。`,
+      open: "去机器管理",
     },
     statsLabel: "统计信息",
     removeImage: "移除图片",

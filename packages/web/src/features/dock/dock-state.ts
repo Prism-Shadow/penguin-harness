@@ -332,12 +332,36 @@ export function setDockScope(next: string | null): void {
 }
 
 /**
- * The draft this scope was holding has become a real Session: its arrangement moves to
- * the new id. Called at the points that turn a draft into a Session (its send paths, and
- * a self-heal renaming a session id), not on any navigation away from the draft.
+ * The draft `from` has become a real Session (or a Session's id self-healed into a new one):
+ * its arrangement moves to the new id, never clobbering one the new id already has. Called at
+ * the points that turn a draft into a Session (its send paths, and a self-heal renaming a
+ * session id), not on any navigation away from the draft.
+ *
+ * Those points come after network round trips, and the person may have moved on meanwhile. True
+ * when they are still on `from` — its docks are the ones on screen, and `stillOpen` (the page
+ * that asked is still mounted) says it is the same page, not a new draft of the same Project
+ * reusing the scope: the docks follow to the new id, and the caller takes the route there too.
+ * False otherwise: the person stays where they are, the docks on screen are left alone, and
+ * `from`'s stored arrangement moves to the new id unless the page on screen is using it.
  */
-export function adoptDockScope(sessionId: string): void {
-  switchScope(sessionId, true);
+export function adoptDockScope(from: string, sessionId: string, stillOpen = true): boolean {
+  if (from === scope) {
+    if (!stillOpen) return false;
+    switchScope(sessionId, true);
+    return true;
+  }
+  const staged = scopes[from];
+  if (from === sessionId || staged === undefined || scopes[sessionId] !== undefined) return false;
+  const { [from]: _moved, ...rest } = scopes;
+  scopes = { ...rest, [sessionId]: staged };
+  writeScopes();
+  // Already on the new id, with nothing arranged there yet: what moved is what it shows.
+  if (sessionId === scope) {
+    layout = staged;
+    reconcileFullscreen();
+    notify();
+  }
+  return false;
 }
 
 function switchScope(target: string, mayHandOver: boolean): void {

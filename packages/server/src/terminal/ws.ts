@@ -19,12 +19,8 @@ import { format } from "node:url";
 import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
-import {
-  isOwnOrigin,
-  originTarget,
-  parseCookieHeader,
-  sessionCookies,
-} from "../auth/middleware.js";
+import { parseCookieHeader, sessionCookies } from "../auth/middleware.js";
+import { acceptsOrigin, publicOrigin } from "../http/public-origin.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { API_SOCKET_PATH } from "../api/types.js";
@@ -67,6 +63,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     if (!match && !apiSocket) return;
 
     let target: URL;
+    let streamUrl: URL;
     try {
       // IncomingMessage has no Fetch Request URL; Node formats its transport authority.
       if (!req.headers.host) return refuse(socket, 403, "Forbidden");
@@ -74,20 +71,21 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
       target = new URL(
         format({ protocol, host: req.headers.host, pathname: url.pathname, slashes: true }),
       );
-      const forwarded = req.headers["x-forwarded-proto"];
-      if (
-        req.headers.origin &&
-        !isOwnOrigin(
-          req.headers.origin,
-          originTarget(
-            target,
-            Array.isArray(forwarded) ? forwarded.join(",") : forwarded,
-            deps.trustProxy ?? false,
-          ),
-        )
-      ) {
+      const header = (name: string): string | undefined => {
+        const value = req.headers[name];
+        return Array.isArray(value) ? value.join(",") : value;
+      };
+      const forwarded = { proto: header("x-forwarded-proto"), host: header("x-forwarded-host") };
+      const trustProxy = deps.trustProxy ?? false;
+      if (!acceptsOrigin(req.headers.origin, target, forwarded, trustProxy)) {
         return refuse(socket, 403, "Forbidden");
       }
+      // The platform gets the public origin with the path and query: the API socket addresses
+      // every call it carries to that origin, so a route that builds a URL back to the App (an
+      // OAuth callback) sees the browser's scheme, host and port, as it does over HTTP.
+      streamUrl = new URL(publicOrigin(target, forwarded, trustProxy));
+      streamUrl.pathname = url.pathname;
+      streamUrl.search = url.search;
     } catch {
       return refuse(socket, 403, "Forbidden");
     }
@@ -107,7 +105,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
           // No terminal lookup: the socket carries the whole API as the cookie's user.
           const ref = apiSocketRef(authed.user.userId);
           return wss.handleUpgrade(req, socket, head, (ws) => {
-            platform.api.attachStream?.(ws, ref, url, deps.log);
+            platform.api.attachStream?.(ws, ref, streamUrl, deps.log);
           });
         }
         const manager = platform.api.terminals?.();
@@ -116,7 +114,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
           return refuse(socket, 404, "Not Found");
         }
         wss.handleUpgrade(req, socket, head, (ws) => {
-          platform.api.attachStream?.(ws, session, url, deps.log);
+          platform.api.attachStream?.(ws, session, streamUrl, deps.log);
         });
       })
       .catch((err: unknown) => {

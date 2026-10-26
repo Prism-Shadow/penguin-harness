@@ -36,8 +36,8 @@ Each authentication source has a `via` value recording how it was established:
 - `desktop`: the desktop app's own window
 - `setup`: the sign-in link on a fresh server
 - `cli`: the internal source stored for a session minted by `penguin auth token`
-- `remote`: a one-hour browser session issued to Penguin Remote from the local API token
-- `token`: the local API token’s authority, presented as a Bearer header or an exchanged Remote cookie
+- `remote`: a one-hour browser session issued to Penguin Remote from the local API token; it counts as a person's sign-in
+- `token`: the local API token itself, presented as a Bearer header
 
 ## Claim a fresh server
 
@@ -121,7 +121,7 @@ Penguin Remote may exchange that local ownership for a browser session by sendin
 
 The response contains a new raw `penguin_session` token for the built-in administrator, with a fixed one-hour expiry and an internal `via: remote` marker. It is returned with `Cache-Control: no-store`; the Harness response does not set a Cookie. Penguin Remote's local proxy must set the Cookie on its public-domain response and must treat the returned token as a credential: do not log, cache, or expose it elsewhere. The endpoint does not enable CORS.
 
-The public API reports this session as `token`: exchanging a token preserves its restrictions on human-only writes and its Agent identity rules. To change an Agent’s exposure, browser backend, or browser pairing, sign out and sign in with a password. The Remote proxy must preserve that password login instead of replacing it with another exchanged session.
+The public API reports this session as `remote`, and it counts as a person's sign-in: like a password sign-in, it can change an agent's exposure, choose the browser backend and pair a browser. It opens nothing reserved for the desktop app's own window, and changing the password from it still asks for the current one. Because the session is minted from the local API token, an agent that holds the token can exchange it for one and make those changes too. As above, the token's limits are not a boundary; the sandbox is.
 
 A script that needs a session of its own mints one. A session is a row in the data root's `web.db`, so the CLI writes one:
 
@@ -199,7 +199,13 @@ Model API keys are the one secret that cannot be reduced further: they must reac
 
 ### Network surface
 
-The server binds `127.0.0.1` by default. Exposing it (`HOST=0.0.0.0`) is a deployment decision that belongs behind TLS termination. Such a deployment needs `PENGUIN_TRUST_PROXY=1`, the external `Host` header passed through unchanged, and `x-forwarded-proto` overwritten with the single value `https`. If any of these is missing, every browser write, signing in included, is refused with `403` `cross_origin_write`.
+The server binds `127.0.0.1` by default. Exposing it (`HOST=0.0.0.0`) is a deployment decision that belongs behind TLS termination. Such a deployment needs `PENGUIN_TRUST_PROXY=1`, `x-forwarded-proto` overwritten with `https`, and the external host passed through, either as an unchanged `Host` header or by overwriting `x-forwarded-host` with it. If any of these is missing, every browser write, signing in included, is refused with `403` `cross_origin_write`.
+
+The address the browser is on is the server's **public origin**. With the proxy trusted, its scheme comes from `x-forwarded-proto` and its host from `x-forwarded-host`, else `Host`, taking the first value of each; otherwise they are the connection's own scheme and the `Host` header. The origin check below compares a write's `Origin` with it, and every address the server hands back to a browser is built on it: a model provider's authorization redirect, and the address a Chrome extension pairs with.
+
+The desktop app's embedded server trusts the forwarded headers. It listens on loopback only, so only processes on the same machine reach it, and a web page cannot set those headers on a cross-origin request (that takes a preflight the server never grants) or on a WebSocket handshake. From outside it is reached only through the Penguin Remote relay, which terminates TLS in front of it. The relay's last hop, the Penguin Remote client on the user's machine, should overwrite `X-Forwarded-Proto` with `https` and `X-Forwarded-Host` with the public host, each as a single value, so the server sees the browser's `https://` address.
+
+During a transition, a write whose `Origin` is the request's own origin, the connection's scheme with its `Host`, passes too. Desktops released before the public origin compare `Origin` with that alone, so a relay hop, today the Penguin Remote client, rewrites the browser's `https://` Origin to `http://` when it names the tunnel's own host. Before 0.3.0 the client stops rewriting `Origin` and sends the two forwarded headers instead, and in 0.3.0 the server accepts the public origin alone.
 
 The API answers only under its canonical application host, which keeps user-generated preview content in a different browser origin from the application's cookies.
 

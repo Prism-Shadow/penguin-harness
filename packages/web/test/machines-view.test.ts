@@ -13,6 +13,10 @@
  * installed, failed — and says nothing while a job's stepper, or the retry status of a machine
  * being brought back, already does.
  *
+ * A connected machine whose server answers and never takes the API socket (its socket reads
+ * `unanswered`) needs a restart, on this server's build all the same; a job on it still speaks
+ * first, and a handshake that completes makes it ready again.
+ *
  * The retry status of a machine being brought back:
  * - Given an attempt running, it is trying the one past the failures so far, of how many.
  * - Given a wait, it says which attempt failed (or, before any, that the connection was lost),
@@ -240,6 +244,21 @@ describe("readMachine", () => {
       message: S.machines.check.ssh["host-not-found"]("nas"),
       canReplaceProgram: false,
     });
+  });
+
+  it("a connected machine whose server never takes the socket needs a restart, whatever build it reports, until a handshake completes", () => {
+    const nas: MachineInfo = {
+      ...carrying("nas"),
+      connection: { pid: 1 },
+      status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
+      socket: { state: "unanswered", since: INSTALLED.at },
+    };
+    expect(outOfDate(nas, "9.9.9")).toBe(false);
+    expect(readMachine(nas, null, "9.9.9")).toEqual({ kind: "restartNeeded" });
+    expect(readingTone({ kind: "restartNeeded" })).toBe("attention");
+    expect(readMachine(nas, job(), "9.9.9").kind).toBe("working");
+    const restarted: MachineInfo = { ...nas, socket: { state: "connected", since: INSTALLED.at } };
+    expect(readMachine(restarted, null, "9.9.9")).toEqual({ kind: "ready", port: 7364 });
   });
 
   it("a machine on another build is behind while its server runs, and stopped once it is stopped", () => {

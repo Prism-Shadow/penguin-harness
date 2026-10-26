@@ -22,10 +22,12 @@
  * removes one. An agent opening a page or starting to act for the conversation on screen brings
  * the browser's dock tab up — once per conversation, so hiding it again is respected.
  *
- * And it keeps a tab while the browser is on screen: a panel showing no tab, the first time,
- * after a restart or a reload of this window, or after the last tab closed, opens the new-tab
- * page at once. The homepage when one is set, a blank page otherwise. Out of sight it opens
- * nothing, so an agent closing the last tab leaves none until the panel is shown again.
+ * And it keeps a tab while the conversation on screen shows the browser in its own docks (a
+ * conversation switched to does not inherit the panel from the one left): a panel showing no
+ * tab, the first time, after a restart or a reload of this window, or after the last tab closed,
+ * opens the new-tab page at once. The homepage when one is set, a blank page otherwise. Out of
+ * sight it opens nothing, so an agent closing the last tab leaves none until the panel is shown
+ * again.
  *
  * And it says once when the browser gets too heavy: each load warning the server starts giving
  * raises one toast, wherever the user is in the app; the toolbar's mark carries it after that.
@@ -408,14 +410,20 @@ function LayerHost() {
 
   // The new-tab page for a panel on screen with no tab. The rule reads the store as it is now,
   // not as this render saw it: a second run of the effect for the same render (StrictMode) then
-  // finds the first run's request on its way. A request that failed is not repeated until the
-  // panel goes and comes back or a tab opens; a window that cannot open tabs would otherwise ask,
-  // and say it failed, again and again.
+  // finds the first run's request on its way. Whether the panel is on screen is asked of the
+  // docks too, as they stand now: a conversation switch moves this store and the docks together,
+  // while the outgoing conversation's panel still holds a visible slot until the render after.
+  // A request that failed is not repeated until the panel goes and comes back or a tab opens; a
+  // window that cannot open tabs would otherwise ask, and say it failed, again and again.
   const panelOnScreen = slotShown && windowShown;
   const newTabPageFailed = useRef<string | null>(null);
   useEffect(() => {
     if (!panelOnScreen || activeTab(state) !== null) newTabPageFailed.current = null;
-    if (newTabPageFailed.current === state.scope || !wantsNewTabPage(browserState(), panelOnScreen))
+    const onScreen = {
+      conversation: currentDockScope(),
+      browserShown: panelOnScreen && isTabShown(BROWSER_TAB),
+    };
+    if (newTabPageFailed.current === state.scope || !wantsNewTabPage(browserState(), onScreen))
       return;
     const scope = state.scope;
     void openBrowserTab().then((tab) => {

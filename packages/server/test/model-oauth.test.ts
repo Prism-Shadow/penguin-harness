@@ -50,7 +50,7 @@ import {
   ModelOAuthService,
   openedMode,
 } from "../src/services/model-oauth-service.js";
-import { requestOrigin } from "../src/http/routes/model-oauth.js";
+import { publicOrigin } from "../src/http/public-origin.js";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchFake } from "./fixtures/fetch.js";
 import { sessionRow } from "./fixtures/session.js";
@@ -361,25 +361,25 @@ describe("flow store", () => {
 
 describe("callback origin", () => {
   it("follows the request's own URL when no proxy is trusted", () => {
-    expect(requestOrigin("http://192.168.1.4:7364/api/x", {}, false)).toBe(
+    expect(publicOrigin("http://192.168.1.4:7364/api/x", {}, false)).toBe(
       "http://192.168.1.4:7364",
     );
     // Untrusted headers are ignored outright, so a caller cannot choose where the redirect lands.
     expect(
-      requestOrigin("http://192.168.1.4:7364/api/x", { proto: "https", host: "evil.test" }, false),
+      publicOrigin("http://192.168.1.4:7364/api/x", { proto: "https", host: "evil.test" }, false),
     ).toBe("http://192.168.1.4:7364");
   });
 
   it("honours the forwarded pair once the deployment trusts it, taking the client-facing hop", () => {
     expect(
-      requestOrigin(
+      publicOrigin(
         "http://127.0.0.1:7364/api/x",
         { proto: "https, http", host: "penguin.example, inner" },
         true,
       ),
     ).toBe("https://penguin.example");
     // Trusted but absent: the request's own URL still answers.
-    expect(requestOrigin("http://127.0.0.1:7364/api/x", {}, true)).toBe("http://127.0.0.1:7364");
+    expect(publicOrigin("http://127.0.0.1:7364/api/x", {}, true)).toBe("http://127.0.0.1:7364");
   });
 });
 

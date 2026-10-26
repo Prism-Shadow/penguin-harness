@@ -120,6 +120,7 @@ export const en: Strings = {
       failed: "Failed",
       installedOnly: "Installed",
       behind: "Update available",
+      restartNeeded: "Restart needed",
       notConnected: "Not connected",
       unreachable: "Unreachable",
       stopped: "Stopped",
@@ -174,8 +175,11 @@ export const en: Strings = {
       connected: "Connected",
       dialling: "Dialling",
       refused: "Refused",
+      unanswered: "Can't connect",
       failed: "Failed",
     },
+    restartNeededReason:
+      "This machine is on a different version, so its conversations won't update by themselves. Click Restart server; if that doesn't help, reinstall it.",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
@@ -419,7 +423,7 @@ export const en: Strings = {
     /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "New terminal",
     /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
-    shellEntry: "Command-line terminal",
+    shellEntry: "Terminal",
     /** The terminal panel's strip of shells, for assistive technology. */
     tabsLabel: "Terminal tabs",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
@@ -3838,6 +3842,11 @@ Scenarios:
       missing: "This conversation's machine is not on this Project's machine list",
       hint: "The conversation is kept on that machine and loads as soon as the connection is back.",
       details: "Technical details",
+    },
+    machineRestartNeeded: {
+      body: (alias: string) =>
+        `${alias} is on a different version, so this conversation won't update by itself. Go to Machines and restart it.`,
+      open: "Go to Machines",
     },
     statsLabel: "Stats",
     removeImage: "Remove image",

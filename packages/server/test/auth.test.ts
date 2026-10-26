@@ -437,7 +437,7 @@ describe("auth", () => {
     }
   });
 
-  it("uses forwarded schemes only behind a trusted proxy and rejects malformed values", async () => {
+  it("uses forwarded schemes only behind a trusted proxy, the first value, and ignores malformed ones", async () => {
     for (const trustProxy of [false, true]) {
       const app = new Hono();
       app.onError(handleError);
@@ -453,10 +453,11 @@ describe("auth", () => {
             "content-type": "application/json",
           },
         });
-      // Node sees the HTTP proxy hop; its sanitized external scheme is authoritative only
-      // when the deployment explicitly trusts that proxy.
+      // Node sees the HTTP proxy hop; the external scheme it reports is authoritative only
+      // when the deployment explicitly trusts that proxy, and in a chain the first value is the
+      // hop facing the browser. A value that is no scheme leaves the connection's own (http).
       expect((await write("https")).status).toBe(trustProxy ? 204 : 403);
-      expect((await write("https,http")).status).toBe(403);
+      expect((await write("https,http")).status).toBe(trustProxy ? 204 : 403);
       expect((await write("ftp")).status).toBe(403);
       expect((await write("http", "http://example.com:8443")).status).toBe(403);
     }

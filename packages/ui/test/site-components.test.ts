@@ -16,13 +16,18 @@
  * - The docs sidebar marks the current page, lists sub-pages under their parent, and leads with
  *   a search button that names its shortcut.
  * - A code card mutes `#` comment lines only, and its copy button names the action.
+ * - The site bar lists every page once, in the shared order, under the host's words, and marks
+ *   the landing page's download page current when it is opened with a trailing slash.
  */
 import { createElement as h } from "react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { SiteCodeCard } from "../src/components/site/site-code";
 import { SiteFooter } from "../src/components/site/site-footer";
+import { SiteNavLinks } from "../src/components/site/site-header";
 import type { SiteLinkProps } from "../src/components/site/site-header";
+import { landingPageAt, siteNavLinks } from "../src/components/site/site-nav";
+import type { SiteNavLabels } from "../src/components/site/site-nav";
 import { highlightSiteCode } from "../src/components/site/site-highlight";
 import { extractToc } from "../src/components/site/markdown-text";
 import { SITE_DOC_REMARK_PLUGINS, SiteMarkdown } from "../src/components/site/site-markdown";
@@ -217,5 +222,39 @@ describe("a code card", () => {
     expect(html.match(/data-comment="true"/g)).toHaveLength(1);
     expect(html).toMatch(/data-comment="true"[^>]*># Linux</);
     expect(html).toMatch(/<button[^>]*>.*<span>Copy<\/span><\/button>/);
+  });
+});
+
+describe("the site bar", () => {
+  const labels: SiteNavLabels = {
+    home: "Home",
+    blog: "Blog",
+    download: "Download",
+    amsp: "AMSP",
+    docs: "Docs",
+    gallery: "Gallery",
+    github: "GitHub",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
+  };
+
+  it("lists every page in order and marks /download/ as the download page", () => {
+    const links = siteNavLinks({ siteRoot: "/", labels, current: landingPageAt("/download/") });
+    const html = renderStatic(h(SiteNavLinks, { links }));
+    const anchors = [...html.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => ({
+      text,
+      current: attrs!.includes('aria-current="page"'),
+    }));
+    expect(anchors.map((anchor) => anchor.text)).toEqual([
+      "Home",
+      "Blog",
+      "Download",
+      "AMSP",
+      "Docs",
+      "Gallery",
+    ]);
+    expect(anchors.filter((anchor) => anchor.current).map((anchor) => anchor.text)).toEqual([
+      "Download",
+    ]);
   });
 });
