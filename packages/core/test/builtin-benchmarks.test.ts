@@ -284,10 +284,7 @@ describe("built-in Benchmarks", () => {
         expect(statement).toContain("checkout on branch `main`");
         expect(statement).toContain("--ak run_timeout=task --ak max_turns=-1");
         expect(statement).toContain("no turn limit");
-        expect(statement).toContain(`benchmarks/gdpevo-${domain}/tasks/train_tasks`);
-        expect(statement).toContain("one continuing Agent Session and container (6 hours)");
-        expect(statement).toContain("--ak agent_state_tar=<frozen-state.tar.gz>");
-        expect(statement).toContain("never combine Train and Test");
+        expect(statement).toContain("Report Train and Test separately");
       }
     }
     expect(await exists(path.join(dir(), "penguinharness-benchmark-gdpevo-train"))).toBe(false);

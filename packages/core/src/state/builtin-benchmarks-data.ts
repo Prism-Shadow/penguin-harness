@@ -678,7 +678,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-CRM",
     description: "GDPEVO CRM: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 客户关系管理：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.2",
+    version: "2026.10.26.3",
     repoDir: "gdpevo-crm",
     ref: "main",
     source: "GDPevo (converted to Harbor tasks)",
@@ -692,11 +692,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     downloads: "Docker Hub and PyPI",
     runTimeout: "task",
     maxTurns: -1,
-    note:
-      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-crm/README.md). ` +
-      "Train at `benchmarks/gdpevo-crm/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
-      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
-      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
+    note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-crm/README.md). Report Train and Test separately.`,
     cases: [
       {
         task: "test_tasks/tg003-test-001",
@@ -704,7 +700,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are a support operations analyst resolving a new offline service ticket batch.",
         category: "CRM/service-tickets (task_group_003)/test",
-        upstreamTask: "task group `task_group_003`, test task `test_001`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -713,7 +708,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         title: "Support Console: test task 002",
         summary: "You are triaging a new contact-center queue for mobile support.",
         category: "CRM/service-tickets (task_group_003)/test",
-        upstreamTask: "task group `task_group_003`, test task `test_002`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -723,7 +717,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are an enterprise support lead preparing the response package fields for a strategic client export complaint.",
         category: "CRM/service-tickets (task_group_003)/test",
-        upstreamTask: "task group `task_group_003`, test task `test_003`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -733,7 +726,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are the executive support lead building a priority board for the next customer-risk review.",
         category: "CRM/service-tickets (task_group_003)/test",
-        upstreamTask: "task group `task_group_003`, test task `test_004`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -743,7 +735,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are a support QA analyst auditing proposed CRM updates before they are posted.",
         category: "CRM/service-tickets (task_group_003)/test",
-        upstreamTask: "task group `task_group_003`, test task `test_005`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -754,7 +745,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-ERP",
     description: "GDPEVO ERP: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 企业资源管理：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.2",
+    version: "2026.10.26.3",
     repoDir: "gdpevo-erp",
     ref: "main",
     source: "GDPevo (converted to Harbor tasks)",
@@ -768,11 +759,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     downloads: "Docker Hub and PyPI",
     runTimeout: "task",
     maxTurns: -1,
-    note:
-      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-erp/README.md). ` +
-      "Train at `benchmarks/gdpevo-erp/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
-      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
-      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
+    note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-erp/README.md). Report Train and Test separately.`,
     cases: [
       {
         task: "test_tasks/tg005-test-001",
@@ -780,7 +767,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "Finance close request: prepare the April 2025 reimbursement close decision for the travel reimbursement batch below.",
         category: "ERP/expense-control (task_group_005)/test",
-        upstreamTask: "task group `task_group_005`, test task `test_001`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -790,7 +776,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are preparing the April 2025 vendor intake exception board for finance control.",
         category: "ERP/expense-control (task_group_005)/test",
-        upstreamTask: "task group `task_group_005`, test task `test_002`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -800,7 +785,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are preparing the April 2025 prepaid close and GL reconciliation package for the controller.",
         category: "ERP/expense-control (task_group_005)/test",
-        upstreamTask: "task group `task_group_005`, test task `test_003`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -810,7 +794,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are preparing a payment release board for a mixed AP run that includes vendor invoices and employee reimbursement clearing bills.",
         category: "ERP/expense-control (task_group_005)/test",
-        upstreamTask: "task group `task_group_005`, test task `test_004`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -820,7 +803,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "The controller needs a month-end exception report for the April 2025 close. Combine unreconciled employee reimbursement exposure with prepaid-to-GL variance exposure using the shared ERP finance API at the base URL provided by the runner.",
         category: "ERP/expense-control (task_group_005)/test",
-        upstreamTask: "task group `task_group_005`, test task `test_005`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -831,7 +813,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-Finance",
     description: "GDPEVO Finance: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 金融：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.2",
+    version: "2026.10.26.3",
     repoDir: "gdpevo-finance",
     ref: "main",
     source: "GDPevo (converted to Harbor tasks)",
@@ -845,18 +827,13 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     downloads: "Docker Hub and PyPI",
     runTimeout: "task",
     maxTurns: -1,
-    note:
-      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-finance/README.md). ` +
-      "Train at `benchmarks/gdpevo-finance/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
-      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
-      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
+    note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-finance/README.md). Report Train and Test separately.`,
     cases: [
       {
         task: "test_tasks/tg010-test-001",
         title: "Asteria Investment Office: test task 001",
         summary: "You are supporting the Asteria Investment Office credit desk.",
         category: "Finance/portfolio-risk (task_group_010)/test",
-        upstreamTask: "task group `task_group_010`, test task `test_001`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -866,7 +843,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are preparing the expanded international equity correlation review for Asteria portfolio PF-INT-ORION.",
         category: "Finance/portfolio-risk (task_group_010)/test",
-        upstreamTask: "task group `task_group_010`, test task `test_002`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -876,7 +852,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are supporting Asteria Investment Office's CIO desk with the Q3 2026 active allocation view refresh.",
         category: "Finance/portfolio-risk (task_group_010)/test",
-        upstreamTask: "task group `task_group_010`, test task `test_003`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -886,7 +861,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are preparing the risk-board JSON for Asteria Investment Office's PF-MA-CYGNUS portfolio.",
         category: "Finance/portfolio-risk (task_group_010)/test",
-        upstreamTask: "task group `task_group_010`, test task `test_004`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -895,7 +869,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         title: "Asteria Investment Office: test task 005",
         summary: "Prepare the compact CIO committee decision JSON for PF-MA-VEGA.",
         category: "Finance/portfolio-risk (task_group_010)/test",
-        upstreamTask: "task group `task_group_010`, test task `test_005`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -906,7 +879,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-Healthcare",
     description: "GDPEVO Healthcare: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 医疗：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.2",
+    version: "2026.10.26.3",
     repoDir: "gdpevo-healthcare",
     ref: "main",
     source: "GDPevo (converted to Harbor tasks)",
@@ -920,11 +893,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     downloads: "Docker Hub and PyPI",
     runTimeout: "task",
     maxTurns: -1,
-    note:
-      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-healthcare/README.md). ` +
-      "Train at `benchmarks/gdpevo-healthcare/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
-      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
-      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
+    note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-healthcare/README.md). Report Train and Test separately.`,
     cases: [
       {
         task: "test_tasks/tg014-test-001",
@@ -932,7 +901,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "Northstar Health Plan needs a UM nurse reviewer disposition for the routine pediatric speech therapy queue item CASE-TE-001.",
         category: "Healthcare/payer-ops (task_group_014)/test",
-        upstreamTask: "task group `task_group_014`, test task `test_001`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -942,7 +910,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "Northstar Health Plan needs a pharmacy appeals coordinator disposition for case APPEAL-TE-002.",
         category: "Healthcare/payer-ops (task_group_014)/test",
-        upstreamTask: "task group `task_group_014`, test task `test_002`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -952,7 +919,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "Northstar Health Plan needs a payment integrity correction packet for outpatient knee arthroscopy claim `CLAIM-TE-003` as of the June 10, 2026 reporting queue. The requester is a payment integrity analyst who needs the claim repriced against the applicable benchmark and returned as structured JSON for correction routing.",
         category: "Healthcare/payer-ops (task_group_014)/test",
-        upstreamTask: "task group `task_group_014`, test task `test_003`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -962,7 +928,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "Northstar Health Plan needs the final peer-to-peer closure summary for cardiac PET MPI authorization case P2P-TE-004.",
         category: "Healthcare/payer-ops (task_group_014)/test",
-        upstreamTask: "task group `task_group_014`, test task `test_004`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -972,7 +937,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "Northstar Health Plan's daily UM-finance huddle needs the mixed operations queue triaged for `QUEUE-TE-005` as of `2026-06-11`.",
         category: "Healthcare/payer-ops (task_group_014)/test",
-        upstreamTask: "task group `task_group_014`, test task `test_005`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -983,7 +947,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-Legal",
     description: "GDPEVO Legal: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 法务：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.2",
+    version: "2026.10.26.3",
     repoDir: "gdpevo-legal",
     ref: "main",
     source: "GDPevo (converted to Harbor tasks)",
@@ -997,11 +961,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     downloads: "Docker Hub and PyPI",
     runTimeout: "task",
     maxTurns: -1,
-    note:
-      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-legal/README.md). ` +
-      "Train at `benchmarks/gdpevo-legal/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
-      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
-      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
+    note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-legal/README.md). Report Train and Test separately.`,
     cases: [
       {
         task: "test_tasks/tg018-test-001",
@@ -1009,7 +969,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "Today is July 14, 2025. You are closing Judge Sutton's Madison County, Arkansas criminal sentencing docket for the clerk's office.",
         category: "Legal/court-clerk (task_group_018)/test",
-        upstreamTask: "task group `task_group_018`, test task `test_001`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -1019,7 +978,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are closing out the March 24, 2027 traffic hearing batch for Oregon 27th Judicial District, Clatsop County citations OR27-TR-2201, OR27-TR-2208, and OR27-TR-2219.",
         category: "Legal/court-clerk (task_group_018)/test",
-        upstreamTask: "task group `task_group_018`, test task `test_002`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -1029,7 +987,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are the deputy clerk preparing a Gloucester County Circuit Court post-sentencing packet for a DUI appeal.",
         category: "Legal/court-clerk (task_group_018)/test",
-        upstreamTask: "task group `task_group_018`, test task `test_003`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -1039,7 +996,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are closing Judge Mercer's Lake County Circuit Court criminal docket from June 18, 2025.",
         category: "Legal/court-clerk (task_group_018)/test",
-        upstreamTask: "task group `task_group_018`, test task `test_004`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -1049,7 +1005,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are the deputy clerk preparing a Hampton Circuit Court financial and supervision packet for two post-disposition matters:",
         category: "Legal/court-clerk (task_group_018)/test",
-        upstreamTask: "task group `task_group_018`, test task `test_005`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -1060,7 +1015,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-DataAnalysis",
     description: "GDPEVO DataAnalysis: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 数据分析：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.2",
+    version: "2026.10.26.3",
     repoDir: "gdpevo-data-analysis",
     ref: "main",
     source: "GDPevo (converted to Harbor tasks)",
@@ -1074,11 +1029,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     downloads: "Docker Hub and PyPI",
     runTimeout: "task",
     maxTurns: -1,
-    note:
-      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-data-analysis/README.md). ` +
-      "Train at `benchmarks/gdpevo-data-analysis/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
-      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
-      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
+    note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-data-analysis/README.md). Report Train and Test separately.`,
     cases: [
       {
         task: "test_tasks/tg024-test-001",
@@ -1086,7 +1037,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are preparing the Q4 2025 Data Reliability portfolio mix review for the Data Platform and Observability teams.",
         category: "Data analysis/portfolio-analytics (task_group_024)/test",
-        upstreamTask: "task group `task_group_024`, test task `test_001`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -1096,7 +1046,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are reviewing reliability and security SLA aging for the engineering portfolio environment.",
         category: "Data analysis/portfolio-analytics (task_group_024)/test",
-        upstreamTask: "task group `task_group_024`, test task `test_002`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -1105,7 +1054,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         title: "Engineering Portfolio Analytics: test task 003",
         summary: "You are preparing a release-readiness assessment for release REL-ZEPHYR-2026-03.",
         category: "Data analysis/portfolio-analytics (task_group_024)/test",
-        upstreamTask: "task group `task_group_024`, test task `test_003`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -1115,7 +1063,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are preparing the Q4 2025 Integrations and Billing portfolio mix review across the Integrations, Billing, API Foundations, and Revenue Platform teams.",
         category: "Data analysis/portfolio-analytics (task_group_024)/test",
-        upstreamTask: "task group `task_group_024`, test task `test_004`",
         cpus: 1,
         memoryMb: 2048,
       },
@@ -1125,7 +1072,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
         summary:
           "You are running an Edge Delivery SLA triage review for reliability and security work.",
         category: "Data analysis/portfolio-analytics (task_group_024)/test",
-        upstreamTask: "task group `task_group_024`, test task `test_005`",
         cpus: 1,
         memoryMb: 2048,
       },
