@@ -11,4 +11,4 @@
 
 GDPEVO 初始不带评估记录，训练与测试分别计分。所有内置 Benchmark 的链接与 checkout 说明统一使用 Benchmark 仓库的 `main` 分支，移除了每个 Benchmark 的 `ref` 字段和固定源码 commit。保留了已有 Project 的 Benchmark。通用包导出脚本导出了同样的定义。
 
-六个 GDPEVO 领域保留原始数据集的上游地址和 Apache-2.0 许可证。官网清单在同一来源下列出六个领域 ID，原有一致性测试与更新后的清单对齐。上游信息、Agent 网络模式、时间限制和轮数上限保持必填，CPU 和内存信息保持选填。
+六个 GDPEVO 领域保留原始数据集的上游地址和 Apache-2.0 许可证。官网清单在同一来源下列出六个领域 ID，原有一致性测试与更新后的清单对齐。除删除的 `ref` 外，Benchmark 层字段保持原来的必填或选填状态。GDPEVO 填写来源、禁用共享网络、说明最终评分器，并列出 Docker Hub、Debian 软件包源和 PyPI 这些下载来源。Case 的摘要、分类、CPU 和内存信息保持选填。
