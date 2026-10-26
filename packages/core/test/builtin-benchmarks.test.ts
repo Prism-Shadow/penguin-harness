@@ -7,9 +7,16 @@
  *   origin `builtin`, and that the manifest reader takes as written.
  * - Every built-in's manifest is a plain Benchmark manifest: its id, title, description, a date
  *   version, status, runs and origin `builtin`, nothing that marks how its cases run.
- * - Every built-in case is one Harbor task: its directory names the task after `CASE-NNN-` within
- *   the API's id rules; its statement links the task's folder and its rubric is worth 100 points.
- * - The Secs list in A to E order, with titles matching their descriptions.
+ * - Every case is one Harbor task: its directory names the task after `CASE-NNN-` within the
+ *   API's id rules; its statement links the task's folder in the repository, the repository's
+ *   rules for running a task and, where the repository has them, the measured results, and
+ *   launches that same task with its caps — the time-budget sentence word for word where the
+ *   benchmark's measured runs told the agent its budget, the no-network line only for deep-swe
+ *   and GDPevo (whose gold answers are public), and the shared-network line for every other
+ *   benchmark, whose tasks have a public agent phase, as the repository's rules allow; its
+ *   rubric is worth 100 points.
+ * - The Secs list in A to E order, each description opening by naming the original benchmark;
+ *   every built-in's description names the original its cases cite as their source.
  * - Six GDPEVO domains list their test tasks using main, with separate training instructions
  *   and no sample scores.
  * - Provisioning again writes nothing; a directory already under an id, built-in or the
@@ -17,7 +24,7 @@
  * - A write that fails part-way leaves neither its directory nor staging debris, and the error
  *   reaches the caller.
  * - Initializing or loading default_agent never writes into benchmarks/.
- * - All built-in benchmark links use the benchmark repository's main branch.
+ * - All built-in benchmark links and launch checkouts use the benchmark repository's main branch.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -177,7 +184,7 @@ describe("built-in Benchmarks", () => {
     }
   });
 
-  it("every built-in case names one Harbor task, links its folder and has a rubric worth 100 points", async () => {
+  it("every case names one Harbor task: its statement links that task's folder and the repository's run rules, and launches that same task with its caps; its rubric is worth 100 points", async () => {
     await provision();
 
     for (const bench of BUILTIN_BENCHMARKS) {
@@ -190,13 +197,40 @@ describe("built-in Benchmarks", () => {
         const statement = await readCase(bench.id, caseId, "statement");
         expect(statement, caseId).toMatch(/^# \S/);
 
-        const taskFolder = `benchmarks/${bench.repoDir}/tasks`;
+        // The launch runs this task, from its benchmark's folder in the repository.
+        const launch = /harbor run -p (benchmarks\/([^/\s]+)\/tasks) -i (\S+) /.exec(statement);
+        expect(launch?.[3], caseId).toBe(task);
+        const [, taskFolder] = launch!;
         expect(statement, caseId).toMatch(
           new RegExp(
             `^- Task: \`${quote(task)}\` in https://\\S+/tree/[^/\\s]+/${quote(`${taskFolder}/${task}`)}$`,
             "m",
           ),
         );
+        expect(statement, caseId).toContain(
+          `--ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} `,
+        );
+        // The time budget the measured runs told the agent, as one shell word, and only there.
+        const budget = /^ {2}--ak time_budget_note='([^']*)' \\$/m.exec(statement)?.[1];
+        expect(budget, caseId).toBe(bench.timeBudgetNote);
+        // The repository's rules for running a task, and its measured results where it has them.
+        expect(statement, caseId).toMatch(
+          /https:\/\/\S+\/blob\/[^/\s]+\/README\.md#running-a-task-for-agents/,
+        );
+        expect(/https:\/\/\S+\/blob\/[^/\s]+\/results\/\S+/.test(statement), caseId).toBe(
+          bench.results !== undefined,
+        );
+        // The network lines the repository's rules call for, and only those: a no-network
+        // benchmark allows its model's host and never joins the shared network, which every
+        // task with a public agent phase joins. GDPevo's gold answers are public, so its agent
+        // phase must not reach the internet.
+        const offline = bench.agentNetwork === "no-network";
+        expect(statement.includes("--allow-agent-host "), caseId).toBe(offline);
+        expect(
+          statement.includes("--extra-docker-compose tools/docker/shared-network.yaml"),
+          caseId,
+        ).toBe(bench.sharedNetwork);
+
         const rubric = await readCase(bench.id, caseId, "rubric");
         const points = [...rubric.matchAll(/^- (\d+) pts:/gm)].map((m) => Number(m[1]));
         expect(
@@ -207,9 +241,10 @@ describe("built-in Benchmarks", () => {
     }
   });
 
-  it("the Secs list in A to E order, with titles matching their descriptions", async () => {
+  it("the Secs list in A to E order, and every description names the original benchmark its cases cite", async () => {
     await provision();
 
+    const firstWord = (text: string) => text.split(/[\s,(]/)[0]!;
     const letters: string[] = [];
     for (const id of BUILTIN_IDS) {
       const { title, description } = await readConfig(id);
@@ -218,6 +253,16 @@ describe("built-in Benchmarks", () => {
         expect(named, id).not.toBeNull();
         expect(String(title), id).toMatch(new RegExp(`Sec ${named![1]}$`));
         letters.push(named![1]!);
+      }
+      // Every case statement cites as its source an original the description names.
+      for (const caseId of await caseIds(id)) {
+        const source = /^- Benchmark: .+? — (.+?)(?: · |$)/m.exec(
+          await readCase(id, caseId, "statement"),
+        )?.[1];
+        expect(source, caseId).toBeTruthy();
+        expect(String(description).toLowerCase(), caseId).toContain(
+          firstWord(source ?? "").toLowerCase(),
+        );
       }
     }
     expect(letters.join("")).toBe("ABCDE");
@@ -303,7 +348,7 @@ describe("built-in Benchmarks", () => {
     expect(await fs.readdir(dir())).toEqual([]);
   });
 
-  it("all built-in benchmark links follow the main branch", async () => {
+  it("all built-in benchmark links and launch checkouts follow the main branch", async () => {
     await provision();
     for (const id of BUILTIN_IDS) {
       for (const caseId of await caseIds(id)) {
@@ -311,8 +356,10 @@ describe("built-in Benchmarks", () => {
         const revisions = [
           ...statement.matchAll(/penguin-harness-benchmark\/(?:tree|blob)\/([^/\s]+)\//g),
         ].map((m) => m[1]);
-        expect(revisions.length, caseId).toBeGreaterThan(0);
-        for (const revision of revisions) {
+        // The task's folder and the run rules at least.
+        expect(revisions.length, caseId).toBeGreaterThanOrEqual(2);
+        const checkout = /a checkout of the `([^`]+)` branch/.exec(statement)?.[1];
+        for (const revision of [...revisions, checkout]) {
           expect(revision, caseId).toBe("main");
         }
       }
