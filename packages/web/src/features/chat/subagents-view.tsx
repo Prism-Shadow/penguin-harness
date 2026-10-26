@@ -29,7 +29,6 @@ import type {
   ModelInfo,
   SessionInfo,
   SessionPatchRequest,
-  SkillMetadataItem,
   SubagentRuntimeInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
@@ -44,14 +43,15 @@ import {
   toastError,
 } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
-import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
+import { abortSubagent, messageSubagent, patchSession } from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
+import type { NestedSessionMeta, StreamModel } from "../../lib/amsp/stream-model";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import type { PermissionPick } from "../../lib/permission-level";
 import { noteSessionSeen } from "../../lib/session-seen";
+import { machineForSession } from "../../lib/session-machines";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
@@ -65,6 +65,7 @@ import type { TopologyNode } from "./agent-topology";
 import { AgentTopologyView } from "./agent-topology-view";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
+import { useAgentSkills } from "./use-agent-skills";
 import type { ComposerReference } from "../../lib/workspace-tree";
 
 interface Selection {
@@ -377,22 +378,9 @@ function SubagentComposer({
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Skills of the CHILD's agent (it may differ from the parent's): candidates for the
-  // toolbar dropdown and the slash menu; a failed fetch reads as no skills.
-  const [skills, setSkills] = useState<SkillMetadataItem[]>([]);
-  useEffect(() => {
-    let stale = false;
-    setSkills([]);
-    const agentId = meta?.agentId;
-    if (!projectId || !agentId) return;
-    getAgentSkills(projectId, agentId)
-      .then((res) => {
-        if (!stale) setSkills(res.skills);
-      })
-      .catch(() => undefined);
-    return () => {
-      stale = true;
-    };
-  }, [projectId, meta?.agentId]);
+  // toolbar dropdown and the slash menu. A child shares its parent's Workspace, so its Agent
+  // is the one on the parent Session's machine.
+  const { skills } = useAgentSkills(projectId, meta?.agentId ?? null, machineForSession(sessionId));
 
   // The level pinned on the child Session from this panel ("" = untouched, the child runs at
   // its own level): mirrors the main composer's per-session pick, scoped to this child —

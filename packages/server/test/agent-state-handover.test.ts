@@ -10,7 +10,7 @@
  * logic stops the run, the successor starts the Session again from its loader.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { assistantText } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { Reassembly } from "../src/hmr/capabilities.js";
@@ -37,7 +37,7 @@ function rowFor(projectId: string): SessionRow {
 }
 
 /** A Session whose every run records its input and stays open until the test releases it (or it is aborted). */
-function heldSession(runs: OmniMessage[][], release: Promise<void>): RuntimeSession {
+function heldSession(runs: AmspRecord[][], release: Promise<void>): RuntimeSession {
   return {
     sessionId: SID,
     toolPermission: () => "rw",
@@ -45,7 +45,7 @@ function heldSession(runs: OmniMessage[][], release: Promise<void>): RuntimeSess
     compactability: () => "ok" as const,
     steer: () => false,
     skipReconnectWait: () => false,
-    async *run(input: OmniMessage[], opts) {
+    async *run(input: AmspRecord[], opts) {
       runs.push(input);
       await Promise.race([
         release,
@@ -57,7 +57,7 @@ function heldSession(runs: OmniMessage[][], release: Promise<void>): RuntimeSess
   };
 }
 
-const textOf = (input: OmniMessage[]): string =>
+const textOf = (input: AmspRecord[]): string =>
   input.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
 
 /** The manager of whichever App is current — after a swap, not the one the fixture flattened. */
@@ -76,7 +76,7 @@ describe("the Agent state across a swap", () => {
   });
 
   it("a running Task goes on through the swap, and the successor starts what it queued", async () => {
-    const runs: OmniMessage[][] = [];
+    const runs: AmspRecord[][] = [];
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
     t = await createTestApp();
@@ -104,7 +104,7 @@ describe("the Agent state across a swap", () => {
   });
 
   it("a state this build cannot take over is stopped by the old logic and started again by the new", async () => {
-    const runs: OmniMessage[][] = [];
+    const runs: AmspRecord[][] = [];
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
     const session = heldSession(runs, held);

@@ -21,7 +21,7 @@
  * `TRACE_LINE_INDEX_MAX_FILES` files are kept.
  */
 import fs from "node:fs/promises";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 
 /** How many files keep their index (least recently used is dropped first). */
 export const TRACE_LINE_INDEX_MAX_FILES = 32;
@@ -94,7 +94,7 @@ export class TraceLineIndex {
     path: string,
     offset: number,
     limit: number,
-  ): Promise<{ events: OmniMessage[]; total: number }> {
+  ): Promise<{ events: AmspRecord[]; total: number }> {
     for (let attempt = 0; ; attempt++) {
       const entry = await this.ensure(path);
       const total = entry.starts.length;
@@ -106,11 +106,11 @@ export class TraceLineIndex {
       const ends = entry.ends.slice(from, to);
       const base = starts[0]!;
       const buf = await this.readBytes(path, base, ends[ends.length - 1]!);
-      const events: OmniMessage[] = [];
+      const events: AmspRecord[] = [];
       try {
         for (let i = 0; i < starts.length; i++) {
           const text = buf.toString("utf8", starts[i]! - base, ends[i]! - base).trim();
-          events.push(JSON.parse(text) as OmniMessage);
+          events.push(JSON.parse(text) as AmspRecord);
         }
       } catch (err) {
         // The bytes under a scanned record no longer parse: the file was replaced between the

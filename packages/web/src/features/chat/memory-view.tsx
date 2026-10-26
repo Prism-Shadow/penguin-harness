@@ -25,8 +25,8 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeDate } from "../../lib/format";
-import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { memoryRowKey } from "../../lib/omni/memory-changes";
+import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/amsp/memory-changes";
+import { memoryRowKey } from "../../lib/amsp/memory-changes";
 import { useLocale } from "../../state/locale";
 import { buildMemoryList, memoryNavBack, memoryNavForRequest } from "./memory-nav";
 import type { MemoryNavMode, ScopeFiles } from "./memory-nav";
@@ -55,6 +55,7 @@ function groupTitle(group: {
 
 export function ChatMemoryView({
   session,
+  machineId = null,
   changes,
   scopes,
   listingError,
@@ -63,6 +64,8 @@ export function ChatMemoryView({
   onOpenSettings,
 }: {
   session: SessionInfo;
+  /** The machine the Session is on (null for this server): its Agent's memory is read there. */
+  machineId?: string | null;
   /** This conversation's aggregated memory changes (identity-stable — chat-page only swaps the array when the content moved). */
   changes: MemoryChangeRow[];
   /** The server listing, loaded by chat-page's use-memory-listing; null = not loaded. */
@@ -105,6 +108,7 @@ export function ChatMemoryView({
         session.agentId,
         target.scope === "user" ? "user" : (target.scopeKey ?? ""),
         target.file,
+        machineId,
       )
       .then((res) => {
         if (!cancelled) setDetail({ key, content: res.content, failed: false });
@@ -118,7 +122,7 @@ export function ChatMemoryView({
     // detailKey stands in for mode.target's identity; changes refresh a just-rewritten file
     // (identity-stable, so streaming ticks never re-fire this).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, detailKey, session.projectId, session.agentId, changes]);
+  }, [active, detailKey, session.projectId, session.agentId, machineId, changes]);
 
   const groups = buildMemoryList(scopes, changes);
 
@@ -194,7 +198,7 @@ export function ChatMemoryView({
             type="button"
             onClick={onOpenSettings}
             data-tooltip={S.chat.openAgentMemory}
-            className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
             <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.inlineGlyph} />
             <span className="truncate">{S.chat.openAgentMemory}</span>
@@ -237,7 +241,7 @@ export function ChatMemoryView({
                     <button
                       type="button"
                       onClick={() => setMode({ kind: "detail", target: row.target })}
-                      className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                      className="flex w-full items-center gap-3 px-3.5 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="flex items-center gap-1.5 truncate font-mono text-sm font-medium text-gray-800 dark:text-gray-200">

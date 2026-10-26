@@ -5,7 +5,7 @@
  * whole goal loop server-side). (Round inputs themselves render as regular user messages with a
  * harness-origin caption — see message-item.tsx; no goal-specific message rendering remains.)
  */
-import { Badge, TranscriptNote } from "@prismshadow/penguin-ui";
+import { Pill, TranscriptNote } from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeTokens } from "../../lib/format";
@@ -35,11 +35,7 @@ export function GoalStatusBanner({ goal }: { goal: GoalBannerState }) {
       subject={goal.objective}
       truncate
       meta={[S.chat.goalProgress(goal.rounds, tokens)]}
-      end={
-        <Badge tone={STATUS_TONE[goal.status]} size="sm">
-          {S.chat.goalStatus[goal.status]}
-        </Badge>
-      }
+      end={<Pill tone={STATUS_TONE[goal.status]}>{S.chat.goalStatus[goal.status]}</Pill>}
     />
   );
 }

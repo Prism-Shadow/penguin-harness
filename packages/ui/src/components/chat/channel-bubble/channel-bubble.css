@@ -7,14 +7,15 @@
  *
  * Plain CSS on tokens, unlayered, like prose.css: the rules it adjusts are unlayered, which a
  * utility in a cascade layer could never override. Each selector here out-weighs the one it
- * adjusts (`.md-body code`, `.md-body :where(th, td)`), so the order the two stylesheets are
- * emitted in does not matter.
+ * adjusts (`.md-body code`, and `.md-body`, which maps the table rules of markdown-table.css), so
+ * the order the stylesheets are emitted in does not matter.
  */
 .channel-bubble :not(pre) > code {
   background-color: var(--ui-line-emphasis);
 }
-.channel-bubble :is(th, td) {
-  border-color: var(--ui-line-emphasis);
+.channel-bubble .md-body {
+  --md-table-rule: var(--ui-line-emphasis);
+  --md-table-rule-head: var(--ui-line-emphasis);
 }
 
 /* A channel message's time (channel-bubble.tsx) sits in the bubble's bottom-right
@@ -32,7 +33,7 @@
   display: inline-block;
   width: var(--channel-time-gap);
 }
-.channel-bubble .md-body > :is(pre, table):last-child {
+.channel-bubble .md-body > :is(pre, .md-table):last-child {
   margin-bottom: 1.125rem;
 }
 .channel-time-gap {

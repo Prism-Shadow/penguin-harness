@@ -79,13 +79,15 @@
     /* Colour — accent: the ink itself under a white label — black and white by default (user
        decision, 2026-10-02; the forest green became the preset `forest`). The rest of the family
        derives from it: hover and active are the accent shaded toward black (the label is white,
-       so a darker fill only gains contrast), the wash and the line are the accent at an alpha. A
-       preset therefore sets `--ui-accent` alone; its label ink is the theme's for the mode. */
+       so a darker fill only gains contrast), the wash and the line are the accent at an alpha,
+       and the tint is the wash's strength mixed into the page. A preset therefore sets
+       `--ui-accent` alone; its label ink is the theme's for the mode. */
     --ui-accent: #232527;
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #000000);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 74%, #000000);
     --ui-accent-fg: #ffffff;
-    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 14%, transparent);
+    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 8%, transparent);
+    --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 8%, var(--ui-canvas));
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 35%, transparent);
 
     /* Colour — semantic tones: a soft tint with its ink and no edge — a tone's line is its tint,
@@ -438,7 +440,8 @@
     --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #ffffff);
     --ui-accent-active: color-mix(in srgb, var(--ui-accent) 90%, #000000);
     --ui-accent-fg: #111214;
-    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 18%, transparent);
+    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 10%, transparent);
+    --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 10%, var(--ui-canvas));
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 45%, transparent);
 
     /* Colour — semantic tones: the tints lifted; a tone's line stays its tint */
@@ -946,54 +949,42 @@
   }
 
   /* A reply still arriving surfaces through a soft veil, so the newest words read as fading in
-     (the reveal paces them word by word): over the trailing line and a half a gradient runs from
-     nothing to the page's own colour at four tenths, so how faint a line is says how new it is —
-     no line, no box, no band where the veil stops, and nothing under it: a glow there would sit
-     on the middle of the block whatever its newest words were, saying nothing. The text moving
-     up through it is the only motion; each line brightens as it leaves.
-     The veil is the host's `::after`, drawn only while the stream's caret is the host's last
-     child: the caret marks where the text ends, so what the host appends after it (a stop
-     reason, a files card) is never veiled; the caret itself is not shown. On `done` — or once
-     something follows the caret — the veil eases away over the reveal duration: the fade runs
-     on opacity, and a discrete `step-end` transition holds the gradient until the fade is over,
-     so the last lines settle into full ink instead of snapping. A reply that mounts finished
-     carries only an empty, transparent layer. Under reduced motion the veil is not drawn. */
-  :root[data-theme="modern"] .ui-stream {
-    position: relative;
-  }
+     (the reveal paces them word by word): over the trailing line and a half the text itself
+     fades, down to six tenths of its ink at the foot, so how faint a line is says how new it is
+     — no line, no box, no band where the veil stops, and nothing painted: the veil is a mask on
+     the host, so whatever lies behind the text (the page, a card, a custom background image)
+     shows through the newest words and nothing is laid over it. The text moving up through it
+     is the only motion; each line brightens as it leaves.
+     The veil is drawn only while the stream's caret is the host's last child: the caret marks
+     where the text ends, so what the host appends after it (a stop reason, a files card) is
+     never veiled; the caret itself is not shown. How far it is drawn is `--_stream-veil`
+     (theme.css: 1 while the edge is live, registered so it interpolates): on `done` it eases to
+     nothing over the reveal duration while the host holds `data-settling` (StreamText drops it
+     when the transition ends), so the last lines settle into full ink instead of snapping, and a
+     settled reply carries no mask at all; one that mounts finished never had one. Each run of new
+     words also fades in on its own (theme.css, `[data-arrive]`). Under reduced motion the veil is
+     not drawn. */
   :root[data-theme="modern"] .ui-stream > [data-slot="caret"] {
     display: none;
   }
-  :root[data-theme="modern"] .ui-stream::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-size: 100% 1.5lh;
-    background-position: bottom;
-    background-repeat: no-repeat;
-    opacity: 0;
-    transition:
-      opacity var(--ui-dur-reveal) var(--ui-ease-out),
-      background-image var(--ui-dur-reveal) step-end allow-discrete;
-  }
-  :root[data-theme="modern"]
-    .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child)::after {
-    opacity: 1;
-    /* The veil says which lines are newest. deslop-ignore-next-line 06 */
-    background-image: linear-gradient(
-      to bottom,
-      transparent,
-      color-mix(in srgb, var(--ui-canvas) 40%, transparent)
-    );
-    transition: opacity var(--ui-dur-reveal) var(--ui-ease-out);
-  }
-  :root[data-theme="modern"][data-motion="reduced"] .ui-stream::after {
-    display: none;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :root[data-theme="modern"] .ui-stream::after {
-      display: none;
+  @media (prefers-reduced-motion: no-preference) {
+    :root[data-theme="modern"]:not([data-motion="reduced"]) .ui-stream {
+      transition: --_stream-veil var(--ui-dur-reveal) var(--ui-ease-out);
+    }
+    /* The veil says which lines are newest. */
+    :root[data-theme="modern"]:not([data-motion="reduced"])
+      .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child),
+    :root[data-theme="modern"]:not([data-motion="reduced"]) .ui-stream[data-settling] {
+      -webkit-mask-image: linear-gradient(
+        to bottom,
+        #000000 calc(100% - 1.5lh),
+        rgb(0 0 0 / calc(1 - 0.4 * var(--_stream-veil)))
+      );
+      mask-image: linear-gradient(
+        to bottom,
+        #000000 calc(100% - 1.5lh),
+        rgb(0 0 0 / calc(1 - 0.4 * var(--_stream-veil)))
+      );
     }
   }
 
@@ -1003,13 +994,15 @@
      absolutely at the row's inset with the host padded to make room, because a host lays its
      body and actions out as a flex row — a dot in the flow would be a third item and push the
      body to the middle. A toast that also carries `ui-glass` frosts like every other floating
-     layer. */
+     layer. On a custom background a notice in the page is a card like any other there: the
+     panel's light glass (wallpaper.css), shadow and dot kept, never a tinted slab; a toast, or
+     a notice in a dialog, keeps the overlay. */
   :root[data-theme="modern"] .ui-notice {
     position: relative;
     padding-inline-start: calc(var(--ui-row-px) + 1.125em);
     border-color: transparent;
     border-radius: var(--ui-radius-lg);
-    background-color: var(--ui-overlay);
+    background-color: var(--wallpaper-panel-fill, var(--ui-overlay));
     box-shadow: var(--ui-shadow-overlay);
     color: var(--ui-fg);
   }
@@ -1104,9 +1097,9 @@
  * The user's accent presets (tokens.ts, `ACCENT_PRESETS.modern`), six: the forest green the
  * theme shipped with (first, as Console lists its orange) and five warm, muted hues, each deep
  * enough in light for the theme's white label and lifted in dark for its dark ink, the way the
- * theme's own accent flips. A preset sets `--ui-accent` and nothing else — hover, active, wash
- * and line derive from it in the theme's rules above, and the label ink is the theme's for the
- * mode — so each preset is one value per mode. The selectors match only Frost's root, so a
+ * theme's own accent flips. A preset sets `--ui-accent` and nothing else — hover, active, wash,
+ * tint and line derive from it in the theme's rules above, and the label ink is the theme's for
+ * the mode — so each preset is one value per mode. The selectors match only Frost's root, so a
  * preset another theme lists paints nothing here.
  */
 @layer ui-accent {

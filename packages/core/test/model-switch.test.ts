@@ -4,7 +4,7 @@
  * A switch is a compaction whose new context opens on the model the user picked: the running
  * context is summarized on the model it is on — always summarize, whatever the configured mode —
  * and the next context opens on the target. The compaction is an ordinary `manual` one: no
- * OmniMessage field or reason names the switch. The model lives only in the new context's
+ * record field or reason names the switch. The model lives only in the new context's
  * `session_meta`, and the switch opens that context's Trace file at once — its head is the
  * durable record — and streams the meta last, so a Session rebuilt from the latest file alone
  * runs on the new model, carrying the summary. The engine knows nothing of models: the Session
@@ -32,14 +32,14 @@ import {
   toolCall,
   toolListReady,
   userText,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   CompactionBeginPayload,
   CompactionEndPayload,
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
   TextPayload,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   EnvironmentInterface,
@@ -62,21 +62,19 @@ import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 // ---------------------------------------------------------------------------
 
 interface ScriptedResponse {
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   outcome?: LLMOutcome;
 }
 
 /** Fake LLM that responds according to a script, recording each input it receives. */
 class ScriptedLLM implements LLMInterface {
-  calls: OmniMessage[][] = [];
+  calls: AmspRecord[][] = [];
   constructor(
     private readonly responses: ScriptedResponse[],
     readonly label = "llm",
   ) {}
 
-  async *streamGenerate(
-    params: GenerativeModelParameters,
-  ): AsyncGenerator<OmniMessage, LLMOutcome> {
+  async *streamGenerate(params: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome> {
     this.calls.push(params.newMessages);
     const next = this.responses.shift();
     if (!next) {
@@ -102,7 +100,7 @@ const fakeEnvironment: EnvironmentInterface = {
 
 const allowAll: ApproveFn = async () => "allow";
 
-const usage = (requestTotal: number, sessionTotal: number): OmniMessage =>
+const usage = (requestTotal: number, sessionTotal: number): AmspRecord =>
   tokenUsage(
     { cache_read: 0, cache_write: 0, output: 0, total: sessionTotal },
     { cache_read: 0, cache_write: 0, output: 0, total: requestTotal },
@@ -136,8 +134,8 @@ const metaFor = (model: ModelRef): SessionMetaPayload => ({
 const SUMMARY_REPLY = "[summary]the distilled summary[/summary]";
 const SUMMARY_TEXT = "[context_summary]\nthe distilled summary\n[/context_summary]";
 
-async function collect<R>(gen: AsyncGenerator<OmniMessage, R>): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
+async function collect<R>(gen: AsyncGenerator<AmspRecord, R>): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) return all;
@@ -147,9 +145,9 @@ async function collect<R>(gen: AsyncGenerator<OmniMessage, R>): Promise<OmniMess
 
 /** Like collect, but also captures the generator's return value. */
 async function collectWithReturn<R>(
-  gen: AsyncGenerator<OmniMessage, R>,
-): Promise<{ all: OmniMessage[]; result: R }> {
-  const all: OmniMessage[] = [];
+  gen: AsyncGenerator<AmspRecord, R>,
+): Promise<{ all: AmspRecord[]; result: R }> {
+  const all: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) return { all, result: res.value };
@@ -159,7 +157,7 @@ async function collectWithReturn<R>(
 
 type CompactionEventPayload = CompactionBeginPayload | CompactionEndPayload;
 
-const compactionEvents = (msgs: OmniMessage[]): CompactionEventPayload[] =>
+const compactionEvents = (msgs: AmspRecord[]): CompactionEventPayload[] =>
   msgs
     .filter((m) => {
       const t = (m.payload as { type?: string }).type ?? "";
@@ -168,15 +166,15 @@ const compactionEvents = (msgs: OmniMessage[]): CompactionEventPayload[] =>
     .map((m) => m.payload as CompactionEventPayload);
 
 /** Each record's kind: the payload type, or `session_meta` for the file head (whose payload carries no type). */
-const payloadTypes = (msgs: OmniMessage[]): (string | undefined)[] =>
+const payloadTypes = (msgs: AmspRecord[]): (string | undefined)[] =>
   msgs.map((m) =>
     m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type,
   );
 
-const textOf = (m: OmniMessage): string => (m.payload as TextPayload).text;
+const textOf = (m: AmspRecord): string => (m.payload as TextPayload).text;
 
 /** The user-side texts of `msgs`, in order — what a replayed history sends as the user's side. */
-const userTexts = (msgs: OmniMessage[]): string[] =>
+const userTexts = (msgs: AmspRecord[]): string[] =>
   msgs
     .filter((m) => {
       const p = m.payload as { type?: string; role?: string };
@@ -185,23 +183,23 @@ const userTexts = (msgs: OmniMessage[]): string[] =>
     .map(textOf);
 
 /** Each message's payload type (`image_url` is what a text-only model must never receive). */
-const payloadTypeList = (msgs: OmniMessage[]): string[] =>
+const payloadTypeList = (msgs: AmspRecord[]): string[] =>
   msgs.map((m) => (m.payload as { type: string }).type);
 
 /** The model a `session_meta` record names, as a reference. */
-const modelOf = (m: OmniMessage): ModelRef => {
+const modelOf = (m: AmspRecord): ModelRef => {
   const p = m.payload as SessionMetaPayload;
   return { provider: p.provider, model_id: p.model_id };
 };
 
 /** The switch stream's last record is the new context's session_meta, naming `model`. */
-const expectEndsWithMetaOn = (all: OmniMessage[], model: ModelRef): void => {
+const expectEndsWithMetaOn = (all: AmspRecord[], model: ModelRef): void => {
   const last = all.at(-1)!;
   expect(last.type).toBe("session_meta");
   expect(modelOf(last)).toEqual(model);
 };
 
-const hasMeta = (msgs: OmniMessage[]): boolean => msgs.some((m) => m.type === "session_meta");
+const hasMeta = (msgs: AmspRecord[]): boolean => msgs.some((m) => m.type === "session_meta");
 
 /**
  * The composition layer's half, as fakes that record what they were asked: which model each
@@ -215,7 +213,7 @@ interface Harness {
   opens: (ModelRef | undefined)[];
   validated: ModelRef[];
   reassembled: ModelRef[];
-  written: OmniMessage[];
+  written: AmspRecord[];
   trace: Writer;
   session: Session;
   /** The Session's Trace files, in index order. */
@@ -239,11 +237,11 @@ function harness(
   const opens: (ModelRef | undefined)[] = [];
   const validated: ModelRef[] = [];
   const reassembled: ModelRef[] = [];
-  const written: OmniMessage[] = [];
+  const written: AmspRecord[] = [];
   let current = MODEL_A;
   const trace = new Writer({ tracesDir: traces, sessionId: SESSION_ID });
   const sink = {
-    write: async (msg: OmniMessage) => {
+    write: async (msg: AmspRecord) => {
       written.push(msg);
       await trace.write(msg);
     },
@@ -406,13 +404,15 @@ describe("in-session model switch", () => {
     expect(llmB.calls).toHaveLength(1);
     expect(llmB.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT, "task two"]);
     const fresh = await readTrace(h.trace.currentPath());
-    expect(payloadTypes(fresh).slice(0, 4)).toEqual([
+    // The switch wrote the summary with the file's head; the next Task opens behind it.
+    expect(payloadTypes(fresh).slice(0, 5)).toEqual([
       "session_meta",
       "tool_list_ready",
       "text",
+      "task_begin",
       "text",
     ]);
-    expect(textOf(fresh[3]!)).toBe("task two");
+    expect(textOf(fresh[4]!)).toBe("task two");
     expect(fresh.filter((m) => m.type === "model_msg" && textOf(m) === SUMMARY_TEXT)).toHaveLength(
       1,
     );
@@ -545,7 +545,13 @@ describe("in-session model switch", () => {
     // carry-over is not written to it — carry-over may hold synthetic messages, which are never
     // persisted — so a resume of that file has nothing pending (the documented gap: the user
     // re-sends the message).
-    expect(payloadTypes(await readTrace(oldPath))).toEqual(["session_meta", "text", "abort"]);
+    expect(payloadTypes(await readTrace(oldPath))).toEqual([
+      "session_meta",
+      "task_begin",
+      "text",
+      "abort",
+      "task_end",
+    ]);
     const opened = await readTrace(h.trace.currentPath());
     expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready"]);
     expect(modelOf(opened[0]!)).toEqual(MODEL_B);
@@ -580,12 +586,15 @@ describe("in-session model switch", () => {
     controller.abort();
     await collect(h.session.run([userText("task two")], { signal: controller.signal }));
     const openPath = h.trace.currentPath();
+    // The run's task_begin stayed behind the compaction in the closed file; its input opened
+    // this one.
     expect(payloadTypes(await readTrace(openPath))).toEqual([
       "session_meta",
       "tool_list_ready",
       "text",
       "text",
       "abort",
+      "task_end",
     ]);
     expect(h.session.compactability()).toBe("just_compacted");
 
@@ -607,6 +616,7 @@ describe("in-session model switch", () => {
       "text",
       "text",
       "abort",
+      "task_end",
     ]);
     expect(textOf(left[2]!)).toBe(SUMMARY_TEXT);
     const opened = await readTrace(h.trace.currentPath());
@@ -683,10 +693,11 @@ describe("in-session model switch", () => {
     // Live, the summary is sent once; on disk it is written once — the run does not re-write it.
     expect(llmC.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT, "task two"]);
     const latest = await readTrace(h.trace.currentPath());
-    expect(payloadTypes(latest).slice(0, 4)).toEqual([
+    expect(payloadTypes(latest).slice(0, 5)).toEqual([
       "session_meta",
       "tool_list_ready",
       "text",
+      "task_begin",
       "text",
     ]);
     // Any later restart replays C's history from this file, the summary at its head.
@@ -1224,7 +1235,7 @@ describe("in-session model switch", () => {
     const llmB = new (class extends ScriptedLLM {
       override async *streamGenerate(
         params: GenerativeModelParameters,
-      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+      ): AsyncGenerator<AmspRecord, LLMOutcome> {
         steer();
         steer = () => {};
         return yield* super.streamGenerate(params);
@@ -1298,10 +1309,11 @@ describe("in-session model switch", () => {
     // own and no other.
     await collect(h.session.run([userText("task two")], { approve: allowAll }));
     const opened = await readTrace(h.trace.currentPath());
-    expect(payloadTypes(opened).slice(0, 5)).toEqual([
+    expect(payloadTypes(opened).slice(0, 6)).toEqual([
       "session_meta",
       "tool_list_ready",
       "text",
+      "task_begin",
       "text",
       "request_begin",
     ]);
@@ -1423,7 +1435,7 @@ describe("in-session model switch", () => {
 
   it("switching is refused when compaction is not configured and there is a context to close", async () => {
     const llmA = new ScriptedLLM([{ messages: [assistantText("answer one"), usage(50, 50)] }], "A");
-    const written: OmniMessage[] = [];
+    const written: AmspRecord[] = [];
     const session = new Session({
       meta: metaFor(MODEL_A),
       bootstrap: async () => ({ llm: llmA }),

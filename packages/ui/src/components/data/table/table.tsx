@@ -148,7 +148,7 @@ export function TableRow({
   return (
     <tr
       {...rest}
-      className={`border-b border-line-muted transition-colors duration-150 last:border-b-0 hover:bg-control-hover ${className}`}
+      className={`border-b border-line-muted transition-colors duration-150 last:border-b-0 hover:bg-control-hover ${rest.onClick !== undefined ? "cursor-default " : ""}${className}`}
     >
       {children}
     </tr>

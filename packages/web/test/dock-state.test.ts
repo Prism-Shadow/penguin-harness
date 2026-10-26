@@ -1,6 +1,6 @@
 /**
  * The dock store (features/dock/dock-state.ts): two docks (right and bottom) of uniform tabs —
- * singleton panels and per-shell terminal tabs — scoped per conversation, the way browser
+ * singleton panels, the terminal panel among them — scoped per conversation, the way browser
  * windows manage their own tabs. The module reads localStorage at import time, so the storage
  * is installed first (for the whole file: a reload reads it back) and the module imported after.
  *
@@ -9,24 +9,26 @@
  *   built-in browser open like any other. Closing a tab removes it, and the last one puts the
  *   dock away.
  * - An open dock with no tabs is visible (the picker); toggling a dock closed keeps its tabs.
- * - Terminal tabs are one per shell, bottom by default, shown where they live rather than
- *   duplicated, and mix freely with panel tabs.
- * - The whole arrangement switches with the Session and comes back on return; one Session's
- *   terminals never appear in another's docks; a placeholder scope's arrangement passes to the
- *   first Session chosen (a draft's to the Session it becomes, never clobbering); dead shells'
- *   tabs are pruned in every scope.
+ * - A panel with no tab yet lands in the dock asked for, else at its own default edge (the
+ *   terminal's is the bottom), and stays one tab; the shell the terminal panel shows is kept per
+ *   conversation.
+ * - The whole arrangement switches with the Session and comes back on return; a placeholder
+ *   scope's arrangement passes to the first Session chosen (a draft's to the Session it becomes,
+ *   never clobbering).
  * - A tab moves to the other dock and activates there (the only tab closes its source dock); a
  *   whole dock moves, merging after the target's tabs; a strip reorders only with a complete,
  *   matching key list.
- * - The terminal toggle reports no tab so the caller adopts or creates one, hides and restores,
- *   and brings the terminal to the front when a panel covers it.
- * - Each scope's arrangement round-trips across a reload (sizes are one preference); a stored
- *   tab key that is no well-formed id is dropped, not the dock, while a well-formed id nothing
- *   has registered (a plugin's panel not loaded yet) is kept; a malformed entry reads as empty
- *   docks.
+ * - The panel toggle (Ctrl+`) reports a missing tab so the caller opens the panel, hides the
+ *   shown panel's dock and restores it, and brings the panel to the front when another tab
+ *   covers it.
+ * - Each scope's arrangement round-trips across a reload, the terminal's shown shell included
+ *   (sizes are one preference); a stored tab key that is no well-formed id is dropped, not the
+ *   dock, while a well-formed id nothing has registered (a plugin's panel not loaded yet) is kept;
+ *   a malformed entry reads as empty docks.
+ * - Given an arrangement stored with a tab per shell (`terminal:<id>`, before the terminal became
+ *   one panel), each dock's first one reads back as the terminal panel's tab in its place, the
+ *   shell it showed stays shown, and the right dock's copy wins; a draft's arrangement loses them.
  * - Scope switches and moves are instant (no animation); toggles animate.
- * - A detached terminal tab returns to the scope it left, unless a conversation already holds
- *   the shell again.
  * - There is one view per open dock; a hidden dock keeps its view to stay mounted on, an empty
  *   one has none.
  * - At most one surface is fullscreen, and only an open dock with tabs enters it. It lasts while
@@ -38,8 +40,6 @@
  *   fullscreen without applying it to a new Session; explicitly exiting stays exited on return.
  * - Given a fullscreen draft, its first send hands fullscreen to the new Session, but never
  *   overwrites an existing Session's fullscreen. A new draft starts at normal size.
- * - Given an inactive fullscreen terminal dock, pruning its last shell prevents fullscreen from
- *   returning when that Session is revisited, even if another terminal returns there first.
  * - Given fullscreen docks, reloading restores their tabs and sizes at normal size.
  * - Given fullscreen docks in several Sessions, crossing the narrow breakpoint clears all of
  *   them; fullscreen chosen in the merged view still survives switching Sessions.
@@ -138,30 +138,27 @@ describe("the toolbar's dock toggles and the picker", () => {
   });
 });
 
-describe("terminal tabs", () => {
-  it("adds one tab per shell, defaulting to the bottom dock", () => {
-    dock.addTerminalTab("term-a");
-    dock.addTerminalTab("term-b");
-    expect(dock.terminalTabDock("term-a")).toBe("bottom");
-    expect(dock.terminalTabIds()).toEqual(["term-a", "term-b"]);
-    expect(dock.dockActiveKey("bottom")).toBe("terminal:term-b");
-  });
-
-  it("shows an existing tab where it lives instead of duplicating it", () => {
-    dock.addTerminalTab("term-a", "right");
-    dock.addTerminalTab("term-b", "right");
-    dock.showTerminal("term-a");
-    expect(dock.terminalTabIds()).toEqual(["term-a", "term-b"]);
-    expect(dock.dockActiveKey("right")).toBe("terminal:term-a");
-  });
-
-  it("mixes freely with panel tabs in one dock", () => {
+describe("the terminal panel", () => {
+  it("lands where it is asked, else at its own default edge, and stays one tab", () => {
+    dock.openPanel("terminal", undefined, "bottom");
+    expect(dock.panelDock("terminal")).toBe("bottom");
     dock.openPanel("workspace", "bottom");
-    dock.addTerminalTab("term-a", "bottom");
-    expect(dock.dockTabs("bottom").map(dock.tabKey)).toEqual(["workspace", "terminal:term-a"]);
-    dock.activateTab("workspace");
-    expect(dock.isTabShown("workspace")).toBe(true);
-    expect(dock.isTabShown("terminal:term-a")).toBe(false);
+    dock.openPanel("terminal", undefined, "bottom"); // reopening shows it where it lives
+    expect(dock.dockTabs("bottom").map(dock.tabKey)).toEqual(["terminal", "workspace"]);
+    expect(dock.dockActiveKey("bottom")).toBe("terminal");
+    dock.openPanel("terminal", "right"); // a dock asking for it moves it there
+    expect(dock.panelDock("terminal")).toBe("right");
+  });
+
+  it("keeps the shell it shows per conversation", () => {
+    const a = `scope-shell-a-${scopeSeq}`;
+    dock.setDockScope(a);
+    dock.openPanel("terminal", undefined, "bottom");
+    dock.setShownShell("t2");
+    dock.setDockScope(`scope-shell-b-${scopeSeq}`);
+    expect(dock.shownShell()).toBeNull();
+    dock.setDockScope(a);
+    expect(dock.shownShell()).toBe("t2");
   });
 });
 
@@ -171,40 +168,30 @@ describe("conversation scopes (each window manages its own tabs)", () => {
     const b = `scope-b-${scopeSeq}`;
     dock.setDockScope(a);
     dock.openPanel("workspace", "right");
-    dock.addTerminalTab("term-a", "bottom");
+    dock.openPanel("terminal", "bottom");
 
     // A conversation that never arranged anything shows nothing.
     dock.setDockScope(b);
     expect(dock.isDockVisible("right")).toBe(false);
     expect(dock.isDockVisible("bottom")).toBe(false);
-    expect(dock.terminalTabIds()).toEqual([]);
+    expect(dock.panelDock("terminal")).toBeNull();
 
     // B's own arrangement never leaks into A's, and A's comes back intact.
     dock.openPanel("memory", "bottom");
     dock.setDockScope(a);
     expect(dock.panelDock("workspace")).toBe("right");
     expect(dock.panelDock("memory")).toBeNull();
-    expect(dock.terminalTabIds()).toEqual(["term-a"]);
-  });
-
-  it("does not lend one Session's terminals to another's docks", () => {
-    const a = `scope-c-${scopeSeq}`;
-    dock.setDockScope(a);
-    dock.addTerminalTab("term-owned", "bottom");
-    dock.setDockScope(`scope-d-${scopeSeq}`);
-    expect(dock.terminalTabDock("term-owned")).toBeNull();
-    // …and cross-scope ownership still counts: the shell is not adoptable here.
-    expect(dock.unownedTerminals(["term-owned", "term-free"])).toEqual(["term-free"]);
+    expect(dock.panelDock("terminal")).toBe("bottom");
   });
 
   it("hands a placeholder-scope arrangement to the first Session chosen", () => {
     dock.setDockScope(null); // ~none: /chat before it resolves to a conversation
-    dock.addTerminalTab("term-staged", "bottom");
+    dock.openPanel("trace", "bottom");
     dock.setDockScope(`scope-resolved-${scopeSeq}`);
-    expect(dock.terminalTabDock("term-staged")).toBe("bottom");
+    expect(dock.panelDock("trace")).toBe("bottom");
     // Moved, not copied: going back off-conversation shows nothing.
     dock.setDockScope(null);
-    expect(dock.terminalTabIds()).toEqual([]);
+    expect(dock.panelDock("trace")).toBeNull();
   });
 
   it("adoptDockScope moves a draft's arrangement to the born Session, never clobbering", () => {
@@ -228,20 +215,6 @@ describe("conversation scopes (each window manages its own tabs)", () => {
     dock.adoptDockScope(owner);
     expect(dock.panelDock("memory")).toBe("bottom");
     expect(dock.panelDock("trace")).toBeNull();
-  });
-
-  it("prunes dead shells' tabs across every scope, not just the one on screen", () => {
-    const a = `scope-e-${scopeSeq}`;
-    const b = `scope-f-${scopeSeq}`;
-    dock.setDockScope(a);
-    dock.addTerminalTab("term-dead", "bottom");
-    dock.setDockScope(b);
-    dock.addTerminalTab("term-live", "bottom");
-    dock.pruneTerminalTabs(new Set(["term-live"]));
-    expect(dock.terminalTabIds()).toEqual(["term-live"]);
-    dock.setDockScope(a);
-    expect(dock.terminalTabIds()).toEqual([]);
-    expect(dock.isDockVisible("bottom")).toBe(false); // its only tab died: the dock went away
   });
 });
 
@@ -283,22 +256,23 @@ describe("moving", () => {
   });
 });
 
-describe("the terminal toggle (Ctrl+`)", () => {
-  it("reports no tab so the caller adopts/creates, then hides and restores", () => {
-    expect(dock.toggleTerminalDocks()).toBe(false); // nothing to toggle: async path takes over
-    dock.addTerminalTab("term-a");
-    expect(dock.toggleTerminalDocks()).toBe(true); // shown → hidden
+describe("the panel toggle (Ctrl+`)", () => {
+  it("reports a missing tab so the caller opens the panel, then hides and restores", () => {
+    expect(dock.togglePanelShown("terminal")).toBe(false);
+    dock.openPanel("terminal", undefined, "bottom");
+    expect(dock.togglePanelShown("terminal")).toBe(true); // shown → hidden
     expect(dock.isDockVisible("bottom")).toBe(false);
-    expect(dock.toggleTerminalDocks()).toBe(true); // hidden → shown again
+    expect(dock.togglePanelShown("terminal")).toBe(true); // hidden → shown again
     expect(dock.isDockVisible("bottom")).toBe(true);
-    expect(dock.dockActiveKey("bottom")).toBe("terminal:term-a");
+    expect(dock.dockActiveKey("bottom")).toBe("terminal");
   });
 
-  it("brings the terminal to the front when a panel covers it, instead of hiding", () => {
-    dock.addTerminalTab("term-a", "bottom");
-    dock.openPanel("workspace", "bottom"); // workspace now shown, terminal behind it
-    expect(dock.toggleTerminalDocks()).toBe(true);
-    expect(dock.dockActiveKey("bottom")).toBe("terminal:term-a");
+  it("brings the panel to the front when another tab covers it, instead of hiding", () => {
+    dock.openPanel("terminal", "bottom");
+    dock.openPanel("workspace", "bottom"); // workspace now shown, the terminal behind it
+    expect(dock.togglePanelShown("terminal")).toBe(true);
+    expect(dock.dockActiveKey("bottom")).toBe("terminal");
+    expect(dock.isDockVisible("bottom")).toBe(true);
   });
 });
 
@@ -308,7 +282,8 @@ describe("persistence", () => {
     const b = `scope-persist-b-${scopeSeq}`;
     dock.setDockScope(a);
     dock.openPanel("workspace", "right");
-    dock.addTerminalTab("term-a", "bottom");
+    dock.openPanel("terminal", "bottom");
+    dock.setShownShell("t-shown");
     dock.toggleDock("bottom"); // hidden, tabs kept
     dock.setBottomRatio(0.5);
     dock.setDockScope(b);
@@ -321,7 +296,8 @@ describe("persistence", () => {
     expect(reloaded.panelDock("workspace")).toBe("right");
     expect(reloaded.isDockVisible("right")).toBe(true);
     expect(reloaded.isDockVisible("bottom")).toBe(false); // hidden stays hidden
-    expect(reloaded.terminalTabIds()).toEqual(["term-a"]);
+    expect(reloaded.panelDock("terminal")).toBe("bottom");
+    expect(reloaded.shownShell()).toBe("t-shown");
     expect(reloaded.bottomRatio()).toBe(0.5); // sizes are one preference, not per scope
     reloaded.setDockScope(b);
     expect(reloaded.dockActiveKey("bottom")).toBe("memory");
@@ -330,7 +306,7 @@ describe("persistence", () => {
   it("keeps a well-formed stored tab id, a plugin's namespaced one too, and drops the rest", async () => {
     // A stored id nothing has registered (a plugin's panel not loaded yet) stays, to render a
     // placeholder; a key that is no id at all is dropped, never the whole dock.
-    const tabs = ["schedules", "acme.kanban", "Bad Key!", "terminal:", "terminal:t1"];
+    const tabs = ["schedules", "acme.kanban", "Bad Key!", "acme/"];
     localStorage.setItem(
       "penguin.dock.layout",
       JSON.stringify({ scopes: { s: { right: { tabs, active: "acme.kanban", open: true } } } }),
@@ -338,13 +314,43 @@ describe("persistence", () => {
     vi.resetModules();
     const reloaded = await import("../src/features/dock/dock-state");
     reloaded.setDockScope("s");
-    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual([
-      "schedules",
-      "acme.kanban",
-      "terminal:t1",
-    ]);
+    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["schedules", "acme.kanban"]);
     expect(reloaded.dockActiveKey("right")).toBe("acme.kanban");
     expect(reloaded.isDockVisible("right")).toBe(true);
+  });
+
+  it("folds a stored tab per shell into the one terminal panel tab, keeping the shown shell", async () => {
+    localStorage.setItem(
+      "penguin.dock.layout",
+      JSON.stringify({
+        scopes: {
+          "session-old": {
+            right: {
+              tabs: ["workspace", "terminal:t1", "terminal:t2"],
+              active: "terminal:t2",
+              open: true,
+            },
+            bottom: { tabs: ["terminal:t3", "memory"], active: "memory", open: true },
+          },
+          // A draft has no Session, so no terminal: its shell tabs simply go.
+          "default_project:new": {
+            bottom: { tabs: ["terminal:t9", "trace"], active: "terminal:t9", open: true },
+          },
+        },
+      }),
+    );
+    vi.resetModules();
+    const reloaded = await import("../src/features/dock/dock-state");
+    reloaded.setDockScope("session-old");
+    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["workspace", "terminal"]);
+    expect(reloaded.dockActiveKey("right")).toBe("terminal");
+    expect(reloaded.shownShell()).toBe("t2");
+    // The right dock's copy wins, as with any panel stored in both.
+    expect(reloaded.dockTabs("bottom").map(reloaded.tabKey)).toEqual(["memory"]);
+    reloaded.setDockScope("default_project:new");
+    expect(reloaded.dockTabs("bottom").map(reloaded.tabKey)).toEqual(["trace"]);
+    expect(reloaded.dockActiveKey("bottom")).toBe("trace");
+    expect(reloaded.shownShell()).toBeNull();
   });
 
   it("reads a stored built-in browser tab back", async () => {
@@ -390,42 +396,15 @@ describe("instant changes (no animation)", () => {
   });
 });
 
-describe("the detach round trip", () => {
-  it("restores a terminal tab into the scope it left, even while another is on screen", () => {
-    const a = `scope-detach-a-${scopeSeq}`;
-    dock.setDockScope(a);
-    dock.addTerminalTab("term-win", "bottom");
-    dock.removeTab("terminal:term-win"); // the detach: tab leaves while the shell moves out
-    expect(dock.isDockVisible("bottom")).toBe(false);
-
-    dock.setDockScope(`scope-detach-b-${scopeSeq}`); // the user wandered off meanwhile
-    dock.restoreTerminalTab(a, "term-win", "bottom");
-    expect(dock.terminalTabIds()).toEqual([]); // not into the scope on screen
-    dock.setDockScope(a);
-    expect(dock.terminalTabIds()).toEqual(["term-win"]);
-    expect(dock.isDockVisible("bottom")).toBe(true);
-    expect(dock.dockActiveKey("bottom")).toBe("terminal:term-win");
-  });
-
-  it("does nothing when some conversation already holds the shell again", () => {
-    const a = `scope-detach-c-${scopeSeq}`;
-    dock.setDockScope(a);
-    dock.addTerminalTab("term-back", "bottom"); // the user re-tabbed it before the window closed
-    dock.restoreTerminalTab(`scope-detach-d-${scopeSeq}`, "term-back", "right");
-    dock.setDockScope(`scope-detach-d-${scopeSeq}`);
-    expect(dock.terminalTabIds()).toEqual([]);
-  });
-});
-
 describe("view models", () => {
   it("renders one view per open dock", () => {
     dock.openPanel("workspace", "right");
-    dock.addTerminalTab("term-a", "bottom");
+    dock.openPanel("terminal", "bottom");
     const views = dock.dockViews();
     expect(views.map((v) => v.position)).toEqual(["right", "bottom"]);
     expect(views[0]?.merged).toBe(false);
     expect(views[0]?.activeKey).toBe("workspace");
-    expect(views[1]?.activeKey).toBe("terminal:term-a");
+    expect(views[1]?.activeKey).toBe("terminal");
   });
 
   it("a hidden dock keeps a view to stay mounted on, an empty one has nothing to keep", () => {
@@ -565,22 +544,6 @@ describe("fullscreen", () => {
     dock.adoptDockScope(born);
     expect(dock.fullscreenDock()).toBe("right");
   });
-
-  it.each([false, true])(
-    "does not restore fullscreen after an inactive dock's last terminal dies (another returns: %s)",
-    (restoreAnother) => {
-      const owner = dock.currentDockScope();
-      dock.addTerminalTab("fullscreen-terminal", "bottom");
-      dock.setDockFullscreen("bottom");
-      dock.setDockScope(`fullscreen-away-${scopeSeq}`);
-      dock.pruneTerminalTabs(new Set());
-      if (restoreAnother) dock.restoreTerminalTab(owner, "returned-terminal", "bottom");
-      dock.setDockScope(owner);
-      expect(dock.fullscreenDock()).toBeNull();
-      dock.openPanel("memory", "bottom");
-      expect(dock.fullscreenDock()).toBeNull();
-    },
-  );
 
   it("reloads the dock's tabs and size without restoring fullscreen", async () => {
     const owner = dock.currentDockScope();

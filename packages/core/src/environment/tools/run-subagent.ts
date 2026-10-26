@@ -27,8 +27,8 @@
  * a nonexistent agent are expressed by the runner as a throw, and collapsed to failed.
  * Docs: /docs/tools § "Subagents".
  */
-import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { DETACHED_TOOL_NOTE_PREFIX, SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
 import type {
   EnvironmentServices,
@@ -68,9 +68,9 @@ export function createSubagentTool(
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal, approve, detachSignal } = ctx;
-      const fail = function* (msg: string): Generator<OmniMessage> {
+      const fail = function* (msg: string): Generator<AmspRecord> {
         yield partialToolCallOutput({ eventType: "delta", output: msg, toolCallId });
       };
 
@@ -78,18 +78,18 @@ export function createSubagentTool(
       // than throwing (consistent with other tools).
       if (!runner) {
         yield* fail("[run_subagent unavailable: no subagent runner configured]");
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       if (!manager || manager.isDisposed) {
         yield* fail("[run_subagent unavailable: no subagent session manager available]");
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const prompt = typeof args.prompt === "string" ? args.prompt : "";
       if (prompt.trim().length === 0) {
         yield* fail(
           describeArgumentError(definition, args, { argument: "prompt", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const agentId = typeof args.agent_id === "string" ? args.agent_id : undefined;
       const modelId = typeof args.model_id === "string" ? args.model_id : undefined;
@@ -100,7 +100,7 @@ export function createSubagentTool(
         yield* fail(
           "[run_subagent error: `model_id` and `provider` must be given together (a model reference is the pair), or both omitted to inherit the parent session's model]",
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       // Thinking-level override: an explicit value must be one of the selectable tiers — a typo
       // must fail loudly rather than silently running the child at an inherited level the caller
@@ -114,7 +114,7 @@ export function createSubagentTool(
           `[run_subagent error: invalid \`thinking_level\` ${JSON.stringify(rawThinkingLevel)}; ` +
             `use one of ${SUBAGENT_THINKING_LEVELS.join(" / ")}, or omit it to inherit the parent session's level]`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const thinkingLevel = rawThinkingLevel as ThinkingLevelName | undefined;
       const background = args.run_in_background === true;
@@ -124,7 +124,7 @@ export function createSubagentTool(
         definition.timeoutMs,
       );
 
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
 
       // Concurrency cap (running child Agents are never evicted): reject spawning if there's no
       // room.
@@ -132,7 +132,7 @@ export function createSubagentTool(
         yield* fail(
           "[run_subagent error: too many background subagents; poll or finish existing ones first]",
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       // Spawn the child Session (precheck errors such as exceeding the depth limit or a
@@ -156,7 +156,7 @@ export function createSubagentTool(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         yield* fail(`[run_subagent error: ${message}]`);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       // run_in_background: no collect window — register immediately, arm the completion
@@ -184,7 +184,7 @@ export function createSubagentTool(
         if (meta) yield meta;
         session.startRun([userText(prompt, "parent_agent")]);
         return {
-          stopReason: "completed",
+          status: "completed",
           note:
             `[subagent running in background with subagent_id ${id}; its completion will arrive ` +
             `as a user message — no need to poll. Use input_subagent to interact (abort: true stops its current run)]`,
@@ -207,7 +207,7 @@ export function createSubagentTool(
           ...(approve ? { approve } : {}),
         });
 
-        if (signal?.aborted) return { stopReason: "aborted" };
+        if (signal?.aborted) return { status: "aborted" };
         if (session.running) {
           // Still running: register as a background session, returning subagent_id for
           // input_subagent to continue accessing it.
@@ -229,7 +229,7 @@ export function createSubagentTool(
             // review" would send the model after work it is not doing — the deadline
             // promotion below keeps the hint because it has no such sink.
             return {
-              stopReason: "completed",
+              status: "completed",
               note:
                 `${DETACHED_TOOL_NOTE_PREFIX} with subagent_id ${id}; leave it running unattended: ` +
                 `do not poll it or send it input — its completion will arrive on its own as a ` +
@@ -239,7 +239,7 @@ export function createSubagentTool(
             };
           }
           return {
-            stopReason: "completed",
+            status: "completed",
             note:
               `[subagent running with subagent_id ${id}; use input_subagent to poll for progress ` +
               `or send a follow-up prompt]` +

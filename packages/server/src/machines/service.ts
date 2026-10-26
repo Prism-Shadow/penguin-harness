@@ -48,6 +48,7 @@ import type {
   MachineReconnect,
   MachineServerStatus,
   MachineSshFailure,
+  MachineSocketFact,
   MachineUseRefusal,
   MachinesCheckoutImage,
   ServerEvent,
@@ -117,6 +118,8 @@ import { syncPluginsToMachine, type WantedPlugin } from "./plugins-sync.js";
 import type { LocalModels } from "./models-sync.js";
 import { localSettings, syncSettingsToMachine } from "./settings-sync.js";
 import { machineApi } from "./machine-api.js";
+import type { MachineApi } from "./machine-api.js";
+import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
 import type { MachineRow } from "../db/repos/machines.js";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
@@ -124,8 +127,11 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
-import { MachineEventRelay } from "./event-relay.js";
-import type { EventRelay, EventRelayDeps, RelayDial } from "./event-relay.js";
+import type { ProxyTarget } from "./proxy.js";
+import { MachineEventHub } from "./event-hub.js";
+import { MachineSockets } from "./machine-sockets.js";
+import { machineSessionForward } from "./session-forward.js";
+import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
@@ -136,6 +142,20 @@ import type { Users } from "../mechanisms/identity.js";
 import { userChannelKey } from "../http/routes/events.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
+
+/**
+ * What a dial to a machine's server returns: the connection to route requests over, the port
+ * its server is on over there, and a session there as its own cookie. The socket proxy path
+ * (proxyTarget) dials machines this way.
+ */
+interface RelayDial {
+  /** Dials the machine's server through the session held to it. */
+  agent: http.Agent;
+  /** The port its server is on over there. */
+  port: number;
+  /** A session on that machine, as its own cookie. */
+  cookie: string;
+}
 
 /** A job's narrator: a line for the log, and optionally the step of the pipeline it begins. */
 type Say = (line: string, phase?: MachinePhase) => void;
@@ -187,10 +207,29 @@ const KEEP_HELD_MS = 60_000;
 /**
  * The first wait before a machine that was lost is tried again — long enough for a server that
  * restarts itself (a plugin load, a hot update) to be back. Each failed attempt doubles the wait,
- * up to the cap: a machine down for a day costs a probe every five minutes.
+ * up to the cap.
  */
 const RECONNECT_FIRST_MS = 5_000;
 const RECONNECT_MAX_MS = 5 * 60_000;
+/**
+ * After this many failed attempts in a row the streak stops, and waits for a person's Retry.
+ * With the waits above the last one lands about fifteen minutes after the loss: a restart, a
+ * reboot or a network blip is back well inside that, and a machine still down after it needs
+ * someone to look — a probe every five minutes for a day would only fill its auth log.
+ */
+const RECONNECT_MAX_ATTEMPTS = 8;
+/**
+ * ssh's refusals that another try cannot fix: each needs a person to act (accept a host key,
+ * fix a key file or the ssh config, authorize a key) and then press Retry. The first one ends the
+ * streak. A refused password has its own stop (`waitsForPassword`).
+ */
+const UNRECOVERABLE_SSH: ReadonlySet<MachineSshFailure> = new Set<MachineSshFailure>([
+  "host-key-unknown",
+  "host-key-changed",
+  "key-file",
+  "auth",
+  "ssh-config",
+]);
 /** After this many failed attempts in a row, the connection check runs on its own. */
 const DIAGNOSE_AFTER = 3;
 /** `machines_changed` goes out at most this often: a burst of log lines is one event per window. */
@@ -218,13 +257,22 @@ type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
 type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported";
 /** Why a config sync was refused before any ssh ran: those, or a machine not connected. */
 type SyncRefusal = ConnectRefusal | "not-connected";
+/**
+ * What a person's Retry of a reconnect did — `started` false when an attempt already runs or
+ * the machine is up — or why it was refused before anything ran.
+ */
+export type RetryReconnectAnswer =
+  | { ok: true; started: boolean }
+  | { ok: false; why: "unknown-machine" | "busy" | "password" | "not-kept" };
 
 /** A machine this server keeps connected, while it is brought back (MachineReconnect, in epoch ms). */
 interface Reconnecting {
   since: number;
   attempts: number;
-  /** When the next attempt is due; null while one runs. */
+  /** When the next attempt is due; null while one runs, and once the streak stopped. */
   nextAt: number | null;
+  /** The streak stopped: nothing runs until a person's Retry (retryReconnect) begins another. */
+  gaveUp?: "attempts" | "ssh";
   lastError: string | null;
   sshReason?: MachineSshFailure;
   diagnosis: MachineDiagnosis | null;
@@ -312,14 +360,16 @@ export interface MachinesEffects {
   now: () => Date;
   /** Tells this server's admins that the machines list changed (`machines_changed`). */
   announce: () => void;
-  /** One of a connected machine's own events, for this server's admins (`machine_event`). */
-  publishEvent: (machineId: string, event: ServerEvent) => void;
-  /** The subscriptions to connected machines' event streams (event-relay.ts). */
-  relay: (deps: EventRelayDeps) => EventRelay;
   /** Starts telling `listener` when a held connection comes up or goes down; returns the stop. */
   watchSessions: (listener: SessionListener) => () => void;
   /** Whether this computer's ssh can sign in with a stored password (transport/login.ts). */
   passwordSignIn: () => Promise<AskpassPlan>;
+  /**
+   * What the API socket to a machine is doing (machines/machine-sockets.ts), for `MachineInfo.socket`:
+   * connected, dialling, refused or failed, and since when. The sockets themselves are the
+   * proxy's, created beside it, so this is an injected reader rather than a field here.
+   */
+  socketFact: (machineId: string) => MachineSocketFact | null;
 }
 
 /** The id of the entry standing for the machine this server runs on. */
@@ -390,8 +440,6 @@ export class MachinesService {
   readonly #reconnects = new Map<string, Reconnecting>();
   /** The timer that runs a machine's next attempt when it is due. */
   readonly #retryTimers = new Map<string, NodeJS.Timeout>();
-  /** The subscriptions that carry each connected machine's own events to this server's admins. */
-  readonly #relay: EventRelay;
   /** The `machines_changed` window: open while one went out recently, and whether another is owed. */
   #announceTimer: NodeJS.Timeout | null = null;
   #announceOwed = false;
@@ -444,21 +492,13 @@ export class MachinesService {
       shippedImage: null,
       now: () => new Date(),
       announce: () => {},
-      publishEvent: () => {},
-      relay: (deps) => new MachineEventRelay(deps),
       watchSessions: onSessionChange,
       passwordSignIn,
       lateSweepMs: 20_000,
+      socketFact: () => null,
       ...effects,
     };
     this.#passwords = new SshPasswords(path.join(dataRoot, "machines"));
-    this.#relay = this.#effects.relay({
-      dial: (address) => this.#dial(address),
-      publish: (machineId, event) => this.#effects.publishEvent(machineId, event),
-      lost: (address) => this.#lost(address),
-      // A refused session is a stale one: the next dial mints another.
-      refused: (address) => this.#sessions.delete(address),
-    });
     // A held connection that drops is a machine to bring back; one that comes up is news.
     this.#unwatch = this.#effects.watchSessions((address, up) => {
       this.#changed();
@@ -550,7 +590,7 @@ export class MachinesService {
     const held = await this.#effects.hold(target);
     if (!held.ok) return held;
     if (this.repo.get(address)?.sessionPid !== held.session.pid) {
-      this.repo.patch(address, { sessionPid: held.session.pid });
+      this.#record(address, { sessionPid: held.session.pid });
     }
     return held;
   }
@@ -597,6 +637,7 @@ export class MachinesService {
       },
       local: true,
       connection: null,
+      socket: null,
       api: null,
       root: this.dataRoot,
       status: {
@@ -627,6 +668,7 @@ export class MachinesService {
         ...(reconnect === undefined ? {} : { reconnect: this.#reconnectInfo(reconnect) }),
         ...(row?.sessionPid != null ? { keepConnected: true as const } : {}),
         ...(withPassword.has(alias) ? { passwordSaved: true as const } : {}),
+        socket: row?.machineId == null ? null : (this.#effects.socketFact(row.machineId) ?? null),
         api: this.#apiSeen.get(id) ?? null,
         ...(configSync === undefined ? {} : { configSync }),
         // The layout's own spelling, in the shell that machine speaks. Unknown platform
@@ -931,15 +973,53 @@ export class MachinesService {
   }
 
   /**
-   * What the proxy needs to forward a request to a machine addressed by its OWN id: a dial
-   * through the connection, the port its server is on over there, and a session there. Null
-   * when the machine is not connected.
+   * The machines a Project uses that this server installed on and knows by id, each with a
+   * client to its own API while it is connected (null otherwise) — for a page of this server
+   * that lists what those machines hold (the archive page). Every call carries this server's
+   * adoption time, as the proxy's do. Two aliases for one machine are one entry, spoken to
+   * through the alias holding a connection.
    */
-  async proxyTarget(
-    machineId: string,
-  ): Promise<{ agent: http.Agent; port: number; cookie: string } | null> {
+  async projectApis(
+    projectId: string,
+  ): Promise<Array<{ machineId: string; alias: string; api: MachineApi | null }>> {
+    const ids = new Set<string>();
+    for (const address of this.#members(projectId)) {
+      const row = this.repo.get(address);
+      if (row !== null && row.machineId !== null && row.version !== null) ids.add(row.machineId);
+    }
+    const out: Array<{ machineId: string; alias: string; api: MachineApi | null }> = [];
+    for (const machineId of ids) {
+      const row = this.#rowFor(machineId);
+      if (row === null) continue;
+      const dial = await this.#dial(row.address);
+      out.push({
+        machineId,
+        alias: row.address.slice("ssh:".length),
+        api:
+          dial === null
+            ? null
+            : machineApi(
+                dial.agent,
+                dial.port,
+                dial.cookie,
+                row.adoptedAt === null ? {} : { [ADOPTED_AT_HEADER]: row.adoptedAt },
+              ),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * What the proxy needs to forward a request to a machine addressed by its OWN id: a dial
+   * through the connection, the port its server is on over there, a session there, and when
+   * this server adopted it (sent along, so that machine reads the Sessions it held before then
+   * as CLI tasks). Null when the machine is not connected.
+   */
+  async proxyTarget(machineId: string): Promise<ProxyTarget | null> {
     const row = this.#rowFor(machineId);
-    return row === null ? null : this.#dial(row.address);
+    if (row === null) return null;
+    const dial = await this.#dial(row.address);
+    return dial === null ? null : { ...dial, adoptedAt: row.adoptedAt };
   }
 
   /**
@@ -947,9 +1027,10 @@ export class MachinesService {
    * its server was last bound to, with a session there. Null when it is not connected — or when
    * no session can be had, which leaves nothing to call it with either.
    */
-  async #dial(address: string): Promise<RelayDial | null> {
+  async #dial(address: string): Promise<(RelayDial & { session: number }) | null> {
     const row = this.repo.get(address);
-    if (row === null || row.remotePort === null || this.#liveSession(address) === null) return null;
+    const live = this.#liveSession(address);
+    if (row === null || row.remotePort === null || live === null) return null;
     const target = this.#targetOf(address.slice("ssh:".length));
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return null;
@@ -957,6 +1038,8 @@ export class MachinesService {
       agent: this.#effects.agent(target, row.remotePort),
       port: row.remotePort,
       cookie: session.cookie,
+      // The socket relay reuses a socket only within one ssh session (socket-relay.ts).
+      session: live.pid,
     };
   }
 
@@ -1063,22 +1146,42 @@ export class MachinesService {
    *
    * `sessionPid` deliberately survives: it names the ssh child THIS server holds, which is
    * the one that just answered, and forgetting it would leave a process nothing can close.
+   *
+   * A different machine is also newly adopted: its adoption time is now (see `#record`). The
+   * first id a machine gives is not an adoption — the row already says when this server took
+   * the machine up, or that it took it up before adoption times were kept, and either stays.
    */
   #rememberMachineId(address: string, machineId: string | null): void {
     if (machineId === null) return;
     const known = this.repo.get(address)?.machineId ?? null;
     if (known === machineId) return;
     if (known === null) {
-      this.repo.patch(address, { machineId });
+      this.#record(address, { machineId });
       return;
     }
-    this.repo.patch(address, {
+    this.#record(address, {
       machineId,
       version: null,
       installedAt: null,
       remotePort: null,
       platform: null,
+      adoptedAt: this.#effects.now().toISOString(),
     });
+  }
+
+  /**
+   * Writes what this server learned about a machine. The write that creates its row is the moment
+   * this server adopted the machine, and the time is kept with it: nothing could have been
+   * created there through this server before, so the Sessions that machine already held are its
+   * own (runtime/session-sources.ts sourceSeenBy reads them as CLI tasks for this server's
+   * requests, see `proxyTarget`). A row from before adoption times were kept has none, and no
+   * later write gives it one: the Sessions on such a machine stay as they were (user decision,
+   * 2026-10-15).
+   */
+  #record(address: string, patch: Parameters<MachinesRepo["patch"]>[1]): void {
+    const adoption =
+      this.repo.get(address) === null ? { adoptedAt: this.#effects.now().toISOString() } : {};
+    this.repo.patch(address, { ...adoption, ...patch });
   }
 
   /**
@@ -1399,7 +1502,7 @@ export class MachinesService {
     }
     // What the machine is, before anything below asks it again: the hand-over and the
     // restart both probe, and they should already speak its dialect.
-    this.repo.patch(address, { platform: outcome.identity.platform });
+    this.#record(address, { platform: outcome.identity.platform });
     // A server that carries no pushed state of its own — a packaged install, a release
     // from a tarball — has nothing to hand over: what is on that machine is what this
     // server would have sent. The hand-over is for the machine whose PROCESS may be
@@ -1458,7 +1561,7 @@ export class MachinesService {
     // The files landed whatever the restart did: the record says what is on its disk, and
     // membership says whose machine it is. A restart that failed is the job's outcome, not
     // a footnote in its log — the page shows it, with Restart as the next step.
-    this.repo.patch(address, { version, installedAt: this.#effects.now().toISOString() });
+    this.#record(address, { version, installedAt: this.#effects.now().toISOString() });
     // The Project that asked for the install is the Project that gets the machine.
     this.#setMember(projectId, address, true);
     if (!restarted.ok) {
@@ -1714,6 +1817,46 @@ export class MachinesService {
     return { ok: true };
   }
 
+  /**
+   * A person's Retry on a machine this server keeps connected: an attempt now, whatever the
+   * streak's schedule says. A streak that is waiting skips the rest of its wait and keeps its
+   * count; one that stopped (`gaveUp`) begins again from the first attempt, its last failure
+   * and check still said until the new attempt answers; a machine that is down with no streak
+   * yet begins one. An attempt already running, or a machine that is up, is left alone, so a
+   * second press starts no second attempt. Refused before anything runs: while a job is queued
+   * or running for it (the job decides how it ends), while its stored password is refused (a
+   * try could lock the account; saving a password tries again), and for a machine not kept
+   * connected (nothing to bring back — Start it).
+   */
+  retryReconnect(address: string): RetryReconnectAnswer {
+    const machine = this.#allMachines().find((entry) => entry.id === address);
+    if (machine === undefined || machine.local) return { ok: false, why: "unknown-machine" };
+    const job = this.#jobs.get(address);
+    if (job !== undefined && (job.queued || job.running)) return { ok: false, why: "busy" };
+    if (!this.#keepsConnected(address)) return { ok: false, why: "not-kept" };
+    const state = this.#reconnects.get(address);
+    if (state === undefined) {
+      if (this.#isUp(address)) return { ok: true, started: false };
+      this.#lost(address, 0);
+    } else if (state.waitsForPassword === true) {
+      return { ok: false, why: "password" };
+    } else if (state.gaveUp !== undefined) {
+      const now = this.#effects.now().getTime();
+      state.since = now;
+      state.attempts = 0;
+      state.nextAt = now;
+      delete state.gaveUp;
+      // The new streak checks the machine again after its own third failure.
+      state.diagnosedFor = null;
+    } else if (state.nextAt === null) {
+      return { ok: true, started: false };
+    } else {
+      state.nextAt = this.#effects.now().getTime();
+    }
+    this.#tryNow(address);
+    return { ok: true, started: true };
+  }
+
   async #connect(
     machine: MachineInfo,
     say: Say,
@@ -1805,7 +1948,7 @@ export class MachinesService {
         ...this.#sshCause(target, connection.detail),
       };
     }
-    this.repo.patch(address, { remotePort });
+    this.#record(address, { remotePort });
     say(`Connected; its server is on port ${remotePort} over there.`);
     // An Agent started over there resolves its model, its command policy and its defaults
     // against THAT machine's config, so a machine without ours is connected and unusable.
@@ -1818,11 +1961,6 @@ export class MachinesService {
       this.#projectsUsing(address),
       lined.unasked,
     );
-    // Its own events, carried into this server's stream from here on (event-relay.ts). A
-    // machine whose server has minted no id yet cannot be named in them, and has none to send;
-    // a generation stopped meanwhile carries nothing — its successor subscribes for itself.
-    const machineId = this.repo.get(address)?.machineId ?? null;
-    if (machineId !== null && !this.#stopped) this.#relay.start(address, machineId);
     // Connected, by whichever way it came — a job or the supervision's own attempt: a streak of
     // reconnecting that was under way is over.
     this.#settle(address);
@@ -1895,7 +2033,7 @@ export class MachinesService {
     const handOver = () => this.#handOverBuild(address, target, expected, tell);
     const outcome = await (this.#checkout?.holding(expected, handOver) ?? handOver());
     if (outcome.kind === "upgraded" && outcome.persisted) {
-      this.repo.patch(address, {
+      this.#record(address, {
         version: expected.version,
         installedAt: this.#effects.now().toISOString(),
       });
@@ -1948,10 +2086,9 @@ export class MachinesService {
   disconnect(address: string): void {
     // The record first: with the mark gone, nothing below reads as a machine to bring back.
     if (this.repo.get(address) !== null) {
-      this.repo.patch(address, { sessionPid: null });
+      this.#record(address, { sessionPid: null });
     }
     this.#settle(address);
-    this.#relay.stop(address);
     closeConnectionTo(address);
     this.#sessions.delete(address);
     this.#changed();
@@ -1973,14 +2110,12 @@ export class MachinesService {
   }
 
   /**
-   * Whether a machine is connected as far as this server is concerned: the connection held, and
-   * its server's events coming in — a stream that ended is how a server that stopped or
-   * restarted is noticed. A machine whose server never minted an id has no events to send, so
-   * the connection alone counts.
+   * Whether a machine is connected as far as this server is concerned: the connection held.
+   * A server that stopped or restarted over there is no longer noticed from here — a machine
+   * with a hub (event-hub.ts) says so through it, and one without answers when next used.
    */
   #isUp(address: string): boolean {
-    if (this.#liveSession(address) === null) return false;
-    return this.repo.get(address)?.machineId == null || this.#relay.active(address);
+    return this.#liveSession(address) !== null;
   }
 
   /**
@@ -2016,6 +2151,18 @@ export class MachinesService {
     this.#retryTimers.set(address, timer);
   }
 
+  /**
+   * Runs a machine's due attempt now rather than when its timer fires. The attempt marks itself
+   * running before the first thing it awaits, so the list read right after already says so.
+   */
+  #tryNow(address: string): void {
+    const pending = this.#retryTimers.get(address);
+    if (pending !== undefined) clearTimeout(pending);
+    this.#retryTimers.delete(address);
+    this.#changed();
+    void this.#bringBack([address]);
+  }
+
   /** A machine stops being brought back: it came back, or it is no longer to be kept connected. */
   #settle(address: string): void {
     const timer = this.#retryTimers.get(address);
@@ -2030,7 +2177,9 @@ export class MachinesService {
     return {
       since: iso(state.since),
       attempts: state.attempts,
+      maxAttempts: RECONNECT_MAX_ATTEMPTS,
       nextAt: state.nextAt === null ? null : iso(state.nextAt),
+      ...(state.gaveUp === undefined ? {} : { gaveUp: state.gaveUp }),
       lastError: state.lastError,
       ...(state.sshReason === undefined ? {} : { sshReason: state.sshReason }),
       diagnosis: state.diagnosis,
@@ -2081,7 +2230,8 @@ export class MachinesService {
    * One attempt to bring a machine back — the whole connect: what runs there, its server started
    * if it is not, the connection held, the Project config handed over. A failure waits twice as long
    * as the one before, up to the cap; the third in a row, and any later one that fails
-   * differently, runs the connection check, whose answer the page shows as the explanation.
+   * differently, runs the connection check, whose answer the page shows as the explanation. The
+   * streak stops at RECONNECT_MAX_ATTEMPTS failures, or at the first that no retry can fix.
    */
   async #attempt(address: string): Promise<void> {
     const state = this.#reconnects.get(address);
@@ -2115,9 +2265,24 @@ export class MachinesService {
       this.#changed();
       return;
     }
-    const wait = Math.min(RECONNECT_FIRST_MS * 2 ** state.attempts, RECONNECT_MAX_MS);
-    state.nextAt = this.#effects.now().getTime() + wait;
-    this.#schedule(address, wait);
+    // A host key, a key file, a refused key or the ssh config: the next try would fail the same
+    // way until someone fixes it, and the sentence for the reason already says how — no check.
+    if (state.sshReason !== undefined && UNRECOVERABLE_SSH.has(state.sshReason)) {
+      state.gaveUp = "ssh";
+      state.nextAt = null;
+      this.#changed();
+      return;
+    }
+    if (state.attempts >= RECONNECT_MAX_ATTEMPTS) {
+      // The stated give-up point: no timer, and the look-over passes a streak with no next
+      // attempt by (#bringBack), until a Retry or this server's restart begins another.
+      state.gaveUp = "attempts";
+      state.nextAt = null;
+    } else {
+      const wait = Math.min(RECONNECT_FIRST_MS * 2 ** state.attempts, RECONNECT_MAX_MS);
+      state.nextAt = this.#effects.now().getTime() + wait;
+      this.#schedule(address, wait);
+    }
     this.#changed();
     if (
       machine !== undefined &&
@@ -2242,7 +2407,6 @@ export class MachinesService {
     if (this.#announceTimer !== null) clearTimeout(this.#announceTimer);
     this.#announceTimer = null;
     this.#unwatch();
-    this.#relay.stopAll();
     if (this.#lateSweep !== null) clearTimeout(this.#lateSweep);
     this.#lateSweep = null;
     closeAllConnections();
@@ -2336,7 +2500,11 @@ export class MachinesService {
     if (models.created.length > 0) say(`Created there: ${models.created.join(", ")}.`);
     for (const entry of models.skipped) {
       skipped.push(entry);
-      say(`Skipped ${entry.provider}/${entry.modelId} — ${entry.reason}`);
+      say(
+        entry.builtInHere === true
+          ? `Skipped ${entry.provider}/${entry.modelId} — a built-in model here that the build on that machine does not include yet; update that machine, then sync again.`
+          : `Skipped ${entry.provider}/${entry.modelId} — ${entry.reason}`,
+      );
       const config = await configOf(entry.projectId).catch(() => null);
       const names = (ref: ModelRef | undefined) =>
         ref?.provider === entry.provider && ref.model_id === entry.modelId;
@@ -2489,7 +2657,7 @@ export class MachinesService {
     // and a machine that was merely installed on is not made a held one by being brought
     // forward at boot — only a connect asks for that.
     const port = probed.state.port;
-    this.repo.patch(address, { remotePort: port });
+    this.#record(address, { remotePort: port });
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return { kind: "failed", step: "sign in", detail: session.detail };
     return this.#effects.upgrade({
@@ -2529,9 +2697,6 @@ export class MachinesService {
       return { ok: false, detail: "no server is running on that machine." };
     }
     const port = before.state.port;
-    // Its events end with it, and that ending is this restart's own: the stream is let go
-    // first, so it is not taken for a machine that was lost, and taken up again after.
-    this.#relay.stop(address);
     say(`Stopping its server on port ${port}…`, "restart");
     const stopped = await this.#effects.stopServer(target);
     if (!stopped.ok) return { ok: false, detail: `it would not stop — ${stopped.detail}` };
@@ -2546,11 +2711,7 @@ export class MachinesService {
     // It is a different process now, and possibly one with an identity it did not have a
     // moment ago: a machine mints its id when a server that mints one starts there.
     await this.#refreshStatus(address, target);
-    this.repo.patch(address, { remotePort: port });
-    const machineId = this.repo.get(address)?.machineId ?? null;
-    if (machineId !== null && this.#liveSession(address) !== null && !this.#stopped) {
-      this.#relay.start(address, machineId);
-    }
+    this.#record(address, { remotePort: port });
     return { ok: true, port };
   }
 
@@ -2729,7 +2890,7 @@ export class MachinesService {
     for (const line of said.split("\n")) if (line.trim() !== "") say(line.trim());
     // What this server knew about the program there is gone with it. The machine's own id lives
     // in its data directory: kept with the data, forgotten with it.
-    this.repo.patch(address, {
+    this.#record(address, {
       version: null,
       installedAt: null,
       remotePort: null,
@@ -2873,7 +3034,7 @@ export class MachinesService {
         // Recorded only when the machine also wrote it down: a swap it could not persist is
         // gone at its next restart, and a record of it would outlive the thing it records.
         if (outcome.kind === "upgraded" && outcome.persisted) {
-          this.repo.patch(address, {
+          this.#record(address, {
             version: plan.version,
             installedAt: this.#effects.now().toISOString(),
           });
@@ -2934,6 +3095,7 @@ export abstract class Machines extends Interface<
     | "start"
     | "syncConfigEverywhere"
     | "proxyTarget"
+    | "projectApis"
     | "jobs"
     | "startUse"
     | "stopUsing"
@@ -2975,6 +3137,8 @@ export class MachinesModule {
   @Use() private readonly users!: Users;
   @Use() private readonly resourceGroups!: ResourceGroups;
   @Provide() machines!: Machines;
+  /** Session-level requests for a machine's Session, routed by its id (session-forward.ts). */
+  @Provide() sessionForward!: MachineSessionForward;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
   setup({ effect }: ClassCtx) {
@@ -3004,6 +3168,11 @@ export class MachinesModule {
         // Best effort: a page reads the list again on its next change or visit.
       }
     };
+    // The generation's one socket cache and the event hub over it (PRFC-0011): the proxy's
+    // streams and the machines' aggregate event stream share both, so the hub holds ONE
+    // subscription per machine however many tabs read it.
+    const sockets = new MachineSockets((line) => console.log(line));
+    const events = new MachineEventHub(sockets, (line) => console.log(line));
     const machines = new MachinesService(
       this.paths.root,
       repo.ownId(),
@@ -3012,17 +3181,24 @@ export class MachinesModule {
         ...(checkout === null ? {} : { packCheckout: deployPacker(checkout) }),
         // An installed release installs the image its build shipped, unless it was pushed to.
         shippedImage: shippedImage(),
+        socketFact: (machineId) => sockets.fact(machineId),
         announce: () => toAdmins({ type: "machines_changed" }),
-        publishEvent: (machineId, event) => toAdmins({ type: "machine_event", machineId, event }),
       },
       () => this.hmr.assetsDir(),
     );
     this.machines = machines;
-    this.routes = machinesRoutes({ machines, access: this.access });
-    this.serverProxyRoutes = machinesServerProxyRoutes(machines);
+    this.routes = machinesRoutes({ machines, access: this.access, events });
+    this.serverProxyRoutes = machinesServerProxyRoutes(machines, { sockets, events });
+    this.sessionForward = machineSessionForward(machines, { sockets, events }, (line) =>
+      console.log(line),
+    );
     // Every transient ssh session THIS generation opened closes with it, and every held one is
     // left for the successor, whose start() re-holds each one the record says was held.
-    effect(() => machines.stop());
+    effect(() => {
+      machines.stop();
+      events.close();
+      sockets.close();
+    });
   }
 }
 
@@ -3032,11 +3208,16 @@ export class MachinesModule {
  * that machine's admin, with a session this server minted over the ssh access that installed
  * it, so this server's admin session is the one credential involved.
  */
-export function machinesServerProxyRoutes(machines: MachinesService): Hono<AppEnv> {
+export function machinesServerProxyRoutes(
+  machines: MachinesService,
+  shared: { sockets?: MachineSockets; events?: MachineEventHub } = {},
+): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const proxy = machinesProxy(
     (machineId) => machines.proxyTarget(machineId),
     (machineId, outcome) => machines.noteApiSeen(machineId, outcome),
+    (line) => console.log(line),
+    shared,
   );
   app.all("*", async (c) => {
     if (!c.var.user.isAdmin) {

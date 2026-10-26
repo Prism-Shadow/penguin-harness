@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/continual-learning",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "Continual learning: a stop hook that, when the task that just ended ran more than 30 completed turns, hands a condensed excerpt of that task to a background subagent, which folds the durable findings into the agent's own skills.",
   "keywords": [
     "penguin-plugin",
@@ -34,7 +34,7 @@
       "prompt_zh": "说明持续学习钩子在超过 30 轮的任务结束后会做什么，再逐行列出你已安装的技能，标出这类任务可能会更新的那些。"
     },
     "hooks": {
-      "version": "2026.10.04.1",
+      "version": "2026.10.24.1",
       "stop": [
         {
           "command": "stop.mjs",

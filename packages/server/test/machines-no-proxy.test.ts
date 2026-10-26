@@ -149,6 +149,8 @@ describe("machine traffic and the proxy settings", () => {
       agent: sessionAgent(socksPort, machinePort),
       port: machinePort,
       cookie: "penguin_session=x",
+      adoptedAt: null,
+      session: 1,
     }));
 
     const res = await forward(

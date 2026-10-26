@@ -3,7 +3,7 @@ title: 产品介绍
 description: PenguinHarness 是什么，它由哪些部分组成，以及从哪里开始。
 ---
 
-欢迎阅读 PenguinHarness 文档。PenguinHarness 是**统一、稳定的 Agent 自进化框架**（Unified and Stable RSI Framework）：一个开源的 Agent Harness，全自动优化模型 × Agent Harness。模型固定不动，进化的是 Harness——提示词、Skill、工具与钩子——每一种自进化算法都跑在同一套 Benchmark、记分板与快照之上。它整体是一套 TypeScript 技术栈，完全本地部署，最低一颗 CPU 即可运行，通过统一的模型网关可以接入 1000+ 在线与本地模型。
+欢迎阅读 PenguinHarness 文档。PenguinHarness 是**统一、稳定的 Agent 自进化框架**（Unified and Stable RSI Framework），一个开源的 Agent Harness。全自动优化：任意模型、任意算法、任意 Benchmark。模型固定不动，进化的是 Harness——提示词、Skill、工具与钩子——每一种自进化算法都跑在同一套 Benchmark、记分板与快照之上。它整体是一套 TypeScript 技术栈，完全本地部署，最低一颗 CPU 即可运行，通过统一的模型网关可以接入 1000+ 在线与本地模型。
 
 ## 开始使用
 
@@ -21,7 +21,7 @@ PenguinHarness 由下面这些组件构成。它们共用同一个数据目录�
 
 | 组件 | 包名 | 说明 |
 | --- | --- | --- |
-| SDK | `@prismshadow/penguin-core` | 核心引擎：ReAct 循环、[OmniMessage 协议](/omni-message)、LLM 与 Environment 的[接口契约](/interfaces)、Agent State 与 Trace。 |
+| SDK | `@prismshadow/penguin-core` | 核心引擎：ReAct 循环、[AMSP 记录](/amsp-records)（来自 `@prismshadow/amsp`）、LLM 与 Environment 的[接口契约](/interfaces)、Agent State 与 Trace。 |
 | CLI | `@prismshadow/penguin-cli` | `penguin` 命令：交互式 REPL、单次 Task 运行，以及模型与 Vault 配置。 |
 | Server | `@prismshadow/penguin-server` | Web 服务端：HTTP [API 与 SSE 流式通道](/server-api)、多用户认证、Project 授权和用量统计。 |
 | Web App | `@prismshadow/penguin-web` | 浏览器界面：多会话对话、Agent 管理、插件库、模型配置、Trace 观测和评估中心。 |
@@ -29,7 +29,7 @@ PenguinHarness 由下面这些组件构成。它们共用同一个数据目录�
 
 ## 三大支柱
 
-PenguinHarness 可以用一句话概括：**统一、稳定的 Agent 自进化框架，全自动优化模型 × Agent Harness**。它围绕三个概念展开，即消息协议、SDK 和技能库，每个概念支撑一个支柱：
+PenguinHarness 可以用一句话概括为**统一、稳定的 Agent 自进化框架，全自动优化：任意模型、任意算法、任意 Benchmark**。它围绕三个概念展开，即消息协议、SDK 和技能库，每个概念支撑一个支柱：
 
 | 支柱 | 含义 |
 | --- | --- |
@@ -50,7 +50,7 @@ PenguinHarness 可以用一句话概括：**统一、稳定的 Agent 自进化�
 
 ## 命名说明
 
-统一消息协议在技术文档中称为 **OmniMessage**，产品宣传中也叫 Penguin Message。本文档一律使用 OmniMessage。
+统一消息格式中的一条消息在技术文档中称为 **AMSP 记录**（AMSP 即它所在的流），产品宣传中也叫 Penguin Message。本文档一律称 AMSP 记录。
 
 ## 了解工作原理
 

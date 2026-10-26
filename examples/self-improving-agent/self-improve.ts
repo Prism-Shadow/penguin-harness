@@ -33,7 +33,7 @@ import {
   createAgent,
   userText,
   isCompleteModelMessage,
-  type OmniMessage,
+  type AmspRecord,
 } from "@prismshadow/penguin-core";
 
 const AGENT_ID = "self-improve-demo";
@@ -118,7 +118,7 @@ function score(
   return { score: s, detail };
 }
 
-async function drain(run: AsyncGenerator<OmniMessage>): Promise<void> {
+async function drain(run: AsyncGenerator<AmspRecord>): Promise<void> {
   for await (const msg of run) {
     if (isCompleteModelMessage(msg) && msg.payload.type === "text") {
       process.stdout.write(msg.payload.text + "\n");

@@ -1,0 +1,212 @@
+<!doctype html>
+<!--
+  Source for the AMSP page's share card (public/og-amsp.png), rendered by
+  `node scripts/capture-og-cover.mjs amsp`. Static and dependency-free, like og-cover.html, whose
+  ground and glows it shares. Edit this file, re-run the script, commit the PNG.
+
+  Composed like MMSP's card (mmsp.penguin.ooo): the mark above the name, the page's headline and
+  subline on the left, the stream as stacked rows on the right. In English only: the shell that
+  carries the card is the English one. The mark is src/components/amsp-mark.tsx in its dark-mode colours.
+  The rows are a Session's first message as the page's player shows it: the ones the Trace stores
+  on a lighter ground, the fragment muted, the closing task_end in blue. Change them with the
+  vocabulary.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      .card {
+        position: relative;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background: #141414;
+        color: #f7f7f7;
+      }
+      /* Same two glows as og-cover.html. */
+      .glow {
+        position: absolute;
+        border-radius: 9999px;
+        filter: blur(90px);
+        opacity: 0.22;
+      }
+      .glow-a {
+        top: -180px;
+        left: -140px;
+        width: 700px;
+        height: 700px;
+        background: radial-gradient(circle, #4285f4 0%, transparent 66%);
+      }
+      .glow-b {
+        right: -200px;
+        bottom: -260px;
+        width: 760px;
+        height: 760px;
+        background: radial-gradient(circle, #0ea5e9 0%, transparent 66%);
+      }
+      .inner {
+        position: relative;
+        display: flex;
+        height: 100%;
+        flex-direction: column;
+        justify-content: space-between;
+        box-sizing: border-box;
+        padding: 64px 76px 52px;
+      }
+      .main {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 56px;
+      }
+      .mark {
+        display: block;
+        width: 92px;
+        height: 92px;
+      }
+      h1 {
+        margin: 26px 0 0;
+        font-size: 112px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1;
+      }
+      .name {
+        margin: 18px 0 0;
+        font-size: 32px;
+        font-weight: 500;
+        color: #d4d4d4;
+      }
+      .name b {
+        font-weight: 600;
+        color: #8ab4f8;
+      }
+      .tagline {
+        margin: 14px 0 0;
+        font-size: 27px;
+        font-weight: 600;
+        color: #f0f0f0;
+      }
+      .subline {
+        margin: 8px 0 0;
+        font-size: 20px;
+        line-height: 1.35;
+        color: #ababab;
+      }
+      .stream {
+        display: flex;
+        width: 430px;
+        flex-direction: column;
+        gap: 10px;
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 21px;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        border: 1px solid #383838;
+        border-radius: 10px;
+        padding: 10px 18px;
+        color: #8f8f8f;
+      }
+      /* Stored in the Trace: the lighter ground the player draws them on. */
+      .row.stored {
+        background: #1c1c1c;
+        color: #f0f0f0;
+      }
+      .row .kind {
+        color: inherit;
+      }
+      .row .closer {
+        color: #8ab4f8;
+      }
+      .foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid rgba(171, 171, 171, 0.22);
+        padding-top: 22px;
+        font-size: 24px;
+        color: #d4d4d4;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 600;
+      }
+      .logo {
+        width: 34px;
+        height: 34px;
+      }
+      .domain {
+        font-weight: 600;
+        color: #8ab4f8;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="glow glow-a"></div>
+      <div class="glow glow-b"></div>
+      <div class="inner">
+        <div class="main">
+          <div>
+            <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+              <g fill="#2a2a33">
+                <path d="M0 16.5V7a7 7 0 0 1 7-7h9.5v16.5Z" />
+                <path d="M15.5 15.5H32V25a7 7 0 0 1-7 7h-9.5Z" />
+              </g>
+              <path d="M16 0h9a7 7 0 0 1 7 7v9H16Z" fill="#477dfb" />
+              <path d="M0 16h16v16H7a7 7 0 0 1-7-7Z" fill="#477dfb" />
+              <g
+                fill="#fff"
+                font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+                font-size="10.5"
+                font-weight="700"
+                text-anchor="middle"
+                dominant-baseline="central"
+              >
+                <text x="8.5" y="8.5">A</text>
+                <text x="23.5" y="8.5">M</text>
+                <text x="8.5" y="23.5">S</text>
+                <text x="23.5" y="23.5">P</text>
+              </g>
+            </svg>
+            <h1>AMSP</h1>
+            <p class="name"><b>A</b>gent <b>M</b>essage <b>S</b>tream <b>P</b>rotocol</p>
+            <p class="tagline">One protocol for agent communication</p>
+            <p class="subline">Stream, parse and store agent messages with one protocol</p>
+          </div>
+          <div class="stream">
+            <div class="row"><span>event: ping</span><span>{}</span></div>
+            <div class="row stored"><span>session_meta</span><span>scripted-model</span></div>
+            <div class="row stored"><span>event_msg</span><span>task_begin</span></div>
+            <div class="row"><span>model_msg</span><span>partial_text</span></div>
+            <div class="row stored"><span>model_msg</span><span>text</span></div>
+            <div class="row stored"><span>event_msg</span><span class="closer">task_end</span></div>
+          </div>
+        </div>
+        <div class="foot">
+          <div class="brand">
+            <img class="logo" src="../public/penguin-logo.svg" alt="" />PenguinHarness
+          </div>
+          <div class="domain">penguin.ooo/amsp</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

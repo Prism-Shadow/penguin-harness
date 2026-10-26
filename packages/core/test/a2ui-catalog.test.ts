@@ -1,7 +1,8 @@
 /**
  * L1 validation of one ```a2ui body (a2ui/catalog.ts): a valid block of each type round-trips
  * to its spec with no issue; every error code fires on the mistake it names and withholds the
- * spec; the warnings fire past the "warn" marks and still return the spec.
+ * spec; the warnings fire past the "warn" marks and still return the spec. A form's fields have
+ * their own file (a2ui-form.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import { parseA2ui } from "../src/a2ui/index.js";
@@ -23,25 +24,6 @@ const choice = {
     { label: "B", value: "Use B", description: "The other one." },
   ],
   allowOther: true,
-};
-const form = {
-  type: "form",
-  title: "Size",
-  fields: [
-    {
-      id: "n",
-      label: "Count",
-      kind: "number",
-      min: 1,
-      max: 5,
-      step: 1,
-      unit: "GB",
-      required: true,
-    },
-    { id: "k", label: "Kind", kind: "single", options: [{ label: "x" }, { label: "y" }] },
-    { id: "t", label: "Notes", kind: "text", placeholder: "Anything else" },
-  ],
-  submitLabel: "Go",
 };
 const steps = {
   type: "steps",
@@ -104,7 +86,6 @@ const metrics = {
 describe("parseA2ui: valid blocks", () => {
   it.each([
     ["choice", choice],
-    ["form", form],
     ["steps", steps],
     ["callout", callout],
     ["weather", weather],
@@ -181,41 +162,6 @@ describe("parseA2ui: L1 errors (no spec)", () => {
     ).toEqual([["multiple_recommended", "options"]]);
   });
 
-  it("form: field rules", () => {
-    const withField = (field: Record<string, unknown>) => ({ type: "form", fields: [field] });
-    expect(errorPaths(withField({ id: "a", label: "A", kind: "single" }))).toEqual([
-      ["options_required", "fields[0].options"],
-    ]);
-    expect(
-      errorPaths(withField({ id: "a", label: "A", kind: "text", options: options(2) })),
-    ).toEqual([["options_forbidden", "fields[0].options"]]);
-    expect(errorPaths(withField({ id: "a", label: "A", kind: "text", min: 1 }))).toEqual([
-      ["number_only", "fields[0].min"],
-    ]);
-    expect(errorPaths(withField({ id: "a", label: "A", kind: "number", min: 5, max: 1 }))).toEqual([
-      ["range_invalid", "fields[0].min"],
-    ]);
-    expect(errorPaths(withField({ id: "a", label: "A", kind: "number", step: 0 }))).toEqual([
-      ["range_invalid", "fields[0].step"],
-    ]);
-    expect(errorPaths(withField({ id: "a", label: "A", kind: "date" }))).toEqual([
-      ["invalid_enum", "fields[0].kind"],
-    ]);
-    expect(errorPaths(withField({ id: "Field-1", label: "A", kind: "text" }))).toEqual([
-      ["invalid_format", "fields[0].id"],
-    ]);
-    expect(
-      errorPaths({
-        type: "form",
-        fields: [
-          { id: "a", label: "A", kind: "text" },
-          { id: "a", label: "B", kind: "text" },
-        ],
-      }),
-    ).toEqual([["duplicate_id", "fields[1].id"]]);
-    expect(errorPaths({ type: "form", fields: [] })).toEqual([["count_out_of_range", "fields"]]);
-  });
-
   it("steps and callout: required text, enum tone, counts", () => {
     expect(errorPaths({ type: "steps", steps: [{ code: "x" }] })).toEqual([
       ["missing_field", "steps[0].text"],
@@ -277,7 +223,7 @@ describe("parseA2ui: warnings keep the spec", () => {
     expect(result.spec).toEqual(callout);
   });
 
-  it("warns past the warn marks: options > 5, label > 40, fields > 4, steps > 10", () => {
+  it("warns past the warn marks: options > 5, label > 40, steps > 10", () => {
     expect(codes({ type: "choice", question: "q", options: options(6) })).toEqual([
       "too_many_options",
     ]);
@@ -288,12 +234,6 @@ describe("parseA2ui: warnings keep the spec", () => {
         options: [{ label: "x".repeat(41) }, { label: "B" }],
       }),
     ).toEqual(["option_label_long"]);
-    expect(
-      codes({
-        type: "form",
-        fields: Array.from({ length: 5 }, (_, i) => ({ id: `f${i}`, label: "F", kind: "text" })),
-      }),
-    ).toEqual(["form_too_many_fields"]);
     expect(
       codes({ type: "steps", steps: Array.from({ length: 11 }, () => ({ text: "Do it." })) }),
     ).toEqual(["steps_too_many"]);
@@ -310,13 +250,7 @@ describe("parseA2ui: warnings keep the spec", () => {
     expect(many.spec).toBeDefined();
   });
 
-  it("warns about fields that have no effect: a placeholder on an option field, a lang without code", () => {
-    expect(
-      codes({
-        type: "form",
-        fields: [{ id: "k", label: "K", kind: "single", options: options(2), placeholder: "p" }],
-      }),
-    ).toEqual(["ignored_field"]);
+  it("warns about a field that has no effect: a lang without code", () => {
     expect(codes({ type: "steps", steps: [{ text: "Do it.", lang: "sh" }] })).toEqual([
       "ignored_field",
     ]);

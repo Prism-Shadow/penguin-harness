@@ -2,20 +2,21 @@
  * The Machine dialog: everything about one machine that its card leaves out, and every verb it
  * takes.
  *
- * - The header: a tile, the state as one chip — a glyph (a spinner while a job runs or the server
- *   brings the machine back) and one plain word, the reason behind it on the glyph's hover — the
- *   installed version, and one line saying how this server reaches the machine.
+ * - The header: a tile, the state as one label pill — one plain word in its tone, the reason behind
+ *   it on the pill's hover — the installed version and this server's tag in the same pill shape,
+ *   and one line saying how this server reaches the machine.
  * - The toolbar, right under it: every verb in one row of flat buttons, as a file manager lays out
  *   its commands, set apart by spacing alone — Update while the machine carries another build
  *   (Enable when nothing is installed), Stop or Start its server, Restart it, Sync config while it
  *   is connected on this server's build, Configure SSH, Uninstall. A verb that cannot run now
  *   stays in place, greyed, and ONE muted sentence under the row says why and names them.
- * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and an
- *   attention notice listing what it could not carry: models keyed from this server's
- *   environment, and models the machine would not take.
- * - Reconnecting, while the server brings a machine it keeps connected back: for how long, which
- *   attempt and when the next, the last failure — and what the connection check found, once the
- *   server ran it after failures in a row.
+ * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and
+ *   attention notices, each of which the person may close, saying what it could not carry:
+ *   models keyed from this server's environment, and models the machine would not take.
+ * - Reconnecting, while the server brings a machine it keeps connected back or has stopped trying:
+ *   the shared retry status (the attempt of how many, the countdown to the next with Retry now,
+ *   where it stopped with Retry — none for a refused password), for how long, the last failure —
+ *   and what the connection check found, once the server ran it after failures in a row.
  * - Progress, while a job is queued or running and after one: its own steps one per line, each
  *   marked done, current, failed or still to come; a job that finished well is a single quiet
  *   line. The log is folded underneath, open while the job runs, with a copy button for the whole
@@ -39,7 +40,6 @@ import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 import type { MachineInfo, MachineJob, SshHostResponse } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
   Button,
   Chevron,
   CopyButton,
@@ -51,22 +51,35 @@ import {
   KeyValue,
   KeyValueRow,
   LogView,
+  MachineStatusPill,
+  MachineToolbar as MachineToolbarView,
   Modal,
+  Notice,
   NoticeStrip,
+  Pill,
+  RetryStatus,
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import {
+  dismissNotice,
+  envOnlyNoticeId,
+  skippedNoticeId,
+  useNoticeDismissed,
+} from "../../lib/notice-dismissals";
+import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { DOT_TONE, jobMoving } from "./machine-card";
 import {
   configSyncView,
+  envOnlyItems,
   jobView,
   machineChip,
   machineFacts,
   machineToolbar,
   reconnectView,
+  skippedItems,
 } from "./machine-detail-view";
 import type {
   CheckLine,
@@ -78,13 +91,16 @@ import type {
   ToolbarItem,
   ToolbarVerb,
 } from "./machine-detail-view";
-import { outOfDate, readMachine } from "./machines-view";
+import { outOfDate, readMachine, socketReading } from "./machines-view";
+import { retryStatus } from "./machine-card";
 
 /**
  * Everything the dialog can ask its page to do for the machine. `use` is the whole pipeline —
- * what Enable, Update and Retry each run; `replaceProgram` the forced install a failure offers.
+ * what Enable, Update and a failed job's Retry each run; `replaceProgram` the forced install a
+ * failure offers; `reconnect` the Retry while the server brings the machine back.
  */
-export type MachineVerb = Exclude<ToolbarVerb, "enable" | "update"> | "use" | "replaceProgram";
+export type MachineVerb =
+  Exclude<ToolbarVerb, "enable" | "update"> | "use" | "replaceProgram" | "reconnect";
 
 /** The page verb a toolbar button asks for. */
 const VERB_OF: Record<ToolbarVerb, MachineVerb> = {
@@ -114,7 +130,23 @@ export interface MachineDetailBodyProps {
   noImage: boolean;
   /** The clock the reconnecting streak and the last check are measured from. */
   now?: number;
-  onAct: (verb: MachineVerb) => void;
+  /**
+   * Whether the person closed the "keys from the environment" notice over what it names now:
+   * shown when false (the default), hidden when true, and hidden while unknown (null), so a
+   * closed notice never flashes in.
+   */
+  envOnlyDismissed?: boolean | null;
+  /** Closes that notice; without it the notice has no close cross. */
+  onDismissEnvOnly?: () => void;
+  /** The same for the "models not synced to this machine" notice, over the refusals it lists. */
+  skippedDismissed?: boolean | null;
+  /** Closes that notice; without it the notice has no close cross. */
+  onDismissSkipped?: () => void;
+  /**
+   * Asks the page for a verb. The page may answer with the request's promise (the reconnect's
+   * Retry does), which rejects when the server refused it.
+   */
+  onAct: (verb: MachineVerb) => void | Promise<void>;
 }
 
 /** The header tile's box and glyph, in px: the plugin dialog's header tile, so the two match. */
@@ -135,29 +167,11 @@ function MachineTile() {
 }
 
 /**
- * The state as one chip in its tone: the glyph — a spinner for a working machine — then the word.
- * The glyph is information, not decoration: it is the shape that tells apart two states sharing a
- * tone. The reason rides on the glyph, which shows no text of its own: the tooltip layer shows a
- * hint only where its words are not already on screen, so on the word it would never open.
+ * The state as the shared status pill, the one the machine's card wears: the word in its tone, the
+ * reason on the pill's hover.
  */
 function StatusChip({ chip }: { chip: MachineChip }) {
-  return (
-    <Badge variant="soft" tone={DOT_TONE[chip.tone]}>
-      <span
-        className="inline-flex"
-        {...(chip.reason === null
-          ? {}
-          : { "data-tooltip": chip.reason, "data-tooltip-content": "text" })}
-      >
-        {chip.glyph === null ? (
-          <Spinner size="xs" tone="success" label={chip.word} />
-        ) : (
-          <GlyphIcon d={chip.glyph} size={ICON_SIZE.inlineGlyph} className={toneInk[chip.tone]} />
-        )}
-      </span>
-      <span className="ml-1">{chip.word}</span>
-    </Badge>
-  );
+  return <MachineStatusPill state={chip.state} label={chip.word} reason={chip.reason} />;
 }
 
 /**
@@ -389,48 +403,52 @@ function CheckList({ lines, alias }: { lines: readonly CheckLine[]; alias: strin
 }
 
 /**
- * The toolbar: the verbs in one row of flat buttons, the primary one first in the primary look,
- * wrapping where the row does not fit; a request in flight greys every one. No rule above or below
- * it: the spacing around the row is what sets it apart. `data-verb` names each for whatever reads
- * the markup.
+ * The toolbar: the shared `MachineToolbar` — the verbs in one row of flat buttons, a request in
+ * flight greying every one — with each button asking the page for its verb, and `note`, the one
+ * sentence saying why the greyed verbs wait, under it.
  */
 export function MachineToolbar({
   items,
   busy,
+  note = null,
   onAct,
 }: {
   items: readonly ToolbarItem[];
   busy: boolean;
+  note?: string | null;
   onAct: (verb: MachineVerb) => void;
 }) {
   return (
-    <div
-      role="toolbar"
-      aria-label={S.machines.detail.toolbar.label}
-      className="flex flex-wrap items-center gap-1"
-    >
-      {items.map((item) => (
-        <Button
-          key={item.verb}
-          size="sm"
-          variant={item.primary ? "primary" : "ghost"}
-          data-verb={item.verb}
-          disabled={busy || item.held !== null}
-          onClick={() => onAct(VERB_OF[item.verb])}
-        >
-          <GlyphIcon d={item.glyph} size={ICON_SIZE.inlineGlyph} />
-          {item.label}
-        </Button>
-      ))}
-    </div>
+    <MachineToolbarView
+      items={items.map((item) => ({ ...item, held: item.held !== null }))}
+      label={S.machines.detail.toolbar.label}
+      busy={busy}
+      note={note}
+      onAct={(verb: ToolbarVerb) => onAct(VERB_OF[verb])}
+    />
   );
 }
 
 /**
  * The last config sync: one quiet line — a check, or the danger cross on a failure, beside the
- * words — and, when the sync left anything behind, one attention notice saying what and why.
+ * words — and, when the sync left anything behind, attention notices saying what and why, both
+ * the shared notice the person may close (as the initial-password banner can be): the model keys
+ * only this server's environment holds, back when another such key appears, and the models the
+ * machine would not take, back when another model is refused or one is refused for another reason.
  */
-function ConfigSync({ view }: { view: ConfigSyncView }) {
+function ConfigSync({
+  view,
+  envOnlyDismissed = false,
+  onDismissEnvOnly,
+  skippedDismissed = false,
+  onDismissSkipped,
+}: {
+  view: ConfigSyncView;
+  envOnlyDismissed?: boolean | null;
+  onDismissEnvOnly?: () => void;
+  skippedDismissed?: boolean | null;
+  onDismissSkipped?: () => void;
+}) {
   const c = S.machines.detail.configSync;
   return (
     <>
@@ -445,24 +463,28 @@ function ConfigSync({ view }: { view: ConfigSyncView }) {
         />
         <span className="min-w-0 break-words whitespace-pre-line">{view.line}</span>
       </p>
-      {(view.envOnly || view.skipped.length > 0) && (
-        <NoticeStrip
+      {view.envOnly && envOnlyDismissed === false && (
+        <Notice
           tone="attention"
-          data-config-sync-notice=""
-          className="mt-3 space-y-2 rounded-md border px-3 py-2 text-sm"
+          className="mt-3"
+          {...(onDismissEnvOnly !== undefined ? { dismiss: { onClick: onDismissEnvOnly } } : {})}
         >
-          {view.envOnly && <p data-env-only="">{c.envOnly}</p>}
-          {view.skipped.length > 0 && (
-            <div data-skipped="">
-              <p>{c.skippedTitle}</p>
-              <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
-                {view.skipped.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </NoticeStrip>
+          <span data-env-only="">{c.envOnly}</span>
+        </Notice>
+      )}
+      {view.skipped.length > 0 && skippedDismissed === false && (
+        <Notice
+          tone="attention"
+          className="mt-3"
+          title={c.skippedTitle}
+          {...(onDismissSkipped !== undefined ? { dismiss: { onClick: onDismissSkipped } } : {})}
+        >
+          <ul data-skipped="" className="mt-1 list-disc space-y-1 pl-5 break-words">
+            {view.skipped.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </Notice>
       )}
     </>
   );
@@ -478,6 +500,10 @@ export function MachineDetailBody({
   busy,
   noImage,
   now = Date.now(),
+  envOnlyDismissed = false,
+  onDismissEnvOnly,
+  skippedDismissed = false,
+  onDismissSkipped,
   onAct,
 }: MachineDetailBodyProps) {
   const m = S.machines;
@@ -507,11 +533,9 @@ export function MachineDetailBody({
               <StatusChip chip={chip} />
               {/* The version on offer is Details' to say, beside the installed one. */}
               {machine.installed !== null && (
-                <Badge variant="soft" tone={behind ? "attention" : "neutral"}>
-                  v{machine.installed.version}
-                </Badge>
+                <Pill tone={behind ? "attention" : "neutral"}>v{machine.installed.version}</Pill>
               )}
-              {machine.local && <Badge variant="outline">{m.localTitle}</Badge>}
+              {machine.local && <Pill>{m.localTitle}</Pill>}
             </div>
             <p className="mt-1 text-sm text-fg-muted">
               {machine.local ? d.describeLocal : d.describeRemote(machine.alias)}
@@ -520,47 +544,39 @@ export function MachineDetailBody({
         </div>
         {toolbar.items.length > 0 && (
           <div>
-            <MachineToolbar items={toolbar.items} busy={busy} onAct={onAct} />
             {/* Why the greyed verbs wait, once, in words — never on a hover the reader has to find. */}
-            {toolbar.sentence !== null && (
-              <p data-held="" className="mt-1.5 text-xs text-fg-muted">
-                {toolbar.sentence}
-              </p>
+            <MachineToolbar
+              items={toolbar.items}
+              busy={busy}
+              note={toolbar.sentence}
+              onAct={onAct}
+            />
+            {configSync !== null && (
+              <ConfigSync
+                view={configSync}
+                envOnlyDismissed={envOnlyDismissed}
+                {...(onDismissEnvOnly !== undefined ? { onDismissEnvOnly } : {})}
+                skippedDismissed={skippedDismissed}
+                {...(onDismissSkipped !== undefined ? { onDismissSkipped } : {})}
+              />
             )}
-            {configSync !== null && <ConfigSync view={configSync} />}
           </div>
         )}
       </div>
 
       {reconnect !== null && (
         <RuledSection level={3} title={d.reconnect.title}>
-          {/* A refused password stops the retries: the line says so instead of counting down. */}
-          {reconnect.stopped ? (
-            <p
-              data-reconnect="stopped"
-              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
-            >
-              <GlyphIcon
-                d={ICONS.xCircle}
-                size={ICON_SIZE.inlineGlyph}
-                className={toneInk.danger}
-              />
-              <span className="font-semibold">{d.reconnect.stopped}</span>
-              <span className="text-fg-muted">{d.reconnect.lasting(reconnect.lasting)}</span>
-            </p>
-          ) : (
-            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
-              <Spinner size="xs" tone="success" label={d.reconnect.trying} />
-              <span className="font-semibold">{d.reconnect.trying}</span>
-              <span className="text-fg-muted">
-                {[
-                  d.reconnect.lasting(reconnect.lasting),
-                  d.reconnect.attempt(reconnect.attempt),
-                  reconnect.next === null ? d.reconnect.now : d.reconnect.next(reconnect.next),
-                ].join(" · ")}
-              </span>
-            </p>
-          )}
+          {/* The card's retry status, at the dialog's size: the Retry sits under where the streak
+              stands, and the last failure, in full, under that. A job moving on the machine
+              decides first, so the Retry waits for it. */}
+          <RetryStatus
+            {...retryStatus(reconnect.status, {
+              onRetry: () => onAct("reconnect"),
+              held: busy || (job !== null && (job.queued || job.running)),
+              layout: "block",
+              reason: d.reconnect.lasting(reconnect.lasting),
+            })}
+          />
           {reconnect.lastError !== null && (
             <p className="mt-2 text-sm break-words whitespace-pre-line">
               <span className="text-fg-muted">{d.reconnect.lastError}</span> {reconnect.lastError}
@@ -673,6 +689,8 @@ export function MachineDetailBody({
         </div>
         {/* The machine's own id is a detail you go looking for: it closes the section, quiet,
             with its copy button. */}
+        <MachineSocketDetails machine={machine} locale={locale} />
+
         {facts.id !== null && (
           <KeyValue size="sm" className="mt-2">
             <FactRow
@@ -704,6 +722,15 @@ export function MachineDetailDialog({
 }) {
   const { alias, local } = body.machine;
   const [host, setHost] = useState<SshHostResponse | null>(null);
+  // The "keys from this server's environment" notice, closed per account and per machine over
+  // the keys it names, and the "models not synced" one, per account, machine and Project over
+  // the refusals it lists (lib/notice-dismissals.ts).
+  const envOnly = envOnlyItems(body.machine);
+  const envOnlyId = envOnlyNoticeId(body.machine.id);
+  const envOnlyDismissed = useNoticeDismissed(envOnlyId, envOnly);
+  const skipped = skippedItems(body.machine);
+  const skippedId = skippedNoticeId(body.machine.id, projectId);
+  const skippedDismissed = useNoticeDismissed(skippedId, skipped);
   useEffect(() => {
     setHost(null);
     if (local) return;
@@ -729,7 +756,39 @@ export function MachineDetailDialog({
   }, []);
   return (
     <Modal open title={alias} onClose={onClose} widthClass="sm:max-w-3xl">
-      <MachineDetailBody {...body} host={host} now={Date.now()} />
+      <MachineDetailBody
+        {...body}
+        host={host}
+        now={Date.now()}
+        envOnlyDismissed={envOnlyDismissed}
+        onDismissEnvOnly={() => dismissNotice(envOnlyId, envOnly)}
+        skippedDismissed={skippedDismissed}
+        onDismissSkipped={() => dismissNotice(skippedId, skipped)}
+      />
     </Modal>
+  );
+}
+
+/** The socket held to this machine, independent of its server/process status. */
+export function MachineSocketDetails({
+  machine,
+  locale,
+}: {
+  machine: MachineInfo;
+  locale: "zh" | "en";
+}) {
+  const socket = socketReading(machine);
+  if (socket === null) return null;
+  const ink =
+    socket.tone === "attention" || socket.tone === "danger" ? toneInk[socket.tone] : undefined;
+  return (
+    <KeyValue size="sm" className="mt-2">
+      <KeyValueRow label={S.machines.detailSocket}>
+        <span className={ink} data-tooltip={formatDateTime(socket.since)}>
+          {`${socket.label} · ${formatRelativeShort(socket.since, locale)}`}
+          {socket.detail === null ? null : ` · ${socket.detail}`}
+        </span>
+      </KeyValueRow>
+    </KeyValue>
   );
 }

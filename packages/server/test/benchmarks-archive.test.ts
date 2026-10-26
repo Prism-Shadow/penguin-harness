@@ -14,12 +14,12 @@
  *   `overwrite` the directory is replaced whole, its evaluation records and `.jobs/` gone — but
  *   not while an evaluation of it is still running (a trial under `.jobs/` without its result, or
  *   the Test Agent's State packed for one), which is a 409 `benchmark_busy` that changes nothing
- *   until the evaluation ends. Overwrites of one id sent at once each land or answer that 409,
- *   never a failure, and leave one whole copy.
+ *   until the evaluation ends. Overwrites of one id sent at once all land, one after another,
+ *   and leave one whole copy; first imports of one id sent at once land once, the rest 409.
  * - An export carries `benchmark_config.toml` as the file reads and the cases, and none of the
  *   copy's own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back
  *   as the same package with no scores. A Benchmark without a version exports as `<id>.zip`.
- *   Exporting an unchanged Benchmark again, later, gives the same bytes.
+ *   Exporting an unchanged Benchmark again, later or in another time zone, gives the same bytes.
  * - A zip that is not a package is refused before anything is written: entries that climb out
  *   (zip-slip), absolute or backslashed paths, names holding a control character, names a disk
  *   that ignores letter case would take for one, a link, the copy's own state, anything else at
@@ -52,6 +52,7 @@ import type {
 } from "../src/api/types.js";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { switchTimeZone } from "./helpers/time-zone.js";
 
 const SHA = "c12d65bc20beb5130ed57b3b7983c62d497b7d2f";
 const FOLDER = `https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/${SHA}/packages/report-writing-v1`;
@@ -395,7 +396,7 @@ describe("benchmark packages", () => {
       },
     );
 
-    it("overwrites of one id sent at once each land or answer 409 benchmark_exists, and leave one whole copy", async () => {
+    it("overwrites of one id sent at once all land, one after another, and leave one whole copy", async () => {
       const dataBase64 = zipB64(packageFiles("report-writing-v1"));
       expect((await member.post(`${base}/archive`, { dataBase64 })).status).toBe(201);
 
@@ -405,16 +406,28 @@ describe("benchmark packages", () => {
         ),
       );
 
-      for (const res of answers) {
-        if (res.status === 201) continue;
-        expect(res.status).toBe(409);
-        expect(((await res.json()) as ErrorBody).error.code).toBe("benchmark_exists");
-      }
-      expect(answers.some((res) => res.status === 201)).toBe(true);
+      expect(answers.map((res) => res.status)).toEqual([201, 201, 201, 201]);
+      // Nothing a replacement moved aside is left staged beside the copy.
       expect(await fs.readdir(dir)).toEqual(["report-writing-v1"]);
       for (const [rel, text] of Object.entries(CASES)) {
         expect(await fs.readFile(path.join(dir, "report-writing-v1", rel), "utf8"), rel).toBe(text);
       }
+    });
+
+    it("first imports of one id sent at once: one lands, the others answer 409 benchmark_exists", async () => {
+      const dataBase64 = zipB64(packageFiles("report-writing-v1"));
+
+      const answers = await Promise.all(
+        Array.from({ length: 3 }, () => member.post(`${base}/archive`, { dataBase64 })),
+      );
+
+      const refused = answers.filter((res) => res.status !== 201);
+      expect(answers.length - refused.length).toBe(1);
+      for (const res of refused) {
+        expect(res.status).toBe(409);
+        expect(((await res.json()) as ErrorBody).error.code).toBe("benchmark_exists");
+      }
+      expect(await fs.readdir(dir)).toEqual(["report-writing-v1"]);
     });
 
     const refusals: Array<[string, () => string, number, string]> = [
@@ -839,7 +852,7 @@ describe("benchmark packages", () => {
       expect((await outsider.get(`${base}/report-writing-v1/archive`)).status).toBe(404);
     });
 
-    it("exports an unchanged Benchmark as the same bytes, whenever it is exported", async () => {
+    it("exports an unchanged Benchmark as the same bytes, whenever and in whatever time zone it is exported", async () => {
       await seedBenchmark();
       const exportAt = async (when: number): Promise<Buffer> => {
         vi.setSystemTime(when);
@@ -847,14 +860,27 @@ describe("benchmark packages", () => {
         expect(res.status).toBe(200);
         return Buffer.from(await res.arrayBuffer());
       };
+      const exportIn = async (zone: string, when: number): Promise<Buffer> => {
+        const restoreZone = switchTimeZone(zone);
+        try {
+          return await exportAt(when);
+        } finally {
+          restoreZone();
+        }
+      };
 
       vi.useFakeTimers({ toFake: ["Date"] });
       try {
         const now = Date.now();
         const first = await exportAt(now);
         const anHourLater = await exportAt(now + 61 * 60 * 1000);
+        // Far west and far east of the zone the server started in (UTC-11, UTC+14).
+        const farWest = await exportIn("Pacific/Pago_Pago", now);
+        const farEast = await exportIn("Pacific/Kiritimati", now);
 
         expect(anHourLater.equals(first)).toBe(true);
+        expect(farWest.equals(first)).toBe(true);
+        expect(farEast.equals(first)).toBe(true);
       } finally {
         vi.useRealTimers();
       }

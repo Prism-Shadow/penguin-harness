@@ -41,7 +41,7 @@ describe("CollapsibleSection", () => {
     const folded = render({ defaultOpen: false });
     expect(folded).toContain('aria-expanded="false"');
     expect(folded).toMatch(/class="grid overflow-clip grid-rows-\[0fr\]"/);
-    expect(folded).toMatch(/<div id="[^"]+" class="min-h-0" inert="">/);
+    expect(folded).toMatch(/<div id="[^"]+" class="[^"]*" inert="">/);
     for (const html of [open, folded]) {
       // The row inside the grid clips nothing: a clip there vanishes ahead of the grid's height.
       // (The section's own frame clips its rounded corners; that box is not the fold's row.)

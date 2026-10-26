@@ -23,8 +23,9 @@
  * |                    | `SkillTile`                                              |                                                       |
  * | `ui-eyebrow`       | a group label naming the items below it (never directly  | —                                                     |
  * |                    | above an `h1`–`h4`); hosts: `Text variant="eyebrow"`,    |                                                       |
- * |                    | the sidebar's and group headers' labels                  |                                                       |
- * | `ui-display`       | the one display title of a page or hero                  | only on an `h1` or `[aria-level="1"]`                 |
+ * |                    | the sidebar's and group headers' labels, and the public  |                                                       |
+ * |                    | sites' `SiteToc` and `SiteSidebarNav` section labels     |                                                       |
+ * | `ui-display`      | the one display title of a page or hero                  | only on an `h1` or `[aria-level="1"]`                 |
  * |                    | hosts: `Heading level={1} display`, `PageHeader`'s title |                                                       |
  * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner" \| "bar"`   |
  * |                    | hosts: the Spinner, a pulsing Dot, the streaming caret   |                                                       |
@@ -47,14 +48,14 @@
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
  * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
  * | `ui-scrim`         | the dimmed layer behind a dialog, drawer or sheet        | —                                                     |
- * | `ui-stream`        | text that may still be streaming in: an assistant        | `data-state="streaming" \| "done"`; while streaming, the markdown blocks (or a `<pre>` host's text node) are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends |
+ * | `ui-stream`        | text that may still be streaming in: an assistant        | `data-state="streaming" \| "done"` (and `data-settling` for the moments a settled host eases its veil away); while streaming, the markdown blocks (or a `<pre>` host's text node) are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends; under a `fade` reveal, runs of text that just arrived (or elements that arrived whole) carry `data-arrive` until they have faded in |
  * |                    | reply, a thinking row, a compaction summary, a tool's    |                                                       |
  * |                    | output; host: `StreamText`                               |                                                       |
  * | `ui-glyph`         | an icon drawn in every theme's style; the theme's CSS    | direct children `data-set="line" \| "octicons" \| "pixel"`, one drawing each; the line set may hold a `data-part="duo"` body under its stroke; a decorative glyph may carry `data-tint="<hue>"` |
  * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
- * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
- * |                    | weather, clock, countdown or metrics tile in a reply;    |                                                       |
- * |                    | host: `WidgetSurface`                                    |                                                       |
+ * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
+ * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
+ * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour, and the field is one flat
  * colour, never a gradient: Frost lays a flat grey field behind the window and sets the
@@ -72,6 +73,9 @@
  * menu's rows are inset bands concentric with the panel. An opted-in shell wallpaper uses
  * `NavigationBackdrop` (`data-glass="navigation"`) in all themes: only this separate layer
  * filters the image, preserving the navigation column's menu positioning.
+ *
+ * Public-site chrome uses the same floating-layer hook on `SiteHeader` and its menu.
+ * `site.css` keeps those surfaces fixed while the gallery changes the app theme below them.
  *
  * The three structure hooks (2026-09-19) are how the themes differ in organisation, not only in
  * colour and radius:
@@ -184,10 +188,18 @@
  * blocks or the text; whatever else it holds (a stop reason, a files card) comes after the
  * caret, and the host holds those back until `done`. Primer changes nothing: the host's own
  * pulsing caret glyph stays. Frost hides the caret and lets the trailing
- * lines surface through a soft veil — a gradient from nothing to the page's colour over the last
- * line and a half, so the newest words are the faintest — drawn only while the caret is
- * the host's last child, so the veil covers the text and never what the host appends after it;
- * on `done` the veil eases away over the reveal duration instead of snapping off. Console draws
+ * lines surface through a soft veil — a mask on the host that fades the last line and a half to
+ * six tenths of its ink, so the newest words are the faintest and whatever lies behind them (the
+ * page, a card, a custom background image) shows through with nothing painted over it — drawn
+ * only while the caret is the host's last child, so the veil covers the text and never what the
+ * host appends after it. How far it is drawn is the registered `--_stream-veil`; on `done` the host
+ * holds `data-settling` while a theme's transition on it runs, so the veil eases away over the
+ * reveal duration instead of snapping off, and drops the attribute once the transition ends (at
+ * once where no theme transitions it), so a settled reply carries no mask. Under Frost's `fade`
+ * reveal each run of words the reveal puts on screen also fades in on its own — `data-arrive` on
+ * the run, which theme.css fades over the reveal duration, with nothing painted — and the host
+ * renders without the runs once the last has faded, so a settled reply is the markup of one that
+ * never streamed. Console draws
  * the caret as a solid block cursor in the body ink, a mono cell wide, blinking in steps, and
  * runs a last paragraph in so the cursor follows its last character; nothing else moves. Under
  * reduced motion the caret holds still and Frost draws no veil.
@@ -206,15 +218,16 @@
  * shows the Octicons today; the set still ships). A host's transform (a chevron's turn, an
  * activity mark's motion) moves all three together.
  *
- * `ui-widget` (2026-10-04) is the surface of the A2UI widgets a reply may carry — a weather card,
- * a clock, a countdown, a dashboard of readings: one rounded box with a head (the name, and when
- * the data was read), a body and an optional foot (the source). Inside it the host marks what a
- * recipe may restyle: every big numeral (`data-figure`), every tile (`data-tile`), every weather
- * illustration's svg (`data-art`). Frost sets it as a soft filled tile with white tiles inside
- * and its numerals at the regular weight, the way it sets a title large; Console as a hairline
- * box with a ruled head, hairline tiles, numerals in the mono face (a reading is data) and the
- * illustration's lines square-capped on crisp edges; Primer keeps the host's card. The
- * illustration's loops run on `--ui-live-timing`, so they step in Console and glide elsewhere.
+ * `ui-widget` (2026-10-04) is the surface of the A2UI widgets a reply may carry — a weather card, a
+ * clock, a countdown, a dashboard of readings, a chart, a machine's resources (2026-10-19): one
+ * rounded box with a head (the name, and when the data was read), a body and an optional foot (the
+ * source). Inside it the host marks what a recipe may restyle: every big numeral (`data-figure`),
+ * every tile (`data-tile`), every weather illustration's svg (`data-art`). Frost sets it as a soft
+ * filled tile with white tiles inside and its numerals at the regular weight, the way it sets a
+ * title large; Console as a hairline box with a ruled head, hairline tiles, numerals in the mono
+ * face (a reading is data) and the illustration's lines square-capped on crisp edges; Primer keeps
+ * the host's card. The illustration's loops run on `--ui-live-timing`, so they step in Console and
+ * glide elsewhere.
  */
 export const HOOKS = [
   "ui-glass",

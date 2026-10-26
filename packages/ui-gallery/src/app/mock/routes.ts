@@ -69,6 +69,7 @@ import type {
   MeResponse,
   LanguageIndexResponse,
   MessagesResponse,
+  MessagingAccountHoldersResponse,
   MessagingBindingsResponse,
   ModelBalanceResponse,
   ModelProtocolDetectResponse,
@@ -134,16 +135,18 @@ import type {
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 // The catalog decides which groups publish a balance, as it does on the server.
-import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
+import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
+// The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
+import type { ApprovalsResponse } from "../../../../amsp/src/types";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
 import { payloadOf } from "./types";
-import type { OmniMessage } from "./types";
+import type { AmspRecord } from "./types";
 
 type Ctx = RequestContext;
 
@@ -913,16 +916,9 @@ router
   })
   // Try it: the stream a real run sends, scripted (fixtures.ts), whole in one body.
   .post("/api/projects/:projectId/agents/:agentId/api/try", (ctx) =>
-    raw(
-      amspTryStream(ctx.body, {
-        agent: `${ctx.params.projectId}/${ctx.params.agentId}`,
-        lang: ctx.store.lang,
-        now: Date.now(),
-      }),
-      {
-        "content-type": "text/event-stream; charset=utf-8",
-      },
-    ),
+    raw(amspTryStream(ctx.body, { lang: ctx.store.lang, now: Date.now() }), {
+      "content-type": "text/event-stream; charset=utf-8",
+    }),
   );
 
 // ---------------------------------------------------------------------------------------------
@@ -1277,6 +1273,11 @@ router
   .post("/api/sessions/:sessionId/messaging/wechat/scan/poll", () => readOnly("poll a WeChat scan"))
   .post("/api/sessions/:sessionId/messaging/wechat/scan/verify", () => empty())
   .post("/api/sessions/:sessionId/messaging/wechat/scan/cancel", () => empty());
+// Nothing in the demo holds a bot, and the demo's machines have nothing to be asked.
+router.get(
+  "/api/projects/:projectId/messaging/account-holders",
+  (): MessagingAccountHoldersResponse => ({ holders: [], unreachable: [] }),
+);
 
 // ---------------------------------------------------------------------------------------------
 // Messages, tasks, approvals, the run
@@ -1341,6 +1342,13 @@ router
     return json({ sessionId } satisfies TaskCreateResponse, 202);
   })
   .get("/api/sessions/:sessionId/goal", (): GoalResponse => ({ goal: null }))
+  // The Agent API's approvals resource on the cookie door, which the API tab's Try it reads
+  // through the SDK: the demo's runs decide their calls themselves, so a look with `wait` holds a
+  // moment, as the server's would, and finds nothing.
+  .get("/api/sessions/:sessionId/approvals", async ({ query }): Promise<ApprovalsResponse> => {
+    if (query.get("wait") !== null) await new Promise((resolve) => setTimeout(resolve, 1000));
+    return { approvals: [] };
+  })
   .post("/api/sessions/:sessionId/approvals/:toolCallId", ({ store, params, body }) => {
     const decision = record(body).decision === "deny" ? "deny" : "allow";
     if (!store.decide(params.sessionId!, params.toolCallId!, decision)) {
@@ -1431,8 +1439,22 @@ router
 // ---------------------------------------------------------------------------------------------
 
 /** What the server derives from a Trace file, derived here from the transcript the same way. */
-function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
-  const ms = (m: OmniMessage) => Date.parse(m.timestamp);
+/**
+ * A round's navigator label, as the server derives it: the first non-empty line of the text that
+ * started it, whitespace collapsed, at most 120 characters (the demo's prompts carry no markers).
+ */
+function promptLabel(text: string): string | undefined {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l !== "");
+  return line === undefined
+    ? undefined
+    : Array.from(line.replace(/\s+/g, " ")).slice(0, 120).join("");
+}
+
+function analyze(history: readonly AmspRecord[]): TraceAnalysisResponse {
+  const ms = (m: AmspRecord) => Date.parse(m.timestamp);
   const requests: TraceAnalysisResponse["requests"] = [];
   const tasks: TraceAnalysisResponse["tasks"] = [];
   const toolCalls: TraceAnalysisResponse["toolCalls"] = [];
@@ -1441,7 +1463,9 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
   const usageTrend: TraceAnalysisResponse["usageTrend"] = [];
   let taskIndex = -1;
   let openRequest: (typeof requests)[number] | null = null;
-  let previous: OmniMessage | null = null;
+  let previous: AmspRecord | null = null;
+  /** A `task_begin` waiting for the turn its input opens: it heads that turn's rows. */
+  let heldTaskBegin: number | null = null;
   const calls = new Map<string, { index: number; span: (typeof toolSpans)[number] }>();
   history.forEach((message, i) => {
     const p = payloadOf(message);
@@ -1450,18 +1474,32 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       previous = message;
       return;
     }
+    // Task records time nothing, as on the server: a task_begin heads the turn its input opens,
+    // a task_end closes the rows of the turn it ends.
+    if (p.type === "task_begin") {
+      heldTaskBegin ??= i;
+      return;
+    }
+    if (p.type === "task_end") {
+      const last = tasks[tasks.length - 1];
+      if (last) last.messageTo = i;
+      return;
+    }
     if (p.type === "text" && p.role === "user") {
       taskIndex += 1;
+      const prompt = promptLabel(p.text);
       tasks.push({
         taskIndex,
-        messageFrom: i,
+        messageFrom: heldTaskBegin ?? i,
         messageTo: i,
         startTs: "",
         endTs: message.timestamp,
         tokens: { cacheRead: 0, cacheWrite: 0, output: 0 },
         llmMs: 0,
         toolMs: 0,
+        ...(prompt !== undefined ? { prompt } : {}),
       });
+      heldTaskBegin = null;
     }
     const task = tasks[tasks.length - 1];
     if (task) {
@@ -1469,7 +1507,11 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       task.endTs = message.timestamp;
     }
     if (p.type === "request_begin") {
-      openRequest = { beginTs: message.timestamp, taskIndex: Math.max(taskIndex, 0) };
+      openRequest = {
+        beginTs: message.timestamp,
+        taskIndex: Math.max(taskIndex, 0),
+        ...(p.thinking_level !== undefined ? { thinkingLevel: p.thinking_level } : {}),
+      };
       requests.push(openRequest);
       if (task && task.startTs === "") task.startTs = message.timestamp;
     } else if (p.type === "request_end" && openRequest) {
@@ -1509,11 +1551,11 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       if (call) {
         const started = Date.parse(call.span.callTs);
         call.span.outputTs = message.timestamp;
-        call.span.stopReason = p.stop_reason ?? "completed";
+        call.span.status = p.status ?? "completed";
         const entry = toolCalls[call.index]!;
         entry.endTs = message.timestamp;
         entry.durationMs = ms(message) - started;
-        entry.stopReason = p.stop_reason ?? "completed";
+        entry.status = p.status ?? "completed";
         if (task) task.toolMs += ms(message) - started;
       }
     } else if (p.type === "approval_decision") {
@@ -2392,6 +2434,7 @@ router
       machineId: null,
       local: false,
       connection: null,
+      socket: null,
       api: null,
       status: null,
       root: `~/.penguin/data`,
@@ -2424,6 +2467,11 @@ router
     readOnly("install on a machine"),
   )
   .post("/api/projects/:projectId/machines/:machineId/connect", () => readOnly("connect a machine"))
+  // Nothing in the fixtures is being brought back: a Retry finds nothing to do, as the server
+  // answers for a machine that is up.
+  .post("/api/projects/:projectId/machines/:machineId/reconnect", ({ store }) =>
+    machinesResponse(store),
+  )
   .post("/api/projects/:projectId/machines/:machineId/restart", () => readOnly("restart a machine"))
   .post("/api/projects/:projectId/machines/:machineId/sync", () =>
     readOnly("sync a machine's config"),

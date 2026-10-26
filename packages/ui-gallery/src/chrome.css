@@ -259,7 +259,6 @@
   font-size: 12.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  cursor: pointer;
   white-space: nowrap;
 }
 .g-seg button:hover {
@@ -290,7 +289,6 @@
   border-radius: 999px;
   background: var(--g-swatch);
   box-shadow: inset 0 0 0 1px rgb(127 127 127 / 0.35);
-  cursor: pointer;
 }
 .g-swatch[data-empty] {
   background: var(--g-inset);
@@ -317,7 +315,6 @@
   color: var(--g-ink);
   font-size: 13px;
   text-align: left;
-  cursor: pointer;
 }
 .g-select:hover {
   background: var(--g-hover);
@@ -360,7 +357,6 @@
   font-size: 13px;
   text-align: left;
   white-space: nowrap;
-  cursor: pointer;
 }
 .g-option[data-active],
 .g-option:hover {
@@ -439,7 +435,6 @@
   border-radius: 6px;
   background: transparent;
   color: var(--g-ink-3);
-  cursor: pointer;
 }
 .g-icon-button:hover {
   color: var(--g-ink);
@@ -617,7 +612,6 @@
   color: var(--g-ink-2);
   font-size: 13px;
   white-space: nowrap;
-  cursor: pointer;
 }
 .g-tool:hover {
   color: var(--g-ink);
@@ -677,7 +671,6 @@
   color: var(--g-ink-3);
   font-family: var(--g-mono);
   font-size: 11.5px;
-  cursor: pointer;
   text-align: left;
 }
 .g-crumb > span {
@@ -951,7 +944,6 @@
   padding: 6px 0;
 }
 .g-licence summary {
-  cursor: pointer;
   font-family: var(--g-mono);
   font-size: 12.5px;
 }

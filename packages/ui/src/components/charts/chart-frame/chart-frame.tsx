@@ -39,14 +39,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import {
-  bubblePosition,
-  CHART_H,
-  PAD_L,
-  PAD_T,
-  sparseLabelIdx,
-  type ChartGeom,
-} from "./chart-geom";
+import { bubblePosition, PAD_T, sparseLabelIdx, type ChartGeom } from "./chart-geom";
 import { ChartAxis, ChartAxisBreak, ChartCursor, ChartGrid, ChartHit } from "../marks/marks";
 
 /** Height (CSS px) of the invisible band laid over a line series so it can be hovered: a 2px stroke is too thin to aim at. */
@@ -137,6 +130,7 @@ export function ChartFrame({
   rightAxis,
   hoverLine = true,
   axisBreaks,
+  label,
   children,
 }: {
   geom: ChartGeom;
@@ -164,10 +158,12 @@ export function ChartFrame({
   hoverLine?: boolean;
   /** Indices after which the x axis skips at least one interval (the usage charts drop the buckets that recorded nothing): a break mark is drawn between that point and the next, so a compressed axis never reads as a continuous one. */
   axisBreaks?: number[];
+  /** The image's accessible name: what the chart shows, since its marks are not read out. */
+  label?: string;
   /** Data marks: bars / line / area, drawn between the grid and the hit area. */
   children?: ReactNode;
 }) {
-  const { x, y, w, innerH, step, min, max } = geom;
+  const { x, y, w, h, padL, innerH, step, min, max } = geom;
   const gridLevels =
     yTicks ?? [0, 0.25, 0.5, 0.75, 1].map((fraction) => min + (max - min) * fraction);
   const labelIdx = labels ?? sparseLabelIdx(dates.length);
@@ -200,7 +196,7 @@ export function ChartFrame({
     const pos = bubblePosition(m.cx - r.left, m.cy - r.top, el.offsetWidth, el.offsetHeight, {
       left: sc.scrollLeft,
       right: sc.scrollLeft + sc.clientWidth,
-      bottom: CHART_H,
+      bottom: h,
     });
     el.style.left = `${pos.left}px`;
     el.style.top = `${pos.top}px`;
@@ -229,13 +225,14 @@ export function ChartFrame({
     <div ref={scrollRef} className="relative overflow-x-auto">
       <svg
         ref={svgRef}
-        viewBox={`0 0 ${w} ${CHART_H}`}
+        viewBox={`0 0 ${w} ${h}`}
         width={w}
-        height={CHART_H}
+        height={h}
         // ui-chart: a theme may redraw the parts, which carry data-part — the grid, the axis
         // labels and breaks here, the series, areas, bars and points in the caller's marks.
         className="ui-chart text-fg-muted"
         role="img"
+        aria-label={label}
         onMouseLeave={() => {
           onHover(null);
           // Drop the pointer sample: on re-entry the bubble stays hidden until the fresh position is known, rather than flashing at the stale one.
@@ -250,8 +247,8 @@ export function ChartFrame({
         {/* Grid lines and y-axis ticks (recessive gray) */}
         {gridLevels.map((v, i) => (
           <g key={i}>
-            <ChartGrid x1={PAD_L} x2={w - geom.padR} y={y(v)} />
-            <ChartAxis x={PAD_L - 6} y={y(v) + 3} anchor="end">
+            <ChartGrid x1={padL} x2={w - geom.padR} y={y(v)} />
+            <ChartAxis x={padL - 6} y={y(v) + 3} anchor="end">
               {fmtY(v)}
             </ChartAxis>
           </g>
@@ -265,7 +262,7 @@ export function ChartFrame({
         ))}
 
         {/* Hover vertical indicator line (line-chart-only: the bar chart's bar itself is the x indicator, see hoverLine) */}
-        {hoverLine && hover !== null && dates[hover] && (
+        {hoverLine && hover !== null && dates[hover] !== undefined && (
           <ChartCursor x={x(hover)} y1={PAD_T} y2={PAD_T + innerH} />
         )}
 
@@ -288,7 +285,7 @@ export function ChartFrame({
           const d = dates[i];
           if (!d) return null;
           return (
-            <ChartAxis key={i} x={x(i)} y={CHART_H - 6} anchor="middle">
+            <ChartAxis key={i} x={x(i)} y={h - 6} anchor="middle">
               {(fmtX ?? ((v: string) => v.slice(5)))(d)}
             </ChartAxis>
           );
@@ -299,7 +296,7 @@ export function ChartFrame({
           dates.map((_, i) => (
             <ChartHit
               key={`hit-${i}`}
-              x={PAD_L + step * i}
+              x={padL + step * i}
               y={PAD_T}
               width={step}
               height={innerH}
@@ -308,7 +305,7 @@ export function ChartFrame({
           ))}
       </svg>
 
-      {bubble && hover !== null && dates[hover] && (
+      {bubble && hover !== null && dates[hover] !== undefined && (
         <div
           ref={bubbleRef}
           className="pointer-events-none absolute rounded border border-line bg-overlay px-2 py-1 text-xs whitespace-nowrap shadow-sm"

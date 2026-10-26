@@ -14,6 +14,7 @@ import type {
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
+import type { MachineState } from "@prismshadow/penguin-ui";
 import {
   formatBytes,
   formatDateTime,
@@ -29,42 +30,24 @@ import {
   failureText,
   isPhase,
   outOfDate,
+  readMachine,
   readingTone,
+  retryReading,
   sshWords,
   stepLabel,
 } from "./machines-view";
-import type { MachineReading } from "./machines-view";
+import type { MachineReading, RetryReading } from "./machines-view";
 
-/** The machine's state as one chip: a glyph (or a spinner) and one plain word. */
+/** The machine's state as one pill: one plain word in the state's tone. */
 export interface MachineChip {
+  /** The state the shared status pill draws (`MachineStatusPill`). */
+  state: MachineState;
   /** The state's one word (`S.machines.state[kind]`; `serving` for this server's own entry). */
   word: string;
   tone: Tone;
-  /** A registry path; null for a working machine, which wears a spinner instead. */
-  glyph: string | null;
   /** The reason behind the word, on hover; null when the word says it all. */
   reason: string | null;
 }
-
-/**
- * The shape beside each state's word. Two states that share a tone (a stopped machine and one out
- * of reach are both amber) still read apart by it.
- */
-const CHIP_GLYPH: Record<MachineReading["kind"], string | null> = {
-  ready: ICONS.chainLink,
-  reconnecting: null,
-  notConnected: ICONS.plugLifted,
-  stopped: ICONS.stopCircle,
-  unreachable: ICONS.alertCircle,
-  behind: ICONS.refresh,
-  installedOnly: ICONS.checkCircle,
-  queued: ICONS.hourglass,
-  working: null,
-  failed: ICONS.xCircle,
-  signInRefused: ICONS.xCircle,
-  notInstalled: ICONS.download,
-  unknown: ICONS.helpCircle,
-};
 
 /**
  * The chip for a reading; `reading` is null for this server's own entry, which is simply running.
@@ -76,12 +59,17 @@ export function machineChip(
   imageVersion: string | null,
 ): MachineChip {
   if (reading === null) {
-    return { word: S.machines.state.serving, tone: "link", glyph: ICONS.house, reason: null };
+    return {
+      state: "serving",
+      word: S.machines.state.serving,
+      tone: "link",
+      reason: null,
+    };
   }
   return {
+    state: reading.kind,
     word: S.machines.state[reading.kind],
     tone: readingTone(reading),
-    glyph: CHIP_GLYPH[reading.kind],
     reason:
       reading.kind === "behind"
         ? imageVersion === null
@@ -439,7 +427,8 @@ export interface ConfigSyncView {
 /**
  * What the dialog says of the machine's last config sync; null before the first one since the
  * server started. A skipped model's reason is the far side's code in the reader's language where
- * the app knows it, its own words otherwise.
+ * the app knows it, its own words otherwise — except for one of this server's built-in models,
+ * whose refusal means the machine's build does not list it yet, and says so.
  */
 export function configSyncView(
   machine: MachineInfo,
@@ -457,27 +446,54 @@ export function configSyncView(
       : c.failed(sync.detail ?? ""),
     envOnly: sync.envOnly.length > 0,
     skipped: sync.skipped.map((one) =>
-      c.skippedModel(`${one.provider}/${one.modelId}`, byCode[one.code] ?? one.reason),
+      c.skippedModel(
+        `${one.provider}/${one.modelId}`,
+        one.builtInHere === true ? c.notInMachineBuild : (byCode[one.code] ?? one.reason),
+      ),
     ),
   };
 }
 
-/** The Reconnecting section: how long, which attempt, when the next, why the last one failed. */
+/**
+ * What the "keys from this server's environment" notice is about, one item per model value the
+ * sync could not carry (`projectId/provider/modelId:VARIABLE`): the set its dismissal is kept
+ * against, so a model that newly takes a value from the environment brings it back.
+ */
+export function envOnlyItems(machine: MachineInfo): string[] {
+  return (machine.configSync?.envOnly ?? []).map(
+    (one) => `${one.projectId}/${one.provider}/${one.modelId}:${one.variable}`,
+  );
+}
+
+/**
+ * What the "models not synced to this machine" notice is about, one item per refused entry and
+ * why (`projectId/provider/modelId:code`, then `:built-in` for one of this server's built-in
+ * models): the set its dismissal is kept against, so another model refused, or the same one
+ * refused for another reason, brings it back. The sync's time is not in it: a sync runs on its
+ * own after every config edit and every reconnect, and the same refusal again is not news.
+ */
+export function skippedItems(machine: MachineInfo): string[] {
+  return (machine.configSync?.skipped ?? []).map(
+    (one) =>
+      `${one.projectId}/${one.provider}/${one.modelId}:${one.code}${one.builtInHere === true ? ":built-in" : ""}`,
+  );
+}
+
+/**
+ * The Reconnecting section: where the streak stands — the attempt, the countdown to the next, or
+ * where it stopped, with its Retry — how long it has lasted, and why the last attempt failed.
+ */
 export interface ReconnectView {
+  /** Where the streak stands, as the shared retry status says it (the card's middle says the same). */
+  status: RetryReading;
   /** How long the streak has lasted, in words. */
   lasting: string;
-  /** The attempt running or next to run (one past the failures so far). */
-  attempt: number;
-  /** When the next attempt runs, in words; null while one runs. */
-  next: string | null;
   /** The last attempt's failure — ssh's refusal in the reader's language; null before one. */
   lastError: string | null;
   /** ssh's own words under a refusal it caused; null otherwise. */
   detail: string | null;
   /** What the connection check found after failures in a row; null until it ran. */
   check: CheckLine[] | null;
-  /** The stored password was refused: no attempt runs until the machine's SSH settings change. */
-  stopped: boolean;
 }
 
 export function reconnectView(
@@ -487,6 +503,9 @@ export function reconnectView(
 ): ReconnectView | null {
   const r = machine.reconnect;
   if (r === undefined) return null;
+  // The reading the card gives with no job in the way: a streak is always one of these.
+  const status = retryReading(readMachine(machine, null, null), machine.alias);
+  if (status === null) return null;
   const failure =
     r.lastError === null
       ? null
@@ -498,14 +517,12 @@ export function reconnectView(
           machine.alias,
         );
   return {
+    status,
     lasting: formatSpan(now - Date.parse(r.since), locale),
-    attempt: r.attempts + 1,
-    next: r.nextAt === null ? null : formatSpan(Date.parse(r.nextAt) - now, locale),
     lastError: failure?.message ?? null,
     detail: failure?.detail ?? null,
     check:
       r.diagnosis === null ? null : r.diagnosis.checks.map((one) => checkLine(one, machine.alias)),
-    stopped: r.waitsForPassword === true,
   };
 }
 

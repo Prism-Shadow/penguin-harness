@@ -1,12 +1,13 @@
 /**
  * Blog list: category chips (all / product news / tech practice / perspectives / release notes) +
  * post cards. A flat list in every view — each card carries its category badge,
- * chips filter by category, and pinned posts sort first.
+ * chips filter by category, and pinned posts sort first. The cards read the blog index; once the
+ * list is up it fetches the post page's code, so opening a post waits only for that post's text.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { useLocale } from "../state/locale";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { formatPostDate, postsFor } from "../lib/blog";
 import type { BlogCategory } from "../lib/blog";
 import { CategoryBadge, PinnedBadge } from "../components/category-badge";
@@ -16,9 +17,12 @@ type Filter = "all" | BlogCategory;
 const FILTERS: Filter[] = ["all", "news", "practice", "perspectives", "changelog"];
 
 export function BlogListPage() {
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const [filter, setFilter] = useState<Filter>("all");
   const posts = postsFor(locale, filter === "all" ? undefined : filter);
+  // The same module the router loads on demand. A chunk that fails to load reloads the page
+  // (main.tsx), so the rejection needs no handling here.
+  useEffect(() => void import("./blog-post").catch(() => undefined), []);
 
   const chip = (active: boolean) =>
     `rounded-full border px-3.5 py-1.5 text-sm transition-colors ${

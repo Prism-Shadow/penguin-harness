@@ -27,7 +27,7 @@
  *   covered through its route in errors.test.ts).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { sessionMeta, tokenUsage, withOrigin } from "@prismshadow/penguin-core";
+import { requestEnd, sessionMeta, tokenUsage, withOrigin } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { ORIGIN_MODELS_MAX, UsageRecorder } from "../src/runtime/usage-recorder.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
@@ -36,6 +36,7 @@ import { UsageService } from "../src/services/usage-service.js";
 import type { PricingRates } from "../src/services/usage-service.js";
 import { openDatabase } from "../src/db/database.js";
 import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
+import { switchTimeZone } from "./helpers/time-zone.js";
 import type { DatabaseSync } from "node:sqlite";
 import { wire } from "@prismshadow/penguin-core/kernel";
 
@@ -85,6 +86,25 @@ describe("usage-recorder", () => {
     expect(row.model_id).toBe("main-model");
     expect(row.total).toBe(115); // taken from request.total
     expect(row.cache_read).toBe(100);
+  });
+
+  it("a request cut off at its output cap is metered by its token_usage and adds no failure row; a failed one adds a 0-token row", async () => {
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    await rec.record(CTX, tokenUsage(counts(500), counts(500)));
+    await rec.record(
+      CTX,
+      requestEnd("retryable", {
+        errorCode: "output_truncated",
+        errorMessage: "cut",
+        retryInMs: 2000,
+      }),
+    );
+    await rec.record(CTX, requestEnd("retryable", { errorCode: "network", retryInMs: 2000 }));
+    const rows = db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all();
+    expect(rows).toEqual([
+      { status: "completed", total: 500 },
+      { status: "retryable", total: 0 },
+    ]);
   });
 
   it("a sub-session's session_meta registers the origin→model mapping; token_usage is attributed via it", async () => {
@@ -690,14 +710,11 @@ describe("bucket enumeration across a DST transition", () => {
   // The zero-fill skeleton and SQLite's `strftime(..., 'localtime')` must agree key for key.
   // A fall-back replays a whole local hour, so two instants an hour apart share one key;
   // the enumeration has to emit that key once, or one of the two points it feeds stays empty.
-  const realTz = process.env.TZ;
+  let restoreZone: () => void;
   beforeEach(() => {
-    process.env.TZ = "America/New_York";
+    restoreZone = switchTimeZone("America/New_York");
   });
-  afterEach(() => {
-    if (realTz === undefined) delete process.env.TZ;
-    else process.env.TZ = realTz;
-  });
+  afterEach(() => restoreZone());
 
   /** 2026-11-01 01:00 EDT (UTC-4) — the hour after this one is replayed as EST (UTC-5). */
   const foldStart = new Date(Date.UTC(2026, 10, 1, 5, 0));

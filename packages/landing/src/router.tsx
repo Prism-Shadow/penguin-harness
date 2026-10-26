@@ -1,20 +1,61 @@
 /**
- * Router: home + blog list + blog post inside a shared Nav/Footer layout.
- * basename comes from Vite's BASE_URL so the site works under the GitHub Pages
- * project subpath; scroll restores to top on route change (hash targets excluded).
+ * Router: home, blog list, blog post, download and the AMSP page inside a shared Nav/Footer
+ * layout. basename comes from Vite's BASE_URL so the site works under the GitHub Pages
+ * project subpath; a route change scrolls to the top or to its hash target
+ * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry).
+ *
+ * Two routes load on demand: the post page carries the Markdown renderer, and the AMSP page its
+ * player, scripted runs and code samples, none of which the other pages use.
  */
-import { useEffect } from "react";
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router";
+import { lazy, Suspense, useEffect } from "react";
+import {
+  BrowserRouter,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router";
+import { useRouteScroll, useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { DOCS_URL, GALLERY_URL } from "./lib/links";
-import { hashTargetId } from "./lib/hash";
+import { getPost, loadPostBody } from "./lib/blog";
 import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
 import { NeonBackground } from "./components/neon-bg";
+import { PostPending } from "./components/post-pending";
 import { HomePage } from "./pages/home";
 import { BlogListPage } from "./pages/blog-list";
-import { BlogPostPage } from "./pages/blog-post";
 import { DownloadPage } from "./pages/download";
+
+const AmspPage = lazy(() =>
+  import("./pages/amsp").then((module) => ({ default: module.AmspPage })),
+);
+
+const BlogPostPage = lazy(() =>
+  import("./pages/blog-post").then((page) => ({ default: page.BlogPostPage })),
+);
+
+/**
+ * A post's route. Its body starts downloading beside the page's code instead of after it; the
+ * main column holds a screen of empty space until both are in, and the page then shows header
+ * and body together.
+ */
+function BlogPostRoute() {
+  const { slug = "" } = useParams();
+  const { locale } = useSiteLocale();
+  const post = getPost(slug, locale);
+  useEffect(() => {
+    // A chunk that fails to load reloads the page (main.tsx): nothing to handle here.
+    if (post) void loadPostBody(post).catch(() => undefined);
+  }, [post]);
+  return (
+    <Suspense fallback={<PostPending />}>
+      <BlogPostPage />
+    </Suspense>
+  );
+}
 
 /**
  * Deep links into a sibling SPA (the docs, the gallery) that missed a real file (e.g. an
@@ -31,32 +72,8 @@ function SiblingRedirect({ url }: { url: string }) {
   return <Navigate to="/" replace />;
 }
 
-/**
- * Last history entry whose scroll was already handled. Module-level so it survives
- * the locale-keyed remount of the whole tree: switching language re-mounts Layout,
- * and without this guard the navigation effect would re-run (jumping to the hash or
- * to the top) and defeat LocaleScope's scroll preservation.
- */
-let handledLocationKey = "";
-
 function Layout() {
-  const { pathname, hash, key } = useLocation();
-  // Genuine route change: jump to top; with a hash (e.g. /#quickstart after leaving
-  // the blog) scroll to the target once the section is in the DOM. A native #anchor
-  // click (a blog TOC entry) also lands here, through popstate. The hash is decoded
-  // first: an anchor to a CJK heading arrives percent-encoded.
-  useEffect(() => {
-    if (key === handledLocationKey) return;
-    handledLocationKey = key;
-    if (hash) {
-      const el = document.getElementById(hashTargetId(hash));
-      if (el) {
-        el.scrollIntoView();
-        return;
-      }
-    }
-    window.scrollTo(0, 0);
-  }, [pathname, hash, key]);
+  useRouteScroll(useLocation());
 
   return (
     <div className="relative flex min-h-full flex-col">
@@ -79,8 +96,17 @@ export function AppRouter() {
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="/blog" element={<BlogListPage />} />
-          <Route path="/blog/:slug" element={<BlogPostPage />} />
+          <Route path="/blog/:slug" element={<BlogPostRoute />} />
           <Route path="/download" element={<DownloadPage />} />
+          <Route
+            path="/amsp"
+            element={
+              // A screen of empty space while the chunk loads, as for a post.
+              <Suspense fallback={<PostPending />}>
+                <AmspPage />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
         {/* Outside Layout: pure redirects, no nav/footer flash. */}

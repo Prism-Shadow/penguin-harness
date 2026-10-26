@@ -11,16 +11,16 @@
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { apiClient, createTestApp, loginAdmin, writeTraceFile, type TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 const BASE = "/api/projects/default_project/agents/penguin_support/workbenches/support";
-const message = (role: string, text: string): OmniMessage =>
+const message = (role: string, text: string): AmspRecord =>
   ({
     timestamp: "2026-10-14T00:00:00Z",
     type: "model_msg",
-    payload: { type: "text", role, text, stop_reason: "completed" },
-  }) as OmniMessage;
+    payload: { type: "text", role, text },
+  }) as AmspRecord;
 interface Ticket {
   id: string;
   title: string;

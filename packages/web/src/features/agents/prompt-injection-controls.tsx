@@ -49,6 +49,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
@@ -127,6 +128,8 @@ export function usePromptInjection({
 } {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on, where its config is written; null for this server. */
+  const machineId = useAgentLocation();
 
   // null until the host tab's load delivers the config (the slots render nothing until then).
   const [state, setState] = useState<SectionConfigState | null>(null);
@@ -168,7 +171,12 @@ export function usePromptInjection({
     if (!projectId) return;
     setSwitchBusy(true);
     try {
-      const res = await api.putAgentConfig(projectId, agentId, featurePatch({ enabled: next }));
+      const res = await api.putAgentConfig(
+        projectId,
+        agentId,
+        featurePatch({ enabled: next }),
+        machineId,
+      );
       applyConfig(res.config);
       toastSuccess(strings.savedToast ?? S.agent.savedTakesEffect);
       onConfigChanged?.();
@@ -193,7 +201,7 @@ export function usePromptInjection({
     // Only the alert strip calls this, and a switch-only feature has no alert strip.
     if (insert === null) return;
     try {
-      const dto = await insert(projectId, agentId);
+      const dto = await insert(projectId, agentId, machineId);
       setState(dto);
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
@@ -211,6 +219,7 @@ export function usePromptInjection({
         projectId,
         agentId,
         featurePatch({ prompt: prompt.draft }),
+        machineId,
       );
       applyConfig(res.config);
       const dto = res.config[feature];

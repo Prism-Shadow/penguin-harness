@@ -1,7 +1,7 @@
 ---
 name: penguin-sdk
 description: Use to build a standalone external program with an agent in it, or connect an external program to a Penguin agent. For an app inside PenguinHarness with its own Agent and workbench tab, use agent-initialization and penguin-plugin directly; no SDK/API question applies. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Workbenches — the tabs and pages beside the chat that an Agent keeps for itself inside PenguinHarness — are the penguin-plugin skill's.
-version: 2026.10.14.2
+version: 2026.10.25.1
 ---
 
 # Penguin Harness SDK and Agent API
@@ -15,13 +15,13 @@ To have an agent perform a task for you, use the `run_subagent` tool: both ways 
 **The SDK: `@prismshadow/penguin-core`, embedded in the program.**
 
 - *What it is.* The agent loop as a TypeScript library. The program creates its own Agent from a data directory inside the project and runs its Sessions in-process. No Penguin server is involved, at build time or at run time.
-- *What you get.* The basic agent loop: the Agent State files (`AGENTS.md`, Skills, tools), the streamed OmniMessages and an `approve` callback for every tool call, in a self-contained folder that runs wherever Node 24 does, on the program's own model key.
+- *What you get.* The basic agent loop: the Agent State files (`AGENTS.md`, Skills, tools), the streamed AMSP records and an `approve` callback for every tool call, in a self-contained folder that runs wherever Node 24 does, on the program's own model key.
 - *What you don't get.* No server-managed Sessions (the program keeps its own), no visibility in the Web App, no approvals UI (the program answers in code) and no cost center. The embedded agent belongs to the program: changes to an Agent inside PenguinHarness never reach it.
 - *Choose it when* the program must stand alone: shipped to other machines or people, run where no Penguin server is, or with the agent built into the product.
 
 **The API: Penguin's Agent API, over AMSP.**
 
-- *What it is.* The program calls an Agent that lives in PenguinHarness, over HTTP. The Penguin server runs each turn and streams it back as AMSP events, and the program continues a conversation by its Session id. TypeScript uses the `@prismshadow/amsp` client (`AgentClient`); any other language, or curl, speaks HTTP and SSE directly.
+- *What it is.* The program calls an Agent that lives in PenguinHarness, over HTTP. The Penguin server runs each turn and streams it back over AMSP as the Session's records, the ones its Trace holds, and the program continues a conversation by its Session id. TypeScript uses the `@prismshadow/amsp` client (`AgentClient`); any other language, or curl, speaks HTTP and SSE directly.
 - *What you get.* The Agent as PenguinHarness runs it: its `AGENTS.md`, Skills and memory, on the Project's models and credentials, so the program holds no model key. The server keeps the conversations as archived chats (**Settings › Archived chats** in the Web App), where a person finds one and unarchives it to read it and answer its approvals, and their usage lands in the cost center.
 - *What it requires.* A running Penguin server that the program can reach over the network; API access turned on for that Agent by the Project's owner, on the Agent's **API** tab; and a key created there, shown once. You never turn these on yourself (see *The API path*).
 - *Choose it when* the Agent already exists in PenguinHarness or should be managed there, people need to see its conversations or costs, or the program is not written in TypeScript.
@@ -80,7 +80,7 @@ Each path also needs one thing only the user can provide: a model credential on 
 
 - An **Agent** loads its state (prompts, tools, skills) from `<root>/<project_id>/agents/<agent_id>/`. Creating an Agent whose directory is empty initializes it with defaults.
 - A **Session** is one conversation of an Agent inside a **Workspace** directory.
-- `session.run()` executes one task and streams every step (thinking, text, tool calls) as OmniMessages.
+- `session.run()` executes one task and streams every step (thinking, text, tool calls) as AMSP records.
 
 ### Project location
 
@@ -117,7 +117,7 @@ If the package is not on your npm registry (it is developed in the PenguinHarnes
 Configure a model for the app's data root, in this order — stop at the first that works:
 
 1. `penguin config model add --root <data_dir> --provider <group> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai-chat] --set-default` — prefer `--client-type openai-chat --base-url <endpoint>` (works with any OpenAI Chat Completions compatible endpoint; exact ids in the unified-llm-api skill). `--provider` is required: a model is always the `(provider, model_id)` pair and the group is never inferred from the id (`custom` for an endpoint outside the built-in groups).
-2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …), and only for an entry whose requests go to the **vendor's own endpoint** (no `--base-url`, or the vendor's official one) — an entry with a `--base-url` of its own (a gateway, a self-hosted server) needs `--api-key`, or `createSession` refuses it. Model selection still comes from the project config, whose preset default is `deepseek-flash`. Env-only setup therefore works out of the box only with `DEEPSEEK_API_KEY`; for another vendor either run the CLI command above or pass a configured `{ provider, modelId }` pair to `createSession`.
+2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …), and only for a model with **no base URL** on itself or its group, or the vendor's own default endpoint — a model with any other base URL (a gateway, a self-hosted server) needs `--api-key`, or `createSession` refuses it. The SDK carries no model catalog: a data root only the SDK and the CLI touch starts with **no models and no default**, so model selection always comes from what step 1 or your code writes. For env-only setup, add the model in code before `createAgent` — `addModel(root, "default_project", { provider: "deepseek", model_id: "deepseek-flash" }, { setDefault: true })`, exported by `@prismshadow/penguin-core` — and leave its group's base URL empty.
 
 Keep model API keys **project-local**: configure them with the penguin CLI into the app's own data root under the working directory, so the project stays self-contained and movable. When building an AI app, **always pass `--root <data_dir>` pointing at the app's data directory inside the current working directory** (the same path you give `createAgent({ root })`, e.g. `./penguin_data`) — never run `penguin config ...` without `--root`, or it writes to the global `~/.penguin/data` instead of the project. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to the app you are building.
 
@@ -179,7 +179,7 @@ session.run([userText(question), ...images.map(imageUrlMessage)], { ... });
 
 Browser flow: `<input type="file" accept="image/*">` plus paste/drag-drop → `FileReader.readAsDataURL` → POST `{ question, images: [dataUrl] }` → the server maps each entry to `imageUrlMessage`. Reject non-image MIME types and cap size (a data URL rides the context window; a few MB is plenty). Whether the session model actually sees pixels is the model config's `vision` flag (`penguin config model list` prints `vision=Y/-`; set via `--vision/--no-vision` on `model add`, default supported): with `vision=false` the core folds the image into an `[attached image: <path>]` line and the built-in `read_file` tool reads it through the project's configured `vision_model` (`penguin config model vision --provider <group> --model-id <id> --root <data_dir>`) — the app still works, through a description instead of direct sight.
 
-**Other payloads worth handling** (always narrow with the guards first): `partial_tool_call` / `partial_tool_call_output` — surface as an activity line ("running `search`…") in apps that grant tools; `request_end` (event) — a non-`completed` `status` is the error signal (`auth` → ask for a key; `message` carries the failure detail; `retry_in_ms` announces a planned in-run retry, renderable as a countdown); `token_usage` (event) — session-cumulative and last-request counts, if the app shows cost; `compaction_begin` / `compaction_end` (events) — long-lived chats only, show a brief "context being compacted" notice. Everything else is safe to ignore.
+**Other payloads worth handling** (always narrow with the guards first): `partial_tool_call` / `partial_tool_call_output` — surface as an activity line ("running `search`…") in apps that grant tools; `request_end` (event) — a non-`completed` `status` is the error signal (`error_code` `auth` → ask for a key; `error_message` carries the failure detail; `retry_in_ms` announces a planned in-run retry, renderable as a countdown); `token_usage` (event) — session-cumulative and last-request counts, if the app shows cost; `compaction_begin` / `compaction_end` (events) — long-lived chats only, show a brief "context being compacted" notice. Everything else is safe to ignore.
 
 ### Wiring in the user's tools
 

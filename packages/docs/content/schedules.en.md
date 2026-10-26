@@ -11,6 +11,7 @@ A scheduled task sends a prompt to an agent at a set time, once or on a repeatin
 - To see a conversation's tasks, see [Open the Scheduled tasks panel](#open-the-scheduled-tasks-panel).
 - To add a task, see [Create a task with AI](#create-a-task-with-ai) or [Create a task manually](#create-a-task-manually).
 - To pause, change or remove a task, see [Turn a task on or off](#turn-a-task-on-or-off) and [Edit or delete a task](#edit-or-delete-a-task).
+- To find a task that has finished, see [Finished tasks are archived](#finished-tasks-are-archived).
 
 ## Open the Scheduled tasks panel
 
@@ -20,7 +21,7 @@ The panel is one of the side panels of the chat page. It is available once the c
 2. In the top-right corner of the chat toolbar, select **Right sidebar** or **Bottom panel**. You can also use the **Shortcuts** launcher on the conversation's right edge.
 3. Choose **Scheduled tasks**. If the side panel already shows other panels, select **Add panel** first.
 
-The panel lists the tasks bound to this conversation. The search box matches a task's name and its prompt. The filters are **All**, **Active**, **Paused** and **Completed**; **Completed** covers tasks that are done, expired or missed. Each row shows a state icon, the task name and its schedule in plain words, for example:
+The panel lists the tasks bound to this conversation. The search box matches a task's name and its prompt. The filters are **All**, **Active** and **Paused**. Tasks that are done, missed or past their end time leave the list; see [Finished tasks are archived](#finished-tasks-are-archived). Each row shows a state icon, the task name and its schedule in plain words, for example:
 
 - "Every day at 08:00 · Next: tomorrow 08:00"
 - "Every 30 minutes"
@@ -54,7 +55,7 @@ Below the list, **Suggestions** offers four ready-made requests: **Daily brief**
 2. Fill in the form. It is the same form as on the agent's settings page, with **Target** set to **This conversation**:
    - **Name** (required): the task's file name. It cannot be changed later.
    - **Period**: `30m`, `12h`, `7d` and so on. Leave it empty for a one-off task.
-   - **Start at** (required) and, optionally, **End at**.
+   - **Start at** (required) and, optionally, **End at**. A one-off task needs a start time that is still ahead, and the end time cannot be in the past: saving refuses either.
    - **Prompt** (required): what to send to the agent.
    - **Enabled**: whether the task is on.
 3. Select **Create**.
@@ -71,6 +72,16 @@ In the panel, use the switch on the task's row. The change takes effect at once:
 
 1. In the panel, open the **More actions** menu on the task's row.
 2. Select **Edit**, or select **Delete** and confirm.
+
+## Finished tasks are archived
+
+A task that can never fire again is moved out of the lists: a one-off task that has run, a one-off task whose time passed while the service was stopped, and a task past its end time. The scheduler moves its file, unchanged, into the agent's `agent_state/schedule/expired/` folder. A one-off task moves as soon as it runs. A task with a queued run moves once that run is sent.
+
+An archived task leaves every list and count: this panel, the agent's **Schedules** tab and its card on the **Agents** page, the alarm clock mark, the schedules API and `penguin schedule ls`. The list of scheduled tasks in the agent's system prompt drops it from the next model context. The file stays on disk.
+
+To bring a task back, edit the times in its file so it can fire again, then move the file back into `agent_state/schedule/`, named `<name>.toml`. An archived file carries a time suffix when an older copy was already in `expired/`; drop the suffix when you move it back. A file moved back with its times still past is archived again.
+
+A task that is switched off, or whose conversation was deleted, is not archived: turn it back on or change its target, and it fires again.
 
 ## The alarm clock mark
 
@@ -95,8 +106,8 @@ The alarm clock mark reads the same list and refreshes with it, so the mark and 
 
 - A repeating task runs at most once every 5 minutes: the shortest period is 5 minutes. A shorter period makes the task invalid.
 - Tasks run only while the PenguinHarness service is running.
-- Missed runs are not made up. When a fire time passes while the service is stopped, a repeating task skips it and a one-off task is marked missed.
+- Missed runs are not made up. When a fire time passes while the service is stopped, a repeating task skips it and a one-off task is marked missed and archived.
 
 ## How it works
 
-Each task is a TOML file under the agent's `agent_state/schedule/` directory. The file format is described in the [Configuration Reference](/configuration#schedules). The scheduler checks the files every 30 seconds, so a file you edit by hand takes effect at the next check.
+Each task is a TOML file under the agent's `agent_state/schedule/` directory. The file format is described in the [Configuration Reference](/configuration#schedules). The scheduler checks the files every 30 seconds, so a file you edit by hand takes effect at the next check. Archived tasks sit in the `expired/` subfolder, which the scheduler never reads.

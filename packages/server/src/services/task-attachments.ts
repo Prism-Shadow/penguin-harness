@@ -10,7 +10,7 @@
  *
  * The line format and its placement are not defined here: they are shared with core's
  * `[attached image: …]` producer and the Web renderer that parses both
- * (`@prismshadow/penguin-core/markers` → attachment-lines.ts, plus `appendAttachmentLines`),
+ * (`@prismshadow/amsp/markers` → attachment-lines.ts, plus `appendAttachmentLines`),
  * so the two conventions cannot drift apart.
  */
 import fs from "node:fs/promises";
@@ -21,7 +21,7 @@ import {
   attachedFileLine,
   modelVisiblePath,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import type { AttachmentLimits } from "./attachment-limits.js";
@@ -298,7 +298,7 @@ export async function removeAttachments(files: string[]): Promise<void> {
 
 /** Result of a write batch: the Prompt to run, plus the paths written so the caller can undo them if the Task never starts. */
 export interface AttachedFiles {
-  input: OmniMessage[];
+  input: AmspRecord[];
   written: string[];
 }
 
@@ -315,7 +315,7 @@ export interface AttachedFiles {
  * otherwise the user's retry would land a second copy of every file.
  */
 export async function attachFilesToInput(
-  messages: OmniMessage[],
+  messages: AmspRecord[],
   attachments: TaskAttachment[],
   root: string,
   sessionId: string,

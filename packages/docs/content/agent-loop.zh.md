@@ -3,7 +3,7 @@ title: Agent 运行循环
 description: session.run 如何驱动 Task 与轮次：审批、工具并发执行、钩子、运行中插话、自动重连与上下文压缩。
 ---
 
-SDK 唯一的执行入口是 `session.run(newMessages, opts?)`：输入是本次新增的 OmniMessage 列表（Prompt），返回值是一个异步生成器，流式产出 [OmniMessage](/omni-message)。一次 `run` 驱动一个完整的 Task，直到模型给出不含工具调用的最终答复；若 [Stop hook](#stop-hook) 要求继续，同一次 `run` 会接连驱动多个 Task。
+SDK 唯一的执行入口是 `session.run(newMessages, opts?)`：输入是本次新增的记录列表（Prompt），返回值是一个异步生成器，流式产出 [AMSP 记录](/amsp-records)。一次 `run` 驱动一个完整的 Task，直到模型给出不含工具调用的最终答复；若 [Stop hook](#stop-hook) 要求继续，同一次 `run` 会接连驱动多个 Task。
 
 本页先给出 `context_engine` 的总体流程，再逐个环节拆解；逐条消息的可见时序与顺序保证见[消息流转与时序](/message-flow)。源码：`packages/core/src/engine/context-engine.ts`。
 
@@ -93,7 +93,7 @@ Task 由若干连续的 Request（轮）组成。每一轮：
 2. LLM 流式返回 `partial_*` 分片，随后是完整消息。
 3. 每个完整的 `tool_call` 先交给已安装的 `pre_tool_use` 钩子，再恰好触发一次 `approve` 回调（钩子已作出决定时除外）；决策记为一条 `approval_decision` 事件。
 4. 通过审批的调用在 Environment 中并发执行，审批本身则逐个进行；工具输出按完成顺序流出。
-5. LLM 流结束时，正常完成的请求先产出最后一条 `token_usage`，随即产出 `request_end(status)`。这一步**不等待工具**：仍在执行的工具输出可以出现在 `request_end` 之后。未完成的请求不产出 `token_usage`。
+5. LLM 流结束时，正常完成的请求（或停在输出上限的请求）先产出最后一条 `token_usage`，随即产出 `request_end(status)`。这一步**不等待工具**：仍在执行的工具输出可以出现在 `request_end` 之后。未完成的请求不产出 `token_usage`。
 6. 整批工具调用全部到达终态后，工具结果**按原始调用顺序重排**，作为下一轮的输入；在此之前不会发起下一次 Request。
 
 某一轮不再产生 `tool_call` 时，Task 结束。
@@ -114,7 +114,7 @@ Task 由若干连续的 Request（轮）组成。每一轮：
 
 | 场景 | 条件 | 补发内容 |
 | --- | --- | --- |
-| A | 模型输出已完成：该轮的 `tool_call` 已提交 | 已完成的工具结果按结构化 `tool_call_output` 补发；未执行完的调用补上 `[interrupted: tool aborted by user]` 占位，保证 `tool_call` 与输出严格配对。 |
+| A | 模型输出已完成：该轮的 `tool_call` 已提交 | 工具结果按结构化 `tool_call_output` 补发；运行中被中断的调用自有一条 `aborted` 结果，装着已产出的内容和中断提示。没有结果的调用补上 `[interrupted: tool aborted by user]` 占位，保证 `tool_call` 与输出严格配对。 |
 | B | 模型输出未完成 | 整轮压平为一段 `[turn_aborted]` 用户文本，携带已产生的部分输出。 |
 
 中断若发生在 Request 发出之前，输入原样保留为补发内容，不压平，多模态输入因此不会丢失。
@@ -153,8 +153,8 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 规则如下：
 
 - 每个 Task 结束后，钩子按注册顺序逐个执行。
-- 每条非空回答都会记录为一条 [`hook` 事件](/omni-message#eventmsg)，字段包括 `hook`、`name`（包名）、`decision`、`reason` 和 `output`。事件推到流上并写入 Trace。注入的输入不在事件里，它是紧随其后的那条 user 消息。
-- 第一个 `continue` 生效。它的输入带上 [`sender: "harness"`](/omni-message#modelmsg完整消息) 标记先推到流上，再在同一次 `run` 调用内驱动下一个 Task。普通运行从不产出自己的输入，宿主据流渲染这条注入的输入；说明它来自 harness 的是这一标记，而不是文本内容。无人 `continue` 时调用返回。
+- 每条非空回答都会记录为一条 [`hook` 事件](/amsp-records#eventmsg)，字段包括 `hook`、`name`（包名）、`decision`、`reason` 和 `output`。事件推到流上并写入 Trace。注入的输入不在事件里，它是紧随其后的那条 user 消息。
+- 第一个 `continue` 生效。它的输入带上 [`sender: "harness"`](/amsp-records#modelmsg完整消息) 标记先推到流上，再在同一次 `run` 调用内驱动下一个 Task。普通运行从不产出自己的输入，宿主据流渲染这条注入的输入；说明它来自 harness 的是这一标记，而不是文本内容。无人 `continue` 时调用返回。
 - Task 被掐断之后，或 signal 已中止时，`continue` 只记录、不执行：用户的中断压过一切钩子。
 - `subagent` 回答让 Session 派生一个游离的后台子 Session（同一 Agent，或 `agent_id` 指定的 Agent），以该 prompt 为第一条 user 消息。它继承本次运行的审批回调，输出流被丢弃（它自己的 Trace 才是记录），其 Session id 以 `output.session_id` 记在事件上。
 - 钩子失败（崩溃、打印的不是 JSON，或超时）时，以错误信息为 `reason` 记录，按无意见处理，永远不会拖垮运行。
@@ -200,7 +200,7 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 
 `prompt` 是用户的文本，开头的标记块（例如 `[use_skills]`）已剥离，多条文本以换行相连。没有 Trace 的 Session 不带 `trace_path`。
 
-每个非空的 `context` 成为一条带 [`sender: "harness"`](/omni-message#modelmsg完整消息) 标记的 user 文本，按钩子顺序紧随用户自己的消息：推到流上，紧随 Prompt 写入 Trace，并与 Prompt 一起在 Task 的首个请求中发出；宿主把它渲染为紧凑的折叠卡片。这条消息本身就是记录，成功的钩子不留 `hook` 事件。钩子失败（退出码非零、打印的不是 JSON、超时或抛错）时，在同一位置记为一条 `hook: "user_prompt"` 的 `hook` 事件，以错误信息为 `reason`，并按无意见处理，永远不会拖垮运行。
+每个非空的 `context` 成为一条带 [`sender: "harness"`](/amsp-records#modelmsg完整消息) 标记的 user 文本，按钩子顺序紧随用户自己的消息：推到流上，紧随 Prompt 写入 Trace，并与 Prompt 一起在 Task 的首个请求中发出；宿主把它渲染为紧凑的折叠卡片。这条消息本身就是记录，成功的钩子不留 `hook` 事件。钩子失败（退出码非零、打印的不是 JSON、超时或抛错）时，在同一位置记为一条 `hook: "user_prompt"` 的 `hook` 事件，以错误信息为 `reason`，并按无意见处理，永远不会拖垮运行。
 
 脚本跑在每条 Prompt 的热路径上：要轻快，在清单里设置较小的 `timeout`，context 也要简短，因为每条 Prompt 模型都要读它。
 
@@ -210,7 +210,7 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 
 ## 运行中插话
 
-Task 运行期间，宿主可以用 `session.steer(input)` 排队一条用户消息（`input` 是 OmniMessage 列表，与 `run` 接收 Prompt 的形状一致），而不打断循环。到下一次组装输入时，引擎把它随那一轮送出。
+Task 运行期间，宿主可以用 `session.steer(input)` 排队一条用户消息（`input` 是记录列表，与 `run` 接收 Prompt 的形状一致），而不打断循环。到下一次组装输入时，引擎把它随那一轮送出。
 
 ### 插话消息如何送达
 
@@ -272,6 +272,8 @@ fatal 判定是一份确定性的白名单，所以用自己的说法描述瞬�
 
 同样的请求只会以同样的方式失败，走退避阶梯只会推迟用户本可据以处理的错误信息。
 
+响应完整送达却停在输出上限（`finish_reason` 为 `length`），以 `retryable` 收尾，`error_code` 为 `output_truncated`；以客户端无法识别的 finish reason（`unknown`）结束的响应，同样以 `retryable` 收尾，错误码为 `malformed`。两者都不提交：LLM 接口把这一轮移出 MMSP 的历史。两者照常计量：供应商已为这次尝试计费并报告了用量，它的 `token_usage` 照常产出，只是不算作 Session 的一轮。引擎按同一阶梯、与其他可重试失败相同的规则重试，重试块里的 `[request_error]` 行写明原因，模型据此可以换一种更短的写法。
+
 只有一种拒绝仍会重试：带图片的请求被供应商以 4xx 拒绝。供应商对这类拒绝的措辞五花八门，按文字匹配并不可靠，因此只要本轮输入带图片，引擎就把 4xx 一律视为图片被拒（`image_rejected`）：把每张图片换成一句固定说明，写明带图的请求被拒、已去图重发（供应商的报错原文经重试输入的 `[request_error]` 行到达模型，见下文）；该次尝试记为 `retryable`、`retry_in_ms: 0`，清理后的输入立即重发。清理后的输入此后一直是本轮的输入，中断或下一条消息都不会再发送这张图。恢复 Session 时也做同样的替换。输入不带图片的 4xx 与其他拒绝一样是 fatal：被拒的图片已在已提交的历史中时，重试也去不掉它。
 
 ### 一轮如何重试
@@ -289,15 +291,15 @@ fatal 判定是一份确定性的白名单，所以用自己的说法描述瞬�
 | 退避上限 | 30 秒 |
 | 等待序列 | 2 秒、4 秒、8 秒、16 秒、30 秒 |
 | 总耐心 | ≈ 60 秒 |
-| 每轮绝对上限 | 20 次尝试 |
+| 每轮绝对上限 | 10 次尝试 |
 
 所有可重试失败共用这一张时间表。这样定是为了让供应商重启、限流这类瞬时故障有真正的恢复时间，同时每次计划等待都不低于 Web App 2 秒的倒计时下限，重试始终可见。
 
-断开前**收到过内容**的尝试（例如响应中途的 `terminated: other side closed (UND_ERR_SOCKET)`）说明连接已建立、模型正在产出，所以它的失败让阶梯从 2 秒重新起步，而不是继续攀升：同一轮里断两次 socket，不该累加成放弃的理由。给这种归零兜底的是另一条绝对上限，单轮总尝试 20 次，只有「每次吐几个字就断」的端点才够得着。`attempt` 始终累计每一次尝试，不随阶梯归零回退。
+断开前**收到过内容**的尝试（例如响应中途的 `terminated: other side closed (UND_ERR_SOCKET)`）说明连接已建立、模型正在产出，所以它的失败让阶梯从 2 秒重新起步，而不是继续攀升：同一轮里断两次 socket，不该累加成放弃的理由。给这种归零兜底的是另一条绝对上限，单轮总尝试 10 次，「每次吐几个字就断」的端点会撞上它，一再停在输出上限的响应也会。`attempt` 始终累计每一次尝试，不随阶梯归零回退。
 
 ### 运行何时放弃
 
-运行在两种情况下放弃：`fatal` 失败，以及重试耗尽的 `retryable` 失败。两种情况都不产出 `abort` 事件，因为 `abort` 只标记用户中断：`request_end` 即终局记录，本轮尚未了结的状态保留为下一次运行的补发内容。
+运行在两种情况下放弃：`fatal` 失败，以及重试耗尽的 `retryable` 失败。两种情况都不产出 `abort` 事件，因为 `abort` 只标记用户中断与轮次上限：`request_end` 即终局记录，本轮尚未了结的状态保留为下一次运行的补发内容。
 
 - `fatal` 失败的终局 `request_end` 状态为 `fatal`，并带 `error_code` 与 `error_message`。
 - 重试耗尽时，终局 `request_end` 状态为 `retryable`，带 `attempt` 与错误字段，但没有 `retry_in_ms`；重试输入（原始输入加上它的 `[turn_retried]` 块）保留为补发内容。

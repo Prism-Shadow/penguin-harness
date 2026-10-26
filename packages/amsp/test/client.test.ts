@@ -1,868 +1,643 @@
 /**
- * AgentClient against a scripted AMSP server (the package's one fetch fake).
+ * AgentClient against the package's fetch fake (helpers/fetch-fake.ts): a run's records, its
+ * result, the approval loop, and the Agent API's other routes.
  *
- * Runs and their streams
- * - Iterating a run yields the server's events in order and stops at [DONE]: nothing after it is
- *   read, and the connection is closed.
- * - A run POSTs its input, and the Session to continue, as JSON to the Agent's runs route, with
- *   the key as a Bearer token and the caller's extra headers; a keyless client sends no
- *   Authorization.
- * - result() joins the main Session's assistant texts and keeps every complete item, on the order
- *   the server captured: user texts, a subagent's texts and compaction summaries stay out of the
- *   text; a summary the engine streamed has no summary.done and leaves no item (fragments are
- *   never rebuilt into one), one delivered whole is kept as its summary.done.
- * - A run that ends fatal resolves with that status and error; it does not reject.
- * - session resolves from run.started while the server still holds back the first content event.
- * - Keep-alive comments, CRLF framing, chunks split mid-event and a data block spread over two
- *   lines leave the events intact.
- * - An event type the client does not know reaches the iterator and the items.
- * - Leaving the loop early stops the iteration, not the run: the connection stays open and
- *   result() still resolves.
- * - Events are kept for an iteration that starts after the run ended, and a finished iteration
- *   keeps answering done.
- * - A run's events can be iterated once.
+ * Runs:
+ * - Given a run stream, iterating it reads the records in order and none of its control frames;
+ *   `session` resolves with the Session the run continues, and the request carries the input,
+ *   that Session, the key and the caller's headers.
+ * - Given a new Session's run, `session` resolves at its `session_meta`, not at the opening beat,
+ *   and the result names that Session.
+ * - Given `run()`, the result arrives with nothing kept to iterate.
+ * - Given named events AMSP does not define and a record type the client does not know, the first
+ *   are left out and the second is read like any record.
+ * - Given a run's records, `result()` decides the status in the rule's order — an unclosed last
+ *   `task_begin` or no Task at all, then an `abort` (the turn cap's included), then an
+ *   unrecovered terminal record (an output cap the retries never got past included) — and nothing
+ *   a subagent records decides it.
+ * - Given a run with a compaction and a subagent, `text` is the main Session's answers without
+ *   the summary or the child's, `usage` counts every request the child's included, and
+ *   `sessionUsage` is the main Session's last count.
+ * - Given a Request cut off at its output cap and retried, and one interrupted, `text` keeps only
+ *   the completed Request's answer, though the others' texts have their records.
  *
- * Failures
- * - A refusal before the stream rejects the run, its session and its iteration with an
- *   AmspHttpError carrying the status and the envelope's code; a body that is not the envelope
- *   reads as `http_error` with the start of the body.
- * - A stream that ends, says [DONE] or breaks before run.done is an AmspStreamError, raised by
- *   the iteration after the events that did arrive; one that ends or breaks after run.done still
- *   resolves.
- * - A 200 answer that is not an event stream (saying what came instead), and a block that is not
- *   an AMSP event, are AmspStreamErrors.
+ * Failures:
+ * - Given a refusal before the stream, the run rejects with AmspHttpError and `session` with it.
+ * - Given a stream that ends without `[DONE]`, or breaks, the run rejects with AmspStreamError;
+ *   given a body that is not an event stream, or a new Session's stream with no `session_meta`,
+ *   the same.
+ * - Given the caller's signal aborting mid-run, the run rejects with its reason and the
+ *   connection closes; `run.abort()` posts the Session's abort and the stream still ends.
  *
- * Approvals (on the captured order: the engine runs the tool while its Request is still open, so
- * approval.requested, approval.decided and the first result fragment precede request.done, and
- * the rest of the result follows it)
- * - An approval request is answered by POST with the callback's decision, even when the caller
- *   only awaits the result; no callback, or a throwing one, answers deny.
- * - The result of such a run carries the next Request's text and one tool_result.done for the
- *   call, whichever side of request.done its fragments fell on.
- * - An approval someone else answered first does not fail the run, and an answer that fails after
- *   the run completed leaves it completed.
- * - An approval the server refuses to take ends the run with that refusal and closes the
- *   connection, so the server aborts the run instead of waiting for good.
+ * Approvals:
+ * - Given a completed `tool_call` with no decision yet, one look at `approvals?wait=30` opens;
+ *   the call it returns goes to `onApproval` once with its origin and Session, and the answer is
+ *   posted; once the decision is on the stream no further look opens.
+ * - Given a call the server decides itself, the open look is closed when its decision arrives and
+ *   nothing is posted.
+ * - Given no callback, or one that throws, the answer posted is `deny`.
+ * - Given a call cut short (written whole, then its Request ends without completing), the look
+ *   it opened closes at that `request_end`.
+ * - Given a call someone else answered first (`approval_not_found`), the run goes on.
  *
- * Aborts
- * - Aborting the signal mid-stream closes the connection and rejects with the signal's AbortError,
- *   whether the fetch errors the body itself or leaves it to the reader.
- * - The iteration stops at once when the signal aborts, and events not yet read are dropped.
- * - A signal that aborts as the response arrives rejects without waiting for the stream; one
- *   aborted before the run sends nothing.
- * - run.abort() asks the server to abort and the stream ends with run.done aborted; on a run that
- *   is over, or was refused, it sends nothing.
- *
- * The rest of the surface
- * - agent() and session() read the Agent and one of its Sessions; an unknown Session is an
- *   AmspHttpError.
- * - abort(sessionId) says whether a run was interrupted; approve() posts a decision and reports
- *   one already taken as approval_not_found.
- * - parseArguments returns the arguments object, {} for none, and null for anything malformed;
- *   a tool_call.done's arguments (the engine's serialization of the parsed call) and its
- *   fragments joined (the provider's text) parse to the same object although their text differs.
- * - An agent reference that is not <projectId>/<agentId> is refused at construction.
- * - A fetch handed to the client carries its requests instead of the global one.
+ * The rest: `agent()`, `session()`, `messages()` with a page, `approvals()` with a wait,
+ * `abort()` and `approve()` reach their routes; `parseArguments` reads a call's arguments.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  AgentClient,
-  AmspHttpError,
-  AmspStreamError,
-  parseArguments,
-  type AmspEvent,
-  type RunOptions,
-} from "../src/index.js";
+import { describe, expect, it } from "vitest";
+import { AgentClient, AmspHttpError, AmspStreamError, parseArguments } from "../src/index.js";
+import type { AmspRecord, RunResult, ToolCallPayload } from "../src/index.js";
 import {
   BASE_URL,
-  DONE,
+  control,
   createFetchFake,
+  DONE,
   frame,
   gate,
   never,
-  type FetchFake,
-  type Step,
 } from "./helpers/fetch-fake.js";
-import { APPROVAL_ROUND_TRIP, MIXED_RUN, sessionOf } from "./helpers/streams.js";
+import type { FetchFake, Step } from "./helpers/fetch-fake.js";
+import {
+  abort,
+  assistantText,
+  compactionBegin,
+  compactionEnd,
+  counts,
+  decision,
+  ev,
+  meta,
+  partialText,
+  partialToolCall,
+  plainRun,
+  requestBegin,
+  requestEnd,
+  taskBegin,
+  taskEnd,
+  toolCall,
+  toolOutput,
+  usage,
+  userText,
+} from "./helpers/streams.js";
 
-const AT = "2026-10-07T10:00:00.000Z";
-const SESSION = "session-2026-10-07-10-00-00-3f9a1c2e";
-const KEY = "test-agent-key";
+const SID = "session-2026-10-23-10-00-00-0000aaaa";
 const RUNS = "/agents/demo/coder/runs";
-const APPROVAL = `/sessions/${SESSION}/approvals/call_1`;
-const USAGE = { cache_read: 0, cache_write: 0, output: 2, total: 412 };
+const APPROVALS = `/sessions/${SID}/approvals?wait=30`;
+const answerPath = (id: string) => `/sessions/${SID}/approvals/${id}`;
 
-/** The approval route of the captured round trip's Session. */
-const ROUND_TRIP_SESSION = sessionOf(APPROVAL_ROUND_TRIP);
-const ROUND_TRIP_APPROVAL = `/sessions/${ROUND_TRIP_SESSION}/approvals/call_1`;
-const ROUND_TRIP_REQUESTED = APPROVAL_ROUND_TRIP.find((e) => e.type === "approval.requested")!;
-
-function ev(type: string, fields: Record<string, unknown> = {}): AmspEvent {
-  return { type, at: AT, ...fields } as AmspEvent;
+function clientOf(fake: FetchFake, extra: Record<string, string> = {}): AgentClient {
+  return new AgentClient({
+    baseUrl: BASE_URL,
+    agent: "demo/coder",
+    apiKey: "penguin_key",
+    fetch: fake.fetch,
+    headers: extra,
+  });
 }
 
-const started = ev("run.started", { session_id: SESSION, agent: "demo/coder" });
-const runDone = (fields: Record<string, unknown> = {}) =>
-  ev("run.done", {
-    status: "completed",
-    requests: 1,
-    usage: USAGE,
-    session_usage: USAGE,
-    ...fields,
-  });
+const PING = control("ping");
 
-/** A plain answer, as the protocol reference shows it. */
-const PLAIN = [
-  started,
-  ev("request.started", { request: 1 }),
-  ev("text.delta", { role: "assistant", text: "" }),
-  ev("text.delta", { role: "assistant", text: "Hello" }),
-  ev("text.delta", { role: "assistant", text: "!" }),
-  ev("text.done", { role: "assistant", text: "Hello!", stop_reason: "completed" }),
-  ev("request.done", { request: 1, status: "completed", usage: USAGE }),
-  runDone(),
-];
-
-const APPROVAL_REQUESTED = ev("approval.requested", {
-  tool_call: { tool_call_id: "call_1", name: "exec_command", arguments: '{"command":"ls"}' },
-});
-
-/**
- * The captured round trip: the server holds the stream at approval.requested until `answered`
- * settles, then the tool runs — its decision and first result fragment before request.done, the
- * rest of the result after it, then the second Request.
- */
-function approvalScript(answered: Promise<unknown>): Step[] {
-  const asked = APPROVAL_ROUND_TRIP.indexOf(ROUND_TRIP_REQUESTED) + 1;
-  return [
-    ...APPROVAL_ROUND_TRIP.slice(0, asked).map(frame),
-    answered,
-    ...APPROVAL_ROUND_TRIP.slice(asked).map(frame),
-    DONE,
-  ];
+/** A run stream: the opening beat, the records with ids, then [DONE] unless `done` is false. */
+function runBody(records: AmspRecord[], done = true): Step[] {
+  return [PING, ...records.map((r, i) => frame(r, `ep-${i + 1}`)), ...(done ? [DONE] : [])];
 }
 
-async function collect(run: AsyncIterable<AmspEvent>): Promise<AmspEvent[]> {
-  const events: AmspEvent[] = [];
-  for await (const event of run) events.push(event);
-  return events;
+/** A new Session's run stream opens: the beat, then the Session's session_meta. */
+const opening = (): Step[] => [PING, frame(meta(SID), "ep-0")];
+
+async function collect(iterable: AsyncIterable<AmspRecord>): Promise<AmspRecord[]> {
+  const out: AmspRecord[] = [];
+  for await (const r of iterable) out.push(r);
+  return out;
 }
 
-let fake: FetchFake;
-let client: AgentClient;
+const kind = (r: AmspRecord) => (r.payload as { type?: string }).type ?? r.type;
 
-beforeEach(() => {
-  fake = createFetchFake();
-  vi.stubGlobal("fetch", fake.fetch);
-  client = new AgentClient({ baseUrl: BASE_URL, agent: "demo/coder", apiKey: KEY });
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
-describe("a run's stream", () => {
-  it("yields the server's events in order and stops at [DONE]", async () => {
-    const served = fake.stream("POST", RUNS, [
-      ...PLAIN.map(frame),
-      DONE,
-      frame(ev("text.done", { role: "assistant", text: "after the end" })),
-    ]);
-
-    expect(await collect(client.stream({ input: "hi" }))).toEqual(PLAIN);
-    expect(served.closed).toBe(true);
+describe("a run", () => {
+  it("reads the records in order without the control frames, and names the Session it continues", async () => {
+    const fake = createFetchFake();
+    const records = plainRun(SID);
+    const steps = runBody(records);
+    // A beat mid-run and a host's own event: neither is a record.
+    steps.splice(4, 0, control("ping"), control("server_event", { type: "task_state" }));
+    fake.stream("POST", RUNS, steps);
+    const run = clientOf(fake, { "X-Trace": "t1" }).stream({ input: "Say hello", sessionId: SID });
+    expect(await run.session).toBe(SID);
+    expect(await collect(run)).toEqual(records);
+    const call = fake.calls[0]!;
+    expect(call.body).toEqual({ session_id: SID, input: "Say hello" });
+    expect(call.headers.get("authorization")).toBe("Bearer penguin_key");
+    expect(call.headers.get("x-trace")).toBe("t1");
+    expect(call.headers.get("accept")).toBe("text/event-stream");
   });
 
-  it("posts the input and the Session to continue to the Agent's runs route, with the key and the caller's headers", async () => {
-    client = new AgentClient({
-      baseUrl: `${BASE_URL}/`,
-      agent: "demo/coder",
-      apiKey: KEY,
-      headers: { "X-Request-Source": "nightly-report" },
-    });
-    fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-    const input: RunOptions["input"] = [
-      { type: "text", text: "What is in this picture?" },
-      { type: "image_url", image_url: "data:image/png;base64,iVBORw0KGgo=" },
-    ];
-
-    await client.run({ sessionId: SESSION, input });
-
-    expect(fake.calls).toHaveLength(1);
-    const [call] = fake.calls;
-    expect(call).toMatchObject({
-      method: "POST",
-      path: RUNS,
-      body: { session_id: SESSION, input },
-    });
-    expect(call!.headers.get("authorization")).toBe(`Bearer ${KEY}`);
-    expect(call!.headers.get("content-type")).toBe("application/json");
-    expect(call!.headers.get("accept")).toBe("text/event-stream");
-    expect(call!.headers.get("x-request-source")).toBe("nightly-report");
+  it("names a new Session at its session_meta, not at the opening beat", async () => {
+    const fake = createFetchFake();
+    const held = gate();
+    const [beat, ...rest] = runBody(plainRun(SID));
+    fake.stream("POST", RUNS, [beat!, held.promise, ...rest]);
+    const run = clientOf(fake).stream({ input: "Say hello" });
+    let named: string | null = null;
+    void run.session.then((id) => (named = id));
+    await fake.requested("POST", RUNS);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(named).toBeNull();
+    held.open();
+    expect(await run.session).toBe(SID);
+    expect((await run.result()).sessionId).toBe(SID);
   });
 
-  it("sends no Authorization from a keyless client", async () => {
-    client = new AgentClient({ baseUrl: BASE_URL, agent: "demo/coder" });
-    fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-
-    await client.run({ input: "hi" });
-
-    expect(fake.calls[0]!.headers.has("authorization")).toBe(false);
-    expect(fake.calls[0]!.body).toEqual({ input: "hi" });
-  });
-
-  it("joins the main Session's assistant texts in result(), leaving deltas, user texts, a subagent's texts and a streamed summary out", async () => {
-    fake.stream("POST", RUNS, [...MIXED_RUN.map(frame), DONE]);
-
-    const result = await client.run({ input: "Fix the build" });
-
-    expect(result).toMatchObject({
+  it("run() resolves to the result alone", async () => {
+    const fake = createFetchFake();
+    fake.stream("POST", RUNS, runBody(plainRun(SID, "Hi there")));
+    const result = await clientOf(fake).run({ input: "Say hello" });
+    expect(result).toEqual({
       status: "completed",
-      sessionId: sessionOf(MIXED_RUN),
-      text: "Working on it.\n\nDone: the build is green.",
-      usage: { output: 18, total: 1100 },
-      sessionUsage: { output: 15, total: 900 },
-      requests: 3,
-    });
-    expect(result).not.toHaveProperty("error");
-    expect(result.items.map((item) => item.type)).toEqual([
-      "run.started",
-      "request.started",
-      "text.done",
-      "request.done",
-      "text.done", // the steering text, role user
-      "context.opened", // the subagent's Session
-      "request.started",
-      "text.done",
-      "request.done",
-      "compaction.started",
-      "compaction.done", // the summary was streamed: no summary.done, and none is rebuilt
-      "request.started",
-      "text.done",
-      "request.done",
-      "run.done",
-    ]);
-    expect(result.items.find((item) => item.type === "context.opened")).toMatchObject({
-      origin: ["session-2026-10-07-10-00-01-c0000001"],
-    });
+      sessionId: SID,
+      text: "Hi there",
+      usage: counts(5, 45, 40),
+      sessionUsage: counts(5, 45, 40),
+      requests: 1,
+    } satisfies RunResult);
   });
 
-  it("keeps a summary the engine delivered whole as its summary.done item, still out of the text", async () => {
-    const summary = ev("summary.done", { text: "The whole summary.", stop_reason: "completed" });
-    fake.stream("POST", RUNS, [
-      frame(started),
-      frame(ev("request.started", { request: 1 })),
-      frame(ev("text.done", { role: "assistant", text: "Before.", stop_reason: "completed" })),
-      frame(ev("request.done", { request: 1, status: "completed", usage: USAGE })),
-      frame(
-        ev("compaction.started", { reason: "manual", mode: "summarize", context: 10, turns: 1 }),
-      ),
-      frame(summary),
-      frame(ev("compaction.done", { reason: "manual", mode: "summarize", status: "completed" })),
-      frame(runDone()),
-      DONE,
-    ]);
-
-    const result = await client.run({ input: "hi" });
-
-    expect(result.text).toBe("Before.");
-    expect(result.items.filter((item) => item.type.startsWith("summary."))).toEqual([summary]);
+  it("reads a record type it does not know like any other", async () => {
+    const fake = createFetchFake();
+    const odd = ev({ type: "something_new", value: 1 });
+    const records = [...plainRun(SID).slice(0, -1), odd, taskEnd()];
+    fake.stream("POST", RUNS, runBody(records));
+    const run = clientOf(fake).stream({ input: "x" });
+    expect((await collect(run)).map(kind)).toContain("something_new");
+    expect((await run.result()).status).toBe("completed");
   });
 
-  it("resolves a run that ended fatal with its status and error", async () => {
-    const error = { code: "auth", message: "401 invalid x-api-key" };
-    fake.stream("POST", RUNS, [
-      frame(started),
-      frame(ev("request.started", { request: 1 })),
-      frame(ev("request.done", { request: 1, status: "fatal", usage: null, error, attempt: 1 })),
-      frame(runDone({ status: "fatal", error })),
-      DONE,
-    ]);
-
-    await expect(client.run({ input: "hi" })).resolves.toMatchObject({
-      status: "fatal",
-      error,
-      text: "",
-    });
+  const main = [taskBegin(), userText("go"), requestBegin()];
+  it.each<[string, AmspRecord[], Pick<RunResult, "status" | "error">]>([
+    [
+      "the last task_begin left open: fatal, internal",
+      [...main, assistantText("half"), requestEnd()],
+      { status: "fatal", error: expect.objectContaining({ code: "internal" }) },
+    ],
+    [
+      "no Task at all: fatal, internal",
+      [userText("go")],
+      { status: "fatal", error: expect.objectContaining({ code: "internal" }) },
+    ],
+    [
+      "a second Task left open after a closed one: fatal",
+      [...main, requestEnd(), taskEnd(), taskBegin(), userText("again")],
+      { status: "fatal", error: expect.objectContaining({ code: "internal" }) },
+    ],
+    [
+      "an abort: aborted, with its cause",
+      [...main, requestEnd("aborted", { error_code: "user_abort" }), abort(), taskEnd()],
+      { status: "aborted", error: { code: "user_abort", message: "The run was interrupted." } },
+    ],
+    [
+      "a request that failed for good: its status and error",
+      [...main, requestEnd("fatal", { error_code: "auth", error_message: "bad key" }), taskEnd()],
+      { status: "fatal", error: { code: "auth", message: "bad key" } },
+    ],
+    [
+      "a failure retried in the run, then an answer: completed",
+      [
+        ...main,
+        requestEnd("retryable", { error_code: "timeout", retry_in_ms: 1000 }),
+        requestBegin(),
+        assistantText("ok"),
+        requestEnd(),
+        taskEnd(),
+      ],
+      { status: "completed" },
+    ],
+    [
+      "a compaction that failed at a Task boundary, then a request: completed",
+      [
+        ...main,
+        requestEnd(),
+        compactionBegin(),
+        compactionEnd("retryable", { error_code: "timeout" }),
+        requestBegin(),
+        assistantText("ok"),
+        requestEnd(),
+        taskEnd(),
+      ],
+      { status: "completed" },
+    ],
+    [
+      "a compaction that failed last: its status",
+      [
+        ...main,
+        requestEnd(),
+        compactionBegin(),
+        compactionEnd("fatal", { error_code: "rejected" }),
+        taskEnd(),
+      ],
+      { status: "fatal", error: { code: "rejected", message: "" } },
+    ],
+    [
+      "the turn cap's abort: aborted, max_turns",
+      [
+        ...main,
+        assistantText("Working."),
+        requestEnd(),
+        abort("max_turns", { error_message: "reached max turns (1)" }),
+        taskEnd(),
+      ],
+      { status: "aborted", error: { code: "max_turns", message: "reached max turns (1)" } },
+    ],
+    [
+      "an attempt cut off at its output cap retried, then an answer: completed",
+      [
+        ...main,
+        assistantText("Half an ans"),
+        requestEnd("retryable", {
+          error_code: "output_truncated",
+          error_message: "cut",
+          retry_in_ms: 2000,
+        }),
+        requestBegin(),
+        assistantText("The answer."),
+        requestEnd(),
+        taskEnd(),
+      ],
+      { status: "completed" },
+    ],
+    [
+      "an output cap the retries never got past: retryable, output_truncated",
+      [
+        ...main,
+        requestEnd("retryable", {
+          error_code: "output_truncated",
+          error_message: "cut",
+          attempt: 6,
+        }),
+        taskEnd(),
+      ],
+      { status: "retryable", error: { code: "output_truncated", message: "cut" } },
+    ],
+    [
+      "a subagent's abort and failure: completed",
+      [
+        ...main,
+        ev({ type: "abort", error_code: "user_abort" }, ["child-1"]),
+        requestEnd("fatal", { error_code: "auth" }, ["child-1"]),
+        assistantText("done"),
+        requestEnd(),
+        taskEnd(),
+      ],
+      { status: "completed" },
+    ],
+  ])("decides the status: %s", async (_name, records, expected) => {
+    const fake = createFetchFake();
+    fake.stream("POST", RUNS, runBody(records));
+    const result = await clientOf(fake).run({ input: "go", sessionId: SID });
+    expect({ status: result.status, ...(result.error ? { error: result.error } : {}) }).toEqual(
+      expected,
+    );
   });
 
-  it("resolves the session from run.started while the server holds back the first content event", async () => {
-    const hold = gate();
-    fake.stream("POST", RUNS, [frame(started), hold.promise, ...PLAIN.slice(1).map(frame), DONE]);
-
-    const run = client.stream({ input: "hi" });
-
-    await expect(run.session).resolves.toBe(SESSION);
-    hold.open();
-    await expect(run.result()).resolves.toMatchObject({ sessionId: SESSION, text: "Hello!" });
+  it("keeps the text of a Request that did not complete out of the answer", async () => {
+    const fake = createFetchFake();
+    fake.stream(
+      "POST",
+      RUNS,
+      runBody([
+        taskBegin(),
+        userText("go"),
+        requestBegin(),
+        assistantText("Half an ans"),
+        requestEnd("retryable", { error_code: "output_truncated", retry_in_ms: 0 }),
+        requestBegin(),
+        assistantText("The answer."),
+        requestEnd(),
+        requestBegin(),
+        assistantText("Interrupted mid-"),
+        requestEnd("aborted"),
+        abort(),
+        taskEnd(),
+      ]),
+    );
+    const result = await clientOf(fake).run({ input: "go", sessionId: SID });
+    expect(result.status).toBe("aborted");
+    expect(result.text).toBe("The answer.");
   });
 
-  it("reads events through keep-alive comments, CRLF framing, split chunks and a two-line data block", async () => {
-    const twoLines =
-      'data: {"type":"text.done","at":"2026-10-07T10:00:00.000Z",\r\ndata: "role":"assistant","text":"Hello!","stop_reason":"completed"}\r\n\r\n';
-    const wire = [
-      frame(started),
-      ": keep-alive\n\n",
-      frame(ev("request.started", { request: 1 })),
-      twoLines,
-      ": keep-alive\n\n",
-      frame(runDone()),
-      DONE,
-    ]
-      .join("")
-      .replaceAll(/(?<!\r)\n/g, "\r\n");
-    const chunks = wire.match(/[\s\S]{1,7}/g)!;
-    fake.stream("POST", RUNS, chunks);
-
-    const events = await collect(client.stream({ input: "hi" }));
-
-    expect(events.map((event) => event.type)).toEqual([
-      "run.started",
-      "request.started",
-      "text.done",
-      "run.done",
-    ]);
-    expect(events[2]).toMatchObject({ role: "assistant", text: "Hello!" });
-  });
-
-  it("passes an event type it does not know to the iterator and the items", async () => {
-    const unknown = ev("plan.updated", { steps: ["read", "summarize"] });
-    fake.stream("POST", RUNS, [frame(started), frame(unknown), frame(runDone()), DONE]);
-    const run = client.stream({ input: "hi" });
-
-    expect(await collect(run)).toContainEqual(unknown);
-    expect((await run.result()).items).toContainEqual(unknown);
-  });
-
-  it("keeps the run going when the loop is left early, so result() still resolves", async () => {
-    const hold = gate();
-    const served = fake.stream("POST", RUNS, [
-      frame(started),
-      hold.promise,
-      ...PLAIN.slice(1).map(frame),
-      DONE,
-    ]);
-    const run = client.stream({ input: "hi" });
-
-    for await (const event of run) {
-      expect(event.type).toBe("run.started");
-      break;
-    }
-    expect(served.closed).toBe(false);
-    hold.open();
-
-    await expect(run.result()).resolves.toMatchObject({ status: "completed", text: "Hello!" });
-    expect(fake.calls.map((call) => call.path)).toEqual([RUNS]);
-  });
-
-  it("keeps every event for an iteration that starts after the run ended", async () => {
-    fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-    const run = client.stream({ input: "hi" });
-
-    await run.result();
-
-    expect(await collect(run)).toEqual(PLAIN);
-  });
-
-  it("keeps answering done once the iteration has finished", async () => {
-    fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-    const iterator = client.stream({ input: "hi" })[Symbol.asyncIterator]();
-    while (!(await iterator.next()).done);
-
-    await expect(iterator.next()).resolves.toEqual({ value: undefined, done: true });
-  });
-
-  it("refuses to iterate a run's events twice", async () => {
-    fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-    const run = client.stream({ input: "hi" });
-    await collect(run);
-
-    expect(() => run[Symbol.asyncIterator]()).toThrow(TypeError);
+  it("keeps a summary and a subagent's text out of the answer, and counts every request's usage", async () => {
+    const fake = createFetchFake();
+    const child = ["child-1"];
+    fake.stream(
+      "POST",
+      RUNS,
+      runBody([
+        taskBegin(),
+        userText("go"),
+        requestBegin(),
+        assistantText("First."),
+        usage(counts(3, 30), counts(3, 30)),
+        requestEnd(),
+        requestBegin(child),
+        assistantText("child says", child),
+        usage(counts(2, 20), counts(2, 20), child),
+        requestEnd("completed", {}, child),
+        compactionBegin(),
+        partialText("start"),
+        partialText("delta", "summary"),
+        assistantText("summary"),
+        usage(counts(4, 40), counts(7, 70)),
+        compactionEnd(),
+        requestBegin(),
+        assistantText("Second."),
+        usage(counts(1, 10), counts(8, 80)),
+        requestEnd(),
+        taskEnd(),
+      ]),
+    );
+    const result = await clientOf(fake).run({ input: "go", sessionId: SID });
+    expect(result.text).toBe("First.\n\nSecond.");
+    expect(result.usage).toEqual(counts(10, 100));
+    expect(result.sessionUsage).toEqual(counts(8, 80));
+    expect(result.requests).toBe(2);
   });
 });
 
 describe("a run that fails", () => {
-  it.each([
-    {
-      answer: "the error envelope",
-      status: 401,
-      body: '{"error":{"code":"unauthorized","message":"This Agent requires an API key."}}',
-      expected: { status: 401, code: "unauthorized", message: "This Agent requires an API key." },
-    },
-    {
-      answer: "an envelope without a message",
-      status: 403,
-      body: '{"error":{"code":"agent_api_disabled"}}',
-      expected: { status: 403, code: "agent_api_disabled", message: "agent_api_disabled" },
-    },
-    {
-      answer: "a body that is not the envelope",
-      status: 502,
-      body: "<html>Bad Gateway</html>",
-      expected: { status: 502, code: "http_error", message: "HTTP 502: <html>Bad Gateway</html>" },
-    },
-  ])(
-    "rejects the run, its session and its iteration with an AmspHttpError read from $answer",
-    async ({ status, body, expected }) => {
-      fake.text("POST", RUNS, status, body, "application/json");
-
-      const run = client.stream({ input: "hi" });
-
-      for (const outcome of [run.result(), run.session, collect(run)]) {
-        const error = await outcome.then(
-          () => null,
-          (err: unknown) => err,
-        );
-        expect(error).toBeInstanceOf(AmspHttpError);
-        expect(error).toMatchObject(expected);
-      }
-    },
-  );
-
-  it.each([
-    { how: "ends", tail: [] as Step[] },
-    { how: "says [DONE]", tail: [DONE] as Step[] },
-    { how: "breaks", tail: [{ fail: new TypeError("terminated") }] as Step[] },
-  ])(
-    "is an AmspStreamError, after the events that did arrive, when the stream $how before run.done",
-    async ({ tail }) => {
-      fake.stream("POST", RUNS, [...PLAIN.slice(0, 4).map(frame), ...tail]);
-      const run = client.stream({ input: "hi" });
-
-      await expect(run.result()).rejects.toBeInstanceOf(AmspStreamError);
-      const seen: AmspEvent[] = [];
-      const iteration = (async () => {
-        for await (const event of run) seen.push(event);
-      })();
-      await expect(iteration).rejects.toBeInstanceOf(AmspStreamError);
-      expect(seen).toEqual(PLAIN.slice(0, 4));
-    },
-  );
-
-  it.each([
-    { how: "ends", tail: [] as Step[] },
-    { how: "breaks", tail: [{ fail: new TypeError("terminated") }] as Step[] },
-  ])("still resolves when the stream $how after run.done", async ({ tail }) => {
-    fake.stream("POST", RUNS, [...PLAIN.map(frame), ...tail]);
-
-    await expect(client.run({ input: "hi" })).resolves.toMatchObject({ status: "completed" });
+  it("rejects a refusal before the stream with its status and code, and the session with it", async () => {
+    const fake = createFetchFake();
+    fake.json("POST", RUNS, 409, { error: { code: "task_in_progress", message: "Busy." } });
+    const run = clientOf(fake).stream({ input: "x", sessionId: SID });
+    await expect(run.result()).rejects.toMatchObject({
+      name: "AmspHttpError",
+      status: 409,
+      code: "task_in_progress",
+    });
+    await expect(run.session).rejects.toBeInstanceOf(AmspHttpError);
   });
 
-  it.each([
-    {
-      answer: "an HTML page",
-      serve: (f: FetchFake) => f.text("POST", RUNS, 200, "<!doctype html>", "text/html"),
-      named: "text/html",
-    },
-    {
-      answer: "an empty answer",
-      serve: (f: FetchFake) => f.empty("POST", RUNS, 200),
-      named: "without a content type",
-    },
-  ])(
-    "is an AmspStreamError saying what came instead when a 200 answer is $answer",
-    async ({ serve, named }) => {
-      serve(fake);
+  it("rejects a stream that ends before [DONE], after reading what came", async () => {
+    const fake = createFetchFake();
+    fake.stream("POST", RUNS, runBody(plainRun(SID).slice(0, 4), false));
+    const run = clientOf(fake).stream({ input: "x" });
+    const read: AmspRecord[] = [];
+    await expect(
+      (async () => {
+        for await (const r of run) read.push(r);
+      })(),
+    ).rejects.toBeInstanceOf(AmspStreamError);
+    expect(read).toHaveLength(4);
+    await expect(run.result()).rejects.toBeInstanceOf(AmspStreamError);
+  });
 
-      const error = await client.run({ input: "hi" }).catch((err: unknown) => err);
+  it("rejects a new Session's stream that reaches [DONE] without its session_meta", async () => {
+    const fake = createFetchFake();
+    fake.stream("POST", RUNS, runBody([taskBegin(), userText("go"), taskEnd()]));
+    const run = clientOf(fake).stream({ input: "go" });
+    await expect(run.result()).rejects.toBeInstanceOf(AmspStreamError);
+    await expect(run.session).rejects.toBeInstanceOf(AmspStreamError);
+  });
 
-      expect(error).toBeInstanceOf(AmspStreamError);
-      expect((error as Error).message).toContain(named);
-    },
-  );
+  it("rejects a connection that breaks mid-stream", async () => {
+    const fake = createFetchFake();
+    fake.stream("POST", RUNS, [
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      { fail: new TypeError("socket hang up") },
+    ]);
+    await expect(clientOf(fake).run({ input: "x" })).rejects.toBeInstanceOf(AmspStreamError);
+  });
 
-  it.each([
-    { block: "not JSON", data: "data: {not json\n\n" },
-    { block: "JSON without a type", data: 'data: {"session_id":"x"}\n\n' },
-  ])("is an AmspStreamError when a block is $block", async ({ data }) => {
-    const served = fake.stream("POST", RUNS, [frame(started), data, never()]);
+  it("rejects an answer that is not an event stream", async () => {
+    const fake = createFetchFake();
+    fake.text("POST", RUNS, 200, "<html>proxy</html>", "text/html");
+    await expect(clientOf(fake).run({ input: "x" })).rejects.toBeInstanceOf(AmspStreamError);
+  });
 
-    await expect(client.run({ input: "hi" })).rejects.toBeInstanceOf(AmspStreamError);
+  it("rejects with the signal's reason and closes the connection when the caller aborts", async () => {
+    const fake = createFetchFake();
+    const served = fake.stream("POST", RUNS, [...opening(), frame(taskBegin(), "ep-1"), never()]);
+    const controller = new AbortController();
+    const run = clientOf(fake).stream({ input: "x", signal: controller.signal });
+    await run.session;
+    controller.abort(new Error("caller left"));
+    await expect(run.result()).rejects.toThrow("caller left");
     expect(served.closed).toBe(true);
+  });
+
+  it("asks the server to abort with run.abort(), and the stream still ends with [DONE]", async () => {
+    const fake = createFetchFake();
+    fake.empty("POST", `/sessions/${SID}/abort`, 202);
+    fake.stream("POST", RUNS, [
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      () => fake.requested("POST", `/sessions/${SID}/abort`),
+      frame(abort(), "ep-2"),
+      frame(taskEnd(), "ep-3"),
+      DONE,
+    ]);
+    const run = clientOf(fake).stream({ input: "x" });
+    await run.session;
+    await run.abort();
+    expect((await run.result()).status).toBe("aborted");
   });
 });
 
 describe("approvals", () => {
-  it.each([
-    { callback: "no callback", onApproval: undefined, decision: "deny" },
-    { callback: "a callback that allows", onApproval: () => "allow" as const, decision: "allow" },
-    {
-      callback: "an async callback that denies",
-      onApproval: async () => "deny" as const,
-      decision: "deny",
-    },
-    {
-      callback: "a callback that throws",
-      onApproval: () => {
-        throw new Error("no terminal to ask");
-      },
-      decision: "deny",
-    },
-  ])(
-    "answers with $decision for $callback, while the caller only awaits the result",
-    async ({ onApproval, decision }) => {
-      fake.empty("POST", ROUND_TRIP_APPROVAL, 204);
-      fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
+  const call = (id: string) => toolCall(id);
+  const pending = (id: string, origin?: string[]) => ({
+    tool_call: call(id).payload as ToolCallPayload,
+    ...(origin ? { origin } : {}),
+  });
 
-      await expect(client.run({ input: "List the files", onApproval })).resolves.toMatchObject({
-        status: "completed",
-      });
-
-      const answer = fake.calls.find((call) => call.path === ROUND_TRIP_APPROVAL)!;
-      expect(answer.body).toEqual({ decision });
-      expect(answer.headers.get("authorization")).toBe(`Bearer ${KEY}`);
-    },
-  );
-
-  it("hands the callback the request and the Session it belongs to", async () => {
-    fake.empty("POST", ROUND_TRIP_APPROVAL, 204);
-    fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
+  it("looks once for an undecided call, asks the callback once and posts its answer", async () => {
+    const fake = createFetchFake();
+    fake.json("GET", APPROVALS, 200, { approvals: [pending("call_1", ["child-1"])] });
+    fake.empty("POST", answerPath("call_1"), 204);
+    fake.stream("POST", RUNS, [
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      frame(toolCall("call_1", '{"cmd":"ls"}', ["child-1"]), "ep-2"),
+      () => fake.requested("POST", answerPath("call_1")),
+      frame(decision("call_1", "allow", ["child-1"]), "ep-3"),
+      frame(toolOutput("call_1", "a.txt", ["child-1"]), "ep-4"),
+      frame(taskEnd(), "ep-5"),
+      DONE,
+    ]);
     const asked: unknown[] = [];
-
-    await client.run({
-      input: "List the files",
-      onApproval: (request, ctx) => {
-        asked.push({ request, ctx });
-        return parseArguments(request.tool_call)?.command === "ls" ? "allow" : "deny";
+    const result = await clientOf(fake).run({
+      input: "x",
+      onApproval: (toolCall, origin, ctx) => {
+        asked.push([toolCall.tool_call_id, origin, ctx.sessionId]);
+        return "allow";
       },
     });
-
-    expect(asked).toEqual([
-      { request: ROUND_TRIP_REQUESTED, ctx: { sessionId: ROUND_TRIP_SESSION } },
-    ]);
-    expect(fake.calls.find((call) => call.path === ROUND_TRIP_APPROVAL)!.body).toEqual({
-      decision: "allow",
-    });
+    expect(result.status).toBe("completed");
+    expect(asked).toEqual([["call_1", ["child-1"], SID]]);
+    const looks = fake.calls.filter((c) => c.path === APPROVALS);
+    expect(looks).toHaveLength(1);
+    const answers = fake.calls.filter((c) => c.path === answerPath("call_1"));
+    expect(answers.map((c) => c.body)).toEqual([{ decision: "allow" }]);
   });
 
-  it("collects the next Request's text and one tool_result.done for a tool that ran inside its Request", async () => {
-    fake.empty("POST", ROUND_TRIP_APPROVAL, 204);
-    fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
-
-    const result = await client.run({ input: "List the files", onApproval: () => "allow" });
-
-    expect(result).toMatchObject({
-      status: "completed",
-      sessionId: ROUND_TRIP_SESSION,
-      text: "Two entries: README.md and src.",
-      requests: 2,
-    });
-    // The result's fragments fell on both sides of request.done; its one .done closes it.
-    expect(result.items.map((item) => item.type)).toEqual([
-      "run.started",
-      "request.started",
-      "tool_call.done",
-      "approval.requested",
-      "approval.decided",
-      "request.done",
-      "tool_result.done",
-      "request.started",
-      "text.done",
-      "request.done",
-      "run.done",
-    ]);
-    expect(result.items.find((item) => item.type === "tool_result.done")).toMatchObject({
-      tool_call_id: "call_1",
-      output: "README.md\nsrc\n",
-    });
-  });
-
-  it("finishes the run when someone else answered the approval first", async () => {
-    fake.json("POST", ROUND_TRIP_APPROVAL, 404, {
-      error: { code: "approval_not_found", message: "This approval was already decided." },
-    });
-    fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
-
-    await expect(
-      client.run({ input: "List the files", onApproval: () => "allow" }),
-    ).resolves.toMatchObject({
-      status: "completed",
-    });
-  });
-
-  it("leaves a completed run as it was when an answer fails after the run ended", async () => {
-    const late = gate();
-    fake.json(
-      "POST",
-      APPROVAL,
-      500,
-      { error: { code: "internal", message: "boom" } },
-      late.promise,
-    );
+  it("closes the open look when the server decides the call itself, and posts nothing", async () => {
+    const fake = createFetchFake();
+    fake.json("GET", APPROVALS, 200, { approvals: [] }, never());
     fake.stream("POST", RUNS, [
-      frame(started),
-      frame(APPROVAL_REQUESTED),
-      fake.requested("POST", APPROVAL),
-      frame(ev("approval.decided", { tool_call_id: "call_1", decision: "deny" })),
-      frame(runDone()),
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      frame(call("call_1"), "ep-2"),
+      () => fake.requested("GET", APPROVALS),
+      frame(decision("call_1", "allow"), "ep-3"),
+      frame(taskEnd(), "ep-4"),
       DONE,
     ]);
-    const run = client.stream({ input: "list the files" });
-    await expect(run.result()).resolves.toMatchObject({ status: "completed" });
-
-    const answer = await fake.requested("POST", APPROVAL);
-    const failed = new Promise((resolve) => answer.signal!.addEventListener("abort", resolve));
-    late.open();
-    await failed;
-
-    expect((await collect(run)).map((event) => event.type)).toEqual([
-      "run.started",
-      "approval.requested",
-      "approval.decided",
-      "run.done",
-    ]);
-  });
-
-  it("ends the run with the server's refusal to take an answer, and closes the connection", async () => {
-    fake.json("POST", ROUND_TRIP_APPROVAL, 401, {
-      error: { code: "unauthorized", message: "This Agent requires an API key." },
-    });
-    const served = fake.stream("POST", RUNS, approvalScript(never()));
-
-    await expect(client.run({ input: "List the files" })).rejects.toMatchObject({
-      status: 401,
-      code: "unauthorized",
-    });
-    expect(served.closed).toBe(true);
-  });
-});
-
-describe("aborting", () => {
-  it.each([
-    { fetch: "a fetch that errors the body on abort", abortErrorsBody: true },
-    { fetch: "a fetch that leaves the body to its reader", abortErrorsBody: false },
-  ])(
-    "closes the connection and rejects with the AbortError when the signal aborts mid-stream, through $fetch",
-    async ({ abortErrorsBody }) => {
-      const controller = new AbortController();
-      const served = fake.stream(
-        "POST",
-        RUNS,
-        [
-          ...PLAIN.slice(0, 4).map(frame),
-          () => {
-            controller.abort();
-            return never();
-          },
-        ],
-        { abortErrorsBody },
-      );
-      const run = client.stream({ input: "hi", signal: controller.signal });
-
-      const error = await run.result().catch((err: unknown) => err);
-
-      expect(error).toBe(controller.signal.reason);
-      expect(error).toMatchObject({ name: "AbortError" });
-      await expect(collect(run)).rejects.toBe(controller.signal.reason);
-      expect(served.closed).toBe(true);
-    },
-  );
-
-  it("stops the iteration at once when the loop aborts the signal", async () => {
-    fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-    const controller = new AbortController();
-    const run = client.stream({ input: "hi", signal: controller.signal });
-
-    const seen: string[] = [];
-    const iteration = (async () => {
-      for await (const event of run) {
-        seen.push(event.type);
-        if (event.type === "text.delta") controller.abort();
-      }
-    })();
-
-    const error = await iteration.catch((err: unknown) => err);
-
-    expect(error).toBe(controller.signal.reason);
-    expect(seen).toEqual(["run.started", "request.started", "text.delta"]);
-  });
-
-  it("drops the events not yet read when the signal aborts while the reader lags behind", async () => {
-    fake.stream("POST", RUNS, [...PLAIN.slice(0, 4).map(frame), never()]);
-    const controller = new AbortController();
-    const run = client.stream({ input: "hi", signal: controller.signal });
-    await run.session;
-
-    controller.abort();
-    await expect(run.result()).rejects.toBe(controller.signal.reason);
-
-    const seen: AmspEvent[] = [];
-    const iteration = (async () => {
-      for await (const event of run) seen.push(event);
-    })();
-    await expect(iteration).rejects.toBe(controller.signal.reason);
-    expect(seen).toEqual([]);
-  });
-
-  it("rejects without waiting for the stream when the signal aborts as the response arrives", async () => {
-    const served = fake.stream("POST", RUNS, [never()]);
-    const controller = new AbortController();
-    client = new AgentClient({
-      baseUrl: BASE_URL,
-      agent: "demo/coder",
-      apiKey: KEY,
-      fetch: async (input, init) => {
-        const response = await fake.fetch(input, init);
-        controller.abort();
-        return response;
-      },
-    });
-
-    const error = await client.run({ input: "hi", signal: controller.signal }).catch((err) => err);
-
-    expect(error).toBe(controller.signal.reason);
-    expect(served.closed).toBe(true);
-  });
-
-  it("sends nothing for a signal aborted before the run", async () => {
-    const controller = new AbortController();
-    controller.abort();
-
-    await expect(client.run({ input: "hi", signal: controller.signal })).rejects.toBe(
-      controller.signal.reason,
+    await clientOf(fake).run({ input: "x", onApproval: () => "allow" });
+    const look = fake.calls.find((c) => c.path === APPROVALS)!;
+    expect(look.signal?.aborted).toBe(true);
+    expect(fake.calls.some((c) => c.method === "POST" && c.path.includes("/approvals/"))).toBe(
+      false,
     );
-    expect(fake.calls).toEqual([]);
-  });
-
-  it("asks the server to abort with run.abort(), and the stream ends with run.done aborted", async () => {
-    const abortPath = `/sessions/${SESSION}/abort`;
-    const userAbort = { code: "user_abort", message: "Aborted by the API caller." };
-    fake.empty("POST", abortPath, 202);
-    fake.stream("POST", RUNS, [
-      ...PLAIN.slice(0, 4).map(frame),
-      fake.requested("POST", abortPath),
-      frame(ev("text.done", { role: "assistant", text: "Hello", stop_reason: "aborted" })),
-      frame(ev("request.done", { request: 1, status: "aborted", usage: null, attempt: 1 })),
-      frame(runDone({ status: "aborted", error: userAbort, session_usage: null })),
-      DONE,
-    ]);
-    const run = client.stream({ input: "hi" });
-
-    await run.session;
-    await run.abort();
-
-    await expect(run.result()).resolves.toMatchObject({
-      status: "aborted",
-      error: userAbort,
-      text: "Hello",
-    });
   });
 
   it.each([
-    {
-      run: "a run that is over",
-      script: (f: FetchFake) => f.stream("POST", RUNS, [...PLAIN.map(frame), DONE]),
-    },
-    {
-      run: "a refused run",
-      script: (f: FetchFake) =>
-        f.json("POST", RUNS, 429, { error: { code: "too_many_runs", message: "Busy." } }),
-    },
-  ])("sends nothing when run.abort() is called on $run", async ({ script }) => {
-    script(fake);
-    const run = client.stream({ input: "hi" });
-    await run.result().catch(() => {});
+    ["without a callback", undefined],
+    [
+      "when the callback throws",
+      () => {
+        throw new Error("no");
+      },
+    ],
+  ])("answers deny %s", async (_name, onApproval) => {
+    const fake = createFetchFake();
+    fake.json("GET", APPROVALS, 200, { approvals: [pending("call_1")] });
+    fake.empty("POST", answerPath("call_1"), 204);
+    fake.stream("POST", RUNS, [
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      frame(call("call_1"), "ep-2"),
+      () => fake.requested("POST", answerPath("call_1")),
+      frame(decision("call_1", "deny"), "ep-3"),
+      frame(taskEnd(), "ep-4"),
+      DONE,
+    ]);
+    await clientOf(fake).run({ input: "x", ...(onApproval ? { onApproval } : {}) });
+    expect(fake.calls.find((c) => c.path === answerPath("call_1"))?.body).toEqual({
+      decision: "deny",
+    });
+  });
 
-    await run.abort();
+  it("closes the open look when the call's Request ends without completing", async () => {
+    // A call the stream cut short is written whole with the arguments that arrived; its Request
+    // then ends without completing, so it was never dispatched and no decision follows it.
+    const fake = createFetchFake();
+    fake.json("GET", APPROVALS, 200, { approvals: [] }, never());
+    const lookClosed = () =>
+      new Promise<void>((resolve) => {
+        const signal = fake.calls.find((c) => c.path === APPROVALS)!.signal!;
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    fake.stream("POST", RUNS, [
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      frame(partialToolCall("call_1", "start"), "ep-2"),
+      frame(partialToolCall("call_1", "delta", '{"cmd":'), "ep-3"),
+      frame(partialToolCall("call_1", "stop"), "ep-4"),
+      frame(toolCall("call_1", '{"cmd":'), "ep-5"),
+      () => fake.requested("GET", APPROVALS),
+      frame(requestEnd("aborted"), "ep-6"),
+      lookClosed,
+      frame(abort(), "ep-7"),
+      frame(taskEnd(), "ep-8"),
+      DONE,
+    ]);
+    const result = await clientOf(fake).run({ input: "x", onApproval: () => "allow" });
+    expect(result.status).toBe("aborted");
+    expect(fake.calls.filter((c) => c.path === APPROVALS)).toHaveLength(1);
+    expect(fake.calls.some((c) => c.method === "POST" && c.path.includes("/approvals/"))).toBe(
+      false,
+    );
+  });
 
-    expect(fake.calls.map((call) => call.path)).toEqual([RUNS]);
+  it("goes on when someone else answered first", async () => {
+    const fake = createFetchFake();
+    fake.json("GET", APPROVALS, 200, { approvals: [pending("call_1")] });
+    fake.json("POST", answerPath("call_1"), 404, {
+      error: { code: "approval_not_found", message: "Already decided." },
+    });
+    fake.stream("POST", RUNS, [
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      frame(call("call_1"), "ep-2"),
+      () => fake.requested("POST", answerPath("call_1")),
+      frame(decision("call_1", "allow"), "ep-3"),
+      frame(taskEnd(), "ep-4"),
+      DONE,
+    ]);
+    expect((await clientOf(fake).run({ input: "x", onApproval: () => "deny" })).status).toBe(
+      "completed",
+    );
+  });
+
+  it("does not look again while an answer is being decided", async () => {
+    const fake = createFetchFake();
+    // The server lists the call until the answer lands.
+    fake.json("GET", APPROVALS, 200, { approvals: [pending("call_1")] });
+    fake.empty("POST", answerPath("call_1"), 204);
+    const human = gate();
+    fake.stream("POST", RUNS, [
+      ...opening(),
+      frame(taskBegin(), "ep-1"),
+      frame(call("call_1"), "ep-2"),
+      () => fake.requested("POST", answerPath("call_1")),
+      frame(decision("call_1", "allow"), "ep-3"),
+      frame(taskEnd(), "ep-4"),
+      DONE,
+    ]);
+    const run = clientOf(fake).stream({
+      input: "x",
+      onApproval: async () => {
+        await human.promise;
+        return "allow" as const;
+      },
+    });
+    await fake.requested("GET", APPROVALS);
+    await new Promise((r) => setTimeout(r, 0));
+    human.open();
+    await run.result();
+    expect(fake.calls.filter((c) => c.path === APPROVALS)).toHaveLength(1);
   });
 });
 
 describe("the rest of the client", () => {
-  it("reads the Agent and one of its Sessions, and reports an unknown Session as an AmspHttpError", async () => {
-    const agent = { id: "demo/coder", name: "Coder", description: "Writes and reviews code." };
-    const session = {
-      id: SESSION,
-      agent: "demo/coder",
-      status: "idle",
-      provider: "deepseek",
-      model_id: "deepseek-chat",
-      created_at: AT,
-      last_active_at: AT,
-    };
-    fake.json("GET", "/agents/demo/coder", 200, { agent });
-    fake.json("GET", `/sessions/${SESSION}`, 200, { session });
-    fake.json("GET", "/sessions/session-unknown", 404, {
-      error: { code: "session_not_found", message: "No such API Session." },
+  it("reads the Agent, a Session, its history page and its pending approvals", async () => {
+    const fake = createFetchFake();
+    fake.json("GET", "/agents/demo/coder", 200, { agent: { id: "demo/coder", name: "Coder" } });
+    fake.json("GET", `/sessions/${SID}`, 200, {
+      session: { id: SID, agent: "demo/coder", status: "idle" },
     });
-
-    await expect(client.agent()).resolves.toEqual(agent);
-    await expect(client.session(SESSION)).resolves.toEqual(session);
-    await expect(client.session("session-unknown")).rejects.toMatchObject({
-      status: 404,
-      code: "session_not_found",
-    });
+    fake.json("GET", `/sessions/${SID}/messages?before=2%3A4&limit=5`, 200, { messages: [] });
+    fake.json("GET", `/sessions/${SID}/approvals?wait=5`, 200, { approvals: [] });
+    const client = clientOf(fake);
+    expect((await client.agent()).name).toBe("Coder");
+    expect((await client.session(SID)).status).toBe("idle");
+    expect(await client.messages(SID, { before: "2:4", limit: 5 })).toEqual({ messages: [] });
+    expect(await client.approvals(SID, 5)).toEqual([]);
   });
 
-  it("says whether abort(sessionId) interrupted a run", async () => {
-    fake.empty("POST", `/sessions/${SESSION}/abort`, 202);
-    fake.empty("POST", "/sessions/session-idle/abort", 204);
-
-    await expect(client.abort(SESSION)).resolves.toBe(true);
-    await expect(client.abort("session-idle")).resolves.toBe(false);
+  it("says whether abort() interrupted a run, and posts a decision with approve()", async () => {
+    const fake = createFetchFake();
+    fake.empty("POST", `/sessions/${SID}/abort`, 202);
+    fake.empty("POST", `/sessions/${SID}/abort`, 204);
+    fake.empty("POST", answerPath("call_9"), 204);
+    const client = clientOf(fake);
+    expect(await client.abort(SID)).toBe(true);
+    expect(await client.abort(SID)).toBe(false);
+    await client.approve(SID, "call_9", "allow");
+    expect(fake.calls.at(-1)?.body).toEqual({ decision: "allow" });
   });
 
-  it("posts a decision with approve(), and reports one already taken as approval_not_found", async () => {
-    fake.empty("POST", APPROVAL, 204);
-    fake.json("POST", `/sessions/${SESSION}/approvals/call_2`, 404, {
-      error: { code: "approval_not_found", message: "This approval was already decided." },
-    });
-
-    await client.approve(SESSION, "call_1", "allow");
-    await expect(client.approve(SESSION, "call_2", "deny")).rejects.toMatchObject({
-      status: 404,
-      code: "approval_not_found",
-    });
-    expect(fake.calls.map((call) => [call.path, call.body])).toEqual([
-      [APPROVAL, { decision: "allow" }],
-      [`/sessions/${SESSION}/approvals/call_2`, { decision: "deny" }],
-    ]);
-  });
-
-  it.each([
-    { args: '{"command":"ls","timeout_ms":5000}', parsed: { command: "ls", timeout_ms: 5000 } },
-    { args: "", parsed: {} },
-    { args: '{"command":"l', parsed: null },
-    { args: '["ls"]', parsed: null },
-    { args: '"ls"', parsed: null },
-    { args: "null", parsed: null },
-  ])("parseArguments reads $args as $parsed", ({ args, parsed }) => {
-    expect(
-      parseArguments({ tool_call_id: "call_1", name: "exec_command", arguments: args }),
-    ).toEqual(parsed);
-  });
-
-  it("parseArguments reads the same object from a tool_call.done and from its fragments joined, although their text differs", () => {
-    // The fragments are the provider's text; the .done is the engine's serialization of the
-    // parsed call. Neither is rebuilt from the other, so a reader parses whichever it holds.
-    const streamed = ['{"command"', ': "echo hi"}'].join("");
-    const done = '{"command":"echo hi"}';
-    const call = (args: string) => ({
-      tool_call_id: "call_1",
-      name: "exec_command",
-      arguments: args,
-    });
-
-    expect(streamed).not.toBe(done);
-    expect(parseArguments(call(done))).toEqual({ command: "echo hi" });
-    expect(parseArguments(call(streamed))).toEqual(parseArguments(call(done)));
-  });
-
-  it.each(["coder", "demo/", "/coder", "demo/coder/extra"])(
-    "refuses the agent reference %j at construction",
-    (agent) => {
-      expect(() => new AgentClient({ baseUrl: BASE_URL, agent })).toThrow(TypeError);
-    },
-  );
-
-  it("sends every request through a fetch handed to it instead of the global one", async () => {
-    const own = createFetchFake();
-    own.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-    client = new AgentClient({ baseUrl: BASE_URL, agent: "demo/coder", fetch: own.fetch });
-
-    await expect(client.run({ input: "hi" })).resolves.toMatchObject({ text: "Hello!" });
-    expect(own.calls).toHaveLength(1);
-    expect(fake.calls).toEqual([]);
+  it("parseArguments reads a call's arguments as an object, or null when they are not one", () => {
+    expect(parseArguments({ arguments: '{"cmd":"ls"}' })).toEqual({ cmd: "ls" });
+    expect(parseArguments({ arguments: "" })).toEqual({});
+    expect(parseArguments({ arguments: '{"cmd":' })).toBeNull();
+    expect(parseArguments({ arguments: "[1]" })).toBeNull();
   });
 });

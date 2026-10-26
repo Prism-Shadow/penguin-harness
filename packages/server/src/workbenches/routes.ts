@@ -19,6 +19,7 @@ import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
+import { mediaType } from "../http/media-type.js";
 import { requireValidId } from "../http/validate.js";
 import type { Access } from "../mechanisms/projects.js";
 import type {
@@ -68,8 +69,13 @@ const tooLarge = () =>
     `A workbench request body is at most ${MAX_BODY_BYTES} bytes`,
   );
 
-const isJson = (contentType: string | undefined): boolean =>
-  contentType === undefined || /^application\/([\w.-]+\+)?json\b/i.test(contentType.trim());
+const isJson = (contentType: string | undefined): boolean => {
+  if (contentType === undefined) return true;
+  const type = mediaType(contentType);
+  return (
+    type?.type === "application" && (type.subtype === "json" || type.subtype.endsWith("+json"))
+  );
+};
 
 function parseJson(bytes: Uint8Array): unknown {
   try {

@@ -15,12 +15,13 @@
  * of discarding it after each one. Every file here imports the whole app graph, core's
  * bundle included, so evaluating that graph once per file rather than once per worker
  * dominated the suite's wall clock; sharing it also drops fork spawns from one per file to
- * one per worker, which is worth more on the two-core Windows runner than anywhere else.
+ * one per worker, which is worth more on the Windows runner than anywhere else.
  * What makes it safe: no file in this suite mocks a module — `vi.mock` would leak into
  * every later file in the same fork, which `test/isolation.test.ts` guards against — the
- * few that mutate `process.env` save and restore it, and files inside a worker still run
- * one at a time. The pool stays `forks` for that last reason: `process.env` is per-process,
- * so a thread pool would let those env-mutating files race each other.
+ * few that mutate `process.env` save and restore it (TZ through test/helpers/time-zone.ts:
+ * deleting TZ does not move a Windows process back to its own zone), and files inside a worker
+ * still run one at a time. The pool stays `forks` for that last reason: `process.env` is
+ * per-process, so a thread pool would let those env-mutating files race each other.
  *
  * `retry` on win32 mirrors core's: real SQLite files and full app trees against a runner
  * whose I/O stalls at a measurable rate, retried per test rather than by re-running the
@@ -36,21 +37,44 @@
  * `restoreMocks` makes the spy half of that mechanical rather than a reading of the suite:
  * a `vi.spyOn` whose inline `mockRestore()` is skipped by a failing assertion above it
  * would otherwise stay installed for every later file in the same worker.
+ *
+ * `--shard` deals files by their measured Windows durations rather than by a hash of the path
+ * (test/setup/weighted-shards.ts, weights in test/shard-weights.json).
  */
+import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
+import { WeightedShards } from "./test/setup/weighted-shards";
+
+/**
+ * Workers: one per core on macOS, at most four; two elsewhere. Each worker boots app trees and
+ * runs real TypeScript compilers, so the count that pays is the number of physical cores. The
+ * macOS runner's three vCPUs are three cores: three workers ran the suite there in 96 s (two:
+ * 114–171 s). The Linux and Windows runners' four vCPUs are two cores with two threads each:
+ * four workers on Linux doubled the summed test time (226 → 465 s) for no shorter run, and a
+ * third on Windows nearly doubled every file's time for no shorter shard. `availableParallelism`
+ * counts threads, not cores, which is why it is consulted only where the two are the same.
+ *
+ * `maxWorkers` is the only worker knob: vitest 4 replaced tinypool with its own pool and dropped
+ * `minWorkers`, which under vitest 3 kept tinypool from terminating an idle worker and failing a
+ * run after every file had passed.
+ */
+const WORKERS =
+  process.platform === "darwin" ? Math.max(1, Math.min(4, availableParallelism())) : 2;
 
 export default defineConfig({
   test: {
     environment: "node",
-    // Each worker boots app trees and runs real TypeScript compilers. Keep their CPU and
-    // filesystem contention bounded on CI and when pnpm runs other packages alongside us.
-    maxWorkers: 2,
-    minWorkers: 1,
+    maxWorkers: WORKERS,
+    sequence: { sequencer: WeightedShards },
     isolate: false,
     restoreMocks: true,
     testTimeout: process.platform === "win32" ? 30_000 : 5_000,
     hookTimeout: process.platform === "win32" ? 30_000 : 10_000,
     retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,
+    // Everything a run writes under the OS temp directory stays in one directory of its own,
+    // which teardown reports on and removes; every file sweeps the temp roots it was handed.
+    globalSetup: ["test/setup/run-temp-dir.ts"],
+    setupFiles: ["test/setup/temp-roots.ts"],
     // `vitest run --coverage` maps every file under src/, loaded by a test or not.
     coverage: {
       provider: "v8",

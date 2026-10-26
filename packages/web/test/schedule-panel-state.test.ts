@@ -91,7 +91,7 @@ describe("pendingScheduleSessions", () => {
 });
 
 describe("filterBucket / scheduleGlyph", () => {
-  it("buckets every display status under exactly one chip, invalid under none", () => {
+  it("puts an armed task under 'active' and a switched-off one under 'paused'; a settled task or an invalid file fits no chip", () => {
     expect(filterBucket("active")).toBe("active");
     expect(filterBucket("disabled")).toBe("paused");
     expect(filterBucket("auto_paused")).toBe("paused");
@@ -100,7 +100,7 @@ describe("filterBucket / scheduleGlyph", () => {
     expect(filterBucket("missed")).toBe("completed");
     expect(filterBucket("invalid")).toBeNull();
     // Every non-"all" chip is a bucket some status lands in.
-    const landed = (["active", "disabled", "done"] as const).map((s) => filterBucket(s));
+    const landed = (["active", "disabled"] as const).map((s) => filterBucket(s));
     for (const chip of SCHEDULE_FILTERS.filter((f) => f !== "all")) {
       expect(landed).toContain(chip);
     }
@@ -141,15 +141,16 @@ describe("matchesQuery / filterSchedules", () => {
     expect(matchesQuery(items[2]!, "  ")).toBe(true);
   });
 
-  it("combines the chip and the query, and shows an invalid file under 'all' only", () => {
+  it("combines the chip and the query, and shows a settled task or an invalid file under 'all' only", () => {
     expect(filterSchedules(items, "all", "").map((i) => i.name)).toEqual([
       "daily_brief",
       "watch_docs",
       "reminder",
       "broken",
     ]);
+    expect(filterSchedules(items, "active", "").map((i) => i.name)).toEqual(["daily_brief"]);
     expect(filterSchedules(items, "paused", "").map((i) => i.name)).toEqual(["watch_docs"]);
-    expect(filterSchedules(items, "completed", "kim").map((i) => i.name)).toEqual(["reminder"]);
+    expect(filterSchedules(items, "all", "kim").map((i) => i.name)).toEqual(["reminder"]);
     expect(filterSchedules(items, "active", "docs")).toEqual([]);
   });
 });

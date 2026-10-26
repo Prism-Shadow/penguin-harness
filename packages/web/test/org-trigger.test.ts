@@ -5,7 +5,7 @@
  * parse chain's place for it in user-message-body (a trigger is never the user's own text).
  */
 import { describe, expect, it } from "vitest";
-import { buildOrgTriggerMessage } from "@prismshadow/penguin-core/markers";
+import { buildOrgTriggerMessage } from "@prismshadow/amsp/markers";
 import {
   orgTriggerAgentId,
   parseOrgTriggerMessage,

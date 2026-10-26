@@ -1,9 +1,9 @@
 {
   "name": "@prismshadow/penguin-web",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "private": true,
   "type": "module",
-  "description": "PenguinHarness web frontend SPA: React + Vite + Tailwind CSS, rendering conversations streamed over the OmniMessage protocol, plus Agent configuration, model configuration, usage stats, and Traces.",
+  "description": "PenguinHarness web frontend SPA: React + Vite + Tailwind CSS, rendering conversations streamed as AMSP records, plus Agent configuration, model configuration, usage stats, and Traces.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -36,11 +36,11 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
-    "@vitest/coverage-v8": "3.2.7",
+    "@vitest/coverage-v8": "4.1.12",
     "jsdom": "^30.1.2",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.6.0",
-    "vite": "^7.0.0",
-    "vitest": "^3.2.6"
+    "vite": "^7.3.7",
+    "vitest": "^4.1.12"
   }
 }

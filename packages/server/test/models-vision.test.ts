@@ -8,7 +8,7 @@
  * - A non-boolean vision is a 400.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { catalogEntryFor } from "@prismshadow/penguin-core";
+import { catalogEntryFor } from "../src/model-catalog/index.js";
 import type { ModelsResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

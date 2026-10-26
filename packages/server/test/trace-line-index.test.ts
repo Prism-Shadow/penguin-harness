@@ -19,12 +19,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readTraceTolerant, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { TraceLineIndex } from "../src/services/trace-line-index.js";
 import { makeTempRoot } from "./helpers.js";
 
-const line = (msg: OmniMessage): string => `${JSON.stringify(msg)}\n`;
-const texts = (events: OmniMessage[]): string[] =>
+const line = (msg: AmspRecord): string => `${JSON.stringify(msg)}\n`;
+const texts = (events: AmspRecord[]): string[] =>
   events.map((e) => (e.payload as { text: string }).text);
 
 describe("trace line index", () => {
@@ -36,7 +36,7 @@ describe("trace line index", () => {
   const bytesRead = () => reads.reduce((sum, r) => sum + (r.end - r.start), 0);
   /** Every page of `size` the index serves, concatenated, and the totals it reported. */
   const allPages = async (size: number) => {
-    const events: OmniMessage[] = [];
+    const events: AmspRecord[] = [];
     const totals = new Set<number>();
     for (let offset = 0; ; offset += size) {
       const page = await index.readRange(file, offset, size);

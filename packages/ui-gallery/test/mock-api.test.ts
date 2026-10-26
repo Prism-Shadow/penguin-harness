@@ -12,6 +12,8 @@
  */
 import { describe, expect, it } from "vitest";
 import * as api from "../../web/src/api/endpoints";
+import { runTry } from "../../web/src/features/agents/api-try-log";
+import type { TryAction } from "../../web/src/features/agents/api-try-log";
 import { ApiError, UNMOCKED } from "../src/app/mock/errors";
 import { IDS } from "../src/app/mock/ids";
 import { answerAsResponse } from "../src/app/mock/fetch-shim";
@@ -77,7 +79,7 @@ describe("the mocked API", () => {
     expect(me.companyMode).toBe(false);
     const projects = await api.listProjects();
     expect(projects.projects.map((p) => p.projectId)).toEqual([store.f.project.projectId]);
-    const agents = await api.listAgents(store.f.project.projectId);
+    const agents = await api.listAgents(store.f.project.projectId, null);
     expect(agents.agents.map((a) => a.agentId)).toEqual([
       IDS.agents.docs,
       IDS.agents.notes,
@@ -85,13 +87,15 @@ describe("the mocked API", () => {
     ]);
     const projectId = store.f.project.projectId;
     const agentId = IDS.agents.docs;
-    expect(await api.getAgentPlugins(projectId, agentId)).toEqual({
-      skills: (await api.getAgentSkills(projectId, agentId)).skills,
-      hooks: (await api.getAgentHooks(projectId, agentId)).hooks,
-      mcpServers: (await api.getAgentMcpServers(projectId, agentId)).servers,
+    expect(await api.getAgentPlugins(projectId, agentId, null)).toEqual({
+      skills: (await api.getAgentSkills(projectId, agentId, null)).skills,
+      hooks: (await api.getAgentHooks(projectId, agentId, null)).hooks,
+      mcpServers: (await api.getAgentMcpServers(projectId, agentId, null)).servers,
       workbenches: [],
     });
-    await expect(api.getAgentPlugins(projectId, "nope")).rejects.toMatchObject({ status: 404 });
+    await expect(api.getAgentPlugins(projectId, "nope", null)).rejects.toMatchObject({
+      status: 404,
+    });
     await expect(api.getSession("nope")).rejects.toMatchObject({ status: 404, code: "not_found" });
   });
 
@@ -99,13 +103,18 @@ describe("the mocked API", () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
     const agent = store.f.agents[0]!.agentId;
-    const first = await api.listSessions(project, agent, {
-      offset: 0,
-      limit: 3,
-      category: "active",
-      withCounts: true,
-      excludeOrg: true,
-    });
+    const first = await api.listSessions(
+      project,
+      agent,
+      {
+        offset: 0,
+        limit: 3,
+        category: "active",
+        withCounts: true,
+        excludeOrg: true,
+      },
+      null,
+    );
     expect(first.sessions.length).toBe(3);
     expect(first.counts?.active).toBeGreaterThan(3);
     // Archived by hand, plus the scheduled run, the evaluation nobody kept and the Test Sessions
@@ -113,40 +122,60 @@ describe("the mocked API", () => {
     // of the active rows.
     expect(first.counts?.archived).toBe(3 + IDS.sessions.tests.length);
     expect(first.workspaceCounts).toBeDefined();
-    const rest = await api.listSessions(project, agent, {
-      offset: 3,
-      limit: 100,
-      category: "active",
-    });
+    const rest = await api.listSessions(
+      project,
+      agent,
+      {
+        offset: 3,
+        limit: 100,
+        category: "active",
+      },
+      null,
+    );
     expect(rest.sessions.length).toBe(first.counts!.active - 3);
     // Newest first, and no row twice across the pages.
     const ids = [...first.sessions, ...rest.sessions].map((s) => s.sessionId);
     expect(new Set(ids).size).toBe(ids.length);
-    const archived = await api.listSessions(project, agent, {
-      offset: 0,
-      limit: 10,
-      category: "archived",
-    });
+    const archived = await api.listSessions(
+      project,
+      agent,
+      {
+        offset: 0,
+        limit: 10,
+        category: "archived",
+      },
+      null,
+    );
     expect(archived.sessions.every((s) => s.archived)).toBe(true);
     // An organization's desk Session reaches neither the user's own page nor its totals.
-    const notes = await api.listSessions(project, store.f.agents[1]!.agentId, {
-      offset: 0,
-      limit: 10,
-      withCounts: true,
-      excludeOrg: true,
-    });
+    const notes = await api.listSessions(
+      project,
+      store.f.agents[1]!.agentId,
+      {
+        offset: 0,
+        limit: 10,
+        withCounts: true,
+        excludeOrg: true,
+      },
+      null,
+    );
     expect(notes.sessions.some((s) => s.client === "org")).toBe(false);
     expect(notes.counts?.active).toBe(notes.sessions.length);
     // Without the flag too, as the server does: a company Session is in no category, so a
     // counted page leaves it out; only the plain list serves it.
-    const counted = await api.listSessions(project, store.f.agents[1]!.agentId, {
-      offset: 0,
-      limit: 10,
-      withCounts: true,
-    });
+    const counted = await api.listSessions(
+      project,
+      store.f.agents[1]!.agentId,
+      {
+        offset: 0,
+        limit: 10,
+        withCounts: true,
+      },
+      null,
+    );
     expect(counted.sessions.some((s) => s.source === "company")).toBe(false);
     expect(counted.counts?.active).toBe(counted.sessions.length);
-    const plain = await api.listSessions(project, store.f.agents[1]!.agentId);
+    const plain = await api.listSessions(project, store.f.agents[1]!.agentId, undefined, null);
     expect(plain.sessions.some((s) => s.source === "company")).toBe(true);
   });
 
@@ -180,13 +209,18 @@ describe("the mocked API", () => {
     const project = store.f.project.projectId;
     const agent = store.f.agents[0]!.agentId;
     const opts = { limit: 3, order: "activity" as const, category: "active" as const };
-    const first = await api.listSessions(project, agent, opts);
-    const rest = await api.listSessions(project, agent, {
-      ...opts,
-      limit: 100,
-      before: first.sessions.at(-1)!,
-    });
-    const all = await api.listSessions(project, agent, { ...opts, limit: 100 });
+    const first = await api.listSessions(project, agent, opts, null);
+    const rest = await api.listSessions(
+      project,
+      agent,
+      {
+        ...opts,
+        limit: 100,
+        before: first.sessions.at(-1)!,
+      },
+      null,
+    );
+    const all = await api.listSessions(project, agent, { ...opts, limit: 100 }, null);
     // The two pages are the whole list, in one order and with no row twice.
     expect([...first.sessions, ...rest.sessions].map((s) => s.sessionId)).toEqual(
       all.sessions.map((s) => s.sessionId),
@@ -205,11 +239,15 @@ describe("the mocked API", () => {
       category: "active" as const,
       excludeOrg: true,
     };
-    const listed = await api.listSessions(project, agent, { ...opts, withCounts: true });
-    const batch = await api.batchSessions(project, [
-      { agentId: agent, ...opts, withCounts: true },
-      { agentId: "no_such_agent", ...opts },
-    ]);
+    const listed = await api.listSessions(project, agent, { ...opts, withCounts: true }, null);
+    const batch = await api.batchSessions(
+      project,
+      [
+        { agentId: agent, ...opts, withCounts: true },
+        { agentId: "no_such_agent", ...opts },
+      ],
+      null,
+    );
     expect(batch.results).toEqual([
       { agentId: agent, ok: true, ...listed },
       { agentId: "no_such_agent", ok: false, reason: "absent" },
@@ -260,16 +298,21 @@ describe("the mocked API", () => {
     expect(renamed.session.title).toBe("Renamed");
     await api.deleteSession(done.sessionId);
     expect(store.session(done.sessionId)).toBeUndefined();
-    const created = await api.createSchedule(project, store.f.agents[0]!.agentId, {
-      name: "hourly",
-      prompt: "Check the corpus.",
-      enabled: true,
-      startAt: new Date().toISOString(),
-      period: "1h",
-    });
+    const created = await api.createSchedule(
+      project,
+      store.f.agents[0]!.agentId,
+      {
+        name: "hourly",
+        prompt: "Check the corpus.",
+        enabled: true,
+        startAt: new Date().toISOString(),
+        period: "1h",
+      },
+      null,
+    );
     expect(created.status).toBe("active");
     expect(
-      (await api.listSchedules(project, store.f.agents[0]!.agentId)).schedules.some(
+      (await api.listSchedules(project, store.f.agents[0]!.agentId, null)).schedules.some(
         (s) => s.name === "hourly",
       ),
     ).toBe(true);
@@ -285,70 +328,78 @@ describe("the mocked API", () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
     const agent = store.f.agents[1]!.agentId;
-    const before = await api.getAgentApi(project, agent);
+    const before = await api.getAgentApi(project, agent, null);
     expect(before.api).toMatchObject({ enabled: false, keys: [] });
-    const on = await api.putAgentApi(project, agent, { enabled: true, approvalMode: "read-only" });
+    const on = await api.putAgentApi(
+      project,
+      agent,
+      { enabled: true, approvalMode: "read-only" },
+      null,
+    );
     expect(on.api).toMatchObject({ enabled: true, approvalMode: "read-only" });
-    expect((await api.listAgents(project)).agents[1]!.apiEnabled).toBe(true);
-    const created = await api.createAgentApiKey(project, agent, { name: "ci" });
+    expect((await api.listAgents(project, null)).agents[1]!.apiEnabled).toBe(true);
+    const created = await api.createAgentApiKey(project, agent, { name: "ci" }, null);
     // The app appends the new key to what it read: the earlier answers must not already hold it.
     expect(before.api.keys).toEqual([]);
     expect(on.api.keys).toEqual([]);
     expect(created.secret.startsWith(created.key.prefix)).toBe(true);
-    await api.deleteAgentApiKey(project, agent, created.key.keyId);
-    expect((await api.getAgentApi(project, agent)).api.keys).toEqual([]);
+    await api.deleteAgentApiKey(project, agent, created.key.keyId, null);
+    expect((await api.getAgentApi(project, agent, null)).api.keys).toEqual([]);
   });
 
   it("tells an Agent's API tab when the admin has turned the Agent API off server-wide", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
     const agent = store.f.agents[0]!.agentId;
-    expect((await api.getAgentApi(project, agent)).serverEnabled).toBe(true);
+    expect((await api.getAgentApi(project, agent, null)).serverEnabled).toBe(true);
     await api.adminPutSettings({ agentApiEnabled: false });
-    expect((await api.getAgentApi(project, agent)).serverEnabled).toBe(false);
-    expect((await api.putAgentApi(project, agent, { open: true })).serverEnabled).toBe(false);
+    expect((await api.getAgentApi(project, agent, null)).serverEnabled).toBe(false);
+    expect((await api.putAgentApi(project, agent, { open: true }, null)).serverEnabled).toBe(false);
   });
 
-  it("streams a Try run as the try route does: the example run, then a continued one", async () => {
+  it("streams a Try run as the try route does, read by the SDK: the example run, then a continued one", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
-    const project = store.f.project.projectId;
-    const agent = store.f.agents[0]!.agentId;
-    /** The body's `data:` payloads, in order. */
-    const payloads = async (res: Response) =>
-      (await res.text())
-        .split("\n\n")
-        .filter((block) => block !== "")
-        .map((block) => block.replace(/^data: /, ""));
-    const typeOf = (payload: string) => (JSON.parse(payload) as { type: string }).type;
+    const target = { projectId: store.f.project.projectId, agentId: store.f.agents[0]!.agentId };
+    /** One Try run as the panel drives it: the actions it dispatched, by type. */
+    const tryOnce = async (body: { input: string; session_id?: string }) => {
+      const actions: TryAction[] = [];
+      await runTry(target, (a) => actions.push(a), body, new AbortController().signal);
+      const kinds = actions.flatMap((a) => {
+        if (a.type !== "record") return [];
+        const r = a.record;
+        return [r.type === "session_meta" ? "session_meta" : (r.payload as { type: string }).type];
+      });
+      const done = actions.find((a) => a.type === "done");
+      const session = actions.find((a) => a.type === "session");
+      return { kinds, done, session };
+    };
 
-    const first = await api.tryAgentApi(project, agent, { input: "What time is it now?" });
-    expect(first.headers.get("content-type")).toMatch(/^text\/event-stream/);
-    const run = await payloads(first);
-    expect(run.at(-1)).toBe("[DONE]");
-    const types = run.slice(0, -1).map(typeOf);
-    expect(types[0]).toBe("run.started");
-    expect(types).toContain("tool_call.done");
-    expect(types).toContain("tool_result.done");
-    expect(types.at(-1)).toBe("run.done");
+    const first = await tryOnce({ input: "What time is it now?" });
+    expect(first.kinds.slice(0, 3)).toEqual(["session_meta", "task_begin", "text"]);
+    expect(first.kinds).toContain("tool_call");
+    expect(first.kinds).toContain("tool_call_output");
+    expect(first.kinds.at(-1)).toBe("task_end");
+    expect(first.done).toMatchObject({ result: { status: "completed", requests: 2 } });
+    const sessionId = first.session?.type === "session" ? first.session.sessionId : "";
 
-    const sessionId = (JSON.parse(run[0]!) as { session_id: string }).session_id;
-    const next = await payloads(
-      await api.tryAgentApi(project, agent, { input: "And now?", session_id: sessionId }),
-    );
-    expect(next.slice(0, -1).map(typeOf)).toEqual([
-      "run.started",
-      "request.started",
-      "text.done",
-      "request.done",
-      "run.done",
+    const next = await tryOnce({ input: "And now?", session_id: sessionId });
+    expect(next.kinds).toEqual([
+      "task_begin",
+      "text",
+      "request_begin",
+      "text",
+      "token_usage",
+      "request_end",
+      "task_end",
     ]);
-    expect(JSON.parse(next[0]!)).toMatchObject({ session_id: sessionId });
+    expect(next.session).toMatchObject({ sessionId });
+    expect(next.done).toMatchObject({ result: { status: "completed", sessionId } });
   });
 
   it("serves the group tables a new Project writes, and takes a protocol or a cleared key on any group", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
-    const models = await api.getModels(project);
+    const models = await api.getModels(project, null);
     // A gateway row stores nothing of its own and follows its group's table.
     expect(models.providers.openrouter?.baseUrl).toMatch(/^https:\/\//);
     const gateway = models.models.find((m) => m.provider === "openrouter")!;

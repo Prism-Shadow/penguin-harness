@@ -14,12 +14,38 @@
  */
 import http from "node:http";
 import { Readable } from "node:stream";
+import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
+import { answerOf } from "../socket/stream-answer.js";
+import type { MachineEventHub } from "./event-hub.js";
+import { MachineSocketRelay } from "./socket-relay.js";
+import type { MachineSockets } from "./machine-sockets.js";
 
 /** Path prefix of the proxy: `/server/<id>/api/…`. */
 export const SERVER_PROXY_PREFIX = "/server/";
 
+/** Where a request to one machine goes, as the machines service answers it. */
+export interface ProxyTarget {
+  /** Dials the machine's server through the session held to it. */
+  agent: http.Agent;
+  /** Its server's port over there. */
+  port: number;
+  /** A session on that machine, as its own cookie. */
+  cookie: string;
+  /**
+   * When this server adopted the machine, sent along as {@link ADOPTED_AT_HEADER} so the machine
+   * reads the Sessions it held before then as CLI tasks; null for a machine adopted before the
+   * time was recorded, which sends nothing.
+   */
+  adoptedAt: string | null;
+  /**
+   * The ssh session the agent dials through (its pid): a socket is only ever reused within
+   * one (socket-relay.ts).
+   */
+  session: number;
+}
+
 /** A parsed proxy path: which machine, and the remote-side path to request. */
-interface ProxyPath {
+export interface ProxyPath {
   machineId: string;
   /** The path forwarded to the remote, always starting `/api/`. */
   remotePath: string;
@@ -50,17 +76,30 @@ export function rewriteLocation(header: string, machineId: string): string {
  * `authorization` among them: the proxy speaks to the machine as ITS admin, with a session
  * this server mints over ssh, and a caller's own bearer is a credential for THIS server. Sent
  * on, it would both hand that credential to another machine and outrank the cookie just
- * minted, since the remote's auth reads a bearer first.
+ * minted, since the remote's auth reads a bearer first. And the adoption time: it is this
+ * server's word about the machine, set from its own record or not at all.
  */
 const DROP_REQUEST_HEADERS = new Set([
   "host",
   "cookie",
   "authorization",
+  // The browser's Origin names THIS server; the machine, addressed under a Host of its own,
+  // would read it as another origin's and refuse every write. Where the request came from is
+  // judged here, on the server the browser talks to (the write guard covers `/server/*`).
+  "origin",
   "connection",
   "keep-alive",
   "upgrade",
+  ADOPTED_AT_HEADER,
 ]);
 const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "location", "connection", "keep-alive"]);
+
+/** What a forward the caller gave up on answers; nobody reads it, but a Response is owed. */
+const cancelledResponse = (): Response =>
+  Response.json(
+    { error: { code: "cancelled", message: "The caller cancelled the request." } },
+    { status: 499 },
+  );
 
 /**
  * Forwards one request to the machine's server and streams the answer back — both
@@ -72,11 +111,12 @@ const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "location", "connection", "
 function proxyThroughSession(
   request: Request,
   path: ProxyPath,
-  agent: http.Agent,
-  port: number,
-  cookie: string,
+  target: ProxyTarget,
   report?: ProxyReport,
 ): Promise<Response> {
+  const { agent, port, cookie } = target;
+  // Given up on before it left: nothing to dial for.
+  if (request.signal.aborted) return Promise.resolve(cancelledResponse());
   return new Promise((resolve) => {
     const url = new URL(request.url);
     const headers: Record<string, string> = {};
@@ -85,6 +125,7 @@ function proxyThroughSession(
     });
     headers["host"] = `localhost:${port}`;
     headers["cookie"] = cookie;
+    if (target.adoptedAt !== null) headers[ADOPTED_AT_HEADER] = target.adoptedAt;
 
     const upstream = http.request(
       {
@@ -115,7 +156,22 @@ function proxyThroughSession(
         );
       },
     );
+    // The caller gave up (an API socket call cancelled at its answer timeout aborts its
+    // Request, socket/serve.ts): drop the forward rather than hold it open until the machine
+    // answers someone who is gone. That is the caller's doing, not the machine's, so it is
+    // not reported as an unreachable machine.
+    let cancelled = false;
+    const cancel = () => {
+      cancelled = true;
+      upstream.destroy();
+    };
+    request.signal.addEventListener("abort", cancel, { once: true });
+    upstream.on("close", () => request.signal.removeEventListener("abort", cancel));
     upstream.on("error", (err) => {
+      if (cancelled) {
+        resolve(cancelledResponse());
+        return;
+      }
       report?.(path.machineId, { ok: false, detail: err.message });
       resolve(
         Response.json(
@@ -153,13 +209,16 @@ export type ProxyReport = (
 ) => void;
 
 export function machinesProxy(
-  resolve: (
-    machineId: string,
-  ) => Promise<{ agent: http.Agent; port: number; cookie: string } | null>,
+  resolve: (machineId: string) => Promise<ProxyTarget | null>,
   report?: ProxyReport,
+  log: (line: string) => void = () => undefined,
+  /** The shared socket cache and event hub, so this generation's routes read the facts the relay writes. */
+  shared: { sockets?: MachineSockets; events?: MachineEventHub } = {},
 ): (request: Request) => Promise<Response | null> {
+  const relay = new MachineSocketRelay(log, shared);
   return async (request) => {
-    const path = parseProxyPath(new URL(request.url).pathname);
+    const url = new URL(request.url);
+    const path = parseProxyPath(url.pathname);
     if (path === null) return null;
     const target = await resolve(path.machineId);
     if (target === null) {
@@ -173,6 +232,37 @@ export function machinesProxy(
         { status: 503 },
       );
     }
-    return proxyThroughSession(request, path, target.agent, target.port, target.cookie, report);
+    return forwardToMachine(request, path, target, relay, report);
   };
+}
+
+/**
+ * Forwards one request to a connected machine's server: a `/server/<machineId>/…` request, and
+ * a Session-level request routed by its Session (session-forward.ts), take the same path.
+ */
+export async function forwardToMachine(
+  request: Request,
+  path: ProxyPath,
+  target: ProxyTarget,
+  relay: MachineSocketRelay,
+  report?: ProxyReport,
+): Promise<Response> {
+  // A stream rides the one socket held to the machine (PRFC-0011) and ONLY that: a stream
+  // forwarded over HTTP is a channel held open for good, and across many machines those
+  // pile up. Without a socket the stream is answered with the reason, and the browser
+  // re-issues it on its backoff (socket-relay.ts).
+  const wantsStream =
+    request.method === "GET" && (request.headers.get("accept") ?? "").includes("text/event-stream");
+  if (wantsStream) {
+    // The socket transport's answer, when the socket carried this request
+    // (socket/stream-answer.ts): the machine's frames answer it directly.
+    const relayed = await relay.stream(path.machineId, target, {
+      path: `${path.remotePath}${new URL(request.url).search}`,
+      lastEventId: request.headers.get("last-event-id"),
+      answer: answerOf(request),
+    });
+    if (relayed.status < 500) report?.(path.machineId, { ok: true });
+    return relayed;
+  }
+  return proxyThroughSession(request, path, target, report);
 }

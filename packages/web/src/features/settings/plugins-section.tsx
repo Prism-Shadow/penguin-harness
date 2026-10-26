@@ -287,7 +287,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     await installInOrder(
       offered,
       async (pkg) => {
-        const to = (target ??= (await api.getInstalledPlugins(projectId)).machineId);
+        const to = (target ??= (await api.getInstalledPlugins(projectId, null)).machineId);
         const res = await api.installPlugin(projectId, pkg, to);
         return res.plugins.find((p) => p.specifier === pkg)?.error;
       },

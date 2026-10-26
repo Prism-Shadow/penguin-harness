@@ -8,6 +8,10 @@
  * - starts a conversation in the machine's temporary workspace with Use, opening nothing, while
  *   the machine is connected; otherwise Use waits and the card says why in words, not on a hover —
  *   and while a job moves there, its stepper says what is happening instead;
+ * - while the server brings the machine back, says in its middle where that stands — the failed
+ *   attempt of how many, the countdown, Retry now — and after the automatic attempts stopped,
+ *   where they stopped with Retry; a press asks the page to retry; a refused password says the
+ *   fix and offers no Retry;
  * - asks to delete the machine with its trash button, never while a job is on its way;
  * - holds Use and Delete while a request is in flight;
  * - offers Sync config only on a connected machine on this server's build;
@@ -22,8 +26,9 @@
  *   hover; holds every verb while a request is in flight, the sentence unchanged;
  * - explains a failure: the step it stopped at, in the far side's own words, what the server's
  *   connection check found, then Retry — and Force install only when the failure offers it;
- * - says, while the server brings a machine back, for how long and which attempt, the last
- *   failure, and what the automatic check found;
+ * - says, while the server brings a machine back, where that stands with its Retry (which asks
+ *   the page to reconnect; none for a refused password), for how long, the last failure, and what
+ *   the automatic check found;
  * - folds a job that finished well into one line with its log closed, opens a running job's log,
  *   and copies the whole log from a button beside it;
  * - says in Details, as text, ssh's own words for a machine out of reach and the time of the last
@@ -31,16 +36,18 @@
  * - repeats the page's last error, since it covers the notice that says it;
  * - is this server's record alone for its own entry: no verb, no steps.
  *
- * Every state renders a card and a dialog, the state said by the card mark's accessible name and
- * by the dialog's status chip, and neither carries a hint that cannot open: none sits on words
- * already on screen — what a card's stat means, and the machine's id, are the dialog's to say.
+ * Every state renders a card and a dialog, the state said in words by the card's status pill — its
+ * reason beside the word for a reader that cannot hover — and by the dialog's, and neither carries
+ * a hint that cannot open: none but a marked one sits on words already on screen — what a card's
+ * stat means, and the machine's id, are the dialog's to say.
  *
  * The update notice counts the machines in use on another build; waved away, it stays down while
  * the same machines are behind and comes back when another falls behind or the build moves.
  *
- * vitest runs node-only here, so components are called as functions and their handlers handed
- * clicks as a browser delivers them (test/helpers/fake-dom.ts); a few are rendered to static markup and
- * read back as a tree (test/helpers/markup.ts). The dialog's verbs are found by their `data-verb`,
+ * vitest runs node-only here, so components are called as functions — the shared package's
+ * machine views (the card, the toolbar) drawn too, since they are this page's presentation — and
+ * their handlers handed clicks as a browser delivers them (test/helpers/fake-dom.ts); a few are
+ * rendered to static markup and read back as a tree (test/helpers/markup.ts). The dialog's verbs are found by their `data-verb`,
  * its steps by their `data-step`, the card's buttons by their `data-action`, never by their words.
  */
 import { createElement, isValidElement } from "react";
@@ -55,7 +62,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as ui from "@prismshadow/penguin-ui";
 import { Button, RuledSection } from "@prismshadow/penguin-ui";
-import { Stepper, MachineCard, machineMark } from "../src/features/machines/machine-card";
+import { MachineCard, machineMark } from "../src/features/machines/machine-card";
 import type { MachineCardProps } from "../src/features/machines/machine-card";
 import {
   JobSteps,
@@ -83,6 +90,7 @@ const remote = (alias: string, extra: Partial<MachineInfo> = {}): MachineInfo =>
   machineId: `Id${alias.replace(/[^a-z0-9]/gi, "")}0000000000`.slice(0, 16),
   local: false,
   connection: null,
+  socket: null,
   api: null,
   status: { state: "stopped", checkedAt: CHECKED },
   root: "/home/ubuntu/.penguin/data",
@@ -119,6 +127,7 @@ const comingBack = remote("mini", {
   reconnect: {
     since: new Date(Date.now() - 6 * 60_000).toISOString(),
     attempts: 3,
+    maxAttempts: 8,
     nextAt: new Date(Date.now() + 80_000).toISOString(),
     lastError: "mini refused. (ssh: connect to host mini port 22: Connection refused)",
     sshReason: "refused",
@@ -135,6 +144,37 @@ const comingBack = remote("mini", {
         { id: "platform", state: "skip" },
       ],
     },
+  },
+});
+/** Kept connected, and the server stopped bringing it back after eight failures in a row. */
+const gaveUp = remote("lab-2", {
+  connection: null,
+  keepConnected: true,
+  reconnect: {
+    since: new Date(Date.now() - 16 * 60_000).toISOString(),
+    attempts: 8,
+    maxAttempts: 8,
+    nextAt: null,
+    gaveUp: "attempts",
+    lastError: "lab-2 refused. (ssh: connect to host lab-2 port 22: Connection refused)",
+    sshReason: "refused",
+    diagnosis: null,
+  },
+});
+/** Kept connected, and its stored password refused: nothing is tried until it is saved again. */
+const locked = remote("vault", {
+  connection: null,
+  keepConnected: true,
+  reconnect: {
+    since: new Date(Date.now() - 2 * 60_000).toISOString(),
+    attempts: 1,
+    maxAttempts: 8,
+    nextAt: null,
+    lastError:
+      "vault rejected the password saved for it. Enter it again in this machine's SSH settings.",
+    sshReason: "password-rejected",
+    diagnosis: null,
+    waitsForPassword: true,
   },
 });
 const winBox = remote("win-box");
@@ -212,6 +252,8 @@ function all(node: ReactNode): AnyElement[] {
 
 /** The shared package's components: the browser renders them; here they stay as they are. */
 const SHARED: ReadonlySet<unknown> = new Set(Object.values(ui));
+/** The shared machine views this page hands its data to: drawn, so what they draw is in the list. */
+const MACHINE_VIEWS: ReadonlySet<unknown> = new Set([ui.MachineCard, ui.MachineToolbar]);
 
 /** A node's children as one flat list: a component may hand on a list inside its own. */
 const nodes = (node: ReactNode): ReactNode[] =>
@@ -229,7 +271,9 @@ function drawn(node: ReactNode): AnyElement[] {
     .flatMap((el) => {
       const element = el as AnyElement;
       const own =
-        typeof element.type === "function" && !SHARED.has(element.type) && element.type !== LogFold;
+        typeof element.type === "function" &&
+        (!SHARED.has(element.type) || MACHINE_VIEWS.has(element.type)) &&
+        element.type !== LogFold;
       const inside = own
         ? (element.type as (props: unknown) => ReactNode)(element.props)
         : element.props.children;
@@ -302,8 +346,11 @@ function card(machine: MachineInfo, job: MachineJob | null = null, busy = false)
     onUse: vi.fn(),
     onSyncConfig: vi.fn(),
     onDelete: vi.fn(),
+    onRetry: vi.fn(async () => {}),
   };
-  const element = MachineCard(props) as AnyElement;
+  // The card hands its data to the shared view; the view's own band is what a browser shows.
+  const view = MachineCard(props) as AnyElement;
+  const element = ui.MachineCard(view.props as unknown as ui.MachineCardProps) as AnyElement;
   const tree = all(element);
   /** The card's buttons by their `data-action`. */
   const buttons = new Map(
@@ -319,8 +366,11 @@ function card(machine: MachineInfo, job: MachineJob | null = null, busy = false)
     element,
     tree,
     buttons,
+    html,
     main: main!,
     waits: waits === undefined ? null : seenText(waits).trim(),
+    /** The retry status in the card's middle, as the card hands it to the shared view. */
+    retry: tree.find((el) => el.type === ui.RetryStatus)?.props as ui.RetryStatusProps | undefined,
   };
 }
 
@@ -387,7 +437,6 @@ describe("a machine's card", () => {
       [stopped, null, why.stopped],
       [added, null, why.notInstalled],
       [stopped, failedJob(stopped, true), why.failed],
-      [comingBack, null, why.reconnectingFor("6 minutes")],
     ];
     for (const [machine, job, line] of cases) {
       const shown = card(machine, job);
@@ -396,13 +445,42 @@ describe("a machine's card", () => {
     }
   });
 
+  it("while the server brings the machine back, says in its middle which attempt failed and when the next runs, and Retry now asks the page to retry", () => {
+    const shown = card(comingBack);
+    expect(shown.retry).toMatchObject({ phase: "waiting", label: S.machines.retry.failed(3, 8) });
+    expect(shown.html).toContain("data-retry-countdown");
+    expect(shown.waits).toBeNull();
+    expect(shown.buttons.get("use")!.props.disabled).toBe(true);
+    expect(shown.retry?.retry?.label).toBe(S.machines.retry.retryNow);
+    void shown.retry!.retry!.onClick();
+    expect(shown.props.onRetry).toHaveBeenCalledOnce();
+    // A request from the page in flight holds it, as it holds Use and Delete.
+    expect(card(comingBack, null, true).retry?.retry?.disabled).toBe(true);
+  });
+
+  it("after the automatic attempts stopped, says where with Retry; a refused password says the fix and offers none", () => {
+    expect(card(gaveUp).retry).toMatchObject({
+      phase: "gaveUp",
+      label: S.machines.retry.gaveUp(8),
+      reason: S.machines.check.ssh.refused("lab-2"),
+      retry: { label: S.machines.retry.retry },
+    });
+    const refused = card(locked);
+    expect(refused.retry).toMatchObject({
+      phase: "blocked",
+      reason: S.machines.check.ssh["password-rejected"]("vault"),
+    });
+    expect(refused.retry?.retry).toBeNull();
+    expect(refused.html).not.toContain("data-retry-action");
+  });
+
   it("while a job moves there, shows its stepper in place of a reason, and holds Use and Delete", () => {
     const updating = card(behind, runningJob(behind));
-    expect(updating.tree.some((el) => el.type === Stepper)).toBe(true);
+    expect(updating.tree.some((el) => el.type === ui.MachineStepper)).toBe(true);
     expect(updating.waits).toBeNull();
     expect(updating.buttons.get("use")!.props.disabled).toBe(true);
     expect(updating.buttons.get("delete")!.props.disabled).toBe(true);
-    expect(card(behind).tree.some((el) => el.type === Stepper)).toBe(false);
+    expect(card(behind).tree.some((el) => el.type === ui.MachineStepper)).toBe(false);
   });
 
   it("asks to delete the machine with its trash button, and opens nothing", () => {
@@ -483,7 +561,8 @@ describe("the Machine dialog", () => {
     ).html;
     const line = elementsOf(readMarkup(synced)).find((el) => "data-config-sync" in el.attrs);
     expect(line?.attrs["data-config-sync"]).toBe("ok");
-    expect(synced).not.toContain("data-config-sync-notice");
+    expect(synced).not.toContain("data-env-only");
+    expect(synced).not.toContain("data-skipped");
 
     const failed = dialog(
       {
@@ -503,6 +582,15 @@ describe("the Machine dialog", () => {
               code: "model_not_addable",
               reason: "cannot be added",
             },
+            // One of this server's built-in models: the machine's build does not list it yet.
+            {
+              projectId: "p",
+              provider: "minimax",
+              modelId: "MiniMax-M3.1-Flash",
+              code: "model_not_addable",
+              reason: "cannot be added",
+              builtInHere: true,
+            },
           ],
         },
       },
@@ -515,6 +603,7 @@ describe("the Machine dialog", () => {
     expect(seen).toContain(
       c.skippedModel("penguin-go/gemini-3.7-flash", S.errors.byCode.model_not_addable),
     );
+    expect(seen).toContain(c.skippedModel("minimax/MiniMax-M3.1-Flash", c.notInMachineBuild));
   });
 
   it("greys what cannot run, saying why once under the toolbar", () => {
@@ -579,19 +668,37 @@ describe("the Machine dialog", () => {
     expect(seenText(rows[0]!)).toContain(S.machines.check.ssh.auth("lab-mac"));
   });
 
-  it("says, while the server brings the machine back, for how long, which attempt, the last failure and what the check found", () => {
+  it("says, while the server brings the machine back, where that stands, for how long, the last failure and what the check found", () => {
     const { html, tree } = dialog(comingBack, null);
     const section_ = section(tree, S.machines.detail.reconnect.title);
     expect(section_).not.toBeNull();
     const seen = seenText(readMarkup(html));
-    expect(seen).toContain(S.machines.detail.reconnect.trying);
+    expect(seen).toContain(S.machines.retry.failed(3, 8));
     expect(seen).toContain(S.machines.detail.reconnect.lasting("6 minutes"));
-    expect(seen).toContain(S.machines.detail.reconnect.attempt(4));
     expect(seen).toContain(S.machines.check.ssh.refused("mini"));
     const rows = elementsOf(readMarkup(html)).filter((el) => "data-check" in el.attrs);
     expect(rows.map((el) => el.attrs["data-check"])).toEqual(["ssh", "platform"]);
     // Not coming back, nothing of it.
     expect(section(dialog(ready, null).tree, S.machines.detail.reconnect.title)).toBeNull();
+  });
+
+  it("offers a Retry under where the streak stands, which asks the page to reconnect; a refused password offers none", () => {
+    const retryIn = (machine: MachineInfo) => {
+      const shown = dialog(machine, null);
+      const found = section(shown.tree, S.machines.detail.reconnect.title)?.find(
+        (el) => el.type === ui.RetryStatus,
+      );
+      return { status: found?.props as ui.RetryStatusProps | undefined, onAct: shown.onAct };
+    };
+    const back = retryIn(comingBack);
+    expect(back.status?.layout).toBe("block");
+    void back.status!.retry!.onClick();
+    expect(back.onAct).toHaveBeenCalledWith("reconnect");
+    expect(retryIn(gaveUp).status).toMatchObject({
+      phase: "gaveUp",
+      retry: { label: S.machines.retry.retry },
+    });
+    expect(retryIn(locked).status).toMatchObject({ phase: "blocked", retry: null });
   });
 
   it("folds a job that finished well into one line with its log closed, opens a running job's log, and offers to copy it", () => {
@@ -648,23 +755,28 @@ describe("every state", () => {
     ["working", behind, runningJob(behind)],
     ["queued", stopped, queuedJob(stopped)],
     ["being brought back", comingBack, null],
+    ["stopped being brought back", gaveUp, null],
+    ["its password refused", locked, null],
     ["installed as far as it goes", winBox, installedJob(winBox)],
     ["never probed", fresh, null],
     ["added, nothing installed", added, null],
   ];
 
-  /** The hints in a piece of markup, each with the words of its own a reader sees. */
+  /**
+   * The unmarked hints in a piece of markup, each with the words of its own a reader sees. A
+   * marked hint (`data-tooltip-extra`, the status pill's reason) says what the screen does not, and
+   * shows over the words it sits on.
+   */
   const hintsIn = (html: string) =>
     elementsOf(readMarkup(html))
-      .filter((el) => "data-tooltip" in el.attrs)
+      .filter((el) => "data-tooltip" in el.attrs && !("data-tooltip-extra" in el.attrs))
       .map((el) => ({ hint: el.attrs["data-tooltip"], words: seenText(el).trim() }));
 
   it.each(cases)(
     "%s: neither the card nor the dialog carries a hint that cannot open — none sits on words already on screen",
     (_, machine, job) => {
       const cardHtml = renderToStaticMarkup(createElement(MachineCard, card(machine, job).props));
-      // The card's state mark always carries one: the markup was read.
-      expect(hintsIn(cardHtml).length).toBeGreaterThan(0);
+      expect(cardHtml).toContain(machine.alias);
       for (const html of [cardHtml, dialog(machine, job, { host: HOST, noImage: true }).html]) {
         expect(hintsIn(html).filter((found) => found.words !== "")).toEqual([]);
       }
@@ -672,15 +784,22 @@ describe("every state", () => {
   );
 
   it.each(cases)(
-    "%s: renders a card and a dialog, the state said by the mark's name and the dialog's chip",
+    "%s: renders a card and a dialog, the state said in words by the card's pill and the dialog's",
     (_, machine, job) => {
       const reading = machine.local ? null : readMachine(machine, job, IMAGE);
-      const label = machineMark(reading).label;
+      const mark = machineMark(reading);
       const html = renderToStaticMarkup(
         createElement(MachineCard, { ...card(machine, job).props }),
       );
       expect(html).toContain(machine.alias);
-      expect(html).toContain(`aria-label="${label.replace(/"/g, "&quot;")}"`);
+      const markup = readMarkup(html);
+      expect(seenText(markup)).toContain(mark.word);
+      // The reason is the pill's hover, marked so it shows over the word, and is read out with it.
+      if (mark.reason !== null) {
+        const pill = elementsOf(markup).find((el) => el.attrs["data-tooltip"] === mark.reason);
+        expect(pill?.attrs["data-tooltip-extra"]).toBe("true");
+        expect(html).toContain(` · ${mark.reason}`);
+      }
       const body = renderToStaticMarkup(
         createElement(MachineDetailBody, dialog(machine, job).props),
       );

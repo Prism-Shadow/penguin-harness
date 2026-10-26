@@ -1,0 +1,501 @@
+---
+title: AMSP 记录
+description: AMSP 记录是唯一的消息格式：SDK 产出它，Trace 存储它，Server 经 SSE 原样推送它。
+---
+
+AMSP 记录是 PenguinHarness 唯一的消息格式。SDK 产出记录，Trace 逐行存储，Server 经 SSE 原样推送。流出去的、存下来的和模型看到的是同一种结构，前端、后端与存储之间没有第二套格式。
+
+它们就是 [AMSP](/amsp) 的记录，即 [Agent API](/agent-api) 向 PenguinHarness 之外的程序提供的流：Trace 的每一行都是一条合法的 AMSP 记录，因此记录的改动就是这个公开协议的改动。
+
+本页先讲信封和三类消息，再逐字段列出全部 payload，最后是贯穿所有记录的规则：流式纪律、结束原因、`origin` 与保真字段。定义见 `packages/amsp/src/records/`（`@prismshadow/amsp` 包，入口 `@prismshadow/amsp/records`），`@prismshadow/penguin-core` 从包根原样再导出。
+
+## 信封
+
+每条消息共用同一个信封，只有 `payload` 不同：
+
+```ts
+interface AmspRecord<P extends AmspPayload = AmspPayload> {
+  timestamp: string;        // ISO 8601 UTC
+  type: "session_meta" | "model_msg" | "event_msg";
+  payload: P;
+  origin?: string[];        // child-Session chain (outer→inner); absent = main Session
+}
+```
+
+三类消息各自承载的内容：
+
+| type | 含义 | 数量 |
+| --- | --- | --- |
+| `session_meta` | 一个模型上下文的完整运行时配置 | 每个上下文恰好一条 |
+| `model_msg` | 模型上下文内的内容（文本、思考、工具调用和结果） | 主体 |
+| `event_msg` | 上下文之外的运行时事件（审批、用量、压缩、中断、钩子回答） | 伴随出现 |
+
+可选的 `origin` 字段用来路由子 Agent 的消息，见 [origin：子 Session 链](#origin子-session-链)。
+
+## session_meta
+
+一条 `session_meta` 消息描述**一个模型上下文**：
+
+```ts
+interface SessionMetaPayload {
+  session_id: string;
+  provider: string;                       // one half of the model-identity pair
+  model_id: string;                       // the upstream request id sent to MMSP
+  model_context_window: number | string;
+  system_prompt: string;                  // fully assembled, placeholders substituted
+  agent_state: string;                    // absolute path of the Agent State
+  workspace: string;                      // absolute path of the Workspace
+  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company" | "workbench"; // what kind of conversation this is
+}
+```
+
+Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上，所用模型只记在这条记录里。
+
+`source` 表示这个 Session 是哪一类会话，同样在整个生命周期内不变：
+
+- `user`：人发起的对话，包括 Web App 的输入框、`penguin chat`，以及分叉出的会话；
+- `api`：外部程序经 Agent API 开出的会话；
+- `schedule`：定时任务的一次运行；
+- `subagent`：`run_subagent` 派生的子会话；
+- `cli`：`penguin run` 创建的会话；
+- `workbench`：Workbench 宿主为应用创建的会话；
+- `company`：[公司模式](/company-mode)开出的工位会话与工单会话。
+
+旧版本写下的 Trace 可能没有 `source`，读作 `user`；若服务器的索引行表明它由公司模式开出，则读作 `company`。也可能是已停用的 `benchmark`，读作 `cli`。文件本身从不改写。
+
+每个 Trace 文件都以一条 `session_meta` 开头。压缩开启新上下文时，新文件的 `session_meta` 记录的系统提示词，按当时的 Agent State 为这个上下文重新装配（见[上下文压缩](/agent-loop#上下文压缩)）。恢复 Session 时，引擎以最新文件里的 `session_meta` 作为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。
+
+思考等级不在 meta 里，它是逐请求的参数：每次请求取 Session 钉住的等级，这个等级可以在上下文中途更换，从下一次请求起生效；没有钉住时，取上下文开启时读到的 Agent 配置缺省值。思考等级不作任何记录。旧 Trace 里出现的 `thinking_level` 字段只用于展示，不会被读回。
+
+工具 schema 同样**不在 meta 里**。工具集要等 MCP Server 连接完成才能确定，而 meta 不应等待。完整的工具定义以独立的 `tool_list_ready` 事件下发（见 [event_msg](#eventmsg)）：
+
+- 首次运行时下发一次；
+- 压缩开启的每个上下文，在其 Trace 文件开头、紧随 `session_meta` 之后再发一次。
+
+拆分之前写入的 Trace 在 meta 里内嵌了 `tools` 字段。这个字段已不再读取，这些 Trace 的工具记录也不再展示。
+
+## model_msg：完整消息
+
+内容 payload 共七种，以 `payload.type` 区分。各类共用一个可选字段 `fidelity`，即不透明的供应商保真负载（见[保真字段](#保真字段)）。内容 payload 都不携带结束原因，工具结果带自己的 `status`（见[结束原因](#结束原因)）：
+
+```ts
+type Fidelity = Record<string, unknown>;  // opaque provider-fidelity payload (see below)
+
+interface TextPayload {
+  type: "text";
+  role: "user" | "assistant";
+  text: string;
+  sender?: "user" | "parent_agent" | "harness" | "server"; // who produced a user-role text; absent = the human user
+  fidelity?: Fidelity;        // e.g. { phase } segment marker (GPT-5), { signature }
+}
+
+interface ThinkingPayload {
+  type: "thinking";
+  role: "assistant";
+  thinking: string;
+  fidelity?: Fidelity;        // required by some models to replay history
+}
+
+interface InlineThinkingPayload {
+  type: "inline_thinking";
+  role: "assistant";
+  data: string;               // reasoning content as base64-encoded bytes
+  mime_type: string;
+  fidelity?: Fidelity;
+}
+
+interface ToolCallPayload {
+  type: "tool_call";
+  role: "assistant";
+  name: string;
+  arguments: string;          // arguments as a JSON string
+  tool_call_id: string;
+  fidelity?: Fidelity;
+}
+
+interface ToolCallOutputPayload {
+  type: "tool_call_output";
+  role: "user";
+  output: string;
+  images?: string[];          // data:<mime>;base64,… URLs (e.g. read_file's image results)
+  tool_call_id: string;
+  status: ToolStatus;         // completed / aborted (denied, or interrupted while running) / fatal
+}
+
+interface ImageUrlPayload {
+  type: "image_url";
+  role: "user";
+  image_url: string;          // web URL or base64 data URL
+}
+
+interface InlineDataPayload {
+  type: "inline_data";
+  role: "user" | "assistant";
+  data: string;               // other binary content, base64-encoded
+  mime_type: string;
+  fidelity?: Fidelity;
+}
+```
+
+`sender` 区分 user 角色文本的来源：真人用户（`user`）、驱动子 Agent 的父 Agent（`parent_agent`）、harness 的自动注入（`harness`，例如后台任务的完成回报、stop 钩子 `continue` 注入的输入，以及 `user_prompt` 钩子补充的 context），以及 Server 自己的触发（`server`，例如定时任务）。这个字段不会发给供应商。
+
+`tool_call` 与 `tool_call_output` 通过 `tool_call_id` 严格配对。一轮内的调用构成一个批次，输出按原始调用顺序回填（见 [Agent 运行循环](/agent-loop)）。
+
+## model_msg：流式分片
+
+四种 `partial_*` payload 与完整消息一一对应，并携带 `event_type` 标记分片阶段：
+
+```ts
+type StreamEventType = "start" | "delta" | "stop";
+
+interface PartialTextPayload {
+  type: "partial_text";
+  role: "assistant";
+  event_type: StreamEventType;
+  text: string;                 // the text added by this fragment
+}
+
+interface PartialThinkingPayload {
+  type: "partial_thinking";
+  role: "assistant";
+  event_type: StreamEventType;
+  thinking: string;
+}
+
+interface PartialToolCallPayload {
+  type: "partial_tool_call";
+  role: "assistant";
+  event_type: StreamEventType;
+  name: string;
+  arguments: string;            // incremental fragment of the arguments JSON
+  tool_call_id: string;
+}
+
+interface PartialToolCallOutputPayload {
+  type: "partial_tool_call_output";
+  role: "user";
+  event_type: StreamEventType;
+  output: string;
+  images?: string[];            // images are not incremental — one delta carries the whole set
+  tool_call_id: string;
+}
+```
+
+### 流式纪律
+
+每段流式内容都遵守同一条时序规则，`stop` 之后紧跟对应的完整消息：
+
+```text
+partial_text(start) → partial_text(delta) → … → partial_text(stop) → text (complete)
+                      └── concatenation of all deltas ≡ the complete message ──┘
+                          (truncation applies to both alike)
+```
+
+因此渲染层可以边收 delta 边绘制，收到完整消息后原地替换。Trace 只记录完整消息，不存分片。接口实现在内部把结构闭合好，从不向上层泄漏未闭合的分片。每组分片在 `stop` 之后都紧跟一条完整消息，使用方无需自己拼接分片。被中断、失败或截断提前结束的条目也一样：它的完整记录装着已经到达的内容（工具调用则是原样的参数文本，未必能解析）。它是否进入模型历史，看所在 Request 的 `request_end.status`。所在 Request 没有完成的工具调用，只有 `approval_decision` 出现在该 `request_end` 之前才执行过；被提前收束的调用从不执行。
+
+## event_msg
+
+十四种事件 payload 记录模型上下文之外的运行时事件：
+
+| 事件 `type` | 记录的内容 |
+| --- | --- |
+| `tool_list_ready` | 发送给模型的完整工具 schema |
+| `mcp_connect_begin` | 正在连接的 MCP Server |
+| `mcp_connect_end` | 总体连接状态与逐个 Server 的结果 |
+| `task_begin` | 一个 Task 的开始 |
+| `task_end` | 最近一个 `task_begin` 所开启的 Task 的结束 |
+| `request_begin` | 一次模型请求的开始，带上该请求发出时的思考等级 |
+| `request_end` | 请求的终态，以及重试详情块（`error_code`、`error_message`、`attempt`、`retry_in_ms`） |
+| `approval_decision` | 一次审批决策，与对应的 `tool_call_id` 配对 |
+| `token_usage` | Session 累计与本次请求的 Token 计数 |
+| `compaction_begin` | 触发原因与模式，以及触发时的上下文 Token 数和累计轮数 |
+| `compaction_end` | 压缩的原因、模式与终态，以及重试详情块 |
+| `abort` | 一次用户中断，或 Task 达到轮次上限而停止，及其原因码 |
+| `subagent` | 父 Trace 中指向直接子 Session 的指针 |
+| `hook` | 一次钩子回答：钩子点、名称、决策，以及钩子自己的记录 |
+
+这套词汇是封闭的：只有当既有记录都不承载某个事实、读端也推导不出来时，才新增记录或字段。`task_begin` / `task_end` 是两处明示例外之一（另一处是 `request_begin.thinking_level`）：此前没有任何记录说明一个 Task 从哪里开始、是否走到终点，各读端只能从用户的 Prompt 推导。
+
+Session 在每个 Task 两侧各写一条：一次 Prompt 的执行，加上随后 stop 钩子留下的 `hook` 记录。stop 钩子以 `continue` 续出的 Task（例如 goal 的一轮）各成一对。手动压缩与模型切换不是 Task，不写这对记录。载荷只有类型：Task 如何结束，由这对记录之间的记录读出（`abort`、终局的 `request_end` 或 `compaction_end`）；由谁发起，由输入本身读出。抛出异常的 Task 不写 `task_end`，因此未闭合的 `task_begin` 表示该 Task 没有走到终点。这对记录在 Trace 中的位置见 [Trace 设计](/sessions-and-traces#trace-设计)。
+
+凡是报告失败的 payload 都带同一对错误字段：`error_code` 是稳定、机器可读的原因码，渲染层据此做本地化；`error_message` 是失败的原始文本，原样展示。完整定义如下：
+
+```ts
+type ErrorCode =
+  // abort causes (a user interruption, or the turn cap)
+  | "user_abort"
+  | "backoff_interrupted"
+  | "compaction_interrupted"
+  | "max_turns"               // the Task reached max_turns; error_message names the cap
+  // LLM request failures (request_end / compaction_end)
+  | "timeout"                 // idle timeout / connection went silent
+  | "network"                 // transport drops, provider 429/5xx, and anything unclassifiable
+  | "malformed"               // response failed parsing/validation, or the stream was truncated
+  | "output_truncated"        // the response stopped at its output cap; retried, never committed
+  | "auth"                    // the provider rejected the credentials
+  | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
+  | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
+  | "unsupported"             // a deterministic client-side rejection (fast mode without a fast tier)
+  | "invalid_input"           // the input failed to assemble into a request
+  // MCP connect failures (per-server results of mcp_connect_end)
+  | "connect_failed"          // the server could not connect or list its tools
+  | "mcp_needs_setup"         // not contacted: the vault lacks a key the entry references
+  | "mcp_sign_in_required";   // not contacted: the entry needs an OAuth sign-in
+
+interface ToolListReadyPayload {
+  type: "tool_list_ready";
+  tools: ToolDefinition[];    // the complete tool schema sent to the model; emitted once
+                              // at the first run (after MCP discovery), written to the
+                              // Trace right after the run's input (it belongs to the new
+                              // turn), and rewritten with session_meta at the head of
+                              // each post-compaction Trace file
+}
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters?: Record<string, unknown>;   // JSON Schema
+}
+
+interface McpConnectBeginPayload {
+  type: "mcp_connect_begin";
+  servers: string[];          // the MCP Servers being contacted; emitted only when
+                              // mcpServers is configured — frontends show a connecting status
+}
+
+interface McpConnectEndPayload {
+  type: "mcp_connect_end";
+  status: StopReason;         // overall terminal status: completed (all connected) / fatal
+                              // (some server failed; nothing retries it within the run) /
+                              // aborted (user interrupted — the attempt is cancelled and
+                              // the next run reconnects from scratch)
+  results: McpServerConnectResult[];
+                              // the phase's total wall time is the end/begin messages'
+                              // timestamp difference (messages carry their own timestamps;
+                              // the payload holds no duplicate duration); empty on aborted
+  error_code?: ErrorCode;
+  error_message?: string;
+}
+
+interface McpServerConnectResult {
+  server: string;
+  transport: "stdio" | "http" | "sse";
+  status: StopReason;         // completed / fatal / aborted — per-server and non-fatal to
+                              // the run: a failed server is skipped and the run continues
+  duration_ms: number;        // this server's own connect + discovery time (no per-server
+                              // messages exist to derive it from)
+  tools?: number;             // tools discovered (on completed)
+  error_code?: ErrorCode;     // failure cause and detail (on fatal)
+  error_message?: string;
+}
+
+interface TaskBeginPayload {
+  type: "task_begin";         // the start of one Task, before everything it writes — its
+                              // input included; written and streamed by the Session
+}
+
+interface TaskEndPayload {
+  type: "task_end";           // the Task returned, however it ended (the records inside
+                              // the pair say how); absent when the Task threw
+}
+
+interface RequestBeginPayload {
+  type: "request_begin";
+  thinking_level?: ThinkingLevelName; // the level sent: the Session's pin, else the context's
+                                      // default; absent when none was sent, and on Traces
+                                      // written before the field
+}
+
+interface RequestEndPayload {
+  type: "request_end";
+  status: StopReason;         // the one record of why the Request ended (see End reasons);
+                              // "completed" is the mechanical commit criterion for replay
+  // The unified RetryDetail block below is stamped in one place by the builders; every
+  // field is additive — old Traces replay unchanged. compaction_end reuses the same block.
+  error_code?: ErrorCode;     // classified cause, non-completed only
+  error_message?: string;     // error detail (LLMOutcome.errorMessage internally — one
+                              // name across the stack), non-completed only: the real
+                              // reason behind a retried/failed Request (e.g. a provider
+                              // error code) — read by the Cost center's errors panel
+  attempt?: number;           // 1-based ordinal of this request within its retry run (the
+                              // authoritative retry count): stamped on failures and on a
+                              // completion that needed retries; absent on a clean first try
+  retry_in_ms?: number;       // planned reconnect wait (ms), present only when the engine
+                              // will retry in-run — the Web App renders it as a countdown;
+                              // a failed request_end without it is the run's terminal record
+}
+
+interface ApprovalDecisionPayload {
+  type: "approval_decision";
+  decision: "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto,
+                              // never asked of a human — the record itself names the decider
+  tool_call_id: string;       // pairs with the approved tool_call — the audit record
+}
+
+interface TokenUsagePayload {
+  type: "token_usage";
+  session: TokenCounts;       // Session cumulative — authored by the engine (the LLM reports `request` only)
+  request: TokenCounts;       // this Request
+}
+
+interface TokenCounts {
+  cache_read: number;
+  cache_write: number;
+  output: number;
+  total: number;
+}
+
+type CompactionReason = "context" | "turns" | "manual";
+type CompactionMode = "summarize" | "discard";
+
+interface CompactionBeginPayload {
+  type: "compaction_begin";
+  reason: CompactionReason;
+  mode: CompactionMode;
+  context: number;            // context tokens at trigger time
+  turns: number;              // cumulative turns at trigger time
+}
+
+interface CompactionEndPayload {
+  type: "compaction_end";
+  reason: CompactionReason;
+  mode: CompactionMode;
+  status: StopReason;         // completed / retryable (abandoned after the retries ran out;
+                              // the standing trigger makes it up) / fatal (a failure no
+                              // retry can fix) / aborted (user interrupted); any status
+                              // but completed keeps the original context
+  attempt?: number;           // the final attempt's ordinal, failed attempts included
+  error_code?: ErrorCode;     // the last failure's cause and detail
+  error_message?: string;
+}
+
+interface AbortPayload {
+  type: "abort";
+  error_code?: ErrorCode;     // user_abort / backoff_interrupted / compaction_interrupted /
+                              // max_turns (the turn cap)
+  error_message?: string;     // the turn cap's names the cap: "reached max turns (40)"
+  reason?: string | null;     // legacy: older Traces carry the cause as English prose here;
+                              // the engine no longer writes it
+}
+
+interface SubagentPayload {
+  type: "subagent";
+  session_id: string;         // pointer in the parent Trace to a direct child Session
+                              // (written to the Trace, not streamed)
+}
+
+interface HookPayload {
+  type: "hook";
+  hook: "stop" | "pre_tool_use"     // the hook point that fired (see the agent loop's hooks)
+    | "user_prompt";                // user_prompt: only for a hook that failed
+  name: string;               // the hook's name: "goal", "continual-learning", …
+  decision?: "continue" | "stop"    // stop point
+    | "allow" | "deny";             // pre_tool_use point; absent when the hook only left a record
+  reason?: string;            // one line for people
+  output?: Record<string, string | number | boolean>;
+                              // the hook's own record — the goal hook writes status /
+                              // round / tokens_used / budget, the continual-learning hook
+                              // session_id / turns; a continue's injected input is NOT
+                              // here: it is the user message that follows
+}
+```
+
+因条目引用了 Agent 的 Vault 中没有的键、或需要 OAuth 登录而被跳过、没有连接的 MCP Server，在 `results` 中记为 `fatal`，错误码为 `mcp_needs_setup` 或 `mcp_sign_in_required`；其 `error_message` 列出缺少的键名，从不包含值。见 [Vault 引用](/tools#vault-引用)。
+
+`compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
+
+## 结束原因
+
+记录不携带逐条的结束原因。每个流式条目都有完整记录，被中断截断的也不例外；它是否进入模型历史，看所在 Request 的 `request_end.status`；运行如何结束，看 `abort` 与终局的 `request_end` / `compaction_end`。旧版本写下的记录在每种模型 payload 上都带 `stop_reason` 字段，现已不再读取。
+
+一次 Request 以 `StopReason` 收尾，`LLMOutcome.status` 使用同一组取值（见[核心接口](/interfaces)）：
+
+```ts
+type StopReason = "completed" | "aborted" | "retryable" | "fatal";  // request_end, compaction_end, MCP connect results
+type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call_output
+```
+
+状态只回答一个问题：要不要重试。失败属于哪一类看 `error_code`，具体细节看 `error_message`。
+
+| `request_end.status` | 含义 | 引擎反应 |
+| --- | --- | --- |
+| `completed` | 正常完成，该轮已提交 | 继续 |
+| `aborted` | 用户中断或取消 | 停止，产出 `abort` 事件，交还用户 |
+| `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败的响应、完整送达却停在输出上限的响应（`error_code` 为 `output_truncated`），以及一切无法归类的错误 | 同一次运行内按退避阶梯自动重连；停在输出上限的尝试不提交。重试用尽时，最后一条不带 `retry_in_ms` 的 `request_end` 即终局记录 |
+| `fatal` | 重试也无法修复的失败：供应商确定性的 4xx 拒绝（参数、配额）、凭据被拒，或确定性的客户端拒绝 | 停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录 |
+
+工具结果的 `status` 说明结果是什么：
+
+| `tool_call_output.status` | 含义 |
+| --- | --- |
+| `completed` | 工具运行到结束；它报告的情况都在输出里。命令跑完即为完成，与退出状态无关：非零退出码或信号是命令的结果，写在输出末行（`[exit code: N]`、`[terminated by signal X]`） |
+| `fatal` | 调用失败：未知工具、参数无法解析、工具出错、执行环境出错或超时。错误回灌给模型，从不重试 |
+| `aborted` | 调用没有运行到结束：被用户、命令策略或 pre_tool_use 钩子拒绝（由谁拒绝见 `approval_decision`），或运行中被用户中断（输出里是它已产出的内容，末尾是中断提示） |
+
+没有这个字段的旧 `tool_call_output` 读作 `completed`。旧 Trace 的 `request_end` 里可能还有已废弃的 `failed`、`timeout`、`malformed` 和 `auth`；回放只与 `completed` 比较，渲染层照常展示这些旧取值。
+
+轮次上限不是一次 Request：Task 达到 `max_turns` 时，引擎写一条 `error_code` 为 `max_turns` 的 `abort`，然后结束这个 Task。
+
+错误从不以异常形式穿过接口边界，错误本身*就是*消息（见 [Agent 运行循环](/agent-loop)）。
+
+## origin：子 Session 链
+
+`origin` 服务于子 Agent。子 Session 的消息转发给父级时，每经过一层就在链首加上一个子 Session id，顺序由外到内。渲染层按这条链把消息归入对应的嵌套卡片：
+
+```ts
+// message from the main Session: no origin
+{ timestamp: "…", type: "model_msg", payload: { type: "text", … } }
+
+// message from a one-level Subagent: origin = [child Session id]
+{ timestamp: "…", type: "model_msg", origin: ["session-2026-07-18-…-a1b2c3d4"], payload: { … } }
+```
+
+带 `origin` 的消息不写入父 Trace：子 Session 有自己的 Trace，父 Trace 只保留 `subagent` 指针事件。
+
+## 保真字段
+
+供应商特有的传输层数据统一放在一个可选字段 `fidelity` 里。它是 LLM 客户端记录的任意 JSON 对象，用于在回放时复原原始消息，例如：
+
+- 思考签名；
+- `phase` 分段标签；
+- GPT-5 的加密推理；
+- OpenAI 兼容上游的推理字段名。
+
+```ts
+// Claude: a thinking block closed by its signature
+{ type: "thinking", thinking: "…", fidelity: { signature: "EqQBCkYIBxgCKkB…" } }
+
+// GPT-5: encrypted reasoning (empty thinking text, fidelity only)
+{ type: "thinking", thinking: "", fidelity: { id: "rs_0d3…", encrypted_content: "gAAAA…" } }
+
+// OpenAI-compatible: the upstream field the reasoning text came from
+{ type: "thinking", thinking: "…", fidelity: { reasoning_field: "reasoning_content" } }
+```
+
+这个负载对 PenguinHarness 完全不透明：全链路原样透传、原样存储。部分模型回放历史时要求它逐字节一致，任何改写或丢失都会破坏兼容性。这也是 Trace 能无损恢复 Session 的前提之一。
+
+## 各通道的消息子集
+
+| 通道 | 使用的子集 |
+| --- | --- |
+| SDK 边界（`session.run` 的输出） | 完整 `model_msg` + 流式 `partial_*` + 全部 `event_msg` |
+| 落盘的 Trace | `session_meta` + 完整 `model_msg` + 全部 `event_msg`（不存分片，也不存带 `origin` 的消息） |
+| Server 的 SSE 推送 | 与 SDK 边界相同，原样的单行 JSON，见 [Server API](/server-api) |
+
+[Agent API](/agent-api) 以 [AMSP](/amsp) 记录的形式推送同样的消息，外加控制帧，不含 Web App 的服务器事件。
+
+消息沿这些通道传递的机制与各项顺序保证，见[消息流转与时序](/message-flow)。
+
+## 构造与判别
+
+`@prismshadow/amsp` 导出全部记录类型，此外还有以下内容，`@prismshadow/penguin-core` 全部再导出：
+
+- `records/builders.ts` 里每种消息的构造函数：`userText`、`assistantText`、`toolCall`、`toolCallOutput`、`partialText`、`tokenUsage`、`withOrigin`、`emptyTokenCounts`、`addTokenCounts` 等；
+- 运行时判别函数：`isCompleteModelMessage`、`isPartialPayload`、`isModelMessage`、`isEventMessage`、`isSessionMeta`、`isTaskRecord`，以及 `lastNonTaskRecord`——它找出判定一个 Trace 文件是否被压缩收尾时要看的那条记录。
+
+```ts
+import { userText, isCompleteModelMessage } from "@prismshadow/amsp";
+
+const prompt = userText("List the files in the current directory");
+// { timestamp: "…", type: "model_msg", payload: { type: "text", role: "user", text: "…" } }
+```

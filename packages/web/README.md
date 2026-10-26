@@ -1,6 +1,6 @@
 # @prismshadow/penguin-web
 
-The PenguinHarness Web App — a React 19 + Vite + Tailwind CSS 4 SPA that renders the OmniMessage stream (same protocol and statistics as the CLI) and manages Agents, Skills, Models, usage and Traces. Feature tour: [Web App Guide](https://penguin.ooo/docs/web-app).
+The PenguinHarness Web App — a React 19 + Vite + Tailwind CSS 4 SPA that renders the stream of AMSP records (same records and statistics as the CLI) and manages Agents, Skills, Models, usage and Traces. Feature tour: [Web App Guide](https://penguin.ooo/docs/web-app).
 
 ## Layout
 
@@ -10,13 +10,13 @@ src/
 ├── api/            # fetch wrapper, typed endpoint functions, EventSource (SSE) wrapper
 ├── state/          # auth / project / sessions / theme / locale contexts
 ├── lib/
-│   ├── omni/       # OmniMessage stream → view-model reducer + connect-first/dedup controller
+│   ├── amsp/       # record stream → view-model reducer + connect-first/dedup controller
 │   └── …           # formatting, i18n dictionaries (zh/en), attachments, helpers
 ├── components/     # ui primitives (modal, drawer, select, …) + app layout
 └── features/       # chat / agents / plugins / skills / models / usage / traces / benchmark / admin
 ```
 
-DTO types are imported type-only from `@prismshadow/penguin-server/api`; no server code enters the bundle. Rendering rules for streaming partials (start/delta/stop aggregation, complete-message replacement, origin-chain nesting into subagent cards) live in `lib/omni/stream-model.ts`, which is fully unit-tested.
+DTO types are imported type-only from `@prismshadow/penguin-server/api`; no server code enters the bundle. Rendering rules for streaming partials (start/delta/stop aggregation, complete-message replacement, origin-chain nesting into subagent cards) live in `lib/amsp/stream-model.ts`, which is fully unit-tested.
 
 ## Development
 

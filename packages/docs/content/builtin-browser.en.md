@@ -68,7 +68,7 @@ When text in the conversation is selected as well, **Copy** and **Add to convers
 
 ## When an agent uses the browser
 
-While an agent is working in a tab, a slow pulsing ring runs around the page and an icon in the toolbar says so. The agent's commands act on the page through the browser's developer tools, not through your mouse and keyboard, so you can watch without anything moving on your screen. Avoid clicking inside the page while the agent is working on it: your clicks change the page under the agent.
+While an agent is working in a tab, a slow pulsing ring runs around the page and an icon in the toolbar says so. The agent's commands act on the page through the browser's developer tools, not through your mouse and keyboard, so you can watch without anything moving on your screen. Before an agent types into a page, the keyboard focus moves into that page, the same as when the agent clicks, so its text never lands in the composer or the address bar. If you were typing a message, click back into the composer to go on. Avoid clicking inside the page while the agent is working on it: your clicks change the page under the agent.
 
 A dialog the page opens while an agent acts is answered for it, so the page does not wait on you: an alert is accepted, and a confirmation or a leave-page dialog is dismissed unless the agent asked to accept it. Dialogs that appear while you browse show as usual.
 
@@ -167,7 +167,7 @@ The agent drives only these tabs:
 - A tab you hand over: select the extension's icon on that tab, then **Add this tab**. It moves into the Penguin group.
 - Pages those tabs open, such as a pop-up or a link opened in a new tab.
 
-It cannot see or touch your other tabs and windows, your cookies, your passwords, your history or your downloads. Raw DevTools commands that would reach them are refused (`cdp_refused`). Chrome's own pages (`chrome://`), the Chrome Web Store and local files cannot be driven at all. Import, clearing browsing data and the browsing history belong to the built-in browser; Chrome keeps its own.
+It cannot see or touch your other tabs and windows, your passwords, your history or your downloads, and it cannot read or change Chrome's cookies directly. Raw DevTools commands that would reach them are refused (`cdp_refused`). Chrome's own pages (`chrome://`), the Chrome Web Store and local files cannot be driven at all. Import, clearing browsing data and the browsing history belong to the built-in browser; Chrome keeps its own.
 
 What reaches the server is what the agent asks of a driven tab, as with the built-in browser: the page as simplified HTML or text, the values its scripts return, screenshots and the text of dialogs. A script in the page can read the cookies the page itself can read; HttpOnly session cookies never leave Chrome.
 

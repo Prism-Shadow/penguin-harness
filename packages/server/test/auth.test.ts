@@ -11,6 +11,9 @@
  * - Changing one's own password checks the old one and the policy, keeps the current session,
  *   clears the initial flag, and retires the old password.
  * - The Secure cookie flag follows x-forwarded-proto only when the proxy is trusted.
+ * - A write from another origin is refused — the Agent API's keyed request excepted — while a
+ *   domain's case and a scheme's default port name the same origin; a browser's cookie carries
+ *   the port it reached the server on.
  * - A write with a non-JSON Content-Type is refused (CSRF defense).
  * - A seed password below the policy is refused before any account is created.
  * - Login failures back off per username, unknown usernames identically, and a success resets
@@ -22,10 +25,24 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { EventEmitter } from "node:events";
+import type { Server } from "node:http";
+import { attachTerminalWebSocket } from "../src/terminal/ws.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { MeResponse, ProjectsResponse } from "../src/api/types.js";
+import type { AgentApiKeyCreateResponse, MeResponse, ProjectsResponse } from "../src/api/types.js";
 import { bootAppDeps } from "../src/app.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
+import {
+  isOwnOrigin,
+  parseCookieHeader,
+  sessionCookieName,
+  sameOriginWrites,
+  jsonOnlyWrites,
+} from "../src/auth/middleware.js";
+import { Hono } from "hono";
+import { identityFrom } from "../src/terminal/identity.js";
+import { mediaType } from "../src/http/media-type.js";
+import { handleError } from "../src/http/errors.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
 import {
   apiClient,
@@ -40,6 +57,7 @@ import {
   replacementsFor,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 
 describe("auth", () => {
   let t: TestApp;
@@ -138,6 +156,377 @@ describe("auth", () => {
     expect(logout.status).toBe(204);
     const after = await api.get("/api/me");
     expect(after.status).toBe(401);
+  });
+
+  it("two instances on one host stay signed in side by side: a browser's cookie carries the port", async () => {
+    // Cookies ignore the port, so a release and a development instance on one host — or two
+    // tunnels on a phone — shared `penguin_session`, and signing in to one signed the other out.
+    const other = await createTestApp();
+    try {
+      await provisionUser(t.app, "dana");
+      await provisionUser(other.app, "dana");
+      const signIn = async (app: TestApp["app"], port: number) => {
+        const res = await app.request(`http://phone.example:${port}/api/auth/login`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            host: `phone.example:${port}`,
+            origin: `http://phone.example:${port}`,
+          },
+          body: JSON.stringify({ userId: "dana", password: "password-123" }),
+        });
+        expect(res.status).toBe(200);
+        return (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+      };
+      const a = await signIn(t.app, 53531);
+      const b = await signIn(other.app, 53899);
+      expect(a.startsWith("penguin_session_53531=")).toBe(true);
+      expect(b.startsWith("penguin_session_53899=")).toBe(true);
+      // One jar, both cookies, sent to both — each server finds its own.
+      const jar = `${a}; ${b}`;
+      const me = (app: TestApp["app"], port: number) =>
+        app.request(`http://phone.example:${port}/api/me`, {
+          headers: { cookie: jar, host: `phone.example:${port}` },
+        });
+      expect((await me(t.app, 53531)).status).toBe(200);
+      expect((await me(other.app, 53899)).status).toBe(200);
+      // Signing out of one leaves the other's cookie alone.
+      const out = await t.app.request("http://phone.example:53531/api/auth/logout", {
+        method: "POST",
+        headers: { cookie: jar, host: "phone.example:53531", origin: "http://phone.example:53531" },
+      });
+      expect(out.status).toBe(204);
+      expect(out.headers.get("set-cookie") ?? "").toContain("penguin_session_53531=;");
+      expect(out.headers.get("set-cookie") ?? "").not.toContain("penguin_session_53899");
+      expect((await me(t.app, 53531)).status).toBe(401);
+      expect((await me(other.app, 53899)).status).toBe(200);
+    } finally {
+      await other.cleanup();
+    }
+  });
+
+  it("a non-browser sign-in keeps the plain cookie name, and a plain cookie still signs in", async () => {
+    // The CLI reads `penguin_session` off the login's Set-Cookie (an older CLI must keep finding
+    // it), and sends it back under that name whatever port it talks to.
+    await provisionUser(t.app, "erin");
+    const res = await t.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", host: "localhost:7364" },
+      body: JSON.stringify({ userId: "erin", password: "password-123" }),
+    });
+    const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+    expect(cookie.startsWith("penguin_session=")).toBe(true);
+    const me = await t.app.request("/api/me", { headers: { cookie, host: "localhost:7364" } });
+    expect(me.status).toBe(200);
+  });
+
+  it("refuses a write a browser made from another origin — another port of this host included", async () => {
+    const { cookie } = await provisionUser(t.app, "fay");
+    const write = (
+      headers: Record<string, string>,
+      body: string | Uint8Array = JSON.stringify({ projectId: "fay-one", name: "x" }),
+    ) =>
+      t.app.request("http://localhost:7364/api/projects", {
+        method: "POST",
+        headers: { cookie, host: "localhost:7364", ...headers },
+        body,
+      });
+    const json = { "content-type": "application/json" };
+    // `SameSite` lets this one through: same site, different port.
+    const sibling = await write({ ...json, origin: "http://localhost:3000" });
+    expect(sibling.status).toBe(403);
+    expect(((await sibling.json()) as { error: { code: string } }).error.code).toBe(
+      "cross_origin_write",
+    );
+    expect((await write({ ...json, origin: "https://evil.example" })).status).toBe(403);
+    expect((await write({ ...json, origin: "null" })).status).toBe(403);
+    // This app's own page, and a client that is no browser at all.
+    expect((await write({ ...json, origin: "http://localhost:7364" })).status).toBe(201);
+    expect(
+      (await write({ ...json }, JSON.stringify({ projectId: "fay-two", name: "x" }))).status,
+    ).toBe(201);
+    // A body with no Content-Type is what `fetch(…, { mode: "no-cors", body: untypedBlob })`
+    // sends; the handlers would parse it as JSON without asking, so it is refused outright.
+    const bytes = new TextEncoder().encode(JSON.stringify({ projectId: "fay-three", name: "x" }));
+    const untyped = await write({ "content-length": String(bytes.byteLength) }, bytes);
+    expect(untyped.status).toBe(415);
+    // A write with neither a type nor a body is still fine (logout, say).
+    expect(
+      (await t.app.request("/api/auth/logout", { method: "POST", headers: { cookie } })).status,
+    ).toBe(204);
+  });
+
+  it("lets a cross-origin Agent API write through to its key gate, and never takes a cookie there", async () => {
+    // The Agent API answers any origin's preflight and sends `Access-Control-Allow-Origin: *`
+    // to a request carrying `Authorization` (the server-api page states it): a page outside this
+    // app calls it with the Agent's key. The same-origin guard must not refuse that write before
+    // the group's own gate has read the key…
+    const admin = await loginAdmin(t.app);
+    const api = apiClient(t.app, admin.cookie);
+    const base = "/api/projects/default_project/agents/default_agent/api";
+    expect((await api.put(base, { enabled: true })).status).toBe(200);
+    const key = (
+      (await (
+        await api.post(`${base}/keys`, { name: "cross-origin suite" })
+      ).json()) as AgentApiKeyCreateResponse
+    ).secret;
+    const sessionId = uniqueSessionId();
+    adoptSession(t.deps, fakeSession(sessionId), {
+      projectId: "default_project",
+      agentId: "default_agent",
+      client: "api",
+    });
+    const abort = (headers: Record<string, string>) =>
+      t.app.request(`http://localhost:7364/api/amsp/v1/sessions/${sessionId}/abort`, {
+        method: "POST",
+        headers: { host: "localhost:7364", ...headers },
+      });
+
+    const keyed = await abort({
+      origin: "http://elsewhere.example",
+      authorization: `Bearer ${key}`,
+    });
+    expect(keyed.status).toBe(204);
+    expect(keyed.headers.get("access-control-allow-origin")).toBe("*");
+    // …and a wrong key is the gate's own 401, not the guard's 403: proof it reached the group.
+    const wrong = await abort({
+      origin: "http://elsewhere.example",
+      authorization: "Bearer no-key",
+    });
+    expect(wrong.status).toBe(401);
+    expect(((await wrong.json()) as { error: { code: string } }).error.code).toBe("unauthorized");
+    expect(wrong.headers.get("access-control-allow-origin")).toBe("*");
+
+    // A cookie is no credential at the Agent API: from another origin the guard refuses the
+    // write, and from this one the gate answers the 401 that a missing key earns.
+    const { cookie } = await provisionUser(t.app, "gina");
+    const withCookie = await abort({ origin: "http://elsewhere.example", cookie });
+    expect(withCookie.status).toBe(403);
+    expect(((await withCookie.json()) as { error: { code: string } }).error.code).toBe(
+      "cross_origin_write",
+    );
+    expect((await abort({ origin: "http://elsewhere.example" })).status).toBe(403);
+    expect((await abort({ origin: "http://localhost:7364", cookie })).status).toBe(401);
+
+    // A keyed call from this origin, and one from a client that is no browser, are as before.
+    expect(
+      (await abort({ origin: "http://localhost:7364", authorization: `Bearer ${key}` })).status,
+    ).toBe(204);
+    expect((await abort({ authorization: `Bearer ${key}` })).status).toBe(204);
+  });
+
+  it("reads an origin normalized: a domain's case and a scheme's default port name one origin", async () => {
+    const { cookie } = await provisionUser(t.app, "hugo");
+    const write = (host: string, origin: string, projectId: string) =>
+      t.app.request(`${new URL(origin).protocol}//${host}/api/projects`, {
+        method: "POST",
+        headers: { cookie, host, origin, "content-type": "application/json" },
+        body: JSON.stringify({ projectId, name: "x" }),
+      });
+    // A Host that spells out the scheme's default port, whichever side writes it.
+    expect((await write("example.com:80", "http://example.com", "hugo-one")).status).toBe(201);
+    expect((await write("example.com", "http://example.com:80", "hugo-two")).status).toBe(201);
+    expect((await write("example.com:443", "https://example.com", "hugo-three")).status).toBe(201);
+    // A domain name is case-insensitive.
+    expect((await write("EXAMPLE.com:7364", "http://Example.COM:7364", "hugo-four")).status).toBe(
+      201,
+    );
+    // Any other port is a different origin, whichever side spells it. A Host with no port means
+    // the scheme's default, so it does not admit an Origin that names a port at all.
+    expect((await write("example.com:443", "http://example.com", "hugo-five")).status).toBe(403);
+    expect((await write("example.com:81", "http://example.com:80", "hugo-six")).status).toBe(403);
+    expect((await write("example.com", "http://example.com:8443", "hugo-seven")).status).toBe(403);
+    expect((await write("example.com:8443", "http://example.com", "hugo-eight")).status).toBe(403);
+  });
+
+  it("names a browser's cookie after the normalized request URL port", async () => {
+    await provisionUser(t.app, "iris");
+    const signIn = (host: string, origin: string) =>
+      t.app.request(`${origin}/api/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json", host, origin },
+        body: JSON.stringify({ userId: "iris", password: "password-123" }),
+      });
+    // Default ports normalize away on both issue and lookup.
+    const plain = await signIn("example.com:80", "http://example.com");
+    expect(plain.status).toBe(200);
+    const plainCookie = (plain.headers.get("set-cookie") ?? "").split(";")[0]!;
+    expect(plainCookie.startsWith("penguin_session=")).toBe(true);
+    expect(
+      (await t.app.request("/api/me", { headers: { cookie: plainCookie, host: "example.com:80" } }))
+        .status,
+    ).toBe(200);
+    // Any other port keeps a name of its own, whatever case the browser spells the host in.
+    const keyed = await signIn("Example.COM:7364", "http://example.com:7364");
+    expect(keyed.status).toBe(200);
+    const keyedCookie = (keyed.headers.get("set-cookie") ?? "").split(";")[0]!;
+    expect(keyedCookie.startsWith("penguin_session_7364=")).toBe(true);
+    expect(
+      (
+        await t.app.request("http://example.com:7364/api/me", {
+          headers: { cookie: keyedCookie, host: "example.com:7364" },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it("uses normalized platform URLs for origin checks and terminal identity", async () => {
+    expect(isOwnOrigin("http://example.com", new URL("https://example.com"))).toBe(false);
+    expect(isOwnOrigin("https://example.com", new URL("https://example.com:443"))).toBe(true);
+    expect(isOwnOrigin("http://[0:0:0:0:0:0:0:1]:7364", new URL("http://[::1]:7364"))).toBe(true);
+    expect(isOwnOrigin("http://[::1]:7365", new URL("http://[::1]:7364"))).toBe(false);
+    expect(isOwnOrigin("http://example.com:8443", new URL("http://example.com"))).toBe(false);
+    expect(isOwnOrigin("null", new URL("http://example.com"))).toBe(false);
+    expect(isOwnOrigin(undefined, new URL("http://example.com"))).toBe(true);
+    for (const url of ["http://example.com:80", "https://example.com:443"]) {
+      expect(sessionCookieName(url, true)).toBe("penguin_session");
+    }
+    for (const [url, port] of [
+      ["http://example.com:443", "443"],
+      ["https://example.com:80", "80"],
+      ["http://[::1]:7364", "7364"],
+    ]) {
+      expect(sessionCookieName(url!, true)).toBe(`penguin_session_${port}`);
+    }
+    const identity = identityFrom({
+      authenticateWithMeta: (token) => (token === "live" ? { user: { userId: "alice" } } : null),
+    });
+    for (const url of ["http://example.com:80", "https://example.com:443", "http://[::1]:7364"]) {
+      const name = sessionCookieName(url, true);
+      expect(await identity(new Request(url, { headers: { cookie: `${name}=live` } }))).toEqual({
+        userId: "alice",
+      });
+    }
+    // A conflicting Host no longer overrides the adapter's request URL.
+    expect(
+      await identity(
+        new Request("http://example.com:7364", {
+          headers: { host: "example.com:9999", cookie: "penguin_session_7364=live" },
+        }),
+      ),
+    ).toEqual({ userId: "alice" });
+  });
+
+  it("uses normalized URL cookie names in the Node upgrade path", async () => {
+    for (const [host, origin, name] of [
+      ["example.com:80", "http://example.com", "penguin_session"],
+      ["[::1]:7364", "http://[::1]:7364", "penguin_session_7364"],
+    ]) {
+      const server = new EventEmitter();
+      attachTerminalWebSocket(server as unknown as Server, {
+        hmr: t.deps.hmr,
+        authService: t.deps.authService,
+        log: () => {},
+      });
+      const { token } = await t.deps.authService.login("admin", TEST_ADMIN_PASSWORD);
+      const reply = await new Promise<string>((resolve) => {
+        const socket = { write: (value: string) => resolve(value), destroy: () => {} };
+        server.emit(
+          "upgrade",
+          {
+            url: "/api/terminals/missing/stream",
+            headers: { host, origin, cookie: `${name}=${token}` },
+            socket,
+          },
+          socket,
+          Buffer.alloc(0),
+        );
+      });
+      // 404 proves both the origin and the normalized cookie passed, without creating a pty.
+      expect(reply).toContain("404 Not Found");
+    }
+  });
+
+  it("uses forwarded schemes only behind a trusted proxy and rejects malformed values", async () => {
+    for (const trustProxy of [false, true]) {
+      const app = new Hono();
+      app.onError(handleError);
+      app.use("*", sameOriginWrites(trustProxy));
+      app.post("/", (c) => c.body(null, 204));
+      const write = (forwarded: string, origin = "https://example.com") =>
+        app.request("http://example.com/", {
+          method: "POST",
+          headers: {
+            host: "example.com",
+            origin,
+            "x-forwarded-proto": forwarded,
+            "content-type": "application/json",
+          },
+        });
+      // Node sees the HTTP proxy hop; its sanitized external scheme is authoritative only
+      // when the deployment explicitly trusts that proxy.
+      expect((await write("https")).status).toBe(trustProxy ? 204 : 403);
+      expect((await write("https,http")).status).toBe(403);
+      expect((await write("ftp")).status).toBe(403);
+      expect((await write("http", "http://example.com:8443")).status).toBe(403);
+    }
+  });
+
+  it("parses media types rather than accepting JSON-looking prefixes", async () => {
+    const app = new Hono();
+    app.onError(handleError);
+    app.use("*", jsonOnlyWrites());
+    app.post("/", (c) => c.body(null, 204));
+    for (const type of [
+      "Application/JSON; charset=utf-8",
+      "application/gzip",
+      "application/octet-stream",
+    ]) {
+      expect(
+        (await app.request("/", { method: "POST", headers: { "content-type": type } })).status,
+      ).toBe(204);
+    }
+    for (const type of [
+      "application/jsonp",
+      "application/json-extra",
+      "application/gzipfoo",
+      "not a media type",
+    ]) {
+      expect(
+        (await app.request("/", { method: "POST", headers: { "content-type": type } })).status,
+      ).toBe(415);
+    }
+    expect(mediaType('Application/Problem+JSON; profile="a;b"')?.subtype).toBe("problem+json");
+    expect(mediaType(undefined)).toBeNull();
+    expect(mediaType("invalid")).toBeNull();
+  });
+
+  it("uses Hono's first duplicate and tolerates malformed cookie escapes", async () => {
+    const { cookie } = await loginAdmin(t.app);
+    const token = cookie.slice(cookie.indexOf("=") + 1);
+    expect(parseCookieHeader(`penguin_session=bad; penguin_session=${token}`).penguin_session).toBe(
+      "bad",
+    );
+    expect(parseCookieHeader("penguin_session=%ZZ").penguin_session).toBe("%ZZ");
+    expect(parseCookieHeader('a="hello%20world"').a).toBe("hello world");
+    expect(
+      (await t.app.request("/api/me", { headers: { cookie: `penguin_session=bad; ${cookie}` } }))
+        .status,
+    ).toBe(401);
+    expect(
+      (await t.app.request("/api/me", { headers: { cookie: `${cookie}; penguin_session=bad` } }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await t.app.request("/api/me", { headers: { cookie: "penguin_session=%ZZ" } })).status,
+    ).toBe(401);
+  });
+
+  it("refuses a write that declares a chunked body with no Content-Type", async () => {
+    // A page can send a body without a length (`fetch` with a stream), which no HTML form can:
+    // the content-type rule has to see the body, not just a content-length that is missing.
+    const { cookie } = await provisionUser(t.app, "jane");
+    const res = await t.app.request("http://localhost:7364/api/projects", {
+      method: "POST",
+      headers: {
+        cookie,
+        host: "localhost:7364",
+        origin: "http://localhost:7364",
+        "transfer-encoding": "chunked",
+      },
+      body: JSON.stringify({ projectId: "jane-one", name: "x" }),
+    });
+    expect(res.status).toBe(415);
   });
 
   it("self password change: old checked, new takes effect, initial flag cleared", async () => {

@@ -20,12 +20,9 @@
  * config and so never travels; `envSourced` names each one, for the sync to say so.
  */
 import type { MachineApi } from "./machine-api.js";
-import {
-  effectiveConnection,
-  modelEnvFallback,
-  providerConnectionShape,
-  resolveModelEnv,
-} from "@prismshadow/penguin-core";
+import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
+import { catalogEntryFor } from "../model-catalog/catalog.js";
+import { modelEnvironment } from "../model-catalog/env-keys.js";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
@@ -72,6 +69,21 @@ export interface SkippedModel {
   modelId: string;
   code: string;
   reason: string;
+  /** One of this server's built-in models, refused as not addable: the machine's build lacks it. */
+  builtInHere?: true;
+}
+
+/**
+ * Whether a refusal says the machine's build is behind rather than that the entry was added by
+ * hand: `model_not_addable` is a group that takes its built-in models only meeting an id that is
+ * not one of them, so for an id that IS one of this server's built-in models in that group, the
+ * machine's catalog is the one that does not list it.
+ */
+function builtInHere(refused: { provider: string; modelId: string; code: string }): boolean {
+  return (
+    refused.code === "model_not_addable" &&
+    catalogEntryFor(refused.provider, refused.modelId.trim()) !== undefined
+  );
 }
 
 /**
@@ -207,6 +219,38 @@ export function planModelSync(local: LocalModels, remote: ModelsResponse): Model
   };
 }
 
+/** How many times a Project the machine is still provisioning is asked after (see syncModelsToMachine). */
+const PROVISIONING_ASKS = 30;
+
+/** An error answer's code, or null when the text is not one. */
+function errorCode(text: string): string | null {
+  try {
+    const code = (JSON.parse(text) as { error?: { code?: unknown } }).error?.code;
+    return typeof code === "string" ? code : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The Project as the machine lists it once it is listed: asked again after each pause, at most
+ * PROVISIONING_ASKS times. Undefined when it never is, or the machine stops answering the list.
+ */
+async function listedSoon(
+  api: MachineApi,
+  projectId: string,
+  pause: () => Promise<void>,
+): Promise<{ projectId: string; name?: string } | undefined> {
+  for (let ask = 0; ask < PROVISIONING_ASKS; ask += 1) {
+    await pause();
+    const listed = await api.request("GET", "/api/projects");
+    if (listed.status !== 200) return undefined;
+    const found = projectsIn(listed.text).find((entry) => entry.projectId === projectId);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 /** The Projects that machine has, with their names, narrowed from its own answer (it may be an older build). */
 function projectsIn(text: string): Array<{ projectId: string; name?: string }> {
   const body: unknown = JSON.parse(text);
@@ -231,14 +275,13 @@ export interface EnvSourced {
 
 /**
  * The values a Project's models take from this server's environment, which no sync can carry:
- * the config is all it sends. Core's credential rule decides, on each row's effective
- * connection (the row's own values, then its group's):
+ * the config is all it sends. MMSP decides what each row reads (the catalog's modelEnvironment,
+ * on the row's effective connection — its own values, then its group's):
  *
- * - a row that holds no key, of its own or its group's, authenticates with the variable
- *   modelEnvFallback allows it — when that variable is set here (a relay variable only with
- *   the base URL it belongs to, as resolveModelCredential requires);
- * - a row with a key and no base URL goes where its routed client's `*_BASE_URL` points, when
- *   that is set here.
+ * - with no key in the file, it authenticates with its routed client's `*_API_KEY` — only for no
+ *   base URL or the client's own default endpoint, and when that variable is set here;
+ * - with a key, from the file or from here, and no base URL in the file, it goes where the
+ *   client's `*_BASE_URL` points, when that is set here.
  *
  * A variable that is not set here is not listed: the row does not run here either.
  */
@@ -249,39 +292,23 @@ export function envSourced(
   const set = (name: string) => (env[name]?.trim() ?? "") !== "";
   const found: EnvSourced[] = [];
   for (const entry of local.models) {
-    const effective = effectiveConnection(
-      {
-        provider: entry.provider,
-        modelId: entry.model_id,
-        clientType: entry.client_type,
-        baseUrl: entry.base_url,
-        apiKey: entry.api_key,
-      },
-      providerConnectionShape(local.providers?.[entry.provider]),
-    );
+    const own = {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: entry.client_type,
+      baseUrl: entry.base_url,
+      apiKey: entry.api_key,
+    };
+    const group = providerConnectionShape(local.providers?.[entry.provider]);
+    const { apiKeyEnv, baseUrlEnv } = modelEnvironment(own, group);
     const add = (variable: string) =>
       found.push({ provider: entry.provider, modelId: entry.model_id, variable });
-    let keyed = effective.apiKey !== undefined;
-    if (!keyed) {
-      const fallback = modelEnvFallback({
-        provider: entry.provider,
-        modelId: entry.model_id,
-        clientType: effective.clientType,
-        baseUrl: effective.baseUrl,
-      });
-      if (
-        fallback !== undefined &&
-        (fallback.readByClient || effective.baseUrl !== undefined) &&
-        set(fallback.envKey)
-      ) {
-        add(fallback.envKey);
-        keyed = true;
-      }
+    let keyed = effectiveConnection(own, group).apiKey !== undefined;
+    if (apiKeyEnv !== undefined && set(apiKeyEnv)) {
+      add(apiKeyEnv);
+      keyed = true;
     }
-    if (keyed && effective.baseUrl === undefined) {
-      const pair = resolveModelEnv(entry.model_id, effective.clientType);
-      if (pair !== undefined && set(pair.envBaseUrlKey)) add(pair.envBaseUrlKey);
-    }
+    if (keyed && baseUrlEnv !== undefined && set(baseUrlEnv)) add(baseUrlEnv);
   }
   return found;
 }
@@ -308,7 +335,15 @@ export function envSourced(
  *
  * An ENTRY the machine refuses by name (a hand-added model in a group that carries only its
  * built-in ones there) is skipped and reported, and the rest of that Project's table is
- * written; a table refused without naming an entry is that Project's refusal, as above.
+ * written; a table refused without naming an entry is that Project's refusal, as above. One
+ * that is a built-in model HERE is marked `builtInHere`: what the machine lacks is a newer build.
+ *
+ * One refusal is not a boundary but a moment: a machine on its first boot answers requests while
+ * it is still provisioning its own `default_project` — the directory is there, so a creation is
+ * refused as taken, and the Project is not listed yet, so nothing else about it answers. The
+ * first sync after an install lands in exactly that window. So a creation refused as taken waits
+ * for the Project to be listed (PROVISIONING_ASKS asks, `pause` apart) and then goes on as for a
+ * Project that was there; one still not listed after that is refused as before.
  */
 export async function syncModelsToMachine(opts: {
   api: MachineApi;
@@ -316,7 +351,10 @@ export async function syncModelsToMachine(opts: {
   loadLocal: (projectId: string) => Promise<LocalModels | null>;
   /** The Projects entitled to this machine — nothing outside this list is touched. */
   projects: string[];
+  /** The wait between two asks for a Project the machine is still provisioning (tests pass none). */
+  pause?: () => Promise<void>;
 }): Promise<ModelSyncOutcome> {
+  const pause = opts.pause ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 1000)));
   let theirs: Array<{ projectId: string; name?: string }>;
   try {
     const listed = await opts.api.request("GET", "/api/projects");
@@ -346,37 +384,50 @@ export async function syncModelsToMachine(opts: {
       continue;
     }
     const path = `/api/projects/${encodeURIComponent(projectId)}/models`;
-    const there = theirs.find((entry) => entry.projectId === projectId);
+    let there = theirs.find((entry) => entry.projectId === projectId);
     try {
-      if (there !== undefined) {
-        // The name follows ours, as the models do: a rename here is a rename there. Refused,
-        // it is said, and the models still go.
-        if (local.name !== undefined && local.name !== "" && local.name !== there.name) {
-          const renamed = await opts.api.request(
-            "PATCH",
-            `/api/projects/${encodeURIComponent(projectId)}`,
-            { name: local.name },
-          );
-          if (renamed.status < 200 || renamed.status >= 300) {
-            refused.push({
-              projectId,
-              detail: `it refused the name of ${projectId}: ${renamed.status} ${renamed.text.slice(0, 200)}`,
-            });
-          }
-        }
-      } else {
+      if (there === undefined) {
         const made = await opts.api.request("POST", "/api/projects", {
           projectId,
           ...(local.name !== undefined && local.name !== "" ? { name: local.name } : {}),
         });
-        if (made.status < 200 || made.status >= 300) {
+        if (made.status >= 200 && made.status < 300) created.push(projectId);
+        else if (made.status === 409 && errorCode(made.text) === "project_exists") {
+          there = await listedSoon(opts.api, projectId, pause);
+          if (there === undefined) {
+            refused.push({
+              projectId,
+              detail: `it refused to create ${projectId}: ${made.status} ${made.text.slice(0, 200)}`,
+            });
+            continue;
+          }
+        } else {
           refused.push({
             projectId,
             detail: `it refused to create ${projectId}: ${made.status} ${made.text.slice(0, 200)}`,
           });
           continue;
         }
-        created.push(projectId);
+      }
+      // The name follows ours, as the models do: a rename here is a rename there. Refused, it
+      // is said, and the models still go. A Project created just now already has ours.
+      if (
+        there !== undefined &&
+        local.name !== undefined &&
+        local.name !== "" &&
+        local.name !== there.name
+      ) {
+        const renamed = await opts.api.request(
+          "PATCH",
+          `/api/projects/${encodeURIComponent(projectId)}`,
+          { name: local.name },
+        );
+        if (renamed.status < 200 || renamed.status >= 300) {
+          refused.push({
+            projectId,
+            detail: `it refused the name of ${projectId}: ${renamed.status} ${renamed.text.slice(0, 200)}`,
+          });
+        }
       }
       const current = await opts.api.request("GET", path);
       if (current.status !== 200) {
@@ -402,7 +453,7 @@ export async function syncModelsToMachine(opts: {
                 (entry) => entry.provider === named.provider && entry.model_id === named.modelId,
               );
         if (named === null || at === -1) break;
-        skipped.push({ projectId, ...named });
+        skipped.push({ projectId, ...named, ...(builtInHere(named) ? { builtInHere: true } : {}) });
         entries = entries.filter((_, index) => index !== at);
         wrote = await opts.api.request(
           "PUT",

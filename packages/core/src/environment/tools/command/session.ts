@@ -442,11 +442,18 @@ export function isStopSignal(signal: NodeJS.Signals | null | undefined): boolean
   return signal != null && STOP_SIGNALS.has(signal);
 }
 
-/** Converts exit info into a tool result (the terminal marker is appended via `note`, outside the truncation, so it isn't lost with long output). */
+/**
+ * Converts exit info into a tool result. A command that ran is a completed tool call whatever its
+ * exit status: the status is the command's result, not the tool's failure — `grep` exits 1 when
+ * nothing matches, `test -f` when the file is absent, and a process killed by a signal still ran.
+ * The status reaches the model and the reader as a note on the output's last line (appended via
+ * `note`, outside the truncation, so it isn't lost with long output). `fatal` belongs to the
+ * Environment's own failures — a timeout, a throw, a spawn error — and never comes from here.
+ */
 export function resultForExit(exit: ProcessExit | null): ToolResult {
-  if (!exit) return { stopReason: "completed" };
-  if (exit.signal) return { stopReason: "fatal", note: `[terminated by signal ${exit.signal}]` };
+  if (!exit) return { status: "completed" };
+  if (exit.signal) return { status: "completed", note: `[terminated by signal ${exit.signal}]` };
   if (exit.code !== 0)
-    return { stopReason: "fatal", note: `[exit code: ${exit.code ?? "unknown"}]` };
-  return { stopReason: "completed" };
+    return { status: "completed", note: `[exit code: ${exit.code ?? "unknown"}]` };
+  return { status: "completed" };
 }

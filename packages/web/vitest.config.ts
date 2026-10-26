@@ -2,7 +2,8 @@
  * Vitest config: node environment, no DOM. Tests drive the app's logic, its stores and the
  * components that render to static markup; e2e/ (Playwright, `test:e2e`) is excluded.
  * Kept separate from vite.config.ts: vitest's bundled vite 5 types conflict with this package's vite 7
- * plugin types, and tests don't need the plugin anyway.
+ * plugin types, and tests don't need the plugin anyway. CI runs the suite in two halves, one job
+ * each (`--shard=1/2`, `--shard=2/2`: scripts/ci-plan.mjs).
  */
 import { defineConfig } from "vitest/config";
 

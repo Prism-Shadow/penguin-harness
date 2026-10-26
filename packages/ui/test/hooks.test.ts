@@ -38,7 +38,7 @@
  *   (`thinking` / `tool` / `event`), its state (`running` / `done` / `error`) and its slots
  *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`,
  *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
- *   (`caret`), `.ui-widget` its kind (the four widgets) and its slots (`head`, `body`, `foot`),
+ *   (`caret`), `.ui-widget` its kind (the six widgets) and its slots (`head`, `body`, `foot`),
  *   a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
  *   wherever a `data-part` is written, and a glyph's sets are the three (`line`, `octicons`,
  *   `pixel`), wherever a `data-set` is written; and a fold's phase, which the foundation's layout
@@ -82,7 +82,7 @@ const APPENDIX_A = [
  * Glass is for the layers that float over the page (the composer card and its slash list, dialogs,
  * menus, popovers, tooltips, the floating launcher) and for a plugin or skill tile; the eyebrow and display rungs for the
  * sidebar's list label and the page titles; live marks for the spinner, a pulsing state dot, the
- * machines page's working marks and the caret of a reply still streaming in; frames for the
+ * step under way in a machine job's stepper and the caret of a reply still streaming in; frames for the
  * transcript's cards, the code block, the page's cards and a table that is its own box; the shell
  * for the app window; a decorative icon for the rows and headers whose label already says what the
  * icon says (a nav row's glyph in the sidebar or a rail, a group header's, a menu row's glyph, a
@@ -99,6 +99,8 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "ComposerCard",
     // A separate wallpaper backdrop keeps filtering off the navigation column.
     "NavigationBackdrop",
+    // The public-site header floats above scrolling content; site.css fixes its appearance.
+    "SiteHeader",
     "SlashMenu",
     "Modal",
     "Dropdown",
@@ -116,11 +118,12 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "SkillTile",
   ],
   // `Text` carries it for its eyebrow role (W7), the one door a group label takes in new code —
-  // the sidebar's list label among them (W7).
-  "ui-eyebrow": ["GroupHeader", "PagedDialog", "Text"],
+  // the sidebar's list label among them (W7). The public sites' group labels (an article's
+  // contents, the docs sidebar's sections) carry it too; site-content.css fixes their look.
+  "ui-eyebrow": ["GroupHeader", "PagedDialog", "Text", "SiteToc", "SiteSidebarNav"],
   // The page titles are `PageHeader`'s; the draft view's hero writes its own.
   "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
-  "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar", "StreamingCaret"],
+  "ui-live": ["Spinner", "Dot", "MachineStepper", "ProgressBar", "StreamingCaret"],
   // The transcript's cards (the tool call, the activity card — the work group and the harness's
   // events — the changes card at a Task's foot, and the one-line note) and the code block, and the
   // page-level boxes (W4): the card and a table that is its own box.
@@ -162,8 +165,21 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-notice": ["Toaster", "NoticeStrip"],
   // The Trace timeline draws its lanes and spans as HTML (`grid` on a lane track, `bar` on a
   // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
-  // SVG ones. A weather widget's next hours are a line chart of their own (2026-10-04).
-  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart", "WeatherHourly"],
+  // SVG ones. The basic charts drawn from data (2026-10-19): the line chart's bare frame, the pie
+  // and the scatter plot draw their own svg, and the horizontal bar chart is HTML rows of tracks
+  // and bars, like the timeline's lanes. A weather widget's next hours, once a line chart of
+  // their own (2026-10-04), are the line chart's bare frame.
+  "ui-chart": [
+    "ChartFrame",
+    "TokenDonut",
+    "Sparkline",
+    "Ring",
+    "TimelineChart",
+    "LineChart",
+    "HBarChart",
+    "PieChart",
+    "ScatterChart",
+  ],
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
   // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
@@ -173,7 +189,7 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // An icon in every theme's style: the two icon renderers, a registry glyph's and a mark's.
   "ui-glyph": ["GlyphIcon", "GlyphMark"],
   // A reply's widgets (2026-10-04): the one surface the weather, clock, countdown and metrics
-  // blocks render on.
+  // blocks render on, and the chart and resources blocks (2026-10-19).
   "ui-widget": ["WidgetSurface"],
 };
 
@@ -192,7 +208,7 @@ const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]
 const NOTICE_SLOTS = new Set(["icon", "title", "body", "actions"]);
 const STREAM_STATES = new Set(["streaming", "done"]);
 const STREAM_SLOTS = new Set(["caret"]);
-const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics"]);
+const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics", "chart", "resources"]);
 const WIDGET_SLOTS = new Set(["head", "body", "foot"]);
 /** Glass apart from a floating layer: a plugin tile or the navigation wallpaper backdrop. */
 const GLASS_KINDS = new Set(["tile", "navigation"]);
@@ -351,7 +367,7 @@ describe("style hooks", () => {
           const widget = element.attributes.get("data-widget");
           if (typeof widget === "string" && !WIDGET_KINDS.has(widget)) {
             problems.push(
-              `${at} .ui-widget data-widget="${widget}" is not weather|clock|countdown|metrics`,
+              `${at} .ui-widget data-widget="${widget}" is not weather|clock|countdown|metrics|chart|resources`,
             );
           }
           for (const { slot } of childSlots(element)) {

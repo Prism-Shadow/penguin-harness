@@ -19,6 +19,7 @@ const machine = (over: Partial<MachineInfo> & { alias: string }): MachineInfo =>
   local: false,
   root: "$HOME/.penguin/data",
   connection: null,
+  socket: null,
   api: null,
   status: null,
   ...over,

@@ -12,8 +12,12 @@
  * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
  *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
  *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
- *   Update. Installing a plugin with a stdio MCP server on an Agent that lacks it asks first,
- *   showing the command it runs on this server, and an update's confirmation shows it too (the
+ *   Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
+ *   after the Agent's name, every action on such a row going to that machine. A machine out of
+ *   reach keeps its rows, greyed and inert with the reason, as it last answered; an Agent whose
+ *   installs have not been answered yet keeps its row too, its Install held until they are.
+ *   Installing a plugin with a stdio MCP server on an Agent that lacks it asks first, showing the
+ *   command it runs on the Agent's server, and an update's confirmation shows it too (the
  *   reinstall writes the servers again). Beside an Agent whose copy of the plugin's MCP
  *   servers waits for vault values or a sign-in, marks say so, and the Project owner gets Set up,
  *   which writes those values into the Agent's vault.
@@ -23,6 +27,10 @@
  * The dialog's footer repeats the same actions with their words, after Export — the package as
  * a zip another server imports, for any member whenever its package is on this server — and,
  * for an admin, Delete on a package an admin installed on the server.
+ *
+ * Until this server has said what its own Agents hold (or, for a module, what its tables list),
+ * the status and "used by" on the metadata line are fixed-width placeholders, so the first answer
+ * replaces a bar rather than a word.
  */
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
@@ -36,6 +44,7 @@ import {
   ICONS,
   ICON_SIZE,
   Modal,
+  Skeleton,
   StatusIcon,
   UpdateDot,
   toastError,
@@ -76,6 +85,32 @@ import {
 const INSTALL_ICON = ICONS.download;
 
 /**
+ * An Agent a library plugin can be installed on: one of this server's, or a machine's own.
+ * `key` is what the page's install map and a usage's lists name it by (lib/agent-location.ts
+ * `agentKey`): the id for this server's, so two machines' `default_agent`s stay two rows.
+ */
+export interface InstallTarget {
+  key: string;
+  agent: AgentSummary;
+  /** The machine the Agent lives on, where installing it runs; null for this server. */
+  machine: InstallMachine | null;
+}
+
+/** The machine an install target lives on, as the dialog reads it. */
+export interface InstallMachine {
+  machineId: string;
+  /** Its ssh alias, written after the Agent's name. */
+  label: string;
+  /**
+   * Whether its Agents can be acted on right now: connected, and its list answered in this page
+   * load (lib/machine-agent-lists.ts). Absent reads as live.
+   */
+  live?: boolean;
+  /** Why it is not live, in words; null while a connected machine's first answer is awaited. */
+  reason?: string | null;
+}
+
+/**
  * A library plugin's quick start: what its package.json's `penguin.quick_start` declares, else its
  * first skill invoked by name (the prompt read at click time, in the UI language); null for a
  * plugin with neither.
@@ -112,9 +147,18 @@ export interface PluginCardProps {
    * already does. The detail dialog names it either way.
    */
   showCategory: boolean;
-  /** Every Agent of the Project, for the manage-installs dialog. */
-  agents: readonly AgentSummary[];
+  /** Every Agent a library plugin can go on, for the manage-installs dialog, in the Agents page's order. */
+  targets: readonly InstallTarget[];
   installed: InstalledMap;
+  /** Targets whose installs are not known yet (not answered, or failed): their rows wait. */
+  unknown?: ReadonlySet<string>;
+  /** Targets whose installs could not be read, with the failure in words. */
+  failed?: ReadonlyMap<string, string>;
+  /**
+   * This server has not said yet what its own Agents (or, for a module, its tables) hold: the
+   * status and "used by" are placeholders rather than a guess that the answer would overturn.
+   */
+  pending?: boolean;
   /** Whether there is a current Agent for quick start to open a draft on. */
   canQuickStart: boolean;
   /** Only an admin changes what the server runs. */
@@ -130,17 +174,18 @@ export interface PluginCardProps {
   onQuickStart: (plugin: PluginItem) => void;
   /** Deletes a package an admin installed on the server (the card has asked first). */
   onDeletePlugin: ((plugin: PluginItem) => Promise<void>) | null;
-  onToggleInstall: (agentId: string, plugin: PluginItem, on: boolean) => Promise<boolean>;
-  onUpdateOutdated: (name: string, agentIds: string[]) => Promise<void>;
+  /** `key` names an install target (see {@link InstallTarget}). */
+  onToggleInstall: (key: string, plugin: PluginItem, on: boolean) => Promise<boolean>;
+  onUpdateOutdated: (name: string, keys: string[]) => Promise<void>;
   /** Asks to install (true) or remove (false) the server module; the page confirms first. */
   onModuleApply: (install: boolean) => void;
   /** An Agent's vault changed under the plugin's MCP servers (Set up saved): its servers are read again. */
   onRepair?: (() => void) | null;
-  onMcpChanged: (agentId: string) => void;
+  onMcpChanged: (key: string) => void;
 }
 
 export function PluginCard(props: PluginCardProps) {
-  const { row, status, usage, categoryTitle, agents, installed } = props;
+  const { row, status, usage, categoryTitle, targets, installed } = props;
   const { locale } = useLocale();
   const sharedId = useId();
   const plugin = row.library;
@@ -160,9 +205,19 @@ export function PluginCard(props: PluginCardProps) {
   const [pendingStdio, setPendingStdio] = useState<string | null>(null);
   // Agent whose Set up form is open (null = none).
   const [setUpAgent, setSetUpAgent] = useState<string | null>(null);
-  const nameOf = (agentId: string) => {
-    const agent = agents.find((a) => a.agentId === agentId);
-    return agent ? agentDisplayName(agent) : agentId;
+  const targetOf = (key: string) => targets.find((t) => t.key === key);
+  /** An install target's name, its machine after it as the dialog lists it. */
+  const nameOf = (key: string) => {
+    const target = targetOf(key);
+    if (target === undefined) return key;
+    const name = agentDisplayName(target.agent);
+    return target.machine === null ? name : `${name} ${S.chat.machineTag(target.machine.label)}`;
+  };
+  /** Where an install on these targets runs commands: the one machine they share, or this server. */
+  const machineOf = (keys: readonly string[]): string | undefined => {
+    const labels = new Set(keys.map((key) => targetOf(key)?.machine?.label ?? null));
+    const [only] = labels;
+    return labels.size === 1 && only !== null && only !== undefined ? only : undefined;
   };
 
   const hint = statusHint(row, status, usage);
@@ -179,8 +234,6 @@ export function PluginCard(props: PluginCardProps) {
     setUpdating(false);
     setPendingUpdate(null);
   };
-  const uninstallAgent =
-    pendingUninstall !== null ? agents.find((a) => a.agentId === pendingUninstall) : undefined;
 
   const archiveUrl = pluginArchiveUrl(row);
   const exportPlugin = async (url: string) => {
@@ -382,6 +435,7 @@ export function PluginCard(props: PluginCardProps) {
     <Card
       padding="md"
       framed={props.framed}
+      data-plugin={row.name}
       interactive
       onClick={cardBodyClick(() => setDetailOpen(true))}
       className="@container flex items-center gap-3"
@@ -429,12 +483,19 @@ export function PluginCard(props: PluginCardProps) {
         <div className="mt-2.5">
           <MetaLine>
             {version !== undefined && <span className="shrink-0 font-mono">v{version}</span>}
-            <StatusMark status={status} hint={hint} />
-            {usage !== null && (
-              <span className="min-w-0 truncate">
-                {S.plugins.usedByAgents(usage.usedBy.length)}
-              </span>
+            {props.pending === true ? (
+              <Skeleton className="h-3 w-16 shrink-0" />
+            ) : (
+              <StatusMark status={status} hint={hint} />
             )}
+            {usage !== null &&
+              (props.pending === true ? (
+                <Skeleton className="h-3 w-24 shrink-0" />
+              ) : (
+                <span className="min-w-0 truncate" data-testid="plugin-used-by">
+                  {S.plugins.usedByAgents(usage.usedBy.length)}
+                </span>
+              ))}
           </MetaLine>
         </div>
         {tags.length > 0 && (
@@ -470,29 +531,31 @@ export function PluginCard(props: PluginCardProps) {
           onClose={() => setInstallOpen(false)}
         >
           <div className="space-y-1">
-            {agents.length === 0 && (
+            {targets.length === 0 && (
               <p className="py-1.5 text-xs text-gray-400">{S.common.loading}</p>
             )}
-            {agents.map((a) => (
+            {targets.map((t) => (
               <InstallRow
-                key={a.agentId}
-                agentId={a.agentId}
-                name={agentDisplayName(a)}
-                installed={usage?.usedBy.includes(a.agentId) ?? false}
-                outdated={behind.includes(a.agentId)}
-                mcp={pluginMcpState(plugin, installed.get(a.agentId))}
+                key={t.key}
+                agentId={t.agent.agentId}
+                name={agentDisplayName(t.agent)}
+                machine={t.machine?.label ?? null}
+                installed={usage?.usedBy.includes(t.key) ?? false}
+                outdated={behind.includes(t.key)}
+                mcp={pluginMcpState(plugin, installed.get(t.key))}
+                held={heldRow(t, props.unknown, props.failed)}
                 isOwner={props.isOwner}
                 onToggle={(on) => {
                   // Install runs directly, unless it brings a stdio server: that runs a command on
-                  // this server, so it confirms first. Uninstall deletes the installed files, so it
-                  // confirms too.
-                  if (!on) setPendingUninstall(a.agentId);
-                  else if (installNeedsConfirm(plugin, installed.get(a.agentId))) {
-                    setPendingStdio(a.agentId);
-                  } else void props.onToggleInstall(a.agentId, plugin, true);
+                  // the Agent's server, so it confirms first. Uninstall deletes the installed
+                  // files, so it confirms too.
+                  if (!on) setPendingUninstall(t.key);
+                  else if (installNeedsConfirm(plugin, installed.get(t.key))) {
+                    setPendingStdio(t.key);
+                  } else void props.onToggleInstall(t.key, plugin, true);
                 }}
-                onUpdate={() => setPendingUpdate([a.agentId])}
-                onSetUp={() => setSetUpAgent(a.agentId)}
+                onUpdate={() => setPendingUpdate([t.key])}
+                onSetUp={() => setSetUpAgent(t.key)}
               />
             ))}
           </div>
@@ -517,14 +580,11 @@ export function PluginCard(props: PluginCardProps) {
             </p>
             {/* Per Agent, the parts the reinstall rewrites, old → new, so it is clear exactly what gets overwritten. */}
             <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-              {pendingUpdate.map((agentId) => {
-                const target = agents.find((a) => a.agentId === agentId);
+              {pendingUpdate.map((key) => {
                 return (
-                  <li key={agentId} className="px-3 py-1.5 text-xs">
-                    <span className="block truncate">
-                      {target ? agentDisplayName(target) : agentId}
-                    </span>
-                    {changedParts(plugin, installed.get(agentId)).map((part) => (
+                  <li key={key} className="px-3 py-1.5 text-xs">
+                    <span className="block truncate">{nameOf(key)}</span>
+                    {changedParts(plugin, installed.get(key)).map((part) => (
                       <span
                         key={`${part.kind}:${part.name}`}
                         className="mt-0.5 flex items-center justify-between gap-3 text-gray-500 dark:text-gray-400"
@@ -554,7 +614,9 @@ export function PluginCard(props: PluginCardProps) {
             </ul>
             {/* The reinstall writes the plugin's stdio servers again — perhaps one the Agent did
                 not carry, or a changed command: what each runs here is said before it does. */}
-            {stdioServers(plugin).length > 0 && <StdioInstallBody plugin={plugin} />}
+            {stdioServers(plugin).length > 0 && (
+              <StdioInstallBody plugin={plugin} machine={machineOf(pendingUpdate)} />
+            )}
           </div>
         </ConfirmModal>
       )}
@@ -588,15 +650,15 @@ export function PluginCard(props: PluginCardProps) {
           cancelLabel={S.common.cancel}
           onClose={() => setPendingUninstall(null)}
           onConfirm={() => {
-            const agentId = pendingUninstall;
+            const key = pendingUninstall;
             setPendingUninstall(null);
-            void props.onToggleInstall(agentId, plugin, false);
+            void props.onToggleInstall(key, plugin, false);
           }}
         >
           <p className="text-sm text-gray-600 dark:text-gray-300">
             {S.plugins.uninstallConfirmBody(
               title,
-              uninstallAgent ? agentDisplayName(uninstallAgent) : pendingUninstall,
+              nameOf(pendingUninstall),
               plugin.mcpServers.length > 0,
             )}
             {(plugin.workbenches?.length ?? 0) > 0 && ` ${S.plugins.uninstallWorkbenchRecords}`}
@@ -613,21 +675,23 @@ export function PluginCard(props: PluginCardProps) {
           cancelLabel={S.common.cancel}
           onClose={() => setPendingStdio(null)}
           onConfirm={() => {
-            const agentId = pendingStdio;
+            const key = pendingStdio;
             setPendingStdio(null);
-            void props.onToggleInstall(agentId, plugin, true);
+            void props.onToggleInstall(key, plugin, true);
           }}
         >
           <StdioInstallBody
             plugin={plugin}
             lead={S.plugins.installStdioTitle(title, nameOf(pendingStdio))}
+            machine={machineOf([pendingStdio])}
           />
         </ConfirmModal>
       )}
       {plugin !== undefined && setUpAgent !== null && props.projectId !== null && (
         <McpSetUpModal
           projectId={props.projectId}
-          agentId={setUpAgent}
+          agentId={targetOf(setUpAgent)?.agent.agentId ?? setUpAgent}
+          machineId={targetOf(setUpAgent)?.machine?.machineId ?? null}
           agentName={nameOf(setUpAgent)}
           title={title}
           plugin={plugin}
@@ -639,20 +703,60 @@ export function PluginCard(props: PluginCardProps) {
   );
 }
 
+/** Why a target's row cannot act right now, or null when it can (see {@link InstallRow}'s `held`). */
+function heldRow(
+  target: InstallTarget,
+  unknown: ReadonlySet<string> | undefined,
+  failed: ReadonlyMap<string, string> | undefined,
+): RowHold | null {
+  const machine = target.machine;
+  if (machine !== null && machine.live === false) {
+    return {
+      reason: machine.reason ?? S.plugins.waitingFor(machine.label),
+      off: true,
+      busy: false,
+    };
+  }
+  if (unknown?.has(target.key) !== true) return null;
+  const failure = failed?.get(target.key);
+  if (failure !== undefined) return { reason: failure, off: false, busy: false };
+  return {
+    reason: machine === null ? S.common.loading : S.plugins.waitingFor(machine.label),
+    off: false,
+    busy: true,
+  };
+}
+
+/** A row held from acting: why, whether its machine is out of reach, and whether it is being asked. */
+export interface RowHold {
+  reason: string;
+  /** The machine cannot be acted on: the row is greyed, as the Agents page greys its cards. */
+  off: boolean;
+  /** The Agent's installs are being asked for: the Install button says it is busy. */
+  busy: boolean;
+}
+
 /**
  * One Agent row in the "manage installs" dialog: an Agent without the plugin shows "Install";
  * one with it shows "Installed", switching to "Uninstall" on hover (the same button carries the
  * uninstall); a copy the server lists as behind additionally shows "Update" (reinstall =
  * update). Install and uninstall go through the page's optimistic updates, rolling back on
  * failure. Where the Agent carries the plugin's MCP servers, marks beside its name say what
- * they wait for — vault values, a sign-in — and a Project owner gets Set up for the values.
+ * they wait for — vault values, a sign-in — and a Project owner gets Set up for the values. A
+ * machine's Agent names its machine after its name, the way a machine's Workspace group does.
+ *
+ * A held row keeps its place and its last state, every button disabled with the reason as its
+ * hint: a machine out of reach greys the row; an Agent whose installs are still unknown shows
+ * Install, held, until they are answered — never "not installed" on the strength of no answer.
  */
 export function InstallRow({
   agentId,
   name,
+  machine = null,
   installed,
   outdated,
   mcp,
+  held = null,
   isOwner,
   onToggle,
   onUpdate,
@@ -660,25 +764,45 @@ export function InstallRow({
 }: {
   agentId: string;
   name: string;
+  /** The ssh alias of the machine the Agent lives on; null for this server. */
+  machine?: string | null;
   installed: boolean;
   outdated: boolean;
   /** What the plugin's MCP servers on this Agent wait for; null when it carries none. */
   mcp: { missingKeys: string[]; signIn: boolean } | null;
+  /** Why the row cannot act right now; null when it can. */
+  held?: RowHold | null;
   isOwner: boolean;
   onToggle: (on: boolean) => void;
   onUpdate: () => void;
   onSetUp: () => void;
 }) {
+  /** Who the row's buttons act on, for their names: two machines' Agents can share an id. */
+  const who = machine === null ? agentId : `${agentId} ${S.chat.machineTag(machine)}`;
+  /** A held row's buttons: disabled, the reason as their hint. */
+  const hold =
+    held === null
+      ? {}
+      : { disabled: true, title: held.reason, "data-tooltip-extra": true as const };
   return (
-    <div className="flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60">
+    <div
+      className={`flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
+    >
       <AgentAvatar id={agentId} name={name} size={22} className="shrink-0 rounded" />
-      <span
-        className="min-w-0 flex-1 truncate text-sm"
-        data-tooltip={agentId}
-        data-tooltip-extra
-        data-tooltip-content="text"
-      >
-        {name}
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span
+          className="min-w-0 truncate text-sm"
+          data-tooltip={agentId}
+          data-tooltip-extra
+          data-tooltip-content="text"
+        >
+          {name}
+        </span>
+        {machine !== null && (
+          <span className="shrink-0 font-mono text-xs text-gray-400 dark:text-gray-500">
+            {S.chat.machineTag(machine)}
+          </span>
+        )}
       </span>
       {mcp !== null && (
         <McpServerMarks
@@ -692,8 +816,9 @@ export function InstallRow({
           size="sm"
           variant="ghost"
           className="shrink-0"
-          aria-label={`${S.plugins.setUp} ${agentId}`}
+          aria-label={`${S.plugins.setUp} ${who}`}
           onClick={onSetUp}
+          {...hold}
         >
           {S.plugins.setUp}
         </Button>
@@ -703,32 +828,39 @@ export function InstallRow({
           size="sm"
           variant="secondary"
           className="shrink-0"
-          aria-label={`${S.skills.updateAction} ${agentId}`}
+          aria-label={`${S.skills.updateAction} ${who}`}
           onClick={onUpdate}
+          {...hold}
         >
           {S.skills.updateAction}
         </Button>
       )}
       {installed ? (
-        // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button carries the uninstall action).
+        // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button
+        // carries the uninstall action) — not on a held row, whose button does nothing.
         <Button
           size="sm"
           variant="ghost"
-          className="group shrink-0"
-          aria-label={`${S.skills.uninstall} ${agentId}`}
+          className={`shrink-0 ${held === null ? "group" : ""}`}
+          aria-label={`${S.skills.uninstall} ${who}`}
           onClick={() => onToggle(false)}
+          {...hold}
         >
           <span className="group-hover:hidden">{S.skills.installed}</span>
-          <span className="hidden text-red-600 group-hover:inline dark:text-red-400">
-            {S.skills.uninstall}
-          </span>
+          {held === null && (
+            <span className="hidden text-red-600 group-hover:inline dark:text-red-400">
+              {S.skills.uninstall}
+            </span>
+          )}
         </Button>
       ) : (
         <Button
           size="sm"
           className="shrink-0"
-          aria-label={`${S.skills.install} ${agentId}`}
+          aria-label={`${S.skills.install} ${who}`}
           onClick={() => onToggle(true)}
+          {...hold}
+          {...(held?.busy === true ? { "aria-busy": true } : {})}
         >
           {S.skills.install}
         </Button>

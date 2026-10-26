@@ -31,7 +31,7 @@
  * cancels the in-flight request. Result content maps as: text blocks → output text; image
  * blocks → `images` data URLs; audio/binary-resource blocks → placeholder lines;
  * `structuredContent` is serialized only when no text block was present; `isError` →
- * `stopReason: "fatal"`. Permission for the frontend's read-only mode comes from the
+ * `status: "fatal"`. Permission for the frontend's read-only mode comes from the
  * spec's `readOnlyHint` annotation (`true` → `"r"`, anything else → `"rw"` — hints are
  * untrusted, so the default is the restrictive direction), unless the entry sets an
  * explicit `permission`, which then applies to every tool of that server.
@@ -44,8 +44,8 @@ import {
 } from "@modelcontextprotocol/client";
 import type { CallToolResult, FetchLike, Tool, Transport } from "@modelcontextprotocol/client";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/client/stdio";
-import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { McpServerConnectResult, OmniMessage } from "../../omnimessage/index.js";
+import { partialToolCallOutput } from "@prismshadow/amsp/records";
+import type { McpServerConnectResult, AmspRecord } from "@prismshadow/amsp/records";
 import { VERSION, userAgent } from "../../index.js";
 import type {
   ConfinedSpawn,
@@ -652,7 +652,7 @@ export class McpToolProvider {
           ? { maxOutputLength: server.maxOutputLength }
           : {}),
       },
-      execute: async function* (args, ctx): AsyncGenerator<OmniMessage, ToolResult> {
+      execute: async function* (args, ctx): AsyncGenerator<AmspRecord, ToolResult> {
         const result = await client
           .callTool(
             { name: tool.name, arguments: args },
@@ -678,7 +678,7 @@ export class McpToolProvider {
           });
         }
         return {
-          stopReason: failed ? "fatal" : "completed",
+          status: failed ? "fatal" : "completed",
           ...(rendered.images.length > 0 ? { images: rendered.images } : {}),
         };
       },

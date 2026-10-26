@@ -21,8 +21,9 @@ services:
     #   # applies only on the very first boot, while no user exists, and must be at least
     #   # 8 characters. Adding it to an already-claimed data root does nothing.
     #   PENGUIN_SEED_ADMIN_PASSWORD: "choose-something-long"
-    #   # Behind a reverse proxy that terminates TLS and sets or strips x-forwarded-proto
-    #   # itself, so session cookies are marked Secure.
+    #   # Behind a reverse proxy that terminates TLS. The proxy must keep the external Host
+    #   # header and overwrite x-forwarded-proto with https, or every write the Web App
+    #   # makes is refused (403 cross_origin_write). Session cookies are then marked Secure.
     #   PENGUIN_TRUST_PROXY: "1"
     #   # Disables the server's only outbound non-model request, the new-release check.
     #   PENGUIN_UPDATE_CHECK: "off"

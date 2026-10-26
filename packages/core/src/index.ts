@@ -1,9 +1,9 @@
 /**
  * @prismshadow/penguin-core — public entry point for the PenguinHarness core SDK.
  *
- * Exports the OmniMessage protocol, the three interface contracts (Human/LLM/Environment),
- * and the runtime entry points for Agent / Session / context_engine along with their
- * submodules (state / llm / environment / trace).
+ * Re-exports the AMSP records (types, guards, builders and markers, from `@prismshadow/amsp`), and
+ * exports the three interface contracts (Human/LLM/Environment) and the runtime entry points for
+ * Agent / Session / context_engine along with their submodules (state / llm / environment / trace).
  *
  * Typical usage:
  *
@@ -18,8 +18,11 @@
 import type { BuildInfo } from "./version-info.js";
 import { resolveBuildInfo } from "./internal/build-info.js";
 
-// Protocol and interface contracts (foundation)
-export * from "./omnimessage/index.js";
+// Protocol and interface contracts (foundation). The records and markers live in @prismshadow/amsp;
+// rejected-images is the engine's fallback for a request whose images the provider refused.
+export * from "@prismshadow/amsp/records";
+export * from "@prismshadow/amsp/markers";
+export * from "./engine/rejected-images.js";
 export * from "./interfaces/index.js";
 // Build/harness identity: not an interface contract, so it sits outside interfaces/ (see version-info.ts).
 export type * from "./version-info.js";
@@ -65,7 +68,7 @@ export type { AgentAssembly, ModelRequestContext, PromptSection } from "./agent.
 // implementation, so a title is cut the same way whichever path produced it. The
 // prompt/request internals (buildTitlePrompt / generateTitleWithLLM) are deliberately not
 // public; marker stripping (stripConversationMarkers) is exported from the markers module
-// via the omnimessage barrel.
+// through the root's `export *` of `@prismshadow/amsp/markers`.
 export { sanitizeTitle, truncateTitle } from "./internal/session-title.js";
 export type { SessionTitleResult } from "./internal/session-title.js";
 // Session assembly likewise stays internal; only the attachment-line placement rule is
@@ -92,7 +95,7 @@ export type {
 } from "./agent.js";
 
 /** SDK version number. */
-export const VERSION = "0.2.16";
+export const VERSION = "0.2.17";
 /** Release build date (UTC yyyy-mm-dd), stamped by the release workflow next to VERSION; null in a dev/source build. */
 export const BUILD_DATE: string | null = null;
 /** Full commit sha the release was built from, stamped by the release workflow next to VERSION; null in a dev/source build. */

@@ -472,7 +472,7 @@ class PenguinServer {
     });
     // The terminal stream is bound on every listener in buildApp(), this one included, or
     // the terminal only works on whichever address the browser happened to resolve; a
-    // loopback opened after buildApp() (never in practice — binding is quick) gets it here.
+    // loopback opened after buildApp() (never in practice) gets it here.
     if (this.app !== undefined) {
       attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
       attachExtensionWebSocket(loopback as unknown as HttpServer, this.extensionWebSocketDeps());
@@ -506,6 +506,7 @@ class PenguinServer {
     const auth = () => this.auth();
     return {
       hmr: this.deps.hmr,
+      trustProxy: this.deps.config.trustProxy,
       // A getter: the upgrade handler asks per handshake, and gets the current generation's.
       get authService() {
         return auth();

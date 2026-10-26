@@ -5,6 +5,7 @@
  * - The menu opens on a secondary click or the keyboard's request over a selection inside the
  *   stream, and declines a touch or pen press-and-hold, an empty or whitespace selection, a
  *   selection running out of the stream or made of several ranges, and a gesture in a field.
+ *   Every selection it takes is one the copy rule takes too, so its Copy row and ⌘C agree.
  * - A keyboard-opened menu hangs at the end of the selection's last line (or the bounding box
  *   without line boxes), and at a link's first line.
  * - An excerpt is trimmed at both ends with normalized line endings, carried into the message
@@ -31,6 +32,7 @@ import {
   streamMenuContent,
 } from "../src/lib/selection-menu";
 import type { SelectionMenuRequest, StreamMenuRequest } from "../src/lib/selection-menu";
+import { takesSelectionCopy } from "../src/lib/selection-copy";
 
 /** A right-click on a selection of reply text: the case the menu exists for. */
 const REQUEST: SelectionMenuRequest = {
@@ -74,6 +76,22 @@ describe("opensSelectionMenu", () => {
 
   it("declines a gesture on a field, whose own menu (paste, spelling) belongs there", () => {
     expect(opensSelectionMenu({ ...REQUEST, onEditable: true })).toBe(false);
+  });
+
+  it("takes only selections ⌘C copies the same way: what it declines past the copy rule is a pointer or the stream's bounds", () => {
+    expect(takesSelectionCopy(REQUEST)).toBe(true);
+    // A press-and-hold, or a selection reaching past the stream: no menu, though ⌘C still copies.
+    expect(opensSelectionMenu({ ...REQUEST, pointerType: "touch" })).toBe(false);
+    expect(opensSelectionMenu({ ...REQUEST, firstRangeInStream: false })).toBe(false);
+    // Whatever the copy rule declines, the menu declines too.
+    for (const declined of [
+      { ...REQUEST, onEditable: true },
+      { ...REQUEST, rangeCount: 2 },
+      { ...REQUEST, selectedText: "  " },
+    ]) {
+      expect(takesSelectionCopy(declined)).toBe(false);
+      expect(opensSelectionMenu(declined)).toBe(false);
+    }
   });
 });
 

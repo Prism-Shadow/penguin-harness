@@ -15,6 +15,8 @@
  *   are its source's, and stay.
  * - Completed earlier shards are cloned and the selected one cut, with stable positions on a
  *   tail page.
+ * - A Trace with Task records is cut after the selected Task's task_end, before the next Task's
+ *   task_begin: the fork never ends on an unclosed Task.
  * - Concurrent forks get unique Sessions and never overwrite the source.
  * - A user without Project access is not told the endpoint exists.
  */
@@ -29,14 +31,17 @@ import {
   modelVisiblePath,
   requestBegin,
   requestEnd,
+  parseTraceLines,
   scratchpadDir,
   sessionMeta,
   subagentEvent,
+  taskBegin,
+  taskEnd,
   tokenUsage,
   tracesDir,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
+import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import type {
   MessagesResponse,
   ProjectCreateResponse,
@@ -54,7 +59,7 @@ function counts(total: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: total, total };
 }
 
-function at(timestamp: string, message: OmniMessage): OmniMessage {
+function at(timestamp: string, message: AmspRecord): AmspRecord {
   return { ...message, timestamp };
 }
 
@@ -252,6 +257,60 @@ describe("session fork", () => {
       ),
     ).toEqual(image);
     expect((await api.get(`/api/sessions/${session.sessionId}`)).status).toBe(200);
+  });
+
+  it("cuts a Trace with Task records after the selected Task's task_end, before the next Task's task_begin", async () => {
+    await seedSource();
+    const file = path.join(
+      tracesDir(t.root, projectId, "default_agent"),
+      "2026-08-14",
+      `${SID}_001.jsonl`,
+    );
+    const [meta, ...records] = parseTraceLines(await fs.readFile(file, "utf8"));
+    const later = records.findIndex(
+      (m) => (m.payload as { text?: string }).text === "later question",
+    );
+    await fs.writeFile(
+      file,
+      [
+        meta!,
+        taskBegin(),
+        ...records.slice(0, later),
+        taskEnd(),
+        taskBegin(),
+        ...records.slice(later),
+        taskEnd(),
+      ]
+        .map((m) => JSON.stringify(m))
+        .join("\n") + "\n",
+      "utf8",
+    );
+    const history = (await (
+      await api.get(`/api/sessions/${SID}/messages`)
+    ).json()) as MessagesResponse;
+    const selected = history.messages.find(
+      (message) => (message.payload as { text?: string }).text === "first answer",
+    );
+
+    const response = await api.post(`/api/sessions/${SID}/fork`, {
+      position: selected!.tracePosition,
+    });
+    expect(response.status).toBe(201);
+    const { session } = (await response.json()) as SessionForkResponse;
+
+    const forked = parseTraceLines(
+      await fs.readFile(
+        path.join(
+          tracesDir(t.root, projectId, "default_agent"),
+          "2026-08-14",
+          `${session.sessionId}_001.jsonl`,
+        ),
+        "utf8",
+      ),
+    );
+    const kinds = forked.map((m) => (m.payload as { type?: string }).type);
+    expect(kinds.at(-1)).toBe("task_end");
+    expect(kinds.filter((k) => k === "task_begin")).toHaveLength(1);
   });
 
   it("shares one persistent number sequence across different reply positions", async () => {

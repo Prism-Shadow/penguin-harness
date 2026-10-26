@@ -29,7 +29,6 @@ import type {
   SessionPatchRequest,
   SessionProcessInfo,
   SessionStatus,
-  SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import {
@@ -77,11 +76,11 @@ import {
   createStreamModel,
   finalizeHistory,
   pushMessage,
-} from "../../lib/omni/stream-model";
-import type { StreamModel } from "../../lib/omni/stream-model";
-import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
-import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { bucketCostUsd } from "../../lib/omni/task-stats";
+} from "../../lib/amsp/stream-model";
+import type { StreamModel } from "../../lib/amsp/stream-model";
+import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/amsp/memory-changes";
+import type { MemoryLocateTarget } from "../../lib/amsp/memory-changes";
+import { bucketCostUsd } from "../../lib/amsp/task-stats";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
@@ -120,6 +119,7 @@ import {
 } from "./session-project";
 import { RouteProbe } from "./route-probe";
 import { machineForSession } from "../../lib/session-machines";
+import { HistoryLoadFailed } from "./history-load-failed";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
@@ -127,16 +127,23 @@ import type { CostStatDisplay } from "./header-stats";
 import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
+import { goalPluginGate } from "./goal-plugin-gate";
+import { discardUnstartedSession } from "./unstarted-session";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { modelLabel } from "./model-select";
 import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "./model-switch";
 import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-grouping";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
+import { useAgentSkills } from "./use-agent-skills";
+import { useMachineModels } from "../../lib/machine-models";
+import { agentSettingsPath } from "../../lib/agent-location";
+import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { deletedChangeKeys } from "./memory-nav";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
+import { measureComposer } from "../dock/composer-height";
 import { DockLauncher } from "../dock/dock-launcher";
 import { useDockMount } from "../dock/use-dock-mount";
 // importing it registers the built-in panels (their definitions and bodies) with the dock
@@ -144,7 +151,7 @@ import "./builtin-dock-panels";
 import { ChatDockProvider } from "./chat-dock-context";
 import type { ChatDockState } from "./chat-dock-context";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
-import { setDockCwd } from "../dock/dock-terminal";
+import { reownTerminals, setDockConversation } from "../dock/dock-terminal";
 import {
   adoptDockScope,
   closedDockView,
@@ -286,7 +293,11 @@ export function ChatPage() {
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
-  const [models, setModels] = useState<ModelsResponse | null>(null);
+  /** This server's model configuration for the Project (the page's own while it acts here). */
+  const [localModelsRead, setLocalModels] = useState<Scoped<ModelsResponse> | null>(null);
+  // Only the current Project's: the read is reset in an effect, and the draft (remounted per
+  // Project in the same commit) would otherwise resolve its model against the last Project's.
+  const localModels = scopedValue(localModelsRead, projectId);
   // Background processes the conversation started (the details popover list), refreshed by
   // the polling effect below; procBusy marks the rows whose Stop / Remove requests are in
   // flight (every exited row at once while "clear exited" runs).
@@ -334,6 +345,8 @@ export function ChatPage() {
   // stream. The tabs themselves deliberately survive the switch — the panels re-bind to
   // the conversation on screen.
   useSyncExternalStore(subscribeDock, dockVersion);
+  // Keeps the terminal list fresh while a conversation is on screen — which is also how the
+  // page learns whether this server serves terminals at all (the terminal panel's `offered`).
   useSyncExternalStore(subscribeTerminals, terminalApiSupported);
   /** Workspace tab: locate this file in the tree (a message file card's click, or a reply's link to a file). */
   const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string } | null>(null);
@@ -438,7 +451,7 @@ export function ChatPage() {
   const listed =
     draft || (routeSessionId !== null && isSessionDeleted(routeSessionId))
       ? null
-      : resolveRoutedSession(routeSessionId, sessions, fetchedSession);
+      : resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId);
   /**
    * The routed Session, held across a refetch that momentarily does not list it.
    *
@@ -463,6 +476,7 @@ export function ChatPage() {
     listed,
     routeSessionId ?? null,
     probeKey !== null && probeFailedKey === probeKey,
+    projectId,
   );
   const routed = draft ? null : heldSession.current;
   /**
@@ -502,6 +516,13 @@ export function ChatPage() {
     : selected === null
       ? null
       : machineForSession(selected.sessionId);
+  /**
+   * The models this page offers and prices by: those of the server it acts on. A draft whose
+   * workspace is on a machine creates its Session over there, and a conversation on a machine
+   * runs there — either way the machine's own models are the ones it can take.
+   */
+  const machineModels = useMachineModels(projectId, pageMachineId);
+  const models = pageMachineId === null ? localModels : machineModels;
   const returnWorkbench = (
     location.state as {
       workbench?: { projectId: string; agentId: string; tabId: string; machineId: string | null };
@@ -522,20 +543,18 @@ export function ChatPage() {
       ? returnWorkbench.tabId
       : null,
   );
-  // New shells start in this conversation's Workspace — its files are what a terminal
-  // opened here is for. While drafting, the Workspace is the one picked in the draft and
-  // DraftView publishes it instead (a child effect runs before this one, so this must
-  // yield rather than clobber it with null). Leaving the chat for another page keeps the
-  // last conversation's Workspace: it is a better default than home for the hotkey,
-  // which stays live everywhere. With the machine that Workspace is on: the path only means
-  // anything on its own filesystem, and a shell for this conversation belongs beside the
-  // agent running it.
+  // The docks' terminals belong to this conversation: they are created under its Session id,
+  // start in its Workspace — its files are what a terminal opened here is for — on the machine
+  // it runs on, and only its own are listed. While drafting there is no Session and DraftView
+  // publishes the draft's Workspace instead (a child effect runs before this one, so this must
+  // yield rather than clobber it).
   useEffect(() => {
     if (draft) return;
-    setDockCwd(
-      selected?.workspace ?? null,
-      selected === null ? null : machineForSession(selected.sessionId),
-    );
+    setDockConversation({
+      sessionId: selected?.sessionId ?? null,
+      workspace: selected?.workspace ?? null,
+      machineId: selected === null ? null : machineForSession(selected.sessionId),
+    });
   }, [draft, selected]);
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
@@ -637,10 +656,12 @@ export function ChatPage() {
   const sessionMemoryChanges = memoryChangesRef.current;
   // The Agent's memory listing, fetched once the Memory tab exists (its body is mounted
   // even behind another tab) or this conversation has changes to mark; shared by the
-  // Memory panel and the card's deleted-row marking.
+  // Memory panel and the card's deleted-row marking. Read from the machine the conversation
+  // is on: its Agent is that machine's, and so is its memory.
   const memoryListing = useMemoryListing(
     projectId,
     selected?.agentId ?? null,
+    selected === null ? null : machineForSession(selected.sessionId),
     panelDock("memory") !== null || sessionMemoryChanges.length > 0,
     sessionMemoryChanges,
   );
@@ -667,6 +688,22 @@ export function ChatPage() {
   // causing the new chat to end up created on the old Agent.
   const selectedSessionId = selected?.sessionId ?? null;
   const selectedAgentId = selected?.agentId ?? null;
+  /**
+   * The machine the selected Session's Agent lives on (null: this server). A Session on a
+   * machine runs that machine's Agent: its settings — the thinking level and compaction threshold
+   * the composer shows and edits, the settings page it links to — are that Agent's, read and
+   * written over there. The same id on this server is another Agent.
+   */
+  const selectedAgentMachine = selected === null ? null : machineForSession(selected.sessionId);
+  // Goal mode's plugin check, against the Session's Agent on the server that holds it
+  // (goal-plugin-gate.ts).
+  const goalPlugin = useMemo(
+    () =>
+      projectId && selectedAgentId
+        ? goalPluginGate(projectId, selectedAgentId, selectedAgentMachine)
+        : null,
+    [projectId, selectedAgentId, selectedAgentMachine],
+  );
   // The thinking level pinned on THIS Session, read straight off the Session row
   // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
@@ -713,26 +750,9 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, taskCount, liveSpawn]);
 
-  // Skills installed on the session's Agent (candidates for the input area's skill dropdown):
-  // fetched keyed on the session's Agent; on switch, cleared first (which also clears the input
-  // area's selection) before refetching; a failed fetch is silently treated as no skills.
-  // Clearing preserves reference identity (an already-empty array isn't replaced), matching
-  // draft-view's convention.
-  const [agentSkills, setAgentSkills] = useState<SkillMetadataItem[]>([]);
-  useEffect(() => {
-    setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
-    if (!projectId || !selectedAgentId) return;
-    let cancelled = false;
-    api
-      .getAgentSkills(projectId, selectedAgentId)
-      .then((res) => {
-        if (!cancelled) setAgentSkills(res.skills);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, selectedAgentId]);
+  // Skills installed on the session's Agent, on its machine (candidates for the input area's
+  // skill dropdown); a switch clears them, which also clears the input area's selection.
+  const { skills: agentSkills } = useAgentSkills(projectId, selectedAgentId, selectedAgentMachine);
 
   // Two readouts come off the session Agent's config, via the same agent-config endpoint the
   // draft picker uses. The configured thinking level ("" = unset/loading) is what the in-session
@@ -749,7 +769,7 @@ export function ChatPage() {
   useEffect(() => {
     setAgentThinkingLevel("");
     setCompactionLimit(undefined);
-  }, [projectId, selectedAgentId]);
+  }, [projectId, selectedAgentId, selectedAgentMachine]);
   // Re-read on focus as well as on an Agent switch: the threshold is edited on another page, so
   // the value this composer holds can go stale under it. Routing to the settings page and back
   // remounts this page and refetches anyway; the focus listener covers the other tab editing the
@@ -765,7 +785,7 @@ export function ChatPage() {
     if (!projectId || !selectedAgentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, selectedAgentId)
+      .getAgentConfig(projectId, selectedAgentId, selectedAgentMachine)
       .then((res) => {
         if (cancelled) return;
         setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
@@ -775,7 +795,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedAgentId, agentConfigTick]);
+  }, [projectId, selectedAgentId, selectedAgentMachine, agentConfigTick]);
   /**
    * Commits the threshold the context panel's cutter proposed, then re-reads the Agent config
    * this page holds so the ring, the cutter and the small-window notice all move together.
@@ -789,9 +809,12 @@ export function ChatPage() {
     async (maxContextLength: number): Promise<void> => {
       if (!projectId || !selectedAgentId) return;
       try {
-        await api.putAgentConfig(projectId, selectedAgentId, {
-          config: { compaction: { maxContextLength } },
-        });
+        await api.putAgentConfig(
+          projectId,
+          selectedAgentId,
+          { config: { compaction: { maxContextLength } } },
+          selectedAgentMachine,
+        );
       } catch (e) {
         toastError(apiErrorText(e));
         throw e;
@@ -800,7 +823,7 @@ export function ChatPage() {
       setAgentConfigTick((n) => n + 1);
       toastSuccess(S.chat.contextThresholdSaved(humanizeTokens(maxContextLength)));
     },
-    [projectId, selectedAgentId],
+    [projectId, selectedAgentId, selectedAgentMachine],
   );
 
   // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
@@ -1020,8 +1043,11 @@ export function ChatPage() {
       // one-off — so the Project's schedule directories are re-read on this same edge, the way
       // the Files and Trace panels re-read theirs. One store refresh serves both surfaces: the
       // store notifies its subscribers, so the dock's schedules panel and the sidebar row's
-      // alarm clock come from the same list and cannot disagree.
-      if (projectId !== null) noteScheduleEvent(projectId);
+      // alarm clock come from the same list and cannot disagree. The list re-read is the one on
+      // the server this conversation runs on: a turn on a machine wrote its task files there.
+      if (projectId !== null) {
+        noteScheduleEvent(projectId, machineForSession(selectedSessionId));
+      }
     }
   }, [stream.taskState, selectedSessionId, projectId, reloadSessions, reloadAgents]);
 
@@ -1242,7 +1268,7 @@ export function ChatPage() {
     [runProcessAction, exitedIds],
   );
 
-  // Model config (context window + credential guide): fetched once per Project.
+  // This server's model config (context window + credential guide): fetched once per Project.
   //
   // The credential guide **only ever nags once per lifetime** (first entry after registration):
   // gated by the server prefs' credentialGuideSeen — previously it checked "default model has no
@@ -1253,12 +1279,12 @@ export function ChatPage() {
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    setModels(null);
+    setLocalModels(null);
     void (async () => {
       try {
-        const res = await api.getModels(projectId);
+        const res = await api.getModels(projectId, null);
         if (cancelled) return;
-        setModels(res);
+        setLocalModels(scoped(projectId, res));
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
         const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
@@ -1288,11 +1314,11 @@ export function ChatPage() {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);
       if (!detail || detail.defaultModel === undefined) return;
-      setModels(null);
+      setLocalModels(null);
       api
-        .getModels(projectId)
+        .getModels(projectId, null)
         .then((res) => {
-          if (!cancelled) setModels(res);
+          if (!cancelled) setLocalModels(scoped(projectId, res));
         })
         .catch(() => undefined);
     };
@@ -1309,8 +1335,9 @@ export function ChatPage() {
       if (respondedId === currentId) return;
       await reloadSessions();
       // Same conversation under a new id: its docks follow, or they are stranded under
-      // an id nothing routes to again.
+      // an id nothing routes to again — its shells first, so its tabs stay its own.
       await adoptBrowserSession(currentId, respondedId);
+      await reownTerminals(currentId, respondedId);
       adoptDockScope(respondedId);
       navigate(`/chat/${respondedId}`, { replace: true });
     },
@@ -1428,12 +1455,18 @@ export function ChatPage() {
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
         toastError(apiErrorText(e, { modelId: ref.modelId }));
         return false;
       }
     },
-    [projectId, selected, addSession, discardSessionDraft, navigate, company],
+    [projectId, selected, addSession, removeSession, discardSessionDraft, navigate, company],
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
@@ -1457,10 +1490,14 @@ export function ChatPage() {
       };
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, target.agentId, {
-          approvalMode: selected.approvalMode,
-          sandbox: selected.sandbox,
-        });
+        // This server's Agent list is what the /agent picker offers, so the new chat is created
+        // here, whichever machine the conversation handed off from is on.
+        const created = await api.createSession(
+          projectId,
+          target.agentId,
+          { approvalMode: selected.approvalMode, sandbox: selected.sandbox },
+          null,
+        );
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);
@@ -1469,7 +1506,13 @@ export function ChatPage() {
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
         // The new chat uses the project's default model (createSession doesn't specify a model reference), so the error copy's model context follows suit.
         toastError(
           apiErrorText(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {}),
@@ -1477,7 +1520,16 @@ export function ChatPage() {
         return false;
       }
     },
-    [projectId, currentAgent, selected, addSession, discardSessionDraft, navigate, models],
+    [
+      projectId,
+      currentAgent,
+      selected,
+      addSession,
+      removeSession,
+      discardSessionDraft,
+      navigate,
+      models,
+    ],
   );
 
   const onStop = useCallback(async () => {
@@ -2062,12 +2114,13 @@ export function ChatPage() {
     views.find((view) => view.position === "bottom") ?? null,
     closedDockView("bottom"),
   );
-  const terminalSupported = terminalApiSupported();
 
   // The Memory panel's way to its management: add / edit / delete live on the Agent's
-  // settings page, on the memory tab.
+  // settings page, on the memory tab — the page of the Agent on the machine the conversation
+  // is on.
   const openMemorySettings = useCallback(
-    (memoryAgentId: string) => navigate(`/agents/${memoryAgentId}?tab=memory`),
+    (memoryAgentId: string, machineId: string | null) =>
+      navigate(agentSettingsPath(memoryAgentId, machineId, "memory")),
     [navigate],
   );
   /**
@@ -2186,7 +2239,9 @@ export function ChatPage() {
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       {...(compactionLimit !== undefined ? { compactionLimit } : {})}
       onChangeCompactionLimit={onChangeCompactionLimit}
-      onOpenAgentSettings={() => navigate(`/agents/${selected.agentId}?tab=runtime`)}
+      onOpenAgentSettings={() =>
+        navigate(agentSettingsPath(selected.agentId, selectedAgentMachine, "runtime"))
+      }
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}
@@ -2204,6 +2259,7 @@ export function ChatPage() {
       {...(sessionDraft.skills && sessionDraft.skills.length > 0
         ? { initialSkills: sessionDraft.skills }
         : {})}
+      goalPlugin={goalPlugin}
       onSkillsChange={onDraftSkillsChange}
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}
@@ -2481,7 +2537,7 @@ export function ChatPage() {
                         data-tooltip-extra
                         disabled={procBusy !== null}
                         onClick={() => void onClearExitedProcesses()}
-                        className="shrink-0 cursor-pointer whitespace-nowrap text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
+                        className="shrink-0 whitespace-nowrap text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
                       >
                         {S.chat.processClearExited}
                       </button>
@@ -2626,13 +2682,15 @@ export function ChatPage() {
                     />
                   ) : selected ? (
                     stream.error ? (
-                      // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
-                      <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
-                        <p className="text-sm text-red-600 dark:text-red-400">
-                          {S.chat.historyLoadFailed}：{stream.error}
-                        </p>
-                        <Button onClick={stream.retry}>{S.common.retry}</Button>
-                      </div>
+                      // History failed to load: say why and offer the way on, instead of staying on
+                      // a misleading empty state — for a conversation on a machine out of reach,
+                      // the machine's state rather than the transport's error.
+                      <HistoryLoadFailed
+                        projectId={projectId}
+                        sessionId={selected.sessionId}
+                        error={stream.error}
+                        onRetry={stream.retry}
+                      />
                     ) : stream.loading ? (
                       <div className="space-y-3 p-6">
                         <Skeleton className="h-5 w-1/3" />
@@ -2694,7 +2752,12 @@ export function ChatPage() {
                               while that dock is hidden, and opens its panels in one click. */}
                           <DockLauncher agentsPending={anySubagentPending} />
                         </div>
-                        <WallpaperSurface className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+                        {/* Measured: the bottom dock's docked height stops where this box would
+                            be covered, and gives way as it grows. */}
+                        <WallpaperSurface
+                          ref={measureComposer}
+                          className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800"
+                        >
                           <div className="mx-auto max-w-3xl">
                             {/* Goal banner docked above the composer: an in-flight goal's progress
                                 (restored on load while still active), or the terminal state reached
@@ -2753,7 +2816,6 @@ export function ChatPage() {
                 open={rightMount.open}
                 animateEntrance={rightMount.animateEntrance}
                 panelBadges={{ agents: anySubagentPending }}
-                terminalSupported={terminalSupported}
               />
             )}
           </div>
@@ -2764,7 +2826,6 @@ export function ChatPage() {
               open={bottomMount.open}
               animateEntrance={bottomMount.animateEntrance}
               panelBadges={{ agents: anySubagentPending }}
-              terminalSupported={terminalSupported}
             />
           )}
         </div>

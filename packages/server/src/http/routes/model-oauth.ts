@@ -50,8 +50,9 @@ const CODE_RE = /^[A-Za-z0-9._~-]{1,512}$/;
 
 /**
  * Origin the browser reached this server on, which is the origin the provider must redirect
- * back to. Taken from the request's own URL, so loopback, a LAN address and a custom port
- * all work without configuration.
+ * back to. Taken from the request's own URL, so loopback and a custom port work without
+ * configuration. The provider redirects only to HTTPS or loopback HTTP, so an origin like a
+ * LAN address over plain HTTP gets a manual flow instead (the service's `openedMode`).
  *
  * `x-forwarded-proto` / `x-forwarded-host` are caller-supplied and are honoured only when
  * the deployment says a reverse proxy sets them (PENGUIN_TRUST_PROXY=1) — the same opt-in
@@ -211,7 +212,9 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
 
   // Opens a flow and returns the page to send the user to. The provider is looked up in the
   // built-in catalog inside the service, which is what rejects a group that publishes no
-  // such flow and what keeps the authorize/exchange endpoints out of client control.
+  // such flow and what keeps the authorize/exchange endpoints out of client control. The
+  // answer carries the mode the flow actually opened in, since a redirect this origin cannot
+  // receive opens as manual.
   app.post("/start", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectOwner(c.var.user.userId, projectId);

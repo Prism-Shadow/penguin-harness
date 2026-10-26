@@ -13,6 +13,7 @@ import { buildFixtures, DEFAULT_MODEL } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
+import { raiseNotices } from "./notices";
 import { rsiEvaluatorTranscript, rsiTestTranscript, rsiTranscript } from "./rsi-transcript";
 import { streamScript } from "./stream-script";
 import {
@@ -39,7 +40,7 @@ import {
 } from "./transcripts";
 import type { Transcript } from "./transcripts";
 import { payloadOf } from "./types";
-import type { Lang, OmniMessage, StreamHandlers } from "./types";
+import type { Lang, AmspRecord, StreamHandlers } from "./types";
 
 // ---------------------------------------------------------------------------------------------
 // Channels
@@ -75,9 +76,9 @@ class Channel {
     return `${EPOCH}-${this.seq}`;
   }
 
-  message(msg: OmniMessage, only?: StreamHandlers): void {
+  message(msg: AmspRecord, only?: StreamHandlers): void {
     const id = this.nextId();
-    for (const s of only ? [only] : this.subscribers) s.onOmniMessage(msg, id);
+    for (const s of only ? [only] : this.subscribers) s.onRecord(msg, id);
   }
 
   event(ev: ServerEvent, only?: StreamHandlers): void {
@@ -111,10 +112,11 @@ export class DemoStore {
   private readonly live = new Map<string, Live>();
   private created = 0;
 
-  constructor(lang: Lang, now: number, signedIn: boolean) {
+  constructor(lang: Lang, now: number, signedIn: boolean, notices = false) {
     this.lang = lang;
     this.signedIn = signedIn;
     this.f = buildFixtures(lang, now);
+    if (notices) raiseNotices(this.f);
     const ref = DEFAULT_MODEL;
     const seeded: Record<string, Transcript> = {
       [IDS.sessions.done]: doneTranscript(lang, now, ref),
@@ -157,10 +159,10 @@ export class DemoStore {
   }
 
   /** The live tail of a running Session: the open fragments and the channel cursor they cover. */
-  liveTail(sessionId: string): { cursor: string; fragments: OmniMessage[] } | undefined {
+  liveTail(sessionId: string): { cursor: string; fragments: AmspRecord[] } | undefined {
     const live = this.live.get(sessionId);
     if (!live || !live.transcript.running) return undefined;
-    const fragments: OmniMessage[] = [];
+    const fragments: AmspRecord[] = [];
     const thinking = live.transcript.openThinking;
     if (thinking)
       fragments.push(
@@ -297,8 +299,8 @@ export class DemoStore {
   }
 
   /** Publishes a message on a Session's channel and records it as history, stamped now. */
-  private emit(live: Live, msg: OmniMessage): void {
-    const stamped: OmniMessage = { ...msg, timestamp: new Date().toISOString() };
+  private emit(live: Live, msg: AmspRecord): void {
+    const stamped: AmspRecord = { ...msg, timestamp: new Date().toISOString() };
     live.channel.message(stamped);
     const payload = payloadOf(stamped);
     if (payload === null || !payload.type.startsWith("partial_"))
@@ -430,19 +432,13 @@ export class DemoStore {
     if (live.transcript.openThinking) delete live.transcript.openThinking;
     const open = live.transcript.openText;
     if (open) {
-      // The streamed part stays, closed as aborted, as the engine records a cut-off reply.
+      // The streamed part stays, as the engine records a cut-off reply.
       delete live.transcript.openText;
       this.emit(
         live,
-        partial(0, {
-          type: "partial_text",
-          role: "assistant",
-          event_type: "stop",
-          text: "",
-          stop_reason: "aborted",
-        }),
+        partial(0, { type: "partial_text", role: "assistant", event_type: "stop", text: "" }),
       );
-      if (open.text !== "") this.emit(live, assistantText(0, open.text, "aborted"));
+      if (open.text !== "") this.emit(live, assistantText(0, open.text));
     }
     if (live.transcript.pendingApproval) {
       delete live.transcript.pendingApproval;
@@ -510,17 +506,30 @@ export class DemoStore {
 
 let current: DemoStore | null = null;
 
+/** What a frame asks of its store: its language, its sign-in state, and the notices raised. */
+interface StoreInit {
+  lang: Lang;
+  signedIn: boolean;
+  /** Raise the notices a conversation can carry (notices.ts). */
+  notices?: boolean;
+}
+
 /** The store the frame's language and sign-in state ask for; created once per document. */
-export function getStore(init?: { lang: Lang; signedIn: boolean }): DemoStore {
+export function getStore(init?: StoreInit): DemoStore {
   if (current === null) {
-    current = new DemoStore(init?.lang ?? "en", Date.now(), init?.signedIn ?? true);
+    current = new DemoStore(
+      init?.lang ?? "en",
+      Date.now(),
+      init?.signedIn ?? true,
+      init?.notices ?? false,
+    );
   }
   return current;
 }
 
 /** A fresh store (tests, and a frame that re-seeds itself). */
-export function resetStore(init: { lang: Lang; signedIn: boolean; now?: number }): DemoStore {
+export function resetStore(init: StoreInit & { now?: number }): DemoStore {
   current?.dispose();
-  current = new DemoStore(init.lang, init.now ?? Date.now(), init.signedIn);
+  current = new DemoStore(init.lang, init.now ?? Date.now(), init.signedIn, init.notices ?? false);
   return current;
 }

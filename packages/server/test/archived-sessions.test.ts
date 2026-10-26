@@ -39,7 +39,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestBegin, sessionMeta, subagentEvent, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   ArchivedSessionGroupsResponse,
   ArchivedSessionsBatchResponse,
@@ -62,10 +62,10 @@ describe("the archive page", () => {
   let t: TestApp;
   let seq = 0;
 
-  // Every Project is written with the built-in Agent's skills and the built-in Benchmarks (several
-  // hundred files and directories), and on the Windows runner writing and removing them takes most
-  // of a scenario's time. So each scenario boots its own app and removes its own data root (one
-  // root shared by all of them outgrew the 30 s hook budget), and provisions only the users it
+  // Every Project is written with the built-in Agent's skills (createTestApp leaves the built-in
+  // Benchmarks out), and on the Windows runner writing and removing them is a real share of a
+  // scenario's time. So each scenario boots its own app and removes its own data root (one root
+  // shared by all of them once outgrew the 30 s hook budget), and provisions only the users it
   // needs; each user brings a default Project.
   beforeEach(async () => {
     t = await createTestApp();
@@ -113,7 +113,7 @@ describe("the archive page", () => {
       title?: string;
       prompt?: string;
       trace?: boolean;
-      extra?: OmniMessage[];
+      extra?: AmspRecord[];
       /** When it was created and last active (ISO); by default each seed is a second newer. */
       at?: string;
     } = {},

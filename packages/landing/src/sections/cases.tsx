@@ -1,10 +1,11 @@
 /**
- * The one-request case: the request as it was typed, then the recording of the legal app it
- * built, with what five sample reviews cost in model calls under the caption.
+ * The one-request case, A2APP: a subtitle line saying what A2APP is above the case's own, the
+ * request as it was typed, then the recording of the legal app it built, with what five sample
+ * reviews cost in model calls under the caption.
  */
 import { S } from "../lib/strings";
-import { useLocale } from "../state/locale";
-import type { Locale } from "../state/locale";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
+import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
 import { Section } from "../components/section";
 import { DemoVideo } from "../components/demo-video";
 import { demoVideoUrl } from "../lib/links";
@@ -18,12 +19,12 @@ const DEMO: Record<Locale, { video: string; poster: string }> = {
 };
 
 export function Cases() {
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const demo = DEMO[locale];
   const c = S.cases;
 
   return (
-    <Section id="cases" title={c.title} subtitle={c.subtitle}>
+    <Section id="cases" title={c.title} subtitle={[c.a2app, c.subtitle]}>
       <figure className="mx-auto max-w-5xl">
         <div className="mx-auto mb-5 w-full max-w-4xl rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-left dark:border-gray-800 dark:bg-gray-900">
           <code className="font-mono text-[12px] leading-5 whitespace-pre-wrap text-gray-800 sm:text-[13px] dark:text-gray-200">

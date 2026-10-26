@@ -3,7 +3,7 @@ title: Core Interfaces
 description: The Human, LLM and Environment contracts behind the engine, with their full signatures, inner types and extension seams.
 ---
 
-The `context_engine` depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations, so the engine sees only [OmniMessage](/omni-message).
+The `context_engine` depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations, so the engine sees only [AMSP records](/amsp-records).
 
 This page follows a turn's control flow: [the Human boundary](#the-human-boundary), the [LLM contract](#llminterface), the [approval callback](#approvefn) and the [Environment contract](#environmentinterface). It ends with the [subagent](#subagent-interfaces) and [vision](#visiondescriberservice) services and the [extension seams](#extension-seams).
 
@@ -20,7 +20,7 @@ All types are exported by `@prismshadow/penguin-core`. The source lives in `pack
             Human (a boundary, not a class)
             session.run(newMessages, { approve, signal })
                           │ ▲
-                          ▼ │ streamed OmniMessage
+                          ▼ │ streamed AmspRecord
                     context_engine
                      │            │
         LLMInterface │            │ EnvironmentInterface
@@ -37,12 +37,12 @@ All types are exported by `@prismshadow/penguin-core`. The source lives in `pack
 
 Every interface follows two rules:
 
-- **Never throw into the engine.** Errors become messages or return values that carry a `stop_reason`.
-- **Follow the streaming discipline.** A stream goes `start → delta → stop`, and the complete message follows immediately.
+- **Never throw into the engine.** Errors become messages (a tool result's `status`) or return values (`LLMOutcome.status`, recorded as `request_end.status`).
+- **Follow the streaming discipline.** A stream goes `start → delta → stop`, and the complete message follows immediately — for an item an interruption cut off too, holding what arrived.
 
 ### Message plane and control plane
 
-The **content** that crosses all three boundaries is OmniMessage and nothing else:
+The **content** that crosses all three boundaries is AMSP records and nothing else:
 
 - `session.run`'s input and its streamed output
 - `streamGenerate`'s input array and its yielded stream
@@ -56,10 +56,11 @@ What travels alongside it is the **control plane**. It is deliberately not messa
 | --- | --- | --- |
 | `signal: AbortSignal` | `RunOptions`, `GenerativeModelParameters`, `ToolExecutionRequest` | An interruption that had to wait its turn in a message queue would not be an interruption. |
 | `thinkingLevel` | `GenerativeModelParameters` | A per-request parameter, like a timeout: it says how to run the request, not what to say. The engine holds the live value as its own state (`ContextEngine.setThinkingLevel`, fed by the `Session.thinkingLevel` setter, the soft-limited knob). When a request omits it, the LLM object's construction default applies, which is the context's opening level. `RunOptions` carries no level. |
-| `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes an OmniMessage tool call. The answer is a three-value enum, which the engine turns into an `approval_decision` message as soon as it has it. |
+| `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes a `tool_call` record. The answer is a three-value enum, which the engine turns into an `approval_decision` message as soon as it has it. |
 | `LLMOutcome` | `streamGenerate`'s generator return value | The request's terminal state, which the engine's retry and reconnect policy branches on. A generator's return value is guaranteed by the type system; "the last message yielded must be a `request_end`" could only ever be a runtime convention. The engine writes that `request_end` from it. |
+| `markInterruptedToolCall` | a mark on a yielded `tool_call` record | A tool call the implementation closed because its request ended early, held in the process only. The record is written like any other; the mark tells the engine not to dispatch it. Readers of the stream or the Trace read the same fact from the Request's `request_end.status`. |
 
-Everything else that is not OmniMessage belongs to the Environment's management plane, described under [EnvironmentInterface](#environmentinterface).
+Everything else that is not a record belongs to the Environment's management plane, described under [EnvironmentInterface](#environmentinterface).
 
 ## The Human boundary
 
@@ -69,9 +70,9 @@ Human is deliberately not an interface class. The SDK caller *is* the Human:
 const session = await agent.createSession({ workspaceDir, provider, modelId });
 
 session.run(
-  newMessages: OmniMessage[],                    // input: the Prompt
+  newMessages: AmspRecord[],                     // input: the Prompt
   opts?: RunOptions,
-): AsyncGenerator<OmniMessage, RunCutoff | null>; // output: streamed OmniMessage; returns null when the run completed
+): AsyncGenerator<AmspRecord, RunCutoff | null>; // output: streamed AmspRecord; returns null when the run completed
 
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
@@ -93,15 +94,17 @@ The return value tells a consumer whether the run really finished. Failures emit
 
 ## LLMInterface
 
-The complete model-side contract is a single method:
+The complete model-side contract is a single method, plus one optional property:
 
 ```ts
 interface LLMInterface {
-  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<AmspRecord, LLMOutcome>;
+  readonly defaultThinkingLevel?: ThinkingLevelName; // the level a request with no pin goes out at;
+                                                     // the engine sends and records it per request
 }
 
 interface GenerativeModelParameters {
-  newMessages: OmniMessage[];    // only this turn's new messages (the impl owns history; mixed roles rejected)
+  newMessages: AmspRecord[];     // only this turn's new messages (the impl owns history; mixed roles rejected)
   signal?: AbortSignal;
   thinkingLevel?: ThinkingLevelName;   // per-request override; omitted = the construction default
 }
@@ -115,7 +118,7 @@ The generator yields `partial_*` fragments and complete messages, and emits Toke
 interface LLMOutcome {
   status: StopReason;      // completed | aborted | retryable | fatal
   errorCode?: ErrorCode;   // classified cause on a non-completed failure; carried onto request_end as error_code
-  errorMessage?: string;   // failure detail: on fatal, and on retryable when a concrete error was caught;
+  errorMessage?: string;   // failure detail: on fatal, and on retryable when a concrete error was caught or the response was cut off;
                            // carried onto request_end as error_message, so the errors panel shows
                            // the real reason behind a retried request
 }
@@ -124,7 +127,7 @@ interface LLMOutcome {
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | Finished normally (`token_usage` already emitted) | Proceed |
-| `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed or truncated responses, and anything unclassifiable | Reconnect within the run on the backoff ladder |
+| `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, and anything unclassifiable. A response that arrived whole but stopped at its output cap is one too, coded `output_truncated`: the implementation removes the turn from its stateful history, and still emits its `token_usage` (it was billed) | Reconnect within the run on the backoff ladder |
 | `fatal` | A failure no retry can fix: a provider 4xx rejection (408 and 429 excluded), rejected credentials, or a deterministic client-side rejection before any network I/O (for example, fast mode on a model without a fast tier) | Stop the run and surface `errorMessage` |
 | `aborted` | User interrupt | Stop and hand back to the user |
 
@@ -136,6 +139,7 @@ Implementation constraints:
 
 - Never throw.
 - Do no internal retries. Reconnecting is the engine's job; see [The Agent Loop](/agent-loop).
+- Close every item. One still streaming when the request is interrupted, fails or is cut off gets its `stop` and a complete message holding what arrived. A tool call closed this way carries the raw argument text and goes through `markInterruptedToolCall` (exported by core), so the engine never dispatches it.
 
 ### GenerativeModelConfig
 
@@ -153,7 +157,7 @@ interface GenerativeModelConfig {
   maxTokens?: number;
   fastMode?: boolean;              // per-model fast mode (MMSP fast_mode; premium faster tier), off by default
   thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh" | "max"
-  requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 300000; <=0 disables
+  requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 600000; <=0 disables
   sessionId?: string;              // the Session's id, sent only to endpoints whose attribution header names the conversation
   toolCallIds?: ToolCallIdAllocator;   // Session-level tool_call_id registry (pass the same instance across compaction)
 }
@@ -169,7 +173,8 @@ interface GenerativeModelConfig {
 
 - A `.delta` becomes a `partial_*` delta, behind a `start` on the item's first fragment.
 - A `.done` becomes the partial `stop` and the complete message (thinking, text or tool call), read off the `.done` item alone.
-- The `stop` event carries the request's Token usage and finish reason. A response that finishes on `length` (cut off at the output cap) or `unknown` ends its last item `fatal`; a stream that ends without a `stop` event is `retryable`.
+- The `stop` event carries the request's Token usage and finish reason. A response that finishes on `length` (cut off at the output cap) ends `retryable` with `errorCode` `output_truncated`, and one that finishes on `unknown` ends `retryable` coded `malformed`; either is taken back out of the stateful history and still metered. A stream that ends without a `stop` event is `retryable`.
+- An item still streaming when the request ends early is closed with what had arrived; a tool call closed this way is marked with `markInterruptedToolCall`.
 
 **Thought summaries.** Every request asks the gateway for thought summaries (`thinking_summary`). No provider rejects the flag: the gateway drops it for families without such a feature, and the Claude family reads it as summarized thinking. Besides letting the reader watch the model reason, it keeps events arriving during a reasoning phase.
 
@@ -185,7 +190,7 @@ interface GenerativeModelConfig {
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | Rule | Behavior |
@@ -206,7 +211,7 @@ The core of the tool-execution contract:
 ```ts
 interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
-  executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
+  executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
   dispose?(): void;                                        // release runtime resources; idempotent
 }
@@ -214,7 +219,7 @@ interface EnvironmentInterface {
 
 The interface carries two planes, and only the first belongs to the agent loop:
 
-- **The message plane** is `executeTool`, the only method `context_engine` calls here. An OmniMessage tool call goes in; a stream of OmniMessage comes out.
+- **The message plane** is `executeTool`, the only method `context_engine` calls here. A `tool_call` record goes in; a stream of records comes out.
 - **The management plane** is `listTools`, `toolPermission`, `dispose` and the optional members below. None of them pass through the engine. They serve Session assembly and a host's own UI, such as the Web App's process and subagents panels or an approval mode's permission lookup. They are ordinary method calls that return ordinary data, which is why they are not message-shaped: making them messages would not make the engine's boundary any purer.
 
 | Optional management member | Purpose |
@@ -239,7 +244,7 @@ Rendering is not this interface's concern. Streaming rendering belongs to the CL
 
 ```ts
 interface ToolExecutionRequest {
-  toolCall: OmniMessage<ToolCallPayload>;   // an approved call
+  toolCall: AmspRecord<ToolCallPayload>;    // an approved call
   signal?: AbortSignal;
   approve?: ApproveFn;                      // forwarded to tools that spawn child Sessions (approval inheritance)
 }
@@ -296,7 +301,7 @@ interface EnvironmentServices {
   commandSessions?: CommandSessionManager;  // long-running command session registry (built by Environment)
   subagentSessions?: SubagentSessionManager;// background subagent session registry (likewise)
   backgroundDone?: (event: BackgroundTaskDoneEvent) => void; // completion-report sink for run_in_background launches (likewise)
-  backgroundForward?: (msg: OmniMessage) => void;           // live message tap of a background subagent (likewise)
+  backgroundForward?: (msg: AmspRecord) => void;            // live message tap of a background subagent (likewise)
 }
 
 interface MCPServerConfig {
@@ -331,7 +336,7 @@ interface BuiltinTool {
     ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve?, fs? };
                                      // fs = the file-system port a file tool works through (the sandboxed helper
                                      // when the Session is confined, this process otherwise; fs.sandboxed says which)
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }
 
 interface ToolDefinitionConfig {
@@ -346,7 +351,7 @@ interface ToolDefinitionConfig {
 }
 ```
 
-A tool emits only content deltas. The Environment handles framing, timeouts, truncation, `stop_reason` priority and turning errors into messages centrally, so a tool author can hardly break the protocol.
+A tool emits only content deltas. The Environment handles framing, timeouts, truncation, the result's `status` priority and turning errors into messages centrally, so a tool author can hardly break the protocol.
 
 Adding a tool is registration: add one `name → factory` entry to `BUILTIN_TOOL_FACTORIES` (`packages/core/src/environment/tools/registry.ts`). For each tool's parameters and behavior, see [Tools & Approval](/tools).
 
@@ -368,13 +373,13 @@ interface SubagentRunner {
 
 interface SubagentHandle {
   sessionId: string;      // the child Session id: the origin hop; subagent_id derives from its tail
-  takeMeta?(): OmniMessage | null; // one-shot take of the child's session_meta (a background launch forwards it upfront)
+  takeMeta?(): AmspRecord | null; // one-shot take of the child's session_meta (a background launch forwards it upfront)
   run(input: {
-    messages: OmniMessage[];  // the round's input, the shape Session.run takes a Prompt in
+    messages: AmspRecord[];   // the round's input, the shape Session.run takes a Prompt in
     signal?: AbortSignal;
     approve?: ApproveFn;  // the parent's approval callback — forwarding is inheritance
-  }): AsyncGenerator<OmniMessage, RunCutoff | null>; // returns null when the round completed
-  steer?(messages: OmniMessage[]): boolean; // queue a steering message for a running round; false when none is running
+  }): AsyncGenerator<AmspRecord, RunCutoff | null>; // returns null when the round completed
+  steer?(messages: AmspRecord[]): boolean; // queue a steering message for a running round; false when none is running
   setThinkingLevel?(level: ThinkingLevelName): void; // pin the child's thinking level from its next request
   dispose(): void;        // release the child Session's runtime resources; idempotent
 }
@@ -384,7 +389,7 @@ Spawning and running are separate, so the same child Session can accept a follow
 
 A round reports a cut-off through its return value, so the parent reports that round as failed instead of handing the model half an answer.
 
-A round's input is an OmniMessage list: the same shape `steer` takes, and the same shape a host passes to `EnvironmentInterface.sendToBackgroundSubagent`. Both ways into a child session speak one vocabulary. The caller owns each message's `sender`. The model's own dispatch (`run_subagent`, `input_subagent`) stamps `parent_agent`, while a human's message from a host panel carries none, so the child's Trace records who actually spoke.
+A round's input is a record list: the same shape `steer` takes, and the same shape a host passes to `EnvironmentInterface.sendToBackgroundSubagent`. Both ways into a child session speak one vocabulary. The caller owns each message's `sender`. The model's own dispatch (`run_subagent`, `input_subagent`) stamps `parent_agent`, while a human's message from a host panel carries none, so the child's Trace records who actually spoke.
 
 ## VisionDescriberService
 

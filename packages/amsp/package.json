@@ -1,8 +1,8 @@
 {
   "name": "@prismshadow/amsp",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "type": "module",
-  "description": "AMSP (Agent Message Stream Protocol): the wire types of a PenguinHarness Agent's API and a zero-dependency client for Node 24 and browsers.",
+  "description": "AMSP (Agent Message Stream Protocol): the records a PenguinHarness Session streams, their builders and markers, the wire types of an Agent's API and a zero-dependency client for Node 24 and browsers.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -16,6 +16,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./records": {
+      "types": "./dist/records.d.ts",
+      "import": "./dist/records.js"
+    },
+    "./markers": {
+      "types": "./dist/markers.d.ts",
+      "import": "./dist/markers.js"
+    },
+    "./browser": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/browser/amsp.js"
     }
   },
   "main": "./dist/index.js",
@@ -29,7 +41,7 @@
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.12"
   },
   "files": [
     "dist",

@@ -2,10 +2,11 @@
  * The whole-reply check (a2ui/check.ts), its report (a2ui/report.ts) and the CLI's argument
  * handling (a2ui/cli.ts): L1 issues carry absolute lines and the block index, the L2 heuristics
  * fire on overuse / a question that is not last / an unintroduced block / a snapshot with no
- * time, prose issues are tagged, and the score follows A2UI_SCORING exactly.
+ * time, the text outside the blocks raises nothing, and the total is L2: the gate passes a reply
+ * with two block warnings and stops one with three.
  */
 import { describe, expect, it } from "vitest";
-import { A2UI_RUBRIC, A2UI_SCORING, checkReply, formatReport } from "../src/a2ui/index.js";
+import { A2UI_RUBRIC, checkReply, formatReport } from "../src/a2ui/index.js";
 import { runCli, type CliIo } from "../src/a2ui/cli.js";
 
 const callout = '```a2ui\n{"type":"callout","tone":"note","text":"Keep the console open."}\n```';
@@ -22,7 +23,7 @@ describe("checkReply", () => {
     expect(report.ok).toBe(true);
     expect(report.issues).toEqual([]);
     expect(report.blocks).toEqual([{ index: 1, fence: "a2ui", type: "choice", ok: true }]);
-    expect(report.score).toEqual({ l1: 100, l2: 100, prose: 100, total: 100 });
+    expect(report.score).toEqual({ l1: 100, l2: 100, total: 100 });
     expect(report.lang).toBe("en");
   });
 
@@ -80,26 +81,66 @@ describe("checkReply", () => {
     );
   });
 
-  it("scores: 15 per L2 warning, 5 per prose warning, the rounded mean when there is no error", () => {
-    const l2 = checkReply(callout);
-    expect(l2.score).toEqual({ l1: 100, l2: 85, prose: 100, total: 93 });
-    const prose = checkReply("The file is written by the loader.");
-    expect(prose.issues.map((i) => [i.code, i.scope])).toEqual([["passive_voice", "prose"]]);
-    expect(prose.score).toEqual({ l1: 100, l2: 100, prose: 95, total: 98 });
-    expect(prose.blocks).toEqual([]);
-    expect(A2UI_SCORING).toMatchObject({ l2PerWarning: 15, prosePerWarning: 5, passTotal: 70 });
+  it("L2: a resources board is a snapshot and needs `asOf`; a chart need not be one", () => {
+    const fence = (spec: object) => `\`\`\`a2ui\n${JSON.stringify(spec)}\n\`\`\``;
+    const board = fence({ type: "resources", cpu: { percent: 37 } });
+    expect(checkReply(`Here is the machine now.\n\n${board}\n`).issues.map((i) => i.code)).toEqual([
+      "no_as_of",
+    ]);
+    const chart = fence({
+      type: "chart",
+      kind: "bar",
+      categories: ["Mon", "Tue"],
+      series: [{ label: "Builds", values: [12, 9] }],
+    });
+    expect(checkReply(`Here are this week's builds.\n\n${chart}\n`).issues).toEqual([]);
+  });
+
+  it("scores: each block warning costs L2 15 points, and the total is L2 when there is no error", () => {
+    expect(checkReply(callout).score).toEqual({ l1: 100, l2: 85, total: 85 });
+  });
+
+  it("the text outside the blocks raises nothing: a passive, vague, long reply scores 100", () => {
+    const prose = [
+      "The file is written by the loader, and various other things are done appropriately etc.",
+      "This sentence keeps going with one more clause and then another clause and yet another clause until it passes any limit on length that a checker could ever set.",
+    ].join(" ");
+    const report = checkReply(`${prose}\n\n- a\n  - b\n    - c\n`);
+    expect(report.issues).toEqual([]);
+    expect(report.blocks).toEqual([]);
+    expect(report.score).toEqual({ l1: 100, l2: 100, total: 100 });
   });
 });
+
+/** A reply of `n` callouts, each under a heading, so each is one `ungrounded_block` warning. */
+const ungrounded = (n: number) =>
+  Array.from({ length: n }, (_, i) => `## Note ${i + 1}\n\n${callout}`).join("\n\n");
 
 describe("formatReport", () => {
   it("prints the summary, the block list, each issue with its place, the score and the rubric", () => {
     const text = formatReport(checkReply(callout), { rubric: true });
     expect(text).toContain("a2ui check: 1 block, 0 errors, 1 warning (lang en)");
     expect(text).toContain("block 1: a2ui callout — ok");
+    expect(text).toContain("warnings — blocks (L2):");
     expect(text).toContain("[block 1 line 1] ungrounded_block:");
-    expect(text).toContain("score: L1 100  L2 85  prose 100  total 93  (pass)");
+    expect(text).toContain("score: L1 100  L2 85  total 85  (pass)");
+    expect(text).not.toContain("prose");
     expect(text).toContain("self-review before sending:");
     expect(text).toContain(`1. ${A2UI_RUBRIC.en[0]}`);
+  });
+
+  it("passes a reply with two block warnings and stops one with three", () => {
+    expect(formatReport(checkReply(ungrounded(2)))).toContain("total 70  (pass)");
+    expect(formatReport(checkReply(ungrounded(3)))).toContain(
+      "total 55  (below the 70 gate; fix the warnings that matter)",
+    );
+  });
+
+  it("says when a reply has no block at all", () => {
+    const text = formatReport(checkReply("Just an answer."));
+    expect(text).toContain("a2ui check: 0 blocks, 0 errors, 0 warnings (lang en)");
+    expect(text).toContain("  no a2ui or mermaid blocks");
+    expect(text).toContain("score: L1 100  L2 100  total 100  (pass)");
   });
 
   it("says why the total is 0 and prints the zh rubric for a zh reply", () => {
@@ -135,6 +176,16 @@ describe("runCli", () => {
     const text = io(good);
     expect(runCli(["--rubric", "--lang=en"], text.cli)).toBe(0);
     expect(text.out[0]).toContain("self-review before sending:");
+  });
+
+  it("--lang picks the rubric's language over the reply's own", () => {
+    const zh = io(good);
+    expect(runCli(["--rubric", "--lang", "zh"], zh.cli)).toBe(0);
+    expect(zh.out[0]).toContain("(lang zh)");
+    expect(zh.out[0]).toContain(`1. ${A2UI_RUBRIC.zh[0]}`);
+    const json = io(good);
+    runCli(["--json", "--lang=zh"], json.cli);
+    expect(JSON.parse(json.out[0]!)).toMatchObject({ lang: "zh" });
   });
 
   it("exits 1 on an error, 2 on a bad option or an unreadable file", () => {

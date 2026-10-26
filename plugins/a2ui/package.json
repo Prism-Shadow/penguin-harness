@@ -1,7 +1,7 @@
 {
   "name": "@penguinharness/a2ui",
-  "version": "0.2.16",
-  "description": "Rich reply blocks for readable output: a choice, a form, a procedure in steps, a callout, a Mermaid diagram, and glanceable widgets (a weather card, a live clock or countdown, and a dashboard of gauges for a system snapshot, a quota or a job's progress), each written as a fenced block inside an ordinary Markdown reply, rendered by the Web App with its own components and shown as plain text everywhere else; a pick fills the composer as ordinary text. Comes with STE-style writing rules for Chinese and English, two scripts that turn a weather lookup and a system snapshot into ready-made blocks, and a checker script that validates every block, scores the draft and prints a self-review rubric before the reply is sent.",
+  "version": "0.2.17",
+  "description": "Rich reply blocks for readable output: a choice, a form, a procedure in steps, a callout, a Mermaid diagram, a basic chart drawn from data (line, area, bar, pie, scatter, histogram or gauge), and glanceable widgets built on those charts (a weather card, a dashboard of gauges for a quota, a budget or a job's progress, and a system-resource board) beside a live clock or countdown, each written as a fenced block inside an ordinary Markdown reply, rendered by the Web App with its own components and shown as plain text everywhere else; a pick fills the composer as ordinary text. Comes with STE-style writing rules for Chinese and English, two scripts that turn a weather lookup and a system snapshot into ready-made blocks, and a checker script that validates every block, scores the draft and prints a self-review rubric before the reply is sent.",
   "keywords": [
     "penguin-plugin",
     "penguinharness",
@@ -23,7 +23,7 @@
     "access": "public"
   },
   "penguin": {
-    "description_zh": "让模型输出更易读的富文本组件：选项、表单、分步操作、提示框、Mermaid 图，以及一眼可读的小组件（天气卡片、实时时钟与倒计时、用仪表展示系统快照、额度余量或任务进度的指标面板），以围栏代码块的形式写在普通 Markdown 回复里，Web App 用自己的组件渲染，其他界面显示为纯文本；用户的选择以普通文字填入输入框。附带中英文的 STE 风格写作规则、两个把天气查询和系统快照直接生成组件块的脚本，以及一个检查脚本：发送前校验每个组件、给草稿打分并打印自审清单。",
+    "description_zh": "让模型输出更易读的富文本组件：选项、表单、分步操作、提示框、Mermaid 图、由数据绘制的基础统计图（折线、面积、柱状、饼图、散点、直方图或仪表），以及基于这些统计图构建的一眼可读的小组件（天气卡片、用仪表展示额度余量、预算或任务进度的指标面板、系统资源面板），外加实时时钟与倒计时，以围栏代码块的形式写在普通 Markdown 回复里，Web App 用自己的组件渲染，其他界面显示为纯文本；用户的选择以普通文字填入输入框。附带中英文的 STE 风格写作规则、两个把天气查询和系统快照直接生成组件块的脚本，以及一个检查脚本：发送前校验每个组件、给草稿打分并打印自审清单。",
     "short_description": "Choices, forms, steps, callouts, diagrams and widgets in replies, with a checker.",
     "short_description_zh": "在回复里使用选项、表单、步骤、提示框、图表和小组件，并自带检查脚本。",
     "category": "office-productivity",

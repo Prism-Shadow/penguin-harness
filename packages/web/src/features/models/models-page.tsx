@@ -68,7 +68,7 @@ import type {
   ProviderConnectionUpdate,
 } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
+  Pill,
   Button,
   Card,
   Checkbox,
@@ -124,20 +124,20 @@ import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
-  canonicalClientType,
   catalogEntryFor,
   fastModeProtocol,
-  groupKeyReaches,
   isAddableGroup,
+  isVendorGroup,
   modelHomepageUrl,
   providerInfo,
   unroutableVendorModel,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
+import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
 import type {
   FastModeProtocol,
   ModelProviderBridgeAuth,
   ModelProviderInfo,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import {
   allGroupKeys,
   discountedPrice,
@@ -159,7 +159,8 @@ import {
   DEFAULT_CUSTOM_CLIENT_TYPE,
   detectableBaseUrl,
   displayWidthCh,
-  envHintKeyFor,
+  envHintFor,
+  keylessFor,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -411,7 +412,7 @@ export interface RowState {
   vision: boolean;
   /** Environment variable name used as fallback when api_key is empty (given by the server based on catalog/protocol). */
   envKey?: string;
-  /** Masked preview of the env-fallback value (first-party official entries only; the plaintext never leaves the server). */
+  /** Masked preview of the env-fallback value (only for a keyless row with no base URL anywhere; the plaintext never leaves the server). */
   envKeyMasked?: string;
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
@@ -710,9 +711,9 @@ export function detectedEnvKeys(rows: readonly RowState[]): Set<string> {
  *
  * The client type and base URL are the ones the entry will actually be USED with — its own,
  * else what it inherits from its group (`inherited`, none by default) — and for a custom-like
- * entry that resolves to none, the compatible client it will be saved on, for the same reason
- * envHintClientType exists: a custom-like group leaves the protocol empty until detection or a
- * manual pick fills it in, and fastModeProtocol would then
+ * entry that resolves to none, the compatible client it will be saved on: a custom-like group
+ * leaves the protocol empty until detection or a manual pick fills it in, and fastModeProtocol
+ * would then
  * fall back to routing by model id. Typing an id that routes to a client with no fast tier
  * (`kimi-k3`, `deepseek-v4-pro`) into a custom group would hide a switch that the persisted
  * `openai-chat` entry can in fact serve. An empty result keeps the id-based routing the preset
@@ -765,15 +766,22 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *   reaches the model (connection.ts) means it follows the group; a variable the environment
  *   holds (`envKey`, only where nothing else covers the model) means the environment answers; a
  *   group key that does NOT reach the model — its own base URL is on another origin — is said
- *   outright, since the card will read "not configured"; otherwise nothing truthful can be said.
- * - Base URL: the group's setting where it has one; else the shape a required one takes; else
- *   what an empty one means — the client's default endpoint.
+ *   outright, since the card will read "not configured"; a model its client calls without a key
+ *   (`keyless`: an open MMSP or vLLM server) says a blank sends none; otherwise the field asks
+ *   for a key.
+ * - Base URL: the group's setting where it has one; else, where the field is required (it
+ *   cannot be saved blank), a request to enter one; else that a blank one uses the default,
+ *   without naming it.
  */
 export function connectionPlaceholders(
   draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
   group: ProviderConnectionDto | undefined,
-  { envKey, baseUrlRequired }: { envKey?: string | undefined; baseUrlRequired: boolean },
-): { apiKey: string | undefined; baseUrl: string } {
+  {
+    envKey,
+    keyless = false,
+    baseUrlRequired,
+  }: { envKey?: string | undefined; keyless?: boolean; baseUrlRequired: boolean },
+): { apiKey: string; baseUrl: string } {
   const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
   const apiKey = draft.credential?.apiKeyMasked
     ? S.models.apiKeyKeepHint
@@ -783,13 +791,15 @@ export function connectionPlaceholders(
         ? S.models.apiKeyEnvHint(envKey)
         : groupKeyMissesRow(draft.baseUrl, group)
           ? S.models.keyNotReachedNote
-          : undefined;
+          : keyless
+            ? S.models.apiKeyKeylessHint
+            : S.models.apiKeyEnterHint;
   const baseUrl =
     inherited.baseUrl !== undefined
       ? S.models.inheritFromGroup
       : baseUrlRequired
-        ? "https://…"
-        : S.models.baseUrlNone;
+        ? S.models.baseUrlEnterHint
+        : S.models.baseUrlDefault;
   return { apiKey, baseUrl };
 }
 
@@ -1028,7 +1038,7 @@ export function ModelsPage() {
     // drop them along with the rows they annotate whenever the active Project changes.
     setSpeedResults(new Map());
     try {
-      adopt(await api.getModels(projectId));
+      adopt(await api.getModels(projectId, null));
     } catch (e) {
       setLoadError(apiErrorText(e));
     }
@@ -1140,10 +1150,8 @@ export function ModelsPage() {
     try {
       const res = await api.syncPlatformModels(projectId);
       adopt(res);
-      // The platform's sync only adds the models it newly offers; the ones already here keep
-      // their prices, protocols and promotions.
-      if (res.added === 0) toastInfo(S.models.platformUpToDate);
-      else toastSuccess(S.models.platformSyncAdded(res.added));
+      if (res.added === 0 && res.updated === 0) toastInfo(S.models.platformUpToDate);
+      else toastSuccess(S.models.platformSyncResult(res.added, res.updated));
     } catch (error) {
       if (error instanceof ApiError && error.code === "platform_reauthorization_required") {
         keyLanded.current = false;
@@ -1587,7 +1595,7 @@ export function ModelsPage() {
                   // reader to look here, and is the tone nearest the gold this mark has
                   // always worn. It gives way on a narrow row before the name does.
                   <span className="hidden shrink-0 @lg:inline-flex">
-                    <Badge tone="attention">{S.models.recommendedGroup}</Badge>
+                    <Pill tone="attention">{S.models.recommendedGroup}</Pill>
                   </span>
                 )}
               </button>
@@ -2276,6 +2284,12 @@ function AddGroupDialog({
   };
 
   const busy = importing !== null;
+  /**
+   * An import needs an endpoint: a blank base URL holds Import and Detect, and is said under the
+   * field once something is typed (the other required base URL fields' rule).
+   */
+  const baseUrlMissing = baseUrl.trim() === "";
+  const baseUrlError = form.dirty && baseUrlMissing ? S.models.baseUrlRequired : null;
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const suffixLabel =
     clientType === null ? S.models.protocolUnset : protocolPathForModel(trimmed, clientType);
@@ -2303,7 +2317,7 @@ function AddGroupDialog({
               <Button
                 size="sm"
                 variant="primary"
-                disabled={busy || !nameValid}
+                disabled={busy || !nameValid || baseUrlMissing}
                 onClick={() => void runImport()}
               >
                 {S.models.groupImportAll}
@@ -2367,9 +2381,9 @@ function AddGroupDialog({
                   variant="link"
                   size="sm"
                   loading={detecting}
-                  disabled={busy}
+                  disabled={busy || baseUrlMissing}
                   onClick={() => void detect()}
-                  title={S.models.detectProtocolHint}
+                  title={baseUrlMissing ? S.models.detectNeedsBaseUrl : S.models.detectProtocolHint}
                   data-tooltip-extra
                   className="shrink-0"
                 >
@@ -2383,6 +2397,7 @@ function AddGroupDialog({
                   required
                   value={baseUrl}
                   disabled={busy}
+                  invalid={baseUrlError !== null}
                   onChange={(e) => {
                     // An edited URL retires the previous verdict: protocol and failure tone
                     // both described the old endpoint.
@@ -2395,7 +2410,7 @@ function AddGroupDialog({
                   className="font-mono"
                   style={{ paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + 2.25rem)` }}
                   title={S.models.baseUrlSuffixTitle}
-                  placeholder="https://…"
+                  placeholder={S.models.baseUrlEnterHint}
                 />
                 <div className="absolute inset-y-0 right-1 flex items-center">
                   <ProtocolSuffixMenu
@@ -2407,6 +2422,7 @@ function AddGroupDialog({
                   />
                 </div>
               </div>
+              {baseUrlError && <FieldError>{baseUrlError}</FieldError>}
             </div>
             {importing !== null && (
               <p className="text-xs text-gray-500 dark:text-gray-400">{importing}</p>
@@ -2613,13 +2629,13 @@ export function ModelCard({
             theme — so a card with marks and a card without are exactly as tall. */}
         <span className="flex w-full flex-wrap items-center gap-1">
           {tags.map((tag) => (
-            <Badge key={tag.key} tone={tag.tone} size="sm" tooltip={tag.title}>
+            <Pill key={tag.key} tone={tag.tone} tooltip={tag.title}>
               {tag.label}
-            </Badge>
+            </Pill>
           ))}
           {tags.length === 0 && (
             <span aria-hidden className="invisible flex">
-              <Badge size="sm">&nbsp;</Badge>
+              <Pill>&nbsp;</Pill>
             </span>
           )}
         </span>
@@ -3059,10 +3075,10 @@ function ModelDialog({
           set({ vision: false });
           toastInfo(S.models.detectVisionNo);
         } else {
-          toastError(S.models.detectFailedBody);
+          toastError(S.models.detectVisionFailed);
         }
       } catch {
-        toastError(S.models.detectFailedBody);
+        toastError(S.models.detectVisionFailed);
       } finally {
         setVisionDetecting(false);
       }
@@ -3292,19 +3308,21 @@ function ModelDialog({
   // the model id and API key labels in both the add and edit dialogs; custom
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
-  // The variable a blank key may be PRESENTED as covered by, for the entry as drafted (core's
-  // modelEnvPreviewKey, which the server's masked preview reads too) on its EFFECTIVE shape:
-  // undefined for every row whose endpoint — its own or the one it follows — is not the
-  // vendor's own (a gateway's endpoint, a custom or vLLM server, a vendor group pointed at a
-  // proxy) and for a keyless vLLM / custom row with no base URL anywhere. The hint and the
+  // The variables a blank key may be PRESENTED as covered by, for the entry as drafted (the
+  // catalog's modelEnvironment, which the server's masked preview reads too): what MMSP's routed
+  // client reads, which is nothing for a base URL other than its own default endpoint (a
+  // gateway's endpoint, a custom or vLLM server, a vendor's second host, a proxy). A custom,
+  // vLLM or user-group row with no base URL anywhere does get its protocol client's variable,
+  // as its Session would, and the note below says where its requests go. The hint and the
   // stored-mask block below follow this.
-  const liveEnvKey = envHintKeyFor(
+  const liveEnv = envHintFor(
     form.provider,
     form.modelId,
     form.clientType,
     form.baseUrl,
     groupShape(group),
   );
+  const liveEnvKey = liveEnv.apiKeyEnv;
   // An id this entry's group cannot place (see unroutableFix). The save is refused by the
   // server for a new or rekeyed entry, so the warning and its way out are shown before the
   // attempt; a row that was already stored keeps saving and carries the same warning on its
@@ -3447,17 +3465,34 @@ function ModelDialog({
       : undefined;
   const { apiKey: apiKeyHint, baseUrl: baseUrlHint } = connectionPlaceholders(form, group, {
     envKey: envHintKey,
+    // A blank key sent as none (an open MMSP or vLLM server); the variable, where set, wins.
+    keyless: keylessFor(
+      form.provider,
+      form.modelId,
+      form.clientType,
+      form.baseUrl,
+      groupShape(group),
+    ),
     baseUrlRequired,
   });
-  // Default endpoint note (zhipu / moonshot each have domestic / international
-  // endpoints): shown only when the env fallback hint appears (hence keyed off the same
-  // envHintKey) and this entry actually goes through the provider's own client (the
-  // resolved envKey matches the provider) — entries going through the OpenAI
-  // client (OPENAI_API_KEY) have no provider default endpoint to speak of.
+  // Where a blank key's requests go, shown only beside the env fallback hint (hence keyed off
+  // the same envHintKey). A vendor group whose client defaults to one of two hosts (zhipu /
+  // moonshot) says how to reach the other one, when this entry goes through the provider's
+  // own client (the resolved envKey matches the provider). Any other group's row on a protocol
+  // client with no base URL anywhere — custom, vLLM, a user group — names the endpoint its
+  // requests go to, the client's default as MMSP records it (https://api.openai.com/v1 for the
+  // OpenAI protocols), unless the matching `*_BASE_URL` is set, so a self-hosted id is never
+  // sent there unannounced.
   const envNote =
-    envHintKey !== undefined && envHintKey === dialogProvider?.envKey
-      ? S.models.providerEnvNotes[form.provider]
-      : undefined;
+    envHintKey === undefined
+      ? undefined
+      : envHintKey === dialogProvider?.envKey && S.models.providerEnvNotes[form.provider]
+        ? S.models.providerEnvNotes[form.provider]
+        : !isVendorGroup(form.provider) &&
+            liveEnv.baseUrlEnv !== undefined &&
+            liveEnv.defaultBaseUrl !== undefined
+          ? S.models.envBaseUrlNote(liveEnv.defaultBaseUrl, liveEnv.baseUrlEnv)
+          : undefined;
   // The add dialog's note on the protocol a new model will speak, inside its Details: the
   // group's (with blank fields following the group where it also names the endpoint, the user's
   // own endpoint where it does not), or — a custom / user-defined group with nothing to follow —
@@ -3608,7 +3643,7 @@ function ModelDialog({
               {S.models.baseUrl}
             </FieldLabel>
             {/* Always live: no API key is needed (the server falls back to the stored key
-                and then to the protocol's env var), and anything that does go wrong is
+                and then probes anonymously), and anything that does go wrong is
                 explained in a popup. `detecting` only guards re-entrancy. */}
             <Button
               variant="link"
@@ -3751,6 +3786,7 @@ function ModelDialog({
               onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
               className="text-right font-mono"
               affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
+              placeholder={S.models.priceBlankHint}
             />
           ))}
         </div>
@@ -3779,7 +3815,7 @@ function ModelDialog({
                 trigger drop onto its own line inside a half-width cell. */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <label
-                className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+                className={`inline-flex items-center gap-2 ${canEdit ? "" : "cursor-not-allowed"}`}
               >
                 <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
                   {S.models.vision}
@@ -3821,7 +3857,7 @@ function ModelDialog({
         {showFastMode && (
           <div className={toggleCellClass}>
             <label
-              className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+              className={`inline-flex items-center gap-2 ${canEdit ? "" : "cursor-not-allowed"}`}
               data-tooltip={S.models.fastModeHint}
               data-tooltip-extra
             >
@@ -3923,20 +3959,10 @@ function ModelDialog({
               )}
               {(isDefault || form.vision || isVisionModel) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
-                  {isDefault && (
-                    <Badge tone={TAG_TONE.status} size="sm">
-                      {S.models.default}
-                    </Badge>
-                  )}
-                  {form.vision && (
-                    <Badge tone={TAG_TONE.capability} size="sm">
-                      {S.models.visionBadge}
-                    </Badge>
-                  )}
+                  {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
+                  {form.vision && <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>}
                   {isVisionModel && (
-                    <Badge tone={TAG_TONE.capability} size="sm">
-                      {S.models.visionModelBadge}
-                    </Badge>
+                    <Pill tone={TAG_TONE.capability}>{S.models.visionModelBadge}</Pill>
                   )}
                 </span>
               )}
@@ -4080,7 +4106,9 @@ const OAUTH_POLL_MS = 2000;
  * The dialog never handles the key, and never handles the PKCE verifier either: it opens a
  * flow, sends the user to the provider's page, and asks the server how that flow ended. Two
  * routes back — the provider redirects to the server (polled here), or, when that redirect
- * cannot reach the harness, the user carries a one-time code across by hand.
+ * cannot reach the harness, the user carries a one-time code across by hand. The server has
+ * the last word on which: it opens a manual flow when the provider would refuse to redirect to
+ * the address this page is served from, and the dialog follows the flow it was given.
  */
 function ModelOAuthDialog({
   projectId,
@@ -4096,7 +4124,16 @@ function ModelOAuthDialog({
   onClose: () => void;
   onApplied: (applied: number) => void;
 }) {
+  /** The route back the user picked. */
   const [manual, setManual] = useState(false);
+  /**
+   * Set once a redirect was asked for and the server opened a manual flow: the provider does not
+   * redirect to this address (plain HTTP to anything but loopback), so the code is the only way
+   * back for as long as the dialog is open, and the switch to the redirect is withdrawn.
+   */
+  const [redirectRefused, setRedirectRefused] = useState(false);
+  /** Whether the flow in hand takes the code by hand rather than through the redirect. */
+  const byHand = manual || redirectRefused;
   const [phase, setPhase] = useState<OAuthPhase>("starting");
   const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -4126,6 +4163,7 @@ function ModelOAuthDialog({
           mode: manual ? "manual" : "callback",
         });
         if (cancelled) return;
+        if (!manual && res.mode === "manual") setRedirectRefused(true);
         setFlow(res);
         setPhase("ready");
       } catch (e) {
@@ -4142,7 +4180,7 @@ function ModelOAuthDialog({
   // Redirect mode: the outcome lands on the server, so this tab only learns of it by asking.
   // A flow that has expired answers 404, which reads the same as never coming back.
   useEffect(() => {
-    if (phase !== "waiting" || manual || flow === null) return;
+    if (phase !== "waiting" || byHand || flow === null) return;
     let stopped = false;
     const tick = async (): Promise<void> => {
       try {
@@ -4172,12 +4210,12 @@ function ModelOAuthDialog({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [phase, manual, flow, projectId, count]);
+  }, [phase, byHand, flow, projectId, count]);
 
   const openAuthorizePage = (): void => {
     if (flow === null) return;
     window.open(flow.authorizeUrl, "_blank", "noopener,noreferrer");
-    if (!manual) setPhase("waiting");
+    if (!byHand) setPhase("waiting");
   };
 
   const submitCode = async (): Promise<void> => {
@@ -4206,7 +4244,7 @@ function ModelOAuthDialog({
       <Button size="sm" variant="primary" onClick={() => setAttempt((n) => n + 1)}>
         {S.models.oauthRetry}
       </Button>
-    ) : manual ? (
+    ) : byHand ? (
       <Button
         size="sm"
         variant="primary"
@@ -4253,7 +4291,7 @@ function ModelOAuthDialog({
             {S.models.oauthIntro(provider.label, count)}
           </p>
         )}
-        {phase !== "done" && manual && (
+        {phase !== "done" && byHand && (
           <>
             {/* In the dialog body, directly above the code Input: it takes the same rung the
                 field does, not the page-level md. */}
@@ -4272,14 +4310,14 @@ function ModelOAuthDialog({
             />
           </>
         )}
-        {phase === "waiting" && !manual && (
+        {phase === "waiting" && !byHand && (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
             <Spinner size="xs" label={S.common.loading} />
             {S.models.oauthWaiting}
           </p>
         )}
         {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-        {phase !== "done" && (
+        {phase !== "done" && !redirectRefused && (
           <Button variant="link" size="sm" onClick={() => setManual((v) => !v)}>
             {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
           </Button>

@@ -6,6 +6,13 @@ export const RELEASES_URL = `${REPO_URL}/releases`;
 export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 
 /**
+ * The host names this site is served from. A link in a post to one of them is a page of this
+ * site, not a site the reader is leaving for (see lib/post-links.ts); the page adds the host it is
+ * actually running on, so a preview deployment counts as itself.
+ */
+export const SITE_HOSTS: readonly string[] = ["penguin.ooo", "www.penguin.ooo"];
+
+/**
  * Docs site: a sibling SPA deployed under the landing page's own base ("/<repo>/docs/",
  * see scripts/build-site.mjs). A plain href — it is a separate app, not a router route.
  * In local dev this resolves to "/docs/", which only exists in the assembled build.
@@ -25,6 +32,19 @@ export const GALLERY_URL = `${import.meta.env.BASE_URL}gallery/`;
  */
 export function galleryUrl(locale: "zh" | "en"): string {
   return `${GALLERY_URL}?lang=${locale}`;
+}
+
+/** The AMSP page's outside links: the SDK on npm and its source, and MMSP's own site. */
+export const AMSP_NPM_URL = "https://www.npmjs.com/package/@prismshadow/amsp";
+export const AMSP_SOURCE_URL = `${REPO_URL}/tree/main/packages/amsp`;
+export const MMSP_URL = "https://mmsp.penguin.ooo/";
+
+/**
+ * MMSP's model index in the site's language. MMSP serves Chinese under `/zh/` and English at its
+ * root, with no `/en/` prefix (`/en/models/` is a 404).
+ */
+export function mmspModelsUrl(locale: "zh" | "en"): string {
+  return locale === "zh" ? `${MMSP_URL}zh/models/` : `${MMSP_URL}models/`;
 }
 
 /**

@@ -14,7 +14,7 @@
  * model_id name across different vendors is attributed separately).
  */
 import { isEventMessage, isSessionMeta } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { formatLocalDate } from "../internal/dates.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
@@ -46,7 +46,7 @@ export class UsageRecorder implements UsageRecording {
   @Use() private readonly clock!: Clock;
 
   /** Consume one outgoing message; messages other than session_meta / token_usage are a no-op. */
-  async record(ctx: UsageContext, msg: OmniMessage): Promise<void> {
+  async record(ctx: UsageContext, msg: AmspRecord): Promise<void> {
     if (isSessionMeta(msg) && msg.origin && msg.origin.length > 0) {
       const originSessionId = msg.origin[msg.origin.length - 1]!;
       // Bounded mapping (avoids unbounded growth over a long-running process): re-inserting refreshes insertion order, over the limit evicts the oldest.
@@ -66,6 +66,7 @@ export class UsageRecorder implements UsageRecording {
       type?: string;
       request?: { cache_read: number; cache_write: number; output: number; total: number };
       status?: string;
+      error_code?: string;
     };
 
     const originSessionId =
@@ -106,10 +107,17 @@ export class UsageRecorder implements UsageRecording {
       this.queries?.invalidate(base.projectId);
       return;
     }
-    // A failed request (request_end and not completed, usually with no token_usage):
-    // persist 0 tokens + status, feeding the "model success rate" stat; a successful
-    // request is already counted once via the token_usage branch above, not repeated here.
-    if (payload.type === "request_end" && payload.status && payload.status !== "completed") {
+    // A failed request (request_end and not completed, with no token_usage): persist 0 tokens
+    // + status, feeding the "model success rate" stat. A successful request is already counted
+    // once via the token_usage branch above, not repeated here — and so is one cut off at its
+    // output cap (`output_truncated`): the provider delivered and billed it (its token_usage
+    // came first), it was only cut at the cap.
+    if (
+      payload.type === "request_end" &&
+      payload.status &&
+      payload.status !== "completed" &&
+      payload.error_code !== "output_truncated"
+    ) {
       this.usage.insert({
         ...base,
         cacheRead: 0,

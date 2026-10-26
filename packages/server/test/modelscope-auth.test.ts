@@ -27,7 +27,7 @@
  * standing in for the global fetch in the route cases.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { presetModelEntries } from "@prismshadow/penguin-core/model-catalog";
+import { presetModelEntries } from "../src/model-catalog/index.js";
 import type {
   ModelScopeAuthFlowStatusResponse,
   ModelScopeAuthStartResponse,

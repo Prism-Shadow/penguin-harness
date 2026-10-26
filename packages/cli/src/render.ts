@@ -57,7 +57,7 @@ import type {
   McpConnectBeginPayload,
   McpConnectEndPayload,
   MessageOrigin,
-  OmniMessage,
+  AmspRecord,
   PartialTextPayload,
   PartialThinkingPayload,
   PartialToolCallOutputPayload,
@@ -220,13 +220,12 @@ export interface RenderOptions {
 
 /**
  * Statically renders resumed history messages (`--resume`: full-message semantics, no
- * partial_*, including interrupted messages and their markers). Uses the
- * same color scheme as streaming rendering: user input `> `, dim thinking, cyan tool
- * calls, dim tool-output gutter; a message whose `stop_reason` isn't completed gets a
- * dim marker appended at the end of its line.
+ * partial_*, including the abort markers). Uses the same color scheme as streaming rendering:
+ * user input `> `, dim thinking, cyan tool calls, dim tool-output gutter; a tool result whose
+ * `status` isn't completed gets a dim marker after its last line.
  */
 export function renderHistory(
-  messages: OmniMessage[],
+  messages: AmspRecord[],
   out: NodeJS.WritableStream,
   t: Messages = defaultMessages(),
   opts: RenderOptions = {},
@@ -235,7 +234,7 @@ export function renderHistory(
   // tool_call_id -> tool name (keyed with the origin chain: parent/child ids may collide),
   // so output lines can be labeled with the tool name of their preceding call.
   const toolNames = new Map<string, string>();
-  const nameKey = (msg: OmniMessage, id: string): string => `${msg.origin?.join("/") ?? ""}:${id}`;
+  const nameKey = (msg: AmspRecord, id: string): string => `${msg.origin?.join("/") ?? ""}:${id}`;
   for (const msg of messages) {
     if (isEventMessage(msg)) {
       const p = msg.payload as { type?: string } & AbortPayload;
@@ -253,10 +252,8 @@ export function renderHistory(
       output?: string;
       images?: string[];
       tool_call_id?: string;
-      stop_reason?: string;
+      status?: string;
     };
-    const marker =
-      p.stop_reason && p.stop_reason !== "completed" ? dim(` [${p.stop_reason}]`, c) : "";
     switch (p.type) {
       case "text":
         if (p.role === "user") {
@@ -270,21 +267,21 @@ export function renderHistory(
           }
         } else {
           // A reply's a2ui blocks print as their text fallback, as they do while streaming.
-          out.write(`${toFallbackMarkdown(p.text ?? "")}${marker}\n`);
+          out.write(`${toFallbackMarkdown(p.text ?? "")}\n`);
         }
         break;
       case "image_url":
         out.write(`\n> ${dim("[image]", c)}\n`);
         break;
       case "thinking":
-        out.write(`${dim(p.thinking ?? "", c)}${marker}\n`);
+        out.write(`${dim(p.thinking ?? "", c)}\n`);
         break;
       case "tool_call": {
         if (p.name) toolNames.set(nameKey(msg, p.tool_call_id ?? ""), p.name);
         const preview =
           renderPartialToolCall(p.name ?? "", p.arguments ?? "", { final: true }) ??
           `${p.name} ${p.arguments}`;
-        out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`, c)}${marker}\n`);
+        out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`, c)}\n`);
         break;
       }
       case "tool_call_output": {
@@ -322,6 +319,8 @@ export function renderHistory(
         for (const _ of p.images ?? []) {
           out.write(`${c.dim}${label} -> [image]${c.reset}\n`);
         }
+        if (p.status && p.status !== "completed")
+          out.write(`${dim(`${label} [${p.status}]`, c)}\n`);
         break;
       }
       default:
@@ -343,7 +342,7 @@ function writeSteeringLines(
 }
 
 /**
- * Streaming renderer: writes the OmniMessage stream to the output stream. The display
+ * Streaming renderer: writes the AmspRecord stream to the output stream. The display
  * text for tool calls is decided locally by `tool-render.ts`; it no longer accepts a
  * tool-render callback from core (rendering has moved down into the CLI).
  */
@@ -358,7 +357,7 @@ export class StreamRenderer {
   private readonly toolOutCollapsers = new Map<string, ToolOutputCollapser>();
 
   /** Pending render queue: while the screen is held (a streaming segment is in progress / awaiting user input), messages queue up here. */
-  private pending: OmniMessage[] = [];
+  private pending: AmspRecord[] = [];
   /** The streaming segment currently holding the screen ("llm" or "out:<tool_call_id>"); null = idle. */
   private holder: string | null = null;
   /** Awaiting user input (approval prompt): locks the screen, all messages queue up. */
@@ -379,7 +378,7 @@ export class StreamRenderer {
    * endUserPrompt unlocks the screen.
    */
   private deferredDecisions: Array<{
-    toolCall: OmniMessage<ToolCallPayload>;
+    toolCall: AmspRecord<ToolCallPayload>;
     decision: ApprovalDecision;
   }> = [];
   /** Reentrancy guard for drain. */
@@ -508,7 +507,7 @@ export class StreamRenderer {
     this.collapseToolOutput = collapse;
   }
 
-  handle(msg: OmniMessage): void {
+  handle(msg: AmspRecord): void {
     this.pending.push(msg);
     this.drain();
   }
@@ -521,7 +520,7 @@ export class StreamRenderer {
    * arrive in the meantime — guaranteeing "tool call -> approval prompt" stay adjacent,
    * for both the main Agent and subagents.
    */
-  beginUserPrompt(toolCall?: OmniMessage<ToolCallPayload>): void {
+  beginUserPrompt(toolCall?: AmspRecord<ToolCallPayload>): void {
     if (toolCall) this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
     // File-tool approvals: the one-line preview shows only the (shortened) path, but the
@@ -555,7 +554,7 @@ export class StreamRenderer {
    * Idempotent (a given call's result is rendered only once); a subsequent
    * approval_decision event arriving through the pipeline is deduplicated by key.
    */
-  noteApprovalDecision(toolCall: OmniMessage<ToolCallPayload>, decision: ApprovalDecision): void {
+  noteApprovalDecision(toolCall: AmspRecord<ToolCallPayload>, decision: ApprovalDecision): void {
     const key = this.callLineKey(toolCall.payload.tool_call_id, toolCall.origin);
     // The screen is locked by **another call's** interactive prompt (e.g. auto-approval
     // of a concurrent subagent): must not write straight into the middle of an
@@ -584,7 +583,7 @@ export class StreamRenderer {
    * (re-)rendered in place from the complete message, and registered so any late
    * streaming/nested copy is deduplicated and skipped.
    */
-  private ensureAdjacentCallLine(tc: OmniMessage<ToolCallPayload>): void {
+  private ensureAdjacentCallLine(tc: AmspRecord<ToolCallPayload>): void {
     const key = this.callLineKey(tc.payload.tool_call_id, tc.origin);
     // The call line is already the last content line and its streaming segment has
     // already finished: already adjacent, nothing to do. If it's still mid-stream (the
@@ -655,7 +654,7 @@ export class StreamRenderer {
   }
 
   /** Streaming segment ownership: the LLM stream (text/thinking/tool_call share one stream serially) or a given tool's output stream; null = atomic message. */
-  private streamOwner(msg: OmniMessage): string | null {
+  private streamOwner(msg: AmspRecord): string | null {
     if (msg.origin && msg.origin.length > 0) return null; // nested messages render as atomic lines
     if (!isModelMessage(msg)) return null;
     const type = msg.payload.type;
@@ -668,7 +667,7 @@ export class StreamRenderer {
     return null;
   }
 
-  private isStop(msg: OmniMessage): boolean {
+  private isStop(msg: AmspRecord): boolean {
     return (msg.payload as { event_type?: string }).event_type === "stop";
   }
 
@@ -695,7 +694,7 @@ export class StreamRenderer {
         // pass (avoiding the quadratic cost of rescanning from the queue head after
         // each message); once the holder releases mid-scan (stop), put the remaining
         // messages back in original order, returning to plain FIFO.
-        const keep: OmniMessage[] = [];
+        const keep: AmspRecord[] = [];
         let progressed = false;
         for (let i = 0; i < this.pending.length; i++) {
           if (this.promptActive || this.inputHold || this.holder === null) {
@@ -720,7 +719,7 @@ export class StreamRenderer {
   }
 
   /** Actually renders one message (queue scheduling is already done by drain). */
-  private renderNow(msg: OmniMessage): void {
+  private renderNow(msg: AmspRecord): void {
     if (msg.origin && msg.origin.length > 0) {
       this.handleNested(msg);
       return;
@@ -984,7 +983,7 @@ export class StreamRenderer {
    * result; the request delta of a child token_usage counts toward this task's usage;
    * everything else is not rendered (see the rendering rule at the top of this file).
    */
-  private handleNested(msg: OmniMessage): void {
+  private handleNested(msg: AmspRecord): void {
     const origin = msg.origin!;
     if (isModelMessage(msg)) {
       if (msg.payload.type === "tool_call") {

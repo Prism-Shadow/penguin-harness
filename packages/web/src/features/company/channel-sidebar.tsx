@@ -17,7 +17,7 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
+  Pill,
   Button,
   FolderSection,
   GlyphIcon,
@@ -153,11 +153,7 @@ function ChannelRow({
           <Icon d={channelGlyph(channel.channelId)} size={ICON_SIZE.rowLead} />
         </span>
         <Truncated text={label} className="min-w-0 flex-1" />
-        {channel.mentionsMe > 0 && (
-          <Badge tone="attention" size="sm">
-            {S.company.channels.mentionChip}
-          </Badge>
-        )}
+        {channel.mentionsMe > 0 && <Pill tone="attention">{S.company.channels.mentionChip}</Pill>}
         {channel.unread > 0 && (
           <span className="shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400">
             {channel.unread}

@@ -25,6 +25,17 @@
  */
 
 @import "./wallpaper.css";
+@import "./cursors.css";
+
+/* How far a `ui-stream` host's newest lines are veiled, 0 to 1 (Frost multiplies it into its
+   mask), private to the recipes (not a token) and registered as a number so a transition can
+   ease it: on `done` it falls to nothing while the host holds `data-settling`, and the mask goes
+   with the attribute once the fade is over. */
+@property --_stream-veil {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
 
 /* Dark mode is the `dark` class on <html>, not the media query: the user can pin either mode. */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -73,7 +84,9 @@
   --color-canvas: var(--ui-canvas);
   --color-surface: var(--ui-surface);
   --color-surface-muted: var(--ui-surface-muted);
-  --color-fill-neutral: var(--ui-fill-neutral);
+  /* The neutral fill under a bubble or a chip: on a custom background it gives way to the image
+     as a light wash of the ink (wallpaper.css); the surfaces around it keep the theme's. */
+  --color-fill-neutral: var(--wallpaper-neutral-fill, var(--ui-fill-neutral));
   --color-surface-inset: var(--ui-inset);
   --color-overlay: var(--ui-overlay);
 
@@ -105,6 +118,9 @@
   --color-accent-active: var(--ui-accent-active);
   --color-accent-fg: var(--ui-accent-fg);
   --color-accent-muted: var(--ui-accent-muted);
+  /* The accent's opaque tint under the person's own words (the user bubble): on a custom
+     background it gives way to the image as the accent's translucent wash (wallpaper.css). */
+  --color-accent-tint: var(--wallpaper-tint-fill, var(--ui-accent-tint));
   --color-accent-line: var(--ui-accent-line);
 
   /* The switch: bg-switch-track (off), bg-switch-knob (the knob on it), bg-switch-knob-on (the
@@ -268,6 +284,16 @@
    *   entry moved to the other area, a regrouped session list, the glyph and the title a run
    *   settles into — fades (and de-blurs) in once; put it on the appended or swapped-in element
    *   only, never on what a page mounts with. Streaming text does not use it (`ui-stream` does).
+   * - `data-arrive` inside a `ui-stream` host: a run of streaming text a `fade` reveal just put on
+   *   screen (or an element that arrived whole: a list item, a table, a code block) fades in over
+   *   the reveal duration. The host pins each run's fade to the moment the run arrived
+   *   (stream-arrivals.ts), so the run reads as far along as it is old whichever element React
+   *   gives it, and drops the attribute once the last run has faded. The fade fills both ways:
+   *   a finished fade stays on its element (holding full ink, which changes nothing) for as long
+   *   as the element is a run, so when React hands that element to a newer run the host finds the
+   *   fade and starts it again at the new run's time instead of the element showing it at once.
+   *   Opacity only: nothing is painted, so whatever lies behind the text shows through the newest
+   *   words.
    * - `data-layout-motion`: an element whose size changes between states, the sidebar's width or a
    *   disclosure's `grid-template-rows: 0fr ↔ 1fr` — or whose place does, a dock surface lifting
    *   off the page column to cover it (`top`, `left`); the theme sets the duration and the curve.
@@ -355,6 +381,20 @@
     from {
       opacity: 0;
       filter: blur(var(--ui-reveal-blur));
+    }
+  }
+
+  /* A run still arriving is never the scroll anchor: it sits at the live edge and moves down
+     with every line the stream adds, so a browser anchored on it carries a reader who has
+     scrolled up along with the stream, a line at a time. Anchored on the settled text above it,
+     the view stays where the reader left it. */
+  .ui-stream [data-arrive] {
+    animation: ui-stream-arrive var(--ui-dur-reveal) var(--ui-ease-out) both;
+    overflow-anchor: none;
+  }
+  @keyframes ui-stream-arrive {
+    from {
+      opacity: 0;
     }
   }
 
@@ -454,9 +494,12 @@
   animation: none;
 }
 /* The `ui-stream` recipes animate the stream's caret (Console's stepped blink; Primer's is the
-   host's own pulse) and ease a layer drawn on the host itself (Frost's veil leaving on `done`),
-   so both are named: the caret holds still and a layer goes at once. The reveal's pace is the
-   app's, which shows the whole text under either signal; Frost also draws no veil then. */
+   host's own pulse) and may draw on the host itself (Console's cursor cell after a list), so
+   those are named: the caret holds still and a layer goes at once. Frost's veil is gated on
+   motion in its own recipe and is simply not drawn. The reveal's pace is the app's, which shows
+   the whole text under either signal and puts no run on screen to fade; a run left over from
+   before the switch shows at full ink. */
+:root[data-motion="reduced"] .ui-stream [data-arrive],
 :root[data-motion="reduced"] .ui-stream [data-slot="caret"],
 :root[data-motion="reduced"] .ui-stream::before,
 :root[data-motion="reduced"] .ui-stream::after,
@@ -479,6 +522,7 @@
   :is(.ui-activity, .ui-activity *)::after {
     animation: none;
   }
+  .ui-stream [data-arrive],
   .ui-stream [data-slot="caret"],
   .ui-stream::before,
   .ui-stream::after,
@@ -535,6 +579,26 @@
     --_tone-fg: var(--ui-tone-neutral-fg);
   }
 
+  /* The tint a tone surface keeps on a custom background, which wallpaper.css thins: the tone
+     tokens under the same five names, keyed on the surface role rather than the hook, so a strip
+     that is not a notice can name its tone the same way and an a2ui callout's own `data-tone` is
+     left alone. `--_tone-bg` is private to the recipes (not a token). */
+  [data-wallpaper-surface="tone"][data-tone="info"] {
+    --_tone-bg: var(--ui-tone-info-bg);
+  }
+  [data-wallpaper-surface="tone"][data-tone="success"] {
+    --_tone-bg: var(--ui-tone-success-bg);
+  }
+  [data-wallpaper-surface="tone"][data-tone="warning"] {
+    --_tone-bg: var(--ui-tone-attention-bg);
+  }
+  [data-wallpaper-surface="tone"][data-tone="danger"] {
+    --_tone-bg: var(--ui-tone-danger-bg);
+  }
+  [data-wallpaper-surface="tone"][data-tone="neutral"] {
+    --_tone-bg: var(--ui-tone-neutral-bg);
+  }
+
   /* Where a tree's levels start. A tree with roots (a file tree) indents from the tree inset;
      a tree with no depth-0 rows hangs off its container's own head (a work group's steps under
      its header), so its first level is the head's level: a recipe that indents by
@@ -586,6 +650,14 @@
   }
   .ui-glyph [data-part="duo"] {
     opacity: var(--ui-icon-duo-opacity, 0);
+  }
+
+  /* A stream host whose edge is live (the caret is its last child) says so as a number a theme's
+     veil can multiply: 1 there, 0 everywhere else (the property's initial value), so a recipe
+     that transitions it eases its veil in and out. `--_stream-veil` is private to the recipes
+     (not a token). */
+  .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child) {
+    --_stream-veil: 1;
   }
 }
 

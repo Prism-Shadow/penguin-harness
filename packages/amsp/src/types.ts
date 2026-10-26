@@ -1,315 +1,77 @@
 /**
  * AMSP (Agent Message Stream Protocol): the wire types.
  *
- * MMSP streams one model call; AMSP streams one run of an Agent — one Task — on a Session the
- * caller continues by id. A run is a `text/event-stream` of `data: <JSON>` blocks, one event
- * each, closed by `data: [DONE]`:
+ * AMSP is the stream of one Session: its records as the Trace holds them, plus the
+ * `partial_*` fragments streamed while a message is produced, and control frames. A stream
+ * is `text/event-stream`; every event is one of two kinds:
  *
- *   stream  := run.started body* run.done
- *   request := request.started (item | tool_result | approval | hook.fired)* request.done
- *   item    := K.delta* K.done        ; K = thinking | text | tool_call | inline_data | inline_thinking
+ * - a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` the record
+ *   envelope `{timestamp, type, payload, origin?}` — {@link AmspRecord}, the payloads snake_case
+ *   exactly as the Trace stores them;
+ * - a **control frame**: a named event without an `id:` — `ping` ({@link AmspControl}) — or the
+ *   run stream's last line, `data: [DONE]`.
  *
- * Events are flat objects discriminated by `type`, snake_case on the wire like MMSP and the
- * OmniMessage payloads they are projected from. `run.done` is the one terminal event and always
- * arrives, errors included. Clients must ignore a `type` they do not know: new event types and
- * optional fields are additive within `/v1`; a change to an existing field's meaning is `/v2`.
+ * A reader dispatches on the SSE event name: unnamed is a record, a name it does not know is
+ * ignored, and so is a `payload.type` it does not know. Within `/v1` the protocol only grows:
+ * new records, new optional fields, new control frames.
  *
- * A Request pair brackets the model's output, not the tools: the engine runs a tool as soon as
- * its call is complete, so the approval and the start of the result arrive while the Request is
- * still open, and the result may end after `request.done` (always before the next
- * `request.started` of the same origin). Attribute results by `tool_call_id`. Fragments and
- * complete items are forwarded as the engine produced them and never rebuilt from each other.
- *
- * The server's translator produces these events and imports this file as types; the client
- * consumes them.
+ * The record vocabulary lives in `./records/` and is re-exported here.
+ * The rest of this file is the shape of the Agent API's requests and answers around the stream.
  */
+import type { MessageOrigin, AmspRecord, ToolCallPayload } from "./records/index.js";
 
-// ---- vocabulary shared with OmniMessage (same strings, same meaning) ----
-export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
-export type Role = "user" | "assistant";
-export type ApprovalDecision = "allow" | "deny" | "forbidden";
-export type Sender = "user" | "parent_agent" | "harness" | "server";
-export type CompactionReason = "context" | "turns" | "manual";
-export type CompactionMode = "summarize" | "discard";
-export type HookPoint = "stop" | "pre_tool_use" | "user_prompt";
-export type HookDecision = "continue" | "stop" | "allow" | "deny";
+export * from "./records/index.js";
+
+/**
+ * A control frame. `ping` opens a run stream, follows any replay on a Session stream, and is the
+ * 20-second heartbeat. No frame names a run's Session: a new Session's is its `session_meta`, the
+ * run stream's first record, and a continued one's is the `session_id` the request sent. Nor
+ * does a frame say a resume failed: a `Last-Event-ID` the server's buffer no longer holds is
+ * refused before the stream starts, 409 `resync_required`.
+ */
+export type AmspControl = { kind: "ping" };
+
+/** A Session's run state, as `GET …/sessions/:id` reports it. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-export interface TokenCounts {
-  cache_read: number;
-  cache_write: number;
-  output: number;
-  total: number;
-}
-/** The one error shape: `code` snake_case and stable (OmniMessage ErrorCode values plus AMSP's own, listed in the protocol reference); `message` raw text. */
+/** The one error shape: `code` snake_case and stable; `message` raw text. */
 export interface AmspError {
   code: string;
   message: string;
 }
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters?: Record<string, unknown>;
-}
-export interface McpServerResult {
-  server: string;
-  transport: "stdio" | "http" | "sse";
-  status: StopReason;
-  duration_ms: number;
-  tools?: number;
-  error?: AmspError;
-}
-
-interface Base {
-  /** ISO 8601 UTC. */
-  at: string;
-  /** Child-Session chain, outer→inner (OmniMessage `origin`); absent = the main Session. */
-  origin?: string[];
-}
-
-// ---- run layer ----
-export interface RunStarted extends Base {
-  type: "run.started";
-  session_id: string;
-  agent: string /* "<projectId>/<agentId>" */;
-}
-export interface RunDone extends Base {
-  type: "run.done";
-  status: StopReason;
-  error?: AmspError;
-  /** Model Requests this run issued (attempts included). */
-  requests: number;
-  usage: TokenCounts;
-  session_usage: TokenCounts | null;
-}
-
-// ---- context / bootstrap ----
-/**
- * A new model context the engine streams: a child Session starting (with `origin`) or, between
- * runs, a model switch. The context a compaction opens is recorded in the Trace, not streamed, so
- * none follows `compaction.done`.
- */
-export interface ContextOpened extends Base {
-  type: "context.opened";
-  session_id: string;
-  provider: string;
-  model_id: string;
-  context_window: number | "unknown";
-}
-export interface McpConnectStarted extends Base {
-  type: "mcp_connect.started";
-  servers: string[];
-}
-export interface McpConnectDone extends Base {
-  type: "mcp_connect.done";
-  status: StopReason;
-  results: McpServerResult[];
-  error?: AmspError;
-}
-export interface ToolsReady extends Base {
-  type: "tools.ready";
-  tools: ToolDefinition[];
-}
-
-// ---- request layer ----
-export interface RequestStarted extends Base {
-  type: "request.started";
-  request: number /* 1-based within the run */;
-}
-/** The Request ended. Results of the tools it called may still follow, before the next `request.started`. */
-export interface RequestDone extends Base {
-  type: "request.done";
-  request: number;
-  status: StopReason;
-  usage: TokenCounts | null;
-  error?: AmspError;
-  /** 1-based attempt ordinal; present on retries and failures (OmniMessage `attempt`). */
-  attempt?: number;
-  /** Present only when the engine will retry this failure within the run. */
-  retry_in_ms?: number;
-}
-
-// ---- item layer: fragments ----
-export interface TextDelta extends Base {
-  type: "text.delta";
-  role: "assistant";
-  text: string;
-}
-export interface ThinkingDelta extends Base {
-  type: "thinking.delta";
-  thinking: string;
-}
-export interface ToolCallDelta extends Base {
-  type: "tool_call.delta";
-  tool_call_id: string;
-  /** Set on the first fragment; may be empty afterwards. */
-  name: string;
-  /** A piece of the arguments text as the provider streamed it. */
-  arguments: string;
-}
-/** Output a running tool has produced so far; may arrive while the Request that made the call is still open. */
-export interface ToolResultDelta extends Base {
-  type: "tool_result.delta";
-  tool_call_id: string;
-  output: string;
-  /** Not incremental: one fragment carries the whole set. */
-  images?: string[];
-}
-/**
- * A fragment of a compaction's summary. A streamed summary has no `summary.done`: the engine
- * streams the fragments or delivers the text whole, never both, and nothing rebuilds one from the
- * other.
- */
-export interface SummaryDelta extends Base {
-  type: "summary.delta";
-  text: string;
-}
-
-// ---- item layer: complete items ----
-export interface TextDone extends Base {
-  type: "text.done";
-  role: Role;
-  text: string;
-  stop_reason: StopReason;
-  /** On user-role texts the harness injected mid-run. */
-  sender?: Sender;
-}
-export interface ThinkingDone extends Base {
-  type: "thinking.done";
-  thinking: string;
-  stop_reason: StopReason;
-}
-export interface ToolCallDone extends Base {
-  type: "tool_call.done";
-  tool_call_id: string;
-  name: string;
-  /**
-   * The complete arguments as a JSON string: the engine's serialization of the parsed call, which
-   * the fragments joined need not equal character for character (`{"command": "ls"}` streamed,
-   * `{"command":"ls"}` here) but parse to the same object; parse with `parseArguments`. A call cut
-   * short (`stop_reason` other than `completed`) carries the text received so far instead.
-   */
-  arguments: string;
-  stop_reason: StopReason;
-}
-/** The tool's result as the model receives it; may arrive after the call's `request.done`, always before the next `request.started` of the same origin. */
-export interface ToolResultDone extends Base {
-  type: "tool_result.done";
-  tool_call_id: string;
-  output: string;
-  images?: string[];
-  stop_reason: StopReason;
-}
-export interface InlineDataDone extends Base {
-  type: "inline_data.done";
-  role: Role;
-  mime_type: string;
-  /** base64 */
-  data: string;
-  stop_reason: StopReason;
-}
-export interface InlineThinkingDone extends Base {
-  type: "inline_thinking.done";
-  mime_type: string;
-  data: string;
-  stop_reason: StopReason;
-}
-export interface ImageUrlDone extends Base {
-  type: "image_url.done";
-  role: "user";
-  image_url: string;
-}
-/** A compaction's summary delivered whole; absent when the summary was streamed. */
-export interface SummaryDone extends Base {
-  type: "summary.done";
-  text: string;
-  stop_reason: StopReason;
-}
-
-// ---- approvals ----
-/** A tool call waiting for the caller's answer; arrives while the call's Request is still open and carries the whole call. */
-export interface ApprovalRequested extends Base {
-  type: "approval.requested";
-  tool_call: { tool_call_id: string; name: string; arguments: string };
-}
-export interface ApprovalDecided extends Base {
-  type: "approval.decided";
-  tool_call_id: string;
-  decision: ApprovalDecision;
-}
-
-// ---- compaction ----
-export interface CompactionStarted extends Base {
-  type: "compaction.started";
-  reason: CompactionReason;
-  mode: CompactionMode;
-  context: number;
-  turns: number;
-}
-export interface CompactionDone extends Base {
-  type: "compaction.done";
-  reason: CompactionReason;
-  mode: CompactionMode;
-  status: StopReason;
-  usage: TokenCounts | null;
-  error?: AmspError;
-  attempt?: number;
-}
-
-// ---- hooks ----
-export interface HookFired extends Base {
-  type: "hook.fired";
-  hook: HookPoint;
-  name: string;
-  decision?: HookDecision;
-  reason?: string;
-  output?: Record<string, string | number | boolean>;
-}
-
-export type AmspEvent =
-  | RunStarted
-  | RunDone
-  | ContextOpened
-  | McpConnectStarted
-  | McpConnectDone
-  | ToolsReady
-  | RequestStarted
-  | RequestDone
-  | TextDelta
-  | ThinkingDelta
-  | ToolCallDelta
-  | ToolResultDelta
-  | SummaryDelta
-  | TextDone
-  | ThinkingDone
-  | ToolCallDone
-  | ToolResultDone
-  | InlineDataDone
-  | InlineThinkingDone
-  | ImageUrlDone
-  | SummaryDone
-  | ApprovalRequested
-  | ApprovalDecided
-  | CompactionStarted
-  | CompactionDone
-  | HookFired;
 
 // ---- requests / responses ----
+
 export type InputItem =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: string /* data: URL or http(s) URL */ };
+
+/** `POST …/agents/:projectId/:agentId/runs`: one run, streamed. */
 export interface RunRequest {
   session_id?: string;
   input: string | InputItem[];
 }
+
+/** `POST …/sessions/:id/tasks`: a run on an API Session that does not hold the connection. */
+export interface TaskRequest {
+  input: string | InputItem[];
+}
+
+/** The `202` answer of `POST …/sessions/:id/tasks`. */
+export interface TaskResponse {
+  session_id: string;
+}
+
 export interface AgentInfo {
   id: string /* "<projectId>/<agentId>" */;
   name?: string;
   description?: string;
 }
+
 export interface AgentResponse {
   agent: AgentInfo;
 }
+
 export interface SessionInfo {
   id: string;
   agent: string;
@@ -319,12 +81,56 @@ export interface SessionInfo {
   created_at: string;
   last_active_at: string;
 }
+
 export interface SessionResponse {
   session: SessionInfo;
 }
+
+/** One tool call the server holds for a decision: the `tool_call` record's payload, and the child Session chain for a subagent's call. */
+export interface PendingApproval {
+  tool_call: ToolCallPayload;
+  origin?: MessageOrigin[];
+}
+
+/** `GET …/sessions/:id/approvals[?wait=<1–60>]`: the calls waiting for a decision now. */
+export interface ApprovalsResponse {
+  approvals: PendingApproval[];
+}
+
+/** `POST …/sessions/:id/approvals/:toolCallId`. */
 export interface ApprovalRequest {
   decision: "allow" | "deny";
 }
+
+/** A history record: a record as the Trace holds it, with where it sits there (absent on a child's expanded records and on input not yet written). */
+export type HistoryRecord = AmspRecord & { tracePosition?: { fileIndex: number; ordinal: number } };
+
+/** A page of history: the newest `tailLimit` Tasks, or the `limit` Tasks before a `before` cursor. */
+export type MessagesPage = { tailLimit: number } | { before: string; limit?: number };
+
+/**
+ * `GET …/sessions/:id/messages`. Without a page, the whole history, every file's `session_meta`
+ * included. With one, a window of whole Tasks with `page` describing it, its images served by
+ * reference to `…/sessions/:id/trace-image`. While the Session runs, `live` joins the history to
+ * the stream: `cursor` is the stream's id at the read, and `fragments` the open `partial_*`
+ * messages so far, each as one `start` carrying what has streamed.
+ *
+ * This answer is the Web App's history read, shared by both doors, so its own fields are camelCase.
+ */
+export interface MessagesResponse {
+  messages: HistoryRecord[];
+  live?: { cursor: string; fragments: AmspRecord[] };
+  page?: {
+    /** Pass back as `before` for the window before this one; absent at the beginning. */
+    before?: string;
+    earlierTurns: number;
+    prior: Record<string, number>;
+    /** The model of the context the window starts in. */
+    contextModel?: { provider: string; modelId: string };
+    agentState?: string;
+  };
+}
+
 export interface ErrorResponse {
   error: AmspError;
 }

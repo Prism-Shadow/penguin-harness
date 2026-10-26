@@ -6,7 +6,7 @@
  * versions. Beside it, the three numbers the scoreboard records for every version, each line
  * growing from the left on a slow loop.
  *
- * The chart values are illustrative and the section says so. Their shapes follow the rules, not a
+ * The chart values are illustrative. Their shapes follow the rules, not a
  * wish: the score only rises because a version is kept only when it scores higher, while cost and
  * duration are recorded but never optimised, so they wander. Phones get the same loop as a stacked
  * reading. Reduced motion: the flow dots stay off and every line is drawn finished. Under the
@@ -17,8 +17,8 @@ import { S } from "../lib/strings";
 import { Section } from "../components/section";
 import { DemoVideo } from "../components/demo-video";
 import { demoVideoUrl } from "../lib/links";
-import { useLocale } from "../state/locale";
-import type { Locale } from "../state/locale";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
+import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
 import demoPosterZh from "../assets/shots/decision-evo-zh.webp";
 import demoPosterEn from "../assets/shots/decision-evo-en.webp";
 
@@ -548,7 +548,7 @@ const DEMO: Record<Locale, { video: string; poster: string }> = {
 
 export function SelfImprove() {
   const c = S.selfImprove;
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const demo = DEMO[locale];
   return (
     <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>

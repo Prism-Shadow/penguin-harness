@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>统一、稳定的 Agent 自进化框架</strong><br />全自动优化<strong>模型 × Agent Harness</strong></p>
+<p align="center"><strong>统一、稳定的 Agent 自进化框架</strong><br />全自动优化：<strong>任意模型&nbsp;· 任意算法&nbsp;· 任意 Benchmark</strong></p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">
@@ -185,7 +185,7 @@ Claude 5.5 的 OpenCode Go 预设为 Haiku；Fable 5.1、Opus 5.5 和 Sonnet 5.5
 ### Docker
 
 ```bash
-docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:0.2.16
+docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:0.2.17
 docker logs penguin       # 首次登录链接，在本机可原样打开
 ```
 
@@ -269,7 +269,7 @@ pnpm install && pnpm build   # 先构建：core 的导出指向 dist/
 pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，依赖只构建一次）
 ```
 
-用编码 Agent 开发本仓库：开发用的 Skill 在 `.agents/skills/` 下（`penguin-harness-dev`、`penguin-harness-frontend`、`penguin-harness-manual-test`）。Claude Code 通过 `.claude` → `.agents` 软链接直接加载，无需安装；换用其他 Agent 时，把 `.agents/skills/*` 链接或复制到它读取 Skill 的目录即可。
+用编码 Agent 开发本仓库：开发用的 Skill 在 `.agents/skills/` 下（`penguin-harness-dev`、`penguin-harness-frontend`、`penguin-harness-manual-test`、`penguin-harness-writing`）。Claude Code 通过 `.claude` → `.agents` 软链接直接加载，无需安装；换用其他 Agent 时，把 `.agents/skills/*` 链接或复制到它读取 Skill 的目录即可。
 
 完整的 Workspace 开发指南见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)：开发命令、质量门禁、仓库布局和 changelog 规则。
 

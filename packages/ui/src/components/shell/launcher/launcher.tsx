@@ -73,7 +73,7 @@ export function LauncherBall({
       style={{ ...style, width: size, height: size }}
       className={`ui-glass anim-pop relative flex touch-none select-none items-center justify-center rounded-full border border-line/80 text-fg-muted shadow-sm backdrop-blur-md transition-[background-color,color,opacity,box-shadow] duration-150 hover:bg-surface/95 hover:text-fg hover:opacity-100 hover:shadow-lg focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
         lit ? "bg-surface/95 text-fg opacity-100" : "bg-surface/75 opacity-80"
-      } ${dragging ? "cursor-grabbing" : "cursor-pointer"} ${className}`}
+      } ${dragging ? "cursor-grabbing" : "cursor-default"} ${className}`}
     >
       {glyph}
       {/* A small pill on the same glass, with no ink of its own, so it follows the ball's resting

@@ -32,8 +32,8 @@ import {
   toolCallOutput,
   userText,
   withOrigin,
-} from "@prismshadow/penguin-core/omnimessage";
-import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core/omnimessage";
+} from "@prismshadow/amsp";
+import type { AmspRecord, TokenCounts } from "@prismshadow/amsp";
 import type {
   MessagesLiveTail,
   MessagesPageInfo,
@@ -42,19 +42,19 @@ import type {
   ServerEvent,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import { OLDER_UNITS, TAIL_UNITS, createStreamController } from "../src/lib/omni/stream-controller";
-import type { MessagesPageQuery, StreamController } from "../src/lib/omni/stream-controller";
-import { approvalKey, findToolCard } from "../src/lib/omni/stream-model";
+import { OLDER_UNITS, TAIL_UNITS, createStreamController } from "../src/lib/amsp/stream-controller";
+import type { MessagesPageQuery, StreamController } from "../src/lib/amsp/stream-controller";
+import { approvalKey, findToolCard } from "../src/lib/amsp/stream-model";
 import type {
   AssistantTextItem,
   ChatItem,
   TaskStatsItem,
   ToolCallItem,
   UserImageItem,
-} from "../src/lib/omni/stream-model";
+} from "../src/lib/amsp/stream-model";
 
 /** Override a message timestamp (constructor defaults to the current time). */
-function at<M extends OmniMessage>(msg: M, ts: string): M {
+function at<M extends AmspRecord>(msg: M, ts: string): M {
   return { ...msg, timestamp: ts };
 }
 
@@ -77,7 +77,7 @@ interface Harness {
   /** The `page` argument of each loadMessages call, in order (undefined = the legacy full read). */
   pageArgs: Array<MessagesPageQuery | undefined>;
   resolveLoad: (
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     live?: MessagesLiveTail,
     serverNowMs?: number | null,
     page?: MessagesPageInfo,
@@ -88,7 +88,7 @@ interface Harness {
 function createHarness(): Harness {
   const pendingLoads: Array<{
     resolve: (m: {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
       live?: MessagesLiveTail;
       serverNowMs?: number | null;
       page?: MessagesPageInfo;
@@ -107,7 +107,7 @@ function createHarness(): Harness {
     sessionId: "s1",
     loadMessages: (page) =>
       new Promise<{
-        messages: OmniMessage[];
+        messages: AmspRecord[];
         live?: MessagesLiveTail;
         serverNowMs?: number | null;
         page?: MessagesPageInfo;
@@ -163,7 +163,7 @@ function pageInfo(over: Partial<MessagesPageInfo> = {}): MessagesPageInfo {
   };
 }
 
-const HISTORY_TASK: OmniMessage[] = [
+const HISTORY_TASK: AmspRecord[] = [
   at(userText("question"), "2026-07-05T00:00:00.000Z"),
   at(assistantText("answer"), "2026-07-05T00:00:03.000Z"),
   at(tokenUsage(counts(1000), counts(1000)), "2026-07-05T00:00:05.000Z"),
@@ -294,10 +294,12 @@ describe("in-stream task_state is the authoritative running state (history-closi
     // Server ordering for a queued follow-up: current run flips idle, then launchTask publishes
     // the queued user input before its running state. The first idle must seal Task 1 before that.
     h.controller.handleServer({ type: "task_state", state: "idle", queued: 1 });
-    h.controller.handleOmni(at(userText("follow-up"), "2026-07-05T00:01:00.000Z"));
+    h.controller.handleRecord(at(userText("follow-up"), "2026-07-05T00:01:00.000Z"));
     h.controller.handleServer({ type: "task_state", state: "running", queued: 0 });
-    h.controller.handleOmni(at(assistantText("follow-up answer"), "2026-07-05T00:01:03.000Z"));
-    h.controller.handleOmni(at(tokenUsage(counts(1400), counts(400)), "2026-07-05T00:01:05.000Z"));
+    h.controller.handleRecord(at(assistantText("follow-up answer"), "2026-07-05T00:01:03.000Z"));
+    h.controller.handleRecord(
+      at(tokenUsage(counts(1400), counts(400)), "2026-07-05T00:01:05.000Z"),
+    );
     h.controller.handleServer({ type: "task_state", state: "idle", queued: 0 });
 
     const stats = h.controller.model.items.filter(
@@ -352,7 +354,7 @@ describe("approval re-delivery (origin composite key + missing-card backfill)", 
     const tc = withOrigin(toolCall({ name: "x", arguments: "{}", toolCallId: "t1" }), "c1");
     h.controller.handleServer({ type: "approval_request", toolCall: tc, origin: ["c1"] });
     expect(h.controller.pendingApprovals.size).toBe(1);
-    h.controller.handleOmni(withOrigin(approvalDecision("allow", "t1"), "c1"));
+    h.controller.handleRecord(withOrigin(approvalDecision("allow", "t1"), "c1"));
     expect(h.controller.pendingApprovals.size).toBe(0);
   });
 
@@ -378,7 +380,7 @@ describe("approval re-delivery (origin composite key + missing-card backfill)", 
     // subtracts another server time from it, so it must never be handed a local clock — while
     // the local stamp stays put, which is what keeps an elapsed-time gate reading it
     // local-first from seeing its start time move and restarting.
-    h.controller.handleOmni(at(approvalDecision("allow", "t1"), "2026-07-05T00:00:05.000Z"));
+    h.controller.handleRecord(at(approvalDecision("allow", "t1"), "2026-07-05T00:00:05.000Z"));
     expect(card.approvalAtMs).toBe(Date.parse("2026-07-05T00:00:05.000Z"));
     expect(card.localApprovalAtMs).toBe(1_000_000);
   });
@@ -428,7 +430,7 @@ describe("resync rebuild", () => {
     const h = createHarness();
     const p = h.controller.load();
     // Buffer: old event A → resync_required → task_state:idle (server re-delivery order).
-    h.controller.handleOmni(at(assistantText("old event A"), "2026-07-05T00:00:01.000Z"));
+    h.controller.handleRecord(at(assistantText("old event A"), "2026-07-05T00:00:01.000Z"));
     h.controller.handleServer({ type: "resync_required" });
     h.controller.handleServer({ type: "task_state", state: "idle" });
     // First round of history returns: replaying up to resync_required invalidates this round.
@@ -441,7 +443,7 @@ describe("resync rebuild", () => {
     // (the question + "old event A"), never a blank, and the live event is not yet in it (feeding it
     // here as a third item would fail this assertion).
     const live = at(assistantText("output during rebuild"), "2026-07-05T00:00:02.000Z");
-    h.controller.handleOmni(live);
+    h.controller.handleRecord(live);
     expect(h.controller.model.items.map((i) => i.kind)).toEqual(["user_text", "assistant_text"]);
     // Second round of history (authoritative) returns: the transferred task_state and
     // buffered events replay in order.
@@ -466,10 +468,10 @@ describe("live-tail seeding (reload mid-stream)", () => {
     h.controller.handleServer({ type: "task_state", state: "running" }, "e1-3");
     // Already covered by the fragment snapshot (seq <= cursor): must be dropped, or the
     // seeded prefix would double.
-    h.controller.handleOmni(partialText("start", "Hel"), "e1-4");
-    h.controller.handleOmni(partialText("delta", "lo"), "e1-5");
+    h.controller.handleRecord(partialText("start", "Hel"), "e1-4");
+    h.controller.handleRecord(partialText("delta", "lo"), "e1-5");
     // After the cursor: continues the seeded fragment.
-    h.controller.handleOmni(partialText("delta", " world"), "e1-6");
+    h.controller.handleRecord(partialText("delta", " world"), "e1-6");
     h.resolveLoad([at(userText("question"), "2026-07-05T00:00:00.000Z")], {
       cursor: "e1-5",
       fragments: [at(partialText("start", "Hello"), "2026-07-05T00:00:01.000Z")],
@@ -485,7 +487,7 @@ describe("live-tail seeding (reload mid-stream)", () => {
     const h = createHarness();
     const p = h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "running" }, "e1-7");
-    h.controller.handleOmni(
+    h.controller.handleRecord(
       partialToolCallOutput({ eventType: "delta", output: "line 2\n", toolCallId: "t1" }),
       "e1-9",
     );
@@ -519,8 +521,8 @@ describe("live-tail seeding (reload mid-stream)", () => {
   it("epoch mismatch: neither drops nor seeds (buffered partials replay as-is)", async () => {
     const h = createHarness();
     const p = h.controller.load();
-    h.controller.handleOmni(partialText("start", "He"), "old-4");
-    h.controller.handleOmni(partialText("delta", "llo"), "old-5");
+    h.controller.handleRecord(partialText("start", "He"), "old-4");
+    h.controller.handleRecord(partialText("delta", "llo"), "old-5");
     h.resolveLoad([], {
       cursor: "new-9",
       fragments: [partialText("start", "Hello")],
@@ -539,8 +541,8 @@ describe("live-tail seeding (reload mid-stream)", () => {
     const inHistory = at(assistantText("done"), "2026-07-05T00:00:01.000Z");
     // Trace append still in flight at read time: the buffered copy is the only copy.
     const diskLagged = at(assistantText("lagged"), "2026-07-05T00:00:02.000Z");
-    h.controller.handleOmni(inHistory, "e1-4");
-    h.controller.handleOmni(diskLagged, "e1-5");
+    h.controller.handleRecord(inHistory, "e1-4");
+    h.controller.handleRecord(diskLagged, "e1-5");
     h.resolveLoad([at(userText("q"), "2026-07-05T00:00:00.000Z"), inHistory], {
       cursor: "e1-6",
       fragments: [],
@@ -569,7 +571,7 @@ describe("live-tail seeding (reload mid-stream)", () => {
 });
 
 describe("windowed history: tail-first load + scroll-up backfill", () => {
-  const OLD_TURN: OmniMessage[] = [
+  const OLD_TURN: AmspRecord[] = [
     at(userText("old question"), "2026-07-04T00:00:00.000Z"),
     at(assistantText("old answer"), "2026-07-04T00:00:02.000Z"),
     at(tokenUsage(counts(400), counts(400)), "2026-07-04T00:00:04.000Z"),
@@ -625,8 +627,8 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     const prompt = at(userText("what is this?"), "2026-07-05T00:00:00.000Z");
     const sent = at(imageUrlMessage(bytes), "2026-07-05T00:00:00.000Z");
     // The stream delivered the image while the page was being read: the buffered copy has its bytes.
-    h.controller.handleOmni(prompt, "e1-1");
-    h.controller.handleOmni(sent, "e1-2");
+    h.controller.handleRecord(prompt, "e1-1");
+    h.controller.handleRecord(sent, "e1-2");
     h.controller.handleServer({ type: "task_state", state: "idle" });
     // The page's copies: positioned Trace records, the image's bytes replaced by its route URL.
     const pagePrompt = { ...prompt, tracePosition: { fileIndex: 2, ordinal: 7 } };
@@ -710,7 +712,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
   });
 
   it("a window is seeded with the model of the context it starts in: its first Tasks name it and a switch further down is marked, in the tail and in a backfilled window alike", async () => {
-    const metaOn = (provider: string, modelId: string): OmniMessage =>
+    const metaOn = (provider: string, modelId: string): AmspRecord =>
       sessionMeta({
         session_id: "s1",
         provider,
@@ -802,8 +804,8 @@ describe("memory updates in paginated history", () => {
   const changes = (items: readonly ChatItem[]) =>
     items.flatMap((item) => (item.kind === "task_stats" ? (item.memoryChanges ?? []) : []));
 
-  function memoryTurn(file: string, day = "05"): OmniMessage[] {
-    const stamp = (message: OmniMessage, second: number) =>
+  function memoryTurn(file: string, day = "05"): AmspRecord[] {
+    const stamp = (message: AmspRecord, second: number) =>
       at(message, `2026-07-${day}T00:00:${String(second).padStart(2, "0")}.000Z`);
     return [
       stamp(userText("remember this"), 0),
@@ -816,7 +818,10 @@ describe("memory updates in paginated history", () => {
           }),
           1 + i * 2,
         ),
-        stamp(toolCallOutput({ output: "updated", toolCallId: `${file}-${i}` }), 2 + i * 2),
+        stamp(
+          toolCallOutput({ output: "updated", toolCallId: `${file}-${i}`, status: "completed" }),
+          2 + i * 2,
+        ),
       ]),
       stamp(assistantText("remembered"), 7),
     ];
@@ -832,7 +837,7 @@ describe("memory updates in paginated history", () => {
       h.resolveLoad(state === "idle" ? messages : messages.slice(0, 1), undefined, null, page);
       await pending;
       if (state === "running") {
-        for (const message of messages.slice(1)) h.controller.handleOmni(message);
+        for (const message of messages.slice(1)) h.controller.handleRecord(message);
         h.controller.handleServer({ type: "task_state", state: "idle" });
       }
       expect(changes(h.controller.model.items)).toMatchObject([

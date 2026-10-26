@@ -4,13 +4,10 @@
  * pin-at-oldest, stash restore past the newest).
  */
 import { describe, expect, it } from "vitest";
-import type { ChatItem } from "../src/lib/omni/stream-model";
+import type { ChatItem } from "../src/lib/amsp/stream-model";
 import { buildSkillsMessage } from "../src/features/chat/skill-use";
 import { handoffMessage } from "../src/features/chat/agent-handoff";
-import {
-  buildBackgroundTaskDoneMessage,
-  buildScheduledMessage,
-} from "@prismshadow/penguin-core/markers";
+import { buildBackgroundTaskDoneMessage, buildScheduledMessage } from "@prismshadow/amsp/markers";
 import {
   buildInputHistory,
   caretOnFirstLine,

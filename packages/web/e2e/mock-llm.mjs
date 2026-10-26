@@ -25,6 +25,10 @@
  *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
  *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
  *    (reload-midstream.spec reloads while the TEXT streams)
+ *  - "scroll bounce test" -> a three-line paragraph every 50ms for ~4s, for every request of
+ *    that conversation (scroll-follow-bounce.spec wheels up while each reply streams)
+ *  - "sticky rows test" -> thinking + three tool_use(exec_command) printing long runs of numbers
+ *    (sticky-rows.spec scrolls an open output under the pinned group head and tool row)
  *  - last message has tool_result -> final text (turn 2)
  *  - otherwise (first user turn) -> thinking + text + tool_use(exec_command)
  */
@@ -505,6 +509,29 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // Sticky-rows test case (sticky-rows.spec): one work group of a thinking step and three
+    // exec_command calls whose output is one long run of numbers, so every line of an open
+    // output block is full of text, edge to edge, while it scrolls under the pinned rows.
+    if (flat.includes("sticky rows test") && !hasToolResult) {
+      block(
+        res,
+        0,
+        { type: "thinking", thinking: "" },
+        [{ type: "thinking_delta", thinking: "Three commands will print the numbers." }],
+        { type: "signature_delta", signature: "sig_mock_sticky" },
+      );
+      for (let i = 1; i <= 3; i++) {
+        block(
+          res,
+          i,
+          { type: "tool_use", id: `toolu_sticky_${i}`, name: "exec_command", input: {} },
+          [{ type: "input_json_delta", partial_json: `{"cmd": "seq -s ' ' ${i} 4000"}` }],
+        );
+      }
+      messageStop(res, "tool_use", 40);
+      return;
+    }
+
     // Slow TEXT test case (reload-midstream.spec): a single text block streamed one delta
     // every 200ms (~8s total) so the page can be reloaded while the assistant text is
     // still streaming. Single turn: ends with end_turn, no tool call.
@@ -527,6 +554,39 @@ const server = http.createServer((req, res) => {
         } else {
           sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
           messageStop(res, "end_turn", 80);
+        }
+      };
+      tick();
+      return;
+    }
+
+    // Scroll-bounce test case (scroll-follow-bounce.spec): a reply that grows by a visible step
+    // on every commit — one three-line paragraph every 50ms for ~4s — so the reader can wheel up
+    // from the bottom while the transcript is still following new text. Every request of that
+    // conversation answers this way, so the spec can stream one reply per gesture.
+    if (flat.includes("scroll bounce test")) {
+      sse(res, "content_block_start", {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "" },
+      });
+      const filler =
+        "The transcript keeps following this reply while it grows, and a reader who scrolls " +
+        "up from the bottom must stay exactly where the gesture left them, however much text " +
+        "arrives below, until they scroll back down or press the button that returns them.";
+      let n = 0;
+      const tick = () => {
+        n += 1;
+        sse(res, "content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: `Paragraph ${n}. ${filler}\n\n` },
+        });
+        if (n < 80) {
+          setTimeout(tick, 50);
+        } else {
+          sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
+          messageStop(res, "end_turn", 4000);
         }
       };
       tick();
