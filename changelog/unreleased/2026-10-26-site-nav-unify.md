@@ -15,4 +15,4 @@ The three public sites built their top navigation from one page list in `@prisms
 - Escape closes the menu on every site.
 - Download is marked as the current page when /download/ is opened directly.
 - The gallery bar's bottom edge keeps the site's line colour under every theme it previews.
-- From 768 px up to 846 px wide, the bar shows the logo without the "PenguinHarness" name, so the links and the controls fit. The English landing bar used to run past the right edge at the narrow end of that range.
+- Between 768 px and 881 px wide, the bar shows the logo without the "PenguinHarness" name, so the links and the controls fit. The English landing bar used to run past the right edge at the narrow end of that range.

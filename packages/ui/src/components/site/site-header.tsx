@@ -104,8 +104,8 @@ export function SiteHeader({
               <img src={logo} alt="" className="h-7 w-7" />
               {/* The name gives way on phones, and from where the link row appears (768 px) up to
                   the width the widest bar needs to keep it: the English docs, all six links and
-                  the menu button. */}
-              <span className="site-ui-brand-name hidden sm:max-md:inline min-[846px]:inline">
+                  the menu button, set in a wide system font (DejaVu Sans). */}
+              <span className="site-ui-brand-name hidden sm:max-md:inline min-[882px]:inline">
                 {name}
               </span>
             </>
