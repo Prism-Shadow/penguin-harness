@@ -104,7 +104,13 @@ import {
   trayStatusMessage,
   updateTrayPrefs,
 } from "./tray-prefs.js";
-import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
+import {
+  getUpdaterStatus,
+  handleUpdaterCommand,
+  initUpdater,
+  noteMainWindowShown,
+  onUpdaterStatus,
+} from "./updater.js";
 import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
 import {
   APP_WINDOW_OPTIONS,
@@ -212,6 +218,8 @@ function createWindow(url: string): void {
   builtinBrowser.host(win);
   followPageTitleBar(win);
   win.once("ready-to-show", () => win?.show());
+  // The automatic update schedule reaches the network: it starts once a window is on screen.
+  win.once("show", noteMainWindowShown);
   // Close-to-tray: the window goes away, the app and its embedded server stay, and the tray
   // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout, an
   // update's restart — is announced before the window is asked to close, which is what

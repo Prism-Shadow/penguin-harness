@@ -46,7 +46,7 @@ import { WindowsUpdater, WindowsUpdateVerificationError } from "./windows-update
 const autoUpdater =
   process.platform === "win32" ? new WindowsUpdater() : electronUpdater.autoUpdater;
 
-/** First check runs after this delay: booting the server and the window comes first. */
+/** First check runs this long after the main window is shown: what the window shows comes first. */
 const FIRST_CHECK_DELAY_MS = 20_000;
 /** Subsequent automatic checks. */
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -173,6 +173,28 @@ async function refreshUpdateFeedOnce(): Promise<void> {
 function scheduleChecks(): void {
   setTimeout(() => void check(), FIRST_CHECK_DELAY_MS).unref();
   setInterval(() => void check(), CHECK_INTERVAL_MS).unref();
+}
+
+/**
+ * The automatic schedule waits for the main window: the update feed is chosen over the network
+ * (the OSS mirror, GitHub), and nothing of that may run while the app is launching. A
+ * "Check for Updates…" the person asks for runs whenever it is asked.
+ */
+let windowShown = false;
+let startAfterShown: (() => void) | null = null;
+
+function whenWindowShown(start: () => void): void {
+  if (windowShown) start();
+  else startAfterShown = start;
+}
+
+/** The main window is on screen: the automatic update schedule may start. Only the first call counts. */
+export function noteMainWindowShown(): void {
+  if (windowShown) return;
+  windowShown = true;
+  const start = startAfterShown;
+  startAfterShown = null;
+  start?.();
 }
 
 // --- status relay (the account-menu row's data source) -----------------------
@@ -303,8 +325,9 @@ export function updatesAvailableInThisForm(): boolean {
 }
 
 /**
- * Wires the updater and starts the automatic schedule. Safe to call in any form: an
- * unsupported one (dev run, deb install) only logs why it is standing down.
+ * Wires the updater, and starts the automatic schedule once the main window is shown
+ * ({@link noteMainWindowShown}). Safe to call in any form: an unsupported one (dev run, deb
+ * install) only logs why it is standing down.
  */
 export function initUpdater(getWindow: () => BrowserWindow | null): void {
   const support = updateSupport({
@@ -389,7 +412,7 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     feedRefreshMode = "static";
     setGenericFeed(override, null);
     log(`feed override: ${override}`);
-    scheduleChecks();
+    whenWindowShown(scheduleChecks);
     return;
   }
 
@@ -405,13 +428,13 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     feedRefreshMode = "github";
     setGitHubFeed();
     log("selected GitHub update feed");
-    scheduleChecks();
+    whenWindowShown(scheduleChecks);
     return;
   }
 
   if (config.source === "oss") {
     feedRefreshMode = "oss";
-    void refreshUpdateFeed().finally(scheduleChecks);
+    whenWindowShown(() => void refreshUpdateFeed().finally(scheduleChecks));
     return;
   }
 
@@ -419,12 +442,12 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     feedRefreshMode = "github";
     setGitHubFeed();
     log("selected GitHub update feed");
-    scheduleChecks();
+    whenWindowShown(scheduleChecks);
     return;
   }
 
   feedRefreshMode = "auto-probe";
-  void refreshUpdateFeed().finally(scheduleChecks);
+  whenWindowShown(() => void refreshUpdateFeed().finally(scheduleChecks));
 }
 
 async function check(): Promise<void> {

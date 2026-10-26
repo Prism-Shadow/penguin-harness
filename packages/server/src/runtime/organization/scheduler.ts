@@ -27,12 +27,16 @@ export class OrganizationScheduler {
     this.intervalMs = opts.intervalMs ?? TICK_INTERVAL_MS;
   }
 
+  /**
+   * The periodic pass, and one pass now — the returned promise is that first pass. The tick is
+   * armed first, so a stop that comes while the pass runs leaves nothing armed.
+   */
   async start(): Promise<void> {
-    await this.tickOnce();
     this.timer = setInterval(() => {
       void this.tickOnce();
     }, this.intervalMs);
     this.timer.unref?.();
+    await this.tickOnce();
   }
 
   stop(): void {

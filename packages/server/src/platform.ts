@@ -222,11 +222,18 @@ export class Startup {
     await this.projectConfig.migrateStoredConfigs().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "config_migration_failed" });
     });
-    // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan.
-    await this.scheduler.start();
-    // Company mode's scheduler: same lifetime and the same startup rule (reconcile once,
-    // no backfill), only active while this App is.
-    await this.orgScheduler.start();
+    // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; and
+    // company mode's scheduler, with the same lifetime and the same startup rule (reconcile
+    // once, no backfill), only active while this App is. Neither first pass is on the boot
+    // path: a pass can fire a missed slot, and a fire can reach the network (a model's
+    // credential refresh) before it is queued — the port is announced and local pages are
+    // served without waiting on it. Each pass still runs, here, as the platform comes up.
+    void this.scheduler.start().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "scheduler_start_failed" });
+    });
+    void this.orgScheduler.start().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "org_scheduler_start_failed" });
+    });
     // Startup adoption sweep: fold Trace-only Sessions into the index. Fire-and-forget —
     // a broken trace shard must not block the boot.
     void this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
