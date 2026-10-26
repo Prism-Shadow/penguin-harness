@@ -89,8 +89,8 @@ export function isOwnOrigin(origin: string | undefined, requestUrl: URL): boolea
  * names the tunnel's own host, or no write would pass. Accepting the request's own origin keeps a
  * server with the rule working behind that rewrite. With no trusted proxy the two origins are the
  * same; behind one, the extra origin names the very host the request was addressed to, only under
- * the connection's own scheme. It goes once the client stops rewriting `Origin` and only sets
- * `X-Forwarded-Proto` and `X-Forwarded-Host`.
+ * the connection's own scheme. Before 0.3.0 the client stops rewriting `Origin` and sets
+ * `X-Forwarded-Proto` and `X-Forwarded-Host` instead; the second clause is deleted in 0.3.0.
  */
 export function acceptsOrigin(
   origin: string | undefined,

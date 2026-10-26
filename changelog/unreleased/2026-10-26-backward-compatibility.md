@@ -21,4 +21,4 @@ Nothing on a desktop. The Penguin Remote client keeps the rewrite while desktops
 
 ### Lifetime
 
-Once every desktop behind the relay runs a release with this change, the Penguin Remote client stops rewriting `Origin` and only sets `X-Forwarded-Proto: https` and `X-Forwarded-Host: <public host>`, overwriting any value already there. The server maintainers then remove the acceptance of the request's own origin (`acceptsOrigin` in `packages/server/src/http/public-origin.ts`), and the check accepts the public origin alone. The release for that removal is to be decided by the owner (proposed: 0.3.0).
+Before 0.3.0, the Penguin Remote client stops rewriting `Origin` and instead sets `X-Forwarded-Proto: https` and `X-Forwarded-Host: <public host>`, overwriting any value already there. In 0.3.0 the server maintainers delete the acceptance of the request's own origin (`acceptsOrigin` in `packages/server/src/http/public-origin.ts`), and the check accepts the public origin alone.

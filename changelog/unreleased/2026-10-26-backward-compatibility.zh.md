@@ -21,4 +21,4 @@
 
 ### 期限
 
-等中继后面的桌面端都运行包含本次改动的版本，Penguin Remote 客户端就不再改写 `Origin`，只设置 `X-Forwarded-Proto: https` 与 `X-Forwarded-Host: <公网主机名>`，覆盖已有的值。随后服务端维护者移除对请求自身来源的接受（`packages/server/src/http/public-origin.ts` 中的 `acceptsOrigin`），来源检查只认公共源。在哪个版本移除由产品负责人决定（提议 0.3.0）。
+0.3.0 之前，Penguin Remote 客户端不再改写 `Origin`，改为设置 `X-Forwarded-Proto: https` 与 `X-Forwarded-Host: <公网主机名>`，覆盖已有的值。服务端维护者在 0.3.0 删除对请求自身来源的接受（`packages/server/src/http/public-origin.ts` 中的 `acceptsOrigin`），来源检查只认公共源。
