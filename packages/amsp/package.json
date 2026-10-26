@@ -28,6 +28,10 @@
     "./browser": {
       "types": "./dist/index.d.ts",
       "import": "./dist/browser/amsp.js"
+    },
+    "./browser-source": {
+      "types": "./browser-source.d.ts",
+      "import": "./dist/browser/source.js"
     }
   },
   "main": "./dist/index.js",
@@ -45,6 +49,7 @@
   },
   "files": [
     "dist",
+    "browser-source.d.ts",
     "LICENSE"
   ],
   "publishConfig": {
