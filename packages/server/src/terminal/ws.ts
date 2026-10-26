@@ -67,6 +67,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     if (!match && !apiSocket) return;
 
     let target: URL;
+    let reached: URL;
     try {
       // IncomingMessage has no Fetch Request URL; Node formats its transport authority.
       if (!req.headers.host) return refuse(socket, 403, "Forbidden");
@@ -75,22 +76,23 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         format({ protocol, host: req.headers.host, pathname: url.pathname, slashes: true }),
       );
       const forwarded = req.headers["x-forwarded-proto"];
-      if (
-        req.headers.origin &&
-        !isOwnOrigin(
-          req.headers.origin,
-          originTarget(
-            target,
-            Array.isArray(forwarded) ? forwarded.join(",") : forwarded,
-            deps.trustProxy ?? false,
-          ),
-        )
-      ) {
+      // The origin the client reached: the Host it addressed, port included, under the scheme
+      // a trusted proxy reports. The Origin check compares against it, and the platform gets
+      // it too: the API socket addresses every call it carries to this origin, so a route
+      // that builds a URL back to the App (an OAuth callback) sees the page's host and port.
+      reached = originTarget(
+        target,
+        Array.isArray(forwarded) ? forwarded.join(",") : forwarded,
+        deps.trustProxy ?? false,
+      );
+      if (req.headers.origin && !isOwnOrigin(req.headers.origin, reached)) {
         return refuse(socket, 403, "Forbidden");
       }
     } catch {
       return refuse(socket, 403, "Forbidden");
     }
+    const streamUrl = new URL(reached);
+    streamUrl.search = url.search;
 
     const authed =
       sessionCookies(parseCookieHeader(req.headers.cookie), target)
@@ -107,7 +109,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
           // No terminal lookup: the socket carries the whole API as the cookie's user.
           const ref = apiSocketRef(authed.user.userId);
           return wss.handleUpgrade(req, socket, head, (ws) => {
-            platform.api.attachStream?.(ws, ref, url, deps.log);
+            platform.api.attachStream?.(ws, ref, streamUrl, deps.log);
           });
         }
         const manager = platform.api.terminals?.();
@@ -116,7 +118,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
           return refuse(socket, 404, "Not Found");
         }
         wss.handleUpgrade(req, socket, head, (ws) => {
-          platform.api.attachStream?.(ws, session, url, deps.log);
+          platform.api.attachStream?.(ws, session, streamUrl, deps.log);
         });
       })
       .catch((err: unknown) => {
