@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `core`, `web`, `ui-gallery`, `tooling`
+- **PR:** [#1341](https://github.com/Prism-Shadow/penguin-harness/pull/1341)
 
 [中文版](2026-10-26-gdpevo-domains.zh.md)
 
