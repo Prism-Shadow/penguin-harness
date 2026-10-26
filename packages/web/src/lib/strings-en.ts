@@ -419,7 +419,7 @@ export const en: Strings = {
     /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "New terminal",
     /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
-    shellEntry: "Command-line terminal",
+    shellEntry: "Terminal",
     /** The terminal panel's strip of shells, for assistive technology. */
     tabsLabel: "Terminal tabs",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
