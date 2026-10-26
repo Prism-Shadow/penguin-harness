@@ -44,6 +44,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -90,9 +91,10 @@ const textOverlapCount = (page) =>
   });
 
 test("layout: en draft + context gauge + mobile models", async ({ page }) => {
-  // English copy is longer, making it the worst case for layout wrapping.
-  await page.addInitScript(() => localStorage.setItem("penguin.lang", "en"));
+  // English copy is longer, making it the worst case for layout wrapping. The language is the
+  // account's (account-prefs.mjs).
   await provisionAndLogin(page.request, U, P);
+  await setAccountPrefs(page.request, { lang: "en" });
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
   const projectId = projects.projects[0].projectId;
   const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
@@ -304,8 +306,7 @@ test("layout: start page version line sits under the slogan at every width", asy
   );
 
   for (const lang of ["zh", "en"]) {
-    await page.goto(`${BASE}/chat/new`);
-    await page.evaluate((l) => localStorage.setItem("penguin.lang", l), lang);
+    await setAccountPrefs(page.request, { lang });
     for (const width of [360, 640, 900, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${BASE}/chat/new`);
@@ -340,8 +341,8 @@ test("layout: start page version line sits under the slogan at every width", asy
 });
 
 test("models: group header actions collapse to icons instead of disappearing", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
   await provisionAndLogin(page.request, "modelwidthuser", P);
+  await setAccountPrefs(page.request, { lang: "zh" });
   await page.setViewportSize({ width: 900, height: 900 });
   await page.goto(`${BASE}/models`);
 
@@ -482,8 +483,8 @@ test("models: group header actions collapse to icons instead of disappearing", a
 });
 
 test("layout: collapsed rail — order, bilingual tooltips, last conversation", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("penguin.lang", "en"));
   await provisionAndLogin(page.request, "railuser", P);
+  await setAccountPrefs(page.request, { lang: "en" });
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
   const projectId = projects.projects[0].projectId;
   const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
@@ -583,7 +584,7 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   await expect(rail.getByRole("link", { name: "Plugins" })).toHaveClass(ACTIVE_FILL);
 
   // --- zh: tooltips follow the product-specified wording ---
-  await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
+  await setAccountPrefs(page.request, { lang: "zh" });
   await page.reload();
   await expect(entries).toHaveCount(7);
   const ZH = ["最近一次对话", "新建对话", "智能体", "模型库", "插件市场", "成本中心", "评估中心"];
@@ -600,8 +601,8 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
 });
 
 test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("penguin.lang", "en"));
   await provisionAndLogin(page.request, "layoutdropdowns", P);
+  await setAccountPrefs(page.request, { lang: "en" });
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
   const projectId = projects.projects[0].projectId;
   // Keyed models unblock the draft page (no "missing key" modal); the long-id model pushes the

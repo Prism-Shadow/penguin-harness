@@ -309,6 +309,7 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-10-14-agent-api-concurrency",
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
+        "2026-10-26-user-drafts",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -372,6 +373,7 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-10-14-agent-api-concurrency",
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
+        "2026-10-26-user-drafts",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -429,6 +431,7 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-10-14-agent-api-concurrency",
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
+        "2026-10-26-user-drafts",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -489,6 +492,7 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-10-14-agent-api-concurrency",
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
+        "2026-10-26-user-drafts",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -537,6 +541,7 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
+        "2026-10-26-user-drafts",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -556,6 +561,64 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
       expect(db.prepare("SELECT adopted_at FROM machines").get()).toEqual({
         adopted_at: "2026-10-15T00:00:00.000Z",
       });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// Given a database from before the account's drafts, the upgrade adds the drafts and background
+// tables on the swap path, both go with their user, and down takes them away again.
+describe("a database from before the account's drafts: 2026-10-26-user-drafts", () => {
+  /** A root whose line declared everything through 2026-09-23-model-tables-adoption. */
+  function openPreUserDrafts(): DatabaseSync {
+    const db = openFresh();
+    db.exec(`
+      DROP INDEX idx_user_drafts_project;
+      DROP INDEX idx_user_drafts_session;
+      DROP TABLE user_drafts;
+      DROP TABLE user_background_images;
+    `);
+    stampThrough(db, "2026-09-23-model-tables-adoption");
+    return db;
+  }
+
+  it("adds both tables while a pushed platform boots, and they go with their user", () => {
+    const db = openPreUserDrafts();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-10-26-user-drafts"]);
+      db.exec("PRAGMA foreign_keys = ON");
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('ann', 'hash', 0, 'now')",
+      );
+      db.exec(
+        "INSERT INTO user_drafts (user_id, draft_key, session_id, project_id, value_json, updated_at)" +
+          ` VALUES ('ann', 'session:s1', 's1', NULL, '{"text":"x"}', 'now')`,
+      );
+      db.exec(
+        "INSERT INTO user_background_images (user_id, image, image_id, updated_at)" +
+          " VALUES ('ann', 'data:image/png;base64,AA==', 'id', 'now')",
+      );
+      db.exec("DELETE FROM users WHERE user_id = 'ann'");
+      expect(db.prepare("SELECT COUNT(*) AS n FROM user_drafts").get()).toEqual({ n: 0 });
+      expect(db.prepare("SELECT COUNT(*) AS n FROM user_background_images").get()).toEqual({
+        n: 0,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down drops both tables, and a second up recreates them", () => {
+    const db = openPreUserDrafts();
+    try {
+      migrate(db);
+      const after = shape(db);
+      rollbackTo(db, "2026-09-23-model-tables-adoption");
+      expect(hasTable(db, "user_drafts")).toBe(false);
+      expect(hasTable(db, "user_background_images")).toBe(false);
+      migrate(db);
+      expect(shape(db)).toBe(after);
     } finally {
       db.close();
     }

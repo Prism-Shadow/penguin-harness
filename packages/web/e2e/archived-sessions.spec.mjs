@@ -23,6 +23,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -70,7 +71,7 @@ test("archived chats live on the Settings page, and an archived URL shows its st
   await create("Index rebuild", { source: "cli" });
   const digest = await create("Weekly digest", { source: "cli" });
 
-  await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
+  await setAccountPrefs(page.request, { lang: "zh" });
   await page.goto(`${BASE}/chat`);
   const sidebar = page.getByRole("complementary");
   await expect(sidebar.getByText("Quarterly report")).toBeVisible();

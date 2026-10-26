@@ -103,7 +103,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | PUT | `/api/me/password` | 修改密码：`{oldPassword, newPassword}` |
 | PUT | `/api/me/profile` | 设置头像和昵称：`{displayName?, avatar?}` → `{user}` |
 | GET | `/api/me/prefs` | 读取 UI 偏好 |
-| PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并）；拒绝 `browserBackend`（`400`），它经由 [`PUT /api/builtin-browser/backend`](#agent-浏览器) 选择 |
+| PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并）；拒绝 `browserBackend`（`400`），它经由 [`PUT /api/builtin-browser/backend`](#agent-浏览器) 选择；同样拒绝 `backgroundImageId`，它只由背景图片接口写入 |
+| GET | `/api/me/drafts` | 你尚未发送的草稿：`{drafts: {<kind>:<id>: value}}` |
+| PATCH | `/api/me/drafts` | 按键写入草稿，值为 `null` 即删除：`{drafts}`，每次至多 50 条；返回 `204` |
+| GET | `/api/me/background-image` | 你的背景图片：`{image, imageId}`，没有时两者都为 `null` |
+| PUT | `/api/me/background-image` | 设置背景图片（不超过 1 MiB 的 PNG、JPEG 或 WebP data URL），传 `null` 即移除：`{image}` → `{imageId}` |
 | GET | `/api/me/archived-sessions/groups` | [设置 › 已归档对话](/settings#已归档对话)的分组：`?q=&source=&projectId=` → `{groups, total, asOf}` |
 | GET | `/api/me/archived-sessions` | 一个分组中的已归档 Session：`?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |
 | POST | `/api/me/archived-sessions/unarchive` | 批量取消归档：`{sessionIds}` 或 `{filter}` → `{done, missing}` |

@@ -402,9 +402,11 @@ describe("2026-10-12-messaging-conversations on a named-migration root", () => {
       migrate(db);
       db.exec("DROP TABLE messaging_conversations");
       db.exec("DELETE FROM schema_migrations WHERE name = '2026-10-12-messaging-conversations'");
-      // The declared predecessor of 2026-10-12-messaging-conversations: rolling back to it undoes the
-      // re-applied migration (the migrations declared after it have no-op downs on this root).
-      const previous = "2026-10-10-agent-api";
+      // The migration applied just before the re-applied one on this root: rolling back to it
+      // undoes exactly that one, whatever the later migrations' downs would do.
+      const previous = namesAfter(null)
+        .filter((n) => n !== "2026-10-12-messaging-conversations")
+        .at(-1)!;
       const before = shape(db);
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-10-12-messaging-conversations",

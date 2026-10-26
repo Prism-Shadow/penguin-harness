@@ -43,6 +43,7 @@ import type { ErrorLog } from "../../mechanisms/observability.js";
 import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { UserDraftsStore } from "../../mechanisms/account-data.js";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { refuseBuiltinDeletion } from "../../services/agent-service.js";
 
@@ -60,6 +61,8 @@ export interface AgentsRouteDeps {
   sessionsRepo: SessionIndex;
   traceIndex: TraceIndex;
   workbenches: Pick<Workbenches, "releaseAgent">;
+  /** Users' unsent drafts, which go with the Agent's Sessions. */
+  drafts: Pick<UserDraftsStore, "deleteByAgent">;
 }
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
@@ -194,6 +197,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       // One rename takes the folder out of every list and route; its contents are removed in
       // the background, which the answer reports and GET /agent-deletions/:id follows.
       deletion = await deps.agentService.deleteAgent(projectId, agentId);
+      // Found through the Session index, so before its rows go.
+      deps.drafts.deleteByAgent(projectId, agentId);
       deps.sessionsRepo.deleteByAgent(projectId, agentId);
       // Trace-index rows describe files that just left: drop them with the Agent.
       deps.traceIndex.removeAgent(projectId, agentId);

@@ -88,6 +88,10 @@ export function dropBrowserExtensions(db: DatabaseSync): void {
   db.exec(
     "DROP INDEX IF EXISTS idx_agent_api_keys_agent; DROP TABLE IF EXISTS agent_api_keys; DROP TABLE IF EXISTS agent_api;",
   );
+  // 2026-10-26-user-drafts came later still.
+  db.exec(
+    "DROP INDEX IF EXISTS idx_user_drafts_project; DROP INDEX IF EXISTS idx_user_drafts_session; DROP TABLE IF EXISTS user_drafts; DROP TABLE IF EXISTS user_background_images;",
+  );
 }
 
 /** Takes 2026-09-14-user-profile's two columns off a database built from the current declaration. */

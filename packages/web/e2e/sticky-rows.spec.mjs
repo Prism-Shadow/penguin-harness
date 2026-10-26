@@ -11,10 +11,15 @@
  *   head and the row still pin, the lines under them still do not show through, and the pinned
  *   rows show what the background shows in their place: the image, neither shifted nor
  *   rescaled, rather than a painted strip.
+ *
+ * The theme, the mode and the background are the account's preferences, set through the API
+ * before each page loads (account-prefs.mjs): every test signs in as the same user, so each one
+ * states all three, the background cleared where it has none.
  */
 import { writeFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin, login } from "./auth.mjs";
+import { setAccountBackgroundImage, setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -28,9 +33,30 @@ test.use({ viewport: { width: 1280, height: 720 } });
 test.describe.configure({ mode: "serial" });
 
 let sessionId;
+/** The custom background: a PNG data URL drawn by the browser in beforeAll. */
+let wallpaper;
 
 test.beforeAll(async ({ browser }) => {
   const page = await browser.newPage();
+  // A wallpaper that changes smoothly and steeply everywhere (red follows x, green follows y, a
+  // triangle wave of 8 levels a pixel), tiled at full strength from the window's corner: a row
+  // showing it a few pixels off, rescaled or not at all differs by far more than a row that is
+  // merely pinned at a fractional offset.
+  wallpaper = await page.evaluate(() => {
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const image = ctx.createImageData(size, size);
+    const wave = (v) => Math.round((Math.abs(v - size / 2) / (size / 2)) * 255);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        image.data.set([wave(x), wave(y), 128, 255], (y * size + x) * 4);
+      }
+    }
+    ctx.putImageData(image, 0, 0);
+    return canvas.toDataURL("image/png");
+  });
   await provisionAndLogin(page.request, USER, PASSWORD);
   const projectId = (await (await page.request.get(`${BASE}/api/projects`)).json()).projects[0]
     .projectId;
@@ -62,10 +88,19 @@ test.beforeAll(async ({ browser }) => {
   await page.close();
 });
 
-/** Opens the conversation in a theme, then its work group and the second tool call's output. */
-async function openOutput(page, theme) {
-  await page.addInitScript((id) => localStorage.setItem("penguin.themeId", id), theme);
+/**
+ * Opens the conversation in a theme — with a light or dark mode and the wallpaper when asked, the
+ * system's mode and no background otherwise — then its work group and the second tool call's
+ * output.
+ */
+async function openOutput(page, theme, { mode = null, background = false } = {}) {
   await login(page.request, USER, PASSWORD);
+  await setAccountPrefs(page.request, {
+    themeId: theme,
+    themeMode: mode,
+    background: background ? { transparency: 0, mode: "tile", position: "left top" } : null,
+  });
+  await setAccountBackgroundImage(page.request, background ? wallpaper : null);
   await page.goto(`/chat/${sessionId}`);
   const head = page.locator("[data-group-header]");
   await head.click();
@@ -209,31 +244,7 @@ for (const [theme, name] of Object.entries(THEMES)) {
     test(`${name}, ${mode}: under a custom background the rows still pin, hide what scrolls under them, and show the image`, async ({
       page,
     }) => {
-      // A wallpaper that changes smoothly and steeply everywhere (red follows x, green follows
-      // y, a triangle wave of 8 levels a pixel), tiled at full strength from the window's
-      // corner: a row showing it a few pixels off, rescaled or not at all differs by far more
-      // than a row that is merely pinned at a fractional offset.
-      await page.addInitScript((mode) => {
-        const size = 64;
-        const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        const image = ctx.createImageData(size, size);
-        const wave = (v) => Math.round((Math.abs(v - size / 2) / (size / 2)) * 255);
-        for (let y = 0; y < size; y++) {
-          for (let x = 0; x < size; x++) {
-            image.data.set([wave(x), wave(y), 128, 255], (y * size + x) * 4);
-          }
-        }
-        ctx.putImageData(image, 0, 0);
-        localStorage.setItem("penguin.theme", mode);
-        localStorage.setItem("penguin.background.image", canvas.toDataURL("image/png"));
-        localStorage.setItem(
-          "penguin.background.settings",
-          JSON.stringify({ transparency: 0, mode: "tile", position: "left top" }),
-        );
-      }, mode);
-      const toolRow = await openOutput(page, theme);
+      const toolRow = await openOutput(page, theme, { mode, background: true });
       await expect(page.locator(".ui-shell[data-wallpaper]")).toHaveCount(1);
       const pinned = await expectPinnedAndOpaque(page, toolRow);
       // The pinned rows' stretch as it is, then the same stretch with the transcript hidden,

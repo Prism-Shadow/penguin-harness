@@ -874,7 +874,7 @@ export const en: Strings = {
     theme: "Theme",
     background: {
       title: "Background",
-      info: "Stored only in this browser or desktop app; never uploaded. PNG, JPEG or WebP, up to 20 MB. Higher transparency makes the image fainter.",
+      info: "Saved to your account, so you also see it when you sign in on another browser or in the desktop app. PNG, JPEG or WebP images up to 20 MB. The higher the transparency, the fainter the image.",
       choose: "Choose image",
       replace: "Replace image",
       remove: "Remove",
@@ -941,6 +941,8 @@ export const en: Strings = {
     notificationsDismissed:
       "The permission prompt was closed without an answer, so notifications stay off. Turn this on again to ask once more.",
     notificationsUnsupported: "This browser does not support system notifications.",
+    notificationsNotAllowedHere:
+      "You turned notifications on elsewhere, but this browser can't show them yet. Turn this on, then choose Allow when your browser asks.",
     trayIcon: "Tray icon",
     trayIconInfo:
       "The desktop app keeps an icon in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs: click it to come back to the window, right-click it to start a session or quit. On by default; turning it off removes the icon at once, no restart, and closing the window then no longer hides it, so the app stays in the Dock on macOS and quits on Windows and Linux.",

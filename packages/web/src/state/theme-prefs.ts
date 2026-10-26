@@ -33,6 +33,13 @@ export type { FontCjk, FontLatin, TextSize };
 /** The storage a reader needs: `readTextSize` also writes, to retire the legacy key. */
 export type PrefStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
+/** The display currency's cached key (the account's copy is the truth, lib/account-sync). */
+export const CURRENCY_KEY = "penguin.currency";
+/** The terminal appearance's cached key. */
+export const TERMINAL_THEME_KEY = "penguin.terminal.theme";
+/** The tool short-names switch's cached key. */
+export const TOOL_ALIASES_KEY = "penguin.toolAliases";
+
 /** "Use the theme's own face" — stored like any other choice, applied as no attribute at all. */
 export const FONT_FOLLOWS_THEME = "theme";
 
