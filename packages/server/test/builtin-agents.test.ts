@@ -193,6 +193,7 @@ describe("built-in Agent provisioning", () => {
               expect(statement, c.id).toContain(
                 "https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-",
               );
+              continue;
             }
             expect(statement, c.id).toMatch(
               /^- Task: `[^`]+` in https:\/\/github\.com\/\S+\/tree\/\S+$/m,

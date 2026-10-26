@@ -41,16 +41,16 @@ export interface BuiltinBenchmarkCase {
   /** The statement's first heading, which the case list shows as the case title. */
   title: string;
   /** What the task asks and what it delivers, in a few sentences; never a hint at a solution. */
-  summary: string;
+  summary?: string;
   /** The upstream category, "<area> / <sub-area>". */
-  category: string;
+  category?: string;
   /**
    * Where the task sits upstream, when the source names its tasks by more than the task folder
    * (GDPevo's task group and split): the statement's Upstream line ends with it.
    */
   upstreamTask?: string;
-  cpus: number;
-  memoryMb: number;
+  cpus?: number;
+  memoryMb?: number;
   /** Upstream expert time estimate in hours, where the source publishes one. */
   expertHours?: number;
 }
@@ -84,15 +84,15 @@ export interface BuiltinBenchmark {
    */
   results?: string;
   /** The source as the statements name it, e.g. a Harbor Hub dataset and its revision. */
-  source: string;
+  source?: string;
   /** The upstream project the tasks come from, and its licence. */
-  upstream: { url: string; license: string };
+  upstream?: { url: string; license: string };
   /** Agent-phase network of the tasks: open, or none except the model provider's API host. */
-  agentNetwork: "public" | "no-network";
+  agentNetwork?: "public" | "no-network";
   /** Trials may join the host's shared `penguin-bench` Docker network (the repository allows it for these). */
-  sharedNetwork: boolean;
+  sharedNetwork?: boolean;
   /** Where the task's verifier runs. */
-  verifier: string;
+  verifier?: string;
   /**
    * Set when the verifier's reward is an upstream grader's score rather than the pass or fail of
    * the task's tests: the rubric names the grader, and `scale` is the statement's account of how
@@ -100,10 +100,10 @@ export interface BuiltinBenchmark {
    */
   grader?: { scale: string };
   /** What the evaluating machine downloads besides nodejs.org, npm and the model provider. */
-  downloads: string;
+  downloads?: string;
   /** Per-trial caps of the measured runs: the adapter's soft timeout and the Agent's turn cap. */
-  runTimeout: string;
-  maxTurns: number;
+  runTimeout?: string;
+  maxTurns?: number;
   /**
    * The adapter's `time_budget_note` of the measured runs, when the benchmark's `job.yaml` sets
    * one: a sentence the adapter puts before the task's instruction to tell the agent its time
@@ -156,16 +156,48 @@ function builtinManifest(bench: BuiltinBenchmark): BenchmarkManifest {
 function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string {
   const offline = bench.agentNetwork === "no-network";
   const task = item.task.split("/").at(-1)!;
+  const resources = [
+    ...(item.cpus !== undefined ? [`${item.cpus} CPU`] : []),
+    ...(item.memoryMb !== undefined ? [`${item.memoryMb / 1024} GB RAM`] : []),
+  ];
   const facts = [
-    `- Benchmark: ${bench.title} — ${bench.source} · Category: ${item.category}` +
+    `- Benchmark: ${bench.title}` +
+      (bench.source !== undefined ? ` — ${bench.source}` : "") +
+      (item.category !== undefined ? ` · Category: ${item.category}` : "") +
       (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
     `- Task: \`${task}\` in ${repoLink(bench, "tree", `${taskPath(bench, item.task)}/${task}`)}`,
-    `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
-      (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
-    `- Container: ${item.cpus} CPU, ${item.memoryMb / 1024} GB RAM, CPU only · Agent network: ` +
-      (offline ? "none, except the model provider's API host" : "public") +
-      ` · Verifier: ${bench.verifier}`,
+    ...(bench.upstream !== undefined
+      ? [
+          `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
+            (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
+        ]
+      : []),
+    ...(resources.length > 0
+      ? [
+          `- Container: ${resources.join(", ")}, CPU only` +
+            (bench.agentNetwork !== undefined
+              ? ` · Agent network: ${offline ? "none, except the model provider's API host" : "public"}`
+              : "") +
+            (bench.verifier !== undefined ? ` · Verifier: ${bench.verifier}` : ""),
+        ]
+      : []),
   ];
+  const intro = [
+    `# ${item.title}`,
+    "",
+    ...(item.summary !== undefined ? [item.summary, ""] : []),
+    ...facts,
+    "",
+  ];
+  // Without local launch settings, the benchmark README supplies the running instructions.
+  if (bench.runTimeout === undefined || bench.maxTurns === undefined) {
+    return [
+      ...intro,
+      bench.note ??
+        `Follow the [benchmark instructions](${repoLink(bench, "blob", `benchmarks/${bench.repoDir}/README.md`)}).`,
+      "",
+    ].join("\n");
+  }
   const command = [
     'export PYTHONPATH="$PWD/agents"',
     `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench, item.task)} -i ${task} \\`,
@@ -182,12 +214,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     "  --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
   ];
   return [
-    `# ${item.title}`,
-    "",
-    item.summary,
-    "",
-    ...facts,
-    "",
+    ...intro,
     "## How this case is run",
     "",
     "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
@@ -206,7 +233,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
         ? "; no turn limit. Run at "
         : ` and after ${bench.maxTurns} turns. Run at `) +
       "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
-      `with Compose v2; uv; network access to ${bench.downloads}, nodejs.org, the npm registry and ` +
+      `with Compose v2; uv; network access to ${bench.downloads !== undefined ? `${bench.downloads}, ` : ""}nodejs.org, the npm registry and ` +
       "the model provider; the model under test configured in this machine's PenguinHarness with " +
       "its API key saved (the adapter copies that one entry into the container, outside the " +
       "trial's log directory)." +

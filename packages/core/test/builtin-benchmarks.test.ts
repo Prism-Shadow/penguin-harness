@@ -7,7 +7,7 @@
  *   origin `builtin`, and that the manifest reader takes as written.
  * - Every built-in's manifest is a plain Benchmark manifest: its id, title, description, a date
  *   version, status, runs and origin `builtin`, nothing that marks how its cases run.
- * - Every case is one Harbor task: its directory names the task after `CASE-NNN-` within the
+ * - Every Sec A–E case is one Harbor task: its directory names the task after `CASE-NNN-` within the
  *   API's id rules; its statement links the task's folder in the repository, the repository's
  *   rules for running a task and, where the repository has them, the measured results, and
  *   launches that same task with its caps — the time-budget sentence word for word where the
@@ -181,10 +181,10 @@ describe("built-in Benchmarks", () => {
     }
   });
 
-  it("every case names one Harbor task: its statement links that task's folder and the repository's run rules, and launches that same task with its caps; its rubric is worth 100 points", async () => {
+  it("every Sec A–E case names one Harbor task: its statement links that task's folder and the repository's run rules, and launches that same task with its caps; its rubric is worth 100 points", async () => {
     await provision();
 
-    for (const bench of BUILTIN_BENCHMARKS) {
+    for (const bench of BUILTIN_BENCHMARKS.filter((bench) => SECTION_IDS.includes(bench.id))) {
       const ids = await caseIds(bench.id);
       expect(ids.length, bench.id).toBeGreaterThan(0);
       for (const caseId of ids) {
@@ -280,10 +280,8 @@ describe("built-in Benchmarks", () => {
         expect(statement).toContain(
           `https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-${domain}/README.md`,
         );
-        expect(statement).toContain(`-p benchmarks/gdpevo-${domain}/tasks/test_tasks -i `);
-        expect(statement).toContain("checkout on branch `main`");
-        expect(statement).toContain("--ak run_timeout=task --ak max_turns=-1");
-        expect(statement).toContain("no turn limit");
+        expect(statement).toContain(`/tree/main/benchmarks/gdpevo-${domain}/tasks/test_tasks/`);
+        expect(statement).not.toMatch(/undefined|NaN|Container:|Category:|harbor run/);
         expect(statement).toContain("Report Train and Test separately");
       }
     }
