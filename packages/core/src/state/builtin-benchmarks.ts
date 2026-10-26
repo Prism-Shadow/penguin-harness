@@ -36,10 +36,7 @@ import {
 
 /** One Harbor task a built-in Benchmark carries as a Case. */
 export interface BuiltinBenchmarkCase {
-  /**
-   * Harbor task name: its directory under the task folder, and what `harbor run -i` selects.
-   * For a nested task path, `-i` selects its basename.
-   */
+  /** Harbor task name: its directory under the task folder, and what `harbor run -i` selects. */
   task: string;
   /** The statement's first heading, which the case list shows as the case title. */
   title: string;
@@ -121,12 +118,12 @@ export interface BuiltinBenchmark {
 
 /** Case directory name: the 1-based position and the Harbor task name. */
 function builtinCaseId(index: number, task: string): string {
-  return `CASE-${String(index).padStart(3, "0")}-${task.split("/").at(-1)}`;
+  return `CASE-${String(index).padStart(3, "0")}-${task}`;
 }
 
 /** Folder of the Benchmark's tasks inside the benchmark repository. */
-function taskPath(bench: BuiltinBenchmark, task = ""): string {
-  return ["benchmarks", bench.repoDir, "tasks", ...task.split("/").slice(0, -1)].join("/");
+function taskPath(bench: BuiltinBenchmark): string {
+  return `benchmarks/${bench.repoDir}/tasks`;
 }
 
 /** A link into the benchmark repository at the Benchmark's pinned commit or branch: a folder (`tree`) or a file (`blob`). */
@@ -159,7 +156,6 @@ function builtinManifest(bench: BuiltinBenchmark): BenchmarkManifest {
  */
 function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string {
   const offline = bench.agentNetwork === "no-network";
-  const task = item.task.split("/").at(-1)!;
   const resources = [
     ...(item.cpus !== undefined ? [`${item.cpus} CPU`] : []),
     ...(item.memoryMb !== undefined ? [`${item.memoryMb / 1024} GB RAM`] : []),
@@ -169,7 +165,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
       (bench.source !== undefined ? ` — ${bench.source}` : "") +
       (item.category !== undefined ? ` · Category: ${item.category}` : "") +
       (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
-    `- Task: \`${task}\` in ${repoLink(bench, "tree", `${taskPath(bench, item.task)}/${task}`)}`,
+    `- Task: \`${item.task}\` in ${repoLink(bench, "tree", `${taskPath(bench)}/${item.task}`)}`,
     ...(bench.upstream !== undefined
       ? [
           `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
@@ -204,7 +200,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
   }
   const command = [
     'export PYTHONPATH="$PWD/agents"',
-    `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench, item.task)} -i ${task} \\`,
+    `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench)} -i ${item.task} \\`,
     `  -a ${HARBOR_AGENT} -m <provider>/<model_id> \\`,
     "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
     `  --ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} \\`,
@@ -224,18 +220,13 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
       `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
       `following that repository's rules for agents — ${repoLink(bench, "blob", BENCHMARK_RUN_RULES)} — ` +
-      `from the root of a checkout ${bench.ref === "main" ? "on branch" : "at commit"} \`${bench.ref}\`:`,
+      `from the root of a checkout at commit \`${bench.ref}\`:`,
     "",
     "```bash",
     ...command,
     "```",
     "",
-    (bench.runTimeout === "task"
-      ? "Caps: the solving budget is read from task.toml"
-      : `Caps: the agent is stopped at ${bench.runTimeout}`) +
-      (bench.maxTurns < 0
-        ? "; no turn limit. Run at "
-        : ` and after ${bench.maxTurns} turns. Run at `) +
+    `Caps: the agent is stopped at ${bench.runTimeout} and after ${bench.maxTurns} turns. Run at ` +
       "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
       `with Compose v2; uv; network access to ${bench.downloads !== undefined ? `${bench.downloads}, ` : ""}nodejs.org, the npm registry and ` +
       "the model provider; the model under test configured in this machine's PenguinHarness with " +

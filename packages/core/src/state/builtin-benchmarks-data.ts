@@ -678,7 +678,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-CRM",
     description: "GDPEVO CRM: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 客户关系管理：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.4",
+    version: "2026.10.26.5",
     repoDir: "gdpevo-crm",
     ref: "main",
     grader: {
@@ -687,23 +687,23 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-crm/README.md). Report Train and Test separately.`,
     cases: [
       {
-        task: "test_tasks/tg003-test-001",
+        task: "crm-test-001",
         title: "Support Console: test task 001",
       },
       {
-        task: "test_tasks/tg003-test-002",
+        task: "crm-test-002",
         title: "Support Console: test task 002",
       },
       {
-        task: "test_tasks/tg003-test-003",
+        task: "crm-test-003",
         title: "Support Console: test task 003",
       },
       {
-        task: "test_tasks/tg003-test-004",
+        task: "crm-test-004",
         title: "Support Console: test task 004",
       },
       {
-        task: "test_tasks/tg003-test-005",
+        task: "crm-test-005",
         title: "Support Console: test task 005",
       },
     ],
@@ -713,7 +713,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-ERP",
     description: "GDPEVO ERP: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 企业资源管理：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.4",
+    version: "2026.10.26.5",
     repoDir: "gdpevo-erp",
     ref: "main",
     grader: {
@@ -722,23 +722,23 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-erp/README.md). Report Train and Test separately.`,
     cases: [
       {
-        task: "test_tasks/tg005-test-001",
+        task: "erp-test-001",
         title: "ERP Finance API: test task 001",
       },
       {
-        task: "test_tasks/tg005-test-002",
+        task: "erp-test-002",
         title: "ERP Finance API: test task 002",
       },
       {
-        task: "test_tasks/tg005-test-003",
+        task: "erp-test-003",
         title: "ERP Finance API: test task 003",
       },
       {
-        task: "test_tasks/tg005-test-004",
+        task: "erp-test-004",
         title: "ERP Finance API: test task 004",
       },
       {
-        task: "test_tasks/tg005-test-005",
+        task: "erp-test-005",
         title: "ERP Finance API: test task 005",
       },
     ],
@@ -748,7 +748,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-Finance",
     description: "GDPEVO Finance: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 金融：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.4",
+    version: "2026.10.26.5",
     repoDir: "gdpevo-finance",
     ref: "main",
     grader: {
@@ -757,23 +757,23 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-finance/README.md). Report Train and Test separately.`,
     cases: [
       {
-        task: "test_tasks/tg010-test-001",
+        task: "finance-test-001",
         title: "Asteria Investment Office: test task 001",
       },
       {
-        task: "test_tasks/tg010-test-002",
+        task: "finance-test-002",
         title: "Asteria Investment Office: test task 002",
       },
       {
-        task: "test_tasks/tg010-test-003",
+        task: "finance-test-003",
         title: "Asteria Investment Office: test task 003",
       },
       {
-        task: "test_tasks/tg010-test-004",
+        task: "finance-test-004",
         title: "Asteria Investment Office: test task 004",
       },
       {
-        task: "test_tasks/tg010-test-005",
+        task: "finance-test-005",
         title: "Asteria Investment Office: test task 005",
       },
     ],
@@ -783,7 +783,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-Healthcare",
     description: "GDPEVO Healthcare: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 医疗：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.4",
+    version: "2026.10.26.5",
     repoDir: "gdpevo-healthcare",
     ref: "main",
     grader: {
@@ -792,23 +792,23 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-healthcare/README.md). Report Train and Test separately.`,
     cases: [
       {
-        task: "test_tasks/tg014-test-001",
+        task: "healthcare-test-001",
         title: "Northstar Payer Operations: test task 001",
       },
       {
-        task: "test_tasks/tg014-test-002",
+        task: "healthcare-test-002",
         title: "Northstar Payer Operations: test task 002",
       },
       {
-        task: "test_tasks/tg014-test-003",
+        task: "healthcare-test-003",
         title: "Northstar Payer Operations: test task 003",
       },
       {
-        task: "test_tasks/tg014-test-004",
+        task: "healthcare-test-004",
         title: "Northstar Payer Operations: test task 004",
       },
       {
-        task: "test_tasks/tg014-test-005",
+        task: "healthcare-test-005",
         title: "Northstar Payer Operations: test task 005",
       },
     ],
@@ -818,7 +818,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-Legal",
     description: "GDPEVO Legal: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 法务：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.4",
+    version: "2026.10.26.5",
     repoDir: "gdpevo-legal",
     ref: "main",
     grader: {
@@ -827,23 +827,23 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-legal/README.md). Report Train and Test separately.`,
     cases: [
       {
-        task: "test_tasks/tg018-test-001",
+        task: "legal-test-001",
         title: "Court Operations Portal: test task 001",
       },
       {
-        task: "test_tasks/tg018-test-002",
+        task: "legal-test-002",
         title: "Court Operations Portal: test task 002",
       },
       {
-        task: "test_tasks/tg018-test-003",
+        task: "legal-test-003",
         title: "Court Operations Portal: test task 003",
       },
       {
-        task: "test_tasks/tg018-test-004",
+        task: "legal-test-004",
         title: "Court Operations Portal: test task 004",
       },
       {
-        task: "test_tasks/tg018-test-005",
+        task: "legal-test-005",
         title: "Court Operations Portal: test task 005",
       },
     ],
@@ -853,7 +853,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     title: "GDPEVO-DataAnalysis",
     description: "GDPEVO DataAnalysis: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 数据分析：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.4",
+    version: "2026.10.26.5",
     repoDir: "gdpevo-data-analysis",
     ref: "main",
     grader: {
@@ -862,23 +862,23 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     note: `For continuous training and testing with a frozen Agent State, follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-data-analysis/README.md). Report Train and Test separately.`,
     cases: [
       {
-        task: "test_tasks/tg024-test-001",
+        task: "data-analysis-test-001",
         title: "Engineering Portfolio Analytics: test task 001",
       },
       {
-        task: "test_tasks/tg024-test-002",
+        task: "data-analysis-test-002",
         title: "Engineering Portfolio Analytics: test task 002",
       },
       {
-        task: "test_tasks/tg024-test-003",
+        task: "data-analysis-test-003",
         title: "Engineering Portfolio Analytics: test task 003",
       },
       {
-        task: "test_tasks/tg024-test-004",
+        task: "data-analysis-test-004",
         title: "Engineering Portfolio Analytics: test task 004",
       },
       {
-        task: "test_tasks/tg024-test-005",
+        task: "data-analysis-test-005",
         title: "Engineering Portfolio Analytics: test task 005",
       },
     ],

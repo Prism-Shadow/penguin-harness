@@ -271,7 +271,7 @@ describe("built-in Benchmarks", () => {
       const ids = await caseIds(id);
       expect(ids).toHaveLength(5);
       for (const caseId of ids) {
-        expect(caseId).toMatch(/^CASE-\d{3}-tg\d{3}-test-\d{3}$/);
+        expect(caseId).toMatch(new RegExp(`^CASE-\\d{3}-${domain}-test-\\d{3}$`));
         const files = [...(await tree(path.join(dir(), id, caseId))).keys()]
           .map((file) => file.split(path.sep).join("/"))
           .sort();
@@ -280,7 +280,7 @@ describe("built-in Benchmarks", () => {
         expect(statement).toContain(
           `https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-${domain}/README.md`,
         );
-        expect(statement).toContain(`/tree/main/benchmarks/gdpevo-${domain}/tasks/test_tasks/`);
+        expect(statement).toContain(`/tree/main/benchmarks/gdpevo-${domain}/tasks/${domain}-test-`);
         expect(statement).not.toMatch(/undefined|NaN|Container:|Category:|harbor run/);
         expect(statement).toContain("Report Train and Test separately");
       }
