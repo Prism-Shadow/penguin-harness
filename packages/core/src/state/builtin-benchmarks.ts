@@ -1,18 +1,27 @@
 /**
  * The built-in Benchmarks: what one is, and the writer that puts it on disk.
  *
- * Each case is a statement and a rubric. Markdown definitions supply those texts directly, as
- * the example Benchmark does; the calibrated Sec A–E definitions render them from Harbor task
- * metadata. Both use the same manifest, case layout and empty scoreboard.
+ * Eleven Benchmarks ship beside the example. PenguinHarness Benchmark Sec A to Sec E are subsets of
+ * rag-bench-essential, DeepSWE v1.1, AutomationBench, Terminal-Bench-Science 0.1 and
+ * Terminal-Bench 4.0, each chosen to run on CPU-only Docker. Their tasks are Harbor task directories
+ * that live in the public benchmark repository, never in this one, and so does every large file they
+ * use: each Case here is text only — a statement that summarises the task, links its folder in
+ * the repository at the Benchmark's pinned commit and the repository's rules for running a task,
+ * and gives the exact Harbor launch with its caps; and a rubric that is the verifier's reward out
+ * of 100.
+ *
+ * The six GDPEVO domain Benchmarks supply their statements and rubrics directly, linking to the
+ * benchmark repository's main branch for current training and test instructions.
+ *
  * `benchmark_config.toml` is a plain Benchmark manifest (origin `builtin`, the built-in's own
  * version) that marks nothing: how a case is run is its statement's to say, and the
- * agent-evaluation Skill reads it there. Harbor case directories are `CASE-NNN-<task>`.
- * The same files, minus the scoreboard, are the Benchmark's
+ * agent-evaluation Skill reads it there. Harbor case directories are `CASE-NNN-<task>`, so the Harbor task name is the case id
+ * without its `CASE-NNN-` prefix. The same files, minus the scoreboard, are the Benchmark's
  * package (scripts/benchmark-packages.mjs writes them for the benchmark repository).
  *
  * They are written when a Project is created (project-benchmarks.ts), and a deleted one stays
  * deleted. The cases themselves are data (builtin-benchmarks-data.ts): cutting a Benchmark down
- * to its final task list is deleting rows there, and the case numbers follow the rows' order.
+ * to its final task list is deleting rows there, and the Harbor case numbers follow the rows' order.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
