@@ -8,10 +8,32 @@ type Ticket = {
   sessionId: string;
   messages: Message[];
   error: string | null;
+  /** A person stopped its last task (the main Session's abort record said so); absent otherwise. */
+  stopped?: boolean;
   createdAt: string;
   updatedAt: string;
 };
 type State = { tickets: Ticket[] };
+
+/**
+ * `host.subscribe` as this handler uses it. A server from before it has no such method and its
+ * `.harness/` types do not name it, so the handler reads it through this shape and, without
+ * it, leaves every answer to GET /tickets.
+ */
+type Subscribe = (
+  sessionId: string,
+  listener: (record: {
+    origin?: string[];
+    payload: { type?: unknown; error_code?: unknown };
+  }) => void,
+) => () => void;
+
+/** The abort codes of a person interrupting a task; the turn cap's `max_turns` is not one. */
+const STOP_CODES: ReadonlySet<unknown> = new Set([
+  "user_abort",
+  "backoff_interrupted",
+  "compaction_interrupted",
+]);
 
 /** How often, and how many times, a Session that sent its task_end is checked for idle. */
 const IDLE_CHECK_MS = 50;
@@ -39,7 +61,11 @@ export default {
         // The Sessions of running tickets, followed live so an answer is saved the moment its
         // task ends, whether or not the page is open. GET /tickets still reconciles: nothing is
         // followed across a server restart until the workbench loads again.
+        const subscribe = (host as unknown as { subscribe?: unknown }).subscribe;
+        const live = typeof subscribe === "function" ? (subscribe as Subscribe).bind(host) : null;
         const following = new Map<string, () => void>();
+        /** Sessions whose current task a person stopped, until that task is reconciled. */
+        const stopped = new Set<string>();
         const unfollow = (sessionId: string) => {
           following.get(sessionId)?.();
           following.delete(sessionId);
@@ -58,6 +84,7 @@ export default {
             if (result.status === "running") return false;
             ticket.status = result.status === "completed" ? "answered" : "failed";
             ticket.error = result.error;
+            if (result.status === "failed" && stopped.has(ticket.sessionId)) ticket.stopped = true;
             ticket.updatedAt = new Date().toISOString();
             if (result.status === "completed")
               ticket.messages.push({ role: "assistant", text: result.text, at: ticket.updatedAt });
@@ -65,6 +92,7 @@ export default {
             ticket.status = "failed";
             ticket.error = e instanceof Error ? e.message : String(e);
           }
+          stopped.delete(ticket.sessionId);
           unfollow(ticket.sessionId);
           return true;
         };
@@ -83,11 +111,14 @@ export default {
           });
         };
         const follow = (sessionId: string) => {
-          if (following.has(sessionId)) return;
+          if (!live || following.has(sessionId)) return;
           try {
-            const stop = host.subscribe(sessionId, (record) => {
-              // Only the main Session's own task_end ends the question; a subagent's carries `origin`.
-              if (record.origin?.length || record.payload.type !== "task_end") return;
+            const stop = live(sessionId, (record) => {
+              // Only the main Session's own records decide; a subagent's carry `origin`.
+              if (record.origin?.length) return;
+              const { type, error_code } = record.payload;
+              if (type === "abort" && STOP_CODES.has(error_code)) stopped.add(sessionId);
+              if (type !== "task_end") return;
               settle(sessionId).catch((e) =>
                 host.log(`Could not save the answer of ${sessionId}: ${String(e)}`),
               );
@@ -104,6 +135,8 @@ export default {
         const start = async (ticket: Ticket, text: string, state: State) => {
           ticket.status = "running";
           ticket.error = null;
+          delete ticket.stopped;
+          stopped.delete(ticket.sessionId);
           ticket.updatedAt = new Date().toISOString();
           await save(state);
           // Before run: a subscription replays nothing, and a short task could end first.

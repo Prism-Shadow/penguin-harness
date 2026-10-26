@@ -252,7 +252,7 @@ it("follows a researching question live, stops it on request and shows the answe
 
   const gets = () => requests.requests.filter((r) => r.method === "GET").length;
   const before = gets();
-  current = { ...researching, status: "failed", error: "Task aborted" };
+  current = { ...researching, status: "failed", error: "Task aborted", stopped: true };
   emit({ type: "abort", error_code: "user_abort" });
   emit({ type: "task_end" });
   await vi.advanceTimersByTimeAsync(0);

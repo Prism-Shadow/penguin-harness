@@ -22,8 +22,6 @@ const TONES = {
   resolved: "done",
   failed: "danger",
 };
-// What the server records as the error of a task someone stopped.
-const STOPPED_ERROR = "Task aborted";
 let preferred;
 try {
   preferred = localStorage.getItem("penguin.support.lang") || localStorage.getItem("penguin.lang");
@@ -76,7 +74,8 @@ function report(id, error) {
   $(id).hidden = false;
 }
 
-const errorText = (error) => (error === STOPPED_ERROR ? copy.stopped : error);
+// A question someone stopped says so in plain words rather than in the server's error.
+const errorText = (ticket) => (ticket.stopped ? copy.stopped : ticket.error);
 
 function badge(element, status) {
   element.textContent = copy[status] || status;
@@ -257,8 +256,9 @@ function renderTicket() {
       return article;
     });
     $("messages").replaceChildren(...messages);
-    $("dialog-error").hidden = !ticket.error;
-    if (ticket.error) report("dialog-error", new Error(errorText(ticket.error)));
+    const error = errorText(ticket);
+    $("dialog-error").hidden = !error;
+    if (error) report("dialog-error", new Error(error));
   }
   const disabled = busy || ticket.status === "running";
   $("resolve").textContent = ticket.status === "resolved" ? copy.reopen : copy.resolve;
