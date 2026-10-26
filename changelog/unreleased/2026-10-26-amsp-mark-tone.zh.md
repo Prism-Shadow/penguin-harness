@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#1329](https://github.com/Prism-Shadow/penguin-harness/pull/1329)
 
 [English](2026-10-26-amsp-mark-tone.md)
 
