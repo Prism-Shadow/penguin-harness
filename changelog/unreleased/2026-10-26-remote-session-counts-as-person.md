@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `server`, `docs`
+- **PR:** [#1337](https://github.com/Prism-Shadow/penguin-harness/pull/1337)
 
 [中文版](2026-10-26-remote-session-counts-as-person.zh.md)
 
