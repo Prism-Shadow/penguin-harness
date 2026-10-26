@@ -5219,8 +5219,10 @@ export interface MachineSocketFact {
    *
    * `unanswered` is a server PROCESS older than the socket: an update handed to a running server
    * swaps its platform and never the process that takes the upgrade, so the machine reports the
-   * current build and still has no socket. Restarting that machine's server mends it, and the
-   * Machines page reads the state as needing a restart. It lasts until a handshake completes: a
+   * current build and still has no socket: it is not running this server's version, which a remote
+   * machine must. A restart of its server, and failing that an update or a reinstall, brings it
+   * there; the Machines page reads the state as needing a restart. It lasts until a handshake
+   * completes: a
    * machine dialled again keeps it while the dial is outstanding, instead of reading `dialling`.
    */
   state: "connected" | "dialling" | "refused" | "unanswered" | "failed";

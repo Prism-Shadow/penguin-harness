@@ -67,7 +67,8 @@ export type MachineReading =
   /**
    * Connected, and its server answers requests but never the API socket (its `socket` reads
    * `unanswered`): a server process older than its build, which keeps every live update from the
-   * machine away until someone restarts it. Its dialog's Restart is the way on.
+   * machine away until it runs this server's version: its dialog's Restart first, and failing
+   * that Update or a reinstall.
    */
   | { kind: "restartNeeded" }
   /** Its server answers but nothing holds a connection to it. */

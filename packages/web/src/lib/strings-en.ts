@@ -179,7 +179,7 @@ export const en: Strings = {
       failed: "Failed",
     },
     restartNeededReason:
-      "Its server answers requests but not the live link: that server process was started before its current build. Restart the server to bring live updates from its conversations back.",
+      "Its server answers requests but not the live link: it is not running this server's version. A remote machine must run the same version as this server: restart it, and if it still cannot connect, update or reinstall it.",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
@@ -3843,7 +3843,7 @@ Scenarios:
     },
     machineRestartNeeded: {
       body: (alias: string) =>
-        `Live updates from ${alias} aren't reaching this page: its server process was started before its current build. Restart its server on the Machines page.`,
+        `Live updates from ${alias} aren't reaching this page: it isn't running this server's version. Restart it on the Machines page; if it still can't connect, update or reinstall it there.`,
       open: "Open Machines",
     },
     statsLabel: "Stats",

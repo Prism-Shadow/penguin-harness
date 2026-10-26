@@ -217,7 +217,7 @@ export const zh = {
     },
     /** Why a machine reads as needing a restart: the status pill's hover. */
     restartNeededReason:
-      "它的服务端应答请求，却不应答实时连接：这个服务进程早于当前版本启动。重启服务后，这台机器上对话的实时更新才会恢复。",
+      "它的服务端应答请求，却不应答实时连接：它运行的不是本服务端的版本。远程机器必须与本服务端运行同一版本：先重启它；仍连不上时，更新或重新安装它，使它运行本服务端的版本。",
     agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
@@ -4027,7 +4027,7 @@ Benchmark：
     /** Above the composer while the conversation's machine reads as needing a restart. */
     machineRestartNeeded: {
       body: (alias: string) =>
-        `${alias} 上的实时更新到不了这里：它的服务进程早于当前版本启动。请在「机器管理」页面重启它的服务。`,
+        `${alias} 上的实时更新到不了这里：它运行的不是本服务端的版本。请在「机器管理」页面重启它；仍连不上时，在那里更新或重新安装它。`,
       open: "打开机器管理",
     },
     statsLabel: "统计信息",

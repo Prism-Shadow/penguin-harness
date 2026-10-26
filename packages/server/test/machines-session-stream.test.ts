@@ -183,7 +183,7 @@ describe("a machine's Session stream", () => {
       expect(refused!.status).toBe(502);
       const { error } = (await refused!.json()) as { error: { code: string; message: string } };
       expect(error.code).toBe("machine_socket_unavailable");
-      expect(error.message).toContain("Restart that machine from the Machines page");
+      expect(error.message).toContain("restart that machine from the Machines page");
       const fact = sockets.fact(MACHINE);
       expect(fact).toMatchObject({ state: "unanswered" });
       expect(told).toEqual(["unanswered"]);

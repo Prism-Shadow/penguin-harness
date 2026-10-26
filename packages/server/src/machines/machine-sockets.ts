@@ -18,8 +18,9 @@
  * A handshake that goes unanswered is told apart by asking the same port for HTTP. A machine
  * whose server answers HTTP and never the handshake is running a server process older than the
  * socket — an update handed to a running server swaps its platform, never the process that takes
- * the upgrade — and its streams stay out of reach until that server is restarted. Its fact says
- * so (`unanswered`) and the answer every stream gets names the restart; nothing here restarts it.
+ * the upgrade — so it is not running this server's version, and its streams stay out of reach
+ * until it does. Its fact says so (`unanswered`) and the answer every stream gets names the way
+ * on: a restart, and failing that an update or a reinstall. Nothing here restarts it.
  */
 import http from "node:http";
 import { WebSocket } from "ws";
@@ -44,13 +45,13 @@ export class HandshakeTimeout extends Error {
 
 /**
  * The handshake went unanswered while the machine's server answers HTTP on the same port: the
- * server process predates the socket. Only a restart of that machine's server brings the socket,
- * so the words the stream's answer carries say where to do it.
+ * server process predates the socket, so the machine is not running this server's version. The
+ * words the stream's answer carries say how to bring it there.
  */
 export class ServerPredatesSocket extends Error {
   constructor() {
     super(
-      "its server answers HTTP but never answered the API socket's handshake: the running server process predates the socket, and an update handed to it while it ran does not replace that process. Restart that machine from the Machines page to bring its live updates back.",
+      "its server answers HTTP but never answered the API socket's handshake: the running server predates the socket, so it is not running this server's version. A remote machine must run the same version as this server: restart that machine from the Machines page, and if it still cannot connect, update or reinstall it so it runs this server's version.",
     );
   }
 }

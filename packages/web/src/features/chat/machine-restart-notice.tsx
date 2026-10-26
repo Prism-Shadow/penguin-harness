@@ -1,8 +1,9 @@
 /**
  * The line above a conversation's composer while the machine it runs on needs a restart: its
- * history loads, and the replies it writes from now on do not arrive until that machine's server
- * is restarted — the stream behind them keeps asking, and opens once it is. Its action opens the
- * Machines page, where the machine's card says the same and its dialog offers the Restart.
+ * history loads, and the replies it writes from now on do not arrive until that machine runs this
+ * server's version — the stream behind them keeps asking, and opens once it does. Its action opens
+ * the Machines page, where the machine's card says the same and its dialog offers the Restart,
+ * the Update and the reinstall.
  *
  * Its own component, reading the machines account itself: the chat page does not re-render on
  * every change to the machines list, a running job's log lines among them.
