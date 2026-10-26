@@ -1818,7 +1818,7 @@ export const en: GalleryStrings = {
           "lab-2 refused the connection: no ssh server listens at that address and port.",
         behind: "Version 0.2.16 is available",
         restartNeeded:
-          "Its server answers requests but not the live link: that server process was started before its current build.",
+          "This machine is on a different version, so its conversations won't update by themselves. Click Restart server; if that doesn't help, reinstall it.",
       },
       cards: "Machine cards",
       cardsHint:

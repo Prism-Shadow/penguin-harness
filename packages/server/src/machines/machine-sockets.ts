@@ -45,13 +45,14 @@ export class HandshakeTimeout extends Error {
 
 /**
  * The handshake went unanswered while the machine's server answers HTTP on the same port: the
- * server process predates the socket, so the machine is not running this server's version. The
- * words the stream's answer carries say how to bring it there.
+ * server process predates the socket, so the machine is not running this server's version. Its
+ * words are the whole answer a stream gets, a page may show them as they are, and so they are
+ * said for whoever uses the page: what is wrong and what to click.
  */
 export class ServerPredatesSocket extends Error {
   constructor() {
     super(
-      "its server answers HTTP but never answered the API socket's handshake: the running server predates the socket, so it is not running this server's version. A remote machine must run the same version as this server: restart that machine from the Machines page, and if it still cannot connect, update or reinstall it so it runs this server's version.",
+      "This machine is on a different version, so its conversations won't update by themselves. On the Machines page, click Restart server; if that doesn't help, reinstall it.",
     );
   }
 }
@@ -419,7 +420,9 @@ export class MachineSockets {
             // and logs nothing, so `since` says when the machine first read this way.
             if (this.#facts.get(machineId)?.state === "unanswered") return;
             this.#state(machineId, "unanswered", err.message);
-            this.log(`[machines] socket to ${machineId}: ${err.message}`);
+            this.log(
+              `[machines] socket to ${machineId}: its server answers HTTP and never the handshake — a server process older than the socket, so not this server's version; it needs a restart, or else a reinstall`,
+            );
           } else {
             const detail = err instanceof Error ? err.message : String(err);
             this.#state(machineId, "failed", detail);
@@ -445,6 +448,9 @@ export class MachineSockets {
       return { socket };
     } catch (err) {
       if (err instanceof HandshakeRefused) return { answer: refusedAnswer(machineId, err.status) };
+      if (err instanceof ServerPredatesSocket) {
+        return { answer: unavailable(502, "machine_socket_unavailable", err.message) };
+      }
       return {
         answer: unavailable(
           502,

@@ -175,11 +175,11 @@ export const en: Strings = {
       connected: "Connected",
       dialling: "Dialling",
       refused: "Refused",
-      unanswered: "Unanswered",
+      unanswered: "Can't connect",
       failed: "Failed",
     },
     restartNeededReason:
-      "Its server answers requests but not the live link: it is not running this server's version. A remote machine must run the same version as this server: restart it, and if it still cannot connect, update or reinstall it.",
+      "This machine is on a different version, so its conversations won't update by themselves. Click Restart server; if that doesn't help, reinstall it.",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
@@ -3843,8 +3843,8 @@ Scenarios:
     },
     machineRestartNeeded: {
       body: (alias: string) =>
-        `Live updates from ${alias} aren't reaching this page: it isn't running this server's version. Restart it on the Machines page; if it still can't connect, update or reinstall it there.`,
-      open: "Open Machines",
+        `${alias} is on a different version, so this conversation won't update by itself. Go to Machines and restart it.`,
+      open: "Go to Machines",
     },
     statsLabel: "Stats",
     removeImage: "Remove image",
