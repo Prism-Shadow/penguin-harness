@@ -176,6 +176,7 @@ import type {
   ServerSettingsUpdateRequest,
   SessionCategory,
   SessionContextResponse,
+  ArchivedSessionGroupServers,
   ArchivedSessionGroupsResponse,
   ArchivedSessionsBatch,
   ArchivedSessionsBatchResponse,
@@ -1039,10 +1040,16 @@ export const deleteSession = (sessionId: string) =>
 
 // The archive page (Settings › Archived chats) -------------------------------------------
 
-/** The archive page's groups — one Workspace of one Project each — with their counts, newest first. */
-export const listArchivedSessionGroups = (query: ArchivedSessionsQuery = {}) =>
+/**
+ * The archive page's groups — one Workspace of one Project each — with their counts, newest
+ * first: this server's and the machines' (`servers` narrows it to one side).
+ */
+export const listArchivedSessionGroups = (
+  query: ArchivedSessionsQuery = {},
+  servers?: ArchivedSessionGroupServers,
+) =>
   apiFetch<ArchivedSessionGroupsResponse>("/api/me/archived-sessions/groups", {
-    query: { q: query.q, source: query.source, projectId: query.projectId },
+    query: { q: query.q, source: query.source, projectId: query.projectId, servers },
   });
 
 /**

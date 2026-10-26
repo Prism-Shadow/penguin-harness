@@ -36,7 +36,7 @@ import { useProject } from "../../state/project";
 import { downloadArchive } from "../agents/archive-download";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
-import { fetchBenchmarks } from "./benchmark-sources";
+import { useBenchmarksAcross } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 
 /**
@@ -175,38 +175,21 @@ export function BenchmarkDetailPage() {
   // for the new Project's Benchmarks rather than asking that Project about this id.
   const switchedAway = useLeaveOnProjectSwitch(projectId, "/benchmark");
 
-  const [benchmark, setBenchmark] = useState<MergedBenchmark | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
-  const [missing, setMissing] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [using, setUsing] = useState(false);
 
-  useDocumentTitle(benchmark?.title ?? S.benchmark.title);
-
   // The Project's list is the only read that carries a Benchmark's scoreboard, so the page takes
-  // it whole — merged over this server and the machines it holds — and picks its own out of it.
-  const machinesKey = machineIds.join(",");
-  useEffect(() => {
-    if (!projectId || benchmarkId === "" || switchedAway) return;
-    let cancelled = false;
-    setBenchmark(null);
-    setError(null);
-    setMissing(false);
-    fetchBenchmarks(projectId, machinesKey === "" ? [] : machinesKey.split(","))
-      .then((merged) => {
-        if (cancelled) return;
-        const found = merged.find((b) => b.id === benchmarkId) ?? null;
-        setBenchmark(found);
-        setMissing(found === null);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(apiErrorText(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, benchmarkId, machinesKey, switchedAway]);
+  // it whole — merged over this server and the machines it holds, each joining as it answers —
+  // and picks its own out of it. Not in the answers so far is only "missing" once no machine is
+  // still out: it may be a Benchmark a machine alone holds.
+  const listed = useBenchmarksAcross(switchedAway ? null : projectId, machineIds);
+  const benchmark: MergedBenchmark | null =
+    benchmarkId === "" ? null : (listed.benchmarks?.find((b) => b.id === benchmarkId) ?? null);
+  /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
+  const missing = benchmark === null && listed.benchmarks !== null && listed.pending.length === 0;
+  const error = listed.error === null ? null : apiErrorText(listed.error);
+
+  useDocumentTitle(benchmark?.title ?? S.benchmark.title);
 
   // The Project's models, for the Use dialog's conversation-model picker; a failure just leaves
   // the picker at the Project default.

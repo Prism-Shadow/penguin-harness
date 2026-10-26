@@ -10,6 +10,9 @@
  * - Given a machine that does not answer this round, its shells are not listed and the list says
  *   it is short; once it answers they are back and the list is whole. Given this server not
  *   answering, the last list stands.
+ * - Given a machine that holds its connection but answers nothing, this server's shells are
+ *   listed as soon as this server answers, and the machine is given up on after its wait, so
+ *   the next refresh reads this server again.
  * - Given this server answering 404 (a runtime older than the terminal API), the API is reported
  *   missing, until it answers again.
  * - Given this server answering 401, it is asked once whether the sign-in still holds, and the
@@ -79,6 +82,26 @@ describe("the terminal list", () => {
     world.unreachable(null);
     await list.refreshTerminals();
     expect(listed(list)).toEqual(["here-1", "m1-1"]);
+  });
+
+  it("lists this server's shells while a quiet machine is out, and gives the machine up after its wait", async () => {
+    vi.useFakeTimers();
+    const world = terminalWorld({ here: [{ id: "here-1" }], machines: { M1: [{ id: "m1-1" }] } });
+    const { list, machines } = await modules();
+    machines.setTerminalMachines(["M1"]);
+
+    world.quiet("M1");
+    const round = list.refreshTerminals();
+    await vi.waitFor(() => expect(listed(list)).toEqual(["here-1"]));
+    expect(list.terminalListComplete()).toBe(false);
+    await vi.advanceTimersByTimeAsync(20_000);
+    await round;
+
+    world.add(null, { id: "here-2" });
+    world.quiet("M1", false);
+    await list.refreshTerminals();
+    expect(listed(list)).toEqual(["here-1", "here-2", "m1-1"]);
+    expect(list.terminalListComplete()).toBe(true);
   });
 
   it("reports the terminal API missing on a 404 from this server, until it answers again", async () => {

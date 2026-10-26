@@ -566,6 +566,13 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 
 ## The rest of the house style
 
+- **Local first, remote lazy** (owner principle, 2026-10-26): a page and the sidebar's local
+  Session list render from this server's answer alone. A machine (connected, connecting or
+  offline) and the public internet are asked after that, and only where the part that shows
+  them is needed (`lib/local-first.ts` gates the shell's own remote reads); each joins with its
+  own state and timeout. Never put a local read and a remote one in one `Promise.all` or behind
+  one skeleton, and never make a route await a machine or the network before it answers with
+  local data.
 - **Stacking contexts**: chrome creates none; dropdown/user menus `z-40`; modal and drawer overlays
   `z-50`; portaled panels `z-[60]`. `styles.css`'s header states this.
 - **Every scroll container is a containing block** (`styles.css`, `@layer base`). Do not undo it: an

@@ -23,7 +23,8 @@
  * - Given a run starting or settling on a row the page holds, the row's run state changes where
  *   it stands, with nothing read again.
  * - Given a machine's groups beside this server's, each group's rows are read from the server it
- *   is on, and a machine that could not be read is named.
+ *   is on, and a machine that could not be read is named. This server's groups are read first and
+ *   are on the page while the machines' answer is still out; the machines' join when it lands.
  * - Given rows on a machine, a row's own button, a selection spanning both servers and a whole
  *   group each act on the server the rows are on — the whole group pinned to the machine's own
  *   count time — and never on the other.
@@ -122,8 +123,11 @@ function matching(
 
 function serve(request: FetchRequest): Response {
   if (request.path === "/api/me/archived-sessions/groups") {
+    const servers = request.query.get("servers");
     const groups = new Map<string, ArchivedSessionGroup>();
-    for (const machine of [null, MACHINE]) {
+    const asked =
+      servers === "here" ? [null] : servers === "machines" ? [MACHINE] : [null, MACHINE];
+    for (const machine of asked) {
       for (const s of matching(request.query, machine)) {
         const key = `${machine}:${s.workspace}`;
         const g = groups.get(key);
@@ -147,7 +151,7 @@ function serve(request: FetchRequest): Response {
       groups: list,
       total: list.reduce((n, g) => n + g.count, 0),
       asOf,
-      ...(unreachable.length > 0
+      ...(unreachable.length > 0 && servers !== "here"
         ? { unreachable: unreachable.map((alias) => ({ machineId: `id-${alias}`, alias })) }
         : {}),
     });
@@ -226,16 +230,21 @@ const machineRun = (prefix: string, workspace: string, n: number, from = 0) =>
   });
 
 const paths = () => fetch.requests.map((r) => r.path);
+/** Which side each read of the groups asked: this server's (`here`) or the machines'. */
+const groupReads = () =>
+  fetch.requests.filter((r) => r.path.endsWith("/groups")).map((r) => r.query.get("servers"));
 
 describe("the archive page", () => {
   it("reads the groups first, then each shown group's first ten rows", async () => {
     rows = [...run("a", "/a", 12, 100), ...run("b", "/b", 3)];
     const store = createArchiveStore();
     await store.getState().load(ALL);
-    expect(paths()[0]).toBe("/api/me/archived-sessions/groups");
-    expect(paths().slice(1).sort()).toEqual([
+    // This server's groups, then their rows; the machines' groups after those.
+    expect(fetch.requests.map((r) => r.query.get("servers") ?? r.path)).toEqual([
+      "here",
       "/api/me/archived-sessions",
       "/api/me/archived-sessions",
+      "machines",
     ]);
     expect(shownGroups(store.getState()).map((g) => g.workspace)).toEqual(["/a", "/b"]);
     expect(shownIds(store, "/a")).toEqual(rows.slice(0, 10).map((s) => s.sessionId));
@@ -469,7 +478,7 @@ describe("the archive page", () => {
     for (const ev of events) store.getState().noteEvent(ev);
     await vi.advanceTimersByTimeAsync(ARCHIVE_REFRESH_DELAY_MS);
     await vi.runAllTimersAsync();
-    expect(paths().filter((p) => p.endsWith("/groups"))).toHaveLength(1);
+    expect(groupReads()).toEqual(["here", "machines"]);
 
     fetch.requests.length = 0;
     store.getState().noteEvent({
@@ -529,6 +538,31 @@ describe("the archive page", () => {
     const pages = fetch.requests.filter((r) => r.path === "/api/me/archived-sessions");
     expect(pages.map((r) => r.query.get("machineId")).sort()).toEqual([MACHINE, null]);
     expect(store.getState().unreachable).toEqual(["nas"]);
+  });
+
+  it("lists this server's groups while the machines' answer is out, and adds theirs when it lands", async () => {
+    rows = [...run("l", "/a", 2, 100), ...machineRun("m", "/m", 3, 200)];
+    let release!: () => void;
+    const machinesAnswered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fetch.answer(async (request) => {
+      if (request.query.get("servers") === "machines") await machinesAnswered;
+      return serve(request);
+    });
+    const store = createArchiveStore();
+    const loaded = store.getState().load(ALL);
+    await vi.waitFor(() => expect(shownIds(store, "/a")).toEqual(["l-00", "l-01"]));
+    expect(shownGroups(store.getState()).map((g) => g.machineId ?? null)).toEqual([null]);
+
+    release();
+    await loaded;
+    expect(shownGroups(store.getState()).map((g) => [g.workspace, g.machineId ?? null])).toEqual([
+      ["/m", MACHINE],
+      ["/a", null],
+    ]);
+    expect(shownIds(store, "/m", MACHINE)).toEqual(["m-00", "m-01", "m-02"]);
+    expect(store.getState().total).toBe(5);
   });
 
   it("acts on a machine's rows on that machine: a row's own button, a mixed selection, a whole group", async () => {
@@ -599,6 +633,6 @@ describe("the archive page", () => {
       .noteEvent(relayed({ type: "session_deleted", sessionId: "m-00", projectId: "p" }));
     await vi.advanceTimersByTimeAsync(ARCHIVE_REFRESH_DELAY_MS);
     await vi.runAllTimersAsync();
-    expect(paths().filter((p) => p.endsWith("/groups"))).toHaveLength(1);
+    expect(groupReads()).toEqual(["here", "machines"]);
   });
 });

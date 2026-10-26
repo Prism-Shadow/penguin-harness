@@ -20,6 +20,9 @@
  * - A machine that could not answer keeps its cached rows and its cache; counts come only
  *   from servers that answered.
  * - This server not answering abandons the reload: the rows stand and loading stays clear.
+ * - A machine is asked once this server's rows are on screen, and holds nothing back: they show
+ *   and loading clears as soon as this server answers; the machine keeps the rows it showed and
+ *   its cache until its own answer lands, which builds the list again.
  * - Two machines' counts for one path stay apart.
  * - A group's next page is asked only of the machine the group is on, by path.
  *
@@ -573,6 +576,78 @@ describe("the list across machines", () => {
     fetch.requests.length = 0;
     await store.getState().loadMoreFor(["a1"], "/w");
     expect(asked()).toEqual([{ machineId: null, workspaceGroup: "/w" }]);
+  });
+});
+
+/** Requests to the named sources (null: this server) wait until released; the rest are served at once. */
+function hold(...sources: (string | null)[]) {
+  const waiting = new Map<string | null, Array<() => void>>(sources.map((s) => [s, []]));
+  fetch.answer((request) => {
+    const queue = waiting.get(request.machine);
+    if (queue === undefined) return serve(request);
+    return new Promise<Response>((resolve, reject) =>
+      queue.push(() => {
+        try {
+          resolve(serve(request));
+        } catch (err) {
+          reject(err);
+        }
+      }),
+    );
+  });
+  return {
+    waiting: (source: string | null) => waiting.get(source)?.length ?? 0,
+    release: (source: string | null) => {
+      const queue = waiting.get(source) ?? [];
+      waiting.delete(source);
+      for (const go of queue) go();
+    },
+  };
+}
+
+describe("a machine still being asked", () => {
+  it("is asked once this server's rows are on screen, and its rows join when it answers", async () => {
+    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+    const held = hold(null, "M1");
+    const store = boot(["M1"]);
+    const done = store.getState().reload();
+    await vi.waitFor(() => expect(held.waiting(null)).toBe(1));
+    expect(held.waiting("M1")).toBe(0);
+
+    held.release(null);
+    await vi.waitFor(() => expect(store.getState().loading).toBe(false));
+    expect(ids(store)).toEqual(["here"]);
+    await vi.waitFor(() => expect(held.waiting("M1")).toBe(1));
+
+    held.release("M1");
+    await done;
+    expect(ids(store)).toEqual(["there", "here"]);
+    expect(store.getState().countsByAgent.get("a1")?.active).toBe(2);
+  });
+
+  it("keeps the rows it showed, and its cache, until its own answer lands", async () => {
+    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+    const store = boot(["M1"]);
+    await store.getState().reload();
+
+    // Over there the Session was deleted meanwhile, and this server has a new one.
+    answers.set(key("M1", "a1"), page([], 0));
+    answers.set(
+      key(null, "a1"),
+      page([row("here", "2026-01-02T00:00:00Z"), row("here-new", "2026-01-04T00:00:00Z")], 2),
+    );
+    const held = hold("M1");
+    const done = store.getState().reload();
+    await vi.waitFor(() => expect(ids(store)).toContain("here-new"));
+    expect(ids(store)).toEqual(["here-new", "there", "here"]);
+    expect(cachedMachineSessions("p", "M1").map((s) => s.sessionId)).toEqual(["there"]);
+
+    held.release("M1");
+    await done;
+    expect(ids(store)).toEqual(["here-new", "here"]);
+    expect(cachedMachineSessions("p", "M1")).toEqual([]);
   });
 });
 

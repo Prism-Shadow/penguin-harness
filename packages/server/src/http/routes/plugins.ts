@@ -80,7 +80,6 @@ import {
   mergeIndexes,
   withoutIcon,
   NIGHTLY_INDEX_URL,
-  SOURCE_WAIT_MS,
 } from "../../plugin/registry.js";
 import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
@@ -387,13 +386,14 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   const prefix = options.prefix ?? (() => null);
 
   /**
-   * Every entry this deployment lists: the indexes' and the prefix's own server modules. A source
-   * still being read is not waited for past SOURCE_WAIT_MS — the shipped entries list without it,
-   * and its own join on a later read, once the cache has them.
+   * Every entry this deployment lists: the indexes' and the prefix's own server modules. A
+   * published index is never waited for: what it has in hand lists, and while its first fetch is
+   * out the shipped entries list without it — at once, with the network slow or gone — and its
+   * own join on a later read, once the cache has them.
    */
   const listing = async () => {
     const { entries, failures, pending } = await mergeIndexes(registries, {
-      waitMs: SOURCE_WAIT_MS,
+      waitForNetwork: false,
     });
     const own = await prefixEntries(prefix(), new Set(entries.map((e) => e.name)));
     return { entries: [...entries, ...own], failures, pending };

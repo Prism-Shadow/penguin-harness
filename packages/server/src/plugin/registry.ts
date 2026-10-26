@@ -39,6 +39,12 @@ export interface PluginRegistry {
    * on every page load, a readme is large and wanted only for the entry someone opened.
    */
   readme(name: string): Promise<string | null>;
+  /**
+   * What this source can answer without waiting on the network: the document in hand, or the
+   * failure it remembers; null while a read is still out (one is started if none is). Absent on a
+   * source that never waits on the network — the builtin index — which is simply read.
+   */
+  inHand?(): Promise<PluginIndexEntry[]> | null;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -355,51 +361,36 @@ export function cachedRegistry(
       .finally(() => {
         inFlight = null;
       }));
+  /** The answer in hand — refreshing a stale document behind it — or null when a fetch is all there is. */
+  const inHand = (): Promise<PluginIndexEntry[]> | null => {
+    if (good !== null && now() - good.at < ttlMs) return Promise.resolve(good.entries);
+    const resting = failed !== null && now() - failed.at < retryMs;
+    if (good !== null) {
+      // Answered with the document in hand; a refresh that fails leaves it standing.
+      if (!resting) refresh().catch(() => undefined);
+      return Promise.resolve(good.entries);
+    }
+    if (resting) return Promise.reject(failed!.error);
+    return null;
+  };
   return {
     source: inner.source,
     snapshot: () => good,
-    index: async () => {
-      if (good !== null && now() - good.at < ttlMs) return good.entries;
-      const resting = failed !== null && now() - failed.at < retryMs;
-      if (good !== null) {
-        // Answered with the document in hand; a refresh that fails leaves it standing.
-        if (!resting) refresh().catch(() => undefined);
-        return good.entries;
-      }
-      if (resting) throw failed!.error;
-      return refresh();
+    index: () => inHand() ?? refresh(),
+    inHand: () => {
+      const answer = inHand();
+      if (answer === null) refresh().catch(() => undefined);
+      return answer;
     },
     readme: (name) => inner.readme(name),
   };
-}
-
-/**
- * How long a listing waits for a source that has not answered yet. Long enough for a reachable
- * index to arrive in the same answer, so a page load renders once; short enough that one behind a
- * network that drops the connection (a host that cannot reach GitHub) costs the page a moment
- * rather than every retry the fetch is allowed. The fetch goes on behind the answer, and a later
- * read gets its entries from the cache.
- */
-export const SOURCE_WAIT_MS = 1_500;
-
-/** `work`'s value, or null once `ms` has passed first; `work` runs on either way. */
-async function within<T>(work: Promise<T>, ms: number): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), ms);
-  });
-  try {
-    return await Promise.race([work, late]);
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 /** What merging the sources gave: their entries, and the sources that failed or are still being read. */
 export interface MergedIndex {
   entries: PluginIndexEntry[];
   failures: { source: string; error: string }[];
-  /** Sources that had not answered within `waitMs`: their entries are missing from this listing. */
+  /** Sources still being read when the listing was made: their entries are missing from it. */
   pending: string[];
 }
 
@@ -410,9 +401,9 @@ export interface MergedIndex {
  * because that index is one publisher's single artifact, but a source that is unreachable,
  * misconfigured or serving garbage must not empty the page of everything else. The failure is
  * reported alongside the entries rather than swallowed, so the Web App can say which source is
- * down instead of quietly showing a shorter list. With `waitMs`, a source that has not answered
- * by then is reported as pending rather than waited for, for the same reason: a slow source must
- * not hold back the ones that answered.
+ * down instead of quietly showing a shorter list. With `waitForNetwork: false`, a source is read
+ * from what it has in hand, and one with nothing in hand yet is reported as pending rather than
+ * waited for, for the same reason: what this server ships lists at once, wherever the network is.
  *
  * On a name collision the FIRST source wins, and the builtin registry is listed first: what this
  * deployment actually ships is the truth about it, and a published index claiming the same
@@ -420,22 +411,23 @@ export interface MergedIndex {
  */
 export async function mergeIndexes(
   registries: readonly PluginRegistry[],
-  { waitMs }: { waitMs?: number } = {},
+  { waitForNetwork = true }: { waitForNetwork?: boolean } = {},
 ): Promise<MergedIndex> {
   const settled = await Promise.all(
     registries.map(async (r) => {
-      const read = (async () => {
-        try {
-          return { entries: await r.index(), error: null };
-        } catch (err) {
-          return {
+      const reading = waitForNetwork || r.inHand === undefined ? r.index() : r.inHand();
+      if (reading === null) return { source: r.source, answer: null };
+      try {
+        return { source: r.source, answer: { entries: await reading, error: null } };
+      } catch (err) {
+        return {
+          source: r.source,
+          answer: {
             entries: [] as PluginIndexEntry[],
             error: err instanceof Error ? err.message : String(err),
-          };
-        }
-      })();
-      const answer = waitMs === undefined ? await read : await within(read, waitMs);
-      return { source: r.source, answer };
+          },
+        };
+      }
     }),
   );
   const seen = new Set<string>();

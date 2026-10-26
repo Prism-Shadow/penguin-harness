@@ -21,6 +21,7 @@
  *   machine's group is read from that machine, acted on there — its rows by id, the whole group
  *   pinned to the machine's own count time — and its events reach the page through this
  *   server's channel, wrapped as `machine_event`. Machines that could not be asked are named.
+ *   The machines' groups are asked apart from this server's and join them when they answer.
  *
  * A vanilla store with its async actions, so the page's whole behaviour is exercised in Node
  * against the fetch fake (the component only renders it and asks before a delete).
@@ -28,6 +29,7 @@
 import { createStore } from "zustand/vanilla";
 import type {
   ArchivedSessionGroup,
+  ArchivedSessionGroupsResponse,
   ArchivedSessionSource,
   ArchivedSessionsBatch,
   ArchivedSessionsQuery,
@@ -133,6 +135,16 @@ export interface ArchiveState {
 export const groupKey = (
   group: Pick<ArchivedSessionGroup, "projectId" | "workspace" | "machineId">,
 ): string => `${group.machineId ?? ""}\0${group.projectId}\0${group.workspace}`;
+
+/** Newest activity first, then Project, machine and Workspace: the order the server lists groups in. */
+function groupOrder(a: ArchivedSessionGroup, b: ArchivedSessionGroup): number {
+  if (a.latest !== b.latest) return a.latest > b.latest ? -1 : 1;
+  if (a.projectId !== b.projectId) return a.projectId < b.projectId ? -1 : 1;
+  const am = a.machineId ?? "";
+  const bm = b.machineId ?? "";
+  if (am !== bm) return am < bm ? -1 : 1;
+  return a.workspace < b.workspace ? -1 : a.workspace > b.workspace ? 1 : 0;
+}
 
 /** The groups on screen: the first `groupLimit`. */
 export function shownGroups(state: ArchiveState): ArchivedSessionGroup[] {
@@ -299,31 +311,27 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       );
     };
 
-    /** Reads the groups, then their rows; `keep` carries each shown group's reveal over. */
-    const read = async (keep: boolean) => {
-      const g = ++gen;
-      const caps = new Map([...get().rows].map(([key, rows]) => [key, rows.cap]));
-      let groups: ArchivedSessionGroup[];
-      let total: number;
-      let asOf: string;
-      let unreachable: string[];
-      try {
-        const answer = await api.listArchivedSessionGroups(query(get().filters));
-        ({ groups, total, asOf } = answer);
-        unreachable = (answer.unreachable ?? []).map((machine) => machine.alias);
-      } catch (err) {
-        if (g !== gen) return;
-        set({ error: apiErrorText(err) });
-        if (get().groups === null) set({ groups: [], total: 0 });
-        return;
-      }
-      if (g !== gen) return;
-      // Rows of groups that are gone go with them.
+    /**
+     * Puts `groups` on the page in the server's order — rows of groups that are gone go with
+     * them — then loads the shown ones among `fill`, and unchooses what the page no longer holds.
+     */
+    const place = async (
+      g: number,
+      next: ArchivedSessionGroup[],
+      fields: { asOf: string; unreachable: string[] },
+      fill: readonly ArchivedSessionGroup[],
+      capOf: (key: string) => number,
+    ) => {
+      const groups = [...next].sort(groupOrder);
       const present = new Set(groups.map(groupKey));
       const rows = new Map([...get().rows].filter(([key]) => present.has(key)));
-      set({ groups, total, asOf, rows, error: null, unreachable });
-      await fillGroups(g, groups.slice(0, get().groupLimit), (key) =>
-        keep ? (caps.get(key) ?? ARCHIVE_ROW_PAGE) : ARCHIVE_ROW_PAGE,
+      const total = groups.reduce((n, group) => n + group.count, 0);
+      set({ groups, total, rows, error: null, ...fields });
+      const filling = new Set(fill.map(groupKey));
+      await fillGroups(
+        g,
+        groups.slice(0, get().groupLimit).filter((group) => filling.has(groupKey(group))),
+        capOf,
       );
       if (g !== gen) return;
       // A row picked that the page no longer holds (unarchived or deleted elsewhere) is
@@ -337,6 +345,54 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       if (keptPicks.length !== picked.size || keptWholes.length !== wholes.size) {
         set({ selection: { picked: new Set(keptPicks), wholes: new Map(keptWholes) } });
       }
+    };
+
+    /**
+     * Reads the groups, then their rows; `keep` carries each shown group's reveal over.
+     *
+     * This server's groups and the machines' are asked apart: this server's first, on the page
+     * the moment they come, the machines' after that. A machine that holds its connection but
+     * answers nothing must not keep the archive this server holds off the page for as long as
+     * its read takes to time out. Until the machines' answer lands, a refresh keeps the machine
+     * groups it showed.
+     */
+    const read = async (keep: boolean) => {
+      const g = ++gen;
+      const caps = new Map([...get().rows].map(([key, rows]) => [key, rows.cap]));
+      const capOf = (key: string) =>
+        keep ? (caps.get(key) ?? ARCHIVE_ROW_PAGE) : ARCHIVE_ROW_PAGE;
+      const filters = query(get().filters);
+      let local: ArchivedSessionGroupsResponse;
+      try {
+        local = await api.listArchivedSessionGroups(filters, "here");
+      } catch (err) {
+        if (g !== gen) return;
+        set({ error: apiErrorText(err) });
+        if (get().groups === null) set({ groups: [], total: 0 });
+        return;
+      }
+      if (g !== gen) return;
+      const shownMachines = (get().groups ?? []).filter((group) => group.machineId !== undefined);
+      await place(
+        g,
+        [...local.groups, ...shownMachines],
+        { asOf: local.asOf, unreachable: get().unreachable },
+        local.groups,
+        capOf,
+      );
+      if (g !== gen) return;
+      const remote = await api.listArchivedSessionGroups(filters, "machines").catch(() => null);
+      if (g !== gen || remote === null) return;
+      await place(
+        g,
+        [...local.groups, ...remote.groups],
+        {
+          asOf: local.asOf,
+          unreachable: (remote.unreachable ?? []).map((machine) => machine.alias),
+        },
+        remote.groups,
+        capOf,
+      );
     };
 
     /**

@@ -1200,6 +1200,10 @@ function batchIds(store: DemoStore, body: unknown): string[] {
 
 router
   .get("/api/me/archived-sessions/groups", ({ store, query }): ArchivedSessionGroupsResponse => {
+    // The demo runs on no machine: the machines' side of the archive holds nothing.
+    if (query.get("servers") === "machines") {
+      return { groups: [], total: 0, asOf: new Date().toISOString() };
+    }
     const groups = new Map<string, ArchivedSessionGroup>();
     const rows = archivedRows(store, query);
     for (const row of rows) {

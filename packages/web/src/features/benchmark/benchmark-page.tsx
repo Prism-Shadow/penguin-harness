@@ -64,7 +64,7 @@ import {
 import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
 import { ImportBenchmarkModal } from "./benchmark-import-modal";
 import { benchmarkRoute } from "./benchmark-route";
-import { fetchBenchmarks } from "./benchmark-sources";
+import { useBenchmarksAcross } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 
@@ -385,10 +385,8 @@ export function BenchmarkPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filterAgentId = searchParams.get("agentId");
 
-  const [benchmarks, setBenchmarks] = useState<MergedBenchmark[] | null>(null);
   /** Bumped to read the list again — after a delete that leaves a machine's copy behind. */
   const [reload, setReload] = useState(0);
-  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
@@ -401,25 +399,12 @@ export function BenchmarkPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   // Benchmarks belong to the Project, so the page reads one list, merged over this server and
-  // the machines it holds — and a Project change starts it over rather than showing the previous
-  // Project's cards while the next list is in flight. A machine that connects re-asks.
-  const machinesKey = machineIds.join(",");
-  useEffect(() => {
-    if (!projectId) return;
-    let cancelled = false;
-    setBenchmarks(null);
-    setError(null);
-    fetchBenchmarks(projectId, machinesKey === "" ? [] : machinesKey.split(","))
-      .then((merged) => {
-        if (!cancelled) setBenchmarks(merged);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(apiErrorText(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, machinesKey, reload]);
+  // the machines it holds, this server's on screen as soon as it answers — and a Project change
+  // starts it over rather than showing the previous Project's cards while the next list is in
+  // flight. A machine that connects re-asks, with the cards on screen kept.
+  const listed = useBenchmarksAcross(projectId, machineIds, reload);
+  const benchmarks = listed.benchmarks;
+  const error = listed.error === null ? null : apiErrorText(listed.error);
 
   // The Project's models, for the Use dialog's conversation-model picker; a failure just
   // leaves the picker at the Project default.
@@ -481,7 +466,7 @@ export function BenchmarkPage() {
       if (deletingBenchmark !== null && deletingBenchmark.machineIds.length > 1) {
         setReload((n) => n + 1);
       } else {
-        setBenchmarks((prev) => (prev ?? []).filter((b) => b.id !== benchmarkId));
+        listed.removeHere(benchmarkId);
       }
       setDeleting(null);
     } catch (e) {

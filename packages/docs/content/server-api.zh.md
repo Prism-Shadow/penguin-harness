@@ -108,7 +108,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | PATCH | `/api/me/drafts` | 按键写入草稿，值为 `null` 即删除：`{drafts}`，每次至多 50 条；返回 `204` |
 | GET | `/api/me/background-image` | 你的背景图片：`{image, imageId}`，没有时两者都为 `null` |
 | PUT | `/api/me/background-image` | 设置背景图片（不超过 1 MiB 的 PNG、JPEG 或 WebP data URL），传 `null` 即移除：`{image}` → `{imageId}` |
-| GET | `/api/me/archived-sessions/groups` | [设置 › 已归档对话](/settings#已归档对话)的分组：`?q=&source=&projectId=` → `{groups, total, asOf}` |
+| GET | `/api/me/archived-sessions/groups` | [设置 › 已归档对话](/settings#已归档对话)的分组：`?q=&source=&projectId=&servers=` → `{groups, total, asOf}` |
 | GET | `/api/me/archived-sessions` | 一个分组中的已归档 Session：`?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |
 | POST | `/api/me/archived-sessions/unarchive` | 批量取消归档：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
 | POST | `/api/me/archived-sessions/delete` | 批量删除：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
@@ -122,7 +122,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
   - 任何已认证的会话都可以调用，包括桌面 shell 的 token 会话。与修改密码的接口不同，修改资料没有旧凭证需要校验。
 - `/api/me/archived-sessions` 及其三个子路由为[设置 › 已归档对话](/settings#已归档对话)提供数据。它们覆盖调用者拥有或参与的所有 Project 中已归档的 Session，只含本服务器；Project 的所有者或成员可以操作其中任何 Session，不论由谁创建。用户归档的 Session，以及 `source` 为 `api`、`schedule`、`cli` 或 `workbench` 且用户没有取消归档的 Session，都是已归档的；见 [Session 创建与目录浏览](#session-创建与目录浏览)。
   - 过滤参数通用。`q` 按标题做不区分大小写的匹配，最多 200 个字符；没有标题的 Session 按其 Trace 的首轮标题匹配。`source` 取 `user`（亲手归档的）、`api`、`schedule`、`cli` 或 `workbench`。`projectId` 只看一个 Project，不存在或调用者无权进入时返回 `404` `project_not_found`。
-  - `GET /api/me/archived-sessions/groups` 返回 `{groups: [{projectId, projectName, workspace, count, latest}], total, asOf}`，每个 Project 的每个 Workspace 一组。`workspace` 是 Workspace 路径，合并的临时 Workspace 记为 `temp`。`latest` 是组内最新的 `lastActiveAt`，分组按它从新到旧排列。`total` 是各组计数之和，`asOf` 是服务端取这些计数的时刻。
+  - `GET /api/me/archived-sessions/groups` 返回 `{groups: [{projectId, projectName, workspace, count, latest}], total, asOf}`，每个 Project 的每个 Workspace 一组。`workspace` 是 Workspace 路径，合并的临时 Workspace 记为 `temp`。`latest` 是组内最新的 `lastActiveAt`，分组按它从新到旧排列。`total` 是各组计数之和，`asOf` 是服务端取这些计数的时刻。`servers=here` 只返回本服务端的分组、不询问任何机器，`servers=machines` 只返回机器上的分组；Web App 分两次询问，一台不应答的机器因此不会拖住本服务端的分组。
   - `GET /api/me/archived-sessions` 按最近活动从新到旧分页读取一个分组。`projectId`、`workspace` 和 `limit`（1–100）必填，`before=<lastActiveAt>,<sessionId>` 与 Session 列表一样从已持有的最后一行之后继续。没有标题的行带上其 Trace 的首轮标题。
   - 两个批量路由接受 `{sessionIds: [...]}`（1–500 个 id）或 `{filter: {q?, source?, projectId?, workspace?, until?, exclude?}}`（代表过滤条件匹配的全部已归档 Session），返回 `{done, missing}`。过滤条件的 `until` 是某次分组响应的 `asOf`：此时批量操作只作用于那一刻已归档、此后没有活动的 Session，计数之后才归档、新开或运行过的 Session 不受影响。`exclude`（1–500 个 id）把这些 Session 排除在外，即**全选**之后又取消勾选的行。每个 Session 都走与 `PATCH` 或 `DELETE /api/sessions/:id` 相同的路径，每个 Session 一个事件。取消归档时 `done` 只计原本已归档的 Session；删除则删除点名的每一个 Session，无论是否已归档，运行中的先中止，但按过滤条件删除时会跳过运行中的 Session，也不计入 `done`。`missing` 列出不存在或调用者无权访问的 id；过滤形式不会产生 `missing`。
 

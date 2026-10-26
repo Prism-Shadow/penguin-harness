@@ -2118,6 +2118,13 @@ export interface ArchivedSessionsQuery {
   projectId?: string;
 }
 
+/**
+ * Which servers' groups GET /api/me/archived-sessions/groups answers with: `here` this server's
+ * alone, never waiting on a machine; `machines` the machines' alone. Absent: both, in one answer.
+ * The Web App asks the two apart, so a machine that answers nothing never holds this server's.
+ */
+export type ArchivedSessionGroupServers = "here" | "machines";
+
 /** One group of the archive page: one Workspace of one Project, on this server or on one machine. */
 export interface ArchivedSessionGroup {
   projectId: string;

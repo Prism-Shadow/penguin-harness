@@ -103,6 +103,7 @@ import {
   subscribeMachineAgentsChanged,
 } from "../lib/machine-agent-lists";
 import { setTerminalMachines } from "../lib/terminal-machines";
+import { noteLocalShown, useLocalShown } from "../lib/local-first";
 import { machineIdOf } from "../lib/workspace-machines";
 import {
   SIDEBAR_PAGE_SIZE,
@@ -857,95 +858,55 @@ export function createSessionsStore() {
           }
           bySource.set(source, list);
         }
-        try {
-          const results = (
-            await Promise.all(
-              [...bySource].map(async ([source, wanted]) => {
-                let answered: PageAnswer[];
-                try {
-                  const res = await api.batchSessions(
-                    projectId,
-                    wanted.map((w) => ({
-                      agentId: w.agentId,
-                      limit: SIDEBAR_PAGE_SIZE + 1,
-                      order: "activity",
-                      category: "active",
-                      excludeOrg: true,
-                      ...(w.scope === "" ? { withCounts: true } : { workspaceGroup: w.scope }),
-                    })),
-                    source,
-                  );
-                  answered = wanted.map((w, i) => oneAnswer(w, source, res.results[i]));
-                } catch {
-                  // The whole SOURCE failed to answer — this server mid-swap, a connection
-                  // held to a server that is not serving, the network. Nothing is applied
-                  // for it below, which is the point: an empty result standing in for a
-                  // failure replaces rows that are perfectly alive (see oneAnswer).
-                  answered = wanted.map((w) => ({
-                    agentId: w.agentId,
-                    source,
-                    pages: [],
-                    answered: false,
-                  }));
-                }
-                return answered;
-              }),
-            )
-          ).flat();
-          // Whether each machine answered is a fact about the machine, whichever reload is
-          // current by now — recorded before a newer one discards this one's rows.
+        /** One source's first pages; a source that fails to answer at all answers nothing. */
+        const ask = async (source: string | null, wanted: WantedPage[]): Promise<PageAnswer[]> => {
+          try {
+            const res = await api.batchSessions(
+              projectId,
+              wanted.map((w) => ({
+                agentId: w.agentId,
+                limit: SIDEBAR_PAGE_SIZE + 1,
+                order: "activity",
+                category: "active",
+                excludeOrg: true,
+                ...(w.scope === "" ? { withCounts: true } : { workspaceGroup: w.scope }),
+              })),
+              source,
+            );
+            return wanted.map((w, i) => oneAnswer(w, source, res.results[i]));
+          } catch {
+            // The whole SOURCE failed to answer — this server mid-swap, a connection held to
+            // a server that is not serving, the network. Nothing is applied for it below,
+            // which is the point: an empty result standing in for a failure replaces rows
+            // that are perfectly alive (see oneAnswer).
+            return wanted.map((w) => ({ agentId: w.agentId, source, pages: [], answered: false }));
+          }
+        };
+        // Superseded, or asked for a Project the list has since left: the Provider's context
+        // sync moves `projectId` before the next Agent set exists, and no reload runs to
+        // supersede this one until it does — so the Project is compared, not only `gen`.
+        const current = () => g === gen && isCurrentProject(projectId, get().projectId);
+        // Agents this server did not answer about. Per Agent, not per server: a damaged index
+        // or a 500 on ONE Agent is a different event from this server being unreadable, and
+        // reading the first as the second is what leaves the page on a skeleton — nothing is
+        // applied, so `loading` is never cleared, and on a quiet server nothing asks again.
+        const unansweredHere = (results: readonly PageAnswer[]) =>
+          new Set(results.flatMap((r) => (r.source === null && !r.answered ? [r.agentId] : [])));
+        /**
+         * Builds the list from the answers in hand and puts it on screen. `pending` names the
+         * machines still being asked: they stand as silent ones do — their cache neither
+         * replaced nor dropped — and keep what the list already showed of them.
+         */
+        const applyAnswers = (results: readonly PageAnswer[], pending: ReadonlySet<string>) => {
+          const unanswered = unansweredHere(results);
           const unansweredMachines = new Set(
             results.flatMap((r) => (r.source !== null && !r.answered ? [r.source] : [])),
           );
-          for (const source of sources) {
-            if (source === null) continue;
-            noteMachineAnswer(
-              source,
-              results.some((r) => r.source === source && r.answered),
-              probed.has(source),
-            );
-          }
-          // Superseded, or asked for a Project the list has since left: the Provider's context
-          // sync moves `projectId` before the next Agent set exists, and no reload runs to
-          // supersede this one until it does — so the Project is compared, not only `gen`.
-          if (g !== gen || !isCurrentProject(projectId, get().projectId)) return;
-          // Agents this server did not answer about. Per Agent, not per server: a damaged
-          // index or a 500 on ONE Agent is a different event from this server being
-          // unreadable, and reading the first as the second is what leaves the page on a
-          // skeleton — nothing is applied, so `loading` is never cleared, and on a quiet
-          // server nothing asks again.
-          const unanswered = new Set(
-            results.flatMap((r) => (r.source === null && !r.answered ? [r.agentId] : [])),
-          );
-          // This server did not answer about ANY of them. It holds the Sessions every other
-          // source is merged AROUND, so there is no list to build — and building one anyway
-          // would replace everything on screen with a handful of remote rows, or with nothing
-          // at all. A reload is a refresh, and a refresh that cannot read anything changes
-          // nothing: the rows stand, `loading` is left as it was, and the next one tries
-          // again. This is the ordinary state during a hot swap and for the moment after a
-          // reconnect.
-          if (unanswered.size === agentIds.length && agentIds.length > 0) {
-            // Said out loud, and asked again on a timer: a page that opened during a swap or
-            // a hiccup used to sit on the skeleton until some event happened to fire.
-            const reasons = results
-              .filter((r) => r.source === null && !r.answered)
-              .map((r) => `${r.agentId}: no answer`);
-            const delay = Math.min(RELOAD_RETRY_MAX_MS, RELOAD_RETRY_MIN_MS * 2 ** retries);
-            retries += 1;
-            console.warn(
-              `[sessions] this server answered for none of the Agents (${reasons.join("; ")}); ` +
-                `the list on screen is kept and asked again in ${delay} ms`,
-            );
-            setTimeout(() => {
-              if (g === gen) void get().reload();
-            }, delay);
-            return;
-          }
-          retries = 0;
           // Machines that did not answer are treated exactly like machines that were never
           // asked: their rows come from the cache below, and their cache is left alone.
-          // So are resting ones, and a probed one: one Agent's answer is not the machine's list.
-          const silent = new Set([...unansweredMachines, ...rested]);
+          // So are resting ones, a probed one (one Agent's answer is not the machine's list),
+          // and one whose answer has not landed yet.
+          const silent = new Set([...unansweredMachines, ...rested, ...pending]);
           const nextSessions: SessionInfo[] = [];
           const seen = new Set<string>();
           // Deleted stays deleted (see the header), read now: a deletion heard while the answers
@@ -1056,6 +1017,25 @@ export function createSessionsStore() {
             if (silent.has(machineId)) continue;
             rememberMachineSessions(projectId, machineId, rowsByMachine.get(machineId) ?? []);
           }
+          // A machine still being asked keeps what this list already showed of it — its rows and
+          // the page positions they were read at — until its own answer lands and the list is
+          // built again. Rows it never showed come from the cache below, as a silent machine's.
+          if (pending.size > 0) {
+            const held = get();
+            for (const s of held.sessions) {
+              const owner = machineForSession(s.sessionId);
+              if (owner === null || !pending.has(owner)) continue;
+              if (seen.has(s.sessionId) || deleted.has(s.sessionId)) continue;
+              seen.add(s.sessionId);
+              nextSessions.push(s);
+            }
+            for (const [key, position] of held.pageState) {
+              const parsed = parsePageKey(key);
+              if (parsed === null || parsed.source === null || !pending.has(parsed.source))
+                continue;
+              if (!nextPageState.has(key)) nextPageState.set(key, position);
+            }
+          }
           // And every machine this list could not read contributes what it last held — the
           // ones with no connection held, and the ones that went quiet during the fetch.
           // `seen` still guards, so a live answer always wins over a remembered one. Their
@@ -1135,7 +1115,62 @@ export function createSessionsStore() {
             workspaceLatestByAgent: nextWorkspaceLatest,
             workspaceLatestActiveByAgent: nextWorkspaceLatestActive,
           });
+        };
+        // THIS server is asked first and its answer goes on screen the moment it lands; the
+        // machines are asked after that. No machine may hold this server's rows, nor `/chat`'s
+        // pick of the last conversation: one that holds its connection but answers nothing —
+        // the network behind it went quiet, or its server is stuck — takes as long as its calls
+        // take to time out, and reloads that supersede each other would stack those waits.
+        // Until a machine's answer lands it stands as a silent one does, and its answer builds
+        // the list again.
+        const machineSources = [...bySource].filter(
+          (entry): entry is [string, WantedPage[]] => entry[0] !== null,
+        );
+        try {
+          const here = await ask(null, bySource.get(null) ?? []);
+          if (!current()) return;
+          // This server did not answer about ANY of them. It holds the Sessions every other
+          // source is merged AROUND, so there is no list to build — and building one anyway
+          // would replace everything on screen with a handful of remote rows, or with nothing
+          // at all. A reload is a refresh, and a refresh that cannot read anything changes
+          // nothing: the rows stand, `loading` is left as it was, and the next one tries
+          // again. This is the ordinary state during a hot swap and for the moment after a
+          // reconnect. No machine is asked meanwhile.
+          const unanswered = unansweredHere(here);
+          if (unanswered.size === agentIds.length && agentIds.length > 0) {
+            // Said out loud, and asked again on a timer: a page that opened during a swap or
+            // a hiccup used to sit on the skeleton until some event happened to fire.
+            const reasons = [...unanswered].map((agentId) => `${agentId}: no answer`);
+            const delay = Math.min(RELOAD_RETRY_MAX_MS, RELOAD_RETRY_MIN_MS * 2 ** retries);
+            retries += 1;
+            console.warn(
+              `[sessions] this server answered for none of the Agents (${reasons.join("; ")}); ` +
+                `the list on screen is kept and asked again in ${delay} ms`,
+            );
+            setTimeout(() => {
+              if (g === gen) void get().reload();
+            }, delay);
+            return;
+          }
+          retries = 0;
+          applyAnswers(here, new Set(machineSources.map(([source]) => source)));
           applied = true;
+          if (machineSources.length === 0) return;
+          set({ loading: false });
+          const there = (
+            await Promise.all(machineSources.map(([source, wanted]) => ask(source, wanted)))
+          ).flat();
+          // Whether each machine answered is a fact about the machine, whichever reload is
+          // current by now — recorded before a newer one discards this one's rows.
+          for (const [source] of machineSources) {
+            noteMachineAnswer(
+              source,
+              there.some((r) => r.source === source && r.answered),
+              probed.has(source),
+            );
+          }
+          if (!current()) return;
+          applyAnswers([...here, ...there], new Set());
         } finally {
           reloadsInFlight -= 1;
           // Only a reload that produced a list may report one. Abandoning above leaves the
@@ -1727,8 +1762,10 @@ function sessionsListFor(
 }
 
 export function SessionsProvider({ children }: { children: ReactNode }) {
-  const { currentProject, agents } = useProject();
+  const { currentProject, agents, projectsLoading, agentsLoading } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** Whether this window's own content is on screen: what the machines' reads below wait for. */
+  const shown = useLocalShown();
   // Stable key for the Agent set: the list object is a new reference on every reload,
   // so join the ids to avoid unnecessary reloads.
   const agentIdsKey = agents.map((a) => a.agentId).join(",");
@@ -1810,6 +1847,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       const answers = await Promise.all([
         ...offline.map(async (machineId) => [machineId, remembered(machineId)] as const),
         ...held.map(async (machineId) => {
+          // Asked once this window's own content is on screen; until then what the machine
+          // was last seen running stands in, as for one out of reach.
+          if (!shown) return [machineId, remembered(machineId)] as const;
           try {
             const listed = await readMachineAgents(projectId, machineId);
             return [machineId, listed.map((agent) => agent.agentId)] as const;
@@ -1824,7 +1864,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, machineIdsKey, offlineMachineIdsKey, machineAgentsTick]);
+  }, [projectId, machineIdsKey, offlineMachineIdsKey, machineAgentsTick, shown]);
   // The machines' Agents of THIS Project only: until the answer for it is in, none — the
   // previous Project's would ask its machines about Agents this Project does not have.
   const machineAgentIdsJson = scopedValue(machineAgents, projectId) ?? "{}";
@@ -1922,8 +1962,10 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // of this channel (the archive page) keeps seeing the shape it always did. The hub's own
   // events (resync_required after a replay the buffer could not honour) are this server's: the
   // list facts missed are this list's. Reconnects on Project switches; the stream is per Project.
+  // Opened once this window's own content is on screen: it is what sets the hub dialling the
+  // machines.
   useEffect(() => {
-    if (projectId === null) return;
+    if (projectId === null || !shown) return;
     const conn = openMachineEvents(projectId, {
       onMachineEvent: (machineId, event) => {
         applyUserEvent(store, event, () => window.location.reload(), machineId);
@@ -1934,7 +1976,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       },
     });
     return () => conn.close();
-  }, [store, projectId]);
+  }, [store, projectId, shown]);
 
   // The store is told about a Project switch in the effect above, one commit after useProject()
   // reports it — and in that commit every descendant's effects run before this Provider's. So
@@ -1942,6 +1984,13 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // loading, never the previous Project's rows (their Agents paired with the new Project).
   const listed = sessionsListFor(state, projectId);
   const { pageState, countsByAgent } = listed;
+  // This window's own content is on screen once this list is — or once there is no list to
+  // wait for (no Project, or one with no Agents) — and the remote reads may start.
+  const nothingToList =
+    (!projectsLoading && projectId === null) || (!agentsLoading && agents.length === 0);
+  useEffect(() => {
+    if (!listed.loading || nothingToList) noteLocalShown();
+  }, [listed.loading, nothingToList]);
   const { machineIds } = state;
 
   const sources = useMemo<(string | null)[]>(() => [null, ...machineIds], [machineIds]);

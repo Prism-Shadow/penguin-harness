@@ -69,21 +69,28 @@ function serve() {
     if (request.path === `/api/projects/${PROJECT}/agents`) return json({ agents: [] });
     if (request.path === "/api/me/archived-sessions/groups") {
       const group = { projectId: PROJECT, projectName: "Project", workspace: "/srv/app" };
+      // The page asks this server's groups and the machines' apart.
+      if (request.query.get("servers") === "machines") {
+        return json({
+          groups: [
+            {
+              ...group,
+              count: 1,
+              latest: "2026-10-14T08:00:00.000Z",
+              machineId: MACHINE,
+              machineAlias: "box",
+              asOf: "2026-10-15T10:00:00.000Z",
+            },
+          ],
+          total: 1,
+          asOf: "2026-10-15T10:00:00.000Z",
+          unreachable: [{ machineId: "x", alias: "nas" }],
+        });
+      }
       return json({
-        groups: [
-          { ...group, count: 2, latest: "2026-10-14T09:00:00.000Z" },
-          {
-            ...group,
-            count: 1,
-            latest: "2026-10-14T08:00:00.000Z",
-            machineId: MACHINE,
-            machineAlias: "box",
-            asOf: "2026-10-15T10:00:00.000Z",
-          },
-        ],
-        total: 3,
+        groups: [{ ...group, count: 2, latest: "2026-10-14T09:00:00.000Z" }],
+        total: 2,
         asOf: "2026-10-15T10:00:00.000Z",
-        unreachable: [{ machineId: "x", alias: "nas" }],
       });
     }
     if (request.path === "/api/me/archived-sessions") {

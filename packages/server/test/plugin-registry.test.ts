@@ -22,8 +22,9 @@
  *   tolerant merge beside the builtin catalogue.
  * - Nor without holding it: a document past its TTL is served at once while the refresh runs
  *   behind it; a failed fetch with nothing cached is the answer, without another fetch, until the
- *   retry window has passed; and the listing answers once its wait passes with the builtin
- *   entries, naming a source still being read as pending, whose entries list on a later read.
+ *   retry window has passed; and the listing never waits on the network — it answers at once with
+ *   the builtin entries, naming a source still being read as pending, whose entries list on a
+ *   later read.
  * - GET /api/plugins/registry and its readme route need a session; the readme route refuses a
  *   name the deployment does not list and needs the name.
  */
@@ -38,7 +39,6 @@ import type { PluginBase } from "../src/plugin/loader.js";
 import {
   INDEX_RETRY_MS,
   NIGHTLY_INDEX_URL,
-  SOURCE_WAIT_MS,
   builtinPluginRegistry,
   cachedRegistry,
   httpPluginRegistry,
@@ -591,14 +591,11 @@ describe("the route's own merge", () => {
     afterEach(() => {
       vi.useRealTimers();
     });
-    /** One read of the listing, letting the route's wait for a source run out. */
-    const read = async (routes: ReturnType<typeof pluginRegistryRoutes>) => {
-      const res = routes.request("/");
-      await vi.advanceTimersByTimeAsync(SOURCE_WAIT_MS);
-      return (await (await res).json()) as PluginIndexResponse;
-    };
+    /** One read of the listing: no timer moves, so an answer that waited on a source never comes. */
+    const read = async (routes: ReturnType<typeof pluginRegistryRoutes>) =>
+      (await (await routes.request("/")).json()) as PluginIndexResponse;
 
-    it("lists the builtin entries once the wait passes, names it pending, and lists its entries on a read after it answers", async () => {
+    it("lists the builtin entries at once, names it pending, and lists its entries on a read after it answers", async () => {
       let answer!: (res: Response) => void;
       const remote = fakeFetch(
         () =>
@@ -613,6 +610,7 @@ describe("the route's own merge", () => {
       expect(first.failures).toEqual([]);
 
       answer(jsonResponse([published]));
+      await vi.advanceTimersByTimeAsync(0); // the fetch lands in the cache
       const second = await read(routes);
       expect(second.plugins.at(-1)!.name).toBe(published.name);
       expect(second.pending).toEqual([]);

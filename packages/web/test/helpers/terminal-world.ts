@@ -7,8 +7,10 @@
  * until the test says its pty exited ({@link TerminalWorld.exit}, {@link TerminalWorld.remove}).
  *
  * A source can stop answering (the request fails at the network, as an unreachable machine's
- * relay does) or answer every terminal request with one status: 404 is a runtime older than the
- * terminal API, 401 a sign-in that no longer holds (`/api/me` then answers 401 as well).
+ * relay does), go quiet (the request never settles until its signal aborts, as a machine whose
+ * connection holds while nothing behind it answers) or answer every terminal request with one
+ * status: 404 is a runtime older than the terminal API, 401 a sign-in that no longer holds
+ * (`/api/me` then answers 401 as well).
  */
 import type { TerminalInfo } from "../../src/features/terminal/terminal-view";
 import { ADMIN_ME } from "./admin-settings";
@@ -32,6 +34,8 @@ export interface TerminalWorld {
   remove(id: string): void;
   /** The source stops answering (true) or answers again (false). */
   unreachable(source: string | null, down?: boolean): void;
+  /** The source's requests never settle until their signal aborts (true), or are answered again (false). */
+  quiet(source: string | null, on?: boolean): void;
   /** The source answers every terminal request with `status`; null restores normal answers. */
   answerWith(source: string | null, status: number | null): void;
   /** The terminal requests that reached a source, optionally of one method. */
@@ -44,6 +48,7 @@ export function terminalWorld(
   /** Shells by source: "" is this server. */
   const shells = new Map<string, TerminalInfo[]>();
   const down = new Set<string>();
+  const quiet = new Set<string>();
   const statuses = new Map<string, number>();
   const keyOf = (source: string | null) => source ?? "";
   let seq = 0;
@@ -73,6 +78,13 @@ export function terminalWorld(
     }
     if (!isTerminalPath(request.path)) return apiError(404, "not_found");
     if (down.has(source)) throw new TypeError("Failed to fetch");
+    if (quiet.has(source)) {
+      return new Promise<Response>((_, reject) =>
+        request.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        ),
+      );
+    }
     const status = statuses.get(source);
     if (status !== undefined) return apiError(status, status === 404 ? "not_found" : "refused");
     const list = shells.get(source) ?? [];
@@ -99,6 +111,10 @@ export function terminalWorld(
     unreachable: (source, isDown = true) => {
       if (isDown) down.add(keyOf(source));
       else down.delete(keyOf(source));
+    },
+    quiet: (source, on = true) => {
+      if (on) quiet.add(keyOf(source));
+      else quiet.delete(keyOf(source));
     },
     answerWith: (source, status) => {
       if (status === null) statuses.delete(keyOf(source));
