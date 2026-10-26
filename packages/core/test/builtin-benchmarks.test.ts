@@ -1,32 +1,29 @@
 /**
  * The built-in Benchmarks, as a new Project's provisioning writes them.
  *
- * - A new Project's benchmarks/ holds the example and seven published built-ins, each with one
+ * - A new Project's benchmarks/ holds the example and eleven published built-ins, each with one
  *   run per case, no evaluations and at least one case, and no staging left behind; each is
  *   written in the package format, a benchmark_config.toml that names its id, a date version and
  *   origin `builtin`, and that the manifest reader takes as written.
  * - Every built-in's manifest is a plain Benchmark manifest: its id, title, description, a date
  *   version, status, runs and origin `builtin`, nothing that marks how its cases run.
- * - Every case is one Harbor task: its directory names the task after `CASE-NNN-` within the
+ * - Every Sec A–E case is one Harbor task: its directory names the task after `CASE-NNN-` within the
  *   API's id rules; its statement links the task's folder in the repository, the repository's
  *   rules for running a task and, where the repository has them, the measured results, and
  *   launches that same task with its caps — the time-budget sentence word for word where the
  *   benchmark's measured runs told the agent its budget, the no-network line only for deep-swe
- *   and GDPevo (whose gold answers are public), and the shared-network line for every other
- *   benchmark, whose tasks have a public agent phase, as the repository's rules allow; its
+ *   and the shared-network line for every other section, whose tasks have a public agent phase,
+ *   as the repository's rules allow; its
  *   rubric is worth 100 points.
  * - The Secs list in A to E order, each description opening by naming the original benchmark;
  *   every built-in's description names the original its cases cite as their source.
- * - GDPevo Train and GDPevo Test are one task directory split in two: the train Benchmark holds
- *   only train tasks, the test Benchmark only test tasks, no task is in both, and every task
- *   group the test Benchmark draws on is one the train Benchmark trains on.
+ * - Six GDPEVO domains use plain Markdown cases and main-branch references, without sample scores.
  * - Provisioning again writes nothing; a directory already under an id, built-in or the
  *   example, is left exactly as it is.
  * - A write that fails part-way leaves neither its directory nor staging debris, and the error
  *   reaches the caller.
  * - Initializing or loading default_agent never writes into benchmarks/.
- * - Release guard: every link into the repository, and the checkout every launch runs from, is at
- *   a commit, never a branch.
+ * - Release guard: Sec A–E keep their calibrated commit references.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -43,18 +40,23 @@ import {
   provisionProjectBenchmarks,
   readBenchmarkManifest,
   type BuiltinBenchmark,
+  type HarborBuiltinBenchmark,
 } from "../src/state/index.js";
 import { BUILTIN_BENCHMARKS } from "../src/state/builtin-benchmarks-data.js";
 
-const BUILTIN_IDS = [
+const SECTION_IDS = [
   "penguinharness-benchmark-sec-a",
   "penguinharness-benchmark-sec-b",
   "penguinharness-benchmark-sec-c",
   "penguinharness-benchmark-sec-d",
   "penguinharness-benchmark-sec-e",
-  "penguinharness-benchmark-gdpevo-train",
-  "penguinharness-benchmark-gdpevo-test",
 ];
+const GDPEVO_DOMAINS = ["crm", "erp", "finance", "healthcare", "legal", "data-analysis"];
+const GDPEVO_IDS = GDPEVO_DOMAINS.map((domain) => `penguinharness-benchmark-gdpevo-${domain}`);
+const BUILTIN_IDS = [...SECTION_IDS, ...GDPEVO_IDS];
+const HARBOR_BENCHMARKS = BUILTIN_BENCHMARKS.filter(
+  (bench): bench is HarborBuiltinBenchmark => "repoDir" in bench,
+);
 
 let tmpRoot: string;
 let prevHome: string | undefined;
@@ -70,9 +72,6 @@ afterEach(async () => {
   else process.env.PENGUIN_HOME = prevHome;
   await fs.rm(tmpRoot, { recursive: true, force: true });
 });
-
-const GDPEVO_TRAIN = "penguinharness-benchmark-gdpevo-train";
-const GDPEVO_TEST = "penguinharness-benchmark-gdpevo-test";
 
 const dir = () => benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
 const provision = (builtins?: readonly BuiltinBenchmark[]) =>
@@ -133,7 +132,7 @@ async function backdate(root: string): Promise<void> {
 }
 
 describe("built-in Benchmarks", () => {
-  it("a new Project's benchmarks/ holds the example and seven published built-ins, each with one run per case, no evaluations and at least one case", async () => {
+  it("a new Project's benchmarks/ holds the example and eleven published built-ins, each with one run per case, no evaluations and at least one case", async () => {
     await provision();
 
     expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS].sort(byName));
@@ -185,10 +184,10 @@ describe("built-in Benchmarks", () => {
     }
   });
 
-  it("every case names one Harbor task: its statement links that task's folder and the repository's run rules, and launches that same task with its caps; its rubric is worth 100 points", async () => {
+  it("every Sec A–E case names one Harbor task: its statement links that task's folder and the repository's run rules, and launches that same task with its caps; its rubric is worth 100 points", async () => {
     await provision();
 
-    for (const bench of BUILTIN_BENCHMARKS) {
+    for (const bench of HARBOR_BENCHMARKS) {
       const ids = await caseIds(bench.id);
       expect(ids.length, bench.id).toBeGreaterThan(0);
       for (const caseId of ids) {
@@ -223,9 +222,8 @@ describe("built-in Benchmarks", () => {
         );
         // The network lines the repository's rules call for, and only those: a no-network
         // benchmark allows its model's host and never joins the shared network, which every
-        // task with a public agent phase joins. GDPevo's gold answers are public, so its agent
-        // phase must not reach the internet.
-        const offline = repoDir === "deep-swe" || repoDir === "gdpevo";
+        // task with a public agent phase joins.
+        const offline = repoDir === "deep-swe";
         expect(statement.includes("--allow-agent-host "), caseId).toBe(offline);
         expect(
           statement.includes("--extra-docker-compose tools/docker/shared-network.yaml"),
@@ -247,7 +245,7 @@ describe("built-in Benchmarks", () => {
 
     const firstWord = (text: string) => text.split(/[\s,(]/)[0]!;
     const letters: string[] = [];
-    for (const id of BUILTIN_IDS) {
+    for (const id of SECTION_IDS) {
       const { title, description } = await readConfig(id);
       const named = /^Sec ([A-Z]) is ([^:]+):/.exec(String(description));
       if (/-sec-[a-z]$/.test(id)) {
@@ -266,31 +264,24 @@ describe("built-in Benchmarks", () => {
     expect(letters.join("")).toBe("ABCDE");
   });
 
-  it("GDPevo Train and GDPevo Test split one task directory: train tasks to optimize on, held-out test tasks of the same groups to evaluate on", async () => {
+  it("automatically seeds six GDPEVO domains as Markdown cases using main, without evaluation data", async () => {
     await provision();
 
-    /** Each case's Harbor task, `tg<group>-<split>-<n>`, and the folder its launch runs it from. */
-    const tasks = async (id: string) =>
-      Promise.all(
-        (await caseIds(id)).map(async (caseId) => {
-          const statement = await readCase(id, caseId, "statement");
-          const [, folder, task] = /harbor run -p (\S+) -i (\S+) /.exec(statement)!;
-          const [, group, split] = /^(tg\d+)-(train|test)-\d+$/.exec(task!) ?? [];
-          return { folder, task, group, split };
-        }),
+    for (const domain of GDPEVO_DOMAINS) {
+      const id = `penguinharness-benchmark-gdpevo-${domain}`;
+      const [caseId] = await caseIds(id);
+      expect(await caseIds(id)).toHaveLength(1);
+      const files = [...(await tree(path.join(dir(), id, caseId!))).keys()]
+        .map((file) => file.split(path.sep).join("/"))
+        .sort();
+      expect(files).toEqual(["rubric/README.md", "statement/README.md"]);
+      expect(await readCase(id, caseId!, "statement")).toContain(
+        `https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-${domain}/README.md`,
       );
-    const train = await tasks(GDPEVO_TRAIN);
-    const test = await tasks(GDPEVO_TEST);
-
-    expect(new Set([...train, ...test].map((t) => t.folder))).toEqual(
-      new Set(["benchmarks/gdpevo/tasks"]),
-    );
-    expect(new Set(train.map((t) => t.split))).toEqual(new Set(["train"]));
-    expect(new Set(test.map((t) => t.split))).toEqual(new Set(["test"]));
-    const trainTasks = new Set(train.map((t) => t.task));
-    expect(test.filter((t) => trainTasks.has(t.task))).toEqual([]);
-    const trainGroups = new Set(train.map((t) => t.group));
-    expect(test.filter((t) => !trainGroups.has(t.group))).toEqual([]);
+      expect(await readCase(id, caseId!, "rubric")).toContain("never combine Train and Test");
+    }
+    expect(await exists(path.join(dir(), "penguinharness-benchmark-gdpevo-train"))).toBe(false);
+    expect(await exists(path.join(dir(), "penguinharness-benchmark-gdpevo-test"))).toBe(false);
   });
 
   it("provisioning again writes nothing", async () => {
@@ -325,10 +316,10 @@ describe("built-in Benchmarks", () => {
   });
 
   it("a write that fails part-way leaves neither its directory nor staging debris, and the error reaches the caller", async () => {
-    const [first, second] = BUILTIN_BENCHMARKS[0]!.cases;
+    const [first, second] = HARBOR_BENCHMARKS[0]!.cases;
     // A task name the filesystem refuses, after a case that writes fine.
-    const broken: BuiltinBenchmark = {
-      ...BUILTIN_BENCHMARKS[0]!,
+    const broken: HarborBuiltinBenchmark = {
+      ...HARBOR_BENCHMARKS[0]!,
       id: "broken-bench",
       cases: [first!, { ...second!, task: "bad\u0000task" }],
     };
@@ -349,9 +340,9 @@ describe("built-in Benchmarks", () => {
   });
 
   // Release guard: a statement that links a branch would follow whatever that branch holds later.
-  it("release guard: every link into the repository, and every launch's checkout, is at a commit", async () => {
+  it("release guard: Sec A–E links and launch checkouts remain pinned to their calibrated commit", async () => {
     await provision();
-    for (const id of BUILTIN_IDS) {
+    for (const id of SECTION_IDS) {
       for (const caseId of await caseIds(id)) {
         const statement = await readCase(id, caseId, "statement");
         const revisions = [

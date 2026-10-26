@@ -93,7 +93,7 @@ import type { ModelRef } from "./transcripts";
 // ---------------------------------------------------------------------------------------------
 
 /** One built-in Benchmark, as core's data module holds it. */
-type BuiltinBenchmark = (typeof BUILTIN_BENCHMARKS)[number];
+type BuiltinBenchmark = Extract<(typeof BUILTIN_BENCHMARKS)[number], { repoDir: string }>;
 
 /**
  * What a model is used with, as GET /models reports it: its own values, else its group's
@@ -1330,7 +1330,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       version: bench.version,
       origin: { kind: "builtin" },
       caseCount: bench.cases.length,
-      evaluations: bench.id === IDS.benchmarks.builtin ? [harborBaseline(bench)] : [],
+      evaluations:
+        "repoDir" in bench && bench.id === IDS.benchmarks.builtin ? [harborBaseline(bench)] : [],
       agentIds: bench.id === IDS.benchmarks.builtin ? [IDS.agents.docs] : [],
     })),
   ];
@@ -1345,10 +1346,16 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ],
   };
   for (const bench of BUILTIN_BENCHMARKS) {
-    benchmarkCases[bench.id] = bench.cases.map((item, i) => ({
-      id: builtinCaseId(i + 1, item.task),
-      title: item.title,
-    }));
+    benchmarkCases[bench.id] =
+      "repoDir" in bench
+        ? bench.cases.map((item, i) => ({
+            id: builtinCaseId(i + 1, item.task),
+            title: item.title,
+          }))
+        : bench.cases.map((item) => ({
+            id: item.id,
+            title: /^#\s+(.+)$/m.exec(item.statement)?.[1]?.trim() ?? item.id,
+          }));
   }
   const caseFiles: DemoFixtures["caseFiles"] = {};
   for (const id of [IDS.benchmarks.docs, IDS.benchmarks.draft]) {
@@ -1366,12 +1373,20 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   }
   // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
   for (const bench of BUILTIN_BENCHMARKS) {
-    bench.cases.forEach((item, i) => {
-      caseFiles[`${bench.id}/${builtinCaseId(i + 1, item.task)}`] = {
-        statement: { "README.md": builtinStatement(bench, item) },
-        rubric: { "README.md": builtinRubric(bench) },
+    const cases =
+      "repoDir" in bench
+        ? bench.cases.map((item, i) => ({
+            id: builtinCaseId(i + 1, item.task),
+            statement: builtinStatement(bench, item),
+            rubric: builtinRubric(bench),
+          }))
+        : bench.cases;
+    for (const item of cases) {
+      caseFiles[`${bench.id}/${item.id}`] = {
+        statement: { "README.md": item.statement },
+        rubric: { "README.md": item.rubric },
       };
-    });
+    }
   }
 
   const machines: MachinesResponse = {
