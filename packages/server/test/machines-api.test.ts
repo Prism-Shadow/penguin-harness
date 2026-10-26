@@ -2401,22 +2401,22 @@ describe("machines API", () => {
       expect(reconnect()).toMatchObject({
         since: "2026-08-24T12:00:00.000Z",
         attempts: 1,
-        nextAt: "2026-08-24T12:00:10.000Z",
+        nextAt: "2026-08-24T12:00:30.000Z",
         lastError: "Connection refused",
       });
-      // Within ten seconds after the first failure: not tried again.
-      clock = new Date(clock.getTime() + 9_000);
+      // Within thirty seconds after the first failure: not tried again.
+      clock = new Date(clock.getTime() + 29_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(1);
       // Once the wait has passed, it is.
       clock = new Date(clock.getTime() + 2_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(2);
-      // The second failure doubles the wait: twenty seconds now, so fifteen later is too soon.
-      clock = new Date(clock.getTime() + 15_000);
+      // The second failure doubles the wait: a minute now, so forty-five seconds later is too soon.
+      clock = new Date(clock.getTime() + 45_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(2);
-      expect(Date.parse(reconnect()!.nextAt!) - clock.getTime()).toBe(5_000);
+      expect(Date.parse(reconnect()!.nextAt!) - clock.getTime()).toBe(15_000);
     });
   });
 
@@ -2550,14 +2550,14 @@ describe("machines API", () => {
       expect(nas()?.reconnect).toMatchObject({
         since: "2026-08-24T12:00:00.000Z",
         attempts: 0,
-        // Its first try is a few seconds out, so a server restarting itself is back by then.
-        nextAt: "2026-08-24T12:00:05.000Z",
+        // Its first try is a while out, so a server restarting itself is back by then.
+        nextAt: "2026-08-24T12:00:15.000Z",
         lastError: null,
         diagnosis: null,
       });
       await t.deps.machines.autoConnect();
       expect(holds).toBe(1);
-      clock = new Date(clock.getTime() + 5_000);
+      clock = new Date(clock.getTime() + 15_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(2);
       expect(nas()?.reconnect).toBeUndefined();
@@ -2820,7 +2820,7 @@ describe("machines API", () => {
       // It failed again: the first of a new streak, waiting the first doubled wait.
       expect(nas()?.reconnect).toMatchObject({
         attempts: 1,
-        nextAt: at(clock.now.getTime() + 10_000),
+        nextAt: at(clock.now.getTime() + 30_000),
       });
       expect(nas()?.reconnect?.gaveUp).toBeUndefined();
     });
@@ -2831,13 +2831,13 @@ describe("machines API", () => {
       await lookOver(clock, 3);
       expect(nas()?.reconnect).toMatchObject({
         attempts: 3,
-        nextAt: at(clock.now.getTime() + 40_000),
+        nextAt: at(clock.now.getTime() + 120_000),
       });
       expect((await admin.post(RECONNECT)).status).toBe(200);
       await waitFor(() => far.probes === 4 && typeof nas()?.reconnect?.nextAt === "string");
       expect(nas()?.reconnect).toMatchObject({
         attempts: 4,
-        nextAt: at(clock.now.getTime() + 80_000),
+        nextAt: at(clock.now.getTime() + 240_000),
       });
     });
 
@@ -2849,7 +2849,7 @@ describe("machines API", () => {
       await lookOver(clock, 2);
       expect(nas()?.reconnect).toMatchObject({
         attempts: 2,
-        nextAt: at(clock.now.getTime() + 20_000),
+        nextAt: at(clock.now.getTime() + 60_000),
       });
       const stopped = await admin.post(STOP);
       expect(stopped.status).toBe(200);
@@ -2866,7 +2866,7 @@ describe("machines API", () => {
       await waitFor(() => far.probes === 3 && typeof nas()?.reconnect?.nextAt === "string");
       expect(nas()?.reconnect).toMatchObject({
         attempts: 1,
-        nextAt: at(clock.now.getTime() + 10_000),
+        nextAt: at(clock.now.getTime() + 30_000),
       });
       expect(nas()?.reconnect?.gaveUp).toBeUndefined();
     });
@@ -2899,7 +2899,7 @@ describe("machines API", () => {
       far.hold = new Promise((resolve) => {
         release = resolve;
       });
-      clock.now = new Date(clock.now.getTime() + 60_000);
+      clock.now = new Date(clock.now.getTime() + 5 * 60_000);
       const running = t.deps.machines.autoConnect();
       await waitFor(() => far.probes === 4);
       expect((await admin.post(STOP)).status).toBe(200);
@@ -2914,7 +2914,7 @@ describe("machines API", () => {
       expect(far.probes).toBe(4);
       expect(nas()?.reconnect).toMatchObject({
         attempts: 1,
-        nextAt: at(clock.now.getTime() + 10_000),
+        nextAt: at(clock.now.getTime() + 30_000),
       });
     });
 

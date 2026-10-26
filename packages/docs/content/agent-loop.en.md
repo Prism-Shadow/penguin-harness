@@ -310,12 +310,12 @@ Only the model reference is fixed at Session creation. Credentials are read from
 
 Each failure that will be retried announces the planned wait on its `request_end` as `retry_in_ms`, using the same formula as the sleep. Every failure stamps `attempt`, the authoritative 1-based ordinal of the request within its retry run; the CLI and the Web App display it verbatim. The wait is visible by design: a retry the user cannot see is a stalled session with no explanation and no way out.
 
-The Web App renders the wait as a live countdown with two controls:
+The Web App renders the wait as one line, "Retrying in 23 s (attempt 3/10)": a live countdown to the next attempt out of the engine's ceiling of attempts per turn, with the cause and the provider's message behind a circled "?", and two controls:
 
 | Control | Effect |
 | --- | --- |
 | **Retry now** | Skips the remaining wait via `Session.skipReconnectWait`; the attempt counter is unchanged |
-| **Give up** | The ordinary abort; the engine's abort-during-backoff path ends the turn |
+| **Stop retrying** | The ordinary abort; the engine's abort-during-backoff path ends the turn |
 
 The CLI prints its own `[retry]` line.
 

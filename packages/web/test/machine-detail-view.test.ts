@@ -92,12 +92,19 @@ const reconnecting: Extract<MachineReading, { kind: "reconnecting" }> = {
   nextAt: "2026-10-10T07:51:00.000Z",
   message: "nas refused the connection.",
 };
-const reconnectStopped: Extract<MachineReading, { kind: "reconnectStopped" }> = {
-  kind: "reconnectStopped",
+const reconnectFailed: Extract<MachineReading, { kind: "reconnectFailed" }> = {
+  kind: "reconnectFailed",
   why: "attempts",
   since: "2026-10-10T07:50:00.000Z",
-  attempts: 8,
-  maxAttempts: 8,
+  attempts: 5,
+  maxAttempts: 5,
+  message: "nas refused the connection.",
+};
+const reconnectStopped: Extract<MachineReading, { kind: "reconnectStopped" }> = {
+  kind: "reconnectStopped",
+  since: "2026-10-10T07:50:00.000Z",
+  attempts: 2,
+  maxAttempts: 5,
   message: "nas refused the connection.",
 };
 const ready: MachineReading = { kind: "ready", port: 7364 };
@@ -107,6 +114,7 @@ const READINGS: MachineReading[] = [
   { kind: "queued" },
   working,
   reconnecting,
+  reconnectFailed,
   reconnectStopped,
   failed,
   ready,
@@ -135,6 +143,7 @@ describe("the status chip", () => {
           "unreachable",
           "working",
           "reconnecting",
+          "reconnectFailed",
           "reconnectStopped",
           "behind",
           "restartNeeded",

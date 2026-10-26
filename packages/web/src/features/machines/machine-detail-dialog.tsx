@@ -584,10 +584,13 @@ export function MachineDetailBody({
             })}
           />
           <p className="mt-1 text-xs text-fg-muted">{d.reconnect.lasting(reconnect.lasting)}</p>
+          {/* Its label on a line of its own: a failure that holds a colon of its own would read as
+              two labels in a row after "Last failure:". */}
           {reconnect.lastError !== null && (
-            <p className="mt-2 text-sm break-words whitespace-pre-line">
-              <span className="text-fg-muted">{d.reconnect.lastError}</span> {reconnect.lastError}
-            </p>
+            <div className="mt-2">
+              <p className="mb-1 text-xs text-fg-muted">{d.reconnect.lastError}</p>
+              <p className="text-sm break-words whitespace-pre-line">{reconnect.lastError}</p>
+            </div>
           )}
           {reconnect.detail !== null && (
             <p data-said="ssh" className="mt-1 text-xs break-words text-fg-muted">

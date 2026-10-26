@@ -29,9 +29,10 @@ const VARIANT: Record<ButtonVariant, string> = {
     "border border-line-emphasis bg-control font-medium text-tone-danger-fg hover:border-tone-danger-line hover:bg-tone-danger-bg",
   ghost:
     "border border-transparent bg-transparent font-medium text-fg-muted hover:bg-control-hover hover:text-fg",
-  // Text that acts: no box, the link colour, the underline on hover. It keeps the body weight,
-  // because a link-button sits in a sentence or a row of plain text.
-  link: "cursor-pointer text-link underline-offset-2 hover:text-link-hover hover:underline disabled:no-underline",
+  // Text that acts: no box, the link colour, the underline on hover — and at rest too where the
+  // theme's link ink is the body's (`--ui-link-decoration`). It keeps the body weight, because a
+  // link-button sits in a sentence or a row of plain text.
+  link: "cursor-pointer text-link underline-offset-2 [text-decoration-line:var(--ui-link-decoration)] hover:text-link-hover hover:underline disabled:no-underline",
 };
 
 const SIZE: Record<ButtonSize, string> = {

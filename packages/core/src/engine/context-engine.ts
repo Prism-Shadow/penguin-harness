@@ -88,7 +88,7 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../interfaces/index.js";
-import { isInterruptedToolCall } from "../interfaces/llm.js";
+import { DEFAULT_MAX_TURN_ATTEMPTS, isInterruptedToolCall } from "../interfaces/llm.js";
 import { MergeQueue, pumpOpener } from "../internal/merge-queue.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
@@ -228,11 +228,12 @@ export interface ContextEngineDeps {
   maxReconnects?: number;
   /**
    * Absolute ceiling on the attempts a single turn may make, counting every attempt whether
-   * or not it received anything. Defaults to 10. It only binds once received content has
-   * reset the consecutive ladder (`maxReconnects`) at least once, and exists to keep that reset
-   * from turning an endpoint that streams a few tokens and drops — or a response that keeps
-   * stopping at its output cap, each attempt billed in full — into a long retry loop. The
-   * compaction loop does not use it: its requests run on `compactionMaxReconnects` alone.
+   * or not it received anything. Defaults to `DEFAULT_MAX_TURN_ATTEMPTS`. It only binds once
+   * received content has reset the consecutive ladder (`maxReconnects`) at least once, and
+   * exists to keep that reset from turning an endpoint that streams a few tokens and drops — or
+   * a response that keeps stopping at its output cap, each attempt billed in full — into a long
+   * retry loop. The compaction loop does not use it: its requests run on
+   * `compactionMaxReconnects` alone.
    */
   maxTurnAttempts?: number;
   /**
@@ -579,7 +580,7 @@ export class ContextEngine {
     this.pendingBootstrapRecords = deps.bootstrapRecords ?? null;
     this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
-    this.maxTurnAttempts = deps.maxTurnAttempts ?? 10;
+    this.maxTurnAttempts = deps.maxTurnAttempts ?? DEFAULT_MAX_TURN_ATTEMPTS;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 2000;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
     this.compactionMaxReconnects = deps.compactionMaxReconnects ?? this.maxReconnects;

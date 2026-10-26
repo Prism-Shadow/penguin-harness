@@ -1,33 +1,37 @@
 /**
- * The one retry row every surface that reconnects shares: where things stand in one sentence,
- * the explanation behind a circled "?" after it, and the presses on the same line.
+ * The one retry row every surface that retries shares — a machine being reconnected, a model
+ * request being retried: where things stand in one sentence, the explanation behind a circled
+ * "?" after it, and the presses on the same line.
  *
- * Five phases, each one mark and one sentence:
+ * Six phases, each one mark and one sentence:
  *
- * - `trying` — an attempt is running ("Reconnecting (attempt 4/5)"): the spinner; the only
- *   press is the quieter one, to stop retrying.
+ * - `trying` — an attempt is starting or running ("Reconnecting (attempt 4/5)"): the spinner;
+ *   the only press is the quieter one, to stop retrying.
  * - `waiting` — the next attempt is scheduled: the hourglass in the attention tone and the
  *   sentence with the seconds in it ("Reconnecting in 23 s (attempt 4/5)"), ticking each second;
  *   once the moment has come, the plain sentence. Both presses: retry now, stop retrying.
- * - `gaveUp` — the automatic attempts reached their stated limit and failed: the cross in the
- *   danger tone, and the main press to start again.
- * - `cancelled` — a person stopped retrying: the pause mark, receding; the main press to start
- *   again.
+ * - `retried` — a retry went out and the row now only records it (a model request's retry,
+ *   whose answer streams in below): a turning arrow, receding.
+ * - `gaveUp` — the attempts reached their limit and failed: the cross in the danger tone, and
+ *   the main press to start again.
+ * - `cancelled` — a person stopped retrying: the pause mark in the attention tone (it waits on
+ *   them now); the main press to start again.
  * - `blocked` — retrying cannot help until someone acts (a refused key, a broken config, a
  *   refused password): the cross in the danger tone; the caller offers a Retry only where a try
  *   is harmless.
  *
  * Only the mark carries colour. The last failure, or the fix, is never a paragraph under the
- * sentence: it waits behind the "?" (`InfoPopover`), which opens on hover. The presses are
- * link-style text at the sentence's size, never boxed: on a wide surface the whole row is one
- * line; in a narrow column they wrap under the sentence, together.
+ * sentence: it waits behind the "?" (`InfoPopover`), which opens on hover, under a short title
+ * of its own when the caller gives one ("Last failure"), so a failure that holds a colon of its
+ * own never reads as two labels in a row. The presses are link-style text at the sentence's
+ * size, never boxed: on a wide surface the whole row is one line; in a narrow column they wrap
+ * under the sentence, together.
  *
- * `RetryActions` is the pair of presses on their own, for a surface that draws its own line (the
- * chat's request retry notice, which keeps the bordered `button` look). A press belongs to one
- * attempt: it disables both — the pressed one spinning while the press's promise is pending —
- * until `attemptKey` changes, which is the caller saying a new attempt began; a promise that
- * rejects releases them, since the request did not go through. So a double click is one attempt,
- * and a new attempt is never left with dead presses from the last one.
+ * A press belongs to one attempt (`RetryActions`): it disables both — the pressed one spinning
+ * while the press's promise is pending — until `attemptKey` changes, which is the caller saying
+ * a new attempt began; a promise that rejects releases them, since the request did not go
+ * through. So a double click is one attempt, and a new attempt is never left with dead presses
+ * from the last one.
  *
  * Props only: every word is the caller's, and so is what a press does.
  */
@@ -40,7 +44,7 @@ import { Spinner } from "../../icons/spinner/spinner";
 import { InfoPopover } from "../../overlays/info-popover/info-popover";
 import { useCountdown } from "./use-countdown";
 
-export type RetryPhase = "trying" | "waiting" | "gaveUp" | "cancelled" | "blocked";
+export type RetryPhase = "trying" | "waiting" | "retried" | "gaveUp" | "cancelled" | "blocked";
 
 export interface RetryAction {
   label: string;
@@ -65,13 +69,8 @@ export interface RetryActionsProps {
    * both until it changes.
    */
   attemptKey: string | number;
-  /** The type rung: `xs` in a card's line or a chat notice, `sm` at a dialog's body size. */
+  /** The type rung: `xs` in a card's line or a transcript, `sm` at a dialog's body size. */
   size?: "xs" | "sm";
-  /**
-   * `button` (the default): bordered main action, ghost second one — a notice's own controls.
-   * `link`: both as link-style text, for the retry row.
-   */
-  look?: "button" | "link";
 }
 
 type Which = "retry" | "secondary";
@@ -94,7 +93,6 @@ export function RetryActions({
   secondary = null,
   attemptKey,
   size = "xs",
-  look = "button",
 }: RetryActionsProps) {
   const [press, setPress] = useState<Press | null>(null);
   const [seenKey, setSeenKey] = useState(attemptKey);
@@ -125,8 +123,8 @@ export function RetryActions({
     <Button
       key={which}
       // A link has no box to pad, so its rung is the type alone: `md` is the body's `text-sm`.
-      size={look === "link" ? (size === "sm" ? "md" : "xs") : size}
-      variant={look === "link" ? "link" : which === "retry" ? "secondary" : "ghost"}
+      size={size === "sm" ? "md" : "xs"}
+      variant="link"
       data-retry-action={which}
       disabled={action.disabled === true || current !== null}
       loading={action.busy === true || (current?.which === which && current.pending)}
@@ -143,7 +141,7 @@ export function RetryActions({
   );
 }
 
-export interface RetryStatusProps extends Omit<RetryActionsProps, "attemptKey" | "look"> {
+export interface RetryStatusProps extends Omit<RetryActionsProps, "attemptKey"> {
   phase: RetryPhase;
   /**
    * Where things stand, in one sentence ("Reconnecting (attempt 4/5)"). While waiting, what the
@@ -156,6 +154,8 @@ export interface RetryStatusProps extends Omit<RetryActionsProps, "attemptKey" |
   nextAt?: number | null;
   /** The explanation behind the "?" after the sentence — the last failure, the fix; null for none. */
   reason?: string | null;
+  /** What the explanation is, as the "?" panel's first line ("Last failure"); null for none. */
+  reasonTitle?: string | null;
   /** The root is the row itself, so `justify-center` centres it under a centred headline. */
   className?: string;
 }
@@ -163,9 +163,11 @@ export interface RetryStatusProps extends Omit<RetryActionsProps, "attemptKey" |
 /** The mark each phase draws: a glyph and the ink it takes. The spinner is `trying`'s. */
 const MARK: Record<Exclude<RetryPhase, "trying">, { glyph: string; ink: string }> = {
   waiting: { glyph: ICONS.hourglass, ink: "text-tone-attention-fg" },
+  // A record of what was done, not a state to act on: it recedes.
+  retried: { glyph: ICONS.rotateCw, ink: "text-fg-muted" },
   gaveUp: { glyph: ICONS.xCircle, ink: "text-tone-danger-fg" },
-  // A person's own stop: settled, so the mark recedes.
-  cancelled: { glyph: ICONS.pause, ink: "text-fg-muted" },
+  // A person's own stop: nothing runs until they retry, which is the attention tone's meaning.
+  cancelled: { glyph: ICONS.pause, ink: "text-tone-attention-fg" },
   blocked: { glyph: ICONS.xCircle, ink: "text-tone-danger-fg" },
 };
 
@@ -194,6 +196,7 @@ export function RetryStatus({
   countdown,
   nextAt = null,
   reason = null,
+  reasonTitle = null,
   retry = null,
   secondary = null,
   size = "xs",
@@ -223,6 +226,9 @@ export function RetryStatus({
           {sentence}
           {reason !== null && (
             <InfoPopover label={label} className="h-[1lh]">
+              {reasonTitle !== null && (
+                <span className="block font-medium text-fg">{reasonTitle}</span>
+              )}
               {reason}
             </InfoPopover>
           )}
@@ -236,7 +242,6 @@ export function RetryStatus({
               secondary={secondary}
               attemptKey={`${phase}:${nextAt ?? ""}:${label}`}
               size={size}
-              look="link"
             />
           </span>
         )}

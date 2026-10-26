@@ -144,8 +144,10 @@ export const zh = {
       working: "处理中",
       ready: "运行中",
       reconnecting: "重新连接中",
-      /** The automatic attempts stopped (eight failures, or an ssh failure no retry mends): Retry is the way on. */
+      /** A person stopped retrying: Retry is the way on. */
       reconnectStopped: "重连已停止",
+      /** The attempts ran out, or ssh refused in a way no retry mends: Retry is the way on. */
+      reconnectFailed: "重连失败",
       failed: "失败",
       installedOnly: "已安装",
       behind: "有新版本",
@@ -326,7 +328,7 @@ export const zh = {
       reconnect: {
         title: "重新连接",
         lasting: (span: string) => `已持续 ${span}`,
-        lastError: "上次失败：",
+        lastError: "上次失败",
         checked: "自动检查的结果：",
       },
     },
@@ -349,8 +351,8 @@ export const zh = {
       stoppedSsh: "重连失败，需先解决 ssh 问题",
       /** The stored password was refused: no Retry, the fix is in the machine's SSH settings. */
       stoppedPassword: "登录被拒，已停止重连",
-      /** Behind the "?": the last attempt's failure. */
-      lastFailure: (message: string) => `上次失败：${message}`,
+      /** The title over the last attempt's failure behind the "?". */
+      lastFailure: "上次失败",
       retryNow: "立即重试",
       stop: "放弃重试",
       retry: "重试",
@@ -3905,23 +3907,28 @@ Benchmark：
       return `[已中断]${text ? `：${text}` : ""}`;
     },
     /**
-     * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `retryable` is the live status; the finer spellings only appear when
-     * replaying Traces written before the stop-reason convergence.
+     * The model request's retry row, one per ladder: `n` is the attempt it is about — the next
+     * one while it waits, the one sent after — of the turn's `m` at most (the engine counts the
+     * first request as attempt 1).
      */
-    reconnect: (
-      status: "retryable" | "failed" | "timeout" | "malformed",
-      state: "waiting" | "retried" | "gaveUp",
-      attempt: number,
-      secondsLeft?: number,
-      errorMessage?: string,
-      errorCode?: string,
-    ) => {
-      // The live protocol carries the classified cause on error_code; the legacy status
-      // spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
-      const kind = errorCode ?? status;
-      const cause =
-        kind === "timeout"
+    requestRetry: {
+      waiting: (seconds: number, n: number, m: number) => `${seconds} 秒后发起第 ${n}/${m} 次请求`,
+      /** The wait is over (or there was none) and the request is going out. */
+      sending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
+      /** The request went out; the row now only records it. */
+      sent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
+      gaveUp: (attempts: number) => (attempts > 1 ? `${attempts} 次请求均失败` : "请求失败"),
+      /**
+       * Why it retried, in words: the title over the provider's own message behind the row's
+       * "?". The live protocol carries the classified cause on `error_code`; the legacy status
+       * spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
+       */
+      cause: (
+        status: "retryable" | "failed" | "timeout" | "malformed",
+        errorCode?: string,
+      ): string => {
+        const kind = errorCode ?? status;
+        return kind === "timeout"
           ? "连接超时或网络中断"
           : kind === "malformed"
             ? "响应不完整或无法解析"
@@ -3934,23 +3941,15 @@ Benchmark：
                   : kind === "failed"
                     ? "模型服务返回错误"
                     : "请求失败";
-      const action =
-        state === "gaveUp"
-          ? `第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`
-          : state === "retried"
-            ? `已发起第 ${attempt} 次重试`
-            : secondsLeft !== undefined
-              ? `第 ${attempt} 次重试，${secondsLeft} 秒后发起…`
-              : `正在发起第 ${attempt} 次重试…`;
-      return `[重试] ${cause}，${action}`;
+      },
+      /** Skips the remaining backoff wait. */
+      retryNow: "立即重试",
+      /** The ordinary session abort. */
+      stop: "放弃重试",
     },
     /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
     llmError: (errorMessage?: string) =>
       `[错误]：模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
-    /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
-    reconnectRetryNow: "立即重试",
-    /** "Give up" on the reconnect countdown (the ordinary session abort). */
-    reconnectGiveUp: "放弃",
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "重试",
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */

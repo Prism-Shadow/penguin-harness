@@ -204,7 +204,9 @@ export const TOKEN_GROUPS = [
     id: "color-text",
     title: "Colour — text",
     // `fg` is the body ink; `fg-emphasis` the strong ink of headings and emphasis (the same
-    // value in light, near-white in dark where the body ink is calmer).
+    // value in light, near-white in dark where the body ink is calmer). `link-decoration` is a
+    // link-style control's line at rest: `none` where the link ink already stands apart from
+    // the body's, `underline` where the link is the body's own ink and the line is what marks it.
     names: [
       "--ui-fg",
       "--ui-fg-emphasis",
@@ -212,6 +214,7 @@ export const TOKEN_GROUPS = [
       "--ui-fg-subtle",
       "--ui-fg-link",
       "--ui-fg-link-hover",
+      "--ui-link-decoration",
     ],
   },
   {

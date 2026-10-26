@@ -117,6 +117,7 @@ export const en: Strings = {
       ready: "Running",
       reconnecting: "Reconnecting",
       reconnectStopped: "Reconnect stopped",
+      reconnectFailed: "Reconnect failed",
       failed: "Failed",
       installedOnly: "Installed",
       behind: "Update available",
@@ -265,7 +266,7 @@ export const en: Strings = {
       reconnect: {
         title: "Reconnecting",
         lasting: (span: string) => `For ${span}`,
-        lastError: "Last failure:",
+        lastError: "Last failure",
         checked: "What the automatic check found:",
       },
     },
@@ -278,7 +279,7 @@ export const en: Strings = {
       cancelled: "Stopped retrying",
       stoppedSsh: "Reconnect failed; fix ssh first",
       stoppedPassword: "Sign-in refused; not retrying",
-      lastFailure: (message: string) => `Last failure: ${message}`,
+      lastFailure: "Last failure",
       retryNow: "Retry now",
       stop: "Stop retrying",
       retry: "Retry",
@@ -3722,24 +3723,19 @@ Scenarios:
       const text = cause ? `${cause}${item?.errorMessage ? `: ${item.errorMessage}` : ""}` : "";
       return `[Aborted]${text ? `: ${text}` : ""}`;
     },
-    /**
-     * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `retryable` is the live status; the finer spellings only appear when
-     * replaying Traces written before the stop-reason convergence.
-     */
-    reconnect: (
-      status: "retryable" | "failed" | "timeout" | "malformed",
-      state: "waiting" | "retried" | "gaveUp",
-      attempt: number,
-      secondsLeft?: number,
-      errorMessage?: string,
-      errorCode?: string,
-    ) => {
-      // The live protocol carries the classified cause on error_code; the legacy status
-      // spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
-      const kind = errorCode ?? status;
-      const cause =
-        kind === "timeout"
+    requestRetry: {
+      waiting: (seconds: number, n: number, m: number) =>
+        `Retrying in ${seconds} s (attempt ${n}/${m})`,
+      sending: (n: number, m: number) => `Retrying (attempt ${n}/${m})`,
+      sent: (n: number, m: number) => `Retried (attempt ${n}/${m})`,
+      gaveUp: (attempts: number) =>
+        attempts > 1 ? `Request failed after ${attempts} attempts` : "Request failed",
+      cause: (
+        status: "retryable" | "failed" | "timeout" | "malformed",
+        errorCode?: string,
+      ): string => {
+        const kind = errorCode ?? status;
+        return kind === "timeout"
           ? "Connection timed out"
           : kind === "malformed"
             ? "Response incomplete or unparseable"
@@ -3752,23 +3748,13 @@ Scenarios:
                   : kind === "failed"
                     ? "The model provider returned an error"
                     : "The request failed";
-      const action =
-        state === "gaveUp"
-          ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`
-          : state === "retried"
-            ? `retry #${attempt} sent`
-            : secondsLeft !== undefined
-              ? `retry #${attempt} in ${secondsLeft}s…`
-              : `starting retry #${attempt}…`;
-      return `[Retry] ${cause}; ${action}`;
+      },
+      retryNow: "Retry now",
+      stop: "Stop retrying",
     },
     /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
     llmError: (errorMessage?: string) =>
       `[Error]: llm request error${errorMessage ? `: ${errorMessage}` : ""}`,
-    /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
-    reconnectRetryNow: "Retry now",
-    /** "Give up" on the reconnect countdown (the ordinary session abort). */
-    reconnectGiveUp: "Give up",
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "Retry",
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */

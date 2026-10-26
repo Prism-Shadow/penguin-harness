@@ -7,8 +7,8 @@
  * The drawing is the UI package's (MessageRow / MessageBubble / MessageAttachments / MessageMeta
  * and the attachment tiles for what the person sent and the run's notice lines, AssistantText for
  * a reply); what stays here is which item becomes what, the text parsing that collapses harness
- * blocks into banners, the reconnect line's countdown and controls, and the Retry a failed or
- * stopped run's last line offers.
+ * blocks into banners, what the model request's retry row says and offers (the UI package's
+ * shared retry row), and the Retry a failed or stopped run's last line offers.
  */
 import { useState } from "react";
 import {
@@ -21,7 +21,7 @@ import {
   MessageBubble,
   MessageMeta,
   MessageRow,
-  RetryActions,
+  RetryStatus,
   useCountdown,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -32,6 +32,7 @@ import { routedUrl } from "../../lib/session-machines";
 import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
+import { requestRetryRow } from "./request-retry-row";
 import { SessionThinking } from "./thinking-block";
 import { SessionToolCall } from "./tool-call-card";
 import { SessionSubagentChip } from "./subagent-chip";
@@ -114,7 +115,7 @@ function SentAttachments({
   );
 }
 
-/** Countdown floor: waits shorter than this keep the plain waiting text (sub-second flashes of numbers are noise). */
+/** Countdown floor: waits shorter than this keep the plain sending text (sub-second flashes of numbers are noise). */
 const COUNTDOWN_MIN_MS = 2000;
 
 /**
@@ -129,10 +130,10 @@ function retryOffer(ctx: StreamRenderContext, last: boolean): StreamRenderContex
 }
 
 /**
- * "Retry" on the line a run ended on, on the same rung as the reconnect line's "retry now". A
- * click disables it, and it stays disabled: the Task starting, or anything landing after the
- * line, takes the button away (and with it this state). A refused retry enables it again — the
- * page has already said why.
+ * "Retry" on the error banner or the stop marker a run ended on (a retry row that gave up offers
+ * its own, as a link). A click disables it, and it stays disabled: the Task starting, or anything
+ * landing after the line, takes the button away (and with it this state). A refused retry enables
+ * it again — the page has already said why.
  */
 function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
   const [acted, setActed] = useState(false);
@@ -152,24 +153,21 @@ function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
 }
 
 /**
- * Reconnect hint line. The live waiting state renders a COUNTDOWN to the next attempt when
- * the engine announced its planned wait (request_end.retry_in_ms ≥ 2s — with the
- * exponential ladder a wait can reach 30s, and a static "waiting" line reads as a hang),
- * plus two inline controls: "retry now" (skips the remaining backoff server-side; the line
- * flips to "retrying" when the request_begin arrives — no optimistic state beyond
- * disabling the buttons) and "give up" (the ordinary session abort; the engine's
- * abort-during-backoff path ends the turn and re-enables the composer). The countdown and the
- * buttons are the UI package's shared ones (`useCountdown`, `RetryActions`): anchored on the
+ * The model request's retry row, one per ladder (request-retry-row.ts says what it reads): a live
+ * countdown when the engine announced its planned wait (request_end.retry_in_ms ≥ 2s — with the
+ * exponential ladder a wait can reach 30s, and a static line reads as a hang), anchored on the
  * CLIENT arrival time of the event (skew-free), whole seconds on the page's one second-aligned
- * clock; at zero it falls back to the plain waiting text, so a stale item can never tick
- * forever. The buttons belong to ONE attempt: a ladder reuses this component across all of
- * them (the item keeps its id through the collapse, see stream-model's continuedLadder), and the
- * attempt number is the key that re-arms them, so one click never leaves a later attempt with
- * dead controls. History safety: replay delivers the following request_begin/abort immediately,
- * flipping the state, so neither the countdown nor the buttons render for replayed items; the
- * buttons are additionally main-session-only (a subagent's backoff belongs to the child session,
- * which the retry-now route does not target). A line that gave up ended the run, and as the
- * stream's last item it offers Retry instead (see retryOffer).
+ * clock. While it runs, two presses: "Retry now" (skips the remaining backoff server-side; the
+ * row flips once the request_begin arrives — no optimistic state beyond holding the presses) and
+ * "Stop retrying" (the ordinary session abort; the engine's abort-during-backoff path ends the
+ * turn and re-enables the composer). The presses belong to ONE attempt: a ladder reuses this
+ * component across all of them (the item keeps its id through the collapse, see stream-model's
+ * continuedLadder), and the attempt is part of the key that re-arms them, so one press never
+ * leaves a later attempt with dead controls. History safety: replay delivers the following
+ * request_begin/abort immediately, flipping the state, so neither the countdown nor the presses
+ * render for replayed items; the presses are additionally main-session-only (a subagent's
+ * backoff belongs to the child session, which the retry-now route does not target). A row that
+ * gave up ended the run, and as the stream's last item it offers Retry (see retryOffer).
  */
 function ReconnectLine({
   item,
@@ -180,54 +178,26 @@ function ReconnectLine({
   ctx: StreamRenderContext;
   last: boolean;
 }) {
-  const state = item.gaveUp ? "gaveUp" : item.retrying ? "retried" : "waiting";
   const target =
-    state === "waiting" &&
+    !item.gaveUp &&
+    !item.retrying &&
     item.plannedDelayMs !== undefined &&
     item.plannedDelayMs >= COUNTDOWN_MIN_MS &&
     item.arrivedAtMs !== undefined
       ? item.arrivedAtMs + item.plannedDelayMs
       : null;
   const left = useCountdown(target);
-  const seconds = left !== null && left > 0 ? left : undefined;
-  const showControls =
-    seconds !== undefined &&
-    ctx.origin.length === 0 &&
-    (ctx.onRetryNow !== undefined || ctx.onGiveUp !== undefined);
-  const retry = state === "gaveUp" ? retryOffer(ctx, last) : undefined;
+  const main = ctx.origin.length === 0;
   return (
-    <MessageBubble
-      variant="notice"
-      tone="attention"
-      actions={
-        showControls ? (
-          // The line's two controls on the button rungs: the retry is the one it offers, the
-          // bordered secondary; giving up is the quieter ghost beside it.
-          <RetryActions
-            attemptKey={item.attempt}
-            retry={
-              ctx.onRetryNow ? { label: S.chat.reconnectRetryNow, onClick: ctx.onRetryNow } : null
-            }
-            secondary={
-              ctx.onGiveUp ? { label: S.chat.reconnectGiveUp, onClick: ctx.onGiveUp } : null
-            }
-          />
-        ) : retry ? (
-          <RetryRunButton onRetry={retry} />
-        ) : undefined
-      }
-    >
-      <span>
-        {S.chat.reconnect(
-          item.status,
-          state,
-          item.attempt,
-          seconds,
-          item.errorMessage,
-          item.errorCode,
-        )}
-      </span>
-    </MessageBubble>
+    <div className="anim-msg my-1">
+      <RetryStatus
+        {...requestRetryRow(item, left !== null && left > 0 ? target : null, {
+          onRetryNow: main ? ctx.onRetryNow : undefined,
+          onStop: main ? ctx.onGiveUp : undefined,
+          onRetry: item.gaveUp ? retryOffer(ctx, last) : undefined,
+        })}
+      />
+    </div>
   );
 }
 

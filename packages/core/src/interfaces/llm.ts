@@ -147,6 +147,13 @@ export interface LLMOutcome {
   errorMessage?: string;
 }
 
+/**
+ * How many attempts a single turn's request may make at most, the first one included, unless
+ * the engine is given its own ceiling (`maxTurnAttempts`). A host that numbers a retry ladder
+ * ("attempt 3/10") reads it from here, so the count it shows is the engine's.
+ */
+export const DEFAULT_MAX_TURN_ATTEMPTS = 10;
+
 /** Complete tool calls an implementation closed because their request ended early (see `markInterruptedToolCall`). */
 const interruptedToolCalls = new WeakSet<AmspRecord>();
 

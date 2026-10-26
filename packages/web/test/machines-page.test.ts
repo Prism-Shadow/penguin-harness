@@ -451,7 +451,8 @@ describe("a machine's card", () => {
     expect(shown.retry).toMatchObject({
       phase: "waiting",
       label: S.machines.retry.trying(4, 5),
-      reason: S.machines.retry.lastFailure(S.machines.check.ssh.refused("mini")),
+      reason: S.machines.check.ssh.refused("mini"),
+      reasonTitle: S.machines.retry.lastFailure,
     });
     expect(shown.html).toContain("data-retry-countdown");
     // The failure is the "?"'s, not a line of the card.
@@ -470,11 +471,14 @@ describe("a machine's card", () => {
     expect(held?.secondary?.disabled).toBe(true);
   });
 
-  it("after the automatic attempts ran out, says they failed with Retry alone; a refused password says the fix and offers nothing", () => {
+  it("after the automatic attempts ran out, says they failed with Retry alone, its pill in the row's danger tone; a refused password says the fix and offers nothing", () => {
+    expect(card(gaveUp).html).toContain('data-machine-state="reconnectFailed"');
+    expect(seenText(readMarkup(card(gaveUp).html))).toContain(S.machines.state.reconnectFailed);
     expect(card(gaveUp).retry).toMatchObject({
       phase: "gaveUp",
       label: S.machines.retry.gaveUp(5),
-      reason: S.machines.retry.lastFailure(S.machines.check.ssh.refused("lab-2")),
+      reason: S.machines.check.ssh.refused("lab-2"),
+      reasonTitle: S.machines.retry.lastFailure,
       retry: { label: S.machines.retry.retry },
       secondary: null,
     });

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * The shared retry row as it lives on a page — the UI package's `RetryStatus`, which the
- * Machines card and dialog and a conversation on an unreachable machine show, and whose presses
- * the chat's request retry notice holds — across renders, on a fake clock.
+ * Machines card and dialog, a conversation on an unreachable machine and a model request's retry
+ * show — across renders, on a fake clock.
  *
  * - Given a wait 40 s out, a second later the sentence says a second less; when the moment comes
  *   the seconds go and the row says the attempt is being tried.

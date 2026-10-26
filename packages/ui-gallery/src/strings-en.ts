@@ -1799,6 +1799,7 @@ export const en: GalleryStrings = {
         working: "Working",
         reconnecting: "Reconnecting",
         reconnectStopped: "Reconnect stopped",
+        reconnectFailed: "Reconnect failed",
         failed: "Failed",
         signInRefused: "Sign-in refused",
         installedOnly: "Installed",
@@ -1815,7 +1816,7 @@ export const en: GalleryStrings = {
         unreachable: "ssh: connect to host 10.0.0.12 port 22: Connection timed out",
         working: "Downloading penguin-harness 0.2.16…",
         reconnecting: "Reconnect 3 of 5 failed",
-        reconnectStopped:
+        reconnectFailed:
           "lab-2 refused the connection: no ssh server listens at that address and port.",
         behind: "Version 0.2.16 is available",
         restartNeeded:
@@ -1881,9 +1882,9 @@ export const en: GalleryStrings = {
       inCard: "In a machine card",
       inCardHint:
         "The card's middle while no job runs; in the narrow column both actions wrap under the sentence together; a press disables them until the next attempt begins.",
-      inChat: "In a chat notice",
+      inChat: "In a conversation",
       inChatHint:
-        "The chat's model request retry notice takes the same pair as buttons: Retry now as secondary, Give up as ghost.",
+        "A model request being retried wears the same row: the attempt of the engine's ceiling, the cause and the provider's words behind the ?, Retry now and Stop retrying while it waits.",
       narrow: "Narrow",
       narrowHint: "At phone width the line wraps under the name; the actions are never cut.",
       trying: (n: number, m: number) => `Reconnecting (attempt ${n}/${m})`,
@@ -1893,7 +1894,7 @@ export const en: GalleryStrings = {
       cancelled: "Stopped retrying",
       stoppedSsh: "Reconnect failed; fix ssh first",
       stoppedPassword: "Sign-in refused; not retrying",
-      lastFailure: (message: string) => `Last failure: ${message}`,
+      lastFailure: "Last failure",
       retryNow: "Retry now",
       stop: "Stop retrying",
       retry: "Retry",
@@ -1906,11 +1907,15 @@ export const en: GalleryStrings = {
         ready: "Running",
         reconnecting: "Reconnecting",
         reconnectStopped: "Reconnect stopped",
+        reconnectFailed: "Reconnect failed",
       },
       card: { checked: "4 min", use: "Use", settings: "Settings", remove: "Delete" },
-      chatRetryNow: "Retry now",
-      chatGiveUp: "Give up",
-      chatLine: (n: number) => `[Retry] Connection timed out or dropped; retry #${n} shortly…`,
+      chatWaiting: (s: number, n: number, m: number) => `Retrying in ${s} s (attempt ${n}/${m})`,
+      chatSending: (n: number, m: number) => `Retrying (attempt ${n}/${m})`,
+      chatSent: (n: number, m: number) => `Retried (attempt ${n}/${m})`,
+      chatGaveUp: (n: number) => `Request failed after ${n} attempts`,
+      chatCause: "Connection timed out",
+      chatError: "upstream request timeout after 60s (request id 7f3c…)",
     },
     attachments: {
       composer: "Composer",

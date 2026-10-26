@@ -5516,7 +5516,7 @@ export interface MachineEnvOnly {
 
 /**
  * A machine this server keeps connected, while it is being brought back. Attempts back off
- * from 5 s, doubling, and stop after `maxAttempts` failures in a row — or after the first, when
+ * from 15 s, doubling, and stop after `maxAttempts` failures in a row — or after the first, when
  * ssh refused in a way no retry fixes, or when a person asks to stop
  * (`POST …/machines/:machineId/stop-reconnecting`) — until a person asks for a Retry
  * (`POST …/machines/:machineId/reconnect`). After three failures in a row the connection check

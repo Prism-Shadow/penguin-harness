@@ -206,9 +206,12 @@ type JobFailure = Extract<NonNullable<MachineJob["result"]>, { ok: false }>;
 const KEEP_HELD_MS = 60_000;
 /**
  * The first wait before a machine that was lost is tried again — long enough for a server that
- * restarts itself (a plugin load, a hot update) to be back. Each failed attempt doubles the wait.
+ * restarts itself (a plugin load, a hot update) or a short network drop to be back, so the first
+ * attempt is not spent on it. Each failed attempt doubles the wait.
  */
-const RECONNECT_FIRST_MS = 5_000;
+const RECONNECT_FIRST_MS = 15_000;
+/** How soon a machine a job is working on is looked at again, to see whether the job brought it back. */
+const JOB_RECHECK_MS = 5_000;
 /**
  * After this many failed attempts in a row the streak stops and is said as failed: a restart or
  * a network blip is back inside it, and a machine still down after it needs someone to look —
@@ -2246,7 +2249,7 @@ export class MachinesService {
       const state = this.#reconnects.get(address);
       if (this.#machineBusy(address)) {
         // A job has it: looked at again in a while, when the job may have brought it back.
-        if (state !== undefined) this.#schedule(address, RECONNECT_FIRST_MS);
+        if (state !== undefined) this.#schedule(address, JOB_RECHECK_MS);
         return false;
       }
       if (state !== undefined) return state.nextAt !== null && state.nextAt <= now;

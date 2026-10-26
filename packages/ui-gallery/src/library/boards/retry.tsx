@@ -1,18 +1,12 @@
 /**
- * 重试: the one retry row every reconnecting surface shares — its five phases at a card's size and
- * at body size, inside a machine card beside a running one, the chat's request retry notice
- * holding the same pair as buttons, and the card at phone width. The wait counts down live, and a
- * press holds its actions until the board starts the next attempt.
+ * 重试: the one retry row every retrying surface shares — a machine's reconnect in its phases at a
+ * card's size and at body size, inside a machine card beside a running one, a model request's
+ * retry in a conversation, and the card at phone width. The wait counts down live, and a press
+ * holds its actions until the board starts the next attempt.
  */
 import { useEffect, useState } from "react";
-import {
-  ICONS,
-  MachineCard,
-  MachineList,
-  MessageBubble,
-  RetryActions,
-  RetryStatus,
-} from "@prismshadow/penguin-ui";
+import { DEFAULT_MAX_TURN_ATTEMPTS } from "@prismshadow/penguin-core/interfaces";
+import { ICONS, MachineCard, MachineList, RetryStatus } from "@prismshadow/penguin-ui";
 import type { MachineCardProps, RetryStatusProps } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
@@ -50,7 +44,8 @@ export function RetryBoard() {
     {
       phase: "trying",
       label: t.trying(4, MAX),
-      reason: t.lastFailure(t.refused("mini")),
+      reason: t.refused("mini"),
+      reasonTitle: t.lastFailure,
       secondary: { label: t.stop, onClick: noop },
       size,
     },
@@ -59,7 +54,8 @@ export function RetryBoard() {
       label: t.trying(wait.attempt + 1, MAX),
       countdown: (s) => t.waiting(s, wait.attempt + 1, MAX),
       nextAt: wait.nextAt,
-      reason: t.lastFailure(t.refused("mini")),
+      reason: t.refused("mini"),
+      reasonTitle: t.lastFailure,
       retry: { label: t.retryNow, onClick: wait.retryNow },
       secondary: { label: t.stop, onClick: noop },
       size,
@@ -67,14 +63,16 @@ export function RetryBoard() {
     {
       phase: "gaveUp",
       label: t.gaveUp(MAX),
-      reason: t.lastFailure(t.refused("edge-1")),
+      reason: t.refused("edge-1"),
+      reasonTitle: t.lastFailure,
       retry: { label: t.retry, onClick: noop },
       size,
     },
     {
       phase: "cancelled",
       label: t.cancelled,
-      reason: t.lastFailure(t.refused("mini")),
+      reason: t.refused("mini"),
+      reasonTitle: t.lastFailure,
       retry: { label: t.retry, onClick: noop },
       size,
     },
@@ -121,12 +119,34 @@ export function RetryBoard() {
     }),
     card("edge-1", {
       status: {
-        state: "reconnectStopped",
-        label: t.states.reconnectStopped,
+        state: "reconnectFailed",
+        label: t.states.reconnectFailed,
         reason: t.refused("edge-1"),
       },
       retry: lines[2]!,
     }),
+  ];
+
+  // A model request's ladder: the attempt of the engine's ceiling, the first request included.
+  const why = { reason: t.chatError, reasonTitle: t.chatCause };
+  const chat: RetryStatusProps[] = [
+    {
+      phase: "waiting",
+      label: t.chatSending(wait.attempt + 1, DEFAULT_MAX_TURN_ATTEMPTS),
+      countdown: (s) => t.chatWaiting(s, wait.attempt + 1, DEFAULT_MAX_TURN_ATTEMPTS),
+      nextAt: wait.nextAt,
+      ...why,
+      retry: { label: t.retryNow, onClick: wait.retryNow },
+      secondary: { label: t.stop, onClick: noop },
+    },
+    { phase: "trying", label: t.chatSending(3, DEFAULT_MAX_TURN_ATTEMPTS), ...why },
+    { phase: "retried", label: t.chatSent(3, DEFAULT_MAX_TURN_ATTEMPTS), ...why },
+    {
+      phase: "gaveUp",
+      label: t.chatGaveUp(6),
+      ...why,
+      retry: { label: t.retry, onClick: noop },
+    },
   ];
 
   return (
@@ -154,19 +174,9 @@ export function RetryBoard() {
       </BoardGroup>
       <BoardGroup title={t.inChat} aside={t.inChatHint}>
         <div className="lib-stack" style={{ maxWidth: "46rem" }}>
-          <MessageBubble
-            variant="notice"
-            tone="attention"
-            actions={
-              <RetryActions
-                attemptKey={wait.nextAt}
-                retry={{ label: t.chatRetryNow, onClick: wait.retryNow }}
-                secondary={{ label: t.chatGiveUp, onClick: noop }}
-              />
-            }
-          >
-            <span>{t.chatLine(wait.attempt)}</span>
-          </MessageBubble>
+          {chat.map((props, index) => (
+            <RetryStatus key={index} {...props} />
+          ))}
         </div>
       </BoardGroup>
       <BoardGroup title={t.narrow} aside={t.narrowHint}>

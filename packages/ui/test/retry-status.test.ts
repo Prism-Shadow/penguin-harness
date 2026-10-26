@@ -1,5 +1,5 @@
 /**
- * The retry row every reconnecting surface shares (src/components/feedback/retry-status/), as it
+ * The retry row every retrying surface shares (src/components/feedback/retry-status/), as it
  * first renders. How it moves — the seconds ticking down, a press holding the actions until the
  * next attempt — is an interaction across renders, and the web app's jsdom suite drives it
  * (packages/web/test/retry-status-live.test.ts).
@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe("the retry row", () => {
-  it.each<RetryPhase>(["trying", "waiting", "gaveUp", "cancelled", "blocked"])(
+  it.each<RetryPhase>(["trying", "waiting", "retried", "gaveUp", "cancelled", "blocked"])(
     "%s: says where things stand, names its phase, and spins only while an attempt runs",
     (phase) => {
       const html = render({ phase, label: "Where things stand" });

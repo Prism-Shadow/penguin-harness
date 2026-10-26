@@ -68,6 +68,7 @@ export function reasonText(reading: MachineReading): string | null {
       return reading.attempts === 0
         ? null
         : S.machines.retry.failed(reading.attempts, reading.maxAttempts);
+    case "reconnectFailed":
     case "reconnectStopped":
       return reading.message;
     case "restartNeeded":
@@ -176,8 +177,8 @@ export function jobProgress(job: MachineJob): MachineStepperProps {
 /**
  * The shared retry row for a machine's retry reading: its sentence and countdown in the reader's
  * words, and the presses on offer — "Retry now" and "Stop retrying" while the streak runs, "Retry"
- * after it stopped. `reason` replaces the reading's own (the dialog says the last failure in full
- * under the row, so its row has no "?").
+ * after it stopped. `reason` replaces the reading's own, title and all (the dialog says the last
+ * failure in full under the row, so its row has no "?").
  */
 export function retryStatus(
   view: RetryReading,
@@ -205,6 +206,7 @@ export function retryStatus(
     label: view.label,
     ...(view.countdown === null ? {} : { countdown: view.countdown }),
     reason,
+    reasonTitle: reason === null ? null : view.reasonTitle,
     nextAt: view.nextAtMs,
     retry:
       offers.retryNow || offers.retry

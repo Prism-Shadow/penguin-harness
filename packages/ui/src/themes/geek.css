@@ -95,6 +95,7 @@
     --ui-fg-subtle: #8f8b8b;
     --ui-fg-link: var(--ui-fg);
     --ui-fg-link-hover: var(--ui-accent);
+    --ui-link-decoration: underline;
 
     /* Colour — lines */
     --ui-line: #e6e3e3;

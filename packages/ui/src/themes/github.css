@@ -73,6 +73,7 @@
     --ui-fg-subtle: var(--color-gray-400);
     --ui-fg-link: #0b57d0; /* brand-700 */
     --ui-fg-link-hover: #1a73e8; /* brand-600 */
+    --ui-link-decoration: none;
 
     /* ---- Colour — lines ---- */
     --ui-line: var(--color-gray-200);

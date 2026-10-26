@@ -182,8 +182,8 @@ describe("readMachine", () => {
     expect(readMachine(nas, job(), "9.9.9").kind).toBe("working");
   });
 
-  it("a machine the server stopped bringing back says why it stopped, in the page's language, and waits on a person", () => {
-    const stopped = (gaveUp: "attempts" | "ssh"): MachineInfo => ({
+  it("a machine the server failed to bring back says why, in the page's language, as a failure; one a person stopped waits on them", () => {
+    const stopped = (gaveUp: "attempts" | "ssh" | "cancelled"): MachineInfo => ({
       ...carrying("nas"),
       keepConnected: true,
       reconnect: {
@@ -199,17 +199,25 @@ describe("readMachine", () => {
     });
     const tired = readMachine(stopped("attempts"), null, "9.9.9");
     expect(tired).toMatchObject({
-      kind: "reconnectStopped",
+      kind: "reconnectFailed",
       why: "attempts",
       attempts: 8,
       message: S.machines.check.ssh.refused("nas"),
     });
-    expect(readingTone(tired)).toBe("attention");
-    expect(readMachine(stopped("ssh"), null, "9.9.9")).toMatchObject({
-      kind: "reconnectStopped",
+    expect(readingTone(tired)).toBe("danger");
+    const refused = readMachine(stopped("ssh"), null, "9.9.9");
+    expect(refused).toMatchObject({
+      kind: "reconnectFailed",
       why: "ssh",
       message: S.machines.check.ssh.auth("nas"),
     });
+    expect(readingTone(refused)).toBe("danger");
+    const cancelled = readMachine(stopped("cancelled"), null, "9.9.9");
+    expect(cancelled).toMatchObject({
+      kind: "reconnectStopped",
+      message: S.machines.check.ssh.auth("nas"),
+    });
+    expect(readingTone(cancelled)).toBe("attention");
     // A refused password is its own stop, whatever else the streak says.
     const locked: MachineInfo = {
       ...stopped("ssh"),
@@ -392,15 +400,17 @@ describe("the retry row of a machine being brought back", () => {
       nextAt,
       message,
     }) satisfies MachineReading;
-  const stopped = (why: "attempts" | "ssh" | "cancelled") =>
-    ({
-      kind: "reconnectStopped",
-      why,
+  const stopped = (why: "attempts" | "ssh" | "cancelled"): MachineReading => {
+    const streak = {
       since: "2026-08-24T12:00:00.000Z",
       attempts: why === "ssh" ? 1 : 5,
       maxAttempts: 5,
       message: "nas refused the connection.",
-    }) satisfies MachineReading;
+    };
+    return why === "cancelled"
+      ? { kind: "reconnectStopped", ...streak }
+      : { kind: "reconnectFailed", why, ...streak };
+  };
   const NEXT = "2026-08-24T12:01:20.000Z";
   /** The row in a language: its sentence (for `seconds` left while waiting), the "?", the presses. */
   const rowIn = (lang: "zh" | "en", reading: MachineReading, seconds = 23) => {
@@ -413,6 +423,7 @@ describe("the retry row of a machine being brought back", () => {
         sentence: view.countdown === null ? view.label : view.countdown(seconds),
         due: view.label,
         reason: view.reason,
+        reasonTitle: view.reasonTitle,
         offers: view.offers,
       };
     } finally {
@@ -421,19 +432,24 @@ describe("the retry row of a machine being brought back", () => {
   };
 
   it("while an attempt runs, names it of how many, keeps the last failure behind its ?, and offers Stop retrying alone", () => {
-    expect(rowIn("zh", coming(3, null, "nas 拒绝了连接。"))).toEqual({
-      phase: "trying",
-      sentence: "正在尝试第 4/5 次重连",
-      due: "正在尝试第 4/5 次重连",
-      reason: "上次失败：nas 拒绝了连接。",
-      offers: { retryNow: false, stop: true, retry: false },
-    });
+    // The failure sits under its own title, so one that holds a colon never reads as two labels.
+    expect(rowIn("zh", coming(3, null, "nas 拒绝了连接：那个地址和端口上没有 ssh 服务。"))).toEqual(
+      {
+        phase: "trying",
+        sentence: "正在尝试第 4/5 次重连",
+        due: "正在尝试第 4/5 次重连",
+        reason: "nas 拒绝了连接：那个地址和端口上没有 ssh 服务。",
+        reasonTitle: "上次失败",
+        offers: { retryNow: false, stop: true, retry: false },
+      },
+    );
     expect(rowIn("en", coming(3, null, "nas refused."))).toMatchObject({
       sentence: "Reconnecting (attempt 4/5)",
-      reason: "Last failure: nas refused.",
+      reason: "nas refused.",
+      reasonTitle: "Last failure",
     });
     // The first attempt has nothing to explain yet.
-    expect(rowIn("en", coming(0, null))?.reason).toBeNull();
+    expect(rowIn("en", coming(0, null))).toMatchObject({ reason: null, reasonTitle: null });
   });
 
   it("while it waits, counts down to that attempt in one sentence, says it is trying once due, and offers Retry now and Stop retrying", () => {
@@ -442,6 +458,7 @@ describe("the retry row of a machine being brought back", () => {
       sentence: "23 秒后尝试第 4/5 次重连",
       due: "正在尝试第 4/5 次重连",
       reason: null,
+      reasonTitle: null,
       offers: { retryNow: true, stop: true, retry: false },
     });
     expect(rowIn("en", coming(3, NEXT))).toMatchObject({
@@ -458,7 +475,8 @@ describe("the retry row of a machine being brought back", () => {
       phase: "gaveUp",
       sentence: "5 次重连均失败",
       due: "5 次重连均失败",
-      reason: "上次失败：nas refused the connection.",
+      reason: "nas refused the connection.",
+      reasonTitle: "上次失败",
       offers: { retryNow: false, stop: false, retry: true },
     });
     expect(rowIn("en", stopped("attempts"))?.sentence).toBe("Reconnect failed after 5 attempts");
@@ -479,6 +497,7 @@ describe("the retry row of a machine being brought back", () => {
       sentence: "重连失败，需先解决 ssh 问题",
       due: "重连失败，需先解决 ssh 问题",
       reason: "nas refused the connection.",
+      reasonTitle: null,
       offers: { retryNow: false, stop: false, retry: true },
     });
     expect(rowIn("en", stopped("ssh"))?.sentence).toBe("Reconnect failed; fix ssh first");
@@ -491,6 +510,7 @@ describe("the retry row of a machine being brought back", () => {
       sentence: "Sign-in refused; not retrying",
       due: "Sign-in refused; not retrying",
       reason: en.machines.check.ssh["password-rejected"]("nas"),
+      reasonTitle: null,
       offers: { retryNow: false, stop: false, retry: false },
     });
   });

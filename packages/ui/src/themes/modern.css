@@ -69,6 +69,7 @@
     --ui-fg-subtle: #979b9f;
     --ui-fg-link: #2f66c4;
     --ui-fg-link-hover: #244f9a;
+    --ui-link-decoration: none;
 
     /* Colour — lines: a step above the fill they sit on, so a card's edge barely exists */
     --ui-line: #e9eaec;
