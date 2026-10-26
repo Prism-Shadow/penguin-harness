@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `server`, `desktop`, `docs`
+- **PR:** [#1351](https://github.com/Prism-Shadow/penguin-harness/pull/1351)
 
 [English](2026-10-26-trust-proxy-hardening.md)
 
