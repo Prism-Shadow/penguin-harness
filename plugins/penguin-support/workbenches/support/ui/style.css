@@ -12,6 +12,7 @@ body {
 .dialog-header,
 .filters,
 .actions,
+.ticket-state,
 footer {
   display: flex;
   align-items: center;
@@ -37,7 +38,6 @@ button {
 button:disabled {
   cursor: default;
 }
-.muted,
 small,
 time,
 footer {
@@ -83,9 +83,12 @@ a {
   font-weight: 500;
   overflow-wrap: anywhere;
 }
-#list small {
-  display: block;
-  margin-top: 4px;
+#list .meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
 }
 #list time {
   flex: none;
@@ -115,13 +118,14 @@ dialog {
   background: var(--wb-bg);
   border: 1px solid var(--wb-border);
   border-radius: var(--wb-radius);
+  box-shadow: var(--ui-shadow-modal, none);
 }
 dialog[open] {
   display: flex;
   flex-direction: column;
 }
 dialog::backdrop {
-  background: rgb(0 0 0 / 35%);
+  background: var(--ui-overlay-backdrop, rgb(0 0 0 / 35%));
 }
 .dialog-header {
   padding: 20px 24px;
@@ -160,8 +164,28 @@ textarea {
   justify-content: flex-end;
   flex-wrap: wrap;
 }
-#status {
+.ticket-state {
+  flex-wrap: wrap;
   margin: 0 0 20px;
+}
+#stop {
+  margin-left: auto;
+}
+.stop-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -8px 0 20px;
+  padding: 10px 12px;
+  background: var(--wb-tone-danger-bg);
+  border: 1px solid var(--wb-tone-danger-line);
+  border-radius: var(--wb-radius);
+}
+button.danger {
+  color: var(--wb-tone-danger-fg);
+  border-color: var(--wb-tone-danger-line);
 }
 .answer {
   border-top: 1px solid var(--wb-border);
@@ -180,6 +204,30 @@ textarea {
 }
 .answer pre {
   overflow-x: auto;
+}
+#activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+/* A live answer: the dot beats while the agent works. */
+#activity::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wb-tone-success-fg);
+  animation: beat 1.6s ease-in-out infinite;
+}
+@keyframes beat {
+  50% {
+    opacity: 0.3;
+  }
+}
+#draft {
+  color: var(--wb-muted);
 }
 #followup {
   margin-top: 24px;

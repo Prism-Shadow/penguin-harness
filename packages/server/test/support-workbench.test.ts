@@ -1,12 +1,14 @@
 /**
  * Given a fresh default Project, its support Agent contributes a working tab without setup.
- * Given persisted in-progress tickets, GET reconciles final answers once; failed/foreign jobs
- * never receive an older or another Project's answer. Reload preserves the ticket history.
+ * Given persisted in-progress tickets after a restart, GET reconciles final answers once and stops
+ * following their Sessions; failed/foreign jobs never receive an older or another Project's
+ * answer. Reload preserves the ticket history.
+ * Given a running question, its answer is saved when the task ends, with no GET to reconcile it.
  * Given an ordinary Agent, plugin install exposes a tab; update preserves records and uninstall removes it.
  * Given a conflicting workbench, plugin install returns 409 without installing its Skill.
  * Given answered tickets, resolve/reopen preserves messages; malformed follow-ups do not write.
  * Session titles arrive independently of answers; changing a Session title updates the saved question.
- * Updating a plugin with an older authoring contract checks its replacement code against this host.
+ * Updating a plugin with an older authoring contract brings this host's types along with the code.
  */
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -14,6 +16,7 @@ import path from "node:path";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { apiClient, createTestApp, loginAdmin, writeTraceFile, type TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
+import { MOCK_MODEL_ID, startMockLLM, type MockLLM } from "./live-session.js";
 const BASE = "/api/projects/default_project/agents/penguin_support/workbenches/support";
 const message = (role: string, text: string): AmspRecord =>
   ({
@@ -21,6 +24,20 @@ const message = (role: string, text: string): AmspRecord =>
     type: "model_msg",
     payload: { type: "text", role, text },
   }) as AmspRecord;
+/** A handler from before the host's title accessor and live subscriptions. */
+const OLDER_HANDLER = `/// <reference no-default-lib="true" />
+/// <reference lib="es2022" />
+import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin";
+export default {
+  modules: {
+    Workbench: {
+      create() {
+        return { api: { main: { async handle() { return { body: { tickets: [] } }; } } } };
+      },
+    },
+  },
+} satisfies WorkbenchPackage;
+`;
 interface Ticket {
   id: string;
   title: string;
@@ -91,7 +108,11 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     ).toBe(409);
   });
   it("recovers persisted jobs once and keeps failures isolated across reloads", async () => {
+    // Loading the workbench followed the Sessions its state says are running; the restart ended
+    // their tasks, so only the GET below can settle them.
+    expect(t.deps.channels.get(ids[0]!).subscriberCount).toBe(1);
     const first = await tickets();
+    expect(t.deps.channels.get(ids[0]!).subscriberCount).toBe(0);
     expect(first[0]).toMatchObject({
       status: "answered",
       messages: [
@@ -163,17 +184,24 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
       tickets: [{ id: "saved", title: "Keep", status: "resolved", messages: [] }],
     });
     await fs.writeFile(path.join(disk, "state.json"), state);
-    // This installed revision predates the new host title accessor.
+    // An older installed revision, written against a harness without the host's title accessor
+    // and live subscriptions: the update must bring types that have them along with the code.
     const authored = path.join(disk, ".harness/plugin.d.ts");
-    await fs.writeFile(
-      authored,
-      (await fs.readFile(authored, "utf8")).replace(/^.*sessionTitle\(.*\n/gm, ""),
+    const older = (await fs.readFile(authored, "utf8")).replace(
+      /^.*\b(?:sessionTitle|subscribe): .*\n/gm,
+      "",
     );
+    expect(older).not.toMatch(/\b(?:sessionTitle|subscribe): /);
+    await fs.writeFile(authored, older);
+    await fs.writeFile(path.join(disk, "index.ts"), OLDER_HANDLER);
     await fs.writeFile(path.join(disk, "ui/app.js"), "local edit");
+    const reload = await admin.post(`${agent}/workbenches/support/reload`);
+    expect(await reload.json()).toMatchObject({ workbench: { error: null } });
     expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(201);
     expect(await (await admin.get(`${agent}/workbenches`)).json()).toMatchObject({
       workbenches: [{ error: null }],
     });
+    expect(await fs.readFile(authored, "utf8")).toMatch(/\bsubscribe: /);
     expect(await fs.readFile(path.join(disk, "state.json"), "utf8")).toBe(state);
     expect(await fs.readFile(path.join(disk, "ui/app.js"), "utf8")).not.toBe("local edit");
     expect((await admin.delete(`${agent}/workbenches/support`)).status).toBe(204);
@@ -187,5 +215,58 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     await fs.writeFile(path.join(dir, "package.json"), "{}");
     expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(409);
     expect(await (await admin.get(`${agent}/skills`)).json()).toMatchObject({ skills: [] });
+  });
+});
+
+describe("support workbench following a question live", { timeout: 30000 }, () => {
+  let t: TestApp, admin: ReturnType<typeof apiClient>, mock: MockLLM;
+  beforeAll(async () => {
+    mock = await startMockLLM(() => "Open the **Support** tab.");
+    t = await createTestApp({ titles: { maybeGenerate: () => {} } });
+    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const models = await admin.put("/api/projects/default_project/models", {
+      defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
+      models: [
+        {
+          provider: "custom",
+          modelId: MOCK_MODEL_ID,
+          clientType: "ant-messages",
+          apiKey: "sk-mock",
+          baseUrl: mock.url,
+          contextWindow: 200_000,
+        },
+      ],
+    });
+    expect(models.status, await models.text()).toBe(200);
+  });
+  afterAll(async () => {
+    await t.deps.manager.shutdown();
+    await t.cleanup();
+    await mock.close();
+  });
+  it("saves the answer when the task ends, with no GET to reconcile it", async () => {
+    const created = await admin.post(`${BASE}/api/tickets`, { text: "Where is the Support tab?" });
+    expect(created.status, await created.clone().text()).toBe(201);
+    const { sessionId } = (await created.json()) as { sessionId: string };
+    const file = path.join(
+      t.root,
+      "default_project/agents/penguin_support/workbenches/support/state.json",
+    );
+    let saved: Ticket | undefined;
+    for (let i = 0; i < 200; i++) {
+      saved = (JSON.parse(await fs.readFile(file, "utf8")) as { tickets: Ticket[] }).tickets[0];
+      if (saved?.status !== "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(saved).toMatchObject({
+      status: "answered",
+      error: null,
+      messages: [
+        { role: "user", text: "Where is the Support tab?" },
+        { role: "assistant", text: "Open the **Support** tab." },
+      ],
+    });
+    // Answered, the question no longer holds its Session's stream.
+    expect(t.deps.channels.get(sessionId).subscriberCount).toBe(0);
   });
 });
