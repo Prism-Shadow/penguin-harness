@@ -664,10 +664,10 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     id: "penguinharness-benchmark-gdpevo-crm",
     title: "GDPEVO-CRM",
     description:
-      "GDPEVO CRM evaluates customer-support workflows: investigate service tickets, combine customer and diagnostic records, and recommend resolutions or escalations. Five training questions and five held-out test questions.",
+      "GDPEVO CRM evaluates customer-support workflows: investigate service tickets, combine customer and diagnostic records, and recommend resolutions or escalations. Five training questions run in one continuous Agent Session and container; the five listed Cases are held-out tests for the frozen Skill. See the domain README for training instructions.",
     descriptionZh:
-      "GDPEVO 客户关系管理：在客服业务系统中查询工单、客户信息和故障诊断记录，提出处理方案或升级建议。包含 5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.9",
+      "GDPEVO 客户关系管理：在客服业务系统中查询工单、客户信息和故障诊断记录，提出处理方案或升级建议。5 道训练题在同一容器、同一 Agent Session 中完成；当前列出的 5 个 Cases 仅用于冻结 Skill 后的独立测试。训练入口见领域 README。",
+    version: "2026.10.26.10",
     repoDir: "gdpevo-crm",
     source: "GDPevo (converted to Harbor tasks)",
     upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
@@ -708,10 +708,10 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     id: "penguinharness-benchmark-gdpevo-erp",
     title: "GDPEVO-ERP",
     description:
-      "GDPEVO ERP covers expense review, accounts payable, vendor compliance and accounting close, requiring agents to reconcile financial records and apply business rules. Five training questions and five held-out test questions.",
+      "GDPEVO ERP covers expense review, accounts payable, vendor compliance and accounting close, requiring agents to reconcile financial records and apply business rules. Five training questions run in one continuous Agent Session and container; the five listed Cases are held-out tests for the frozen Skill. See the domain README for training instructions.",
     descriptionZh:
-      "GDPEVO 企业资源管理：围绕费用审核、应付账款、供应商合规和会计结账，核对财务记录并依据业务规则作出判断。包含 5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.9",
+      "GDPEVO 企业资源管理：围绕费用审核、应付账款、供应商合规和会计结账，核对财务记录并依据业务规则作出判断。5 道训练题在同一容器、同一 Agent Session 中完成；当前列出的 5 个 Cases 仅用于冻结 Skill 后的独立测试。训练入口见领域 README。",
+    version: "2026.10.26.10",
     repoDir: "gdpevo-erp",
     source: "GDPevo (converted to Harbor tasks)",
     upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
@@ -752,10 +752,10 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     id: "penguinharness-benchmark-gdpevo-finance",
     title: "GDPEVO-Finance",
     description:
-      "GDPEVO Finance evaluates institutional investment analysis: combine portfolio holdings, market data and investment policies to assess risk and recommend asset allocations. Five training questions and five held-out test questions.",
+      "GDPEVO Finance evaluates institutional investment analysis: combine portfolio holdings, market data and investment policies to assess risk and recommend asset allocations. Five training questions run in one continuous Agent Session and container; the five listed Cases are held-out tests for the frozen Skill. See the domain README for training instructions.",
     descriptionZh:
-      "GDPEVO 金融：结合机构投资组合的持仓、市场数据和投资政策，分析风险并提出资产配置建议。包含 5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.9",
+      "GDPEVO 金融：结合机构投资组合的持仓、市场数据和投资政策，分析风险并提出资产配置建议。5 道训练题在同一容器、同一 Agent Session 中完成；当前列出的 5 个 Cases 仅用于冻结 Skill 后的独立测试。训练入口见领域 README。",
+    version: "2026.10.26.10",
     repoDir: "gdpevo-finance",
     source: "GDPevo (converted to Harbor tasks)",
     upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
@@ -796,10 +796,10 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     id: "penguinharness-benchmark-gdpevo-healthcare",
     title: "GDPEVO-Healthcare",
     description:
-      "GDPEVO Healthcare evaluates health-insurance operations, including prior authorization, appeals and payment integrity, using case records and coverage policies to determine appropriate actions. Five training questions and five held-out test questions.",
+      "GDPEVO Healthcare evaluates health-insurance operations, including prior authorization, appeals and payment integrity, using case records and coverage policies to determine appropriate actions. Five training questions run in one continuous Agent Session and container; the five listed Cases are held-out tests for the frozen Skill. See the domain README for training instructions.",
     descriptionZh:
-      "GDPEVO 医疗：围绕医疗保险的事前授权、申诉处理和支付审核，结合个案资料与保障政策判断处理方案。包含 5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.9",
+      "GDPEVO 医疗：围绕医疗保险的事前授权、申诉处理和支付审核，结合个案资料与保障政策判断处理方案。5 道训练题在同一容器、同一 Agent Session 中完成；当前列出的 5 个 Cases 仅用于冻结 Skill 后的独立测试。训练入口见领域 README。",
+    version: "2026.10.26.10",
     repoDir: "gdpevo-healthcare",
     source: "GDPevo (converted to Harbor tasks)",
     upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
@@ -840,10 +840,10 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     id: "penguinharness-benchmark-gdpevo-legal",
     title: "GDPEVO-Legal",
     description:
-      "GDPEVO Legal evaluates court administration: interpret case records and court orders to determine dispositions, docket updates and related financial entries. Five training questions and five held-out test questions.",
+      "GDPEVO Legal evaluates court administration: interpret case records and court orders to determine dispositions, docket updates and related financial entries. Five training questions run in one continuous Agent Session and container; the five listed Cases are held-out tests for the frozen Skill. See the domain README for training instructions.",
     descriptionZh:
-      "GDPEVO 法务：解读案件记录与法院指令，确定案件处理结果、案卷更新和相关财务记账内容。包含 5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.9",
+      "GDPEVO 法务：解读案件记录与法院指令，确定案件处理结果、案卷更新和相关财务记账内容。5 道训练题在同一容器、同一 Agent Session 中完成；当前列出的 5 个 Cases 仅用于冻结 Skill 后的独立测试。训练入口见领域 README。",
+    version: "2026.10.26.10",
     repoDir: "gdpevo-legal",
     source: "GDPevo (converted to Harbor tasks)",
     upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
@@ -884,10 +884,10 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     id: "penguinharness-benchmark-gdpevo-data-analysis",
     title: "GDPEVO-DataAnalysis",
     description:
-      "GDPEVO DataAnalysis evaluates engineering portfolio analysis: combine work-item, SLA and release records to assess workload composition, overdue work and release readiness. Five training questions and five held-out test questions.",
+      "GDPEVO DataAnalysis evaluates engineering portfolio analysis: combine work-item, SLA and release records to assess workload composition, overdue work and release readiness. Five training questions run in one continuous Agent Session and container; the five listed Cases are held-out tests for the frozen Skill. See the domain README for training instructions.",
     descriptionZh:
-      "GDPEVO 数据分析：汇总工程项目的工作项、服务时限和发布记录，分析工作构成、逾期情况及版本发布准备情况。包含 5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.9",
+      "GDPEVO 数据分析：汇总工程项目的工作项、服务时限和发布记录，分析工作构成、逾期情况及版本发布准备情况。5 道训练题在同一容器、同一 Agent Session 中完成；当前列出的 5 个 Cases 仅用于冻结 Skill 后的独立测试。训练入口见领域 README。",
+    version: "2026.10.26.10",
     repoDir: "gdpevo-data-analysis",
     source: "GDPevo (converted to Harbor tasks)",
     upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
