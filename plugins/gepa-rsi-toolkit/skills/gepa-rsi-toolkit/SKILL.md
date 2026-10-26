@@ -1,6 +1,6 @@
 ---
 name: gepa-rsi-toolkit
-description: Run GEPA (Reflective Prompt Evolution Can Outperform Reinforcement Learning, Agrawal et al. 2025) on an agent and a frozen Benchmark: reflect on a minibatch of its Traces and scores to rewrite the instruction, keep a child that beats its parent, draw parents from the per-case Pareto front, keep the best average.
+description: Run GEPA (Reflective Prompt Evolution Can Outperform Reinforcement Learning, Agrawal et al. 2025) on an agent and a frozen Benchmark - reflect on a minibatch of its Traces and scores to rewrite the instruction, keep a child that beats its parent, draw parents from the per-case Pareto front, keep the best average.
 version: 2026.10.22.1
 ---
 
