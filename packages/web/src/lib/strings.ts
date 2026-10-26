@@ -999,7 +999,7 @@ export const zh = {
     theme: "主题",
     background: {
       title: "背景图片",
-      info: "图片随账号保存在服务器上，在其他浏览器或桌面应用登录同一账号时也会显示。支持 PNG、JPEG、WebP，最大 20 MB。透明度越高，图片越淡。",
+      info: "图片会保存在你的账号里，换一个浏览器或在桌面应用登录也能看到。支持 PNG、JPEG、WebP 图片，不超过 20 MB。透明度越高，图片越淡。",
       choose: "选择图片",
       replace: "更换图片",
       remove: "移除",
@@ -1064,7 +1064,7 @@ export const zh = {
     notificationsUnsupported: "当前浏览器不支持系统通知。",
     /** The account wants notifications, but this browser was never granted permission to show them. */
     notificationsNotAllowedHere:
-      "你的账号已开启通知，但这个浏览器还没有获得通知权限。打开这个开关即可申请。",
+      "你在别处开启了通知，但这个浏览器还不能显示。打开这个开关，在浏览器的提示里点「允许」。",
     /** Desktop shell only: the system-tray icon. Absent in a browser. */
     trayIcon: "托盘图标",
     trayIconInfo:
