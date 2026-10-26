@@ -3,7 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** feature
 - **Scope:** `web`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#1346](https://github.com/Prism-Shadow/penguin-harness/pull/1346)
 
 [English](2026-10-26-workbench-theme-tokens.md)
 
