@@ -23,8 +23,14 @@
  * - The company a row's Session belongs to — `companyOfRow` — is named only when the shell's
  *   own organization list holds it, so the click can take the company view there before it
  *   asks the sidebar to locate the row; a company this shell cannot show reads as none.
+ * - The reach a click owes the shell's mode before that ask can be answered — `reachOfRow` —
+ *   is the row's company for a company row this shell can show, and the development list for
+ *   a normal row while the shell stands in company mode; the shell already standing where
+ *   the row lives, a company the shell cannot show, and company mode being unavailable all
+ *   reach nothing.
  */
 import type { HarnessStatusSession, SessionStatus } from "@prismshadow/penguin-server/api";
+import type { WorkMode } from "../features/company/company-nav";
 
 /** localStorage keys under which the two sets persist (all best-effort; see the loader). */
 export const OPENED_KEY = "penguin.statusBar.opened";
@@ -190,6 +196,39 @@ export function companyOfRow(
   return organizations.some((o) => o.projectId === row.projectId && o.orgId === row.orgId)
     ? { projectId: row.projectId, orgId: row.orgId }
     : null;
+}
+
+/**
+ * The reach a click on this row owes the shell's mode before the locate ask can be answered:
+ * the row's company for a company row this shell can show, the development list for a normal
+ * Session while the shell stands in company mode, and nothing when the sidebar is already
+ * where the row lives or cannot be taken to it at all. The company side names the pair
+ * `companyOfRow` answered with, and the store's setters are no-ops where the shell already
+ * stands, so a row of the company on screen only jumps. A company this shell cannot show
+ * keeps the jump-only degradation from whichever mode the shell is in — such a row is not a
+ * normal Session, so it never reaches for the development list either.
+ *
+ * `workMode` is the mode the shell STANDS in (the effective one: development whenever company
+ * mode is unavailable, so a normal row reaches nothing then), and `companyAvailable` is
+ * whether the company reach may be made at all — with it off, a company row reaches nothing
+ * too.
+ */
+export type RowReach =
+  { workMode: "company"; projectId: string; orgId: string } | { workMode: "dev" };
+
+export function reachOfRow(
+  row: Pick<HarnessStatusSession, "projectId" | "orgId">,
+  organizations: ReadonlyArray<{ projectId: string; orgId: string }>,
+  workMode: WorkMode,
+  companyAvailable: boolean,
+): RowReach | null {
+  const company = companyOfRow(row, organizations);
+  if (company !== null) return companyAvailable ? { workMode: "company", ...company } : null;
+  // Only a row no organization holds is the development list's to locate: one a company the
+  // shell cannot show holds keeps the jump alone, and a shell standing in development
+  // already lists the row.
+  if (row.orgId === null && workMode === "company") return { workMode: "dev" };
+  return null;
 }
 
 /** One decimal of GB — the bar's memory shape (`6.2 / 16 GB`). */

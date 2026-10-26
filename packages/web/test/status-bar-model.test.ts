@@ -26,6 +26,7 @@ import {
   gigabytes,
   loadIdSet,
   marksForTransitions,
+  reachOfRow,
   saveIdSet,
   viewedCount,
   workingMachineOf,
@@ -255,5 +256,55 @@ describe("the company a row belongs to (点击时先到所属 company)", () => {
       companyOfRow(row("s", "idle", { projectId: "p9", orgId: "acme" }), organizations),
     ).toBeNull();
     expect(companyOfRow(row("s", "idle", { orgId: "acme" }), [])).toBeNull();
+  });
+});
+
+describe("reachOfRow", () => {
+  const organizations = [
+    { projectId: "p1", orgId: "acme" },
+    { projectId: "p2", orgId: "globex" },
+  ];
+
+  it("names the company reach for a listed company row from either mode", () => {
+    // Wherever the shell stands, the reach is the same pair: the store's setters are no-ops
+    // when it already stands there (company mode, that organization).
+    for (const mode of ["dev", "company"] as const) {
+      expect(reachOfRow(row("s", "idle", { orgId: "acme" }), organizations, mode, true)).toEqual({
+        workMode: "company",
+        projectId: "p1",
+        orgId: "acme",
+      });
+    }
+  });
+
+  it("takes the shell back to development for a normal row while it stands in company mode", () => {
+    // The reach this round adds, the company side's mirror image: a row no organization
+    // holds is the development list's to locate, and the company sidebar on screen cannot
+    // answer for it — so the shell leaves company mode first, and the ask waits out the
+    // switch for the development list to mount and answer.
+    expect(reachOfRow(row("s", "idle"), organizations, "company", true)).toEqual({
+      workMode: "dev",
+    });
+  });
+
+  it("reaches nothing for a normal row the shell already lists in development", () => {
+    expect(reachOfRow(row("s", "idle"), organizations, "dev", true)).toBeNull();
+  });
+
+  it("keeps the jump-only degradation for a company the shell cannot show, and when company mode is unavailable", () => {
+    // A row of a company the shell's own list does not hold is not a normal Session: it
+    // reaches nothing from company mode either — the jump alone, as before this round.
+    expect(
+      reachOfRow(
+        row("s", "idle", { projectId: "p9", orgId: "acme" }),
+        organizations,
+        "company",
+        true,
+      ),
+    ).toBeNull();
+    // Company mode unavailable: no company reach may be made, and the shell stands in
+    // development, so neither kind of row reaches anywhere.
+    expect(reachOfRow(row("s", "idle", { orgId: "acme" }), organizations, "dev", false)).toBeNull();
+    expect(reachOfRow(row("s", "idle"), organizations, "dev", false)).toBeNull();
   });
 });

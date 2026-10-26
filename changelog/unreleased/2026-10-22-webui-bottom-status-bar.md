@@ -34,10 +34,11 @@ shows the counts `session: ${active} / ${viewed}` alone.
   open it again.
 - Clicking a row moves the shell onto that session and asks the left column to catch up: a
   row of a company the sidebar is not on takes it there first (entering company mode if the
-  shell is in development), and then the sidebar unfolds the group the row lives in — its
-  desk's group for a company session, or a ticket entry listed exactly as if it had been
-  opened from its ticket — and brings the row into view. A company this shell's own
-  organization list cannot show leaves everything as it was.
+  shell is in development), a row no organization holds takes the shell back to the
+  development list (leaving company mode when it stands in it), and then the sidebar unfolds
+  the group the row lives in — its desk's group for a company session, or a ticket entry
+  listed exactly as if it had been opened from its ticket — and brings the row into view. A
+  company this shell's own organization list cannot show leaves everything as it was.
 - The left side follows the machine of the session you viewed most recently: the load that
   matters is the load of whatever you last worked on, which for a company on its own machine
   is that machine. A machine that did not answer the poll shows no numbers rather than another

@@ -25,9 +25,10 @@
  * at it again. A row the user has NOT opened is the active half's own: it rides the list only
  * while the poll still reports it active — no x, no mark, nothing kept — and one click moves
  * it into the opened half with every current semantic (the sidebar is asked to locate it
- * too, so the left column follows the jump: its desk's row, or its conversation's — and a
- * row whose company is not the one on screen takes the sidebar there first, the ask kept
- * waiting for that company's rows to mount and answer it).
+ * too, so the left column follows the jump: its desk's row, or its conversation's — and the
+ * reach before the ask takes the sidebar where the row lives: a row whose company is not the
+ * one on screen goes there first, a normal row takes the shell back to the development
+ * list, and the ask is kept waiting for the rows that mount to answer it).
  */
 import { useEffect, useRef, useState } from "react";
 import { useMatch, useNavigate } from "react-router";
@@ -47,11 +48,11 @@ import {
   OPENED_KEY,
   IdSet,
   byLatest,
-  companyOfRow,
   gigabytes,
   loadIdSet,
   marksForTransitions,
   pageStorage,
+  reachOfRow,
   saveIdSet,
   viewedCount,
   workingMachineOf,
@@ -189,23 +190,28 @@ export function StatusBar() {
    * A row's click: open the Session, and ask the sidebar to catch up — the left column
    * locates what the jump landed on (its desk's row in company mode, its conversation's in
    * development mode), so the two halves of the shell never disagree about where the user
-   * is. A row of a company the sidebar is not on takes it there first: `companyOfRow` names
-   * that company only when the shell's own list holds it, and both setters are no-ops when
-   * the shell already stands there, so a row of the company on screen only jumps. The row
-   * itself carries what the locate needs: the employee's Agent for a company Session, and a
-   * title to fall back on.
+   * is. The reach before the ask is `reachOfRow`'s to name: a company row the shell's own
+   * list holds takes the sidebar to that company (both setters no-ops where the shell
+   * already stands, so a row of the company on screen only jumps), a normal row takes the
+   * shell back to the development list when it stands in company mode, and anything else —
+   * the development the shell already lists in, a company the shell cannot show, company
+   * mode unavailable — reaches nothing. The row itself carries what the locate needs: the
+   * employee's Agent for a company Session, and a title to fall back on.
    */
   const open = (row: HarnessStatusSession) => {
     setListOpen(false);
     navigate(`/chat/${row.sessionId}`);
-    // The reach before the ask: the sidebar has to be on the row's company for the ask to
-    // be answerable, so it is moved there first (entering company mode if the shell is in
-    // development), and the ask — held by the locate store until a sidebar can answer —
-    // waits out the switch and lands on that company's rows.
-    const target = companyOfRow(row, company.organizations);
-    if (target !== null && company.available) {
-      company.setWorkMode("company");
-      company.setCurrentOrg(orgKey(target.projectId, target.orgId));
+    // The reach before the ask: the sidebar has to stand where the row lives for the ask to
+    // be answerable — the row's company for a company row, the development list for a
+    // normal Session — so the shell's mode is moved first (the store's setters are no-ops
+    // where it already stands), and the ask — held by the locate store until a sidebar can
+    // answer — waits out the switch and lands on the rows that can answer it.
+    const reach = reachOfRow(row, company.organizations, company.workMode, company.available);
+    if (reach !== null) {
+      company.setWorkMode(reach.workMode);
+      if (reach.workMode === "company") {
+        company.setCurrentOrg(orgKey(reach.projectId, reach.orgId));
+      }
     }
     locateSessionInSidebar(row.sessionId, row.agentId, row.title);
   };
