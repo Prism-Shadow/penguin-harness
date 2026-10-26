@@ -37,16 +37,19 @@ import {
 } from "../src/state/index.js";
 import { BUILTIN_BENCHMARKS } from "../src/state/builtin-benchmarks-data.js";
 
-const SECTION_IDS = [
+const BUILTIN_IDS = [
   "penguinharness-benchmark-sec-a",
   "penguinharness-benchmark-sec-b",
   "penguinharness-benchmark-sec-c",
   "penguinharness-benchmark-sec-d",
   "penguinharness-benchmark-sec-e",
+  "penguinharness-benchmark-gdpevo-crm",
+  "penguinharness-benchmark-gdpevo-erp",
+  "penguinharness-benchmark-gdpevo-finance",
+  "penguinharness-benchmark-gdpevo-healthcare",
+  "penguinharness-benchmark-gdpevo-legal",
+  "penguinharness-benchmark-gdpevo-data-analysis",
 ];
-const GDPEVO_DOMAINS = ["crm", "erp", "finance", "healthcare", "legal", "data-analysis"];
-const GDPEVO_IDS = GDPEVO_DOMAINS.map((domain) => `penguinharness-benchmark-gdpevo-${domain}`);
-const BUILTIN_IDS = [...SECTION_IDS, ...GDPEVO_IDS];
 
 let tmpRoot: string;
 let prevHome: string | undefined;
@@ -208,7 +211,7 @@ describe("built-in Benchmarks", () => {
     await provision();
 
     const letters: string[] = [];
-    for (const id of SECTION_IDS) {
+    for (const id of BUILTIN_IDS) {
       const { title, description } = await readConfig(id);
       const named = /^Sec ([A-Z]) is ([^:]+):/.exec(String(description));
       if (/-sec-[a-z]$/.test(id)) {
@@ -223,8 +226,9 @@ describe("built-in Benchmarks", () => {
   it("automatically seeds five test cases per GDPEVO domain using main and keeps training separate", async () => {
     await provision();
 
-    for (const domain of GDPEVO_DOMAINS) {
-      const id = `penguinharness-benchmark-gdpevo-${domain}`;
+    for (const id of BUILTIN_IDS) {
+      if (!id.startsWith("penguinharness-benchmark-gdpevo-")) continue;
+      const domain = id.slice("penguinharness-benchmark-gdpevo-".length);
       const ids = await caseIds(id);
       expect(ids).toHaveLength(5);
       for (const caseId of ids) {
