@@ -7,6 +7,8 @@
  *   POST   /:id/rollback {revision} restore that version's files and reload
  *   DELETE /:id                    remove the folder and its recorded versions
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name)
+ *   GET    /:id/sdk/amsp.js        the page SDK: AMSP's browser build (see page-sdk.ts)
+ *   GET    /:id/sdk/workbench.js   the page SDK: that build plus this server's signed-in door
  *   *      /:id/api/*              handed to the workbench's WorkbenchMain.handle: JSON by default, any
  *                                  content type when the handler names one (see respond)
  *
@@ -27,6 +29,7 @@ import type {
   WorkbenchResponse,
   Workbenches,
 } from "../mechanisms/workbenches.js";
+import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
 import { WorkbenchNotFound } from "./service.js";
 
 const MIME: Record<string, string> = {
@@ -274,6 +277,23 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
       "content-type": MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream",
       "cache-control": "no-cache",
     });
+  });
+
+  // The same files for every workbench, but only under one that exists: a page of another
+  // Project, or of a workbench since removed, gets the 404 its own files would.
+  app.get("/:id/sdk/:file", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const id = c.req.param("id");
+    const name = c.req.param("file");
+    if (
+      !isPageSdkName(name) ||
+      !(await deps.workbenches.list(projectId, agentId)).some((w) => w.id === id)
+    )
+      throw new HttpError(404, "not_found", "No such workbench, or no such file in its sdk/.");
+    const { body, etag } = await pageSdkFile(name);
+    const headers = { "content-type": PAGE_SDK_CONTENT_TYPE, "cache-control": "no-cache", etag };
+    if (etagMatches(c.req.header("if-none-match"), etag)) return c.body(null, 304, headers);
+    return c.body(body, 200, headers);
   });
 
   app.all("/:id/api/*", async (c) => {
