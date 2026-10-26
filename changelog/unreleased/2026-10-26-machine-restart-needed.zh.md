@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `server`, `web`, `ui`, `docs`
+- **PR:** [#1338](https://github.com/Prism-Shadow/penguin-harness/pull/1338)
 
 [English](2026-10-26-machine-restart-needed.md)
 
