@@ -121,12 +121,13 @@ describe("the frame URL", () => {
       cjk: THEME_STORAGE_KEYS.fontCjk,
       lang: APP_LANG_KEY,
     });
-    // The language key is the app's own (state/locale.tsx), spelled here because it has no export.
+    // The language key is the app's own (state/locale-pref.ts), spelled here to keep the
+    // gallery's frame script free of the app's modules.
     const locale = readFileSync(
-      fileURLToPath(new URL("../../web/src/state/locale.tsx", import.meta.url)),
+      fileURLToPath(new URL("../../web/src/state/locale-pref.ts", import.meta.url)),
       "utf8",
     );
-    expect(locale).toContain(`const STORAGE_KEY = "${APP_LANG_KEY}";`);
+    expect(locale).toContain(`export const LANG_KEY = "${APP_LANG_KEY}";`);
   });
 
   it("is a classic script that gives the document a seeded in-memory storage", () => {

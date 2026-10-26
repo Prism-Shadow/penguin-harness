@@ -9,8 +9,11 @@
  * and a draft belongs to the Project it was aimed at (its Workspace and model are that
  * Project's). Storage is injectable (work-mode.ts convention: vitest runs in Node with no
  * localStorage) and every read degrades to "no draft" rather than throwing at a dialog open.
+ * The default is lib/account-sync's synced storage: like the composer's, this draft follows the
+ * account to another browser.
  */
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
+import { syncedStorage } from "../../lib/account-sync/cache";
 
 /** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory one. */
 export interface DraftStorage {
@@ -102,7 +105,7 @@ export function serializeOrgDraft(draft: OrgCreateDraft): string {
 
 export function loadOrgDraft(key: string, storage?: DraftStorage): OrgCreateDraft | null {
   try {
-    return parseOrgDraft((storage ?? localStorage).getItem(key));
+    return parseOrgDraft((storage ?? syncedStorage).getItem(key));
   } catch {
     return null;
   }
@@ -111,7 +114,7 @@ export function loadOrgDraft(key: string, storage?: DraftStorage): OrgCreateDraf
 /** Writes the draft, or removes it when there is nothing left in it to keep. */
 export function saveOrgDraft(key: string, draft: OrgCreateDraft, storage?: DraftStorage): void {
   try {
-    const store = storage ?? localStorage;
+    const store = storage ?? syncedStorage;
     if (hasContent(draft)) store.setItem(key, serializeOrgDraft(draft));
     else store.removeItem(key);
   } catch {
@@ -121,7 +124,7 @@ export function saveOrgDraft(key: string, draft: OrgCreateDraft, storage?: Draft
 
 export function clearOrgDraft(key: string, storage?: DraftStorage): void {
   try {
-    (storage ?? localStorage).removeItem(key);
+    (storage ?? syncedStorage).removeItem(key);
   } catch {
     /* best-effort */
   }

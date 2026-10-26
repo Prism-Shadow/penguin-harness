@@ -6,13 +6,16 @@
  *
  * Two global preferences live here: `penguin.dock.launcherY` (where it rests) and
  * `penguin.dock.launcherHidden` (whether the user put it away at all). Both are registered
- * as browser preferences in lib/install-scope.ts, so switching data roots keeps them.
+ * as browser preferences in lib/install-scope.ts, so switching data roots keeps them. Where the
+ * ball rests is this screen's layout and stays in this browser; whether it shows at all is a
+ * Settings preference, so it follows the account (lib/account-sync).
  *
  * Coordinates are the ball's TOP offset within the chat body — the region between the
  * toolbar and the composer — and its horizontal offset from the resting edge: 0 on the
  * edge, negative when pulled into the conversation.
  */
 import { rubberband } from "@prismshadow/penguin-ui";
+import { subscribeAccountApplied, writeCached } from "../../lib/account-sync/cache";
 
 /** localStorage key of the resting position: the ball's centre as a ratio of the body's height. */
 export const LAUNCHER_Y_KEY = "penguin.dock.launcherY";
@@ -228,18 +231,32 @@ export function readLauncherHidden(storage?: LauncherStorage | null): boolean {
   return hiddenCache;
 }
 
-/** Puts the launcher away or brings it back, and tells everything rendering from it. */
+function notifyHidden(): void {
+  hiddenVersion += 1;
+  for (const listener of hiddenListeners) listener();
+}
+
+/**
+ * Puts the launcher away or brings it back, and tells everything rendering from it. Without an
+ * explicit storage this is a user's choice: cached and carried to the account.
+ */
 export function writeLauncherHidden(hidden: boolean, storage?: LauncherStorage | null): void {
-  const target = storage === undefined ? defaultStorage() : storage;
+  const value = hidden ? LAUNCHER_HIDDEN_ON : LAUNCHER_HIDDEN_OFF;
   try {
-    target?.setItem(LAUNCHER_HIDDEN_KEY, hidden ? LAUNCHER_HIDDEN_ON : LAUNCHER_HIDDEN_OFF);
+    if (storage === undefined) writeCached(LAUNCHER_HIDDEN_KEY, value);
+    else storage?.setItem(LAUNCHER_HIDDEN_KEY, value);
   } catch {
     // Private-mode storage failures only cost persistence; this session still updates.
   }
   if (storage === undefined) hiddenCache = hidden;
-  hiddenVersion += 1;
-  for (const listener of hiddenListeners) listener();
+  notifyHidden();
 }
+
+// The account's choice replaced the cached one: the next read takes it from the cache.
+subscribeAccountApplied(() => {
+  hiddenCache = null;
+  notifyHidden();
+});
 
 /**
  * Where the ball follows the pointer mid-drag. Along the edge it tracks the pointer inside

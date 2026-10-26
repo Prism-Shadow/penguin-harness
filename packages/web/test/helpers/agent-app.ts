@@ -73,6 +73,7 @@ import { NavigationGuard } from "../../src/lib/unsaved/navigation-guard";
 import { UnsavedPrompt } from "../../src/lib/unsaved/unsaved-prompt";
 import { ADMIN_ME } from "./admin-settings";
 import { mount } from "./dom";
+import { SignedIn } from "./signed-in";
 import { apiError, json, stubFetch } from "./fetch";
 import type { FakeFetch, FetchRequest } from "./fetch";
 
@@ -776,7 +777,15 @@ export async function mountAgentApp(
           null,
           h(NavigationGuard),
           h(Link, { to: "/chat" }, "Sidebar chat"),
-          h(ProjectProvider, null, h(MachinesProvider, null, h(SessionsProvider, null, h(Outlet)))),
+          h(
+            SignedIn,
+            null,
+            h(
+              ProjectProvider,
+              null,
+              h(MachinesProvider, null, h(SessionsProvider, null, h(Outlet))),
+            ),
+          ),
         ),
         children: [
           { path: "/chat", element: h("p", null, "Chat page") },

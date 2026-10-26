@@ -103,7 +103,11 @@ Sign-in, sign-out, account claiming, and the current user's password, profile, p
 | PUT | `/api/me/password` | Changes the password: `{oldPassword, newPassword}` |
 | PUT | `/api/me/profile` | Sets the avatar and nickname: `{displayName?, avatar?}` → `{user}` |
 | GET | `/api/me/prefs` | Reads UI preferences |
-| PUT | `/api/me/prefs` | Writes UI preferences (shallow merge); `browserBackend` is refused (`400`), since it is chosen through [`PUT /api/builtin-browser/backend`](#agent-browser) |
+| PUT | `/api/me/prefs` | Writes UI preferences (shallow merge); `browserBackend` is refused (`400`), since it is chosen through [`PUT /api/builtin-browser/backend`](#agent-browser), and so is `backgroundImageId`, which only the background image route writes |
+| GET | `/api/me/drafts` | Your unsent drafts: `{drafts: {<kind>:<id>: value}}` |
+| PATCH | `/api/me/drafts` | Writes drafts by key, `null` removes one: `{drafts}`, at most 50 per request; answers `204` |
+| GET | `/api/me/background-image` | Your background image: `{image, imageId}`, both `null` when there is none |
+| PUT | `/api/me/background-image` | Sets the background image (a PNG, JPEG or WebP data URL up to 1 MiB) or removes it with `null`: `{image}` → `{imageId}` |
 | GET | `/api/me/archived-sessions/groups` | The groups of [Settings › Archived chats](/settings#archived-chats): `?q=&source=&projectId=` → `{groups, total, asOf}` |
 | GET | `/api/me/archived-sessions` | One group's archived Sessions: `?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |
 | POST | `/api/me/archived-sessions/unarchive` | Unarchives Sessions: `{sessionIds}` or `{filter}` → `{done, missing}` |

@@ -443,7 +443,110 @@ export interface UiPrefs {
    * everywhere else.
    */
   browserBackend?: BrowserBackend;
+  // ----- The Settings pages' preferences, which follow the account to every browser. Each is
+  // the value the Web App keeps in that browser's cache (see its lib/account-sync), validated on
+  // write by services/account-settings.ts for shape only: the Web App decides what a value
+  // means and reads anything it does not know as its default. `null` reads as unset.
+  /** Light / dark / follow the system. */
+  themeMode?: string | null;
+  /** Which theme renders the app (a theme id). */
+  themeId?: string | null;
+  /** The accent preset, or "neutral" for the theme's own. */
+  accent?: string | null;
+  /** The root text size step. */
+  textSize?: string | null;
+  /** The Latin face paired over the theme's own ("theme" = keep the theme's). */
+  fontLatin?: string | null;
+  /** The CJK face paired over the theme's own ("theme" = keep the theme's). */
+  fontCjk?: string | null;
+  /** Interface language: zh / en / system. */
+  lang?: string | null;
+  /** Display currency for prices. */
+  currency?: string | null;
+  /** The terminal's appearance: light / dark / follow the app. */
+  terminalTheme?: string | null;
+  /** Whether tool cards name the built-in tools by their short alias. */
+  toolAliases?: boolean | null;
+  /** Whether task-completion notifications were asked for (each browser still needs its own OS permission). */
+  notifications?: boolean | null;
+  /** Whether the floating dock launcher was put away. */
+  launcherHidden?: boolean | null;
+  /** Mid-run send mode: steer or queue as a follow-up. */
+  steerMode?: string | null;
+  /** The custom background's display settings; the image itself is GET|PUT /api/me/background-image. */
+  background?: BackgroundSettingsDto | null;
+  /**
+   * Which background image the account holds, as an opaque id that changes whenever the image
+   * does; absent or null when it holds none. Written only by PUT /api/me/background-image (PUT
+   * /api/me/prefs refuses it): a browser compares it with the image it has cached and fetches the
+   * image only when they differ.
+   */
+  backgroundImageId?: string | null;
   [key: string]: unknown;
+}
+
+/** The custom background's display settings, as the Web App stores them. */
+export interface BackgroundSettingsDto {
+  /** 0–100: how much of the page colour shows through the image. */
+  transparency: number;
+  mode: string;
+  position: string;
+}
+
+/**
+ * The background image cap, in characters of the data URL: the same number the Web App encodes
+ * against, so the browser and the server cannot disagree about what "too large" means.
+ */
+export const BACKGROUND_IMAGE_MAX_CHARS = 1024 * 1024;
+
+/** GET /api/me/background-image. */
+export interface BackgroundImageResponse {
+  /** A PNG / JPEG / WebP data URL, or null when the account holds no image. */
+  image: string | null;
+  imageId: string | null;
+}
+
+/** PUT /api/me/background-image: the image to keep, or null to remove it. */
+export interface BackgroundImageRequest {
+  image: string | null;
+}
+
+/** PUT /api/me/background-image's answer: the id the image is now known by (null once removed). */
+export interface BackgroundImagePutResponse {
+  imageId: string | null;
+}
+
+/**
+ * The kinds of draft the account keeps, as the first segment of a draft key
+ * (`<kind>:<id>`). The id names what the draft belongs to, so the server can drop it with that
+ * thing: `chat` — a Project's new-conversation draft (`chat:<projectId>`); `parked` — a
+ * Project's parked draft conversations (`parked:<projectId>`); `org` — a Project's
+ * create-organization form (`org:<projectId>`); `channel` — a company-mode channel's composer
+ * (`channel:<projectId>.<orgId>.<channelId>`); `session` — a Session's composer
+ * (`session:<sessionId>`); `a2ui` — a reply's form answers in progress
+ * (`a2ui:<sessionId>:<block>`).
+ */
+export const DRAFT_KINDS = ["chat", "parked", "org", "channel", "session", "a2ui"] as const;
+export type DraftKind = (typeof DRAFT_KINDS)[number];
+
+/** One draft's cap, in characters of its JSON text. */
+export const DRAFT_VALUE_MAX_CHARS = 256 * 1024;
+
+/** Draft writes one PATCH may carry. */
+export const DRAFTS_PATCH_MAX_ENTRIES = 50;
+
+/** GET /api/me/drafts: every draft the account keeps, by key, as the JSON each was written with. */
+export interface DraftsResponse {
+  drafts: Record<string, unknown>;
+}
+
+/**
+ * PATCH /api/me/drafts: drafts to write, by key; `null` removes one. Applied together. When the
+ * account then holds more than its bound, its least recently written drafts outside this patch
+ * are dropped.
+ */
+export interface DraftsPatchRequest {
+  drafts: Record<string, unknown>;
 }
 
 /** A group balance pinned beside the user name: which Project's key reads which group's balance. */

@@ -28,6 +28,11 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  BackgroundImagePutResponse,
+  BackgroundImageRequest,
+  BackgroundImageResponse,
+  DraftsPatchRequest,
+  DraftsResponse,
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
@@ -291,6 +296,20 @@ export const getPrefs = () => apiFetch<PrefsResponse>("/api/me/prefs");
 
 export const putPrefs = (prefs: UiPrefs) =>
   apiFetch<PrefsResponse>("/api/me/prefs", { method: "PUT", body: prefs });
+
+/** Every unsent draft the account keeps (lib/account-sync caches them in the browser). */
+export const getDrafts = () => apiFetch<DraftsResponse>("/api/me/drafts");
+
+/** Writes drafts by key; `null` removes one. */
+export const patchDrafts = (body: DraftsPatchRequest) =>
+  apiFetch<void>("/api/me/drafts", { method: "PATCH", body });
+
+/** The account's background image; its id also rides on the prefs, so a browser asks only when it changed. */
+export const getBackgroundImage = () =>
+  apiFetch<BackgroundImageResponse>("/api/me/background-image");
+
+export const putBackgroundImage = (body: BackgroundImageRequest) =>
+  apiFetch<BackgroundImagePutResponse>("/api/me/background-image", { method: "PUT", body });
 
 // Admin user management (admin only) -----------------------------------------------------
 

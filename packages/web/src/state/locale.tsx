@@ -2,7 +2,8 @@
  * Language context: zh / en / system (tracks navigator.language, listens for languagechange).
  * On switch, first synchronously calls setActiveStrings (assigned during render, idempotent),
  * then remounts the whole tree keyed on locale so every `S.x` read immediately reflects the
- * new language; the preference persists to localStorage. The shared UI package's accessibility
+ * new language; the preference follows the account, cached in this browser (locale-pref.ts) and
+ * re-read when the account's copy arrives (lib/account-sync). The shared UI package's accessibility
  * fallbacks (a close cross's name, a "Copied" announcement) are handed the same language here.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
@@ -11,11 +12,12 @@ import { UiStringsProvider } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../lib/strings";
 import { en } from "../lib/strings-en";
 import { uiStringsFor } from "../lib/ui-strings";
+import { subscribeAccountApplied, writeCached } from "../lib/account-sync/cache";
+import { LANG_KEY, readLangPref } from "./locale-pref";
+import type { LangPref } from "./locale-pref";
 
-export type LangPref = "zh" | "en" | "system";
+export type { LangPref };
 export type Locale = "zh" | "en";
-
-const STORAGE_KEY = "penguin.lang";
 
 interface LocaleContextValue {
   lang: LangPref;
@@ -42,14 +44,8 @@ function resolve(lang: LangPref): Locale {
   return lang === "system" ? systemLocale() : lang;
 }
 
-function initialLang(): LangPref {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "zh" || stored === "en" || stored === "system") return stored;
-  return "system";
-}
-
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<LangPref>(initialLang);
+  const [lang, setLangState] = useState<LangPref>(() => readLangPref());
   // Re-resolution signal for browser language changes while in system mode.
   const [, setSysTick] = useState(0);
 
@@ -65,8 +61,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("languagechange", onChange);
   }, [lang]);
 
+  // The account's language replaced the cached one at sign-in.
+  useEffect(() => subscribeAccountApplied(() => setLangState(readLangPref())), []);
+
   const setLang = useCallback((next: LangPref) => {
-    localStorage.setItem(STORAGE_KEY, next);
+    writeCached(LANG_KEY, next);
     setLangState(next);
   }, []);
 
