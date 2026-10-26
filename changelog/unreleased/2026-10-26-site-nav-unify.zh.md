@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `ui`, `landing`, `docs`, `ui-gallery`
+- **PR:** [#1331](https://github.com/Prism-Shadow/penguin-harness/pull/1331)
 
 [English](2026-10-26-site-nav-unify.md)
 
