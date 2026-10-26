@@ -110,6 +110,8 @@ export interface SessionsRouteDeps {
   auth: Auth;
   /** Who a run acts for: the person who started it (an agent's browser calls drive their Chrome). */
   drivers?: SessionDrivers;
+  /** Users' unsent drafts, which go with the Session they were written for. */
+  drafts: Pick<UserDraftsStore, "deleteBySession">;
 }
 import {
   assertAttachmentBudget,
@@ -165,6 +167,7 @@ import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
+import type { UserDraftsStore } from "../../mechanisms/account-data.js";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { Auth } from "../../mechanisms/identity.js";
 import type { AgentApi } from "../../mechanisms/agent-api.js";
@@ -482,7 +485,13 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
 export function sessionDeletionDeps(
   deps: Pick<
     SessionsRouteDeps,
-    "config" | "manager" | "traceService" | "sessionsRepo" | "messaging" | "sessionSources"
+    | "config"
+    | "manager"
+    | "traceService"
+    | "sessionsRepo"
+    | "messaging"
+    | "sessionSources"
+    | "drafts"
   >,
 ): SessionDeletionDeps {
   return {
@@ -492,6 +501,7 @@ export function sessionDeletionDeps(
     sessions: deps.sessionsRepo,
     unbindMessaging: (sessionId) => deps.messaging.unbindSession(sessionId),
     sources: deps.sessionSources,
+    drafts: deps.drafts,
   };
 }
 
@@ -1814,6 +1824,7 @@ export class SessionApiRoutes {
   @Use() private readonly drivers!: SessionDrivers;
   @Use() private readonly agentApi!: AgentApi;
   @Use() private readonly orgService!: OrgService;
+  @Use() private readonly drafts!: UserDraftsStore;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1861,6 +1872,7 @@ export class SessionApiRoutes {
       liveStreams: this.liveStreams,
       auth: this.auth,
       drivers: this.drivers,
+      drafts: this.drafts,
     };
     const modelOAuthDeps = {
       config: this.config,
@@ -1915,6 +1927,7 @@ export class SessionApiRoutes {
       sessionService,
       sessionsRepo,
       traceIndex: this.traceIndex,
+      drafts: this.drafts,
     });
     this.agentConfigRoutes = agentConfigRoutes({
       agentConfigService,

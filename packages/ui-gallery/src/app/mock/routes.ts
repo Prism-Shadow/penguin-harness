@@ -87,6 +87,9 @@ import type {
   PluginLibraryResponse,
   PluginReadmeResponse,
   PrefsResponse,
+  BackgroundImagePutResponse,
+  BackgroundImageResponse,
+  DraftsResponse,
   ProjectSchedulesResponse,
   ProjectsResponse,
   ProjectUpdateResponse,
@@ -215,7 +218,13 @@ router
   .put("/api/me/prefs", ({ store, body }): PrefsResponse => {
     store.f.prefs = { ...store.f.prefs, ...record(body) };
     return { prefs: store.f.prefs };
-  });
+  })
+  // The demo account holds no drafts and no background image: a frame keeps what it writes in
+  // its own storage, which is all a demo needs, so the writes are accepted and not kept.
+  .get("/api/me/drafts", (): DraftsResponse => ({ drafts: {} }))
+  .patch("/api/me/drafts", () => empty())
+  .get("/api/me/background-image", (): BackgroundImageResponse => ({ image: null, imageId: null }))
+  .put("/api/me/background-image", (): BackgroundImagePutResponse => ({ imageId: null }));
 
 // ---------------------------------------------------------------------------------------------
 // Admin

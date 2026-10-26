@@ -16,7 +16,8 @@
  *   off and show nothing. A platform that refuses to construct the confirmation still keeps
  *   the opt-in.
  * - The hint under the switch is silent until something needs saying, names a dismissed
- *   prompt, and keeps a refusal or a missing API on screen.
+ *   prompt, keeps a refusal or a missing API on screen, and tells a browser never asked that
+ *   the account wants notifications.
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -204,6 +205,12 @@ describe("what the row says under the switch", () => {
     // A dismissal leaves the permission at "default", so nothing is stored and the switch
     // reverts. With no line under it that click reads as a control that does nothing.
     expect(notificationHintFor("default", true)).toBe("dismissed");
+  });
+
+  it("tells a browser never asked that the account wants notifications, and how to allow them here", () => {
+    // The preference followed the account here; the permission did not.
+    expect(notificationHintFor("default", false, true)).toBe("notAllowedHere");
+    expect(notificationHintFor("granted", false, true)).toBeNull();
   });
 
   it("keeps a refusal and a missing API on screen whether or not this session asked", () => {

@@ -800,8 +800,8 @@ export const en: Strings = {
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
-      "Below the switch: the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what this browser lists on the Plugins page.",
-    /** The page's own switch, above the server's cards: a display preference of this browser. */
+      "Below the switch: the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what the Plugins page lists, and is saved to your account.",
+    /** The page's own switch, above the server's cards: a display preference that follows the account. */
     pluginsIncompatibleOnly: "Show only incompatible plugins",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
@@ -870,7 +870,7 @@ export const en: Strings = {
     theme: "Theme",
     background: {
       title: "Background",
-      info: "Stored only in this browser or desktop app; never uploaded. PNG, JPEG or WebP, up to 20 MB. Higher transparency makes the image fainter.",
+      info: "Saved to your account on the server, so it also shows when you sign in from another browser or the desktop app. PNG, JPEG or WebP, up to 20 MB. Higher transparency makes the image fainter.",
       choose: "Choose image",
       replace: "Replace image",
       remove: "Remove",
@@ -937,6 +937,8 @@ export const en: Strings = {
     notificationsDismissed:
       "The permission prompt was closed without an answer, so notifications stay off. Turn this on again to ask once more.",
     notificationsUnsupported: "This browser does not support system notifications.",
+    notificationsNotAllowedHere:
+      "Notifications are on for your account, but this browser has not been allowed to show them yet. Turn this on to allow them here.",
     trayIcon: "Tray icon",
     trayIconInfo:
       "The desktop app keeps an icon in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs: click it to come back to the window, right-click it to start a session or quit. On by default; turning it off removes the icon at once, no restart, and closing the window then no longer hides it, so the app stays in the Dock on macOS and quits on Windows and Linux.",

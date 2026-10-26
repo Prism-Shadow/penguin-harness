@@ -164,6 +164,8 @@ import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
 import { splitBySize } from "../../lib/upload-limits";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
+import { readSteerMode, writeSteerMode } from "./steer-mode";
+import type { SteerMode } from "./steer-mode";
 
 /**
  * Agent candidate panel for the `/agent` switch picker, on the shared PickerList (search, scroll
@@ -215,19 +217,6 @@ function AgentMenuList({
       )}
     />
   );
-}
-
-/**
- * Mid-run send mode: steer (delivered mid-run as a [user_steering] input) vs follow-up
- * (queued server-side until the run ends). A remembered per-user UI preference, persisted
- * the same way as the sidebar grouping mode (validated localStorage read under a
- * `penguin.*` key); configurable from the "+" menu's settings row in draft state and active
- * sessions alike.
- */
-type SteerMode = "steer" | "followup";
-const STEER_MODE_KEY = "penguin.steerMode";
-function initialSteerMode(): SteerMode {
-  return localStorage.getItem(STEER_MODE_KEY) === "followup" ? "followup" : "steer";
 }
 
 /**
@@ -1036,12 +1025,12 @@ export function ChatInput({
   // Mid-run send mode (owner directive): the user chooses between "steer" (delivered mid-run
   // as a [user_steering] input) and "follow-up" (held server-side and auto-sent as an ordinary
   // next task once this run finishes). Set from the "+" menu's settings row — available in
-  // draft state and active sessions alike — and **remembered** across sessions/reloads
-  // (localStorage, see STEER_MODE_KEY).
-  const [steerMode, setSteerModeState] = useState<SteerMode>(initialSteerMode);
+  // draft state and active sessions alike — and **remembered** across sessions, reloads and
+  // browsers (a preference of the account, see steer-mode.ts).
+  const [steerMode, setSteerModeState] = useState<SteerMode>(() => readSteerMode());
   const setSteerMode = (mode: SteerMode): void => {
     setSteerModeState(mode);
-    localStorage.setItem(STEER_MODE_KEY, mode);
+    writeSteerMode(mode);
   };
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
   // Which of the two channels this draft can use, or Stop when neither will take it — the whole

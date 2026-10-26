@@ -68,6 +68,8 @@ import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
+import { UserDraftsRepo } from "./db/repos/user-drafts.js";
+import { BackgroundImagesRepo } from "./db/repos/background-images.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
 import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
@@ -178,6 +180,7 @@ import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
+import { BackgroundImageStore, UserDraftsStore } from "./mechanisms/account-data.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
 import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
@@ -376,6 +379,17 @@ export class SessionRuntimeModule {}
 export class SettingsModule {}
 
 /**
+ * What an account keeps on the server beside its preferences: unsent drafts and the custom
+ * background image. A group of its own rather than part of the settings group, so a stand-in
+ * for the settings store does not have to stand in for these too.
+ */
+@Module({
+  children: [UserDraftsRepo, BackgroundImagesRepo],
+  exports: [UserDraftsStore, BackgroundImageStore],
+})
+export class AccountDataModule {}
+
+/**
  * Plugin configuration as a group of its own, beside the settings it is stored in: a plugin
  * that stands in for the settings group replaces the store, not the schema-and-watch layer
  * over it, and a plugin's manifest names this module as where `PluginConfig` comes from.
@@ -495,6 +509,7 @@ export class WorkbenchesModule {}
   children: [
     RuntimeModule,
     SettingsModule,
+    AccountDataModule,
     PluginConfigModule,
     IdentityModule,
     ProjectsModule,
