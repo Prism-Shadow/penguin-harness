@@ -17,6 +17,8 @@ import type {
   AgentApiSettings,
   AgentConfigResponse,
   AgentCreateResponse,
+  AgentDeleteResponse,
+  AgentDeletionInfo,
   AgentHooksResponse,
   AgentMcpServerItem,
   AgentMcpServersResponse,
@@ -830,8 +832,20 @@ router
     if (agent.agentId === IDS.agents.docs)
       fail(409, "agent_builtin", "The docs Agent is the demo's; it stays.");
     ctx.store.f.agents = ctx.store.f.agents.filter((a) => a.agentId !== agent.agentId);
-    return empty();
-  });
+    // The demo has no files to remove: the deletion is over as it answers.
+    const deletion: AgentDeletionInfo = {
+      deletionId: `${agent.agentId}-0`,
+      agentId: agent.agentId,
+      phase: "done",
+      total: 0,
+      removed: 0,
+    };
+    return json({ deletion } satisfies AgentDeleteResponse, 202);
+  })
+  // No removal ever runs in the background here, so no deletion is known.
+  .get("/api/projects/:projectId/agent-deletions/:deletionId", () =>
+    fail(404, "agent_deletion_not_found", "No such deletion is in progress."),
+  );
 
 // ---------------------------------------------------------------------------------------------
 // An Agent's public API: its switches, approval mode and keys (the stream itself is not mocked)
