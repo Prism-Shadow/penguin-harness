@@ -31,6 +31,10 @@ export function createPanelTaskScope(): PanelTaskScope {
  *     session mid-run therefore auto-opens on the spawn that is already live, which reads as
  *     that spawn introducing itself;
  *   - anything else (steering, compaction, more messages in the same task) → null.
+ * An observation whose stream data is another Session's (`streamSessionId`: the render right
+ * after a switch, before the stream has reset for the new one) is no observation of this
+ * Session at all: it neither advances the tracker nor opens anything, so the previous Session's
+ * live spawn never opens the panel in the Session switched to.
  * A taskCount DECREASE is a defensive re-baseline (a resync swapped in a smaller model):
  * adopted silently, with the auto-open attempt marked consumed so a rebuild can never
  * surprise-open a panel the user closed mid-task.
@@ -39,8 +43,14 @@ export function createPanelTaskScope(): PanelTaskScope {
  */
 export function advancePanelTaskScope(
   state: PanelTaskScope,
-  obs: { sessionId: string | null; taskCount: number; liveSpawn: boolean },
+  obs: {
+    sessionId: string | null;
+    streamSessionId: string | null;
+    taskCount: number;
+    liveSpawn: boolean;
+  },
 ): "autoOpen" | null {
+  if (obs.streamSessionId !== obs.sessionId) return null;
   const switched = obs.sessionId !== state.sessionId;
   const rebaseline = !switched && obs.taskCount < state.taskCount;
   if (switched || obs.taskCount !== state.taskCount) {

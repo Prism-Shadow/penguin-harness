@@ -14,7 +14,8 @@
  *   conversation.
  * - The whole arrangement switches with the Session and comes back on return; a placeholder
  *   scope's arrangement passes to the first Session chosen (a draft's to the Session it becomes,
- *   never clobbering).
+ *   never clobbering, and only the draft's own even when the send finishes after the user moved
+ *   to another conversation).
  * - A tab moves to the other dock and activates there (the only tab closes its source dock); a
  *   whole dock moves, merging after the target's tabs; a strip reorders only with a complete,
  *   matching key list.
@@ -199,7 +200,7 @@ describe("conversation scopes (each window manages its own tabs)", () => {
     const born = `scope-born-${scopeSeq}`;
     dock.setDockScope(draft);
     dock.openPanel("workspace", "right");
-    dock.adoptDockScope(born);
+    dock.adoptDockScope(draft, born);
     expect(dock.currentDockScope()).toBe(born);
     expect(dock.panelDock("workspace")).toBe("right");
     // The next draft starts clean rather than inheriting it.
@@ -212,9 +213,30 @@ describe("conversation scopes (each window manages its own tabs)", () => {
     dock.openPanel("memory", "bottom");
     dock.setDockScope(draft);
     dock.openPanel("trace", "right");
-    dock.adoptDockScope(owner);
+    dock.adoptDockScope(draft, owner);
     expect(dock.panelDock("memory")).toBe("bottom");
     expect(dock.panelDock("trace")).toBeNull();
+  });
+
+  it("adoptDockScope finishing after the user moved on hands over the draft's docks, not the ones on screen", () => {
+    const draft = `new-late-${scopeSeq}`;
+    const elsewhere = `scope-elsewhere-${scopeSeq}`;
+    const born = `scope-born-late-${scopeSeq}`;
+    dock.setDockScope(draft);
+    dock.openPanel("builtin-browser", "right");
+    // The first send is still on its way when the user opens another conversation.
+    dock.setDockScope(elsewhere);
+    dock.openPanel("memory", "bottom");
+    dock.adoptDockScope(draft, born);
+    expect(dock.currentDockScope()).toBe(elsewhere);
+    expect(dock.panelDock("memory")).toBe("bottom");
+    expect(dock.panelDock("builtin-browser")).toBeNull();
+    dock.setDockScope(born);
+    expect(dock.panelDock("builtin-browser")).toBe("right");
+    expect(dock.panelDock("memory")).toBeNull();
+    // Moved, not copied: the next draft starts clean.
+    dock.setDockScope(draft);
+    expect(dock.panelDock("builtin-browser")).toBeNull();
   });
 });
 
@@ -534,14 +556,14 @@ describe("fullscreen", () => {
     const born = `fullscreen-born-${scopeSeq}`;
     dock.openPanel("workspace", "right");
     dock.setDockFullscreen("right");
-    dock.adoptDockScope(born);
+    dock.adoptDockScope(draft, born);
     expect(dock.fullscreenDock()).toBe("right");
     dock.setDockScope(draft);
     expect(dock.fullscreenDock()).toBeNull();
 
     dock.openPanel("memory", "bottom");
     dock.setDockFullscreen("bottom");
-    dock.adoptDockScope(born);
+    dock.adoptDockScope(draft, born);
     expect(dock.fullscreenDock()).toBe("right");
   });
 

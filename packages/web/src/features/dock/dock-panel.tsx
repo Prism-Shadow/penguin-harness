@@ -87,6 +87,7 @@ import { composerHeight, useComposerHeight } from "./composer-height";
 import {
   activateTab,
   bottomRatio,
+  currentDockScope,
   dockVersion,
   fullscreenDock,
   hideView,
@@ -119,6 +120,18 @@ import {
  * panel follows in registry order, which is where a plugin's panel lands.
  */
 const PICKER_LEAD: readonly PanelId[] = ["agents", TERMINAL_PANEL, "builtin-browser"];
+
+/**
+ * Closes a tab once its close guards agree (the Files panel's editor asks about unsaved text),
+ * in the conversation it was closed in: an answer given after the user moved to another
+ * conversation must not close that conversation's tab of the same kind.
+ */
+function closeWhenAllowed(key: string): void {
+  const asked = currentDockScope();
+  void confirmClose([key]).then((ok) => {
+    if (ok && currentDockScope() === asked) removeTab(key);
+  });
+}
 
 /**
  * How far past the dock's maximum size a boundary drag pulls before the dock snaps to fullscreen,
@@ -176,11 +189,7 @@ function PanelBody({
         else if (fullscreenDock() === position) setDockFullscreen(null);
       },
       // The tab's × path: a close guard the body registered (unsaved text) asks first.
-      close: () => {
-        void confirmClose([id]).then((ok) => {
-          if (ok) removeTab(id);
-        });
-      },
+      close: () => closeWhenAllowed(id),
     }),
     [id, position, merged, active, fullscreen],
   );
@@ -235,12 +244,7 @@ export function DockPanel({
   // editor holding unsaved text), which asks first: the tab's × is the one gesture here that
   // really unmounts a body. Closing the terminal panel's tab leaves its shells running — its
   // own strip's × is what ends one.
-  const closeTab = useCallback((tab: DockTab) => {
-    const key = tabKey(tab);
-    void confirmClose([key]).then((ok) => {
-      if (ok) removeTab(key);
-    });
-  }, []);
+  const closeTab = useCallback((tab: DockTab) => closeWhenAllowed(tabKey(tab)), []);
   // Hiding puts the surface away and nothing else — every body stays mounted at zero size —
   // so there is nothing to ask about, however much unsaved work a tab is holding.
   const hide = useCallback(() => hideView(view), [view]);

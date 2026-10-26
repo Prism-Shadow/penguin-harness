@@ -332,12 +332,29 @@ export function setDockScope(next: string | null): void {
 }
 
 /**
- * The draft this scope was holding has become a real Session: its arrangement moves to
- * the new id. Called at the points that turn a draft into a Session (its send paths, and
- * a self-heal renaming a session id), not on any navigation away from the draft.
+ * The draft `from` has become a real Session (or a Session's id self-healed into a new one):
+ * its arrangement moves to the new id, never clobbering one the new id already has. Called at
+ * the points that turn a draft into a Session (its send paths, and a self-heal renaming a
+ * session id), not on any navigation away from the draft. Those points come after network round
+ * trips, and the user may have moved to another conversation meanwhile: only `from`'s own
+ * arrangement moves then, and the docks on screen stay that conversation's.
  */
-export function adoptDockScope(sessionId: string): void {
-  switchScope(sessionId, true);
+export function adoptDockScope(from: string, sessionId: string): void {
+  if (from === scope) {
+    switchScope(sessionId, true);
+    return;
+  }
+  const staged = scopes[from];
+  if (from === sessionId || staged === undefined || scopes[sessionId] !== undefined) return;
+  const { [from]: _moved, ...rest } = scopes;
+  scopes = { ...rest, [sessionId]: staged };
+  writeScopes();
+  // Already on the new id, with nothing arranged there yet: what moved is what it shows.
+  if (sessionId === scope) {
+    layout = staged;
+    reconcileFullscreen();
+    notify();
+  }
 }
 
 function switchScope(target: string, mayHandOver: boolean): void {

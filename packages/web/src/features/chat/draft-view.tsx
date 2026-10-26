@@ -74,7 +74,7 @@ import type { ComposerControl } from "./chat-input";
 import { goalPluginGate } from "./goal-plugin-gate";
 import { discardUnstartedSession } from "./unstarted-session";
 import { APPROVAL_MODES } from "./approval-mode";
-import { adoptDockScope } from "../dock/dock-state";
+import { adoptDockScope, currentDockScope } from "../dock/dock-state";
 import { setDockConversation } from "../dock/dock-terminal";
 import { StartDashboard } from "./start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
@@ -767,6 +767,9 @@ export function DraftView({
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
       const browserScope = browserState().scope;
+      // The draft's own docks, named now: the send takes round trips, and the user may be on
+      // another conversation by the time it has a Session to hand them to.
+      const dockScope = currentDockScope();
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
@@ -804,7 +807,7 @@ export function DraftView({
         // The draft now has an id of its own, so its docks move with it: anything left
         // behind under the draft's scope would surface in the NEXT new conversation
         // instead (dock-state.ts).
-        adoptDockScope(res.sessionId);
+        adoptDockScope(dockScope, res.sessionId);
         navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
       } catch (e) {
