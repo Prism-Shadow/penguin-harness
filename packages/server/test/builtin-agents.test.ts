@@ -189,11 +189,10 @@ describe("built-in Agent provisioning", () => {
               await owner.get(`${base}/${bench.id}/cases/${c.id}/files/content?path=README.md`)
             ).text();
             if (bench.id.startsWith(`${BUILTIN_PREFIX}gdpevo-`)) {
-              expect(bench.caseCount).toBe(1);
+              expect(bench.caseCount).toBe(5);
               expect(statement, c.id).toContain(
                 "https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-",
               );
-              continue;
             }
             expect(statement, c.id).toMatch(
               /^- Task: `[^`]+` in https:\/\/github\.com\/\S+\/tree\/\S+$/m,

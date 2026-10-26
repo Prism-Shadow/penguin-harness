@@ -9,15 +9,15 @@
  * marked `final` in that benchmark's `selection.json` in the repository, in its order, and the
  * caps and the time-budget note are its `job.yaml`'s; a later change to the set is a row edit,
  * and the case numbers (`CASE-001-…`) follow the rows' order.
- * GDPEVO's domain cases supply their statement and rubric directly, referencing the benchmark
- * repository's main branch for current tasks and instructions.
+ * Each GDPEVO domain lists its five test tasks and links its continuous-training instructions
+ * on the benchmark repository's main branch. Train and Test scores are reported separately.
  * A Project keeps the case list it was created with (project-benchmarks.ts writes a Benchmark
  * once, when the Project is created). Summaries say what a task asks and what it delivers, never
  * how to solve it: they are public to every agent that reads the Benchmark, an optimizer
  * included. Each row's `version` is its manifest's date version: an edit to a row, or to anything
  * this file holds that its statements repeat, moves the version of every Benchmark it changes.
  */
-import type { BuiltinBenchmark, MarkdownBuiltinBenchmark } from "./builtin-benchmarks.js";
+import type { BuiltinBenchmark } from "./builtin-benchmarks.js";
 
 /** The public repository that holds the task folders, the Harbor adapter and the scripts. */
 export const BENCHMARK_REPO = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
@@ -63,7 +63,7 @@ const BUILT_IN_ZH =
   "由它自带的验证器评分，题目文件在公开仓库 Prism-Shadow/penguin-harness-benchmark 中。它在创建 Project " +
   "时写入，删除后不会再写回。";
 
-export const BUILTIN_BENCHMARKS: (BuiltinBenchmark | MarkdownBuiltinBenchmark)[] = [
+export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
   {
     id: "penguinharness-benchmark-sec-a",
     title: "PenguinHarness Benchmark Sec A",
@@ -678,21 +678,74 @@ export const BUILTIN_BENCHMARKS: (BuiltinBenchmark | MarkdownBuiltinBenchmark)[]
     title: "GDPEVO-CRM",
     description: "GDPEVO CRM: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 客户关系管理：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.1",
+    version: "2026.10.26.2",
+    repoDir: "gdpevo-crm",
+    ref: "main",
+    source: "GDPevo (converted to Harbor tasks)",
+    upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
+    agentNetwork: "no-network",
+    sharedNetwork: false,
+    verifier: "same container, after the agent",
+    grader: {
+      scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
+    },
+    downloads: "Docker Hub and PyPI",
+    runTimeout: "task",
+    maxTurns: -1,
+    note:
+      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-crm/README.md). ` +
+      "Train at `benchmarks/gdpevo-crm/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
+      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
+      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
     cases: [
       {
-        id: "CASE-001-crm",
-        statement: `# GDPEVO-CRM
-
-Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-crm/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-crm/tasks).
-For training, use all five training questions in one continuous Agent session and container.
-For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
-`,
-        rubric: `# Scoring rubric (max 100 points)
-
-The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
-Report the training score separately; never combine Train and Test into one score.
-`,
+        task: "test_tasks/tg003-test-001",
+        title: "Support Console: test task 001",
+        summary:
+          "You are a support operations analyst resolving a new offline service ticket batch.",
+        category: "CRM/service-tickets (task_group_003)/test",
+        upstreamTask: "task group `task_group_003`, test task `test_001`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg003-test-002",
+        title: "Support Console: test task 002",
+        summary: "You are triaging a new contact-center queue for mobile support.",
+        category: "CRM/service-tickets (task_group_003)/test",
+        upstreamTask: "task group `task_group_003`, test task `test_002`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg003-test-003",
+        title: "Support Console: test task 003",
+        summary:
+          "You are an enterprise support lead preparing the response package fields for a strategic client export complaint.",
+        category: "CRM/service-tickets (task_group_003)/test",
+        upstreamTask: "task group `task_group_003`, test task `test_003`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg003-test-004",
+        title: "Support Console: test task 004",
+        summary:
+          "You are the executive support lead building a priority board for the next customer-risk review.",
+        category: "CRM/service-tickets (task_group_003)/test",
+        upstreamTask: "task group `task_group_003`, test task `test_004`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg003-test-005",
+        title: "Support Console: test task 005",
+        summary:
+          "You are a support QA analyst auditing proposed CRM updates before they are posted.",
+        category: "CRM/service-tickets (task_group_003)/test",
+        upstreamTask: "task group `task_group_003`, test task `test_005`",
+        cpus: 1,
+        memoryMb: 2048,
       },
     ],
   },
@@ -701,21 +754,75 @@ Report the training score separately; never combine Train and Test into one scor
     title: "GDPEVO-ERP",
     description: "GDPEVO ERP: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 企业资源管理：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.1",
+    version: "2026.10.26.2",
+    repoDir: "gdpevo-erp",
+    ref: "main",
+    source: "GDPevo (converted to Harbor tasks)",
+    upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
+    agentNetwork: "no-network",
+    sharedNetwork: false,
+    verifier: "same container, after the agent",
+    grader: {
+      scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
+    },
+    downloads: "Docker Hub and PyPI",
+    runTimeout: "task",
+    maxTurns: -1,
+    note:
+      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-erp/README.md). ` +
+      "Train at `benchmarks/gdpevo-erp/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
+      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
+      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
     cases: [
       {
-        id: "CASE-001-erp",
-        statement: `# GDPEVO-ERP
-
-Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-erp/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-erp/tasks).
-For training, use all five training questions in one continuous Agent session and container.
-For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
-`,
-        rubric: `# Scoring rubric (max 100 points)
-
-The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
-Report the training score separately; never combine Train and Test into one score.
-`,
+        task: "test_tasks/tg005-test-001",
+        title: "ERP Finance API: test task 001",
+        summary:
+          "Finance close request: prepare the April 2025 reimbursement close decision for the travel reimbursement batch below.",
+        category: "ERP/expense-control (task_group_005)/test",
+        upstreamTask: "task group `task_group_005`, test task `test_001`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg005-test-002",
+        title: "ERP Finance API: test task 002",
+        summary:
+          "You are preparing the April 2025 vendor intake exception board for finance control.",
+        category: "ERP/expense-control (task_group_005)/test",
+        upstreamTask: "task group `task_group_005`, test task `test_002`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg005-test-003",
+        title: "ERP Finance API: test task 003",
+        summary:
+          "You are preparing the April 2025 prepaid close and GL reconciliation package for the controller.",
+        category: "ERP/expense-control (task_group_005)/test",
+        upstreamTask: "task group `task_group_005`, test task `test_003`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg005-test-004",
+        title: "ERP Finance API: test task 004",
+        summary:
+          "You are preparing a payment release board for a mixed AP run that includes vendor invoices and employee reimbursement clearing bills.",
+        category: "ERP/expense-control (task_group_005)/test",
+        upstreamTask: "task group `task_group_005`, test task `test_004`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg005-test-005",
+        title: "ERP Finance API: test task 005",
+        summary:
+          "The controller needs a month-end exception report for the April 2025 close. Combine unreconciled employee reimbursement exposure with prepaid-to-GL variance exposure using the shared ERP finance API at the base URL provided by the runner.",
+        category: "ERP/expense-control (task_group_005)/test",
+        upstreamTask: "task group `task_group_005`, test task `test_005`",
+        cpus: 1,
+        memoryMb: 2048,
       },
     ],
   },
@@ -724,21 +831,73 @@ Report the training score separately; never combine Train and Test into one scor
     title: "GDPEVO-Finance",
     description: "GDPEVO Finance: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 金融：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.1",
+    version: "2026.10.26.2",
+    repoDir: "gdpevo-finance",
+    ref: "main",
+    source: "GDPevo (converted to Harbor tasks)",
+    upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
+    agentNetwork: "no-network",
+    sharedNetwork: false,
+    verifier: "same container, after the agent",
+    grader: {
+      scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
+    },
+    downloads: "Docker Hub and PyPI",
+    runTimeout: "task",
+    maxTurns: -1,
+    note:
+      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-finance/README.md). ` +
+      "Train at `benchmarks/gdpevo-finance/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
+      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
+      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
     cases: [
       {
-        id: "CASE-001-finance",
-        statement: `# GDPEVO-Finance
-
-Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-finance/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-finance/tasks).
-For training, use all five training questions in one continuous Agent session and container.
-For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
-`,
-        rubric: `# Scoring rubric (max 100 points)
-
-The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
-Report the training score separately; never combine Train and Test into one score.
-`,
+        task: "test_tasks/tg010-test-001",
+        title: "Asteria Investment Office: test task 001",
+        summary: "You are supporting the Asteria Investment Office credit desk.",
+        category: "Finance/portfolio-risk (task_group_010)/test",
+        upstreamTask: "task group `task_group_010`, test task `test_001`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg010-test-002",
+        title: "Asteria Investment Office: test task 002",
+        summary:
+          "You are preparing the expanded international equity correlation review for Asteria portfolio PF-INT-ORION.",
+        category: "Finance/portfolio-risk (task_group_010)/test",
+        upstreamTask: "task group `task_group_010`, test task `test_002`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg010-test-003",
+        title: "Asteria Investment Office: test task 003",
+        summary:
+          "You are supporting Asteria Investment Office's CIO desk with the Q3 2026 active allocation view refresh.",
+        category: "Finance/portfolio-risk (task_group_010)/test",
+        upstreamTask: "task group `task_group_010`, test task `test_003`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg010-test-004",
+        title: "Asteria Investment Office: test task 004",
+        summary:
+          "You are preparing the risk-board JSON for Asteria Investment Office's PF-MA-CYGNUS portfolio.",
+        category: "Finance/portfolio-risk (task_group_010)/test",
+        upstreamTask: "task group `task_group_010`, test task `test_004`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg010-test-005",
+        title: "Asteria Investment Office: test task 005",
+        summary: "Prepare the compact CIO committee decision JSON for PF-MA-VEGA.",
+        category: "Finance/portfolio-risk (task_group_010)/test",
+        upstreamTask: "task group `task_group_010`, test task `test_005`",
+        cpus: 1,
+        memoryMb: 2048,
       },
     ],
   },
@@ -747,21 +906,75 @@ Report the training score separately; never combine Train and Test into one scor
     title: "GDPEVO-Healthcare",
     description: "GDPEVO Healthcare: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 医疗：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.1",
+    version: "2026.10.26.2",
+    repoDir: "gdpevo-healthcare",
+    ref: "main",
+    source: "GDPevo (converted to Harbor tasks)",
+    upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
+    agentNetwork: "no-network",
+    sharedNetwork: false,
+    verifier: "same container, after the agent",
+    grader: {
+      scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
+    },
+    downloads: "Docker Hub and PyPI",
+    runTimeout: "task",
+    maxTurns: -1,
+    note:
+      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-healthcare/README.md). ` +
+      "Train at `benchmarks/gdpevo-healthcare/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
+      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
+      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
     cases: [
       {
-        id: "CASE-001-healthcare",
-        statement: `# GDPEVO-Healthcare
-
-Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-healthcare/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-healthcare/tasks).
-For training, use all five training questions in one continuous Agent session and container.
-For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
-`,
-        rubric: `# Scoring rubric (max 100 points)
-
-The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
-Report the training score separately; never combine Train and Test into one score.
-`,
+        task: "test_tasks/tg014-test-001",
+        title: "Northstar Payer Operations: test task 001",
+        summary:
+          "Northstar Health Plan needs a UM nurse reviewer disposition for the routine pediatric speech therapy queue item CASE-TE-001.",
+        category: "Healthcare/payer-ops (task_group_014)/test",
+        upstreamTask: "task group `task_group_014`, test task `test_001`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg014-test-002",
+        title: "Northstar Payer Operations: test task 002",
+        summary:
+          "Northstar Health Plan needs a pharmacy appeals coordinator disposition for case APPEAL-TE-002.",
+        category: "Healthcare/payer-ops (task_group_014)/test",
+        upstreamTask: "task group `task_group_014`, test task `test_002`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg014-test-003",
+        title: "Northstar Payer Operations: test task 003",
+        summary:
+          "Northstar Health Plan needs a payment integrity correction packet for outpatient knee arthroscopy claim `CLAIM-TE-003` as of the June 10, 2026 reporting queue. The requester is a payment integrity analyst who needs the claim repriced against the applicable benchmark and returned as structured JSON for correction routing.",
+        category: "Healthcare/payer-ops (task_group_014)/test",
+        upstreamTask: "task group `task_group_014`, test task `test_003`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg014-test-004",
+        title: "Northstar Payer Operations: test task 004",
+        summary:
+          "Northstar Health Plan needs the final peer-to-peer closure summary for cardiac PET MPI authorization case P2P-TE-004.",
+        category: "Healthcare/payer-ops (task_group_014)/test",
+        upstreamTask: "task group `task_group_014`, test task `test_004`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg014-test-005",
+        title: "Northstar Payer Operations: test task 005",
+        summary:
+          "Northstar Health Plan's daily UM-finance huddle needs the mixed operations queue triaged for `QUEUE-TE-005` as of `2026-06-11`.",
+        category: "Healthcare/payer-ops (task_group_014)/test",
+        upstreamTask: "task group `task_group_014`, test task `test_005`",
+        cpus: 1,
+        memoryMb: 2048,
       },
     ],
   },
@@ -770,21 +983,75 @@ Report the training score separately; never combine Train and Test into one scor
     title: "GDPEVO-Legal",
     description: "GDPEVO Legal: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 法务：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.1",
+    version: "2026.10.26.2",
+    repoDir: "gdpevo-legal",
+    ref: "main",
+    source: "GDPevo (converted to Harbor tasks)",
+    upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
+    agentNetwork: "no-network",
+    sharedNetwork: false,
+    verifier: "same container, after the agent",
+    grader: {
+      scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
+    },
+    downloads: "Docker Hub and PyPI",
+    runTimeout: "task",
+    maxTurns: -1,
+    note:
+      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-legal/README.md). ` +
+      "Train at `benchmarks/gdpevo-legal/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
+      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
+      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
     cases: [
       {
-        id: "CASE-001-legal",
-        statement: `# GDPEVO-Legal
-
-Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-legal/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-legal/tasks).
-For training, use all five training questions in one continuous Agent session and container.
-For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
-`,
-        rubric: `# Scoring rubric (max 100 points)
-
-The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
-Report the training score separately; never combine Train and Test into one score.
-`,
+        task: "test_tasks/tg018-test-001",
+        title: "Court Operations Portal: test task 001",
+        summary:
+          "Today is July 14, 2025. You are closing Judge Sutton's Madison County, Arkansas criminal sentencing docket for the clerk's office.",
+        category: "Legal/court-clerk (task_group_018)/test",
+        upstreamTask: "task group `task_group_018`, test task `test_001`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg018-test-002",
+        title: "Court Operations Portal: test task 002",
+        summary:
+          "You are closing out the March 24, 2027 traffic hearing batch for Oregon 27th Judicial District, Clatsop County citations OR27-TR-2201, OR27-TR-2208, and OR27-TR-2219.",
+        category: "Legal/court-clerk (task_group_018)/test",
+        upstreamTask: "task group `task_group_018`, test task `test_002`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg018-test-003",
+        title: "Court Operations Portal: test task 003",
+        summary:
+          "You are the deputy clerk preparing a Gloucester County Circuit Court post-sentencing packet for a DUI appeal.",
+        category: "Legal/court-clerk (task_group_018)/test",
+        upstreamTask: "task group `task_group_018`, test task `test_003`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg018-test-004",
+        title: "Court Operations Portal: test task 004",
+        summary:
+          "You are closing Judge Mercer's Lake County Circuit Court criminal docket from June 18, 2025.",
+        category: "Legal/court-clerk (task_group_018)/test",
+        upstreamTask: "task group `task_group_018`, test task `test_004`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg018-test-005",
+        title: "Court Operations Portal: test task 005",
+        summary:
+          "You are the deputy clerk preparing a Hampton Circuit Court financial and supervision packet for two post-disposition matters:",
+        category: "Legal/court-clerk (task_group_018)/test",
+        upstreamTask: "task group `task_group_018`, test task `test_005`",
+        cpus: 1,
+        memoryMb: 2048,
       },
     ],
   },
@@ -793,21 +1060,74 @@ Report the training score separately; never combine Train and Test into one scor
     title: "GDPEVO-DataAnalysis",
     description: "GDPEVO DataAnalysis: five training questions and five held-out test questions.",
     descriptionZh: "GDPEVO 数据分析：5 道训练题和 5 道独立测试题。",
-    version: "2026.10.26.1",
+    version: "2026.10.26.2",
+    repoDir: "gdpevo-data-analysis",
+    ref: "main",
+    source: "GDPevo (converted to Harbor tasks)",
+    upstream: { url: "https://github.com/Prism-Shadow/GDPevo", license: "Apache-2.0" },
+    agentNetwork: "no-network",
+    sharedNetwork: false,
+    verifier: "same container, after the agent",
+    grader: {
+      scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
+    },
+    downloads: "Docker Hub and PyPI",
+    runTimeout: "task",
+    maxTurns: -1,
+    note:
+      `Follow the [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-data-analysis/README.md). ` +
+      "Train at `benchmarks/gdpevo-data-analysis/tasks/train_tasks` with all five training questions in one continuing Agent Session and container (6 hours). " +
+      "Evaluate all five test cases using the same frozen Agent State, adding `--ak agent_state_tar=<frozen-state.tar.gz>`; each starts a fresh Session and container (4 hours). " +
+      "The Test score is the mean of these five case scores. Report training separately; never combine Train and Test.",
     cases: [
       {
-        id: "CASE-001-data-analysis",
-        statement: `# GDPEVO-DataAnalysis
-
-Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-data-analysis/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-data-analysis/tasks).
-For training, use all five training questions in one continuous Agent session and container.
-For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
-`,
-        rubric: `# Scoring rubric (max 100 points)
-
-The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
-Report the training score separately; never combine Train and Test into one score.
-`,
+        task: "test_tasks/tg024-test-001",
+        title: "Engineering Portfolio Analytics: test task 001",
+        summary:
+          "You are preparing the Q4 2025 Data Reliability portfolio mix review for the Data Platform and Observability teams.",
+        category: "Data analysis/portfolio-analytics (task_group_024)/test",
+        upstreamTask: "task group `task_group_024`, test task `test_001`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg024-test-002",
+        title: "Engineering Portfolio Analytics: test task 002",
+        summary:
+          "You are reviewing reliability and security SLA aging for the engineering portfolio environment.",
+        category: "Data analysis/portfolio-analytics (task_group_024)/test",
+        upstreamTask: "task group `task_group_024`, test task `test_002`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg024-test-003",
+        title: "Engineering Portfolio Analytics: test task 003",
+        summary: "You are preparing a release-readiness assessment for release REL-ZEPHYR-2026-03.",
+        category: "Data analysis/portfolio-analytics (task_group_024)/test",
+        upstreamTask: "task group `task_group_024`, test task `test_003`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg024-test-004",
+        title: "Engineering Portfolio Analytics: test task 004",
+        summary:
+          "You are preparing the Q4 2025 Integrations and Billing portfolio mix review across the Integrations, Billing, API Foundations, and Revenue Platform teams.",
+        category: "Data analysis/portfolio-analytics (task_group_024)/test",
+        upstreamTask: "task group `task_group_024`, test task `test_004`",
+        cpus: 1,
+        memoryMb: 2048,
+      },
+      {
+        task: "test_tasks/tg024-test-005",
+        title: "Engineering Portfolio Analytics: test task 005",
+        summary:
+          "You are running an Edge Delivery SLA triage review for reliability and security work.",
+        category: "Data analysis/portfolio-analytics (task_group_024)/test",
+        upstreamTask: "task group `task_group_024`, test task `test_005`",
+        cpus: 1,
+        memoryMb: 2048,
       },
     ],
   },

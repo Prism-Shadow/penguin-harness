@@ -7,7 +7,7 @@
  *   origin `builtin`, and that the manifest reader takes as written.
  * - Every built-in's manifest is a plain Benchmark manifest: its id, title, description, a date
  *   version, status, runs and origin `builtin`, nothing that marks how its cases run.
- * - Every Sec A–E case is one Harbor task: its directory names the task after `CASE-NNN-` within the
+ * - Every case is one Harbor task: its directory names the task after `CASE-NNN-` within the
  *   API's id rules; its statement links the task's folder in the repository, the repository's
  *   rules for running a task and, where the repository has them, the measured results, and
  *   launches that same task with its caps — the time-budget sentence word for word where the
@@ -17,7 +17,8 @@
  *   rubric is worth 100 points.
  * - The Secs list in A to E order, each description opening by naming the original benchmark;
  *   every built-in's description names the original its cases cite as their source.
- * - Six GDPEVO domains use plain Markdown cases and main-branch references, without sample scores.
+ * - Six GDPEVO domains list their test tasks using main, with separate training instructions
+ *   and no sample scores.
  * - Provisioning again writes nothing; a directory already under an id, built-in or the
  *   example, is left exactly as it is.
  * - A write that fails part-way leaves neither its directory nor staging debris, and the error
@@ -53,9 +54,6 @@ const SECTION_IDS = [
 const GDPEVO_DOMAINS = ["crm", "erp", "finance", "healthcare", "legal", "data-analysis"];
 const GDPEVO_IDS = GDPEVO_DOMAINS.map((domain) => `penguinharness-benchmark-gdpevo-${domain}`);
 const BUILTIN_IDS = [...SECTION_IDS, ...GDPEVO_IDS];
-const HARBOR_BENCHMARKS = BUILTIN_BENCHMARKS.filter(
-  (bench): bench is BuiltinBenchmark => "repoDir" in bench,
-);
 
 let tmpRoot: string;
 let prevHome: string | undefined;
@@ -73,7 +71,7 @@ afterEach(async () => {
 });
 
 const dir = () => benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
-const provision = (builtins?: Readonly<typeof BUILTIN_BENCHMARKS>) =>
+const provision = (builtins?: readonly BuiltinBenchmark[]) =>
   provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID, builtins);
 const byName = (a: string, b: string) => a.localeCompare(b);
 /** `text` as a literal inside a regular expression. */
@@ -183,10 +181,10 @@ describe("built-in Benchmarks", () => {
     }
   });
 
-  it("every Sec A–E case names one Harbor task: its statement links that task's folder and the repository's run rules, and launches that same task with its caps; its rubric is worth 100 points", async () => {
+  it("every case names one Harbor task: its statement links that task's folder and the repository's run rules, and launches that same task with its caps; its rubric is worth 100 points", async () => {
     await provision();
 
-    for (const bench of HARBOR_BENCHMARKS) {
+    for (const bench of BUILTIN_BENCHMARKS) {
       const ids = await caseIds(bench.id);
       expect(ids.length, bench.id).toBeGreaterThan(0);
       for (const caseId of ids) {
@@ -197,9 +195,11 @@ describe("built-in Benchmarks", () => {
         expect(statement, caseId).toMatch(/^# \S/);
 
         // The launch runs this task, from its benchmark's folder in the repository.
-        const launch = /harbor run -p (benchmarks\/([^/\s]+)\/tasks) -i (\S+) /.exec(statement);
-        expect(launch?.[3], caseId).toBe(task);
-        const [, taskFolder, repoDir] = launch!;
+        const launch = /harbor run -p (benchmarks\/[^/\s]+\/tasks(?:\/\S+)?) -i (\S+) /.exec(
+          statement,
+        );
+        expect(launch?.[2], caseId).toBe(task);
+        const [, taskFolder] = launch!;
         expect(statement, caseId).toMatch(
           new RegExp(
             `^- Task: \`${quote(task)}\` in https://\\S+/tree/[^/\\s]+/${quote(`${taskFolder}/${task}`)}$`,
@@ -222,12 +222,12 @@ describe("built-in Benchmarks", () => {
         // The network lines the repository's rules call for, and only those: a no-network
         // benchmark allows its model's host and never joins the shared network, which every
         // task with a public agent phase joins.
-        const offline = repoDir === "deep-swe";
+        const offline = bench.agentNetwork === "no-network";
         expect(statement.includes("--allow-agent-host "), caseId).toBe(offline);
         expect(
           statement.includes("--extra-docker-compose tools/docker/shared-network.yaml"),
           caseId,
-        ).toBe(!offline);
+        ).toBe(bench.sharedNetwork);
 
         const rubric = await readCase(bench.id, caseId, "rubric");
         const points = [...rubric.matchAll(/^- (\d+) pts:/gm)].map((m) => Number(m[1]));
@@ -263,21 +263,32 @@ describe("built-in Benchmarks", () => {
     expect(letters.join("")).toBe("ABCDE");
   });
 
-  it("automatically seeds six GDPEVO domains as Markdown cases using main, without evaluation data", async () => {
+  it("automatically seeds five test cases per GDPEVO domain using main and keeps training separate", async () => {
     await provision();
 
     for (const domain of GDPEVO_DOMAINS) {
       const id = `penguinharness-benchmark-gdpevo-${domain}`;
-      const [caseId] = await caseIds(id);
-      expect(await caseIds(id)).toHaveLength(1);
-      const files = [...(await tree(path.join(dir(), id, caseId!))).keys()]
-        .map((file) => file.split(path.sep).join("/"))
-        .sort();
-      expect(files).toEqual(["rubric/README.md", "statement/README.md"]);
-      expect(await readCase(id, caseId!, "statement")).toContain(
-        `https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-${domain}/README.md`,
-      );
-      expect(await readCase(id, caseId!, "rubric")).toContain("never combine Train and Test");
+      const ids = await caseIds(id);
+      expect(ids).toHaveLength(5);
+      for (const caseId of ids) {
+        expect(caseId).toMatch(/^CASE-\d{3}-tg\d{3}-test-\d{3}$/);
+        const files = [...(await tree(path.join(dir(), id, caseId))).keys()]
+          .map((file) => file.split(path.sep).join("/"))
+          .sort();
+        expect(files).toEqual(["rubric/README.md", "statement/README.md"]);
+        const statement = await readCase(id, caseId, "statement");
+        expect(statement).toContain(
+          `https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-${domain}/README.md`,
+        );
+        expect(statement).toContain(`-p benchmarks/gdpevo-${domain}/tasks/test_tasks -i `);
+        expect(statement).toContain("checkout on branch `main`");
+        expect(statement).toContain("--ak run_timeout=task --ak max_turns=-1");
+        expect(statement).toContain("no turn limit");
+        expect(statement).toContain(`benchmarks/gdpevo-${domain}/tasks/train_tasks`);
+        expect(statement).toContain("one continuing Agent Session and container (6 hours)");
+        expect(statement).toContain("--ak agent_state_tar=<frozen-state.tar.gz>");
+        expect(statement).toContain("never combine Train and Test");
+      }
     }
     expect(await exists(path.join(dir(), "penguinharness-benchmark-gdpevo-train"))).toBe(false);
     expect(await exists(path.join(dir(), "penguinharness-benchmark-gdpevo-test"))).toBe(false);
@@ -315,10 +326,10 @@ describe("built-in Benchmarks", () => {
   });
 
   it("a write that fails part-way leaves neither its directory nor staging debris, and the error reaches the caller", async () => {
-    const [first, second] = HARBOR_BENCHMARKS[0]!.cases;
+    const [first, second] = BUILTIN_BENCHMARKS[0]!.cases;
     // A task name the filesystem refuses, after a case that writes fine.
     const broken: BuiltinBenchmark = {
-      ...HARBOR_BENCHMARKS[0]!,
+      ...BUILTIN_BENCHMARKS[0]!,
       id: "broken-bench",
       cases: [first!, { ...second!, task: "bad\u0000task" }],
     };

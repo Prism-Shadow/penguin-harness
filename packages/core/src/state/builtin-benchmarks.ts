@@ -10,18 +10,18 @@
  * and gives the exact Harbor launch with its caps; and a rubric that is the verifier's reward out
  * of 100.
  *
- * The six GDPEVO domain Benchmarks supply their statements and rubrics directly, linking to the
- * benchmark repository's main branch for current training and test instructions.
+ * The six GDPEVO domain Benchmarks list their test tasks and link to the benchmark repository's
+ * main branch for continuous training instructions. Train and Test scores remain separate.
  *
  * `benchmark_config.toml` is a plain Benchmark manifest (origin `builtin`, the built-in's own
  * version) that marks nothing: how a case is run is its statement's to say, and the
- * agent-evaluation Skill reads it there. Harbor case directories are `CASE-NNN-<task>`, so the Harbor task name is the case id
+ * agent-evaluation Skill reads it there. Case directories are `CASE-NNN-<task>`, so the Harbor task name is the case id
  * without its `CASE-NNN-` prefix. The same files, minus the scoreboard, are the Benchmark's
  * package (scripts/benchmark-packages.mjs writes them for the benchmark repository).
  *
  * They are written when a Project is created (project-benchmarks.ts), and a deleted one stays
  * deleted. The cases themselves are data (builtin-benchmarks-data.ts): cutting a Benchmark down
- * to its final task list is deleting rows there, and the Harbor case numbers follow the rows' order.
+ * to its final task list is deleting rows there, and the case numbers follow the rows' order.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -36,7 +36,7 @@ import {
 
 /** One Harbor task a built-in Benchmark carries as a Case. */
 export interface BuiltinBenchmarkCase {
-  /** Harbor task name: its directory under the task folder, and what `harbor run -i` selects. */
+  /** Harbor task path under the task folder; its basename is what `harbor run -i` selects. */
   task: string;
   /** The statement's first heading, which the case list shows as the case title. */
   title: string;
@@ -46,7 +46,7 @@ export interface BuiltinBenchmarkCase {
   category: string;
   /**
    * Where the task sits upstream, when the source names its tasks by more than the task folder
-   * (such as a task group and split): the statement's Upstream line ends with it.
+   * (GDPevo's task group and split): the statement's Upstream line ends with it.
    */
   upstreamTask?: string;
   cpus: number;
@@ -74,8 +74,8 @@ export interface BuiltinBenchmark {
   /** The benchmark's directory in the benchmark repository, which keeps the source's name: its tasks are `benchmarks/<repoDir>/tasks`. */
   repoDir: string;
   /**
-   * The 40-character commit of the benchmark repository its statements link and its evaluations
-   * fetch: the commit its task set was calibrated and measured at.
+   * The benchmark repository revision its statements link and evaluations fetch: a calibrated
+   * commit for Sec A–E, or the main branch for GDPEVO.
    */
   ref: string;
   /**
@@ -115,25 +115,17 @@ export interface BuiltinBenchmark {
   cases: BuiltinBenchmarkCase[];
 }
 
-/** A built-in with plain Markdown cases, without Harbor-specific metadata. */
-export interface MarkdownBuiltinBenchmark extends Pick<
-  BuiltinBenchmark,
-  "id" | "title" | "description" | "descriptionZh" | "version"
-> {
-  cases: Array<{ id: string; statement: string; rubric: string }>;
-}
-
 /** Case directory name: the 1-based position and the Harbor task name. */
 function builtinCaseId(index: number, task: string): string {
-  return `CASE-${String(index).padStart(3, "0")}-${task}`;
+  return `CASE-${String(index).padStart(3, "0")}-${task.split("/").at(-1)}`;
 }
 
 /** Folder of the Benchmark's tasks inside the benchmark repository. */
-function taskPath(bench: BuiltinBenchmark): string {
-  return `benchmarks/${bench.repoDir}/tasks`;
+function taskPath(bench: BuiltinBenchmark, task = ""): string {
+  return ["benchmarks", bench.repoDir, "tasks", ...task.split("/").slice(0, -1)].join("/");
 }
 
-/** A link into the benchmark repository at the Benchmark's pinned commit: a folder (`tree`) or a file (`blob`). */
+/** A link into the benchmark repository at the Benchmark's revision: a folder (`tree`) or a file (`blob`). */
 function repoLink(bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string): string {
   return `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
 }
@@ -144,7 +136,7 @@ function shellWord(text: string): string {
 }
 
 /** A plain Benchmark manifest, like any other: nothing in it marks how the cases run. */
-function builtinManifest(bench: BuiltinBenchmark | MarkdownBuiltinBenchmark): BenchmarkManifest {
+function builtinManifest(bench: BuiltinBenchmark): BenchmarkManifest {
   return {
     id: bench.id,
     title: bench.title,
@@ -163,10 +155,11 @@ function builtinManifest(bench: BuiltinBenchmark | MarkdownBuiltinBenchmark): Be
  */
 function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string {
   const offline = bench.agentNetwork === "no-network";
+  const task = item.task.split("/").at(-1)!;
   const facts = [
     `- Benchmark: ${bench.title} — ${bench.source} · Category: ${item.category}` +
       (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
-    `- Task: \`${item.task}\` in ${repoLink(bench, "tree", `${taskPath(bench)}/${item.task}`)}`,
+    `- Task: \`${task}\` in ${repoLink(bench, "tree", `${taskPath(bench, item.task)}/${task}`)}`,
     `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
       (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
     `- Container: ${item.cpus} CPU, ${item.memoryMb / 1024} GB RAM, CPU only · Agent network: ` +
@@ -175,7 +168,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
   ];
   const command = [
     'export PYTHONPATH="$PWD/agents"',
-    `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench)} -i ${item.task} \\`,
+    `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench, item.task)} -i ${task} \\`,
     `  -a ${HARBOR_AGENT} -m <provider>/<model_id> \\`,
     "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
     `  --ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} \\`,
@@ -200,13 +193,18 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
       `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
       `following that repository's rules for agents — ${repoLink(bench, "blob", BENCHMARK_RUN_RULES)} — ` +
-      `from the root of a checkout at commit \`${bench.ref}\`:`,
+      `from the root of a checkout ${bench.ref === "main" ? "on branch" : "at commit"} \`${bench.ref}\`:`,
     "",
     "```bash",
     ...command,
     "```",
     "",
-    `Caps: the agent is stopped at ${bench.runTimeout} and after ${bench.maxTurns} turns. Run at ` +
+    (bench.runTimeout === "task"
+      ? "Caps: the solving budget is read from task.toml"
+      : `Caps: the agent is stopped at ${bench.runTimeout}`) +
+      (bench.maxTurns < 0
+        ? "; no turn limit. Run at "
+        : ` and after ${bench.maxTurns} turns. Run at `) +
       "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
       `with Compose v2; uv; network access to ${bench.downloads}, nodejs.org, the npm registry and ` +
       "the model provider; the model under test configured in this machine's PenguinHarness with " +
@@ -246,16 +244,8 @@ function rubric(bench: BuiltinBenchmark): string {
  */
 export async function writeBuiltinBenchmark(
   benchDir: string,
-  bench: BuiltinBenchmark | MarkdownBuiltinBenchmark,
+  bench: BuiltinBenchmark,
 ): Promise<void> {
-  const cases =
-    "repoDir" in bench
-      ? bench.cases.map((item, i) => ({
-          id: builtinCaseId(i + 1, item.task),
-          statement: statement(bench, item),
-          rubric: rubric(bench),
-        }))
-      : bench.cases;
   const results = await Promise.allSettled([
     writeBenchmarkManifest(benchDir, builtinManifest(bench)),
     fs.writeFile(
@@ -263,12 +253,16 @@ export async function writeBuiltinBenchmark(
       stringifyYaml({ evaluations: [] }),
       "utf8",
     ),
-    ...cases.map(async (item) => {
-      const caseDir = path.join(benchDir, item.id);
+    ...bench.cases.map(async (item, i) => {
+      const caseDir = path.join(benchDir, builtinCaseId(i + 1, item.task));
       await fs.mkdir(path.join(caseDir, "statement"), { recursive: true });
       await fs.mkdir(path.join(caseDir, "rubric"), { recursive: true });
-      await fs.writeFile(path.join(caseDir, "statement", "README.md"), item.statement, "utf8");
-      await fs.writeFile(path.join(caseDir, "rubric", "README.md"), item.rubric, "utf8");
+      await fs.writeFile(
+        path.join(caseDir, "statement", "README.md"),
+        statement(bench, item),
+        "utf8",
+      );
+      await fs.writeFile(path.join(caseDir, "rubric", "README.md"), rubric(bench), "utf8");
     }),
   ]);
   const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");

@@ -93,7 +93,7 @@ import type { ModelRef } from "./transcripts";
 // ---------------------------------------------------------------------------------------------
 
 /** One built-in Benchmark, as core's data module holds it. */
-type BuiltinBenchmark = Extract<(typeof BUILTIN_BENCHMARKS)[number], { repoDir: string }>;
+type BuiltinBenchmark = (typeof BUILTIN_BENCHMARKS)[number];
 
 /**
  * What a model is used with, as GET /models reports it: its own values, else its group's
@@ -1178,8 +1178,9 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   // whose statement and rubric are text only. The writer is core's (builtin-benchmarks.ts), kept
   // private there beside the file system, so the two texts are spelled again here, word for word.
   const builtinCaseId = (index: number, task: string) =>
-    `CASE-${String(index).padStart(3, "0")}-${task}`;
-  const taskPath = (bench: BuiltinBenchmark) => `benchmarks/${bench.repoDir}/tasks`;
+    `CASE-${String(index).padStart(3, "0")}-${task.split("/").at(-1)}`;
+  const taskPath = (bench: BuiltinBenchmark, task = "") =>
+    ["benchmarks", bench.repoDir, "tasks", ...task.split("/").slice(0, -1)].join("/");
   const repoLink = (bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string) =>
     `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
   const shellWord = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
@@ -1188,10 +1189,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     item: BuiltinBenchmark["cases"][number],
   ): string => {
     const offline = bench.agentNetwork === "no-network";
+    const task = item.task.split("/").at(-1)!;
     const facts = [
       `- Benchmark: ${bench.title} — ${bench.source} · Category: ${item.category}` +
         (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
-      `- Task: \`${item.task}\` in ${repoLink(bench, "tree", `${taskPath(bench)}/${item.task}`)}`,
+      `- Task: \`${task}\` in ${repoLink(bench, "tree", `${taskPath(bench, item.task)}/${task}`)}`,
       `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
         (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
       `- Container: ${item.cpus} CPU, ${item.memoryMb / 1024} GB RAM, CPU only · Agent network: ` +
@@ -1200,7 +1202,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ];
     const command = [
       'export PYTHONPATH="$PWD/agents"',
-      `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench)} -i ${item.task} \\`,
+      `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench, item.task)} -i ${task} \\`,
       `  -a ${HARBOR_AGENT} -m <provider>/<model_id> \\`,
       "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
       `  --ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} \\`,
@@ -1225,13 +1227,18 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
         `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
         `following that repository's rules for agents — ${repoLink(bench, "blob", BENCHMARK_RUN_RULES)} — ` +
-        `from the root of a checkout at commit \`${bench.ref}\`:`,
+        `from the root of a checkout ${bench.ref === "main" ? "on branch" : "at commit"} \`${bench.ref}\`:`,
       "",
       "```bash",
       ...command,
       "```",
       "",
-      `Caps: the agent is stopped at ${bench.runTimeout} and after ${bench.maxTurns} turns. Run at ` +
+      (bench.runTimeout === "task"
+        ? "Caps: the solving budget is read from task.toml"
+        : `Caps: the agent is stopped at ${bench.runTimeout}`) +
+        (bench.maxTurns < 0
+          ? "; no turn limit. Run at "
+          : ` and after ${bench.maxTurns} turns. Run at `) +
         "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
         `with Compose v2; uv; network access to ${bench.downloads}, nodejs.org, the npm registry and ` +
         "the model provider; the model under test configured in this machine's PenguinHarness with " +
@@ -1330,8 +1337,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       version: bench.version,
       origin: { kind: "builtin" },
       caseCount: bench.cases.length,
-      evaluations:
-        "repoDir" in bench && bench.id === IDS.benchmarks.builtin ? [harborBaseline(bench)] : [],
+      evaluations: bench.id === IDS.benchmarks.builtin ? [harborBaseline(bench)] : [],
       agentIds: bench.id === IDS.benchmarks.builtin ? [IDS.agents.docs] : [],
     })),
   ];
@@ -1346,16 +1352,10 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ],
   };
   for (const bench of BUILTIN_BENCHMARKS) {
-    benchmarkCases[bench.id] =
-      "repoDir" in bench
-        ? bench.cases.map((item, i) => ({
-            id: builtinCaseId(i + 1, item.task),
-            title: item.title,
-          }))
-        : bench.cases.map((item) => ({
-            id: item.id,
-            title: /^#\s+(.+)$/m.exec(item.statement)?.[1]?.trim() ?? item.id,
-          }));
+    benchmarkCases[bench.id] = bench.cases.map((item, i) => ({
+      id: builtinCaseId(i + 1, item.task),
+      title: item.title,
+    }));
   }
   const caseFiles: DemoFixtures["caseFiles"] = {};
   for (const id of [IDS.benchmarks.docs, IDS.benchmarks.draft]) {
@@ -1373,20 +1373,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   }
   // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
   for (const bench of BUILTIN_BENCHMARKS) {
-    const cases =
-      "repoDir" in bench
-        ? bench.cases.map((item, i) => ({
-            id: builtinCaseId(i + 1, item.task),
-            statement: builtinStatement(bench, item),
-            rubric: builtinRubric(bench),
-          }))
-        : bench.cases;
-    for (const item of cases) {
-      caseFiles[`${bench.id}/${item.id}`] = {
-        statement: { "README.md": item.statement },
-        rubric: { "README.md": item.rubric },
+    bench.cases.forEach((item, i) => {
+      caseFiles[`${bench.id}/${builtinCaseId(i + 1, item.task)}`] = {
+        statement: { "README.md": builtinStatement(bench, item) },
+        rubric: { "README.md": builtinRubric(bench) },
       };
-    }
+    });
   }
 
   const machines: MachinesResponse = {
