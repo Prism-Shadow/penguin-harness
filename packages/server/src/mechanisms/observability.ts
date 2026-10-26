@@ -106,6 +106,7 @@ export abstract class UsageStore {
     granularity: UsageSeriesGranularity,
     f?: UsageFilter,
     tiers?: readonly PeakTier[],
+    dayOffsetMinutes?: number,
   ): UsageSeriesModelSums[];
   abstract agentSeries(
     projectId: string,
@@ -145,5 +146,6 @@ export abstract class UsageQueries {
     sessionIds: readonly string[],
     fromTs: string,
     toTs: string,
+    timeZone: string,
   ): Promise<Array<{ date: string; cost: number }>>;
 }
