@@ -20,7 +20,14 @@ import { parse } from "hono/utils/cookie";
 import { AMSP_PREFIX } from "../amsp/cors.js";
 import { HttpError } from "../http/errors.js";
 import { mediaType } from "../http/media-type.js";
-import { acceptsOrigin, forwardedHeaders, publicOriginOf } from "../http/public-origin.js";
+import {
+  NO_PROXY_RULE,
+  acceptsOrigin,
+  forwardedHeaders,
+  publicOriginOf,
+  sameOriginSite,
+} from "../http/public-origin.js";
+import type { OriginRule } from "../http/public-origin.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { SessionVia } from "./service.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -221,17 +228,24 @@ function isAmspKeyedWrite(c: Context): boolean {
  * CSRF defense, first line: a write a browser makes must come from a page of THIS origin. The
  * browser states the origin itself (`Origin` rides on every POST, PUT, PATCH and DELETE, and a
  * page cannot forge it), so this asks the question directly — where the content-type rule
- * below only asks what a cross-site form is able to send. Host AND port: cookies ignore the
- * port, so `SameSite` lets a page served by any other local server ride the session.
+ * below only asks what a cross-site form is able to send. Scheme, host AND port: cookies ignore
+ * the port, so `SameSite` lets a page served by any other local server ride the session, and a
+ * browser without schemeful SameSite hands the https cookie to a page on `http://` of the same
+ * host. A browser that sends `Sec-Fetch-Site` must also say `same-origin` there. The browser
+ * computes it, scheme included, so this refuses such a page even where the desktop's transition
+ * (OriginRule.acceptOwnOrigin) lets its `Origin` through.
  */
 export const sameOriginWrites =
-  (trustProxy = false): MiddlewareHandler =>
+  (rule: OriginRule = NO_PROXY_RULE): MiddlewareHandler =>
   async (c, next) => {
     if (
       WRITE_METHODS.has(c.req.method) &&
       !OWN_ORIGIN_RULE_PATHS.has(c.req.path.replace(/\/+$/, "")) &&
       !isAmspKeyedWrite(c) &&
-      !acceptsOrigin(c.req.header("origin"), c.req.url, forwardedHeaders(c), trustProxy)
+      !(
+        sameOriginSite(c.req.header("sec-fetch-site")) &&
+        acceptsOrigin(c.req.header("origin"), c.req.url, forwardedHeaders(c), rule)
+      )
     ) {
       throw new HttpError(
         403,
@@ -267,11 +281,11 @@ const ALLOWED_WRITE_CONTENT_TYPES = [
  */
 const WORKBENCH_API = /^\/api\/projects\/[^/]+\/agents\/[^/]+\/workbenches\/[^/]+\/api(\/|$)/;
 
-function fromThisOrigin(c: Context, trustProxy: boolean): boolean {
+function fromThisOrigin(c: Context, rule: OriginRule): boolean {
   const header = (name: string) => c.req.header(name);
   const site = header("sec-fetch-site");
   if (site !== undefined) return site === "same-origin";
-  return acceptsOrigin(header("origin"), c.req.url, forwardedHeaders(c), trustProxy);
+  return acceptsOrigin(header("origin"), c.req.url, forwardedHeaders(c), rule);
 }
 
 const crossOrigin = () =>
@@ -282,7 +296,7 @@ const crossOrigin = () =>
   );
 
 export const jsonOnlyWrites =
-  (trustProxy = false): MiddlewareHandler =>
+  (rule: OriginRule = NO_PROXY_RULE): MiddlewareHandler =>
   async (c, next) => {
     // A workbench's handler answers every method, so its GET is whatever the workbench made it
     // — not the read every other route's GET is. A `SameSite=Lax` cookie rides along on a
@@ -290,7 +304,7 @@ export const jsonOnlyWrites =
     // that handler as the signed-in user; the browser's own account of where the request came
     // from is what settles it, on every method rather than only on writes.
     if (!WRITE_METHODS.has(c.req.method) && WORKBENCH_API.test(c.req.path)) {
-      if (!fromThisOrigin(c, trustProxy)) throw crossOrigin();
+      if (!fromThisOrigin(c, rule)) throw crossOrigin();
     }
     if (WRITE_METHODS.has(c.req.method)) {
       const contentType = c.req.header("content-type");
@@ -304,7 +318,7 @@ export const jsonOnlyWrites =
         c.req.header("transfer-encoding") !== undefined;
       // A workbench's own handler takes any body; the origin rule is its whole defense there.
       if (WORKBENCH_API.test(c.req.path)) {
-        if (forgeable && !fromThisOrigin(c, trustProxy)) throw crossOrigin();
+        if (forgeable && !fromThisOrigin(c, rule)) throw crossOrigin();
       } else if (contentType ? forgeable : hasBody) {
         throw new HttpError(
           415,

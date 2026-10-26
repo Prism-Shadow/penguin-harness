@@ -10,11 +10,11 @@
 Every compatibility decision of this batch is recorded here once; the feature entries reference this file instead of re-telling it.
 ## An `Origin` a Penguin Remote hop rewrote to `http://`
 
-A desktop released before [the public origin](2026-10-26-oauth-callback-port.md) trusts no proxy and compares a write's `Origin` with the request's own origin: the connection's scheme, plain HTTP, with its `Host`. So that those desktops take writes through Penguin Remote, a hop of the relay, today the Penguin Remote client on the user's machine, rewrites a browser `Origin` of `https://u<N>.go.penguin.ooo` to `http://u<N>.go.penguin.ooo` when it names the tunnel's own host. A server with the public origin expects `https://`, so it accepts the request's own origin as well, and keeps working behind that rewrite.
+A desktop released before [the public origin](2026-10-26-oauth-callback-port.md) trusts no proxy and compares a write's `Origin` with the request's own origin: the connection's scheme, plain HTTP, with its `Host`. So that those desktops take writes through Penguin Remote, a hop of the relay, today the Penguin Remote client on the user's machine, rewrites a browser `Origin` of `https://u<N>.go.penguin.ooo` to `http://u<N>.go.penguin.ooo` when it names the tunnel's own host. A desktop with the public origin expects `https://`, so it accepts the request's own origin as well, and keeps working behind that rewrite.
 
 ### Scope
 
-The origin check on writes (`/api/*` and `/server/*`), on the API socket and terminal WebSocket handshakes, and on a workbench's handler. Without a trusted proxy the two origins are the same, and nothing changes.
+The origin check on writes (`/api/*` and `/server/*`), on the API socket and terminal WebSocket handshakes, and on a workbench's handler, on the desktop app's embedded server only: the one server Penguin Remote reaches, recognised by desktop mode (`PENGUIN_DESKTOP_TOKEN`). There the request's own origin passes whatever the forwarded headers say. Every other server, behind a trusted proxy or not, accepts the public origin alone ([trust-proxy hardening](2026-10-26-trust-proxy-hardening.md)); without a trusted proxy the two origins are the same anyway.
 
 ### What you need to do
 
@@ -22,7 +22,7 @@ Nothing on a desktop. The Penguin Remote client keeps the rewrite while desktops
 
 ### Lifetime
 
-Before 0.3.0, the Penguin Remote client stops rewriting `Origin` and instead sets `X-Forwarded-Proto: https` and `X-Forwarded-Host: <public host>`, overwriting any value already there. In 0.3.0 the server maintainers delete the acceptance of the request's own origin (`acceptsOrigin` in `packages/server/src/http/public-origin.ts`), and the check accepts the public origin alone.
+Before 0.3.0, the Penguin Remote client stops rewriting `Origin` and instead sets `X-Forwarded-Proto: https` and `X-Forwarded-Host: <public host>`, overwriting any value already there, and keeps the public host as `Host`. In 0.3.0 the server maintainers delete the acceptance of the request's own origin (`OriginRule.acceptOwnOrigin` and its first use in `acceptsOrigin`, `packages/server/src/http/public-origin.ts`, with the `acceptOwnOrigin` option of `packages/server/src/terminal/ws.ts`), and the desktop accepts the public origin alone too.
 
 ## Preferences and drafts already in a browser
 

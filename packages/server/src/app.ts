@@ -58,6 +58,7 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import { originRule } from "./http/public-origin.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
@@ -511,8 +512,8 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
-  app.use("/api/*", sameOriginWrites(deps.config.trustProxy));
-  app.use("/api/*", jsonOnlyWrites(deps.config.trustProxy));
+  app.use("/api/*", sameOriginWrites(originRule(deps.config)));
+  app.use("/api/*", jsonOnlyWrites(originRule(deps.config)));
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel
   // included, which the platform declares and contributes like any other group

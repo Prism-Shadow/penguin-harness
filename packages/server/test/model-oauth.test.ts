@@ -370,15 +370,23 @@ describe("callback origin", () => {
     ).toBe("http://192.168.1.4:7364");
   });
 
-  it("honours the forwarded pair once the deployment trusts it, taking the client-facing hop", () => {
+  it("honours the forwarded pair once the deployment trusts it, one value each", () => {
+    expect(
+      publicOrigin(
+        "http://127.0.0.1:7364/api/x",
+        { proto: "HTTPS", host: "penguin.example" },
+        true,
+      ),
+    ).toBe("https://penguin.example");
+    // A list is what an appending proxy makes of a client's own header: the request's own
+    // scheme and Host stand in, as they do when the headers are absent.
     expect(
       publicOrigin(
         "http://127.0.0.1:7364/api/x",
         { proto: "https, http", host: "penguin.example, inner" },
         true,
       ),
-    ).toBe("https://penguin.example");
-    // Trusted but absent: the request's own URL still answers.
+    ).toBe("http://127.0.0.1:7364");
     expect(publicOrigin("http://127.0.0.1:7364/api/x", {}, true)).toBe("http://127.0.0.1:7364");
   });
 });

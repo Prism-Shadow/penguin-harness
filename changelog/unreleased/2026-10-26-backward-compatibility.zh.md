@@ -10,11 +10,11 @@
 本批次的每项兼容决定都只在这里记录一次；各功能条目引用本文件，不再重复叙述。
 ## Penguin Remote 的一跳改写为 `http://` 的 `Origin`
 
-[公共源](2026-10-26-oauth-callback-port.zh.md)之前发布的桌面端不信任任何代理，拿写请求的 `Origin` 与请求自身的来源比对，即连接的协议（明文 HTTP）加 `Host`。为了让这些桌面端经 Penguin Remote 也能接受写请求，中继的一跳（目前是用户机器上的 Penguin Remote 客户端）在浏览器的 `Origin` 指向隧道自己的主机时，把 `https://u<N>.go.penguin.ooo` 改写为 `http://u<N>.go.penguin.ooo`。有了公共源的服务端期待的是 `https://`，所以同时接受请求自身的来源，在这条改写之后照常工作。
+[公共源](2026-10-26-oauth-callback-port.zh.md)之前发布的桌面端不信任任何代理，拿写请求的 `Origin` 与请求自身的来源比对，即连接的协议（明文 HTTP）加 `Host`。为了让这些桌面端经 Penguin Remote 也能接受写请求，中继的一跳（目前是用户机器上的 Penguin Remote 客户端）在浏览器的 `Origin` 指向隧道自己的主机时，把 `https://u<N>.go.penguin.ooo` 改写为 `http://u<N>.go.penguin.ooo`。有了公共源的桌面端期待的是 `https://`，所以同时接受请求自身的来源，在这条改写之后照常工作。
 
 ### 范围
 
-写请求（`/api/*` 与 `/server/*`）、API socket 与终端 WebSocket 握手、Workbench 处理器上的来源检查。没有受信任的代理时两个来源相同，行为不变。
+写请求（`/api/*` 与 `/server/*`）、API socket 与终端 WebSocket 握手、Workbench 处理器上的来源检查，且只限桌面应用内嵌的服务端：它是 Penguin Remote 唯一会连到的服务端，以桌面模式（`PENGUIN_DESKTOP_TOKEN`）识别。在那里，无论转发头怎么写，请求自身的来源都放行。其他服务端，无论是否受信任代理，都只认公共源（[受信任代理的加固](2026-10-26-trust-proxy-hardening.zh.md)）；没有受信任的代理时，两个来源本来就相同。
 
 ### 你需要做什么
 
@@ -22,7 +22,7 @@
 
 ### 期限
 
-0.3.0 之前，Penguin Remote 客户端不再改写 `Origin`，改为设置 `X-Forwarded-Proto: https` 与 `X-Forwarded-Host: <公网主机名>`，覆盖已有的值。服务端维护者在 0.3.0 删除对请求自身来源的接受（`packages/server/src/http/public-origin.ts` 中的 `acceptsOrigin`），来源检查只认公共源。
+0.3.0 之前，Penguin Remote 客户端不再改写 `Origin`，改为设置 `X-Forwarded-Proto: https` 与 `X-Forwarded-Host: <公网主机名>`，覆盖已有的值，并让 `Host` 保持为公网主机名。服务端维护者在 0.3.0 删除对请求自身来源的接受（`packages/server/src/http/public-origin.ts` 中的 `OriginRule.acceptOwnOrigin` 及 `acceptsOrigin` 里对它的使用，连同 `packages/server/src/terminal/ws.ts` 的 `acceptOwnOrigin` 选项），桌面端也只认公共源。
 
 ## 浏览器里已有的偏好与草稿
 

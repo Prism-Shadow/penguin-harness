@@ -87,7 +87,7 @@ The lifetime is fixed at one hour and cannot be selected by the caller. The stor
 
 `sessionToken` is a raw administrator credential. Penguin Remote's local proxy is responsible for putting it in the named Cookie on a response from the public domain. Clients must not log or cache either the local API token or the returned session token.
 
-The desktop's server trusts the forwarded headers and builds the browser's address from them (see [Security](/security#network-surface)). On every request it forwards, WebSocket upgrades included, the local proxy should therefore overwrite `X-Forwarded-Proto` with `https` and `X-Forwarded-Host` with the public host, each as a single value. For desktops released before that, it also rewrites a browser `Origin` of `https://<public host>` to `http://<public host>`; before 0.3.0 it stops rewriting `Origin` and sends only the two headers, and from 0.3.0 the server no longer accepts the rewritten `http://` Origin.
+The desktop's server trusts the forwarded headers and builds the browser's address from them (see [Security](/security#network-surface)). On every request it forwards, WebSocket upgrades included, the local proxy should therefore keep the public host as `Host` and overwrite `X-Forwarded-Proto` with `https` and `X-Forwarded-Host` with the public host, each as a single value. For desktops released before that, it also rewrites a browser `Origin` of `https://<public host>` to `http://<public host>`, which only a desktop's server accepts; before 0.3.0 it stops rewriting `Origin` and sends only the two headers, and from 0.3.0 the server no longer accepts the rewritten `http://` Origin.
 
 ## Auth and Account
 
@@ -1328,7 +1328,7 @@ Routes that serve the desktop shell, hot updates and the Web App's own module sy
 - `POST /api/desktop/shutdown` does not use the cookie session. It authenticates with the desktop shell's own Bearer token (`401` `unauthorized` otherwise), answers first, and starts the graceful shutdown right after.
 - The update, tray and privacy-settings routes answer only the desktop shell's own window: any other session gets `403` `desktop_shell_only`. When the shell is not listening, they return `503` `shell_unreachable`. `PUT /api/desktop/tray` returns `400` `invalid_show_tray_icon` for a non-boolean `showTrayIcon`, `400` `invalid_locale` for a `locale` other than `zh` or `en`, and `400` `empty_tray_patch` when neither field is given. The PUT only acknowledges the change; read the result back with GET.
 - `POST /api/desktop/privacy-settings` returns `400` `invalid_privacy_pane` for a `pane` other than `files` (Files and Folders) or `fullDisk` (Full Disk Access). The shell opens the pane on macOS only.
-- The `/api/hmr` routes are admin only (`403` `forbidden`). On a non-loopback bind they also require HTTPS and otherwise return `403` `hmr_disabled`. `X-Forwarded-Proto` counts only when `PENGUIN_TRUST_PROXY=1`. A completed upgrade sends `web_updated` to every connected client, so they reload.
+- The `/api/hmr` routes are admin only (`403` `forbidden`). On a non-loopback bind they also require HTTPS and otherwise return `403` `hmr_disabled`. `X-Forwarded-Proto` counts only when `PENGUIN_TRUST_PROXY=1`, and only as the single value `https`. A completed upgrade sends `web_updated` to every connected client, so they reload.
 
 ## Streaming (SSE)
 
@@ -1449,7 +1449,7 @@ The bundled Web App connects in this order:
 
 The API socket is a second transport of the same API, for the bundled Web App (PRFC-0011): one socket per tab, every frame a call to an existing endpoint, every long-lived stream a call that does not end. Nothing above is specific to it — HTTP and the socket enter the same routes, so a call is authorized, validated and answered exactly as its HTTP twin.
 
-It has its own upgrade route: `GET /api/socket` (Upgrade; `apiSocketPath()` in `@prismshadow/penguin-server/api` spells it). The handshake is the terminal stream's — the session cookie and a same-origin `Origin` (or none) — and the socket then serves calls as the user that cookie names, each addressed to the [public origin](/security#network-surface) the socket was opened on, as an HTTP request would be. No terminal is created, listed or touched and no terminal id is involved, so there is nothing to forge. The runtime-owned prefixes (`/api/auth`, `/api/hmr`, `/api/desktop`) answer `421 not_on_socket`; a client makes those over HTTP.
+It has its own upgrade route: `GET /api/socket` (Upgrade; `apiSocketPath()` in `@prismshadow/penguin-server/api` spells it). The handshake is the terminal stream's — the session cookie, a same-origin `Origin` (or none), and `Sec-Fetch-Site: same-origin` when the browser sends that header — and the socket then serves calls as the user that cookie names, each addressed to the [public origin](/security#network-surface) the socket was opened on, as an HTTP request would be. No terminal is created, listed or touched and no terminal id is involved, so there is nothing to forge. The runtime-owned prefixes (`/api/auth`, `/api/hmr`, `/api/desktop`) answer `421 not_on_socket`; a client makes those over HTTP.
 
 Frames are JSON text frames, ids are the client's and unique for the socket's life:
 

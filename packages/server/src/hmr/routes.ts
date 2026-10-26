@@ -53,7 +53,8 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
       // TLS terminated by this process) counts unless the deployment explicitly says a
       // reverse proxy is in front and strips/overwrites the header itself
       // (PENGUIN_TRUST_PROXY=1 / config.trustProxy) — the same opt-in a real proxy setup
-      // requires anyway.
+      // requires anyway. Even then only one value counts: a list (`https, http`, an appending
+      // proxy's) or anything but `http`/`https` leaves the request's own scheme.
       if (new URL(publicOriginOf(c, deps.config.trustProxy)).protocol !== "https:") {
         throw new HttpError(
           403,

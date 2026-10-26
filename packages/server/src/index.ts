@@ -34,6 +34,7 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
+import { originRule } from "./http/public-origin.js";
 import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
 import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
@@ -506,7 +507,7 @@ class PenguinServer {
     const auth = () => this.auth();
     return {
       hmr: this.deps.hmr,
-      trustProxy: this.deps.config.trustProxy,
+      ...originRule(this.deps.config),
       // A getter: the upgrade handler asks per handshake, and gets the current generation's.
       get authService() {
         return auth();

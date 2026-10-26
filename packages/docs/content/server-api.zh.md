@@ -87,7 +87,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 `sessionToken` 是原始管理员凭据。Penguin Remote 的本地代理负责在公网域名的响应中把它写入上述名称的 Cookie。客户端不得记录或缓存本地 API token 以及返回的会话 token。
 
-桌面端的服务端信任转发头，并据此得出浏览器所在的地址（见[安全](/security#网络暴露面)）。因此本地代理转发每个请求时（含 WebSocket 升级），都应当把 `X-Forwarded-Proto` 覆盖为 `https`、把 `X-Forwarded-Host` 覆盖为公网主机名，各只带一个值。对于在此之前发布的桌面端，它还把浏览器的 `Origin` 由 `https://<公网主机名>` 改写为 `http://<公网主机名>`；0.3.0 之前它不再改写 `Origin`，只发送这两个头；从 0.3.0 起，服务端不再接受改写后的 `http://` Origin。
+桌面端的服务端信任转发头，并据此得出浏览器所在的地址（见[安全](/security#网络暴露面)）。因此本地代理转发每个请求时（含 WebSocket 升级），都应当让 `Host` 保持为公网主机名，并把 `X-Forwarded-Proto` 覆盖为 `https`、把 `X-Forwarded-Host` 覆盖为公网主机名，各只带一个值。对于在此之前发布的桌面端，它还把浏览器的 `Origin` 由 `https://<公网主机名>` 改写为 `http://<公网主机名>`，只有桌面端的服务端接受这个改写后的值；0.3.0 之前它不再改写 `Origin`，只发送这两个头；从 0.3.0 起，服务端不再接受改写后的 `http://` Origin。
 
 ## 认证与账号
 
@@ -1328,7 +1328,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 - `POST /api/desktop/shutdown` 不使用 cookie 会话。它用桌面 shell 专有的 Bearer token 认证（否则返回 `401` `unauthorized`），先应答，再立即开始优雅关闭。
 - update、tray 和 privacy-settings 路由只响应桌面 shell 自己的窗口：其他任何会话都会得到 `403` `desktop_shell_only`。shell 未监听时，返回 `503` `shell_unreachable`。`showTrayIcon` 不是布尔值时，`PUT /api/desktop/tray` 返回 `400` `invalid_show_tray_icon`；`locale` 不是 `zh` 或 `en` 时返回 `400` `invalid_locale`；两个字段都未提供时返回 `400` `empty_tray_patch`。PUT 只确认收到更改；请用 GET 读回实际结果。
 - `pane` 不是 `files`（文件与文件夹）或 `fullDisk`（完全磁盘访问权限）时，`POST /api/desktop/privacy-settings` 返回 `400` `invalid_privacy_pane`。shell 只在 macOS 上打开面板。
-- `/api/hmr` 路由仅限管理员（`403` `forbidden`）。绑定在非环回地址上时还要求 HTTPS，否则返回 `403` `hmr_disabled`。只有 `PENGUIN_TRUST_PROXY=1` 时 `X-Forwarded-Proto` 才生效。升级完成后，每个已连接的客户端都会收到 `web_updated` 并重新加载。
+- `/api/hmr` 路由仅限管理员（`403` `forbidden`）。绑定在非环回地址上时还要求 HTTPS，否则返回 `403` `hmr_disabled`。只有 `PENGUIN_TRUST_PROXY=1` 时 `X-Forwarded-Proto` 才生效，而且只认单个值 `https`。升级完成后，每个已连接的客户端都会收到 `web_updated` 并重新加载。
 
 ## 流式传输（SSE）
 
@@ -1449,7 +1449,7 @@ export type ServerEvent =
 
 API 套接字是同一个 API 的第二种传输，供自带的 Web App 使用（PRFC-0011）：一个标签页一条套接字，每一帧是对既有端点的一次调用，每个长期的流是一次不结束的调用。上文没有任何东西是它特有的——HTTP 与套接字进入同一批路由，一次调用的授权、校验与应答与它的 HTTP 孪生完全一致。
 
-它有自己的 upgrade 路由：`GET /api/socket`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath()` 负责拼写）。握手沿用终端流的那一套——会话 Cookie 与同源的 `Origin`（或没有）——之后套接字以该 Cookie 命名的用户身份服务每次调用，每次调用都以建立套接字时的[公共源](/security#网络暴露面)为地址，与 HTTP 请求一致。它不创建、不列出、也不触碰任何终端，不涉及终端 id，因此也没有可伪造的 id。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
+它有自己的 upgrade 路由：`GET /api/socket`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath()` 负责拼写）。握手沿用终端流的那一套——会话 Cookie、同源的 `Origin`（或没有），以及浏览器发送 `Sec-Fetch-Site` 时它的值须为 `same-origin`——之后套接字以该 Cookie 命名的用户身份服务每次调用，每次调用都以建立套接字时的[公共源](/security#网络暴露面)为地址，与 HTTP 请求一致。它不创建、不列出、也不触碰任何终端，不涉及终端 id，因此也没有可伪造的 id。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
 
 帧是 JSON 文本帧，id 由客户端分配、在套接字生命周期内唯一：
 

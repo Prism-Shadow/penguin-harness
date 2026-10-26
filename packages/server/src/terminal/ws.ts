@@ -12,7 +12,8 @@
  *
  * Auth: the session cookie rides along on the upgrade request, so the same credential as
  * the REST API is used, plus an Origin check — a WebSocket handshake is not subject to
- * CORS, so without it any page the user visits could open a shell on this machine.
+ * CORS, so without it any page the user visits could open a shell on this machine. A browser
+ * that sends `Sec-Fetch-Site` must say `same-origin` there too, as on a write.
  */
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import { format } from "node:url";
@@ -20,7 +21,7 @@ import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import { parseCookieHeader, sessionCookies } from "../auth/middleware.js";
-import { acceptsOrigin, publicOrigin } from "../http/public-origin.js";
+import { acceptsOrigin, publicOrigin, sameOriginSite } from "../http/public-origin.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { API_SOCKET_PATH } from "../api/types.js";
@@ -46,7 +47,10 @@ const BACKPRESSURE_POLL_MS = 250;
 export interface TerminalWebSocketDeps {
   /** The booted platform owns the terminals; the runtime asks it per upgrade. */
   hmr: ServerHmrHost;
+  /** PENGUIN_TRUST_PROXY=1 (OriginRule.trustProxy). */
   trustProxy?: boolean;
+  /** Desktop mode: the handshake also takes the request's own origin (OriginRule.acceptOwnOrigin). */
+  acceptOwnOrigin?: boolean;
   authService: Auth;
   log: (line: string) => void;
 }
@@ -77,7 +81,11 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
       };
       const forwarded = { proto: header("x-forwarded-proto"), host: header("x-forwarded-host") };
       const trustProxy = deps.trustProxy ?? false;
-      if (!acceptsOrigin(req.headers.origin, target, forwarded, trustProxy)) {
+      const rule = { trustProxy, acceptOwnOrigin: deps.acceptOwnOrigin ?? false };
+      if (
+        !sameOriginSite(header("sec-fetch-site")) ||
+        !acceptsOrigin(req.headers.origin, target, forwarded, rule)
+      ) {
         return refuse(socket, 403, "Forbidden");
       }
       // The platform gets the public origin with the path and query: the API socket addresses

@@ -13,6 +13,7 @@ import {
 } from "../auth/middleware.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
+import { originRule } from "./public-origin.js";
 import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
@@ -156,11 +157,12 @@ export class HttpModule {
       }
       return capped.mw(c, next);
     });
-    app.use("/api/*", sameOriginWrites(this.config.trustProxy));
+    const origins = originRule(this.config);
+    app.use("/api/*", sameOriginWrites(origins));
     // A machine's API is reached through this server (machines/proxy.ts), with this server's
     // cookie: the same question, asked here because the hop drops the Origin.
-    app.use("/server/*", sameOriginWrites(this.config.trustProxy));
-    app.use("/api/*", jsonOnlyWrites(this.config.trustProxy));
+    app.use("/server/*", sameOriginWrites(origins));
+    app.use("/api/*", jsonOnlyWrites(origins));
 
     // A group's own auth declaration applies to both HTTP and socket calls, independent of order.
     const authenticate = gate;
