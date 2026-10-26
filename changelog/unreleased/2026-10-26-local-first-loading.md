@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `web`, `server`, `ui-gallery`, `docs`, `skills`
+- **PR:** [#1345](https://github.com/Prism-Shadow/penguin-harness/pull/1345)
 
 [中文版](2026-10-26-local-first-loading.zh.md)
 
