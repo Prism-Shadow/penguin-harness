@@ -15,7 +15,8 @@
  * - The whole arrangement switches with the Session and comes back on return; a placeholder
  *   scope's arrangement passes to the first Session chosen (a draft's to the Session it becomes,
  *   never clobbering, and only the draft's own even when the send finishes after the user moved
- *   to another conversation).
+ *   to another conversation); the handoff says whether the user is still on the draft, which is
+ *   what decides whether the route follows to the new Session.
  * - A tab moves to the other dock and activates there (the only tab closes its source dock); a
  *   whole dock moves, merging after the target's tabs; a strip reorders only with a complete,
  *   matching key list.
@@ -200,7 +201,8 @@ describe("conversation scopes (each window manages its own tabs)", () => {
     const born = `scope-born-${scopeSeq}`;
     dock.setDockScope(draft);
     dock.openPanel("workspace", "right");
-    dock.adoptDockScope(draft, born);
+    // Still on the draft: the docks follow, and the caller takes the route along.
+    expect(dock.adoptDockScope(draft, born)).toBe(true);
     expect(dock.currentDockScope()).toBe(born);
     expect(dock.panelDock("workspace")).toBe("right");
     // The next draft starts clean rather than inheriting it.
@@ -227,7 +229,8 @@ describe("conversation scopes (each window manages its own tabs)", () => {
     // The first send is still on its way when the user opens another conversation.
     dock.setDockScope(elsewhere);
     dock.openPanel("memory", "bottom");
-    dock.adoptDockScope(draft, born);
+    // Moved on: no follow, so the caller leaves the route where the user went.
+    expect(dock.adoptDockScope(draft, born)).toBe(false);
     expect(dock.currentDockScope()).toBe(elsewhere);
     expect(dock.panelDock("memory")).toBe("bottom");
     expect(dock.panelDock("builtin-browser")).toBeNull();
@@ -237,6 +240,19 @@ describe("conversation scopes (each window manages its own tabs)", () => {
     // Moved, not copied: the next draft starts clean.
     dock.setDockScope(draft);
     expect(dock.panelDock("builtin-browser")).toBeNull();
+  });
+
+  it("adoptDockScope leaves a new draft page of the same Project alone when the sending one has closed", () => {
+    const draft = `new-again-${scopeSeq}`;
+    const born = `scope-born-again-${scopeSeq}`;
+    dock.setDockScope(draft);
+    dock.openPanel("trace", "bottom");
+    // The user opened a fresh draft (same scope) before the first send returned.
+    expect(dock.adoptDockScope(draft, born, false)).toBe(false);
+    expect(dock.currentDockScope()).toBe(draft);
+    expect(dock.panelDock("trace")).toBe("bottom");
+    dock.setDockScope(born);
+    expect(dock.panelDock("trace")).toBeNull();
   });
 });
 

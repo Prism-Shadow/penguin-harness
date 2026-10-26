@@ -758,6 +758,15 @@ export function DraftView({
   // a racing navigation. A ref rather than state — the composer disables its own send button
   // off its `busy` state, and nothing else on this page renders differently mid-send.
   const sendingRef = useRef(false);
+  // Whether this draft's page is still the one open: the first send's round trips can outlast
+  // it, and a new draft of the same Project would reuse its dock scope.
+  const openRef = useRef(true);
+  useEffect(() => {
+    openRef.current = true;
+    return () => {
+      openRef.current = false;
+    };
+  }, []);
 
   // First message sent: only now is the Session created (Agent / Workspace / Model / approval
   // mode are all locked in together), then the route jumps once sent; returns false on any
@@ -806,9 +815,11 @@ export function DraftView({
         discardDraft();
         // The draft now has an id of its own, so its docks move with it: anything left
         // behind under the draft's scope would surface in the NEXT new conversation
-        // instead (dock-state.ts).
-        adoptDockScope(dockScope, res.sessionId);
-        navigate(`/chat/${res.sessionId}`, { replace: true });
+        // instead (dock-state.ts). Only someone still on this draft is taken to the new
+        // Session; whoever moved to another conversation stays there, and the Session waits
+        // in the sidebar.
+        if (adoptDockScope(dockScope, res.sessionId, openRef.current))
+          navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
       } catch (e) {
         // The Session was created but its first Task was refused or failed (postTask failed):

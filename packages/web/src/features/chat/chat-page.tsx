@@ -1348,11 +1348,12 @@ export function ChatPage() {
       if (respondedId === currentId) return;
       await reloadSessions();
       // Same conversation under a new id: its docks follow, or they are stranded under
-      // an id nothing routes to again — its shells first, so its tabs stay its own.
+      // an id nothing routes to again — its shells first, so its tabs stay its own. Only
+      // someone still on the old id is taken to the new one; whoever moved on stays put.
       await adoptBrowserSession(currentId, respondedId);
       await reownTerminals(currentId, respondedId);
-      adoptDockScope(currentId, respondedId);
-      navigate(`/chat/${respondedId}`, { replace: true });
+      if (adoptDockScope(currentId, respondedId))
+        navigate(`/chat/${respondedId}`, { replace: true });
     },
     [reloadSessions, navigate],
   );

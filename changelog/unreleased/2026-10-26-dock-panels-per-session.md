@@ -27,6 +27,11 @@ previous one's data.
   one handed to the new Session, and the draft's stayed behind for the next new conversation.
   Only the draft's (or the old id's) own arrangement moves now, and the docks on screen are left
   alone.
+- A draft's first send and a self-healed Session id no longer take the user to the new Session
+  when they have moved to another conversation meanwhile (a new draft included); only someone
+  still on the draft or the old id is taken there. The new Session still appears in the sidebar,
+  and its dock arrangement still moves with it, unless a new draft page of the same Project on
+  screen is using it.
 - Requests to panels (a file link, a memory row, a subagent chip) were cleared one render after
   a switch, so the next conversation's panels could act on the previous one's: the Memory panel
   landing on its entry, the agents panel focusing its child. They are now dropped as the route
