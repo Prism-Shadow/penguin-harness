@@ -1,7 +1,7 @@
 ---
 name: penguin-sdk
 description: Use to build a standalone external program with an agent in it, or connect an external program to a Penguin agent. For an app inside PenguinHarness with its own Agent and workbench tab, use agent-initialization and penguin-plugin directly; no SDK/API question applies. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Workbenches — the tabs and pages beside the chat that an Agent keeps for itself inside PenguinHarness — are the penguin-plugin skill's.
-version: 2026.10.25.1
+version: 2026.10.26.1
 ---
 
 # Penguin Harness SDK and Agent API
@@ -431,3 +431,4 @@ The program calls an Agent that lives in PenguinHarness. You write the program; 
 - **Keep the key out of the code.** The program reads it from the `PENGUIN_AGENT_KEY` environment variable. Never write a key into source, a committed file, a log or a reply, and never ask the user to paste one into the chat.
 - **Connection values.** The Base URL and the Agent ID come from the API tab or `penguin agent api status --agent-id <agentId>`. A local server's Base URL is `http://localhost:7364/api/amsp/v1`: `localhost`, not `127.0.0.1`, where a local server serves previews and refuses every API request with `401`. The Agent ID is `<projectId>/<agentId>`.
 - **No data root, no model key.** The server runs the Agent on the Project's models. An SDK recipe keeps its shape on this path: the RAG app, for instance, replaces `createAgent`, `createSession` and `session.run` with an `AgentClient` run, and its persona goes into the Agent's `AGENTS.md`.
+- **Not for workbenches.** A workbench that shows its Agent's answer live still takes neither way: its page follows the Session through the page SDK its server serves (`../sdk/workbench.js`) and its handler through `host.subscribe`, with no key and no API switch (the penguin-plugin skill, *Follow the Agent live*).

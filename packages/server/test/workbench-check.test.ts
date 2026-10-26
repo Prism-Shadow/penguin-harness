@@ -2,16 +2,19 @@
  * Given an Agent created only on disk, the shipped Skill checker registers it and loads its
  * tab using the injected server even when a shell proxy points elsewhere. Missing tabs fail
  * with actionable feedback; missing Session credentials fail without searching for a server.
+ * With --follow it prints a Session's records as a workbench page reads them, through the
+ * signed-in user's door, and stops at the main conversation's task_end, not a child's.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { serve } from "@hono/node-server";
-import { loadAgentState } from "@prismshadow/penguin-core";
-import { createTestApp, type TestApp } from "./helpers.js";
+import { loadAgentState, taskBegin, taskEnd, userText } from "@prismshadow/penguin-core";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
+import { createTestApp, waitFor, type TestApp } from "./helpers.js";
 const exec = promisify(execFile);
 const checker = fileURLToPath(
   new URL(
@@ -91,6 +94,40 @@ describe("Workbench Skill checker", { timeout: 30000 }, () => {
         .prepare("SELECT agent_id FROM agents WHERE project_id = ? AND agent_id = ?")
         .get("default_project", "file_created"),
     ).toMatchObject({ agent_id: "file_created" });
+  });
+  it("--follow prints the records written after it subscribes, until the main task_end", async () => {
+    const sessionId = uniqueSessionId();
+    adoptSession(t.deps, fakeSession(sessionId));
+    const child = spawn(process.execPath, [checker, "--follow", sessionId], {
+      env: {
+        ...process.env,
+        PENGUIN_API_URL: url,
+        PENGUIN_API_TOKEN: t.deps.authService.localApiToken()!,
+        PENGUIN_PROJECT_ID: "",
+      },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+    const exited = new Promise<number | null>((resolve) => child.on("close", resolve));
+    await waitFor(() => stderr.includes("Following"), 10000);
+    const channel = t.deps.channels.get(sessionId);
+    channel.publish(taskBegin());
+    channel.publish({ ...taskEnd(), origin: ["session-child"] });
+    channel.publish(userText("still running"));
+    channel.publish(taskEnd());
+    expect(await exited).toBe(0);
+    const records = stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { payload: { type: string }; origin?: string[] });
+    expect(records.map((r) => [r.payload.type, r.origin ?? null])).toEqual([
+      ["task_begin", null],
+      ["task_end", ["session-child"]],
+      ["text", null],
+      ["task_end", null],
+    ]);
   });
   it("fails without injected credentials without probing another server", async () => {
     await expect(

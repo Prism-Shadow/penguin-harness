@@ -329,6 +329,8 @@ const reader = new SessionReader(transport, sessionId, {
 });
 ```
 
+A workbench page does not build this itself: it imports `../sdk/workbench.js`, which the server serves beside every workbench, and calls `followSession(sessionId)`. That module re-exports this package as built for the server answering, with the right base already set, for a workbench on another machine too. See [Workbench plugins](/skills#workbench-plugins).
+
 > [!WARNING]
 > A key in a page is readable by everyone who loads the page. Use a browser client for a tool only you and your team open, with the key entered at run time, or keep the key on a backend that calls the agent for the page.
 

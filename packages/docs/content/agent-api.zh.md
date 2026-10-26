@@ -329,6 +329,8 @@ const reader = new SessionReader(transport, sessionId, {
 });
 ```
 
+工作台页面不必自己拼装这些：引入服务端为每个工作台提供的 `../sdk/workbench.js`，调用 `followSession(sessionId)` 即可。这个模块重新导出的就是应答该工作台的服务端所带的这个包，基础路径也已设好，工作台在其他机器上时同样适用。见 [Workbench 插件](/skills#workbench-插件)。
+
 > [!WARNING]
 > 写在页面里的密钥，任何打开该页面的人都能读到。浏览器客户端只适合你和团队自用的工具，并在运行时输入密钥；否则就把密钥放在后端，由后端替页面调用 Agent。
 

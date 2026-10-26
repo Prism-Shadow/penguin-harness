@@ -1,0 +1,18 @@
+# Workbenches follow their agent live over AMSP
+
+- **Date:** 2026-10-26
+- **Type:** feature
+- **Scope:** `server`, `web`, `skills`, `docs`
+- **PR:** [#0000](https://github.com/Prism-Shadow/penguin-harness/pull/0000)
+
+[中文版](2026-10-26-workbench-amsp.zh.md)
+
+A workbench can now follow the Sessions it starts while the agent works, reading the same AMSP records the chat view reads, instead of only polling for the finished answer. AMSP itself did not change. Starting turns, saving results and every other side effect stay in the workbench's handler, and reading results with `sessionResult` and polling keep working. The design is PRFC-0023 ([penguin-harness-design #391](https://github.com/Prism-Shadow/penguin-harness-design/pull/391)).
+
+## Details
+
+- Pages: the server answering a workbench serves its page SDK at `GET …/workbenches/:id/sdk/workbench.js` and `…/sdk/amsp.js`. A page under `ui/` imports `../sdk/workbench.js` and gets `followSession`, `abortSession`, `apiBase`, `transport` and everything `@prismshadow/amsp` exports. It reads the signed-in user's door, `GET /api/sessions/:id/amsp`, so a workbench on a machine and one under `pnpm dev` follow the same way. This took the place of the `/workbench-sdk/amsp.js` path the AMSP design had named and nothing served.
+- Server code: `WorkbenchHost.subscribe(sessionId, listener)` hands the listener the Session's records as they are written and returns the function that stops it. Reloading or removing the workbench ends its subscriptions.
+- Look: workbench pages receive the app's theme, accent, fonts and design tokens. `/workbench-ui.css` kept its `--wb-*` variables and `wb-*` classes, now mapped onto the app's tokens, and added the tone colours `--wb-tone-<tone>-{fg,bg,line}` and the `wb-badge` status pill coloured by `data-tone`.
+- PenguinHarness Support: while a question runs, its dialog shows the answer as it is written, a line naming the tool the agent is using and a **Stop** button, and the question shows as answered as soon as its task ends. Existing installs receive it as a plugin update.
+- Skills and docs: the `penguin-plugin` Skill gained a "Follow the Agent live (AMSP)" section, and its `scripts/check.mjs --follow <sessionId>` prints a Session's records as a page receives them, until the main conversation's `task_end`. The `penguin-sdk` Skill says a workbench takes neither of its two ways. The docs cover it under Skills & Plugins › Workbench plugins and Agent API › In a browser.
