@@ -5413,11 +5413,11 @@ export interface MachineEnvOnly {
 
 /**
  * A machine this server keeps connected, while it is being brought back. Attempts back off
- * from 5 s, doubling to a 5-minute cap, and stop after `maxAttempts` failures in a row (about a
- * quarter of an hour) — or after the first, when ssh refused in a way no retry fixes — until a
- * person asks for a Retry (`POST …/machines/:machineId/reconnect`). After three failures in a
- * row the connection check runs on its own, and its answer is what the page shows as the
- * explanation.
+ * from 5 s, doubling, and stop after `maxAttempts` failures in a row — or after the first, when
+ * ssh refused in a way no retry fixes, or when a person asks to stop
+ * (`POST …/machines/:machineId/stop-reconnecting`) — until a person asks for a Retry
+ * (`POST …/machines/:machineId/reconnect`). After three failures in a row the connection check
+ * runs on its own, and its answer is what the page shows as the explanation.
  */
 export interface MachineReconnect {
   /** When this streak began: the moment the machine was found not connected, or the Retry that began it again. */
@@ -5432,9 +5432,11 @@ export interface MachineReconnect {
    * The streak stopped, and nothing runs until a person asks for a Retry, which begins a new
    * one: `attempts` — `maxAttempts` failed in a row; `ssh` — ssh refused in a way retrying
    * cannot fix (a host key unknown or changed, an unusable key file, a key refused, a broken
-   * ssh config), said by `sshReason`.
+   * ssh config), said by `sshReason`; `cancelled` — a person stopped it. An attempt that was
+   * under way when it was stopped runs out: it may still connect the machine, and its failure
+   * is the `lastError`.
    */
-  gaveUp?: "attempts" | "ssh";
+  gaveUp?: "attempts" | "ssh" | "cancelled";
   /** The last attempt's failure in the far side's words; null before the first one fails. */
   lastError: string | null;
   /** Why ssh refused, when the last failure was ssh's own — for the page to say in its language. */

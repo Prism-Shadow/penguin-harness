@@ -8,10 +8,10 @@
  * - starts a conversation in the machine's temporary workspace with Use, opening nothing, while
  *   the machine is connected; otherwise Use waits and the card says why in words, not on a hover —
  *   and while a job moves there, its stepper says what is happening instead;
- * - while the server brings the machine back, says in its middle where that stands — the failed
- *   attempt of how many, the countdown, Retry now — and after the automatic attempts stopped,
- *   where they stopped with Retry; a press asks the page to retry; a refused password says the
- *   fix and offers no Retry;
+ * - while the server brings the machine back, says in its middle where that stands — the attempt
+ *   of how many and the countdown to it, the last failure behind a "?", Retry now and Stop
+ *   retrying — and after the automatic attempts stopped, that they failed, with Retry; each press
+ *   asks the page for its own request; a refused password says the fix and offers nothing;
  * - asks to delete the machine with its trash button, never while a job is on its way;
  * - holds Use and Delete while a request is in flight;
  * - offers Sync config only on a connected machine on this server's build;
@@ -26,9 +26,9 @@
  *   hover; holds every verb while a request is in flight, the sentence unchanged;
  * - explains a failure: the step it stopped at, in the far side's own words, what the server's
  *   connection check found, then Retry — and Force install only when the failure offers it;
- * - says, while the server brings a machine back, where that stands with its Retry (which asks
- *   the page to reconnect; none for a refused password), for how long, the last failure, and what
- *   the automatic check found;
+ * - says, while the server brings a machine back, where that stands with its presses (Retry asks
+ *   the page to reconnect, Stop retrying to stop; none for a refused password), for how long, the
+ *   last failure in full, and what the automatic check found;
  * - folds a job that finished well into one line with its log closed, opens a running job's log,
  *   and copies the whole log from a button beside it;
  * - says in Details, as text, ssh's own words for a machine out of reach and the time of the last
@@ -127,7 +127,7 @@ const comingBack = remote("mini", {
   reconnect: {
     since: new Date(Date.now() - 6 * 60_000).toISOString(),
     attempts: 3,
-    maxAttempts: 8,
+    maxAttempts: 5,
     nextAt: new Date(Date.now() + 80_000).toISOString(),
     lastError: "mini refused. (ssh: connect to host mini port 22: Connection refused)",
     sshReason: "refused",
@@ -146,14 +146,14 @@ const comingBack = remote("mini", {
     },
   },
 });
-/** Kept connected, and the server stopped bringing it back after eight failures in a row. */
+/** Kept connected, and the server stopped bringing it back after five failures in a row. */
 const gaveUp = remote("lab-2", {
   connection: null,
   keepConnected: true,
   reconnect: {
-    since: new Date(Date.now() - 16 * 60_000).toISOString(),
-    attempts: 8,
-    maxAttempts: 8,
+    since: new Date(Date.now() - 4 * 60_000).toISOString(),
+    attempts: 5,
+    maxAttempts: 5,
     nextAt: null,
     gaveUp: "attempts",
     lastError: "lab-2 refused. (ssh: connect to host lab-2 port 22: Connection refused)",
@@ -168,7 +168,7 @@ const locked = remote("vault", {
   reconnect: {
     since: new Date(Date.now() - 2 * 60_000).toISOString(),
     attempts: 1,
-    maxAttempts: 8,
+    maxAttempts: 5,
     nextAt: null,
     lastError:
       "vault rejected the password saved for it. Enter it again in this machine's SSH settings.",
@@ -347,6 +347,7 @@ function card(machine: MachineInfo, job: MachineJob | null = null, busy = false)
     onSyncConfig: vi.fn(),
     onDelete: vi.fn(),
     onRetry: vi.fn(async () => {}),
+    onStopRetry: vi.fn(async () => {}),
   };
   // The card hands its data to the shared view; the view's own band is what a browser shows.
   const view = MachineCard(props) as AnyElement;
@@ -445,25 +446,37 @@ describe("a machine's card", () => {
     }
   });
 
-  it("while the server brings the machine back, says in its middle which attempt failed and when the next runs, and Retry now asks the page to retry", () => {
+  it("while the server brings the machine back, counts down in its middle to the attempt of how many, the last failure behind a ?; Retry now and Stop retrying each ask the page", () => {
     const shown = card(comingBack);
-    expect(shown.retry).toMatchObject({ phase: "waiting", label: S.machines.retry.failed(3, 8) });
+    expect(shown.retry).toMatchObject({
+      phase: "waiting",
+      label: S.machines.retry.trying(4, 5),
+      reason: S.machines.retry.lastFailure(S.machines.check.ssh.refused("mini")),
+    });
     expect(shown.html).toContain("data-retry-countdown");
+    // The failure is the "?"'s, not a line of the card.
+    expect(seenText(readMarkup(shown.html))).not.toContain(S.machines.check.ssh.refused("mini"));
     expect(shown.waits).toBeNull();
     expect(shown.buttons.get("use")!.props.disabled).toBe(true);
     expect(shown.retry?.retry?.label).toBe(S.machines.retry.retryNow);
+    expect(shown.retry?.secondary?.label).toBe(S.machines.retry.stop);
     void shown.retry!.retry!.onClick();
     expect(shown.props.onRetry).toHaveBeenCalledOnce();
-    // A request from the page in flight holds it, as it holds Use and Delete.
-    expect(card(comingBack, null, true).retry?.retry?.disabled).toBe(true);
+    void shown.retry!.secondary!.onClick();
+    expect(shown.props.onStopRetry).toHaveBeenCalledOnce();
+    // A request from the page in flight holds both, as it holds Use and Delete.
+    const held = card(comingBack, null, true).retry;
+    expect(held?.retry?.disabled).toBe(true);
+    expect(held?.secondary?.disabled).toBe(true);
   });
 
-  it("after the automatic attempts stopped, says where with Retry; a refused password says the fix and offers none", () => {
+  it("after the automatic attempts ran out, says they failed with Retry alone; a refused password says the fix and offers nothing", () => {
     expect(card(gaveUp).retry).toMatchObject({
       phase: "gaveUp",
-      label: S.machines.retry.gaveUp(8),
-      reason: S.machines.check.ssh.refused("lab-2"),
+      label: S.machines.retry.gaveUp(5),
+      reason: S.machines.retry.lastFailure(S.machines.check.ssh.refused("lab-2")),
       retry: { label: S.machines.retry.retry },
+      secondary: null,
     });
     const refused = card(locked);
     expect(refused.retry).toMatchObject({
@@ -471,6 +484,7 @@ describe("a machine's card", () => {
       reason: S.machines.check.ssh["password-rejected"]("vault"),
     });
     expect(refused.retry?.retry).toBeNull();
+    expect(refused.retry?.secondary).toBeNull();
     expect(refused.html).not.toContain("data-retry-action");
   });
 
@@ -673,7 +687,7 @@ describe("the Machine dialog", () => {
     const section_ = section(tree, S.machines.detail.reconnect.title);
     expect(section_).not.toBeNull();
     const seen = seenText(readMarkup(html));
-    expect(seen).toContain(S.machines.retry.failed(3, 8));
+    expect(html).toContain('data-retry-phase="waiting"');
     expect(seen).toContain(S.machines.detail.reconnect.lasting("6 minutes"));
     expect(seen).toContain(S.machines.check.ssh.refused("mini"));
     const rows = elementsOf(readMarkup(html)).filter((el) => "data-check" in el.attrs);
@@ -682,7 +696,7 @@ describe("the Machine dialog", () => {
     expect(section(dialog(ready, null).tree, S.machines.detail.reconnect.title)).toBeNull();
   });
 
-  it("offers a Retry under where the streak stands, which asks the page to reconnect; a refused password offers none", () => {
+  it("offers Retry now and Stop retrying beside where the streak stands, each asking the page for its verb; a refused password offers none", () => {
     const retryIn = (machine: MachineInfo) => {
       const shown = dialog(machine, null);
       const found = section(shown.tree, S.machines.detail.reconnect.title)?.find(
@@ -691,9 +705,13 @@ describe("the Machine dialog", () => {
       return { status: found?.props as ui.RetryStatusProps | undefined, onAct: shown.onAct };
     };
     const back = retryIn(comingBack);
-    expect(back.status?.layout).toBe("block");
+    expect(back.status?.size).toBe("sm");
+    // The section says the last failure in full under the row: no "?" for it.
+    expect(back.status?.reason).toBeNull();
     void back.status!.retry!.onClick();
     expect(back.onAct).toHaveBeenCalledWith("reconnect");
+    void back.status!.secondary!.onClick();
+    expect(back.onAct).toHaveBeenCalledWith("stopReconnecting");
     expect(retryIn(gaveUp).status).toMatchObject({
       phase: "gaveUp",
       retry: { label: S.machines.retry.retry },

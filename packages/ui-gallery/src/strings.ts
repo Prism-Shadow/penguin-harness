@@ -534,7 +534,7 @@ export const zh = {
       retry: {
         title: "重试",
         description:
-          "所有重试与重连共用的状态行：正在尝试、等待下一次（倒计时与立即重试）、已放弃（重试）、不值得重试，及其在机器卡片、详情弹窗与对话提示行中的样子。",
+          "所有重连共用的一行状态：正在尝试、等待下一次（倒计时、立即重试与放弃重试）、已失败、已放弃与不值得重试（重试），失败的说明收在带圈问号里，及其在机器卡片、详情弹窗与对话中的样子。",
       },
       attachments: {
         title: "附件",
@@ -1762,7 +1762,7 @@ export const zh = {
         failed: "失败于「重启服务」：30 秒内端口 7364 没有响应。",
         unreachable: "ssh: connect to host 10.0.0.12 port 22: Connection timed out",
         working: "Downloading penguin-harness 0.2.16…",
-        reconnecting: "第 3/8 次重连失败",
+        reconnecting: "第 3/5 次重连失败",
         reconnectStopped: "lab-2 拒绝了连接：那个地址和端口上没有 ssh 服务。",
         behind: "有新版本 0.2.16",
         restartNeeded:
@@ -1816,26 +1816,30 @@ export const zh = {
       noHosts: "ssh 配置里的主机都已在本页。",
     },
     retry: {
-      phases: "四个阶段",
+      phases: "五个阶段",
       phasesHint:
-        "卡片中段的一行：正在尝试（转圈）、等待下一次（沙漏、逐秒倒计时与「立即重试」）、已放弃（暂停、原因与「重试」）、不值得重试（危险色的叉与办法；只有标记带色）。",
-      blocks: "块状",
-      blocksHint: "详情弹窗的分节里：正文字号，原因在句下，按钮在原因下、取表单档尺寸。",
+        "卡片中段的一行：正在尝试（转圈与「放弃重试」）、等待下一次（沙漏，句中逐秒倒计时，「立即重试」与「放弃重试」）、已失败（危险色的叉与「重试」）、已放弃（暂停与「重试」）、不值得重试（危险色的叉与「重试」或不提供）。失败的说明收在句末的带圈问号里，只有标记带色。",
+      blocks: "正文字号",
+      blocksHint: "详情弹窗的分节与对话里：同样一行，正文字号，操作是同一行里的链接样式文字。",
       inCard: "在机器卡片中",
-      inCardHint: "没有任务时占卡片中段；按下按钮即置灰并转圈，下一次尝试开始才恢复。",
+      inCardHint:
+        "没有任务时占卡片中段；栏窄时两个操作一起换到句子下面；按下即置灰，下一次尝试开始才恢复。",
       inChat: "在对话提示行中",
-      inChatHint: "对话的重连提示行用同一对按钮：「立即重试」次级、「放弃」幽灵。",
+      inChatHint:
+        "对话里模型请求的重试提示行用同一对按钮的按钮样式：「立即重试」次级、「放弃」幽灵。",
       narrow: "窄屏",
-      narrowHint: "手机宽度下状态行在名称下方换行，按钮不截断。",
-      trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连…`,
+      narrowHint: "手机宽度下状态行在名称下方换行，操作不截断。",
+      trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连`,
+      waiting: (s: number, n: number, m: number) => `${s} 秒后尝试第 ${n}/${m} 次重连`,
       failed: (n: number, m: number) => `第 ${n}/${m} 次重连失败`,
-      countdown: (s: number) => `${s} 秒后重连`,
-      gaveUp: (m: number) => `${m} 次重连都没连上，已停止自动重试`,
-      stoppedSsh: "已停止自动重连",
+      gaveUp: (m: number) => `${m} 次重连均失败`,
+      cancelled: "已放弃重试",
+      stoppedSsh: "重连失败，需先解决 ssh 问题",
       stoppedPassword: "登录被拒，已停止重连",
+      lastFailure: (message: string) => `上次失败：${message}`,
       retryNow: "立即重试",
+      stop: "放弃重试",
       retry: "重试",
-      lasting: "已持续 16 分钟",
       refused: (alias: string) => `${alias} 拒绝了连接：那个地址和端口上没有 ssh 服务。`,
       hostKey:
         "mini 的主机密钥和记录的不一致，ssh 拒绝连接。如果那台机器重装过，请用 ssh-keygen -R 删掉旧密钥，再连接一次。",

@@ -10,9 +10,10 @@
  * - the stats: how this server reaches the machine, the build it carries, the port its server
  *   answers on, and when it was last checked;
  * - the middle: the job's stepper while a job for the machine is queued or running, else the retry
- *   status while the server brings the machine back or stopped trying (the attempt of how many,
- *   the countdown to the next with Retry now, where it stopped with Retry), else why Use waits (a
- *   hint would never open on the button, which shows its word);
+ *   row while the server brings the machine back or stopped trying (the attempt of how many and
+ *   the countdown to it with Retry now and Stop retrying, or where it stopped with Retry; the last
+ *   failure behind its "?"), else why Use waits (a hint would never open on the button, which
+ *   shows its word);
  * - the buttons: Use starts a new conversation in the machine's temporary workspace, Settings
  *   opens the Machine dialog, Delete takes the machine off this Project after a confirmation, and
  *   Sync config hands a connected machine on this server's build this Project's config now. A
@@ -173,37 +174,44 @@ export function jobProgress(job: MachineJob): MachineStepperProps {
 }
 
 /**
- * The shared retry status for a machine's retry reading: the countdown in the reader's words, and
- * the Retry — "Retry now" while waiting, "Retry" after a stop — where one is on offer. `reason`
- * replaces the reading's own (the dialog says the last failure on a line of its own).
+ * The shared retry row for a machine's retry reading: its sentence and countdown in the reader's
+ * words, and the presses on offer — "Retry now" and "Stop retrying" while the streak runs, "Retry"
+ * after it stopped. `reason` replaces the reading's own (the dialog says the last failure in full
+ * under the row, so its row has no "?").
  */
 export function retryStatus(
   view: RetryReading,
   {
     onRetry,
+    onStop,
     held,
-    layout = "line",
+    size = "xs",
     reason = view.reason,
   }: {
     /** Retries now; a promise that rejects says the server refused, so the press can be made again. */
     onRetry: () => unknown;
-    /** Something else is in flight or moving on the machine: the Retry takes no press. */
+    /** Stops retrying; a promise that rejects lets the press be made again. */
+    onStop: () => unknown;
+    /** Something else is in flight or moving on the machine: the presses are not taken. */
     held: boolean;
-    layout?: "line" | "block";
+    size?: "xs" | "sm";
     reason?: string | null;
   },
 ): RetryStatusProps {
   const r = S.machines.retry;
+  const { offers } = view;
   return {
     phase: view.phase,
     label: view.label,
+    ...(view.countdown === null ? {} : { countdown: view.countdown }),
     reason,
     nextAt: view.nextAtMs,
-    countdown: r.countdown,
-    retry: view.canRetry
-      ? { label: view.phase === "waiting" ? r.retryNow : r.retry, onClick: onRetry, disabled: held }
-      : null,
-    layout,
+    retry:
+      offers.retryNow || offers.retry
+        ? { label: offers.retryNow ? r.retryNow : r.retry, onClick: onRetry, disabled: held }
+        : null,
+    secondary: offers.stop ? { label: r.stop, onClick: onStop, disabled: held } : null,
+    size,
   };
 }
 
@@ -233,6 +241,8 @@ export interface MachineCardProps {
    * which lets the press be made again.
    */
   onRetry: () => Promise<void>;
+  /** Stops the server bringing the machine back. Rejects when the request did not go through. */
+  onStopRetry: () => Promise<void>;
 }
 
 /** The card's stats: how the machine is reached, its build, its server's port, the last check. */
@@ -266,6 +276,7 @@ export function MachineCard({
   onSyncConfig,
   onDelete,
   onRetry,
+  onStopRetry,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
   const moving = !machine.local && jobMoving(job);
@@ -289,7 +300,9 @@ export function MachineCard({
       root={machine.root}
       facts={cardFacts(machine, locale)}
       progress={moving && job !== null ? jobProgress(job) : null}
-      retry={retry === null ? null : retryStatus(retry, { onRetry, held: busy })}
+      retry={
+        retry === null ? null : retryStatus(retry, { onRetry, onStop: onStopRetry, held: busy })
+      }
       waits={useWaitsBecause(machine, job, reading)}
       onOpen={onOpen}
       onBodyClick={cardBodyClick(onOpen)}

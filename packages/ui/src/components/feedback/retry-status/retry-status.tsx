@@ -1,25 +1,33 @@
 /**
- * The one retry experience every surface that retries or reconnects shares: where things stand,
- * when the next try comes, when the automatic tries stopped, and the press that tries again.
+ * The one retry row every surface that reconnects shares: where things stand in one sentence,
+ * the explanation behind a circled "?" after it, and the presses on the same line.
  *
- * Four phases, each one mark and one sentence:
+ * Five phases, each one mark and one sentence:
  *
- * - `trying` — an attempt is running: the spinner, and no button to press (there is nothing to
- *   hurry).
- * - `waiting` — an attempt failed and the next is scheduled: the hourglass in the attention tone,
- *   a countdown to `nextAt` that ticks each second, and the main action ("Retry now").
- * - `gaveUp` — the automatic attempts stopped at their stated limit: the pause mark in the
- *   attention tone, why in muted words, and the main action ("Retry").
+ * - `trying` — an attempt is running ("Reconnecting (attempt 4/5)"): the spinner; the only
+ *   press is the quieter one, to stop retrying.
+ * - `waiting` — the next attempt is scheduled: the hourglass in the attention tone and the
+ *   sentence with the seconds in it ("Reconnecting in 23 s (attempt 4/5)"), ticking each second;
+ *   once the moment has come, the plain sentence. Both presses: retry now, stop retrying.
+ * - `gaveUp` — the automatic attempts reached their stated limit and failed: the cross in the
+ *   danger tone, and the main press to start again.
+ * - `cancelled` — a person stopped retrying: the pause mark, receding; the main press to start
+ *   again.
  * - `blocked` — retrying cannot help until someone acts (a refused key, a broken config, a
- *   refused password): the cross in the danger tone — only the mark is red — and the fix in muted
- *   words; the caller offers a Retry only where a try is harmless.
+ *   refused password): the cross in the danger tone; the caller offers a Retry only where a try
+ *   is harmless.
  *
- * `RetryActions` is the pair of buttons on their own, for a surface that draws its own line (the
- * chat's reconnect notice): the main action bordered, a quieter second one ghost. A press belongs
- * to one attempt: it disables both buttons — the pressed one spinning while the press's promise
- * is pending — until `attemptKey` changes, which is the caller saying a new attempt began; a
- * promise that rejects releases them, since the request did not go through. So a double click is
- * one attempt, and a new attempt is never left with dead buttons from the last one.
+ * Only the mark carries colour. The last failure, or the fix, is never a paragraph under the
+ * sentence: it waits behind the "?" (`InfoPopover`), which opens on hover. The presses are
+ * link-style text at the sentence's size, never boxed: on a wide surface the whole row is one
+ * line; in a narrow column they wrap under the sentence, together.
+ *
+ * `RetryActions` is the pair of presses on their own, for a surface that draws its own line (the
+ * chat's request retry notice, which keeps the bordered `button` look). A press belongs to one
+ * attempt: it disables both — the pressed one spinning while the press's promise is pending —
+ * until `attemptKey` changes, which is the caller saying a new attempt began; a promise that
+ * rejects releases them, since the request did not go through. So a double click is one attempt,
+ * and a new attempt is never left with dead presses from the last one.
  *
  * Props only: every word is the caller's, and so is what a press does.
  */
@@ -29,40 +37,46 @@ import { Button } from "../../actions/button/button";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { Spinner } from "../../icons/spinner/spinner";
+import { InfoPopover } from "../../overlays/info-popover/info-popover";
 import { useCountdown } from "./use-countdown";
 
-export type RetryPhase = "trying" | "waiting" | "gaveUp" | "blocked";
+export type RetryPhase = "trying" | "waiting" | "gaveUp" | "cancelled" | "blocked";
 
 export interface RetryAction {
   label: string;
   /**
-   * The press. A returned promise keeps the button spinning until it settles; one that rejects
-   * releases the press, so a refused request can be tried again.
+   * The press. A returned promise keeps it spinning until it settles; one that rejects releases
+   * the press, so a refused request can be tried again.
    */
   onClick: () => unknown;
-  /** Something else is in flight on this surface: the button takes no presses. */
+  /** Something else is in flight on this surface: the press is not taken. */
   disabled?: boolean;
-  /** This action's own request is in flight, as the caller knows it: the button spins. */
+  /** This action's own request is in flight, as the caller knows it: it spins. */
   busy?: boolean;
 }
 
 export interface RetryActionsProps {
-  /** The main action: "Retry now" while waiting, "Retry" after giving up; null for none. */
+  /** The main action: "Retry now" while waiting, "Retry" after a stop; null for none. */
   retry?: RetryAction | null;
-  /** A quieter second action ("Give up"); null for none. */
+  /** The quieter second action ("Stop retrying", "Give up"); null for none. */
   secondary?: RetryAction | null;
   /**
    * Changes when a new attempt begins (its ordinal, its scheduled time, the phase): a press holds
-   * both buttons until it changes.
+   * both until it changes.
    */
   attemptKey: string | number;
-  /** The button rung: `xs` in a line of text or a card, `sm` beside a dialog's other controls. */
+  /** The type rung: `xs` in a card's line or a chat notice, `sm` at a dialog's body size. */
   size?: "xs" | "sm";
+  /**
+   * `button` (the default): bordered main action, ghost second one — a notice's own controls.
+   * `link`: both as link-style text, for the retry row.
+   */
+  look?: "button" | "link";
 }
 
 type Which = "retry" | "secondary";
 
-/** The press the buttons are holding for: which one, and whether its promise is still pending. */
+/** The press the actions are holding for: which one, and whether its promise is still pending. */
 interface Press {
   which: Which;
   pending: boolean;
@@ -80,11 +94,12 @@ export function RetryActions({
   secondary = null,
   attemptKey,
   size = "xs",
+  look = "button",
 }: RetryActionsProps) {
   const [press, setPress] = useState<Press | null>(null);
   const [seenKey, setSeenKey] = useState(attemptKey);
   // A new attempt began: whatever was pressed belonged to the last one. Adjusted while
-  // rendering, so the first paint of the new attempt already has live buttons.
+  // rendering, so the first paint of the new attempt already has live presses.
   const current = seenKey === attemptKey ? press : null;
   if (seenKey !== attemptKey) {
     setSeenKey(attemptKey);
@@ -109,8 +124,9 @@ export function RetryActions({
   const button = (which: Which, action: RetryAction) => (
     <Button
       key={which}
-      size={size}
-      variant={which === "retry" ? "secondary" : "ghost"}
+      // A link has no box to pad, so its rung is the type alone: `md` is the body's `text-sm`.
+      size={look === "link" ? (size === "sm" ? "md" : "xs") : size}
+      variant={look === "link" ? "link" : which === "retry" ? "secondary" : "ghost"}
       data-retry-action={which}
       disabled={action.disabled === true || current !== null}
       loading={action.busy === true || (current?.which === which && current.pending)}
@@ -127,29 +143,29 @@ export function RetryActions({
   );
 }
 
-export interface RetryStatusProps extends Omit<RetryActionsProps, "attemptKey" | "size"> {
+export interface RetryStatusProps extends Omit<RetryActionsProps, "attemptKey" | "look"> {
   phase: RetryPhase;
-  /** One sentence for where things stand ("Reconnect 3 of 8 failed"). */
-  label: string;
-  /** What stands behind it — the last failure, the fix — in muted words; null for nothing. */
-  reason?: string | null;
-  /** `waiting`: when the next attempt runs, in epoch ms; the line counts down to it. */
-  nextAt?: number | null;
-  /** `waiting`: the countdown's words for n seconds left; without it no seconds are shown. */
-  countdown?: (seconds: number) => string;
   /**
-   * `line` (the default) sizes it for a card's narrow column: small type, the buttons wrapping
-   * after the sentence. `block` sizes it for a dialog section: the sentence at body size, the
-   * reason under it, the buttons under that at the dialog's control rung.
+   * Where things stand, in one sentence ("Reconnecting (attempt 4/5)"). While waiting, what the
+   * row says once the moment has come and the attempt is due.
    */
-  layout?: "line" | "block";
+  label: string;
+  /** `waiting`: the sentence for n seconds left, the seconds in it; without it no seconds show. */
+  countdown?: (seconds: number) => string;
+  /** `waiting`: when the next attempt runs, in epoch ms; the row counts down to it. */
+  nextAt?: number | null;
+  /** The explanation behind the "?" after the sentence — the last failure, the fix; null for none. */
+  reason?: string | null;
+  /** The root is the row itself, so `justify-center` centres it under a centred headline. */
   className?: string;
 }
 
-/** The mark each phase draws: a glyph and the tone its ink takes. The spinner is `trying`'s. */
+/** The mark each phase draws: a glyph and the ink it takes. The spinner is `trying`'s. */
 const MARK: Record<Exclude<RetryPhase, "trying">, { glyph: string; ink: string }> = {
   waiting: { glyph: ICONS.hourglass, ink: "text-tone-attention-fg" },
-  gaveUp: { glyph: ICONS.pause, ink: "text-tone-attention-fg" },
+  gaveUp: { glyph: ICONS.xCircle, ink: "text-tone-danger-fg" },
+  // A person's own stop: settled, so the mark recedes.
+  cancelled: { glyph: ICONS.pause, ink: "text-fg-muted" },
   blocked: { glyph: ICONS.xCircle, ink: "text-tone-danger-fg" },
 };
 
@@ -170,57 +186,61 @@ function PhaseMark({ phase, label }: { phase: RetryPhase; label: string }) {
   );
 }
 
+const TEXT: Record<"xs" | "sm", string> = { xs: "text-xs", sm: "text-sm" };
+
 export function RetryStatus({
   phase,
   label,
-  reason = null,
-  nextAt = null,
   countdown,
+  nextAt = null,
+  reason = null,
   retry = null,
   secondary = null,
-  layout = "line",
+  size = "xs",
   className = "",
 }: RetryStatusProps) {
   const seconds = useCountdown(phase === "waiting" ? nextAt : null);
   const counting = seconds !== null && seconds > 0 && countdown !== undefined;
-  const block = layout === "block";
+  const sentence = counting ? countdown(seconds) : label;
   const hasActions = retry !== null || secondary !== null;
   return (
     <div
       role="status"
       data-retry-phase={phase}
-      className={`min-w-0 ${block ? "text-sm" : "text-xs"} ${className}`}
+      className={`flex min-w-0 items-start ${ICON_GAP.row} ${TEXT[size]} ${className}`}
     >
-      <p className={`flex items-start ${ICON_GAP.row}`}>
-        <PhaseMark phase={phase} label={label} />
-        <span className="min-w-0">
-          <span className="font-medium">{label}</span>
-          {counting && (
-            // The phase's sentence is what is announced; the seconds change too often to be read.
-            // One unit when the line wraps: "39 s" never stands apart from what it counts to.
-            <span
-              aria-live="off"
-              data-retry-countdown=""
-              className="whitespace-nowrap text-fg-muted tabular-nums"
-            >
-              {` · ${countdown(seconds)}`}
-            </span>
+      <PhaseMark phase={phase} label={label} />
+      {/* Beside the mark, so presses that wrap line up under the sentence, not under the mark. */}
+      <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
+        {/* The sentence and its "?" stay together: the sentence wraps inside its own box, never
+            away from the "?". While the seconds tick, the sentence changes too often to be read
+            out; the phase's own changes still are. */}
+        <span
+          aria-live={counting ? "off" : undefined}
+          data-retry-countdown={counting ? "" : undefined}
+          className={`flex min-w-0 items-start ${ICON_GAP.row} font-medium tabular-nums`}
+        >
+          {sentence}
+          {reason !== null && (
+            <InfoPopover label={label} className="h-[1lh]">
+              {reason}
+            </InfoPopover>
           )}
         </span>
-      </p>
-      {reason !== null && (
-        <p className={`${block ? "mt-1" : "mt-0.5"} break-words text-fg-muted`}>{reason}</p>
-      )}
-      {hasActions && (
-        <div className={`${block ? "mt-2" : "mt-1.5"} flex flex-wrap items-center gap-2`}>
-          <RetryActions
-            retry={retry}
-            secondary={secondary}
-            attemptKey={`${phase}:${nextAt ?? ""}`}
-            size={block ? "sm" : "xs"}
-          />
-        </div>
-      )}
+        {hasActions && (
+          // The two keep one line where it has room; a column narrower than both wraps them
+          // rather than letting a label overflow it.
+          <span className="flex min-w-0 flex-wrap items-start gap-x-3">
+            <RetryActions
+              retry={retry}
+              secondary={secondary}
+              attemptKey={`${phase}:${nextAt ?? ""}:${label}`}
+              size={size}
+              look="link"
+            />
+          </span>
+        )}
+      </div>
     </div>
   );
 }

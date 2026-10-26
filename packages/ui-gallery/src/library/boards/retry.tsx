@@ -1,8 +1,8 @@
 /**
- * 重试: the one retry status every retrying surface shares — its four phases as a card's line and
- * as a dialog's block, inside a machine card beside a running one, the chat's reconnect notice
- * holding the same buttons, and the card at phone width. The wait counts down live, and a press
- * holds its buttons until the board starts the next attempt.
+ * 重试: the one retry row every reconnecting surface shares — its five phases at a card's size and
+ * at body size, inside a machine card beside a running one, the chat's request retry notice
+ * holding the same pair as buttons, and the card at phone width. The wait counts down live, and a
+ * press holds its actions until the board starts the next attempt.
  */
 import { useEffect, useState } from "react";
 import {
@@ -21,7 +21,7 @@ const ROOT = "/home/ubuntu/.penguin/data";
 const VERSION = "v0.2.16";
 /** The wait the demo's countdown runs; pressing Retry now starts it over, as a new attempt would. */
 const WAIT_MS = 40_000;
-const MAX = 8;
+const MAX = 5;
 
 /** A wait that counts down and starts over: each press of Retry now is the next attempt. */
 function useDemoWait() {
@@ -46,32 +46,46 @@ export function RetryBoard() {
   const { S } = useGallery();
   const t = S.library.retry;
   const wait = useDemoWait();
-  const phases = (layout: "line" | "block"): RetryStatusProps[] => [
-    { phase: "trying", label: t.trying(4, MAX), layout },
+  const phases = (size: "xs" | "sm"): RetryStatusProps[] => [
+    {
+      phase: "trying",
+      label: t.trying(4, MAX),
+      reason: t.lastFailure(t.refused("mini")),
+      secondary: { label: t.stop, onClick: noop },
+      size,
+    },
     {
       phase: "waiting",
-      label: t.failed(wait.attempt, MAX),
+      label: t.trying(wait.attempt + 1, MAX),
+      countdown: (s) => t.waiting(s, wait.attempt + 1, MAX),
       nextAt: wait.nextAt,
-      countdown: t.countdown,
+      reason: t.lastFailure(t.refused("mini")),
       retry: { label: t.retryNow, onClick: wait.retryNow },
-      layout,
-      ...(layout === "block" ? { reason: t.lasting } : {}),
+      secondary: { label: t.stop, onClick: noop },
+      size,
     },
     {
       phase: "gaveUp",
       label: t.gaveUp(MAX),
-      reason: layout === "block" ? t.lasting : t.refused("edge-1"),
+      reason: t.lastFailure(t.refused("edge-1")),
       retry: { label: t.retry, onClick: noop },
-      layout,
+      size,
+    },
+    {
+      phase: "cancelled",
+      label: t.cancelled,
+      reason: t.lastFailure(t.refused("mini")),
+      retry: { label: t.retry, onClick: noop },
+      size,
     },
     {
       phase: "blocked",
       label: t.stoppedSsh,
       reason: t.hostKey,
       retry: { label: t.retry, onClick: noop },
-      layout,
+      size,
     },
-    { phase: "blocked", label: t.stoppedPassword, reason: t.password, layout },
+    { phase: "blocked", label: t.stoppedPassword, reason: t.password, size },
   ];
   const facts = [
     { glyph: ICONS.terminalPrompt, value: "ssh" },
@@ -90,7 +104,7 @@ export function RetryBoard() {
     remove: { label: t.card.remove, onClick: noop },
     ...over,
   });
-  const lines = phases("line");
+  const lines = phases("xs");
   const cards: MachineCardProps[] = [
     card("gpu-a100", {
       status: { state: "ready", label: t.states.ready },
@@ -126,7 +140,7 @@ export function RetryBoard() {
       </BoardGroup>
       <BoardGroup title={t.blocks} aside={t.blocksHint}>
         <div className="lib-stack" style={{ maxWidth: "36rem" }}>
-          {phases("block").map((props, index) => (
+          {phases("sm").map((props, index) => (
             <RetryStatus key={index} {...props} />
           ))}
         </div>

@@ -206,18 +206,15 @@ type JobFailure = Extract<NonNullable<MachineJob["result"]>, { ok: false }>;
 const KEEP_HELD_MS = 60_000;
 /**
  * The first wait before a machine that was lost is tried again — long enough for a server that
- * restarts itself (a plugin load, a hot update) to be back. Each failed attempt doubles the wait,
- * up to the cap.
+ * restarts itself (a plugin load, a hot update) to be back. Each failed attempt doubles the wait.
  */
 const RECONNECT_FIRST_MS = 5_000;
-const RECONNECT_MAX_MS = 5 * 60_000;
 /**
- * After this many failed attempts in a row the streak stops, and waits for a person's Retry.
- * With the waits above the last one lands about fifteen minutes after the loss: a restart, a
- * reboot or a network blip is back well inside that, and a machine still down after it needs
- * someone to look — a probe every five minutes for a day would only fill its auth log.
+ * After this many failed attempts in a row the streak stops and is said as failed: a restart or
+ * a network blip is back inside it, and a machine still down after it needs someone to look —
+ * who can try again at once with Retry. Probing on and on would only fill its auth log.
  */
-const RECONNECT_MAX_ATTEMPTS = 8;
+const RECONNECT_MAX_ATTEMPTS = 5;
 /**
  * ssh's refusals that another try cannot fix: each needs a person to act (accept a host key,
  * fix a key file or the ssh config, authorize a key) and then press Retry. The first one ends the
@@ -264,6 +261,12 @@ type SyncRefusal = ConnectRefusal | "not-connected";
 export type RetryReconnectAnswer =
   | { ok: true; started: boolean }
   | { ok: false; why: "unknown-machine" | "busy" | "password" | "not-kept" };
+/**
+ * What a person's Stop retrying did — `stopped` false when there was no streak running to stop
+ * (the machine is up, or the streak had already stopped) — or that there is no such machine.
+ */
+export type StopReconnectAnswer =
+  { ok: true; stopped: boolean } | { ok: false; why: "unknown-machine" };
 
 /** A machine this server keeps connected, while it is brought back (MachineReconnect, in epoch ms). */
 interface Reconnecting {
@@ -271,8 +274,16 @@ interface Reconnecting {
   attempts: number;
   /** When the next attempt is due; null while one runs, and once the streak stopped. */
   nextAt: number | null;
-  /** The streak stopped: nothing runs until a person's Retry (retryReconnect) begins another. */
-  gaveUp?: "attempts" | "ssh";
+  /**
+   * An attempt is under way. Kept apart from `nextAt` because a Stop retrying during an attempt
+   * stops the streak while that attempt still runs out (its ssh is not cut off).
+   */
+  running?: true;
+  /**
+   * The streak stopped: nothing runs until a person's Retry (retryReconnect) begins another —
+   * `cancelled` when that person stopped it (stopReconnecting).
+   */
+  gaveUp?: "attempts" | "ssh" | "cancelled";
   lastError: string | null;
   sshReason?: MachineSshFailure;
   diagnosis: MachineDiagnosis | null;
@@ -1683,6 +1694,8 @@ export class MachinesService {
     this.#changed();
     if (state?.waitsForPassword !== true) return;
     delete state.waitsForPassword;
+    // A Stop retrying before the refusal came is answered by this save, which asks for a try.
+    delete state.gaveUp;
     state.nextAt = this.#effects.now().getTime();
     this.#schedule(address, 0);
   }
@@ -1823,7 +1836,8 @@ export class MachinesService {
    * count; one that stopped (`gaveUp`) begins again from the first attempt, its last failure
    * and check still said until the new attempt answers; a machine that is down with no streak
    * yet begins one. An attempt already running, or a machine that is up, is left alone, so a
-   * second press starts no second attempt. Refused before anything runs: while a job is queued
+   * second press starts no second attempt — and an attempt a Stop retrying left running out is
+   * taken as the new streak's first. Refused before anything runs: while a job is queued
    * or running for it (the job decides how it ends), while its stored password is refused (a
    * try could lock the account; saving a password tries again), and for a machine not kept
    * connected (nothing to bring back — Start it).
@@ -1844,10 +1858,16 @@ export class MachinesService {
       const now = this.#effects.now().getTime();
       state.since = now;
       state.attempts = 0;
-      state.nextAt = now;
       delete state.gaveUp;
       // The new streak checks the machine again after its own third failure.
       state.diagnosedFor = null;
+      if (state.running === true) {
+        // The attempt a Stop retrying left running out is this streak's first: a second one
+        // beside it would double the ssh.
+        this.#changed();
+        return { ok: true, started: false };
+      }
+      state.nextAt = now;
     } else if (state.nextAt === null) {
       return { ok: true, started: false };
     } else {
@@ -1855,6 +1875,29 @@ export class MachinesService {
     }
     this.#tryNow(address);
     return { ok: true, started: true };
+  }
+
+  /**
+   * A person's Stop retrying on a machine this server is bringing back: the streak stops at once
+   * (`gaveUp: "cancelled"`), its timer cleared, and nothing runs until a Retry, a Start or this
+   * server's restart. An attempt already under way is not cut off — its ssh runs out: one that
+   * connects leaves the machine connected, one that fails is followed by nothing. A machine that
+   * is up, or a streak that already stopped, is left alone.
+   */
+  stopReconnecting(address: string): StopReconnectAnswer {
+    const machine = this.#allMachines().find((entry) => entry.id === address);
+    if (machine === undefined || machine.local) return { ok: false, why: "unknown-machine" };
+    const state = this.#reconnects.get(address);
+    if (state === undefined || state.gaveUp !== undefined || state.waitsForPassword === true) {
+      return { ok: true, stopped: false };
+    }
+    const timer = this.#retryTimers.get(address);
+    if (timer !== undefined) clearTimeout(timer);
+    this.#retryTimers.delete(address);
+    state.gaveUp = "cancelled";
+    state.nextAt = null;
+    this.#changed();
+    return { ok: true, stopped: true };
   }
 
   async #connect(
@@ -2229,20 +2272,27 @@ export class MachinesService {
   /**
    * One attempt to bring a machine back — the whole connect: what runs there, its server started
    * if it is not, the connection held, the Project config handed over. A failure waits twice as long
-   * as the one before, up to the cap; the third in a row, and any later one that fails
-   * differently, runs the connection check, whose answer the page shows as the explanation. The
-   * streak stops at RECONNECT_MAX_ATTEMPTS failures, or at the first that no retry can fix.
+   * as the one before; the third in a row, and any later one that fails differently, runs the
+   * connection check, whose answer the page shows as the explanation. The streak stops at
+   * RECONNECT_MAX_ATTEMPTS failures, at the first that no retry can fix, or at a person's Stop
+   * retrying — which, coming while this attempt runs, lets it finish and schedules nothing after.
    */
   async #attempt(address: string): Promise<void> {
     const state = this.#reconnects.get(address);
-    if (state === undefined || this.#stopped) return;
+    if (state === undefined || this.#stopped || state.running === true) return;
     state.nextAt = null;
+    state.running = true;
     this.#changed();
     const machine = this.#allMachines().find((entry) => entry.id === address);
-    const result: MachineJob["result"] =
-      machine === undefined
-        ? { ok: false, step: "connect", message: "that host is no longer in the ssh config." }
-        : await this.#connect(machine, () => {}, "check", await this.#readyPlan());
+    let result: MachineJob["result"];
+    try {
+      result =
+        machine === undefined
+          ? { ok: false, step: "connect", message: "that host is no longer in the ssh config." }
+          : await this.#connect(machine, () => {}, "check", await this.#readyPlan());
+    } finally {
+      delete state.running;
+    }
     // Stopped, deleted or disposed meanwhile: what the attempt learned is nobody's now.
     if (this.#stopped || this.#reconnects.get(address) !== state) return;
     if (result !== null && result.ok) {
@@ -2265,6 +2315,11 @@ export class MachinesService {
       this.#changed();
       return;
     }
+    // A person stopped the streak while this attempt ran: its failure is said, nothing follows.
+    if (state.gaveUp === "cancelled") {
+      this.#changed();
+      return;
+    }
     // A host key, a key file, a refused key or the ssh config: the next try would fail the same
     // way until someone fixes it, and the sentence for the reason already says how — no check.
     if (state.sshReason !== undefined && UNRECOVERABLE_SSH.has(state.sshReason)) {
@@ -2279,7 +2334,7 @@ export class MachinesService {
       state.gaveUp = "attempts";
       state.nextAt = null;
     } else {
-      const wait = Math.min(RECONNECT_FIRST_MS * 2 ** state.attempts, RECONNECT_MAX_MS);
+      const wait = RECONNECT_FIRST_MS * 2 ** state.attempts;
       state.nextAt = this.#effects.now().getTime() + wait;
       this.#schedule(address, wait);
     }

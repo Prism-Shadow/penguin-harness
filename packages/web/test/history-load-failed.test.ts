@@ -7,8 +7,10 @@
  *   machine by its alias and says it is reconnecting, with the countdown to the next attempt; the
  *   transport's error — the machine's internal id, the SOCKS port — is not on screen until the
  *   details fold is opened.
- * - Given that, Retry now asks the server to try the machine now, and the status follows the
+ * - Given that, Retry now asks the server to try the machine now, and the row follows the
  *   answer to the attempt running; a refused retry is said and the press can be made again.
+ * - Given that, Stop retrying asks the server to stop, and the row follows the answer to stopped,
+ *   offering Retry.
  * - Given the machine connected again, the history is read again on its own, once.
  * - Given a machine whose server is stopped (nothing is bringing it back), the transcript says
  *   so by its alias, and its Retry reads the history again.
@@ -32,7 +34,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-type Link = "waiting" | "trying" | "connected" | "stopped";
+type Link = "waiting" | "trying" | "cancelled" | "connected" | "stopped";
 
 /** The Project's machine list with `box` in the state the test sets. */
 function machineList(link: Link): MachinesResponse {
@@ -50,8 +52,9 @@ function machineList(link: Link): MachinesResponse {
           reconnect: {
             since: "2026-10-19T23:16:00.000Z",
             attempts: 1,
-            maxAttempts: 8,
+            maxAttempts: 5,
             nextAt: link === "waiting" ? new Date(Date.now() + 40_000).toISOString() : null,
+            ...(link === "cancelled" ? { gaveUp: "cancelled" } : {}),
             lastError: null,
             diagnosis: null,
           },
@@ -91,6 +94,13 @@ function server(initial: Link) {
       if (state.refuseRetry) return apiError(409, "job_running", "A job is running on box.");
       state.link = "trying";
       return json(machineList("trying"));
+    }
+    if (
+      request.method === "POST" &&
+      request.path === `/api/projects/${PROJECT}/machines/ssh%3Abox/stop-reconnecting`
+    ) {
+      state.link = "cancelled";
+      return json(machineList("cancelled"));
     }
     return apiError(404, "not_found");
   });
@@ -190,6 +200,26 @@ describe("a conversation's history that could not be read", () => {
     expect(document.querySelector("[data-retry-phase]")?.getAttribute("data-retry-phase")).toBe(
       "trying",
     );
+  });
+
+  it("asks the server to stop retrying, and follows its answer to stopped, offering Retry", async () => {
+    const s = server("waiting");
+    const modules = await fresh();
+    modules.sessionMachines.rememberSessionMachine(SESSION, MACHINE);
+    await open(modules, vi.fn());
+    const r = modules.en.machines.retry;
+    await waitFor(() => visibleText().includes(r.stop));
+
+    await click(button(r.stop));
+    expect(
+      s.fetch.requests.filter((q) => q.method === "POST" && q.path.endsWith("/stop-reconnecting")),
+    ).toHaveLength(1);
+    await waitFor(() => visibleText().includes(r.cancelled));
+    expect(document.querySelector("[data-retry-phase]")?.getAttribute("data-retry-phase")).toBe(
+      "cancelled",
+    );
+    expect(button(r.retry).disabled).toBe(false);
+    expect(visibleText()).not.toContain(r.stop);
   });
 
   it("reads the history again on its own once the machine is connected, once", async () => {

@@ -331,21 +331,28 @@ export const zh = {
       },
     },
     /**
-     * The retry status while the server brings a machine back (the card's middle, the dialog's
-     * Reconnecting section): `n` is the attempt, `m` the failures in a row that stop the streak.
+     * The retry row while the server brings a machine back (the card's middle, the dialog's
+     * Reconnecting section, a conversation on that machine): `n` is the attempt, `m` the
+     * failures in a row that stop the streak.
      */
     retry: {
-      trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连…`,
-      /** Waiting for the first attempt: nothing has failed yet. */
-      lost: "连接已断开",
+      /** An attempt running — and a wait whose moment has come. */
+      trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连`,
+      /** Waiting for the next attempt, the seconds ticking. */
+      waiting: (seconds: number, n: number, m: number) => `${seconds} 秒后尝试第 ${n}/${m} 次重连`,
+      /** The status pill's reason while it waits after a failure. */
       failed: (n: number, m: number) => `第 ${n}/${m} 次重连失败`,
-      countdown: (seconds: number) => `${seconds} 秒后重连`,
-      gaveUp: (m: number) => `${m} 次重连都没连上，已停止自动重试`,
-      /** ssh refused in a way no retry mends; the reason under it says the fix. */
-      stoppedSsh: "已停止自动重连",
+      gaveUp: (m: number) => `${m} 次重连均失败`,
+      /** A person stopped retrying. */
+      cancelled: "已放弃重试",
+      /** ssh refused in a way no retry mends; the "?" says the fix. */
+      stoppedSsh: "重连失败，需先解决 ssh 问题",
       /** The stored password was refused: no Retry, the fix is in the machine's SSH settings. */
       stoppedPassword: "登录被拒，已停止重连",
+      /** Behind the "?": the last attempt's failure. */
+      lastFailure: (message: string) => `上次失败：${message}`,
       retryNow: "立即重试",
+      stop: "放弃重试",
       retry: "重试",
     },
     /** The confirmations the page asks before a verb that stops or removes something. */

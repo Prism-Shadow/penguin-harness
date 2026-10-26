@@ -529,7 +529,7 @@ export const en: GalleryStrings = {
       retry: {
         title: "Retry",
         description:
-          "The status line every retry and reconnect shares: trying, waiting for the next attempt (a countdown and Retry now), gave up (Retry), not worth retrying — and how it sits in a machine card, a dialog and a chat notice.",
+          "The one status line every reconnect shares: trying, waiting for the next attempt (a countdown, Retry now and Stop retrying), failed, stopped and not worth retrying (Retry), why behind a circled ? — and how it sits in a machine card, a dialog and a conversation.",
       },
       attachments: {
         title: "Attachments",
@@ -1814,7 +1814,7 @@ export const en: GalleryStrings = {
         failed: "Failed at Restart the server: no answer on port 7364 within 30 s.",
         unreachable: "ssh: connect to host 10.0.0.12 port 22: Connection timed out",
         working: "Downloading penguin-harness 0.2.16…",
-        reconnecting: "Reconnect 3 of 8 failed",
+        reconnecting: "Reconnect 3 of 5 failed",
         reconnectStopped:
           "lab-2 refused the connection: no ssh server listens at that address and port.",
         behind: "Version 0.2.16 is available",
@@ -1872,29 +1872,31 @@ export const en: GalleryStrings = {
       noHosts: "Every host in the ssh config is on this page already.",
     },
     retry: {
-      phases: "Four phases",
+      phases: "Five phases",
       phasesHint:
-        "A card's middle line: trying (a spinner), waiting for the next attempt (an hourglass, a countdown by the second and Retry now), gave up (a pause, the reason and Retry), not worth retrying (a cross in the danger tone and the fix; only the mark is coloured).",
-      blocks: "As a block",
+        "A card's middle line: trying (a spinner and Stop retrying), waiting for the next attempt (an hourglass, the countdown in the sentence, Retry now and Stop retrying), failed (a cross in the danger tone and Retry), stopped by a person (a pause and Retry), not worth retrying (a cross in the danger tone, with Retry or none). Why it failed sits behind the circled ? after the sentence; only the mark is coloured.",
+      blocks: "At body size",
       blocksHint:
-        "In a dialog section: body type, the reason under the sentence, the buttons under that on the form rung.",
+        "In a dialog section and in a conversation: the same one line at body size, the actions link-style text in it.",
       inCard: "In a machine card",
       inCardHint:
-        "The card's middle while no job runs; a press disables the buttons and spins until the next attempt begins.",
+        "The card's middle while no job runs; in the narrow column both actions wrap under the sentence together; a press disables them until the next attempt begins.",
       inChat: "In a chat notice",
       inChatHint:
-        "The chat's reconnect notice takes the same pair: Retry now as secondary, Give up as ghost.",
+        "The chat's model request retry notice takes the same pair as buttons: Retry now as secondary, Give up as ghost.",
       narrow: "Narrow",
-      narrowHint: "At phone width the line wraps under the name; the buttons are never cut.",
-      trying: (n: number, m: number) => `Trying to reconnect (${n} of ${m})…`,
+      narrowHint: "At phone width the line wraps under the name; the actions are never cut.",
+      trying: (n: number, m: number) => `Reconnecting (attempt ${n}/${m})`,
+      waiting: (s: number, n: number, m: number) => `Reconnecting in ${s} s (attempt ${n}/${m})`,
       failed: (n: number, m: number) => `Reconnect ${n} of ${m} failed`,
-      countdown: (s: number) => `next try in ${s} s`,
-      gaveUp: (m: number) => `Stopped retrying after ${m} failed reconnects`,
-      stoppedSsh: "Stopped reconnecting",
-      stoppedPassword: "Sign-in refused; stopped reconnecting",
+      gaveUp: (m: number) => `Reconnect failed after ${m} attempts`,
+      cancelled: "Stopped retrying",
+      stoppedSsh: "Reconnect failed; fix ssh first",
+      stoppedPassword: "Sign-in refused; not retrying",
+      lastFailure: (message: string) => `Last failure: ${message}`,
       retryNow: "Retry now",
+      stop: "Stop retrying",
       retry: "Retry",
-      lasting: "For 16 minutes",
       refused: (alias: string) =>
         `${alias} refused the connection: no ssh server listens at that address and port.`,
       hostKey:

@@ -224,6 +224,12 @@ export function MachinesPage() {
       throw new Error("The server did not take the retry.");
     }
   };
+  /** Stop retrying, the same way: a failed request is said, and the press can be made again. */
+  const stopReconnecting = async (machine: MachineInfo): Promise<void> => {
+    if (!(await post((project) => api.stopReconnectingMachine(project, machine.id)))) {
+      throw new Error("The server did not take the stop.");
+    }
+  };
 
   /** What the server turned down, by machine, as the page's notice says it; null for nothing. */
   const refusals = (answer: MachinesUseResponse): string | null => {
@@ -360,6 +366,8 @@ export function MachinesPage() {
         return void configure(machine.alias);
       case "reconnect":
         return retryReconnect(machine);
+      case "stopReconnecting":
+        return stopReconnecting(machine);
       case "uninstall":
         setRemoveData(false);
         return setPendingVerb({ kind: "uninstall", id: machine.id });
@@ -385,6 +393,7 @@ export function MachinesPage() {
       onSyncConfig={() => void post((project) => api.syncMachineConfig(project, machine.id))}
       onDelete={() => setPendingVerb({ kind: "delete", id: machine.id })}
       onRetry={() => retryReconnect(machine)}
+      onStopRetry={() => stopReconnecting(machine)}
     />
   );
 

@@ -231,7 +231,8 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 | POST | `/api/projects/:projectId/machines/stop-using` | 把 `{machines: [id…]}` 从本 Project 删除：断开各自的连接，不再保持连接；那台机器上的程序与数据都保留，ssh 配置里的主机也不变 |
 | POST | `/api/projects/:projectId/machines/:machineId/install` | 开始在这台主机上安装当前构建，并将这台主机分配给本 Project；任务运行期间返回 `202`，响应体相同 |
 | POST | `/api/projects/:projectId/machines/:machineId/connect` | 启动那台机器的服务器，并维持那条唯一的连接，此后保持连接；connect 任务运行期间返回 `202`，响应体相同 |
-| POST | `/api/projects/:projectId/machines/:machineId/reconnect` | 重试连回本服务端保持连接的机器：跳过下次尝试前剩余的等待（次数不变），或在自动重连停止后（连续失败 8 次，或重试也不会好转的 ssh 失败）重新开始一轮；正在尝试或已连接时什么都不做。返回 `200` 与列表，或 `409`（`job_running`、`password_refused`、`not_kept_connected`） |
+| POST | `/api/projects/:projectId/machines/:machineId/reconnect` | 重试连回本服务端保持连接的机器：跳过下次尝试前剩余的等待（次数不变），或在自动重连停止后（连续失败 5 次、重试也不会好转的 ssh 失败，或已放弃重试）重新开始一轮；正在尝试或已连接时什么都不做。返回 `200` 与列表，或 `409`（`job_running`、`password_refused`、`not_kept_connected`） |
+| POST | `/api/projects/:projectId/machines/:machineId/stop-reconnecting` | 放弃重试：停止连回这台机器（`reconnect.gaveUp: "cancelled"`），直到再次重试；正在进行的那次尝试会跑完，之后不再安排。没有可停的不算错误。返回 `200` 与列表 |
 | POST | `/api/projects/:projectId/machines/:machineId/disconnect` | 断开连接、不再保持连接，远端服务器继续运行 |
 | POST | `/api/projects/:projectId/machines/:machineId/restart` | 停止那台机器的服务器，并在同一端口重新启动；返回 `202`，那台机器有任务在运行时返回 `409` |
 | POST | `/api/projects/:projectId/machines/:machineId/stop` | 停止那台机器的服务器，不再保持连接，安装保留；返回 `202` 或 `409` |

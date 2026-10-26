@@ -90,6 +90,7 @@ const reconnecting: Extract<MachineReading, { kind: "reconnecting" }> = {
   attempts: 2,
   maxAttempts: 8,
   nextAt: "2026-10-10T07:51:00.000Z",
+  message: "nas refused the connection.",
 };
 const reconnectStopped: Extract<MachineReading, { kind: "reconnectStopped" }> = {
   kind: "reconnectStopped",
@@ -434,9 +435,9 @@ describe("a machine being brought back", () => {
     expect(reconnectView(machine({ reconnect: lost }), "en", NOW)).toMatchObject({
       status: {
         phase: "waiting",
-        label: S.machines.retry.failed(3, 8),
+        label: S.machines.retry.trying(4, 8),
         nextAtMs: Date.parse(lost.nextAt!),
-        canRetry: true,
+        offers: { retryNow: true, stop: true, retry: false },
       },
       lasting: "10 minutes",
       lastError: lost.lastError,
@@ -445,13 +446,24 @@ describe("a machine being brought back", () => {
     });
     const view = (over: Partial<MachineReconnect>) =>
       reconnectView(machine({ reconnect: { ...lost, nextAt: null, ...over } }), "en", NOW)?.status;
-    // An attempt under way: nothing to press.
-    expect(view({})).toMatchObject({ phase: "trying", canRetry: false });
-    // Stopped: the Retry starts again; a refused password offers none, the fix is its SSH settings.
-    expect(view({ gaveUp: "attempts" })).toMatchObject({ phase: "gaveUp", canRetry: true });
+    // An attempt under way: only Stop retrying.
+    expect(view({})).toMatchObject({
+      phase: "trying",
+      offers: { retryNow: false, stop: true, retry: false },
+    });
+    // Stopped, by its limit or by a person: the Retry starts again; a refused password offers
+    // nothing, the fix is its SSH settings.
+    expect(view({ gaveUp: "attempts" })).toMatchObject({
+      phase: "gaveUp",
+      offers: { retry: true },
+    });
+    expect(view({ gaveUp: "cancelled" })).toMatchObject({
+      phase: "cancelled",
+      offers: { retry: true },
+    });
     expect(view({ waitsForPassword: true, sshReason: "password-rejected" })).toMatchObject({
       phase: "blocked",
-      canRetry: false,
+      offers: { retryNow: false, stop: false, retry: false },
     });
   });
 

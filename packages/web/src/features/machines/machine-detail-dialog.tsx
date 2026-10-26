@@ -14,9 +14,10 @@
  *   attention notices, each of which the person may close, saying what it could not carry:
  *   models keyed from this server's environment, and models the machine would not take.
  * - Reconnecting, while the server brings a machine it keeps connected back or has stopped trying:
- *   the shared retry status (the attempt of how many, the countdown to the next with Retry now,
- *   where it stopped with Retry — none for a refused password), for how long, the last failure —
- *   and what the connection check found, once the server ran it after failures in a row.
+ *   the shared retry row (the attempt of how many and the countdown to it with Retry now and Stop
+ *   retrying, where it stopped with Retry — none for a refused password), for how long, the last
+ *   failure in full — and what the connection check found, once the server ran it after failures
+ *   in a row.
  * - Progress, while a job is queued or running and after one: its own steps one per line, each
  *   marked done, current, failed or still to come; a job that finished well is a single quiet
  *   line. The log is folded underneath, open while the job runs, with a copy button for the whole
@@ -97,10 +98,15 @@ import { retryStatus } from "./machine-card";
 /**
  * Everything the dialog can ask its page to do for the machine. `use` is the whole pipeline —
  * what Enable, Update and a failed job's Retry each run; `replaceProgram` the forced install a
- * failure offers; `reconnect` the Retry while the server brings the machine back.
+ * failure offers; `reconnect` the Retry while the server brings the machine back, and
+ * `stopReconnecting` its Stop retrying.
  */
 export type MachineVerb =
-  Exclude<ToolbarVerb, "enable" | "update"> | "use" | "replaceProgram" | "reconnect";
+  | Exclude<ToolbarVerb, "enable" | "update">
+  | "use"
+  | "replaceProgram"
+  | "reconnect"
+  | "stopReconnecting";
 
 /** The page verb a toolbar button asks for. */
 const VERB_OF: Record<ToolbarVerb, MachineVerb> = {
@@ -566,17 +572,18 @@ export function MachineDetailBody({
 
       {reconnect !== null && (
         <RuledSection level={3} title={d.reconnect.title}>
-          {/* The card's retry status, at the dialog's size: the Retry sits under where the streak
-              stands, and the last failure, in full, under that. A job moving on the machine
-              decides first, so the Retry waits for it. */}
+          {/* The card's retry row, at the dialog's size, with no "?": the last failure is said in
+              full under it. A job moving on the machine decides first, so the presses wait for it. */}
           <RetryStatus
             {...retryStatus(reconnect.status, {
               onRetry: () => onAct("reconnect"),
+              onStop: () => onAct("stopReconnecting"),
               held: busy || (job !== null && (job.queued || job.running)),
-              layout: "block",
-              reason: d.reconnect.lasting(reconnect.lasting),
+              size: "sm",
+              reason: null,
             })}
           />
+          <p className="mt-1 text-xs text-fg-muted">{d.reconnect.lasting(reconnect.lasting)}</p>
           {reconnect.lastError !== null && (
             <p className="mt-2 text-sm break-words whitespace-pre-line">
               <span className="text-fg-muted">{d.reconnect.lastError}</span> {reconnect.lastError}

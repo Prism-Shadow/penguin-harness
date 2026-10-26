@@ -2232,6 +2232,13 @@ export const reconnectMachine = (projectId: string, machineId: string) =>
     { method: "POST", body: {} },
   );
 
+/** Stop retrying: the server stops bringing that machine back until a Retry (200, the list). */
+export const stopReconnectingMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/stop-reconnecting`,
+    { method: "POST", body: {} },
+  );
+
 /** Restarts that machine's server so what runs there matches what is on its disk (202, a job). */
 export const restartMachine = (projectId: string, machineId: string) =>
   apiFetch<MachinesResponse>(

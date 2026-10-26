@@ -270,14 +270,17 @@ export const en: Strings = {
       },
     },
     retry: {
-      trying: (n: number, m: number) => `Trying to reconnect (${n} of ${m})…`,
-      lost: "Connection lost",
+      trying: (n: number, m: number) => `Reconnecting (attempt ${n}/${m})`,
+      waiting: (seconds: number, n: number, m: number) =>
+        `Reconnecting in ${seconds} s (attempt ${n}/${m})`,
       failed: (n: number, m: number) => `Reconnect ${n} of ${m} failed`,
-      countdown: (seconds: number) => `next try in ${seconds} s`,
-      gaveUp: (m: number) => `Stopped retrying after ${m} failed reconnects`,
-      stoppedSsh: "Stopped reconnecting",
-      stoppedPassword: "Sign-in refused; stopped reconnecting",
+      gaveUp: (m: number) => `Reconnect failed after ${m} attempts`,
+      cancelled: "Stopped retrying",
+      stoppedSsh: "Reconnect failed; fix ssh first",
+      stoppedPassword: "Sign-in refused; not retrying",
+      lastFailure: (message: string) => `Last failure: ${message}`,
       retryNow: "Retry now",
+      stop: "Stop retrying",
       retry: "Retry",
     },
     confirm: {

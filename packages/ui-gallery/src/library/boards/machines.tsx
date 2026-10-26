@@ -127,17 +127,19 @@ export function MachinesBoard() {
     card("mini", "reconnecting", {
       retry: {
         phase: "waiting",
-        label: r.failed(3, 8),
+        label: r.trying(4, 5),
         nextAt,
-        countdown: r.countdown,
+        countdown: (s) => r.waiting(s, 4, 5),
+        reason: r.lastFailure(r.refused("mini")),
         retry: { label: r.retryNow, onClick: noop },
+        secondary: { label: r.stop, onClick: noop },
       },
     }),
     card("lab-2", "reconnectStopped", {
       retry: {
         phase: "gaveUp",
-        label: r.gaveUp(8),
-        reason: r.refused("lab-2"),
+        label: r.gaveUp(5),
+        reason: r.lastFailure(r.refused("lab-2")),
         retry: { label: r.retry, onClick: noop },
       },
     }),

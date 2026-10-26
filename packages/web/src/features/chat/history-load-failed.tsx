@@ -3,8 +3,9 @@
  *
  * For a conversation on a machine the server cannot reach right now, the history lives on that
  * machine, so the failure is the machine's state and is said as such: the machine by its alias
- * and where its link stands, the Machines page's own retry status (the countdown, Retry now,
- * where it stopped), and the history loads again on its own once the machine is connected. The
+ * and where its link stands, the Machines page's own retry row (the attempt and the countdown to
+ * it with Retry now and Stop retrying, or where it stopped with Retry, the last failure behind its
+ * "?"), and the history loads again on its own once the machine is connected. The
  * transport's error — the machine's internal id, a SOCKS port — is kept one fold away for
  * whoever has to diagnose it, never the headline.
  *
@@ -73,12 +74,14 @@ export function HistoryLoadFailed({
   }
 
   const entry = away.machine;
-  // The Machines page's Retry: the server tries the connection now. A refusal is said and
-  // rejects, so the press can be made again.
-  const reconnect = async (): Promise<void> => {
+  // The Machines page's presses: the server tries the connection now, or stops trying. A refusal
+  // is said and rejects, so the press can be made again.
+  const ask = async (
+    send: (projectId: string, machineId: string) => ReturnType<typeof api.reconnectMachine>,
+  ): Promise<void> => {
     if (projectId === null || entry === null) return;
     try {
-      machines.accept(await api.reconnectMachine(projectId, entry.id));
+      machines.accept(await send(projectId, entry.id));
     } catch (err) {
       toastError(apiErrorText(err));
       throw err;
@@ -93,8 +96,13 @@ export function HistoryLoadFailed({
         <p className="text-sm text-fg-muted">{S.chat.machineAway.hint}</p>
         {away.retry !== null ? (
           <RetryStatus
-            {...retryStatus(away.retry, { onRetry: reconnect, held: false, layout: "block" })}
-            className="text-left"
+            {...retryStatus(away.retry, {
+              onRetry: () => ask(api.reconnectMachine),
+              onStop: () => ask(api.stopReconnectingMachine),
+              held: false,
+              size: "sm",
+            })}
+            className="justify-center text-left"
           />
         ) : (
           <Button onClick={onRetry}>{S.common.retry}</Button>
