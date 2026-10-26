@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** feature
 - **Scope:** `server`, `web`, `ui`, `ui-gallery`, `docs`
+- **PR:** [#1344](https://github.com/Prism-Shadow/penguin-harness/pull/1344)
 
 [English](2026-10-26-unified-retry-row.md)
 
