@@ -11,9 +11,9 @@ The preferences set on the Settings pages and the Web App's unsent drafts moved 
 
 ## What follows the account
 
-- Preferences: theme, light or dark, accent, text size, fonts, the background image and its display settings, terminal theme, tool short names, the shortcuts launcher switch, interface language, currency, task-completion notifications, the Plugins page's "incompatible plugins only" filter, and the composer's mid-run send mode. Work mode, the personal company-mode switch and keyboard shortcuts were already on the account.
+- Preferences: theme, light or dark, accent, text size, fonts, the background image and its display settings, terminal theme, tool short names, the shortcuts launcher switch, interface language, currency, task-completion notifications, and the composer's mid-run send mode. Work mode, the personal company-mode switch and keyboard shortcuts were already on the account.
 - Drafts: the new-conversation draft and each Session's composer, with their Workspace, Agent, model and approval picks; parked draft conversations; company-mode channel composers; the create-organization form; and A2UI form answers in progress.
-- Kept in the browser: panel and file-tree widths, the dock layout, sidebar and group folds, pins and manual order, where the launcher rests, the Project and Agent last opened, and notices dismissed in that browser.
+- Kept in the browser: panel and file-tree widths, the dock layout, sidebar and group folds, pins and manual order, where the launcher rests, the Plugins page's "incompatible plugins only" filter, the Project and Agent last opened, and notices dismissed in that browser.
 
 ## Details
 

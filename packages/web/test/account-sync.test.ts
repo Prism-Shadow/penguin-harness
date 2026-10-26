@@ -12,8 +12,9 @@
  *   none.
  * - A cached draft key maps to the account's `<kind>:<id>` key and back for every kind, a user
  *   named "session" included; another user's key maps to nothing.
- * - Given a first sign-in, cached drafts the account lacks go up, form answers included; later, a
- *   cached draft the account lacks was sent or deleted elsewhere and is dropped. Either way the account wins a conflict, a pending edit wins over the account, and a
+ * - Given a first sign-in, cached drafts the account lacks go up, except form answers (their keys
+ *   carry no user), which are dropped; later, a cached draft the account lacks was sent or
+ *   deleted elsewhere and is dropped. Either way the account wins a conflict, a pending edit wins over the account, and a
  *   pending removal is not resurrected.
  * - Signed in: an edit is cached at once and reaches the account after the debounce; one whose
  *   send failed stays pending across a reload and wins over the account's older value at the next
@@ -122,9 +123,10 @@ describe("reading the account's drafts into the cache", () => {
       cached,
       { userId: "ann", importing: true, pending: new Set() },
     );
-    expect(plan.upload).toEqual(["chat:p", "a2ui:s-1:b"]);
+    expect(plan.upload).toEqual(["chat:p"]);
     expect(plan.cache).toEqual([
       ["penguin.chatDraft.session.ann.s-1", '{"text":"account reply"}'],
+      ["penguin.a2uiDraft.s-1:b", null],
       ["penguin.chatDraft.session.ann.s-2", '{"text":"from elsewhere"}'],
     ]);
   });

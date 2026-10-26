@@ -800,8 +800,8 @@ export const en: Strings = {
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
-      "Below the switch: the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what the Plugins page lists, and is saved to your account.",
-    /** The page's own switch, above the server's cards: a display preference that follows the account. */
+      "Below the switch: the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what this browser lists on the Plugins page.",
+    /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "Show only incompatible plugins",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",

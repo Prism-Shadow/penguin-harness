@@ -19,7 +19,6 @@ import type { UiPrefs } from "@prismshadow/penguin-server/api";
 import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import { LAUNCHER_HIDDEN_KEY } from "../../features/dock/dock-launcher-state";
 import { STEER_MODE_KEY } from "../../features/chat/steer-mode";
-import { PLUGINS_INCOMPATIBLE_ONLY_KEY } from "../../features/plugins/incompatible-only";
 import { CURRENCY_KEY, TERMINAL_THEME_KEY, TOOL_ALIASES_KEY } from "../../state/theme-prefs";
 import { LANG_KEY } from "../../state/locale-pref";
 import { NOTIFICATIONS_KEY } from "../notification-pref";
@@ -39,7 +38,6 @@ export type SyncedPrefField =
   | "notifications"
   | "launcherHidden"
   | "steerMode"
-  | "pluginsIncompatibleOnly"
   | "background";
 
 export interface SyncedPref {
@@ -104,7 +102,6 @@ export const SYNCED_PREFS: readonly SyncedPref[] = [
   flag("notifications", NOTIFICATIONS_KEY),
   flag("launcherHidden", LAUNCHER_HIDDEN_KEY),
   token("steerMode", STEER_MODE_KEY),
-  flag("pluginsIncompatibleOnly", PLUGINS_INCOMPATIBLE_ONLY_KEY),
   object("background", BACKGROUND_STORAGE_KEYS.settings),
 ];
 

@@ -473,8 +473,6 @@ export interface UiPrefs {
   launcherHidden?: boolean | null;
   /** Mid-run send mode: steer or queue as a follow-up. */
   steerMode?: string | null;
-  /** Whether the Plugins page lists only the plugins this build cannot fully run. */
-  pluginsIncompatibleOnly?: boolean | null;
   /** The custom background's display settings; the image itself is GET|PUT /api/me/background-image. */
   background?: BackgroundSettingsDto | null;
   /**

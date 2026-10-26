@@ -1,6 +1,6 @@
 /**
  * At the top, apart from everything under it, the Plugins page's "incompatible plugins only"
- * switch: a display preference of the account, not server configuration, which commits when
+ * switch: a display preference of this browser, not server configuration, which commits when
  * flipped and which the page, open under this dialog, follows at once (incompatible-only.ts).
  *
  * Under it, ruled off, plugin options (admin only, server-global): one card per settings entry

@@ -25,12 +25,7 @@ const TOKEN_FIELDS = [
 ] as const;
 
 /** Preferences that are a switch. */
-const FLAG_FIELDS = [
-  "toolAliases",
-  "notifications",
-  "launcherHidden",
-  "pluginsIncompatibleOnly",
-] as const;
+const FLAG_FIELDS = ["toolAliases", "notifications", "launcherHidden"] as const;
 
 const TOKEN = /^[A-Za-z0-9_-]{1,64}$/;
 /** A background mode or position: lowercase words ("cover", "center top"). */

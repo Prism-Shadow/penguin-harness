@@ -931,8 +931,8 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响插件页列出哪些插件，随账号保存。",
-    /** The page's own switch, above the server's cards: a display preference that follows the account. */
+      "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+    /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "只显示不兼容的插件",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "留空保持已保存的值不变",

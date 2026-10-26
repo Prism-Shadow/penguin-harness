@@ -361,7 +361,11 @@ mode, machines, workflows:
   `Select`/`OptionMenu` that is the only control in its `PrefRow`. Render the new value at once,
   write only that value, settle on the server's answer; on failure roll back **and**
   `toastError(apiErrorText(e))` (or the row's hint slot) — `useInstantSetting`
-  (`lib/instant-setting.ts`) does all three. A consequential switch asks first through
+  (`lib/instant-setting.ts`) does all three. The one exception is a personal preference that
+  follows the account (`lib/account-sync`: theme, language, background, notifications…): it is
+  written to the browser's cache through `writeCached` and applies at once, and its server write
+  is batched and retried in the background — a failed write is neither rolled back nor toasted.
+  A consequential switch asks first through
   `ConfirmModal` and shows the stored state until confirmed — and joins
   `test/consequential-confirms.test.ts`. A switch that acts on a typed value acts on the *saved*
   value: while that value has unsaved edits (or is missing, where the switch means nothing

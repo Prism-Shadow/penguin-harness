@@ -79,10 +79,9 @@ export interface DraftsPlan {
  *   goes up again.
  * - Otherwise the account wins: its drafts are cached, and a cached draft it does not hold was
  *   sent or deleted elsewhere, so it goes — unless `importing` (this browser has never handed
- *   this account its drafts), in which case it goes up instead, once. Form answers go up with
- *   the rest although their cache keys carry no user: a browser two accounts share has always
- *   shown either account the other's, and dropping them would lose what the one person on most
- *   browsers had half answered.
+ *   this account its drafts), in which case it goes up instead, once. Form answers are left out
+ *   of that: their cache keys carry no user, so on a browser two accounts share the one signing
+ *   in first would be handed the other's answers. They go like any draft the account lacks.
  */
 export function planDrafts(
   account: Readonly<Record<string, unknown>>,
@@ -100,7 +99,7 @@ export function planDrafts(
     } else if (Object.hasOwn(account, key)) {
       const wanted = JSON.stringify(account[key]);
       if (wanted !== text) plan.cache.push([cacheKey, wanted]);
-    } else if (options.importing) {
+    } else if (options.importing && !key.startsWith("a2ui:")) {
       plan.upload.push(key);
     } else {
       plan.cache.push([cacheKey, null]);
