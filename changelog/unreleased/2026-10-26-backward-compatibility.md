@@ -7,9 +7,9 @@
 
 [中文版](2026-10-26-backward-compatibility.zh.md)
 
-## An `Origin` the Penguin Remote relay rewrote to `http://`
+## An `Origin` a Penguin Remote hop rewrote to `http://`
 
-A desktop released before [the public origin](2026-10-26-oauth-callback-port.md) trusts no proxy and compares a write's `Origin` with the request's own origin: the connection's scheme, plain HTTP, with its `Host`. To let those desktops take writes through Penguin Remote, the relay rewrites the browser's `https://u<N>.go.penguin.ooo` Origin to `http://u<N>.go.penguin.ooo`. A server with the public origin expects `https://`, so it accepts the request's own origin as well, and keeps working behind that rewrite.
+A desktop released before [the public origin](2026-10-26-oauth-callback-port.md) trusts no proxy and compares a write's `Origin` with the request's own origin: the connection's scheme, plain HTTP, with its `Host`. So that those desktops take writes through Penguin Remote, a hop of the relay, today the Penguin Remote client on the user's machine, rewrites a browser `Origin` of `https://u<N>.go.penguin.ooo` to `http://u<N>.go.penguin.ooo` when it names the tunnel's own host. A server with the public origin expects `https://`, so it accepts the request's own origin as well, and keeps working behind that rewrite.
 
 ### Scope
 
@@ -17,8 +17,8 @@ The origin check on writes (`/api/*` and `/server/*`), on the API socket and ter
 
 ### What you need to do
 
-Nothing on a desktop. The relay keeps the rewrite while desktops from before this change connect through it.
+Nothing on a desktop. The Penguin Remote client keeps the rewrite while desktops from before this change connect through the relay.
 
 ### Lifetime
 
-The relay's maintainers drop the rewrite once every desktop that connects through Penguin Remote runs a release with this change. In the release after that, the server maintainers remove the acceptance of the request's own origin (`acceptsOrigin` in `packages/server/src/http/public-origin.ts`), and the check accepts the public origin alone.
+Once every desktop behind the relay runs a release with this change, the Penguin Remote client stops rewriting `Origin` and only sets `X-Forwarded-Proto: https` and `X-Forwarded-Host: <public host>`, overwriting any value already there. The server maintainers then remove the acceptance of the request's own origin (`acceptsOrigin` in `packages/server/src/http/public-origin.ts`), and the check accepts the public origin alone. The release for that removal is to be decided by the owner (proposed: 0.3.0).

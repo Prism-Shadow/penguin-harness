@@ -87,6 +87,8 @@ The lifetime is fixed at one hour and cannot be selected by the caller. The stor
 
 `sessionToken` is a raw administrator credential. Penguin Remote's local proxy is responsible for putting it in the named Cookie on a response from the public domain. Clients must not log or cache either the local API token or the returned session token.
 
+The desktop's server trusts the forwarded headers and builds the browser's address from them (see [Security](/security#network-surface)). On every request it forwards, WebSocket upgrades included, the local proxy should therefore overwrite `X-Forwarded-Proto` with `https` and `X-Forwarded-Host` with the public host, each as a single value. For desktops released before that, it also rewrites a browser `Origin` of `https://<public host>` to `http://<public host>`; once every desktop behind the relay builds the address itself, it stops rewriting `Origin` and sends only the two headers.
+
 ## Auth and Account
 
 Sign-in, sign-out, account claiming, and the current user's password, profile, preferences and archived chats.

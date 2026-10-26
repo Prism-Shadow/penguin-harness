@@ -84,12 +84,13 @@ export function isOwnOrigin(origin: string | undefined, requestUrl: URL): boolea
  * origin, or the request's own origin — the connection's scheme with its `Host`.
  *
  * The second is a transition. A desktop server from before this rule trusts no proxy and compares
- * `Origin` with the request's own origin, so the Penguin Remote relay, which terminates TLS in
- * front of it, rewrites the browser's `https://` Origin to `http://` for writes to pass at all.
- * Accepting the request's own origin keeps a server with the rule working behind that rewrite.
- * With no trusted proxy the two origins are the same; behind one, the extra origin names the very
- * host the request was addressed to, only under the connection's own scheme. The extra origin is
- * accepted until the relay drops the rewrite.
+ * `Origin` with the request's own origin, so a hop of the Penguin Remote relay — today its client,
+ * the proxy on the user's machine — rewrites the browser's `https://` Origin to `http://` when it
+ * names the tunnel's own host, or no write would pass. Accepting the request's own origin keeps a
+ * server with the rule working behind that rewrite. With no trusted proxy the two origins are the
+ * same; behind one, the extra origin names the very host the request was addressed to, only under
+ * the connection's own scheme. It goes once the client stops rewriting `Origin` and only sets
+ * `X-Forwarded-Proto` and `X-Forwarded-Host`.
  */
 export function acceptsOrigin(
   origin: string | undefined,

@@ -87,6 +87,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 `sessionToken` 是原始管理员凭据。Penguin Remote 的本地代理负责在公网域名的响应中把它写入上述名称的 Cookie。客户端不得记录或缓存本地 API token 以及返回的会话 token。
 
+桌面端的服务端信任转发头，并据此得出浏览器所在的地址（见[安全](/security#网络暴露面)）。因此本地代理转发每个请求时（含 WebSocket 升级），都应当把 `X-Forwarded-Proto` 覆盖为 `https`、把 `X-Forwarded-Host` 覆盖为公网主机名，各只带一个值。对于在此之前发布的桌面端，它还把浏览器的 `Origin` 由 `https://<公网主机名>` 改写为 `http://<公网主机名>`；等中继后面的桌面端都能自己得出这个地址，它就不再改写 `Origin`，只发送这两个头。
+
 ## 认证与账号
 
 登录、登出、账号认领，以及当前用户的密码、资料、偏好设置和已归档对话。
