@@ -6,7 +6,7 @@
  * Terminal-Bench 4.0, each chosen to run on CPU-only Docker. Their tasks are Harbor task directories
  * that live in the public benchmark repository, never in this one, and so does every large file they
  * use: each Case here is text only — a statement that summarises the task, links its folder in
- * the repository at the Benchmark's pinned commit and the repository's rules for running a task,
+ * the repository's main branch and the repository's rules for running a task,
  * and gives the exact Harbor launch with its caps; and a rubric that is the verifier's reward out
  * of 100.
  *
@@ -74,14 +74,8 @@ export interface BuiltinBenchmark {
   /** The benchmark's directory in the benchmark repository, which keeps the source's name: its tasks are `benchmarks/<repoDir>/tasks`. */
   repoDir: string;
   /**
-   * The 40-character commit of the benchmark repository its statements link and its evaluations
-   * fetch: the commit its task set was calibrated and measured at.
-   * GDPEVO uses `main` instead.
-   */
-  ref: string;
-  /**
    * The measured results of a PenguinHarness release on these tasks, as a path in the repository
-   * at `ref`; the statements link it and the numbers stay there. Absent while no such page exists.
+   * on `main`; the statements link it and the numbers stay there. Absent while no such page exists.
    */
   results?: string;
   /** The source as the statements name it, e.g. a Harbor Hub dataset and its revision. */
@@ -126,9 +120,9 @@ function taskPath(bench: BuiltinBenchmark): string {
   return `benchmarks/${bench.repoDir}/tasks`;
 }
 
-/** A link into the benchmark repository at the Benchmark's pinned commit or branch: a folder (`tree`) or a file (`blob`). */
-function repoLink(bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string): string {
-  return `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
+/** A link into the benchmark repository's main branch: a folder (`tree`) or a file (`blob`). */
+function repoLink(kind: "tree" | "blob", rel: string): string {
+  return `${BENCHMARK_REPO}/${kind}/main/${rel}`;
 }
 
 /** `text` as one single-quoted shell word. */
@@ -165,7 +159,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
       (bench.source !== undefined ? ` — ${bench.source}` : "") +
       (item.category !== undefined ? ` · Category: ${item.category}` : "") +
       (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
-    `- Task: \`${item.task}\` in ${repoLink(bench, "tree", `${taskPath(bench)}/${item.task}`)}`,
+    `- Task: \`${item.task}\` in ${repoLink("tree", `${taskPath(bench)}/${item.task}`)}`,
     ...(bench.upstream !== undefined
       ? [
           `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
@@ -194,7 +188,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     return [
       ...intro,
       bench.note ??
-        `Follow the [benchmark instructions](${repoLink(bench, "blob", `benchmarks/${bench.repoDir}/README.md`)}).`,
+        `Follow the [benchmark instructions](${repoLink("blob", `benchmarks/${bench.repoDir}/README.md`)}).`,
       "",
     ].join("\n");
   }
@@ -219,8 +213,8 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     "",
     "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
       `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
-      `following that repository's rules for agents — ${repoLink(bench, "blob", BENCHMARK_RUN_RULES)} — ` +
-      `from the root of a checkout at commit \`${bench.ref}\`:`,
+      `following that repository's rules for agents — ${repoLink("blob", BENCHMARK_RUN_RULES)} — ` +
+      "from the root of a checkout of the `main` branch:",
     "",
     "```bash",
     ...command,
@@ -242,7 +236,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     "",
     ...(bench.results !== undefined
       ? [
-          `Measured results of PenguinHarness on these tasks: ${repoLink(bench, "blob", bench.results)}`,
+          `Measured results of PenguinHarness on these tasks: ${repoLink("blob", bench.results)}`,
           "",
         ]
       : []),

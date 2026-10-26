@@ -24,7 +24,7 @@
  * - A write that fails part-way leaves neither its directory nor staging debris, and the error
  *   reaches the caller.
  * - Initializing or loading default_agent never writes into benchmarks/.
- * - Release guard: Sec A–E keep their calibrated commit references.
+ * - All built-in benchmark links use the benchmark repository's main branch.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -209,6 +209,7 @@ describe("built-in Benchmarks", () => {
         expect(statement, caseId).toContain(
           `--ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} `,
         );
+        expect(statement, caseId).toContain("from the root of a checkout of the `main` branch:");
         // The time budget the measured runs told the agent, as one shell word, and only there.
         const budget = /^ {2}--ak time_budget_note='([^']*)' \\$/m.exec(statement)?.[1];
         expect(budget, caseId).toBe(bench.timeBudgetNote);
@@ -344,20 +345,18 @@ describe("built-in Benchmarks", () => {
     expect(await fs.readdir(dir())).toEqual([]);
   });
 
-  // Release guard: a statement that links a branch would follow whatever that branch holds later.
-  it("release guard: Sec A–E links and launch checkouts remain pinned to their calibrated commit", async () => {
+  it("all built-in benchmark links follow the main branch", async () => {
     await provision();
-    for (const id of SECTION_IDS) {
+    for (const id of BUILTIN_IDS) {
       for (const caseId of await caseIds(id)) {
         const statement = await readCase(id, caseId, "statement");
         const revisions = [
           ...statement.matchAll(/penguin-harness-benchmark\/(?:tree|blob)\/([^/\s]+)\//g),
         ].map((m) => m[1]);
-        // The task's folder and the run rules at least.
+        // The task's folder and its running instructions at least.
         expect(revisions.length, caseId).toBeGreaterThanOrEqual(2);
-        const checkout = /a checkout at commit `([^`]+)`/.exec(statement)?.[1];
-        for (const revision of [...revisions, checkout]) {
-          expect(revision, caseId).toMatch(/^[0-9a-f]{40}$/);
+        for (const revision of revisions) {
+          expect(revision, caseId).toBe("main");
         }
       }
     }

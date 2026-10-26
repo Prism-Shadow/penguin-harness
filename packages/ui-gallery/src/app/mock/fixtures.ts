@@ -1180,8 +1180,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   const builtinCaseId = (index: number, task: string) =>
     `CASE-${String(index).padStart(3, "0")}-${task}`;
   const taskPath = (bench: BuiltinBenchmark) => `benchmarks/${bench.repoDir}/tasks`;
-  const repoLink = (bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string) =>
-    `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
+  const repoLink = (kind: "tree" | "blob", rel: string) => `${BENCHMARK_REPO}/${kind}/main/${rel}`;
   const shellWord = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
   const builtinStatement = (
     bench: BuiltinBenchmark,
@@ -1197,7 +1196,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         (bench.source !== undefined ? ` — ${bench.source}` : "") +
         (item.category !== undefined ? ` · Category: ${item.category}` : "") +
         (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
-      `- Task: \`${item.task}\` in ${repoLink(bench, "tree", `${taskPath(bench)}/${item.task}`)}`,
+      `- Task: \`${item.task}\` in ${repoLink("tree", `${taskPath(bench)}/${item.task}`)}`,
       ...(bench.upstream !== undefined
         ? [
             `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
@@ -1226,7 +1225,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       return [
         ...intro,
         bench.note ??
-          `Follow the [benchmark instructions](${repoLink(bench, "blob", `benchmarks/${bench.repoDir}/README.md`)}).`,
+          `Follow the [benchmark instructions](${repoLink("blob", `benchmarks/${bench.repoDir}/README.md`)}).`,
         "",
       ].join("\n");
     }
@@ -1251,8 +1250,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       "",
       "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
         `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
-        `following that repository's rules for agents — ${repoLink(bench, "blob", BENCHMARK_RUN_RULES)} — ` +
-        `from the root of a checkout at commit \`${bench.ref}\`:`,
+        `following that repository's rules for agents — ${repoLink("blob", BENCHMARK_RUN_RULES)} — ` +
+        "from the root of a checkout of the `main` branch:",
       "",
       "```bash",
       ...command,
@@ -1274,7 +1273,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       "",
       ...(bench.results !== undefined
         ? [
-            `Measured results of PenguinHarness on these tasks: ${repoLink(bench, "blob", bench.results)}`,
+            `Measured results of PenguinHarness on these tasks: ${repoLink("blob", bench.results)}`,
             "",
           ]
         : []),

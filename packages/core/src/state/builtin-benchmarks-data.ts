@@ -23,14 +23,6 @@ import type { BuiltinBenchmark } from "./builtin-benchmarks.js";
 export const BENCHMARK_REPO = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
 
 /**
- * The revision of that repository Sec A to Sec E link and fetch: the commit that carries their
- * calibrated task sets and the v0.2.13 results (benchmark repository #2). A later re-measurement
- * moves it to the commit that carries those results; the release guard in
- * test/builtin-benchmarks.test.ts holds these sections' `ref` to a 40-character commit id.
- */
-const SECTIONS_REF = "c12d65bc20beb5130ed57b3b7983c62d497b7d2f";
-
-/**
  * The measured results of a PenguinHarness release on Sec A to Sec E (accuracy over three
  * attempts, cost, tokens, time), as a path in the repository. Statements link it; the numbers
  * stay there.
@@ -75,9 +67,8 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
       "Sec A 即 rag-bench-essential（Data Analysis Bench）：在长报告、多级表头的表格、电子表格、文档库、" +
       "一份 144 MB 的调查微观数据和一个 Formula 1 SQLite 数据库上做数据分析，由每道题自带的评分器判定通过与否。" +
       BUILT_IN_ZH,
-    version: "2026.10.12.1",
+    version: "2026.10.26.1",
     repoDir: "rag-bench-essential",
-    ref: SECTIONS_REF,
     results: SECTIONS_RESULTS,
     source: "rag-bench-essential, Data Analysis Bench (converted to Harbor tasks)",
     upstream: {
@@ -192,9 +183,8 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     descriptionZh:
       "Sec B 即 DeepSWE v1.1：在真实的开源仓库里实现功能、修复缺陷，按 Agent 提交的代码由项目自己的测试评分。" +
       BUILT_IN_ZH,
-    version: "2026.10.12.1",
+    version: "2026.10.26.1",
     repoDir: "deep-swe",
-    ref: SECTIONS_REF,
     results: SECTIONS_RESULTS,
     source: "DeepSWE v1.1 (Harbor Hub `datacurve/deep-swe-1-1`, revision 1)",
     upstream: { url: "https://github.com/datacurve-ai/deep-swe", license: "Apache-2.0" },
@@ -307,9 +297,8 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     descriptionZh:
       "Sec C 即 AutomationBench：在模拟的 SaaS 应用之间完成业务流程，经命令行工具操作，按上游的评分细则打分。" +
       BUILT_IN_ZH,
-    version: "2026.10.12.1",
+    version: "2026.10.26.1",
     repoDir: "automation-bench",
-    ref: SECTIONS_REF,
     results: SECTIONS_RESULTS,
     source: "AutomationBench 1.0.6 (converted to Harbor tasks)",
     upstream: { url: "https://github.com/zapier/AutomationBench", license: "MIT" },
@@ -421,9 +410,8 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
       `terminal. ${BUILT_IN}`,
     descriptionZh:
       "Sec D 即 Terminal-Bench-Science 0.1：在终端里完成研究级的科学计算任务。" + BUILT_IN_ZH,
-    version: "2026.10.12.1",
+    version: "2026.10.26.1",
     repoDir: "terminal-bench-science",
-    ref: SECTIONS_REF,
     results: SECTIONS_RESULTS,
     source:
       "Terminal-Bench-Science 0.1 (Harbor Hub `terminal-bench-science/terminal-bench-science`, revision 10)",
@@ -557,9 +545,8 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     descriptionZh:
       "Sec E 即 Terminal-Bench 4.0：在终端里完成困难而真实的任务，涵盖软件、安全、科学、机器学习、运维、硬件与媒体。" +
       BUILT_IN_ZH,
-    version: "2026.10.12.1",
+    version: "2026.10.26.1",
     repoDir: "terminal-bench",
-    ref: SECTIONS_REF,
     results: SECTIONS_RESULTS,
     source: "Terminal-Bench 4.0 (Harbor Hub `terminal-bench/terminal-bench`, revision 4)",
     upstream: { url: "https://github.com/harbor-framework/terminal-bench", license: "Apache-2.0" },
@@ -680,7 +667,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     descriptionZh: "GDPEVO 客户关系管理：5 道训练题和 5 道独立测试题。",
     version: "2026.10.26.5",
     repoDir: "gdpevo-crm",
-    ref: "main",
     grader: {
       scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
     },
@@ -715,7 +701,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     descriptionZh: "GDPEVO 企业资源管理：5 道训练题和 5 道独立测试题。",
     version: "2026.10.26.5",
     repoDir: "gdpevo-erp",
-    ref: "main",
     grader: {
       scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
     },
@@ -750,7 +735,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     descriptionZh: "GDPEVO 金融：5 道训练题和 5 道独立测试题。",
     version: "2026.10.26.5",
     repoDir: "gdpevo-finance",
-    ref: "main",
     grader: {
       scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
     },
@@ -785,7 +769,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     descriptionZh: "GDPEVO 医疗：5 道训练题和 5 道独立测试题。",
     version: "2026.10.26.5",
     repoDir: "gdpevo-healthcare",
-    ref: "main",
     grader: {
       scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
     },
@@ -820,7 +803,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     descriptionZh: "GDPEVO 法务：5 道训练题和 5 道独立测试题。",
     version: "2026.10.26.5",
     repoDir: "gdpevo-legal",
-    ref: "main",
     grader: {
       scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
     },
@@ -855,7 +837,6 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     descriptionZh: "GDPEVO 数据分析：5 道训练题和 5 道独立测试题。",
     version: "2026.10.26.5",
     repoDir: "gdpevo-data-analysis",
-    ref: "main",
     grader: {
       scale: "a normalized reward r scores 100·r; a missing or unparseable answer.json scores 0",
     },
