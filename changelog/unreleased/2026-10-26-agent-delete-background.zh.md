@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `server`, `web`, `ui`, `docs`
+- **PR:** [#1348](https://github.com/Prism-Shadow/penguin-harness/pull/1348)
 
 [English](2026-10-26-agent-delete-background.md)
 
