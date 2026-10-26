@@ -3,7 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** feature
 - **Scope:** `server`, `amsp`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#1347](https://github.com/Prism-Shadow/penguin-harness/pull/1347)
 
 [中文版](2026-10-26-workbench-page-sdk.zh.md)
 
