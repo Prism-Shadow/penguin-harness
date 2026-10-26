@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** feature
 - **Scope:** `plugins`
+- **PR:** [#1352](https://github.com/Prism-Shadow/penguin-harness/pull/1352)
 
 [中文版](2026-10-26-penguin-support-live.zh.md)
 
