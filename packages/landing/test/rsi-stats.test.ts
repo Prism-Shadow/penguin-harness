@@ -44,14 +44,14 @@ const rsiPlugins = readdirSync(pluginsRoot, { withFileTypes: true })
  * static import would pull core's sources, and everything they import, into this package's
  * typecheck.
  */
-async function builtinBenchmarks(): Promise<Array<{ id: string; upstream: string }>> {
+async function builtinBenchmarks(): Promise<Array<{ id: string; upstream: string | undefined }>> {
   const file = join(__dirname, "..", "..", "core", "src", "state", "builtin-benchmarks-data.ts");
   const data = (await import(pathToFileURL(file).href)) as {
-    BUILTIN_BENCHMARKS: ReadonlyArray<{ id: string; upstream: { url: string } }>;
+    BUILTIN_BENCHMARKS: ReadonlyArray<{ id: string; upstream?: { url: string } }>;
   };
   return data.BUILTIN_BENCHMARKS.map((benchmark) => ({
     id: benchmark.id,
-    upstream: benchmark.upstream.url,
+    upstream: benchmark.upstream?.url,
   }));
 }
 
