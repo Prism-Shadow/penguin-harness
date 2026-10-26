@@ -17,5 +17,5 @@
 - **提示词。** 反思提示词逐字采用 `InstructionProposalSignature.default_prompt_template`；小批量里的每次执行按源码渲染记录的方式写成 `Inputs`、`Generated Outputs`、`Feedback` 三段，回复按 `ProposalAdapter.parse` 的方式解析。
 - **预算。** Target 的每次执行都计入 `max_metric_calls`，并像源码一样在每轮开始前检查。冒烟默认值是种子的一次测量，加上四轮未接纳任何子代的迭代。
 - **声明的改动。** 由于 Rubric 不公开，反馈只有 Rubric 分数；反思模型按路径阅读每次执行的 Trace 与 Workspace；分数取 `0..100`，因此 `perfect_score` 为 100；Merge 不运行，因为只有一条指令时它只会复现某个父代。
-- **评测。** 该工具包附带的 `references/evaluation.md` 与其他算法工具包逐字节相同。
+- **评测。** 该工具包附带的 `references/evaluation.md` 与其他算法工具包逐字节相同；插件自带的 `test/skills.test.ts` 检查它的 `SKILL.md` 能被解析，与插件库里其他带 Skill 的插件一致。
 - **包。** `core`、`cli` 与 `desktop` 依赖 `@penguinharness/gepa-rsi-toolkit`。落地页的算法一行、README 表格、技能与插件、自我进化、评估中心、组件库的插件库与 Web App 的技能端到端测试都列入了它。
