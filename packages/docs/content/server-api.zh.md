@@ -468,7 +468,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/projects/:projectId/model-oauth/start` | 发起流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
+| POST | `/api/projects/:projectId/model-oauth/start` | 发起流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl, mode}` |
 | GET | `/api/projects/:projectId/model-oauth/callback` | 供应商跳转回来的地址（`?flow=&code=`）：把授权码存到流程上，并返回一个 HTML 页面。`HEAD` 返回 405 |
 | GET | `/api/projects/:projectId/model-oauth/:flowId` | 轮询流程，兑换已存下的授权码并写入 key：`{status: pending\|done\|error, provider, error?}` |
 | POST | `/api/projects/:projectId/model-oauth/:flowId/code` | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
@@ -478,6 +478,8 @@ PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发�
 `GET /callback` 必须是例外。回环地址上的 OAuth 跳转，由供应商跳转到的那个浏览器接收，而它未必是发起流程的浏览器。比如桌面 shell 会在*系统*浏览器中打开授权页，而系统浏览器没有这个应用的源的 Cookie。因此只有这一条路径挂在会话校验之外，改用 flow id 鉴权：32 个随机字节，10 分钟内有效，且只允许存入一次。授权码只能存入发起这个流程的 Project，而且只有要求过回调的流程才接受：`manual` 流程一律拒绝，因为它从未拿到过回调 URL。
 
 回调能做的事还有第二重限制：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、写入 Project 模型，都发生在 `GET /:flowId`，也就是所有者自己的轮询里，仍在会话校验之后。除非所有者主动查询流程状态，否则任何 key 都进不了 Project；兑换失败也在那里以 `{status: error, error}` 报告，而不是显示在跳转页面上。回调周边的一切同样不在豁免之列：更长的路径、其他任何请求方法（这一路径本身的 `HEAD` 返回 405），以及另外三条同组路由，都仍然需要会话。
+
+回调 URL 以浏览器的[公共源](/security#网络暴露面)为准：浏览器访问服务器时用的地址，在受信任的代理之后则是代理报告的地址，因此经 Penguin Remote 访问的桌面端会跳回它的 `https://` 中继地址。供应商只会跳转到 HTTPS，或 `localhost`、`[::1]`、`127.x.x.x` 上的明文 HTTP；来自其他明文 HTTP 源的 `callback` 请求会以 `manual` 打开，返回中的 `mode` 写明流程实际以哪种模式打开。
 
 `mode: manual` 不发送回调 URL，授权页会显示一个一次性授权码，由用户手动粘贴回来，适用于跳转回不来的部署。无论由哪条路由兑换授权码，流程完成后都会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
 
@@ -1284,6 +1286,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 - `PUT /backend` 和 `POST /extension/pairings` 只能由已登录的本人操作：本机 API token 得到 `403` `human_required`。调用者不能选择的后端返回 `405` `not_supported`（普通成员要求 `builtin` 时返回 `403` `admin_required`），Agent 正在操作浏览器时切换返回 `409` `action_in_flight`。切换不会关闭任何标签页。
 - Agent 的调用使用本机 API token，其身份是管理员。这样的调用带有 `sessionId`（在请求体里，或 `GET`、`DELETE` 的查询参数里）时，服务器改按正在驱动该会话的那个人行事：发起该会话当前这轮运行的人，或定时任务的创建者，再不然是 Project 的所有者。Agent 驱动的就是这个人的 Chrome，从不使用其他用户的 Chrome。
 - `GET /extension` 和 `DELETE /extension/:id` 只能看到调用者自己的配对。配对码只能用一次，10 分钟内有效，输错五次即作废；新生成的配对码会取代调用者之前的那个。
+- 配对码附带的 `origin` 是扩展配对时连接的地址：浏览器的[公共源](/security#网络暴露面)，而不是请求的 `Origin` 头。
 
 后端无法驱动时，操作返回 `503` `browser_unavailable`，错误码旁带一个 `reason`。内置后端：`not_desktop`（没有桌面 shell）、`shell_unsupported`（shell 版本过旧，无法承载浏览器）或 `no_window`（没有窗口认领新标签页）。Chrome 后端：`extension_not_paired`、`extension_disconnected` 或 `extension_disabled`。不带 `reason` 时，错误信息会说明原因，例如用户暂停了扩展。在 `chrome` 上，用户收回的标签页返回 `409` `tab_released`；超出标签页范围的原始 CDP 返回 `403` `cdp_refused`，包括 `Target`、`Browser`、`Storage`、`Fetch`、`Extensions`、`Tethering` 和 `Security` 域，读写 Cookie、清除缓存或拦截请求的 `Network` 方法，以及 `DOM.setFileInputFiles` 和 `Page.setDownloadBehavior`。
 
@@ -1440,7 +1443,7 @@ export type ServerEvent =
 
 API 套接字是同一个 API 的第二种传输，供自带的 Web App 使用（PRFC-0011）：一个标签页一条套接字，每一帧是对既有端点的一次调用，每个长期的流是一次不结束的调用。上文没有任何东西是它特有的——HTTP 与套接字进入同一批路由，一次调用的授权、校验与应答与它的 HTTP 孪生完全一致。
 
-它有自己的 upgrade 路由：`GET /api/socket`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath()` 负责拼写）。握手沿用终端流的那一套——会话 Cookie 与同源的 `Origin`（或没有）——之后套接字以该 Cookie 命名的用户身份服务每次调用。它不创建、不列出、也不触碰任何终端，不涉及终端 id，因此也没有可伪造的 id。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
+它有自己的 upgrade 路由：`GET /api/socket`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath()` 负责拼写）。握手沿用终端流的那一套——会话 Cookie 与同源的 `Origin`（或没有）——之后套接字以该 Cookie 命名的用户身份服务每次调用，每次调用都以建立套接字时的[公共源](/security#网络暴露面)为地址，与 HTTP 请求一致。它不创建、不列出、也不触碰任何终端，不涉及终端 id，因此也没有可伪造的 id。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
 
 帧是 JSON 文本帧，id 由客户端分配、在套接字生命周期内唯一：
 

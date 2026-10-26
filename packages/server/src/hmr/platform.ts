@@ -119,8 +119,8 @@ export interface PlatformApi extends Park {
    * In-process accessors for the one thing the seam cannot carry: a live socket. The
    * runtime's ws transport authenticates an upgrade, then hands the socket over with the
    * reference it authenticated — a pty's session, or the API socket's user — for the
-   * platform's protocol to drive. `url` is the upgrade's own: the origin the client reached
-   * (Host and port, scheme as a trusted proxy reports it) with the path and query it asked for.
+   * platform's protocol to drive. `url` is the upgrade's own: its public origin (the browser's
+   * scheme, host and port; http/public-origin.ts) with the path and query it asked for.
    */
   terminals(): TerminalManager;
   attachStream(ws: WebSocket, ref: AttachedStream, url: URL, log: (l: string) => void): void;

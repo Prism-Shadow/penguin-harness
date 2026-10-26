@@ -24,7 +24,7 @@ import type { BrowserBackend, BuiltinBrowserServerEvent, UiPrefs } from "../api/
 import type { AppEnv } from "../auth/middleware.js";
 import { BrowserExtensionsRepo } from "../db/repos/browser-extensions.js";
 import { BROWSER_EXTENSIONS_KEY } from "../db/repos/server-settings.js";
-import type { Channels, Clock, Db, Desktop, Log, Paths } from "../hmr/capabilities.js";
+import type { Channels, Clock, Config, Db, Desktop, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import { ensureInstallId } from "../install-id.js";
 import type { Users } from "../mechanisms/identity.js";
@@ -118,6 +118,7 @@ export class BuiltinBrowserRoutes {
   @Use() private readonly prefs!: UiPrefsStore;
   @Use() private readonly drivers!: SessionDrivers;
   @Use() private readonly sessions!: SessionIndex;
+  @Use() private readonly config!: Config;
   @Provide() gate!: BrowserExtensionGate;
   @Bind("BuiltinBrowserRoutes.routes") routes!: Hono<AppEnv>;
   @Bind("BuiltinBrowserRoutes.pair") pairRoutes!: Hono<AppEnv>;
@@ -179,6 +180,7 @@ export class BuiltinBrowserRoutes {
         return user === null ? null : { userId: user.userId, isAdmin: user.isAdmin };
       },
       pairing,
+      trustProxy: this.config.trustProxy,
     });
     this.pairRoutes = extensionPairRoutes(pairing);
     this.gate = {

@@ -7056,7 +7056,12 @@ export interface BrowserExtensionPairingResponse {
   code: string;
   /** ISO time the code stops working. */
   expiresAt: string;
-  /** The request's Origin, when it carried one: the address the browser reaches this server at. */
+  /**
+   * The address the browser reaches this server at, which the extension pairs with: the public
+   * origin (scheme, host and port; from the forwarded headers when the server trusts a proxy).
+   * Null only from an older server, which echoed the request's `Origin` and had none to echo for
+   * a call that carried no `Origin`.
+   */
   origin: string | null;
 }
 

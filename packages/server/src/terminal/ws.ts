@@ -19,12 +19,8 @@ import { format } from "node:url";
 import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
-import {
-  isOwnOrigin,
-  originTarget,
-  parseCookieHeader,
-  sessionCookies,
-} from "../auth/middleware.js";
+import { parseCookieHeader, sessionCookies } from "../auth/middleware.js";
+import { acceptsOrigin, publicOrigin } from "../http/public-origin.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { API_SOCKET_PATH } from "../api/types.js";
@@ -67,7 +63,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     if (!match && !apiSocket) return;
 
     let target: URL;
-    let reached: URL;
+    let streamUrl: URL;
     try {
       // IncomingMessage has no Fetch Request URL; Node formats its transport authority.
       if (!req.headers.host) return refuse(socket, 403, "Forbidden");
@@ -75,24 +71,24 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
       target = new URL(
         format({ protocol, host: req.headers.host, pathname: url.pathname, slashes: true }),
       );
-      const forwarded = req.headers["x-forwarded-proto"];
-      // The origin the client reached: the Host it addressed, port included, under the scheme
-      // a trusted proxy reports. The Origin check compares against it, and the platform gets
-      // it too: the API socket addresses every call it carries to this origin, so a route
-      // that builds a URL back to the App (an OAuth callback) sees the page's host and port.
-      reached = originTarget(
-        target,
-        Array.isArray(forwarded) ? forwarded.join(",") : forwarded,
-        deps.trustProxy ?? false,
-      );
-      if (req.headers.origin && !isOwnOrigin(req.headers.origin, reached)) {
+      const header = (name: string): string | undefined => {
+        const value = req.headers[name];
+        return Array.isArray(value) ? value.join(",") : value;
+      };
+      const forwarded = { proto: header("x-forwarded-proto"), host: header("x-forwarded-host") };
+      const trustProxy = deps.trustProxy ?? false;
+      if (!acceptsOrigin(req.headers.origin, target, forwarded, trustProxy)) {
         return refuse(socket, 403, "Forbidden");
       }
+      // The platform gets the public origin with the path and query: the API socket addresses
+      // every call it carries to that origin, so a route that builds a URL back to the App (an
+      // OAuth callback) sees the browser's scheme, host and port, as it does over HTTP.
+      streamUrl = new URL(publicOrigin(target, forwarded, trustProxy));
+      streamUrl.pathname = url.pathname;
+      streamUrl.search = url.search;
     } catch {
       return refuse(socket, 403, "Forbidden");
     }
-    const streamUrl = new URL(reached);
-    streamUrl.search = url.search;
 
     const authed =
       sessionCookies(parseCookieHeader(req.headers.cookie), target)

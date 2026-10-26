@@ -468,7 +468,7 @@ A provider group that publishes an authorization flow in the built-in catalog ca
 
 | Method | Path | Description |
 | --- | --- | --- |
-| POST | `/api/projects/:projectId/model-oauth/start` | Opens a flow: `{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
+| POST | `/api/projects/:projectId/model-oauth/start` | Opens a flow: `{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl, mode}` |
 | GET | `/api/projects/:projectId/model-oauth/callback` | Where the provider redirects (`?flow=&code=`): stores the code on the flow and answers with an HTML page. `HEAD` answers 405 |
 | GET | `/api/projects/:projectId/model-oauth/:flowId` | Polls a flow, redeeming a stored code and applying the key: `{status: pending\|done\|error, provider, error?}` |
 | POST | `/api/projects/:projectId/model-oauth/:flowId/code` | Redeems a code the user pasted: `{code}` → `{ok, applied?, error?}` |
@@ -478,6 +478,8 @@ The server generates the PKCE verifier, keeps it in memory for ten minutes and n
 `GET /callback` has to be the exception. A loopback OAuth redirect arrives in whichever browser the provider redirected, which is not necessarily the one that started the flow. The desktop shell, for example, opens the authorization page in the *system* browser, which holds no cookie for the app's origin. So this one path is mounted outside the session gate and authorizes with the flow id instead: 32 random bytes, valid for ten minutes and usable for one deposit. A deposit is accepted only for the Project the flow was opened in, and only for a flow that asked for a callback: a `manual` flow is refused, because it was never given a callback URL.
 
 What the callback may do is limited a second time: it stores the code on the flow and nothing else. The exchange with the provider and the write into the Project's models both happen on `GET /:flowId`, the owner's own poll, behind the session gate. No key reaches a Project unless its owner asks for the flow's status, and a failed exchange is reported there as `{status: error, error}` rather than on the redirect page. Nothing next to the callback is exempt either: a longer path, any other method (`HEAD` on the exact path answers 405), and the three sibling routes all still require a session.
+
+The callback URL is built on the browser's [public origin](/security#network-surface): the address it reached the server at, or behind a trusted proxy the address the proxy reports, so a desktop reached through Penguin Remote is redirected back to its `https://` relay address. The provider redirects only to HTTPS or to plain HTTP on `localhost`, `[::1]` or `127.x.x.x`; a `callback` request from any other plain-HTTP origin opens as `manual`, and the answer's `mode` says which mode the flow opened in.
 
 `mode: manual` sends no callback URL, so the authorization page shows a one-time code for the user to paste back, for deployments the redirect cannot reach. Whichever route redeems the code, a completed flow invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
 
@@ -1284,6 +1286,7 @@ The browser agents drive with `penguin browser`, under `/api/builtin-browser`. I
 - `PUT /backend` and `POST /extension/pairings` are the signed-in person's own: the local API token gets `403` `human_required`. A backend the caller may not choose returns `405` `not_supported` (or `403` `admin_required` for a member asking for `builtin`), and a switch while an agent acts in the browser returns `409` `action_in_flight`. Switching closes no tabs.
 - An agent's calls use the local API token, which acts as the administrator. When such a call carries a `sessionId` (in the body, or in the query of a `GET` or `DELETE`), the server acts for the person driving that session instead: the one who started its current run, or the creator of a scheduled task, else the Project's owner. That is whose Chrome the agent drives; another user's Chrome is never used.
 - `GET /extension` and `DELETE /extension/:id` see only the caller's own pairings. A pairing code works once, for 10 minutes, and five wrong attempts end it; a new code replaces the caller's previous one.
+- The `origin` a pairing code comes with is the address the extension pairs with: the browser's [public origin](/security#network-surface), not the request's `Origin` header.
 
 When the backend cannot be driven, an action returns `503` `browser_unavailable` with a `reason` beside the code. Built-in: `not_desktop` (no desktop shell), `shell_unsupported` (a shell too old for the browser) or `no_window` (no window took a new tab). Chrome: `extension_not_paired`, `extension_disconnected` or `extension_disabled`. Without a reason, the message says why, such as the user having paused the extension. On `chrome`, a tab the user took back answers `409` `tab_released`, and raw CDP that reaches outside the tab answers `403` `cdp_refused`: the `Target`, `Browser`, `Storage`, `Fetch`, `Extensions`, `Tethering` and `Security` domains, the `Network` methods that read or change cookies, clear the cache or intercept requests, `DOM.setFileInputFiles` and `Page.setDownloadBehavior`.
 
@@ -1440,7 +1443,7 @@ The bundled Web App connects in this order:
 
 The API socket is a second transport of the same API, for the bundled Web App (PRFC-0011): one socket per tab, every frame a call to an existing endpoint, every long-lived stream a call that does not end. Nothing above is specific to it — HTTP and the socket enter the same routes, so a call is authorized, validated and answered exactly as its HTTP twin.
 
-It has its own upgrade route: `GET /api/socket` (Upgrade; `apiSocketPath()` in `@prismshadow/penguin-server/api` spells it). The handshake is the terminal stream's — the session cookie and a same-origin `Origin` (or none) — and the socket then serves calls as the user that cookie names. No terminal is created, listed or touched and no terminal id is involved, so there is nothing to forge. The runtime-owned prefixes (`/api/auth`, `/api/hmr`, `/api/desktop`) answer `421 not_on_socket`; a client makes those over HTTP.
+It has its own upgrade route: `GET /api/socket` (Upgrade; `apiSocketPath()` in `@prismshadow/penguin-server/api` spells it). The handshake is the terminal stream's — the session cookie and a same-origin `Origin` (or none) — and the socket then serves calls as the user that cookie names, each addressed to the [public origin](/security#network-surface) the socket was opened on, as an HTTP request would be. No terminal is created, listed or touched and no terminal id is involved, so there is nothing to forge. The runtime-owned prefixes (`/api/auth`, `/api/hmr`, `/api/desktop`) answer `421 not_on_socket`; a client makes those over HTTP.
 
 Frames are JSON text frames, ids are the client's and unique for the socket's life:
 

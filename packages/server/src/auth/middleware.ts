@@ -20,6 +20,7 @@ import { parse } from "hono/utils/cookie";
 import { AMSP_PREFIX } from "../amsp/cors.js";
 import { HttpError } from "../http/errors.js";
 import { mediaType } from "../http/media-type.js";
+import { acceptsOrigin, forwardedHeaders, publicOriginOf } from "../http/public-origin.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { SessionVia } from "./service.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -54,40 +55,9 @@ export function parseCookieHeader(header: string | null | undefined): Record<str
   return parse(header ?? "");
 }
 
-/** Scheme, host and port must agree; absent Origin retains the non-browser contract. */
-export function isOwnOrigin(origin: string | undefined, requestUrl: URL): boolean {
-  if (!origin) return true;
-  if (requestUrl.protocol !== "http:" && requestUrl.protocol !== "https:") return false;
-  try {
-    const source = new URL(origin);
-    return (
-      (source.protocol === "http:" || source.protocol === "https:") &&
-      source.origin === requestUrl.origin
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** TLS-terminating proxies must preserve Host and overwrite, never append, the protocol header. */
-export function originTarget(
-  requestUrl: string | URL,
-  forwarded: string | undefined,
-  trustProxy: boolean,
-): URL {
-  const url = new URL(requestUrl);
-  if (trustProxy && forwarded !== undefined) {
-    if (forwarded !== "http" && forwarded !== "https") {
-      throw new HttpError(403, "cross_origin_write", "Invalid forwarded protocol.");
-    }
-    url.protocol = `${forwarded}:`;
-  }
-  return url;
-}
-
-function contextTarget(c: Context, trustProxy: boolean): URL {
-  return originTarget(c.req.url, c.req.header("x-forwarded-proto"), trustProxy);
-}
+// The origin comparison lives with the public-origin rule (http/public-origin.ts); re-exported
+// for the callers that reach it here.
+export { isOwnOrigin } from "../http/public-origin.js";
 
 /**
  * Session cookie attributes, shared by every path that sets one. `maxAge` comes from the
@@ -99,19 +69,17 @@ export function cookieOptions(
   ttlMs: number,
   trustProxy: boolean,
 ) {
-  // `x-forwarded-proto` is caller-supplied and untrusted unless the deployment opts in
-  // (config.trustProxy — the same gate hmr/routes.ts uses, and for the same reason). Trusting
-  // it on a plain-HTTP bind would let anyone reaching the port get a Secure cookie back, which
-  // the browser then refuses to send over that connection: a sign-in that never takes.
-  const proto = trustProxy
-    ? (c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", ""))
-    : new URL(c.req.url).protocol.replace(":", "");
+  // Secure when the public origin is https. `x-forwarded-proto` counts only when the deployment
+  // trusts it (config.trustProxy — the same gate hmr/routes.ts uses, and for the same reason).
+  // Trusting it on a plain-HTTP bind would let anyone reaching the port get a Secure cookie back,
+  // which the browser then refuses to send over that connection: a sign-in that never takes.
+  const secure = new URL(publicOriginOf(c, trustProxy)).protocol === "https:";
   return {
     httpOnly: true,
     sameSite: "Lax" as const,
     path: "/",
     maxAge: Math.floor(ttlMs / 1000),
-    ...(proto === "https" ? { secure: true } : {}),
+    ...(secure ? { secure: true } : {}),
   };
 }
 
@@ -262,8 +230,7 @@ export const sameOriginWrites =
       WRITE_METHODS.has(c.req.method) &&
       !OWN_ORIGIN_RULE_PATHS.has(c.req.path.replace(/\/+$/, "")) &&
       !isAmspKeyedWrite(c) &&
-      c.req.header("origin") &&
-      !isOwnOrigin(c.req.header("origin"), contextTarget(c, trustProxy))
+      !acceptsOrigin(c.req.header("origin"), c.req.url, forwardedHeaders(c), trustProxy)
     ) {
       throw new HttpError(
         403,
@@ -303,7 +270,7 @@ function fromThisOrigin(c: Context, trustProxy: boolean): boolean {
   const header = (name: string) => c.req.header(name);
   const site = header("sec-fetch-site");
   if (site !== undefined) return site === "same-origin";
-  return !header("origin") || isOwnOrigin(header("origin"), contextTarget(c, trustProxy));
+  return acceptsOrigin(header("origin"), c.req.url, forwardedHeaders(c), trustProxy);
 }
 
 const crossOrigin = () =>
