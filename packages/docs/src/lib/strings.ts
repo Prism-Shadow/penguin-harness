@@ -9,16 +9,17 @@ export const zh = {
   siteName: "PenguinHarness",
 
   nav: {
-    // Landing-parity labels: the top bar mirrors the landing page's nav exactly
-    // (same items, same order) so the two sites link into each other seamlessly.
+    // The landing page's words for the site bar; which pages it shows, and in what order, is
+    // the shared page list's (SITE_PAGES), the same on all three sites.
     home: "主页",
     blog: "博客",
     download: "下载",
+    amsp: "AMSP",
     docs: "文档",
     gallery: "画廊",
     github: "GitHub",
-    openMenu: "打开目录",
-    closeMenu: "关闭目录",
+    openMenu: "打开菜单",
+    closeMenu: "关闭菜单",
   },
 
   theme: {

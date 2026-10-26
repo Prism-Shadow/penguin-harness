@@ -11,6 +11,7 @@ export const en: GalleryStrings = {
       home: "Home",
       blog: "Blog",
       download: "Download",
+      amsp: "AMSP",
       docs: "Docs",
       gallery: "Gallery",
       github: "GitHub",

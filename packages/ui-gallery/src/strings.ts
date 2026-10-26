@@ -52,6 +52,7 @@ export const zh = {
       home: "主页",
       blog: "博客",
       download: "下载",
+      amsp: "AMSP",
       docs: "文档",
       gallery: "画廊",
       github: "GitHub",
