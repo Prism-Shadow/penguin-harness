@@ -36,7 +36,10 @@ import {
 
 /** One Harbor task a built-in Benchmark carries as a Case. */
 export interface BuiltinBenchmarkCase {
-  /** Harbor task path under the task folder; its basename is what `harbor run -i` selects. */
+  /**
+   * Harbor task name: its directory under the task folder, and what `harbor run -i` selects.
+   * For a nested task path, `-i` selects its basename.
+   */
   task: string;
   /** The statement's first heading, which the case list shows as the case title. */
   title: string;
@@ -59,7 +62,7 @@ export interface BuiltinBenchmarkCase {
 export interface BuiltinBenchmark {
   /** Directory under `benchmarks/`, which is the Benchmark id: `penguinharness-benchmark-<name>`. */
   id: string;
-  /** The Benchmark's display name. */
+  /** "PenguinHarness Benchmark <name>", the name being "Sec <letter>"; GDPEVO uses "GDPEVO-<domain>". */
   title: string;
   /** Names the original benchmark the Benchmark is drawn from, then what it shares with the others. */
   description: string;
@@ -74,8 +77,9 @@ export interface BuiltinBenchmark {
   /** The benchmark's directory in the benchmark repository, which keeps the source's name: its tasks are `benchmarks/<repoDir>/tasks`. */
   repoDir: string;
   /**
-   * The benchmark repository revision its statements link and evaluations fetch: a calibrated
-   * commit for Sec A–E, or the main branch for GDPEVO.
+   * The 40-character commit of the benchmark repository its statements link and its evaluations
+   * fetch: the commit its task set was calibrated and measured at.
+   * GDPEVO uses `main` instead.
    */
   ref: string;
   /**
@@ -125,7 +129,7 @@ function taskPath(bench: BuiltinBenchmark, task = ""): string {
   return ["benchmarks", bench.repoDir, "tasks", ...task.split("/").slice(0, -1)].join("/");
 }
 
-/** A link into the benchmark repository at the Benchmark's revision: a folder (`tree`) or a file (`blob`). */
+/** A link into the benchmark repository at the Benchmark's pinned commit or branch: a folder (`tree`) or a file (`blob`). */
 function repoLink(bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string): string {
   return `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
 }
