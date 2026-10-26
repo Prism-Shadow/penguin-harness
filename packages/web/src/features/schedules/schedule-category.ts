@@ -14,7 +14,7 @@
  */
 import type { ScheduleItem } from "@prismshadow/penguin-server/api";
 import { periodMinutes } from "./schedule-describe";
-import { filterBucket } from "./schedule-panel-state";
+import { SCHEDULE_FILTERS, filterBucket } from "./schedule-panel-state";
 import type { ScheduleFilter } from "./schedule-panel-state";
 
 export type ScheduleType = "once" | "minutes" | "hours" | "days" | "weeks" | "custom";
@@ -50,8 +50,15 @@ export function scheduleType(period: string | undefined): ScheduleType {
 }
 
 /** How many tasks sit under each status chip; `all` counts every task, invalid files included. */
-export function countByStatus(items: readonly Pick<ScheduleItem, "status">[]): Record<ScheduleFilter, number> {
-  const counts: Record<ScheduleFilter, number> = { all: items.length, active: 0, paused: 0, completed: 0 };
+export function countByStatus(
+  items: readonly Pick<ScheduleItem, "status">[],
+): Record<ScheduleFilter, number> {
+  const counts: Record<ScheduleFilter, number> = {
+    all: items.length,
+    active: 0,
+    paused: 0,
+    completed: 0,
+  };
   for (const item of items) {
     const bucket = filterBucket(item.status);
     if (bucket !== null) counts[bucket] += 1;
@@ -60,7 +67,9 @@ export function countByStatus(items: readonly Pick<ScheduleItem, "status">[]): R
 }
 
 /** How many tasks sit under each type chip. */
-export function countByType(items: readonly Pick<ScheduleItem, "period">[]): Record<ScheduleType, number> {
+export function countByType(
+  items: readonly Pick<ScheduleItem, "period">[],
+): Record<ScheduleType, number> {
   const counts: Record<ScheduleType, number> = {
     once: 0,
     minutes: 0,
@@ -73,17 +82,56 @@ export function countByType(items: readonly Pick<ScheduleItem, "period">[]): Rec
   return counts;
 }
 
+/** The three filters of the Project-wide page, as one value (what its URL carries). */
+export interface SchedulePageFilters {
+  status: ScheduleFilter;
+  type: ScheduleType | "all";
+  query: string;
+}
+
+/** No filter at all: what the page opens on, and what a cleared filter writes. */
+export const NO_SCHEDULE_FILTERS: SchedulePageFilters = { status: "all", type: "all", query: "" };
+
+/**
+ * The filters a URL asks for. An address is user input — a hand-edited link, a stale bookmark —
+ * so every value is checked against what this build knows and anything else falls back to no
+ * filter, rather than leaving the page in a state its own controls cannot show.
+ */
+export function readScheduleFilters(params: URLSearchParams): SchedulePageFilters {
+  const status = params.get("status") ?? "all";
+  const type = params.get("type") ?? "all";
+  return {
+    status: (SCHEDULE_FILTERS as readonly string[]).includes(status)
+      ? (status as ScheduleFilter)
+      : "all",
+    type:
+      type === "all" || (SCHEDULE_TYPES as readonly string[]).includes(type)
+        ? (type as ScheduleType | "all")
+        : "all",
+    query: params.get("q") ?? "",
+  };
+}
+
+/**
+ * The filters as URL parameters, with the empty ones left out so an unfiltered page has a clean
+ * address (`/schedules`, not `/schedules?status=all&type=all&q=`).
+ */
+export function writeScheduleFilters(filters: SchedulePageFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filters.status !== "all") params.set("status", filters.status);
+  if (filters.type !== "all") params.set("type", filters.type);
+  if (filters.query.trim() !== "") params.set("q", filters.query);
+  return params;
+}
+
 /**
  * The list under both filters: a status chip, a type chip ("all" passes everything), and the
  * search box. Generic in the item for the same reason filterSchedules is — the Project-wide
  * list carries the agent that owns each task, and narrowing must not strip it.
  */
-export function filterSchedulePage<T extends Pick<ScheduleItem, "status" | "period" | "name" | "prompt">>(
-  items: readonly T[],
-  status: ScheduleFilter,
-  type: ScheduleType | "all",
-  query: string,
-): T[] {
+export function filterSchedulePage<
+  T extends Pick<ScheduleItem, "status" | "period" | "name" | "prompt">,
+>(items: readonly T[], status: ScheduleFilter, type: ScheduleType | "all", query: string): T[] {
   const q = query.trim().toLowerCase();
   return items.filter(
     (item) =>

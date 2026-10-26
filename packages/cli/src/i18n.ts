@@ -2142,7 +2142,9 @@ const en: Messages = {
           ? "aborted during reconnect backoff"
           : abort?.errorCode === "compaction_interrupted"
             ? "aborted during compaction"
-            : (abort?.errorCode ?? abort?.reason ?? "");
+            : abort?.errorCode === "server_restart"
+              ? "interrupted by a server restart"
+              : (abort?.errorCode ?? abort?.reason ?? "");
     const text = cause ? `${cause}${abort?.errorMessage ? `: ${abort.errorMessage}` : ""}` : "";
     return `[abort]${text ? `: ${text}` : ""}`;
   },
@@ -3224,7 +3226,9 @@ const zh: Messages = {
           ? "重试等待中被中断"
           : abort?.errorCode === "compaction_interrupted"
             ? "压缩过程中被中断"
-            : (abort?.errorCode ?? abort?.reason ?? "");
+            : abort?.errorCode === "server_restart"
+              ? "服务重启导致中断"
+              : (abort?.errorCode ?? abort?.reason ?? "");
     const text = cause ? `${cause}${abort?.errorMessage ? `：${abort.errorMessage}` : ""}` : "";
     return `[已中断]${text ? `：${text}` : ""}`;
   },

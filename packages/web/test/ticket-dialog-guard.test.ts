@@ -19,6 +19,7 @@ import { TicketDialogHost } from "../src/features/company/ticket-dialog";
 import { AuthProvider } from "../src/state/auth";
 import { CompanyProvider, useCompany } from "../src/state/company";
 import { ProjectProvider } from "../src/state/project";
+import { SessionsProvider } from "../src/state/sessions";
 import { ThemeProvider } from "../src/state/theme";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { PROJECT } from "./helpers/project-settings";
@@ -124,7 +125,11 @@ async function openTicket() {
           h(
             ProjectProvider,
             null,
-            h(CompanyProvider, null, h(OpenTicket), h(TicketDialogHost), h(UnsavedPrompt)),
+            h(
+              SessionsProvider,
+              null,
+              h(CompanyProvider, null, h(OpenTicket), h(TicketDialogHost), h(UnsavedPrompt)),
+            ),
           ),
         ),
       ),
@@ -151,6 +156,16 @@ describe("a ticket's sections", () => {
       addEventListener: () => {},
       removeEventListener: () => {},
     }));
+    // The conversations' live stream, which jsdom does not have; the dialog's run dots
+    // read it through SessionsProvider, and nothing here listens to it.
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener() {}
+        removeEventListener() {}
+        close() {}
+      },
+    );
   });
   afterEach(async () => {
     await unmountAll();

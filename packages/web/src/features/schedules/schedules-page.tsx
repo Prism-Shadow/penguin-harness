@@ -24,7 +24,7 @@
  * schedule event, regaining focus — and on the header's button.
  */
 import { useCallback, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import type { ProjectScheduleItem, ScheduleStatus } from "@prismshadow/penguin-server/api";
 import {
   Badge,
@@ -54,15 +54,17 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import {
+  NO_SCHEDULE_FILTERS,
   SCHEDULE_TYPES,
   countByStatus,
   countByType,
   filterSchedulePage,
+  readScheduleFilters,
+  writeScheduleFilters,
 } from "./schedule-category";
-import type { ScheduleType } from "./schedule-category";
+import type { SchedulePageFilters, ScheduleType } from "./schedule-category";
 import { describeInstant, describePeriod } from "./schedule-describe";
 import { SCHEDULE_FILTERS, autoPauseReasonOf } from "./schedule-panel-state";
-import type { ScheduleFilter } from "./schedule-panel-state";
 import { ScheduleDetailDialog } from "./schedule-detail-dialog";
 import { ScheduleFormModal } from "./schedule-form-modal";
 import { refreshSchedules, useProjectSchedules } from "./schedule-store";
@@ -105,20 +107,34 @@ export function SchedulesPage() {
   const projectId = currentProject?.projectId ?? null;
   // The key is this page: the store refetches whenever it changes, and here it never does — the
   // page is not a conversation, so its list rides the store's event and focus refreshes.
-  const { items, error } = useProjectSchedules(projectId, "schedules-page");
-  const [status, setStatus] = useState<ScheduleFilter>("all");
-  const [type, setType] = useState<ScheduleType | "all">("all");
-  const [query, setQuery] = useState("");
+  const { items, invalidFiles, error } = useProjectSchedules(projectId, "schedules-page");
+  // The filters live in the address, so a narrowed view survives a reload and can be sent to
+  // someone else. `replace` keeps them out of the back stack: choosing three chips is one view,
+  // not three pages to walk back through.
+  const [params, setParams] = useSearchParams();
+  const filters = useMemo(() => readScheduleFilters(params), [params]);
+  const setFilters = useCallback(
+    (patch: Partial<SchedulePageFilters>) => {
+      setParams(writeScheduleFilters({ ...filters, ...patch }), { replace: true });
+    },
+    [filters, setParams],
+  );
+  const { status, type, query } = filters;
   // The task the detail dialog shows, by identity rather than by snapshot: a toggle or a save
   // replaces the list, and the dialog must show what the server now says, not what it said when
   // the row was clicked. A task that disappeared (deleted elsewhere) closes the dialog by itself.
   const [openKey, setOpenKey] = useState<{ agentId: string; name: string } | null>(null);
   const [editing, setEditing] = useState<ProjectScheduleItem | null>(null);
+  // The agent a new task is being created for (the group's Create button); null means no form.
+  const [creating, setCreating] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   useDocumentTitle(S.schedulesPage.title);
 
   const all = useMemo(() => items ?? [], [items]);
-  const shown = useMemo(() => filterSchedulePage(all, status, type, query), [all, status, type, query]);
+  const shown = useMemo(
+    () => filterSchedulePage(all, status, type, query),
+    [all, status, type, query],
+  );
   const statusCounts = useMemo(() => countByStatus(all), [all]);
   const typeCounts = useMemo(() => countByType(all), [all]);
   const groups = useMemo(() => groupByAgent(shown), [shown]);
@@ -150,11 +166,7 @@ export function SchedulesPage() {
     void refreshSchedules(projectId);
   }, [projectId]);
 
-  const clearFilters = () => {
-    setStatus("all");
-    setType("all");
-    setQuery("");
-  };
+  const clearFilters = () => setFilters(NO_SCHEDULE_FILTERS);
 
   // One table per agent, each with the same columns; the min width lets the narrow columns hold
   // their line before the overflow container takes over.
@@ -173,7 +185,9 @@ export function SchedulesPage() {
   if (items === null) {
     body = error === null ? <Skeleton className="h-40 w-full" /> : null;
   } else if (all.length === 0) {
-    body = <EmptyState title={S.schedulesPage.emptyTitle} description={S.schedulesPage.emptyHint} />;
+    body = (
+      <EmptyState title={S.schedulesPage.emptyTitle} description={S.schedulesPage.emptyHint} />
+    );
   } else if (shown.length === 0) {
     body = (
       <EmptyState
@@ -193,14 +207,21 @@ export function SchedulesPage() {
             <CardHeader
               title={nameOf(group.agentId)}
               actions={
-                // A link, not a button: the destination is a route, so it can be opened in a
-                // new tab — and a <button> inside an <a> is neither.
-                <Link
-                  to={`/agents/${encodeURIComponent(group.agentId)}?tab=schedules`}
-                  className="text-xs text-fg-muted hover:underline"
-                >
-                  {S.schedulesPage.openAgent}
-                </Link>
+                <>
+                  {/* Create here, for this agent: the form is the same one the settings tab
+                      opens, and a task is created for the agent whose group it sits in. */}
+                  <Button size="sm" variant="ghost" onClick={() => setCreating(group.agentId)}>
+                    {S.schedulesPage.newTask}
+                  </Button>
+                  {/* A link, not a button: the destination is a route, so it can be opened in a
+                      new tab — and a <button> inside an <a> is neither. */}
+                  <Link
+                    to={`/agents/${encodeURIComponent(group.agentId)}?tab=schedules`}
+                    className="text-xs text-fg-muted hover:underline"
+                  >
+                    {S.schedulesPage.openAgent}
+                  </Link>
+                </>
               }
             />
             <Table framed={false} tableClassName="min-w-[720px]">
@@ -215,12 +236,21 @@ export function SchedulesPage() {
                     onClick={() => setOpenKey({ agentId: item.agentId, name: item.name })}
                     className="cursor-pointer"
                   >
+                    {/* The name is a button as well as the row being clickable: the mouse gets
+                        the whole line, and a keyboard gets one stop per task that opens the same
+                        dialog (a clickable <tr> is reachable by neither tab nor Enter). */}
                     <TableCell
                       className="max-w-48 truncate font-mono text-xs"
                       data-tooltip={item.name}
                       data-tooltip-content="code"
                     >
-                      {item.name}
+                      <button
+                        type="button"
+                        onClick={() => setOpenKey({ agentId: item.agentId, name: item.name })}
+                        className="block max-w-full truncate text-left hover:underline focus-visible:underline"
+                      >
+                        {item.name}
+                      </button>
                     </TableCell>
                     <TableCell nowrap>
                       <span
@@ -278,7 +308,11 @@ export function SchedulesPage() {
         title={S.schedulesPage.title}
         description={S.schedulesPage.subtitle}
         actions={
-          <Button size="sm" disabled={refreshing || projectId === null} onClick={() => void refresh()}>
+          <Button
+            size="sm"
+            disabled={refreshing || projectId === null}
+            onClick={() => void refresh()}
+          >
             {S.schedulesPage.refresh}
           </Button>
         }
@@ -303,11 +337,15 @@ export function SchedulesPage() {
                 ),
               }))}
               value={status}
-              onChange={setStatus}
+              onChange={(value) => setFilters({ status: value })}
             />
           </div>
           <div className="w-40 shrink-0">
-            <Select size="sm" value={type} onChange={(e) => setType(e.target.value as ScheduleType | "all")}>
+            <Select
+              size="sm"
+              value={type}
+              onChange={(e) => setFilters({ type: e.target.value as ScheduleType | "all" })}
+            >
               <option value="all">{chip(S.schedulesPage.typeAll, statusCounts.all)}</option>
               {SCHEDULE_TYPES.map((value) => (
                 <option key={value} value={value}>
@@ -322,7 +360,7 @@ export function SchedulesPage() {
               value={query}
               placeholder={S.schedulesPage.searchPlaceholder}
               aria-label={S.schedulesPage.searchPlaceholder}
-              onChange={setQuery}
+              onChange={(value) => setFilters({ query: value })}
             />
           </div>
         </div>
@@ -348,6 +386,22 @@ export function SchedulesPage() {
 
       {body}
 
+      {/* A file that failed to parse is a task that quietly stopped being scheduled, and only a
+          Project-wide view can say so for every agent at once (the settings tab says it per
+          agent). Shown whatever the filters say: it is not a task, and no chip can reach it. */}
+      {invalidFiles.length > 0 && (
+        <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
+          <p className="font-medium">{S.schedulesPage.invalidFiles}</p>
+          <ul className="mt-0.5 space-y-1 font-mono text-xs">
+            {invalidFiles.map((file) => (
+              <li key={`${file.agentId}/${file.name}`}>
+                {file.agentId} · {file.name}: {file.error}
+              </li>
+            ))}
+          </ul>
+        </NoticeStrip>
+      )}
+
       <ScheduleDetailDialog
         item={detail}
         onClose={() => setOpenKey(null)}
@@ -360,13 +414,19 @@ export function SchedulesPage() {
         onChanged={changed}
       />
 
+      {/* One form for both verbs: `editing` set rewrites that task, `creating` set creates one
+          for that agent (a task belongs to exactly one agent, so the group decides which). */}
       <ScheduleFormModal
-        open={editing !== null}
-        agentId={editing?.agentId ?? ""}
+        open={editing !== null || creating !== null}
+        agentId={editing?.agentId ?? creating ?? ""}
         editing={editing}
-        onClose={() => setEditing(null)}
+        onClose={() => {
+          setEditing(null);
+          setCreating(null);
+        }}
         onSaved={() => {
           setEditing(null);
+          setCreating(null);
           changed();
         }}
       />

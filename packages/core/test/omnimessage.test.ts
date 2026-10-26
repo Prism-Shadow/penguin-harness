@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  abortCodeForInterruption,
   abortEvent,
   addTokenCounts,
   approvalDecision,
@@ -10,6 +11,7 @@ import {
   partialToolCallOutput,
   toolCallOutput,
   userText,
+  SERVER_SHUTDOWN_ABORT_REASON,
 } from "../src/omnimessage/index.js";
 import type { ToolCallOutputPayload } from "../src/omnimessage/index.js";
 
@@ -38,6 +40,26 @@ describe("builders", () => {
       type: "abort",
       error_code: "backoff_interrupted",
     });
+    expect(abortEvent("server_restart").payload).toMatchObject({
+      type: "abort",
+      error_code: "server_restart",
+    });
+  });
+
+  it("abortCodeForInterruption maps the server-shutdown reason to server_restart", () => {
+    expect(abortCodeForInterruption(undefined)).toBe("user_abort");
+    expect(abortCodeForInterruption(null)).toBe("user_abort");
+    const userAbort = new AbortController();
+    userAbort.abort();
+    expect(abortCodeForInterruption(userAbort.signal)).toBe("user_abort");
+    const shutdown = new AbortController();
+    shutdown.abort(SERVER_SHUTDOWN_ABORT_REASON);
+    expect(abortCodeForInterruption(shutdown.signal)).toBe("server_restart");
+    // The shutdown cause outranks the run's ordinary interruption code.
+    expect(abortCodeForInterruption(shutdown.signal, "backoff_interrupted")).toBe("server_restart");
+    expect(abortCodeForInterruption(shutdown.signal, "compaction_interrupted")).toBe(
+      "server_restart",
+    );
   });
 
   it("toolCallOutput carries optional images and round-trips through JSON", () => {

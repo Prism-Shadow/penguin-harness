@@ -6,11 +6,14 @@
 import { describe, expect, it } from "vitest";
 import type { ScheduleItem, ScheduleStatus } from "@prismshadow/penguin-server/api";
 import {
+  NO_SCHEDULE_FILTERS,
   SCHEDULE_TYPES,
   countByStatus,
   countByType,
   filterSchedulePage,
+  readScheduleFilters,
   scheduleType,
+  writeScheduleFilters,
 } from "../src/features/schedules/schedule-category";
 
 function item(overrides: Partial<ScheduleItem> & { name: string }): ScheduleItem {
@@ -56,7 +59,15 @@ describe("scheduleType", () => {
 
 describe("countByStatus", () => {
   it("counts the panel's buckets, and 'all' counts every task including an invalid file", () => {
-    const statuses: ScheduleStatus[] = ["active", "active", "disabled", "done", "expired", "missed", "invalid"];
+    const statuses: ScheduleStatus[] = [
+      "active",
+      "active",
+      "disabled",
+      "done",
+      "expired",
+      "missed",
+      "invalid",
+    ];
     const counts = countByStatus(statuses.map((status, i) => item({ name: `t${i}`, status })));
     expect(counts).toEqual({ all: 7, active: 2, paused: 1, completed: 3 });
   });
@@ -71,6 +82,34 @@ describe("countByType", () => {
       item({ name: "daily2", period: "24h" }),
     ]);
     expect(counts).toEqual({ once: 1, minutes: 0, hours: 1, days: 2, weeks: 0, custom: 0 });
+  });
+});
+
+describe("the filters a URL carries", () => {
+  it("an empty address is no filter", () => {
+    expect(readScheduleFilters(new URLSearchParams())).toEqual(NO_SCHEDULE_FILTERS);
+  });
+
+  it("round-trips what this build knows", () => {
+    const filters = { status: "paused", type: "days", query: "日报" } as const;
+    expect(readScheduleFilters(writeScheduleFilters(filters))).toEqual(filters);
+  });
+
+  it("an unfiltered page has a clean address — no `status=all` clutter", () => {
+    expect(writeScheduleFilters(NO_SCHEDULE_FILTERS).toString()).toBe("");
+    // A blank search is no search, and a padded one keeps what was typed.
+    expect(writeScheduleFilters({ ...NO_SCHEDULE_FILTERS, query: "   " }).toString()).toBe("");
+    expect(writeScheduleFilters({ ...NO_SCHEDULE_FILTERS, query: " x " }).get("q")).toBe(" x ");
+  });
+
+  it("a hand-edited or stale address falls back to no filter instead of a state no control can show", () => {
+    const params = new URLSearchParams("status=running&type=hourly&q=ok");
+    expect(readScheduleFilters(params)).toEqual({ status: "all", type: "all", query: "ok" });
+    expect(readScheduleFilters(new URLSearchParams("type=custom"))).toEqual({
+      status: "all",
+      type: "custom",
+      query: "",
+    });
   });
 });
 
@@ -113,7 +152,9 @@ describe("filterSchedulePage", () => {
   it("an invalid file sits under 'all' only, and still answers to the search box", () => {
     const invalid = item({ name: "broken", status: "invalid", invalidReason: "bad date" });
     const list = [...items, invalid];
-    expect(filterSchedulePage(list, "active", "all", "").map((i) => i.name)).not.toContain("broken");
+    expect(filterSchedulePage(list, "active", "all", "").map((i) => i.name)).not.toContain(
+      "broken",
+    );
     expect(filterSchedulePage(list, "all", "all", "broken").map((i) => i.name)).toEqual(["broken"]);
   });
 });

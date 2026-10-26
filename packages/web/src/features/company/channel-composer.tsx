@@ -50,7 +50,8 @@ import type {
 import { Button, Dropdown, ICON_GAP, MenuLabel, noAutofill } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { fitTextarea } from "../../lib/textarea-fit";
-import { PrincipalChip } from "./shared";
+import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
+import { PrincipalChip, principalLabel } from "./shared";
 import {
   mentionInsertWire,
   mentionLabel,
@@ -115,6 +116,8 @@ export function ChannelComposer({
   initialText = "",
   onTextChange,
   onSend,
+  replyTo = null,
+  onCancelReply,
 }: {
   candidates: readonly MentionCandidate[];
   names: ReadonlyMap<string, string>;
@@ -124,6 +127,10 @@ export function ChannelComposer({
   onTextChange?: (text: string) => void;
   /** Sends the draft; resolves true once it is in the stream (the draft is then cleared). */
   onSend: (text: string) => Promise<boolean>;
+  /** Message the draft is quoting as a reply, if any. */
+  replyTo?: OrgChannelMessage | null;
+  /** Clears the quoted reply. */
+  onCancelReply?: () => void;
 }) {
   const [draft, setDraftState] = useState<MentionDraft>(() => ({
     text: initialText,
@@ -346,6 +353,23 @@ export function ChannelComposer({
 
   return (
     <div className="shrink-0 border-t border-gray-200 pt-3 dark:border-gray-800">
+      {replyTo !== null && replyTo !== undefined && (
+        <div className="mb-2 flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800">
+          <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300">
+            {S.company.channels.replyTo} {principalLabel(replyTo.sender, names)}: {replyTo.text}
+          </span>
+          {onCancelReply !== undefined && (
+            <button
+              type="button"
+              onClick={onCancelReply}
+              className="shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+              aria-label={S.common.cancel}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
       <div className={`flex items-end ${ICON_GAP.menu}`}>
         <Dropdown
           className="min-w-0 flex-1"

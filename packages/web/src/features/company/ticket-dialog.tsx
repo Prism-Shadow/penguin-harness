@@ -25,8 +25,10 @@
  * A parent or a child swaps the dialog's own ticket. Only a session leaves the page, since a
  * conversation has no in-place form: it opens as the full conversation page and joins the
  * company sidebar's Temporary group (temp-session.ts).
- * A session's live status is not drawn: a ticket reports its own work, not what a session is
- * doing this second.
+ * Each session row draws its run dot — live first, the ticket's own snapshot for a session no
+ * event has named — and the folded summary counts the working ones, so a ticket whose sessions
+ * all went quiet reads quiet without opening the fold. (The board asked for this on 2026-10-18:
+ * in-progress tickets with long-dead sessions looked alive.)
  */
 import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useNavigate } from "react-router";
@@ -37,6 +39,7 @@ import type {
   OrgTicketPriority,
   OrgTicketStatus,
   OrgTicketUpdateRequest,
+  SessionStatus,
 } from "@prismshadow/penguin-server/api";
 import type { ReactNode } from "react";
 import {
@@ -70,10 +73,11 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney } from "../../lib/format";
-import { toneInk } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
+import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { PathMarkdown, PathText } from "./path-capsule";
 import {
@@ -240,6 +244,7 @@ function TicketDialog({
   /** Whether the board and roster on hand are this organization's, so the fields can read names. */
   const contextReady = contextOrg === `${projectId}/${orgId}`;
   const { tickets: ticketsVersion, runs: runsVersion } = company.versions;
+  const liveStatuses = useLiveSessionStatuses();
   /** The open section's update: what Save would send; empty while nothing changed. */
   const pendingUpdate =
     detail === null || editing === null
@@ -376,6 +381,14 @@ function TicketDialog({
   const created = detail === null ? null : ticketCreatedDate(detail.ticketId);
   const counts = detail === null ? null : ticketSummaryCounts(detail);
   const history = detail === null ? [] : ticketHistoryRows(detail.history);
+  /** Sessions working right now (live first, snapshot fallback) — the fold's summary reads it. */
+  const runningSessions =
+    detail === null
+      ? 0
+      : detail.sessionItems.filter((s) => {
+          const status = liveStatuses.get(s.sessionId) ?? s.status;
+          return status === "running" || status === "compacting";
+        }).length;
   /** A history line's principal: the employee's name, "you" for the reader, else the user id. */
   const historyPrincipal = (principal: string) =>
     me !== null && principal === `user:${me}`
@@ -834,7 +847,9 @@ function TicketDialog({
                 summary={
                   counts === null || counts.sessionsEmpty
                     ? S.common.none
-                    : S.company.tickets.sessionsCount(counts.sessions)
+                    : runningSessions > 0
+                      ? `${S.company.tickets.sessionsCount(counts.sessions)} · ${S.company.tickets.sessionsRunning(runningSessions)}`
+                      : S.company.tickets.sessionsCount(counts.sessions)
                 }
               >
                 {detail.sessionItems.length === 0 ? (
@@ -843,6 +858,7 @@ function TicketDialog({
                   <ul className="space-y-1">
                     {detail.sessionItems.map((s) => (
                       <li key={s.sessionId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                        <SessionRunDot status={liveStatuses.get(s.sessionId) ?? s.status} />
                         <PrincipalChip principal={agentPrincipal(s.agentId)} names={names} />
                         <span className="flex min-w-0 flex-1">
                           {s.agentId === "" ? (
@@ -1206,5 +1222,23 @@ function Fold({
         {children}
       </div>
     </section>
+  );
+}
+
+/**
+ * A ticket session's run dot: emerald and pulsing while it works, receding gray once settled.
+ * Never the only carrier — its tooltip and accessible name spell the state out (the muted
+ * tone's WCAG rule in lib/tone.ts).
+ */
+function SessionRunDot({ status }: { status: SessionStatus }) {
+  const on = status === "running" || status === "compacting";
+  const label = on ? S.company.tickets.sessionRunning : S.company.tickets.sessionIdle;
+  return (
+    <span
+      className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? `${toneDot.busy} ui-live animate-pulse` : toneDot.muted}`}
+      data-tooltip={label}
+    >
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }

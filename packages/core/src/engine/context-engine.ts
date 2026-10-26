@@ -30,6 +30,7 @@
  * the user Prompt on the first turn, and the previous turn's tool_call_output afterward.
  */
 import {
+  abortCodeForInterruption,
   abortEvent,
   approvalDecision,
   assistantText,
@@ -66,6 +67,7 @@ import {
 } from "../omnimessage/markers/index.js";
 import type {
   ErrorCode,
+  AbortErrorCode,
   ApprovalDecision,
   CompactionMode,
   CompactionReason,
@@ -803,8 +805,9 @@ export class ContextEngine {
       // multimodal input isn't lost. The message is already written to Trace, so it won't be
       // rewritten on the next send.
       this.pendingCarryOver = input;
-      yield* this.emitAbort("user_abort");
-      return { kind: "abort", errorCode: "user_abort" };
+      const abortCode = abortCodeForInterruption(signal);
+      yield* this.emitAbort(abortCode);
+      return { kind: "abort", errorCode: abortCode };
     }
 
     let turnCount = 0;
@@ -873,8 +876,9 @@ export class ContextEngine {
         // during tool execution): stop and hand control back to the user.
         if (signal?.aborted || turn.outcome.status === "aborted") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort("user_abort");
-          return { kind: "abort", errorCode: "user_abort" };
+          const abortCode = abortCodeForInterruption(signal);
+          yield* this.emitAbort(abortCode);
+          return { kind: "abort", errorCode: abortCode };
         }
         // `fatal` stops the run: a definitive provider rejection, a dead credential, or a
         // deterministic client-side rejection — the identical request can never succeed, so
@@ -967,8 +971,9 @@ export class ContextEngine {
         consecutive += 1;
         if (!(await this.backoff(consecutive, signal))) {
           this.pendingCarryOver = attemptInput;
-          yield* this.emitAbort("backoff_interrupted");
-          return { kind: "abort", errorCode: "backoff_interrupted" };
+          const abortCode = abortCodeForInterruption(signal, "backoff_interrupted");
+          yield* this.emitAbort(abortCode);
+          return { kind: "abort", errorCode: abortCode };
         }
       }
 
@@ -1044,8 +1049,9 @@ export class ContextEngine {
             // Only the user interruption is an abort; a failed compaction's terminal
             // record is the compaction_end (status + error_message) already written.
             if (result.status === "aborted") {
-              yield* this.emitAbort("compaction_interrupted");
-              return { kind: "abort", errorCode: "compaction_interrupted" };
+              const abortCode = abortCodeForInterruption(signal, "compaction_interrupted");
+              yield* this.emitAbort(abortCode);
+              return { kind: "abort", errorCode: abortCode };
             }
             return {
               kind: "compaction_failure",
@@ -1191,7 +1197,20 @@ export class ContextEngine {
   async *switchContext(signal?: AbortSignal): AsyncGenerator<OmniMessage, StopReason> {
     if (this.sessionTurns > 0) {
       const status = yield* this.compact({ signal, mode: "summarize" });
-      if (status !== "completed") return status ?? "fatal";
+      if (status !== "completed") {
+        // A transport failure (retryable — e.g. the model being switched away from is
+        // already dead) must not strand the switch on the old context: the summary could
+        // not be produced, so fall back to discarding the old context and opening the
+        // target context without one. A definitive failure (fatal) or a user interruption
+        // (aborted) keeps the old context as before.
+        if (status !== "retryable") return status ?? "fatal";
+        this.pendingCarryOver = this.pendingCarryOver.filter(
+          (m) => (m.payload as { type?: string }).type === "text",
+        );
+        this.pendingSummary = null;
+        this.openingSummary = null;
+        yield* this.startNewContext();
+      }
     } else {
       yield* this.startNewContext();
       // A switch carries text alone: tool outputs pair with tool calls only the context left
@@ -2178,7 +2197,7 @@ export class ContextEngine {
 
   /** User interruption: emits an abort event carrying the machine-readable cause. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
   private async *emitAbort(
-    errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted",
+    errorCode: AbortErrorCode,
   ): AsyncGenerator<OmniMessage> {
     const msg = abortEvent(errorCode);
     yield msg;

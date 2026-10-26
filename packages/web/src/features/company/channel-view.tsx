@@ -126,6 +126,8 @@ export function ChannelView() {
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [joining, setJoining] = useState(false);
   const [confirmJoin, setConfirmJoin] = useState(false);
+  /** Message the composer is currently quoting as a reply. */
+  const [replyTo, setReplyTo] = useState<OrgChannelMessage | null>(null);
   /** Messages that arrived while the view was scrolled up; shown on the pill. */
   const [pendingNew, setPendingNew] = useState(0);
   const [showJump, setShowJump] = useState(false);
@@ -161,6 +163,7 @@ export function ChannelView() {
     setDetailError(null);
     setPendingNew(0);
     setConfirmJoin(false);
+    setReplyTo(null);
     markedRef.current = null;
     firstDayRef.current = null;
     listedMemberRef.current = null;
@@ -366,12 +369,16 @@ export function ChannelView() {
 
   const send = async (text: string): Promise<boolean> => {
     try {
-      const msg = await api.sendOrgChannelMessage(projectId, orgId, channelId, { text });
+      const msg = await api.sendOrgChannelMessage(projectId, orgId, channelId, {
+        text,
+        ...(replyTo !== null ? { refs: { replyTo: replyTo.id } } : {}),
+      });
       draft.discard();
       follow.resume();
       setDays((prev) =>
         prev === null ? prev : appendMessage(prev, meta?.today ?? msg.time.slice(0, 10), msg),
       );
+      setReplyTo(null);
       return true;
     } catch (e) {
       toastError(apiErrorText(e));
@@ -591,12 +598,20 @@ export function ChannelView() {
         }
         avatar={
           p.kind === "agent" ? (
-            <EmployeeAvatar
-              id={p.id}
-              name={sender.name}
-              size={FACE_PX.message}
-              className="shrink-0 rounded-lg"
-            />
+            <span
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setReplyTo(first);
+              }}
+              className="inline-flex"
+            >
+              <EmployeeAvatar
+                id={p.id}
+                name={sender.name}
+                size={FACE_PX.message}
+                className="shrink-0 rounded-lg"
+              />
+            </span>
           ) : undefined
         }
       >
@@ -724,6 +739,8 @@ export function ChannelView() {
                 initialText={draft.initial}
                 onTextChange={draft.onTextChange}
                 onSend={send}
+                replyTo={replyTo}
+                onCancelReply={() => setReplyTo(null)}
               />
             ) : detail !== null && detail.archived ? (
               <NoticeStrip

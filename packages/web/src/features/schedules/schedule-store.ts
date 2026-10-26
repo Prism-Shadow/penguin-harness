@@ -28,7 +28,10 @@
  * kilobytes back for exactly the blank-then-refetch this cache exists to remove.
  */
 import { useEffect, useSyncExternalStore } from "react";
-import type { ProjectScheduleItem } from "@prismshadow/penguin-server/api";
+import type {
+  ProjectScheduleItem,
+  ProjectSchedulesResponse,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 
@@ -96,6 +99,13 @@ export function scheduleItems(projectId: string | null): ProjectScheduleItem[] |
 /** This Project's last failure text, or null. */
 export function scheduleError(projectId: string | null): string | null {
   return peek(projectId)?.error ?? null;
+}
+
+/** The files that failed to parse, each with the agent holding it; empty before the first answer. */
+export function scheduleInvalidFiles(
+  projectId: string | null,
+): ProjectSchedulesResponse["invalidFiles"] {
+  return peek(projectId)?.invalidFiles ?? [];
 }
 
 /**
@@ -190,7 +200,12 @@ export function subscribeSchedules(listener: () => void): () => void {
 export function useProjectSchedules(
   projectId: string | null,
   refreshKey: string,
-): { items: ProjectScheduleItem[] | null; error: string | null } {
+): {
+  items: ProjectScheduleItem[] | null;
+  /** The broken files beside the list — see the Entry field. */
+  invalidFiles: ProjectSchedulesResponse["invalidFiles"];
+  error: string | null;
+} {
   useSyncExternalStore(subscribeSchedules, schedulesVersion, schedulesVersion);
   // Held for as long as this reader is mounted, and deliberately not keyed on `refreshKey`:
   // moving between two conversations of one Project must not release the entry and take it again.
@@ -200,6 +215,7 @@ export function useProjectSchedules(
   }, [projectId, refreshKey]);
   return {
     items: scheduleItems(projectId),
+    invalidFiles: scheduleInvalidFiles(projectId),
     error: scheduleError(projectId),
   };
 }
