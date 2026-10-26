@@ -301,7 +301,7 @@ reader.on("error", (err) => console.error(err)); // refused for good, such as a 
 
 ### 在浏览器中
 
-同一个包经打包工具即可在浏览器中使用；包里另带一个无需解析依赖的 ES 模块 `dist/browser/amsp.js`，供按 URL 引入的页面使用。与服务器不同源的页面必须使用密钥：服务器对任何来源都应答 CORS 预检，但只在带 `Authorization` 的请求上返回 `Access-Control-Allow-Origin: *`。跨源请求只能携带 `Authorization` 和 `Content-Type`，所以额外的 `headers` 只适用于同源页面和 Node。
+同一个包经打包工具即可在浏览器中使用；包里另带一个无需解析依赖的 ES 模块 `@prismshadow/amsp/browser`（`dist/browser/amsp.js`），供按 URL 引入的页面使用；要把它提供给自己页面的服务端，可以从 `@prismshadow/amsp/browser-source` 取得同样字节的字符串 `BROWSER_SOURCE`。与服务器不同源的页面必须使用密钥：服务器对任何来源都应答 CORS 预检，但只在带 `Authorization` 的请求上返回 `Access-Control-Allow-Origin: *`。跨源请求只能携带 `Authorization` 和 `Content-Type`，所以额外的 `headers` 只适用于同源页面和 Node。
 
 ```ts
 import { AgentClient, isModelMessage } from "@prismshadow/amsp";
@@ -329,7 +329,7 @@ const reader = new SessionReader(transport, sessionId, {
 });
 ```
 
-工作台页面不必自己拼装这些：引入服务端为每个工作台提供的 `../sdk/workbench.js`，调用 `followSession(sessionId)` 即可。这个模块重新导出的就是应答该工作台的服务端所带的这个包，基础路径也已设好，工作台在其他机器上时同样适用。见 [Workbench 插件](/skills#workbench-插件)。
+工作台页面不必自己拼装这些：引入服务端为每个工作台提供的 `../sdk/workbench.js`，调用 `followSession(sessionId)` 即可。这个模块重新导出应答该工作台的服务端所带的浏览器构建，`apiBase` 与 `transport` 已按它的 Cookie 门设好，工作台在其他机器上或位于反向代理前缀之下时同样适用；另外还提供 `abortSession(sessionId)`。见 [Workbench 插件](/skills#workbench-插件)。
 
 > [!WARNING]
 > 写在页面里的密钥，任何打开该页面的人都能读到。浏览器客户端只适合你和团队自用的工具，并在运行时输入密钥；否则就把密钥放在后端，由后端替页面调用 Agent。

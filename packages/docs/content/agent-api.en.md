@@ -301,7 +301,7 @@ reader.on("error", (err) => console.error(err)); // refused for good, such as a 
 
 ### In a browser
 
-The same package works in a browser through a bundler, and ships one ES module with nothing to resolve, `dist/browser/amsp.js`, for a page that imports it by URL. A page on another origin than the server needs a key: the server answers the CORS preflight for any origin, but sends `Access-Control-Allow-Origin: *` only on a request carrying `Authorization`. A cross-origin request may carry only `Authorization` and `Content-Type`, so extra `headers` are for same-origin pages and Node.
+The same package works in a browser through a bundler, and ships one ES module with nothing to resolve, `@prismshadow/amsp/browser` (`dist/browser/amsp.js`), for a page that imports it by URL; a server that serves it to its pages can take the same bytes as a string, `BROWSER_SOURCE` from `@prismshadow/amsp/browser-source`. A page on another origin than the server needs a key: the server answers the CORS preflight for any origin, but sends `Access-Control-Allow-Origin: *` only on a request carrying `Authorization`. A cross-origin request may carry only `Authorization` and `Content-Type`, so extra `headers` are for same-origin pages and Node.
 
 ```ts
 import { AgentClient, isModelMessage } from "@prismshadow/amsp";
@@ -329,7 +329,7 @@ const reader = new SessionReader(transport, sessionId, {
 });
 ```
 
-A workbench page does not build this itself: it imports `../sdk/workbench.js`, which the server serves beside every workbench, and calls `followSession(sessionId)`. That module re-exports this package as built for the server answering, with the right base already set, for a workbench on another machine too. See [Workbench plugins](/skills#workbench-plugins).
+A workbench page does not build this itself: it imports `../sdk/workbench.js`, which the server serves beside every workbench, and calls `followSession(sessionId)`. That module re-exports the browser build of the server answering, with `apiBase` and `transport` already set for its cookie door, for a workbench on another machine or behind a proxy prefix too, and adds `abortSession(sessionId)`. See [Workbench plugins](/skills#workbench-plugins).
 
 > [!WARNING]
 > A key in a page is readable by everyone who loads the page. Use a browser client for a tool only you and your team open, with the key entered at run time, or keep the key on a backend that calls the agent for the page.

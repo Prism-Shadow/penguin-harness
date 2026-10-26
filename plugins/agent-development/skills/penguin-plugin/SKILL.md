@@ -46,7 +46,7 @@ Use this pattern for uploads, research and support tickets:
 
 Polling shows a job only once it is done. To show the answer while the Agent writes it, and to learn the moment a turn ends, follow the job's Session over AMSP: the records its Trace holds plus the streamed fragments, the same ones the chat view reads. AMSP carries the Agent's conversation and nothing else. Starting a turn, follow-ups, saving results and every other side effect stay in your handler.
 
-**The page** imports the page SDK the server serves beside your workbench, relative to the page just like `../api/…`:
+**The page** imports the page SDK the server serves beside your workbench, relative to the page just like `../api/…`: `../sdk/workbench.js` from a page directly under `ui/`, one more `../` for each folder deeper:
 
 ```js
 let reader = null;
@@ -80,12 +80,12 @@ function closeItem() {
 ```
 
 - Open one reader for the item on screen (its dialog or detail view), never one per list row: each reader holds a connection, and a browser allows only a few per origin. Close it when the dialog closes and when the page is hidden (`visibilitychange`).
-- `followSession(sessionId, { tailLimit? })` returns the SDK's `SessionReader`: it reads the latest Tasks of the history, then the live tail, and reconnects on its own. On `reset`, drop what you drew; the history follows again.
+- `followSession(sessionId, options?)` returns the SDK's `SessionReader` on the Session's stream, taking `tailLimit` and the reader's other options: it reads the latest Tasks of the history (events with `source: "history"`), then the live tail, and reconnects on its own. On `reset`, drop what you drew; the history follows again. Records of subagents come through with an `origin`; skip them yourself.
 - `task_end` is a hint, not the result: on it, refresh from your handler, whose saved answer is what stays. Keep the polling path from *Background jobs* as the fallback for a failed import, and keep the list itself on (slower) polling.
-- `abortSession(sessionId)` stops the running turn, for a Stop button.
-- `workbench.js` re-exports everything `@prismshadow/amsp` does, plus `apiBase` and `transport` for other reads of the signed-in user's door. Never write an absolute `/api/…` path into a page: a workbench on a machine is served under `/server/<machine>/api/…`, and `apiBase` already says which.
+- `abortSession(sessionId)` stops the running task, for a Stop button, and resolves `true` when there was one to stop, `false` when nothing was running.
+- `workbench.js` re-exports everything `@prismshadow/amsp` does, plus `apiBase` and `transport` for other reads of the signed-in user's door. Never write an absolute `/api/…` path into a page: a workbench on a machine is served under `/server/<machine>/api/…`, a reverse proxy may add a prefix of its own, and `apiBase` already says which.
 
-**The handler** gets the same records from `host.subscribe(sessionId, listener)`, which returns the function that stops them. It is live only: nothing from before the call, no history. Treat a record as a trigger and keep `await host.sessionResult(sessionId)` as the authoritative snapshot:
+**The handler** gets the same records from `host.subscribe(sessionId, listener)`, which returns the function that stops them. It is live only: nothing from before the call, no history, so subscribe before `host.run`. A record is a `WorkbenchRecord` (`{ timestamp, type, payload: { type?, … }, origin? }`, from `@prismshadow/penguin-server/plugin`). Treat it as a trigger and keep `await host.sessionResult(sessionId)` as the authoritative snapshot:
 
 ```ts
 create({ use }) {
@@ -95,24 +95,24 @@ create({ use }) {
     if (watching.has(sessionId)) return;
     const stop = host.subscribe(sessionId, (record) => {
       if (record.origin || record.payload.type !== "task_end") return;
-      void settle(sessionId).then((done) => {
-        if (!done) return; // a queued follow-up is running: keep watching
+      void settleWhenIdle(sessionId).then((done) => {
+        if (!done) return; // a queued follow-up started: wait for its task_end
         stop();
         watching.delete(sessionId);
       });
     });
     watching.set(sessionId, stop);
   };
-  // create runs again on every reload, and a reload ends every subscription.
+  // create runs again whenever the workbench loads, and a reload ends every subscription.
   for (const job of runningJobs(host.getState())) watch(job.sessionId);
-  // …
+  // …and call watch(sessionId) before host.run, when a job starts and on every follow-up.
 }
 ```
 
-- `settle` reads `sessionResult`, returns `false` while it is still `running`, and otherwise saves `completed` or `failed` with `host.setState` under the same read/modify/write lock as your routes.
-- Subscribe before `host.run`, when a job starts and on every follow-up, so a short turn cannot end unseen.
-- Keep the GET-time reconcile from *Background jobs*: records written while nothing was listening (between a reload and `create`, across a server restart) are not replayed.
-- A listener that throws is logged and skipped; a Session outside this Project throws at `subscribe`.
+- The main `task_end` arrives a moment before the Session reads idle, and until then `sessionResult` still says `running`. So `settleWhenIdle` waits a little for `host.sessionStatus(sessionId)` to read `idle`, then reads `sessionResult` and saves `completed` or `failed` with `host.setState` under the same read/modify/write lock as your routes. If the Session stays busy, a queued follow-up has started: return `false` and keep watching.
+- Keep the GET-time reconcile from *Background jobs*. Nothing is replayed: subscriptions end with a reload, a rollback, removal or a server restart (and `create` runs again only when the workbench next loads), and on their own once the Session has sat idle with nothing published for a while.
+- A listener that throws is logged once and keeps receiving. A Session outside this Project throws at `subscribe`.
+- If `.harness/plugin.d.ts` has no `subscribe`, the workbench was written against an older harness: delete `.harness/` and let the server write it again, then fix what the compiler reports.
 
 Never reach the Agent from a workbench through the Agent API: not `/api/amsp/v1`, not an Agent key, not the Agent's API switch or the key door. That door needs the owner to open the Agent, refuses the Sessions a workbench creates, and a key in a page is readable by everyone who opens it. The page SDK reads the signed-in user's own door, which needs nothing.
 
