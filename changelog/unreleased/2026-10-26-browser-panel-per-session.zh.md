@@ -3,6 +3,7 @@
 - **Date:** 2026-10-26
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1335](https://github.com/Prism-Shadow/penguin-harness/pull/1335)
 
 [English](2026-10-26-browser-panel-per-session.md)
 
