@@ -47,7 +47,7 @@ export interface BuiltinBenchmarkCase {
 }
 
 /** One built-in Benchmark: its card, the facts every statement repeats, and its cases. */
-export interface HarborBuiltinBenchmark {
+export interface BuiltinBenchmark {
   /** Directory under `benchmarks/`, which is the Benchmark id: `penguinharness-benchmark-<name>`. */
   id: string;
   /** The Benchmark's display name. */
@@ -108,13 +108,11 @@ export interface HarborBuiltinBenchmark {
 
 /** A built-in with plain Markdown cases, without Harbor-specific metadata. */
 export interface MarkdownBuiltinBenchmark extends Pick<
-  HarborBuiltinBenchmark,
+  BuiltinBenchmark,
   "id" | "title" | "description" | "descriptionZh" | "version"
 > {
   cases: Array<{ id: string; statement: string; rubric: string }>;
 }
-
-export type BuiltinBenchmark = HarborBuiltinBenchmark | MarkdownBuiltinBenchmark;
 
 /** Case directory name: the 1-based position and the Harbor task name. */
 function builtinCaseId(index: number, task: string): string {
@@ -122,12 +120,12 @@ function builtinCaseId(index: number, task: string): string {
 }
 
 /** Folder of the Benchmark's tasks inside the benchmark repository. */
-function taskPath(bench: HarborBuiltinBenchmark): string {
+function taskPath(bench: BuiltinBenchmark): string {
   return `benchmarks/${bench.repoDir}/tasks`;
 }
 
 /** A link into the benchmark repository at the Benchmark's pinned commit: a folder (`tree`) or a file (`blob`). */
-function repoLink(bench: HarborBuiltinBenchmark, kind: "tree" | "blob", rel: string): string {
+function repoLink(bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string): string {
   return `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
 }
 
@@ -137,7 +135,7 @@ function shellWord(text: string): string {
 }
 
 /** A plain Benchmark manifest, like any other: nothing in it marks how the cases run. */
-function builtinManifest(bench: BuiltinBenchmark): BenchmarkManifest {
+function builtinManifest(bench: BuiltinBenchmark | MarkdownBuiltinBenchmark): BenchmarkManifest {
   return {
     id: bench.id,
     title: bench.title,
@@ -154,7 +152,7 @@ function builtinManifest(bench: BuiltinBenchmark): BenchmarkManifest {
  * The statement README: summary, provenance and resources, then how the case is run — the
  * repository's rules for agents, the exact launch with its caps — and how it is scored.
  */
-function statement(bench: HarborBuiltinBenchmark, item: BuiltinBenchmarkCase): string {
+function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string {
   const offline = bench.agentNetwork === "no-network";
   const facts = [
     `- Benchmark: ${bench.title} — ${bench.source} · Category: ${item.category}` +
@@ -223,7 +221,7 @@ function statement(bench: HarborBuiltinBenchmark, item: BuiltinBenchmarkCase): s
 }
 
 /** The rubric README: the verifier's reward out of 100, decided by the task's tests or its grader. */
-function rubric(bench: HarborBuiltinBenchmark): string {
+function rubric(bench: BuiltinBenchmark): string {
   const decides = bench.grader !== undefined ? "grader decides" : "tests decide";
   return `# Scoring rubric (max 100 points)
 
@@ -239,7 +237,7 @@ function rubric(bench: HarborBuiltinBenchmark): string {
  */
 export async function writeBuiltinBenchmark(
   benchDir: string,
-  bench: BuiltinBenchmark,
+  bench: BuiltinBenchmark | MarkdownBuiltinBenchmark,
 ): Promise<void> {
   const cases =
     "repoDir" in bench

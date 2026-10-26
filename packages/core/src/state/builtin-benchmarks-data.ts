@@ -17,7 +17,7 @@
  * included. Each row's `version` is its manifest's date version: an edit to a row, or to anything
  * this file holds that its statements repeat, moves the version of every Benchmark it changes.
  */
-import type { BuiltinBenchmark } from "./builtin-benchmarks.js";
+import type { BuiltinBenchmark, MarkdownBuiltinBenchmark } from "./builtin-benchmarks.js";
 
 /** The public repository that holds the task folders, the Harbor adapter and the scripts. */
 export const BENCHMARK_REPO = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
@@ -63,7 +63,7 @@ const BUILT_IN_ZH =
   "由它自带的验证器评分，题目文件在公开仓库 Prism-Shadow/penguin-harness-benchmark 中。它在创建 Project " +
   "时写入，删除后不会再写回。";
 
-export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
+export const BUILTIN_BENCHMARKS: (BuiltinBenchmark | MarkdownBuiltinBenchmark)[] = [
   {
     id: "penguinharness-benchmark-sec-a",
     title: "PenguinHarness Benchmark Sec A",
@@ -673,25 +673,18 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
       },
     ],
   },
-  ...[
-    ["crm", "CRM", "客户关系管理"],
-    ["erp", "ERP", "企业资源管理"],
-    ["finance", "Finance", "金融"],
-    ["healthcare", "Healthcare", "医疗"],
-    ["legal", "Legal", "法务"],
-    ["data-analysis", "DataAnalysis", "数据分析"],
-  ].map(([domain, name, nameZh]) => ({
-    id: `penguinharness-benchmark-gdpevo-${domain}`,
-    title: `GDPEVO-${name}`,
-    description: `GDPEVO ${name}: five training questions and five held-out test questions.`,
-    descriptionZh: `GDPEVO ${nameZh}：5 道训练题和 5 道独立测试题。`,
+  {
+    id: "penguinharness-benchmark-gdpevo-crm",
+    title: "GDPEVO-CRM",
+    description: "GDPEVO CRM: five training questions and five held-out test questions.",
+    descriptionZh: "GDPEVO 客户关系管理：5 道训练题和 5 道独立测试题。",
     version: "2026.10.26.1",
     cases: [
       {
-        id: `CASE-001-${domain}`,
-        statement: `# GDPEVO-${name}
+        id: "CASE-001-crm",
+        statement: `# GDPEVO-CRM
 
-Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-${domain}/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-${domain}/tasks).
+Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-crm/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-crm/tasks).
 For training, use all five training questions in one continuous Agent session and container.
 For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
 `,
@@ -702,5 +695,120 @@ Report the training score separately; never combine Train and Test into one scor
 `,
       },
     ],
-  })),
+  },
+  {
+    id: "penguinharness-benchmark-gdpevo-erp",
+    title: "GDPEVO-ERP",
+    description: "GDPEVO ERP: five training questions and five held-out test questions.",
+    descriptionZh: "GDPEVO 企业资源管理：5 道训练题和 5 道独立测试题。",
+    version: "2026.10.26.1",
+    cases: [
+      {
+        id: "CASE-001-erp",
+        statement: `# GDPEVO-ERP
+
+Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-erp/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-erp/tasks).
+For training, use all five training questions in one continuous Agent session and container.
+For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
+`,
+        rubric: `# Scoring rubric (max 100 points)
+
+The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
+Report the training score separately; never combine Train and Test into one score.
+`,
+      },
+    ],
+  },
+  {
+    id: "penguinharness-benchmark-gdpevo-finance",
+    title: "GDPEVO-Finance",
+    description: "GDPEVO Finance: five training questions and five held-out test questions.",
+    descriptionZh: "GDPEVO 金融：5 道训练题和 5 道独立测试题。",
+    version: "2026.10.26.1",
+    cases: [
+      {
+        id: "CASE-001-finance",
+        statement: `# GDPEVO-Finance
+
+Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-finance/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-finance/tasks).
+For training, use all five training questions in one continuous Agent session and container.
+For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
+`,
+        rubric: `# Scoring rubric (max 100 points)
+
+The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
+Report the training score separately; never combine Train and Test into one score.
+`,
+      },
+    ],
+  },
+  {
+    id: "penguinharness-benchmark-gdpevo-healthcare",
+    title: "GDPEVO-Healthcare",
+    description: "GDPEVO Healthcare: five training questions and five held-out test questions.",
+    descriptionZh: "GDPEVO 医疗：5 道训练题和 5 道独立测试题。",
+    version: "2026.10.26.1",
+    cases: [
+      {
+        id: "CASE-001-healthcare",
+        statement: `# GDPEVO-Healthcare
+
+Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-healthcare/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-healthcare/tasks).
+For training, use all five training questions in one continuous Agent session and container.
+For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
+`,
+        rubric: `# Scoring rubric (max 100 points)
+
+The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
+Report the training score separately; never combine Train and Test into one score.
+`,
+      },
+    ],
+  },
+  {
+    id: "penguinharness-benchmark-gdpevo-legal",
+    title: "GDPEVO-Legal",
+    description: "GDPEVO Legal: five training questions and five held-out test questions.",
+    descriptionZh: "GDPEVO 法务：5 道训练题和 5 道独立测试题。",
+    version: "2026.10.26.1",
+    cases: [
+      {
+        id: "CASE-001-legal",
+        statement: `# GDPEVO-Legal
+
+Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-legal/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-legal/tasks).
+For training, use all five training questions in one continuous Agent session and container.
+For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
+`,
+        rubric: `# Scoring rubric (max 100 points)
+
+The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
+Report the training score separately; never combine Train and Test into one score.
+`,
+      },
+    ],
+  },
+  {
+    id: "penguinharness-benchmark-gdpevo-data-analysis",
+    title: "GDPEVO-DataAnalysis",
+    description: "GDPEVO DataAnalysis: five training questions and five held-out test questions.",
+    descriptionZh: "GDPEVO 数据分析：5 道训练题和 5 道独立测试题。",
+    version: "2026.10.26.1",
+    cases: [
+      {
+        id: "CASE-001-data-analysis",
+        statement: `# GDPEVO-DataAnalysis
+
+Follow the latest [benchmark instructions](${BENCHMARK_REPO}/blob/main/benchmarks/gdpevo-data-analysis/README.md) and [tasks](${BENCHMARK_REPO}/tree/main/benchmarks/gdpevo-data-analysis/tasks).
+For training, use all five training questions in one continuous Agent session and container.
+For testing, evaluate the frozen Agent on all five held-out test questions, each in a fresh session and container.
+`,
+        rubric: `# Scoring rubric (max 100 points)
+
+The Test score is the mean verifier reward over all five held-out test questions multiplied by 100.
+Report the training score separately; never combine Train and Test into one score.
+`,
+      },
+    ],
+  },
 ];

@@ -40,7 +40,6 @@ import {
   provisionProjectBenchmarks,
   readBenchmarkManifest,
   type BuiltinBenchmark,
-  type HarborBuiltinBenchmark,
 } from "../src/state/index.js";
 import { BUILTIN_BENCHMARKS } from "../src/state/builtin-benchmarks-data.js";
 
@@ -55,7 +54,7 @@ const GDPEVO_DOMAINS = ["crm", "erp", "finance", "healthcare", "legal", "data-an
 const GDPEVO_IDS = GDPEVO_DOMAINS.map((domain) => `penguinharness-benchmark-gdpevo-${domain}`);
 const BUILTIN_IDS = [...SECTION_IDS, ...GDPEVO_IDS];
 const HARBOR_BENCHMARKS = BUILTIN_BENCHMARKS.filter(
-  (bench): bench is HarborBuiltinBenchmark => "repoDir" in bench,
+  (bench): bench is BuiltinBenchmark => "repoDir" in bench,
 );
 
 let tmpRoot: string;
@@ -74,7 +73,7 @@ afterEach(async () => {
 });
 
 const dir = () => benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
-const provision = (builtins?: readonly BuiltinBenchmark[]) =>
+const provision = (builtins?: Readonly<typeof BUILTIN_BENCHMARKS>) =>
   provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID, builtins);
 const byName = (a: string, b: string) => a.localeCompare(b);
 /** `text` as a literal inside a regular expression. */
@@ -318,7 +317,7 @@ describe("built-in Benchmarks", () => {
   it("a write that fails part-way leaves neither its directory nor staging debris, and the error reaches the caller", async () => {
     const [first, second] = HARBOR_BENCHMARKS[0]!.cases;
     // A task name the filesystem refuses, after a case that writes fine.
-    const broken: HarborBuiltinBenchmark = {
+    const broken: BuiltinBenchmark = {
       ...HARBOR_BENCHMARKS[0]!,
       id: "broken-bench",
       cases: [first!, { ...second!, task: "bad\u0000task" }],

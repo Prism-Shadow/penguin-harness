@@ -18,7 +18,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { BUILTIN_BENCHMARKS } from "./builtin-benchmarks-data.js";
-import { writeBuiltinBenchmark, type BuiltinBenchmark } from "./builtin-benchmarks.js";
+import { writeBuiltinBenchmark } from "./builtin-benchmarks.js";
 import { EXAMPLE_BENCHMARK_ID, writeExampleBenchmark } from "./example-benchmark.js";
 import { benchmarksDir } from "./paths.js";
 
@@ -176,7 +176,7 @@ async function swapIn(incoming: string, target: string): Promise<void> {
 export async function provisionProjectBenchmarks(
   root: string,
   projectId: string,
-  builtins: readonly BuiltinBenchmark[] = BUILTIN_BENCHMARKS,
+  builtins: Readonly<typeof BUILTIN_BENCHMARKS> = BUILTIN_BENCHMARKS,
 ): Promise<void> {
   const dir = benchmarksDir(root, projectId);
   await fs.mkdir(dir, { recursive: true });
