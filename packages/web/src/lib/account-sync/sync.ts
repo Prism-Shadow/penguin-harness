@@ -300,7 +300,12 @@ function send(s: SyncState): Promise<void> {
 
 // ---------------------------------------------------------------------------- reading
 
-function applyPrefs(s: SyncState, account: UiPrefs): void {
+/**
+ * Writes the account's preferences into the cache. Resolves once the account's background image
+ * is in too, when the cached one was not it, so the first screen a new browser shows already has
+ * the image (the caller's wait bounds this like the reads).
+ */
+function applyPrefs(s: SyncState, account: UiPrefs): Promise<void> {
   const plan = planPrefs(
     account,
     { getItem: rawGet },
@@ -321,7 +326,7 @@ function applyPrefs(s: SyncState, account: UiPrefs): void {
   rawSet(PREFS_IMPORTED_KEY, "1");
   writeJournal(s);
   noteAccountApplied();
-  if (plan.image === "fetch") void fetchImage(s);
+  return plan.image === "fetch" ? fetchImage(s) : Promise.resolve();
 }
 
 /** The account's image, fetched only when the one cached here is not it. */
@@ -389,9 +394,7 @@ export async function startAccountSync(userId: string): Promise<boolean> {
   };
   const prefsRead = api
     .getPrefs()
-    .then((res) => {
-      if (state === s) applyPrefs(s, res.prefs);
-    })
+    .then((res) => (state === s ? applyPrefs(s, res.prefs) : undefined))
     .catch(failed);
   const draftsRead = api
     .getDrafts()
