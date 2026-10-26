@@ -81,9 +81,9 @@ export interface BuiltinBenchmark {
   /** The source as the statements name it, e.g. a Harbor Hub dataset and its revision. */
   source?: string;
   /** The upstream project the tasks come from, and its licence. */
-  upstream?: { url: string; license: string };
+  upstream: { url: string; license: string };
   /** Agent-phase network of the tasks: open, or none except the model provider's API host. */
-  agentNetwork?: "public" | "no-network";
+  agentNetwork: "public" | "no-network";
   /** Trials may join the host's shared `penguin-bench` Docker network (the repository allows it for these). */
   sharedNetwork?: boolean;
   /** Where the task's verifier runs. */
@@ -97,8 +97,8 @@ export interface BuiltinBenchmark {
   /** What the evaluating machine downloads besides nodejs.org, npm and the model provider. */
   downloads?: string;
   /** Per-trial caps of the measured runs: the adapter's soft timeout and the Agent's turn cap. */
-  runTimeout?: string;
-  maxTurns?: number;
+  runTimeout: string;
+  maxTurns: number;
   /**
    * The adapter's `time_budget_note` of the measured runs, when the benchmark's `job.yaml` sets
    * one: a sentence the adapter puts before the task's instruction to tell the agent its time
