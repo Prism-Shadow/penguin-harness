@@ -10,6 +10,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
 import type { Server as HttpServer } from "node:http";
+import type { Socket as NetSocket } from "node:net";
 import { WebSocket } from "ws";
 import { createTestApp, loginAdmin, provisionUser, apiClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -18,6 +19,7 @@ import {
   TerminalStreamOpcode,
   decodeTerminalFrame,
   encodeTerminalFrame,
+  framePayloadText,
 } from "../src/terminal/frames.js";
 
 const TEST_TIMEOUT = 20_000;
@@ -111,9 +113,22 @@ async function terminalInfo(id: string): Promise<TerminalInfoJson> {
   return (await res.json()) as TerminalInfoJson;
 }
 
+/**
+ * One server→client data frame as it left the wire, before ws inflates it: the compression
+ * test reads the RSV1 bit (permessage-deflate) and the frame's real length from here.
+ */
+interface WireFrame {
+  rsv1: boolean;
+  opcode: number;
+  length: number;
+  payload: Uint8Array;
+}
+
 interface StreamClient {
   ws: WebSocket;
   frames: Array<{ opcode: number; text: string }>;
+  /** Raw first-fragment frames seen on the socket; populated only for deflate clients. */
+  wire: WireFrame[];
   /** Concatenation of every Output payload so far. */
   outputText(): string;
   /** Payload of the first Restore frame (the attach snapshot). */
@@ -133,15 +148,27 @@ function streamUrl(id: string, cols?: number, rows?: number): string {
 /** Opens a stream and resolves once connected; every received frame must decode. */
 function attach(
   id: string,
-  options: { cookie?: string; cols?: number; rows?: number; origin?: string } = {},
+  options: {
+    cookie?: string;
+    cols?: number;
+    rows?: number;
+    origin?: string;
+    /** Negotiate permessage-deflate (a browser does) and record raw frames on the wire. */
+    deflate?: boolean;
+  } = {},
 ): Promise<StreamClient> {
   const headers: Record<string, string> = { cookie: options.cookie ?? adminCookie };
   if (options.origin !== undefined) headers.origin = options.origin;
-  const ws = new WebSocket(streamUrl(id, options.cols ?? 80, options.rows ?? 24), { headers });
+  const ws = new WebSocket(streamUrl(id, options.cols ?? 80, options.rows ?? 24), {
+    headers,
+    ...(options.deflate === true ? { perMessageDeflate: {} } : {}),
+  });
   const frames: StreamClient["frames"] = [];
+  const wire: WireFrame[] = [];
   // Every server-sent frame must decode; checked from waitFor (throwing inside the ws
   // 'message' listener would surface as an uncaught exception, not a test failure).
   let undecodable = 0;
+  let wireError: string | null = null;
 
   ws.on("message", (raw: Buffer) => {
     const frame = decodeTerminalFrame(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength));
@@ -152,9 +179,60 @@ function attach(
     frames.push({ opcode: frame.opcode, text: new TextDecoder().decode(frame.payload) });
   });
 
+  // The wire tap for the deflate client: walks the raw server→client stream and records
+  // each message's first fragment — the one that carries the compression bit. Server
+  // frames are never masked, so the walk is header + length + payload, nothing else.
+  const watchWire = (): void => {
+    const sock = (ws as unknown as { _socket?: NetSocket })._socket;
+    if (sock === undefined) {
+      wireError = "the deflate client has no underlying socket to watch";
+      return;
+    }
+    let pending = Buffer.alloc(0);
+    sock.on("data", (chunk: Buffer) => {
+      pending = Buffer.concat([pending, chunk]);
+      for (;;) {
+        if (pending.length < 2) break;
+        const b0 = pending[0] as number;
+        const b1 = pending[1] as number;
+        if ((b1 & 0x80) !== 0) {
+          wireError = "server frames must arrive unmasked";
+          return;
+        }
+        let header = 2;
+        let length = b1 & 0x7f;
+        if (length === 126) {
+          if (pending.length < 4) break;
+          length = pending.readUInt16BE(2);
+          header = 4;
+        } else if (length === 127) {
+          if (pending.length < 10) break;
+          const huge = pending.readBigUInt64BE(2);
+          if (huge > 0xffff_ffffn) {
+            wireError = "a frame too large to parse";
+            return;
+          }
+          length = Number(huge);
+          header = 10;
+        }
+        if (pending.length < header + length) break;
+        if ((b0 & 0x0f) !== 0) {
+          wire.push({
+            rsv1: (b0 & 0x40) !== 0,
+            opcode: b0 & 0x0f,
+            length,
+            payload: new Uint8Array(pending.subarray(header, header + length)),
+          });
+        }
+        pending = pending.subarray(header + length);
+      }
+    });
+  };
+
   const client: StreamClient = {
     ws,
     frames,
+    wire,
     outputText: () =>
       frames
         .filter((f) => f.opcode === TerminalStreamOpcode.Output)
@@ -176,12 +254,14 @@ function attach(
       const deadline = Date.now() + timeoutMs;
       while (!predicate()) {
         if (undecodable > 0) throw new Error(`Received ${undecodable} undecodable frame(s).`);
+        if (wireError !== null) throw new Error(wireError);
         if (Date.now() > deadline) {
           throw new Error(`Timed out waiting for ${what}. Frames: ${JSON.stringify(frames)}`);
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       if (undecodable > 0) throw new Error(`Received ${undecodable} undecodable frame(s).`);
+      if (wireError !== null) throw new Error(wireError);
     },
     close: () =>
       new Promise((resolve) => {
@@ -192,7 +272,10 @@ function attach(
   };
 
   return new Promise((resolve, reject) => {
-    ws.once("open", () => resolve(client));
+    ws.once("open", () => {
+      if (options.deflate === true) watchWire();
+      resolve(client);
+    });
     ws.once("unexpected-response", (_req, res) =>
       reject(new Error(`handshake rejected: ${res.statusCode}`)),
     );
@@ -356,6 +439,51 @@ describePty("terminal stream heartbeat", () => {
         // Echoed untouched: the payload is the CLIENT's clock reading, and only the client
         // can make a round trip out of it.
         expect(pong?.text).toBe("42");
+      } finally {
+        await client.close();
+        await api.delete(`/api/terminals/${terminal.id}`);
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+describePty("terminal stream compression", () => {
+  it(
+    "leaves small frames uncompressed and large ones compressed once permessage-deflate is negotiated",
+    async () => {
+      const terminal = await createTerminal();
+      const client = await attach(terminal.id, { deflate: true });
+      try {
+        await client.waitFor(() => client.restoreText().length > 0, "attach restore");
+
+        // A keystroke-sized burst: the command's echo, its output and the next prompt
+        // together are far below the threshold, and on the wire it must arrive as-is —
+        // RSV1 clear, the bytes decodable as a terminal frame with no inflate anywhere.
+        const SMALL_MARKER = "zz-small-uncompressed-42";
+        await runAndWait(client, `echo ${SMALL_MARKER}`, SMALL_MARKER);
+        await client.waitFor(
+          () =>
+            client.wire.some((f) => {
+              if (f.rsv1) return false;
+              const frame = decodeTerminalFrame(f.payload);
+              return (
+                frame !== null &&
+                frame.opcode === TerminalStreamOpcode.Output &&
+                framePayloadText(frame).includes(SMALL_MARKER)
+              );
+            }),
+          "the small frame on the wire uncompressed",
+        );
+
+        // A large burst of barely compressible bytes stays compressed: RSV1 set, and —
+        // random base64 shrinks little — still far past the threshold on the wire.
+        await runAndWait(
+          client,
+          "head -c 4000 /dev/urandom | base64; echo big-burst-done",
+          "big-burst-done",
+        );
+        expect(client.wire.some((f) => f.rsv1 && f.length >= 512)).toBe(true);
       } finally {
         await client.close();
         await api.delete(`/api/terminals/${terminal.id}`);
