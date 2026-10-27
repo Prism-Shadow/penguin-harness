@@ -125,11 +125,12 @@ export function agentEvaluationPlugin(): PluginItem {
     skill(
       "agent-evaluation",
       "Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.",
+      "2026.10.27.1",
     ),
     skill(
       "benchmark-design",
       "Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline, or import a published Benchmark package.",
-      "2026.10.14.1",
+      "2026.10.27.1",
     ),
   ]);
 }
