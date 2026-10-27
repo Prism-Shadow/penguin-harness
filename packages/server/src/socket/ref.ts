@@ -16,14 +16,16 @@ export { apiSocketPath } from "../api/types.js";
 export interface ApiSocketRef {
   apiSocket: true;
   ownerUserId: string;
+  /** Rechecks the original login without renewing its expiry. */
+  sessionIsLive: () => boolean;
 }
 
 /** What the platform's websocket seam is handed: a pty's session, or the API socket's user. */
 export type AttachedStream = TerminalSession | ApiSocketRef;
 
 /** The reference for a handshake authenticated as `userId`. */
-export function apiSocketRef(userId: string): ApiSocketRef {
-  return { apiSocket: true, ownerUserId: userId };
+export function apiSocketRef(userId: string, sessionIsLive: () => boolean): ApiSocketRef {
+  return { apiSocket: true, ownerUserId: userId, sessionIsLive };
 }
 
 export const isApiSocketRef = (attached: object): attached is ApiSocketRef =>
