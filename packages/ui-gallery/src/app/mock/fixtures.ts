@@ -60,7 +60,7 @@ import {
 } from "../../../../server/dist/model-catalog.js";
 import { effectiveConnection } from "../../../../core/dist/state/model-connection.js";
 // The Benchmark files fetched for this build, shared with Project provisioning.
-import bundledBenchmarks from "../../../../core/builtin-benchmarks/catalog.json";
+import bundledBenchmarks from "../../../../../node_modules/.cache/penguin-benchmarks/catalog.json";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
 import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";

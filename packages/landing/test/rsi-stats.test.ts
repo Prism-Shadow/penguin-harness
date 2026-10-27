@@ -40,7 +40,7 @@ const rsiPlugins = readdirSync(pluginsRoot, { withFileTypes: true })
 
 /** The catalogue prepared from the same packages that ship in the application. */
 function builtinBenchmarks(): Array<{ id: string; upstream: string }> {
-  const file = join(__dirname, "..", "..", "core", "builtin-benchmarks", "catalog.json");
+  const file = join(__dirname, "../../../node_modules/.cache/penguin-benchmarks/catalog.json");
   const packages = JSON.parse(readFileSync(file, "utf8")) as Array<{
     id: string;
     cases: Array<{ statement: string }>;

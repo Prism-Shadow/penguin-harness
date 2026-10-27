@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const BENCHMARKS_DIR = path.join(ROOT, "packages/core/builtin-benchmarks");
+export const BENCHMARKS_DIR = path.join(ROOT, "node_modules", ".cache", "penguin-benchmarks");
 const REPOSITORY = "https://github.com/Prism-Shadow/penguin-harness-benchmark.git";
 const require = createRequire(path.join(ROOT, "packages/core/package.json"));
 const { parse } = require("smol-toml");

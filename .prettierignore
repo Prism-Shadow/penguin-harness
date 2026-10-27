@@ -1,7 +1,6 @@
 # build output and dependencies
 node_modules/
 dist/
-packages/core/builtin-benchmarks/
 pnpm-lock.yaml
 # the assembled app directory some branches stage before packing (packages/desktop/.gitignore
 # ignores it there; prettier does not read .gitignore, so it needs saying again here)

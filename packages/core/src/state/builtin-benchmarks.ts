@@ -22,7 +22,9 @@ function benchmarkDirectory(): string {
   const bundled = fileURLToPath(new URL("./builtin-benchmarks/", import.meta.url));
   if (existsSync(bundled)) return bundled;
   // Source execution and source tests, before bundling flattens this module into dist/.
-  return fileURLToPath(new URL("../../builtin-benchmarks/", import.meta.url));
+  return fileURLToPath(
+    new URL("../../../../node_modules/.cache/penguin-benchmarks/", import.meta.url),
+  );
 }
 
 export async function readBuiltinBenchmarks(): Promise<BuiltinBenchmark[]> {
