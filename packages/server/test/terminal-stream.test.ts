@@ -519,7 +519,9 @@ describePty("terminal stream backpressure", () => {
       const loggedBefore = serverLogs.length;
       const isLagging = (): boolean =>
         serverLogs.slice(loggedBefore).some((l) => l.includes("pausing for resync"));
+      let lastRound = 0;
       for (let round = 1; round <= 8 && !isLagging(); round += 1) {
+        lastRound = round;
         // The pty echoes a command line the instant it is typed, so a literal marker would
         // satisfy this wait before the flood behind it had produced one byte. All eight
         // rounds would then go out back-to-back and land as one undifferentiated flood: the
@@ -536,18 +538,34 @@ describePty("terminal stream backpressure", () => {
       // The burst has fully landed server-side, and the lagging viewer is still attached.
       expect(client.ws.readyState).toBe(WebSocket.OPEN);
 
-      // Catching up delivers a resync Restore, and the stream is live again afterwards.
+      // Catching up delivers a resync Restore, and the stream is live again afterwards —
+      // but the resync that ends the cycle is not necessarily the first one. On a slow
+      // enough link the kernel absorbs the flood as fast as the pty emits it, so the
+      // viewer's in-flight count dips below the low watermark while the flood is still
+      // streaming: the poll repaints mid-flood, the stream desyncs again behind the bytes
+      // still coming, and a probe typed now lands in that drop window — its text reaches
+      // the client only inside a later snapshot. The Restore that ends the cycle is the
+      // one whose repaint carries the round's end marker: the flood was complete when the
+      // snapshot was taken, the pane is quiet from that point, and the live probe below is
+      // typed to an idle shell.
+      const burstEnd = `BURST-${20 + lastRound}`;
+      const settledRestore = (): { opcode: number; text: string } | undefined =>
+        client.frames.find(
+          (f) => f.opcode === TerminalStreamOpcode.Restore && f.text.includes(burstEnd),
+        );
       client.ws.resume();
-      const restores = (): StreamClient["frames"] =>
-        client.frames.filter((f) => f.opcode === TerminalStreamOpcode.Restore);
-      await client.waitFor(() => restores().length >= 2, "resync Restore frame", 60_000);
-      const resync = restores()[1]!;
-      // What a resync promises is the repaint, not a particular line of screen residue:
-      // the snapshot is taken whenever this viewer's socket drains past the low watermark,
-      // which the test does not get to choose and which may well be mid-flood. So assert
-      // the two things that hold at every such instant — it is the same self-contained
-      // repaint an attach sends, and it carries the flooded screen rather than the empty
-      // one the attach Restore captured.
+      await client.waitFor(
+        () => settledRestore() !== undefined,
+        "the resync Restore after the flood",
+        // The closing repaint is the last thing through the backlog the paused socket
+        // accumulated, and chewing through it is plain CPU — the slowest step of this
+        // case on a starved runner, so the cap is deliberately generous.
+        90_000,
+      );
+      const resync = settledRestore()!;
+      // What a resync promises is the repaint, not a particular line of screen residue —
+      // it is the same self-contained repaint an attach sends, and it carries the flooded
+      // screen rather than the empty one the attach Restore captured.
       expect(resync.text.slice(0, RESTORE_PREAMBLE.length)).toBe(RESTORE_PREAMBLE);
       expect(resync.text).toMatch(FLOOD_ROWS);
       await runAndWait(client, "echo LIVE-$((40+2))", "LIVE-42");
@@ -560,7 +578,7 @@ describePty("terminal stream backpressure", () => {
     }
     // Megabytes through a pty, a paused socket and a drain: minutes of budget on a loaded
     // runner, where the default would report a timeout rather than a real defect.
-  }, 120_000);
+  }, 180_000);
 });
 
 describePty("terminal stream attach", () => {
