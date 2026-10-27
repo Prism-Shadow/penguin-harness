@@ -520,8 +520,16 @@ describePty("terminal stream backpressure", () => {
       const isLagging = (): boolean =>
         serverLogs.slice(loggedBefore).some((l) => l.includes("pausing for resync"));
       for (let round = 1; round <= 8 && !isLagging(); round += 1) {
-        client.sendInput(`${FLOOD_COMMAND}; echo BURST-DONE-${round}\r`);
-        await waitForCapture(terminal.id, `BURST-DONE-${round}`, 60_000);
+        // The pty echoes a command line the instant it is typed, so a literal marker would
+        // satisfy this wait before the flood behind it had produced one byte. All eight
+        // rounds would then go out back-to-back and land as one undifferentiated flood: the
+        // kernel's autotuned buffers absorb far more than a single round's share, and
+        // whichever way the watermark lands, the assert below races a stream that is still
+        // running — the flake this suite was known for. The arithmetic is the fix: the echo
+        // of "BURST-$((20+1))" matches nothing the wait accepts, so a round ends only once
+        // the shell has actually run it — its burst fully landed server-side.
+        client.sendInput(`${FLOOD_COMMAND}; echo BURST-$((20+${round}))\r`);
+        await waitForCapture(terminal.id, `BURST-${20 + round}`, 60_000);
       }
       expect(isLagging(), "server never marked the paused viewer as lagging").toBe(true);
 
