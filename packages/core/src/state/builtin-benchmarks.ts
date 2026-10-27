@@ -155,43 +155,20 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     ...(item.memoryMb !== undefined ? [`${item.memoryMb / 1024} GB RAM`] : []),
   ];
   const facts = [
-    `- Benchmark: ${bench.title}` +
-      (bench.source !== undefined ? ` — ${bench.source}` : "") +
+    `- Benchmark: ${bench.title} — ${bench.source}` +
       (item.category !== undefined ? ` · Category: ${item.category}` : "") +
       (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
     `- Task: \`${item.task}\` in ${repoLink("tree", `${taskPath(bench)}/${item.task}`)}`,
-    ...(bench.upstream !== undefined
-      ? [
-          `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
-            (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
-        ]
-      : []),
+    `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
+      (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
     ...(resources.length > 0
       ? [
-          `- Container: ${resources.join(", ")}, CPU only` +
-            (bench.agentNetwork !== undefined
-              ? ` · Agent network: ${offline ? "none, except the model provider's API host" : "public"}`
-              : "") +
-            (bench.verifier !== undefined ? ` · Verifier: ${bench.verifier}` : ""),
+          `- Container: ${resources.join(", ")}, CPU only · Agent network: ` +
+            (offline ? "none, except the model provider's API host" : "public") +
+            ` · Verifier: ${bench.verifier}`,
         ]
       : []),
   ];
-  const intro = [
-    `# ${item.title}`,
-    "",
-    ...(item.summary !== undefined ? [item.summary, ""] : []),
-    ...facts,
-    "",
-  ];
-  // Without local launch settings, the benchmark README supplies the running instructions.
-  if (bench.runTimeout === undefined || bench.maxTurns === undefined) {
-    return [
-      ...intro,
-      bench.note ??
-        `Follow the [benchmark instructions](${repoLink("blob", `benchmarks/${bench.repoDir}/README.md`)}).`,
-      "",
-    ].join("\n");
-  }
   const command = [
     'export PYTHONPATH="$PWD/agents"',
     `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench)} -i ${item.task} \\`,
@@ -208,7 +185,11 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     "  --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
   ];
   return [
-    ...intro,
+    `# ${item.title}`,
+    "",
+    ...(item.summary !== undefined ? [item.summary, ""] : []),
+    ...facts,
+    "",
     "## How this case is run",
     "",
     "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
@@ -227,7 +208,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
         ? ", with no turn limit. Run at "
         : ` and after ${bench.maxTurns} turns. Run at `) +
       "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
-      `with Compose v2; uv; network access to ${bench.downloads !== undefined ? `${bench.downloads}, ` : ""}nodejs.org, the npm registry and ` +
+      `with Compose v2; uv; network access to ${bench.downloads}, nodejs.org, the npm registry and ` +
       "the model provider; the model under test configured in this machine's PenguinHarness with " +
       "its API key saved (the adapter copies that one entry into the container, outside the " +
       "trial's log directory)." +
