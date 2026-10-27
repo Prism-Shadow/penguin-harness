@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-26
 - **Type:** fix
-- **Scope:** `core`, `web`, `ui-gallery`, `landing`, `tooling`
+- **Scope:** `core`, `web`, `ui-gallery`, `landing`, `tooling`, `agent-evaluation`
 - **PR:** [#1341](https://github.com/Prism-Shadow/penguin-harness/pull/1341)
 
 [English](2026-10-26-gdpevo-domains.md)
@@ -11,4 +11,4 @@
 
 十二个 GDPEVO 条目复用现有 Benchmark 结构、初始化流程、Harbor 启动模板和包导出脚本。测试任务以 `crm-test-001` 等领域名称直接放在 `tasks/` 下；训练选择同一目录下的 `train_tasks`。中英文介绍说明各领域及训练、测试的区别。示例页、官网清单和导入示例使用对应的 Train/Test ID。保留已有 Project 的 Benchmark，新建的 GDPEVO 条目不带评估记录。
 
-所有内置 Case 定义删除 `summary`、`category`、`cpus` 和 `memoryMb`，同时删除对应的说明生成分支。Case 说明保留任务标题、来源链接、网络和评分器信息，以及启动和评分方式。Docker 资源限制仍由 Benchmark 仓库的任务文件管理。Benchmark 顶层字段除删除 `ref` 外，保持原来的必填或选填状态；来源链接与 checkout 说明使用 Benchmark 仓库的 `main` 分支。
+所有内置 Case 定义删除 `summary`、`category`、`cpus` 和 `memoryMb`，同时删除对应的说明生成分支。Case 说明保留任务标题、来源链接、网络和评分器信息，以及启动和评分方式。Docker 资源限制仍由 Benchmark 仓库的任务文件管理。Benchmark 顶层字段除删除 `ref` 外，保持原来的必填或选填状态；来源链接与 checkout 说明使用 Benchmark 仓库的 `main` 分支。Agent Evaluation 接受分支、标签及提交链接，每轮评测开始时解析一次来源版本，所有评测任务共用同一份检出。

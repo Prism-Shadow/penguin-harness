@@ -17,7 +17,7 @@ A package is how a Benchmark travels between Projects and servers: a folder name
 - `benchmark_config.toml` is the manifest: `id` (the folder's name), `title`, `description`, `version` (a date version, `"YYYY.MM.DD.N"`), `status`, `runs`, and an `[origin]` table last (`kind`, plus `url`, `ref`, `path` and `imported_at` for a repository import). A manifest written before `id`, `version` and `[origin]` existed has none of them and is still a package: its folder's name is its id, and it is unversioned. A package is always `published`: a draft or a failed calibration does not travel.
 - Every `CASE-*` folder holds `statement/README.md` and `rubric/README.md`. After `CASE-` come letters, digits, `_` and `-` only.
 - Never in a package: `scoreboard.yaml` (the copy's evaluation records), `.jobs/` (its Harbor trials), any other entry whose name starts with `.`, and symlinks. A package's scores start empty wherever it lands.
-- No large originals. A case whose task needs large files links them from its statement at a pinned commit, the way the built-in Benchmarks' `## How this case is run` sections do.
+- No large originals. A case whose task needs large files links them from its statement at a branch, tag or commit, the way the built-in Benchmarks' `## How this case is run` sections do.
 
 The built-in Benchmarks are published in this format under `packages/<id>/` of https://github.com/Prism-Shadow/penguin-harness-benchmark.
 
