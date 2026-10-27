@@ -385,6 +385,20 @@ describe("robustness", () => {
     expect(socket.isOpen()).toBe(true);
   });
 
+  it("drops the reconnect booked for a parked stream once that stream closes", async () => {
+    const conn = socket.stream("/api/events", handlers());
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    last().drop(); // parked, with a reconnect booked on the backoff
+    conn.close(); // the page that held it is gone
+    expect(vi.getTimerCount()).toBe(0); // nothing left to fire after the page
+    vi.advanceTimersByTime(60_000);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
   it("closes a socket that turns out to be another user's", async () => {
     await openViaReady();
     expect(last().url).toBe("ws://test/socket/admin");

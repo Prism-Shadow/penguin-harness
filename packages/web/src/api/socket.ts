@@ -379,6 +379,10 @@ export class ApiSocket {
       this.#cancel(entry.id);
       entry.id = null;
     }
+    // A booked reconnect exists to bring parked streams back. With the last of them closed it
+    // has nothing to carry, and left to fire it would settle an identity and open a socket for
+    // a page that has gone (an unmounted app, a closed workbench); the next stream opens one.
+    if (this.#waiting.size === 0) this.#reconnect = this.#clearTimer(this.#reconnect);
   }
 
   /** Opens the socket; streams and calls queue behind the handshake. Only from ready(). */
