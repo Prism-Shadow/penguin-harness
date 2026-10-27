@@ -8,8 +8,6 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  DIAL_TIMEOUT_MS,
-  RECHECK_TIMEOUT_MS,
   RETRY_DELAYS_MS,
   TerminalConnection,
   type AttachedSocket,
@@ -411,7 +409,9 @@ describe("terminal connection", () => {
     // The link swallows the handshake: no onOpen, no onClose, CONNECTING forever.
     const stalled = h.sockets[0] as FakeSocket;
 
-    await vi.advanceTimersByTimeAsync(DIAL_TIMEOUT_MS);
+    // 15s: DIAL_TIMEOUT_MS in the source, written as a literal so this case also runs
+    // (red) on the tree before the fix, where the export does not exist yet.
+    await vi.advanceTimersByTimeAsync(15_000);
 
     expect(stalled.closed).toBe(true);
     expect(h.statuses.at(-1)?.status).toBe("reconnecting");
@@ -448,7 +448,8 @@ describe("terminal connection", () => {
 
     await vi.advanceTimersByTimeAsync((RETRY_DELAYS_MS[0] as number) * 1.2); // recheck #1 is out
     const statusesBefore = h.statuses.length;
-    await vi.advanceTimersByTimeAsync(RECHECK_TIMEOUT_MS); // …and it never answers
+    // 10s: RECHECK_TIMEOUT_MS in the source, a literal for the same reason as above.
+    await vi.advanceTimersByTimeAsync(10_000); // …and it never answers
 
     expect(h.statuses.length).toBe(statusesBefore + 1); // a NEW status, not the drop's old one
     expect(h.statuses.at(-1)?.status).toBe("reconnecting");
