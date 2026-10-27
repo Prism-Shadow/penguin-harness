@@ -201,9 +201,7 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     ...command,
     "```",
     "",
-    (bench.runTimeout === "task"
-      ? "Caps: the agent uses the solving time limit from `task.toml`"
-      : `Caps: the agent is stopped at ${bench.runTimeout}`) +
+    `Caps: the agent is stopped at ${bench.runTimeout}` +
       (bench.maxTurns === -1
         ? ", with no turn limit. Run at "
         : ` and after ${bench.maxTurns} turns. Run at `) +
