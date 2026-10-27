@@ -72,11 +72,14 @@ export async function buildBenchmarks({ refresh = false } = {}) {
         const caseDir = path.join(dir, item.name);
         const statement = await fs.readFile(path.join(caseDir, "statement/README.md"), "utf8");
         const rubric = await fs.readFile(path.join(caseDir, "rubric/README.md"), "utf8");
-        await fs.cp(caseDir, path.join(dest, item.name), {
-          recursive: true,
-          filter: async (file) =>
-            !path.basename(file).startsWith(".") && !(await fs.lstat(file)).isSymbolicLink(),
-        });
+        for (const [part, text] of [
+          ["statement", statement],
+          ["rubric", rubric],
+        ]) {
+          const target = path.join(dest, item.name, part);
+          await fs.mkdir(target, { recursive: true });
+          await fs.writeFile(path.join(target, "README.md"), text, "utf8");
+        }
         cases.push({
           id: item.name,
           title: /^#\s+(.+)$/m.exec(statement)?.[1] ?? item.name,
