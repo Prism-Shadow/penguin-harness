@@ -68,6 +68,16 @@ const BACKPRESSURE_POLL_MS = 250;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const HEARTBEAT_TIMEOUT_MS = 75_000;
 
+/**
+ * Frames smaller than this go out uncompressed even when the stream negotiated
+ * permessage-deflate: a keystroke's echo compresses to more bytes than it started with
+ * once the deflate overhead rides along. ws's own `perMessageDeflate.threshold` cannot
+ * carry this promise — it only applies to a direction that negotiated no_context_takeover,
+ * and this server keeps its deflate context precisely because a shared context is what
+ * compresses repeated output best — so the decision is made per message, here.
+ */
+const SMALL_FRAME_BYTES = 512;
+
 export function bindTerminalStream(
   ws: WebSocket,
   session: TerminalSession,
@@ -95,7 +105,7 @@ export function bindTerminalStream(
     if (ws.readyState !== ws.OPEN) return;
     const size = bytes.byteLength;
     inFlight += size;
-    ws.send(bytes, () => {
+    ws.send(bytes, { compress: size >= SMALL_FRAME_BYTES }, () => {
       inFlight -= size;
       drain.note(size, inFlight);
     });

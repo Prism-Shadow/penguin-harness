@@ -34,14 +34,16 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     /**
      * Terminal output is the most compressible traffic this server has — repeated prompts,
      * repeated SGR runs, whole repainted screens — and on a phone the bytes are the scarce
-     * thing, so it is worth a little CPU here. The settings keep that little: only frames
-     * past the threshold are compressed (a keystroke echo would grow), the window is capped
-     * so a per-socket deflate context costs kilobytes rather than the default's hundreds,
-     * and the client's context is not kept, because a browser's uplink here is a keystroke
-     * at a time and has nothing to reuse.
+     * thing, so it is worth a little CPU here. The settings keep that little: the window is
+     * capped so a per-socket deflate context costs kilobytes rather than the default's
+     * hundreds, and the client's context is not kept, because a browser's uplink here is a
+     * keystroke at a time and has nothing to reuse. Small frames are left uncompressed by
+     * the sender itself, per message (terminal/stream.ts), not by a threshold here: ws only
+     * applies a config `threshold` to a direction that negotiated no_context_takeover, and
+     * this server keeps its context — a shared context is what compresses repeated output
+     * best.
      */
     perMessageDeflate: {
-      threshold: 512,
       clientNoContextTakeover: true,
       serverMaxWindowBits: 13,
       zlibDeflateOptions: { level: 3, memLevel: 7 },

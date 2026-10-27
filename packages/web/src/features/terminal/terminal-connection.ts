@@ -33,6 +33,19 @@ const SILENCE_LIMIT_MS = 45_000;
 const FROZEN_TICK_MS = HEARTBEAT_INTERVAL_MS * 3;
 /** How long a wake-up probe waits for its echo before the socket is declared dead. */
 const WAKE_PROBE_TIMEOUT_MS = 5_000;
+/**
+ * A dial that never reaches `onOpen` is given up on after this long. A phone's network can
+ * black-hole a handshake without ever closing it — CONNECTING forever, no heartbeat started,
+ * nothing to probe — so the dial carries its own clock: past it the socket is dropped like
+ * any dead one and the backoff ladder tries again.
+ */
+export const DIAL_TIMEOUT_MS = 15_000;
+/**
+ * The same clock for the existence probe a retry waits on: one small request, so a link that
+ * lets it hang would let it hang forever. Losing the race reads as the same transient
+ * failure a rejected probe is.
+ */
+export const RECHECK_TIMEOUT_MS = 10_000;
 
 /**
  * Backoff for reattaching, in milliseconds; the last entry repeats. It stays short because
@@ -80,10 +93,18 @@ export class TerminalConnection {
   private attempt = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  /** The dial's clock: armed when a socket is created, disarmed when it opens. */
+  private dialTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSeenAt = 0;
   private lastTickAt = 0;
   /** Whether the far end speaks the heartbeat (see the silence limit above). */
   private answersProbes = false;
+  /**
+   * True from the start of an attach to its socket: while `first()`/`recheck()` are pending.
+   * Nothing may start a second attach meanwhile — the host policy behind `first()` creates a
+   * terminal when it answers, and an answer that races a wake would create a second one.
+   */
+  private connecting = false;
 
   constructor(private readonly deps: TerminalConnectionDeps) {}
 
@@ -96,6 +117,7 @@ export class TerminalConnection {
     this.stopped = true;
     this.clearRetry();
     this.stopHeartbeat();
+    this.clearDial();
     this.socket?.close();
     this.socket = null;
   }
@@ -118,6 +140,10 @@ export class TerminalConnection {
   wake(): void {
     if (this.stopped) return;
     if (this.socket === null) {
+      // An attach already in flight IS the "right now" a wake asks for; letting a second
+      // one start would run the host's policy twice (two terminals) or open two sockets
+      // where the loser is never closed.
+      if (this.connecting) return;
       this.clearRetry();
       this.attempt = 0;
       void this.connect();
@@ -136,61 +162,80 @@ export class TerminalConnection {
   }
 
   private async connect(): Promise<void> {
-    if (this.stopped || this.socket !== null) return;
-    let id: string;
+    if (this.stopped || this.socket !== null || this.connecting) return;
+    this.connecting = true;
     try {
-      if (this.terminalId === null) {
-        id = await this.deps.first();
-        this.terminalId = id;
-      } else {
-        id = this.terminalId;
-        if (!(await this.deps.recheck(id))) {
+      let id: string;
+      try {
+        if (this.terminalId === null) {
+          // No clock on this one, on purpose: `first()` is the host's own policy —
+          // repeating it because it is slow would create a second terminal, and failing it
+          // on a timer would kill an attach a slow link is still completing.
+          id = await this.deps.first();
+          this.terminalId = id;
+        } else {
+          id = this.terminalId;
+          const present = await this.within(this.deps.recheck(id), RECHECK_TIMEOUT_MS);
+          if (this.stopped) return; // a stop that landed while the probe was out
+          if (!present) {
+            this.stopped = true;
+            this.deps.onStatus("error", "terminal is gone");
+            return;
+          }
+        }
+      } catch (err) {
+        if (this.stopped) return;
+        const detail = err instanceof Error ? err.message : String(err);
+        // A first attach is the host's policy failing, and is fatal. A recheck is just this
+        // link being down again — the same thing the retry is for, and so is its timeout.
+        if (this.terminalId === null) {
           this.stopped = true;
-          this.deps.onStatus("error", "terminal is gone");
+          this.deps.onStatus("error", detail);
           return;
         }
-      }
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      // A first attach is the host's policy failing, and is fatal. A recheck is just this
-      // link being down again — the same thing the retry is for.
-      if (this.terminalId === null) {
-        this.stopped = true;
-        this.deps.onStatus("error", detail);
+        this.deps.onStatus("reconnecting", detail);
+        this.scheduleRetry();
         return;
       }
-      this.deps.onStatus("reconnecting", detail);
-      this.scheduleRetry();
-      return;
-    }
-    if (this.stopped) return;
+      if (this.stopped) return;
 
-    const socket: AttachedSocket = this.deps.open(id, {
-      onOpen: () => {
-        if (this.socket !== socket) return;
-        this.attempt = 0;
-        this.startHeartbeat();
-        this.deps.onStatus("ready", "");
-      },
-      onMessage: (data) => {
-        if (this.socket !== socket) return;
-        this.lastSeenAt = Date.now();
-        const frame = decodeFrame(data);
-        if (!frame) return;
-        // The heartbeat is this module's own traffic and never reaches the terminal.
-        if (frame.opcode === TerminalOpcode.Ping) {
-          socket.send(encodeFrame(TerminalOpcode.Pong, frame.text));
-          return;
-        }
-        if (frame.opcode === TerminalOpcode.Pong) {
-          this.answersProbes = true;
-          return;
-        }
-        this.deps.onFrame(frame);
-      },
-      onClose: () => this.drop(socket),
-    });
-    this.socket = socket;
+      const socket: AttachedSocket = this.deps.open(id, {
+        onOpen: () => {
+          if (this.socket !== socket) return;
+          this.clearDial();
+          this.attempt = 0;
+          this.startHeartbeat();
+          this.deps.onStatus("ready", "");
+        },
+        onMessage: (data) => {
+          if (this.socket !== socket) return;
+          this.lastSeenAt = Date.now();
+          const frame = decodeFrame(data);
+          if (!frame) return;
+          // The heartbeat is this module's own traffic and never reaches the terminal.
+          if (frame.opcode === TerminalOpcode.Ping) {
+            socket.send(encodeFrame(TerminalOpcode.Pong, frame.text));
+            return;
+          }
+          if (frame.opcode === TerminalOpcode.Pong) {
+            this.answersProbes = true;
+            return;
+          }
+          this.deps.onFrame(frame);
+        },
+        onClose: () => this.drop(socket),
+      });
+      this.socket = socket;
+      // A new peer has answered nothing yet; what the previous socket answered says nothing
+      // about this one — the reattach may have landed on an older server.
+      this.answersProbes = false;
+      this.dialTimer = setTimeout(() => {
+        this.dialTimer = null;
+        this.drop(socket);
+      }, DIAL_TIMEOUT_MS);
+    } finally {
+      this.connecting = false;
+    }
   }
 
   /** Gives up on one socket and starts the countdown to the next. */
@@ -198,6 +243,7 @@ export class TerminalConnection {
     if (this.socket !== socket) return;
     this.socket = null;
     this.stopHeartbeat();
+    this.clearDial();
     socket.close();
     if (this.stopped) return;
     this.deps.onStatus("reconnecting", "");
@@ -222,6 +268,33 @@ export class TerminalConnection {
     if (this.retryTimer === null) return;
     clearTimeout(this.retryTimer);
     this.retryTimer = null;
+  }
+
+  private clearDial(): void {
+    if (this.dialTimer === null) return;
+    clearTimeout(this.dialTimer);
+    this.dialTimer = null;
+  }
+
+  /**
+   * Races a dependency call against a clock it cannot hang past. The losing call is left to
+   * settle on its own — its late answer lands in a continuation that checks `stopped` and
+   * the single-flight guard, so it changes nothing.
+   */
+  private within<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("the server did not answer in time")), ms);
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err: unknown) => {
+          clearTimeout(timer);
+          reject(err instanceof Error ? err : new Error(String(err)));
+        },
+      );
+    });
   }
 
   private ping(): void {
