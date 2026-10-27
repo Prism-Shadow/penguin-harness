@@ -4,7 +4,7 @@
  * excluded — empty AGENTS.md, cannot be deleted).
  * Specialized capabilities are now carried by Skills — agent_creator / agent_optimizer
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
- * A new Project also starts with its Benchmarks — the example and the eleven built-ins, written
+ * A new Project also starts with its Benchmarks — the example and the seventeen built-ins, written
  * once when it is created — which the Benchmark API lists as plain published Benchmarks seeded
  * as builtin, each with a date version and each case statement saying how the case is run. A
  * default_project adopted at bootstrap keeps the Benchmarks it holds and is given only the
@@ -142,7 +142,7 @@ describe("built-in Agent provisioning", () => {
     expect(scores).toEqual([...scores].sort((a, b) => a - b));
   });
 
-  it("a new Project, initial or created, comes with the example and the eleven built-ins, listed as plain published Benchmarks whose statements say how each case is run", async () => {
+  it("a new Project, initial or created, comes with the example and the seventeen built-ins, listed as plain published Benchmarks whose statements say how each case is run", async () => {
     // The one scenario that reads the shipped catalog whole, on an app that writes it as
     // production does (createTestApp leaves the built-ins out unless asked).
     const shipped = await createTestApp({ builtinBenchmarks: true });
@@ -157,8 +157,10 @@ describe("built-in Agent provisioning", () => {
         const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
         const example = body.benchmarks.find((b) => b.id === "example-benchmark")!;
         const builtins = body.benchmarks.filter((b) => b.id.startsWith(BUILTIN_PREFIX));
-        expect(builtins, projectId).toHaveLength(11);
-        expect(builtins.filter((b) => b.id.startsWith(`${BUILTIN_PREFIX}gdpevo-`))).toHaveLength(6);
+        expect(builtins, projectId).toHaveLength(17);
+        expect(builtins.filter((b) => b.id.startsWith(`${BUILTIN_PREFIX}gdpevo-`))).toHaveLength(
+          12,
+        );
         expect(body.benchmarks.map((b) => b.id)).toEqual([
           "example-benchmark",
           ...builtins.map((b) => b.id),
@@ -189,7 +191,7 @@ describe("built-in Agent provisioning", () => {
               await owner.get(`${base}/${bench.id}/cases/${c.id}/files/content?path=README.md`)
             ).text();
             if (bench.id.startsWith(`${BUILTIN_PREFIX}gdpevo-`)) {
-              expect(bench.caseCount).toBe(5);
+              expect(bench.caseCount).toBe(bench.id.endsWith("-train") ? 1 : 5);
               expect(statement, c.id).toContain(
                 "https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-",
               );
@@ -226,7 +228,7 @@ describe("built-in Agent provisioning", () => {
       ).json()) as BenchmarksResponse;
       const ids = body.benchmarks.map((b) => b.id);
       expect(ids).toContain("example-benchmark");
-      expect(ids.filter((id) => id.startsWith(BUILTIN_PREFIX))).toHaveLength(11);
+      expect(ids.filter((id) => id.startsWith(BUILTIN_PREFIX))).toHaveLength(17);
       expect(body.benchmarks.find((b) => b.id === mine)).toMatchObject({
         title: "Mine",
         caseCount: 0,

@@ -1,17 +1,17 @@
 /**
  * The built-in Benchmarks: what one is, and the writer that puts it on disk.
  *
- * Eleven Benchmarks ship beside the example. PenguinHarness Benchmark Sec A to Sec E are subsets of
+ * Seventeen Benchmarks ship beside the example. PenguinHarness Benchmark Sec A to Sec E are subsets of
  * rag-bench-essential, DeepSWE v1.1, AutomationBench, Terminal-Bench-Science 0.1 and
  * Terminal-Bench 4.0, each chosen to run on CPU-only Docker. Their tasks are Harbor task directories
  * that live in the public benchmark repository, never in this one, and so does every large file they
- * use: each Case here is text only — a statement that summarises the task, links its folder in
+ * use: each Case here is text only — a statement that names the task, links its folder in
  * the repository's main branch and the repository's rules for running a task,
  * and gives the exact Harbor launch with its caps; and a rubric that is the verifier's reward out
  * of 100.
  *
- * The six GDPEVO domain Benchmarks list their test tasks and link to the benchmark repository's
- * main branch for continuous training instructions. Train and Test scores remain separate.
+ * Each of the six GDPEVO domains has separate Train and Test Benchmarks: one continuous training
+ * Case and five independent test Cases. Train and Test scores remain separate.
  *
  * `benchmark_config.toml` is a plain Benchmark manifest (origin `builtin`, the built-in's own
  * version) that marks nothing: how a case is run is its statement's to say, and the
@@ -40,17 +40,11 @@ export interface BuiltinBenchmarkCase {
   task: string;
   /** The statement's first heading, which the case list shows as the case title. */
   title: string;
-  /** What the task asks and what it delivers, in a few sentences; never a hint at a solution. */
-  summary?: string;
-  /** The upstream category, "<area> / <sub-area>". */
-  category?: string;
   /**
    * Where the task sits upstream, when the source names its tasks by more than the task folder
    * (GDPevo's task group and split): the statement's Upstream line ends with it.
    */
   upstreamTask?: string;
-  cpus?: number;
-  memoryMb?: number;
   /** Upstream expert time estimate in hours, where the source publishes one. */
   expertHours?: number;
 }
@@ -59,7 +53,7 @@ export interface BuiltinBenchmarkCase {
 export interface BuiltinBenchmark {
   /** Directory under `benchmarks/`, which is the Benchmark id: `penguinharness-benchmark-<name>`. */
   id: string;
-  /** "PenguinHarness Benchmark <name>", the name being "Sec <letter>"; GDPEVO uses "GDPEVO-<domain>". */
+  /** "PenguinHarness Benchmark <name>", the name being "Sec <letter>"; GDPEVO uses "GDPEVO-<domain>-Train/Test". */
   title: string;
   /** Names the original benchmark the Benchmark is drawn from, then what it shares with the others. */
   description: string;
@@ -145,29 +139,19 @@ function builtinManifest(bench: BuiltinBenchmark): BenchmarkManifest {
 }
 
 /**
- * The statement README: summary, provenance and resources, then how the case is run — the
+ * The statement README: title, provenance and network, then how the case is run — the
  * repository's rules for agents, the exact launch with its caps — and how it is scored.
  */
 function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string {
   const offline = bench.agentNetwork === "no-network";
-  const resources = [
-    ...(item.cpus !== undefined ? [`${item.cpus} CPU`] : []),
-    ...(item.memoryMb !== undefined ? [`${item.memoryMb / 1024} GB RAM`] : []),
-  ];
   const facts = [
     `- Benchmark: ${bench.title} — ${bench.source}` +
-      (item.category !== undefined ? ` · Category: ${item.category}` : "") +
       (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
     `- Task: \`${item.task}\` in ${repoLink("tree", `${taskPath(bench)}/${item.task}`)}`,
     `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
       (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
-    ...(resources.length > 0
-      ? [
-          `- Container: ${resources.join(", ")}, CPU only · Agent network: ` +
-            (offline ? "none, except the model provider's API host" : "public") +
-            ` · Verifier: ${bench.verifier}`,
-        ]
-      : []),
+    `- Agent network: ${offline ? "none, except the model provider's API host" : "public"}` +
+      ` · Verifier: ${bench.verifier}`,
   ];
   const command = [
     'export PYTHONPATH="$PWD/agents"',
@@ -187,7 +171,6 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
   return [
     `# ${item.title}`,
     "",
-    ...(item.summary !== undefined ? [item.summary, ""] : []),
     ...facts,
     "",
     "## How this case is run",

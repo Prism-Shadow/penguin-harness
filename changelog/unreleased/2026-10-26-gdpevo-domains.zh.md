@@ -1,4 +1,4 @@
-# GDPEVO 自动加载为六个独立领域 Benchmark
+# GDPEVO 六个领域分别内置 Train/Test
 
 - **Date:** 2026-10-26
 - **Type:** fix
@@ -7,8 +7,8 @@
 
 [English](2026-10-26-gdpevo-domains.md)
 
-新建 Project 通过现有的内置 Benchmark 流程自动获得 GDPEVO-CRM、GDPEVO-ERP、GDPEVO-Finance、GDPEVO-Healthcare、GDPEVO-Legal 和 GDPEVO-DataAnalysis。每个领域复用原来的 Benchmark 和 case 结构，列出五道测试题，省略选填的摘要与资源信息，引用 Benchmark 仓库的 `main` 分支。测试任务采用 `crm-test-001` 这样的领域名称，直接放在 `tasks/` 下，复用原来的用例命名与任务路径处理。题目说明复用原来的 Harbor 启动模板，每道测试题限时 4 小时、不限制轮数，要求传入冻结后的 Agent State，并链接到各领域 README 中的 State 准备和连续训练流程。移除了旧的跨领域 Train/Test 定义和 GDPEVO 固定版本引用。
+新建 Project 为 GDPEVO-CRM、GDPEVO-ERP、GDPEVO-Finance、GDPEVO-Healthcare、GDPEVO-Legal 和 GDPEVO-DataAnalysis 六个领域分别内置 Train 和 Test Benchmark。每个 Train 包含一个连续训练 Case，五道训练题在同一 Agent Session 和业务容器内完成，整组解题限时 6 小时，最后导出 Skill。每个 Test 包含五个独立 Cases，每题解题限时 4 小时。两者均不限制轮数。测试前冻结导出的 Skill，Train/Test 分别计分。
 
-GDPEVO 初始不带评估记录，训练与测试分别计分。所有内置 Benchmark 的链接与 checkout 说明统一使用 Benchmark 仓库的 `main` 分支，移除了每个 Benchmark 的 `ref` 字段和固定源码 commit。保留了已有 Project 的 Benchmark。通用包导出脚本导出了同样的定义。
+十二个 GDPEVO 条目复用现有 Benchmark 结构、初始化流程、Harbor 启动模板和包导出脚本。测试任务以 `crm-test-001` 等领域名称直接放在 `tasks/` 下；训练选择同一目录下的 `train_tasks`。中英文介绍说明各领域及训练、测试的区别。示例页、官网清单和导入示例使用对应的 Train/Test ID。保留已有 Project 的 Benchmark，新建的 GDPEVO 条目不带评估记录。
 
-六个 GDPEVO 领域保留原始数据集的上游地址和 Apache-2.0 许可证。官网清单在同一来源下列出六个领域 ID，原有一致性测试与更新后的清单对齐。除删除的 `ref` 外，Benchmark 层字段保持原来的必填或选填状态，题目说明生成代码直接使用必填字段。GDPEVO 填写来源、禁用共享网络、说明最终评分器，并列出 Docker Hub、Debian 软件包源和 PyPI 这些下载来源。Case 的摘要、分类、CPU 和内存信息保持选填。
+所有内置 Case 定义删除 `summary`、`category`、`cpus` 和 `memoryMb`，同时删除对应的说明生成分支。Case 说明保留任务标题、来源链接、网络和评分器信息，以及启动和评分方式。Docker 资源限制仍由 Benchmark 仓库的任务文件管理。Benchmark 顶层字段除删除 `ref` 外，保持原来的必填或选填状态；来源链接与 checkout 说明使用 Benchmark 仓库的 `main` 分支。

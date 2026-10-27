@@ -1,7 +1,7 @@
 /**
  * The built-in Benchmarks, as a new Project's provisioning writes them.
  *
- * - A new Project's benchmarks/ holds the example and eleven published built-ins, each with one
+ * - A new Project's benchmarks/ holds the example and seventeen published built-ins, each with one
  *   run per case, no evaluations and at least one case, and no staging left behind; each is
  *   written in the package format, a benchmark_config.toml that names its id, a date version and
  *   origin `builtin`, and that the manifest reader takes as written.
@@ -17,8 +17,8 @@
  *   rubric is worth 100 points.
  * - The Secs list in A to E order, each description opening by naming the original benchmark;
  *   every built-in's description names the original its cases cite as their source.
- * - Six GDPEVO domains list their test tasks using main, with separate training instructions
- *   and no sample scores.
+ * - Each GDPEVO domain has a Train Benchmark with one continuous Case and a Test Benchmark
+ *   with five independent Cases, using main and starting without sample scores.
  * - Provisioning again writes nothing; a directory already under an id, built-in or the
  *   example, is left exactly as it is.
  * - A write that fails part-way leaves neither its directory nor staging debris, and the error
@@ -50,12 +50,18 @@ const BUILTIN_IDS = [
   "penguinharness-benchmark-sec-c",
   "penguinharness-benchmark-sec-d",
   "penguinharness-benchmark-sec-e",
-  "penguinharness-benchmark-gdpevo-crm",
-  "penguinharness-benchmark-gdpevo-erp",
-  "penguinharness-benchmark-gdpevo-finance",
-  "penguinharness-benchmark-gdpevo-healthcare",
-  "penguinharness-benchmark-gdpevo-legal",
-  "penguinharness-benchmark-gdpevo-data-analysis",
+  "penguinharness-benchmark-gdpevo-crm-train",
+  "penguinharness-benchmark-gdpevo-crm-test",
+  "penguinharness-benchmark-gdpevo-erp-train",
+  "penguinharness-benchmark-gdpevo-erp-test",
+  "penguinharness-benchmark-gdpevo-finance-train",
+  "penguinharness-benchmark-gdpevo-finance-test",
+  "penguinharness-benchmark-gdpevo-healthcare-train",
+  "penguinharness-benchmark-gdpevo-healthcare-test",
+  "penguinharness-benchmark-gdpevo-legal-train",
+  "penguinharness-benchmark-gdpevo-legal-test",
+  "penguinharness-benchmark-gdpevo-data-analysis-train",
+  "penguinharness-benchmark-gdpevo-data-analysis-test",
 ];
 
 let tmpRoot: string;
@@ -132,7 +138,7 @@ async function backdate(root: string): Promise<void> {
 }
 
 describe("built-in Benchmarks", () => {
-  it("a new Project's benchmarks/ holds the example and eleven published built-ins, each with one run per case, no evaluations and at least one case", async () => {
+  it("a new Project's benchmarks/ holds the example and seventeen published built-ins, each with one run per case, no evaluations and at least one case", async () => {
     await provision();
 
     expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS].sort(byName));
@@ -268,16 +274,21 @@ describe("built-in Benchmarks", () => {
     expect(letters.join("")).toBe("ABCDE");
   });
 
-  it("automatically seeds five test cases per GDPEVO domain using main and keeps training separate", async () => {
+  it("seeds a continuous Train case and five independent Test cases per GDPEVO domain", async () => {
     await provision();
 
     for (const id of BUILTIN_IDS) {
       if (!id.startsWith("penguinharness-benchmark-gdpevo-")) continue;
-      const domain = id.slice("penguinharness-benchmark-gdpevo-".length);
+      const train = id.endsWith("-train");
+      const domain = id
+        .slice("penguinharness-benchmark-gdpevo-".length)
+        .replace(/-(train|test)$/, "");
       const ids = await caseIds(id);
-      expect(ids).toHaveLength(5);
+      expect(ids).toHaveLength(train ? 1 : 5);
       for (const caseId of ids) {
-        expect(caseId).toMatch(new RegExp(`^CASE-\\d{3}-${domain}-test-\\d{3}$`));
+        expect(caseId).toMatch(
+          train ? /^CASE-001-train_tasks$/ : new RegExp(`^CASE-\\d{3}-${domain}-test-\\d{3}$`),
+        );
         const files = [...(await tree(path.join(dir(), id, caseId))).keys()]
           .map((file) => file.split(path.sep).join("/"))
           .sort();
@@ -286,7 +297,10 @@ describe("built-in Benchmarks", () => {
         expect(statement).toContain(
           `https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-${domain}/README.md`,
         );
-        expect(statement).toContain(`/tree/main/benchmarks/gdpevo-${domain}/tasks/${domain}-test-`);
+        expect(statement).toContain(
+          `/tree/main/benchmarks/gdpevo-${domain}/tasks/${train ? "train_tasks" : `${domain}-test-`}`,
+        );
+        expect(statement).toContain(`--ak run_timeout=${train ? "6h" : "4h"} --ak max_turns=-1`);
       }
     }
     expect(await exists(path.join(dir(), "penguinharness-benchmark-gdpevo-train"))).toBe(false);

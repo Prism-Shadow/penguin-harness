@@ -1187,24 +1187,14 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     item: BuiltinBenchmark["cases"][number],
   ): string => {
     const offline = bench.agentNetwork === "no-network";
-    const resources = [
-      ...(item.cpus !== undefined ? [`${item.cpus} CPU`] : []),
-      ...(item.memoryMb !== undefined ? [`${item.memoryMb / 1024} GB RAM`] : []),
-    ];
     const facts = [
       `- Benchmark: ${bench.title} — ${bench.source}` +
-        (item.category !== undefined ? ` · Category: ${item.category}` : "") +
         (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
       `- Task: \`${item.task}\` in ${repoLink("tree", `${taskPath(bench)}/${item.task}`)}`,
       `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
         (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
-      ...(resources.length > 0
-        ? [
-            `- Container: ${resources.join(", ")}, CPU only · Agent network: ` +
-              (offline ? "none, except the model provider's API host" : "public") +
-              ` · Verifier: ${bench.verifier}`,
-          ]
-        : []),
+      `- Agent network: ${offline ? "none, except the model provider's API host" : "public"}` +
+        ` · Verifier: ${bench.verifier}`,
     ];
     const command = [
       'export PYTHONPATH="$PWD/agents"',
@@ -1224,7 +1214,6 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     return [
       `# ${item.title}`,
       "",
-      ...(item.summary !== undefined ? [item.summary, ""] : []),
       ...facts,
       "",
       "## How this case is run",

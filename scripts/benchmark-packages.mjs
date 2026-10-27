@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Writes the built-in Benchmarks, PenguinHarness Benchmark Sec A to Sec E and the six GDPEVO
- * domains, as packages: for each, `<out>/<id>/` holding its manifest, benchmark_config.toml,
+ * Writes the built-in Benchmarks, PenguinHarness Benchmark Sec A to Sec E and Train/Test pairs
+ * for six GDPEVO domains, as packages: each `<out>/<id>/` holds its manifest, benchmark_config.toml,
  * and every case's statement and rubric. That is what a new Project is seeded with, minus the
  * scoreboard, which is a copy's own record of its evaluations and never part of a package. The
  * benchmark repository (Prism-Shadow/penguin-harness-benchmark) commits the output under
