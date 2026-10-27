@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/use-bento-slides",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "description": "Create and edit Bento presentations — self-contained .bento.html decks whose document is JSON. Use whenever the user wants a slide deck or presentation: from scratch, from source material, or by improving an existing file.",
   "keywords": [
     "penguin-plugin",

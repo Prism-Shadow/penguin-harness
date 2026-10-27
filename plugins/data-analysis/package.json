@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/data-analysis",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "description": "Complete data-analysis tasks with bounded inspection, correct data semantics, native artifact handling, complete delivery, and risk-based verification.",
   "keywords": [
     "penguin-plugin",

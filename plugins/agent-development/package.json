@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/agent-development",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "description": "Agent development on PenguinHarness: initialize agents from a requirement, build agent apps on the SDK or connect them to an agent over the Agent API, build workbenches (the pages beside the chat an agent keeps for itself), call any model through one unified LLM API, manage models and secrets, and orchestrate agents, sessions, costs and schedules.",
   "keywords": [
     "penguin-plugin",

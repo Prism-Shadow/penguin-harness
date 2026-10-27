@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/skill-porting",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "description": "Port from external ecosystems after reviewing every file: skills into this agent's agent_state/skills/ (Claude Code plugin marketplaces, the Codex plugin repo, skills.sh registry names, GitHub repos, local folders), or a whole plugin (a Codex or Claude Code plugin, a skills repository, a folder in a GitHub repository) into a PenguinHarness plugin package installed on the server with penguin plugin install.",
   "keywords": [
     "penguin-plugin",
