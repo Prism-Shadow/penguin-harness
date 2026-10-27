@@ -68,6 +68,7 @@ const BROWSER_BY_PLATFORM: Record<Platform, readonly string[]> = {
  */
 const COMMON_ALL = [
   "Mod+KeyP", // print
+  "Mod+Shift+KeyP", // Firefox private window; palette default, configurable by the user
   "Mod+KeyS", // save page
   "Mod+KeyO", // open a file
   "Mod+KeyF", // find
@@ -189,7 +190,7 @@ const COMMON_BY_PLATFORM: Record<Platform, readonly string[]> = {
     "Mod+Alt+KeyK", // web console (Firefox)
     "Mod+Alt+KeyM", // responsive design mode (Firefox)
     "Mod+Alt+KeyN", // split view (Chrome)
-    "Mod+Alt+KeyP", // page setup (Chrome)
+    "Mod+Shift+KeyP", // page setup (Chrome)
     "Mod+Alt+KeyR", // reader view (Firefox)
     "Mod+Alt+KeyU", // view source
     "Mod+Alt+Shift+KeyA", // focus inactive dialogs (Chrome)
