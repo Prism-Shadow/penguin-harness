@@ -22,10 +22,6 @@ on:
       full:
         type: boolean
         default: true
-      benchmark_artifact:
-        description: Benchmark snapshot prepared by the release workflow.
-        type: string
-        default: ""
     secrets:
       DEEPSEEK_API_KEY:
         required: false
@@ -33,9 +29,6 @@ on:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
-
-env:
-  PENGUIN_BENCHMARKS_ARTIFACT: ${{ inputs.benchmark_artifact || '' }}
 
 jobs:
   plan:

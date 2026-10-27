@@ -1,8 +1,8 @@
 /**
- * Fetch the Benchmark packages once, then ship the same files in every build artifact.
+ * Fetch the Benchmark manifests and Case Markdown at build time for packaging.
  * Content lives in penguin-harness-benchmark/packages; this repository keeps no copy in git.
  * --refresh takes main again. PENGUIN_BENCHMARKS_SOURCE can name a local packages/ directory
- * when developing both repositories, or a snapshot prepared by the release workflow.
+ * when developing both repositories.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";

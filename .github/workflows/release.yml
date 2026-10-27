@@ -79,7 +79,6 @@ jobs:
     with:
       ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       full: true
-      benchmark_artifact: ${{ needs.check-release.outputs.benchmark_artifact }}
     secrets:
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
@@ -91,7 +90,6 @@ jobs:
       contents: read
     outputs:
       exists: ${{ steps.check.outputs.exists }}
-      benchmark_artifact: benchmark-packages-${{ github.run_attempt }}
     steps:
       - id: check
         env:
@@ -104,19 +102,6 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Resolve main once for this release; all validators and publishers use these files.
-      - uses: actions/checkout@v5
-        with:
-          repository: Prism-Shadow/penguin-harness-benchmark
-          ref: main
-          sparse-checkout: packages
-          path: benchmark-source
-      - uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-packages-${{ github.run_attempt }}
-          path: benchmark-source/packages
-          if-no-files-found: error
-
   # Desktop installers (Electron shell, three-OS matrix). Runs BEFORE the release job:
   # Release assets are immutable once published, so the installers must exist when the
   # Release is created.
@@ -127,7 +112,6 @@ jobs:
     with:
       ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-      benchmark_artifact: ${{ needs.check-release.outputs.benchmark_artifact }}
       require_macos_signing: true
       require_windows_signing: true
     # The signing secrets themselves live in the called workflow's matrix environments
@@ -149,13 +133,6 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.check-release.outputs.benchmark_artifact }}
-          path: ${{ runner.temp }}/benchmark-packages
-      - name: Use the release Benchmark snapshot
-        run: echo "PENGUIN_BENCHMARKS_SOURCE=$RUNNER_TEMP/benchmark-packages" >> "$GITHUB_ENV"
 
       # pnpm version comes from package.json's packageManager field.
       - uses: pnpm/action-setup@v6
@@ -639,13 +616,6 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.check-release.outputs.benchmark_artifact }}
-          path: ${{ runner.temp }}/benchmark-packages
-      - name: Use the release Benchmark snapshot
-        run: echo "PENGUIN_BENCHMARKS_SOURCE=$RUNNER_TEMP/benchmark-packages" >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@v6
 

@@ -64,16 +64,6 @@ runs:
       shell: bash
       run: pnpm install --frozen-lockfile --config.engine-strict=true
 
-    - uses: actions/download-artifact@v4
-      if: env.PENGUIN_BENCHMARKS_ARTIFACT != ''
-      with:
-        name: ${{ env.PENGUIN_BENCHMARKS_ARTIFACT }}
-        path: ${{ runner.temp }}/benchmark-packages
-    - name: Use the release Benchmark snapshot
-      if: env.PENGUIN_BENCHMARKS_ARTIFACT != ''
-      shell: bash
-      run: echo "PENGUIN_BENCHMARKS_SOURCE=$RUNNER_TEMP/benchmark-packages" >> "$GITHUB_ENV"
-
     # Only the requested packages and their dependencies. A shard that tests core
     # alone does not pay for the desktop bundle, which is the slowest target here.
     # verify-deps-before-run is off because it wants a TTY it does not have on a runner.
