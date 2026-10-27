@@ -472,10 +472,15 @@ export const zh = {
       editor: "编辑器",
     },
     unbound: "未设置",
-    /** The recorder button's tooltip. */
-    rebind: "更改快捷键",
+    /** The recorder button's tooltip — it adds a binding to the command rather than replacing one. */
+    rebind: "添加快捷键",
+    /** The recorder button's idle face: a chord recorded onto the command joins its existing bindings. */
+    addBinding: "添加快捷键…",
+    /** Each existing binding's remove button. */
+    removeBinding: "删除这个快捷键",
     record: "按下新的快捷键…",
-    recordHint: "Esc 取消 · Backspace 清除",
+    /** Recording's own keys: Esc leaves the command alone; Backspace clears every one of its bindings. */
+    recordHint: "Esc 取消 · Backspace 清空全部绑定",
     needsModifier: "需要配合 Ctrl 或 Alt（macOS 为 ⌘ 或 ⌃），Shift 只能与它们一起使用；或使用 F 键",
     resetRow: "恢复默认",
     resetAll: "全部恢复默认",
@@ -3837,6 +3842,8 @@ Benchmark：
     } as Record<string, string>,
     statusRunning: "运行中",
     statusCompacting: "压缩中",
+    /** The session's own run state when nothing is happening — the command palette's session completion shows it beside the title. */
+    statusIdle: "空闲",
     /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
     statusCompletedUnread: "运行完毕，未读",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */

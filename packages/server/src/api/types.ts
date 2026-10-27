@@ -384,17 +384,24 @@ export interface DraftShortcut {
 }
 
 /**
+ * One command's stored bindings: a chord string ("Mod+Shift+KeyW") — the one-binding form an
+ * older build writes — an array of chord strings (a command can hold several bindings, the
+ * first its oldest), or null (explicitly unbound).
+ */
+export type StoredKeybindingsValue = string | readonly string[] | null;
+
+/**
  * The account's keyboard shortcut overrides, one section per platform (the Web App's `Mod` token
  * is ⌘ on macOS and Ctrl elsewhere, so a deliberate macOS-only binding must not leak to Windows).
- * Each section maps a command id to a chord string ("Mod+Shift+KeyW") or null (explicitly
- * unbound); only rows that differ from the Web App's default are present. Bounded on write by
- * services/keybindings.ts.
+ * Each section maps a command id to that command's bindings (a chord string, an array of chord
+ * strings, or null = explicitly unbound); only rows that differ from the Web App's default are
+ * present. Bounded on write by services/keybindings.ts.
  */
 export interface StoredKeybindings {
   v: 1;
-  mac?: Record<string, string | null>;
-  windows?: Record<string, string | null>;
-  linux?: Record<string, string | null>;
+  mac?: Record<string, StoredKeybindingsValue>;
+  windows?: Record<string, StoredKeybindingsValue>;
+  linux?: Record<string, StoredKeybindingsValue>;
 }
 
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
