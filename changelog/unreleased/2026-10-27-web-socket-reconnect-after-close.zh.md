@@ -3,6 +3,7 @@
 - **Date:** 2026-10-27
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1370](https://github.com/Prism-Shadow/penguin-harness/pull/1370)
 
 [English](2026-10-27-web-socket-reconnect-after-close.md)
 
