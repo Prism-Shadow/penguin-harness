@@ -47,9 +47,9 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
+    "test": "node ../../scripts/build-benchmarks.mjs && vitest run --passWithNoTests",
     "test:e2e": "node ../../scripts/run-with-env.mjs PENGUIN_E2E=1 -- vitest run test/llm.e2e.test.ts",
-    "build": "tsup"
+    "build": "node ../../scripts/build-benchmarks.mjs && tsup && node ../../scripts/build-benchmarks.mjs --stage dist/builtin-benchmarks"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.3.1",

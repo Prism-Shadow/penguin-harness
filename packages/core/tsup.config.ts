@@ -13,9 +13,6 @@ export default defineConfig({
     // A row's effective connection and credential rule: no Node dependency and no catalog
     // data, so the Web App bundles the same answers the server and the CLI compute.
     "src/state/model-connection.ts",
-    // The built-in Benchmarks as data: no Node dependency, so the component gallery's demo
-    // Project lists them as a new Project gets them.
-    "src/state/builtin-benchmarks-data.ts",
     // Window/threshold arithmetic plus its two defaults: pure numbers, no Node dependency, so
     // the web app can bundle the compaction-threshold derivation its context ring fills against.
     "src/llm/context-limits.ts",

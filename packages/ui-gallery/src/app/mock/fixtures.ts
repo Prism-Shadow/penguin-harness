@@ -59,14 +59,8 @@ import {
   presetProviderTable,
 } from "../../../../server/dist/model-catalog.js";
 import { effectiveConnection } from "../../../../core/dist/state/model-connection.js";
-// The built-in Benchmarks as core writes them into a new Project: their cards and their cases.
-import {
-  BENCHMARK_REPO,
-  BENCHMARK_RUN_RULES,
-  BUILTIN_BENCHMARKS,
-  HARBOR_AGENT,
-  HARBOR_VERSION,
-} from "../../../../core/dist/state/builtin-benchmarks-data.js";
+// The Benchmark files fetched for this build, shared with Project provisioning.
+import bundledBenchmarks from "../../../../core/builtin-benchmarks/catalog.json";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
 import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
@@ -92,8 +86,14 @@ import type { ModelRef } from "./transcripts";
 // Helpers
 // ---------------------------------------------------------------------------------------------
 
-/** One built-in Benchmark, as core's data module holds it. */
-type BuiltinBenchmark = (typeof BUILTIN_BENCHMARKS)[number];
+/** The package metadata and README texts prepared for the browser at build time. */
+type BuiltinBenchmark = Pick<
+  BenchmarkSummary,
+  "id" | "title" | "description" | "descriptionZh" | "version"
+> & {
+  cases: Array<{ id: string; title: string; statement: string; rubric: string }>;
+};
+const BUILTIN_BENCHMARKS = bundledBenchmarks as BuiltinBenchmark[];
 
 /**
  * What a model is used with, as GET /models reports it: its own values, else its group's
@@ -1174,87 +1174,6 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ),
   ];
 
-  // The built-in Benchmarks, as core writes them into a new Project: every case is a Harbor task
-  // whose statement and rubric are text only. The writer is core's (builtin-benchmarks.ts), kept
-  // private there beside the file system, so the two texts are spelled again here, word for word.
-  const builtinCaseId = (index: number, task: string) =>
-    `CASE-${String(index).padStart(3, "0")}-${task}`;
-  const taskPath = (bench: BuiltinBenchmark) => `benchmarks/${bench.repoDir}/tasks`;
-  const repoLink = (kind: "tree" | "blob", rel: string) => `${BENCHMARK_REPO}/${kind}/main/${rel}`;
-  const shellWord = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
-  const builtinStatement = (
-    bench: BuiltinBenchmark,
-    item: BuiltinBenchmark["cases"][number],
-  ): string => {
-    const offline = bench.agentNetwork === "no-network";
-    const facts = [
-      `- Benchmark: ${bench.title} — ${bench.source}` +
-        (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
-      `- Task: \`${item.task}\` in ${repoLink("tree", `${taskPath(bench)}/${item.task}`)}`,
-      `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
-        (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
-      `- Agent network: ${offline ? "none, except the model provider's API host" : "public"}` +
-        ` · Verifier: ${bench.verifier}`,
-    ];
-    const command = [
-      'export PYTHONPATH="$PWD/agents"',
-      `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench)} -i ${item.task} \\`,
-      `  -a ${HARBOR_AGENT} -m <provider>/<model_id> \\`,
-      "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
-      `  --ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} \\`,
-      ...(bench.timeBudgetNote !== undefined
-        ? [`  --ak time_budget_note=${shellWord(bench.timeBudgetNote)} \\`]
-        : []),
-      ...(offline ? ["  --allow-agent-host <model provider API host> \\"] : []),
-      ...(bench.sharedNetwork
-        ? ["  --extra-docker-compose tools/docker/shared-network.yaml \\"]
-        : []),
-      "  --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
-    ];
-    return [
-      `# ${item.title}`,
-      "",
-      ...facts,
-      "",
-      "## How this case is run",
-      "",
-      "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
-        `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
-        `following that repository's rules for agents — ${repoLink("blob", BENCHMARK_RUN_RULES)} — ` +
-        "from the root of a checkout of the `main` branch:",
-      "",
-      "```bash",
-      ...command,
-      "```",
-      "",
-      `Caps: the agent is stopped at ${bench.runTimeout}` +
-        (bench.maxTurns === -1
-          ? ", with no turn limit. Run at "
-          : ` and after ${bench.maxTurns} turns. Run at `) +
-        "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
-        `with Compose v2; uv; network access to ${bench.downloads}, nodejs.org, the npm registry and ` +
-        "the model provider; the model under test configured in this machine's PenguinHarness with " +
-        "its API key saved (the adapter copies that one entry into the container, outside the " +
-        "trial's log directory)." +
-        (bench.note !== undefined ? ` ${bench.note}` : ""),
-      "",
-      "The score is the verifier's reward × 100: " +
-        (bench.grader?.scale ??
-          "a pass (1) scores 100, a fail (0) scores 0, and a fractional reward r scores 100·r") +
-        ". An evaluation from the Evaluation Center keeps every trial under this Benchmark's " +
-        "`.jobs/` directory and records its Session id as `harbor:<trial name>`.",
-      "",
-      ...(bench.results !== undefined
-        ? [
-            `Measured results of PenguinHarness on these tasks: ${repoLink("blob", bench.results)}`,
-            "",
-          ]
-        : []),
-    ].join("\n");
-  };
-  const builtinRubric = (bench: BuiltinBenchmark) =>
-    `# Scoring rubric (max 100 points)\n\n- 100 pts: the Harbor verifier's reward for this trial (\`/logs/verifier/reward.txt\` or the \`reward\` key of \`reward.json\`) multiplied by 100. The task's own ${bench.grader !== undefined ? "grader decides" : "tests decide"}; there is no manual judging and no partial credit beyond what the verifier itself reports.\n`;
-
   /**
    * The one built-in Benchmark the docs Agent has been through: one Harbor trial per case, the
    * verifier passing three of them. A run's Session id names its trial (`harbor:<trial>`).
@@ -1263,11 +1182,13 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     const rnd = seeded(4040);
     const cases = bench.cases.map((item, i) => {
       const score = i === 0 || i === 3 || i === 7 ? 100 : 0;
-      const trial = `${item.task.slice(0, 22)}__${Math.floor(rnd() * 36 ** 7)
+      const trial = `${item.id.replace(/^CASE-\d+-/, "").slice(0, 22)}__${Math.floor(
+        rnd() * 36 ** 7,
+      )
         .toString(36)
         .padStart(7, "0")}`;
       return caseRecord(
-        builtinCaseId(i + 1, item.task),
+        item.id,
         score,
         Math.round((0.04 + rnd() * 0.06) * 10_000) / 10_000,
         420_000 + Math.round(rnd() * 600_000),
@@ -1344,8 +1265,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ],
   };
   for (const bench of BUILTIN_BENCHMARKS) {
-    benchmarkCases[bench.id] = bench.cases.map((item, i) => ({
-      id: builtinCaseId(i + 1, item.task),
+    benchmarkCases[bench.id] = bench.cases.map((item) => ({
+      id: item.id,
       title: item.title,
     }));
   }
@@ -1365,10 +1286,10 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   }
   // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
   for (const bench of BUILTIN_BENCHMARKS) {
-    bench.cases.forEach((item, i) => {
-      caseFiles[`${bench.id}/${builtinCaseId(i + 1, item.task)}`] = {
-        statement: { "README.md": builtinStatement(bench, item) },
-        rubric: { "README.md": builtinRubric(bench) },
+    bench.cases.forEach((item) => {
+      caseFiles[`${bench.id}/${item.id}`] = {
+        statement: { "README.md": item.statement },
+        rubric: { "README.md": item.rubric },
       };
     });
   }

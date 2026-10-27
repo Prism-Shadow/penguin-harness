@@ -4,7 +4,7 @@
  * excluded — empty AGENTS.md, cannot be deleted).
  * Specialized capabilities are now carried by Skills — agent_creator / agent_optimizer
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
- * A new Project also starts with its Benchmarks — the example and the seventeen built-ins, written
+ * A new Project also starts with its Benchmarks — the example and the shipped packages, written
  * once when it is created — which the Benchmark API lists as plain published Benchmarks seeded
  * as builtin, each with a date version and each case statement saying how the case is run. A
  * default_project adopted at bootstrap keeps the Benchmarks it holds and is given only the
@@ -13,12 +13,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { benchmarksDir, libraryPlugin, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
+import {
+  benchmarksDir,
+  libraryPlugin,
+  loadPreinstalledPlugins,
+  readBuiltinBenchmarks,
+} from "@prismshadow/penguin-core";
 import type { BenchmarkCasesResponse, BenchmarksResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, type TestApp } from "./helpers.js";
-
-/** What every built-in Benchmark's id starts with: `penguinharness-benchmark-<name>`. */
-const BUILTIN_PREFIX = "penguinharness-benchmark-";
 
 interface AgentsResponse {
   agents: Array<{ agentId: string; name?: string; description?: string }>;
@@ -142,9 +144,10 @@ describe("built-in Agent provisioning", () => {
     expect(scores).toEqual([...scores].sort((a, b) => a - b));
   });
 
-  it("a new Project, initial or created, comes with the example and the seventeen built-ins, listed as plain published Benchmarks whose statements say how each case is run", async () => {
+  it("a new Project, initial or created, comes with the example and the shipped packages, listed as plain published Benchmarks whose statements say how each case is run", async () => {
     // The one scenario that reads the shipped catalog whole, on an app that writes it as
     // production does (createTestApp leaves the built-ins out unless asked).
+    const packages = await readBuiltinBenchmarks();
     const shipped = await createTestApp({ builtinBenchmarks: true });
     try {
       const owner = apiClient(shipped.app, (await provisionUser(shipped.app, "owner1")).cookie);
@@ -156,10 +159,9 @@ describe("built-in Agent provisioning", () => {
         const base = `/api/projects/${projectId}/benchmarks`;
         const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
         const example = body.benchmarks.find((b) => b.id === "example-benchmark")!;
-        const builtins = body.benchmarks.filter((b) => b.id.startsWith(BUILTIN_PREFIX));
-        expect(builtins, projectId).toHaveLength(17);
-        expect(builtins.filter((b) => b.id.startsWith(`${BUILTIN_PREFIX}gdpevo-`))).toHaveLength(
-          12,
+        const builtins = body.benchmarks.filter((b) => b.id !== "example-benchmark");
+        expect(builtins.map((b) => b.id).sort(), projectId).toEqual(
+          packages.map((b) => b.id).sort(),
         );
         expect(body.benchmarks.map((b) => b.id)).toEqual([
           "example-benchmark",
@@ -190,17 +192,10 @@ describe("built-in Agent provisioning", () => {
             const statement = await (
               await owner.get(`${base}/${bench.id}/cases/${c.id}/files/content?path=README.md`)
             ).text();
-            if (bench.id.startsWith(`${BUILTIN_PREFIX}gdpevo-`)) {
-              expect(bench.caseCount).toBe(bench.id.endsWith("-train") ? 1 : 5);
-              expect(statement, c.id).toContain(
-                "https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/benchmarks/gdpevo-",
-              );
-            }
-            expect(statement, c.id).toMatch(
-              /^- Task: `[^`]+` in https:\/\/github\.com\/\S+\/tree\/\S+$/m,
+            const source = packages.find((p) => p.id === bench.id)!;
+            expect(statement, c.id).toBe(
+              await fs.readFile(path.join(source.directory, c.id, "statement/README.md"), "utf8"),
             );
-            expect(statement, c.id).toMatch(/^## How this case is run$/m);
-            expect(statement, c.id).toMatch(/harbor run -p \S+ -i \S+ /);
           }
         }
       }
@@ -210,7 +205,8 @@ describe("built-in Agent provisioning", () => {
   });
 
   it("an existing default_project adopted at bootstrap keeps its own Benchmarks and is given only the missing ones", async () => {
-    const mine = `${BUILTIN_PREFIX}sec-a`;
+    const packages = await readBuiltinBenchmarks();
+    const mine = packages[0]!.id;
     const adopted = await createTestApp({
       builtinBenchmarks: true,
       // A data root the CLI made before the server's first start, holding a Benchmark of its
@@ -228,7 +224,7 @@ describe("built-in Agent provisioning", () => {
       ).json()) as BenchmarksResponse;
       const ids = body.benchmarks.map((b) => b.id);
       expect(ids).toContain("example-benchmark");
-      expect(ids.filter((id) => id.startsWith(BUILTIN_PREFIX))).toHaveLength(17);
+      expect(ids.sort()).toEqual(["example-benchmark", ...packages.map((p) => p.id)].sort());
       expect(body.benchmarks.find((b) => b.id === mine)).toMatchObject({
         title: "Mine",
         caseCount: 0,

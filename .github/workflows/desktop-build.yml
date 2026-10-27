@@ -36,6 +36,11 @@ on:
         required: false
         type: string
         default: ""
+      benchmark_artifact:
+        description: Benchmark snapshot prepared by the release workflow.
+        required: false
+        type: string
+        default: ""
       require_macos_signing:
         description: "Sign/notarize macOS artifacts, failing the job if credentials are missing."
         required: false
@@ -125,6 +130,16 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - uses: actions/download-artifact@v4
+        if: inputs.benchmark_artifact != ''
+        with:
+          name: ${{ inputs.benchmark_artifact }}
+          path: ${{ runner.temp }}/benchmark-packages
+      - name: Use the release Benchmark snapshot
+        if: inputs.benchmark_artifact != ''
+        shell: bash
+        run: echo "PENGUIN_BENCHMARKS_SOURCE=$RUNNER_TEMP/benchmark-packages" >> "$GITHUB_ENV"
 
       # Stamp the release version the same way release.yml stamps the CLI artifacts —
       # core's VERSION/BUILD_DATE constants (what the app and server report) plus the

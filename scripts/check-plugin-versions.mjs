@@ -83,26 +83,11 @@ const hookCommands = (hooks) => {
   return canonical(commands);
 };
 
-/**
- * The Benchmarks a new Project is seeded with carry date versions too: the example's in
- * example-benchmark.ts, each built-in's in builtin-benchmarks-data.ts, whose rows
- * builtin-benchmarks.ts writes into statements. The built-ins are also published as packages in
- * the benchmark repository, where a version names one exact content. So a change to what any of
- * these files says must change at least one of the `version: "YYYY.MM.DD.N"` literals in the
- * file that holds the versions. Lines that are comments or blank do not count as a change, and a
- * file that did not exist at the base commit is new and passes.
- */
+/** The example remains authored here; shipped Benchmark versions live in their packages. */
 const SEEDED_BENCHMARKS = [
   {
     sources: ["packages/core/src/state/example-benchmark.ts"],
     versions: "packages/core/src/state/example-benchmark.ts",
-  },
-  {
-    sources: [
-      "packages/core/src/state/builtin-benchmarks-data.ts",
-      "packages/core/src/state/builtin-benchmarks.ts",
-    ],
-    versions: "packages/core/src/state/builtin-benchmarks-data.ts",
   },
 ];
 const dateVersions = (text) =>
