@@ -1,4 +1,5 @@
 import { defineConfig } from "tsup";
+import { buildBenchmarks, stageBenchmarks } from "../../scripts/build-benchmarks.mjs";
 // Inlines this checkout's git identity into the artifact — see the helper's module doc:
 // core's dist is what the server imports at run time, and a shipped bundle has no path back to the checkout it came from.
 import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
@@ -36,6 +37,10 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   define: buildGitDefine(),
+  onSuccess: async () => {
+    await buildBenchmarks();
+    await stageBenchmarks("dist/builtin-benchmarks");
+  },
   // @prismshadow/skills (the vendored SKILL.md parser and its writer) is a devDependency bundled
   // into dist, so the published core carries that code and never imports the package at run
   // time; its own runtime dependency, yaml, is one of core's dependencies and stays external.
