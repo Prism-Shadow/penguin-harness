@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Fetch the Benchmark packages once, then ship the same files in every build artifact.
  * Content lives in penguin-harness-benchmark/packages; this repository keeps no copy in git.
