@@ -109,6 +109,8 @@ export function ChartCard({
   employee,
   state,
   currency,
+  warnRatio,
+  pauseRatio,
   x,
   y,
   detached = false,
@@ -116,6 +118,8 @@ export function ChartCard({
   menu,
 }: {
   employee: OrgEmployeeItem;
+  warnRatio: number;
+  pauseRatio: number;
   /** The state the dot draws — the live one, which the chart's own `state` cannot be. */
   state: OrgEmployeeState;
   currency: Currency;
@@ -142,7 +146,7 @@ export function ChartCard({
   useEffect(() => {
     close();
   }, [viewEpoch, close]);
-  const tone = budgetTone(employee.spend.ratio);
+  const tone = budgetTone(employee.spend.ratio, warnRatio, pauseRatio);
   const spent = formatMoney(employee.spend.cumulative, currency);
   const spend =
     employee.budget === undefined
@@ -226,7 +230,7 @@ export function ChartCard({
             {spend}
           </span>
         </span>
-        {/* The ratio bar: emerald under 80%, amber from 80%, red from 100%; an empty track without a budget. */}
+        {/* The ratio bar uses the organization's configured budget thresholds. */}
         <span
           className="mt-1.5 block h-[3px] w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
           aria-hidden

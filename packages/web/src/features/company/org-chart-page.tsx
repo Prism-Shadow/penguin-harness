@@ -570,6 +570,8 @@ export function OrgChartPage() {
                     employee={employee}
                     state={employeeStates.get(employee.agentId) ?? employee.state}
                     currency={currency}
+                    warnRatio={chart.budgetWarnRatio}
+                    pauseRatio={chart.budgetPauseRatio}
                     x={node.x}
                     y={node.y}
                     detached={node.detached}

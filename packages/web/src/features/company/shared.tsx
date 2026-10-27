@@ -212,14 +212,18 @@ export function SpendRing({
   ratio,
   currency,
   size = 64,
+  warnRatio,
+  pauseRatio,
 }: {
   cost: number;
   budget?: number;
   ratio?: number;
   currency: Currency;
   size?: number;
+  warnRatio?: number;
+  pauseRatio?: number;
 }) {
-  const tone = budgetTone(ratio);
+  const tone = budgetTone(ratio, warnRatio, pauseRatio);
   const share = ratio === undefined ? 0 : Math.min(1, Math.max(0, ratio));
   const label =
     budget === undefined
@@ -266,14 +270,18 @@ export function BudgetBar({
   ratio,
   currency,
   compact = false,
+  warnRatio,
+  pauseRatio,
 }: {
   cost: number;
   budget?: number;
   ratio?: number;
   currency: Currency;
   compact?: boolean;
+  warnRatio?: number;
+  pauseRatio?: number;
 }) {
-  const tone = budgetTone(ratio);
+  const tone = budgetTone(ratio, warnRatio, pauseRatio);
   const width = ratio === undefined ? 0 : Math.min(100, Math.max(0, ratio * 100));
   const label =
     budget === undefined

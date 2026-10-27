@@ -164,11 +164,33 @@ export function shiftPeriod(period: string, delta: number): string | null {
  */
 export type BudgetTone = Extract<Tone, "muted" | "success" | "attention" | "danger">;
 
-/** The tone a spend-against-budget ratio takes: attention from 80%, danger from 100%, success below; muted without a budget. */
-export function budgetTone(ratio: number | undefined): BudgetTone {
+/**
+ * Returns the tone for a budget usage ratio.
+ * Uses the configured warning and pause thresholds,
+ * falling back to the defaults when none are provided.
+ */
+export function budgetTone(
+  ratio: number | undefined,
+  warnRatio = 0.8,
+  pauseRatio = 1.0,
+): BudgetTone {
   if (ratio === undefined || !Number.isFinite(ratio)) return "muted";
-  if (ratio >= 1) return "danger";
-  if (ratio >= 0.8) return "attention";
+  if (ratio >= pauseRatio) return "danger";
+  if (ratio >= warnRatio) return "attention";
+  return "success";
+}
+
+/**
+ * Uses the server-computed budget state for Finance surfaces.
+ * Without a valid budget ratio, no budget tone is shown.
+ */
+export function financeBudgetTone(
+  ratio: number | undefined,
+  status: Pick<OrgFinanceEmployee, "warned" | "paused">,
+): BudgetTone {
+  if (ratio === undefined || !Number.isFinite(ratio)) return "muted";
+  if (status.paused) return "danger";
+  if (status.warned) return "attention";
   return "success";
 }
 

@@ -88,8 +88,8 @@ import {
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { FinanceGauge, SpendMeter } from "./finance-gauge";
 import {
-  budgetTone,
   dailyBreaks,
+  financeBudgetTone,
   financeKpis,
   financeSeries,
   groupAlerts,
@@ -428,7 +428,10 @@ export function FinancePage() {
   }
 
   const kpis = financeKpis(data);
-  const ratioTone = budgetTone(kpis.ratio);
+
+  const root = data.employees.find((e) => e.reportsTo === null) ?? data.employees[0];
+
+  const ratioTone = root ? financeBudgetTone(kpis.ratio, root) : "muted";
   /** Spend against a budget as one sentence — what the ring and every meter carry as their name. */
   const spendLabel = (
     cost: number,
@@ -481,7 +484,7 @@ export function FinancePage() {
               >
                 {/* Small: the tile is a quarter of the KPI panel, and the ring is the
                     picture of a number that is already spelled out beside it. */}
-                <FinanceGauge ratio={kpis.ratio} label={gaugeLabel} size={40} />
+                <FinanceGauge ratio={kpis.ratio} label={gaugeLabel} size={40} tone={ratioTone} />
               </StatTile>
               <StatTile
                 icon={ICONS.percent}
@@ -625,6 +628,7 @@ export function FinancePage() {
                                   employee.budget,
                                   employee.ratio,
                                 )}
+                                tone={financeBudgetTone(employee.ratio, employee)}
                                 {...(employee.ratio !== undefined ? { ratio: employee.ratio } : {})}
                               />
                             </span>
