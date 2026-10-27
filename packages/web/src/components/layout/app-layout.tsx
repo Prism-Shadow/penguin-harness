@@ -57,6 +57,7 @@ import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-laye
 import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
+import { useSessionCompletion } from "../../features/palette/session-completion";
 
 /**
  * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
@@ -412,6 +413,9 @@ export function AppLayout() {
     };
   }, [collapsed, inCompany, newChat]);
 
+  // The palette's session completion: built here where the session store lives, so the palette
+  // itself stays free of the app's state and mounts unchanged on the workbench route.
+  const sessionCompletion = useSessionCompletion();
   const background = useBackground();
   return (
     <AppShell
@@ -507,7 +511,7 @@ export function AppLayout() {
           and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
           reloads, so navigating the app must never re-parent one. */}
       <BuiltinBrowserLayer />
-      <AppPalette />
+      <AppPalette suggest={sessionCompletion} />
     </AppShell>
   );
 }

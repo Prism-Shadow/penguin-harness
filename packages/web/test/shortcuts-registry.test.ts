@@ -17,14 +17,21 @@ import {
 import { browserCommon, browserReserved } from "../src/lib/shortcuts/reserved";
 import { S } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import type { Chord, CommandId, Platform } from "../src/lib/shortcuts/types";
+import type { Chord, CommandId, Keymap, Platform } from "../src/lib/shortcuts/types";
 
 const PLATFORMS: readonly Platform[] = ["mac", "windows", "linux"];
 /** The id grammar the server enforces on `ui_prefs.keybindings` (services/keybindings.ts). */
 const ID_RE = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/;
 
-function defaultsFor(platform: Platform): Map<CommandId, Chord | null> {
-  return new Map(SHORTCUT_COMMANDS.map((cmd) => [cmd.id, defaultChord(cmd, platform)]));
+/** The registry's defaults as a keymap: one command, one binding — the list's first member. */
+function defaultsFor(platform: Platform): Keymap {
+  return new Map(
+    SHORTCUT_COMMANDS.map((cmd) => [cmd.id, wrap(defaultChord(cmd, platform))] as const),
+  );
+}
+
+function wrap(chord: Chord | null): readonly Chord[] {
+  return chord === null ? [] : [chord];
 }
 
 describe("registry defaults", () => {

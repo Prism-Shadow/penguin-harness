@@ -1,13 +1,14 @@
 /**
- * Shortcuts page of the System settings dialog: every rebindable command, grouped, each row a
- * recorder showing the current chord. Everything applies on the spot — the store writes the
- * browser mirror and the account's prefs — so there is no Save button; the trailing action row
- * only holds "Reset all", which asks first however many shortcuts it would put back: what it
- * undoes is the user's own setup, and nothing brings it back. Each group is a titled run of the
- * settings rows every other page uses (`SettingsGroup`, `PrefRow`), so the page keeps their
- * pitch. A row's hint is a fact about its current state, kept on screen: a conflict with another
- * command first, then a claim on the chord from outside the page (a browser tab never receives
- * ⌘W; ⌘P takes over the browser's Print; the desktop menu also carries ⌘R).
+ * Shortcuts page of the System settings dialog: every rebindable command, grouped, each row the
+ * command's bindings as removable chips plus a recorder that adds one more. Everything applies
+ * on the spot — the store writes the browser mirror and the account's prefs — so there is no
+ * Save button; the trailing action row only holds "Reset all", which asks first however many
+ * shortcuts it would put back: what it undoes is the user's own setup, and nothing brings it
+ * back. Each group is a titled run of the settings rows every other page uses (`SettingsGroup`,
+ * `PrefRow`), so the page keeps their pitch. A row's hint is a fact about its bindings, kept on
+ * screen: a conflict with another command first, then a claim on a chord from outside the page
+ * (a browser tab never receives ⌘W; ⌘P takes over the browser's Print; the desktop menu also
+ * carries ⌘R).
  */
 import { useState } from "react";
 import {
@@ -21,12 +22,20 @@ import {
   SettingsGroup,
   SettingsSection,
 } from "@prismshadow/penguin-ui";
+import { ChordKbd } from "../../components/ui/chord-kbd";
 import { S } from "../../lib/strings";
 import { conflictsOf, findConflicts, type Conflict } from "../../lib/shortcuts/conflicts";
 import { currentHost, currentPlatform } from "../../lib/shortcuts/platform";
 import { SHORTCUT_COMMANDS, SHORTCUT_GROUPS, commandById } from "../../lib/shortcuts/registry";
 import { browserCommon, browserReserved, desktopReserved } from "../../lib/shortcuts/reserved";
-import { isOverridden, resetAll, resetBinding, setBinding } from "../../lib/shortcuts/store";
+import {
+  addBinding,
+  isOverridden,
+  removeBinding,
+  resetAll,
+  resetBinding,
+  unbindCommand,
+} from "../../lib/shortcuts/store";
 import type { Chord, CommandId, ShortcutCommand } from "../../lib/shortcuts/types";
 import { useKeymap } from "../../lib/shortcuts/use-keymap";
 import { ShortcutRecorder } from "./shortcut-recorder";
@@ -37,16 +46,17 @@ interface RowHint {
 }
 
 /**
- * The one line under a row, in priority order: a conflict (the row may not fire), then a chord a
- * browser keeps for itself (dead in every browser tab), then one the host also uses (the binding
- * takes that function over). A conflict shows only from the side that loses: both rows of a
- * same-scope clash, but only the global row of a shadowed one — the focus-scoped command wins
- * there. Bindings are per account and shared by the browser and the desktop app, so the browser's
- * claims show on either host; in the desktop app its own menu's claim is named first.
+ * The one line under a row — the highest-priority fact about ANY of its bindings: a conflict (a
+ * chord the row may not fire on), then a chord a browser keeps for itself (dead in every browser
+ * tab), then one the host also uses (the binding takes that function over). A conflict shows
+ * only from the side that loses: both rows of a same-scope clash, but only the global row of a
+ * shadowed one — the focus-scoped command wins there. Bindings are per account and shared by the
+ * browser and the desktop app, so the browser's claims show on either host; in the desktop app
+ * its own menu's claim is named first.
  */
 function rowHint(
   cmd: ShortcutCommand,
-  chord: Chord | null,
+  bindings: readonly Chord[],
   conflicts: readonly Conflict[],
 ): RowHint | null {
   const mine = conflictsOf(cmd.id, conflicts);
@@ -64,28 +74,33 @@ function rowHint(
       tone: "attention",
     };
   }
-  if (chord === null) return null;
   const platform = currentPlatform();
-  if (browserReserved(chord, platform)) {
+  const reserved = bindings.some((chord) => browserReserved(chord, platform));
+  if (reserved) {
     return { text: S.shortcuts.browserReserved, tone: "attention" };
   }
   // The shell binds no key before the page today, so only the menu case can arise here.
-  if (currentHost() === "desktop" && desktopReserved(chord, platform) === "menu") {
+  const menu =
+    currentHost() === "desktop" &&
+    bindings.some((chord) => desktopReserved(chord, platform) === "menu");
+  if (menu) {
     return { text: S.shortcuts.desktopMenuReserved };
   }
-  return browserCommon(chord, platform) ? { text: S.shortcuts.browserCommon } : null;
+  return bindings.some((chord) => browserCommon(chord, platform))
+    ? { text: S.shortcuts.browserCommon }
+    : null;
 }
 
 function ShortcutRow({
   cmd,
-  chord,
+  bindings,
   conflicts,
 }: {
   cmd: ShortcutCommand;
-  chord: Chord | null;
+  bindings: readonly Chord[];
   conflicts: readonly Conflict[];
 }) {
-  const hint = rowHint(cmd, chord, conflicts);
+  const hint = rowHint(cmd, bindings, conflicts);
   const overridden = isOverridden(cmd.id);
   // The row draws a hint in the muted ink; a conflict or a chord the browser keeps says so in
   // the attention tone instead.
@@ -97,7 +112,33 @@ function ShortcutRow({
     );
   return (
     <PrefRow label={S.shortcuts.commands[cmd.id]} hint={hintNode}>
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        {bindings.length === 0 && (
+          <span className="text-xs text-fg-subtle">{S.shortcuts.unbound}</span>
+        )}
+        {bindings.map((chord) => (
+          <span
+            key={`${chord.mod}/${chord.ctrl}/${chord.alt}/${chord.shift}/${chord.code}`}
+            className="flex items-center gap-0.5"
+          >
+            <ChordKbd chord={chord} />
+            <IconButton
+              variant="ghost"
+              size="sm"
+              label={`${S.shortcuts.removeBinding}: ${S.shortcuts.commands[cmd.id]}`}
+              title={S.shortcuts.removeBinding}
+              onClick={() => removeBinding(cmd.id, chord)}
+            >
+              <GlyphIcon d={ICONS.xCircle} size={ICON_SIZE.iconButton} />
+            </IconButton>
+          </span>
+        ))}
+        <ShortcutRecorder
+          onCommit={(next) => {
+            if (next === null) unbindCommand(cmd.id);
+            else addBinding(cmd.id, next);
+          }}
+        />
         {overridden && (
           <IconButton
             variant="ghost"
@@ -109,7 +150,6 @@ function ShortcutRow({
             <GlyphIcon d={ICONS.rotateCcw} size={ICON_SIZE.iconButton} />
           </IconButton>
         )}
-        <ShortcutRecorder chord={chord} onCommit={(next) => setBinding(cmd.id, next)} />
       </div>
     </PrefRow>
   );
@@ -140,7 +180,7 @@ export function ShortcutsSection() {
               <ShortcutRow
                 key={cmd.id}
                 cmd={cmd}
-                chord={keymap.get(cmd.id) ?? null}
+                bindings={keymap.get(cmd.id) ?? []}
                 conflicts={conflicts}
               />
             ))}

@@ -401,10 +401,15 @@ export const en: Strings = {
       editor: "the editor",
     },
     unbound: "Not set",
-    /** The recorder button's tooltip. */
-    rebind: "Change shortcut",
+    /** The recorder button's tooltip — it adds a binding to the command rather than replacing one. */
+    rebind: "Add shortcut",
+    /** The recorder button's idle face: a chord recorded onto the command joins its existing bindings. */
+    addBinding: "Add shortcut…",
+    /** Each existing binding's remove button. */
+    removeBinding: "Remove this shortcut",
     record: "Press the new shortcut…",
-    recordHint: "Esc cancels · Backspace clears",
+    /** Recording's own keys: Esc leaves the command alone; Backspace clears every one of its bindings. */
+    recordHint: "Esc cancels · Backspace clears every binding",
     needsModifier:
       "Hold Ctrl or Alt (⌘ or ⌃ on macOS); Shift only together with them. Or use an F key",
     resetRow: "Restore default",
@@ -3645,6 +3650,8 @@ Scenarios:
     } as Record<string, string>,
     statusRunning: "Running",
     statusCompacting: "Compacting",
+    /** The session's own run state when nothing is happening — the command palette's session completion shows it beside the title. */
+    statusIdle: "Idle",
     /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
     statusCompletedUnread: "Done, unread",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
