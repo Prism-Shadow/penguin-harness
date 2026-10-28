@@ -166,31 +166,7 @@ export const zh = {
     /** The link to the same screen in the component gallery, full size. */
     open: "在画廊中打开",
     loading: "正在载入实时演示…",
-  },
-
-  /** The app live under the hero, and the three rows beside it (sections/showcase.tsx). */
-  showcase: {
-    /** Each `frame` names its frame for assistive technology. */
-    start: "开始页（实时演示）",
-    evolve: {
-      title: "一句话启动 Agent 自进化",
-      text: "说出要优化的智能体、评估集和目标分数，PenguinHarness 就会修改它、重新评测，分数更高才保留。",
-      link: "自进化怎么运作",
-      frame: "一轮自进化的对话（实时演示）",
-    },
-    evaluate: {
-      title: "可观测的自进化",
-      text: "六类能力的 Benchmark 为每个版本打分，附成本和耗时，按智能体和模型连成一条线，哪一版更好一眼可见。",
-      link: "了解评估中心",
-      frame: "评估中心里的一套 Benchmark（实时演示）",
-    },
-    toolkits: {
-      title: "前沿的自进化算法，提高准确率，降低成本",
-      /** `names`: the paper toolkits, already listed (OPRO、APE、…). */
-      text: (names: string) => `除了默认循环，${names} 各自是一个工具包，按原论文的流程运行。`,
-      link: "浏览插件库",
-      frame: "插件市场（实时演示）",
-    },
+    evolutionFrame: "一轮自进化的对话（实时演示）",
   },
 
   /** The self-evolution loop and its three recorded numbers (sections/self-improve.tsx). */

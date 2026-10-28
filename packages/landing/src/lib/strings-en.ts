@@ -171,29 +171,7 @@ export const en: Strings = {
   live: {
     open: "Open in the gallery",
     loading: "Loading the live demo…",
-  },
-
-  showcase: {
-    start: "Start page (live demo)",
-    evolve: {
-      title: "Start agent self-evolution with one sentence",
-      text: "Name the agent, the Benchmark and the target score. PenguinHarness edits the agent, evaluates it again, and keeps the version that scores higher.",
-      link: "How self-evolution works",
-      frame: "A self-evolution round in a conversation (live demo)",
-    },
-    evaluate: {
-      title: "Observable self-evolution",
-      text: "Benchmarks covering six kinds of capability score every version of an agent, with cost and duration recorded beside the score; each agent and model gets its own line, making the better version plain to see.",
-      link: "About the Evaluation Center",
-      frame: "A Benchmark in the Evaluation Center (live demo)",
-    },
-    toolkits: {
-      title: "State-of-the-art self-evolution algorithms for higher accuracy, lower cost",
-      text: (names: string) =>
-        `Besides the default loop, ${names} each come as a toolkit that runs the algorithm the way its paper describes.`,
-      link: "Browse the plugin library",
-      frame: "The plugin market (live demo)",
-    },
+    evolutionFrame: "A self-evolution round in a conversation (live demo)",
   },
 
   selfImprove: {

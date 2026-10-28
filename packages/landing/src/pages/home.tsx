@@ -1,11 +1,10 @@
 /**
- * Home: one live walkthrough and three concise capability summaries, the self-evolution
+ * Home: one live walkthrough, the self-evolution
  * loop with its demo, the one-sentence case, what PenguinHarness is made of, what is already
  * built around the agent, the cost comparison, customer scenarios, the latest posts, how to
  * install, and the close.
  */
 import { Hero } from "../sections/hero";
-import { Showcase } from "../sections/showcase";
 import { SelfImprove } from "../sections/self-improve";
 import { Cases } from "../sections/cases";
 import { Pillars } from "../sections/pillars";
@@ -23,7 +22,6 @@ export function HomePage() {
   return (
     <>
       <Hero />
-      <Showcase />
       <SelfImprove />
       <Cases />
       <Pillars />

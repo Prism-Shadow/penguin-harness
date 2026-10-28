@@ -246,7 +246,7 @@ export function Hero() {
         <LiveAppFrame
           surface="chat-new"
           autoplay="evolution"
-          title={S.showcase.evolve.frame}
+          title={S.live.evolutionFrame}
           className="anim-rise mx-auto mt-14 max-w-6xl text-left sm:mt-16"
         />
       </div>
