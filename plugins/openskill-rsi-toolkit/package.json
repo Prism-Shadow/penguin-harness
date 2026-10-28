@@ -1,0 +1,40 @@
+{
+  "name": "@penguinharness/openskill-rsi-toolkit",
+  "version": "0.2.21",
+  "description": "OpenSkill RSI: retrieve independent knowledge, refine reusable skills with virtual tests, freeze the final library, then evaluate native Project Benchmarks.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/openskill-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "penguin": {
+    "description_zh": "OpenSkill RSI：检索独立知识，以虚拟测试反馈修订可复用技能，冻结最终技能库后评测项目内的 Benchmark。支持当前 Harbor 任务和 GDPevo 领域 Train/Test 包。",
+    "short_description": "OpenSkill RSI Toolkit: learn skills through research and virtual tests.",
+    "short_description_zh": "OpenSkill RSI 工具包：通过检索与虚拟测试学习技能。",
+    "category": "rsi",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Use openskill-rsi-toolkit to run OpenSkill on a published Benchmark in this Project with a fresh Target and the current model, including a baseline comparison; ask which Benchmark if unspecified.",
+      "prompt_zh": "使用 openskill-rsi-toolkit，以当前模型和新建 Target 在本项目已发布的 Benchmark 上运行 OpenSkill 并比较基线；若未指定 Benchmark，请先询问。",
+      "skills": [
+        "openskill-rsi-toolkit"
+      ]
+    },
+    "title": "OpenSkill RSI Toolkit",
+    "title_zh": "OpenSkill 自进化工具包"
+  }
+}

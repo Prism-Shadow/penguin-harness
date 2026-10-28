@@ -8,7 +8,7 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins
 
 | Category | Plugins |
 | --- | --- |
-| Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `evo-harness-rsi-toolkit` |
+| Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `evo-harness-rsi-toolkit`, `openskill-rsi-toolkit` |
 | Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `agent-company`, `penguin-support` |
 | Software Development | `software-development`, `use-claude-code` |
 | AI App Development | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
