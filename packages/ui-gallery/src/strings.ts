@@ -1767,7 +1767,7 @@ export const zh = {
         reconnectFailed: "lab-2 拒绝了连接：那个地址和端口上没有 ssh 服务。",
         behind: "有新版本 0.2.16",
         restartNeeded:
-          "这台机器的版本和当前不一致，对话不会自动刷新。请点「重启服务」；还不行就重新安装。",
+          "这台机器的版本和当前不一致，对话不会自动刷新。请点「重启服务」；还不行就点「重新安装」。",
       },
       cards: "机器卡片",
       cardsHint: "本服务端在首，其后每种状态一张；标题行至多两枚胶囊，版本在统计行。",
@@ -1800,6 +1800,7 @@ export const zh = {
         stop: "停止服务",
         restart: "重启服务",
         configure: "配置 SSH",
+        reinstall: "重新安装",
         uninstall: "卸载",
       },
       add: "添加机器",

@@ -119,7 +119,7 @@ export function noPushedCliDetail(said: string): string | null {
   const line = NO_PUSHED_CLI.exec(said)?.[0];
   return line === undefined
     ? null
-    : "PenguinHarness is installed on that machine without the build this server runs there, so it cannot be started or asked anything. Install it again from this page (Update, or Force install): that puts the build there. " +
+    : "PenguinHarness is installed on that machine without the build this server runs there, so it cannot be started or asked anything. Install it again from this page (Update, or Reinstall): that puts the build there. " +
         `(It said: ${line})`;
 }
 

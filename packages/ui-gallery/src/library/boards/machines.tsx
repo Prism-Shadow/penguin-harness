@@ -147,7 +147,7 @@ export function MachinesBoard() {
     }),
     card("edge-1", "unreachable", {
       status: { state: "unreachable", label: t.states.unreachable, reason: SSH_SAID },
-      waits: t.waits.stopped,
+      waits: t.waits.notConnected,
     }),
     card("office-2", "notConnected", {
       facts: facts(false, { port: true }),
@@ -171,7 +171,7 @@ export function MachinesBoard() {
       waits: t.waits.notInstalled,
     }),
     card("win-box", "installedOnly", { waits: t.waits.windows }),
-    card("fresh", "unknown", { waits: t.waits.stopped }),
+    card("fresh", "unknown", { waits: t.waits.notConnected }),
   ];
 
   return (
@@ -230,6 +230,13 @@ export function MachinesBoard() {
               verb: "configure",
               label: t.verbs.configure,
               glyph: ICONS.slidersHorizontal,
+              primary: false,
+              held: false,
+            },
+            {
+              verb: "reinstall",
+              label: t.verbs.reinstall,
+              glyph: ICONS.download,
               primary: false,
               held: false,
             },

@@ -155,9 +155,6 @@ export const en: Strings = {
     queued: "Waiting its turn behind the machines before it.",
     working: "Working…",
     failedAt: (step: string) => `Failed at "${step}".`,
-    replaceProgram: "Force install",
-    replaceProgramConfirm: (alias: string) =>
-      `Force install on ${alias}? Whatever is on that machine now, this server's build is installed and its server restarted; anyone using it will be interrupted.`,
     refusedSelf: (alias: string) => `${alias} is the machine this server runs on; nothing to add.`,
     refusedUnknown: (alias: string) => `${alias} is not in this server's ssh config.`,
     composer: {
@@ -180,7 +177,7 @@ export const en: Strings = {
       failed: "Failed",
     },
     restartNeededReason:
-      "This machine is on a different version, so its conversations won't update by themselves. Click Restart server; if that doesn't help, reinstall it.",
+      "This machine is on a different version, so its conversations won't update by themselves. Click Restart server; if that doesn't help, click Reinstall.",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
@@ -235,6 +232,7 @@ export const en: Strings = {
       logLabel: "Job log",
       copyLog: "Copy log",
       retry: "Retry",
+      reinstallHint: "If Retry doesn't help, click Reinstall above.",
       checking: "Checking this machine…",
       toolbar: {
         label: "Machine actions",
@@ -245,6 +243,7 @@ export const en: Strings = {
         restart: "Restart server",
         syncConfig: "Sync config",
         configure: "Configure SSH",
+        reinstall: "Reinstall",
         uninstall: "Uninstall",
       },
       configSync: {
@@ -264,7 +263,7 @@ export const en: Strings = {
         noImage: "This server has no version to install.",
       },
       reconnect: {
-        title: "Reconnecting",
+        title: "Reconnection",
         lasting: (span: string) => `For ${span}`,
         lastError: "Last failure",
         checked: "What the automatic check found:",
@@ -297,6 +296,9 @@ export const en: Strings = {
       uninstallTitle: (alias: string) => `Uninstall PenguinHarness from ${alias}?`,
       uninstallBody: (programDir: string) =>
         `Its server is stopped first, then the program directory ${programDir} is removed. The machine stays on the list as not installed.`,
+      reinstallTitle: (alias: string) => `Reinstall PenguinHarness on ${alias}?`,
+      reinstallBody:
+        "Installs this server's version on that machine again, then restarts its server and reconnects to it. Anyone using it is briefly cut off; the Sessions, agents and config on the machine are kept.",
       removeData: "Also delete the data directory on this machine",
       removeDataWarning:
         "The Sessions, Agents and config on that machine live there, and cannot be recovered once deleted.",

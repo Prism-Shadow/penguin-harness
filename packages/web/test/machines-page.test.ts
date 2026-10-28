@@ -7,7 +7,8 @@
  *   dialog is what it opens; Settings opens it too;
  * - starts a conversation in the machine's temporary workspace with Use, opening nothing, while
  *   the machine is connected; otherwise Use waits and the card says why in words, not on a hover —
- *   and while a job moves there, its stepper says what is happening instead;
+ *   a server stopped only when it is, not connected for one out of reach — and while a job moves
+ *   there, its stepper says what is happening instead;
  * - while the server brings the machine back, says in its middle where that stands — the attempt
  *   of how many and the countdown to it, the last failure behind a "?", Retry now and Stop
  *   retrying — and after the automatic attempts stopped, that they failed, with Retry; each press
@@ -19,13 +20,15 @@
  *
  * The dialog
  * - lays its verbs out in one toolbar, each asking its page for its own verb: Enable and Update
- *   for the whole pipeline, Stop or Start, Restart, Sync config, Configure SSH, Uninstall;
+ *   for the whole pipeline, Stop or Start, Restart, Sync config, Configure SSH, Reinstall,
+ *   Uninstall;
  * - says when the config was last synced, or why that failed, and lists what it could not carry:
  *   models keyed from this server's environment, models the machine would not take;
  * - greys a verb that cannot run and says why in one sentence under the toolbar, never on a
  *   hover; holds every verb while a request is in flight, the sentence unchanged;
  * - explains a failure: the step it stopped at, in the far side's own words, what the server's
- *   connection check found, then Retry — and Force install only when the failure offers it;
+ *   connection check found, then Retry — and, only when installing again may mend it, a line
+ *   pointing at the toolbar's Reinstall, the one way to reinstall;
  * - says, while the server brings a machine back, where that stands with its presses (Retry asks
  *   the page to reconnect, Stop retrying to stop; none for a refused password), for how long, the
  *   last failure in full, and what the automatic check found;
@@ -436,6 +439,7 @@ describe("a machine's card", () => {
     const why = S.machines.card.why;
     const cases: [MachineInfo, MachineJob | null, string][] = [
       [stopped, null, why.stopped],
+      [unreachable, null, why.notConnected],
       [added, null, why.notInstalled],
       [stopped, failedJob(stopped, true), why.failed],
     ];
@@ -541,6 +545,7 @@ describe("the Machine dialog", () => {
       "stop",
       "restart",
       "configure",
+      "reinstall",
       "uninstall",
     ]);
     const asks: [string, MachineVerb][] = [
@@ -548,6 +553,7 @@ describe("the Machine dialog", () => {
       ["stop", "stop"],
       ["restart", "restart"],
       ["configure", "configure"],
+      ["reinstall", "reinstall"],
       ["uninstall", "uninstall"],
     ];
     for (const [verb, page] of asks) {
@@ -646,16 +652,20 @@ describe("the Machine dialog", () => {
     }
   });
 
-  it("explains a failure: the step, the far side's words, then Retry — and Force install only when offered", () => {
-    const { tree, verbs, onAct } = dialog(stopped, failedJob(stopped, true));
+  it("explains a failure: the step, the far side's words, then Retry — and points at Reinstall only when it may mend it", () => {
+    const { tree, html, verbs, onAct } = dialog(stopped, failedJob(stopped, true));
     expect(words(tree)).toContain(NO_ANSWER);
     const marked = tree.filter((el) => el.type === "li" && el.props["data-state"] === "failed");
     expect(marked.map((el) => el.props["data-step"])).toEqual(["restart"]);
     verbs.get("retry")!.press();
     expect(onAct).toHaveBeenCalledWith("use");
-    verbs.get("replaceProgram")!.press();
-    expect(onAct).toHaveBeenCalledWith("replaceProgram");
-    expect(dialog(stopped, failedJob(stopped, false)).verbs.has("replaceProgram")).toBe(false);
+    // One way to reinstall: the toolbar's, which the failure points at in words.
+    expect(seenText(readMarkup(html))).toContain(S.machines.detail.reinstallHint);
+    expect([...verbsOf(section(tree, S.machines.detail.progress)!).keys()]).toEqual(["retry"]);
+    verbs.get("reinstall")!.press();
+    expect(onAct).toHaveBeenCalledWith("reinstall");
+    const plain = dialog(stopped, failedJob(stopped, false)).html;
+    expect(seenText(readMarkup(plain))).not.toContain(S.machines.detail.reinstallHint);
   });
 
   it("says what the server's connection check found after a failure, or that it is still checking", () => {

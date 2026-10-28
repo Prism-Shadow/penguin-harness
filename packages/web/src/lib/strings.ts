@@ -188,10 +188,6 @@ export const zh = {
     queued: "排队中，等前面的机器处理完。",
     working: "处理中…",
     failedAt: (step: string) => `失败于「${step}」。`,
-    /** The forced install a failed job may offer. */
-    replaceProgram: "强制安装",
-    replaceProgramConfirm: (alias: string) =>
-      `在 ${alias} 上强制安装？无论那台机器上现在是什么，都会装上本服务端的构建并重启它的服务，正在用它的人会被打断。`,
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
@@ -219,7 +215,7 @@ export const zh = {
     },
     /** Why a machine reads as needing a restart: the status pill's hover. */
     restartNeededReason:
-      "这台机器的版本和当前不一致，对话不会自动刷新。请点「重启服务」；还不行就重新安装。",
+      "这台机器的版本和当前不一致，对话不会自动刷新。请点「重启服务」；还不行就点「重新安装」。",
     agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
@@ -290,6 +286,8 @@ export const zh = {
       copyLog: "复制日志",
       /** A failed job's way out, under the failure. */
       retry: "重试",
+      /** Under Retry when installing again may mend the failure: where that button is. */
+      reinstallHint: "如果重试也不行，可以点上方的「重新安装」。",
       /** The connection check the server ran after the job failed, check by check. */
       checking: "正在检查这台机器…",
       /** The toolbar under the header: every verb the machine takes, in one row. */
@@ -302,6 +300,7 @@ export const zh = {
         restart: "重启服务",
         syncConfig: "同步配置",
         configure: "配置 SSH",
+        reinstall: "重新安装",
         uninstall: "卸载",
       },
       /** The line under the toolbar on the last config sync, and the notice of what it left behind. */
@@ -370,6 +369,9 @@ export const zh = {
       uninstallTitle: (alias: string) => `卸载 ${alias} 上的 PenguinHarness？`,
       uninstallBody: (programDir: string) =>
         `会先停止它的服务，再删除程序目录 ${programDir}。这台机器仍留在列表中，显示「未安装」。`,
+      reinstallTitle: (alias: string) => `在 ${alias} 上重新安装 PenguinHarness？`,
+      reinstallBody:
+        "会把本服务端的版本重新安装到这台机器上，然后重启它的服务并重新连接。正在用它的人会短暂断开；机器上的会话、Agent 与配置都会保留。",
       removeData: "同时删除这台机器上的数据目录",
       /** Said under the data directory's path. */
       removeDataWarning: "那台机器上的会话、Agent 与配置都在其中，删除后无法恢复。",

@@ -26,7 +26,7 @@ export type MachineReading =
   | { kind: "queued" }
   /** The server is working on it; `step` is its latest line. */
   | { kind: "working"; step: string | null }
-  /** The last job failed, in the far side's own words; `canReplaceProgram` offers the forced install. */
+  /** The last job failed, in the far side's own words; `canReplaceProgram`: installing again may mend it. */
   | { kind: "failed"; step: string; message: string; canReplaceProgram: boolean }
   /** Connected and answering: agents can run there. */
   | { kind: "ready"; port: number | null }
@@ -392,10 +392,12 @@ export function useWaitsBecause(
       return why.notInstalled;
     case "installedOnly":
       return why.windows;
-    case "notConnected":
-      return why.notConnected;
-    default:
+    case "stopped":
       return why.stopped;
+    default:
+      // Not connected — out of reach, never checked or on another build included: nothing says
+      // its server is stopped, only that nothing holds a connection to it.
+      return why.notConnected;
   }
 }
 

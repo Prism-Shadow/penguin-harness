@@ -301,6 +301,7 @@ export type JobView =
       message: string;
       /** ssh's own words under a refusal it caused; null otherwise. */
       detail: string | null;
+      /** Installing again may mend it: the section points at the toolbar's Reinstall. */
       canReplaceProgram: boolean;
       /** The connection check the server ran after the failure; null when it ran none. */
       check: JobCheck | null;
@@ -334,7 +335,15 @@ export function jobView(job: MachineJob): JobView {
 
 /** The toolbar's verbs, by what each one does. */
 export type ToolbarVerb =
-  "enable" | "update" | "stop" | "start" | "restart" | "syncConfig" | "configure" | "uninstall";
+  | "enable"
+  | "update"
+  | "stop"
+  | "start"
+  | "restart"
+  | "syncConfig"
+  | "configure"
+  | "reinstall"
+  | "uninstall";
 
 /** Why a toolbar verb waits: a job on its way, a machine out of reach, a stopped server, no build. */
 export type HoldReason = "moving" | "unreachable" | "stopped" | "noImage";
@@ -358,6 +367,7 @@ const GLYPH: Record<ToolbarVerb, string> = {
   // The config leaving this server for that machine.
   syncConfig: ICONS.upload,
   configure: ICONS.slidersHorizontal,
+  reinstall: ICONS.download,
   uninstall: ICONS.trash,
 };
 
@@ -370,8 +380,12 @@ const REASONS: readonly HoldReason[] = ["moving", "unreachable", "stopped", "noI
  * whole pipeline); one on another build than this server's is updated — the same pipeline,
  * offered only while it would change something; then its server stopped or started (whichever
  * it is not), restarted, its config synced (only while it is connected and on this server's
- * build), its ssh host configured, and the program uninstalled. This server's own entry takes
- * none.
+ * build), its ssh host configured, the program installed again whatever version it carries, and
+ * uninstalled. This server's own entry takes none.
+ *
+ * A streak holds what needs the machine only while it is under way, or waits for a password no
+ * verb would get past: once it stopped — at its limit, at an ssh refusal, or at a person's Stop
+ * retrying — every verb can be pressed, and each one reaches the machine on its own.
  */
 export function machineToolbar(
   machine: MachineInfo,
@@ -382,7 +396,7 @@ export function machineToolbar(
   if (machine.local) return { items: [], sentence: null };
   const t = S.machines.detail.toolbar;
   const moving = job !== null && (job.queued || job.running);
-  const reconnecting = machine.reconnect !== undefined;
+  const reconnecting = machine.reconnect !== undefined && machine.reconnect.gaveUp === undefined;
   const kept = machine.keepConnected === true || machine.connection !== null;
   const item = (
     verb: ToolbarVerb,
@@ -409,6 +423,7 @@ export function machineToolbar(
       items.push(item("syncConfig", t.syncConfig, moving ? "moving" : null));
     }
     items.push(item("configure", t.configure, null));
+    items.push(item("reinstall", t.reinstall, pipelineHeld));
     items.push(item("uninstall", t.uninstall, reachHeld));
   }
   const held = S.machines.detail.held;
