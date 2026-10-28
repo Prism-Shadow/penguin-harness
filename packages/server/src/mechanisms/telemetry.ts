@@ -40,8 +40,25 @@ export abstract class Telemetry extends Interface<{
     run: () => Promise<T>,
     describe?: (result: T) => Pick<TelemetrySampleInput, "bytes" | "attrs">,
   ): Promise<T>;
+  /** `span` for synchronous work: the same sample, status and scope. */
+  time<T>(
+    probe: string,
+    keys: TelemetryKeys,
+    run: () => T,
+    describe?: (result: T) => Pick<TelemetrySampleInput, "bytes" | "attrs">,
+  ): T;
   /** The buffered samples matching the query, oldest first. */
   samples(query: TelemetryQuery): TelemetrySample[];
   /** Empties the buffer. */
   clear(): void;
+  /**
+   * Registers something that records the current state as samples (the Sessions record one
+   * `session.memory` each). Taken only when the buffer is read, never on a schedule.
+   */
+  addSnapshot(take: () => void): void;
+  /**
+   * Records the current state into the buffer: `process.memory`, then every registered
+   * snapshot. The read route calls it before answering; while off it does nothing.
+   */
+  snapshot(): void;
 }>() {}
