@@ -58,6 +58,7 @@
   max-width: 100%;
 }
 .hero-word {
+  --hero-word-cycle: 4.8s;
   --hero-ink-edge: var(--color-brand-700);
   --hero-ink-center: var(--color-brand-500);
   --hero-word-delay: 0s;
@@ -68,7 +69,7 @@
   white-space: nowrap;
 }
 .hero-word-reach {
-  --hero-word-delay: -3.6s;
+  --hero-word-delay: -2.4s;
 }
 .dark .hero-word {
   --hero-ink-edge: var(--color-brand-300);
@@ -91,7 +92,7 @@
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  animation: hero-ink-flow 7.2s ease-in-out var(--hero-word-delay) infinite;
+  animation: hero-ink-flow var(--hero-word-cycle) ease-in-out var(--hero-word-delay) infinite;
 }
 
 /* One timeline reveals and grows the line, carrying the plane by its tail without scaling it. */
@@ -110,7 +111,7 @@
   width: 0;
   height: 100%;
   opacity: 0;
-  animation: hero-flight-draw 7.2s linear var(--hero-word-delay) infinite;
+  animation: hero-flight-draw var(--hero-word-cycle) linear var(--hero-word-delay) infinite;
 }
 .hero-word-trail {
   display: block;
