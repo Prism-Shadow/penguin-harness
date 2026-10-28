@@ -3,6 +3,7 @@
 - **Date:** 2026-10-28
 - **Type:** feature
 - **Scope:** `landing`
+- **PR:** [#1375](https://github.com/Prism-Shadow/penguin-harness/pull/1375)
 
 [中文版](2026-10-28-hero-keyword-styles.zh.md)
 
