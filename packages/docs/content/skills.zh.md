@@ -245,6 +245,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `skilladam-rsi-toolkit` | [SkillAdam](https://arxiv.org/abs/2609.08944) |
 | | `evo-harness-rsi-toolkit` | Evo-Harness：单次执行、原 Solver 会话负反馈反思和一次批量编译。使用现有原生委派和 State 接口，提供批次校验、冻结 Skill 导出与完整测试统计。 |
 | | `openskill-rsi-toolkit` | 通过检索和独立虚拟验证构建技能库，冻结后进行 baseline／final Benchmark 评测。 |
+| | `trace-rsi-toolkit` | TRACE，出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：按技能汇总成功与失败轨迹，修订模块化技能库并测量重复运行的一致性。通过指令选择技能，自带 Benchmark、初始化、训练、评测与源码运行包参考，并说明上下文保留等适配 |
 | 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图、由数据绘制的统计图（折线、面积、柱状、饼图、散点、直方图或仪表），以及天气、时钟、倒计时、指标和系统资源小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |

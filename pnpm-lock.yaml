@@ -158,6 +158,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
@@ -276,6 +279,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
@@ -397,6 +403,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
@@ -1027,6 +1036,8 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/trace-rsi-toolkit: {}
 
   plugins/use-bento-slides:
     devDependencies:
@@ -2041,6 +2052,9 @@ packages:
 
   '@penguinharness/software-development@file:plugins/software-development':
     resolution: {directory: plugins/software-development, type: directory}
+
+  '@penguinharness/trace-rsi-toolkit@file:plugins/trace-rsi-toolkit':
+    resolution: {directory: plugins/trace-rsi-toolkit, type: directory}
 
   '@penguinharness/use-bento-slides@file:plugins/use-bento-slides':
     resolution: {directory: plugins/use-bento-slides, type: directory}
@@ -6550,6 +6564,8 @@ snapshots:
 
   '@penguinharness/software-development@file:plugins/software-development': {}
 
+  '@penguinharness/trace-rsi-toolkit@file:plugins/trace-rsi-toolkit': {}
+
   '@penguinharness/use-bento-slides@file:plugins/use-bento-slides': {}
 
   '@penguinharness/use-claude-code@file:plugins/use-claude-code': {}
@@ -6630,6 +6646,7 @@ snapshots:
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
@@ -6673,6 +6690,7 @@ snapshots:
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
@@ -6716,6 +6734,7 @@ snapshots:
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
@@ -6755,6 +6774,7 @@ snapshots:
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
@@ -6794,6 +6814,7 @@ snapshots:
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl

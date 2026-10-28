@@ -38,6 +38,7 @@
     "@penguinharness/skill-porting": "workspace:*",
     "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
     "@penguinharness/software-development": "workspace:*",
+    "@penguinharness/trace-rsi-toolkit": "workspace:*",
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*"

@@ -110,16 +110,17 @@ Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和
 
 ## RSI 工具包
 
-RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：模型固定不动，Agent 依据自己实测的结果改进自己的 Harness——提示词、Skill、工具与钩子。每一种自进化算法都以一个 **RSI 工具包**发布，也就是插件库 **Agent 自进化**分类里的一个插件。上文的循环就是 **Default RSI Toolkit**（`default-rsi-toolkit`）；另外四个工具包各按原论文的流程运行一种已发表的算法，各带一个与插件同名的 Skill：
+RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：模型固定不动，Agent 依据自己实测的结果改进自己的 Harness——提示词、Skill、工具与钩子。每一种自进化算法都以一个 **RSI 工具包**发布，也就是插件库 **Agent 自进化**分类里的一个插件。上文的循环就是 **Default RSI Toolkit**（`default-rsi-toolkit`）；另外五个工具包各实现一种已发表的算法，并声明适配差异，各带一个与插件同名的 Skill：
 
 - **OPRO**（`opro-rsi-toolkit`），出自 [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409)（Yang 等，2023）：优化器依据历史指令与分数提出新指令，每个候选都在冻结的 Benchmark 上测量，保留得分最高的指令。
 - **APE**（`ape-rsi-toolkit`），出自 [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910)（Zhou 等，2022）：不迭代、一次完成，提议者从输入 / 输出示例归纳候选指令，每个候选都测量一遍，保留最优者。
 - **ACE**（`ace-rsi-toolkit`），出自 [Agentic Context Engineering](https://arxiv.org/abs/2510.04618)（Zhang 等，2025），采用其顺序离线算法：Reflector 逐条阅读训练 Trace，Curator 把教训并入 Agent 每次任务前都会读的规则手册（playbook），最终的手册在冻结的 Benchmark 上测量。
 - **AWM**（`awm-rsi-toolkit`），出自 [Agent Workflow Memory](https://arxiv.org/abs/2409.07429)（Wang 等，2024）：从成功轨迹归纳工作流并存入 Agent 的记忆，可以在线（训练流）或离线（给定经验）进行，冻结后在 Benchmark 上测试。
+- **TRACE** （`trace-rsi-toolkit`），出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：入口 Skill 负责外层实验组织，训练参考文件作为独立的 Curator Skill 安装到容器内。外层 Agent 通过 Harbor 启动训练，每个 Curator 从新 Actor 子会话的轨迹初始化、修订模块化技能库。默认每题每批两次、演化两轮；训练完成后，每个 Group 按完整训练均分选择一版有效技能库，平分选更早阶段，冻结后与无 Skill 基线各进行三次完整测试。这是实验采用的版本选择规则，测试反馈不参与选版。评测遵循已发布的连续训练契约，按完整测试重复的均分计算平均数与样本标准差；做题时的技能选择依赖指令执行，已读取的正文保留在历史中，不宣称复现论文的逐轮上下文替换。
 
 OPRO 与 APE 各自带一个小型演示任务：只要提出来，Skill 会先新建一个 Agent 和一套 6 题的 Benchmark 再开始。每个 Skill 都写明论文的默认参数和一档更小的冒烟预算；除非你要求，它从不按论文的完整预算运行。
 
-工具包之间互不依赖，也不依赖 `default-rsi-toolkit`，任何一个单独安装即可运行。每个工具包都在被测 Agent 里自行初始化学习槽：一个 Agent 自有的 Skill，存放方法学到的内容（指令、规则手册或工作流），再在它的 `AGENTS.md` 里加一行固定指令，要求它开始任务前先读这个 Skill。方法的循环只改这个 Skill 存放的内容。每一次测量都经由工具包自带的 `references/evaluation.md` 进行：它与 `agent-evaluation` 采用同一套单格协议（每个 Case × run 经 `run_subagent` 派生一个子 Agent，返回纯协议 YAML），写入同样的记分板记录。四个算法工具包里的这份文件逐字节相同。内置 Benchmark 的题目按题干的 **How this case is run** 一节运行，与 `agent-evaluation` 一致。
+工具包之间互不依赖，也不依赖 `default-rsi-toolkit`，任何一个单独安装即可运行。每个工具包都在被测 Agent 里自行初始化学习槽：一个 Agent 自有的 Skill，存放方法学到的内容（指令、规则手册、工作流或模块化技能库），再在它的 `AGENTS.md` 里加一行固定指令，要求它开始任务前先读这个 Skill。方法的循环只改这个 Skill 存放的内容。每次测量遵循工具包自带的 `references/evaluation.md`，写入现有记分板格式。OPRO、APE、ACE 和 AWM 共用通用单格评测协议；连续训练工具包分别说明训练启动、产物交接与独立测试流程。内置 Benchmark 的题目按题干的 **How this case is run** 一节运行，与 `agent-evaluation` 一致。
 
 工具包测量的每个候选都取一个新的 Agent State `version`。与默认循环相同，每个版本在被改动之前先打快照；运行结束时停在方法选定的版本上。这些评估照常写入 `scoreboard.yaml`，标签规则不变，因此同一个 Agent 在同一模型与思考等级下的默认循环与 OPRO 共用图表上的一条线：各点的版本号区分它们，每条评估的摘要标题写明所用的方法。在 Web App 中，用评估中心**优化**标签页的**方法**字段选择工具包，见[评估中心](/evaluation-center#优化-agent)。
 
@@ -241,5 +242,6 @@ Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的
 | `ape-rsi-toolkit` | `ape-rsi-toolkit` | 运行 APE：从输入 / 输出示例归纳指令 |
 | `ace-rsi-toolkit` | `ace-rsi-toolkit` | 运行 ACE：从训练 Trace 进化规则手册 |
 | `awm-rsi-toolkit` | `awm-rsi-toolkit` | 运行 AWM：从成功轨迹归纳工作流 |
+| `trace-rsi-toolkit` | `trace-rsi-toolkit` | 运行 TRACE：对比轨迹演化技能库，评测冻结后的技能 |
 
 Skill 如何组织和安装，见[技能与插件](/skills)。

@@ -89,7 +89,14 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name: its npm version, a category, and a dated version on every part", async () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBeGreaterThan(0);
+    const { dependencies } = JSON.parse(
+      await fs.readFile(path.resolve(import.meta.dirname, "../package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+    expect(plugins.map((plugin) => plugin.packageName).sort()).toEqual(
+      Object.keys(dependencies)
+        .filter((name) => name.startsWith("@penguinharness/"))
+        .sort(),
+    );
     for (const plugin of plugins) {
       const pkg = JSON.parse(
         await fs.readFile(path.join(pluginsRoot, plugin.name, "package.json"), "utf8"),
@@ -346,6 +353,7 @@ describe("groupPlugins / loadPluginGroups", () => {
       "openskill-rsi-toolkit",
       "opro-rsi-toolkit",
       "skilladam-rsi-toolkit",
+      "trace-rsi-toolkit",
     ]);
     expect(names("office-productivity")).toEqual([
       "a2ui",
