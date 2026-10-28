@@ -17,6 +17,8 @@ Training progress uses numbered `step` labels and retains native stage names for
 
 Plugin packages omit development test files.
 
+The website algorithm catalog includes SkillAdam, Evo-Harness, OpenSkill and TRACE.
+
 - Added learner instructions for initial Skill generation, an evolving issue tracker, a variance-controlled edit budget, and candidate evaluation.
 - Added a numerical helper for optimizer state and Evaluation Center records.
 - Added a train-once protocol with three test repetitions of each frozen State by default and separate Train/Test results. Aggregate cases within each repetition before calculating the mean and sample standard deviation; aggregate benchmarks in the same order.

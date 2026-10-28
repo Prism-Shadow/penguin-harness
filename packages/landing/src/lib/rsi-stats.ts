@@ -33,6 +33,14 @@ export const RSI_TOOLKITS = [
   { plugin: "ape-rsi-toolkit", label: "APE", href: "https://arxiv.org/abs/2211.01910" },
   { plugin: "ace-rsi-toolkit", label: "ACE", href: "https://arxiv.org/abs/2510.04618" },
   { plugin: "awm-rsi-toolkit", label: "AWM", href: "https://arxiv.org/abs/2409.07429" },
+  { plugin: "skilladam-rsi-toolkit", label: "SkillAdam", href: "https://arxiv.org/abs/2609.08944" },
+  {
+    plugin: "evo-harness-rsi-toolkit",
+    label: "Evo-Harness",
+    href: "https://arxiv.org/abs/2608.15071v2",
+  },
+  { plugin: "openskill-rsi-toolkit", label: "OpenSkill", href: "https://arxiv.org/abs/2606.06741" },
+  { plugin: "trace-rsi-toolkit", label: "TRACE", href: "https://arxiv.org/abs/2608.22793" },
 ] as const satisfies ReadonlyArray<{ plugin: string; label: string; href: string | null }>;
 
 /**
