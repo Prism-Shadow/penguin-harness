@@ -539,35 +539,57 @@ describePty("terminal stream backpressure", () => {
       expect(client.ws.readyState).toBe(WebSocket.OPEN);
 
       // Catching up delivers a resync Restore, and the stream is live again afterwards —
-      // but the resync that ends the cycle is not necessarily the first one. On a slow
-      // enough link the kernel absorbs the flood as fast as the pty emits it, so the
-      // viewer's in-flight count dips below the low watermark while the flood is still
-      // streaming: the poll repaints mid-flood, the stream desyncs again behind the bytes
-      // still coming, and a probe typed now lands in that drop window — its text reaches
-      // the client only inside a later snapshot. The Restore that ends the cycle is the
-      // one whose repaint carries the round's end marker: the flood was complete when the
-      // snapshot was taken, the pane is quiet from that point, and the live probe below is
-      // typed to an idle shell.
+      // but which frame ends the cycle depends on the link, so the settle cannot wait for
+      // a particular one. On a slow link the kernel absorbs the flood as fast as the pty
+      // emits it: the resync fires mid-flood, no second high-water crossing follows, and
+      // the round's end marker reaches the client as live output — no marker-bearing
+      // Restore ever exists. What every timing has in common is the marker arriving at
+      // the client, in whichever frame carries it: the marker is the last thing the round
+      // produces, so once the client holds it, nothing of the flood is left in flight.
       const burstEnd = `BURST-${20 + lastRound}`;
-      const settledRestore = (): { opcode: number; text: string } | undefined =>
-        client.frames.find(
-          (f) => f.opcode === TerminalStreamOpcode.Restore && f.text.includes(burstEnd),
-        );
       client.ws.resume();
       await client.waitFor(
-        () => settledRestore() !== undefined,
-        "the resync Restore after the flood",
-        // The closing repaint is the last thing through the backlog the paused socket
+        () => client.frames.some((f) => f.text.includes(burstEnd)),
+        "the flood's end to reach the client",
+        // The flood's tail is the last thing through the backlog the paused socket
         // accumulated, and chewing through it is plain CPU — the slowest step of this
         // case on a starved runner, so the cap is deliberately generous.
         90_000,
       );
-      const resync = settledRestore()!;
+
+      // One race is still open at that instant: a resync whose poll had not yet fired
+      // repaints within one interval (250ms) of the client catching up, and a probe
+      // typed before it would land in that drop window. The repaint arrives as a Restore
+      // — a data frame — so a quiet window far longer than the poll, in which nothing
+      // but the heartbeat arrives, proves none was pending: the pane is quiet, and the
+      // live probe below is typed to an idle shell.
+      let quietSince = 0;
+      let quietFrames = -1;
+      const streamQuiet = (): boolean => {
+        const dataFrames = client.frames.filter(
+          (f) => f.opcode !== TerminalStreamOpcode.Ping,
+        ).length;
+        if (dataFrames !== quietFrames) {
+          quietFrames = dataFrames;
+          quietSince = Date.now();
+        }
+        return Date.now() - quietSince >= 2_000;
+      };
+      await client.waitFor(streamQuiet, "a quiet stream after the flood", 30_000);
+
+      // The resync this case exists to verify: the lagging gate above means the server
+      // desynced this viewer, and the only way out of that state is the poll's fresh
+      // Restore — so a repaint carrying the flooded pane must have arrived. It is not
+      // necessarily the marker-bearing one (the mid-flood timing above legitimately
+      // skips that); the flooded pane is the promise, and it identifies the repaint.
+      const resync = client.frames.find(
+        (f) => f.opcode === TerminalStreamOpcode.Restore && FLOOD_ROWS.test(f.text),
+      );
+      expect(resync, "a resync repaint of the flooded pane").toBeDefined();
       // What a resync promises is the repaint, not a particular line of screen residue —
       // it is the same self-contained repaint an attach sends, and it carries the flooded
       // screen rather than the empty one the attach Restore captured.
-      expect(resync.text.slice(0, RESTORE_PREAMBLE.length)).toBe(RESTORE_PREAMBLE);
-      expect(resync.text).toMatch(FLOOD_ROWS);
+      expect(resync!.text.slice(0, RESTORE_PREAMBLE.length)).toBe(RESTORE_PREAMBLE);
       await runAndWait(client, "echo LIVE-$((40+2))", "LIVE-42");
     } finally {
       // Closed here rather than after the assertions: a socket a failed assertion left open
