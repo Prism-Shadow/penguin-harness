@@ -94,16 +94,14 @@
   animation: hero-ink-flow 7.2s ease-in-out var(--hero-word-delay) infinite;
 }
 
-/* One moving edge draws the line and carries the plane by its tail, without scaling the icon. */
+/* One timeline reveals and grows the line, carrying the plane by its tail without scaling it. */
 .hero-word-trace {
   position: absolute;
   right: 0.65em;
   bottom: -0.03em;
   left: 0.04em;
   height: 0.045em;
-  opacity: 0;
   pointer-events: none;
-  animation: hero-trace-fade 7.2s ease-in-out var(--hero-word-delay) infinite;
 }
 .hero-word-flight {
   position: absolute;
@@ -111,7 +109,8 @@
   left: 0;
   width: 0;
   height: 100%;
-  animation: hero-trace-draw 7.2s ease-in-out var(--hero-word-delay) infinite;
+  opacity: 0;
+  animation: hero-flight-draw 7.2s linear var(--hero-word-delay) infinite;
 }
 .hero-word-trail {
   display: block;
@@ -142,34 +141,30 @@
     background-position: 0% 50%;
   }
 }
-@keyframes hero-trace-fade {
+@keyframes hero-flight-draw {
   0%,
-  8% {
+  4% {
+    width: 0%;
     opacity: 0;
   }
-  14%,
-  40% {
+  8% {
     opacity: 1;
   }
-  48%,
-  100% {
+  44% {
+    width: 100%;
+    opacity: 1;
+  }
+  48% {
     opacity: 0;
   }
-}
-@keyframes hero-trace-draw {
-  0%,
-  8% {
-    width: 0%;
-  }
-  44%,
   100% {
     width: 100%;
+    opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .hero-word-ink,
-  .hero-word-trace,
   .hero-word-flight {
     animation: none;
   }
