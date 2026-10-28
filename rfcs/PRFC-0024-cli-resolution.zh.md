@@ -5,12 +5,12 @@
 - Feature Name: `cli-resolution`
 - Start Date: 2026-10-23
 - PRFC PR: none yet (native to this repository)
-- Implementation PR: —（本 RFC 落地后由它自己的实现 PR 承载）
+- Implementation PR: —（由本 RFC 的实现分支承载，尚未开 PR）
 
 ## Summary
 [summary]: #summary
 
-本 RFC 把「这次运行哪个 CLI 入口」收成一个有名字的问题——**resolution**——由每个要跑 harness CLI 的消费方共享：server 启动、机器远端命令、推送闸门、用户可见的命令 shim。resolution 从安装的声明与 [harness meta](./PRFC-0023-harness-meta.zh.md#guide-level-explanation) 作答。每条 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 的产品都带一个 **pushed-CLI loader**；找不到可用 loader 时，resolution 给出具名故障。答案是带固定顺序的判定过程：记录与声明的每一种状态，各自得出一个入口或一个具名故障。
+本 RFC 把「这次运行哪个 CLI 入口」收成一个有名字的问题——**resolution**——由每个要跑 harness CLI 的消费方共享：server 启动、机器远端命令、推送闸门、用户可见的命令 shim。resolution 从安装的声明与 [harness meta](./PRFC-0023-harness-meta.zh.md#guide-level-explanation) 作答。每条 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 的产品都带一个 **pushed-CLI loader**——桌面应用还没有；找不到可用 loader 时，resolution 给出具名故障。答案是带固定顺序的判定过程：记录与声明的每一种状态，各自得出一个入口或一个具名故障。
 
 ## Motivation
 [motivation]: #motivation
@@ -46,11 +46,11 @@ resolution 先读记录，再读声明。没有记录的数据根运行安装入
 
 ### 身份靠声明
 
-loader 靠声明亮明身份：一个导出的身份常量、一处包声明，或记录里的一个指针；哪个载体胜出，见下方 Unresolved。resolution 从声明发现 loader。一次保住声明的改名对 resolution 不可见；一次破坏声明的改名在发现点变成具名故障。
+loader 靠包清单里的一个字段亮明身份：`penguin.pushedCliLoader`，值是相对该清单的 loader 路径。resolution 从这个字段发现 loader。一次保住字段的改名对 resolution 不可见；一次破坏字段的改名在发现点变成具名故障。
 
 ### 每条通道都带 loader
 
-每条通道的产品都带一个可加载的 pushed-CLI loader，由发行面在构建期断言。这样一次产品重塑不会无声丢掉加载推送代码的那一半。断言查什么——入口与 loader 在每个产物中都在、都加载——是本 RFC 的主张；发行工作流怎样措辞它的失败，见 Unresolved。
+每条通道的产品都带一个可加载的 pushed-CLI loader，由发行面在构建期断言。这样一次产品重塑不会无声丢掉加载推送代码的那一半。断言查什么——入口与 loader 在每个产物中都在、都加载——是本 RFC 的主张；发行工作流怎样措辞它的失败，见 Unresolved。今天有一条通道还没带上它：桌面应用不带 loader，它的数据根一直答故障 `loader-absent`，直到桌面产品带上一个。
 
 ### 故障要具名
 
@@ -70,12 +70,18 @@ loader 靠声明亮明身份：一个导出的身份常量、一处包声明，�
 3. **推送闸门**——候选推送用接收方安装将来实际运行的那个 loader 做冒烟测试；测的 loader 与将来运行的那个是同一个，闸门才装对了门。
 4. **命令 shim**——数据根放到用户 `PATH` 上的东西是 resolution 的答案，敲 `penguin` 的人与监督者拿到同一个入口。
 
+### 答案在哪里
+
+resolution 是一个模块，位于热更新层之外。那一层——`packages/hmr`、`packages/server/src/hmr/` 与 `packages/desktop/`——承载 store 与记录的机制，改动那里意味着重建并重装每一台安装；判定过程是部署方可能想改、却不必付这个代价的那部分。模块以 server 包的子路径发布，`@prismshadow/penguin-server/cli-resolution`——把 `./hmr/manifest` 与 `./version-report` 送进一个没有 server 的进程的，就是这套子路径机制——所以没有任何一条通道的打包需要改：loader 引入答案，server 自己的消费方直接引入它。
+
+记录的五种状态在那里读。那一层的 reader 只答三种——`readPushedCli` 说「没有推送」「有个 bundle」「坏了」——把两个「没有推送」并成一个、把三个故障并成一个，所以 resolver 自己读 `<root>/hmr/harness.json`，并在那一层会作答的地方把答案投影到它的三种上。有一条用例钉住这层投影，两份 reader 因此不会无声地走岔。
+
 ### resolution 的输入与顺序
 
 resolution 收四个输入：调用方自己的入口、数据根、根里那份记录，以及调用方产品携带的声明。它的答案是一个入口加一个理由，或一个故障加一个名字。
 
 1. **自身。** 调用方自己的入口就是 loader 时，resolution 答它自己，理由取它名字应得的那一个：声明的 loader 答 `pushed`，旧名答 `legacy`。这条规则让 loader 不去加载自己。
-2. **记录。** [PRFC-0023](./PRFC-0023-harness-meta.zh.md#reference-level-explanation) 的 meta reader 给出记录、没有记录或记录损坏。
+2. **记录。** [PRFC-0023](./PRFC-0023-harness-meta.zh.md#reference-level-explanation) 的记录被读成第 3 到第 7 步各自的名字；resolver 自己读这份文件，因为那一层的 reader 把它们并在一起（见「答案在哪里」）。
 3. **没有记录。** 没有记录的根里没有推送的 CLI，安装入口运行，理由 `no-record`。
 4. **记录损坏。** 读不出或解析不了的记录答故障 `damaged-record`。
 5. **CLI 指针。** 记录里根本没有 CLI 一节，根里就没有推送的 CLI，安装入口运行，理由 `no-pushed-cli`。
@@ -105,16 +111,30 @@ resolution 收四个输入：调用方自己的入口、数据根、根里那份
 
 消费方据答案行动。必须起 server 的监督者在答案是故障时运行安装入口，并记下故障名。loader 在故障上什么都不运行，只把故障报出来；一个人或一条远端命令在没有记录的根上调用它时，它报 `no-record`。远端命令原样转达对端的故障。命令 shim 承载 resolution 的答案，人敲到的入口就是监督者会运行的那个入口。自己入口无法再拉起进程的消费方——`PATH` 上的无扩展名 symlink、经 TypeScript 运行器跑的源跑——在进程内运行 server，并记下 `entry-not-respawnable` 这一情形。
 
+### 声明的形状
+
+产品在发货那个包的包清单里声明它的 loader：
+
+```json
+"penguin": { "pushedCliLoader": "./dist/penguin-hmr.js" }
+```
+
+值是一条相对清单所在目录的路径，resolution 按那个目录解析它；爬出这个包的值不指向任何 loader。读者从手上的入口向上走，找到最近的那份包清单——它就是产品自己的清单——并把 bin symlink 或 `PATH` 链接先解析成它指向的文件。
+
+这个字段给出三种答案，判定顺序对它们各有安排，所以三者分开：已声明、缺席（早于声明的产品）、损坏（字段指不出一份可用文件）。字段损坏时答 `loader-missing`，旧名不再被读。
+
+声明随产品走：npm 包发的是它自己的清单，发行 payload 的 `lib/` 是把同一个包部署出来、字段原样带着，Docker 镜像照抄那份 `lib/`，桌面应用在自己的 bundle 旁带上自己的清单，源码检出里清单就在树里。对端的声明是它程序目录里的同一份文件，调用方读它，不必拼一条路径。
+
 ### 各通道的答案
 
-每条通道的产品都装一个入口、声明一个 loader，装配时写下根的第一份记录（[PRFC-0023](./PRFC-0023-harness-meta.zh.md#guide-level-explanation)）。表里逐通道读出 resolution 的答案：首启时与一次推送之后。
+每条通道的产品都装一个入口，除桌面应用外每个产品都声明一个 loader，装配时写下根的第一份记录（[PRFC-0023](./PRFC-0023-harness-meta.zh.md#guide-level-explanation)）。表里逐通道读出 resolution 的答案：首启时与一次推送之后。
 
 | 通道 | 安装入口 | 声明的 loader | 首启 | 推送之后 |
 | --- | --- | --- | --- | --- |
 | npm 包 | 主 CLI bin | 与它并排的 loader bin | loader——`pushed` | loader——`pushed` |
 | 发行 tarball（含 universal） | launcher 脚本 | 安装好的 CLI 对旁边的 loader | loader——`pushed` | loader——`pushed` |
 | Docker 镜像 | 今天的无扩展名 symlink；下方改动后是可再运行的入口 | 镜像里的 loader | loader——`pushed`；symlink 入口在重塑之前答 `entry-not-respawnable` | loader——`pushed` |
-| 桌面应用 | 打包的 CLI，经外壳的 launch 入口启动 | launch 入口旁边的打包 loader | loader——`pushed`；不带 loader 构建出的产品答 `loader-absent` | loader——`pushed` |
+| 桌面应用 | 打包的 CLI，经外壳的 launch 入口启动 | 今天没有：产品不带 loader | 故障 `loader-absent`——这条通道的缺口，仍然开着 | 故障 `loader-absent`，直到产品带上 loader |
 | 源码检出 | 构建出的 CLI；源跑没有可再运行的入口 | 构建出的 CLI 旁边的 loader | 构建跑：loader——`pushed`；源跑：`entry-not-respawnable` | loader——`pushed`；dev 根的装配仍在下方开放 |
 | machines 安装出的对端 | loader，它是对端唯一的 CLI 面 | 同一个 loader | loader——`pushed`；从未被推送、也未被本侧安装过的裸 release 答 `no-record` | loader——`pushed` |
 
@@ -128,17 +148,19 @@ resolution 收四个输入：调用方自己的入口、数据根、根里那份
 
 携带声明的发布线覆盖到部署关心的机器时，窗口关闭。此后产品去掉旧名那一支，没有声明的产品答 `loader-absent`。窗口的长度、调用方对端所用探测的确切形状，仍在下方开放。
 
-### 身份的载体（候选）
+### 身份的载体
 
-加载器模块的导出常量；包清单里的声明；harness meta 记录里的指针。三种载体在「过时的实现在哪里响亮失败」上不同。选择留给实现那一轮讨论，只固定一个要求：载体是一份声明，一个读者能查阅的东西。
+载体是包清单里的 `penguin.pushedCliLoader` 字段。三条性质定下它。读一份清单不需要运行产品，人、远端调用方与发行断言都需要这一点。清单属于一个产品，所以每条通道声明自己产物里带的那一个 loader。每条通道的打包本来就会带上清单，声明因此不需要第二套投递机制。
+
+另外两个候选各缺其中一条。导出的身份常量只有运行产品代码才读得到，而远端调用方与构建期断言做不到这件事。记录里的指针描述的是一个数据根、而非一个产品，而没有记录的根里仍然有 loader 要找。
 
 ### 构建期的通道断言（候选）
 
-发行面按产物断言：入口存在，loader 在旁或在内，两者都加载。断言属于发行工作流，因为要抓的失败是跨包的：一个包重塑了入口，随行 loader 在另一个包里被重塑。
+发行面按产物断言：入口存在，loader 在旁或在内，两者都加载。断言属于发行工作流，因为要抓的失败是跨包的：一个包重塑了入口，随行 loader 在另一个包里被重塑。桌面包的重塑产检会是第一个实例——它会让一次「清单没有声明 loader」或「声明的 loader 没有随包进去」的构建失败——而这项检查随 loader 一起来。
 
 ### 两条缺口通道
 
-`PATH` 入口是无扩展名 symlink 的那条：入口换成可再运行的形态（真实文件或 launcher），resolution 在那里与别处一样工作。桌面通道：已有一条实现线示范了形态——外壳经一个先问记录、有推送 CLI 就运行它的 launch 入口启动——本 RFC 采纳这个方向，入口的确切形式留给实现。
+`PATH` 入口是无扩展名 symlink 的那条：入口换成可再运行的形态（真实文件或 launcher），resolution 在那里与别处一样工作；形态仍在下方开放。桌面应用这边，产品会把 loader 与它打包的 CLI 并排发货，并在自己的清单里声明它，桌面数据根于是与其余五条通道一样能运行推送的 CLI。这项改动不在本版里：桌面包属于热更新层，那一层的改动要重建并重装每一台安装，所以桌面数据根今天答 `loader-absent`。
 
 ### 与 PRFC-0023 的分工
 
@@ -189,13 +211,15 @@ Node 的 `bin` 映射是声明的入口：包说它安装什么，调用方读�
 ## Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-几处细节留待实现或后续修订。
+几处细节仍然开着，每条都写着它为什么还不能在这里定下。
 
-- 身份载体：导出常量、包清单、记录指针，或它们的组合。
-- 结果名的载体：一个值、一个退出码、一个带类型的错误，或它们的组合。
-- 过渡窗口的长度与对端探测的确切形状。
-- 构建期断言失败是硬性的发行失败，还是窗口期内的一条警告。
-- 两条缺口通道的确切入口形态：桌面 launch 入口的摆位，symlink 通道的 `PATH` 面变成什么。
+- 结果名的载体：一个值、一个退出码、一个带类型的错误，或它们的组合。消费方需要一个能记录、能比较的名字；三者中哪一个承载它取决于消费方，而今天 resolver 答一个值、loader 用退出码报告。
+- 过渡窗口的长度：一次发行决定，因为只有当携带声明的发布线覆盖到部署关心的机器时，窗口才关闭。
+- 对端探测的确切形状：它取决于旧对端能答什么，而清单里没有字段告诉调用方该怎么问。
+- 构建期断言失败是硬性的发行失败还是窗口期内的一条警告：断言是新的，发行得先带它一段时间，才知道它有哪些误报。
+- symlink 通道的 `PATH` 面变成什么。那个镜像暴露的仍是这条无扩展名链接，重塑它会改变人在那里到达 CLI 的方式。
+- 桌面应用何时带上它的 loader。产品今天不带，数据根因此答 `loader-absent`；这项改动属于热更新层。
+- record 的五种状态是否搬进那一层的 reader，让 resolution 成为对一份 reader 的投影，而不是同一个文件的第二个读法。
 
 ## Future possibilities
 [future-possibilities]: #future-possibilities
@@ -205,6 +229,15 @@ resolution 可以推广：一次推送的 web 资产与 platform 两半可以按
 ---
 
 ## Changes
+
+### v1.2.0
+
+- 定下身份的载体：包清单里的 `penguin.pushedCliLoader` 字段，理由与被否掉的两个候选写在「身份的载体」一节。
+- 新增声明的参考形状：字段本身、按清单所在目录解析、从入口走到它所属包的清单，以及已声明、缺席、损坏三种答案。
+- 新增 record 的五种状态，即 resolver 读到的形态：没有记录、记录损坏、没有 CLI 一节、指针不可用、指针所指文件不在。那一层的 reader 保持它那三种答案；resolver 自己读记录，并把答案投影到它那三种上。
+- 把判定带进代码：一个 resolver 回答运行哪个入口；pushed-CLI loader 按名字报告它的答案，命令 shim 运行它。它位于热更新层之外，以 server 包的子路径发布（见「答案在哪里」）。机器远端命令与推送闸门仍各自作答。
+- 机器页按名字读 loader 的失败——这一版引入的具名报告，以及更早发布线发的那两句句子——存储里没有 CLI 的机器因此拿到「在这页重装一次」那句，不论它是哪条发布线装上去的。
+- 桌面通道仍然开着：它的产品不带 loader、也不声明 loader，桌面数据根因此答 `loader-absent`。关掉它要改桌面包，而桌面包属于热更新层。
 
 ### v1.1.0
 
