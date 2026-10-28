@@ -49,7 +49,7 @@
 
 PenguinHarness is an open-source framework for agent self-evolution (recursive self-improvement, RSI). The model stays fixed; the harness evolves: prompts, Skills, tools and hooks. It runs on your computer or server as a desktop app, a Web App, a CLI and an SDK.
 
-- **Every RSI algorithm in one framework.** Default, OPRO, APE, ACE, AWM, SkillAdam and TRACE ship as plugins and run on the same built-in Benchmarks, scoreboard and snapshots.
+- **Every RSI algorithm in one framework.** Default, OPRO, APE, ACE, AWM, SkillAdam, Evo-Harness, OpenSkill and TRACE ship as plugins and run on the same built-in Benchmarks, scoreboard and snapshots.
 - **One sentence builds an agent app.** Describe what you need, and an agent writes the app, its page and its run instructions.
 - **Cheap to run.** A deliberately small toolset, tuned for open models: on our data-analysis suite, the best accuracy at 1/70 of Claude Code's cost.
 
@@ -65,6 +65,7 @@ Pick an algorithm, pick a Benchmark, and an agent improves another agent round b
 | `ace-rsi-toolkit` | [ACE](https://arxiv.org/abs/2510.04618): lessons from Traces curated into a playbook |
 | `awm-rsi-toolkit` | [AWM](https://arxiv.org/abs/2409.07429): workflows induced from successful runs |
 | `skilladam-rsi-toolkit` | [SkillAdam](https://arxiv.org/abs/2609.08944): evolving issue tracker and adaptive Skill edit budget |
+| `evo-harness-rsi-toolkit` | [Evo-Harness](https://arxiv.org/abs/2608.15071v2): one Solver pass, reflection in the original Session and one batch Skill compilation |
 | `openskill-rsi-toolkit` | [OpenSkill](https://arxiv.org/abs/2606.06741): external research and independent virtual tests before frozen-State evaluation |
 | `trace-rsi-toolkit` | [TRACE](https://arxiv.org/abs/2608.22793): skill-bank evolution from contrasting trajectories, with consistency measurement |
 

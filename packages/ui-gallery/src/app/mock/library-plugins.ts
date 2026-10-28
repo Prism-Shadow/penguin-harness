@@ -21,8 +21,16 @@ import awmIcon from "../../../../../plugins/awm-rsi-toolkit/icon.svg?raw";
 import awmPkg from "../../../../../plugins/awm-rsi-toolkit/package.json";
 import defaultIcon from "../../../../../plugins/default-rsi-toolkit/icon.svg?raw";
 import defaultPkg from "../../../../../plugins/default-rsi-toolkit/package.json";
+import evoIcon from "../../../../../plugins/evo-harness-rsi-toolkit/icon.svg?raw";
+import evoPkg from "../../../../../plugins/evo-harness-rsi-toolkit/package.json";
+import openskillIcon from "../../../../../plugins/openskill-rsi-toolkit/icon.svg?raw";
+import openskillPkg from "../../../../../plugins/openskill-rsi-toolkit/package.json";
 import oproIcon from "../../../../../plugins/opro-rsi-toolkit/icon.svg?raw";
 import oproPkg from "../../../../../plugins/opro-rsi-toolkit/package.json";
+import skilladamIcon from "../../../../../plugins/skilladam-rsi-toolkit/icon.svg?raw";
+import skilladamPkg from "../../../../../plugins/skilladam-rsi-toolkit/package.json";
+import traceIcon from "../../../../../plugins/trace-rsi-toolkit/icon.svg?raw";
+import tracePkg from "../../../../../plugins/trace-rsi-toolkit/package.json";
 
 /** The fields of a plugin's package.json the library listing reads. */
 interface Manifest {
@@ -110,10 +118,38 @@ export function rsiToolkitPlugins(): PluginItem[] {
         "Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.",
       ),
     ]),
+    libraryPlugin(evoPkg, evoIcon, [
+      skill(
+        "evo-harness-rsi-toolkit",
+        '"Run Evo on selected Project Benchmarks: one training pass, negative-feedback reflection in the original Solver Session, one batch compilation, then repeated frozen baseline/final evaluation."',
+        "2026.10.28.11",
+      ),
+    ]),
+    libraryPlugin(openskillPkg, openskillIcon, [
+      skill(
+        "openskill-rsi-toolkit",
+        "Run OpenSkill (Open-World Self-Evolution for LLM Agents, Yan et al. 2026). Retrieve domain knowledge and verification anchors, refine skills using independent virtual tests without target supervision, freeze the last revision, then evaluate the Target on its Benchmark.",
+        "2026.10.28.6",
+      ),
+    ]),
     libraryPlugin(oproPkg, oproIcon, [
       skill(
         "opro-rsi-toolkit",
         "Reproduce OPRO (Large Language Models as Optimizers, Yang et al. 2023) on an agent and a frozen Benchmark, or on the precise-summary demo task shipped with this Skill: propose instructions from the scored history, measure each one, keep the best.",
+      ),
+    ]),
+    libraryPlugin(skilladamPkg, skilladamIcon, [
+      skill(
+        "skilladam-rsi-toolkit",
+        '"Run a SkillAdam experiment on the Project\'s selected Benchmarks: train once in a continuing Agent Session, freeze the learned Skill, then evaluate it repeatedly on held-out tasks."',
+        "2026.10.28.7",
+      ),
+    ]),
+    libraryPlugin(tracePkg, traceIcon, [
+      skill(
+        "trace-rsi-toolkit",
+        "Organize TRACE experiments on published Benchmarks, train a modular skill bank from Actor trajectories, select a checkpoint by training scores, and compare it with a no-Skill baseline on independent tests.",
+        "2026.10.28.3",
       ),
     ]),
   ];
