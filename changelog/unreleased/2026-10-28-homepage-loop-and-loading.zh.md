@@ -3,6 +3,7 @@
 - **Date:** 2026-10-28
 - **Type:** feature
 - **Scope:** `landing`, `ui-gallery`, `ui`
+- **PR:** [#1380](https://github.com/Prism-Shadow/penguin-harness/pull/1380)
 
 [English](2026-10-28-homepage-loop-and-loading.md)
 
