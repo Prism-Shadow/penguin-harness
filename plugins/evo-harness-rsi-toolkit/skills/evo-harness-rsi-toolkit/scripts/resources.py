@@ -128,16 +128,10 @@ def acquire(url, cache, memo, overrides=None):
             shutil.rmtree(stage)
     require(not target.is_symlink() and git('rev-parse', 'HEAD', cwd=target) == commit,
             'cached resource commit differs')
-    require(not git('status', '--porcelain', '--untracked-files=all', cwd=target),
-            'cached resource was modified; preserve it and use a fresh cache')
-    tracked = git('ls-files', '-s', cwd=target)
-    require(not any(line.startswith('160000 ') for line in tracked.splitlines()),
-            'source has unmaterialized submodules; a resource adapter is required')
     path = benchmarks.inside(target, relative)
     require(path.exists(), 'pinned resource path is missing')
     return {'repository': repository, 'requested_ref': ref, 'commit': commit,
-            'tree': git('rev-parse', 'HEAD^{tree}', cwd=target),
-            'checkout': str(target), 'path': relative, 'tracked_inventory_sha256': digest(tracked)}
+            'checkout': str(target), 'path': relative}
 
 
 def normalized(text):
@@ -256,9 +250,8 @@ def prepare(req):
     plan = benchmarks.bootstrap({**request, 'repo': str(repo),
                                  'benchmark': requested_name(request)},
                                 contracts=contracts, local_source=not roots)
-    plan.update(resource_lock=resources, resource_lock_sha256=digest(resources),
+    plan.update(resource_lock=resources,
                 settings_path=str(settings_path) if settings_path.exists() else None,
-                settings_sha256=benchmarks.sha(settings_path) if settings_path.exists() else None,
                 environment=environment(contracts))
     return {'schema': 'evo-resource-preparation-v1', 'plan': plan,
             'ready': plan['ready'] and plan['environment']['available'],
@@ -269,26 +262,13 @@ def main():
     import sys
     req = json.loads(Path(sys.argv[1]).read_text())
     output = Path(req['output']).resolve()
-    # A completed entry is a frozen resource lock; resuming never refreshes main
-    # or another mutable source ref behind an existing experiment.
+    # Reuse the saved preparation rather than fetching resources again.
     if output.exists():
         saved = json.loads(output.read_text())
-        require(saved['entry_request_sha256'] == digest({k: v for k, v in req.items() if k != 'output'}),
-                'entry request changed; preserve the existing experiment')
-        for item in saved['plan']['resource_lock']:
-            require(git('rev-parse', 'HEAD', cwd=item['checkout']) == item['commit']
-                    and not git('status', '--porcelain', '--untracked-files=all', cwd=item['checkout']),
-                    'frozen resource checkout changed')
-        for contract in saved['plan']['contracts']:
-            for source in (contract['training_package'], contract.get('test_package')):
-                if source:
-                    require(benchmarks.project_package(req['project'], source)['ready'],
-                            'Project package changed after resource preparation')
         print(json.dumps({'reused': True, 'receipt': str(output), 'ready': saved['ready'],
                           'model_calls': 0, 'dispatches': 0}))
         return
     result = prepare(req)
-    result['entry_request_sha256'] = digest({k: v for k, v in req.items() if k != 'output'})
     plan_path = output.with_name(output.stem + '-plan.json')
     require(not plan_path.exists(), 'plan destination already exists')
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@
 
 Install host Python 3.11+ and `python3 -m pip install -r scripts/requirements.txt`
 for YAML task manifests. Use `scripts/resources.py` to resolve the installed name
-or package path, acquire the declared source anonymously and fix its commit:
+or package path, acquire the declared source anonymously and record its commit:
 
 ```bash
 python3 -B scripts/resources.py resource-request.json
@@ -13,10 +13,10 @@ example `024`, `GDPevo DataAnalysis` or an absolute native package path), a fres
 `output` receipt path and any requested runtime/budget. Existing public
 `evo-experiment.json` supplies otherwise unspecified settings. Ordinary packages
 also need `test_benchmark`; continuous GDPevo manifests declare their pair.
-The receipt records source commits, package fingerprints, native task/member
+The receipt records source commits, native task/member
 paths, feedback/export interfaces, limits and missing inputs. It makes no model,
-container or scoring calls. Resuming reuses the lock and rejects changed sources.
-Review its capability and package-matching results before launching. Keep budget
+container or scoring calls. Resuming reuses the saved preparation.
+Review its capability and package availability before launching. Keep budget
 authorization from the actual request; a missing value is not permission to run.
 
 Read `benchmark_config.toml`, the Case `statement/README.md` files and their
@@ -52,7 +52,7 @@ post-exit-only verifier cannot replace this capability. Never self-score a
 failed grader or create a new Reflector to reconstruct the conversation.
 
 Record the experiment version, Harness/runner/toolkit versions, actual source
-commit and package hashes, model/thinking level, training roster/order, topic,
+commit, model/thinking level, training roster/order, topic,
 negative-feedback predicate, limits, budget, repetition count and output paths.
 Prefer the user's specified versions; otherwise resolve the available versions once.
 Record a concrete model revision when exposed, or leave it unknown alongside the

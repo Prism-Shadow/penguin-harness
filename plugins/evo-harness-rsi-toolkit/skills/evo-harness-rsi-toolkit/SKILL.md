@@ -1,7 +1,7 @@
 ---
 name: evo-harness-rsi-toolkit
 description: "Run Evo on selected Project Benchmarks: one training pass, negative-feedback reflection in the original Solver Session, one batch compilation, then repeated frozen baseline/final evaluation."
-version: 2026.10.28.11
+version: 2026.10.28.12
 ---
 
 # Evo-Harness
@@ -14,7 +14,7 @@ If the message only names this Skill, ask which experiment to run. An explicit
 experiment request authorizes the workflow below.
 
 Resolve the requested Benchmark by name or
-package path from the current Environment's App Data Dir. Resolve and freeze its resources using [setup](references/initialization.md).
+package path from the current Environment's App Data Dir. Prepare its resources using [setup](references/initialization.md).
 Read its manifest,
 Case statements and linked run instructions. Use its declared Train/Test split,
 task sources, adapter and scoring. A name is sufficient when its package is
@@ -67,7 +67,7 @@ Use the [common report fields](references/evaluation.md#common-report-fields): `
    out of both States. Test feedback never changes the learned package.
 5. Follow [evaluation](references/evaluation.md) to launch all held-out cells,
    collect native results and publish complete Evaluation Center matrices.
-   Retain every case score and per-trial usage, plus source and State digests.
+   Retain every case score and per-trial usage, plus source versions and State digests.
 
 Use existing managed background tools to launch workers and collect completions.
 Retain job IDs and output paths across compaction. Launch workers within the

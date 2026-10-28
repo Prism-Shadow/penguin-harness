@@ -1,12 +1,10 @@
 """Resource preparation through public native packages; no API/model calls.
 
 Given an installed package and one-sentence request, resolve its declared source
-and existing settings. Cache once by commit; reject drift and escaping URLs.
+and existing settings. Cache once by commit; reject escaping URLs.
 Given a new Workspace package path, use it without dataset-specific source code.
 Given post-exit Harbor, expose launch configuration but refuse full RSI learning.
 """
-import contextlib
-import io
 import json
 import os
 from pathlib import Path
@@ -15,7 +13,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
@@ -100,27 +97,6 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(result['plan']['resource_lock'], [])
         self.assertEqual(result['plan']['contracts'][0]['test_package']['benchmark_id'], second.name)
         self.assertEqual(result['plan']['algorithm']['candidate_source'], 'negative-original-solver')
-        (second / 'CASE-local/statement/README.md').write_text('changed after preparation')
-        self.assertFalse(benchmarks.project_package(self.project,
-            result['plan']['contracts'][0]['test_package'])['ready'])
-
-    def test_frozen_entry_reuses_commit_and_refuses_changed_checkout(self):
-        self.package('plain', harbor=True); self.commit(); self.settings()
-        request = self.root / 'request.json'
-        receipt = self.root / 'receipt.json'
-        request.write_text(json.dumps({'project': str(self.project), 'dataset': 'plain', 'output': str(receipt)}))
-        with patch.object(sys, 'argv', ['resources.py', str(request)]), contextlib.redirect_stdout(io.StringIO()):
-            resources.main()
-        original = receipt.read_bytes()
-        with patch.object(resources, 'acquire', side_effect=AssertionError('resume must not fetch')):
-            with patch.object(sys, 'argv', ['resources.py', str(request)]), contextlib.redirect_stdout(io.StringIO()):
-                resources.main()
-        self.assertEqual(receipt.read_bytes(), original)
-        checkout = Path(json.loads(original)['plan']['resource_lock'][0]['checkout'])
-        (checkout / 'tasks/plain/task.toml').write_text('modified')
-        with patch.object(sys, 'argv', ['resources.py', str(request)]), self.assertRaisesRegex(ValueError, 'changed'):
-            resources.main()
-        self.assertEqual(receipt.read_bytes(), original)
 
     @unittest.skipUnless(os.environ.get('EVO_BENCHMARK'), 'actual official source required')
     def test_024_aliases_bind_the_same_manifest_as_the_domain_name(self):
@@ -133,7 +109,7 @@ class ResourceTests(unittest.TestCase):
             result = resources.prepare({'project': str(self.project), 'dataset': name})
             contracts = result['plan']['contracts']
             self.assertEqual(len(contracts), 1)
-            names.append(contracts[0]['source_manifest_sha256'])
+            names.append(contracts[0]['source_manifest'])
             self.assertEqual(contracts[0]['benchmark'], 'gdpevo-data-analysis')
             self.assertEqual(len(contracts[0]['members']), 5)
         self.assertEqual(len(set(names)), 1)
@@ -151,15 +127,12 @@ class ResourceTests(unittest.TestCase):
             self.assertEqual(record['requested_ref'], ref)
             self.assertTrue((Path(record['checkout']) / record['path'] / 'task.toml').is_file())
 
-    def test_import_mismatch_and_missing_authorization_do_not_dispatch(self):
+    def test_missing_authorization_does_not_dispatch(self):
         self.package('plain', harbor=True); self.commit(); self.settings(paid_authorized=False)
-        (self.project / 'benchmarks/plain/CASE-local/rubric/README.md').write_text('Modified rubric')
         # Source discovery is permitted before authorization; no rubric text is returned.
         result = resources.prepare({'project': str(self.project), 'dataset': 'plain'})
         self.assertFalse(result['ready'])
         self.assertIn('current budget authorization', result['plan']['missing_inputs'])
-        self.assertFalse(result['plan']['project_packages'][0]['ready'])
-        self.assertIn('CASE-local/rubric/README.md', result['plan']['project_packages'][0]['files']['changed'])
         self.assertEqual(result['model_calls'], 0)
 
     def test_unsupported_source_urls_and_same_train_test_refused(self):

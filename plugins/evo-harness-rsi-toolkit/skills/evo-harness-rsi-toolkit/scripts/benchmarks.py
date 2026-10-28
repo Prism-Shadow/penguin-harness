@@ -4,7 +4,6 @@ Resolve repository refs once; discover public packages and explicit task mapping
 prepare a frozen contract for the main Penguin to execute with native workers.
 """
 import fnmatch
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -18,10 +17,6 @@ from urllib.parse import unquote, urlparse
 def require(ok, reason):
     if not ok:
         raise ValueError(reason)
-
-
-def sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def inside(root, relative):
@@ -42,8 +37,6 @@ def pin(repo, ref='HEAD'):
     commit = git(repo, 'rev-parse', '--verify', ref + '^{commit}')
     require(re.fullmatch('[0-9a-f]{40}', commit), 'ref did not resolve to a full commit')
     require(git(repo, 'rev-parse', 'HEAD') == commit, 'check out the resolved commit before preparation')
-    require(not git(repo, 'status', '--porcelain', '--', 'packages', 'benchmarks', 'agents', 'tools/gdpevo'),
-            'benchmark source is modified; commit it before freezing')
     return commit
 
 
@@ -72,53 +65,6 @@ def resolve_link(repo, url):
     raise ValueError('ref/path not available locally; fetch the requested ref, then resolve it once')
 
 
-def package_files(root):
-    """Native package scope: non-dot regular files below CASE-* trees.
-
-    Project scoreboards/jobs are runtime state. A link or special entry inside
-    a case cannot stand in for an imported regular file. Hash private attachments
-    without exposing their bytes to learning roles.
-    """
-    root = Path(root)
-    require(root.is_dir() and not root.is_symlink(), 'invalid package directory')
-    files = {}
-    def walk(directory):
-        for path in sorted(directory.iterdir()):
-            if path.name.startswith('.'):
-                continue  # Native Benchmark imports/exports exclude dot entries.
-            require(not path.is_symlink(), 'symlink in Benchmark case')
-            if path.is_dir():
-                walk(path)
-            else:
-                require(path.is_file(), 'non-regular Benchmark case file')
-                files[path.relative_to(root).as_posix()] = sha(path)
-    for path in sorted(root.iterdir()):
-        if path.name.startswith('CASE-'):
-            require(path.is_dir() and not path.is_symlink(), 'invalid Benchmark case directory')
-            walk(path)
-    return files
-
-
-def configuration_digest(data, directory):
-    # Import rewrites TOML and [origin]. Compare execution/configuration values,
-    # not whitespace or the copy's import timestamp. Retain unknown non-origin
-    # fields too: their modification is not silently accepted.
-    values = {k: v for k, v in data.items() if k != 'origin'}
-    values.setdefault('id', directory)
-    if not isinstance(values.get('title'), str) or values['title'] == '':
-        values['title'] = directory
-    if values.get('status') not in ('draft', 'failed'):
-        values['status'] = 'published'
-    runs = values.get('runs')
-    values['runs'] = (int(runs) if type(runs) in (int, float) and math.isfinite(runs)
-                      and runs >= 1 and runs == int(runs) else 1)
-    for key in ('description', 'description_zh'):
-        if not isinstance(values.get(key), str) or values[key] == '':
-            values.pop(key, None)
-    return hashlib.sha256(json.dumps(values, sort_keys=True, ensure_ascii=False,
-                                    default=str, separators=(',', ':')).encode()).hexdigest()
-
-
 def package(repo, directory):
     # An explicit native package path may live in a Project or user Workspace,
     # outside its separately pinned Harbor runtime checkout.
@@ -126,7 +72,6 @@ def package(repo, directory):
     manifest = root / 'benchmark_config.toml'
     require(manifest.is_file() and not manifest.is_symlink(), 'invalid Benchmark manifest')
     data = tomllib.loads(manifest.read_text())
-    inventory = package_files(root)
     require(data.get('status') not in ('draft', 'failed'), 'Benchmark is not published')
     data.setdefault('id', root.name)
     require(root.name == data['id'], 'Benchmark ID differs from package directory')
@@ -139,14 +84,10 @@ def package(repo, directory):
         require(statement.is_file(), 'case has no native statement')
         require((p / 'rubric/README.md').is_file(), 'case has no native rubric')
         # Never return rubric bytes to a learner.
-        cases.append({'case_id': p.name, 'statement': str(statement),
-                      'statement_sha256': sha(statement), 'rubric_sha256': sha(p / 'rubric/README.md')})
+        cases.append({'case_id': p.name, 'statement': str(statement)})
     require(cases, 'empty Benchmark')
     return {'benchmark_id': data['id'], 'version': data.get('version'),
-            'manifest_sha256': sha(root / 'benchmark_config.toml'),
-            'package_path': str(root), 'cases': cases,
-            'configuration_sha256': configuration_digest(data, root.name),
-            'content_files': inventory}
+            'package_path': str(root), 'cases': cases}
 
 
 def harbor_task(repo, case):
@@ -174,7 +115,6 @@ def harbor_task(repo, case):
     options = dict(tokens[i + 1].split('=', 1) for i, t in enumerate(tokens[:-1])
                    if t == '--ak' and '=' in tokens[i + 1])
     return {'kind': 'harbor', **case, 'task_name': task.name, 'task_path': str(task),
-            'task_toml_sha256': sha(task / 'task.toml'),
             'limits': {'agent': raw.get('agent', {}), 'options': options},
             'launch_argv': tokens}
 
@@ -217,7 +157,7 @@ def gdpevo(repo, manifest):
     require(method == 'POST' and route.startswith('/'), 'unsupported training feedback transport')
     submission = run['submission']
     return {'adapter': 'gdpevo-continuous-v2', 'benchmark': info['id'],
-            'source_manifest': str(path), 'source_manifest_sha256': sha(path),
+            'source_manifest': str(path),
             'training_package': train, 'test_package': test,
             'training_case': training, 'test_cases': tests, 'members': members,
             'training_io': {'workspace': '/app', 'access_file': '/app/environment_access.md',
@@ -271,29 +211,11 @@ def discover(repo, requested):
 
 
 def project_package(project, source):
-    """Verify the actual Project copy, not just the source checkout/build cache."""
+    """Locate the installed Project package."""
     directory = Path(project) / 'benchmarks' / source['benchmark_id']
-    if not (directory / 'benchmark_config.toml').is_file():
-        return {'ready': False, 'reason': 'not_imported', 'benchmark_id': source['benchmark_id']}
-    try:
-        actual = package(directory.parent, directory.name)
-    except (OSError, ValueError, KeyError) as error:
-        return {'ready': False, 'reason': 'invalid_import', 'benchmark_id': source['benchmark_id'],
-                'error_type': type(error).__name__}
-    require('content_files' in source and 'configuration_sha256' in source,
-            'source contract lacks complete package fingerprint; prepare a new contract')
-    expected, observed = source['content_files'], actual['content_files']
-    missing = sorted(set(expected) - set(observed))
-    extra = sorted(set(observed) - set(expected))
-    changed = sorted(k for k in expected.keys() & observed.keys() if expected[k] != observed[k])
-    config_match = actual['configuration_sha256'] == source['configuration_sha256']
-    ready = config_match and not missing and not extra and not changed
-    return {'ready': ready, 'reason': 'matching' if ready else 'stale_or_modified',
-            'benchmark_id': source['benchmark_id'], 'actual_version': actual['version'],
-            'required_version': source['version'], 'configuration_matches': config_match,
-            'actual_manifest_sha256': actual['manifest_sha256'],
-            'source_manifest_sha256': source['manifest_sha256'],
-            'files': {'missing': missing, 'extra': extra, 'changed': changed}}
+    ready = (directory / 'benchmark_config.toml').is_file()
+    return {'ready': ready, 'reason': 'installed' if ready else 'not_imported',
+            'benchmark_id': source['benchmark_id'], 'package_path': str(directory)}
 
 
 def bootstrap(req, *, contracts=None, local_source=False):
@@ -357,9 +279,6 @@ def bootstrap(req, *, contracts=None, local_source=False):
                for source in (c['training_package'], c.get('test_package')) if source]
     return {'schema': 'evo-experiment-contract-v2', 'source_commit': commit,
             'source_kind': 'local-package' if local_source else 'git-checkout',
-            'source_content_sha256': hashlib.sha256(json.dumps(
-                [s for c in contracts for s in (c['training_package'], c.get('test_package')) if s],
-                sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
             'source_ref': link or req.get('ref', 'HEAD'), 'contracts': contracts, 'runtime': runtime,
             'budget_usd': budget, 'budget_scope': scope, 'budget_allocations':allocations,
             'authorized_total_usd':budget if scope=='total' else budget*len(contracts) if budget else None,
@@ -385,6 +304,6 @@ if __name__ == '__main__':
     destination = Path(request['output'])
     require(not destination.exists(), 'frozen contract already exists; reconcile it, never replace')
     destination.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
-    print(json.dumps({'contract': str(destination), 'sha256': sha(destination),
+    print(json.dumps({'contract': str(destination),
                       'ready': result['ready'], 'missing_inputs': result['missing_inputs'],
                       'project_packages': result['project_packages']}, ensure_ascii=False))

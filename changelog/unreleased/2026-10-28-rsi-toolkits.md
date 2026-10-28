@@ -32,3 +32,5 @@ Shared reporting and plugin integration: [Saigyouji-Yuyuko1000](https://github.c
 Registered all four plugins for core, CLI and desktop packaging, the bilingual plugin catalogs, the self-improvement documentation, the website algorithm list and the UI Gallery demo. Shipped plugins omit development tests; OpenSkill has no development acceptance or replay prerequisite.
 
 Repositories without GDPevo manifests no longer load PyYAML during Evo resource preparation. GDPevo retains its declared PyYAML dependency.
+
+Evo resource preparation records source versions without per-file fingerprint comparisons or resume-time drift checks.
