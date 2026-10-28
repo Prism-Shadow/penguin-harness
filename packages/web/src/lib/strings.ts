@@ -4036,8 +4036,8 @@ Benchmark：
     historyLoadFailed: "历史消息加载失败",
     /**
      * A conversation on a machine the server cannot reach: its history lives there. The headline
-     * names the machine by its alias and says its link state; the transport's own error is folded
-     * under the details row.
+     * names the machine by its alias and says its link state; one button opens the Machines page;
+     * the transport's own error is folded under the details row.
      */
     machineAway: {
       reconnecting: (alias: string) => `${alias} 当前连不上，正在重连`,
@@ -4047,6 +4047,7 @@ Benchmark：
       notConnected: (alias: string) => `${alias} 尚未连接`,
       missing: "这个对话所在的机器不在当前 Project 的机器列表中",
       hint: "对话保存在那台机器上，连接恢复后会自动加载。",
+      openMachines: "去机器管理",
       details: "技术细节",
     },
     /** Above the composer while the conversation's machine reads as needing a restart. */

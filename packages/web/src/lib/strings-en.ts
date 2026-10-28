@@ -3842,6 +3842,7 @@ Scenarios:
       notConnected: (alias: string) => `${alias} is not connected`,
       missing: "This conversation's machine is not on this Project's machine list",
       hint: "The conversation is kept on that machine and loads as soon as the connection is back.",
+      openMachines: "Go to Machines",
       details: "Technical details",
     },
     machineRestartNeeded: {
