@@ -2,15 +2,17 @@
  * The command palette's session completion (features/palette/session-completion.ts): the
  * query's first token starting a session id is the trigger; the rows offered are the
  * sidebar's own, in the order the session store holds them; each entry shows the title (or
- * the untitled fallback) with the status word beside it; running one navigates to that
- * session's chat page.
+ * the untitled fallback) with the status word beside the session's id; running one navigates
+ * to that session's chat page.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../src/lib/strings";
 import {
   SESSION_COMPLETION_MAX,
+  SESSION_DETAIL_ID_MAX,
   sessionCompletionActions,
+  sessionDetailId,
   sessionQueryPrefix,
   sessionStatusWord,
 } from "../src/features/palette/session-completion";
@@ -62,19 +64,25 @@ describe("sessionCompletionActions", () => {
     row({ sessionId: "session-2026-10-06-ffff", title: "A subagent", source: "subagent" }),
   ];
 
-  it("offers the sidebar rows whose id starts the query, in the store's order, with title and status", () => {
+  it("offers the sidebar rows whose id starts the query, with title, status and id", () => {
     const actions = sessionCompletionActions(sessions, "session-2026-10-0", navigate);
     expect(actions.map((a) => a.id)).toEqual([
       "session:session-2026-10-01-aaaa",
       "session:session-2026-10-02-bbbb",
       "session:session-2026-10-03-cccc",
     ]);
-    expect(actions[0]).toMatchObject({ label: "Palette work", detail: S.chat.statusRunning });
+    expect(actions[0]).toMatchObject({
+      label: "Palette work",
+      detail: `${S.chat.statusRunning} · session-2026-10-01-aaaa`,
+    });
     expect(actions[1]).toMatchObject({
       label: S.chat.defaultSessionTitle,
-      detail: S.chat.statusCompacting,
+      detail: `${S.chat.statusCompacting} · session-2026-10-02-bbbb`,
     });
-    expect(actions[2]).toMatchObject({ label: "Old chat", detail: S.chat.statusIdle });
+    expect(actions[2]).toMatchObject({
+      label: "Old chat",
+      detail: `${S.chat.statusIdle} · session-2026-10-03-cccc`,
+    });
   });
 
   it("answers nothing unless the query starts a session id", () => {
@@ -108,5 +116,12 @@ describe("sessionCompletionActions", () => {
     expect(sessionStatusWord("running")).toBe(S.chat.statusRunning);
     expect(sessionStatusWord("compacting")).toBe(S.chat.statusCompacting);
     expect(sessionStatusWord("idle")).toBe(S.chat.statusIdle);
+  });
+
+  it("keeps a short id whole and ellipses a long one's tail in the detail", () => {
+    expect(sessionDetailId("session-2026-10-01-aaaa")).toBe("session-2026-10-01-aaaa");
+    const long = `session-${"x".repeat(60)}`;
+    expect(sessionDetailId(long)).toBe(`${long.slice(0, SESSION_DETAIL_ID_MAX)}…`);
+    expect(sessionDetailId(long)).toHaveLength(SESSION_DETAIL_ID_MAX + 1);
   });
 });
