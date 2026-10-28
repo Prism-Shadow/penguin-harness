@@ -10,7 +10,7 @@ A command can hold several keyboard bindings. The Shortcuts settings page draws 
 
 The stored form (`ui_prefs.keybindings`) carries one command's bindings as an array of chord strings; the single-chord string an older build writes still reads as one binding, the server accepts both forms and caps a command at eight chords.
 
-Typing the start of a session id (`session-…`) in the command palette completes that session: the entry shows its title with its run state (running, compacting or idle) beside it, and Enter jumps to its chat page. Completion works on the sessions the sidebar has loaded, most recent first, at most twenty entries.
+Typing the start of a session id (`session-…`) in the command palette completes that session: the entry shows its title with its run state (running, compacting or idle) and its session id beside it, and Enter jumps to its chat page. A long id is ellipsed in the entry's secondary line. Completion works on the sessions the sidebar has loaded, most recent first, at most twenty entries.
 
 ## Details
 

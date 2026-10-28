@@ -1,6 +1,6 @@
 /**
  * Session completion for the command palette: typing the start of a session id (`session-…`)
- * offers that session — its title beside its run state, Enter jumps to its chat page. The rows
+ * offers that session — its title beside its status word and id, Enter jumps to its chat page. The rows
  * are the sidebar's own (the session store the sidebar pages into), so a completion names what
  * the app already holds and nothing is fetched for it.
  *
@@ -37,10 +37,30 @@ export function sessionStatusWord(status: SessionStatus): string {
 }
 
 /**
+ * How much of a session id one completion's detail keeps: the id rides beside the status word
+ * as the row's secondary text, and ids past this length end with an ellipsis so the title —
+ * the row's main text — keeps its room.
+ */
+export const SESSION_DETAIL_ID_MAX = 44;
+
+/** A session id trimmed to {@link SESSION_DETAIL_ID_MAX} characters, the tail ellipsed. */
+export function sessionDetailId(sessionId: string): string {
+  return sessionId.length > SESSION_DETAIL_ID_MAX
+    ? `${sessionId.slice(0, SESSION_DETAIL_ID_MAX)}…`
+    : sessionId;
+}
+
+/** The row's secondary text: the status's word beside the session's id. */
+export function sessionDetail(status: SessionStatus, sessionId: string): string {
+  return `${sessionStatusWord(status)} · ${sessionDetailId(sessionId)}`;
+}
+
+/**
  * The sessions whose id starts the query, most recently active first, as palette actions: the
  * title (the sidebar's untitled fallback), the status word beside it, and a jump to the chat
  * page on run. Rows the sidebar does not draw are never offered — a completion lands somewhere
- * the sidebar itself could have taken the user.
+ * the sidebar itself could have taken the user. The row's secondary text carries the status
+ * word beside the session's id.
  */
 export function sessionCompletionActions(
   sessions: readonly SessionInfo[],
@@ -56,7 +76,7 @@ export function sessionCompletionActions(
     id: `session:${s.sessionId}`,
     label: s.title ?? S.chat.defaultSessionTitle,
     keywords: [s.sessionId],
-    detail: sessionStatusWord(s.status),
+    detail: sessionDetail(s.status, s.sessionId),
     run: () => navigate(`/chat/${encodeURIComponent(s.sessionId)}`),
   }));
 }
