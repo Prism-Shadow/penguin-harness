@@ -1,7 +1,7 @@
 ---
 name: evo-harness-rsi-toolkit
 description: "Run Evo on selected Project Benchmarks: one training pass, negative-feedback reflection in the original Solver Session, one batch compilation, then repeated frozen baseline/final evaluation."
-version: 2026.10.28.10
+version: 2026.10.28.11
 ---
 
 # Evo-Harness

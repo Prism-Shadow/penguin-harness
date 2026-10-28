@@ -221,8 +221,8 @@ def prepare(req):
         repo = Path(next(iter(roots)))
         manifests = list(repo.glob('benchmarks/*/tasks/task_group.yaml'))
         ids = {p['benchmark_id'] for p in selected}
-        import yaml
         for manifest in manifests:
+            import yaml
             value = yaml.safe_load(manifest.read_text())
             info = value['benchmark']
             if group_alias and value.get('task_group', {}).get('task_group_id') != group_alias:
