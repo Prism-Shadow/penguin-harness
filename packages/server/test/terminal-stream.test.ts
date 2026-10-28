@@ -10,6 +10,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
 import type { Server as HttpServer } from "node:http";
+import type { Socket as NetSocket } from "node:net";
 import { WebSocket } from "ws";
 import { createTestApp, loginAdmin, provisionUser, apiClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -18,6 +19,7 @@ import {
   TerminalStreamOpcode,
   decodeTerminalFrame,
   encodeTerminalFrame,
+  framePayloadText,
 } from "../src/terminal/frames.js";
 
 const TEST_TIMEOUT = 20_000;
@@ -111,15 +113,29 @@ async function terminalInfo(id: string): Promise<TerminalInfoJson> {
   return (await res.json()) as TerminalInfoJson;
 }
 
+/**
+ * One server→client data frame as it left the wire, before ws inflates it: the compression
+ * test reads the RSV1 bit (permessage-deflate) and the frame's real length from here.
+ */
+interface WireFrame {
+  rsv1: boolean;
+  opcode: number;
+  length: number;
+  payload: Uint8Array;
+}
+
 interface StreamClient {
   ws: WebSocket;
   frames: Array<{ opcode: number; text: string }>;
+  /** Raw first-fragment frames seen on the socket; populated only for deflate clients. */
+  wire: WireFrame[];
   /** Concatenation of every Output payload so far. */
   outputText(): string;
   /** Payload of the first Restore frame (the attach snapshot). */
   restoreText(): string;
   sendInput(text: string): void;
   sendResize(cols: number, rows: number, intent: "claim" | "update"): void;
+  sendPing(payload: string): void;
   waitFor(predicate: () => boolean, what: string, timeoutMs?: number): Promise<void>;
   close(): Promise<void>;
 }
@@ -132,15 +148,27 @@ function streamUrl(id: string, cols?: number, rows?: number): string {
 /** Opens a stream and resolves once connected; every received frame must decode. */
 function attach(
   id: string,
-  options: { cookie?: string; cols?: number; rows?: number; origin?: string } = {},
+  options: {
+    cookie?: string;
+    cols?: number;
+    rows?: number;
+    origin?: string;
+    /** Negotiate permessage-deflate (a browser does) and record raw frames on the wire. */
+    deflate?: boolean;
+  } = {},
 ): Promise<StreamClient> {
   const headers: Record<string, string> = { cookie: options.cookie ?? adminCookie };
   if (options.origin !== undefined) headers.origin = options.origin;
-  const ws = new WebSocket(streamUrl(id, options.cols ?? 80, options.rows ?? 24), { headers });
+  const ws = new WebSocket(streamUrl(id, options.cols ?? 80, options.rows ?? 24), {
+    headers,
+    ...(options.deflate === true ? { perMessageDeflate: {} } : {}),
+  });
   const frames: StreamClient["frames"] = [];
+  const wire: WireFrame[] = [];
   // Every server-sent frame must decode; checked from waitFor (throwing inside the ws
   // 'message' listener would surface as an uncaught exception, not a test failure).
   let undecodable = 0;
+  let wireError: string | null = null;
 
   ws.on("message", (raw: Buffer) => {
     const frame = decodeTerminalFrame(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength));
@@ -151,9 +179,60 @@ function attach(
     frames.push({ opcode: frame.opcode, text: new TextDecoder().decode(frame.payload) });
   });
 
+  // The wire tap for the deflate client: walks the raw server→client stream and records
+  // each message's first fragment — the one that carries the compression bit. Server
+  // frames are never masked, so the walk is header + length + payload, nothing else.
+  const watchWire = (): void => {
+    const sock = (ws as unknown as { _socket?: NetSocket })._socket;
+    if (sock === undefined) {
+      wireError = "the deflate client has no underlying socket to watch";
+      return;
+    }
+    let pending = Buffer.alloc(0);
+    sock.on("data", (chunk: Buffer) => {
+      pending = Buffer.concat([pending, chunk]);
+      for (;;) {
+        if (pending.length < 2) break;
+        const b0 = pending[0] as number;
+        const b1 = pending[1] as number;
+        if ((b1 & 0x80) !== 0) {
+          wireError = "server frames must arrive unmasked";
+          return;
+        }
+        let header = 2;
+        let length = b1 & 0x7f;
+        if (length === 126) {
+          if (pending.length < 4) break;
+          length = pending.readUInt16BE(2);
+          header = 4;
+        } else if (length === 127) {
+          if (pending.length < 10) break;
+          const huge = pending.readBigUInt64BE(2);
+          if (huge > 0xffff_ffffn) {
+            wireError = "a frame too large to parse";
+            return;
+          }
+          length = Number(huge);
+          header = 10;
+        }
+        if (pending.length < header + length) break;
+        if ((b0 & 0x0f) !== 0) {
+          wire.push({
+            rsv1: (b0 & 0x40) !== 0,
+            opcode: b0 & 0x0f,
+            length,
+            payload: new Uint8Array(pending.subarray(header, header + length)),
+          });
+        }
+        pending = pending.subarray(header + length);
+      }
+    });
+  };
+
   const client: StreamClient = {
     ws,
     frames,
+    wire,
     outputText: () =>
       frames
         .filter((f) => f.opcode === TerminalStreamOpcode.Output)
@@ -169,16 +248,20 @@ function attach(
           payload: JSON.stringify({ cols, rows, intent }),
         }),
       ),
+    sendPing: (payload) =>
+      ws.send(encodeTerminalFrame({ opcode: TerminalStreamOpcode.Ping, payload })),
     waitFor: async (predicate, what, timeoutMs = 15_000) => {
       const deadline = Date.now() + timeoutMs;
       while (!predicate()) {
         if (undecodable > 0) throw new Error(`Received ${undecodable} undecodable frame(s).`);
+        if (wireError !== null) throw new Error(wireError);
         if (Date.now() > deadline) {
           throw new Error(`Timed out waiting for ${what}. Frames: ${JSON.stringify(frames)}`);
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       if (undecodable > 0) throw new Error(`Received ${undecodable} undecodable frame(s).`);
+      if (wireError !== null) throw new Error(wireError);
     },
     close: () =>
       new Promise((resolve) => {
@@ -189,7 +272,10 @@ function attach(
   };
 
   return new Promise((resolve, reject) => {
-    ws.once("open", () => resolve(client));
+    ws.once("open", () => {
+      if (options.deflate === true) watchWire();
+      resolve(client);
+    });
     ws.once("unexpected-response", (_req, res) =>
       reject(new Error(`handshake rejected: ${res.statusCode}`)),
     );
@@ -317,15 +403,95 @@ describePty("terminal stream handshake", () => {
 });
 
 /**
- * The line the backpressure flood is made of, and the marker its resync assertion reads.
- * It fills every row of the screen for the whole burst, so it is there whichever instant
- * the resync snapshot is taken at — unlike a marker printed once at the end of a round,
- * which megabytes of scrolling carry off the screen again.
+ * What the backpressure flood is made of: random bytes, not repeated ones.
+ *
+ * The stream is compressed on the wire (terminal/ws.ts), and repeated text leaves the
+ * socket a hundred times smaller than it entered — a `yes`-style burst is delivered as fast
+ * as a shell can produce it and never puts a viewer behind at all. base64 of /dev/urandom
+ * is the cheapest output a shell can produce that compresses to nothing, so what the viewer
+ * is behind on is real.
  */
-const FLOOD_LINE = "0123456789abcdef";
+const FLOOD_COMMAND = "head -c 4000000 /dev/urandom | base64";
+/**
+ * A screenful of that flood: base64 runs on two consecutive rows. The restore stream writes
+ * the grid row by row, so this holds whichever instant the resync snapshot is taken at —
+ * unlike a marker printed once per round, which megabytes of scrolling carry off the screen.
+ */
+const FLOOD_ROWS = /[A-Za-z0-9+/]{40}\r\n[A-Za-z0-9+/]{40}/;
 
 /** Every Restore opens with this self-contained repaint (see snapshot.ts). */
 const RESTORE_PREAMBLE = "\x1b[0m\x1b[?1049l\x1b[H\x1b[2J\x1b[3J";
+
+describePty("terminal stream heartbeat", () => {
+  it(
+    "echoes a client's probe, so a client can tell a live socket from a dead one",
+    async () => {
+      const terminal = await createTerminal();
+      const client = await attach(terminal.id);
+      try {
+        client.sendPing("42");
+        await client.waitFor(
+          () => client.frames.some((f) => f.opcode === TerminalStreamOpcode.Pong),
+          "pong",
+        );
+
+        const pong = client.frames.find((f) => f.opcode === TerminalStreamOpcode.Pong);
+        // Echoed untouched: the payload is the CLIENT's clock reading, and only the client
+        // can make a round trip out of it.
+        expect(pong?.text).toBe("42");
+      } finally {
+        await client.close();
+        await api.delete(`/api/terminals/${terminal.id}`);
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+describePty("terminal stream compression", () => {
+  it(
+    "leaves small frames uncompressed and large ones compressed once permessage-deflate is negotiated",
+    async () => {
+      const terminal = await createTerminal();
+      const client = await attach(terminal.id, { deflate: true });
+      try {
+        await client.waitFor(() => client.restoreText().length > 0, "attach restore");
+
+        // A keystroke-sized burst: the command's echo, its output and the next prompt
+        // together are far below the threshold, and on the wire it must arrive as-is —
+        // RSV1 clear, the bytes decodable as a terminal frame with no inflate anywhere.
+        const SMALL_MARKER = "zz-small-uncompressed-42";
+        await runAndWait(client, `echo ${SMALL_MARKER}`, SMALL_MARKER);
+        await client.waitFor(
+          () =>
+            client.wire.some((f) => {
+              if (f.rsv1) return false;
+              const frame = decodeTerminalFrame(f.payload);
+              return (
+                frame !== null &&
+                frame.opcode === TerminalStreamOpcode.Output &&
+                framePayloadText(frame).includes(SMALL_MARKER)
+              );
+            }),
+          "the small frame on the wire uncompressed",
+        );
+
+        // A large burst of barely compressible bytes stays compressed: RSV1 set, and —
+        // random base64 shrinks little — still far past the threshold on the wire.
+        await runAndWait(
+          client,
+          "head -c 4000 /dev/urandom | base64; echo big-burst-done",
+          "big-burst-done",
+        );
+        expect(client.wire.some((f) => f.rsv1 && f.length >= 512)).toBe(true);
+      } finally {
+        await client.close();
+        await api.delete(`/api/terminals/${terminal.id}`);
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
 
 describePty("terminal stream backpressure", () => {
   it("resyncs a lagging viewer with a fresh Restore instead of disconnecting it", async () => {
@@ -342,9 +508,9 @@ describePty("terminal stream backpressure", () => {
       client.ws.pause();
       // Flood until the server itself reports this viewer as lagging. A fixed burst is a
       // coin flip: a paused reader still lets the kernel absorb megabytes into its socket
-      // buffers (autotuned), so the server's own send queue — the thing the watermark
-      // measures — may never cross 1 MiB however much the shell wrote. This suite failed
-      // that way roughly one run in three, locally and on CI.
+      // buffers (autotuned), so the viewer's backlog — the thing the watermark measures —
+      // may never cross 1 MiB however much the shell wrote. This suite failed that way
+      // roughly one run in three, locally and on CI.
       //
       // Only lines logged from here on count. `serverLogs` outlives one attempt and vitest
       // retries this file on macOS, so a second attempt reading the first one's line would
@@ -353,29 +519,77 @@ describePty("terminal stream backpressure", () => {
       const loggedBefore = serverLogs.length;
       const isLagging = (): boolean =>
         serverLogs.slice(loggedBefore).some((l) => l.includes("pausing for resync"));
+      let lastRound = 0;
       for (let round = 1; round <= 8 && !isLagging(); round += 1) {
-        client.sendInput(`yes ${FLOOD_LINE} | head -n 400000; echo BURST-DONE-${round}\r`);
-        await waitForCapture(terminal.id, `BURST-DONE-${round}`, 60_000);
+        lastRound = round;
+        // The pty echoes a command line the instant it is typed, so a literal marker would
+        // satisfy this wait before the flood behind it had produced one byte. All eight
+        // rounds would then go out back-to-back and land as one undifferentiated flood: the
+        // kernel's autotuned buffers absorb far more than a single round's share, and
+        // whichever way the watermark lands, the assert below races a stream that is still
+        // running — the flake this suite was known for. The arithmetic is the fix: the echo
+        // of "BURST-$((20+1))" matches nothing the wait accepts, so a round ends only once
+        // the shell has actually run it — its burst fully landed server-side.
+        client.sendInput(`${FLOOD_COMMAND}; echo BURST-$((20+${round}))\r`);
+        await waitForCapture(terminal.id, `BURST-${20 + round}`, 60_000);
       }
       expect(isLagging(), "server never marked the paused viewer as lagging").toBe(true);
 
       // The burst has fully landed server-side, and the lagging viewer is still attached.
       expect(client.ws.readyState).toBe(WebSocket.OPEN);
 
-      // Catching up delivers a resync Restore, and the stream is live again afterwards.
+      // Catching up delivers a resync Restore, and the stream is live again afterwards —
+      // but which frame ends the cycle depends on the link, so the settle cannot wait for
+      // a particular one. On a slow link the kernel absorbs the flood as fast as the pty
+      // emits it: the resync fires mid-flood, no second high-water crossing follows, and
+      // the round's end marker reaches the client as live output — no marker-bearing
+      // Restore ever exists. What every timing has in common is the marker arriving at
+      // the client, in whichever frame carries it: the marker is the last thing the round
+      // produces, so once the client holds it, nothing of the flood is left in flight.
+      const burstEnd = `BURST-${20 + lastRound}`;
       client.ws.resume();
-      const restores = (): StreamClient["frames"] =>
-        client.frames.filter((f) => f.opcode === TerminalStreamOpcode.Restore);
-      await client.waitFor(() => restores().length >= 2, "resync Restore frame", 60_000);
-      const resync = restores()[1]!;
-      // What a resync promises is the repaint, not a particular line of screen residue:
-      // the snapshot is taken whenever this viewer's socket drains past the low watermark,
-      // which the test does not get to choose and which may well be mid-flood. So assert
-      // the two things that hold at every such instant — it is the same self-contained
-      // repaint an attach sends, and it carries the flooded screen rather than the empty
-      // one the attach Restore captured.
-      expect(resync.text.slice(0, RESTORE_PREAMBLE.length)).toBe(RESTORE_PREAMBLE);
-      expect(resync.text).toContain(`${FLOOD_LINE}\r\n${FLOOD_LINE}`);
+      await client.waitFor(
+        () => client.frames.some((f) => f.text.includes(burstEnd)),
+        "the flood's end to reach the client",
+        // The flood's tail is the last thing through the backlog the paused socket
+        // accumulated, and chewing through it is plain CPU — the slowest step of this
+        // case on a starved runner, so the cap is deliberately generous.
+        90_000,
+      );
+
+      // One race is still open at that instant: a resync whose poll had not yet fired
+      // repaints within one interval (250ms) of the client catching up, and a probe
+      // typed before it would land in that drop window. The repaint arrives as a Restore
+      // — a data frame — so a quiet window far longer than the poll, in which nothing
+      // but the heartbeat arrives, proves none was pending: the pane is quiet, and the
+      // live probe below is typed to an idle shell.
+      let quietSince = 0;
+      let quietFrames = -1;
+      const streamQuiet = (): boolean => {
+        const dataFrames = client.frames.filter(
+          (f) => f.opcode !== TerminalStreamOpcode.Ping,
+        ).length;
+        if (dataFrames !== quietFrames) {
+          quietFrames = dataFrames;
+          quietSince = Date.now();
+        }
+        return Date.now() - quietSince >= 2_000;
+      };
+      await client.waitFor(streamQuiet, "a quiet stream after the flood", 30_000);
+
+      // The resync this case exists to verify: the lagging gate above means the server
+      // desynced this viewer, and the only way out of that state is the poll's fresh
+      // Restore — so a repaint carrying the flooded pane must have arrived. It is not
+      // necessarily the marker-bearing one (the mid-flood timing above legitimately
+      // skips that); the flooded pane is the promise, and it identifies the repaint.
+      const resync = client.frames.find(
+        (f) => f.opcode === TerminalStreamOpcode.Restore && FLOOD_ROWS.test(f.text),
+      );
+      expect(resync, "a resync repaint of the flooded pane").toBeDefined();
+      // What a resync promises is the repaint, not a particular line of screen residue —
+      // it is the same self-contained repaint an attach sends, and it carries the flooded
+      // screen rather than the empty one the attach Restore captured.
+      expect(resync!.text.slice(0, RESTORE_PREAMBLE.length)).toBe(RESTORE_PREAMBLE);
       await runAndWait(client, "echo LIVE-$((40+2))", "LIVE-42");
     } finally {
       // Closed here rather than after the assertions: a socket a failed assertion left open
@@ -386,7 +600,7 @@ describePty("terminal stream backpressure", () => {
     }
     // Megabytes through a pty, a paused socket and a drain: minutes of budget on a loaded
     // runner, where the default would report a timeout rather than a real defect.
-  }, 120_000);
+  }, 180_000);
 });
 
 describePty("terminal stream attach", () => {
