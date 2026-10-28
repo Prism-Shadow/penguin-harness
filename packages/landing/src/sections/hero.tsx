@@ -6,7 +6,7 @@
  * the app itself, live: the start page in a frame. What the rows list, and where each entry
  * links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those lists' lengths.
  */
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
@@ -74,9 +74,17 @@ function CatalogRow({
   );
 }
 
+function HeroWord({ text, variant }: { text: string; variant: "growth" | "reach" }) {
+  return (
+    <span className={`hero-word hero-word-${variant}`}>
+      <span className="hero-word-ink">{text}</span>
+      <span className="hero-word-trace" aria-hidden="true" />
+    </span>
+  );
+}
+
 export function Hero() {
   const { locale } = useSiteLocale();
-  const growthLetters = Array.from(S.hero.positioning.growth);
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
@@ -98,28 +106,14 @@ export function Hero() {
         >
           <span className="hero-positioning-clause">
             {S.hero.positioning.growthLead}
-            <span className="hero-word hero-word-growth">
-              {growthLetters.map((letter, index) => (
-                <span
-                  key={index}
-                  className="hero-growth-letter"
-                  style={
-                    {
-                      "--letter-progress": index / Math.max(growthLetters.length - 1, 1),
-                    } as CSSProperties
-                  }
-                >
-                  {letter}
-                </span>
-              ))}
-            </span>
+            <HeroWord text={S.hero.positioning.growth} variant="growth" />
             {S.hero.positioning.growthEnd}
           </span>
           {S.hero.positioning.separator}
           <wbr />
           <span className="hero-positioning-clause">
             {S.hero.positioning.reachLead}
-            <span className="hero-word hero-word-reach">{S.hero.positioning.reach}</span>
+            <HeroWord text={S.hero.positioning.reach} variant="reach" />
             {S.hero.positioning.reachEnd}
           </span>
         </p>

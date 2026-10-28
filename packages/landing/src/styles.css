@@ -51,66 +51,97 @@
 /* Keep the hero hierarchy consistent across languages and let narrow screens wrap naturally. */
 .hero-positioning {
   font-size: clamp(1.5rem, 4vw, 2.6rem);
-  line-height: 1.65;
+  line-height: 1.5;
 }
 .hero-positioning-clause {
   display: inline-block;
   max-width: 100%;
 }
 .hero-word {
+  --hero-ink-edge: var(--color-brand-700);
+  --hero-ink-center: var(--color-brand-500);
+  --hero-word-delay: 0s;
   position: relative;
+  isolation: isolate;
   display: inline-block;
-  color: var(--color-brand-700);
-  line-height: 1.2;
+  color: var(--hero-ink-edge);
   white-space: nowrap;
 }
-.dark .hero-word-growth {
-  color: var(--color-brand-300);
-}
-
-/* Increasing letter size and a rising baseline give the growth phrase a direction. */
-.hero-growth-letter {
-  display: inline-block;
-  font-size: calc(0.92em + 0.2em * var(--letter-progress));
-  font-weight: 700;
-  white-space: pre;
-  transform: translateY(calc(-0.1em * var(--letter-progress)));
-}
-.hero-word::after {
-  position: absolute;
-  pointer-events: none;
-  content: "";
-}
-.hero-word-growth::after {
-  right: -0.02em;
-  bottom: -0.03em;
-  left: 0;
-  height: 0.11em;
-  background: currentColor;
-  clip-path: polygon(0 85%, 100% 0, 100% 35%, 0 100%);
-  transform: rotate(-2deg);
-}
-
-/* A close-fitting, angled brush stroke makes reach the slogan's strongest accent. */
 .hero-word-reach {
-  isolation: isolate;
-  margin-inline: 0.17em;
-  padding: 0.06em 0.16em 0.1em;
-  color: var(--color-white);
-  font-weight: 700;
+  --hero-word-delay: -3.6s;
 }
-.hero-word-reach::after {
-  z-index: -1;
-  inset: 0 -0.04em;
-  background: var(--color-brand-700);
-  clip-path: polygon(1% 8%, 100% 0, 98.5% 92%, 0 100%);
-  transform: rotate(-2deg);
+.dark .hero-word {
+  --hero-ink-edge: var(--color-brand-300);
+  --hero-ink-center: var(--color-brand-500);
 }
-.dark .hero-word-reach {
-  color: var(--color-brand-950);
+
+/* The color moves inside the glyphs; their size, baseline and advance never change. */
+.hero-word-ink {
+  position: relative;
+  display: inline-block;
+  /* deslop-ignore-next-line 06 -- One moving color emphasis, confined to the slogan's glyphs. */
+  background-image: linear-gradient(
+    110deg,
+    var(--hero-ink-edge) 40%,
+    var(--hero-ink-center) 50%,
+    var(--hero-ink-edge) 60%
+  );
+  background-size: 400% 100%;
+  background-position: 100% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: hero-ink-flow 7.2s ease-in-out var(--hero-word-delay) infinite;
 }
-.dark .hero-word-reach::after {
-  background: var(--color-brand-300);
+
+/* A fine line draws after the light passes, then clears before the next phrase takes over. */
+.hero-word-trace {
+  position: absolute;
+  right: 0;
+  bottom: 0.1em;
+  left: 0;
+  height: 0.045em;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: hero-trace-draw 7.2s ease-in-out var(--hero-word-delay) infinite;
+}
+
+@keyframes hero-ink-flow {
+  0%,
+  12% {
+    background-position: 100% 50%;
+  }
+  68%,
+  100% {
+    background-position: 0% 50%;
+  }
+}
+@keyframes hero-trace-draw {
+  0%,
+  12% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  38%,
+  48% {
+    opacity: 0.65;
+    transform: scaleX(1);
+  }
+  60%,
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-word-ink,
+  .hero-word-trace {
+    animation: none;
+  }
 }
 .hero-automation {
   font-size: clamp(1rem, 2.1vw, 1.125rem);
