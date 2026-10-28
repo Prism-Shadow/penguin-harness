@@ -45,7 +45,15 @@ export const en: Strings = {
   },
 
   hero: {
-    positioning: "Software that keeps growing. Evolution within reach.",
+    positioning: {
+      growthLead: "Software that ",
+      growth: "keeps growing",
+      growthEnd: ".",
+      separator: " ",
+      reachLead: "Evolution ",
+      reach: "within reach",
+      reachEnd: ".",
+    },
     subtitle: "Free and Stable RSI Framework",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",

@@ -44,8 +44,16 @@ export const zh = {
   },
 
   hero: {
-    /** The slogan, in the positioning line's place and style. */
-    positioning: "让软件持续成长，让进化触手可及",
+    /** Two clauses keep the emphasized phrases and punctuation in each locale's reading order. */
+    positioning: {
+      growthLead: "让软件",
+      growth: "持续成长",
+      growthEnd: "，",
+      separator: "",
+      reachLead: "让进化",
+      reach: "触手可及",
+      reachEnd: "",
+    },
     /** The grey line under the slogan. */
     subtitle: "免费、稳定的 Agent 自进化框架",
     downloadCta: "下载桌面版",

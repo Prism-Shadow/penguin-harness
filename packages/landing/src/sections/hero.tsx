@@ -92,10 +92,21 @@ export function Hero() {
         </h1>
 
         <p
-          className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word]"
+          className="hero-positioning anim-rise mx-auto mt-6 font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word]"
           style={{ animationDelay: "70ms" }}
         >
-          {S.hero.positioning}
+          <span className="hero-positioning-clause">
+            {S.hero.positioning.growthLead}
+            <span className="hero-word hero-word-growth">{S.hero.positioning.growth}</span>
+            {S.hero.positioning.growthEnd}
+          </span>
+          {S.hero.positioning.separator}
+          <wbr />
+          <span className="hero-positioning-clause">
+            {S.hero.positioning.reachLead}
+            <span className="hero-word hero-word-reach">{S.hero.positioning.reach}</span>
+            {S.hero.positioning.reachEnd}
+          </span>
         </p>
 
         <p

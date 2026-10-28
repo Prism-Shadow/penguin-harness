@@ -51,6 +51,47 @@
 /* Keep the hero hierarchy consistent across languages and let narrow screens wrap naturally. */
 .hero-positioning {
   font-size: clamp(1.5rem, 4vw, 2.6rem);
+  line-height: 1.65;
+}
+.hero-positioning-clause {
+  display: inline-block;
+  max-width: 100%;
+}
+.hero-word {
+  position: relative;
+  display: inline-block;
+  color: var(--color-brand-700);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.dark .hero-word {
+  color: var(--color-brand-300);
+}
+
+/* The rising stroke follows growth; the enclosing stroke brings reach into focus. */
+.hero-word::after {
+  position: absolute;
+  pointer-events: none;
+  content: "";
+}
+.hero-word-growth::after {
+  right: 0;
+  bottom: -0.06em;
+  left: 0;
+  height: 0.18em;
+  border-bottom: 0.055em solid currentColor;
+  border-radius: 0 0 50% 50%;
+  transform: rotate(-4deg);
+}
+.hero-word-reach {
+  margin-inline: 0.36em;
+}
+.hero-word-reach::after {
+  inset: -0.24em -0.4em;
+  border: 0.035em solid currentColor;
+  /* deslop-ignore-next-line 19 -- The oval is a phrase annotation, not a control surface. */
+  border-radius: 50%;
+  transform: rotate(-2deg);
 }
 .hero-automation {
   font-size: clamp(1rem, 2.1vw, 1.125rem);
