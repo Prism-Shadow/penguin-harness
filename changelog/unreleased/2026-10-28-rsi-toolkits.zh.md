@@ -34,3 +34,5 @@
 不含 GDPevo 清单的仓库在 Evo 资源准备时不再加载 PyYAML；GDPevo 仍保留已声明的 PyYAML 依赖。
 
 Evo 资源准备记录来源版本，不再逐文件比对指纹或在恢复时检查资源变化。
+
+Windows Web 测试在匹配 Socket 测试替身前统一模块路径格式。

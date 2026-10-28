@@ -29,7 +29,7 @@ const socketStandInPlugin: Plugin = {
   enforce: "pre",
   resolveId(source, importer) {
     if (importer === undefined) return null;
-    const from = importer.split("?")[0]!;
+    const from = resolve(importer.split("?")[0]!);
     if (!from.startsWith(appSource)) return null;
     const wanted = resolve(dirname(from), source);
     if (wanted !== socketModule && `${wanted}.ts` !== socketModule) return null;

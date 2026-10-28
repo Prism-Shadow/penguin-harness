@@ -34,3 +34,5 @@ Registered all four plugins for core, CLI and desktop packaging, the bilingual p
 Repositories without GDPevo manifests no longer load PyYAML during Evo resource preparation. GDPevo retains its declared PyYAML dependency.
 
 Evo resource preparation records source versions without per-file fingerprint comparisons or resume-time drift checks.
+
+Windows Web tests normalize module paths before selecting the socket stand-in.
