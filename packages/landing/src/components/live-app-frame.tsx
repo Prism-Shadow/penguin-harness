@@ -25,8 +25,8 @@ import { BrowserFrame } from "./browser-frame";
 import { ArrowUpRightIcon } from "./icons";
 import { LivePlaybackControl } from "./live-playback-control";
 
-/** How far below the viewport a frame starts loading: about a screen ahead of the reader. */
-const LOAD_AHEAD = "800px 0px";
+/** A short lead-in loads the app when its window is about to enter view. */
+const LOAD_AHEAD = "200px 0px";
 /** How long a frame may take to say it is ready before it is shown anyway. */
 const READY_FALLBACK_MS = 8000;
 

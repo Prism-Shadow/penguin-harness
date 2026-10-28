@@ -91,6 +91,11 @@ void document.fonts.ready.then(() => {
 });
 
 if (params.autoplay === "evolution") {
-  const dispose = installEvolutionAutoplay(window, rsiPrompt(params.lang), store.evolutionPlayback);
+  const dispose = installEvolutionAutoplay(
+    window,
+    rsiPrompt(params.lang),
+    store.evolutionPlayback,
+    () => store.clearEvolutionRounds(),
+  );
   import.meta.hot?.dispose(dispose);
 }

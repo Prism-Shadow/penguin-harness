@@ -13,6 +13,8 @@
  */
 import { useEffect, useState } from "react";
 import { S } from "../lib/strings";
+import { useVisibleActivity } from "../lib/visible-activity";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { Section } from "../components/section";
 import medicalShot from "../assets/case-medical-qc.webp";
 import lineShot from "../assets/case-line-inspection.webp";
@@ -24,17 +26,19 @@ export function Scenarios() {
   const items = S.scenarios.items;
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
+  const { ref, active: visible } = useVisibleActivity<HTMLDivElement>();
+  const reduced = usePrefersReducedMotion();
 
   useEffect(() => {
-    if (paused || items.length < 2) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (paused || !visible || reduced || items.length < 2) return;
     const timer = setInterval(() => setActive((i) => (i + 1) % items.length), ROTATE_MS);
     return () => clearInterval(timer);
-  }, [paused, items.length]);
+  }, [paused, visible, reduced, items.length]);
 
   return (
     <Section id="scenarios" title={S.scenarios.title} subtitle={S.scenarios.subtitle}>
       <div
+        ref={ref}
         className="mx-auto max-w-5xl"
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}

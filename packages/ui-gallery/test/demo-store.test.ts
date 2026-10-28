@@ -9,6 +9,7 @@
  * - Given a running walkthrough, abort cancels every later step; retry completes the round
  *   without echoing another prompt.
  * - Given paused playback, the evolution stream waits, then continues the same turn on resume.
+ * - Given repeated rounds, completed automatic Sessions are reclaimed while manual and running Sessions stay.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
@@ -459,6 +460,30 @@ describe("a sent message", () => {
 describe("the evolution walkthrough", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("reclaims completed rounds without deleting manual or unfinished Sessions", () => {
+    vi.useFakeTimers();
+    const store = resetStore({ lang: "en", signedIn: true, now: NOW, evolutionDemo: true });
+    const manual = store.createSession(IDS.agents.general, {});
+    const completed = store.createSession(IDS.agents.general, {});
+    store.startTask(completed.sessionId, rsiPrompt("en"));
+    vi.advanceTimersByTime(30_000);
+    const running = store.createSession(IDS.agents.general, {});
+    store.startTask(running.sessionId, rsiPrompt("en"));
+    const sub = collector();
+    store.userChannel.subscribe(sub);
+    store.clearEvolutionRounds();
+    expect(store.session(completed.sessionId)).toBeUndefined();
+    expect(store.transcript(completed.sessionId)).toBeUndefined();
+    expect(store.session(manual.sessionId)).toBeDefined();
+    expect(store.session(running.sessionId)?.status).toBe("running");
+    expect(sub.events).toContainEqual({
+      type: "session_deleted",
+      sessionId: completed.sessionId,
+      projectId: completed.projectId,
+    });
+    store.dispose();
   });
 
   it.each(["en", "zh"] as const)(

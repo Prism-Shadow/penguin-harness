@@ -22,6 +22,7 @@ import {
 } from "../components/icons";
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
 import { LiveAppFrame } from "../components/live-app-frame";
+import { useVisibleActivity } from "../lib/visible-activity";
 
 /**
  * An entry of a text catalogue row: plain text on the page, no box of its own — the row is a
@@ -91,11 +92,16 @@ function HeroWord({ text, variant }: { text: string; variant: "growth" | "reach"
 
 export function Hero() {
   const { locale } = useSiteLocale();
+  const { ref: motion, active } = useVisibleActivity<HTMLParagraphElement>();
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
       <div className="relative mx-auto max-w-6xl px-4 pt-12 pb-12 text-center sm:px-6 sm:pt-24 sm:pb-14">
-        <h1 className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5">
+        <h1
+          id="home-top"
+          tabIndex={-1}
+          className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5"
+        >
           <img
             src={`${import.meta.env.BASE_URL}penguin-logo.svg`}
             alt=""
@@ -107,7 +113,8 @@ export function Hero() {
         </h1>
 
         <p
-          className="hero-positioning anim-rise mx-auto mt-6 font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word]"
+          ref={motion}
+          className={`hero-positioning anim-rise mx-auto mt-6 font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word] ${active ? "" : "hero-motion-paused"}`}
           style={{ animationDelay: "70ms" }}
         >
           <span className="hero-positioning-clause">
@@ -155,15 +162,15 @@ export function Hero() {
         </div>
 
         <dl
-          className="anim-rise mx-auto mt-10 grid max-w-5xl gap-y-5 sm:mt-12 sm:grid-cols-3 sm:gap-x-6"
+          className="anim-rise mx-auto mt-10 grid max-w-5xl grid-cols-3 gap-x-3 sm:mt-12 sm:gap-x-6"
           style={{ animationDelay: "250ms" }}
         >
           {S.hero.stats.map((stat) => (
             <div key={stat.value} className="min-w-0">
-              <dt className="mx-auto mt-1 max-w-64 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              <dt className="mx-auto mt-1 min-h-8 max-w-64 text-xs leading-4 text-gray-500 sm:min-h-0 sm:leading-5 dark:text-gray-400">
                 {stat.label}
               </dt>
-              <dd className="hero-stat-value mx-auto mt-0.5 text-xl leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-[22px] dark:text-gray-100">
+              <dd className="hero-stat-value mx-auto mt-0.5 text-base leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-[22px] dark:text-gray-100">
                 {stat.value}
               </dd>
             </div>

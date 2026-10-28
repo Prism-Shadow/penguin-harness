@@ -261,6 +261,16 @@ export class DemoStore {
     return true;
   }
 
+  /** Discard only the completed automatic round before the walkthrough starts its next one. */
+  clearEvolutionRounds(): void {
+    for (const [sessionId, live] of this.live) {
+      const row = this.session(sessionId);
+      if (!live.evolution || row?.status !== "idle") continue;
+      this.deleteSession(sessionId);
+      this.userChannel.event({ type: "session_deleted", sessionId, projectId: row.projectId });
+    }
+  }
+
   patchSession(sessionId: string, patch: Partial<SessionInfo>): SessionInfo | undefined {
     const row = this.session(sessionId);
     if (!row) return undefined;

@@ -7,6 +7,8 @@
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { S } from "../lib/strings";
+import { useVisibleActivity } from "../lib/visible-activity";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { Section } from "../components/section";
 
 /** Shared build cycle (s): both sides reset together so the pace gap is obvious. */
@@ -97,18 +99,24 @@ function ComparePanel({
 
 export function Compare() {
   const [cycle, setCycle] = useState(0);
+  const { ref, active } = useVisibleActivity<HTMLDivElement>();
+  const reduced = usePrefersReducedMotion();
   const c = S.compare;
 
   // Remount both builds together: every block begins hidden, then lands once at its delay.
   // One shared reset keeps the two paces side by side.
   useEffect(() => {
+    if (!active || reduced) return;
     const timer = window.setInterval(() => setCycle((value) => value + 1), CYCLE_S * 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [active, reduced]);
 
   return (
     <Section id="compare" title={c.title} subtitle={c.subtitle}>
-      <div className="mx-auto grid max-w-4xl gap-6 sm:grid-cols-2">
+      <div
+        ref={ref}
+        className={`mx-auto grid max-w-4xl gap-6 sm:grid-cols-2 ${active && !reduced ? "" : "content-motion-paused"}`}
+      >
         <ComparePanel {...c.library}>
           <SlowBuild key={`slow-${cycle}`} />
         </ComparePanel>

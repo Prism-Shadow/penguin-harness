@@ -10,6 +10,7 @@ export * from "./components/site/site-route-scroll";
 export * from "./components/site/site-footer";
 export * from "./components/site/site-pill";
 export * from "./components/site/site-playback";
+export * from "./components/site/site-scroll-top";
 export * from "./components/site/site-copy";
 export * from "./components/site/site-code";
 export * from "./components/site/site-highlight";

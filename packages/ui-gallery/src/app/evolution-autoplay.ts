@@ -1,4 +1,4 @@
-/** Sends one visible evolution walkthrough, then opens its evaluation curve through the app. */
+/** A visible, pausable loop: send the prompt, show its evaluation curve, then start a fresh round. */
 import { S } from "../../../web/src/lib/strings";
 import { IDS } from "./mock/ids";
 import type { EvolutionClock } from "./evolution-clock";
@@ -8,6 +8,7 @@ export function installEvolutionAutoplay(
   win: Window & typeof globalThis,
   prompt: string,
   playback: EvolutionClock,
+  clearPreviousRound: () => void,
 ): () => void {
   if (win.matchMedia("(prefers-reduced-motion: reduce)").matches) return () => undefined;
   const doc = win.document;
@@ -18,8 +19,9 @@ export function installEvolutionAutoplay(
   )!.set!;
   let visible = false;
   let stopped = false;
+  let paused = false;
   let sent = false;
-  let destination: "result" | "center" | "detail" | "chart" = "result";
+  let destination: "result" | "center" | "detail" | "chart" | "replay" | "restart" = "result";
   let index = 0;
   let timer: (() => void) | undefined;
 
@@ -32,7 +34,7 @@ export function installEvolutionAutoplay(
     cancelTimer();
     visibility.disconnect();
     changes.disconnect();
-    doc.removeEventListener("visibilitychange", queue);
+    doc.removeEventListener("visibilitychange", sync);
     doc.removeEventListener("pointerdown", takeOver, true);
     doc.removeEventListener("keydown", takeOver, true);
     doc.removeEventListener("input", takeOver, true);
@@ -44,8 +46,8 @@ export function installEvolutionAutoplay(
   const control = (event: MessageEvent) => {
     if (event.source !== win.parent || event.origin !== win.location.origin) return;
     if (event.data?.type !== EVOLUTION_CONTROL || typeof event.data.paused !== "boolean") return;
-    playback.setPaused(event.data.paused);
-    queue();
+    paused = event.data.paused;
+    sync();
     win.parent.postMessage(
       { type: EVOLUTION_STATE, state: event.data.paused ? "paused" : "playing" },
       win.location.origin,
@@ -135,20 +137,51 @@ export function installEvolutionAutoplay(
         destination = "chart";
         card.click();
       }
-    } else {
+    } else if (destination === "chart") {
       const chart = doc.querySelector("main svg.ui-chart");
       if (chart) {
         revealChart(chart);
-        stop();
+        destination = "replay";
+        timer = playback.schedule(advance, 4000);
       }
+    } else if (destination === "replay") {
+      const button = [...doc.querySelectorAll<HTMLButtonElement>("button")].find(
+        (candidate) =>
+          candidate.getClientRects().length > 0 &&
+          (candidate.textContent?.trim() === S.chat.newSessionMenu ||
+            candidate.getAttribute("aria-label")?.startsWith(S.chat.newSessionMenu)),
+      );
+      if (button) {
+        destination = "restart";
+        button.click();
+        timer = playback.schedule(advance, 200);
+      } else {
+        [...doc.querySelectorAll<HTMLButtonElement>("header button")]
+          .find((candidate) => candidate.getClientRects().length > 0)
+          ?.click();
+        timer = playback.schedule(advance, 400);
+      }
+    } else {
+      const input = doc.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea');
+      if (!input || input.disabled) return;
+      if (input.value !== "") {
+        stop();
+        return;
+      }
+      clearPreviousRound();
+      index = 0;
+      sent = false;
+      destination = "result";
+      queue();
     }
   };
+  function sync() {
+    playback.setPaused(paused || !visible || doc.hidden);
+    queue();
+  }
   function queue() {
     if (stopped) return;
-    if (!visible || doc.hidden) {
-      cancelTimer();
-      return;
-    }
+    if (!visible || doc.hidden) return;
     if (sent) {
       if (timer === undefined) timer = playback.schedule(advance, 80);
       return;
@@ -160,12 +193,13 @@ export function installEvolutionAutoplay(
   const visibility = new win.IntersectionObserver(
     ([entry]) => {
       visible = entry?.isIntersecting === true && entry.intersectionRatio >= 0.25;
-      queue();
+      sync();
     },
     { threshold: [0, 0.25] },
   );
+  playback.setPaused(true);
   visibility.observe(doc.documentElement);
-  doc.addEventListener("visibilitychange", queue);
+  doc.addEventListener("visibilitychange", sync);
   doc.addEventListener("pointerdown", takeOver, true);
   doc.addEventListener("keydown", takeOver, true);
   doc.addEventListener("input", takeOver, true);

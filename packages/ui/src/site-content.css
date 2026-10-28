@@ -66,6 +66,46 @@
 }
 
 @layer components {
+  .site-scroll-top-marker {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+  }
+  .site-scroll-top {
+    position: fixed;
+    right: 20px;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    z-index: 30;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    border: 1px solid var(--site-gray-200);
+    border-radius: 8px;
+    background: white;
+    color: var(--site-gray-600);
+    transition: color 150ms var(--site-ease);
+  }
+  .site-scroll-top:hover {
+    color: var(--site-gray-950);
+  }
+  .site-scroll-top svg {
+    width: 20px;
+    height: 20px;
+  }
+  :root.dark .site-scroll-top {
+    border-color: var(--site-gray-700);
+    background: var(--site-gray-900);
+    color: var(--site-gray-300);
+  }
+  :root.dark .site-scroll-top:hover {
+    border-color: var(--site-gray-600);
+    color: var(--site-gray-100);
+  }
+
   .site-playback-button {
     display: inline-flex;
     flex-shrink: 0;

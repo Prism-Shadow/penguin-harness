@@ -8,6 +8,7 @@ import type { Strings } from "./strings";
 
 export const en: Strings = {
   siteName: "PenguinHarness",
+  backToTop: "Back to top",
 
   announcement: {
     label: "Announcements",

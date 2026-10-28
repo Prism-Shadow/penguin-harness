@@ -12,8 +12,10 @@
  * reading. Reduced motion: the flow dots stay off and every line is drawn finished. Under the
  * panel, the recorded demo of a decision agent's round, with what its test runs cost.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { S } from "../lib/strings";
+import { useVisibleActivity } from "../lib/visible-activity";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { Section } from "../components/section";
 import { DemoVideo } from "../components/demo-video";
 import { demoVideoUrl } from "../lib/links";
@@ -27,12 +29,6 @@ const OPTIMIZER_SKILL = "agent-optimization";
 const EVALUATOR_SKILL = "agent-evaluation";
 const VERSION_OLD = "vN";
 const VERSION_NEW = "vN+1";
-
-const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-
-function prefersReducedMotion(): boolean {
-  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
-}
 
 type NodeKind = "accent" | "target" | "neutral";
 
@@ -205,6 +201,8 @@ function TrendChart({
   const axis = "stroke-gray-200 dark:stroke-gray-800";
   const tickText = "fill-gray-400 text-[8.5px] tabular-nums dark:fill-gray-500";
 
+  const { ref, active } = useVisibleActivity<HTMLElement>();
+  const reduced = usePrefersReducedMotion();
   const fadeRef = useRef<SVGGElement>(null);
   const pathRef = useRef<SVGPathElement>(null);
   const headRef = useRef<SVGGElement>(null);
@@ -232,7 +230,7 @@ function TrendChart({
       fade.style.opacity = String(opacity);
     };
 
-    if (prefersReducedMotion()) {
+    if (reduced || !active) {
       apply(1, 1);
       return;
     }
@@ -249,10 +247,10 @@ function TrendChart({
     return () => cancelAnimationFrame(raf);
     // px/py are pure functions of the props below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points, phase, format]);
+  }, [points, phase, format, active, reduced]);
 
   return (
-    <figure className="min-w-0">
+    <figure ref={ref} className="min-w-0">
       <figcaption className="flex items-baseline justify-between gap-3">
         <span className="text-sm font-semibold tracking-tight">{label}</span>
         <span className="text-xs text-gray-500 dark:text-gray-400">{hint}</span>
@@ -429,9 +427,11 @@ function MobileEvolutionFlow() {
 
 function LoopDiagram() {
   const c = S.selfImprove;
-  const [reduced] = useState(prefersReducedMotion);
+  const reduced = usePrefersReducedMotion();
+  const { ref, active } = useVisibleActivity<SVGSVGElement>();
   return (
     <svg
+      ref={ref}
       viewBox="30 8 660 380"
       role="img"
       aria-label={c.diagramLabel}
@@ -483,7 +483,7 @@ function LoopDiagram() {
         markerEnd="url(#si-arrow-accent)"
       />
 
-      {!reduced && (
+      {active && !reduced && (
         <>
           <FlowDot path={EDGE_SPAWN} dur="2.4s" begin="0s" />
           <FlowDot path={EDGE_FEEDBACK} dur="2.4s" begin="1.2s" />

@@ -1,7 +1,7 @@
 /**
  * Given an autoplay frame, its window-bar button pauses typing and resumes the existing draft.
  * Given a running evolution, the button pauses emitted steps and navigation, then resumes to the curve.
- * Given reduced motion, ordinary frames, or a finished walkthrough, no autoplay control is offered.
+ * Given reduced motion, or ordinary frames, no autoplay control is offered.
  * Given the AMSP player, the same control pauses and continues its streamed events.
  */
 import { test, expect } from "@playwright/test";
@@ -43,7 +43,7 @@ test("pauses typing and resumes the same prompt on a phone", async ({ page }) =>
     "true",
   );
   const draft = await frame.locator(composer).inputValue();
-  await page.clock.runFor(30_000);
+  await page.clock.fastForward(30_000);
   await expect(frame.locator(composer)).toHaveValue(draft);
   await expect(frame.getByRole("table")).toHaveCount(0);
   await page.getByRole("button", { name: "播放", exact: true }).click();
@@ -57,14 +57,14 @@ test("pauses typing and resumes the same prompt on a phone", async ({ page }) =>
   await expect(frame.getByRole("button", { name: "停止", exact: true }).first()).toBeVisible();
 });
 
-test("pauses the running stream and resumes all the way to the curve", async ({ page }) => {
+test("pauses the stream, pauses between loops and resumes the next round", async ({ page }) => {
   const { frame } = await openHero(page, "en");
   await expect(frame.locator(composer)).not.toHaveValue("");
   await page.clock.runFor(6500);
   await expect(frame.getByRole("button", { name: "Stop", exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   const before = await frame.locator("main .md-body").allTextContents();
-  await page.clock.runFor(30_000);
+  await page.clock.fastForward(30_000);
   await expect(frame.getByRole("heading", { name: "Docs QA v1", exact: true })).toHaveCount(0);
   await expect(frame.getByRole("button", { name: "Stop", exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
@@ -73,21 +73,29 @@ test("pauses the running stream and resumes all the way to the curve", async ({ 
   await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
   for (
     let step = 0;
-    step < 6 &&
+    step < 16 &&
     (await frame.getByRole("heading", { name: "Docs QA v1", exact: true }).count()) === 0;
     step++
   )
-    await page.clock.runFor(5000);
+    await page.clock.runFor(2000);
   await expect(frame.getByRole("heading", { name: "Docs QA v1", exact: true })).toBeVisible();
   await expect(frame.locator('main svg.ui-chart [data-part="series"]').first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Pause", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await page.clock.fastForward(30_000);
+  await expect(frame.getByRole("heading", { name: "Docs QA v1", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+  for (let step = 0; step < 10 && (await frame.locator(composer).count()) === 0; step++)
+    await page.clock.runFor(1000);
+  await expect(frame.locator(composer)).toBeVisible();
 });
 
 test("does not offer autoplay controls under reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const { frame } = await openHero(page);
   await expect(page.getByRole("button", { name: "暂停", exact: true })).toHaveCount(0);
-  await page.clock.runFor(30_000);
+  await page.clock.fastForward(30_000);
   await expect(frame.locator(composer)).toHaveValue("");
 });
 
@@ -101,7 +109,7 @@ test("pauses and resumes the AMSP stream with the shared control", async ({ page
   await pause.click();
   const stream = page.locator('[role="tabpanel"] ol:visible');
   const before = await stream.allTextContents();
-  await page.clock.runFor(15_000);
+  await page.clock.fastForward(15_000);
   expect(await stream.allTextContents()).toEqual(before);
   await page.getByRole("button", { name: "播放", exact: true }).click();
   await page.clock.runFor(1200);

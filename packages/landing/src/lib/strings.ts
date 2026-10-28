@@ -8,6 +8,7 @@
  */
 export const zh = {
   siteName: "PenguinHarness",
+  backToTop: "回到顶部",
 
   announcement: {
     label: "公告",

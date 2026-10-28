@@ -131,6 +131,13 @@
   stroke-width: 1.5;
   transform: translateY(-50%);
 }
+.hero-motion-paused .hero-word-ink,
+.hero-motion-paused .hero-word-flight {
+  animation-play-state: paused;
+}
+.content-motion-paused [class] {
+  animation-play-state: paused;
+}
 
 @keyframes hero-ink-flow {
   0%,

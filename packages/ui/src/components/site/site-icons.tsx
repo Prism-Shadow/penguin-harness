@@ -127,6 +127,14 @@ export function ArrowRightIcon(props: IconProps) {
   );
 }
 
+export function ArrowUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.arrowUp} />
+    </Icon>
+  );
+}
+
 export function AirplaneIcon(props: IconProps) {
   return (
     <Icon {...props}>
