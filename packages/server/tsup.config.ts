@@ -12,7 +12,9 @@ export default defineConfig({
   // reset-admin-password are side-effect-free for CLI pre-checks and the offline
   // admin-password rescue); "./secret-file" is the shared symlink-safe writer;
   // "./hmr/manifest" is the host-less harness.json reader the CLI's thin loader
-  // resolves the current cli bundle through, and "./version-report" is the shared
+  // resolves the current cli bundle through, "./cli-resolution" is the shared answer to
+  // "which entry runs this command" that loader and the command shim both act on, and
+  // "./version-report" is the shared
   // assembler `penguin version` and GET /api/version both render (core plus that
   // same reader — no server). There is deliberately no
   // "./platform" subpath: src/hmr/entry.ts (this package's platform artifact
@@ -37,6 +39,7 @@ export default defineConfig({
     "auth-token": "src/auth-token.ts",
     "secret-file": "src/secret-file.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
+    "cli-resolution": "src/cli-resolution.ts",
     "version-report": "src/version-report.ts",
     // "./plugin": the surface plugin PACKAGES compile against. Plugins live outside
     // this bundle entirely — they are configuration resolved from the installation,

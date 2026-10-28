@@ -23,11 +23,13 @@
  * shell happens to resolve — under the desktop app that interpreter is the Electron binary,
  * which runs a script only with `ELECTRON_RUN_AS_NODE` set; and the default above.
  *
- * Which CLI that is, is decided once per boot by {@link resolveCliLaunch}: an explicit
- * `PENGUIN_CLI_ENTRY` (what `penguin server|web` and the desktop shell pass for themselves),
- * else, for a server running from a checkout, that checkout's CLI — from source while the
- * server itself runs from source, so `pnpm dev` never offers a CLI older than the code it
- * serves.
+ * Which CLI that is, is decided once per boot: {@link resolveCliLaunch} names the installed
+ * CLI — an explicit `PENGUIN_CLI_ENTRY` (what `penguin server|web` and the desktop shell
+ * pass for themselves), else, for a server running from a checkout, that checkout's CLI,
+ * from source while the server itself runs from source — and resolution
+ * (@prismshadow/penguin-server/cli-resolution) decides between that entry and the loader
+ * of a pushed CLI, which is the entry that runs the same code this server runs. See
+ * {@link shimFromResolution}.
  *
  * Rewritten at every boot, so a moved checkout is picked up by the next start; while a
  * server is running, a dist that moved out from under it has already broken the server
@@ -41,6 +43,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import type { CliFaultName, CliReason, CliResolution } from "../cli-resolution.js";
 
 /** `<root>/bin`, the directory the shim is written to and the Session puts on PATH. */
 export function cliShimDir(root: string): string {
@@ -170,6 +173,64 @@ export function resolveCliLaunch(opts: ResolveCliLaunchOptions): CliLaunch {
     checkout,
     origin: null,
     unavailable: `${why}. Run \`pnpm --filter @prismshadow/penguin-cli build\`, then restart the server.`,
+  };
+}
+
+/** The CLI this installation offers, before resolution has a say. */
+export interface InstalledCli {
+  /** The entry this server was told to offer, or null when it has none. */
+  entry: string | null;
+  /** Interpreter options before it (see CliLaunch.execArgs). */
+  execArgs: readonly string[];
+  /** Why a checkout's own CLI cannot run; null otherwise. */
+  unavailable: string | null;
+}
+
+/** What the shim runs, and the name of resolution's answer it ran under. */
+export interface ShimLaunchAnswer {
+  entry: string | null;
+  execArgs: string[];
+  unavailable: string | null;
+  /** The answer's name: a reason, a fault, or `no-entry` when there was nothing to ask about. */
+  answer: CliReason | CliFaultName | "no-entry";
+}
+
+/**
+ * The shim's entry, from resolution's answer.
+ *
+ * The shim carries the answer rather than deciding for itself: the loader a root with a
+ * pushed CLI resolves to, the installed CLI for a root with no pushed one, and the
+ * installed CLI with the fault recorded when resolution faults — a server that starts on
+ * its installed CLI beats one that does not, and that fallback is now a named decision
+ * instead of an accident. A loader is a plain file, so only the installed entry keeps the
+ * interpreter options a source run needs.
+ */
+export function shimFromResolution(
+  installed: InstalledCli,
+  resolved: CliResolution | null,
+): ShimLaunchAnswer {
+  if (installed.entry === null || resolved === null) {
+    return {
+      entry: installed.entry,
+      execArgs: [...installed.execArgs],
+      unavailable: installed.unavailable,
+      answer: "no-entry",
+    };
+  }
+  if (resolved.kind === "fault") {
+    return {
+      entry: installed.entry,
+      execArgs: [...installed.execArgs],
+      unavailable: installed.unavailable,
+      answer: resolved.fault,
+    };
+  }
+  const same = resolved.entry === installed.entry;
+  return {
+    entry: resolved.entry,
+    execArgs: same ? [...installed.execArgs] : [],
+    unavailable: null,
+    answer: resolved.reason,
   };
 }
 

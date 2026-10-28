@@ -13,6 +13,9 @@
     "penguin": "./dist/penguin.js",
     "penguin-hmr": "./dist/penguin-hmr.js"
   },
+  "penguin": {
+    "pushedCliLoader": "./dist/penguin-hmr.js"
+  },
   "engines": {
     "node": ">=24"
   },
