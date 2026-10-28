@@ -9,6 +9,7 @@ export * from "./components/site/site-locale";
 export * from "./components/site/site-route-scroll";
 export * from "./components/site/site-footer";
 export * from "./components/site/site-pill";
+export * from "./components/site/site-playback";
 export * from "./components/site/site-copy";
 export * from "./components/site/site-code";
 export * from "./components/site/site-highlight";

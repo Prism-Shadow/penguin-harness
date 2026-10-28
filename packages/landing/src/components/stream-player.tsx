@@ -24,7 +24,12 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
-import { highlightSiteCode, SiteCodeBlock, SitePill } from "@prismshadow/penguin-ui/site";
+import {
+  highlightSiteCode,
+  SiteCodeBlock,
+  SitePill,
+  SitePlaybackButton,
+} from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { SCENARIOS } from "../lib/amsp-demo";
 import { AMSP_DEMO_AGENT, playerCode } from "../lib/amsp-quickstart";
@@ -139,15 +144,12 @@ export function StreamPlayer() {
             ))}
           </div>
           {!still && (
-            <button
-              type="button"
-              aria-pressed={paused}
-              onClick={() => setPaused((was) => !was)}
-              className="mb-1 ml-auto inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600 transition-colors hover:text-gray-950 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
-            >
-              {paused ? <PlayGlyph /> : <PauseGlyph />}
-              <span>{paused ? P.play : P.pause}</span>
-            </button>
+            <SitePlaybackButton
+              paused={paused}
+              onPausedChange={setPaused}
+              labels={P}
+              className="mb-1 ml-auto"
+            />
           )}
         </div>
 
@@ -427,22 +429,5 @@ function UsageBars({ usage }: { usage: TokenCounts }) {
         );
       })}
     </div>
-  );
-}
-
-function PauseGlyph(): ReactNode {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
-      <rect x="14" y="4" width="4" height="16" rx="1" />
-      <rect x="6" y="4" width="4" height="16" rx="1" />
-    </svg>
-  );
-}
-
-function PlayGlyph(): ReactNode {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
-      <path d="M6 3l14 9-14 9V3Z" />
-    </svg>
   );
 }

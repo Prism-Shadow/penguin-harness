@@ -66,6 +66,36 @@
 }
 
 @layer components {
+  .site-playback-button {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border: 1px solid var(--site-gray-200);
+    border-radius: 6px;
+    color: var(--site-gray-600);
+    font-size: var(--site-text-xs);
+    font-weight: 500;
+    line-height: var(--site-text-xs-lh);
+    white-space: nowrap;
+    transition: color 150ms var(--site-ease);
+  }
+  .site-playback-button svg {
+    width: 12px;
+    height: 12px;
+  }
+  .site-playback-button:hover {
+    color: var(--site-gray-950);
+  }
+  :root.dark .site-playback-button {
+    border-color: var(--site-gray-800);
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-playback-button:hover {
+    color: var(--site-gray-100);
+  }
+
   /* ---------- Group labels: the TOC's heading and the docs sidebar's sections ---------- */
   .site-eyebrow.ui-eyebrow {
     font-family: inherit;

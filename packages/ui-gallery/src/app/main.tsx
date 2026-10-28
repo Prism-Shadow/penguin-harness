@@ -45,7 +45,7 @@ const isSettingsPage = (value: string): value is SettingsSectionKey =>
   (SETTINGS_PAGES as readonly string[]).includes(value);
 
 const params = parseFrameParams(window.location.search);
-getStore({
+const store = getStore({
   lang: params.lang,
   signedIn: !params.signedOut,
   notices: params.notices === true,
@@ -91,6 +91,6 @@ void document.fonts.ready.then(() => {
 });
 
 if (params.autoplay === "evolution") {
-  const dispose = installEvolutionAutoplay(window, rsiPrompt(params.lang));
+  const dispose = installEvolutionAutoplay(window, rsiPrompt(params.lang), store.evolutionPlayback);
   import.meta.hot?.dispose(dispose);
 }

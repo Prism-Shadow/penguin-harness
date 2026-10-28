@@ -8,6 +8,7 @@
  *   round, rejects a duplicate start, carries its live answer on reconnect and shows the gain.
  * - Given a running walkthrough, abort cancels every later step; retry completes the round
  *   without echoing another prompt.
+ * - Given paused playback, the evolution stream waits, then continues the same turn on resume.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
@@ -506,6 +507,32 @@ describe("the evolution walkthrough", () => {
     },
   );
 
+  it("holds the evolution stream and resumes the same turn", () => {
+    vi.useFakeTimers();
+    const store = resetStore({ lang: "en", signedIn: true, now: NOW, evolutionDemo: true });
+    const row = store.createSession(IDS.agents.general, {});
+    const sub = collector();
+    store.channel(row.sessionId)!.subscribe(sub);
+    store.evolutionPlayback.setPaused(true);
+    store.startTask(row.sessionId, rsiPrompt("en"));
+    const start = sub.messages.length;
+    vi.advanceTimersByTime(30_000);
+    expect(sub.messages).toHaveLength(start);
+    store.evolutionPlayback.setPaused(false);
+    vi.advanceTimersByTime(6000);
+    expect(sub.messages.length).toBeGreaterThan(start);
+    store.evolutionPlayback.setPaused(true);
+    const middle = sub.messages.length;
+    vi.advanceTimersByTime(30_000);
+    expect(sub.messages).toHaveLength(middle);
+    expect(store.session(row.sessionId)?.status).toBe("running");
+    store.evolutionPlayback.setPaused(false);
+    vi.advanceTimersByTime(30_000);
+    expect(store.session(row.sessionId)?.status).toBe("idle");
+    expect(textDeltas(sub.messages).join("")).toContain(String(rsiCandidateEvaluation().score));
+    store.dispose();
+  });
+
   it("stops future evolution steps on abort and retries without echoing a second prompt", () => {
     vi.useFakeTimers();
     const store = resetStore({ lang: "en", signedIn: true, now: NOW, evolutionDemo: true });
@@ -514,7 +541,9 @@ describe("the evolution walkthrough", () => {
     store.channel(row.sessionId)!.subscribe(sub);
     store.startTask(row.sessionId, rsiPrompt("en"));
     vi.advanceTimersByTime(2000);
+    store.evolutionPlayback.setPaused(true);
     store.abort(row.sessionId);
+    store.evolutionPlayback.setPaused(false);
     const count = sub.messages.length;
     vi.advanceTimersByTime(30_000);
     expect(sub.messages).toHaveLength(count);

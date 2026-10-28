@@ -135,6 +135,22 @@ export function AirplaneIcon(props: IconProps) {
   );
 }
 
+export function PauseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.pause} />
+    </Icon>
+  );
+}
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.play} />
+    </Icon>
+  );
+}
+
 export function TerminalIcon(props: IconProps) {
   return (
     <Icon {...props}>

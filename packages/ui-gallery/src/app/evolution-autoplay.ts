@@ -1,10 +1,13 @@
 /** Sends one visible evolution walkthrough, then opens its evaluation curve through the app. */
 import { S } from "../../../web/src/lib/strings";
 import { IDS } from "./mock/ids";
+import type { EvolutionClock } from "./evolution-clock";
+import { EVOLUTION_CONTROL, EVOLUTION_STATE } from "./evolution-messages";
 
 export function installEvolutionAutoplay(
   win: Window & typeof globalThis,
   prompt: string,
+  playback: EvolutionClock,
 ): () => void {
   if (win.matchMedia("(prefers-reduced-motion: reduce)").matches) return () => undefined;
   const doc = win.document;
@@ -18,10 +21,10 @@ export function installEvolutionAutoplay(
   let sent = false;
   let destination: "result" | "center" | "detail" | "chart" = "result";
   let index = 0;
-  let timer: number | undefined;
+  let timer: (() => void) | undefined;
 
   const cancelTimer = () => {
-    win.clearTimeout(timer);
+    timer?.();
     timer = undefined;
   };
   const stop = () => {
@@ -34,6 +37,19 @@ export function installEvolutionAutoplay(
     doc.removeEventListener("keydown", takeOver, true);
     doc.removeEventListener("input", takeOver, true);
     win.removeEventListener("pagehide", stop);
+    win.removeEventListener("message", control);
+    playback.setPaused(false);
+    win.parent.postMessage({ type: EVOLUTION_STATE, state: "finished" }, win.location.origin);
+  };
+  const control = (event: MessageEvent) => {
+    if (event.source !== win.parent || event.origin !== win.location.origin) return;
+    if (event.data?.type !== EVOLUTION_CONTROL || typeof event.data.paused !== "boolean") return;
+    playback.setPaused(event.data.paused);
+    queue();
+    win.parent.postMessage(
+      { type: EVOLUTION_STATE, state: event.data.paused ? "paused" : "playing" },
+      win.location.origin,
+    );
   };
   const takeOver = (event: Event) => {
     if (event.isTrusted) stop();
@@ -51,14 +67,14 @@ export function installEvolutionAutoplay(
       index += 1;
       setValue.call(input, letters.slice(0, index).join(""));
       input.dispatchEvent(new win.Event("input", { bubbles: true }));
-      timer = win.setTimeout(tick, index === letters.length ? 500 : 1700 / letters.length);
+      timer = playback.schedule(tick, index === letters.length ? 500 : 1700 / letters.length);
       return;
     }
     const button = [...input.closest('[data-slot="composer"]')!.querySelectorAll("button")].find(
       (candidate) => candidate.getAttribute("aria-label") === S.chat.send,
     );
     if (!button || button.disabled) {
-      timer = win.setTimeout(tick, 100);
+      timer = playback.schedule(tick, 100);
       return;
     }
     sent = true;
@@ -94,7 +110,7 @@ export function installEvolutionAutoplay(
         // The app opens its Agents panel during parallel evaluation; return the space to the result.
         doc.querySelector<HTMLButtonElement>('[data-testid="dock-tab-close"]')?.click();
         destination = "center";
-        timer = win.setTimeout(advance, 1300);
+        timer = playback.schedule(advance, 1300);
       }
     } else if (destination === "center") {
       const link = [...doc.querySelectorAll<HTMLAnchorElement>('a[href="/benchmark"]')].find(
@@ -103,13 +119,13 @@ export function installEvolutionAutoplay(
       if (link) {
         destination = "detail";
         link.click();
-        timer = win.setTimeout(advance, 700);
+        timer = playback.schedule(advance, 700);
       } else {
         // On a phone, open the real navigation drawer before choosing Evaluation Center.
         [...doc.querySelectorAll<HTMLButtonElement>("header button")]
           .find((button) => button.getClientRects().length > 0)
           ?.click();
-        timer = win.setTimeout(advance, 400);
+        timer = playback.schedule(advance, 400);
       }
     } else if (destination === "detail") {
       const card = [...doc.querySelectorAll<HTMLButtonElement>("main button")].find((candidate) =>
@@ -134,10 +150,10 @@ export function installEvolutionAutoplay(
       return;
     }
     if (sent) {
-      if (timer === undefined) timer = win.setTimeout(advance, 80);
+      if (timer === undefined) timer = playback.schedule(advance, 80);
       return;
     }
-    if (timer === undefined) timer = win.setTimeout(tick, index === 0 ? 650 : 50);
+    if (timer === undefined) timer = playback.schedule(tick, index === 0 ? 650 : 50);
   }
   const changes = new win.MutationObserver(queue);
   changes.observe(doc.documentElement, { childList: true, subtree: true });
@@ -154,5 +170,7 @@ export function installEvolutionAutoplay(
   doc.addEventListener("keydown", takeOver, true);
   doc.addEventListener("input", takeOver, true);
   win.addEventListener("pagehide", stop, { once: true });
+  win.addEventListener("message", control);
+  win.parent.postMessage({ type: EVOLUTION_STATE, state: "ready" }, win.location.origin);
   return stop;
 }

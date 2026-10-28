@@ -24,6 +24,7 @@ import {
 } from "./rsi-transcript";
 import { streamScript } from "./stream-script";
 import { evolutionReply } from "./evolution-reply";
+import { EvolutionClock } from "../evolution-clock";
 import {
   abortEvent,
   approvalDecision,
@@ -104,7 +105,7 @@ interface Live {
   transcript: Transcript;
   channel: Channel;
   /** Timers of a running script, cleared on abort or dispose. */
-  timers: number[];
+  timers: (() => void)[];
   /** The history length the looping reply rewinds to (the streaming Session only). */
   loopFrom?: number;
   /** A stop left the turn held: the next message carries it, or a Retry resends it alone. */
@@ -118,6 +119,7 @@ export class DemoStore {
   /** Signed in as the fixtures' admin, or nobody. */
   signedIn: boolean;
   readonly userChannel = new Channel();
+  readonly evolutionPlayback = new EvolutionClock();
   private readonly live = new Map<string, Live>();
   private created = 0;
 
@@ -307,13 +309,18 @@ export class DemoStore {
   }
 
   private schedule(live: Live, at: number, run: () => void): void {
-    live.timers.push(setTimeout(run, at) as unknown as number);
+    if (live.evolution) {
+      live.timers.push(this.evolutionPlayback.schedule(run, at));
+    } else {
+      const timer = setTimeout(run, at);
+      live.timers.push(() => clearTimeout(timer));
+    }
   }
 
   private stopScript(sessionId: string): void {
     const live = this.live.get(sessionId);
     if (!live) return;
-    for (const timer of live.timers) clearTimeout(timer);
+    for (const cancel of live.timers) cancel();
     live.timers = [];
   }
 
@@ -538,6 +545,7 @@ export class DemoStore {
   }
 
   dispose(): void {
+    this.evolutionPlayback.dispose();
     for (const id of this.live.keys()) this.stopScript(id);
   }
 }

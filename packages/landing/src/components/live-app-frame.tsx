@@ -23,6 +23,7 @@ import type { SurfaceId } from "../lib/live-frame";
 import { useSiteLocale, useSiteTheme } from "@prismshadow/penguin-ui/site";
 import { BrowserFrame } from "./browser-frame";
 import { ArrowUpRightIcon } from "./icons";
+import { LivePlaybackControl } from "./live-playback-control";
 
 /** How far below the viewport a frame starts loading: about a screen ahead of the reader. */
 const LOAD_AHEAD = "800px 0px";
@@ -81,9 +82,11 @@ export function LiveAppFrame({
   const { dark } = useSiteTheme();
   const phone = useMedia("(max-width: 639.98px)");
   const fine = useMedia("(hover: hover) and (pointer: fine)");
+  const reduced = useMedia("(prefers-reduced-motion: reduce)");
   const size = frameSize(phone);
   const src = liveFrameSrc(surface, locale, dark, autoplay);
   const box = useRef<HTMLDivElement | null>(null);
+  const frame = useRef<HTMLIFrameElement | null>(null);
   const [near, setNear] = useState(false);
   const [width, setWidth] = useState(0);
   const [readySrc, setReadySrc] = useState<string | null>(null);
@@ -155,13 +158,16 @@ export function LiveAppFrame({
     <BrowserFrame
       className={className}
       aside={
-        <a
-          href={open}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-        >
-          {S.live.open}
-          <ArrowUpRightIcon className="h-3 w-3" />
-        </a>
+        <div className="flex shrink-0 items-center gap-2">
+          <a
+            href={open}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            {S.live.open}
+            <ArrowUpRightIcon className="h-3 w-3" />
+          </a>
+          {autoplay && !reduced && <LivePlaybackControl key={src} frame={frame} src={src} />}
+        </div>
       }
     >
       <div
@@ -173,6 +179,7 @@ export function LiveAppFrame({
         {!ready && <span className="sr-only">{S.live.loading}</span>}
         {near && scale > 0 && (
           <iframe
+            ref={frame}
             key={src}
             src={src}
             title={title}
