@@ -94,16 +94,24 @@
   animation: hero-ink-flow 7.2s ease-in-out var(--hero-word-delay) infinite;
 }
 
-/* The plane leads the line; separate animations keep the icon's size fixed as it flies. */
+/* One moving edge draws the line and carries the plane by its tail, without scaling the icon. */
 .hero-word-trace {
   position: absolute;
-  right: 0.16em;
-  bottom: 0.1em;
+  right: 0.65em;
+  bottom: -0.03em;
   left: 0.04em;
   height: 0.045em;
   opacity: 0;
   pointer-events: none;
   animation: hero-trace-fade 7.2s ease-in-out var(--hero-word-delay) infinite;
+}
+.hero-word-flight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 100%;
+  animation: hero-trace-draw 7.2s ease-in-out var(--hero-word-delay) infinite;
 }
 .hero-word-trail {
   display: block;
@@ -111,20 +119,17 @@
   height: 100%;
   background: currentColor;
   opacity: 0.5;
-  transform: scaleX(0);
-  transform-origin: left;
-  animation: hero-trace-draw 7.2s ease-in-out var(--hero-word-delay) infinite;
 }
 .hero-word-plane {
   position: absolute;
   top: 50%;
-  left: 0;
-  width: 0.5em;
-  height: 0.5em;
-  fill: currentColor;
-  stroke-width: 0.7;
-  transform: translate(-50%, -50%);
-  animation: hero-plane-fly 7.2s ease-in-out var(--hero-word-delay) infinite;
+  left: 100%;
+  width: 0.65em;
+  height: 0.65em;
+  overflow: visible;
+  fill: none;
+  stroke-width: 1.5;
+  transform: translateY(-50%);
 }
 
 @keyframes hero-ink-flow {
@@ -139,44 +144,33 @@
 }
 @keyframes hero-trace-fade {
   0%,
-  12% {
+  8% {
     opacity: 0;
   }
-  38%,
-  48% {
+  14%,
+  40% {
     opacity: 1;
   }
-  60%,
+  48%,
   100% {
     opacity: 0;
   }
 }
 @keyframes hero-trace-draw {
   0%,
-  12% {
-    transform: scaleX(0);
+  8% {
+    width: 0%;
   }
-  38%,
+  44%,
   100% {
-    transform: scaleX(1);
-  }
-}
-@keyframes hero-plane-fly {
-  0%,
-  12% {
-    left: 0%;
-  }
-  38%,
-  100% {
-    left: 100%;
+    width: 100%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .hero-word-ink,
   .hero-word-trace,
-  .hero-word-trail,
-  .hero-word-plane {
+  .hero-word-flight {
     animation: none;
   }
 }
