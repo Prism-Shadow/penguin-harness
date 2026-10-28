@@ -7,4 +7,4 @@
 
 [中文版](2026-10-28-hero-keyword-styles.zh.md)
 
-The home page slogan emphasized “keeps growing” and “within reach” with a soft blue highlight that sweeps through the letters and a fine underline that draws, then fades. The two phrases alternate their emphasis while keeping the surrounding text's size, weight and baseline. The same treatment was applied in Chinese, with colors adjusted for light and dark themes, clauses kept together where space permits, and a still version for reduced motion.
+The home page slogan emphasized “keeps growing” and “within reach” with a soft blue highlight that sweeps through the letters and a small airplane that flies horizontally to the right, leading a fine underline before fading with it. The two phrases alternate their emphasis while keeping the surrounding text's size, weight and baseline. The same treatment was applied in Chinese, with colors adjusted for light and dark themes, clauses kept together where space permits, and a still version for reduced motion.

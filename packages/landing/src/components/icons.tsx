@@ -194,6 +194,7 @@ export {
   CopyIcon,
   ExternalLinkIcon,
   LinkIcon,
+  AirplaneIcon,
   TerminalIcon,
   GitHubIcon,
   SunIcon,

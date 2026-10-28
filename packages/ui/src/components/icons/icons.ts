@@ -316,6 +316,9 @@ export const ICONS = {
   bubbleLines: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
   /** A paper plane. */
   paperPlane: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
+  /** An airplane seen from above, with its nose pointing horizontally right. */
+  airplane:
+    "M22 12c0-.83-.67-1.5-1.5-1.5H14L8 3H5l4.5 7.5H5L3.5 8H2l1.5 4L2 16h1.5L5 13.5h4.5L5 21h3l6-7.5h6.5c.83 0 1.5-.67 1.5-1.5Z",
   /** A pane with an arrow leaving it: this opens outside the app, in a tab of its own. */
   externalLink: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3",
   /** An arrow entering a doorway (lucide log-in). */

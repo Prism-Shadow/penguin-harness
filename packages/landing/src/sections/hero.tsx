@@ -17,6 +17,7 @@ import {
   DownloadIcon,
   ExternalLinkIcon,
   ModelProviderLogo,
+  AirplaneIcon,
   TerminalIcon,
 } from "../components/icons";
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
@@ -78,7 +79,10 @@ function HeroWord({ text, variant }: { text: string; variant: "growth" | "reach"
   return (
     <span className={`hero-word hero-word-${variant}`}>
       <span className="hero-word-ink">{text}</span>
-      <span className="hero-word-trace" aria-hidden="true" />
+      <span className="hero-word-trace" aria-hidden="true">
+        <span className="hero-word-trail" />
+        <AirplaneIcon className="hero-word-plane" />
+      </span>
     </span>
   );
 }

@@ -14,20 +14,20 @@ export function evolutionReply(lang: Lang, now: number, model: ModelRef): Script
   });
   const answer = history[answerIndex]!;
   const startedAt = Date.parse(history[0]!.timestamp);
-  const scale = 18_000 / (Date.parse(answer.timestamp) - startedAt);
+  const scale = 13_500 / (Date.parse(answer.timestamp) - startedAt);
   // The app already echoed the person's prompt; the new Session owns its own metadata.
   const steps: ScriptStep[] = history.slice(2, answerIndex).map((msg) => ({
     at: Math.max(250, (Date.parse(msg.timestamp) - startedAt) * scale),
     msg,
   }));
-  let at = 18_000;
+  let at = 13_500;
   const text = (event_type: "start" | "delta" | "stop", value: string) =>
     partial(0, { type: "partial_text", role: "assistant", event_type, text: value });
   steps.push({ at, msg: text("start", "") });
-  // End the walkthrough on its score comparison; the tools already carry the detailed audit.
+  // Keep the summary focused on its score comparison; the tools carry the detailed audit.
   const summary = rsiAnswer(lang).split("\n\n- ")[0]!;
   const chunks = streamScript(summary, 15);
-  const pace = 4800 / scriptDuration(chunks);
+  const pace = 3600 / scriptDuration(chunks);
   for (const chunk of chunks) {
     at += chunk.gap * pace;
     steps.push({ at, msg: text("delta", chunk.text) });

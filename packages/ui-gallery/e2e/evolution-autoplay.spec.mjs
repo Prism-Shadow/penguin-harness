@@ -1,6 +1,6 @@
 /**
  * Given the hero's embedded new conversation, when visible, it types and sends one request,
- * then the real app shows streamed tools and the improved evaluation in either language.
+ * then the real app shows streamed tools, clicks Evaluation Center and opens its score curve.
  * Given a frame below the viewport, it waits; showing it starts the walkthrough without
  * stealing the host page's focus or changing its scroll position.
  * Given human input, autoplay yields and preserves the person's draft.
@@ -18,7 +18,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const lang of ["en", "zh"]) {
-  test(`types, sends and shows an improved evaluation (${lang})`, async ({ page }) => {
+  test(`types, sends and opens the score curve (${lang})`, async ({ page }) => {
+    if (lang === "zh") await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(query(lang));
     await expect(page.locator(composer)).toBeVisible();
     await expect(page.locator(composer)).not.toHaveValue("");
@@ -30,8 +31,15 @@ for (const lang of ["en", "zh"]) {
     const result = page.getByRole("table").last();
     await expect(result).toContainText("81");
     await expect(result).toContainText("88.5");
+    await expect(page.locator('main svg.ui-chart [data-part="series"]').first()).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name: lang === "zh" ? "文档问答 v1" : "Docs QA v1",
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(page.getByTestId("dock")).toHaveCount(0);
-    await expect(page.locator(composer).first()).toHaveValue("");
+    await expect(page.locator(composer)).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText(/mock data|模拟数据/i);
   });
 }
@@ -52,6 +60,7 @@ test("waits below the fold and leaves the host page in place", async ({ page, ba
   await expect(frame.getByRole("button", { name: "Stop", exact: true }).first()).toBeVisible();
   await page.clock.runFor(25_000);
   await expect(frame.getByRole("table").last()).toContainText("88.5");
+  await expect(frame.locator('main svg.ui-chart [data-part="series"]').first()).toBeVisible();
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("host");
   expect(await page.evaluate(() => scrollY)).toBe(scroll);
 });
@@ -78,6 +87,7 @@ test("keeps the evaluation panel open when the reader takes over during the run"
   await page.clock.runFor(25_000);
   await expect(page.getByRole("table").last()).toContainText("88.5");
   await expect(page.getByTestId("dock").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Docs QA v1", exact: true })).toHaveCount(0);
 });
 
 for (const mode of ["reduced motion", "ordinary frame"]) {

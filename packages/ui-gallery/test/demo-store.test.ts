@@ -470,7 +470,7 @@ describe("the evolution walkthrough", () => {
       store.channel(row.sessionId)!.subscribe(sub);
       expect(store.startTask(row.sessionId, rsiPrompt(lang))).toBe(true);
       expect(store.startTask(row.sessionId, rsiPrompt(lang))).toBe(false);
-      vi.advanceTimersByTime(19_500);
+      vi.advanceTimersByTime(14_500);
       const fragments = store.liveTail(row.sessionId)!.fragments;
       expect(fragments.some((m) => payloadOf(m)?.type === "partial_text")).toBe(true);
       vi.advanceTimersByTime(10_000);

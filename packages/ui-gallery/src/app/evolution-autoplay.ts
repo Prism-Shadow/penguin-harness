@@ -1,5 +1,6 @@
-/** Types into the real composer and sends once, when its embedded window becomes visible. */
+/** Sends one visible evolution walkthrough, then opens its evaluation curve through the app. */
 import { S } from "../../../web/src/lib/strings";
+import { IDS } from "./mock/ids";
 
 export function installEvolutionAutoplay(
   win: Window & typeof globalThis,
@@ -15,6 +16,7 @@ export function installEvolutionAutoplay(
   let visible = false;
   let stopped = false;
   let sent = false;
+  let destination: "result" | "center" | "detail" | "chart" = "result";
   let index = 0;
   let timer: number | undefined;
 
@@ -49,7 +51,7 @@ export function installEvolutionAutoplay(
       index += 1;
       setValue.call(input, letters.slice(0, index).join(""));
       input.dispatchEvent(new win.Event("input", { bubbles: true }));
-      timer = win.setTimeout(tick, index === letters.length ? 700 : 2200 / letters.length);
+      timer = win.setTimeout(tick, index === letters.length ? 500 : 1700 / letters.length);
       return;
     }
     const button = [...input.closest('[data-slot="composer"]')!.querySelectorAll("button")].find(
@@ -62,23 +64,80 @@ export function installEvolutionAutoplay(
     sent = true;
     button.click();
   };
-  function queue() {
-    if (sent) {
+  const revealChart = (chart: Element) => {
+    for (
+      let parent = chart.parentElement;
+      parent && parent !== doc.body;
+      parent = parent.parentElement
+    ) {
+      if (
+        parent.scrollHeight > parent.clientHeight &&
+        /auto|scroll/.test(win.getComputedStyle(parent).overflowY)
+      ) {
+        const rect = chart.getBoundingClientRect();
+        const box = parent.getBoundingClientRect();
+        if (rect.top < box.top + 48 || rect.bottom > box.bottom - 16)
+          parent.scrollTop +=
+            rect.top - box.top - Math.max(64, (parent.clientHeight - rect.height) / 2);
+        break;
+      }
+    }
+  };
+  const advance = () => {
+    timer = undefined;
+    if (stopped || !visible || doc.hidden) return;
+    if (destination === "result") {
       const running = [...doc.querySelectorAll('[data-slot="composer"] button')].some(
         (button) => button.getAttribute("aria-label") === S.chat.stop,
       );
-      if (!stopped && !running && doc.querySelector("main table")) {
+      if (!running && doc.querySelector("main table")) {
         // The app opens its Agents panel during parallel evaluation; return the space to the result.
         doc.querySelector<HTMLButtonElement>('[data-testid="dock-tab-close"]')?.click();
+        destination = "center";
+        timer = win.setTimeout(advance, 1300);
+      }
+    } else if (destination === "center") {
+      const link = [...doc.querySelectorAll<HTMLAnchorElement>('a[href="/benchmark"]')].find(
+        (candidate) => candidate.getClientRects().length > 0,
+      );
+      if (link) {
+        destination = "detail";
+        link.click();
+        timer = win.setTimeout(advance, 700);
+      } else {
+        // On a phone, open the real navigation drawer before choosing Evaluation Center.
+        [...doc.querySelectorAll<HTMLButtonElement>("header button")]
+          .find((button) => button.getClientRects().length > 0)
+          ?.click();
+        timer = win.setTimeout(advance, 400);
+      }
+    } else if (destination === "detail") {
+      const card = [...doc.querySelectorAll<HTMLButtonElement>("main button")].find((candidate) =>
+        candidate.textContent?.includes(IDS.benchmarks.docs),
+      );
+      if (card) {
+        destination = "chart";
+        card.click();
+      }
+    } else {
+      const chart = doc.querySelector("main svg.ui-chart");
+      if (chart) {
+        revealChart(chart);
         stop();
       }
-      return;
     }
+  };
+  function queue() {
+    if (stopped) return;
     if (!visible || doc.hidden) {
       cancelTimer();
       return;
     }
-    if (!stopped && timer === undefined) timer = win.setTimeout(tick, index === 0 ? 800 : 50);
+    if (sent) {
+      if (timer === undefined) timer = win.setTimeout(advance, 80);
+      return;
+    }
+    if (timer === undefined) timer = win.setTimeout(tick, index === 0 ? 650 : 50);
   }
   const changes = new win.MutationObserver(queue);
   changes.observe(doc.documentElement, { childList: true, subtree: true });

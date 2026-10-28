@@ -195,6 +195,7 @@ export const DUOTONE: Readonly<Partial<Record<GlyphKey, string>>> = {
   /** The bubble, tail and all. */
   messagePlus: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   paperPlane: "M22 2l-7 20-4-9-9-4z",
+  airplane: ICONS.airplane,
   play: ICONS.play,
   /** The lens, not the handle. */
   search: "M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z",
@@ -316,6 +317,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   messagePlus: "teal",
   bubbleLines: "teal",
   paperPlane: "teal",
+  airplane: "teal",
   externalLink: "teal",
   chainLink: "teal",
   pulse: "teal",
