@@ -1,17 +1,23 @@
 /**
- * Segmented context-usage donut ring: used in the top-right corner of each round
- * (Task) card on the Trace page — shows both **usage ratio** (sum of arc lengths
+ * Segmented context-usage donut ring: used at the end of each round's row on the Trace
+ * page — shows both **usage ratio** (sum of arc lengths
  * / limit) and **segment composition** (three segments). Draws, clockwise from
  * the top (12 o'clock), the cacheRead, cacheWrite, and output segments in order,
  * with the remainder left as an empty ring; the limit `max` is the model's context
  * window, which the caller resolves. If all three buckets are 0, only the base ring
  * is drawn; when usage exceeds the limit, the ring is filled proportionally to usage
  * and the remainder is coloured by threshold (>80% attention / >95% danger) to signal
- * approaching/exceeding the limit; exact values show in the shared tooltip on hover.
+ * approaching/exceeding the limit; exact values show in the shared tooltip on hover
+ * (unless `hint` is off, below).
  * Segments use the theme's Token-kind colours; the base ring takes the ring's own ink.
  *
  * The words are the caller's: `labels` names the usage and each Token kind, and the
  * figures come from `format` (the app's own token abbreviation).
+ *
+ * `hint={false}` is for a ring drawn inside a control that opens a panel of the figures: the
+ * control carries the one name and the one hint, so the ring drops its own tooltip and steps out
+ * of the accessibility tree — a trigger with two hints shows the wrong one, and a name inside a
+ * named button is read twice.
  *
  * The composer's context usage is a single-colour, single-value ring (total only) — a
  * `Ring`, not this component.
@@ -35,6 +41,7 @@ export function TokenDonut({
   size = 44,
   labels,
   format = String,
+  hint = true,
 }: {
   cacheRead: number;
   cacheWrite: number;
@@ -46,6 +53,8 @@ export function TokenDonut({
   labels: TokenDonutLabels;
   /** How a Token count is printed in the accessible name and tooltip. */
   format?: (tokens: number) => string;
+  /** Whether the ring names itself and shows its figures on hover; false inside a control that does both. */
+  hint?: boolean;
 }) {
   const total = cacheRead + cacheWrite + output;
   const strokeWidth = Math.max(2, Math.round(size * 0.16));
@@ -80,9 +89,9 @@ export function TokenDonut({
       viewBox={`0 0 ${size} ${size}`}
       // ui-chart: a theme may redraw the parts (the track as the grid, each arc a series).
       className={`ui-chart block shrink-0 ${ringTone}`}
-      role="img"
-      aria-label={title}
-      data-tooltip={title}
+      {...(hint
+        ? { role: "img", "aria-label": title, "data-tooltip": title }
+        : { "aria-hidden": true })}
     >
       {/* Base ring (empty ring / remainder), in the svg's own ink: the near-limit tone above. */}
       <ChartArc

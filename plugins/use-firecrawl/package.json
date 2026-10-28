@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/use-firecrawl",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "Search the web and scrape pages into clean markdown with the Firecrawl API — query-based discovery, single-URL extraction including public PDFs, driven by curl with a vault-stored API key.",
   "keywords": [
     "penguin-plugin",
@@ -36,5 +36,12 @@
     },
     "title": "Firecrawl Search",
     "title_zh": "Firecrawl 搜索"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^4.1.12"
   }
 }

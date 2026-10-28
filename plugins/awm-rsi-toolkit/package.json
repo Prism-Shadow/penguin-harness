@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/awm-rsi-toolkit",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "The AWM RSI Toolkit: Agent Workflow Memory (Wang et al., 2024, https://arxiv.org/abs/2409.07429) — workflows are induced from successful trajectories and stored in the Target's memory, online over a training stream or offline from supplied experiences, then frozen for independent testing on the Benchmark. Self-contained: it creates the Target's workflow memory, evaluates its own cells and writes the Evaluation Center's scoreboard.",
   "keywords": [
     "penguin-plugin",

@@ -26,7 +26,7 @@ import {
 } from "../client.js";
 import { getSessionMessages, resolveSessionTarget } from "../server-session.js";
 import { SessionStream, nextFrameOrDeadline } from "../server-task.js";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { Messages } from "../i18n.js";
 
 /** Registers `log` under the `penguin session` group (see session.ts). */
@@ -111,7 +111,7 @@ export function registerLogCommand(session: Command, t: Messages): void {
           }
           if (frame === null) break;
           if (frame.event !== undefined) continue; // server events: not transcript content
-          const msg = JSON.parse(frame.data) as OmniMessage;
+          const msg = JSON.parse(frame.data) as AmspRecord;
           if (opts.json === true) out.write(`${JSON.stringify(msg)}\n`);
           else renderer.handle(msg);
         }

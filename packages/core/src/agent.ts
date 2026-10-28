@@ -83,6 +83,7 @@ import {
 } from "./internal/session-support.js";
 import {
   compactionEnd,
+  isSessionMeta,
   mcpConnectBegin,
   mcpConnectEnd,
   normalizeSessionSource,
@@ -90,14 +91,14 @@ import {
   toolListReady,
   userText,
   withOrigin,
-} from "./omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import type {
   MessageOrigin,
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
   SessionSource,
   ToolCallPayload,
-} from "./omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
 import type { CompactionSettings, OpenContextOptions } from "./engine/context-engine.js";
@@ -638,7 +639,8 @@ export class Agent {
     // the config fallback entirely; only `undefined` (no pin) reads the config chain,
     // against this context's State (Agent explicit > Project default_chat > built-in
     // "medium", see configuredThinkingLevel). A per-request parameter, not part of the
-    // prefix: this is only the base the Session's live pin overrides, and nothing records it.
+    // prefix: this is only the base the Session's live pin overrides; `session_meta` does not
+    // record it (each request's `request_begin` records the level it went out at).
     const pin = spec.thinkingLevel;
     const thinkingLevel =
       pin === null ? undefined : (pin ?? this.configuredThinkingLevel(state, projectConfig));
@@ -1253,32 +1255,42 @@ export class Agent {
           // defaults to deny). The tool_call received for approval also carries the
           // origin, so the approval UI can identify which tool a subagent is calling.
           const childApprove = approve
-            ? (tc: OmniMessage<ToolCallPayload>) => approve(withOrigin(tc, hop))
+            ? (tc: AmspRecord<ToolCallPayload>) => approve(withOrigin(tc, hop))
             : undefined;
           // The engine writes a run's input to the CHILD's own Trace but never replays
           // it to its consumer (a session's normal caller typed that input itself) —
           // here the consumer is the PARENT, whose frontend has never seen the child's
-          // prompt. Forward the input messages themselves (origin-tagged, ahead of the
-          // run's output) so the live nested view shows the child's user side exactly
-          // like a reloaded one (history expansion splices the child Trace, which
-          // carries these same messages). The parent engine drops origin messages from
-          // the parent Trace, so replay never duplicates them. Later rounds
+          // prompt. Forward the input messages themselves (origin-tagged) right behind the
+          // run's first record — its Task's `task_begin`, which precedes the input in the
+          // child's own Trace too — so the live nested view shows the child's user side
+          // exactly like a reloaded one (history expansion splices the child Trace, which
+          // carries these same messages, in this order). The parent engine drops origin
+          // messages from the parent Trace, so replay never duplicates them. Later rounds
           // (input_subagent follow-up prompts, a host panel's message) come through this
           // same generator and are forwarded the same way.
           // The caller owns each message's `sender` — "parent_agent" for the model's own
           // dispatch, none for a human's message from a host panel — so the child's Trace
           // records who actually spoke.
-          for (const input of messages) yield withOrigin(input, hop);
           // Manual iteration so the child run's return value — whether the round was cut
           // off — propagates to the handle's own return for the parent's round report.
           const it = childSession.run(messages, {
             ...(signal ? { signal } : {}),
             ...(childApprove ? { approve: childApprove } : {}),
           });
+          let inputForwarded = false;
           for (;;) {
             const res = await it.next();
             if (res.done) return res.value;
+            // The child streams its own session_meta when it writes one (its first run's, a
+            // compaction's). The parent's stream carries the child's meta once, as sent above
+            // or by takeMeta: it identifies the nested Session, and each copy reaching the
+            // parent engine would record another `subagent` pointer.
+            if (isSessionMeta(res.value) && !res.value.origin?.length) continue;
             yield withOrigin(res.value, hop);
+            if (!inputForwarded) {
+              inputForwarded = true;
+              for (const input of messages) yield withOrigin(input, hop);
+            }
           }
         },
         // Mid-run steering rides the child Session's own steering queue — the same
@@ -1666,7 +1678,7 @@ function remindToUpdate(hook: InstalledHook): void {
 }
 
 /** Drives a hook-spawned child to completion in the background, dropping its stream (its own Trace is the record), and releases it. */
-function runDetached(handle: SubagentHandle, messages: OmniMessage[], approve?: ApproveFn): void {
+function runDetached(handle: SubagentHandle, messages: AmspRecord[], approve?: ApproveFn): void {
   void (async () => {
     try {
       const it = handle.run({ messages, ...(approve ? { approve } : {}) });

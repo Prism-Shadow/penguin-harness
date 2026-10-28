@@ -44,9 +44,12 @@ site passes `highlightSiteCode`), `SiteToc` with `useActiveTocEntry`, `SiteSideb
 `@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors; a site's
 Tailwind entry also imports `site-page.css` (the `dark` variant, the brand scale, the neutral dark
 ramp, body defaults). This entry is independent of the app renderer and full theme; public sites
-do not need the app's bundled fonts just to render a page. Their wrappers only adapt routes,
-labels, content and preferences. Do not restore copied navbar markup, language-menu event
-handlers, theme cycles, footers, copy buttons or Markdown typography in a site package.
+do not need the app's bundled fonts just to render a page, nor the theme icon sets: a site control
+draws line icons (`site-icons`, `CheckLineIcon`) and builds menu rows with `MenuRow`, never
+`GlyphIcon`, `MenuItem` or a mark drawn in every set, any of which carries the sets into the
+landing and docs bundles. Their wrappers only adapt routes, labels, content and preferences. Do
+not restore copied navbar markup, language-menu event handlers, theme cycles, footers, copy
+buttons or Markdown typography in a site package.
 
 A site component is held to the package's de-slop rules like any other: its look lives in
 `site-content.css` or `site-prose.css` on the `--site-*` palette (Tailwind's values, the neutral
@@ -139,6 +142,16 @@ character, and the placeholder says what blank means, so a visible line would on
 
 Already-disclosed text does not move: `title=` tooltips, `OptionMenu` row descriptions, confirm
 dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
+
+### Placeholders: what blank does, or what to do
+
+A placeholder says what happens if the field is left as it is, or the next step to take (owner,
+2026-10-24): 「留空则使用环境变量 DEEPSEEK_API_KEY」 says what blank does, 「请填写 API key」 what
+to do, 「留空使用默认 base URL」 both. A field whose blank state means something, or that must be
+filled, never has an empty placeholder. No bare status word (「未设置」) and no value dump
+(「默认发往 <url>」): the placeholder speaks to the reader's next move, not to the configuration.
+A required field with a stored value shows the value itself; the placeholder covers the empty
+state only.
 
 ### Tooltips: when a mark gets one
 
@@ -348,7 +361,11 @@ mode, machines, workflows:
   `Select`/`OptionMenu` that is the only control in its `PrefRow`. Render the new value at once,
   write only that value, settle on the server's answer; on failure roll back **and**
   `toastError(apiErrorText(e))` (or the row's hint slot) — `useInstantSetting`
-  (`lib/instant-setting.ts`) does all three. A consequential switch asks first through
+  (`lib/instant-setting.ts`) does all three. The one exception is a personal preference that
+  follows the account (`lib/account-sync`: theme, language, background, notifications…): it is
+  written to the browser's cache through `writeCached` and applies at once, and its server write
+  is batched and retried in the background — a failed write is neither rolled back nor toasted.
+  A consequential switch asks first through
   `ConfirmModal` and shows the stored state until confirmed — and joins
   `test/consequential-confirms.test.ts`. A switch that acts on a typed value acts on the *saved*
   value: while that value has unsaved edits (or is missing, where the switch means nothing

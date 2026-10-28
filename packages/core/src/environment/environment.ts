@@ -28,8 +28,8 @@
  * Docs: /docs/tools § "Execution contract".
  */
 import path from "node:path";
-import { partialToolCallOutput, toolCallOutput, userText } from "../omnimessage/index.js";
-import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
+import { partialToolCallOutput, toolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { McpServerConnectResult, AmspRecord, ToolStatus } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   BackgroundCommandInfo,
@@ -215,7 +215,7 @@ export class Environment implements EnvironmentInterface {
       // the single consumer via setBackgroundTaskListener (events before that are buffered).
       backgroundDone: (event: BackgroundTaskDoneEvent) => this.emitBackgroundDone(event),
       // Live-forwarded background-subagent messages, same single-consumer pattern.
-      backgroundForward: (msg: OmniMessage) => this.emitBackgroundForward(msg),
+      backgroundForward: (msg: AmspRecord) => this.emitBackgroundForward(msg),
     };
     this.equip(config.toolConfig);
     this.mcp = this.newMcpProvider(config.toolConfig.mcpServers, config.vault ?? {});
@@ -374,17 +374,17 @@ export class Environment implements EnvironmentInterface {
 
   // Live-forwarded background-subagent messages: same single-listener + buffer-until-attach
   // pattern as the completion reports above.
-  private bgFwdListener: ((msg: OmniMessage) => void) | null = null;
-  private bgFwdBuffer: OmniMessage[] = [];
+  private bgFwdListener: ((msg: AmspRecord) => void) | null = null;
+  private bgFwdBuffer: AmspRecord[] = [];
 
-  private emitBackgroundForward(msg: OmniMessage): void {
+  private emitBackgroundForward(msg: AmspRecord): void {
     if (this.bgDisposed) return;
     if (this.bgFwdListener) this.bgFwdListener(msg);
     else this.bgFwdBuffer.push(msg);
   }
 
   /** Attaches the single background-message listener, flushing buffered messages (see EnvironmentInterface). */
-  setBackgroundMessageListener(listener: (msg: OmniMessage) => void): void {
+  setBackgroundMessageListener(listener: (msg: AmspRecord) => void): void {
     this.bgFwdListener = listener;
     const buffered = this.bgFwdBuffer;
     this.bgFwdBuffer = [];
@@ -425,7 +425,7 @@ export class Environment implements EnvironmentInterface {
    * Host-initiated message to one child session — a user's input on the child, whatever its
    * state: steering mid-run, a follow-up run when idle, a revival through the runner when the
    * session is no longer live (see EnvironmentInterface.sendToBackgroundSubagent). Converges
-   * on the same managed-session channel input_subagent uses, taking the same OmniMessage list;
+   * on the same managed-session channel input_subagent uses, taking the same AmspRecord list;
    * the caller's messages carry no sender (human origin), unlike the model path's
    * "parent_agent" — and they reach both branches unchanged, so a steered round and a started
    * round record the same author. The child runs every round at its own context's thinking
@@ -433,7 +433,7 @@ export class Environment implements EnvironmentInterface {
    */
   async sendToBackgroundSubagent(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     const session = this.subagentSessions.bySessionId(childSessionId);
@@ -459,7 +459,7 @@ export class Environment implements EnvironmentInterface {
    */
   private async resumeAndRun(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     const agentId = opts?.resume?.agentId;
@@ -528,7 +528,7 @@ export class Environment implements EnvironmentInterface {
    */
   private attachHostTap(session: {
     hasMessageTap: boolean;
-    setMessageTap(tap: (msg: OmniMessage) => void): void;
+    setMessageTap(tap: (msg: AmspRecord) => void): void;
   }): void {
     if (session.hasMessageTap) return;
     session.setMessageTap((msg) => this.emitBackgroundForward(msg));
@@ -612,14 +612,14 @@ export class Environment implements EnvironmentInterface {
    * `tool_call_output`; nested messages carrying origin pass through unchanged. Dispatches by
    * looking up the tool name; any exception collapses into an explanatory output — never throws.
    *
-   * The priority for deciding stop_reason is: user interruption > timeout > tool throw > tool
-   * self-report. Interruption is determined by the `signal` held by Environment, and is
-   * compatible with both a tool self-reporting aborted and an AbortError raised by the
+   * The priority for deciding the result's status is: user interruption > timeout > tool
+   * throw > tool self-report. Interruption is determined by the `signal` held by Environment,
+   * and is compatible with both a tool self-reporting aborted and an AbortError raised by the
    * interruption. An internal abort raised by a timeout does not count as a user interruption —
    * it's finalized as failed, with the timeout reason written into the output.
    * Docs: /docs/tools § "Execution contract".
    */
-  async *executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage> {
+  async *executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord> {
     const payload = request.toolCall.payload;
     // tool_call_id is passed through unchanged, so context_engine and the LLM can associate the
     // request with its result.
@@ -696,7 +696,7 @@ export class Environment implements EnvironmentInterface {
     let withheld = ""; // Rolling buffer of text past the head window (<= withheldCapacity)
     let contentLen = 0; // Total length of content produced by the tool (including evicted parts)
     let toolOutput: string | null = null; // Fallback: content basis when the tool produces a full message itself
-    let selfReported: StopReason | undefined; // Tool's self-reported stop reason (return value takes priority over the full message)
+    let selfReported: ToolStatus | undefined; // Tool's self-reported status (return value takes priority over the full message)
     let selfNote: string | null = null; // Tool's self-reported end marker (e.g. exit code), appended outside truncation
     let selfImages: string[] | undefined; // Tool's self-reported images (data URL), carried via a single streamed delta and the full message
     let thrown: unknown = null;
@@ -721,7 +721,7 @@ export class Environment implements EnvironmentInterface {
         const res = await gen.next();
         if (res.done) {
           const result: ToolResult | void = res.value;
-          if (result?.stopReason) selfReported = result.stopReason;
+          if (result?.status) selfReported = result.status;
           if (result?.note) selfNote = result.note;
           if (result?.images && result.images.length > 0) selfImages = result.images;
           break;
@@ -734,7 +734,7 @@ export class Environment implements EnvironmentInterface {
         const p = out.payload as {
           type?: string;
           event_type?: string;
-          stop_reason?: string;
+          status?: string;
           output?: string;
         };
         if (p.type === "partial_tool_call_output") {
@@ -797,7 +797,7 @@ export class Environment implements EnvironmentInterface {
             }
           }
         } else if (p.type === "tool_call_output") {
-          // Fallback: if the tool still produces a full message, use it as the basis for content and stop reason (not needed under the new contract).
+          // Fallback: if the tool still produces a full message, use it as the basis for content and status (not needed under the new contract).
           toolOutput = p.output ?? "";
           if (
             maxOutputLength > 0 &&
@@ -811,8 +811,8 @@ export class Environment implements EnvironmentInterface {
             // also becomes the recovery basis instead of any deltas it happened to emit.
             archiveCapture.replace(toolOutput);
           }
-          if (selfReported === undefined && p.stop_reason) {
-            selfReported = p.stop_reason as StopReason;
+          if (selfReported === undefined && p.status) {
+            selfReported = p.status as ToolStatus;
           }
         } else {
           // Other message types without origin: protocol misuse, ignore and warn (keep the parent stream clean).
@@ -872,7 +872,7 @@ export class Environment implements EnvironmentInterface {
       archiveCapture?.cancel();
     }
 
-    let stopReason: StopReason;
+    let status: ToolStatus;
     const notes: string[] = [];
     if (truncated) {
       if (archiveResult?.status === "saved") {
@@ -896,18 +896,18 @@ export class Environment implements EnvironmentInterface {
       notes.push(selfNote);
     }
     if (aborted) {
-      stopReason = "aborted";
+      status = "aborted";
       notes.push(TOOL_ABORTED_NOTE);
     } else if (timedOut) {
       // A tool timeout or error is definitive for this call — nothing in the harness
       // retries a tool, so the result is fed back to the model as fatal.
-      stopReason = "fatal";
+      status = "fatal";
       notes.push(`[tool timeout: exceeded ${timeoutMs}ms]`);
     } else if (thrown != null) {
-      stopReason = "fatal";
+      status = "fatal";
       notes.push(`[tool error] ${thrown instanceof Error ? thrown.message : String(thrown)}`);
     } else {
-      stopReason = selfReported ?? "completed";
+      status = selfReported ?? "completed";
     }
     // The tool's reply must never be empty: an empty tool_result leaves the model unable to
     // tell "silent success" apart from "call failed", and some Providers outright reject empty
@@ -941,23 +941,23 @@ export class Environment implements EnvironmentInterface {
     // "streamed concatenation == full message" the same way text does (truncation only applies
     // to text, never touches images).
     // Only carried on normal completion; interruption/timeout/error paths carry no images, to keep finalization simple.
-    const images = stopReason === "completed" ? selfImages : undefined;
+    const images = status === "completed" ? selfImages : undefined;
     if (images) {
       yield partialToolCallOutput({ eventType: "delta", toolCallId, images });
     }
-    yield partialToolCallOutput({ eventType: "stop", toolCallId, stopReason });
+    yield partialToolCallOutput({ eventType: "stop", toolCallId });
     yield toolCallOutput({
       output: fullOutput,
       toolCallId,
-      stopReason,
+      status,
       ...(images ? { images } : {}),
     });
   }
 }
 
 /** Upfront failure (unknown tool/argument parse failure): delta(explanation) -> stop -> full failed output (start already emitted by the caller). */
-function* emitFailure(toolCallId: string, message: string): Generator<OmniMessage> {
+function* emitFailure(toolCallId: string, message: string): Generator<AmspRecord> {
   yield partialToolCallOutput({ eventType: "delta", output: message, toolCallId });
-  yield partialToolCallOutput({ eventType: "stop", toolCallId, stopReason: "fatal" });
-  yield toolCallOutput({ output: message, toolCallId, stopReason: "fatal" });
+  yield partialToolCallOutput({ eventType: "stop", toolCallId });
+  yield toolCallOutput({ output: message, toolCallId, status: "fatal" });
 }

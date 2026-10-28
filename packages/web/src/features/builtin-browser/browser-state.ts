@@ -609,15 +609,24 @@ export function addressOf(state: BrowserState, tab: BuiltinBrowserTab): string {
 }
 
 /**
- * Whether this window should open the new-tab page by itself: its browser panel is on screen,
- * the browser can be used, and it has no tab, none open and none on its way. A tab on its way
- * is a page this window is creating or has created and the registry does not list yet (from any
- * window's, the agent's or a page's request), or a request of its own not yet answered, whose
- * page this window has not been asked for yet.
+ * Whether this window should open the new-tab page by itself: the docks on screen are this
+ * conversation's and its own arrangement shows the browser panel, the browser can be used, and the
+ * conversation has no tab, none open and none on its way. A tab on its way is a page this window
+ * is creating or has created and the registry does not list yet (from any window's, the agent's or
+ * a page's request), or a request of its own not yet answered, whose page this window has not been
+ * asked for yet.
+ *
+ * Another conversation's arrangement showing the browser counts for nothing here: during a switch
+ * the outgoing panel is still mounted for a render, and a page opened for the incoming
+ * conversation would bring the browser panel up there too (shouldReveal).
  */
-export function wantsNewTabPage(state: BrowserState, panelOnScreen: boolean): boolean {
+export function wantsNewTabPage(
+  state: BrowserState,
+  onScreen: { conversation: string; browserShown: boolean },
+): boolean {
   return (
-    panelOnScreen &&
+    onScreen.browserShown &&
+    onScreen.conversation === state.scope &&
     builtinUsable(state) &&
     sessionTabs(state).length === 0 &&
     !state.guests.some((guest) => guest.scope === state.scope) &&

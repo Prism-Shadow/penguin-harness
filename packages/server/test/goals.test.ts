@@ -39,7 +39,7 @@ import {
   tokenUsage,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core";
+import type { AmspRecord, TokenCounts } from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -78,7 +78,7 @@ function usage(total: number): TokenCounts {
 }
 
 /** A goal round's injected input, as the host records it: plain protocol text, stamped `sender: "harness"`. */
-function roundInput(round: number): OmniMessage {
+function roundInput(round: number): AmspRecord {
   return userText(`goal round ${round} protocol lines`, "harness");
 }
 
@@ -89,7 +89,7 @@ function goalHook(
   round: number,
   tokensUsed: number,
   budget = -1,
-): OmniMessage {
+): AmspRecord {
   return hookEvent({
     hook: "stop",
     name: "goal",
@@ -130,20 +130,20 @@ describe("SessionManager.startGoal", () => {
    * harness-stamped injections and the goal hook's answers are (the hook loop is core's and
    * the decisions are the goal plugin's; both are tested where they live).
    */
-  function goalFakeSession(stream: (input: OmniMessage[]) => OmniMessage[]): RuntimeSession & {
+  function goalFakeSession(stream: (input: AmspRecord[]) => AmspRecord[]): RuntimeSession & {
     runOpts: RunOpts[];
-    runs: OmniMessage[][];
+    runs: AmspRecord[][];
     starts: Array<{ name: string; prompt: string; extras: unknown }>;
   } {
     const runOpts: RunOpts[] = [];
-    const runs: OmniMessage[][] = [];
+    const runs: AmspRecord[][] = [];
     const starts: Array<{ name: string; prompt: string; extras: unknown }> = [];
     const session = fakeSession(ROW.sessionId, {
       async runUserPromptHook(name, prompt, extras) {
         starts.push({ name, prompt, extras });
         return { context: "goal round 1 protocol lines" };
       },
-      async *run(input: OmniMessage[]) {
+      async *run(input: AmspRecord[]) {
         runs.push(input);
         runOpts.push({});
         yield* stream(input);
@@ -226,13 +226,13 @@ describe("SessionManager.startGoal", () => {
     });
 
     // The inputs were published on the message stream (no `event:` name) for live viewers —
-    // round 1 by startGoal itself (core never yields a run's initial input, and a page
+    // round 1 echoed by the manager (core never yields a run's initial input, and a page
     // already subscribed would otherwise miss it until a reload), round 2 off the stream:
     // the user's own message verbatim — the [use_skills] block included — and both rounds'
     // harness-stamped protocol messages.
     const published = events
       .filter((e) => e.event === undefined)
-      .map((e) => JSON.parse(e.data) as OmniMessage)
+      .map((e) => JSON.parse(e.data) as AmspRecord)
       .filter((m) => m.type === "model_msg" && (m.payload as { role?: string }).role === "user");
     expect(published).toHaveLength(3);
     expect((published[0]!.payload as { text: string }).text).toContain("[use_skills]");
@@ -512,7 +512,7 @@ for (const { installed, legacy } of [
       /** The user texts published on the session's message stream, in order. */
       const published = () =>
         userTexts(
-          events.filter((e) => e.event === undefined).map((e) => JSON.parse(e.data) as OmniMessage),
+          events.filter((e) => e.event === undefined).map((e) => JSON.parse(e.data) as AmspRecord),
         );
       const goalFile = () =>
         path.join(sessionScratchpadDir(root, PROJECT, AGENT, sessionId), "GOAL.json");

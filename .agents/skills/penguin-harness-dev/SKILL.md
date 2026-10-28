@@ -21,6 +21,7 @@ them when the task reaches them:
 | `reference/changelog.md` | Writing or auditing a changelog entry |
 | `reference/model-catalog.md` | Touching the server's model catalog, pricing, provider groups, which environment variable a keyless row reads, or glyphs |
 | `reference/authoring.md` | Writing a blog post, auditing prose, or proposing a simplification |
+| The `penguin-harness-writing` skill | Writing or revising a blog post, a docs page or landing copy: a gateway model writes every word, through its prompts and checks |
 | `reference/release.md` | Preparing a release: the branch order, what changes, the announcement, the blog post and its screenshots |
 | `reference/testing.md` | **Writing or changing any test**: scenarios first, behaviour only, one fake per boundary, branch coverage, speed, CI time as a cost |
 | `reference/ai-slop.md` | **Every** change a user sees or reads: UI, styles, UI strings, docs, landing, blog, changelog — the rules, the scanner, the catalogue of tells |
@@ -34,6 +35,11 @@ coloured keywords or "it's not just X — it's Y". Reuse the theme tokens and `l
 is a labelled pill or an icon plus a tooltip, never a bare coloured dot; sections are ruled, not
 boxed. Run `node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs <what you touched>`
 and triage every hit. `reference/ai-slop.md` has the repo's own decisions and the full catalogue.
+
+**A copy request changes words, in place.** When the owner asks for new copy, swap the words
+inside the existing layout: removing or restyling a section, element, type size, number or
+animation needs the owner's explicit say, and a feature demo is the real software (a capture of
+the running Web App or a live gallery frame), never an imitation UI or a scripted replay.
 
 ## Repo shape — read before your first edit
 
@@ -214,8 +220,8 @@ at the top of `generative-model.ts`.
 
 ## The message protocol is closed by default
 
-- **OmniMessage is closed by default.** No new field, type or enum value unless the fact is
+- **AMSP records are closed by default.** No new field, type or enum value unless the fact is
   unrepresentable by existing records and underivable by readers; prefer recording earlier or
   streaming an existing record over a new field. Say so in the PR. The architecture spec's
-  message-format section states the rule, and `packages/core/src/omnimessage/types.ts` repeats it
+  message-format section states the rule, and `packages/amsp/src/records/types.ts` repeats it
   at its head.

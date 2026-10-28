@@ -1,7 +1,8 @@
 /**
  * The matcher (src/lib/shortcuts/match.ts) against the registry's defaults: which platform
- * chord runs which command, how a focus scope beats global, and how defaults relocate on a
- * non-US layout while user chords stay physical.
+ * chord runs which command, how a focus scope beats global, how a command with several bindings
+ * fires on any of them, and how defaults relocate on a non-US layout while user chords stay
+ * physical.
  */
 import { describe, expect, it } from "vitest";
 import { parseChord } from "../src/lib/shortcuts/chord";
@@ -9,8 +10,15 @@ import { isShortcut, matchShortcut, relocateChord } from "../src/lib/shortcuts/m
 import { SHORTCUT_COMMANDS, defaultChord } from "../src/lib/shortcuts/registry";
 import type { Chord, CommandId, KeyLike, Keymap, Platform } from "../src/lib/shortcuts/types";
 
-function defaults(platform: Platform): Map<CommandId, Chord | null> {
-  return new Map(SHORTCUT_COMMANDS.map((cmd) => [cmd.id, defaultChord(cmd, platform)]));
+/** The registry's defaults as a keymap: one command, one binding — the list's first member. */
+function defaults(platform: Platform): Keymap {
+  return new Map(
+    SHORTCUT_COMMANDS.map((cmd) => [cmd.id, wrap(defaultChord(cmd, platform))] as const),
+  );
+}
+
+function wrap(chord: Chord | null): readonly Chord[] {
+  return chord === null ? [] : [chord];
 }
 
 function key(overrides: Partial<KeyLike> & { code: string }): KeyLike {
@@ -94,19 +102,44 @@ describe("the default table per platform", () => {
 describe("resolution", () => {
   it("lets the focus scope beat global on the same chord, and registry order break a tie", () => {
     const chord = parseChord("Mod+KeyW")!;
-    const keymap: Keymap = new Map<CommandId, Chord | null>([
-      ["palette.toggle", chord], // global, first in registry order
-      ["terminal.toggle", chord], // global
-      ["terminal.close", chord], // terminal scope
-      ["editor.save", null],
+    const keymap: Keymap = new Map<CommandId, readonly Chord[]>([
+      ["palette.toggle", [chord]], // global, first in registry order
+      ["terminal.toggle", [chord]], // global
+      ["terminal.close", [chord]], // terminal scope
+      ["editor.save", []],
     ]);
     const e = key({ code: "KeyW", ctrlKey: true });
     expect(matchShortcut(e, keymap, ["terminal", "global"], "linux")).toBe("terminal.close");
     expect(matchShortcut(e, keymap, ["global"], "linux")).toBe("palette.toggle");
   });
 
+  it("matches any of a command's bindings, and none while it is unbound", () => {
+    const keymap: Keymap = new Map<CommandId, readonly Chord[]>([
+      ["palette.toggle", [parseChord("Mod+Alt+KeyP")!, parseChord("Mod+KeyP")!]],
+      ["terminal.toggle", []],
+    ]);
+    expect(
+      matchShortcut(key({ code: "KeyP", ctrlKey: true, altKey: true }), keymap, ALL, "linux"),
+    ).toBe("palette.toggle");
+    expect(matchShortcut(key({ code: "KeyP", ctrlKey: true }), keymap, ALL, "linux")).toBe(
+      "palette.toggle",
+    );
+    expect(
+      matchShortcut(key({ code: "KeyP", ctrlKey: true, shiftKey: true }), keymap, ALL, "linux"),
+    ).toBeNull();
+    expect(
+      matchShortcut(key({ code: "Backquote", ctrlKey: true }), keymap, ["terminal"], "linux"),
+    ).toBeNull();
+    expect(
+      isShortcut(key({ code: "KeyP", ctrlKey: true }), keymap, "palette.toggle", "linux"),
+    ).toBe(true);
+    expect(
+      isShortcut(key({ code: "Backquote", ctrlKey: true }), keymap, "terminal.toggle", "linux"),
+    ).toBe(false);
+  });
+
   it("never matches an unbound command", () => {
-    const keymap: Keymap = new Map<CommandId, Chord | null>([["terminal.close", null]]);
+    const keymap: Keymap = new Map<CommandId, readonly Chord[]>([["terminal.close", []]]);
     expect(matchShortcut(key({ code: "KeyW", ctrlKey: true }), keymap, ALL, "linux")).toBeNull();
     expect(
       isShortcut(key({ code: "KeyW", ctrlKey: true }), keymap, "terminal.close", "linux"),

@@ -51,14 +51,25 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 
 ## Trace 设计
 
-Trace 是只追加的 JSON Lines 文件，每行是一个 OmniMessage 信封，详见 [OmniMessage 协议](/omni-message)。历史只追加，从不原地修改。
+Trace 是只追加的 JSON Lines 文件，每行是一条 AMSP 记录，详见 [AMSP 记录](/amsp-records)。历史只追加，从不原地修改。
 
 - 一个 Trace 文件对应一个完整的模型上下文。压缩产生新的上下文段时，写入器切换到新文件，索引依次递增：`_002`、`_003`……
 - 记录的内容：`session_meta`、完整的 `model_msg`，以及所有 `event_msg`。
 - 不记录的内容：
   - 流式的 `partial_*` 片段。片段结束后，由生产方追加完整消息。
   - 带 `origin` 标记的嵌套消息。子 Agent 的消息写入子 Session 自己的 Trace。父 Trace 只在派生子 Agent 的位置保留一条 `subagent` 指针事件，记录子 Session 的 id。
-- `request_begin` 与 `request_end(status)` 成对出现，界定一个 Request。重放时以 `request_end.status === "completed"` 判定该轮是否已提交。
+- `request_begin` 与 `request_end(status)` 成对出现，界定一个 Request。重放时以 `request_end.status === "completed"` 判定该轮是否已提交。`request_begin` 还记录该 Request 发出时的思考等级（`thinking_level`），轨迹观测据此定位等级切换的位置；重放不读取它。
+- `task_begin` 与 `task_end` 成对出现，界定一个 Task：一次 Prompt 的执行，加上随后 stop 钩子的 `hook` 记录；goal 的每一轮各是一个 Task，手动压缩与模型切换则不是。这对记录由 Session 自己写入：
+  - `task_begin` 先于该 Task 写下的一切记录（含其输入），一个 Task 由它开头。Session 的第一个文件仍以 `session_meta` 开头。
+  - Task 记录从不开启新文件。Task 以一次已完成的压缩收尾时，它的 `task_end` 以及下一个 Task 的 `task_begin` 追加在旧文件的 `compaction_end` 之后；新文件由下一个上下文的第一条消息开启。因此 Task 中途发生压缩时，它结束所在的文件晚于开始所在的文件。
+  - 一个 `task_begin` 之后、下一个 `task_begin` 或 Trace 末尾之前没有 `task_end`，表示该 Task 没有走到终点：进程退出或运行失败。Session 正在运行时，末尾那一个即进行中的 Task。
+  - 在这对记录出现之前写下的 Trace 不带它们，读端照旧从用户的 Prompt 推导 Task 边界；Trace 从不回写。
+- 主 Session 的 `session_meta` 在写入时也推入输出流，只推一次，此后不再发送。写入发生在三个时刻：
+  - 新 Session 的第一条消息把它写在第一个文件开头，先于该 Task 的 `task_begin`；
+  - 压缩开启的新上下文在新文件开出时写入它，即压缩之后第一条要写入的记录之前。压缩结束了上一个 Task 时，Task 记录不开新文件，所以它落在下一个 Task 的 `task_begin` 之后、该 Task 的输入之前；
+  - 模型切换在切换完成时写入它，这发生在两次运行之间，所以它在 Session 的流上，不在下一次运行的流里。
+
+  之后需要它的读端读取 Session，或读取完整历史，其中带有每个文件开头的 `session_meta`。见 [AMSP](/amsp)。
 - 追加在写入器内部串行执行。并发生产者（模型流、并行的工具执行）写出的记录严格一条接一条落盘，每条都是一整行、中间不断开。数 MB 的记录（比如 base64 图片的 Data URL）绝不会因并发追加而撕裂；文件轮转也绝不会把一条记录切成两半。
 - 每条记录都用一次 `write(2)` 追加，不用 `fs.appendFile`：后者会把超过 512 KiB 的负载拆成多次底层写入。因此进程异常退出最多截断最后一条记录，绝不会从中间撕开一条。
 - Session 恢复继续写入已有文件之前，写入器会先探测文件尾部。如果上一次崩溃留下了断行（结尾没有换行符），下一条记录前会先补一个换行符，断行就不会吞掉之后追加的记录。
@@ -67,22 +78,24 @@ Trace 是只追加的 JSON Lines 文件，每行是一个 OmniMessage 信封，�
 
 ### Trace 开头示例
 
-下面是一个示意性的 Trace 开头，每行一个 OmniMessage 信封。注意顺序：
+下面是一个示意性的 Trace 开头，每行一条记录。注意顺序：
 
+- Task 的 `task_begin` 最先写入，位于文件的 `session_meta` 之后。
 - 用户输入先写入，之后才是与它一起发送的 `request_begin`。
 - [User-prompt hook](/agent-loop#user-prompt-hook) 的回答紧跟在用户输入之后：每个 context 一条带 harness 标记的 user 文本，失败的钩子则是一条 `hook` 事件。
 - 首次运行时，工具集以 `tool_list_ready` 事件跟在输入之后；如果配置了 MCP Server，在这之前还有一对 `mcp_connect_begin` / `mcp_connect_end`。`session_meta` 不携带工具定义。
 
 ```jsonl
 {"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
+{"timestamp":"…","type":"event_msg","payload":{"type":"task_begin"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Create hello.txt"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"tool_list_ready","tools":[…]}}
-{"timestamp":"…","type":"event_msg","payload":{"type":"request_begin"}}
-{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0","stop_reason":"completed"}}
+{"timestamp":"…","type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
+{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"approval_decision","decision":"allow","tool_call_id":"call_0"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"token_usage","session":{…},"request":{…}}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"request_end","status":"completed"}}
-{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"[no output]","tool_call_id":"call_0","stop_reason":"completed"}}
+{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"[no output]","tool_call_id":"call_0","status":"completed"}}
 ```
 
 ### 截断的工具输出
@@ -124,7 +137,7 @@ Trace 是恢复的唯一事实来源，不存在需要保持同步的独立 Sess
 
 ### 压缩完成之后
 
-如果最新的 Trace 文件以一次已完成的压缩结尾，这个上下文已整体关闭，恢复时从一个空上下文开始。
+如果最新的 Trace 文件以一次已完成的压缩结尾，这个上下文已整体关闭，恢复时从一个空上下文开始。`compaction_end` 之后的 Task 记录不计：在一个 Task 结束、下一个 Task 的第一条消息写入之前重启，仍能在这里找到摘要。
 
 summarize 模式下，恢复后会重建 `[context_summary]`，并把它加在恢复后的第一条输入之前。使用早期尖括号 `<summary>` 形式的旧 Trace 仍然能够识别。
 
@@ -164,7 +177,7 @@ summarize 模式下，恢复后会重建 `[context_summary]`，并把它加在�
 - 有些模型要求重放历史时逐字节一致。
 - 任何改写都会破坏兼容性。
 
-Trace 直接存储原始 OmniMessage 信封而不采用后处理格式，这是原因之一。
+Trace 直接存储原始记录而不采用后处理格式，这是原因之一。
 
 ## 可观测性
 

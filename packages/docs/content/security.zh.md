@@ -36,8 +36,8 @@ PenguinHarness 用真实凭据在真实机器上运行 Agent，所以值得弄�
 - `desktop`：桌面应用自己的窗口
 - `setup`：新服务器上的登录链接
 - `cli`：由 `penguin auth token` 铸造的会话在内部存储的来源
-- `remote`：由本地 API token 为 Penguin Remote 签发的一小时浏览器会话
-- `token`：本地 API token 所代表的权限，通过 Bearer 头或兑换后的 Remote Cookie 认证
+- `remote`：由本地 API token 为 Penguin Remote 签发的一小时浏览器会话，算作人的登录
+- `token`：本地 API token 本身，通过 Bearer 头出示
 
 ## 认领新服务器
 
@@ -121,7 +121,7 @@ Penguin Remote 可以凭这种本地所有权，通过 `POST /api/remote/session
 
 响应会返回一个以内置管理员身份创建的全新原始 `penguin_session` token，有效期固定为一小时，内部标记为 `via: remote`。响应带有 `Cache-Control: no-store`，Harness 本身不设置 Cookie。Penguin Remote 的本地代理必须在公网域名的响应中设置 Cookie，并把返回的 token 当作凭据处理：不得记录、缓存或暴露到其他位置。该接口不会开放 CORS。
 
-公开 API 将这个会话标记为 `token`：兑换会话保留原 token 的人工操作限制和 Agent 身份规则。修改 Agent 的对外暴露、浏览器后端或浏览器配对时，需要退出登录后使用密码登录。Remote 代理应保留这次密码登录，不能用新兑换的会话覆盖它。
+公开 API 将这个会话标记为 `remote`，并把它算作人的登录：与密码登录一样，它可以修改 Agent 的对外暴露、选择浏览器后端、配对浏览器。只属于桌面应用自己窗口的功能它打不开，用它修改密码仍需输入当前密码。这个会话由本地 API token 兑换而来，所以持有 token 的 Agent 也能先兑换一个会话，再做这些修改。如上文所说，token 的这些限制不是边界，约束 Agent 的是沙盒。
 
 脚本需要自己的会话时，就自己铸造一个。会话是数据根目录下 `web.db` 里的一行记录，所以 CLI 直接写入一行：
 
@@ -199,8 +199,16 @@ Cookie 设置为 HttpOnly 和 SameSite=Lax。请求确实是 https，或者**受
 
 ### 网络暴露面
 
-服务器默认绑定 `127.0.0.1`。要对外暴露（`HOST=0.0.0.0`），那是部署层面的决定，必须放在 TLS 终结之后，并由代理设置 `x-forwarded-proto`。
+服务器默认绑定 `127.0.0.1`。对外暴露（`HOST=0.0.0.0`）属于部署层面的决定，必须放在 TLS 终结之后。这样的部署需要设置 `PENGUIN_TRUST_PROXY=1`，代理要把 `x-forwarded-proto` 覆盖为 `https`，并把外部主机名传进来：要么原样转发 `Host` 请求头，要么用它覆盖 `x-forwarded-host`。缺任何一条，浏览器的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝。
+
+浏览器所在的地址是服务器的**公共源**（public origin）。代理受信任时，协议取自 `x-forwarded-proto`，主机取自 `x-forwarded-host`，没有时取 `Host`，各取第一个值；不受信任时，就是连接本身的协议与 `Host` 请求头。下文的来源检查拿写请求的 `Origin` 与它比对，服务器交还给浏览器的地址也都以它为准：模型厂商授权后的跳转地址，以及 Chrome 扩展配对时连接的地址。
+
+桌面应用内嵌的服务端信任这两个转发头。它只监听回环地址，只有本机进程能连上；网页也无法在跨源请求（那需要一次服务器从不放行的预检）或 WebSocket 握手里设置这些头。从外部访问它只有 Penguin Remote 中继一条路，中继在它前面终结 TLS。中继的最后一跳，即用户机器上的 Penguin Remote 客户端，应当把 `X-Forwarded-Proto` 覆盖为 `https`、把 `X-Forwarded-Host` 覆盖为公网主机名，各只带一个值，服务器由此看到浏览器所在的 `https://` 地址。
+
+过渡期内，`Origin` 等于请求自身来源（连接的协议加 `Host`）的写请求同样放行。公共源之前发布的桌面端只拿 `Origin` 与这个来源比对，所以中继的一跳（目前是 Penguin Remote 客户端）在 `Origin` 指向隧道自己的主机时，把浏览器的 `https://` 改写成 `http://`。0.3.0 之前，客户端不再改写 `Origin`，改为发送那两个转发头；从 0.3.0 起，服务器只认公共源。
 
 API 只在规范的应用主机名下应答，这样用户生成的预览内容与应用的 cookie 就处于不同的浏览器源（origin）。
 
-跨站请求伪造要面对两层相互独立的防线：SameSite=Lax 的 cookie，以及 Content-Type 检查：凡是 HTML 表单能产生的 Content-Type，对应的写请求一律拒绝。
+针对跨站请求伪造，共有三层相互独立的防线：SameSite=Lax 的 Cookie、写请求的来源检查，以及 Content-Type 检查。SameSite=Lax 的 Cookie 阻止其他站点上的页面借用会话。来源检查用 `403` `cross_origin_write` 拒绝来自其他源的写请求。之所以需要这项检查，是因为 `SameSite` 把同一主机的另一个端口视为同一站点，否则本机其他程序提供的页面就能借用会话。Content-Type 检查会拒绝 HTML 表单能产生的那些类型的写请求，也会拒绝带请求体却没有 `Content-Type` 的写请求；两种拒绝都返回 `415` `unsupported_media_type`。
+
+有两种写请求不受来源检查的约束：`/api/amsp/v1` 下携带 `Authorization: Bearer …` 密钥的 Agent API 写请求，由 Agent API 自己的校验判定；浏览器扩展的配对请求，服务器只对来自扩展自身来源的请求作答。

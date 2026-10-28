@@ -19,6 +19,49 @@ overrides:
   # nanoid < 3.3.17 high (custom generators can loop indefinitely on size 0); only
   # 3.x copies exist here (transitive). Remove once no dependent resolves < 3.3.17.
   nanoid: "^3.3.17"
+  # GHSA-4mjr-xmp4-gh2g / GHSA-x5fp-wj9c-mxmx: qs < 6.16.0 (DoS via an attacker-controlled
+  # isBuffer; array-limit bypass via bracket-key comma parsing). express 4 and body-parser
+  # 1.20 pin ~6.15.1; express arrives through @prismshadow/mmsp, whose main entry never
+  # loads it. @larksuiteoapi/node-sdk's copy resolves >= 6.16 by range. Remove once mmsp no
+  # longer depends on express 4, or express 4 accepts qs ^6.16.
+  qs: "^6.16.0"
+  # GHSA-6j4f-fj2g-mc7p / GHSA-qhr7-859c-m2p7 / GHSA-q2hr-2g5m-vwhr: brace-expansion DoS
+  # (stack exhaustion on nested or comma-heavy braces; quadratic `{a},b}` rewrite). Every
+  # copy is build-time only (minimatch under electron-builder and @vitest/coverage-v8);
+  # `pnpm update` leaves the electron-builder subtree alone, so one line per major keeps
+  # each dependent inside its own major. Remove once a fresh install resolves 1.1.21 /
+  # 2.1.7 / 5.0.12 or newer without them.
+  "brace-expansion@1": "^1.1.21"
+  "brace-expansion@2": "^2.1.7"
+  "brace-expansion@5": "^5.0.12"
+  # GHSA-5jgf-p345-68v8 / GHSA-fph4-wmhf-6fwf / GHSA-f65p-4m7j-42xc / GHSA-jqff-g426-hqxp /
+  # GHSA-qw65-cvwx-89v3 / GHSA-hrr3-gc8f-f4qj: fast-uri < 3.1.8 (host confusion, SSRF and
+  # authority injection in URI normalization). Only ajv 8 under app-builder-lib pulls it;
+  # build-time only. Remove once app-builder-lib's tree resolves >= 3.1.8 on a fresh install.
+  fast-uri: "^3.1.8"
+  # GHSA-6gmq-8vp8-gcm6 / GHSA-4w3w-2rp5-g8jm / GHSA-w2rr-34g9-rvrj / GHSA-93r5-fhx6-vmg9 /
+  # GHSA-965w-775f-mr7g / GHSA-x4fp-j954-r2f4 / GHSA-8344-3jmq-59r6 / GHSA-6h8r-xr42-gp59 /
+  # GHSA-27p8-2357-5qqv / GHSA-c7q8-3ch8-vqpv: @xmldom/xmldom <= 0.8.14 (serializer
+  # injections, quadratic parsing). Only plist 3.1.0 under app-builder-lib pulls it;
+  # build-time only. Remove once app-builder-lib's tree resolves >= 0.8.15 on a fresh install.
+  "@xmldom/xmldom": "^0.8.15"
+  # GHSA-3wwx-pv8p-q78v / GHSA-rfgv-xxqx-mfg5 / GHSA-r53p-7pc4-xj5r: undici 6.x < 6.28.1
+  # (WebSocket DoS; response splitting via the retry interceptor). Only node-gyp 12 under
+  # @electron/rebuild pulls the 6.x line; build-time only. The 7.x copy is the server's own
+  # dependency and is fixed by its range. Remove once node-gyp there moves past undici 6.
+  "undici@6": "^6.28.1"
+  # GHSA-ch52-4w7c-c8xp: http-cache-semantics <= 4.2.0 (max-stale handling can disclose
+  # another user's cached response). Only electron-builder's Electron downloader pulls it
+  # (@electron/get 3 -> got 11 -> cacheable-request 7); nothing shipped loads it. 4.3.0 sits
+  # outside the advisory's range. Remove once app-builder-lib depends on @electron/get >= 5.
+  http-cache-semantics: "^4.3.0"
+# packages/ui is consumed as source, so web, landing, docs and ui-gallery must link it rather than
+# get an injected copy: a copy is refreshed only by `pnpm install`, so a file added to or replaced
+# in packages/ui would not reach their tests, dev servers or builds until then. pnpm links an
+# injected workspace package only while its own peer set matches its dependents'; packages/ui's
+# `supports-color` devDependency keeps them matching (vitest 3's `debug` used to bring it in).
+# After a dependency change, `readlink packages/web/node_modules/@prismshadow/penguin-ui` must
+# still print ../../../ui.
 injectWorkspacePackages: true
 syncInjectedDepsAfterScripts:
   - build
@@ -57,4 +100,4 @@ minimumReleaseAgeExclude:
   - "@deepseek-ai/dsh-session@0.1.0-rc.7"
   - "@deepseek-ai/dsh-timeout@0.1.0-rc.7"
   - "@deepseek-ai/dsh-typert-protocol@0.1.0-rc.7"
-  - "@prismshadow/mmsp@0.5.4"
+  - "@prismshadow/mmsp@0.5.6"

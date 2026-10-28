@@ -3,6 +3,11 @@
  * initialized via GET /api/me on mount; when unauthenticated, the route guard (RequireAuth)
  * redirects to /login; a successful login/registration holds a session cookie (HttpOnly,
  * issued by the server).
+ *
+ * A user is adopted only after the account's preferences and drafts are in this browser's cache
+ * (lib/account-sync, bounded wait): the signed-in app's first render then shows the account's
+ * theme and language, and every composer mounts with the account's draft. Signing out sends what
+ * is still pending first, then stops carrying edits.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -10,6 +15,10 @@ import type { MeResponse, UploadLimits, UserInfo } from "@prismshadow/penguin-se
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
 import { probeSession } from "../api/session-probe";
+import { flushAccountSync, startAccountSync, stopAccountSync } from "../lib/account-sync/sync";
+
+/** How long signing out waits for pending edits to reach the account before it goes ahead. */
+const SIGN_OUT_FLUSH_MS = 2000;
 
 /**
  * Stand-in until GET /api/me answers, matching the server's shipped defaults. The window is the
@@ -60,7 +69,8 @@ interface AuthContextValue {
   /**
    * How THIS session was established — a browser signed into a desktop-mode server holds a
    * "password" session. "desktop" and "setup" may change the password without the old one
-   * (see omitsOldPassword in lib/account-menu). ("token" marks Bearer-authenticated API
+   * (see omitsOldPassword in lib/account-menu). "remote" is a page reached through Penguin
+   * Remote and is treated like "password" everywhere. ("token" marks Bearer-authenticated API
    * callers and never occurs in a browser session; it is carried for type parity with the
    * server.)
    */
@@ -109,7 +119,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Must be registered before the GET /api/me effect below (effects in the same component
   // run in declaration order).
   useEffect(() => {
-    setUnauthorizedHandler(() => setUser(null));
+    setUnauthorizedHandler(() => {
+      // The session is gone: nothing more can reach the account, and the journal keeps what
+      // was pending for this account's next sign-in.
+      stopAccountSync();
+      setUser(null);
+    });
     return () => setUnauthorizedHandler(null);
   }, []);
 
@@ -117,8 +132,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     api
       .getMe()
-      .then((res) => {
+      .then(async (res) => {
         if (cancelled) return;
+        // A refused read already signed the client out (the 401 handler): nothing to adopt.
+        if (!(await startAccountSync(res.user.userId)) || cancelled) return;
         setUser(res.user);
         setPreviewIsolated(res.previewIsolated);
         setDesktopMode(res.desktopMode);
@@ -172,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // back to development, which would cost every UI login a company choice.
     try {
       const me = await api.getMe();
+      if (!(await startAccountSync(me.user.userId))) return;
       setUser(me.user);
       setPreviewIsolated(me.previewIsolated);
       setDesktopMode(me.desktopMode);
@@ -183,11 +201,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // read came back 401, which says the session cookie never took. Adopting a user on a
       // session that does not exist would undo the 401 handler's setUser(null) in the same
       // continuation and mount the shell over a dead session.
-      if (loginSessionSurvives(e)) setUser(res.user);
+      if (loginSessionSurvives(e) && (await startAccountSync(res.user.userId))) {
+        setUser(res.user);
+      }
     }
   }, []);
 
   const logout = useCallback(async () => {
+    // Before the session ends: afterwards nothing pending could reach the account.
+    await Promise.race([
+      flushAccountSync(),
+      new Promise<void>((resolve) => setTimeout(resolve, SIGN_OUT_FLUSH_MS)),
+    ]);
+    stopAccountSync();
     try {
       await api.logout();
     } finally {

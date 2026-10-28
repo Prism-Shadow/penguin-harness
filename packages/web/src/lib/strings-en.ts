@@ -120,6 +120,7 @@ export const en: Strings = {
       failed: "Failed",
       installedOnly: "Installed",
       behind: "Update available",
+      restartNeeded: "Restart needed",
       notConnected: "Not connected",
       unreachable: "Unreachable",
       stopped: "Stopped",
@@ -174,8 +175,11 @@ export const en: Strings = {
       connected: "Connected",
       dialling: "Dialling",
       refused: "Refused",
+      unanswered: "Can't connect",
       failed: "Failed",
     },
+    restartNeededReason:
+      "This machine is on a different version, so its conversations won't update by themselves. Click Restart server; if that doesn't help, reinstall it.",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
     updateNotice: (count: number) =>
@@ -249,6 +253,8 @@ export const en: Strings = {
           "Model keys from environment variables can't be synced to this machine. Set the keys by hand first.",
         skippedTitle: "These models were not synced to this machine:",
         skippedModel: (model: string, reason: string) => `${model}: ${reason}`,
+        notInMachineBuild:
+          "This machine's version doesn't include this built-in model yet; update the machine, then sync config again.",
       },
       held: {
         moving: "Another action is running on this machine.",
@@ -389,10 +395,15 @@ export const en: Strings = {
       editor: "the editor",
     },
     unbound: "Not set",
-    /** The recorder button's tooltip. */
-    rebind: "Change shortcut",
+    /** The recorder button's tooltip — it adds a binding to the command rather than replacing one. */
+    rebind: "Add shortcut",
+    /** The recorder button's idle face: a chord recorded onto the command joins its existing bindings. */
+    addBinding: "Add shortcut…",
+    /** Each existing binding's remove button. */
+    removeBinding: "Remove this shortcut",
     record: "Press the new shortcut…",
-    recordHint: "Esc cancels · Backspace clears",
+    /** Recording's own keys: Esc leaves the command alone; Backspace clears every one of its bindings. */
+    recordHint: "Esc cancels · Backspace clears every binding",
     needsModifier:
       "Hold Ctrl or Alt (⌘ or ⌃ on macOS); Shift only together with them. Or use an F key",
     resetRow: "Restore default",
@@ -417,7 +428,7 @@ export const en: Strings = {
     /** Starts another shell: the terminal panel's "+" and the standalone /terminal page's button. */
     newShell: "New terminal",
     /** The terminal panel's name: its dock tab, its "+" menu row, picker row and launcher entry. */
-    shellEntry: "Command-line terminal",
+    shellEntry: "Terminal",
     /** The terminal panel's strip of shells, for assistive technology. */
     tabsLabel: "Terminal tabs",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
@@ -868,7 +879,7 @@ export const en: Strings = {
     theme: "Theme",
     background: {
       title: "Background",
-      info: "Stored only in this browser or desktop app; never uploaded. PNG, JPEG or WebP, up to 20 MB. Higher transparency makes the image fainter.",
+      info: "Saved to your account, so you also see it when you sign in on another browser or in the desktop app. PNG, JPEG or WebP images up to 20 MB. The higher the transparency, the fainter the image.",
       choose: "Choose image",
       replace: "Replace image",
       remove: "Remove",
@@ -935,6 +946,8 @@ export const en: Strings = {
     notificationsDismissed:
       "The permission prompt was closed without an answer, so notifications stay off. Turn this on again to ask once more.",
     notificationsUnsupported: "This browser does not support system notifications.",
+    notificationsNotAllowedHere:
+      "You turned notifications on elsewhere, but this browser can't show them yet. Turn this on, then choose Allow when your browser asks.",
     trayIcon: "Tray icon",
     trayIconInfo:
       "The desktop app keeps an icon in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs: click it to come back to the window, right-click it to start a session or quit. On by default; turning it off removes the icon at once, no restart, and closing the window then no longer hides it, so the app stays in the Dock on macOS and quits on Windows and Linux.",
@@ -1843,6 +1856,7 @@ export const en: Strings = {
     onMachineHint: (machine: string) =>
       `This agent lives on ${machine}: its settings, chats and deletion all happen on that machine, apart from this server's agents of the same id.`,
     usageThisServerOnly: "The usage center counts this server's agents only",
+    readingMachineAgents: (machine: string): string => `Reading the agents on ${machine}…`,
     deleteConfirmOnMachine: (name: string, machine: string): string =>
       `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
@@ -1907,7 +1921,7 @@ export const en: Strings = {
     apiReadDocs: "Read the documentation",
     apiCopyAgentPrompt: "Copy prompt for Agent",
     apiAgentPrompt: (docsUrl: string, baseUrl: string, agentRef: string) =>
-      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call this Agent.\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\nUse the @prismshadow/amsp SDK: stream() for streamed events and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
+      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call this Agent.\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\nUse the @prismshadow/amsp SDK: stream() for the streamed records and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
     apiSessionSettings: "New session settings",
     apiSessionSettingsHint:
       "Applies to new API sessions. An unset model follows the Project default; an unset thinking level follows the Agent configuration; an unset workspace creates a temporary workspace.",
@@ -1963,7 +1977,8 @@ export const en: Strings = {
     apiTryCacheRead: "Cache read",
     apiTryCacheWrite: "Cache write",
     apiTryElapsed: "Elapsed",
-    apiTryStreamBroken: "The stream ended before run.done.",
+    apiTryStreamBroken: "The stream ended before data: [DONE].",
+    apiTryUnfinished: "The run did not reach its end: its last task_begin was never closed.",
   },
 
   models: {
@@ -2195,6 +2210,7 @@ export const en: Strings = {
     priceCacheRead: "Cache read price",
     priceCacheWrite: "Cache write price",
     priceOutput: "Output price",
+    priceBlankHint: "Empty = not costed",
     promotionPriceHint: (pct: number): string =>
       `These are list prices. A running promotion takes ${pct}% off them; changing a price cancels it`,
     currency: "Currency",
@@ -2203,6 +2219,8 @@ export const en: Strings = {
     apiKey: "API key",
     apiKeyKeepHint: "Leave empty to keep the current key",
     apiKeyEnvHint: (envKey: string): string => `Leave empty to use the ${envKey} env var`,
+    apiKeyEnterHint: "Enter an API key",
+    apiKeyKeylessHint: "Leave blank to use no API key",
     keyConfigured: "Key configured",
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",
@@ -2228,7 +2246,8 @@ export const en: Strings = {
     groupSettingsEntry: "Group settings…",
     groupSettingsTitle: (label: string): string => `${label} group settings`,
     clearGroupKey: "Clear the group key",
-    baseUrlNone: "Not set: the client's default endpoint",
+    baseUrlDefault: "Leave blank to use the default base URL",
+    baseUrlEnterHint: "Enter a base URL",
     detectNeedsBaseUrl: "Enter a base URL first",
     protocolNone: "Not set",
     protocolRoutedById: "Routed by model ID",
@@ -2343,8 +2362,8 @@ export const en: Strings = {
       moonshot:
         "Defaults to the China endpoint (api.moonshot.cn); for a platform.kimi.com key, set MOONSHOT_BASE_URL=https://api.moonshot.ai/v1 beside it, or enter the key here with that base URL",
     },
-    envBaseUrlNote: (envBaseUrlKey: string): string =>
-      `Requests go to the client's default endpoint, or to ${envBaseUrlKey} when it is set`,
+    envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
+      `Requests go to ${defaultBaseUrl}, or to ${envBaseUrlKey} when it is set`,
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
       `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
@@ -2774,6 +2793,10 @@ export const en: Strings = {
     sharedHint: "Managed in the Project config for every machine; it cannot be removed here.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
+    /** A machine out of reach, as the header's machine picker lists it. */
+    machineOutOfReach: (machine: string) => `${machine} (out of reach)`,
+    /** A manage-installs row whose machine has not answered yet: its button waits for it. */
+    waitingFor: (machine: string) => `Waiting for ${machine} to answer`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "Settings",
     pageDesc:
@@ -2821,6 +2844,11 @@ export const en: Strings = {
       failed: (reason: string) => `Failed to load: ${reason}`,
       elsewhere: (machines: string) => `Runs only on ${machines}, not on this server`,
       unsynced: "Installed, not on that machine yet",
+      /** Appended to a library status counted with Agents on a machine out of reach. */
+      lastSeenOn: (n: number) =>
+        n === 1
+          ? " (incl. 1 agent on a machine out of reach, as last seen)"
+          : ` (incl. ${n} agents on machines out of reach, as last seen)`,
     },
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */
@@ -3602,6 +3630,8 @@ Scenarios:
     } as Record<string, string>,
     statusRunning: "Running",
     statusCompacting: "Compacting",
+    /** The session's own run state when nothing is happening — the command palette's session completion shows it beside the title. */
+    statusIdle: "Idle",
     /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
     statusCompletedUnread: "Done, unread",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
@@ -3678,11 +3708,13 @@ Scenarios:
     subagent: "Subagent",
     subagentRunning: "Running",
     /**
-     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
-     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
-     * renders its English `reason` prose as-is.
+     * Abort banner (user interruptions, and the turn cap). The cause localizes from
+     * `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim. The turn cap's line is
+     * localized whole (its message only restates the cap in English). A legacy Trace without a
+     * code renders its English `reason` prose as-is.
      */
     aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      if (item?.errorCode === "max_turns") return "[Stopped]: reached the maximum turns per task";
       const cause =
         item?.errorCode === "user_abort"
           ? "aborted by user"
@@ -3719,9 +3751,11 @@ Scenarios:
               ? "Network or service temporarily unavailable"
               : kind === "image_rejected"
                 ? "The model provider rejected an image in this turn's input (replaced with a note)"
-                : kind === "failed"
-                  ? "The model provider returned an error"
-                  : "The request failed";
+                : kind === "output_truncated"
+                  ? "The model's output was cut off at the output limit"
+                  : kind === "failed"
+                    ? "The model provider returned an error"
+                    : "The request failed";
       const action =
         state === "gaveUp"
           ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`
@@ -3815,6 +3849,11 @@ Scenarios:
       missing: "This conversation's machine is not on this Project's machine list",
       hint: "The conversation is kept on that machine and loads as soon as the connection is back.",
       details: "Technical details",
+    },
+    machineRestartNeeded: {
+      body: (alias: string) =>
+        `${alias} is on a different version, so this conversation won't update by itself. Go to Machines and restart it.`,
+      open: "Go to Machines",
     },
     statsLabel: "Stats",
     removeImage: "Remove image",
@@ -4102,7 +4141,7 @@ Scenarios:
     pinnedSession: "Pinned",
     /** The hover ellipsis button that opens the row's full context menu. */
     moreActions: "More actions",
-    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default, the Trace panel's file pills). */
+    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default). */
     loadMore: "More",
     /** A list's one reveal row (a sidebar group, time mode's whole list, an archive group): n = conversations that list still hides; a click shows ten more, fetching when the loaded ones run out. */
     expandRestSessions: (n: number) => `Show ${n} more ${n === 1 ? "chat" : "chats"}`,
@@ -4787,17 +4826,27 @@ Scenarios:
     zoomIn: "Zoom in",
     linkHint:
       "Hover a timeline segment or event row to cross-highlight, click a segment to jump to its message; legend highlights its kind; drag the bar below to pan/zoom",
+    /** The Trace file picker's panel: its title, and how many files it lists. */
     filesTitle: "Trace files",
+    fileCount: (n: number) => (n === 1 ? "1 file" : `${n} files`),
     toolCalls: "Tool calls",
-    taskInput: "Input tokens this turn",
-    taskOutput: "Output tokens this turn",
     cacheHit: "Cache hits",
+    /** The uncached part of the input, beside its cache hits (a round's readings). */
+    cacheMiss: "Cache misses",
     hitRate: "Hit rate",
     avgToolCalls: "Avg tools / turn",
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
     exportFile: "Export",
+    /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
+    roundNav: "Turn index",
+    roundCount: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
+    /** The navigator's number box: its accessible name and its placeholder. */
+    jumpToRound: "Jump to turn",
+    jumpToRoundPlaceholder: "Turn",
+    /** The panel a round's ring opens, and the name of the button standing in for a ring on a round with no context snapshot. */
+    roundReadings: "Turn readings",
   },
 
   benchmark: {

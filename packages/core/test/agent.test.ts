@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ModelRef, OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
 import {
   agentsMdPath,
@@ -436,14 +436,14 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const gen = handle.run({ messages: [userText("noop")] });
       const first = await gen.next();
       expect(first.done).toBe(false);
-      const msg = first.value as OmniMessage;
+      const msg = first.value as AmspRecord;
       expect(msg.type).toBe("session_meta");
       // Child messages are stamped with the child Session id as the origin hop.
       expect(msg.origin?.[0]).toBe(handle.sessionId);
       for (;;) {
         const next = await gen.next();
         expect(next.done).toBe(false);
-        if (((next.value as OmniMessage).payload as { type?: string }).type === "tool_list_ready") {
+        if (((next.value as AmspRecord).payload as { type?: string }).type === "tool_list_ready") {
           llm = capturedLLMConfigs.list.at(-1)!;
           break;
         }
@@ -645,7 +645,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     }
   });
 
-  it("forwards the run input as an origin-tagged user message, after session_meta and before any model output", async () => {
+  it("forwards the run input as an origin-tagged user message, after session_meta and the child's task_begin, before any model output", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-input-forward");
     await fs.mkdir(ws, { recursive: true });
@@ -664,10 +664,14 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const gen = handle.run({ messages: [userText("count the TODO items")] });
       const first = (await gen.next()).value as { type: string };
       expect(first.type).toBe("session_meta");
-      // The input yield precedes childSession.run: pulling it never issues an LLM request.
-      const second = await gen.next();
-      expect(second.done).toBe(false);
-      const msg = second.value as {
+      // The child's Task opens first, the order its own Trace has: task_begin, then the input.
+      const second = (await gen.next()).value as { origin?: string[]; payload: { type: string } };
+      expect(second.origin).toEqual([handle.sessionId]);
+      expect(second.payload.type).toBe("task_begin");
+      // The input follows before the child's run goes on: pulling it never issues an LLM request.
+      const third = await gen.next();
+      expect(third.done).toBe(false);
+      const msg = third.value as {
         type: string;
         origin?: string[];
         payload: { type: string; role?: string; text?: string };
@@ -919,10 +923,10 @@ describe("Agent.createSession skill metadata injection", () => {
 });
 
 describe("Agent model contexts are assembled from the Agent State on disk, at every context open", () => {
-  const promptOf = (session: { metaMessage: OmniMessage }): string =>
+  const promptOf = (session: { metaMessage: AmspRecord }): string =>
     (session.metaMessage.payload as { system_prompt: string }).system_prompt;
   const mdFile = () => agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
-  const typeOf = (msg: OmniMessage | undefined): string | undefined =>
+  const typeOf = (msg: AmspRecord | undefined): string | undefined =>
     (msg?.payload as { type?: string } | undefined)?.type;
   /** The engine-facing context opener (the Session's wrapper around the Agent's factory), reachable once the first-run bootstrap has resolved the toolset. */
   const openerOf = (session: unknown) =>
@@ -938,8 +942,8 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
   /** Opens the Session's next context through its opener, collecting the records the opener publishes. */
   async function openNext(
     session: unknown,
-  ): Promise<{ opened: OpenedContext; records: OmniMessage[] }> {
-    const records: OmniMessage[] = [];
+  ): Promise<{ opened: OpenedContext; records: AmspRecord[] }> {
+    const records: AmspRecord[] = [];
     const opened = await openerOf(session)({ emit: (msg) => records.push(msg) });
     return { opened, records };
   }
@@ -1127,7 +1131,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-meta");
     await fs.mkdir(ws, { recursive: true });
-    const levelOf = (session: { metaMessage: OmniMessage }) =>
+    const levelOf = (session: { metaMessage: AmspRecord }) =>
       (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
 
     // The seeded config pins "medium"; a `null` pin (a subagent whose parent has none) runs
@@ -1189,7 +1193,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-pin");
     await fs.mkdir(ws, { recursive: true });
-    const levelOf = (session: { metaMessage: OmniMessage }) =>
+    const levelOf = (session: { metaMessage: AmspRecord }) =>
       (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
     const engineLevelOf = (session: unknown) =>
       (session as { engine: { thinkingLevel?: string } }).engine.thinkingLevel;
@@ -1285,8 +1289,8 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
 describe("Session.switchModel on a real Agent (the composition layer's half)", () => {
   const TARGET = { provider: "anthropic", modelId: "claude-sonnet-4-6" };
   /** Runs a switch to its end, keeping what it streamed. */
-  async function drain(gen: AsyncGenerator<OmniMessage, unknown>): Promise<OmniMessage[]> {
-    const all: OmniMessage[] = [];
+  async function drain(gen: AsyncGenerator<AmspRecord, unknown>): Promise<AmspRecord[]> {
+    const all: AmspRecord[] = [];
     for (;;) {
       const res = await gen.next();
       if (res.done) return all;
@@ -1296,7 +1300,7 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
   const lastBuilt = () =>
     capturedLLMConfigs.list.at(-1) as
       { modelId?: string; apiKey?: string; baseUrl?: string; systemPrompt?: string } | undefined;
-  const modelIdOf = (session: { metaMessage: OmniMessage }): string =>
+  const modelIdOf = (session: { metaMessage: AmspRecord }): string =>
     (session.metaMessage.payload as { model_id: string }).model_id;
   /**
    * The opener the Session's engine calls for its next context, and the Session's way of
@@ -1407,7 +1411,7 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
         const gen = child.run({ messages: [userText("noop")] });
         const first = await gen.next();
         await gen.return(null);
-        expect((first.value as OmniMessage).payload).toMatchObject({
+        expect((first.value as AmspRecord).payload).toMatchObject({
           provider: "myproxy",
           model_id: "claude-sonnet-4-6",
         });
@@ -1462,7 +1466,7 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
       const { foldInputImages } = (
         session as unknown as {
           engine: {
-            deps: { foldInputImages: (messages: OmniMessage[]) => Promise<OmniMessage[] | null> };
+            deps: { foldInputImages: (messages: AmspRecord[]) => Promise<AmspRecord[] | null> };
           };
         }
       ).engine.deps;

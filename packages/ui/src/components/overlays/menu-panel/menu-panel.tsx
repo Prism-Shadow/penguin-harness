@@ -4,6 +4,7 @@
  * OptionMenu, Dropdown and the pickers built on them spell their panels and rows from these; the
  * Menu family builds on them.
  */
+import type { ReactNode } from "react";
 import { CheckIcon } from "../../icons/marks/marks";
 
 /**
@@ -36,8 +37,21 @@ export function menuRowTone(selected = false): string {
  */
 export function ChoiceCheck({ on }: { on: boolean }) {
   return (
+    <ChoiceSlot on={on}>
+      <CheckIcon className="text-fg-muted" />
+    </ChoiceSlot>
+  );
+}
+
+/**
+ * ChoiceCheck's slot around a mark the caller draws, for a row that brings its own check: the
+ * public sites draw theirs as a line, so the icon sets the menu check is drawn in stay out of
+ * their bundles.
+ */
+export function ChoiceSlot({ on, children }: { on: boolean; children: ReactNode }) {
+  return (
     <span aria-hidden className="flex w-3 shrink-0 justify-center">
-      {on && <CheckIcon className="text-fg-muted" />}
+      {on && children}
     </span>
   );
 }

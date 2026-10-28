@@ -45,6 +45,7 @@ import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
   WorkbenchInfo,
   WorkbenchInput,
+  WorkbenchRecord,
   WorkbenchRequest,
   WorkbenchResponse,
   WorkbenchTab,
@@ -53,6 +54,7 @@ import type {
 } from "../mechanisms/workbenches.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
 import { migrateWorkbenches } from "./migrate.js";
+import { WorkbenchSubscriptions } from "./subscribe.js";
 import { compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
@@ -508,6 +510,8 @@ export class WorkbenchService implements Workbenches {
     let next: Loaded;
     /** The tree this attempt booted, so a later throw can let it go instead of leaking it. */
     let booted: { dispose: () => void } | null = null;
+    /** Its handler's subscriptions (./subscribe.ts): they end with the tree, or here if it never serves. */
+    let subscriptions: WorkbenchSubscriptions | null = null;
     try {
       const manifests = await readManifests(folder);
       const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
@@ -539,8 +543,15 @@ export class WorkbenchService implements Workbenches {
       ];
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       const root = await loadDefs(manifests, entry);
-      const host = await this.host(projectId, agentId, folder);
-      const tree = await bootModules(root, {
+      const own = new WorkbenchSubscriptions({
+        channels: this.channels,
+        statusOf: (sessionId) => this.runner.statusOf(sessionId),
+        now: () => this.clock.now().getTime(),
+        log: (line) => this.log.line(`[workbench ${folder.id}] ${line}`),
+      });
+      subscriptions = own;
+      const host = await this.host(projectId, agentId, folder, own);
+      const modules = await bootModules(root, {
         ifaces: table as unknown as IfaceTable,
         resources: this.resources!,
         published: {
@@ -548,6 +559,18 @@ export class WorkbenchService implements Workbenches {
           values: { [HOST_MODULE]: { host }, [WEB_MODULE]: { web: {} } },
         },
       });
+      // Whatever lets this tree go — a reload replacing it, a removal, the platform going away —
+      // ends its handler's subscriptions with it: each one holds a Session's channel.
+      const tree: ModuleTree = {
+        ...modules,
+        dispose: () => {
+          try {
+            modules.dispose();
+          } finally {
+            own.close();
+          }
+        },
+      };
       const alias = Object.entries(root.manifest.provides).find(
         ([, ref]) => ref === MAIN_IFACE,
       )![0];
@@ -578,6 +601,7 @@ export class WorkbenchService implements Workbenches {
       // rather than left behind. The previous instance keeps answering — it was never
       // disposed, because that only happens once the new one is in place.
       booted?.dispose();
+      subscriptions?.close();
       next = {
         folder,
         tree: previous?.tree ?? null,
@@ -603,7 +627,12 @@ export class WorkbenchService implements Workbenches {
     return next;
   }
 
-  private async host(projectId: string, agentId: string, folder: WorkbenchFolder) {
+  private async host(
+    projectId: string,
+    agentId: string,
+    folder: WorkbenchFolder,
+    subscriptions: WorkbenchSubscriptions,
+  ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
     return {
@@ -651,6 +680,10 @@ export class WorkbenchService implements Workbenches {
         const messages = await service.traces.readMessages(projectId, row.agentId, sessionId);
         // A new task can begin while reading the trace; never label its prior answer complete.
         return workbenchResult(service.runner.statusOf(sessionId), messages);
+      },
+      subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void) {
+        service.ownSession(projectId, sessionId, "subscribe");
+        return subscriptions.subscribe(sessionId, listener);
       },
       getState: () => state,
       async setState(next: unknown) {

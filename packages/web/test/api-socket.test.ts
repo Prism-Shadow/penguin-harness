@@ -9,17 +9,17 @@ import type { StreamConnection, StreamHandlers } from "../src/api/sse";
 import { FakeSocket } from "./fake-socket";
 
 const handlers = (): StreamHandlers & {
-  omni: unknown[];
+  records: unknown[];
   server: unknown[];
   opens: number;
   errors: boolean[];
 } => {
   const h = {
-    omni: [] as unknown[],
+    records: [] as unknown[],
     server: [] as unknown[],
     opens: 0,
     errors: [] as boolean[],
-    onOmniMessage: (m: unknown) => h.omni.push(m),
+    onRecord: (m: unknown) => h.records.push(m),
     onServerEvent: (e: unknown) => h.server.push(e),
     onOpen: () => {
       h.opens += 1;
@@ -156,7 +156,7 @@ describe("streams", () => {
     last().receive({ id: 1, event: "server_event", eventId: "1-1", data: '{"type":"hello"}' });
     last().receive({ id: 1, event: "message", eventId: "1-2", data: '{"kind":"m"}' });
     expect(h.server).toEqual([{ type: "hello" }]);
-    expect(h.omni).toEqual([{ kind: "m" }]);
+    expect(h.records).toEqual([{ kind: "m" }]);
     conn.close();
     expect(last().frames()[1]).toEqual({ id: 1, cancel: true });
   });
@@ -175,7 +175,7 @@ describe("streams", () => {
     // A stream's own beat reaches no handler: it is liveness, and the deadline was re-armed.
     last().receive({ id: 1, event: "heartbeat", data: "{}" });
     last().receive({ id: 1, event: "server_event", eventId: "h-1", data: '{"type":"hello"}' });
-    // An event with no `event:` line arrives named `message` (sse-text.ts), and stays an OmniMessage.
+    // An event with no `event:` line arrives named `message` (sse-text.ts), and stays a record.
     last().receive({ id: 1, event: "message", eventId: "1-2", data: '{"kind":"m"}' });
     last().receive({
       id: 1,
@@ -187,10 +187,10 @@ describe("streams", () => {
       ["machine_event", { machineId: "m1", event: { type: "hello" } }, "a1b2c3d4-7"],
     ]);
     expect(h.server).toEqual([{ type: "hello" }]);
-    expect(h.omni).toEqual([{ kind: "m" }]);
+    expect(h.records).toEqual([{ kind: "m" }]);
   });
 
-  it("treats an unlisted event name as an OmniMessage when the caller supplied no onEvent", async () => {
+  it("treats an unlisted event name as an AmspRecord when the caller supplied no onEvent", async () => {
     const h = handlers();
     socket.stream("/api/events", h);
     await Promise.resolve();
@@ -204,7 +204,7 @@ describe("streams", () => {
       eventId: "a1b2c3d4-7",
       data: '{"machineId":"m1"}',
     });
-    expect(h.omni).toEqual([{ machineId: "m1" }]); // unchanged behaviour for every existing caller
+    expect(h.records).toEqual([{ machineId: "m1" }]); // unchanged behaviour for every existing caller
     expect(h.server).toEqual([]);
   });
 

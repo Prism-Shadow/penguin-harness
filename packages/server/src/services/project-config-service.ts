@@ -83,7 +83,7 @@ import type {
   LLMOutcome,
   ModelRequestContext,
   ModelRef,
-  OmniMessage,
+  AmspRecord,
   ModelEntry,
   ProjectConfig,
   ProviderConnection,
@@ -749,7 +749,7 @@ export function utilityCompletionConfig(
  * terminal outcome is then what has something to say about why.
  */
 export async function collectUtilityCompletion(
-  stream: AsyncGenerator<OmniMessage, LLMOutcome>,
+  stream: AsyncGenerator<AmspRecord, LLMOutcome>,
 ): Promise<UtilityCompletion> {
   let text = "";
   for (;;) {
@@ -856,7 +856,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    * Called once as the App starts, before the schedulers. A file that does not parse is left for
    * the next read that needs it to report. Exists for the one-time migrations alone, so it goes
    * with them at the 0.3.0 release preparation
-   * (changelog/unreleased/2026-10-15-backward-compatibility.md).
+   * (changelog/0.2.17/2026-10-15-backward-compatibility.md).
    */
   async migrateStoredConfigs(): Promise<void> {
     let entries: Dirent[];
@@ -2298,7 +2298,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    *   vision model. Everything else goes: every row that is not a preset (the user's own,
    *   and those an older catalog added, retired rows included), every user-defined group,
    *   every override on a preset row, and every group setting the catalog does not write
-   *   (custom's and vLLM's base URLs included). Promotions become the catalog's.
+   *   (custom's base URL included; vLLM's returns to the catalog's local address). Promotions
+   *   become the catalog's.
    *
    *   Penguin Go gets no exception. Its rows beyond the presets and its promotions came from
    *   the platform, which prices against its own list: keeping a promotion on a row whose price
@@ -2400,7 +2401,7 @@ export class ProjectConfigService implements ProjectConfigStore {
  * or complete backfill) — the probe's "the endpoint really answered" signal. Tool calls and
  * event messages don't count (the probe declares no tools).
  */
-export function isProbeContent(msg: OmniMessage): boolean {
+export function isProbeContent(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; thinking?: string; text?: string };
   if (p.type === "partial_thinking" || p.type === "thinking") return Boolean(p.thinking);
   if (p.type === "partial_text" || p.type === "text") return Boolean(p.text);
@@ -2408,7 +2409,9 @@ export function isProbeContent(msg: OmniMessage): boolean {
 }
 
 /**
- * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
+ * Probe verdict from the terminal LLM outcome. `completed` always passes, and so does a
+ * response cut off at its output cap (`output_truncated`: a whole response the probe's tiny
+ * max_tokens cut off). A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
  * model that spends the probe's tiny max_tokens entirely on thinking (finish_reason=length ->
  * MMSP's EmptyResponseError, a `retryable` outcome that still streamed content) — the
@@ -2420,7 +2423,10 @@ export function probeVerdict(
   outcome: LLMOutcome,
   sawContent: boolean,
 ): { ok: true } | { ok: false; message: string } {
-  if (outcome.status === "completed") return { ok: true };
+  // A response cut at the probe's tiny cap is a whole answer: the endpoint answered.
+  if (outcome.status === "completed" || outcome.errorCode === "output_truncated") {
+    return { ok: true };
+  }
   if (outcome.status === "retryable" && sawContent) return { ok: true };
   return { ok: false, message: outcomeDetail(outcome) };
 }

@@ -36,6 +36,7 @@ import { DraftView } from "../../src/features/chat/draft-view";
 import { ADMIN_ME } from "./admin-settings";
 import { socketWorld } from "./api-socket-world";
 import { mount } from "./dom";
+import { SignedIn } from "./signed-in";
 import { apiError, json, stubFetch } from "./fetch";
 import type { FakeFetch, FetchRequest } from "./fetch";
 
@@ -310,9 +311,13 @@ export async function mountDraft() {
     [
       {
         element: h(
-          ProjectProvider,
+          SignedIn,
           null,
-          h(MachinesProvider, null, h(SessionsProvider, null, h(Rows), h(Outlet))),
+          h(
+            ProjectProvider,
+            null,
+            h(MachinesProvider, null, h(SessionsProvider, null, h(Rows), h(Outlet))),
+          ),
         ),
         children: [
           { path: "/chat/new", element: h(Draft) },

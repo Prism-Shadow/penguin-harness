@@ -455,4 +455,8 @@ Skill 分两步加载：先加载索引，正文按需读取。
 
 安装插件时，工作台复制到 Agent 的 `workbenches/<id>/`。更新替换插件携带的源文件，保留记录状态与历史版本；如果名称已被其他插件或手工创建的工作台使用，则拒绝安装。卸载会删除工作台及其记录。
 
-内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。也可以把该插件安装到其他 Agent。
+工作台可以在 Agent 工作时实时跟随它发起的会话。页面引入 `../sdk/workbench.js`，这是服务端为每个工作台提供的页面 SDK；`followSession(sessionId)` 以当前登录用户的权限读取该 Session 的 [AMSP 记录](/amsp-records)，回答因此随 Agent 的生成逐字出现；`abortSession(sessionId)` 停止当前这一轮。工作台的服务端代码通过 `host.subscribe(sessionId, listener)` 收到同样的记录。发起任务与保存结果仍由工作台自己的处理器完成，用 `host.sessionResult` 读取结果、定时轮询的做法照常可用。这些都不需要 Agent API 密钥。
+
+工作台页面通过 `/workbench-ui.css` 获得与应用一致的外观：其中的 `--wb-*` 变量和 `wb-*` 类跟随用户的主题、强调色、字体与明暗模式，`wb-badge` 加上 `data-tone` 属性即可按状态着色。`--wb-*` 只会新增、不会改名；要调整页面样式，在 `:root` 上重新声明它们即可。
+
+内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。问题运行时，对话框里会随生成显示回答和 Agent 正在做的事，并提供**停止**按钮。新版本以插件更新的形式提供，已安装的副本只在你更新时才被替换。也可以把该插件安装到其他 Agent。

@@ -11,6 +11,7 @@ export const en: GalleryStrings = {
       home: "Home",
       blog: "Blog",
       download: "Download",
+      amsp: "AMSP",
       docs: "Docs",
       gallery: "Gallery",
       github: "GitHub",
@@ -1497,6 +1498,7 @@ export const en: GalleryStrings = {
             ],
             allowOther: true,
           },
+          answer: "SQLite",
         },
         {
           lead: "The change passed every check.",
@@ -1526,6 +1528,7 @@ export const en: GalleryStrings = {
               { label: "End-to-end tests", description: "About fifteen minutes; needs a browser" },
             ],
           },
+          answer: "Type check, Unit tests",
         },
         {
           lead: "Give the deployment details in one go:",
@@ -1585,6 +1588,16 @@ export const en: GalleryStrings = {
             ],
             submitLabel: "Fill in answers",
           },
+          answer: [
+            "Service name: billing-api",
+            "Region: us-east",
+            "Add-ons: CDN, Backups",
+            "Replicas: 3 pods",
+            "Scale out at: 80%",
+            "Notes:",
+            "  Keep the old version for a day",
+            "  Page me if p95 passes 400 ms",
+          ].join("\n"),
         },
         {
           lead: "Then pick when it goes out:",
@@ -1654,6 +1667,7 @@ export const en: GalleryStrings = {
       a2uiDiagram:
         "flowchart LR\n  A[Request] --> B{Cached?}\n  B -->|yes| C[Serve it]\n  B -->|no| D[Fetch from origin]\n  D --> C",
       a2uiInvalidLead: "A block that cannot be shown gives its reason and its source:",
+      a2uiAnswered: "Answered: read-only, the answers read back from the message the reader sent",
     },
     layout: {
       page: "Page and header",
@@ -1789,6 +1803,7 @@ export const en: GalleryStrings = {
         signInRefused: "Sign-in refused",
         installedOnly: "Installed",
         behind: "Update available",
+        restartNeeded: "Restart needed",
         notConnected: "Not connected",
         unreachable: "Unreachable",
         stopped: "Stopped",
@@ -1803,6 +1818,8 @@ export const en: GalleryStrings = {
         reconnectStopped:
           "lab-2 refused the connection: no ssh server listens at that address and port.",
         behind: "Version 0.2.16 is available",
+        restartNeeded:
+          "This machine is on a different version, so its conversations won't update by themselves. Click Restart server; if that doesn't help, reinstall it.",
       },
       cards: "Machine cards",
       cardsHint:

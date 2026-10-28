@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/penguin-support",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "PenguinHarness product support with a question list, conversation dialogs and answers grounded in documentation and source code.",
   "license": "Apache-2.0",
   "repository": {

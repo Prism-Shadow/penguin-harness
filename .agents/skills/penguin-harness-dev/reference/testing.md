@@ -83,7 +83,7 @@ own, and the real integration goes unchecked (see the seam-fakes note in `verifi
 
 ## 4. Coverage is measured by branches
 
-- Each package can run `vitest run --coverage` (v8 provider, `coverage.all` over `src/`). What
+- Each package can run `vitest run --coverage` (v8 provider, `coverage.include` over `src/`). What
   matters is **branch** coverage of the code a change touches: every `if`, `??`, early return and
   error path the change adds is taken by some scenario, both ways where both ways are behaviour.
 - A PR that adds branches without scenarios for them is unfinished. A PR that deletes tests must

@@ -1,6 +1,6 @@
 ---
 title: 架构总览
-description: SDK、Server、CLI 和 Web App 如何分工，以及三接口边界与 OmniMessage 如何组织整个系统。
+description: SDK、Server、CLI 和 Web App 如何分工，以及三接口边界与 AMSP 记录如何组织整个系统。
 ---
 
 PenguinHarness 是一个 pnpm monorepo，核心是 `@prismshadow/penguin-core` 里的执行引擎。Server 是随产品交付的 Human 实现，所有 Task 都由它运行；SDK 嵌入方也可以直接驱动引擎。
@@ -16,7 +16,7 @@ Web App 和 CLI 经 HTTP 与 SSE 访问 Server，桌面应用则把 Server 和 W
 │   CLI       │  │  Web App (React SPA)        │
 │  (penguin)  │  │                             │
 └──────┬──────┘  └──────────────┬──────────────┘
-       │                        │   HTTP · OmniMessage over SSE
+       │                        │   HTTP · AmspRecord over SSE
 ┌──────┴────────────────────────┴──────────────┐
 │  Server (Hono + SQLite)                      │
 └──────────────────────┬───────────────────────┘
@@ -34,28 +34,28 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 
 | 包 | 角色 |
 | --- | --- |
-| `packages/core` | SDK 与引擎：`context_engine`、OmniMessage、LLM 与 Environment 接口、钩子、状态和 Trace |
+| `packages/core` | SDK 与引擎：`context_engine`、LLM 与 Environment 接口、钩子、状态和 Trace |
 | `packages/server` | Human 实现：通过 core 运行 Task，经 HTTP 接收输入和审批，用 SSE 流式输出结果 |
-| `packages/amsp` | [Agent API](/agent-api) 的协议包：[AMSP](/amsp) 传输类型（Server 也引用）和零依赖的客户端，适用于 Node 与浏览器 |
+| `packages/amsp` | 协议包：[AMSP 记录](/amsp-records)及其构造函数与标记（core 再导出）、[Agent API](/agent-api) 的 [AMSP](/amsp) 传输类型，以及零依赖的客户端，适用于 Node 与浏览器 |
 | `packages/cli` | Server 的终端客户端：REPL 与单次运行都经 HTTP 和 SSE 完成；本地没有运行中的 Server 时会自动启动一个。只有 `penguin config` 直接经 SDK 读写配置文件 |
-| `packages/web` | 纯渲染的 SPA：渲染 OmniMessage 流，不含任何引擎逻辑 |
+| `packages/web` | 纯渲染的 SPA：渲染 AMSP 记录流，不含任何引擎逻辑 |
 | `packages/desktop` | 桌面应用：一个 Electron 外壳，把 Server 作为 `utilityProcess` 运行，并在本地 HTTP 地址上打开窗口 |
 | `packages/hmr` | 热更新机制：版本存储、原子提交、资源注册表，以及 park → boot → swap |
 | `plugins/*` | 内置插件库，每个插件一个包：Skill（`SKILL.md` 目录）和会话钩子（脚本包），由 core 加载 |
 
 ## 三接口边界
 
-`context_engine` 是整个系统的核心，只做两件事：维护线性消息历史，以及在三个接口之间编排事件流。它只认识 [OmniMessage](/omni-message)，不做任何协议转换。
+`context_engine` 是整个系统的核心，只做两件事：维护线性消息历史，以及在三个接口之间编排事件流。它只认识 [AMSP 记录](/amsp-records)，不做任何协议转换。
 
-- **Human**：用户侧边界。它刻意不是一个接口类：SDK 的唯一入口 `session.run(newMessages, { approve, signal })` *就是* Human 边界。输入是一组新增的 OmniMessage 和一个审批回调，输出是 OmniMessage 流。Server 是随产品交付的实现；CLI 和 Web App 经 HTTP 与 SSE 访问它，SDK 嵌入方则自己调用 `session.run`。
-- **LLM**：模型侧接口 `LLMInterface`。它把 OmniMessage 转成发往 MMSP 模型网关的请求，再把流式事件转回 OmniMessage。供应商协议适配全部在 MMSP 内完成，core 不引入任何厂商 SDK。
+- **Human**：用户侧边界。它刻意不是一个接口类：SDK 的唯一入口 `session.run(newMessages, { approve, signal })` *就是* Human 边界。输入是一组新增的记录和一个审批回调，输出是记录流。Server 是随产品交付的实现；CLI 和 Web App 经 HTTP 与 SSE 访问它，SDK 嵌入方则自己调用 `session.run`。
+- **LLM**：模型侧接口 `LLMInterface`。它把记录转成发往 MMSP 模型网关的请求，再把流式事件转回记录。供应商协议适配全部在 MMSP 内完成，core 不引入任何厂商 SDK。
 - **Environment**：工具执行接口 `EnvironmentInterface`。它执行通过审批的工具调用，并把结果流式送回。
 
 内核不含任何供应商、工具或 UI 的细节，三侧都能按配置替换而不必改动 core：今天是本地 shell，明天可以换成别的沙箱；调用方可以是 CLI、Web App，也可以是程序化调用。接口签名见[核心接口](/interfaces)。
 
 ## 一个 Task 的数据流
 
-1. Human 把一段 Prompt（一组 OmniMessage）交给 `session.run`。
+1. Human 把一段 Prompt（一组记录）交给 `session.run`。
 2. 引擎发起一次 Request，`LLMInterface` 流式产出 `partial_*` 分片和完整消息。
 3. 每个完整的 `tool_call` 触发一次 `approve` 决策，通过审批的调用在 Environment 中并发执行。
 4. 工具输出按原始顺序回填，作为下一次 Request 的输入。
@@ -78,7 +78,7 @@ CLI 和 Web App 经 HTTP 与 SSE 同 Server 通信。随产品交付的各个应
 
 | 设计 | 归属 | 承载位置 |
 | --- | --- | --- |
-| OmniMessage 协议、消息解析与分片聚合 | SDK | `core/src/omnimessage/`，见 [OmniMessage 协议](/omni-message) |
+| AMSP 记录、消息解析与分片聚合 | SDK | `amsp/src/records/` 与 `amsp/src/markers/`，由 core 再导出，见 [AMSP 记录](/amsp-records) |
 | ReAct 循环、补发、重连、压缩 | SDK | `core/src/engine/context-engine.ts`，见 [Agent 运行循环](/agent-loop) |
 | 审批机制（每个 `tool_call` 一次决策） | SDK | `ApproveFn`（`core/src/interfaces/shared.ts`）；具体模式由 Server 或 SDK 宿主注入 |
 | 工具执行与集中收尾 | SDK | `core/src/environment/`，见[工具与审批](/tools) |
@@ -123,7 +123,6 @@ packages/
 ├── core/src
 │   ├── agent.ts / session.ts       # the createAgent composition layer and Session (run / compact / generateTitle)
 │   ├── engine/context-engine.ts    # ReAct loop orchestration: turn lifecycle, approvals, carry-over, reconnect, compaction
-│   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · markers/
 │   ├── interfaces/                 # llm.ts · environment.ts · shared.ts (ApproveFn and the vocabulary both sides share)
 │   ├── llm/                        # generative-model.ts MMSP adapter · app-attribution.ts gateway headers · tool-call-ids.ts id uniqueness · context-limits.ts
 │   ├── environment/                # environment.ts execution close-out · tools/ registry, 7 builtin tools, background sessions · mcp/
@@ -134,9 +133,10 @@ packages/
 │   │                               # agent-state (Skill install, prompt assembly) · agent-vault · builtin-agents
 │   ├── trace/                      # writer.ts append-only JSONL · resume.ts replay-based recovery
 │   └── internal/                   # shared helpers: dates, Session support, merge queue, session-title.ts (one-shot title generation, never in Trace)
+├── amsp/src                        # records/ the record types, guards and builders · markers/ · the Agent API types and client
 ├── server/src                      # index.ts boot sequence · app assembly · db (node:sqlite) · auth · http/routes · runtime · services · hmr · plugin · terminal · model-catalog.ts
 ├── cli/src                         # commander entry · commands/ (run / chat / input / logs / ls / agent / project / schedule / config / serve …) · server client and approval prompts
-├── web/src                         # api client · state · lib/omni stream rendering · components · feature pages (layout below)
+├── web/src                         # api client · state · lib/amsp stream rendering · components · feature pages (layout below)
 ├── desktop/                        # the Electron shell
 ├── hmr/                            # the hot-update mechanism
 ├── landing/                        # the product landing page (with the blog)
@@ -149,7 +149,7 @@ packages/
 packages/web/src
 ├── api/          # fetch wrapper · one function per API (DTOs type-only from @prismshadow/penguin-server/api) · SSE wrapper
 ├── state/        # auth / project / sessions / company / theme / locale contexts
-├── lib/omni/     # OmniMessage stream → view-model reducer; connect-first + dedup stream controller
+├── lib/amsp/     # AmspRecord stream → view-model reducer; connect-first + dedup stream controller
 ├── components/   # ui primitives (modal / drawer / select …) and the app layout
 ├── pages/        # the login pages
 └── features/     # chat / agents / skills / plugins / models / usage / traces / benchmark / schedules / company / settings / admin … pages
@@ -161,16 +161,16 @@ Server 的路由与投递保证见 [Server API](/server-api)，Server 进程如�
 
 ### 一个协议，三种职责
 
-OmniMessage 同时是 SDK 的对外接口、Trace 的落盘格式和引擎内部的通货：「流出去的」「存下来的」「模型看到的」是同一种东西。
+AMSP 记录同时是 SDK 的对外接口、Trace 的落盘格式和引擎内部的通货：「流出去的」「存下来的」「模型看到的」是同一种东西。
 
 ### 错误收敛为消息
 
-LLM 与 Environment 从不向引擎抛异常。它们的结果携带四值 `stop_reason`，具体原因由 `error_code` 和 `error_message` 承载：
+LLM 与 Environment 从不向引擎抛异常。Request 的结束记在 `request_end.status` 上，工具结果带自己的 `status`（`completed`、调用被拒或运行中被中断时的 `aborted`、`fatal`），具体原因由 `error_code` 和 `error_message` 承载：
 
-| `stop_reason` | 含义与引擎行为 |
+| `request_end.status` | 含义与引擎行为 |
 | --- | --- |
 | `completed` | 正常完成；循环继续或 Task 结束 |
-| `retryable` | 值得重试的 LLM 失败：引擎在同一次运行内自动重连，最多连续 5 次无进展的重试，指数退避并设上限 |
+| `retryable` | 值得重试的 LLM 失败，停在输出上限的响应（`output_truncated`）也在其中：引擎在同一次运行内自动重连，最多连续 5 次无进展的重试，指数退避并设上限 |
 | `fatal` | 确定性的失败，例如凭据被拒：运行立即停止，因为重试也不可能成功 |
 | `aborted` | 用户中断 |
 

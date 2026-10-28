@@ -58,7 +58,7 @@ function assemble(groups: Group[]): {
         return token === TOKEN ? { user: USER, via: "token" } : null;
       },
       authenticateWithMeta: (token: string) =>
-        token === "remote-cookie" ? { user: USER, via: "token", renewed: false } : null,
+        token === "remote-cookie" ? { user: USER, via: "remote", renewed: false } : null,
       sessionIsLive: (token: string) => token === "remote-cookie",
     },
     errors: { record: () => {} },

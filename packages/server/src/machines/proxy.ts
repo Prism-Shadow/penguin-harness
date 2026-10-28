@@ -45,7 +45,7 @@ export interface ProxyTarget {
 }
 
 /** A parsed proxy path: which machine, and the remote-side path to request. */
-interface ProxyPath {
+export interface ProxyPath {
   machineId: string;
   /** The path forwarded to the remote, always starting `/api/`. */
   remotePath: string;
@@ -83,6 +83,10 @@ const DROP_REQUEST_HEADERS = new Set([
   "host",
   "cookie",
   "authorization",
+  // The browser's Origin names THIS server; the machine, addressed under a Host of its own,
+  // would read it as another origin's and refuse every write. Where the request came from is
+  // judged here, on the server the browser talks to (the write guard covers `/server/*`).
+  "origin",
   "connection",
   "keep-alive",
   "upgrade",
@@ -228,24 +232,37 @@ export function machinesProxy(
         { status: 503 },
       );
     }
-    // A stream rides the one socket held to the machine (PRFC-0011) and ONLY that: a stream
-    // forwarded over HTTP is a channel held open for good, and across many machines those
-    // pile up. Without a socket the stream is answered with the reason, and the browser
-    // re-issues it on its backoff (socket-relay.ts).
-    const wantsStream =
-      request.method === "GET" &&
-      (request.headers.get("accept") ?? "").includes("text/event-stream");
-    if (wantsStream) {
-      // The socket transport's answer, when the socket carried this request
-      // (socket/stream-answer.ts): the machine's frames answer it directly.
-      const relayed = await relay.stream(path.machineId, target, {
-        path: `${path.remotePath}${url.search}`,
-        lastEventId: request.headers.get("last-event-id"),
-        answer: answerOf(request),
-      });
-      if (relayed.status < 500) report?.(path.machineId, { ok: true });
-      return relayed;
-    }
-    return proxyThroughSession(request, path, target, report);
+    return forwardToMachine(request, path, target, relay, report);
   };
+}
+
+/**
+ * Forwards one request to a connected machine's server: a `/server/<machineId>/…` request, and
+ * a Session-level request routed by its Session (session-forward.ts), take the same path.
+ */
+export async function forwardToMachine(
+  request: Request,
+  path: ProxyPath,
+  target: ProxyTarget,
+  relay: MachineSocketRelay,
+  report?: ProxyReport,
+): Promise<Response> {
+  // A stream rides the one socket held to the machine (PRFC-0011) and ONLY that: a stream
+  // forwarded over HTTP is a channel held open for good, and across many machines those
+  // pile up. Without a socket the stream is answered with the reason, and the browser
+  // re-issues it on its backoff (socket-relay.ts).
+  const wantsStream =
+    request.method === "GET" && (request.headers.get("accept") ?? "").includes("text/event-stream");
+  if (wantsStream) {
+    // The socket transport's answer, when the socket carried this request
+    // (socket/stream-answer.ts): the machine's frames answer it directly.
+    const relayed = await relay.stream(path.machineId, target, {
+      path: `${path.remotePath}${new URL(request.url).search}`,
+      lastEventId: request.headers.get("last-event-id"),
+      answer: answerOf(request),
+    });
+    if (relayed.status < 500) report?.(path.machineId, { ok: true });
+    return relayed;
+  }
+  return proxyThroughSession(request, path, target, report);
 }

@@ -27,7 +27,7 @@ import {
   tokenUsage,
   toolListReady,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, StopReason, TokenCounts } from "@prismshadow/penguin-core";
+import type { AmspRecord, StopReason, TokenCounts } from "@prismshadow/penguin-core";
 import type {
   ModelRefDto,
   ServerEvent,
@@ -105,14 +105,14 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
     compactability: () => "ok" as const,
     steer: () => false,
     skipReconnectWait: () => false,
-    async *run(): AsyncGenerator<OmniMessage> {
+    async *run(): AsyncGenerator<AmspRecord> {
       yield requestBegin();
       yield assistantText("answered");
       yield requestEnd("completed");
       yield tokenUsage(counts(50), counts(50));
     },
-    async *compact(): AsyncGenerator<OmniMessage> {},
-    async *switchModel(opts): AsyncGenerator<OmniMessage, StopReason> {
+    async *compact(): AsyncGenerator<AmspRecord> {},
+    async *switchModel(opts): AsyncGenerator<AmspRecord, StopReason> {
       fake.signals.push(opts.signal);
       if (behaviour.kind === "throw") throw behaviour.error;
       if (behaviour.kind === "inline") {
@@ -183,7 +183,7 @@ describe("POST /switch-model", () => {
 
   /** The Session channel's traffic, split into messages and server events, as an SSE client sees it. */
   const listen = () => {
-    const messages: OmniMessage[] = [];
+    const messages: AmspRecord[] = [];
     const events: ServerEvent[] = [];
     /** The row's model as it stood when each compaction_end was published. */
     const rowAtEnd: ModelRefDto[] = [];
@@ -196,7 +196,7 @@ describe("POST /switch-model", () => {
         events.push(JSON.parse(evt.data) as ServerEvent);
         return;
       }
-      const msg = JSON.parse(evt.data) as OmniMessage;
+      const msg = JSON.parse(evt.data) as AmspRecord;
       messages.push(msg);
       heldAt.push([
         msg.type === "session_meta" ? "session_meta" : (msg.payload as { type?: string }).type,
@@ -379,7 +379,7 @@ describe("POST /switch-model", () => {
     });
     const fake = switchFake(A, { kind: "stream", status: "completed", gate });
     // A run that parks too, on the same gate.
-    fake.run = async function* (): AsyncGenerator<OmniMessage> {
+    fake.run = async function* (): AsyncGenerator<AmspRecord> {
       await gate;
       yield assistantText("done");
     };

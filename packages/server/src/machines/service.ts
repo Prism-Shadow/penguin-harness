@@ -130,6 +130,8 @@ import { machinesProxy } from "./proxy.js";
 import type { ProxyTarget } from "./proxy.js";
 import { MachineEventHub } from "./event-hub.js";
 import { MachineSockets } from "./machine-sockets.js";
+import { machineSessionForward } from "./session-forward.js";
+import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
@@ -2532,7 +2534,11 @@ export class MachinesService {
     if (models.created.length > 0) say(`Created there: ${models.created.join(", ")}.`);
     for (const entry of models.skipped) {
       skipped.push(entry);
-      say(`Skipped ${entry.provider}/${entry.modelId} — ${entry.reason}`);
+      say(
+        entry.builtInHere === true
+          ? `Skipped ${entry.provider}/${entry.modelId} — a built-in model here that the build on that machine does not include yet; update that machine, then sync again.`
+          : `Skipped ${entry.provider}/${entry.modelId} — ${entry.reason}`,
+      );
       const config = await configOf(entry.projectId).catch(() => null);
       const names = (ref: ModelRef | undefined) =>
         ref?.provider === entry.provider && ref.model_id === entry.modelId;
@@ -3166,6 +3172,8 @@ export class MachinesModule {
   @Use() private readonly users!: Users;
   @Use() private readonly resourceGroups!: ResourceGroups;
   @Provide() machines!: Machines;
+  /** Session-level requests for a machine's Session, routed by its id (session-forward.ts). */
+  @Provide() sessionForward!: MachineSessionForward;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
   setup({ effect }: ClassCtx) {
@@ -3198,7 +3206,12 @@ export class MachinesModule {
     // The generation's one socket cache and the event hub over it (PRFC-0011): the proxy's
     // streams and the machines' aggregate event stream share both, so the hub holds ONE
     // subscription per machine however many tabs read it.
-    const sockets = new MachineSockets((line) => console.log(line));
+    // A machine whose server answers HTTP and never the socket's handshake reads as needing a
+    // restart on the Machines page: that reading arrives with the list, so its start and its end
+    // are told like any other change to it.
+    const sockets = new MachineSockets((line) => console.log(line), {
+      announce: () => toAdmins({ type: "machines_changed" }),
+    });
     const events = new MachineEventHub(sockets, (line) => console.log(line));
     const machines = new MachinesService(
       this.paths.root,
@@ -3216,6 +3229,9 @@ export class MachinesModule {
     this.machines = machines;
     this.routes = machinesRoutes({ machines, access: this.access, events });
     this.serverProxyRoutes = machinesServerProxyRoutes(machines, { sockets, events });
+    this.sessionForward = machineSessionForward(machines, { sockets, events }, (line) =>
+      console.log(line),
+    );
     // Every transient ssh session THIS generation opened closes with it, and every held one is
     // left for the successor, whose start() re-holds each one the record says was held.
     effect(() => {

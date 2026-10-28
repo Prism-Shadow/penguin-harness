@@ -13,14 +13,21 @@
  * - Given a prompt with no text, its images make one message.
  * - Given files attached to a prompt, each file is named in its own tile above the text.
  * - Given a prompt that follows a reply, its images do not join the earlier prompt.
+ *
+ * A reply's form shows what answered it:
+ * - Given the form as the open question, it takes input and starts at its defaults.
+ * - Given the person's message with the filled text after it, the form is read-only and shows
+ *   those answers.
+ * - Given the same transcript read back from history after a reload, under the other interface
+ *   language, it shows the same answers.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MessageStream } from "../src/features/chat/message-stream";
-import type { StreamRenderContext } from "../src/features/chat/message-stream";
-import type { ChatItem } from "../src/lib/omni/stream-model";
+import type { A2uiActions, StreamRenderContext } from "../src/features/chat/message-stream";
+import type { ChatItem } from "../src/lib/amsp/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { LocaleProvider } from "../src/state/locale";
@@ -201,5 +208,88 @@ describe("MessageStream prompts with attachments", () => {
     ]);
     expect(anchorCount(html)).toBe(2);
     expect(html.indexOf("AAAA")).toBeGreaterThan(html.indexOf("Answer."));
+  });
+});
+
+describe("MessageStream answered A2UI blocks", () => {
+  const FORM = {
+    type: "form",
+    title: "Deployment",
+    fields: [
+      { id: "service", label: "Service name", kind: "text", required: true },
+      {
+        id: "replicas",
+        label: "Replicas",
+        kind: "number",
+        min: 1,
+        max: 10,
+        unit: "pods",
+        default: 2,
+      },
+      { id: "notify", label: "Notify me", kind: "switch", default: true },
+    ],
+  };
+  const question = `Give the details in one go:\n\n\`\`\`a2ui\n${JSON.stringify(FORM)}\n\`\`\``;
+  // What the form's fill button put in the composer, as the person sent it.
+  const answer = "Service name: billing-api\nReplicas: 5 pods\nNotify me: No";
+  afterEach(() => {
+    setActiveStrings(zh);
+    vi.unstubAllGlobals();
+  });
+  /** The stream as the chat page draws it, in the interface language `lang`. */
+  const stream = (items: ChatItem[], lang: A2uiActions["lang"] = "en") => {
+    stubLocalStorage().setItem("penguin.lang", lang);
+    return renderToStaticMarkup(
+      createElement(
+        LocaleProvider,
+        null,
+        createElement(MessageStream, {
+          items,
+          version: 1,
+          ctx: {
+            pendingApprovals: new Map(),
+            onApprove: async () => {},
+            origin: [],
+            taskRunning: false,
+            a2uiActions: { interactive: true, fill: () => {}, lang },
+          },
+          onAddExcerpt: () => {},
+        }),
+      ),
+    );
+  };
+  /** The opening tags of `name` carrying every one of `attrs`. */
+  const tags = (html: string, name: string, ...attrs: string[]) =>
+    (html.match(new RegExp(`<${name}\\b[^>]*>`, "g")) ?? []).filter((tag) =>
+      attrs.every((attr) => tag.includes(attr)),
+    );
+  const transcript = (first: number): ChatItem[] => [
+    { kind: "user_text", id: first, text: "Deploy the billing service" },
+    { kind: "assistant_text", id: first + 1, text: question, streaming: false },
+    { kind: "user_text", id: first + 2, text: answer },
+  ];
+
+  it("the open question takes input and starts at its defaults", () => {
+    const html = stream(transcript(1).slice(0, 2));
+    expect(tags(html, "button", 'type="submit"')).toHaveLength(1);
+    expect(tags(html, "input", 'value="2"')).toHaveLength(1);
+    expect(tags(html, "button", 'role="switch"', 'aria-checked="true"')).toHaveLength(1);
+  });
+
+  it("once answered, the form is read-only and shows the answers that were sent", () => {
+    const html = stream(transcript(1));
+    expect(tags(html, "button", 'type="submit"')).toHaveLength(0);
+    expect(tags(html, "input", 'value="billing-api"', 'disabled=""')).toHaveLength(1);
+    expect(tags(html, "input", 'value="5"')).toHaveLength(1);
+    expect(tags(html, "input", 'value="2"')).toHaveLength(0);
+    expect(tags(html, "button", 'role="switch"', 'aria-checked="false"')).toHaveLength(1);
+  });
+
+  it("after a reload, read back from history under the other language, shows the same answers", () => {
+    // History windows arrive as new items with their own ids; the interface is in Chinese now.
+    const html = stream(transcript(-40), "zh");
+    expect(tags(html, "input", 'value="billing-api"', 'disabled=""')).toHaveLength(1);
+    expect(tags(html, "input", 'value="5"')).toHaveLength(1);
+    expect(tags(html, "button", 'role="switch"', 'aria-checked="false"')).toHaveLength(1);
   });
 });

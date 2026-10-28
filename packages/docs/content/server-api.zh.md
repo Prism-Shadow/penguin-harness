@@ -41,7 +41,7 @@ packages/server/src
 
 API 接受两种凭证：Cookie 会话和本地 API token。
 
-- Cookie 会话：`penguin_session`（HttpOnly，SameSite=Lax）。普通登录会话有效期为 30 天并滑动续期；由 CLI 和 Remote 铸造的短期会话保持签发时设置的到期时间。
+- Cookie 会话：浏览器（通过带 `Origin` 的登录请求）拿到的会话 Cookie 名为 `penguin_session_<port>`（HttpOnly，SameSite=Lax），`<port>` 是它访问服务器所用地址的端口。地址里没有端口，或客户端（CLI、curl）不发送 `Origin` 时，名字是 `penguin_session`；浏览器沿用旧名的 Cookie 仍被接受。普通登录会话有效期为 30 天，并采用滑动续期；由 CLI 和 Remote 铸造的短期会话保持签发时设置的到期时间。
 - 密码以 scrypt 哈希存储。会话是 `auth_sessions` 表中的一行，以随机 Cookie token 的 sha256 为键；原始 token 从不存储。会话重启后依然有效，符合条件的会话会在原地续期；登出则删除这一行。
 - 不开放注册。启动时，服务器会用一个随机密码初始化内置管理员 `admin`：密码哈希后保存，明文随即丢弃，没有任何人见过它。在设置密码之前，每次启动都会打印一条首次登录链接，用来认领账号。自动化场景可以改用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定一个已知密码。其余所有账号都由管理员创建。
 - 仅限同源：未启用任何 CORS 中间件。例外是 Agent API 的 `/api/amsp/v1`：它应答任何来源的预检，并在带 `Authorization` 的请求上返回 `Access-Control-Allow-Origin: *`。这组路由不接受上面两种凭证：请求出示的是该 Agent 的 API 密钥；Agent 允许无密钥访问时，也可以不出示。见 [Agent API](/agent-api)。
@@ -74,7 +74,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 `POST /api/remote/session` 将当前本地 API token 所代表的权限兑换为一个以内置管理员身份创建的短期浏览器会话。接口只接受 `Authorization: Bearer <本地 API token>`：未提供或提供错误的 Bearer token 返回 `401`；已通过密码、桌面、首次登录或 Remote Cookie 认证的请求返回 `403`。请求必须使用 `Content-Type: application/json`，请求体为空对象（`{}`）。该接口不会新增任何 CORS 开放。
 
-有效期固定为一小时，调用方不能自行指定。持久化的会话来源在内部标记为 `remote`，不会进入 30 天滑动续期路径。它保留本地 API token 的权限（`/api/me` 返回 `sessionVia: "token"`），因此 `human_required` 限制和 Agent 身份规则也适用于这个 Cookie。需要人工授权的写操作必须另行使用密码登录。Remote Cookie 不能再次兑换会话；兑换请求必须在 Bearer 头中携带真正的本地 API token。成功响应带有 `Cache-Control: no-store`，不包含 `Set-Cookie`，并返回：
+有效期固定为一小时，调用方不能自行指定。持久化的会话来源在内部标记为 `remote`，不会进入 30 天滑动续期路径。`/api/me` 对它返回 `sessionVia: "remote"`，它算作人的登录：以 `human_required` 拒绝本地 API token 的写操作接受它；Agent 身份规则也把它当作普通的 Cookie 会话，它携带的 `sessionId` 或 `agentId` 不会被当作 Agent 的身份声明。它打不开只属于桌面应用自己窗口的路由，用它修改密码仍需提供当前密码。持有本地 API token 的 Agent 同样能兑换这样的会话，所以这也不是边界，边界是沙盒。Remote Cookie 不能再次兑换会话；兑换请求必须在 Bearer 头中携带真正的本地 API token。成功响应带有 `Cache-Control: no-store`，不包含 `Set-Cookie`，并返回：
 
 ```json
 {
@@ -86,6 +86,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 ```
 
 `sessionToken` 是原始管理员凭据。Penguin Remote 的本地代理负责在公网域名的响应中把它写入上述名称的 Cookie。客户端不得记录或缓存本地 API token 以及返回的会话 token。
+
+桌面端的服务端信任转发头，并据此得出浏览器所在的地址（见[安全](/security#网络暴露面)）。因此本地代理转发每个请求时（含 WebSocket 升级），都应当把 `X-Forwarded-Proto` 覆盖为 `https`、把 `X-Forwarded-Host` 覆盖为公网主机名，各只带一个值。对于在此之前发布的桌面端，它还把浏览器的 `Origin` 由 `https://<公网主机名>` 改写为 `http://<公网主机名>`；0.3.0 之前它不再改写 `Origin`，只发送这两个头；从 0.3.0 起，服务端不再接受改写后的 `http://` Origin。
 
 ## 认证与账号
 
@@ -101,7 +103,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | PUT | `/api/me/password` | 修改密码：`{oldPassword, newPassword}` |
 | PUT | `/api/me/profile` | 设置头像和昵称：`{displayName?, avatar?}` → `{user}` |
 | GET | `/api/me/prefs` | 读取 UI 偏好 |
-| PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并）；拒绝 `browserBackend`（`400`），它经由 [`PUT /api/builtin-browser/backend`](#agent-浏览器) 选择 |
+| PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并）；拒绝 `browserBackend`（`400`），它经由 [`PUT /api/builtin-browser/backend`](#agent-浏览器) 选择；同样拒绝 `backgroundImageId`，它只由背景图片接口写入 |
+| GET | `/api/me/drafts` | 你尚未发送的草稿：`{drafts: {<kind>:<id>: value}}` |
+| PATCH | `/api/me/drafts` | 按键写入草稿，值为 `null` 即删除：`{drafts}`，每次至多 50 条；返回 `204` |
+| GET | `/api/me/background-image` | 你的背景图片：`{image, imageId}`，没有时两者都为 `null` |
+| PUT | `/api/me/background-image` | 设置背景图片（不超过 1 MiB 的 PNG、JPEG 或 WebP data URL），传 `null` 即移除：`{image}` → `{imageId}` |
 | GET | `/api/me/archived-sessions/groups` | [设置 › 已归档对话](/settings#已归档对话)的分组：`?q=&source=&projectId=` → `{groups, total, asOf}` |
 | GET | `/api/me/archived-sessions` | 一个分组中的已归档 Session：`?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |
 | POST | `/api/me/archived-sessions/unarchive` | 批量取消归档：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
@@ -259,7 +265,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 
 - `elsewhere`：这台主机已由其他 Project 安装，可以直接接管，而不必重新安装。
 - `keepConnected`：本服务器保持这台机器连接期间为 `true`（见上文）；只添加过、已停止、已删除或已断开的机器没有这个字段。
-- `configSync`：最近一次向这台机器下发配置的结果，只存在内存中，本服务器启动后第一次下发之前没有这个字段：`{at, ok, detail?, envOnly, skipped}`。`detail` 逐行列出没有下发成功的部分。`envOnly` 为模型条目取自本服务器环境变量、因而无法下发的每个值列出 `{projectId, provider, modelId, variable}`；`skipped` 为对端拒绝的每个模型条目列出 `{projectId, provider, modelId, code, reason}`。两者都只含本 Project 的条目。
+- `configSync`：最近一次向这台机器下发配置的结果，只存在内存中，本服务器启动后第一次下发之前没有这个字段：`{at, ok, detail?, envOnly, skipped}`。`detail` 逐行列出没有下发成功的部分。`envOnly` 为模型条目取自本服务器环境变量、因而无法下发的每个值列出 `{projectId, provider, modelId, variable}`；`skipped` 为对端拒绝的每个模型条目列出 `{projectId, provider, modelId, code, reason, builtInHere?}`；`builtInHere: true` 表示这是本服务器的内置模型、却被对端以 `model_not_addable` 拒绝，说明对端的构建还没有这个模型，更新那台机器后即可同步过去。两者都只含本 Project 的条目。
 - `reconnect`：服务器正在把一台保持连接的机器连回来时出现：`{since, attempts, maxAttempts, nextAt, gaveUp?, lastError, sshReason?, diagnosis, waitsForPassword?}`——这一轮从何时开始、已失败几次与失败几次即停止、下次何时尝试（正在尝试时与停止后为 `null`）、停止的原因（`attempts` 或 `ssh`，重试后清除）、最近一次失败的对端原话、ssh 拒绝时的原因、连续失败 3 次后运行的连接检查（此前为 `null`），以及保存的密码被拒后的 `waitsForPassword: true`——此后在密码改变之前不再尝试。
 - `passwordSaved`：本服务器用自己保存的密码登录这台机器时为 `true`（见上文）。
 - `member`：机器在本 Project 的列表中时为 `true`，机器管理页为它显示一张卡片。`POST …/add` 只把它加入列表而不安装；`POST …/use` 在被要求时就把它加入列表，因此首次安装失败的机器连同它的任务留在列表中，直到被删除。
@@ -268,7 +274,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `installed`：本服务器最近一次在那台机器上执行的安装，格式为 `{version, at}`；从未安装过则为 `null`。它保存在数据根目录下，因此重启、热推送和其他机器上的安装都不会使它丢失。它记录的是实际执行过的操作，并不核对远端状态，所以手动清空过的机器仍会显示为已安装，直到下一次安装把它纠正过来。安装失败不会留下任何记录。
 - `machineId`：机器自身的 id，由运行在那台机器上的服务器生成（记录在它的 `machine` 表中），共 16 个 base64url 字符。重命名、修改别名和重新安装都不会改变它，持久化引用应指向它。在那台机器上启动过服务器之前，它为 `null`，因为还没有任何东西生成过它。本服务器在与 `status` 同一次往返中获知它，并把它与安装记录存放在一起。同一主机的两个别名报告相同的 `machineId`。
 - `local`：标记本服务器所在的机器。由于应答请求的正是它，这条记录始终在列表中，始终显示为已安装且正在运行；它也永远不会成为安装目标：对它调用 `POST …/install` 返回 `409` `self_install`。
-- `socket`：本服务器对那台机器持有的 API 套接字，形如 `{state, since, detail?}`——握手完成后为 `connected`，拨号尚未结束时为 `dialling`，机器对握手回了状态码时为 `refused`，拨号本身失败时为 `failed`——`since` 是进入该状态的时刻，`detail` 在有话可说时携带传输层自己的原话。本地这条记录为 `null`；在有任何流索要过套接字之前同样为 `null`。它与 `connection` 一样，是关于本侧某个进程的事实；Machines 页读它，卡住的流就不必再去浏览器控制台里找。
+- `socket`：本服务器对那台机器持有的 API 套接字，形如 `{state, since, detail?}`——握手完成后为 `connected`，拨号尚未结束时为 `dialling`，机器对握手回了状态码时为 `refused`，它的服务端应答 HTTP 却始终不应答握手时为 `unanswered`，拨号本身失败时为 `failed`——`since` 是进入该状态的时刻，`detail` 在有话可说时携带传输层自己的原话。本地这条记录为 `null`；在有任何流索要过套接字之前同样为 `null`。它与 `connection` 一样，是关于本侧某个进程的事实；Machines 页读它，卡住的流就不必再去浏览器控制台里找。`unanswered` 说明那台机器的服务进程早于套接字：交给运行中服务端的更新只替换它的平台，从不替换接收升级请求的那个进程，于是机器报告的是当前构建，却仍然没有套接字：它运行的不是本服务器的版本，而远程机器必须与本服务器运行同一版本。Machines 页把它读作需要重启；再次拨号期间保持不变，一次握手完成后清除。
 - `status`：`{state, checkedAt, port?, detail?}`，其中 `state` 为 `running`、`stopped` 或 `unreachable`；从未探测过的机器为 `null`。没有单独的 ssh 状态。ssh 就是传输通道，连不上的机器即为 `unreachable`，`detail` 携带 OpenSSH 自己的报错信息。`GET` 从不主动探测，只报告最近一次的结果，因为每探测一台机器都要花费一次 ssh 往返，而列表本身只是配置文本。只有 `POST …/machines/probe` 会付出这些往返开销，而且只针对已安装的机器。
 
 ### 已连接机器的 API
@@ -279,6 +285,12 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 该代理仅限管理员，且只使用单一身份：请求在对端以那台机器的管理员身份执行，所用会话由本服务器凭借自身的 ssh 访问能力签发（在那台机器上执行 `penguin auth token`）。浏览器的 Cookie 不会传到对端，机器上的 Cookie 也不会带回本地。只有 `/api` 会转发，前端仍在本地运行。
 
+**机器上的 Session 也可以只凭 id 访问。** 管理员发出的 `/api/sessions/:sessionId/…` 请求，若本服务器自己的索引里没有该 Session，就会转发到持有它的机器，转发方式、身份与请求头规则都与 `/server/<machineId>/api/sessions/:sessionId/…` 相同，流也同样只走 socket。本服务器从内存中的索引查出机器：索引由各机器的 `session_created` 与 `session_deleted` 事件填充；遇到没见过的 id，则同时询问调用方各 Project 的每台已连接机器（`GET /api/sessions/:sessionId`），先答 `200` 的机器即持有该 Session。所有机器都否认的 id 会被记为未知 10 秒。本服务器自己索引里的 Session 一律在本地应答，非管理员调用方照常得到 `404` `session_not_found`。除机器自己的应答外，还有三种结果：
+
+- `404` `session_not_found`——没有机器持有该 id。
+- `503` `not_connected`——持有该 Session 的机器未连接；`details` 给出它的 `machineId` 与 `alias`。
+- `502` `machine_refused`——机器拒绝了本服务器的会话（对端答 `401` 或 `403`）；`details` 同样指明机器。机器的拒绝从不以 `401` 转交，因为客户端会把本服务器答的 `401` 当作自己被登出。
+
 启用机器人之前，本服务器还会询问 Project 的每台已连接机器启用了哪些机器人账号（`GET /api/messaging/accounts`），见[跨服务器的机器人账号](#跨服务器的机器人账号)。
 
 已连接机器自己的用户级事件经由 Project 的机器聚合流（`GET /api/projects/:projectId/machines/events`，**socket hub 内每台机器一条事件流**）而不是代理送到页面：hub 经它的套接字对每台机器的 `/api/events` 只持有唯一的一次订阅，给每个服务端事件标上来源机器，只发给管理员。因此无论连了多少台机器，页面都只持有一条事件流——浏览器对同一来源只允许 6 条 HTTP/1.1 连接，每台机器一条流的做法连上 5 台就会把它们占满。订阅断开后按上次的事件 id 续订；缓存无法满足的重放以 `resync_required` 作答，页面据此重新拉取列表。运行着不带 socket hub 版本的机器会对聚合流的拨号回以拒绝，它的事件因此不会实时到达页面；它的行数据仍可经 HTTP 读取，更新该机器后即恢复。
@@ -286,7 +298,7 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 **流只走套接字。** `accept` 要求 `text/event-stream` 的请求，经本服务器对该机器持有的那条套接字转发；若把流经 HTTP 转发，每条流都要占住一条永不结束的响应——即 ssh 会话内的一条通道——每台机器、每条流各一条，正是套接字本应消除的那堆被占住的连接。因此当没有套接字能承载一条流时，代理自己作答，形状即上文的错误形状，浏览器随后按该流自己的退避（1 s 起倍增到 30 s，流打开后归零）重新发起它，而不是去要一个 HTTP 孪生：
 
 - `502` `machine_socket_refused`——机器对套接字握手回了状态码。这正是构建早于套接字的程序，或拒绝了本服务器的程序；该拒绝会被记住一分钟，这一分钟内的流直接作答而不再拨号，旧程序需要 API socket 能力才能使用这些 socket 代理流。
-- `502` `machine_socket_unavailable`——拨号失败。既未打开、也未在 10 s 内失败的拨号会被拆掉而不是继续等待，因此一次卡住的握手永远不能把它之后该机器的所有流堵在后面。此回答不被记忆：下一条流会重新拨号。
+- `502` `machine_socket_unavailable`——拨号失败。既未打开、也未在 10 s 内失败的拨号会被拆掉而不是继续等待，因此一次卡住的握手永远不能把它之后该机器的所有流堵在后面。此回答不被记忆：下一条流会重新拨号。拨号超时而机器的服务端在同一端口上应答 HTTP 时，错误信息是写给使用页面的人看的，前面不带机器 id：这台机器的版本不一致，请在 Machines 页点 Restart server，还不行就重新安装它。
 - `504` `machine_stream_not_opened`——套接字在，但机器 8 s 内未打开该流。那是热推把这条套接字留在了已 dispose 的 App 上：心跳让它看起来还活着，实则什么都不答。此时套接字在这里被拆掉，其上每一条流随之结束、由浏览器重新发起，下一条流拨向机器当前的程序。
 
 套接字属于拨出它的那条 ssh 会话，而不只属于机器 id：传输层重开会话时——掉线、重连——旧套接字被关闭，下一条流重新拨号，因此没有哪条套接字能比它所在的连接活得更久。机器自己的非流式回答（`403`、`404`）原样透传；只有上述三个码是代理自己的。
@@ -462,7 +474,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/projects/:projectId/model-oauth/start` | 发起流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
+| POST | `/api/projects/:projectId/model-oauth/start` | 发起流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl, mode}` |
 | GET | `/api/projects/:projectId/model-oauth/callback` | 供应商跳转回来的地址（`?flow=&code=`）：把授权码存到流程上，并返回一个 HTML 页面。`HEAD` 返回 405 |
 | GET | `/api/projects/:projectId/model-oauth/:flowId` | 轮询流程，兑换已存下的授权码并写入 key：`{status: pending\|done\|error, provider, error?}` |
 | POST | `/api/projects/:projectId/model-oauth/:flowId/code` | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
@@ -472,6 +484,8 @@ PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发�
 `GET /callback` 必须是例外。回环地址上的 OAuth 跳转，由供应商跳转到的那个浏览器接收，而它未必是发起流程的浏览器。比如桌面 shell 会在*系统*浏览器中打开授权页，而系统浏览器没有这个应用的源的 Cookie。因此只有这一条路径挂在会话校验之外，改用 flow id 鉴权：32 个随机字节，10 分钟内有效，且只允许存入一次。授权码只能存入发起这个流程的 Project，而且只有要求过回调的流程才接受：`manual` 流程一律拒绝，因为它从未拿到过回调 URL。
 
 回调能做的事还有第二重限制：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、写入 Project 模型，都发生在 `GET /:flowId`，也就是所有者自己的轮询里，仍在会话校验之后。除非所有者主动查询流程状态，否则任何 key 都进不了 Project；兑换失败也在那里以 `{status: error, error}` 报告，而不是显示在跳转页面上。回调周边的一切同样不在豁免之列：更长的路径、其他任何请求方法（这一路径本身的 `HEAD` 返回 405），以及另外三条同组路由，都仍然需要会话。
+
+回调 URL 以浏览器的[公共源](/security#网络暴露面)为准：浏览器访问服务器时用的地址，在受信任的代理之后则是代理报告的地址，因此经 Penguin Remote 访问的桌面端会跳回它的 `https://` 中继地址。供应商只会跳转到 HTTPS，或 `localhost`、`[::1]`、`127.x.x.x` 上的明文 HTTP；来自其他明文 HTTP 源的 `callback` 请求会以 `manual` 打开，返回中的 `mode` 写明流程实际以哪种模式打开。
 
 `mode: manual` 不发送回调 URL，授权页会显示一个一次性授权码，由用户手动粘贴回来，适用于跳转回不来的部署。无论由哪条路由兑换授权码，流程完成后都会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
 
@@ -805,7 +819,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
 - `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，Agent API 的运行新建的 Session 由服务器写入 `"api"`，这两个值客户端都不能发送。`excludeOrg` 用它剔除 `org` 行，Agent API 只延续 `api` 行；见 [Agent API](/agent-api#会话)。Trace 未记录 `source` 的 `"org"` 行（旧版本写下的，或尚未运行过的）读作 `company` 会话。
-- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/omni-message#sessionmeta)），它与用户的归档标记一起决定 Session 的类别。`subagent` 与 `company` 会话无论标记如何都不属于任何类别，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它们移出这一页和所有总数，只有不带这些参数的完整列表才返回它们。其余的会话，用户归档的，或 `source` 为 `api`、`schedule`、`cli`、`workbench` 且用户没有取消归档的，为 `archived`；否则为 `active`。取消归档会写入一个保留标记，之后的运行从不清除它，所以用户取消归档过的程序会话保持 `active`，直到再次被归档。这条规则在每次读取时计算，不改写磁盘上的任何内容；Session 信息中的 `archived` 就是它的结论。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
+- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/amsp-records#sessionmeta)），它与用户的归档标记一起决定 Session 的类别。`subagent` 与 `company` 会话无论标记如何都不属于任何类别，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它们移出这一页和所有总数，只有不带这些参数的完整列表才返回它们。其余的会话，用户归档的，或 `source` 为 `api`、`schedule`、`cli`、`workbench` 且用户没有取消归档的，为 `archived`；否则为 `active`。取消归档会写入一个保留标记，之后的运行从不清除它，所以用户取消归档过的程序会话保持 `active`，直到再次被归档。这条规则在每次读取时计算，不改写磁盘上的任何内容；Session 信息中的 `archived` 就是它的结论。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
 - 创建时 `source` 只接受 `"cli"`，由 `penguin run` 发送；其他来源只由服务器自己写入，省略时创建 `user` 会话。已停用的 `"benchmark"` 仍然接受，按 `"cli"` 处理。
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，系统隐藏的条目（带隐藏属性，如 `AppData`、`NTUSER.DAT`）另带 `hidden: true`，只写盘符如 `D:` 即视为其根目录 `D:\`。请求主目录并带 `places=1` 时，另附选择器左栏所需的两项：`standardFolders`（桌面、文档、下载、图片，按该机器自己的规则取得——Windows 的已知文件夹、Linux 的 XDG 用户目录；读取失败时省略）与 `locations`（Windows 的各盘符、macOS 的各卷、Linux 的根目录及 `/media`、`/run/media`、`/mnt` 下的挂载点，各带 `kind`，有名称时带 `label`）。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
 - `POST /dirs/access` 是桌面端 Workspace 选择器里的**允许访问**。macOS 只替它认定为读取责任方的应用询问桌面、文稿与下载的访问权限，因此由桌面 shell 的主进程把绝对路径 `path` 读一次，响应要等用户作答后才返回。`granted` 表示这次读取是否成功（非 macOS 平台不读取，恒为 `true`）。`packaged` 为 `false` 表示这是从终端启动的开发实例，macOS 把它的读取记在该终端名下。`path` 不是绝对路径时返回 `400` `dir_not_absolute`；服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`；shell 在 120 秒内没有应答时返回 `504` `timeout`。只有桌面应用自己的窗口可以调用，其他会话返回 `403` `desktop_shell_only`。
@@ -857,10 +871,12 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/` | Session 信息 |
 | PATCH | `/` | 更新 Session：`{approvalMode?, sandbox?, thinkingLevel?, archived?, title?}` |
 | DELETE | `/` | 删除 Session，连同它的 Trace、暂存文件和子 Agent Session |
-| GET | `/messages` | OmniMessage 历史，全量或按 Task 窗口 |
+| GET | `/messages` | 记录历史，全量或按 Task 窗口 |
 | GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
 | POST | `/fork` | 在一条已完成的助手回复之后分叉空闲的 Session：`{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | SSE 事件流；见[流式传输（SSE）](#流式传输sse) |
+| GET | `/amsp` | 该 Session 的 AMSP 流：只有记录和 `ping`，不含 `/stream` 另加的服务器事件 |
+| GET | `/approvals[?wait=]` | 等待决定的工具调用：`{approvals: [{tool_call, origin?}]}` |
 | GET | `/context` | 当前模型上下文的组成，以及压缩将从哪里开始 |
 | GET | `/goal` | 当前 Session 最近一次目标运行 |
 
@@ -870,10 +886,12 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `PATCH /` 带 `archived: true` 归档 Session；带 `archived: false` 取消归档，并让它留在侧边栏：由程序打开的 Session 此后再运行也保持 `active`，直到再次被归档。两者都以 `session_archived` 宣告。`subagent` 与 `company` 会话不在任何列表中，对它们设置 `archived` 返回 `409` `session_not_listed`。运行、恢复、定时任务投递或消息接入都照常作用于已归档的 Session，且不会取消归档。
 - `DELETE /` 先中止运行中的 Task，再移除 Session 的 Trace 文件、暂存文件、索引行和消息渠道绑定。它派生的子 Agent Session（由其 Trace 中的 `subagent` 记录找出）按同样的方式一并删除。每删除一个 Session 都以 `session_deleted` 宣告。
-- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
 - `GET /goal` 返回 `{goal}`：Session 从未跑过目标时为 `null`，否则为 `{objective, status, budget, used, rounds}`。`status` 取值为 `active`、`complete`、`blocked`、`budget_limited` 或 `aborted`，`budget` 为 -1 表示不限制。目标只存活在它的运行期间，所以 Session 已停止运行、目标却仍是 active 时，会报告为 `aborted`。见[目标模式](/goal-mode)。
+- `GET /amsp` 为登录用户或本机 API token 提供 Agent API 的 Session 流，与 `GET /api/amsp/v1/sessions/:sessionId/stream` 是同一个处理器：每条记录带其 `id:`，`event: ping` 立即发出、此后每 20 秒一次。续传所用的 `Last-Event-ID`（或 `lastEventId`）已被挤出缓冲时，不开流，直接以 `409` `resync_required` 作答。它不写任何 `server_event`，没有初始的 `task_state` 快照，也不补发 `approval_request`。见 [Session 流](/amsp#session-流)。
+- `GET /approvals` 是 Agent API 的待决审批资源，与 `GET /api/amsp/v1/sessions/:sessionId/approvals` 是同一个处理器：列出每次调用的 `tool_call` 载荷，子 Agent 的调用另带 `origin`。带 `wait=<秒数>`（限制在 1–60 之间）时，列表为空就挂起，直到有调用进入等待或时间用完；`wait` 不是整数时返回 400。回答经 `POST /approvals/:toolCallId`。见[审批](/amsp#审批)。
 
 ### GET /messages 上的 `live` 字段
 
@@ -881,16 +899,16 @@ Trace 只存储完整的消息，流式的 `partial_*` 消息从不落盘，所�
 
 ```ts
 interface MessagesResponse {
-  messages: (OmniMessage & { tracePosition?: { fileIndex: number; ordinal: number } })[];
+  messages: (AmspRecord & { tracePosition?: { fileIndex: number; ordinal: number } })[];
   live?: {
     // The Session channel's most recently assigned SSE event id (`<epoch>-<seq>`):
     // every event published up to and including this id is already reflected in `fragments`.
     cursor: string;
-    // One synthetic `partial_* start` OmniMessage per open streaming fragment, whose
+    // One synthetic `partial_* start` AmspRecord per open streaming fragment, whose
     // payload carries the full accumulated content so far (text/thinking prefix,
     // tool-call name + accumulated arguments, tool-output prefix + images), with the
     // original `origin` chain preserved (subagent fragments included).
-    fragments: OmniMessage[];
+    fragments: AmspRecord[];
   };
 }
 ```
@@ -899,7 +917,7 @@ interface MessagesResponse {
 
 ### 分叉
 
-`tracePosition` 是历史响应的元数据，不属于持久化的 OmniMessage 信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
+`tracePosition` 是历史响应的元数据，不属于持久化的记录信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
 
 分叉会克隆保留的 Trace 文件，并把源暂存区按新 Session id 拍快照，同时改写系统生成的本地附件标记，因此以后无论删除哪个 Session，分叉都能继续工作。从同一个源 Session 的任意回复创建的分叉，共用一套与界面语言无关的持久标题序号（`Source title (1)`、`Source title (2)`）；删除较早的分叉也不会释放它的序号。源 Session 正在运行或压缩时返回 409。
 
@@ -1274,6 +1292,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 - `PUT /backend` 和 `POST /extension/pairings` 只能由已登录的本人操作：本机 API token 得到 `403` `human_required`。调用者不能选择的后端返回 `405` `not_supported`（普通成员要求 `builtin` 时返回 `403` `admin_required`），Agent 正在操作浏览器时切换返回 `409` `action_in_flight`。切换不会关闭任何标签页。
 - Agent 的调用使用本机 API token，其身份是管理员。这样的调用带有 `sessionId`（在请求体里，或 `GET`、`DELETE` 的查询参数里）时，服务器改按正在驱动该会话的那个人行事：发起该会话当前这轮运行的人，或定时任务的创建者，再不然是 Project 的所有者。Agent 驱动的就是这个人的 Chrome，从不使用其他用户的 Chrome。
 - `GET /extension` 和 `DELETE /extension/:id` 只能看到调用者自己的配对。配对码只能用一次，10 分钟内有效，输错五次即作废；新生成的配对码会取代调用者之前的那个。
+- 配对码附带的 `origin` 是扩展配对时连接的地址：浏览器的[公共源](/security#网络暴露面)，而不是请求的 `Origin` 头。
 
 后端无法驱动时，操作返回 `503` `browser_unavailable`，错误码旁带一个 `reason`。内置后端：`not_desktop`（没有桌面 shell）、`shell_unsupported`（shell 版本过旧，无法承载浏览器）或 `no_window`（没有窗口认领新标签页）。Chrome 后端：`extension_not_paired`、`extension_disconnected` 或 `extension_disabled`。不带 `reason` 时，错误信息会说明原因，例如用户暂停了扩展。在 `chrome` 上，用户收回的标签页返回 `409` `tab_released`；超出标签页范围的原始 CDP 返回 `403` `cdp_refused`，包括 `Target`、`Browser`、`Storage`、`Fetch`、`Extensions`、`Tethering` 和 `Security` 域，读写 Cookie、清除缓存或拦截请求的 `Network` 方法，以及 `DOM.setFileInputFiles` 和 `Page.setDownloadBehavior`。
 
@@ -1318,16 +1337,17 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
+| 每个 Session（AMSP） | `GET /api/sessions/:sessionId/amsp` | 只有 Session 的记录和 `ping`，与 Agent API 提供的相同；见 [Session 流](/amsp#session-流) |
 | 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_archived`、`session_deleted`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated`、公司模式的 `org_*` 事件，以及只发给管理员的 `machines_changed` |
 | 每个 Project 的机器 | `GET /api/projects/:projectId/machines/events` | 每台已连接机器自己的事件，各自带上来源机器的标记，由 hub 每台机器唯一的那次订阅合并而来（**socket hub 内每台机器一条事件流**） |
 
 ### 传输格式
 
-默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见 [OmniMessage 协议](/omni-message)）。名为 `ping` 的事件是心跳（见[投递保证](#投递保证)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
+默认（未命名）的 SSE 事件以单行 JSON 携带原始 AMSP 记录：SDK 产出、Trace 存储的就是这些记录（见 [AMSP 记录](/amsp-records)）。名为 `ping` 的事件是心跳（见[投递保证](#投递保证)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
 
 ```ts
 export type ServerEvent =
-  | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
+  | { type: "approval_request"; toolCall: AmspRecord<ToolCallPayload>; origin?: string[] }
   | {
       type: "task_state";
       state: "idle" | "running" | "compacting";
@@ -1429,7 +1449,7 @@ export type ServerEvent =
 
 API 套接字是同一个 API 的第二种传输，供自带的 Web App 使用（PRFC-0011）：一个标签页一条套接字，每一帧是对既有端点的一次调用，每个长期的流是一次不结束的调用。上文没有任何东西是它特有的——HTTP 与套接字进入同一批路由，一次调用的授权、校验与应答与它的 HTTP 孪生完全一致。
 
-它在终端流的 upgrade 路径上打开，用一个以登录用户命名的保留 id：`GET /api/terminals/api-socket@<userId>/stream`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath(userId)` 负责拼写）。握手就是终端流的握手——会话 Cookie、同源的 `Origin`（或没有）、以及 id 的 owner 必须是登录用户本人，admin 的 Cookie 打不开 `api-socket@alice`——之后套接字以该用户的身份服务每次调用。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
+它有自己的 upgrade 路由：`GET /api/socket`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath()` 负责拼写）。握手沿用终端流的那一套——会话 Cookie 与同源的 `Origin`（或没有）——之后套接字以该 Cookie 命名的用户身份服务每次调用，每次调用都以建立套接字时的[公共源](/security#网络暴露面)为地址，与 HTTP 请求一致。它不创建、不列出、也不触碰任何终端，不涉及终端 id，因此也没有可伪造的 id。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
 
 帧是 JSON 文本帧，id 由客户端分配、在套接字生命周期内唯一：
 

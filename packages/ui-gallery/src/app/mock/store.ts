@@ -40,7 +40,7 @@ import {
 } from "./transcripts";
 import type { Transcript } from "./transcripts";
 import { payloadOf } from "./types";
-import type { Lang, OmniMessage, StreamHandlers } from "./types";
+import type { Lang, AmspRecord, StreamHandlers } from "./types";
 
 // ---------------------------------------------------------------------------------------------
 // Channels
@@ -76,9 +76,9 @@ class Channel {
     return `${EPOCH}-${this.seq}`;
   }
 
-  message(msg: OmniMessage, only?: StreamHandlers): void {
+  message(msg: AmspRecord, only?: StreamHandlers): void {
     const id = this.nextId();
-    for (const s of only ? [only] : this.subscribers) s.onOmniMessage(msg, id);
+    for (const s of only ? [only] : this.subscribers) s.onRecord(msg, id);
   }
 
   event(ev: ServerEvent, only?: StreamHandlers): void {
@@ -159,10 +159,10 @@ export class DemoStore {
   }
 
   /** The live tail of a running Session: the open fragments and the channel cursor they cover. */
-  liveTail(sessionId: string): { cursor: string; fragments: OmniMessage[] } | undefined {
+  liveTail(sessionId: string): { cursor: string; fragments: AmspRecord[] } | undefined {
     const live = this.live.get(sessionId);
     if (!live || !live.transcript.running) return undefined;
-    const fragments: OmniMessage[] = [];
+    const fragments: AmspRecord[] = [];
     const thinking = live.transcript.openThinking;
     if (thinking)
       fragments.push(
@@ -299,8 +299,8 @@ export class DemoStore {
   }
 
   /** Publishes a message on a Session's channel and records it as history, stamped now. */
-  private emit(live: Live, msg: OmniMessage): void {
-    const stamped: OmniMessage = { ...msg, timestamp: new Date().toISOString() };
+  private emit(live: Live, msg: AmspRecord): void {
+    const stamped: AmspRecord = { ...msg, timestamp: new Date().toISOString() };
     live.channel.message(stamped);
     const payload = payloadOf(stamped);
     if (payload === null || !payload.type.startsWith("partial_"))
@@ -432,19 +432,13 @@ export class DemoStore {
     if (live.transcript.openThinking) delete live.transcript.openThinking;
     const open = live.transcript.openText;
     if (open) {
-      // The streamed part stays, closed as aborted, as the engine records a cut-off reply.
+      // The streamed part stays, as the engine records a cut-off reply.
       delete live.transcript.openText;
       this.emit(
         live,
-        partial(0, {
-          type: "partial_text",
-          role: "assistant",
-          event_type: "stop",
-          text: "",
-          stop_reason: "aborted",
-        }),
+        partial(0, { type: "partial_text", role: "assistant", event_type: "stop", text: "" }),
       );
-      if (open.text !== "") this.emit(live, assistantText(0, open.text, "aborted"));
+      if (open.text !== "") this.emit(live, assistantText(0, open.text));
     }
     if (live.transcript.pendingApproval) {
       delete live.transcript.pendingApproval;

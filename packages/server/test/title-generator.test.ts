@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
-import type { OmniMessage, SessionTitleResult } from "@prismshadow/penguin-core";
+import type { AmspRecord, SessionTitleResult } from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -75,7 +75,7 @@ describe("title-generator", () => {
   let db: DatabaseSync;
   let sessions: SessionsRepo;
   let channels: ChannelHub;
-  let recorded: OmniMessage[];
+  let recorded: AmspRecord[];
 
   const makeGenerator = (): TitleGenerator =>
     new TitleGenerator({

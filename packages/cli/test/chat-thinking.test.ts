@@ -9,11 +9,7 @@
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
-import {
-  partialToolCall,
-  partialToolCallOutput,
-  type OmniMessage,
-} from "@prismshadow/penguin-core";
+import { partialToolCall, partialToolCallOutput, type AmspRecord } from "@prismshadow/penguin-core";
 import { registerChatCommand } from "../src/commands/chat.js";
 import { getMessages } from "../src/i18n.js";
 import { FakeServer } from "./fake-server.js";
@@ -161,7 +157,7 @@ describe("chat /thinking (the Session's pinned thinking level, applied per model
 
 describe("chat /verbose (tool-output collapsing)", () => {
   /** One exec_command call whose output streams 12 lines (l1..l12). */
-  function longToolOutput(): OmniMessage[] {
+  function longToolOutput(): AmspRecord[] {
     const id = "call_c9";
     return [
       partialToolCall({ eventType: "start", name: "exec_command", toolCallId: id }),

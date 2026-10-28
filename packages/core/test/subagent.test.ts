@@ -17,9 +17,9 @@ import {
   toolCall,
   userText,
   withOrigin,
-} from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
 import { collectWindow } from "../src/environment/tools/subagent/collect.js";
-import type { MessageOrigin, OmniMessage } from "../src/omnimessage/index.js";
+import type { MessageOrigin, AmspRecord } from "@prismshadow/amsp/records";
 import type {
   ApproveFn,
   RunCutoff,
@@ -55,29 +55,29 @@ interface LoosePayload {
   type?: string;
   event_type?: string;
   output?: string;
-  stop_reason?: string;
+  status?: string;
   tool_call_id?: string;
 }
-const pl = (m: OmniMessage): LoosePayload => m.payload as LoosePayload;
+const pl = (m: AmspRecord): LoosePayload => m.payload as LoosePayload;
 
 type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
 
 /**
- * Test fakes still talk in prompt strings; the contract now takes the OmniMessage list a
+ * Test fakes still talk in prompt strings; the contract now takes the AmspRecord list a
  * Session's `run` takes, so the adapters below unwrap it once (see SubagentHandle.run).
  */
-const promptOf = (messages: OmniMessage[]): string =>
+const promptOf = (messages: AmspRecord[]): string =>
   messages.map((m) => (m.payload as { text?: string }).text ?? "").join("");
 
-/** Adapts a prompt-string fake to SubagentHandle.run's OmniMessage input. */
+/** Adapts a prompt-string fake to SubagentHandle.run's AmspRecord input. */
 const asHandleRun =
-  <T extends RunInput>(run: (input: T) => AsyncGenerator<OmniMessage>): SubagentHandle["run"] =>
+  <T extends RunInput>(run: (input: T) => AsyncGenerator<AmspRecord>): SubagentHandle["run"] =>
   ({ messages, ...rest }) =>
     run({ prompt: promptOf(messages), ...rest } as unknown as T);
 
 /** Builds a SubagentRunner from a run implementation (spawn arguments observed via a spy). */
 function runnerOf(
-  run: (input: RunInput) => AsyncGenerator<OmniMessage>,
+  run: (input: RunInput) => AsyncGenerator<AmspRecord>,
   spawnSpy?: (input: {
     agentId?: string;
     modelId?: string;
@@ -119,9 +119,9 @@ async function until(cond: () => boolean, ms = 3000): Promise<void> {
 /** Collects yielded messages and captures the generator's return value (the tool reports its
  *  finish reason via the return value). */
 async function collectWithReturn(
-  gen: AsyncGenerator<OmniMessage, ToolResult | void>,
-): Promise<{ out: OmniMessage[]; result: ToolResult | void }> {
-  const out: OmniMessage[] = [];
+  gen: AsyncGenerator<AmspRecord, ToolResult | void>,
+): Promise<{ out: AmspRecord[]; result: ToolResult | void }> {
+  const out: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) return { out, result: res.value };
@@ -130,7 +130,7 @@ async function collectWithReturn(
 }
 
 /** Concatenates the tool's own (origin-free) output deltas. */
-const ownDeltas = (out: OmniMessage[]): string =>
+const ownDeltas = (out: AmspRecord[]): string =>
   out
     .filter(
       (m) =>
@@ -206,7 +206,7 @@ describe("run_subagent tool (foreground)", () => {
     // The child's text deltas are mirrored as this tool's own output (Environment derives the
     // complete tool_call_output from this).
     expect(ownDeltas(out)).toBe("Hello world");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     // The model is free to choose the agent, model, and thinking level (spawn arguments); the
     // prompt is handed to run.
     expect(seen[0]).toEqual({
@@ -233,7 +233,7 @@ describe("run_subagent tool (foreground)", () => {
       const { services } = makeServices(runner);
       const tool = createSubagentTool(DEF, services);
       const { out, result } = await collectWithReturn(tool.execute(args, CTX));
-      expect(result?.stopReason).toBe("fatal");
+      expect(result?.status).toBe("fatal");
       expect(ownDeltas(out)).toContain("must be given together");
       expect(spawned).toHaveLength(0);
     }
@@ -253,7 +253,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(seen).toHaveLength(1);
     expect(seen[0]?.modelId).toBeUndefined();
     expect(seen[0]?.provider).toBeUndefined();
@@ -274,7 +274,7 @@ describe("run_subagent tool (foreground)", () => {
       const { out, result } = await collectWithReturn(
         tool.execute({ prompt: "x", thinking_level }, CTX),
       );
-      expect(result?.stopReason).toBe("fatal");
+      expect(result?.status).toBe("fatal");
       expect(ownDeltas(out)).toContain("invalid `thinking_level`");
       expect(ownDeltas(out)).toContain("low / medium / high / xhigh / max");
       expect(spawned).toHaveLength(0);
@@ -296,7 +296,7 @@ describe("run_subagent tool (foreground)", () => {
       const { services } = makeServices(runner);
       const tool = createSubagentTool(DEF, services);
       const { result } = await collectWithReturn(tool.execute(args, CTX));
-      expect(result?.stopReason).toBe("completed");
+      expect(result?.status).toBe("completed");
       expect(seen).toHaveLength(1);
       expect("thinkingLevel" in seen[0]!).toBe(false);
     }
@@ -321,7 +321,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices();
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("no subagent runner");
   });
 
@@ -335,7 +335,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({}, CTX));
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("prompt");
   });
 
@@ -349,7 +349,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(result?.note).toContain("without a text answer");
   });
 
@@ -362,7 +362,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(result?.note).toContain("subagent aborted: user_abort");
   });
 
@@ -386,7 +386,7 @@ describe("run_subagent tool (foreground)", () => {
     const { out, result } = await collectWithReturn(
       tool.execute({ prompt: "x" }, { ...CTX, approve }),
     );
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(ownDeltas(out)).toContain("decision:allow");
     expect(askedFor).toEqual(["exec_command"]);
   });
@@ -405,7 +405,7 @@ describe("run_subagent tool (foreground)", () => {
     const { result } = await collectWithReturn(
       tool.execute({ prompt: "x", yield_time_ms: 10_000 }, { ...CTX, signal: controller.signal }),
     );
-    expect(result?.stopReason).toBe("aborted");
+    expect(result?.status).toBe("aborted");
     await until(() => sawAbort);
   });
 });
@@ -414,14 +414,14 @@ describe("run_subagent backgrounding + input_subagent", () => {
   /** A child Agent whose first-turn task is stuck on a gate: after backgrounding, the test
    *  controls when it finishes. */
   function gatedChild(): {
-    run: (input: RunInput) => AsyncGenerator<OmniMessage>;
+    run: (input: RunInput) => AsyncGenerator<AmspRecord>;
     release: () => void;
     prompts: string[];
   } {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const prompts: string[] = [];
-    const run = async function* ({ prompt, signal }: RunInput): AsyncGenerator<OmniMessage> {
+    const run = async function* ({ prompt, signal }: RunInput): AsyncGenerator<AmspRecord> {
       prompts.push(prompt);
       if (prompts.length === 1) {
         yield withOrigin(partialText("delta", `start:${prompt} `), HOP);
@@ -444,7 +444,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       tool.execute({ prompt: "task", yield_time_ms: 250 }, CTX),
     );
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(ownDeltas(out)).toBe("start:task ");
     const id = extractSubagentId(result);
     // subagent_id is derived from the tail of the child Session id: it can be correlated with
@@ -471,7 +471,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     // Output buffered while backgrounded is delivered on the tail via polling; after a turn
     // ends, the session is kept (resumable).
     expect(ownDeltas(out)).toContain("end:task");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(result?.note).toContain(`subagent idle with subagent_id ${id}`);
   });
 
@@ -492,7 +492,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       writeTool.execute({ subagent_id: id, prompt: "two", yield_time_ms: 3000 }, CTX),
     );
     expect(ownDeltas(out)).toContain("ran:two");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(child.prompts).toEqual(["one", "two"]);
   });
 
@@ -509,7 +509,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       writeTool.execute({ subagent_id: id, prompt: "more", yield_time_ms: 250 }, CTX),
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("still running");
     child.release();
   });
@@ -520,7 +520,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       writeTool.execute({ subagent_id: "subagent-deadbeef" }, CTX),
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("unknown subagent_id subagent-deadbeef");
   });
 
@@ -553,7 +553,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       writeTool.execute({ subagent_id: id, yield_time_ms: 3000 }, { ...CTX, approve }),
     );
     expect(ownDeltas(out)).toContain("approved:allow");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
   });
 
   it("refuses to spawn beyond the background subagent capacity", async () => {
@@ -568,7 +568,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       const session = new ManagedSubagentSession({
         sessionId: `session-occupy-0000000${i}`,
         // eslint-disable-next-line require-yield
-        run: async function* ({ signal }): AsyncGenerator<OmniMessage> {
+        run: async function* ({ signal }): AsyncGenerator<AmspRecord> {
           await aborted(signal);
         },
         dispose() {},
@@ -578,7 +578,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     }
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(ownDeltas(out)).toContain("too many background subagents");
   });
 
@@ -615,7 +615,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     let emitSecond: (() => void) | null = null;
     const session = new ManagedSubagentSession({
       sessionId: HOP,
-      run: async function* ({ signal }): AsyncGenerator<OmniMessage> {
+      run: async function* ({ signal }): AsyncGenerator<AmspRecord> {
         yield withOrigin(partialText("delta", "first"), HOP);
         await new Promise<void>((resolve) => {
           emitSecond = resolve;
@@ -640,7 +640,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       for (;;) {
         const res = await gen.next();
         expect(res.done).toBe(false);
-        const p = pl(res.value as OmniMessage);
+        const p = pl(res.value as AmspRecord);
         if (p.type === "partial_text" || p.type === "partial_tool_call_output") {
           out += (res.value.payload as { text?: string; output?: string }).text ?? p.output ?? "";
         }
@@ -664,15 +664,15 @@ describe("subagent steering and per-run abort", () => {
     runner: SubagentRunner;
     prompts: string[];
     /** Each round's raw input messages (the contract's own shape — sender included). */
-    inputs: OmniMessage[][];
-    steers: OmniMessage[][];
+    inputs: AmspRecord[][];
+    steers: AmspRecord[][];
     /** Levels pinned on the child through the handle, in order. */
     pins: string[];
     release: () => void;
   } {
     const prompts: string[] = [];
-    const inputs: OmniMessage[][] = [];
-    const steers: OmniMessage[][] = [];
+    const inputs: AmspRecord[][] = [];
+    const steers: AmspRecord[][] = [];
     const pins: string[] = [];
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -680,7 +680,7 @@ describe("subagent steering and per-run abort", () => {
       async spawn() {
         const handle: SubagentHandle = {
           sessionId: HOP,
-          async *run({ messages, signal }): AsyncGenerator<OmniMessage, RunCutoff | null> {
+          async *run({ messages, signal }): AsyncGenerator<AmspRecord, RunCutoff | null> {
             const prompt = promptOf(messages);
             inputs.push(messages);
             prompts.push(prompt);
@@ -728,7 +728,7 @@ describe("subagent steering and per-run abort", () => {
       writeTool.execute({ subagent_id: id, prompt: "go left", yield_time_ms: 250 }, CTX),
     );
     expect(ownDeltas(out)).toContain(`steering message queued for subagent ${id}`);
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(result?.note).toContain("still running");
     expect(child.steers).toHaveLength(1);
     const payload = child.steers[0]![0]!.payload as { text?: string; sender?: string };
@@ -754,7 +754,7 @@ describe("subagent steering and per-run abort", () => {
     );
     expect(ownDeltas(out)).toContain(`aborting subagent ${id}'s current run`);
     // The aborted round settles as failed with the child's abort reason; the session is kept.
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(result?.note).toContain("subagent aborted");
     expect(result?.note).toContain(`subagent idle with subagent_id ${id}`);
     expect(manager.get(id)).toBeDefined();
@@ -763,7 +763,7 @@ describe("subagent steering and per-run abort", () => {
       writeTool.execute({ subagent_id: id, prompt: "again", yield_time_ms: 3000 }, CTX),
     );
     expect(ownDeltas(followUp.out)).toContain("ran:again");
-    expect(followUp.result?.stopReason).toBe("completed");
+    expect(followUp.result?.status).toBe("completed");
     expect(child.prompts).toEqual(["task", "again"]);
   });
 
@@ -784,7 +784,7 @@ describe("subagent steering and per-run abort", () => {
       ),
     );
     expect(ownDeltas(out)).toContain("ran:redirect");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(child.prompts).toEqual(["task", "redirect"]);
     // The redirect ran fresh — nothing was delivered as steering.
     expect(child.steers).toHaveLength(0);
@@ -806,7 +806,7 @@ describe("subagent steering and per-run abort", () => {
       writeTool.execute({ subagent_id: id, abort: true, yield_time_ms: 250 }, CTX),
     );
     expect(ownDeltas(out)).toContain("already idle; nothing to abort");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
   });
 
   it("exposes list/steer/abort to the host via Environment, converging on the same channel", async () => {
@@ -821,7 +821,7 @@ describe("subagent steering and per-run abort", () => {
       env.setSubagentStateListener(() => {
         pings += 1;
       });
-      const forwarded: OmniMessage[] = [];
+      const forwarded: AmspRecord[] = [];
       env.setBackgroundMessageListener((msg) => forwarded.push(msg));
 
       // Spawn through the real tool path; the window expires with the child still running.
@@ -865,7 +865,7 @@ describe("subagent steering and per-run abort", () => {
       // The caller's own message reaches the child unchanged: a human's panel round records
       // no sender, exactly like the steering above — only the model's dispatch is
       // "parent_agent" (round one, through run_subagent).
-      const [dispatched, panelRound] = child.inputs as [OmniMessage[], OmniMessage[]];
+      const [dispatched, panelRound] = child.inputs as [AmspRecord[], AmspRecord[]];
       expect((dispatched[0]!.payload as { sender?: string }).sender).toBe("parent_agent");
       expect((panelRound[0]!.payload as { sender?: string }).sender).toBeUndefined();
       await until(() =>
@@ -915,7 +915,7 @@ describe("subagent steering and per-run abort", () => {
           toolCallId: "c_fallback",
         }),
       });
-      const out: OmniMessage[] = [];
+      const out: AmspRecord[] = [];
       for (;;) {
         const res = await gen.next();
         if (res.done) break;
@@ -932,7 +932,7 @@ describe("subagent steering and per-run abort", () => {
   it("revives a released child through the runner's resume and starts its next round", async () => {
     const prompts: string[] = [];
     const resumes: { agentId?: string; sessionId: string }[] = [];
-    const run = async function* ({ prompt }: RunInput): AsyncGenerator<OmniMessage> {
+    const run = async function* ({ prompt }: RunInput): AsyncGenerator<AmspRecord> {
       prompts.push(prompt);
       yield withOrigin(partialText("delta", `ran:${prompt}`), HOP);
     };
@@ -986,7 +986,7 @@ describe("subagent steering and per-run abort", () => {
   it("input_subagent revives a released id through the runner (a subagent is never destroyed)", async () => {
     const prompts: string[] = [];
     const resumes: { agentId?: string; sessionId: string }[] = [];
-    const run = async function* ({ prompt }: RunInput): AsyncGenerator<OmniMessage> {
+    const run = async function* ({ prompt }: RunInput): AsyncGenerator<AmspRecord> {
       prompts.push(prompt);
       yield withOrigin(assistantText(`ran:${prompt}`), HOP);
     };
@@ -1032,7 +1032,7 @@ describe("subagent steering and per-run abort", () => {
     );
     expect(ownDeltas(out)).toContain(`[subagent ${id} resumed]`);
     expect(ownDeltas(out)).toContain("ran:again");
-    expect(result?.stopReason).toBe("completed");
+    expect(result?.status).toBe("completed");
     expect(resumes).toEqual([{ sessionId: HOP }]);
     expect(prompts).toContain("again");
     expect(manager.get(id)).toBeDefined();
@@ -1044,7 +1044,7 @@ describe("subagent steering and per-run abort", () => {
     const session = new ManagedSubagentSession({
       sessionId: HOP,
       // eslint-disable-next-line require-yield
-      async *run({ signal }): AsyncGenerator<OmniMessage> {
+      async *run({ signal }): AsyncGenerator<AmspRecord> {
         await aborted(signal);
       },
       dispose() {},

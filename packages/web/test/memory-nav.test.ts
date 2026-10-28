@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
-import type { MemoryChangeRow } from "../src/lib/omni/memory-changes";
+import type { MemoryChangeRow } from "../src/lib/amsp/memory-changes";
 import {
   buildMemoryList,
   deletedChangeKeys,

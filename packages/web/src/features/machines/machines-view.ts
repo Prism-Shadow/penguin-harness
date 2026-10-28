@@ -64,6 +64,13 @@ export type MachineReading =
   | { kind: "installedOnly" }
   /** Carrying a different build from the one this server would install. */
   | { kind: "behind"; version: string }
+  /**
+   * Connected, and its server answers requests but never the API socket (its `socket` reads
+   * `unanswered`): a server process older than its build, which keeps every live update from the
+   * machine away until it runs this server's version: its dialog's Restart first, and failing
+   * that Update or a reinstall.
+   */
+  | { kind: "restartNeeded" }
   /** Its server answers but nothing holds a connection to it. */
   | { kind: "notConnected" }
   | { kind: "unreachable"; detail: string | null }
@@ -197,6 +204,8 @@ export function readMachine(
     };
   }
   if (machine.connection !== null) {
+    // Whatever build it reports: the build on its disk is not the process that serves it.
+    if (needsRestart(machine)) return { kind: "restartNeeded" };
     const status = machine.status;
     return {
       kind: "ready",
@@ -261,6 +270,14 @@ export function readingTone(reading: MachineReading): Tone {
 }
 
 /**
+ * Whether the machine's server must be restarted before anything streams from it: it answers
+ * requests and never the API socket, so it is a process older than the build it reports.
+ */
+export function needsRestart(machine: MachineInfo): boolean {
+  return !machine.local && machine.socket?.state === "unanswered";
+}
+
+/**
  * Whether a new conversation can start on a machine now — the card's Use: this server always,
  * another machine while it is connected and nothing is moving on it.
  */
@@ -280,6 +297,8 @@ const SOCKET_TONE: Record<MachineSocketFact["state"], Tone> = {
   // The machine answered the handshake with a status (a program predating the socket): not
   // broken, but nothing will stream until it is brought forward.
   refused: "attention",
+  // Its server answers and never takes the handshake: nothing streams until it is restarted.
+  unanswered: "attention",
   // The dial did not complete, or a socket that was up closed: the far side's words are there
   // when there are any, and this is what needs a person.
   failed: "danger",

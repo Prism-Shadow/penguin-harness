@@ -16,7 +16,7 @@
  * group header ticks from while an item is still in flight (once nothing is running the header
  * freezes at the computed span, so the displayed number never jumps backwards).
  */
-import type { ChatItem } from "../../lib/omni/stream-model";
+import type { ChatItem } from "../../lib/amsp/stream-model";
 
 export function summarizeWork(items: ChatItem[]): {
   steps: number;

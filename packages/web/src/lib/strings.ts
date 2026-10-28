@@ -149,6 +149,7 @@ export const zh = {
       failed: "失败",
       installedOnly: "已安装",
       behind: "有新版本",
+      restartNeeded: "需要重启",
       notConnected: "未连接",
       unreachable: "连不上",
       stopped: "已停止",
@@ -211,8 +212,12 @@ export const zh = {
       connected: "已连接",
       dialling: "拨号中",
       refused: "被拒绝",
+      unanswered: "连接不上",
       failed: "失败",
     },
+    /** Why a machine reads as needing a restart: the status pill's hover. */
+    restartNeededReason:
+      "这台机器的版本和当前不一致，对话不会自动刷新。请点「重启服务」；还不行就重新安装。",
     agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
@@ -304,6 +309,8 @@ export const zh = {
         envOnly: "环境变量里的模型密钥无法同步到这台机器，请先手动配置模型密钥。",
         skippedTitle: "这些模型没有同步到这台机器：",
         skippedModel: (model: string, reason: string) => `${model}：${reason}`,
+        /** Why a built-in model of this server was refused: the machine's build does not list it yet. */
+        notInMachineBuild: "这台机器的版本还没有这个内置模型；请先更新这台机器，再同步配置。",
       },
       /**
        * The one sentence under the toolbar while some of its verbs wait: why, said plainly. The
@@ -454,10 +461,15 @@ export const zh = {
       editor: "编辑器",
     },
     unbound: "未设置",
-    /** The recorder button's tooltip. */
-    rebind: "更改快捷键",
+    /** The recorder button's tooltip — it adds a binding to the command rather than replacing one. */
+    rebind: "添加快捷键",
+    /** The recorder button's idle face: a chord recorded onto the command joins its existing bindings. */
+    addBinding: "添加快捷键…",
+    /** Each existing binding's remove button. */
+    removeBinding: "删除这个快捷键",
     record: "按下新的快捷键…",
-    recordHint: "Esc 取消 · Backspace 清除",
+    /** Recording's own keys: Esc leaves the command alone; Backspace clears every one of its bindings. */
+    recordHint: "Esc 取消 · Backspace 清空全部绑定",
     needsModifier: "需要配合 Ctrl 或 Alt（macOS 为 ⌘ 或 ⌃），Shift 只能与它们一起使用；或使用 F 键",
     resetRow: "恢复默认",
     resetAll: "全部恢复默认",
@@ -997,7 +1009,7 @@ export const zh = {
     theme: "主题",
     background: {
       title: "背景图片",
-      info: "图片仅保存在当前浏览器或桌面端，不会上传。支持 PNG、JPEG、WebP，最大 20 MB。透明度越高，图片越淡。",
+      info: "图片会保存在你的账号里，换一个浏览器或在桌面应用登录也能看到。支持 PNG、JPEG、WebP 图片，不超过 20 MB。透明度越高，图片越淡。",
       choose: "选择图片",
       replace: "更换图片",
       remove: "移除",
@@ -1060,6 +1072,9 @@ export const zh = {
     notificationsDismissed:
       "权限提示被关闭、没有给出答复，通知因此保持关闭。再次打开这个开关可以重新申请。",
     notificationsUnsupported: "当前浏览器不支持系统通知。",
+    /** The account wants notifications, but this browser was never granted permission to show them. */
+    notificationsNotAllowedHere:
+      "你在别处开启了通知，但这个浏览器还不能显示。打开这个开关，在浏览器的提示里点「允许」。",
     /** Desktop shell only: the system-tray icon. Absent in a browser. */
     trayIcon: "托盘图标",
     trayIconInfo:
@@ -1955,6 +1970,8 @@ export const zh = {
       `这个 Agent 在 ${machine} 上：设置、对话与删除都在那台机器上进行，和本服务端同 id 的 Agent 互不相干。`,
     /** The disabled Usage button on a machine's Agent: what the usage center counts. */
     usageThisServerOnly: "成本中心只统计本服务端的 Agent",
+    /** Why a connected machine's Agent cards wait: its list has not answered in this page load yet. */
+    readingMachineAgents: (machine: string): string => `正在读取 ${machine} 的 Agent…`,
     /** Delete's confirmation for a machine's Agent: the machine it is deleted on. */
     deleteConfirmOnMachine: (name: string, machine: string): string =>
       `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,
@@ -2027,7 +2044,7 @@ export const zh = {
     apiReadDocs: "查看使用文档",
     apiCopyAgentPrompt: "复制给 Agent 的提示词",
     apiAgentPrompt: (docsUrl: string, baseUrl: string, agentRef: string) =>
-      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用此 Agent 的代码。\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\n使用 @prismshadow/amsp SDK：stream() 读取事件流，await run() 获取完整结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
+      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用此 Agent 的代码。\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\n使用 @prismshadow/amsp SDK：stream() 逐条读取记录，await run() 获取完整结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
     apiSessionSettings: "新会话设置",
     apiSessionSettingsHint:
       "应用于之后新建的 API 会话。模型留空使用 Project 默认模型，思考等级留空使用 Agent 配置，工作区留空则创建临时工作区。",
@@ -2089,7 +2106,8 @@ export const zh = {
     apiTryCacheRead: "缓存读",
     apiTryCacheWrite: "缓存写",
     apiTryElapsed: "用时",
-    apiTryStreamBroken: "事件流在 run.done 之前结束。",
+    apiTryStreamBroken: "事件流在 data: [DONE] 之前结束。",
+    apiTryUnfinished: "运行没有走到终点：最后一个 task_begin 没有闭合。",
   },
 
   models: {
@@ -2348,6 +2366,8 @@ export const zh = {
     priceCacheRead: "缓存命中价格",
     priceCacheWrite: "缓存未命中价格",
     priceOutput: "输出价格",
+    /** The price fields' placeholder: a model with no prices is left out of every cost (the three are filled together or not at all). */
+    priceBlankHint: "留空则不计算费用",
     /** Line under the model dialog's price fields on a row with a running promotion: the fields hold the list price, and changing it cancels the promotion. */
     promotionPriceHint: (pct: number): string =>
       `此处为牌价，当前促销在此基础上省 ${pct}%；修改价格会取消促销`,
@@ -2357,6 +2377,10 @@ export const zh = {
     apiKey: "API key",
     apiKeyKeepHint: "留空保留现有 key",
     apiKeyEnvHint: (envKey: string): string => `留空则使用环境变量 ${envKey}`,
+    /** The API key placeholder where nothing covers a blank field: no stored key, no group key that reaches the model, no environment variable the server reports set. */
+    apiKeyEnterHint: "请填写 API key",
+    /** The API key placeholder where a blank key is called without one: an open MMSP server or a vLLM server, with no stored key, group key or set variable. */
+    apiKeyKeylessHint: "留空则不使用 API key",
     keyConfigured: "已配置 key",
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",
@@ -2391,8 +2415,10 @@ export const zh = {
     groupSettingsTitle: (label: string): string => `${label} 分组设置`,
     /** The clear box under a stored group key. */
     clearGroupKey: "清除分组密钥",
-    /** A blank base URL that nothing fills: the group settings' placeholder, and a model's where its group sets none. */
-    baseUrlNone: "未设置：使用客户端默认端点",
+    /** The base URL placeholder where no group setting fills a blank field and none is required; it names no URL. */
+    baseUrlDefault: "留空使用默认 base URL",
+    /** The base URL placeholder where the field is required and empty: a blank one cannot be saved. */
+    baseUrlEnterHint: "请填写 base URL",
     /** The group settings' Detect while neither the field nor the group holds a base URL. */
     detectNeedsBaseUrl: "先填写 base URL",
     /** The protocol menu's first row in the group settings: the group sets none. */
@@ -2521,8 +2547,8 @@ export const zh = {
       moonshot:
         "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需在环境中同时设置 MOONSHOT_BASE_URL=https://api.moonshot.ai/v1，或在此填写 key 并填该 base URL",
     } as Record<string, string | undefined>,
-    envBaseUrlNote: (envBaseUrlKey: string): string =>
-      `请求发往该客户端的默认端点；设置了 ${envBaseUrlKey} 时发往该地址`,
+    envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
+      `请求发往 ${defaultBaseUrl}；环境里设置了 ${envBaseUrlKey} 时改发往该地址`,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
@@ -2938,6 +2964,10 @@ export const zh = {
     sharedTag: "所有机器共用",
     sharedHint: "在 Project 配置中对所有机器统一管理，不能在这里移除。",
     machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
+    /** A machine out of reach, as the header's machine picker lists it. */
+    machineOutOfReach: (machine: string) => `${machine}（不可达）`,
+    /** A manage-installs row whose machine has not answered yet: its button waits for it. */
+    waitingFor: (machine: string) => `等待 ${machine} 答复`,
     /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "设置",
     pageDesc:
@@ -2982,6 +3012,8 @@ export const zh = {
       failed: (reason: string) => `加载失败：${reason}`,
       elsewhere: (machines: string) => `只在 ${machines} 上运行，本机不运行`,
       unsynced: "已安装，尚未同步到该机器",
+      /** Appended to a library status counted with Agents on a machine out of reach. */
+      lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
     noMatch: "没有匹配的插件。",
     /** The description of a shipped package the registry has no entry for. */
@@ -3781,6 +3813,8 @@ Benchmark：
     } as Record<string, string>,
     statusRunning: "运行中",
     statusCompacting: "压缩中",
+    /** The session's own run state when nothing is happening — the command palette's session completion shows it beside the title. */
+    statusIdle: "空闲",
     /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
     statusCompletedUnread: "运行完毕，未读",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
@@ -3852,11 +3886,13 @@ Benchmark：
     subagent: "子会话",
     subagentRunning: "运行中",
     /**
-     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
-     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
-     * renders its English `reason` prose as-is.
+     * Abort banner (user interruptions, and the turn cap). The cause localizes from
+     * `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim. The turn cap's line is
+     * localized whole (its message only restates the cap in English). A legacy Trace without a
+     * code renders its English `reason` prose as-is.
      */
     aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      if (item?.errorCode === "max_turns") return "[已停止]：已达到单次任务最大轮数";
       const cause =
         item?.errorCode === "user_abort"
           ? "用户中断"
@@ -3893,9 +3929,11 @@ Benchmark：
               ? "网络或服务暂时不可用"
               : kind === "image_rejected"
                 ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-                : kind === "failed"
-                  ? "模型服务返回错误"
-                  : "请求失败";
+                : kind === "output_truncated"
+                  ? "模型输出达到输出上限，被截断"
+                  : kind === "failed"
+                    ? "模型服务返回错误"
+                    : "请求失败";
       const action =
         state === "gaveUp"
           ? `第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`
@@ -3995,6 +4033,12 @@ Benchmark：
       missing: "这个对话所在的机器不在当前 Project 的机器列表中",
       hint: "对话保存在那台机器上，连接恢复后会自动加载。",
       details: "技术细节",
+    },
+    /** Above the composer while the conversation's machine reads as needing a restart. */
+    machineRestartNeeded: {
+      body: (alias: string) =>
+        `${alias} 的版本和当前不一致，这里的对话不会自动刷新。请到「机器管理」重启这台机器。`,
+      open: "去机器管理",
     },
     statsLabel: "统计信息",
     removeImage: "移除图片",
@@ -4317,7 +4361,7 @@ Benchmark：
     pinnedSession: "已置顶",
     /** The hover ellipsis button that opens the row's full context menu. */
     moreActions: "更多操作",
-    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default, the Trace panel's file pills). */
+    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default). */
     loadMore: "更多",
     /** A list's one reveal row (a sidebar group, time mode's whole list, an archive group): n = conversations that list still hides; a click shows ten more, fetching when the loaded ones run out. */
     expandRestSessions: (n: number) => `展开其余 ${n} 个对话`,
@@ -4988,11 +5032,13 @@ Benchmark：
     zoomIn: "放大",
     linkHint:
       "鼠标移到时间线段或消息行即可联动高亮，点击时间线段跳转到对应消息；图例可高亮同类；拖动下方滑块平移/缩放",
+    /** The Trace file picker's panel: its title, and how many files it lists. */
     filesTitle: "Trace 文件",
+    fileCount: (n: number) => `${n} 个文件`,
     toolCalls: "工具调用",
-    taskInput: "本轮输入 tokens",
-    taskOutput: "本轮输出 tokens",
     cacheHit: "命中缓存",
+    /** The uncached part of the input, beside its cache hits (a round's readings). */
+    cacheMiss: "未命中缓存",
     hitRate: "命中率",
     avgToolCalls: "每轮平均工具调用",
     /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空) and is the stem of the conversation row's state titles (压缩中 / 压缩完毕), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
@@ -5000,6 +5046,14 @@ Benchmark：
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
+    /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
+    roundNav: "轮次导航",
+    roundCount: (n: number) => `${n} 轮`,
+    /** The navigator's number box: its accessible name and its placeholder. */
+    jumpToRound: "跳转到轮次",
+    jumpToRoundPlaceholder: "轮次",
+    /** The panel a round's ring opens, and the name of the button standing in for a ring on a round with no context snapshot. */
+    roundReadings: "本轮读数",
   },
 
   benchmark: {

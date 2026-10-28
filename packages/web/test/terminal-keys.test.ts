@@ -7,10 +7,17 @@
 import { describe, expect, it } from "vitest";
 import { SHORTCUT_COMMANDS, defaultChord } from "../src/lib/shortcuts/registry";
 import { terminalKeyAction, type TerminalKeyHost } from "../src/lib/shortcuts/terminal-keys";
-import type { Chord, CommandId, KeyLike, Platform } from "../src/lib/shortcuts/types";
+import type { Chord, CommandId, KeyLike, Keymap, Platform } from "../src/lib/shortcuts/types";
 
-function defaults(platform: Platform): Map<CommandId, Chord | null> {
-  return new Map(SHORTCUT_COMMANDS.map((cmd) => [cmd.id, defaultChord(cmd, platform)]));
+/** The registry's defaults as a keymap: one command, one binding — the list's first member. */
+function defaults(platform: Platform): Keymap {
+  return new Map(
+    SHORTCUT_COMMANDS.map((cmd) => [cmd.id, wrap(defaultChord(cmd, platform))] as const),
+  );
+}
+
+function wrap(chord: Chord | null): readonly Chord[] {
+  return chord === null ? [] : [chord];
 }
 
 function key(overrides: Partial<KeyLike> & { code: string }): KeyLike {

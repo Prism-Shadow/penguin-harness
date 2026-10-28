@@ -29,7 +29,7 @@ import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
 import { attachmentFileName, splitAttachments } from "../../lib/attachments";
 import { routedUrl } from "../../lib/session-machines";
-import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
+import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
 import { SessionThinking } from "./thinking-block";
@@ -373,13 +373,11 @@ export function MessageItem({
       // footer, and rendering both would pop up two copy buttons in the same spot. The stats
       // line's copy grabs **all** of this turn's assistant text (see collectTaskAssistant),
       // which is more useful than copying segment by segment.
-      // The body (Markdown, caret, the theme's reveal) is AssistantText; the stop reason and a
-      // nested reply's files card follow the text once it is fully revealed.
+      // The body (Markdown, caret, the theme's reveal) is AssistantText; a nested reply's files
+      // card follows the text once it is fully revealed. How the Request ended is not the
+      // text's to say: the retry line, error banner or stop marker that follows says it.
       return (
         <AssistantText text={item.text} streaming={item.streaming}>
-          {item.stopReason && item.stopReason !== "completed" && (
-            <span className="ml-1 font-mono text-xs text-fg-subtle">[{item.stopReason}]</span>
-          )}
           {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
           {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
             <MessageFilesCard

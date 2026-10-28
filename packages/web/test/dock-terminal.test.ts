@@ -263,7 +263,7 @@ describe("keeping shells with their owner", () => {
     const after = `${before}-healed`;
 
     await terminal.reownTerminals(before, after);
-    dock.adoptDockScope(after);
+    dock.adoptDockScope(before, after);
     terminal.setDockConversation({ sessionId: after, workspace: "/work", machineId: null });
     await list.refreshTerminals();
 

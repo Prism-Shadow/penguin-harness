@@ -387,9 +387,9 @@ jobs:
 
       # One retry, and only here. Per-test flakes are already absorbed inside vitest
       # (`retry` in core's and the server's configs, Windows only); what this covers is the
-      # failure that has no failing test at all — a tinypool `ERR_IPC_CHANNEL_CLOSED` raised
-      # while the worker pool tears down, after every file has reported green. A real
-      # regression fails both attempts.
+      # failure that has no failing test at all — a worker-pool error raised while the pool
+      # tears down (vitest 3's tinypool: `ERR_IPC_CHANNEL_CLOSED`), after every file has
+      # reported green. A real regression fails both attempts.
       - name: Unit tests (vitest)
         shell: bash
         env:

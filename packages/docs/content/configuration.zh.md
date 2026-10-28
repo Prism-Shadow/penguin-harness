@@ -19,7 +19,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的源，例如 `https://preview.example.com` | 未设置：每次请求推导对应的回环地址 |
 | `PENGUIN_GO_ORIGIN` | 服务端发起 Penguin Go Key 授权和余额查询时调用的可信源 | `https://go.penguin.ooo` |
 | `MODELSCOPE_BRIDGE_URL` | 服务端发起 ModelScope Key 授权时调用的授权中转层地址 | `https://go.penguin.ooo/modelscope` |
-| `PENGUIN_TRUST_PROXY` | 设为 `1` 时信任 `x-forwarded-proto` 请求头 | 未设置：忽略请求头 |
+| `PENGUIN_TRUST_PROXY` | 设为 `1` 时信任 `x-forwarded-proto` 与 `x-forwarded-host` 请求头 | 未设置：两者都忽略。桌面应用的服务端会设置它 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 预置内置管理员的固定初始密码（自动化测试 / e2e） | 未设置：生成随机密码 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 时关闭 Web App 的新版本检查 | 启用 |
@@ -29,7 +29,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 
 说明：
 
-- `PENGUIN_TRUST_PROXY`：只在反向代理终结 TLS、并由代理自己设置或清除这个请求头时启用。启用后，会话 Cookie 会带上 `Secure` 标记，热更新的网络检查也能识别出 HTTPS。
+- `PENGUIN_TRUST_PROXY`：当部署在终结 TLS 的反向代理之后时设置。代理必须把 `x-forwarded-proto` 覆盖为 `https`，并且要么原样保留外部的 `Host` 请求头，要么用它覆盖 `x-forwarded-host`；服务端各取第一个值。服务端据此得出浏览器所在的地址，即[公共源](/security#网络暴露面)：会话 Cookie 带上 `Secure` 标记，写请求的 `Origin` 与它比对，热更新的网络检查能识别出 HTTPS，模型厂商的授权也跳回这个地址。不设置的话，Web App 的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝。桌面应用内嵌的服务端会自己设置它：它只监听回环地址，从外部只能经 Penguin Remote 中继访问，中继的客户端应当把 `x-forwarded-proto` 覆盖为 `https`、把 `x-forwarded-host` 覆盖为公网主机名，各只带一个值。
 - `PENGUIN_SEED_ADMIN_PASSWORD`：不设置时，预置管理员时会生成一个随机密码，哈希后立即丢弃，没有人见过；账号通过首次登录链接认领。
 - `PENGUIN_GO_ORIGIN`：它是服务端配置，不接受浏览器指定的端点。取值必须是不带路径的 HTTPS 源；只有 `localhost`、`127.0.0.1` 和 `[::1]` 这类集成环境可以用明文 HTTP。带路径、凭据、查询参数或 fragment 的取值会在启动时被拒绝。见[连接账户](/models#连接账户)。
 - `MODELSCOPE_BRIDGE_URL`：与 `PENGUIN_GO_ORIGIN` 一样是服务端配置，不接受浏览器指定的端点。它必须是不带凭据、查询参数或 fragment 的 HTTPS 地址。不同之处是**它允许带路径前缀**，因为生产环境的中转层就挂在 `https://go.penguin.ooo/modelscope` 下。见[连接账户](/models#连接账户)。
@@ -82,7 +82,7 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-新建 Project 不给这七个一方厂商分组写 `base_url`，组内没有 key 的模型因此读取上表的变量；base URL 是厂商缺省端点的分组或模型同样读取。网关分组（openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope）的分组带网关的 base URL，组内模型须在文件里有 key：它们的 OpenAI 兼容客户端会读取 `OPENAI_*`（opencode-go 中走 Anthropic Messages 的模型读取 `ANTHROPIC_*`），里面存的是你的 OpenAI 或 Anthropic key。custom、vLLM 或自建分组的模型若在任何一层都不带 base URL，则读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（api.openai.com），设置了 `OPENAI_BASE_URL` 时发往它。Penguin Go 与 ModelScope 只从分组的连接信息取 key：在分组标题栏连接，或在分组设置里粘贴 key。`PENGUIN_GO_API_KEY` 与 `PENGUIN_GO_BASE_URL` 不再读取；只设置过这两个变量的用户，请在 Penguin Go 的分组标题栏重新连接，或粘贴 key。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）的模型有 `base_url` 而没有 `api_key` 时不发送任何 key，开放的 MMSP 服务器正是这样接受请求。供应商分组和内置模型目录见[模型与供应商](/models)。
+新建 Project 不给这七个一方厂商分组写 `base_url`，组内没有 key 的模型因此读取上表的变量；base URL 是厂商缺省端点的分组或模型同样读取。网关分组（openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope）的分组带网关的 base URL，组内模型须在文件里有 key：它们的 OpenAI 兼容客户端会读取 `OPENAI_*`（opencode-go 中走 Anthropic Messages 的模型读取 `ANTHROPIC_*`），里面存的是你的 OpenAI 或 Anthropic key。custom 或自建分组的模型若在任何一层都不带 base URL，则读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（`https://api.openai.com/v1`），设置了 `OPENAI_BASE_URL` 时发往它。vllm 分组的客户端读取 vLLM 自己的那对变量 `VLLM_API_KEY` 与 `VLLM_BASE_URL`，从不读取 `OPENAI_*`：新建 Project 把 `vllm serve` 默认监听的 `http://127.0.0.1:8000/v1` 写为该分组的 base URL；任何一层都不带 base URL 的 vllm 模型发往 `VLLM_BASE_URL`，未设置时同样发往该地址。Penguin Go 与 ModelScope 只从分组的连接信息取 key：在分组标题栏连接，或在分组设置里粘贴 key。`PENGUIN_GO_API_KEY` 与 `PENGUIN_GO_BASE_URL` 不再读取；只设置过这两个变量的用户，请在 Penguin Go 的分组标题栏重新连接，或粘贴 key。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）或 `openai-chat-vllm-adapter` 客户端（vLLM 服务器）的模型有 `base_url` 而没有 `api_key` 时不发送任何 key，未设置 key 启动的服务器正是这样接受请求；vLLM 客户端发送 vLLM 的占位 key `EMPTY`。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
@@ -166,7 +166,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 
 ### 分组连接信息
 
-`[providers.<id>]` 存一个分组的连接信息，以 provider id 为键：内置分组或你创建的分组。新建 Project 的文件为目录给出端点或协议的每个内置分组写好这张表：网关的 base URL 与协议、Penguin Go 的中转 base URL、vLLM 的协议。一方厂商分组与 custom 没有。模型库页面的分组设置与连接分组时都会写入它，不带 `--model-id` 的 `penguin config model add --provider <分组>` 同样写入。自建分组的这张表随该分组最后一个模型一并删除。
+`[providers.<id>]` 存一个分组的连接信息，以 provider id 为键：内置分组或你创建的分组。新建 Project 的文件为目录给出端点或协议的每个内置分组写好这张表：网关的 base URL 与协议、Penguin Go 的中转 base URL、vLLM 的协议与本地 base URL `http://127.0.0.1:8000/v1`。一方厂商分组与 custom 没有。模型库页面的分组设置与连接分组时都会写入它，不带 `--model-id` 的 `penguin config model add --provider <分组>` 同样写入。自建分组的这张表随该分组最后一个模型一并删除。
 
 | 键 | 类型 | 说明 |
 | --- | --- | --- |
@@ -315,7 +315,7 @@ enabled = false
 | `max_turns` | `-1` | 每个 Task 的最大 LLM 轮数 |
 | `model.max_tokens` | `32000` | 每次 Request 的输出 Token 上限 |
 | `model.thinking_level` | `medium` | 每个模型上下文开启时使用的思考等级，除非 Session 钉住了等级 |
-| `model.timeoutMs` | `300000` | 每次 Request 的**空闲**时间预算，单位毫秒 |
+| `model.timeoutMs` | `600000` | 每次 Request 的**空闲**时间预算，单位毫秒 |
 | `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值 |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值 |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
@@ -339,7 +339,7 @@ enabled = false
 - `max_turns`：`-1` 表示不限制；正整数则为单个 Task 的轮数上限。
 - `model.max_tokens`：`-1` 表示不设上限（使用供应商默认值）。每次请求都会把实际生效值限制在「模型 `context_window` − 估算输入」以内，因此不会向窗口小的模型要求放不下的输出量。
 - `model.thinking_level`：可选 `none` / `low` / `medium` / `high` / `xhigh` / `max`。思考等级在一个模型上下文内固定，修改要等下一次压缩才生效。没有此字段时，采用 Project `[default_chat]` 中的 `thinking_level`；若仍未设置，则为 `medium`。
-- `model.timeoutMs`：等待下一个上游事件的最长时长，每收到一个事件就重新计时。它限制的不是请求总时长，而是两段等待：从建立连接到收到第一个事件，以及事件之间的空档。有的模型在思考阶段不向网络输出任何内容，整个思考期都落在第一段空档里，默认值已为这种情况留出余量。
+- `model.timeoutMs`：等待下一个上游事件的最长时长，每收到一个事件就重新计时。它限制的不是请求总时长，而是两段等待：从建立连接到收到第一个事件，以及事件之间的空档。有的模型在思考阶段不向网络输出任何内容，整个思考期都落在第一段空档里；有的中转站会在上游消费掉思考内容，直到开始作答才发出数据，经由它访问的模型也是如此。默认值已为这两种情况留出余量。
 - `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 2048」中较小的一个。因此窗口小的模型会在自己的窗口内触发压缩；窗口超过 258048 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理。
 - `compaction.max_session_turns`：`-1` 表示不限制。
 - `*.prompt`：各小节的提示词都能在对应的设置标签页编辑：两段记忆提示词在 **记忆**，`vault.prompt` 在 **密钥保险柜**，`skills.prompt` 在 **技能**，`schedules.prompt` 在 **定时任务**。
@@ -371,7 +371,7 @@ max_turns: -1
 model:
   max_tokens: 32000
   thinking_level: medium
-  timeoutMs: 300000
+  timeoutMs: 600000
 
 compaction:
   max_context_length: 256000

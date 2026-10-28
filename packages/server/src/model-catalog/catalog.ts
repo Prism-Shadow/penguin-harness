@@ -68,9 +68,9 @@
  * alone says where a request goes (effectiveConnection reads no catalog).
  * Five groups pin at GROUP level as well (ModelProviderInfo.clientType, read
  * through providerClientType), so that a model the user adds there speaks the same protocol
- * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
- * OpenRouter, TokenDance, SiliconFlow and Atlas Cloud, whose do — see each group's own block
- * comment.
+ * as the presets: vLLM, whose added models inherit the local server's address its table is
+ * seeded with, and OpenRouter, TokenDance, SiliconFlow and Atlas Cloud, whose inherit the
+ * gateway's — see each group's own block comment.
  * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
  * the family its spelling begins with and never looks at base_url (MMSP's routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
@@ -185,7 +185,7 @@ export interface ModelProviderInfo {
    * a new Project writes as the group's `[providers.<id>]` base URL (catalogGroupConnection),
    * so every row of the group — a model added by hand included — follows it without storing
    * the address itself. A reference value: nothing reads it when a request is built. Left
-   * blank for direct vendors and custom.
+   * blank for direct vendors, custom and vLLM (whose rows name the local server's address).
    */
   gatewayBaseUrl?: string;
   /**
@@ -320,6 +320,13 @@ export interface ModelCatalogEntry {
  */
 const VLLM_CLIENT_TYPE = "openai-chat-vllm-adapter";
 
+/**
+ * Where `vllm serve` answers when it runs on this machine with its default port (8000): every
+ * vLLM row's preset base URL, so a new Project stores it once, on the group's table
+ * (catalogGroupConnection), and the models added to the group by hand follow it too.
+ */
+const VLLM_LOCAL_BASE_URL = "http://127.0.0.1:8000/v1";
+
 /** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
@@ -328,6 +335,8 @@ const QWEN_TOKEN_PLAN_BASE_URL =
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
+/** TokenDance's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
+const TOKENDANCE_MESSAGES_BASE_URL = "https://tokendance.space/gateway";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
@@ -615,12 +624,15 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   },
   {
     // Self-hosted: the user runs the server, so there is no console to mint a key at
-    // (apiKeyUrl) and no endpoint to preset (gatewayBaseUrl). modelsUrl points at the recipe
-    // index, which is where the served ids in this group are documented.
+    // (apiKeyUrl) and no endpoint every user shares (gatewayBaseUrl). The group's rows name the
+    // address a server started on this machine answers on, which a new Project stores as the
+    // group's base URL. modelsUrl points at the recipe index, which is where the served ids in
+    // this group are documented.
     id: "vllm",
     label: "vLLM",
-    envKey: "OPENAI_API_KEY",
-    envBaseUrlKey: "OPENAI_BASE_URL",
+    // vLLM's own pair, which MMSP's vLLM client reads, and never OpenAI's.
+    envKey: "VLLM_API_KEY",
+    envBaseUrlKey: "VLLM_BASE_URL",
     modelsUrl: "https://recipes.vllm.ai/",
     clientType: VLLM_CLIENT_TYPE,
     // The served ids are the user's own, so this group keeps taking models added by hand.
@@ -1004,6 +1016,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // The 1017 snapshot, served by DeepSeek's own endpoint (MMSP 0.5.5's registry, models API
+    // read 2026-10-19): $0.15 / $0.60 / $0.003 off-peak, double in DeepSeek's weekday windows,
+    // so the row stores that peak and declares DEEPSEEK_OFF_PEAK like the row above.
+    modelId: "deepseek/deepseek-v4.1-flash-1017",
+    displayName: "DeepSeek V4.1 Flash 1017",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.006, 0.3, 1.2),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "deepseek/deepseek-v4-flash-0731",
     displayName: "DeepSeek V4 Flash 0731",
     provider: "openrouter",
@@ -1136,12 +1162,40 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // The paid listing, which replaced the free variant when its free period ended (models API
+    // read 2026-10-23): $0.15 input / $0.60 output / $0.015 cache read, 1,048,576 tokens, image
+    // input, MiniMax's own list price.
+    modelId: "minimax/minimax-m3.1-flash",
+    displayName: "MiniMax M3.1 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.015, 0.15, 0.6),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     // No official separate cache price published: cache_read uses the standard input price (no discount assumed).
     modelId: "minimax/minimax-m3",
     displayName: "MiniMax M3",
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.06, 0.3, 1.2),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Read 2026-10-24 from the models API and the per-model endpoints API: $2 input / $10
+    // output / $0.20 cache read over 1,048,576 tokens, image input, served by Moonshot AI alone
+    // and with no promotion on the default endpoint (`discount: 0`). The listing's
+    // `moonshotai/highspeed` endpoint ($4 / $20 / $0.20) is a provider route under this same id,
+    // not a model of its own.
+    modelId: "moonshotai/kimi-k3.1-pro",
+    displayName: "Kimi K3.1 Pro",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.2, 2, 10),
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
@@ -1364,6 +1418,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.05, 0.14, 1),
     supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Recursive's Flint, listed 2026-10-21 (models API read 2026-10-23): free, 262,144 tokens,
+    // up to 235,929 output tokens, text input only, with reasoning and tool calls.
+    modelId: "recursive/flint-v1.0:free",
+    displayName: "Flint (free)",
+    provider: "openrouter",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
@@ -1684,11 +1750,24 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- SiliconFlow (gateway, official CNY pricing: cache hit / input / output) --
   {
+    // CNY 1 input / 4 output / 0.02 cache hit over 1,048,576 tokens, image input (MMSP 0.5.5's
+    // registry, SiliconFlow's price list).
+    modelId: "deepseek-ai/DeepSeek-V4.1-Flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "siliconflow",
+    contextWindow: 1048576,
+    pricing: cny(0.02, 1, 4),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    // SiliconFlow repriced it to CNY 1.5 / 4.5 / 0.15 (MMSP 0.5.5's registry).
     modelId: "deepseek-ai/DeepSeek-V4-Flash",
     displayName: "DeepSeek V4 Flash",
     provider: "siliconflow",
-    contextWindow: 1000000,
-    pricing: cny(0.02, 1, 2),
+    contextWindow: 1048576,
+    pricing: cny(0.15, 1.5, 4.5),
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
@@ -1697,8 +1776,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "deepseek-ai/DeepSeek-V4-Pro",
     displayName: "DeepSeek V4 Pro",
     provider: "siliconflow",
-    contextWindow: 1000000,
-    pricing: cny(0.1, 12, 24),
+    contextWindow: 1048576,
+    pricing: cny(1, 12, 24),
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
@@ -1707,7 +1786,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "meituan-longcat/LongCat-2.0",
     displayName: "LongCat 2.0",
     provider: "siliconflow",
-    contextWindow: 1000000,
+    contextWindow: 1048576,
     pricing: cny(0.1, 5, 20),
     supportsVision: false,
     clientType: "openai-chat",
@@ -1767,7 +1846,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "zai-org/GLM-5.3",
     displayName: "GLM-5.3",
     provider: "siliconflow",
-    contextWindow: 1000000,
+    contextWindow: 1048576,
     pricing: cny(2, 8, 28),
     supportsVision: false,
     clientType: "openai-chat",
@@ -1793,7 +1872,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "zai-org/GLM-5.2",
     displayName: "GLM-5.2",
     provider: "siliconflow",
-    contextWindow: 1000000,
+    contextWindow: 1048576,
     pricing: cny(2, 8, 28),
     supportsVision: false,
     clientType: "openai-chat",
@@ -1964,6 +2043,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // The 1017 snapshot, priced exactly as the row above in the public catalog (re-read
+    // 2026-10-23): the same peak tier, schedule and 20% promotion.
+    modelId: "deepseek-v4.1-flash-1017",
+    displayName: "DeepSeek V4.1 Flash 1017",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    discount: 0.2,
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
     // Dots Studio's (rednote / Xiaohongshu) Dots3-Note Preview: an open-weight MoE, 280B total
     // and 16B active, the lightest of the Dots 3 family. TokenDance lists it as "Dots3-Note
     // Preview（Free）": the words and the tag are kept as the seller spells them, as the
@@ -2079,6 +2172,22 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // Moonshot's Kimi K3.1 Pro (public catalog, read 2026-10-24): text, image and video input
+    // over a 1,000,000-token window, at CNY 13 input / 68 output / 1.3 cache hit, undiscounted
+    // and the same on both protocols the portal prices it on. Its supported_protocols are
+    // openai:chat-completions and anthropic:messages, so the openai-chat pin is the group's
+    // convention rather than the only shape the id serves; image parts go through this group's
+    // openai-chat client.
+    modelId: "kimi-k3.1-pro",
+    displayName: "Kimi K3.1 Pro",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(1.3, 13, 68),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
     // inclusionAI's Ling-3.0-flash: text only, with the 256,000-token window the listing gives
     // (the model's native length; its description says it extends to 1M). 65% off a CNY 0.4
     // input / 1.2 output / 0.08 cache hit list, so the gateway bills 0.14 / 0.42 / 0.028.
@@ -2144,6 +2253,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // CNY 1 input / 4 output / 0.1 cache hit over a 1,000,000-token window, undiscounted (public
+    // catalog, re-read 2026-10-23). Pinned to Anthropic Messages: the gateway's Chat Completions
+    // stream for this model ends in a chunk without `delta`, which openai-chat cannot read
+    // (MMSP 0.5.5's registry pins the same).
+    modelId: "minimax-m3.1-flash",
+    displayName: "MiniMax M3.1 Flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.1, 1, 4),
+    supportsVision: true,
+    clientType: "ant-messages",
+    baseUrl: TOKENDANCE_MESSAGES_BASE_URL,
   },
   {
     // One model reached two ways, priced by whoever is selling it: this row carries the
@@ -2958,6 +3081,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- MiniMax (official USD pay-as-you-go list prices, standard tier at <=512K input — every
   // rate doubles above 512K, and the priority tier is 1.5x). --
   {
+    // Pay-as-you-go list price, one tier (MiniMax pricing guide, read 2026-10-19 by MMSP 0.5.5's
+    // registry): $0.15 input / $0.60 output / $0.015 cache hit over a 1,000,000-token window.
+    modelId: "MiniMax-M3.1-Flash",
+    displayName: "MiniMax M3.1 Flash",
+    provider: "minimax",
+    contextWindow: 1000000,
+    pricing: usd(0.015, 0.15, 0.6),
+    supportsVision: true,
+  },
+  {
     modelId: "MiniMax-M3",
     displayName: "MiniMax M3",
     provider: "minimax",
@@ -3325,6 +3458,30 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Moonshot (Kimi) (official CNY pricing) --
   {
+    // Moonshot's list (pricing page, read 2026-10-23 for MMSP 0.5.6's registry): CNY 13 input /
+    // 68 output / 1.3 cache hit over a 1,048,576-token window, image input. The default
+    // five-minute cache write bills at the input price, which is what cache_write stores; the
+    // one-hour write, which only MMSP's `prompt_caching` enhance asks for, bills twice that.
+    modelId: "kimi-k3.1-pro",
+    displayName: "Kimi K3.1 Pro",
+    provider: "moonshot",
+    contextWindow: 1048576,
+    pricing: cny(1.3, 13, 68),
+    supportsVision: true,
+  },
+  {
+    // The same model at two to three times the output speed (Moonshot's model list), at twice
+    // the input, output and cache-write prices and the same cache hit: CNY 26 / 136 / 1.3.
+    // Moonshot's vision guide names only kimi-k3.1-pro, but its model list files both ids under
+    // multimodal models, and MMSP's live probe read a base64 image through this one.
+    modelId: "kimi-k3.1-pro-highspeed",
+    displayName: "Kimi K3.1 Pro Highspeed",
+    provider: "moonshot",
+    contextWindow: 1048576,
+    pricing: cny(1.3, 26, 136),
+    supportsVision: true,
+  },
+  {
     modelId: "kimi-k3",
     displayName: "Kimi K3",
     provider: "moonshot",
@@ -3357,7 +3514,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   //   the same genuine $0 tier the `:free` gateway rows carry, so these models show the free
   //   badge and contribute 0 to the cost center rather than the "unpriced" mark — which is the
   //   truthful reading of a self-hosted endpoint that bills nobody.
-  // - **no base URL**. Every deployment has its own; the user supplies it, as in `custom`.
+  // - **the local server's base URL** (VLLM_LOCAL_BASE_URL), where `vllm serve` answers when
+  //   it runs on the same machine with its default port. A new Project stores it once, on the
+  //   group's table; a deployment elsewhere changes the group's base URL.
   // - **no auto-routing**. Each row pins openai-chat-vllm-adapter explicitly, and the pin is
   //   load-bearing twice over: `Qwen/*` begins with no family AutoLLMClient knows and would
   //   be rejected outright, while `deepseek-ai/DeepSeek-V4-*` begins with "deepseek-" and
@@ -3378,6 +3537,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: false,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     // The experimental vision revision: DeepSeek's first multimodal V4, a ViT tower on the
@@ -3391,6 +3551,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "deepseek-ai/DeepSeek-V4-Pro",
@@ -3400,6 +3561,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: false,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.5-0.8B",
@@ -3409,6 +3571,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.5-9B",
@@ -3418,6 +3581,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.6-35B-A3B",
@@ -3427,6 +3591,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.8-27B",
@@ -3436,6 +3601,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   {
     modelId: "Qwen/Qwen3.8-Flash-Next",
@@ -3445,6 +3611,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+    baseUrl: VLLM_LOCAL_BASE_URL,
   },
   // -- Custom (the group that otherwise holds only user-defined models). A preset may live
   // here only as a complete row — its own base URL and a pinned generic protocol — because the

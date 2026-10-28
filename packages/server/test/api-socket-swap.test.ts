@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { WebSocket } from "ws";
 import type { Reassembly } from "../src/hmr/capabilities.js";
+import type { ApiSocketRef } from "../src/socket/ref.js";
 import { createTestApp, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -48,8 +49,8 @@ function fakeSocket() {
   return socket;
 }
 
-const REF = { id: "api-socket@admin", ownerUserId: "admin", apiSocket: true };
-const URL_ = new URL("http://localhost:7364/api/terminals/api-socket%40admin/stream");
+const REF: ApiSocketRef = { apiSocket: true, ownerUserId: "admin" };
+const URL_ = new URL("http://localhost:7364/api/socket");
 
 describe("the API socket across a swap", () => {
   let t: TestApp;
@@ -61,7 +62,7 @@ describe("the API socket across a swap", () => {
     t = await createTestApp();
     const platform = await t.deps.hmr.ensure();
     const ws = fakeSocket();
-    platform.api.attachStream(ws as unknown as WebSocket, REF as never, URL_, () => undefined);
+    platform.api.attachStream(ws as unknown as WebSocket, REF, URL_, () => undefined);
     ws.call(1, "/api/projects");
     await waitFor(() => ws.sent.some((f) => f.id === 1));
     expect(ws.sent.find((f) => f.id === 1)?.status).toBe(200);
@@ -80,7 +81,7 @@ describe("the API socket across a swap", () => {
     t = await createTestApp();
     const platform = await t.deps.hmr.ensure();
     const ws = fakeSocket();
-    platform.api.attachStream(ws as unknown as WebSocket, REF as never, URL_, () => undefined);
+    platform.api.attachStream(ws as unknown as WebSocket, REF, URL_, () => undefined);
     const handle = t.deps.hmr.resources.claim<{ close(): void }>("apiSockets:open");
     expect(handle).toBeDefined();
     handle!.close();

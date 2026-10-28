@@ -125,14 +125,14 @@ Copy `.env.example` to `.env` for model credentials in development.
 ## Repo layout
 
 A pnpm monorepo (TypeScript, Node >= 24). One install ships four layers that share a
-single data directory (`~/.penguin/data`) and a single message protocol (OmniMessage):
+single data directory (`~/.penguin/data`) and a single message format (AMSP records):
 
 | Package                                   | Name                          | Role                                                                                                    |
 | ----------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [`packages/core`](../packages/core)       | `@prismshadow/penguin-core`   | SDK & engine: ReAct loop, OmniMessage protocol, LLM/Environment interface contracts, Agent State, Trace |
+| [`packages/core`](../packages/core)       | `@prismshadow/penguin-core`   | SDK & engine: ReAct loop, LLM/Environment interface contracts, Agent State, Trace                       |
 | [`packages/cli`](../packages/cli)         | `@prismshadow/penguin-cli`    | The `penguin` command: REPL, one-shot runs, model & vault config, service launcher                      |
 | [`packages/server`](../packages/server)   | `@prismshadow/penguin-server` | Web backend: HTTP API + SSE streaming, multi-user auth, Project authorization, usage stats              |
-| [`packages/amsp`](../packages/amsp) | `@prismshadow/amsp` | AMSP, the Agent API's event stream: its wire types, which the server imports, and a zero-dependency client for Node and browsers |
+| [`packages/amsp`](../packages/amsp) | `@prismshadow/amsp` | AMSP records (their types, guards, builders and markers, which core re-exports), the Agent API's wire types, and a zero-dependency client for Node and browsers |
 | [`packages/web`](../packages/web)         | `@prismshadow/penguin-web`    | Web App: multi-session chat, Agent/skill/model management, Trace observability, evaluation center       |
 | [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each (`plugins/<name>` is `@penguinharness/<name>`): Agent plugins — skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries) — which `packages/core` depends on and loads; and server plugins a Project asks for on the Plugins page (its `[plugins]` table), such as the sandbox backends |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
@@ -252,6 +252,67 @@ in plain text, and an issue is public and permanent.
 
 Questions and usage help belong on [Discord](https://discord.gg/eFHKqqcU3D) or in the
 WeChat group, not in the issue tracker.
+
+## Design RFCs
+
+Design documents (RFCs) for PenguinHarness live in the [`rfcs/`](../rfcs/) directory. Each RFC
+describes a design decision, architectural choice, or major feature proposal, and can be developed
+and reviewed independently from implementation PRs.
+
+### When to write an RFC
+
+Write an RFC when your proposal affects:
+
+- Core concepts or architecture (message protocol, plugin model, session lifecycle)
+- Major product behavior or user-facing changes
+- Integration of new subsystems or external dependencies
+- Significant changes to existing design decisions
+
+For smaller tasks (bug fixes, minor refactors, performance optimizations), an RFC is not needed.
+
+### RFC workflow
+
+1. **Create an RFC document** using the template at [`rfcs/TEMPLATE.md`](../rfcs/TEMPLATE.md).
+   Choose the next available RFC number (listed in [`rfcs/README.md`](../rfcs/README.md)) and name
+   your file `PRFC-NNNN-your-slug.md`. Every RFC is a pair: the English document and its Chinese
+   counterpart `PRFC-NNNN-your-slug.zh.md`, carrying the same sections, each linking the other at
+   the top.
+
+2. **Submit an RFC PR** to this repository, adding your document under `rfcs/`. The RFC is
+   reviewed before any implementation begins — design and code reviews are separate.
+
+3. **Implementation PRs reference the RFC** — mention the RFC number in your implementation PR title
+   or body so readers can find the design behind the code. RFC and implementation merge independently:
+   an RFC can be approved while implementation is still in draft, or vice versa.
+
+4. **Modify an approved RFC carefully**: once an RFC lands, changes should be rare. If you must update
+   it, raise the version number (e.g., `v1.0.0` → `v2.0.0`) and document the change in a `## Changes`
+   section at the end of the file. See the template for the format.
+
+### RFC format and required sections
+
+Every RFC must include:
+
+- **Summary** — one-paragraph overview of the proposal
+- **Motivation** — why this is needed, what problems it solves
+- **Guide-level explanation** — how to think about this feature (not implementation details yet)
+- **Reference-level explanation** — technical design, interactions with other systems
+- **Drawbacks** — what could go wrong, what we give up
+- **Rationale and alternatives** — why this design, what else was considered
+- **Unresolved questions** — what will be decided during implementation or after merging
+
+See [`rfcs/TEMPLATE.md`](../rfcs/TEMPLATE.md) for a complete example and filling guide.
+
+### Continuous integration for RFCs
+
+Pull requests that modify `rfcs/` are checked for:
+
+- Proper file naming (`PRFC-NNNN-slug.md`)
+- Consecutive numbering and no unexpected duplicates
+- Presence of required sections (Summary, Motivation, etc.)
+- For existing RFCs: version bump and `## Changes` section when content is modified
+
+If any check fails, CI will report the error and suggest corrections.
 
 ## Pull requests
 

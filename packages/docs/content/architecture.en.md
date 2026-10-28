@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: How the SDK, Server, CLI and Web App divide responsibilities, and how the three-interface boundary and OmniMessage organize the system.
+description: How the SDK, Server, CLI and Web App divide responsibilities, and how the three-interface boundary and AMSP records organize the system.
 ---
 
 PenguinHarness is a pnpm monorepo. Its center is the execution engine in `@prismshadow/penguin-core`. The Server ships with the product as the Human implementation of that engine: it runs every Task. SDK embedders can also drive the engine directly.
@@ -16,7 +16,7 @@ The stack, top to bottom:
 │   CLI       │  │  Web App (React SPA)        │
 │  (penguin)  │  │                             │
 └──────┬──────┘  └──────────────┬──────────────┘
-       │                        │   HTTP · OmniMessage over SSE
+       │                        │   HTTP · AmspRecord over SSE
 ┌──────┴────────────────────────┴──────────────┐
 │  Server (Hono + SQLite)                      │
 └──────────────────────┬───────────────────────┘
@@ -34,28 +34,28 @@ The CLI and the Web App talk to the Server over HTTP and SSE. Among the shipped 
 
 | Package | Role |
 | --- | --- |
-| `packages/core` | SDK and engine: `context_engine`, OmniMessage, the LLM and Environment interfaces, hooks, state and Trace |
+| `packages/core` | SDK and engine: `context_engine`, the LLM and Environment interfaces, hooks, state and Trace |
 | `packages/server` | The Human implementation: runs Tasks through core, takes input and approvals over HTTP, streams output over SSE |
-| `packages/amsp` | The [Agent API](/agent-api)'s protocol package: the [AMSP](/amsp) wire types, which the Server imports, and a zero-dependency client for Node and browsers |
+| `packages/amsp` | The protocol package: the [AMSP records](/amsp-records) with their builders and markers (core re-exports them), the [AMSP](/amsp) wire types of the [Agent API](/agent-api), and a zero-dependency client for Node and browsers |
 | `packages/cli` | Terminal client of the Server: REPL and one-shot runs over HTTP and SSE. It starts a local Server when none is running. Only `penguin config` reads and writes configuration files directly through the SDK |
-| `packages/web` | Rendering SPA: renders the OmniMessage stream and contains no engine logic |
+| `packages/web` | Rendering SPA: renders the stream of AMSP records and contains no engine logic |
 | `packages/desktop` | Desktop app: an Electron shell that runs the Server as a `utilityProcess` and opens its window on the local HTTP address |
 | `packages/hmr` | The hot-update mechanism: the version store, the atomic commit, the resource registry, and park → boot → swap |
 | `plugins/*` | The built-in plugin library, one package per plugin: Skills (`SKILL.md` directories) and Session hooks (script packages), loaded by core |
 
 ## The three-interface boundary
 
-The `context_engine` is the heart of the system. It does exactly two things: it maintains the linear message history, and it orchestrates the event flow between three interfaces. It speaks only [OmniMessage](/omni-message) and performs no protocol conversion.
+The `context_engine` is the heart of the system. It does exactly two things: it maintains the linear message history, and it orchestrates the event flow between three interfaces. It speaks only [AMSP records](/amsp-records) and performs no protocol conversion.
 
-- **Human**: the user-side boundary. It is deliberately not an interface class: the SDK's single entry point, `session.run(newMessages, { approve, signal })`, *is* the Human boundary. Input is a list of new OmniMessages plus an approval callback; output is a stream of OmniMessages. The Server is the shipped implementation. The CLI and the Web App reach it over HTTP and SSE, and SDK embedders call `session.run` themselves.
-- **LLM**: the model-side interface, `LLMInterface`. It translates OmniMessage into requests against the MMSP model gateway, and streamed events back into OmniMessage. All provider protocol adaptation happens inside MMSP, so core never imports a vendor SDK.
+- **Human**: the user-side boundary. It is deliberately not an interface class: the SDK's single entry point, `session.run(newMessages, { approve, signal })`, *is* the Human boundary. Input is a list of new records plus an approval callback; output is a stream of records. The Server is the shipped implementation. The CLI and the Web App reach it over HTTP and SSE, and SDK embedders call `session.run` themselves.
+- **LLM**: the model-side interface, `LLMInterface`. It translates records into requests against the MMSP model gateway, and streamed events back into records. All provider protocol adaptation happens inside MMSP, so core never imports a vendor SDK.
 - **Environment**: the tool-execution interface, `EnvironmentInterface`. It runs approved tool calls and streams the results back.
 
 The kernel contains no provider, tool or UI specifics, so each side swaps by configuration without touching core: a local shell today, another sandbox tomorrow; the CLI, the Web App or a programmatic caller. See [Core Interfaces](/interfaces) for the signatures.
 
 ## Data flow of one Task
 
-1. The Human hands a Prompt (a list of OmniMessages) to `session.run`.
+1. The Human hands a Prompt (a list of records) to `session.run`.
 2. The engine issues a Request. The `LLMInterface` streams `partial_*` fragments and complete messages.
 3. Every complete `tool_call` triggers one `approve` decision. Approved calls run concurrently in the Environment.
 4. Tool outputs are re-fed in their original order as the next Request's input.
@@ -78,7 +78,7 @@ Item by item, each design maps to an owner and to the file or module that carrie
 
 | Design | Owner | Carried by |
 | --- | --- | --- |
-| The OmniMessage protocol, message parsing and partial aggregation | SDK | `core/src/omnimessage/` — see [The OmniMessage Protocol](/omni-message) |
+| AMSP records, message parsing and partial aggregation | SDK | `amsp/src/records/` and `amsp/src/markers/`, re-exported by core — see [AMSP Records](/amsp-records) |
 | The ReAct loop, carry-over, reconnect, compaction | SDK | `core/src/engine/context-engine.ts` — see [The Agent Loop](/agent-loop) |
 | The approval mechanism (one decision per `tool_call`) | SDK | `ApproveFn` (`core/src/interfaces/shared.ts`); the concrete mode is injected by the Server or an SDK host |
 | Tool execution and centralized close-out | SDK | `core/src/environment/` — see [Tools & Approval](/tools) |
@@ -123,7 +123,6 @@ packages/
 ├── core/src
 │   ├── agent.ts / session.ts       # the createAgent composition layer and Session (run / compact / generateTitle)
 │   ├── engine/context-engine.ts    # ReAct loop orchestration: turn lifecycle, approvals, carry-over, reconnect, compaction
-│   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · markers/
 │   ├── interfaces/                 # llm.ts · environment.ts · shared.ts (ApproveFn and the vocabulary both sides share)
 │   ├── llm/                        # generative-model.ts MMSP adapter · app-attribution.ts gateway headers · tool-call-ids.ts id uniqueness · context-limits.ts
 │   ├── environment/                # environment.ts execution close-out · tools/ registry, 7 builtin tools, background sessions · mcp/
@@ -134,9 +133,10 @@ packages/
 │   │                               # agent-state (Skill install, prompt assembly) · agent-vault · builtin-agents
 │   ├── trace/                      # writer.ts append-only JSONL · resume.ts replay-based recovery
 │   └── internal/                   # shared helpers: dates, Session support, merge queue, session-title.ts (one-shot title generation, never in Trace)
+├── amsp/src                        # records/ the record types, guards and builders · markers/ · the Agent API types and client
 ├── server/src                      # index.ts boot sequence · app assembly · db (node:sqlite) · auth · http/routes · runtime · services · hmr · plugin · terminal · model-catalog.ts
 ├── cli/src                         # commander entry · commands/ (run / chat / input / logs / ls / agent / project / schedule / config / serve …) · server client and approval prompts
-├── web/src                         # api client · state · lib/omni stream rendering · components · feature pages (layout below)
+├── web/src                         # api client · state · lib/amsp stream rendering · components · feature pages (layout below)
 ├── desktop/                        # the Electron shell
 ├── hmr/                            # the hot-update mechanism
 ├── landing/                        # the product landing page (with the blog)
@@ -149,7 +149,7 @@ packages/
 packages/web/src
 ├── api/          # fetch wrapper · one function per API (DTOs type-only from @prismshadow/penguin-server/api) · SSE wrapper
 ├── state/        # auth / project / sessions / company / theme / locale contexts
-├── lib/omni/     # OmniMessage stream → view-model reducer; connect-first + dedup stream controller
+├── lib/amsp/     # AmspRecord stream → view-model reducer; connect-first + dedup stream controller
 ├── components/   # ui primitives (modal / drawer / select …) and the app layout
 ├── pages/        # the login pages
 └── features/     # chat / agents / skills / plugins / models / usage / traces / benchmark / schedules / company / settings / admin … pages
@@ -161,16 +161,16 @@ The Server's routes and delivery guarantees are detailed on [Server API](/server
 
 ### One protocol, three jobs
 
-OmniMessage is at once the SDK's external interface, the Trace's on-disk format and the engine's internal currency. What streams, what is stored and what the model sees are the same thing.
+The AMSP record is at once the SDK's external interface, the Trace's on-disk format and the engine's internal currency. What streams, what is stored and what the model sees are the same thing.
 
 ### Errors converge into messages
 
-The LLM and the Environment never throw into the engine. Their results carry a four-value `stop_reason`, and the concrete cause rides on `error_code` and `error_message`:
+The LLM and the Environment never throw into the engine. A Request's end is recorded as `request_end.status`, a tool result carries its own `status` (`completed`, `aborted` for a call denied or interrupted while it ran, `fatal`), and the concrete cause rides on `error_code` and `error_message`:
 
-| `stop_reason` | Meaning and engine behavior |
+| `request_end.status` | Meaning and engine behavior |
 | --- | --- |
 | `completed` | Finished normally; the loop continues or the Task ends |
-| `retryable` | An LLM failure worth retrying: the engine reconnects within the run, up to 5 consecutive fruitless retries, on an exponential backoff with a ceiling |
+| `retryable` | An LLM failure worth retrying, a response cut off at its output cap (`output_truncated`) included: the engine reconnects within the run, up to 5 consecutive fruitless retries, on an exponential backoff with a ceiling |
 | `fatal` | A definitive failure, such as a rejected credential: the run stops at once, because no retry can make it work |
 | `aborted` | A user interruption |
 

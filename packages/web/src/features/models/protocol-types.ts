@@ -6,7 +6,11 @@
  * The probing itself is server-side (packages/server/src/services/protocol-detect.ts); these
  * only decide what the dialog shows and what is worth sending there.
  */
-import { modelEnvironment, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import {
+  modelCalledKeyless,
+  modelEnvironment,
+  providerInfo,
+} from "@prismshadow/penguin-server/model-catalog";
 import type { ModelEnvironment } from "@prismshadow/penguin-server/model-catalog";
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
 
@@ -201,16 +205,39 @@ export function envHintFor(
   baseUrl: string,
   group?: ProviderConnectionShape,
 ): ModelEnvironment {
-  return modelEnvironment(
-    {
-      provider,
-      modelId: modelId.trim(),
-      clientType:
-        protocolForPersist(provider, clientType, { clientType: group?.clientType }) || undefined,
-      baseUrl: baseUrl.trim() || undefined,
-    },
-    group,
-  );
+  return modelEnvironment(draftEntry(provider, modelId, clientType, baseUrl, group), group);
+}
+
+/**
+ * Whether the entry as drafted, with no key and its client's variable unset, is called without a
+ * key: the catalog's modelCalledKeyless on the same entry envHintFor reads (an open MMSP server
+ * or a vLLM server, never a sign-in-keyed group's relay).
+ */
+export function keylessFor(
+  provider: string,
+  modelId: string,
+  clientType: string,
+  baseUrl: string,
+  group?: ProviderConnectionShape,
+): boolean {
+  return modelCalledKeyless(draftEntry(provider, modelId, clientType, baseUrl, group), group);
+}
+
+/** The draft as the catalog reads a row: its id, the protocol it will be saved with, its URL. */
+function draftEntry(
+  provider: string,
+  modelId: string,
+  clientType: string,
+  baseUrl: string,
+  group: ProviderConnectionShape | undefined,
+) {
+  return {
+    provider,
+    modelId: modelId.trim(),
+    clientType:
+      protocolForPersist(provider, clientType, { clientType: group?.clientType }) || undefined,
+    baseUrl: baseUrl.trim() || undefined,
+  };
 }
 
 /*

@@ -1,7 +1,7 @@
 ---
 name: unified-llm-api
 description: Call model APIs through @prismshadow/mmsp (MMSP) — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
-version: 2026.10.10.1
+version: 2026.10.24.1
 ---
 
 # Unified LLM API (MMSP)
@@ -59,7 +59,7 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 | GPT-5.5 / 5.4          | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`                                  | OpenRouter `openai/gpt-5.5`, `openai/gpt-5.5-pro`, `openai/gpt-5.4`, `openai/gpt-5.4-mini`, `openai/gpt-5.4-nano`, `openai/gpt-5.4-pro`         |
 | OpenAI embedding       | `text-embedding-3-small`, `text-embedding-3-large`                                    | —                                                                                                                                               |
 | MiniMax M3             | `MiniMax-M3`                                                                          | OpenRouter `minimax/minimax-m3`                                                                                                                 |
-| Kimi K3 / K2.6         | `kimi-k3`, `kimi-k2.6`                                                                | OpenRouter `moonshotai/kimi-k3`, `moonshotai/kimi-k2.6`; SiliconFlow `Pro/moonshotai/Kimi-K2.6`                                                 |
+| Kimi K3.1 / K3 / K2.6  | `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed`, `kimi-k3`, `kimi-k2.6`                    | OpenRouter `moonshotai/kimi-k3.1-pro`, `moonshotai/kimi-k3`, `moonshotai/kimi-k2.6`; SiliconFlow `Pro/moonshotai/Kimi-K2.6`                     |
 | Kimi K2.7 Code         | —                                                                                     | SiliconFlow `moonshotai/Kimi-K2.7-Code`; Fireworks AI `accounts/fireworks/models/kimi-k2p7-code`                                                |
 | DeepSeek V4            | `deepseek-flash`, `deepseek-v4-pro`                                                   | OpenRouter `deepseek/deepseek-v4.1-flash`, `deepseek/deepseek-v4-pro-0813`, `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-flash-0731`, `deepseek/deepseek-v4-flash-vision-exp`; Fireworks AI `accounts/fireworks/models/deepseek-v4p1-flash`, `accounts/fireworks/models/deepseek-v4-pro-0813`, `accounts/fireworks/models/deepseek-v4-flash-0731`; SiliconFlow `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` |
 | GLM 5.3 / 5.2 / 5.1    | `glm-5.3`, `glm-5.3-flash`, `glm-5.2`, `glm-5.1`                                      | OpenRouter `z-ai/glm-5.3`, `z-ai/glm-5.3-flash`, `z-ai/glm-5.2`; SiliconFlow `zai-org/GLM-5.2`                                                  |
@@ -195,10 +195,10 @@ try {
 }
 ```
 
-- `thinking_level` never throws: every client maps each level onto the closest one the model supports. `MAX` falls back silently where the vendor has no such tier, and a model that always reasons (Kimi K3, GLM-5.3, Claude Opus 5.5 / Fable 5.1) turns `NONE` into its lowest effort, and so does Claude Haiku 5.5.
+- `thinking_level` never throws: every client maps each level onto the closest one the model supports. `MAX` falls back silently where the vendor has no such tier, and a model that always reasons (GLM-5.3, Claude Opus 5.5 / Fable 5.1) turns `NONE` into its lowest effort, and so does Claude Haiku 5.5. On the Kimi K3 series (`kimi-k3`, `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed`), `moonshot-official` sends `NONE` as `reasoning_effort: "none"`, which turns reasoning off.
 - `temperature`: both Gemini clients reject any value; `openai-official`, `anthropic-official`, `moonshot-official` and `deepseek-official` accept only `1.0`; `minimax-official` accepts 0 to 1; `zai-official` and the compatible clients pass it through.
-- `tool_choice`: `"auto"` works everywhere. `zai-official` accepts nothing else; `deepseek-official` and `minimax-official` add `"none"`; `moonshot-official` adds `"required"` for Kimi K3 but never a named tool; `anthropic-official` takes `"required"` or one tool name, except on Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1, which cannot be forced.
-- `prompt_caching`: `ENABLE` (the default) works everywhere; only `anthropic-official` also takes `DISABLE` and `ENHANCE` (a one-hour cache).
+- `tool_choice`: `"auto"` works everywhere. `zai-official` accepts nothing else; `deepseek-official` and `minimax-official` add `"none"`; `moonshot-official` adds `"required"` for the Kimi K3 series but never a named tool; `anthropic-official` takes `"required"` or one tool name, except on Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1, which cannot be forced.
+- `prompt_caching`: `ENABLE` (the default) works everywhere. `anthropic-official` also takes `DISABLE` and `ENHANCE` (a one-hour cache); `moonshot-official` takes `ENHANCE` on the Kimi K3 series, sent as `prompt_cache_options` with a one-hour TTL; Moonshot bills those cache writes at twice the input price.
 - `fast_mode`: fast processing at premium pricing, decided by the client the model routes to:
   - sent as `service_tier: "priority"` by `openai-official`, `openai-responses`, `openai-chat`, `openai-chat-vllm-adapter`, `google-official` and `minimax-official`;
   - sent as `speed: "fast"` with the fast-mode beta header by `ant-messages` and `anthropic-official` — except on Bedrock and on Claude 4.6, Sonnet 5.5, Haiku 5.5 and Fable 5.1, which reject it. Anthropic's fast mode is a research preview: organizations without access get a 429;

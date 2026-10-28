@@ -5,27 +5,29 @@
  */
 import type { MessagesLiveTail, ServerEvent } from "@prismshadow/penguin-server/api";
 
-export type OmniMessage = MessagesLiveTail["fragments"][number];
-export type OmniPayload = OmniMessage["payload"];
+export type AmspRecord = MessagesLiveTail["fragments"][number];
+export type AmspPayload = AmspRecord["payload"];
 /** The `session_meta` record's payload, the one arm of the union that carries no `type`. */
-export type SessionMetaPayload = Extract<OmniPayload, { session_id: string }>;
+export type SessionMetaPayload = Extract<AmspPayload, { session_id: string }>;
 /** Every other payload: a model message or an event, discriminated by `type`. */
-export type TypedPayload = Exclude<OmniPayload, SessionMetaPayload>;
+export type TypedPayload = Exclude<AmspPayload, SessionMetaPayload>;
 export type PayloadOf<T extends TypedPayload["type"]> = Extract<TypedPayload, { type: T }>;
 export type ToolCallMessage = Extract<ServerEvent, { type: "approval_request" }>["toolCall"];
+/** A thinking level as a request's `request_begin` records it. */
+export type ThinkingLevel = NonNullable<PayloadOf<"request_begin">["thinking_level"]>;
 
 /**
  * A message's typed payload, or null for the `session_meta` record. The envelope's `type` is
  * what says which payload a message carries (the payload union itself has no shared
  * discriminant), so this is the one place that reads it.
  */
-export function payloadOf(msg: OmniMessage): TypedPayload | null {
+export function payloadOf(msg: AmspRecord): TypedPayload | null {
   return msg.type === "session_meta" ? null : (msg.payload as TypedPayload);
 }
 
 /** The stream handlers the app's SSE module declares, as the mock delivers to them. */
 export interface StreamHandlers {
-  onOmniMessage: (msg: OmniMessage, eventId: string | null) => void;
+  onRecord: (msg: AmspRecord, eventId: string | null) => void;
   onServerEvent: (event: ServerEvent, eventId: string | null) => void;
   onOpen?: () => void;
   onError?: (closed: boolean) => void;

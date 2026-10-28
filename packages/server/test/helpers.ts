@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { bootAppDeps, createApp } from "../src/app.js";
 import type { ServerBoot } from "../src/app.js";
 import type { ModuleTree, ModuleClass } from "@prismshadow/penguin-core/kernel";
@@ -84,6 +84,7 @@ import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
 import { MachineEventHub } from "../src/machines/event-hub.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
+import { machineSessionForward } from "../src/machines/session-forward.js";
 import type { Access } from "../src/mechanisms/projects.js";
 import { ProcessShellPort } from "../src/builtin-browser/module.js";
 import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
@@ -443,6 +444,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
         machines,
         routes: machinesRoutes({ machines, access: accessDouble(), events }),
         serverProxyRoutes: machinesServerProxyRoutes(machines, { sockets, events }),
+        sessionForward: machineSessionForward(machines, { sockets, events }),
       },
     ]);
   }
@@ -693,7 +695,7 @@ export async function writeTraceFile(
   dateDir: string,
   sessionId: string,
   index: number,
-  messages: OmniMessage[],
+  messages: AmspRecord[],
 ): Promise<string> {
   const dir = path.join(root, projectId, "agents", agentId, "traces", dateDir);
   await fs.mkdir(dir, { recursive: true });

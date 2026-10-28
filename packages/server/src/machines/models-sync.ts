@@ -21,6 +21,7 @@
  */
 import type { MachineApi } from "./machine-api.js";
 import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
+import { catalogEntryFor } from "../model-catalog/catalog.js";
 import { modelEnvironment } from "../model-catalog/env-keys.js";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
 import type {
@@ -68,6 +69,21 @@ export interface SkippedModel {
   modelId: string;
   code: string;
   reason: string;
+  /** One of this server's built-in models, refused as not addable: the machine's build lacks it. */
+  builtInHere?: true;
+}
+
+/**
+ * Whether a refusal says the machine's build is behind rather than that the entry was added by
+ * hand: `model_not_addable` is a group that takes its built-in models only meeting an id that is
+ * not one of them, so for an id that IS one of this server's built-in models in that group, the
+ * machine's catalog is the one that does not list it.
+ */
+function builtInHere(refused: { provider: string; modelId: string; code: string }): boolean {
+  return (
+    refused.code === "model_not_addable" &&
+    catalogEntryFor(refused.provider, refused.modelId.trim()) !== undefined
+  );
 }
 
 /**
@@ -319,7 +335,8 @@ export function envSourced(
  *
  * An ENTRY the machine refuses by name (a hand-added model in a group that carries only its
  * built-in ones there) is skipped and reported, and the rest of that Project's table is
- * written; a table refused without naming an entry is that Project's refusal, as above.
+ * written; a table refused without naming an entry is that Project's refusal, as above. One
+ * that is a built-in model HERE is marked `builtInHere`: what the machine lacks is a newer build.
  *
  * One refusal is not a boundary but a moment: a machine on its first boot answers requests while
  * it is still provisioning its own `default_project` — the directory is there, so a creation is
@@ -436,7 +453,7 @@ export async function syncModelsToMachine(opts: {
                 (entry) => entry.provider === named.provider && entry.model_id === named.modelId,
               );
         if (named === null || at === -1) break;
-        skipped.push({ projectId, ...named });
+        skipped.push({ projectId, ...named, ...(builtInHere(named) ? { builtInHere: true } : {}) });
         entries = entries.filter((_, index) => index !== at);
         wrote = await opts.api.request(
           "PUT",

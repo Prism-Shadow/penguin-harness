@@ -16,7 +16,9 @@
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
 import { panelWidth } from "../chat/use-panel-width";
-import { DOCK_MIN_HEIGHT_PX, DOCK_RATIO_MAX, bottomRatio, type DockPosition } from "./dock-state";
+import { bottomDockHeight } from "./bottom-dock-size";
+import { composerHeight } from "./composer-height";
+import { bottomRatio, type DockPosition } from "./dock-state";
 
 /** Fraction of the host's width/height that counts as an edge band for direct drops. */
 const EDGE_BAND = 0.45;
@@ -46,7 +48,7 @@ export function dockDropCandidate(x: number, y: number): DockPosition | null {
 /**
  * The exact region a dock at `position` would occupy after the drop — measured from the
  * live layout, not assumed: an already-open dock contributes its rendered rect; otherwise
- * the stored sizes apply, clamped exactly like the docks' own CSS. Only an OPEN dock
+ * the stored sizes apply, clamped exactly as the docks clamp them. Only an OPEN dock
  * counts: a hidden one stays in the tree at zero size, and measuring that would preview a
  * region of nothing. The right region's top is the main row (`[data-dock-row]`, below the
  * chat toolbar), the row the right dock really renders in.
@@ -59,14 +61,14 @@ function previewStyle(host: DOMRect, position: DockPosition): CSSProperties {
       )
       ?.getBoundingClientRect() ?? null;
   if (position === "bottom") {
-    const height = Math.min(
+    const area = document.querySelector("[data-dock-area]")?.getBoundingClientRect().height;
+    const height =
       existing?.height ??
-        Math.max(
-          DOCK_MIN_HEIGHT_PX,
-          Math.min(DOCK_RATIO_MAX * host.height, bottomRatio() * host.height),
-        ),
-      host.height,
-    );
+      bottomDockHeight(bottomRatio(), {
+        host: host.height,
+        area: area ?? host.height,
+        composer: composerHeight(),
+      });
     return { left: host.left, top: host.bottom - height, width: host.width, height };
   }
   const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect() ?? host;

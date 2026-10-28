@@ -13,6 +13,8 @@ import {
   toolCallOutput,
   tokenUsage,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   userText,
   partialText,
   partialThinking,
@@ -89,8 +91,28 @@ describe("pure formatters", () => {
 
   it("renderHistory includes abort events from resumed sessions", () => {
     const { stream, text } = collector();
-    renderHistory([assistantText("partial", "aborted"), abortEvent()], stream, t);
-    expect(stripAnsi(text())).toBe("partial [aborted]\n[abort]: aborted by user\n");
+    renderHistory([assistantText("partial"), abortEvent()], stream, t);
+    expect(stripAnsi(text())).toBe("partial\n[abort]: aborted by user\n");
+  });
+
+  it("renderHistory marks a tool result that is not completed, and names the turn cap", () => {
+    const { stream, text } = collector();
+    renderHistory(
+      [
+        toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "call_7" }),
+        toolCallOutput({
+          output: "Tool call denied by user.",
+          toolCallId: "call_7",
+          status: "aborted",
+        }),
+        abortEvent("max_turns", "reached max turns (3)"),
+      ],
+      stream,
+      t,
+    );
+    const s = stripAnsi(text());
+    expect(s).toContain("[tool-l_7] exec_command [aborted]");
+    expect(s).toContain("[stopped]: reached the maximum turns per task");
   });
 
   it("a legacy abort without an error_code renders its reason prose verbatim", () => {
@@ -113,7 +135,7 @@ describe("StreamRenderer", () => {
     r.handle(partialText("start", "Hel"));
     r.handle(partialText("delta", "lo "));
     r.handle(partialText("delta", "world"));
-    r.handle(partialText("stop", "", "completed"));
+    r.handle(partialText("stop", ""));
     r.handle(assistantText("Hello world")); // complete message: must not be re-rendered
     expect(stripAnsi(text())).toBe("Hello world\n");
   });
@@ -126,6 +148,20 @@ describe("StreamRenderer", () => {
     r.handle(partialThinking("stop"));
     r.handle(thinkingMessage("thinking")); // must not be re-rendered
     expect(stripAnsi(text())).toBe("thinking\n");
+  });
+
+  it("prints nothing for a Task's task_begin / task_end, live or from history", () => {
+    const live = collector();
+    const r = new StreamRenderer(live.stream, t);
+    r.handle(taskBegin());
+    r.handle(partialText("start", "Hi"));
+    r.handle(partialText("stop", ""));
+    r.handle(assistantText("Hi"));
+    r.handle(taskEnd());
+    expect(stripAnsi(live.text())).toBe("Hi\n");
+    const history = collector();
+    renderHistory([taskBegin(), assistantText("Hi"), taskEnd()], history.stream, t);
+    expect(stripAnsi(history.text())).toBe("Hi\n");
   });
 
   it("does not render a complete tool_call without partials", () => {
@@ -246,7 +282,7 @@ describe("StreamRenderer", () => {
     r.handle(partialToolCallOutput({ eventType: "delta", output: "line1\n", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "delta", output: "line2", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "c3" }));
-    r.handle(toolCallOutput({ output: "line1\nline2", toolCallId: "c3" })); // must not be re-rendered
+    r.handle(toolCallOutput({ output: "line1\nline2", toolCallId: "c3", status: "completed" })); // must not be re-rendered
     // Call line first, then each output line repeats the `[tool-xxx] <toolName>` prefix.
     expect(stripAnsi(text())).toBe(
       "[tool-c3] exec_command <- $ ls\n[tool-c3] exec_command -> line1\n[tool-c3] exec_command -> line2\n",
@@ -408,7 +444,7 @@ describe("StreamRenderer", () => {
     // No call preceded tA in this stream: the gutter falls back to the pairing tag.
     expect(stripAnsi(text())).toBe("[tool-tA] -> a1\n[tool-tA] -> a2\n"); // hello is still queued
     r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "tA" }));
-    r.handle(partialText("stop", "", "completed"));
+    r.handle(partialText("stop", ""));
     expect(stripAnsi(text())).toBe("[tool-tA] -> a1\n[tool-tA] -> a2\nhello\n");
   });
 
@@ -418,10 +454,33 @@ describe("StreamRenderer", () => {
     r.beginUserPrompt();
     r.handle(partialText("start", ""));
     r.handle(partialText("delta", "after prompt"));
-    r.handle(partialText("stop", "", "completed"));
+    r.handle(partialText("stop", ""));
     expect(text()).toBe(""); // the screen is locked while waiting for user input
     r.endUserPrompt();
     expect(stripAnsi(text())).toBe("after prompt\n");
+  });
+
+  it("prints nothing for the session_meta and task_begin a Session's first message streams", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(
+      sessionMeta({
+        session_id: "s",
+        provider: "custom",
+        model_id: "m",
+        model_context_window: 1,
+        system_prompt: "sp",
+        agent_state: "/a",
+        workspace: "/w",
+        source: "user",
+      }),
+    );
+    r.handle(taskBegin());
+    expect(stripAnsi(text())).toBe("");
+    r.handle(partialText("start", ""));
+    r.handle(partialText("delta", "hello"));
+    r.handle(partialText("stop", ""));
+    expect(stripAnsi(text())).toBe("hello\n");
   });
 
   it("does not print token_usage per turn; endTask prints [stats] line with per-task deltas", () => {
@@ -832,7 +891,7 @@ describe("StreamRenderer", () => {
     r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c5" }));
     r.handle(partialText("start", ""));
     r.handle(partialText("delta", "hi"));
-    r.handle(partialText("stop", "", "completed"));
+    r.handle(partialText("stop", ""));
     // Auto-approval: the call line is no longer adjacent -> it is re-rendered in place, with the result immediately following it as a pair.
     r.noteApprovalDecision(
       toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "c5" }),
@@ -991,8 +1050,8 @@ describe("renderHistory (resume)", () => {
         thinkingMessage("pondering"),
         assistantText("hi there"),
         toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "call_653" }),
-        toolCallOutput({ output: "a.txt\nb.txt", toolCallId: "call_653" }),
-        assistantText("half answer", "aborted"),
+        toolCallOutput({ output: "a.txt\nb.txt", toolCallId: "call_653", status: "completed" }),
+        assistantText("half answer"),
       ],
       stream,
     );
@@ -1003,8 +1062,8 @@ describe("renderHistory (resume)", () => {
     expect(s).toContain("[tool-653] exec_command <- $ ls");
     expect(s).toContain("[tool-653] exec_command -> a.txt");
     expect(s).toContain("[tool-653] exec_command -> b.txt");
-    // An interrupted message carries a marker (rendering includes the interrupted turn).
-    expect(s).toContain("half answer [aborted]");
+    // The interrupted reply renders as it was recorded; the abort line says how it ended.
+    expect(s).toContain("half answer");
   });
 
   it("skips events and renders nothing for empty history", async () => {
@@ -1141,7 +1200,7 @@ describe("tool-output collapsing (chat display; the Trace keeps the full text)",
     renderHistory(
       [
         toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "call_653" }),
-        toolCallOutput({ output: lines, toolCallId: "call_653" }),
+        toolCallOutput({ output: lines, toolCallId: "call_653", status: "completed" }),
       ],
       stream,
       t,
@@ -1166,7 +1225,11 @@ describe("tool-output collapsing (chat display; the Trace keeps the full text)",
     renderHistory(
       [
         toolCall({ name: "exec_command", arguments: '{"cmd":"x"}', toolCallId: "call_0c9" }),
-        toolCallOutput({ output: `${body.join("\n")}\n`, toolCallId: "call_0c9" }),
+        toolCallOutput({
+          output: `${body.join("\n")}\n`,
+          toolCallId: "call_0c9",
+          status: "completed",
+        }),
       ],
       history.stream,
       t,
@@ -1183,7 +1246,11 @@ describe("tool-output collapsing (chat display; the Trace keeps the full text)",
   it("renderHistory leaves outputs whole by default", () => {
     const { stream, text } = collector();
     const lines = Array.from({ length: 20 }, (_, i) => `l${i + 1}`).join("\n");
-    renderHistory([toolCallOutput({ output: lines, toolCallId: "call_653" })], stream, t);
+    renderHistory(
+      [toolCallOutput({ output: lines, toolCallId: "call_653", status: "completed" })],
+      stream,
+      t,
+    );
     expect(stripAnsi(text())).toContain("-> l10\n");
   });
 });
@@ -1309,7 +1376,7 @@ describe("StreamRenderer color wiring (issue #102)", () => {
         userText("hi"),
         thinkingMessage("t"),
         toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "h1" }),
-        toolCallOutput({ output: "a.txt\n", toolCallId: "h1" }),
+        toolCallOutput({ output: "a.txt\n", toolCallId: "h1", status: "completed" }),
       ],
       stream,
       t,
@@ -1345,7 +1412,7 @@ describe("a2ui blocks (the Web App's components, printed as their text fallback)
     const r = new StreamRenderer(stream, t);
     r.handle(partialText("start", ""));
     for (let i = 0; i < reply.length; i += 5) r.handle(partialText("delta", reply.slice(i, i + 5)));
-    r.handle(partialText("stop", "", "completed"));
+    r.handle(partialText("stop", ""));
     return stripAnsi(text());
   }
 

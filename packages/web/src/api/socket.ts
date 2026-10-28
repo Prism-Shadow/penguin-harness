@@ -17,9 +17,9 @@
  * behind it going away), or an answer that was not a stream at all but may become one again
  * (a 503 while a machine reconnects). Fatal answers (401/403/404) stop the retries.
  *
- * The socket is addressed by the signed-in user (the server's reserved terminal-stream id,
- * `apiSocketPath`), and this module finds out who that is BY ITSELF — asking `/api/me` over
- * HTTP once, or being told by the API client when a `/api/me` answer passes through it. No
+ * The socket's address is the server's own route for it (`apiSocketPath`); who it opens as is
+ * its cookie, so this module finds out who that is BY ITSELF — asking `/api/me` over HTTP
+ * once, or being told by the API client when a `/api/me` answer passes through it. No
  * caller has to know the socket exists: `ready()` settles the identity, opens the socket and
  * waits for the handshake, so the page's very first calls ride it rather than race it. A
  * sign-in or sign-out passing through the API client resets the identity, which closes the
@@ -28,7 +28,7 @@
  * Without a socket — the browser cannot open one, or the handshake keeps failing — calls
  * fall back to fetch, and streams wait in silence until one comes or the page reloads.
  */
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import type { StreamConnection, StreamHandlers } from "./sse";
 
@@ -574,24 +574,24 @@ export class ApiSocket {
           return; // single-line JSON by protocol; anything else is skipped unread
         }
         // SSE names a frame by its `event:` line, and sse-text.ts defaults an absent one to
-        // `message` — the OmniMessage shape. Everything else is named dispatch, with the
+        // `message` — the AmspRecord shape. Everything else is named dispatch, with the
         // handlers this module knows by name first and `onEvent` for the rest.
         const name = typeof frame.event === "string" ? frame.event : "message";
         if (name === "server_event") {
           stream.handlers.onServerEvent(data as ServerEvent, eventId);
         } else if (name === "message") {
-          stream.handlers.onOmniMessage(data as OmniMessage, eventId);
+          stream.handlers.onRecord(data as AmspRecord, eventId);
         } else if (name === "heartbeat" || name === "ping") {
           // Liveness only, and it has already been banked above: the beat is never an
           // application event, so it reaches no handler. `ping` is the session and user
           // streams' own beat; over HTTP the SSE reader drops it by the same name — and
-          // here it is a frame whose `{}` payload must not be read as an OmniMessage.
+          // here it is a frame whose `{}` payload must not be read as a record.
         } else if (stream.handlers.onEvent !== undefined) {
           stream.handlers.onEvent(name, data, eventId);
         } else {
-          // No named-event handler: an unlisted name is an OmniMessage, exactly as every name
+          // No named-event handler: an unlisted name is a record, exactly as every name
           // but `server_event` was treated before `onEvent` existed.
-          stream.handlers.onOmniMessage(data as OmniMessage, eventId);
+          stream.handlers.onRecord(data as AmspRecord, eventId);
         }
       } else if ("stream" in frame) {
         stream.failures = 0;
@@ -702,22 +702,21 @@ async function whoAmI(): Promise<string | null> {
 }
 
 /**
- * The socket's address: the signed-in user's reserved terminal-stream id, the same path the
- * server spells with its own `apiSocketPath` (server/src/api/types.ts). Spelled here rather
- * than imported because the site build compiles this package without the server's dist: the
- * `./api` subpath resolves into that dist, so a value import leaves the gallery build with
- * nothing to resolve (main keeps that subpath type-only, and type imports are dropped).
+ * The socket's address: the server's own upgrade route for it, whose cookie names the user.
+ * Spelled here rather than imported because the site build compiles this package without the
+ * server's dist: the `./api` subpath resolves into that dist, so a value import leaves the
+ * gallery build with nothing to resolve (main keeps that subpath type-only, and type imports
+ * are dropped).
  */
-const apiSocketPath = (userId: string): string =>
-  `/api/terminals/${encodeURIComponent(`api-socket@${userId}`)}/stream`;
+const apiSocketPath = (): string => "/api/socket";
 
-/** The page's socket: to this origin, same cookie the page holds, on the signed-in user's reserved id. */
+/** The page's socket: to this origin, same cookie the page holds — whoever it names. */
 // Off a page (no `location` — the Web App's logic under test in Node) there is no origin to
 // open the socket on, so it is unavailable from the start.
 export const apiSocket = new ApiSocket(
-  (userId) => {
+  () => {
     const scheme = location.protocol === "https:" ? "wss" : "ws";
-    return `${scheme}://${location.host}${apiSocketPath(userId)}`;
+    return `${scheme}://${location.host}${apiSocketPath()}`;
   },
   whoAmI,
   typeof location !== "undefined" && typeof WebSocket !== "undefined",

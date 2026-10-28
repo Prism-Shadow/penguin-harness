@@ -561,7 +561,8 @@ describe("the Machine dialog", () => {
     ).html;
     const line = elementsOf(readMarkup(synced)).find((el) => "data-config-sync" in el.attrs);
     expect(line?.attrs["data-config-sync"]).toBe("ok");
-    expect(synced).not.toContain("data-config-sync-notice");
+    expect(synced).not.toContain("data-env-only");
+    expect(synced).not.toContain("data-skipped");
 
     const failed = dialog(
       {
@@ -581,6 +582,15 @@ describe("the Machine dialog", () => {
               code: "model_not_addable",
               reason: "cannot be added",
             },
+            // One of this server's built-in models: the machine's build does not list it yet.
+            {
+              projectId: "p",
+              provider: "minimax",
+              modelId: "MiniMax-M3.1-Flash",
+              code: "model_not_addable",
+              reason: "cannot be added",
+              builtInHere: true,
+            },
           ],
         },
       },
@@ -593,6 +603,7 @@ describe("the Machine dialog", () => {
     expect(seen).toContain(
       c.skippedModel("penguin-go/gemini-3.7-flash", S.errors.byCode.model_not_addable),
     );
+    expect(seen).toContain(c.skippedModel("minimax/MiniMax-M3.1-Flash", c.notInMachineBuild));
   });
 
   it("greys what cannot run, saying why once under the toolbar", () => {

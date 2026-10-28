@@ -57,12 +57,12 @@ The program asks the agent to create `hello.txt`, using the current directory as
 ### How the program works
 
 - `createAgent` loads an agent's configuration by id: its prompts, tools and runtime parameters. `default_agent` is the agent seeded when the data root is initialized.
-- `session.run()` returns an async iterator that yields OmniMessages one by one. The guard in the loop picks out complete model text messages; tool calls, thinking blocks and everything else arrive on the same stream.
+- `session.run()` returns an async iterator that yields AMSP records one by one. The guard in the loop picks out complete model text messages; tool calls, thinking blocks and everything else arrive on the same stream.
 - `approve` is the approval callback, and returning `"allow"` permits everything. [Tools & Approval](/tools) describes how the four approval modes map onto tools.
 
 ## Next steps
 
 - [Core Interfaces](/interfaces): the contracts behind `createAgent`, `Session`, LLM and Environment.
-- [The OmniMessage Protocol](/omni-message): the shape of what `session.run()` yields.
+- [AMSP Records](/amsp-records): the shape of what `session.run()` yields.
 - [The Agent Loop](/agent-loop): what happens inside a single Task.
 - [Sessions & Traces](/sessions-and-traces): how conversations and execution records are stored.

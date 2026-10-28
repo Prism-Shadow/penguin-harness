@@ -13,7 +13,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ICONS } from "@prismshadow/penguin-ui";
 import { MemoryChangesCard } from "../src/features/chat/memory-changes-card";
-import type { MemoryChangeRow } from "../src/lib/omni/memory-changes";
+import type { MemoryChangeRow } from "../src/lib/amsp/memory-changes";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

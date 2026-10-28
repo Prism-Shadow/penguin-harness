@@ -7,7 +7,7 @@
  * client that joins mid-stream — a refresh during a long tool call — cannot rebuild the
  * in-progress message from `GET /messages` alone, and its fresh EventSource carries no
  * `Last-Event-ID` for the channel buffer to replay. This tracker lets the messages
- * endpoint attach, alongside history, one synthetic `partial_* start` OmniMessage per
+ * endpoint attach, alongside history, one synthetic `partial_* start` AmspRecord per
  * open fragment whose payload carries the full accumulated content so far (text/thinking
  * prefix, tool-call name + accumulated arguments, tool-output prefix + images); the
  * client seeds these into its stream model and live deltas keep appending on top. See
@@ -23,7 +23,7 @@
 import { isPartialPayload } from "@prismshadow/penguin-core";
 import type {
   CompleteModelPayload,
-  OmniMessage,
+  AmspRecord,
   PartialModelPayload,
 } from "@prismshadow/penguin-core";
 
@@ -149,8 +149,8 @@ function startPayload(frag: OpenFragment): PartialModelPayload {
 
 /** The open streaming fragments of running sessions, as their holder uses them — what {@link LiveTailTracker} implements. */
 export interface LiveTail {
-  observe(sessionId: string, msg: OmniMessage): void;
-  fragments(sessionId: string): OmniMessage[];
+  observe(sessionId: string, msg: AmspRecord): void;
+  fragments(sessionId: string): AmspRecord[];
   clear(sessionId: string): void;
 }
 
@@ -159,7 +159,7 @@ export class LiveTailTracker implements LiveTail {
   private readonly sessions = new Map<string, Map<string, OpenFragment>>();
 
   /** Feed one published message (call in the same synchronous tick as the channel publish). */
-  observe(sessionId: string, msg: OmniMessage): void {
+  observe(sessionId: string, msg: AmspRecord): void {
     if (msg.type !== "model_msg") return;
     const p = msg.payload;
     if (!isPartialPayload(p)) {
@@ -220,10 +220,10 @@ export class LiveTailTracker implements LiveTail {
    * carrying the full accumulated content, the original origin chain, and the original
    * start timestamp. Empty when the session has no open fragments.
    */
-  fragments(sessionId: string): OmniMessage[] {
+  fragments(sessionId: string): AmspRecord[] {
     const open = this.sessions.get(sessionId);
     if (!open) return [];
-    const out: OmniMessage[] = [];
+    const out: AmspRecord[] = [];
     for (const frag of open.values()) {
       out.push({
         timestamp: frag.timestamp,

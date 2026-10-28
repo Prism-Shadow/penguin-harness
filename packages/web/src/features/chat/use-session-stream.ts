@@ -1,6 +1,6 @@
 /**
  * Session stream hook (connect-first + dedupe on use): React adapter layer — the protocol state machine lives in
- * lib/omni/stream-controller.ts (pure logic, unit-testable).
+ * lib/amsp/stream-controller.ts (pure logic, unit-testable).
  *
  * 1. On entering a Session, connect SSE first; events are handed to the controller (buffered if
  *    history isn't ready yet);
@@ -29,22 +29,28 @@ import { probeSession } from "../../api/session-probe";
 import { apiSocket } from "../../api/socket";
 import { openSessionStream } from "../../api/sse";
 import { machineForSession } from "../../lib/session-machines";
-import { createStreamController } from "../../lib/omni/stream-controller";
+import { createStreamController } from "../../lib/amsp/stream-controller";
 import type {
   OlderHistoryState,
   PendingApproval,
   StreamController,
-} from "../../lib/omni/stream-controller";
-import { createStreamModel } from "../../lib/omni/stream-model";
-import type { ChatItem, StreamModel } from "../../lib/omni/stream-model";
+} from "../../lib/amsp/stream-controller";
+import { createStreamModel } from "../../lib/amsp/stream-model";
+import type { ChatItem, StreamModel } from "../../lib/amsp/stream-model";
 import type { GoalBannerState } from "./goal-use";
 
-export type { OlderHistoryState, PendingApproval } from "../../lib/omni/stream-controller";
+export type { OlderHistoryState, PendingApproval } from "../../lib/amsp/stream-controller";
 
 /** Minimum spacing between version commits: below one frame at 8fps, invisible as staleness, but ~8× fewer full re-parses of the growing message during a fast large-code stream. */
 const BUMP_MIN_INTERVAL_MS = 120;
 
 export interface SessionStreamState {
+  /**
+   * The Session everything below describes (null: none, a draft). It trails the `sessionId`
+   * argument by one render after a switch: until the reset below has run, the state is still the
+   * previous Session's, and nothing may act on it as the new one's.
+   */
+  sessionId: string | null;
   /** View model (updated in place; version bump triggers re-render): the LIVE tail window. */
   model: StreamModel;
   /**
@@ -119,6 +125,7 @@ export function useSessionStream(
   const [error, setError] = useState<string | null>(null);
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
+  const [describes, setDescribes] = useState<string | null>(sessionId);
 
   /**
    * A history still loading after this is said out loud, with where the call went and what the
@@ -198,6 +205,7 @@ export function useSessionStream(
       // so "A is still running" would block sending in the new draft B after switching.
       controllerRef.current?.dispose();
       controllerRef.current = null;
+      setDescribes(null);
       setTaskState("idle");
       setQueuedFollowUps(0);
       setPendingSteering([]);
@@ -212,6 +220,7 @@ export function useSessionStream(
       return;
     }
     setVersion((v) => v + 1);
+    setDescribes(sessionId);
     setLoading(true);
     setError(null);
     // First-frame placeholder: the task_state snapshot from the stream (pushed on subscribe)
@@ -277,7 +286,7 @@ export function useSessionStream(
 
     // Connect-first: subscribe to the stream before fetching history.
     const conn = openSessionStream(sessionId, {
-      onOmniMessage: controller.handleOmni,
+      onRecord: controller.handleRecord,
       onServerEvent: controller.handleServer,
       // Hydrate the goal banner only once the subscription is live (fires on first connect and
       // every reconnect); the prev/active guards keep it from clobbering a live banner.
@@ -329,6 +338,7 @@ export function useSessionStream(
   void pendingTick;
 
   return {
+    sessionId: describes,
     model: controllerRef.current?.model ?? placeholderRef.current,
     prefixItems: controllerRef.current?.prefixItems ?? EMPTY_PREFIX,
     prefixSubagents: controllerRef.current?.prefixSubagents ?? EMPTY_SUBAGENTS,

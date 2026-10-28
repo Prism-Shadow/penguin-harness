@@ -18,6 +18,8 @@ import {
   attachedImageLine,
   isSessionMeta,
   isSteeredBackgroundNotice,
+  isTaskBegin,
+  isTaskRecord,
   matchAttachedFileLine,
   matchAttachedImageLine,
   modelVisiblePath,
@@ -29,7 +31,8 @@ import {
   scratchpadDir,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { CompactionMode, OmniMessage } from "@prismshadow/penguin-core";
+import type { CompactionMode, AmspRecord } from "@prismshadow/penguin-core";
+import { promptLabel } from "./trace-prompt-label.js";
 import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,
@@ -114,7 +117,7 @@ function forkSessionId(date: Date): string {
   return `session-${formatLocalDate(date)}-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${randomUUID().replaceAll("-", "").slice(0, 8)}`;
 }
 
-function isAssistantText(msg: OmniMessage): boolean {
+function isAssistantText(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: unknown };
   return (
     msg.type === "model_msg" &&
@@ -125,7 +128,7 @@ function isAssistantText(msg: OmniMessage): boolean {
   );
 }
 
-function isTaskStartingUser(msg: OmniMessage): boolean {
+function isTaskStartingUser(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: unknown };
   if (msg.type !== "model_msg") return false;
   if (p.type === "image_url") return true;
@@ -165,7 +168,7 @@ function rewriteForkText(text: string, sourceScratchpad: string, forkScratchpad:
 }
 
 function positioned(
-  messages: readonly OmniMessage[],
+  messages: readonly AmspRecord[],
   fileIndex: number,
   fromOrdinal = 0,
 ): HistoryMessage[] {
@@ -190,7 +193,7 @@ export type MessagesPageRequest =
 /** A windowed history read's result (route maps it onto MessagesResponse.page). */
 export interface MessagesPageResult {
   /** The window's records with their `tracePosition`, images still inline (the route references them). */
-  messages: OmniMessage[];
+  messages: AmspRecord[];
   /** Cursor of the window's first unit; absent = the window reaches the beginning. */
   before?: string;
   /** Cumulative stats before the window (earlierTurns = prior.turns). */
@@ -227,7 +230,7 @@ interface ExpandCtx {
   projectScanned: boolean;
   ancestry: Set<string>;
   depth: number;
-  raw: Map<string, OmniMessage[] | null>;
+  raw: Map<string, AmspRecord[] | null>;
 }
 
 /**
@@ -236,7 +239,7 @@ interface ExpandCtx {
  * records the Session id; the sub-session's Agent is located within the Project by
  * its Trace file.
  */
-function subagentPointer(msg: OmniMessage): string | null {
+function subagentPointer(msg: AmspRecord): string | null {
   if (msg.type !== "event_msg") return null;
   const p = msg.payload as { type?: string; session_id?: unknown };
   if (p.type !== "subagent" || typeof p.session_id !== "string" || p.session_id === "") {
@@ -345,7 +348,7 @@ export class TraceService implements Traces {
   }
 
   /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
-  private async readShard(path: string): Promise<OmniMessage[]> {
+  private async readShard(path: string): Promise<AmspRecord[]> {
     this.observeShardRead?.(path);
     return readTraceTolerant(path);
   }
@@ -377,9 +380,9 @@ export class TraceService implements Traces {
       }
       for (const line of text.split("\n")) {
         if (!line.includes('"subagent"')) continue;
-        let msg: OmniMessage;
+        let msg: AmspRecord;
         try {
-          msg = JSON.parse(line) as OmniMessage;
+          msg = JSON.parse(line) as AmspRecord;
         } catch {
           continue; // A torn final line (a crashed writer) holds no complete pointer.
         }
@@ -433,7 +436,7 @@ export class TraceService implements Traces {
       raw: new Map(),
     };
     const files = await this.locateAll(projectId, agentId, sessionId);
-    const out: OmniMessage[] = [];
+    const out: AmspRecord[] = [];
     for (const file of files) {
       const raw = await this.readShard(file.path);
       out.push(...(await this.expandMessages(projectId, positioned(raw, file.index), ctx)));
@@ -465,11 +468,11 @@ export class TraceService implements Traces {
     projectId: string,
     childSid: string,
     ctx: ExpandCtx,
-  ): Promise<OmniMessage[] | null> {
+  ): Promise<AmspRecord[] | null> {
     const cached = ctx.raw.get(childSid);
     if (cached !== undefined) return cached;
     const childAgent = await this.resolveChildAgent(projectId, childSid, ctx);
-    let raw: OmniMessage[] | null = null;
+    let raw: AmspRecord[] | null = null;
     if (childAgent) {
       const files = await this.locateAll(projectId, childAgent, childSid);
       if (files.length > 0) {
@@ -487,10 +490,10 @@ export class TraceService implements Traces {
    */
   private async expandMessages(
     projectId: string,
-    messages: readonly OmniMessage[],
+    messages: readonly AmspRecord[],
     ctx: ExpandCtx,
-  ): Promise<OmniMessage[]> {
-    const out: OmniMessage[] = [];
+  ): Promise<AmspRecord[]> {
+    const out: AmspRecord[] = [];
     for (const msg of messages) {
       // The depth cap guards against runaway recursion; ancestry guards against a
       // cyclic pointer (a tampered Trace pointing to itself/an ancestor is not expanded).
@@ -500,7 +503,7 @@ export class TraceService implements Traces {
         continue;
       }
       const raw = await this.readChildRaw(projectId, childSid, ctx);
-      let nested: OmniMessage[] = [];
+      let nested: AmspRecord[] = [];
       if (raw !== null) {
         ctx.ancestry.add(childSid);
         nested = await this.expandMessages(projectId, raw, { ...ctx, depth: ctx.depth + 1 });
@@ -659,7 +662,7 @@ export class TraceService implements Traces {
 
     // Walk backward from the end, scanning whole shards (each from its cached carry-in)
     // until the window has more units than requested or the beginning is reached.
-    const shardMessages = new Map<number, OmniMessage[]>();
+    const shardMessages = new Map<number, AmspRecord[]>();
     let boundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
     let startPos = endPos + 1;
     while (boundaries.length <= req.limit && startPos > 0) {
@@ -788,7 +791,7 @@ export class TraceService implements Traces {
     const targetFilePos = files.findIndex((file) => file.index === position.fileIndex);
     if (targetFilePos < 0) throw invalid("The selected reply no longer exists in this Session.");
 
-    const shards: OmniMessage[][] = [];
+    const shards: AmspRecord[][] = [];
     for (let i = 0; i <= targetFilePos; i++) shards.push(await this.readShard(files[i]!.path));
     const targetShard = shards[targetFilePos]!;
     const target = targetShard[position.ordinal];
@@ -818,8 +821,13 @@ export class TraceService implements Traces {
     for (let i = position.ordinal + 1; i < targetShard.length; i++) {
       const msg = targetShard[i]!;
       const p = msg.payload as { type?: string; status?: string };
-      // The next user Task and housekeeping compaction both belong after the selected reply.
-      if (isTaskStartingUser(msg) || (msg.type === "event_msg" && p.type === "compaction_begin")) {
+      // The next user Task and housekeeping compaction both belong after the selected reply —
+      // the next Task from its task_begin on, so the fork never ends on an unclosed one.
+      if (
+        isTaskStartingUser(msg) ||
+        isTaskBegin(msg) ||
+        (msg.type === "event_msg" && p.type === "compaction_begin")
+      ) {
         break;
       }
       // A Task may contain several assistant segments/requests. Only the final visible reply
@@ -859,7 +867,7 @@ export class TraceService implements Traces {
     const forkScratchpad = path.join(scratchpadRoot, newSessionId);
     const written: string[] = [];
 
-    const rewrite = (msg: OmniMessage): OmniMessage => {
+    const rewrite = (msg: AmspRecord): AmspRecord => {
       if (isSessionMeta(msg)) {
         const sourcePrompt = msg.payload.system_prompt;
         const sourceVisible = modelVisiblePath(sourceScratchpad);
@@ -890,7 +898,7 @@ export class TraceService implements Traces {
             ...msg.payload,
             text: rewriteForkText(p.text, sourceScratchpad, forkScratchpad),
           },
-        } as OmniMessage;
+        } as AmspRecord;
       }
       return msg;
     };
@@ -1040,7 +1048,7 @@ export class TraceService implements Traces {
    */
   private async filePricing(
     projectId: string,
-    meta: OmniMessage | undefined,
+    meta: AmspRecord | undefined,
   ): Promise<{ provider: string; modelId: string; rates: TieredRates } | null> {
     if (meta === undefined) return null;
     const { provider, model_id: modelId } = meta.payload as {
@@ -1111,6 +1119,8 @@ export class TraceService implements Traces {
     /** Inside the image run that follows a `[user_steering]` text (see the turn-start rule below). */
     let steeringImages = false;
     let sawToolCallThisRequest = false;
+    /** The main Request's tool calls so far (cleared at its request_begin). */
+    let requestCallIds: string[] = [];
     // Compaction interval (compaction_begin..compaction_end): the compaction
     // request's request_begin/request_end and token_usage all fall inside it (see
     // core context-engine's summarize flow), which is used to exclude the
@@ -1173,10 +1183,20 @@ export class TraceService implements Traces {
      *   - Other messages belong to the current taskIndex: tool output and
      *     approval decisions arriving after request_end still belong to this
      *     turn (they're the results of tools this turn's Request initiated).
+     *   - A `task_begin` opens the pending span too — it precedes its Task's
+     *     input — but starts no turn by itself: turns are still told apart by
+     *     the markers above, so a Trace counts the same turns with or without
+     *     Task records. A span holding nothing but Task records (a file that
+     *     ends on `compaction_end, task_end, task_begin`) stays with the turn
+     *     before it, and no Task record moves a turn's end time.
      */
     const msgTask: number[] = new Array<number>(messages.length).fill(-1);
     /** The pending new turn's starting point (message index); settled once request_begin determines the taskIndex. */
     let pendingFrom: number | null = null;
+    /** The navigator label of the pending turn: from its first user text that leaves one (see promptLabel). */
+    let pendingPrompt: string | null = null;
+    /** Whether the pending span holds a turn's starting marker, not only a `task_begin` that opened it. */
+    let pendingStartsTurn = false;
 
     for (let mi = 0; mi < messages.length; mi++) {
       const msg = messages[mi]!;
@@ -1227,7 +1247,7 @@ export class TraceService implements Traces {
       // message is a genuine new turn). A subagent's messages pass through without closing it:
       // they belong to another session's stream and say nothing about this one's grouping.
       // The Web answers the same "what is one Task" question over the live stream — see
-      // `openSteering` in web/src/lib/omni/stream-model.ts; the two need to stay in step.
+      // `openSteering` in web/src/lib/amsp/stream-model.ts; the two need to stay in step.
       const isImage = !hasOrigin && msg.type === "model_msg" && p.type === "image_url";
       if (!hasOrigin && !isSteeringText && !(isImage && steeringImages)) steeringImages = false;
       if (isSteeringText) steeringImages = true;
@@ -1241,8 +1261,13 @@ export class TraceService implements Traces {
         ((p.type === "text" && p.role === "user") || p.type === "image_url");
       const startsCompactionTurn =
         !hasOrigin && msg.type === "event_msg" && p.type === "compaction_begin";
+      if (!hasOrigin && isTaskBegin(msg) && pendingFrom === null) pendingFrom = mi;
       if (startsUserTurn || startsCompactionTurn) {
         if (pendingFrom === null) pendingFrom = mi;
+        pendingStartsTurn = true;
+        if (startsUserTurn && p.type === "text" && pendingPrompt === null) {
+          pendingPrompt = promptLabel(p.text as string);
+        }
         // A user Prompt **always starts a new turn**: judging continuation solely
         // by "did the previous turn call a tool" isn't enough — if the previous
         // turn ended in a retryable status (given up after exhausting retries),
@@ -1260,12 +1285,15 @@ export class TraceService implements Traces {
             prevSerialTs = msg.timestamp;
             if (!continuation) taskIndex++; // Not a continuation -> a new Task
             sawToolCallThisRequest = false;
+            requestCallIds = [];
           }
           // Settle taskIndex before opening the span: the span belongs directly to
           // the current Task. Nearest-neighbor pairing: if the previous begin was
           // never closed (process exited mid-run), the span is left open.
           openRequest = { beginTs: msg.timestamp, taskIndex };
           if (compactionActive) openRequest.compaction = true;
+          // The level the request went out at; absent on Traces written before the field.
+          if (typeof p.thinking_level === "string") openRequest.thinkingLevel = p.thinking_level;
           requests.push(openRequest);
           if (!hasOrigin) {
             const t = ensureTask(taskIndex);
@@ -1291,6 +1319,9 @@ export class TraceService implements Traces {
                 if (messages[k]!.origin === undefined) msgTask[k] = taskIndex;
               }
               pendingFrom = null;
+              pendingStartsTurn = false;
+              if (pendingPrompt !== null) t.prompt = pendingPrompt;
+              pendingPrompt = null;
             }
             msgTask[mi] = taskIndex;
           }
@@ -1334,6 +1365,18 @@ export class TraceService implements Traces {
           if (!hasOrigin) {
             prevSerialTs = null;
             continuation = sawToolCallThisRequest || retryable;
+            // A Request that did not complete: a call of it with no approval decision was
+            // closed with it and never dispatched (the engine decides every call it dispatches
+            // before the Request ends), so it gets no timeline lane — one would render as an
+            // execution spanning the rest of the timeline.
+            if (status !== undefined && status !== "completed") {
+              for (const id of requestCallIds) {
+                const lane = openSpansById.get(id);
+                if (lane === undefined || lane.approvalTs !== undefined) continue;
+                openSpansById.delete(id);
+                toolSpans.splice(toolSpans.indexOf(lane), 1);
+              }
+            }
           }
           if (retryable) reconnectCount++;
           if (openRequest) {
@@ -1481,21 +1524,17 @@ export class TraceService implements Traces {
       }
       if (p.type === "tool_call" && typeof p.tool_call_id === "string") {
         if (!hasOrigin) sawToolCallThisRequest = true; // This turn called a tool -> the next turn continues the same Task
-        const callStop = typeof p.stop_reason === "string" ? p.stop_reason : undefined;
         const span: ToolCallSpan = {
           toolCallId: p.tool_call_id,
           name: typeof p.name === "string" ? p.name : "",
           startTs: msg.timestamp,
         };
-        if (callStop !== undefined) span.stopReason = callStop;
         openToolCalls.set(p.tool_call_id, span);
         toolCalls.push(span);
-        // The timeline lane only accepts calls that "will actually be executed":
-        // an interrupt-compensation tool_call (stop_reason other than completed)
-        // never gets an approval/output, and putting it on a lane would render as
-        // a phantom "executing" state spanning the whole timeline — so it's
-        // skipped outright.
-        if (!hasOrigin && (callStop === undefined || callStop === "completed")) {
+        // A timeline lane, until the call's Request ends without completing and without having
+        // dispatched it (see request_end).
+        if (!hasOrigin) {
+          requestCallIds.push(p.tool_call_id);
           const timeline: TraceToolSpan = {
             toolCallId: p.tool_call_id,
             name: typeof p.name === "string" ? p.name : "",
@@ -1511,12 +1550,13 @@ export class TraceService implements Traces {
           span.endTs = msg.timestamp;
           const dur = Date.parse(msg.timestamp) - Date.parse(span.startTs);
           if (Number.isFinite(dur)) span.durationMs = dur;
-          if (typeof p.stop_reason === "string") span.stopReason = p.stop_reason;
+          // A result written before tool results carried a status reads as completed.
+          span.status = typeof p.status === "string" ? p.status : "completed";
         }
         const timeline = openSpansById.get(p.tool_call_id);
         if (timeline && timeline.outputTs === undefined) {
           timeline.outputTs = msg.timestamp;
-          if (typeof p.stop_reason === "string") timeline.stopReason = p.stop_reason;
+          timeline.status = typeof p.status === "string" ? p.status : "completed";
         }
       }
     }
@@ -1526,11 +1566,16 @@ export class TraceService implements Traces {
     // and forms its own turn — reattaching it to the previous turn would smear
     // two separate user sends together.
     if (pendingFrom !== null) {
-      taskIndex++;
+      // Task records alone (the next Task's task_begin behind a closing compaction) are no
+      // turn: they stay with the turn before them.
+      if (pendingStartsTurn) taskIndex++;
       for (let k = pendingFrom; k < messages.length; k++) {
         if (messages[k]!.origin === undefined) msgTask[k] = taskIndex;
       }
-      ensureTask(taskIndex);
+      if (pendingStartsTurn) {
+        const t = ensureTask(taskIndex);
+        if (pendingPrompt !== null) t.prompt = pendingPrompt;
+      }
     }
 
     // Each turn's message index range and end-of-turn time are always derived from
@@ -1571,6 +1616,9 @@ export class TraceService implements Traces {
       // created, and its timestamp has nothing to do with this turn (it also gets
       // rewritten verbatim at the start of a new file after compaction splits the file).
       if (messages[k]!.type === "session_meta") continue;
+      // Nor do Task records: the next Task's task_begin can sit at the end of this turn's
+      // file (behind a closing compaction), written when that next Task started.
+      if (isTaskRecord(messages[k]!)) continue;
       const ts = messages[k]!.timestamp;
       if (t.endTs === "" || ts > t.endTs) t.endTs = ts;
     }
@@ -1779,7 +1827,7 @@ export class TraceService implements Traces {
     agentId: string,
     sessionId: string,
     index: number,
-  ): Promise<OmniMessage[]> {
+  ): Promise<AmspRecord[]> {
     const file = await this.locateByIndex(projectId, agentId, sessionId, index);
     return readTraceTolerant(file.path);
   }
@@ -1831,7 +1879,7 @@ export class TraceService implements Traces {
     content: string,
   ): Promise<TraceImportResponse> {
     const invalid = (message: string) => new HttpError(400, "invalid_trace", message);
-    let records: OmniMessage[];
+    let records: AmspRecord[];
     try {
       // Strict parse: import is the gate for user-supplied files, so a malformed middle
       // line is reported as 400 rather than silently dropped (read paths skip it instead).

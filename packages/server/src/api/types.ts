@@ -3,22 +3,17 @@
  * frontend SPA (single source of truth).
  *
  * These field definitions are authoritative for the Web API contract. Conventions:
- *   - DTO fields use camelCase; OmniMessage keeps the core protocol as-is (snake_case shell),
+ *   - DTO fields use camelCase; an AMSP record keeps its own shape as-is (snake_case envelope),
  *     no conversion;
  *   - This file holds only types, no implementation; exposed to the frontend via package
  *     exports `"./api"` for type-only import;
- *   - Types are taken only from core's pure subpaths (omnimessage / interfaces), so the
+ *   - Types are taken only from `@prismshadow/amsp` and core's pure `interfaces` subpath, so the
  *     frontend can safely reference them.
  *
  * Docs: packages/docs/content/server-api.{zh,en}.md (site path /docs/server-api) is the
  * public route/SSE reference for this contract — keep it in sync when changing DTOs.
  */
-import type {
-  CompactionMode,
-  OmniMessage,
-  SessionSource,
-  ToolCallPayload,
-} from "@prismshadow/penguin-core/omnimessage";
+import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
   MCPServerConfig,
   ThinkingLevelName,
@@ -144,11 +139,11 @@ export interface MeResponse {
    * "desktop" is the shell's own window (one-shot token); "setup" was claimed through the
    * first-login link on a server whose admin password has never been set. Both may set a
    * password without the old one (it is random and was never shown); only "desktop" opens
-   * desktop-only routes. "token" marks the local API token's authority, carried by a Bearer
-   * header or an exchanged Remote cookie; neither can perform writes requiring a person's
-   * sign-in.
+   * desktop-only routes. "remote" is the one-hour session Penguin Remote exchanged the local
+   * API token for; it counts as the person's sign-in. "token" marks the local API token itself,
+   * sent as a Bearer header; it cannot perform writes requiring a person's sign-in.
    */
-  sessionVia: "password" | "desktop" | "setup" | "token";
+  sessionVia: "password" | "desktop" | "setup" | "remote" | "token";
   /**
    * The upload limits currently in force, so the composer can refuse an oversize pick before
    * reading it and can name the real number in the message. They are admin-settable and ride
@@ -389,17 +384,24 @@ export interface DraftShortcut {
 }
 
 /**
+ * One command's stored bindings: a chord string ("Mod+Shift+KeyW") — the one-binding form an
+ * older build writes — an array of chord strings (a command can hold several bindings, the
+ * first its oldest), or null (explicitly unbound).
+ */
+export type StoredKeybindingsValue = string | readonly string[] | null;
+
+/**
  * The account's keyboard shortcut overrides, one section per platform (the Web App's `Mod` token
  * is ⌘ on macOS and Ctrl elsewhere, so a deliberate macOS-only binding must not leak to Windows).
- * Each section maps a command id to a chord string ("Mod+Shift+KeyW") or null (explicitly
- * unbound); only rows that differ from the Web App's default are present. Bounded on write by
- * services/keybindings.ts.
+ * Each section maps a command id to that command's bindings (a chord string, an array of chord
+ * strings, or null = explicitly unbound); only rows that differ from the Web App's default are
+ * present. Bounded on write by services/keybindings.ts.
  */
 export interface StoredKeybindings {
   v: 1;
-  mac?: Record<string, string | null>;
-  windows?: Record<string, string | null>;
-  linux?: Record<string, string | null>;
+  mac?: Record<string, StoredKeybindingsValue>;
+  windows?: Record<string, StoredKeybindingsValue>;
+  linux?: Record<string, StoredKeybindingsValue>;
 }
 
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
@@ -448,7 +450,110 @@ export interface UiPrefs {
    * everywhere else.
    */
   browserBackend?: BrowserBackend;
+  // ----- The Settings pages' preferences, which follow the account to every browser. Each is
+  // the value the Web App keeps in that browser's cache (see its lib/account-sync), validated on
+  // write by services/account-settings.ts for shape only: the Web App decides what a value
+  // means and reads anything it does not know as its default. `null` reads as unset.
+  /** Light / dark / follow the system. */
+  themeMode?: string | null;
+  /** Which theme renders the app (a theme id). */
+  themeId?: string | null;
+  /** The accent preset, or "neutral" for the theme's own. */
+  accent?: string | null;
+  /** The root text size step. */
+  textSize?: string | null;
+  /** The Latin face paired over the theme's own ("theme" = keep the theme's). */
+  fontLatin?: string | null;
+  /** The CJK face paired over the theme's own ("theme" = keep the theme's). */
+  fontCjk?: string | null;
+  /** Interface language: zh / en / system. */
+  lang?: string | null;
+  /** Display currency for prices. */
+  currency?: string | null;
+  /** The terminal's appearance: light / dark / follow the app. */
+  terminalTheme?: string | null;
+  /** Whether tool cards name the built-in tools by their short alias. */
+  toolAliases?: boolean | null;
+  /** Whether task-completion notifications were asked for (each browser still needs its own OS permission). */
+  notifications?: boolean | null;
+  /** Whether the floating dock launcher was put away. */
+  launcherHidden?: boolean | null;
+  /** Mid-run send mode: steer or queue as a follow-up. */
+  steerMode?: string | null;
+  /** The custom background's display settings; the image itself is GET|PUT /api/me/background-image. */
+  background?: BackgroundSettingsDto | null;
+  /**
+   * Which background image the account holds, as an opaque id that changes whenever the image
+   * does; absent or null when it holds none. Written only by PUT /api/me/background-image (PUT
+   * /api/me/prefs refuses it): a browser compares it with the image it has cached and fetches the
+   * image only when they differ.
+   */
+  backgroundImageId?: string | null;
   [key: string]: unknown;
+}
+
+/** The custom background's display settings, as the Web App stores them. */
+export interface BackgroundSettingsDto {
+  /** 0–100: how much of the page colour shows through the image. */
+  transparency: number;
+  mode: string;
+  position: string;
+}
+
+/**
+ * The background image cap, in characters of the data URL: the same number the Web App encodes
+ * against, so the browser and the server cannot disagree about what "too large" means.
+ */
+export const BACKGROUND_IMAGE_MAX_CHARS = 1024 * 1024;
+
+/** GET /api/me/background-image. */
+export interface BackgroundImageResponse {
+  /** A PNG / JPEG / WebP data URL, or null when the account holds no image. */
+  image: string | null;
+  imageId: string | null;
+}
+
+/** PUT /api/me/background-image: the image to keep, or null to remove it. */
+export interface BackgroundImageRequest {
+  image: string | null;
+}
+
+/** PUT /api/me/background-image's answer: the id the image is now known by (null once removed). */
+export interface BackgroundImagePutResponse {
+  imageId: string | null;
+}
+
+/**
+ * The kinds of draft the account keeps, as the first segment of a draft key
+ * (`<kind>:<id>`). The id names what the draft belongs to, so the server can drop it with that
+ * thing: `chat` — a Project's new-conversation draft (`chat:<projectId>`); `parked` — a
+ * Project's parked draft conversations (`parked:<projectId>`); `org` — a Project's
+ * create-organization form (`org:<projectId>`); `channel` — a company-mode channel's composer
+ * (`channel:<projectId>.<orgId>.<channelId>`); `session` — a Session's composer
+ * (`session:<sessionId>`); `a2ui` — a reply's form answers in progress
+ * (`a2ui:<sessionId>:<block>`).
+ */
+export const DRAFT_KINDS = ["chat", "parked", "org", "channel", "session", "a2ui"] as const;
+export type DraftKind = (typeof DRAFT_KINDS)[number];
+
+/** One draft's cap, in characters of its JSON text. */
+export const DRAFT_VALUE_MAX_CHARS = 256 * 1024;
+
+/** Draft writes one PATCH may carry. */
+export const DRAFTS_PATCH_MAX_ENTRIES = 50;
+
+/** GET /api/me/drafts: every draft the account keeps, by key, as the JSON each was written with. */
+export interface DraftsResponse {
+  drafts: Record<string, unknown>;
+}
+
+/**
+ * PATCH /api/me/drafts: drafts to write, by key; `null` removes one. Applied together. When the
+ * account then holds more than its bound, its least recently written drafts outside this patch
+ * are dropped.
+ */
+export interface DraftsPatchRequest {
+  drafts: Record<string, unknown>;
 }
 
 /** A group balance pinned beside the user name: which Project's key reads which group's balance. */
@@ -1023,7 +1128,8 @@ export interface ModelBalanceFailure {
 /**
  * How the authorization code travels back. `callback` sends the browser to a harness URL
  * the provider redirects to; `manual` asks the provider for a one-time code the user copies
- * back by hand, for the case where that redirect cannot reach the harness.
+ * back by hand, for the case where that redirect cannot reach the harness — or where the
+ * provider would refuse it: only an HTTPS or loopback HTTP origin can be redirected to.
  */
 export type ModelOAuthMode = "callback" | "manual";
 
@@ -1035,7 +1141,7 @@ export type ModelOAuthMode = "callback" | "manual";
 export interface ModelOAuthStartRequest {
   /** Provider group id (must be a catalog group that publishes a key-minting flow). */
   provider: string;
-  /** Defaults to `callback`. */
+  /** Defaults to `callback`; the response says which mode the flow was opened in. */
   mode?: ModelOAuthMode;
 }
 
@@ -1043,6 +1149,12 @@ export interface ModelOAuthStartRequest {
 export interface ModelOAuthStartResponse {
   flowId: string;
   authorizeUrl: string;
+  /**
+   * The mode the flow was opened in: `manual` for a `callback` request when the origin the
+   * request reached this server on is neither HTTPS nor loopback HTTP, which the provider's
+   * authorization page refuses as a callback.
+   */
+  mode: ModelOAuthMode;
 }
 
 /** Why a flow failed, as a code the frontend phrases; never carries a code, a verifier or a key. */
@@ -2339,7 +2451,7 @@ export interface TracePosition {
 }
 
 /** History-only transport metadata; `tracePosition` is never persisted into Trace JSONL. */
-export type HistoryMessage = OmniMessage & { tracePosition?: TracePosition };
+export type HistoryMessage = AmspRecord & { tracePosition?: TracePosition };
 
 export interface SessionForkRequest {
   /** The final root assistant text record of the completed Task to keep. */
@@ -2388,7 +2500,7 @@ export interface SessionPatchRequest {
  *   - `cursor`: the Session channel's most recently assigned SSE event id
  *     (`<epoch>-<seq>`); every event published up to and including this id is already
  *     reflected in `fragments`.
- *   - `fragments`: one synthetic `partial_* start` OmniMessage per open streaming
+ *   - `fragments`: one synthetic `partial_* start` AmspRecord per open streaming
  *     fragment, whose payload carries the full accumulated content so far (text/thinking
  *     prefix, tool-call name + accumulated arguments, tool-output prefix + images), with
  *     the original `origin` chain preserved.
@@ -2403,7 +2515,7 @@ export interface SessionPatchRequest {
  */
 export interface MessagesLiveTail {
   cursor: string;
-  fragments: OmniMessage[];
+  fragments: AmspRecord[];
 }
 
 /**
@@ -3336,7 +3448,7 @@ export interface MessagingAccountHoldersResponse {
 }
 
 // ---------------------------------------------------------------------------
-// SSE server events (OmniMessage uses the default event, only server_event here)
+// SSE server events (records use the default event, only server_event here)
 // ---------------------------------------------------------------------------
 
 /** Docs: /docs/server-api § "Streaming (SSE)". */
@@ -3345,7 +3457,7 @@ export type ServerEvent =
    * Approval request escalated to a human: every call under always-ask, plus rw/unknown-permission
    * calls under read-only (see runtime/approvals.ts); pending approvals are resent on reconnect.
    */
-  | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
+  | { type: "approval_request"; toolCall: AmspRecord<ToolCallPayload>; origin?: string[] }
   /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
   | {
       type: "task_state";
@@ -3619,7 +3731,7 @@ export interface SessionContextResponse extends SessionContextParts {
 }
 
 export interface TraceEventsResponse {
-  events: OmniMessage[];
+  events: AmspRecord[];
   offset: number;
   limit: number;
   /**
@@ -3649,6 +3761,11 @@ export interface RequestSpan {
   approvalWaitMs?: number;
   /** LLM generation duration = durationMs − approvalWaitMs (≥ 0): only this can be used as the TPS denominator, not durationMs. */
   activeMs?: number;
+  /**
+   * The thinking level this request went out at, as its `request_begin` records it. Absent
+   * when no level was sent, and on Traces written before the field — unknown, not a level.
+   */
+  thinkingLevel?: string;
 }
 
 /**
@@ -3679,6 +3796,14 @@ export interface TraceTaskStats {
    * mode; treat an absent value as `summarize`, which is what the badge said before the split.
    */
   compactionMode?: CompactionMode;
+  /**
+   * A short label for the round navigator: the first non-empty line of the user text that
+   * started this turn, with harness marker blocks and attachment lines removed, whitespace
+   * collapsed, at most 120 characters (the view truncates it further to fit). Absent when no
+   * user text started the turn — a summarize compaction turn, an image-only send — or none of
+   * its lines is left (only attachment lines).
+   */
+  prompt?: string;
   /**
    * This turn's message index range within the **entire file** (inclusive). A single
    * sequential scan on the server tells which turn each message belongs to; the frontend
@@ -3758,7 +3883,8 @@ export interface ToolCallSpan {
   startTs: string;
   endTs?: string;
   durationMs?: number;
-  stopReason?: string;
+  /** The paired tool_call_output's `status` (completed / aborted / fatal); absent while the call has no output. */
+  status?: string;
 }
 
 /** Workspace file entry (Files tab). */
@@ -3891,7 +4017,8 @@ export interface TraceToolSpan {
   approvalTs?: string;
   decision?: string;
   outputTs?: string;
-  stopReason?: string;
+  /** The tool_call_output's `status` (completed / aborted / fatal); absent while unclosed. */
+  status?: string;
   /** The Task that initiated this tool (grouped with its tool_call segment): async output belongs to this Task even if it arrives after request_end. */
   taskIndex: number;
 }
@@ -4963,6 +5090,7 @@ export type {
   WorkbenchVersion,
   WorkbenchRequest,
   WorkbenchResponse,
+  WorkbenchRecord,
 } from "../mechanisms/workbenches.js";
 
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
@@ -5133,12 +5261,12 @@ export interface DesktopTrayCommandMessage {
 
 /**
  * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
- * endpoint. It is opened on the terminal-stream upgrade path under a reserved id naming the
- * signed-in user — `api-socket@<userId>` — which the server's terminal lookup answers with a
- * reference the socket protocol is served for (server: socket/ref.ts). Shared here so the
- * Web App and the machine relay spell the address the same way.
+ * endpoint. It has its own upgrade route, {@link API_SOCKET_PATH}: the runtime's websocket
+ * seam authenticates the cookie and the Origin there and hands the socket to the platform,
+ * which serves the protocol as the signed-in user (server: socket/ref.ts). Shared so the Web
+ * App and anything else that speaks to another server spell the address the same way.
  */
-export const API_SOCKET_ID_PREFIX = "api-socket@";
+export const API_SOCKET_PATH = "/api/socket";
 
 /**
  * Paths whose answer depends on the KIND of session behind the request — the desktop shell's
@@ -5156,8 +5284,9 @@ export function sessionKindPath(pathname: string): boolean {
     (pathname.startsWith("/api/") && pathname.endsWith("/reveal"))
   );
 }
-export function apiSocketPath(userId: string): string {
-  return `/api/terminals/${encodeURIComponent(`${API_SOCKET_ID_PREFIX}${userId}`)}/stream`;
+/** The API socket's address. No id is involved: the handshake's cookie names the user. */
+export function apiSocketPath(): string {
+  return API_SOCKET_PATH;
 }
 
 // Desktop folder access (desktop mode, macOS)
@@ -5281,10 +5410,19 @@ export interface RestartResponse {
 export interface MachineSocketFact {
   /**
    * `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused`
-   * when the machine answered the handshake with a status (a program predating the socket), and
-   * `failed` when the dial did not complete or a socket that was up closed.
+   * when the machine answered the handshake with a status (a program predating the socket),
+   * `unanswered` when its server answers HTTP and never answered the handshake, and `failed` when
+   * the dial did not complete or a socket that was up closed.
+   *
+   * `unanswered` is a server PROCESS older than the socket: an update handed to a running server
+   * swaps its platform and never the process that takes the upgrade, so the machine reports the
+   * current build and still has no socket: it is not running this server's version, which a remote
+   * machine must. A restart of its server, and failing that an update or a reinstall, brings it
+   * there; the Machines page reads the state as needing a restart. It lasts until a handshake
+   * completes: a
+   * machine dialled again keeps it while the dial is outstanding, instead of reading `dialling`.
    */
-  state: "connected" | "dialling" | "refused" | "failed";
+  state: "connected" | "dialling" | "refused" | "unanswered" | "failed";
   /** When that state was entered (ISO). */
   since: string;
   /** The transport's own words where there are any: a refusal's status, a dial's error. */
@@ -5454,6 +5592,12 @@ export interface MachineSkippedModel {
   /** The far side's error code (`model_not_addable`, `model_not_routable`). */
   code: string;
   reason: string;
+  /**
+   * The entry is one of this server's built-in models for its group, which the machine refused
+   * as not addable: the machine's build does not list it yet, so updating the machine, then
+   * syncing again, carries it. Absent for any other refusal.
+   */
+  builtInHere?: true;
 }
 
 /** A model entry that takes `variable` from this server's environment. */
@@ -7118,7 +7262,12 @@ export interface BrowserExtensionPairingResponse {
   code: string;
   /** ISO time the code stops working. */
   expiresAt: string;
-  /** The request's Origin, when it carried one: the address the browser reaches this server at. */
+  /**
+   * The address the browser reaches this server at, which the extension pairs with: the public
+   * origin (scheme, host and port; from the forwarded headers when the server trusts a proxy).
+   * Null only from an older server, which echoed the request's `Origin` and had none to echo for
+   * a call that carried no `Origin`.
+   */
   origin: string | null;
 }
 

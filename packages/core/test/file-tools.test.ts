@@ -31,7 +31,7 @@ import {
 import { EDIT_FILE_NAME, createEditFileTool } from "../src/environment/tools/edit-file.js";
 import { WRITE_FILE_NAME, createWriteFileTool } from "../src/environment/tools/write-file.js";
 import type { BuiltinTool, ToolResult } from "../src/environment/tools/types.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ToolDefinitionConfig } from "../src/interfaces/index.js";
 import { modelVisiblePath } from "../src/internal/model-visible-path.js";
 
@@ -42,7 +42,7 @@ function def(name: string, permission: "r" | "rw"): ToolDefinitionConfig {
 /** Runs one tool execution: concatenates text deltas and captures the generator's return value. */
 async function run(tool: BuiltinTool, args: Record<string, unknown>, workspaceDir: string) {
   const gen = tool.execute(args, { workspaceDir, toolCallId: "c1" });
-  const messages: OmniMessage[] = [];
+  const messages: AmspRecord[] = [];
   let result: ToolResult | void;
   for (;;) {
     const res = await gen.next();
@@ -72,7 +72,7 @@ describe("read_file", () => {
   it("reads a file by workspace-relative path in cat -n style", async () => {
     await writeFile(path.join(tmp, "a.txt"), "alpha\nbeta\ngamma\n");
     const { result, text } = await run(tool(), { file_path: "a.txt" }, tmp);
-    expect(result?.stopReason).toBeUndefined(); // Defaults to completed
+    expect(result?.status).toBeUndefined(); // Defaults to completed
     expect(text.split("\n")).toEqual(["     1\talpha", "     2\tbeta", "     3\tgamma"]);
   });
 
@@ -82,7 +82,7 @@ describe("read_file", () => {
       const abs = path.join(outside, "abs.txt");
       await writeFile(abs, "outside\n");
       const { result, text } = await run(tool(), { file_path: abs }, tmp);
-      expect(result?.stopReason).toBeUndefined();
+      expect(result?.status).toBeUndefined();
       expect(text).toContain("\toutside");
     } finally {
       await rm(outside, { recursive: true, force: true });
@@ -93,7 +93,7 @@ describe("read_file", () => {
     const lines = Array.from({ length: 10 }, (_, i) => `line-${i + 1}`).join("\n");
     await writeFile(path.join(tmp, "many.txt"), `${lines}\n`);
     const { result, text } = await run(tool(), { file_path: "many.txt", offset: 3, limit: 4 }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     const rows = text.split("\n");
     expect(rows[0]).toBe("     3\tline-3");
     expect(rows[3]).toBe("     6\tline-6");
@@ -121,13 +121,13 @@ describe("read_file", () => {
   it("reports an empty file as a note, not a failure", async () => {
     await writeFile(path.join(tmp, "empty.txt"), "");
     const { result, text } = await run(tool(), { file_path: "empty.txt" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain("empty file");
   });
 
   it("fails with a path hint when the file does not exist", async () => {
     const { result, text } = await run(tool(), { file_path: "missing.txt" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("File not found");
     expect(text).toContain("missing.txt");
     expect(text).toContain("workspace");
@@ -143,7 +143,7 @@ describe("read_file", () => {
     await writeFile(path.join(tmp, "agent_state", "AGENTS.md"), "persona\n");
     await writeFile(path.join(tmp, "notes.txt"), "n\n");
     const { result, text } = await run(tool(), { file_path: path.join(tmp, "AGENTS.md") }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain(
       `The directory "${modelVisiblePath(tmp)}" exists but has no entry "AGENTS.md".`,
     );
@@ -154,7 +154,7 @@ describe("read_file", () => {
   it("reports the first missing segment of a deeper path", async () => {
     const missing = path.join(tmp, "nope", "deep", "file.txt");
     const { result, text } = await run(tool(), { file_path: missing }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain(
       `The directory "${modelVisiblePath(tmp)}" exists but has no entry "nope".`,
     );
@@ -164,7 +164,7 @@ describe("read_file", () => {
     await writeFile(path.join(tmp, "a.txt"), "x\n");
     const inner = path.join(tmp, "a.txt", "inner.txt");
     const { result, text } = await run(tool(), { file_path: inner }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("File not found");
     expect(text).toContain(
       `Note: "${modelVisiblePath(path.join(tmp, "a.txt"))}" exists but is a file, not a directory.`,
@@ -181,14 +181,14 @@ describe("read_file", () => {
   it("fails when the path is a directory", async () => {
     await mkdir(path.join(tmp, "subdir"));
     const { result, text } = await run(tool(), { file_path: "subdir" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("directory");
   });
 
   it("fails on binary content (NUL bytes) and advises other tools", async () => {
     await writeFile(path.join(tmp, "bin.dat"), Buffer.from([0x89, 0x50, 0x00, 0x0a, 0x42]));
     const { result, text } = await run(tool(), { file_path: "bin.dat" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("binary");
     expect(text).toContain("shell commands");
   });
@@ -196,14 +196,14 @@ describe("read_file", () => {
   it("fails when offset is past the end of the file", async () => {
     await writeFile(path.join(tmp, "two.txt"), "a\nb\n");
     const { result, text } = await run(tool(), { file_path: "two.txt", offset: 5 }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("past the end");
     expect(text).toContain("2 lines");
   });
 
   it("fails when file_path is missing", async () => {
     const { result, text } = await run(tool(), {}, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain('"file_path"');
   });
 });
@@ -219,7 +219,7 @@ describe("edit_file", () => {
       { file_path: "src.ts", old_string: "const b = 2;", new_string: "const b = 20;" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toBe(
       [
         'Replaced 1 occurrence in "src.ts".',
@@ -241,7 +241,7 @@ describe("edit_file", () => {
       { file_path: "multi.txt", old_string: "foo", new_string: "qux", replace_all: true },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toBe(
       [
         'Replaced 3 occurrences in "multi.txt".',
@@ -260,7 +260,7 @@ describe("edit_file", () => {
       { file_path: "f.txt", old_string: "goodbye", new_string: "farewell" },
       tmp,
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain('old_string not found in "f.txt"');
     expect(await readFile(path.join(tmp, "f.txt"), "utf8")).toBe("hello\n"); // Untouched
   });
@@ -272,7 +272,7 @@ describe("edit_file", () => {
       { file_path: "dup.txt", old_string: "x", new_string: "y" },
       tmp,
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("3 times");
     expect(text).toContain("replace_all");
     expect(await readFile(path.join(tmp, "dup.txt"), "utf8")).toBe("x\nx\nx\n");
@@ -285,7 +285,7 @@ describe("edit_file", () => {
       { file_path: "same.txt", old_string: "abc", new_string: "abc" },
       tmp,
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("identical");
   });
 
@@ -295,7 +295,7 @@ describe("edit_file", () => {
       { file_path: "nope.txt", old_string: "a", new_string: "b" },
       tmp,
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("File not found");
     expect(text).toContain("write_file");
     expect(text).toContain(
@@ -310,19 +310,19 @@ describe("edit_file", () => {
       { file_path: "d", old_string: "a", new_string: "b" },
       tmp,
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("directory");
   });
 
   it("fails when required arguments are missing", async () => {
     const missingPath = await run(tool(), { old_string: "a", new_string: "b" }, tmp);
-    expect(missingPath.result?.stopReason).toBe("fatal");
+    expect(missingPath.result?.status).toBe("fatal");
     expect(missingPath.text).toContain('"file_path"');
     const missingOld = await run(tool(), { file_path: "f", new_string: "b" }, tmp);
-    expect(missingOld.result?.stopReason).toBe("fatal");
+    expect(missingOld.result?.status).toBe("fatal");
     expect(missingOld.text).toContain('"old_string"');
     const missingNew = await run(tool(), { file_path: "f", old_string: "a" }, tmp);
-    expect(missingNew.result?.stopReason).toBe("fatal");
+    expect(missingNew.result?.status).toBe("fatal");
     expect(missingNew.text).toContain('"new_string"');
   });
 });
@@ -336,7 +336,7 @@ describe("write_file", () => {
       { file_path: "out.txt", content: "one\ntwo\n" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain('Created "out.txt"');
     expect(text).toContain("2 lines");
     expect(text).toContain("8 bytes");
@@ -349,7 +349,7 @@ describe("write_file", () => {
       { file_path: "a/b/c/deep.txt", content: "deep" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain("Created");
     expect(await readFile(path.join(tmp, "a/b/c/deep.txt"), "utf8")).toBe("deep");
     expect((await stat(path.join(tmp, "a/b"))).isDirectory()).toBe(true);
@@ -362,14 +362,14 @@ describe("write_file", () => {
       { file_path: "exists.txt", content: "new content" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain('Overwrote "exists.txt"');
     expect(await readFile(path.join(tmp, "exists.txt"), "utf8")).toBe("new content");
   });
 
   it("accepts an empty string as content", async () => {
     const { result, text } = await run(tool(), { file_path: "blank.txt", content: "" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain("0 lines, 0 bytes");
     expect(await readFile(path.join(tmp, "blank.txt"), "utf8")).toBe("");
   });
@@ -377,7 +377,7 @@ describe("write_file", () => {
   it("fails when the path is a directory", async () => {
     await mkdir(path.join(tmp, "adir"));
     const { result, text } = await run(tool(), { file_path: "adir", content: "x" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("directory");
   });
 
@@ -388,13 +388,13 @@ describe("write_file", () => {
       { file_path: "plain.txt/child.txt", content: "y" },
       tmp,
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("Failed to write");
   });
 
   it("fails when content is missing (but not when it is empty)", async () => {
     const { result, text } = await run(tool(), { file_path: "nocontent.txt" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain('"content"');
   });
 });
@@ -410,7 +410,7 @@ describe("read_file — argument coercion, CRLF, secret guard", () => {
       { file_path: "many.txt", offset: "3", limit: "4" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain("     3\tline-3");
     expect(text).toContain("showing 3-6");
   });
@@ -418,12 +418,12 @@ describe("read_file — argument coercion, CRLF, secret guard", () => {
   it("fails on non-numeric offset/limit instead of silently defaulting", async () => {
     await writeFile(path.join(tmp, "a.txt"), "x\n");
     const badOffset = await run(tool(), { file_path: "a.txt", offset: "abc" }, tmp);
-    expect(badOffset.result?.stopReason).toBe("fatal");
+    expect(badOffset.result?.status).toBe("fatal");
     expect(badOffset.text).toContain(
       'read_file was not run: argument "offset" is invalid: expected a number (got "abc").',
     );
     const badLimit = await run(tool(), { file_path: "a.txt", limit: 0 }, tmp);
-    expect(badLimit.result?.stopReason).toBe("fatal");
+    expect(badLimit.result?.status).toBe("fatal");
     expect(badLimit.text).toContain(
       'read_file was not run: argument "limit" is invalid: expected a positive number (got 0).',
     );
@@ -432,7 +432,7 @@ describe("read_file — argument coercion, CRLF, secret guard", () => {
   it("strips trailing \\r from displayed lines and notes CRLF line endings", async () => {
     await writeFile(path.join(tmp, "crlf.txt"), "alpha\r\nbeta\r\n");
     const { result, text } = await run(tool(), { file_path: "crlf.txt" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain("     1\talpha\n");
     expect(text).not.toContain("\r");
     expect(text).toContain("(file uses CRLF line endings)");
@@ -443,10 +443,10 @@ describe("read_file — argument coercion, CRLF, secret guard", () => {
     await mkdir(path.join(tmp, "sub"));
     await writeFile(path.join(tmp, "sub", ".project_config.toml"), "key=1\n");
     const vault = await run(tool(), { file_path: ".vault.toml" }, tmp);
-    expect(vault.result?.stopReason).toBe("fatal");
+    expect(vault.result?.status).toBe("fatal");
     expect(vault.text).toContain("Refusing to read");
     const cfg = await run(tool(), { file_path: "sub/.project_config.toml" }, tmp);
-    expect(cfg.result?.stopReason).toBe("fatal");
+    expect(cfg.result?.status).toBe("fatal");
     expect(cfg.text).toContain("Refusing to read");
   });
 
@@ -455,12 +455,12 @@ describe("read_file — argument coercion, CRLF, secret guard", () => {
     // Case variant: a case-insensitive filesystem (macOS/Windows) opens ".VAULT.TOML" as
     // the store itself; on a case-sensitive one refusing the name is a harmless false positive.
     const upper = await run(tool(), { file_path: ".VAULT.TOML" }, tmp);
-    expect(upper.result?.stopReason).toBe("fatal");
+    expect(upper.result?.status).toBe("fatal");
     expect(upper.text).toContain("Refusing to read");
     // Symlink: the link's own basename says nothing about what it dereferences to.
     await symlink(path.join(tmp, ".vault.toml"), path.join(tmp, "notes.txt"));
     const linked = await run(tool(), { file_path: "notes.txt" }, tmp);
-    expect(linked.result?.stopReason).toBe("fatal");
+    expect(linked.result?.status).toBe("fatal");
     expect(linked.text).toContain("Refusing to read");
     expect(linked.text).not.toContain("SECRET=1");
     // A symlink NAMED like a store but pointing elsewhere is refused on the lexical name —
@@ -468,11 +468,11 @@ describe("read_file — argument coercion, CRLF, secret guard", () => {
     await writeFile(path.join(tmp, "plain.txt"), "hello\n");
     await symlink(path.join(tmp, "plain.txt"), path.join(tmp, ".project_config.toml"));
     const named = await run(tool(), { file_path: ".project_config.toml" }, tmp);
-    expect(named.result?.stopReason).toBe("fatal");
+    expect(named.result?.status).toBe("fatal");
     // An ordinary symlink to an ordinary file still reads.
     await symlink(path.join(tmp, "plain.txt"), path.join(tmp, "alias.txt"));
     const ok = await run(tool(), { file_path: "alias.txt" }, tmp);
-    expect(ok.result?.stopReason).toBeUndefined();
+    expect(ok.result?.status).toBeUndefined();
     expect(ok.text).toContain("hello");
   });
 });
@@ -488,7 +488,7 @@ describe("read_file — bounded scan and output budget", () => {
       maxOutputLength: 300,
     });
     const { result, text } = await run(tool, { file_path: "many.txt" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     // The whole output fits under the tool's own cap, so Environment cannot cut the note.
     expect(text.length).toBeLessThanOrEqual(300);
     expect(text).toMatch(
@@ -501,7 +501,7 @@ describe("read_file — bounded scan and output budget", () => {
     await writeFile(path.join(tmp, "huge-line.txt"), "x".repeat(READ_FILE_SCAN_CAP_BYTES + 1024));
     const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
     const { result, text } = await run(tool(), { file_path: "huge-line.txt" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("Stopped after scanning 8 MB");
     expect(text).toContain("sed -n");
   });
@@ -537,7 +537,7 @@ describe("read_file — bounded scan and output budget", () => {
     );
     const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
     const { result, text } = await run(tool(), { file_path: "scan-cap-minus-one.txt" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain("[line truncated]");
     expect(text).not.toContain("file has more than");
     expect(text).not.toContain("Stopped after scanning");
@@ -548,7 +548,7 @@ describe("read_file — bounded scan and output budget", () => {
     await writeFile(path.join(tmp, "long.txt"), "x\n".repeat(READ_FILE_SCAN_CAP_BYTES / 2 + 4096));
     const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
     const { result, text } = await run(tool(), { file_path: "long.txt" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toMatch(
       /\[file has more than \d+ lines; showing 1-2000 — call again with offset to continue\]/,
     );
@@ -565,7 +565,7 @@ describe("edit_file — review follow-ups", () => {
       { file_path: "f.txt", old_string: "", new_string: "x" },
       tmp,
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain('required argument "old_string" is empty.');
     expect(text).toContain("write_file");
   });
@@ -577,7 +577,7 @@ describe("edit_file — review follow-ups", () => {
       { file_path: "crlf.txt", old_string: "alpha\nbeta", new_string: "gamma" },
       tmp,
     );
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("old_string not found");
     expect(text).toContain("CRLF");
   });
@@ -590,7 +590,7 @@ describe("edit_file — review follow-ups", () => {
       { file_path: "erase.txt", old_string: "abc", new_string: "" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toBe('Replaced 1 occurrence in "erase.txt".\n@@ -1,1 +0,0 @@\n-abc');
     expect(await readFile(file, "utf8")).toBe("");
   });
@@ -614,7 +614,7 @@ describe("write_file — review follow-ups", () => {
       await writeFile(file, "old");
       await chmod(file, 0o600);
       const { result } = await run(tool(), { file_path: "mode.txt", content: "new" }, tmp);
-      expect(result?.stopReason).toBeUndefined();
+      expect(result?.status).toBeUndefined();
       expect((await stat(file)).mode & 0o777).toBe(0o600);
       expect(await readFile(file, "utf8")).toBe("new");
     },
@@ -642,7 +642,7 @@ describe("edit_file — diff output caps", () => {
       { file_path: "cap.txt", old_string: "target", new_string: "changed", replace_all: true },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain('Replaced 8 occurrences in "cap.txt".');
     expect(text.match(/@@ /g)).toHaveLength(5);
     expect(text).toContain("…and 3 more replacements");
@@ -661,7 +661,7 @@ describe("edit_file — diff output caps", () => {
       { file_path: "tiny.txt", old_string: "a", new_string: "z", replace_all: true },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text.length).toBeLessThanOrEqual(150);
     expect(text).toContain('Replaced 2 occurrences in "tiny.txt".');
     expect(text).not.toContain("@@");
@@ -675,7 +675,7 @@ describe("edit_file — diff output caps", () => {
       { file_path: "crlfdiff.txt", old_string: "alpha", new_string: "gamma" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain("-alpha");
     expect(text).toContain("+gamma");
     expect(text).toContain(" beta");
@@ -693,7 +693,7 @@ describe("write_file — overwrite diffs", () => {
       { file_path: "d.txt", content: "one\nTWO\nthree\n" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toBe(
       [
         'Overwrote "d.txt" (3 lines, 14 bytes).',
@@ -743,7 +743,7 @@ describe("edit_file / write_file — symlinked targets", () => {
       { file_path: "link.md", old_string: "world", new_string: "there" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     // The edit landed on the file the link names — not on a regular file that replaced it.
     expect(await readFile(path.join(tmp, "real.md"), "utf8")).toBe("hello\nthere\n");
     expect((await lstat(path.join(tmp, "link.md"))).isSymbolicLink()).toBe(true);
@@ -753,7 +753,7 @@ describe("edit_file / write_file — symlinked targets", () => {
     await writeFile(path.join(tmp, "real.txt"), "old\n");
     await symlink("real.txt", path.join(tmp, "alias.txt"));
     const { result, text } = await run(write(), { file_path: "alias.txt", content: "new\n" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(text).toContain('Overwrote "alias.txt"');
     expect(await readFile(path.join(tmp, "real.txt"), "utf8")).toBe("new\n");
     expect((await lstat(path.join(tmp, "alias.txt"))).isSymbolicLink()).toBe(true);
@@ -764,7 +764,7 @@ describe("edit_file / write_file — symlinked targets", () => {
     await symlink("end.txt", path.join(tmp, "middle.txt"));
     await symlink("middle.txt", path.join(tmp, "head.txt"));
     const { result } = await run(write(), { file_path: "head.txt", content: "done\n" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(await readFile(path.join(tmp, "end.txt"), "utf8")).toBe("done\n");
     expect((await lstat(path.join(tmp, "middle.txt"))).isSymbolicLink()).toBe(true);
     expect((await lstat(path.join(tmp, "head.txt"))).isSymbolicLink()).toBe(true);
@@ -775,7 +775,7 @@ describe("edit_file / write_file — symlinked targets", () => {
     await writeFile(path.join(tmp, "data", "target.txt"), "before\n");
     await symlink(path.join("data", "target.txt"), path.join(tmp, "shortcut.txt"));
     const { result } = await run(write(), { file_path: "shortcut.txt", content: "after\n" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     expect(await readFile(path.join(tmp, "data", "target.txt"), "utf8")).toBe("after\n");
     expect((await lstat(path.join(tmp, "shortcut.txt"))).isSymbolicLink()).toBe(true);
   });
@@ -787,7 +787,7 @@ describe("edit_file / write_file — symlinked targets", () => {
       { file_path: "dangling.txt", content: "made\n" },
       tmp,
     );
-    expect(result?.stopReason).toBeUndefined();
+    expect(result?.status).toBeUndefined();
     // Nothing was there to overwrite, so it reads as a creation.
     expect(text).toContain('Created "dangling.txt"');
     expect(await readFile(path.join(tmp, "missing", "created.txt"), "utf8")).toBe("made\n");
@@ -803,7 +803,7 @@ describe("edit_file / write_file — symlinked targets", () => {
       await chmod(real, 0o600);
       await symlink("moded.txt", path.join(tmp, "moded-link.txt"));
       const { result } = await run(write(), { file_path: "moded-link.txt", content: "new\n" }, tmp);
-      expect(result?.stopReason).toBeUndefined();
+      expect(result?.status).toBeUndefined();
       expect(await readFile(real, "utf8")).toBe("new\n");
       expect((await stat(real)).mode & 0o777).toBe(0o600);
     },
@@ -813,7 +813,7 @@ describe("edit_file / write_file — symlinked targets", () => {
     await symlink("b.txt", path.join(tmp, "a.txt"));
     await symlink("a.txt", path.join(tmp, "b.txt"));
     const { result, text } = await run(write(), { file_path: "a.txt", content: "x\n" }, tmp);
-    expect(result?.stopReason).toBe("fatal");
+    expect(result?.status).toBe("fatal");
     expect(text).toContain("Too many levels of symbolic links");
   });
 
@@ -849,7 +849,7 @@ describe("edit_file / write_file — one file, concurrent writers", () => {
       ),
     );
     for (const { result, text } of outcomes) {
-      expect(result?.stopReason).toBeUndefined();
+      expect(result?.status).toBeUndefined();
       expect(text).toContain("Replaced 1 occurrence");
     }
     // Every edit read the file after the one before it landed, so all eight are in there.
@@ -864,8 +864,8 @@ describe("edit_file / write_file — one file, concurrent writers", () => {
       run(edit(), { file_path: "same.txt", old_string: "beta", new_string: "one" }, tmp),
       run(edit(), { file_path: "same.txt", old_string: "beta", new_string: "two" }, tmp),
     ]);
-    const succeeded = outcomes.filter((o) => o.result?.stopReason === undefined);
-    const failed = outcomes.filter((o) => o.result?.stopReason === "fatal");
+    const succeeded = outcomes.filter((o) => o.result?.status === undefined);
+    const failed = outcomes.filter((o) => o.result?.status === "fatal");
     expect(succeeded).toHaveLength(1);
     expect(failed).toHaveLength(1);
     // The loser read the winner's content, where its old_string no longer exists.
@@ -881,8 +881,8 @@ describe("edit_file / write_file — one file, concurrent writers", () => {
       run(write(), { file_path: "both.txt", content: "fresh\nshared\nnew-tail\n" }, tmp),
       run(edit(), { file_path: "both.txt", old_string: "shared", new_string: "edited" }, tmp),
     ]);
-    expect(written.result?.stopReason).toBeUndefined();
-    expect(edited.result?.stopReason).toBeUndefined();
+    expect(written.result?.status).toBeUndefined();
+    expect(edited.result?.status).toBeUndefined();
     // `shared` is in both contents, so the edit succeeds either way and the file alone
     // cannot tell the orders apart: unserialized, a write that renames last also leaves its
     // own content behind. What separates them is what the SECOND call read — each renders
@@ -904,7 +904,7 @@ describe("edit_file / write_file — one file, concurrent writers", () => {
       run(edit(), { file_path: "real.conf", old_string: "one", new_string: "ONE" }, tmp),
       run(edit(), { file_path: "link.conf", old_string: "two", new_string: "TWO" }, tmp),
     ]);
-    for (const { result } of outcomes) expect(result?.stopReason).toBeUndefined();
+    for (const { result } of outcomes) expect(result?.status).toBeUndefined();
     // Both names resolve to one lock key, so neither edit was computed from stale content.
     expect(await readFile(path.join(tmp, "real.conf"), "utf8")).toBe("ONE\nTWO\n");
   });

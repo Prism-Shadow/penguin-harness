@@ -50,6 +50,7 @@ describe("harness status bar (POST /api/harness-status)", () => {
     t = await createTestApp({
       machines: fakeMachinesNode(
         () => [],
+        undefined,
         () => fleet,
       ),
     });

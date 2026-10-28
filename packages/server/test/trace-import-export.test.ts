@@ -8,7 +8,7 @@
  * endpoints. Import is owner-only, mirroring the Agent snapshot import.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
+import type { AmspRecord, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
   AgentTracesResponse,
   ProjectCreateResponse,
@@ -35,13 +35,13 @@ function metaPayload(sessionId: string): SessionMetaPayload {
 }
 
 /** Envelope with a fixed timestamp (the builders stamp "now"; import derives the date dir from it). */
-const rec = (timestamp: string, type: OmniMessage["type"], payload: unknown): OmniMessage =>
-  ({ timestamp, type, payload }) as OmniMessage;
+const rec = (timestamp: string, type: AmspRecord["type"], payload: unknown): AmspRecord =>
+  ({ timestamp, type, payload }) as AmspRecord;
 
 /** First record's timestamp: 02:00 UTC, so on runners west of UTC the local date differs from the UTC date. */
 const FIRST_TS = "2026-07-06T02:00:00.000Z";
 
-function sampleTrace(sessionId: string): OmniMessage[] {
+function sampleTrace(sessionId: string): AmspRecord[] {
   return [
     rec(FIRST_TS, "session_meta", metaPayload(sessionId)),
     rec("2026-07-06T02:00:01.000Z", "model_msg", {
@@ -66,7 +66,7 @@ function localDateOf(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-const toContent = (messages: OmniMessage[]): string =>
+const toContent = (messages: AmspRecord[]): string =>
   messages.map((m) => JSON.stringify(m)).join("\n") + "\n";
 const b64 = (s: string): string => Buffer.from(s, "utf8").toString("base64");
 

@@ -68,7 +68,7 @@ import {
   HARBOR_VERSION,
 } from "../../../../core/dist/state/builtin-benchmarks-data.js";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
-import type { AmspEvent } from "../../../../amsp/src/types";
+import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
 import { agentEvaluationPlugin, rsiToolkitPlugins } from "./library-plugins";
@@ -817,9 +817,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           {
             name: "penguin-sdk",
             description:
-              "Build with the PenguinHarness SDK: the Session, Agent State and OmniMessage APIs.",
-            descriptionZh:
-              "使用 PenguinHarness SDK 开发：Session、Agent State 与 OmniMessage 接口。",
+              "Build with the PenguinHarness SDK: the Session, Agent State and AMSP record APIs.",
+            descriptionZh: "使用 PenguinHarness SDK 开发：Session、Agent State 与 AMSP 记录接口。",
             version: "0.2.13",
             package: "@penguinharness/penguin-sdk",
             source: "builtin",
@@ -1421,6 +1420,15 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               code: "model_not_addable",
               reason: "cannot be added",
             },
+            // A built-in model here that the machine's older build does not list yet.
+            {
+              projectId: IDS.project,
+              provider: "minimax",
+              modelId: "MiniMax-M3.1-Flash",
+              code: "model_not_addable",
+              reason: "cannot be added",
+              builtInHere: true,
+            },
           ],
         },
       },
@@ -1628,7 +1636,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         file("mcp.md", 7_420, 1),
         file("memory.md", 5_118, 1),
       ],
-      "corpus/penguin-docs": [file("server-api.md", 31_004, 1), file("omni-message.md", 22_870, 1)],
+      "corpus/penguin-docs": [file("server-api.md", 31_004, 1), file("amsp-records.md", 22_870, 1)],
       scripts: [file("check-links.mjs", 1_984, 3)],
       src: [file("bm25.ts", 3_102, 5), file("rag.ts", 1_410, 0)],
       test: [file("rag.test.ts", 2_206, 0)],
@@ -1652,7 +1660,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       "corpus/claude-code-docs/memory.md":
         "# Memory\n\nMemory files are Markdown with a frontmatter name and description.\n",
       "corpus/penguin-docs/server-api.md": "# Server API\n\nEvery route is listed here.\n",
-      "corpus/penguin-docs/omni-message.md": "# OmniMessage\n\nThe message protocol.\n",
+      "corpus/penguin-docs/amsp-records.md": "# AMSP Records\n\nThe message format.\n",
     },
   };
 
@@ -1975,18 +1983,19 @@ function dateOutput(ms: number): string {
 }
 
 /**
- * The body the try route streams, as `data:` lines and `[DONE]`: the example question answered
- * by running `date` over two Requests — the tool call's fragments and the complete call, its
- * result, then the answer's fragments and the complete answer, so the rendered view has
- * fragments to merge; a run that continues a Session gets one answer in one Request.
+ * The body the try route streams, as AMSP frames: a `ping`, the run's records with their ids, then
+ * `[DONE]`. A new Session's first message: its session_meta, which names it, the Task, the example
+ * question answered by running `date` over two Requests — the tool call's fragments and the
+ * complete call, its decision and output, then the answer's fragments and the complete answer, so
+ * the rendered view has fragments to merge; a run that continues a Session gets one answer in one
+ * Request.
  */
-export function amspTryStream(
-  body: unknown,
-  run: { agent: string; lang: Lang; now: number },
-): string {
-  const { agent, lang, now } = run;
+export function amspTryStream(body: unknown, run: { lang: Lang; now: number }): string {
+  const { lang, now } = run;
   const L = <T>(zh: T, en: T): T => (lang === "zh" ? zh : en);
   const sessionField = (body as { session_id?: unknown } | null)?.session_id;
+  const inputField = (body as { input?: unknown } | null)?.input;
+  const question = typeof inputField === "string" ? inputField : "";
   const sessionId = typeof sessionField === "string" ? sessionField : TRY_SESSION_ID;
   let clock = now;
   const at = (stepMs: number) => new Date((clock += stepMs)).toISOString();
@@ -1996,37 +2005,30 @@ export function amspTryStream(
     output,
     total,
   });
-  const started: AmspEvent = {
-    type: "run.started",
-    at: at(0),
-    session_id: sessionId,
-    agent,
-  };
-  let events: AmspEvent[];
+  const ev = (stepMs: number, payload: object): AmspRecord =>
+    ({ timestamp: at(stepMs), type: "event_msg", payload }) as AmspRecord;
+  const msg = (stepMs: number, payload: object): AmspRecord =>
+    ({ timestamp: at(stepMs), type: "model_msg", payload }) as AmspRecord;
+  const userInput = msg(10, {
+    type: "text",
+    role: "user",
+    text: question,
+  });
+  let records: AmspRecord[];
   if (typeof sessionField === "string") {
     const answer = usage(38, 3120, 2944);
-    events = [
-      started,
-      { type: "request.started", at: at(120), request: 1 },
-      {
-        type: "text.done",
-        at: at(1400),
-        role: "assistant",
-        text: L(
-          "演示数据只回答第一个问题；真实的 Agent 会在这里接着同一个会话作答。",
-          "The demo answers only the first question; a real agent would carry on this conversation here.",
-        ),
-        stop_reason: "completed",
-      },
-      { type: "request.done", at: at(20), request: 1, status: "completed", usage: answer },
-      {
-        type: "run.done",
-        at: at(10),
-        status: "completed",
-        requests: 1,
-        usage: answer,
-        session_usage: usage(124, 5848, 5184),
-      },
+    const text = L(
+      "演示数据只回答第一个问题；真实的 Agent 会在这里接着同一个会话作答。",
+      "The demo answers only the first question; a real agent would carry on this conversation here.",
+    );
+    records = [
+      ev(0, { type: "task_begin" }),
+      userInput,
+      ev(120, { type: "request_begin", thinking_level: "medium" }),
+      msg(1400, { type: "text", role: "assistant", text }),
+      ev(10, { type: "token_usage", session: usage(124, 5848, 5184), request: answer }),
+      ev(10, { type: "request_end", status: "completed" }),
+      ev(10, { type: "task_end" }),
     ];
   } else {
     const call = usage(31, 1376, 1152);
@@ -2039,78 +2041,86 @@ export function amspTryStream(
     // The answer as a model streams it: three fragments, then the complete text.
     const third = Math.ceil(answerText.length / 3);
     const fragments = [0, 1, 2].map((i) => answerText.slice(i * third, (i + 1) * third));
-    events = [
-      started,
+    const id = "toolu_try_date";
+    records = [
       {
-        type: "context.opened",
-        at: at(60),
-        session_id: sessionId,
-        provider: "anthropic",
-        model_id: "claude-sonnet-5",
-        context_window: 200000,
-      },
-      {
-        type: "tools.ready",
-        at: at(20),
+        timestamp: at(0),
+        type: "session_meta",
+        payload: {
+          session_id: sessionId,
+          provider: "anthropic",
+          model_id: "claude-sonnet-5",
+          model_context_window: 200000,
+          system_prompt: "",
+          agent_state: "",
+          workspace: "",
+          source: "api",
+        },
+      } as AmspRecord,
+      ev(10, { type: "task_begin" }),
+      userInput,
+      ev(20, {
+        type: "tool_list_ready",
         tools: ["exec_command", "read_file", "write_file", "edit_file", "web_fetch"].map(
           (name) => ({ name, description: "" }),
         ),
-      },
-      { type: "request.started", at: at(40), request: 1 },
-      {
-        type: "tool_call.delta",
-        at: at(1200),
-        tool_call_id: "toolu_try_date",
+      }),
+      ev(40, { type: "request_begin", thinking_level: "medium" }),
+      msg(1200, {
+        type: "partial_tool_call",
+        event_type: "start",
         name: "exec_command",
+        arguments: "",
+        tool_call_id: id,
+      }),
+      msg(100, {
+        type: "partial_tool_call",
+        event_type: "delta",
+        name: "",
         arguments: '{"cmd": ',
-      },
-      {
-        type: "tool_call.delta",
-        at: at(200),
-        tool_call_id: "toolu_try_date",
+        tool_call_id: id,
+      }),
+      msg(200, {
+        type: "partial_tool_call",
+        event_type: "delta",
         name: "",
         arguments: '"date"}',
-      },
-      {
-        type: "tool_call.done",
-        at: at(100),
-        tool_call_id: "toolu_try_date",
+        tool_call_id: id,
+      }),
+      msg(10, {
+        type: "partial_tool_call",
+        event_type: "stop",
+        name: "",
+        arguments: "",
+        tool_call_id: id,
+      }),
+      msg(10, {
+        type: "tool_call",
         name: "exec_command",
         arguments: '{"cmd":"date"}',
-        stop_reason: "completed",
-      },
-      {
-        type: "tool_result.done",
-        at: at(260),
-        tool_call_id: "toolu_try_date",
+        tool_call_id: id,
+      }),
+      ev(10, { type: "approval_decision", decision: "allow", tool_call_id: id }),
+      ev(10, { type: "token_usage", session: call, request: call }),
+      ev(10, { type: "request_end", status: "completed" }),
+      msg(260, {
+        type: "tool_call_output",
         output: `${clockText}\n`,
-        stop_reason: "completed",
-      },
-      { type: "request.done", at: at(10), request: 1, status: "completed", usage: call },
-      { type: "request.started", at: at(30), request: 2 },
-      ...fragments.map((text): AmspEvent => ({
-        type: "text.delta",
-        at: at(400),
-        role: "assistant",
-        text,
-      })),
-      {
-        type: "text.done",
-        at: at(10),
-        role: "assistant",
-        text: answerText,
-        stop_reason: "completed",
-      },
-      { type: "request.done", at: at(20), request: 2, status: "completed", usage: answer },
-      {
-        type: "run.done",
-        at: at(10),
+        tool_call_id: id,
         status: "completed",
-        requests: 2,
-        usage: usage(86, 2728, 2240),
-        session_usage: usage(86, 2728, 2240),
-      },
+      }),
+      ev(30, { type: "request_begin", thinking_level: "medium" }),
+      msg(10, { type: "partial_text", role: "assistant", event_type: "start", text: "" }),
+      ...fragments.map((text) =>
+        msg(400, { type: "partial_text", role: "assistant", event_type: "delta", text }),
+      ),
+      msg(10, { type: "partial_text", role: "assistant", event_type: "stop", text: "" }),
+      msg(10, { type: "text", role: "assistant", text: answerText }),
+      ev(10, { type: "token_usage", session: usage(86, 2728, 2240), request: answer }),
+      ev(20, { type: "request_end", status: "completed" }),
+      ev(10, { type: "task_end" }),
     ];
   }
-  return [...events.map((e) => JSON.stringify(e)), "[DONE]"].map((d) => `data: ${d}\n\n`).join("");
+  const frames = records.map((r, i) => `id: try-${i + 1}\ndata: ${JSON.stringify(r)}\n\n`);
+  return ["event: ping\ndata: {}\n\n", ...frames, "data: [DONE]\n\n"].join("");
 }

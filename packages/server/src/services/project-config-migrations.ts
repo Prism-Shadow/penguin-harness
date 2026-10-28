@@ -58,7 +58,7 @@ export function isPenguinGoEndpoint(value: unknown): value is string {
  * origin and paths in isPenguinGoEndpoint, and the migration cases in server
  * `penguin-go-mmsp.test.ts` ("Penguin Go stored projects"); see
  * changelog/0.2.15/2026-10-12-backward-compatibility.md and
- * changelog/unreleased/2026-10-15-backward-compatibility.md. The `endpoint` path stays.
+ * changelog/0.2.17/2026-10-15-backward-compatibility.md. The `endpoint` path stays.
  */
 export function migratePenguinGoRoutes(table: Record<string, unknown>, endpoint?: string): number {
   if (!Array.isArray(table.models)) return 0;

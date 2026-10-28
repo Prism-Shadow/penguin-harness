@@ -41,7 +41,7 @@ Suggest the approval mode that fits the program, and say why in one line:
 | Shows every tool call to its own user | `always-ask` | Every call waits for the program's answer |
 | Must never run a tool | `deny-all` | Every call is denied; the agent answers without tools |
 
-A call that waits reaches the program as an `approval.requested` event, and the run waits, with no time limit, for an answer, an abort or a disconnect. The `@prismshadow/amsp` client answers it with `onApproval`, or with `deny` when there is none. The mode is read when an API conversation is created; a change on the tab applies to conversations created after it.
+A call that waits is listed by the conversation's approvals resource, `GET <Base URL>/sessions/<session_id>/approvals`, and the run waits, with no time limit, for an answer, an abort or a disconnect. The `@prismshadow/amsp` client polls that resource and answers with `onApproval`, or with `deny` when there is none. The mode is read when an API conversation is created; a change on the tab applies to conversations created after it.
 
 Leave **Allow keyless access** off unless the user asks for it. With it on, anything that can reach the server can run the Agent on the Project's models.
 
@@ -64,10 +64,10 @@ To run the program yourself, you need the key in your environment. Ask the user 
 npm install @prismshadow/amsp
 ```
 
-The client has no dependencies and runs in Node 24 and in current browsers. If your registry does not have the package, call the API over HTTP as in section 4.
+Use a version after 0.2.16, which reads the current stream; 0.2.16 and earlier read the old events and cannot. The package is versioned with PenguinHarness, so match it to the server: a server of 0.2.16 or earlier needs the client of the same version. The client has no dependencies and runs in Node 24 and in current browsers. If your registry does not have the package, call the API over HTTP as in section 4.
 
 ```ts
-import { AgentClient, parseArguments } from "@prismshadow/amsp";
+import { AgentClient, isModelMessage, parseArguments } from "@prismshadow/amsp";
 
 const apiKey = process.env.PENGUIN_AGENT_KEY;
 if (!apiKey) throw new Error("Set PENGUIN_AGENT_KEY to the key from the agent's API tab.");
@@ -87,25 +87,28 @@ console.log(first.text);
 const run = client.stream({
   sessionId: first.sessionId,
   input: "Now list its headings",
-  onApproval: (request) => {
-    const args = parseArguments(request.tool_call);
-    return request.tool_call.name === "exec_command" && args?.cmd === "ls" ? "allow" : "deny";
+  onApproval: (toolCall, origin) => {
+    const args = parseArguments(toolCall);
+    return !origin && toolCall.name === "exec_command" && args?.cmd === "ls" ? "allow" : "deny";
   },
 });
-for await (const event of run) {
-  // An event without `origin` is the main conversation's; a subagent's events carry one.
-  if (event.type === "text.delta" && !event.origin) process.stdout.write(event.text);
+for await (const record of run) {
+  // A record without `origin` is the main conversation's; a subagent's carry one.
+  if (record.origin || !isModelMessage(record)) continue;
+  if (record.payload.type === "partial_text") process.stdout.write(record.payload.text);
 }
 const second = await run.result();
 ```
 
-- `run()` runs to the end and resolves with the result: `status`, `error`, `sessionId`, `text` (the main conversation's answer), `items`, `usage`, `sessionUsage` and `requests`. `stream()` starts the run and returns it at once: iterate it once for the events, await `run.session` for the Session id, and `run.result()` for the end.
+- The stream carries the conversation's records: AMSP record envelopes `{timestamp, type, payload, origin?}`, the same lines the Trace stores. The answer streams as `partial_text` records and arrives whole as an assistant `text` record.
+- `run()` runs to the end and resolves with the result: `status`, `error`, `sessionId`, `text` (the main conversation's answer), `usage`, `sessionUsage` and `requests`. `stream()` starts the run and returns it at once: iterate it once for the records, await `run.session` for the Session id, and `run.result()` for the end.
 - **Conversations.** Keep one `sessionId` per conversation of the program, such as one per end user or chat thread, and pass it back to continue. Omit it to start a new conversation. Only the Agent's own API conversations can be continued.
-- **Approvals.** `onApproval` is called only when the approval mode makes a call wait. Without it, or when it throws, the client answers `deny`. A person can answer the same request in the Web App; the first answer counts.
-- **Aborting.** Abort the `signal` passed to `stream()` or `run()` to drop the connection: the server aborts the run. `run.abort()` asks the server to abort and still delivers the final `run.done`, with `status: "aborted"`.
-- **Failures.** A refusal before the stream starts rejects with `AmspHttpError` (`status`, `code`, `message`; see section 5). After that, `result()` resolves for every run: check `status` (`completed`, `aborted`, `retryable` or `fatal`) and `error`. A stream that breaks before `run.done` rejects with `AmspStreamError`.
-- **Unknown events** are passed through. Switch on `event.type` with a default branch.
-- **A web app** keeps the key on its own server. The page posts to the app's server, which runs the Agent and relays the `text.delta` events to the page over SSE, aborting through `signal` when the page disconnects: the shape of the RAG recipe's `server.ts`. A key inside a page is readable by everyone who loads the page.
+- **Approvals.** `onApproval(toolCall, origin, { sessionId })` is called only when the approval mode makes a call wait; `origin` is set for a subagent's call. Without it, or when it throws, the client answers `deny`. A person can answer the same call in the Web App; the first answer counts.
+- **Aborting.** Abort the `signal` passed to `stream()` or `run()` to drop the connection: the server aborts the run. `run.abort()` asks the server to abort and keeps the stream until `[DONE]`; the result's `status` is `aborted`.
+- **Failures.** A refusal before the stream starts rejects with `AmspHttpError` (`status`, `code`, `message`; see section 5). After that, `result()` resolves for every run that reached `[DONE]`: check `status` (`completed`, `aborted`, `retryable` or `fatal`) and `error`. A stream that breaks before `[DONE]` rejects with `AmspStreamError`.
+- **Unknown records** are passed through. Switch on `payload.type` with a default branch.
+- **Following a conversation** that runs elsewhere, or across many runs: `SessionReader` reads its history and then its live records, and reconnects on its own.
+- **A web app** keeps the key on its own server. The page posts to the app's server, which runs the Agent and relays the answer's `partial_text` to the page over SSE, aborting through `signal` when the page disconnects: the shape of the RAG recipe's `server.ts`. A key inside a page is readable by everyone who loads the page.
 
 ## 4. Any language: HTTP and curl
 
@@ -117,12 +120,16 @@ curl -N "$BASE/agents/demo/coder/runs" \
   -H "Authorization: Bearer $PENGUIN_AGENT_KEY" -H "Content-Type: application/json" \
   -d '{"input":"Summarize README.md"}'
 
-# Continue it with the session_id that the first event, run.started, carried.
+# Continue it with the session_id that its first record, the session_meta, carried.
 curl -N "$BASE/agents/demo/coder/runs" \
   -H "Authorization: Bearer $PENGUIN_AGENT_KEY" -H "Content-Type: application/json" \
   -d '{"session_id":"<session_id>","input":"Now list its headings"}'
 
-# Answer an approval.requested event while its run is still streaming.
+# List the calls waiting for an answer, holding the request up to 30 seconds.
+curl "$BASE/sessions/<session_id>/approvals?wait=30" \
+  -H "Authorization: Bearer $PENGUIN_AGENT_KEY"
+
+# Answer one while its run is still streaming.
 curl -X POST "$BASE/sessions/<session_id>/approvals/<tool_call_id>" \
   -H "Authorization: Bearer $PENGUIN_AGENT_KEY" -H "Content-Type: application/json" \
   -d '{"decision":"allow"}'
@@ -130,14 +137,15 @@ curl -X POST "$BASE/sessions/<session_id>/approvals/<tool_call_id>" \
 
 To read the stream in your own code:
 
-- Each event is one `data: <JSON>` line followed by a blank line. After the last event comes `data: [DONE]`. A line that starts with `:` is a keep-alive comment, sent after 15 seconds of silence: skip it.
-- The first event is `run.started`, with the `session_id`. The last is `run.done`, with `status`, `error` and `usage`. The answer is the assistant `text.done` events without an `origin`, or their `text.delta` fragments as they arrive.
-- Skip every event `type` you do not know.
-- `POST <Base URL>/sessions/<session_id>/abort` aborts a run and keeps its stream open until `run.done`.
+- It is SSE. An event without an `event:` name is a record: its `id:` is `<epoch>-<seq>` and its `data:` one JSON envelope `{timestamp, type, payload, origin?}`. A named event is a control frame: `ping`, first and every 20 seconds. The run ends with `data: [DONE]`. Skip every event name and `payload.type` you do not know.
+- The run's records go from `task_begin` to `task_end`. A new conversation's first run opens with its `session_meta`, whose `session_id` is the id to continue it with; a run that continues a conversation carries none. The answer is the assistant `text` records without an `origin`, or their `partial_text` fragments as they arrive.
+- How the run went is in the records: an `abort` record means it was aborted; a `request_end` that is not `completed` and has no `retry_in_ms` gives its failure in `error_code` and `error_message`; a last `task_begin` with no `task_end` before `[DONE]` means the server failed. A body that ends without `[DONE]` means the connection broke.
+- `POST <Base URL>/sessions/<session_id>/abort` aborts a run and keeps its stream open until `[DONE]`.
+- `GET <Base URL>/sessions/<session_id>/stream` follows a conversation across runs; `POST <Base URL>/sessions/<session_id>/tasks` with `{"input": …}` starts a run on it without holding a connection, and its records arrive on that stream.
 
 ## 5. Errors
 
-A request refused before the stream gets an HTTP status and `{"error": {"code": "…", "message": "…"}}`. Once the stream has started, `run.done` carries the error instead.
+A request refused before the stream gets an HTTP status and `{"error": {"code": "…", "message": "…"}}`. Once the stream has started, the records carry the error instead.
 
 | Status | `code` | Usually | What to do |
 | --- | --- | --- | --- |
@@ -146,8 +154,9 @@ A request refused before the stream gets an HTTP status and `{"error": {"code": 
 | 403 | `agent_api_disabled` | The administrator turned the Agent API off | Ask the user to have an administrator turn it on |
 | 404 | `agent_not_found` | API access is off, the Agent ID is wrong, or the key belongs to another Agent | Check with `penguin agent api status`, then ask the owner |
 | 404 | `session_not_found` | The `session_id` is not one of this Agent's API conversations | Start a new conversation |
-| 409 | `task_in_progress`, `compacting` | The conversation is still busy | Wait for its `run.done`: one run per conversation at a time |
-| 429 | `too_many_runs` | The Agent already has 4 conversations running, Web App ones included | Retry after `Retry-After` seconds |
+| 409 | `task_in_progress`, `compacting` | The conversation is still busy | Wait for its `[DONE]`: one run per conversation at a time |
+| 409 | `resync_required` | A Session stream reopened with a `Last-Event-ID` the server no longer holds (it restarted, or moved past it) | Read the history again and reopen the stream without `Last-Event-ID`; `SessionReader` does this itself |
+| 429 | `too_many_runs` | The Agent already has as many conversations running as its limit allows (4 by default), Web App ones included | Retry after `Retry-After` seconds |
 
 ## 6. Verify before you hand over
 

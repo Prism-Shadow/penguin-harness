@@ -19,8 +19,8 @@ import { S } from "../../lib/strings";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { routedUrl } from "../../lib/session-machines";
-import { approvalKey } from "../../lib/omni/stream-model";
-import type { ToolCallItem } from "../../lib/omni/stream-model";
+import { approvalKey } from "../../lib/amsp/stream-model";
+import type { ToolCallItem } from "../../lib/amsp/stream-model";
 import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { SessionSubagentChip } from "./subagent-chip";
@@ -327,9 +327,7 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
     item.argStartedAtMs !== undefined && item.callStartedAtMs !== undefined
       ? Math.max(0, item.callStartedAtMs - item.argStartedAtMs)
       : 0;
-  const failed =
-    (item.callStopReason !== undefined && item.callStopReason !== "completed") ||
-    (item.outputStopReason !== undefined && item.outputStopReason !== "completed");
+  const failed = item.outputStatus !== undefined && item.outputStatus !== "completed";
   const state: RunState = pending
     ? "waiting"
     : executing || item.callStreaming
@@ -349,14 +347,13 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
             : S.chat.decisionAuto
       }`
     : null;
-  // A denial reports stop_reason "aborted" on the output it feeds back — a person's "deny"
-  // and the command policy's "forbidden" alike; that abort IS the decision, so the icon
-  // reads "Denied · …" (the label's second half names the decider) rather than falling
-  // through to the raw stop reason. A user-abort of a RUNNING tool carries no deny
-  // decision, so the label falls through to its stop reason below.
+  // A denial reports status "aborted" on the output it feeds back — a person's "deny" and the
+  // command policy's "forbidden" alike; that abort IS the decision, so the icon reads
+  // "Denied · …" (the label's second half names the decider) rather than falling through to
+  // the raw status. A call interrupted while running (or cut short while streaming) carries no
+  // deny decision, so the label falls through to its status below.
   const denied =
-    (item.decision === "deny" || item.decision === "forbidden") &&
-    item.outputStopReason === "aborted";
+    (item.decision === "deny" || item.decision === "forbidden") && item.outputStatus === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
@@ -365,7 +362,7 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
         ? (decisionText ?? S.chat.workDone)
         : denied
           ? (decisionText ?? undefined)
-          : (item.outputStopReason ?? item.callStopReason);
+          : item.outputStatus;
   // Total duration = argument generation + execution, excluding the approval wait: settled once
   // known; while executing, a live segment from the approval grant (or from call completion when
   // no approval was needed) on top of the generation baseline; while waiting on approval, frozen

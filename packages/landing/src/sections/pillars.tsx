@@ -1,17 +1,17 @@
 /**
  * What PenguinHarness is made of, as a radiating diagram: PenguinHarness fans out into
- * OmniMessage / Penguin SDK / Agent State, and each concept drops into the card under it that
+ * AMSP / Penguin SDK / Agent State, and each concept drops into the card under it that
  * says what it is and links to its docs page. Arrow paths carry slow-moving dots (SMIL
  * animateMotion). The diagram is hidden on small screens, where the three cards stack.
  */
-import { useSyncExternalStore } from "react";
 import { S } from "../lib/strings";
 import { DOCS_URL } from "../lib/links";
 import { Section } from "../components/section";
 import { ArrowRightIcon } from "../components/icons";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
 
 /** Docs page per card, in the order of `S.pillars.items`. */
-const DOCS_PAGES = ["omni-message", "quickstart-sdk", "configuration"];
+const DOCS_PAGES = ["amsp-records", "quickstart-sdk", "configuration"];
 
 /**
  * Concept chip centers in viewBox units. The cards below sit in a grid of the same width with a
@@ -28,26 +28,6 @@ const FAN_PATHS = [
 ];
 /** Short connectors from each concept chip into its card below. */
 const DROP_PATHS = CHIP_X.map((x) => `M${x},164 L${x},198`);
-
-const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-
-function subscribeReducedMotion(onChange: () => void): () => void {
-  const mq = window.matchMedia(REDUCED_MOTION_QUERY);
-  mq.addEventListener("change", onChange);
-  return () => mq.removeEventListener("change", onChange);
-}
-
-/**
- * The stylesheet's reduced-motion rule stops CSS animations only; SMIL keeps running, so the
- * diagram reads the preference itself (live, as it can change while the page is open).
- */
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(
-    subscribeReducedMotion,
-    () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
-    () => false,
-  );
-}
 
 function FlowDot({ path, dur, begin }: { path: string; dur: string; begin: string }) {
   // Same color as the arrow strokes so the dot reads as flow on the line, not an accent.
@@ -68,7 +48,8 @@ function FlowDot({ path, dur, begin }: { path: string; dur: string; begin: strin
 }
 
 function RadialDiagram() {
-  // Under reduced motion the dots are left out and the arrows alone carry the structure.
+  // The stylesheet's reduced-motion rule stops CSS animations only; SMIL keeps running, so under
+  // reduced motion the dots are left out and the arrows alone carry the structure.
   const still = usePrefersReducedMotion();
   return (
     <svg

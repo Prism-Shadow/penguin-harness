@@ -232,8 +232,8 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await bottomDock.getByTestId("dock-pick-trace").click();
   const main = page.locator("main");
   await expect(main.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
-  // The file pills name the Session's own Trace files, newest first.
-  await expect(main.getByText("Trace 文件").first()).toBeVisible();
+  // The sticky toolbar names the Session's own Trace file: its number, date and size.
+  await expect(main.locator("[data-slot='toolbar']").getByText(/#\d{3} · /)).toBeVisible();
   // Legend shows the 5 fixed categories (tool-exec renamed).
   await expect(main.getByText("工具调用执行").first()).toBeVisible();
   await expect(main.getByText("模型回复").first()).toBeVisible();

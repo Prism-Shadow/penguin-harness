@@ -6,13 +6,15 @@
  *   behind the word is there exactly when there is one — a failure's words after its step by the
  *   name the steps list gives it, ssh's diagnostic, the line a working job is on, the attempt a
  *   reconnect failed at, the failure a stopped reconnect ended on, the version a machine on another
- *   build would get (none when this server has no build of its own). This server's own entry is
- *   running.
+ *   build would get (none when this server has no build of its own), and for a machine whose
+ *   server needs a restart why it does. This server's own entry is running.
  * - The toolbar: one row, no verb twice. A machine with nothing installed is enabled; one on
  *   another build is updated, and only then — in sync, there is no update to offer, hidden rather
  *   than greyed; then its server is stopped while it is kept connected, started once it is not;
- *   restarted; its config synced, only while it is connected on this server's build; its ssh host
- *   configured; the program uninstalled. This server's own entry has none.
+ *   restarted — the primary for a machine whose server needs a restart, unless an update is on
+ *   offer, which restarts it anyway; its config synced, only while it is connected on this
+ *   server's build; its ssh host configured; the program uninstalled. This server's own entry has
+ *   none.
  * - A verb waits for one reason, and one sentence says it, naming every verb it holds: a job on
  *   its way holds all but the ssh form; a machine being brought back holds stopping, restarting
  *   and uninstalling; a stopped server holds restarting; no build to install holds enabling. No
@@ -109,6 +111,7 @@ const READINGS: MachineReading[] = [
   ready,
   { kind: "installedOnly" },
   { kind: "behind", version: "0.2.12" },
+  { kind: "restartNeeded" },
   { kind: "notConnected" },
   unreachable,
   { kind: "stopped" },
@@ -126,9 +129,15 @@ describe("the status chip", () => {
       expect(chip.word).toBe(S.machines.state[kind]);
       expect(chip.tone).toBe(readingTone(reading));
       expect(chip.reason !== null).toBe(
-        ["failed", "unreachable", "working", "reconnecting", "reconnectStopped", "behind"].includes(
-          kind,
-        ),
+        [
+          "failed",
+          "unreachable",
+          "working",
+          "reconnecting",
+          "reconnectStopped",
+          "behind",
+          "restartNeeded",
+        ].includes(kind),
       );
     },
   );
@@ -218,6 +227,21 @@ describe("the toolbar", () => {
     expect(verbs(machine())).not.toContain("update");
     expect(verbs(behind)).not.toContain("syncConfig");
     expect(verbs(behind, null, null)).not.toContain("update");
+  });
+
+  it("offers Restart as the primary while the machine's server needs one, and leaves that to Update when one is on offer", () => {
+    const unanswered = { state: "unanswered" as const, since: "2026-10-10T07:59:00.000Z" };
+    const bar = machineToolbar(machine({ socket: unanswered }), null, IMAGE, false);
+    expect(bar.items.map((item) => item.verb)).toEqual(verbs(machine()));
+    expect(bar.items.filter((item) => item.primary).map((item) => item.verb)).toEqual(["restart"]);
+    expect(bar.items.find((item) => item.verb === "restart")?.held).toBeNull();
+
+    const behind = machine({
+      socket: unanswered,
+      installed: { version: "0.2.12", at: "2026-09-20T08:00:00.000Z" },
+    });
+    const primaries = machineToolbar(behind, null, IMAGE, false).items.filter((i) => i.primary);
+    expect(primaries.map((item) => item.verb)).toEqual(["update"]);
   });
 
   it("starts a server that was stopped, and holds its restart, saying so once", () => {

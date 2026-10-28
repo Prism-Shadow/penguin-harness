@@ -11,6 +11,9 @@
  *   failed exchange or an unstorable key ends it with its reason. A redirect deposits the code
  *   once (a manual flow takes none) and only the owner's poll redeems it; an unpolled deposit
  *   expires with the flow. The callback origin follows the request unless a proxy is trusted.
+ * - A redirect opens only to an origin the authorization page accepts — HTTPS, or plain HTTP to
+ *   `localhost`, `[::1]` or `127.x.x.x`; asked for anywhere else (a LAN address, a hostname,
+ *   `0.0.0.0`), the flow opens in manual mode, says so, and still takes a pasted code.
  * - The routes: only the owner starts, polls and redeems; the key lands once, as the group's key
  *   every model of the group uses, and the Project's open Session channels hear
  *   credentials_updated; a rejected code reaches the dialog through the poll and touches no
@@ -45,8 +48,9 @@ import {
   exchangeCode,
   FLOW_TTL_MS,
   ModelOAuthService,
+  openedMode,
 } from "../src/services/model-oauth-service.js";
-import { requestOrigin } from "../src/http/routes/model-oauth.js";
+import { publicOrigin } from "../src/http/public-origin.js";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchFake } from "./fixtures/fetch.js";
 import { sessionRow } from "./fixtures/session.js";
@@ -357,25 +361,56 @@ describe("flow store", () => {
 
 describe("callback origin", () => {
   it("follows the request's own URL when no proxy is trusted", () => {
-    expect(requestOrigin("http://192.168.1.4:7364/api/x", {}, false)).toBe(
+    expect(publicOrigin("http://192.168.1.4:7364/api/x", {}, false)).toBe(
       "http://192.168.1.4:7364",
     );
     // Untrusted headers are ignored outright, so a caller cannot choose where the redirect lands.
     expect(
-      requestOrigin("http://192.168.1.4:7364/api/x", { proto: "https", host: "evil.test" }, false),
+      publicOrigin("http://192.168.1.4:7364/api/x", { proto: "https", host: "evil.test" }, false),
     ).toBe("http://192.168.1.4:7364");
   });
 
   it("honours the forwarded pair once the deployment trusts it, taking the client-facing hop", () => {
     expect(
-      requestOrigin(
+      publicOrigin(
         "http://127.0.0.1:7364/api/x",
         { proto: "https, http", host: "penguin.example, inner" },
         true,
       ),
     ).toBe("https://penguin.example");
     // Trusted but absent: the request's own URL still answers.
-    expect(requestOrigin("http://127.0.0.1:7364/api/x", {}, true)).toBe("http://127.0.0.1:7364");
+    expect(publicOrigin("http://127.0.0.1:7364/api/x", {}, true)).toBe("http://127.0.0.1:7364");
+  });
+});
+
+describe("opened mode", () => {
+  it("keeps the redirect for HTTPS and for plain HTTP to a loopback host", () => {
+    for (const origin of [
+      "http://localhost:7364",
+      "http://127.0.0.1:7364",
+      "http://127.8.9.10:7364",
+      "http://[::1]:7364",
+      "https://penguin.example",
+      "https://192.168.1.10:7364",
+    ]) {
+      expect(openedMode("callback", origin), origin).toBe("callback");
+    }
+  });
+
+  it("opens a manual flow where the provider refuses to redirect: plain HTTP off loopback", () => {
+    for (const origin of [
+      "http://192.168.1.10:7364",
+      "http://penguin.lan:7364",
+      "http://0.0.0.0:7364",
+      "http://app.localhost:7364",
+      "not a url",
+    ]) {
+      expect(openedMode("callback", origin), origin).toBe("manual");
+    }
+  });
+
+  it("never turns a manual request into a redirect", () => {
+    expect(openedMode("manual", "http://localhost:7364")).toBe("manual");
   });
 });
 
@@ -439,6 +474,7 @@ describe("model-oauth routes", () => {
     );
     expect(q.get("key_name")).toBe("PenguinHarness");
     expect(q.get("app_url")).toBe(APP_URL);
+    expect(body.mode).toBe("callback");
 
     expect((await member.post(`${base()}/start`, { provider: "tokendance" })).status).toBe(403);
     expect((await owner.post(`${base()}/start`, { provider: "deepseek" })).status).toBe(400);
@@ -623,6 +659,24 @@ describe("model-oauth routes", () => {
     // Single use here too.
     const again = await owner.post(`${base()}/${started.flowId}/code`, { code: "pasted-code" });
     expect(again.status).toBe(409);
+  });
+
+  it("a redirect asked for over plain HTTP on a LAN address opens as manual, says so, and redeems a pasted code", async () => {
+    const lan = (apiPath: string) => `http://192.168.1.10:7364${apiPath}`;
+    const res = await owner.post(lan(`${base()}/start`), { provider: "tokendance" });
+    expect(res.status).toBe(200);
+    const started = (await res.json()) as ModelOAuthStartResponse;
+    expect(started.mode).toBe("manual");
+    const q = new URL(started.authorizeUrl).searchParams;
+    expect(q.has("callback_url")).toBe(false);
+    expect(q.get("code_challenge_method")).toBe("S256");
+    expect(q.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+    const redeemed = await owner.post(lan(`${base()}/${started.flowId}/code`), {
+      code: "pasted-code",
+    });
+    expect(((await redeemed.json()) as ModelOAuthCodeResponse).ok).toBe(true);
+    expect(exchanges()[0]!.body.code).toBe("pasted-code");
   });
 
   it("polling and redeeming both refuse a member, and 404 an unknown flow", async () => {

@@ -12,7 +12,7 @@
  *
  * The scanner walks one shard's RAW messages (no subagent expansion — origin-carrying
  * messages never appear in a shard) and mirrors, decision for decision, the Web reducer
- * in web/src/lib/omni/stream-model.ts (pushMessage/startTask/finalizeOpenTask) plus the
+ * in web/src/lib/amsp/stream-model.ts (pushMessage/startTask/finalizeOpenTask) plus the
  * outline-entry rule in web/src/features/chat/outline-model.ts (buildOutline) — the four
  * implementations of "what is one turn" (this file, stream-model, outline-model, and
  * trace-service.analyze) must stay in step; tests on both sides pin the shared cases.
@@ -32,17 +32,22 @@
  * token totals (via the caller-provided child expander), and the last main-session
  * session/context token readings.
  *
+ * Task records (`task_begin` / `task_end`) are skipped outright, before anything else looks at
+ * a message: Tasks are still derived from user prompts here, and skipping keeps every cut,
+ * count and timing exactly what it is on a Trace written before the records existed — the
+ * cached prefix records stay valid, so CACHE_VERSION is unchanged by them.
+ *
  * Scan state is carried across shards (a Task can span a rotation). Cached per-shard
  * prefix records (trace_files.page_stats) persist the carry so old shards are read at
  * most once ever; bump CACHE_VERSION whenever any rule in this file changes.
  */
-import { parseUserSteeringText } from "@prismshadow/penguin-core";
+import { isTaskRecord, parseUserSteeringText } from "@prismshadow/penguin-core";
 import {
   parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
-} from "@prismshadow/penguin-core/markers";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+} from "@prismshadow/amsp/markers";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
 export const CACHE_VERSION = 4;
@@ -297,7 +302,7 @@ function outlineEligible(text: string, sender: string | undefined, isNotice: boo
  */
 export async function scanMessages(
   state: ScanState,
-  messages: readonly OmniMessage[],
+  messages: readonly AmspRecord[],
   onBoundary: (ordinal: number, stats: WindowPriorStats) => void,
   expandChild: ((sessionId: string) => Promise<ChildAggregate | null>) | null,
   fromOrdinal = 0,
@@ -308,6 +313,7 @@ export async function scanMessages(
     // Shards never contain origin-carrying messages (core's Writer filters them);
     // defensively skip any that appear rather than mis-shaping the counts.
     if (msg.origin !== undefined && msg.origin.length > 0) continue;
+    if (isTaskRecord(msg)) continue;
     const ms = tsMs(msg.timestamp);
     const p = msg.payload as Record<string, unknown> & { type?: string; role?: string };
 

@@ -28,7 +28,7 @@
  * Docs: /docs/cli § "penguin session input".
  */
 import type { Command } from "commander";
-import { isModelMessage, type OmniMessage } from "@prismshadow/penguin-core";
+import { isModelMessage, type AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
@@ -45,7 +45,7 @@ import { SessionStream, watchTask } from "../server-task.js";
 import type { Messages } from "../i18n.js";
 
 /** The most recent complete assistant text of the main session (poll's snapshot); null when none exists yet. */
-export function latestAssistantText(messages: OmniMessage[]): string | null {
+export function latestAssistantText(messages: AmspRecord[]): string | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]!;
     if ((msg.origin?.length ?? 0) > 0 || !isModelMessage(msg)) continue;

@@ -1,7 +1,8 @@
 /** Controlled site preferences: persistence and translated labels belong to the host. */
 import { useEffect, useState } from "react";
+import { CheckLineIcon } from "../icons/marks/marks";
 import { Dropdown } from "../overlays/dropdown/dropdown";
-import { Menu, MenuRadioItem } from "../overlays/menu/menu";
+import { Menu, MenuRow } from "../overlays/menu/menu";
 import {
   GitHubIcon,
   GlobeIcon,
@@ -75,13 +76,17 @@ export function SiteLanguageMenu({
         </button>
       }
     >
+      {/* The rows bring their own line check: the menu's own is drawn in every theme's icon set,
+          which the sites never show and would otherwise ship. */}
       <Menu label={labels.label} density="md">
         {(["en", "zh", "system"] as const).map((option) => (
-          <MenuRadioItem
+          <MenuRow
             key={option}
+            role="menuitemradio"
             className="site-ui-language-option"
             label={labels[option]}
             checked={value === option}
+            check={<CheckLineIcon className="site-ui-language-check" />}
             onSelect={() => {
               onChange(option);
               setOpen(false);

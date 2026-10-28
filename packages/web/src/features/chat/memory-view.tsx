@@ -25,8 +25,8 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeDate } from "../../lib/format";
-import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { memoryRowKey } from "../../lib/omni/memory-changes";
+import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/amsp/memory-changes";
+import { memoryRowKey } from "../../lib/amsp/memory-changes";
 import { useLocale } from "../../state/locale";
 import { buildMemoryList, memoryNavBack, memoryNavForRequest } from "./memory-nav";
 import type { MemoryNavMode, ScopeFiles } from "./memory-nav";

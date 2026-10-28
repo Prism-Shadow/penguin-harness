@@ -76,11 +76,11 @@ import {
   createStreamModel,
   finalizeHistory,
   pushMessage,
-} from "../../lib/omni/stream-model";
-import type { StreamModel } from "../../lib/omni/stream-model";
-import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
-import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { bucketCostUsd } from "../../lib/omni/task-stats";
+} from "../../lib/amsp/stream-model";
+import type { StreamModel } from "../../lib/amsp/stream-model";
+import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/amsp/memory-changes";
+import type { MemoryLocateTarget } from "../../lib/amsp/memory-changes";
+import { bucketCostUsd } from "../../lib/amsp/task-stats";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
@@ -120,6 +120,7 @@ import {
 import { RouteProbe } from "./route-probe";
 import { machineForSession } from "../../lib/session-machines";
 import { HistoryLoadFailed } from "./history-load-failed";
+import { MachineRestartNotice } from "./machine-restart-notice";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
@@ -143,6 +144,7 @@ import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { deletedChangeKeys } from "./memory-nav";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
+import { measureComposer } from "../dock/composer-height";
 import { DockLauncher } from "../dock/dock-launcher";
 import { useDockMount } from "../dock/use-dock-mount";
 // importing it registers the built-in panels (their definitions and bodies) with the dock
@@ -154,6 +156,7 @@ import { reownTerminals, setDockConversation } from "../dock/dock-terminal";
 import {
   adoptDockScope,
   closedDockView,
+  currentDockScope,
   dockViews,
   dockVersion,
   isTabShown,
@@ -376,12 +379,18 @@ export function ChatPage() {
   const [subagentTaskScope, setSubagentTaskScope] = useState<{
     anchorSessionId: string;
   } | null>(null);
-  useEffect(() => {
+  // The commands above belong to the conversation they were given in. Dropped while rendering
+  // the route that names another one, not in an effect after it: the panel bodies of the next
+  // conversation would otherwise mount with the last one's command for a render and act on it
+  // (land the Memory panel on its entry, focus the agents panel on its child).
+  const [commandsFor, setCommandsFor] = useState(routeSessionId);
+  if (commandsFor !== routeSessionId) {
+    setCommandsFor(routeSessionId);
     setFileOpenRequest(null);
     setMemoryRequest(null);
     setSubagentFocus(null);
     setSubagentTaskScope(null);
-  }, [routeSessionId]);
+  }
   // A command also resets when its panel's TAB closes: the tab body unmounts with the tab,
   // so a re-added tab is a fresh mount that would otherwise replay the stale command —
   // reopening the Workspace would re-locate a long-clicked file, and reopening the agents
@@ -738,16 +747,22 @@ export function ChatPage() {
   // always lives in the live tail window, so live-only loses nothing.
   const taskCount = taskStartCount(stream.model.items);
   const liveSpawn = stream.taskState !== "idle" && latestTaskHasSubagent(stream.model);
+  // The stream trails a switch by one render (still the previous Session's model and state), so
+  // the tracker is told whose data it is looking at; the panel opens only in this conversation's
+  // own docks, the ones on screen when the effect runs.
+  const streamSessionId = stream.sessionId;
   useEffect(() => {
     const action = advancePanelTaskScope(panelTaskScopeRef.current, {
       sessionId: selectedSessionId,
+      streamSessionId,
       taskCount,
       liveSpawn,
     });
-    if (action === "autoOpen" && !isTabShown("agents")) openPanel("agents");
-    // The tracker only acts on real transitions of these three observed values.
+    if (action === "autoOpen" && currentDockScope() === selectedSessionId && !isTabShown("agents"))
+      openPanel("agents");
+    // The tracker only acts on real transitions of these observed values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSessionId, taskCount, liveSpawn]);
+  }, [selectedSessionId, streamSessionId, taskCount, liveSpawn]);
 
   // Skills installed on the session's Agent, on its machine (candidates for the input area's
   // skill dropdown); a switch clears them, which also clears the input area's selection.
@@ -1334,11 +1349,12 @@ export function ChatPage() {
       if (respondedId === currentId) return;
       await reloadSessions();
       // Same conversation under a new id: its docks follow, or they are stranded under
-      // an id nothing routes to again — its shells first, so its tabs stay its own.
+      // an id nothing routes to again — its shells first, so its tabs stay its own. Only
+      // someone still on the old id is taken to the new one; whoever moved on stays put.
       await adoptBrowserSession(currentId, respondedId);
       await reownTerminals(currentId, respondedId);
-      adoptDockScope(respondedId);
-      navigate(`/chat/${respondedId}`, { replace: true });
+      if (adoptDockScope(currentId, respondedId))
+        navigate(`/chat/${respondedId}`, { replace: true });
     },
     [reloadSessions, navigate],
   );
@@ -2751,12 +2767,23 @@ export function ChatPage() {
                               while that dock is hidden, and opens its panels in one click. */}
                           <DockLauncher agentsPending={anySubagentPending} />
                         </div>
-                        <WallpaperSurface className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+                        {/* Measured: the bottom dock's docked height stops where this box would
+                            be covered, and gives way as it grows. */}
+                        <WallpaperSurface
+                          ref={measureComposer}
+                          className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800"
+                        >
                           <div className="mx-auto max-w-3xl">
                             {/* Goal banner docked above the composer: an in-flight goal's progress
                                 (restored on load while still active), or the terminal state reached
                                 during this page's lifetime. The stop button is the composer's
                                 regular stop (one abort ends the whole goal loop). */}
+                            {/* A conversation on a machine whose server needs a restart: its live
+                                updates stay away until then, and this says so instead of the
+                                stream retrying in silence. */}
+                            {!draft && pageMachineId !== null && (
+                              <MachineRestartNotice machineId={pageMachineId} />
+                            )}
                             {stream.goal && <GoalStatusBanner goal={stream.goal} />}
                             {input}
                           </div>

@@ -1,0 +1,2436 @@
+/**
+ * Record stream → render view-model reducer. A
+ * pure logic module, no React dependency: takes in an ordered sequence of
+ * records (history's complete messages + real-time partial/complete/
+ * event), and produces a `ChatItem[]` view model (updated in place, with the caller triggering the re-render).
+ *
+ * Key points:
+ *   - Fragment tracking: partial_text / partial_thinking are tracked by "the
+ *     currently open fragment"; partial_tool_call / partial_tool_call_output
+ *     are attributed to a tool card by tool_call_id. start opens it, delta
+ *     accumulates, stop closes it; the subsequent complete message
+ *     **replaces** the fragment's content (guaranteeing consistency;
+ *     with no open fragment — mid-stream join — it's appended directly); an
+ *     orphan delta (no start seen) is ignored, converging once the complete message arrives.
+ *   - origin routing: messages carrying an origin go into a nested child
+ *     model (surfaced in the UI as a subagent chip + the subagents panel);
+ *     on a sub-session's first message it binds to "the most recent allowed
+ *     (decision=allow) and not-yet-complete run_subagent tool card that
+ *     hasn't been bound to an origin yet", falling back to a standalone
+ *     SubagentItem if none is found; its opening prompt then moves it onto the
+ *     card of the call that carried that prompt (see moveToSpawningCard).
+ *     Inside the nested model, the same reducer recurses (with the first
+ *     origin hop stripped). Sub-session token_usage counts toward this
+ *     level's stats (same convention as the CLI).
+ *   - Events: approval_decision annotates the corresponding tool card
+ *     (labeled "manual" if clicked on this end, "automatic" otherwise);
+ *     abort → an interruption marker item; request_end ending in any status
+ *     the engine reconnects on (retryable) → a retry-hint item (the engine discards that
+ *     attempt and resends the original input; the next request_begin marks the hint as resent, and an
+ *     arriving abort marks it as retries exhausted); other request_begin/end
+ *     events aren't rendered (Request duration is covered by Trace
+ *     performance analysis); compaction_begin/end → a banner item;
+ *     token_usage → fed into stats (task-stats.ts).
+ *   - Compaction-internal messages: model_msg within a
+ *     compaction_begin↔end range (the compaction prompt, thinking and summary output)
+ *     are never rendered as transcript items and never counted toward Task
+ *     segmentation; the request's thinking and the summary's own text (live
+ *     partial_thinking / partial_text fragments, or the span's complete thinking
+ *     and assistant text on rebuild) accumulate onto the running compaction
+ *     banner instead (issue #290);
+ *     user text prefixed with `[context_summary]` is a compaction-summary
+ *     injection, treated as internal input (not rendered, doesn't start a new Task).
+ *   - Task segmentation: a complete text/image message on the main
+ *     session's user side starts a new Task, and so does the first request
+ *     after a request_end or abort that ended the run (a Retry, which sends no
+ *     new message — see StreamModel.runEnded); a Task ends when the live
+ *     stream receives task_state:idle (notifyTaskIdle), or — during history
+ *     rebuild — when the next Task starts / the stream ends
+ *     (finalizeHistory). Either way the duration comes from Trace timestamps
+ *     alone and never the local clock, so a round settles to the same figure
+ *     watched live and replayed after a reload. A stats row is only added if token_usage occurred during the Task.
+ *     The Trace's Task records (task_begin / task_end) are ignored outright, at every level:
+ *     segmentation is still derived as above, so a Trace reads the same with or without them.
+ *   - Overlap-dedup helpers: buildDedupIndex/isDuplicate
+ *     judge duplicates by exact match of the envelope JSON; when a complete
+ *     message hits the dedup check, discardFragmentFor also discards the corresponding in-flight fragment.
+ * Docs: /docs/amsp-records § "The streaming discipline".
+ */
+import {
+  isEventMessage,
+  isModelMessage,
+  isPartialPayload,
+  isTaskRecord,
+  normalizeSessionSource,
+} from "@prismshadow/amsp";
+import { parseBackgroundTaskDoneMessage, parseUserSteeringText } from "@prismshadow/amsp/markers";
+import type {
+  ApprovalDecision,
+  CompactionMode,
+  CompactionReason,
+  CompleteModelPayload,
+  EventPayload,
+  AmspRecord,
+  PartialModelPayload,
+  SessionMetaPayload,
+  SessionSource,
+  StopReason,
+  TokenUsagePayload,
+  ToolStatus,
+} from "@prismshadow/amsp";
+import type { TracePosition } from "@prismshadow/penguin-server/api";
+import {
+  addLlmDuration,
+  addToolExecution,
+  beginCompaction,
+  commitPendingCompaction,
+  createTaskStatsTracker,
+  endCompaction,
+  endTask,
+  resetTaskCounters,
+  trackMainUsage,
+  trackSubagentUsage,
+} from "./task-stats";
+import type { TaskStats, TaskStatsTracker } from "./task-stats";
+import { classifyMemoryPath, mergeMemoryChanges } from "./memory-changes";
+import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
+
+// ---------------------------------------------------------------------------
+// View model types
+// ---------------------------------------------------------------------------
+
+/** Source of an approval decision: clicked on this end (manual) / other (automatic judgment or submitted by another end). A policy veto needs no source — its decision value is "forbidden". */
+export type DecisionSource = "manual" | "remote";
+
+export interface UserTextItem {
+  kind: "user_text";
+  id: number;
+  text: string;
+  /** Set for a harness-injected input (a stop hook's continue, the goal plugin's round protocol): rendered with an origin caption, skipped by input history and the outline. */
+  sender?: "harness";
+  /** Message timestamp (milliseconds): shown on footer hover. History and real time share the same source — this message's own timestamp. */
+  atMs?: number;
+}
+
+/**
+ * Mid-run steering: a `[user_steering]`-wrapped user text delivered between turns
+ * (see core `Session.steer`). Rendered as a compact user-styled chip **inside** the running
+ * Task's flow — it never starts a new Task (`text` is the inner message, marker stripped).
+ */
+export interface UserSteeringItem {
+  kind: "user_steering";
+  id: number;
+  text: string;
+  /**
+   * Images sent with this steering message: core delivers them as ordinary user image
+   * messages right behind the text, and they are folded in here rather than rendered as
+   * standalone bubbles — they are part of the same message and must not start a Task.
+   * (Without vision the images arrive as `[attached image: …]` lines inside `text` instead,
+   * which the chip restores at render time like any user message.)
+   */
+  images?: string[];
+  /** Message timestamp (milliseconds): shown on footer hover. */
+  atMs?: number;
+}
+
+/**
+ * A background completion notice steered into the running Task (`delivery: steering` on its
+ * `[background_task_done]` block — see core's Session notice queue): rendered as the
+ * completion banner **inside** the running Task's flow, like a steering chip it never starts
+ * a new Task — so the turn's stats row still arrives exactly once, at task end. An unstamped
+ * notice (an idle-launched notice task's own input) stays an ordinary `user_text` item and
+ * keeps its independent turn. `text` is the raw message text (block included): the renderer
+ * and the topology's terminal-state scan both re-parse it, exactly as they do for the
+ * unstamped form.
+ */
+export interface BackgroundNoticeItem {
+  kind: "background_notice";
+  id: number;
+  text: string;
+  /** Message timestamp (milliseconds): shown on footer hover. */
+  atMs?: number;
+}
+
+export interface UserImageItem {
+  kind: "user_image";
+  id: number;
+  imageUrl: string;
+  /** Message timestamp (milliseconds): shown on footer hover. */
+  atMs?: number;
+}
+
+export interface AssistantTextItem {
+  kind: "assistant_text";
+  id: number;
+  text: string;
+  /** The streamed fragment is still accumulating. */
+  streaming: boolean;
+  /** Its Request ended `completed` (set at that request_end): only such a reply is a fork point. */
+  requestCompleted?: boolean;
+  /**
+   * Message timestamp (milliseconds): shown on footer hover. During
+   * streaming it's a placeholder using the partial start's timestamp;
+   * once the complete message arrives, it switches to that message's own
+   * timestamp — the same convention as Trace (which records the **completion** time).
+   */
+  atMs?: number;
+  /** Stable history coordinate, present after a history read (live replies resolve it on demand). */
+  tracePosition?: TracePosition;
+}
+
+export interface ThinkingItem {
+  kind: "thinking";
+  id: number;
+  thinking: string;
+  streaming: boolean;
+  /** Start timestamp in milliseconds (the partial start's message time; approximated by the previous message's time when history has no fragments). */
+  startedAtMs?: number;
+  /** Thinking duration (settled when the complete message arrives: message time - start time). */
+  durationMs?: number;
+}
+
+export interface ToolCallItem {
+  kind: "tool_call";
+  id: number;
+  toolCallId: string;
+  name: string;
+  /** Tool argument JSON (accumulated via streamed deltas, replaced once the complete message arrives). */
+  argumentsText: string;
+  callStreaming: boolean;
+  /** A complete tool_call message has been received (all streamed copies after this are ignored). */
+  callComplete: boolean;
+  /** Tool output (appended via streaming, replaced once the complete message arrives; truncation/timeout/interruption markers are already in the text). */
+  output: string;
+  /** Images carried by the tool output (an array of data URLs; a streamed delta carries the whole array at once, and the complete message converges it again). */
+  images?: string[];
+  outputStreaming: boolean;
+  outputComplete: boolean;
+  /**
+   * The result's `status` (tool_call_output.status; a record written before the field reads as
+   * completed). `aborted` also marks a card that will never get a result — the call was cut
+   * short while streaming, or interrupted while it ran.
+   */
+  outputStatus?: ToolStatus;
+  /** Approval decision (annotated by the approval_decision event). */
+  decision?: ApprovalDecision;
+  decisionSource?: DecisionSource;
+  /** run_subagent: the bound sub-session stream (nested model). */
+  subagent?: StreamModel;
+  subagentSessionId?: string;
+  /** Tool execution start (the message time when the tool_call closed; same convention as Trace analysis). */
+  callStartedAtMs?: number;
+  /** Approval-granted moment (the approval_decision message time): execution timing starts from here, deducting the approval wait. */
+  approvalAtMs?: number;
+  /**
+   * The moment THIS client answered the approval, read from the local clock as the decision is
+   * submitted — the approval_decision event that carries approvalAtMs only arrives a broadcast
+   * later. Kept apart from approvalAtMs because that one is a server message time that
+   * noteApprovalWait subtracts callStartedAtMs (another server time) from: a local Date.now()
+   * in there would put two clocks inside one stat, so a skewed client could corrupt
+   * openApprovalWaitMs. Only the UI's elapsed-time gates read this, and they measure against
+   * Date.now(), which is the clock it is already on.
+   */
+  localApprovalAtMs?: number;
+  /** This card's approval wait has already been counted toward its owning Request (see noteApprovalWait): whichever of the two timestamps arrives later triggers it, guarding against double-counting. */
+  approvalWaitCounted?: boolean;
+  /**
+   * Argument generation start (the partial_tool_call start's message time):
+   * the rolling timing baseline during streamed argument generation.
+   * Approximated by the previous message's time when history rebuild has no fragments (same convention as thinking).
+   */
+  argStartedAtMs?: number;
+  /** Total tool duration (settled when the tool_call_output complete message arrives) = the argument-generation segment + the execution segment, excluding the approval wait (see settleToolDuration). */
+  durationMs?: number;
+}
+
+/** A standalone sub-session card for when no run_subagent tool card can be bound. */
+export interface SubagentItem {
+  kind: "subagent";
+  id: number;
+  sessionId: string;
+  model: StreamModel;
+}
+
+export interface AbortItem {
+  kind: "abort";
+  id: number;
+  /** Machine-readable cause (the records' ErrorCode vocabulary); the banner localizes from it. */
+  errorCode?: string;
+  /** Raw failure detail, shown verbatim (absent on live user interrupts). */
+  errorMessage?: string;
+  /** Legacy Traces only: the cause as English prose, rendered verbatim when no errorCode is present. */
+  reason?: string;
+}
+
+/**
+ * A run-ending LLM failure, from a `request_end` with status `fatal` (an LLM failure
+ * produces no abort event — the request_end is its terminal record).
+ */
+export interface LlmErrorItem {
+  kind: "llm_error";
+  id: number;
+  /** Machine-readable cause (request_end.error_code). */
+  errorCode?: string;
+  /** The provider's own error text (request_end.error_message), shown verbatim. */
+  errorMessage?: string;
+}
+
+/** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
+export type ReconnectStatus = "retryable" | "failed" | "timeout" | "malformed";
+
+function isReconnectStatus(status: string | undefined): status is ReconnectStatus {
+  return (
+    status === "retryable" || status === "failed" || status === "timeout" || status === "malformed"
+  );
+}
+
+/** An LLM Request ending retryable → the engine retries carrying the content already produced. */
+export interface ReconnectItem {
+  kind: "reconnect";
+  id: number;
+  /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
+  status: ReconnectStatus;
+  /** Which retry attempt this is — request_end.attempt, the core's authoritative 1-based ordinal (1 for Traces written before the field existed). */
+  attempt: number;
+  /** The retry request has been sent (set true by the next request_begin). */
+  retrying: boolean;
+  /** Retries exhausted: set at creation when the request_end announced no retry (`retryable` with no retry_in_ms — the run ends there), or by an abort event in legacy Traces. */
+  gaveUp?: boolean;
+  /** Machine-readable cause (request_end.error_code); the cause wording localizes from it. */
+  errorCode?: string;
+  /** The final failure's detail (request_end.error_message), rendered in the gave-up state. */
+  errorMessage?: string;
+  /**
+   * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
+   * when the event carried none — old Traces, or a final failure). Waits can reach the
+   * 30s backoff ceiling, so the view renders a live countdown for the waiting state when
+   * this is ≥2s (see ReconnectLine).
+   */
+  plannedDelayMs?: number;
+  /**
+   * CLIENT-clock arrival time of the request_end (the countdown anchor — client-local, so
+   * server clock skew cannot bend the ticker). On history replay the following
+   * request_begin/abort arrives immediately and flips retrying/gaveUp, so a replayed item
+   * never stays in the waiting state to tick.
+   */
+  arrivedAtMs?: number;
+}
+
+export interface CompactionItem {
+  kind: "compaction";
+  id: number;
+  reason: CompactionReason;
+  mode: CompactionMode;
+  /** True between begin and end (renders a "compaction in progress" banner). */
+  running: boolean;
+  status?: StopReason;
+  /** Last failure detail from compaction_end.error_message (its share of the RetryDetail block; present on failed ends from new cores). */
+  errorMessage?: string;
+  /** The begin message's timestamp (ms); ticks the running row and anchors durationMs. */
+  beginTsMs?: number;
+  /** Wall time derived from the begin/end message timestamps (absent on a mid-stream join). */
+  durationMs?: number;
+  /**
+   * Raw text of the summary the compaction request is generating (issue #290): accumulated
+   * live from the span's own partial_text fragments, and rebuilt identically on history
+   * replay from the span's complete assistant text — the banner shows the summary being
+   * written and keeps it readable after a reload. Raw model output (summary tags included;
+   * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
+   */
+  summaryText?: string;
+  /**
+   * Raw text of the thinking the compaction request produced ahead of its summary:
+   * accumulated live from the span's own partial_thinking fragments, and rebuilt identically
+   * on history replay from the span's complete thinking messages — the banner shows it in a
+   * collapsed section of its own. Absent when the request produced none (a model that does
+   * not think, or discard mode).
+   */
+  thinkingText?: string;
+  /** True while a thinking fragment of the compaction request is open (the section streams); settled by its stop, or by the end event. */
+  thinkingStreaming?: boolean;
+  /**
+   * Start of the thinking section's wall time, and with it the rule both sections follow:
+   * **a section is timed over exactly the window in which it shows itself running**, so the
+   * number and the spinner beside it can never disagree.
+   *
+   * Thinking therefore starts at the first fragment that carried thinking and settles at that
+   * fragment's stop — the moment the section stops spinning. The result section shows itself
+   * running for the whole compaction (it has no fragment flag of its own), so it starts at the
+   * first summary text and settles at `compaction_end`; its share of the header's begin-to-end
+   * span is what the request spent writing plus the adoption behind it.
+   *
+   * History rebuild has no fragments: the previous message's time approximates each start and
+   * the complete message's own time settles it — the ThinkingItem convention (see
+   * `settleThinkingDuration`), so a reload lands within a message hop of the live numbers.
+   *
+   * A retried compaction concatenates every attempt into one draft (`thinkingText` and
+   * `summaryText` both), so a start is recorded once and a later stop only extends the settled
+   * value: the wall time covers the whole span that produced the prose on screen, the failed
+   * attempts and the gaps between them included. Timing the last attempt alone would print a
+   * short number against text it did not write.
+   */
+  thinkingStartedAtMs?: number;
+  /** Settled thinking wall time (boundaries: see thinkingStartedAtMs). */
+  thinkingDurationMs?: number;
+  /** Start of the result section's wall time (boundaries: see thinkingStartedAtMs). */
+  summaryStartedAtMs?: number;
+  /** Settled result wall time (boundaries: see thinkingStartedAtMs). */
+  summaryDurationMs?: number;
+}
+
+/**
+ * The Session moved to another model between two contexts: derived from two consecutive
+ * main-session `session_meta` records naming different (provider, model_id) pairs — an
+ * in-session model switch opens its new context on the model the user picked, and nothing else
+ * on the stream says so. Model ids rather than display names: the marker renders from the Trace
+ * alone, and a model removed from the configuration since must still read.
+ */
+export interface ModelChangeItem {
+  kind: "model_change";
+  id: number;
+  from: { provider: string; modelId: string };
+  to: { provider: string; modelId: string };
+  /** The timestamp of the `session_meta` that named the new model (ms). */
+  tsMs?: number;
+}
+
+/** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
+export interface McpToolSummary {
+  name: string;
+  description?: string;
+}
+
+/** One server's connect outcome (from the end payload), backing the row's per-server groups. */
+export interface McpServerOutcome {
+  server: string;
+  /** `completed` / `fatal`; legacy Traces spell the failure `failed`. */
+  status: StopReason;
+  /** That server's own connect + discovery time (the payload's duration_ms). */
+  durationMs: number;
+  /** Discovered tool count (present on a completed connect). */
+  tools?: number;
+  /** Failure detail (present on a failed connect). */
+  error?: string;
+  /** The failure's cause (`connect_failed`, or `mcp_needs_setup` / `mcp_sign_in_required` for a server that was not contacted). */
+  errorCode?: string;
+}
+
+export interface McpConnectItem {
+  kind: "mcp_connect";
+  id: number;
+  /** Servers being contacted (from mcp_connect_begin). */
+  servers: string[];
+  /** True between mcp_connect_begin and mcp_connect_end (renders a connecting banner). */
+  running: boolean;
+  /** The begin message's timestamp (ms); the end computes durationMs from it. */
+  beginTsMs?: number;
+  /** Total connect + discovery wall time, derived from the pair's message timestamps. */
+  durationMs?: number;
+  /** MCP tools discovered across connected servers (sum of the end results' counts). */
+  toolCount?: number;
+  /** Per-server outcomes (the end payload's results), one expandable group each. */
+  results?: McpServerOutcome[];
+  /** Discovered MCP tools (attached by the tool_list_ready that follows the end). */
+  tools?: McpToolSummary[];
+  /** Servers that failed to connect (empty list omitted); reasons live in `results`. */
+  failed?: string[];
+  /** Servers not contacted because they wait on the user — a vault key, a sign-in (empty list omitted); reasons live in `results`. */
+  waiting?: string[];
+  /** The user aborted the run mid-connect (a fresh connect starts on the next send). */
+  aborted?: boolean;
+}
+
+export interface TaskStatsItem {
+  kind: "task_stats";
+  id: number;
+  /**
+   * This Task's stats; `null` = no token_usage occurred this round (e.g. the
+   * reply was interrupted mid-way), so there's nothing to show. This item
+   * is still produced in that case — it also serves as that reply's
+   * **footer** (timestamp + copy); not producing it would leave an interrupted reply without a timestamp or copy button.
+   */
+  stats: TaskStats | null;
+  /** This Task's assistant text (the copy button's target); an empty string when there's no text. */
+  assistantText: string;
+  /**
+   * Timestamp (milliseconds) of this Task's last assistant text. The stats
+   * row sits right below the AI reply and itself doubles as that reply's
+   * footer — the timestamp and copy both belong to it, and the assistant
+   * message is never rendered with its own separate footer (otherwise two copy buttons would appear in the same spot).
+   */
+  atMs?: number;
+  /** Final assistant record of this completed Task; used by Session fork. */
+  forkPosition?: TracePosition;
+  /** True only when the final assistant segment and its Request completed normally. */
+  forkable?: boolean;
+  /** Memory topic files this Task changed through the structured file tools (merged, one row per file); absent when there were none. */
+  memoryChanges?: MemoryChangeRow[];
+  /**
+   * The model this Task ran on — the one its context's `session_meta` names (see
+   * `StreamModel.contextModel`). Absent when nothing had said which by the time the Task
+   * began — the history was read before the Session's Trace existed, and a first context's
+   * meta is never streamed; the cost shown beside the row is then priced on the Session's
+   * current model.
+   */
+  model?: { provider: string; modelId: string };
+}
+
+export type ChatItem =
+  | UserTextItem
+  | UserSteeringItem
+  | BackgroundNoticeItem
+  | UserImageItem
+  | AssistantTextItem
+  | ThinkingItem
+  | ToolCallItem
+  | SubagentItem
+  | AbortItem
+  | LlmErrorItem
+  | ReconnectItem
+  | CompactionItem
+  | ModelChangeItem
+  | McpConnectItem
+  | TaskStatsItem;
+
+// ---------------------------------------------------------------------------
+// Model state
+// ---------------------------------------------------------------------------
+
+/**
+ * Identity of a nested child session, captured from its own session_meta (a child session's
+ * DTO isn't loaded by the chat page, so this is the panel's only live source for "which agent
+ * runs this child"). Main-session models never fill it — their identity comes from the Session DTO.
+ */
+export interface NestedSessionMeta {
+  /** Agent id parsed from the `agent_state` path (its parent directory name); null when unparseable. */
+  agentId: string | null;
+  provider: string;
+  modelId: string;
+  /** What kind of conversation the child is, as its meta records it (narrowed: an old Trace's missing source reads as `user`, `benchmark` as `cli`). */
+  source: SessionSource;
+}
+
+export interface StreamModel {
+  items: ChatItem[];
+  /** A nested sub-session model (produces no stats row; its stats count toward the parent). */
+  nested: boolean;
+  /** Child-session identity from its session_meta (nested models only; null until it arrives). */
+  meta: NestedSessionMeta | null;
+  /** Absolute `agent_state` path from session_meta or the history page (null until known); the Memory root `<agent_state>/memory/` for the Task summary's memory-change rows. */
+  agentState: string | null;
+  /**
+   * The model the running context was opened on, and the Session its `session_meta` names (null
+   * until one arrives, or a history window says which model it starts on). A Session's model
+   * can change between contexts — each context's meta records its own — so this follows
+   * rotations, and a main-session meta naming another model than the one held pushes a
+   * model-change marker. The chat page moves its Session row to this model when the two
+   * disagree (see `sessionRowStale`).
+   */
+  contextModel: { sessionId: string; provider: string; modelId: string } | null;
+  /** `contextModel` as the open Task began: a switch only happens between Tasks, so this is the model the whole Task runs on (see `TaskStatsItem.model`). */
+  taskModel: { provider: string; modelId: string } | null;
+  /**
+   * Elapsed-time stamps for the subagents panel's topology nodes (nested models only — the main
+   * session's timing is covered by task stats). Stamped in routeNested: the `firstSeen` pair when
+   * the nested model is created, the `lastActivity` pair on every message routed into its subtree
+   * (cheap assignments). Two clocks are kept because neither works alone:
+   *   - Local wall clock (`firstSeenLocalMs` / `lastActivityLocalMs`): when this client saw the
+   *     child appear / last act. Faithful only while watching live — a history replay sets all of
+   *     them within one synchronous load, so every replayed span collapses to ~0 at load time.
+   *   - Message timestamps (`firstTsMs` / `lastActivityTsMs`): the same two moments in SERVER
+   *     time, recorded identically during live streaming and history replay — a reload reproduces
+   *     the same span. May drift from the local clock (same caveat as LiveDuration's sinceMs).
+   * Topology extraction therefore derives a done node's duration from the timestamp pair (correct
+   * in both live and reloaded views) and ticks a running node from firstTsMs, falling back to the
+   * local pair only when timestamps were unparseable (see agent-topology.ts).
+   */
+  firstSeenLocalMs?: number;
+  lastActivityLocalMs?: number;
+  firstTsMs?: number;
+  lastActivityTsMs?: number;
+  stats: TaskStatsTracker;
+  /** The currently open text/thinking fragment (opened by start, closed by stop). */
+  openText: AssistantTextItem | null;
+  openThinking: ThinkingItem | null;
+  /** A fragment that has stopped and is waiting to be replaced by the complete message. */
+  pendingText: AssistantTextItem | null;
+  pendingThinking: ThinkingItem | null;
+  /**
+   * The steering chip still collecting its images: core delivers a steering message's images
+   * as user image messages immediately behind its text, so an image arriving while this is
+   * set belongs to that chip. Any other message closes the window (see pushMessage) — an
+   * images-only Prompt sent after a steering message is a genuine new Task.
+   */
+  openSteering: UserSteeringItem | null;
+  /** tool_call_id → tool card (shared by both fragment attribution and complete-message replacement). */
+  toolCards: Map<string, ToolCallItem>;
+  /** Direct child Session id → nested model. */
+  subagents: Map<string, StreamModel>;
+  /**
+   * Direct children bound before their opening prompt arrived, by position alone: the prompt
+   * names the call that spawned them, and may still move them onto its card (see
+   * moveToSpawningCard).
+   */
+  unconfirmedSubagents: Set<string>;
+  /** toolCallIds whose approval was clicked on this end (shares the reference with nested models, labeled "manual"). */
+  localDecisions: Set<string>;
+  /** Approval decisions that arrived before their tool card (backfilled when the card is created). */
+  pendingDecisions: Map<string, ApprovalDecision>;
+  /** Approval timestamps that arrived before their tool card (backfilled into approvalAtMs when the card is created, used to deduct the approval duration). */
+  pendingDecisionTs: Map<string, number>;
+  /** Timestamp of the most recent message (used to approximate the start time when history's thinking has no fragments). */
+  lastTsMs: number;
+  /**
+   * The millisecond time of the main session's currently unclosed Request's
+   * request_begin (used for output TPS timing): when request_end arrives, it
+   * pairs with this to compute the wall-clock duration added to this Task's
+   * LLM time; compaction requests aren't timed; a later begin overrides an unclosed one.
+   */
+  openRequestBeginMs: number | null;
+  /**
+   * The first item id the main session's currently unclosed Request could have produced
+   * (`nextItemId` at its request_begin; null before one is seen): its request_end marks the
+   * assistant texts from there on with whether the Request completed.
+   */
+  openRequestFirstItemId: number | null;
+  /**
+   * Total human approval wait time (milliseconds) within the currently
+   * unclosed Request: deducted from the wall-clock duration at request_end,
+   * so only the time the LLM is actually generating counts toward the
+   * output TPS denominator. Core does `await approve(tc)` inside the
+   * streaming loop — if approval doesn't return, the next chunk isn't
+   * consumed and request_end isn't emitted either, so the whole human wait
+   * sits sandwiched between request_begin and request_end; without
+   * deducting it, "5s of generation + 55s of approval wait" would render
+   * 100 tok/s as 8 tok/s. Tool **execution** isn't included here (core
+   * dispatches it via `void executeOne`, which doesn't block the streaming loop — execution happens between two Requests).
+   */
+  openApprovalWaitMs: number;
+  /** Task segmentation state. */
+  taskOpen: boolean;
+  /**
+   * Local-clock instant the running Task's header elapsed ticks from — display
+   * only; no settled duration is ever derived from it (see finalizeOpenTask,
+   * which reads Trace timestamps alone). A live stream sets it to the real
+   * start; a history rebuild would otherwise stamp the page-load instant and
+   * restart the ticking value from zero on every reload, so pushMessages
+   * back-dates it by the elapsed already behind the Task — measured entirely
+   * in server time, so no client/server clock offset reaches it, and taken
+   * from the server's own clock rather than the Trace's tail so that an event
+   * still in flight is counted too.
+   */
+  taskStartLocalMs: number;
+  /** The Task's first message timestamp, in SERVER time: both the settled duration and the back-dated live anchor measure from it. */
+  taskFirstTsMs: number;
+  /**
+   * The latest timestamp seen among this round's messages. Two readers:
+   *   - the **fallback for the round's end**, used only for a degenerate
+   *     round that has no request_end at all (interrupted before its first
+   *     Request even ran) — the normal round-end is taken from taskLastReqEndMs;
+   *   - the floor under the anchor pushMessages back-dates taskStartLocalMs
+   *     to, for a round still open when a history rebuild ends. That reader
+   *     fires for every such round, degenerate or not, but only decides the
+   *     anchor when the server's own clock did not come back with the
+   *     response — it cannot see an event still in flight.
+   */
+  taskLastTsMs: number;
+  /**
+   * The timestamp of this round's last **non-compaction** request_end — this
+   * is the true round end, and this round's duration = it − the first
+   * message. A round's real work is done once its last Request finishes:
+   *   - Automatic compaction **mid-round** (the engine keeps running with a
+   *     carry-over after compacting, so a normal Request follows the
+   *     compaction) sits **within** the span and is naturally counted into
+   *     the round's duration — which is correct, since compaction did occupy this round's wall-clock time;
+   *   - Compaction **after the round ends** (finalization's automatic
+   *     compaction / manual /compact), the next round's injected
+   *     `[context_summary]`, and the session_meta rewritten after a file
+   *     rotation all come **after** it, and are naturally excluded from the round.
+   * So no compaction wall-clock addition/subtraction is needed at all —
+   * just take the span directly (history rebuild and live share the same
+   * convention, consistent before and after a refresh).
+   * null = this round has no request_end yet (a degenerate round, falls back to taskLastTsMs).
+   */
+  taskLastReqEndMs: number | null;
+  /**
+   * Whether the turn that ran most recently produced tool outputs — the same
+   * question the engine asks to tell a mid-Task compaction from a wrap-up one
+   * (`turn.toolOutputs.length > 0`). Set by a complete tool_call_output, cleared
+   * when the next Request opens, and read at `compaction_begin` (see
+   * `isWrapUpCompaction`).
+   */
+  turnToolOutputs: boolean;
+  /**
+   * A wrap-up compaction closed the round before its banner was created (see
+   * `compaction_begin`), yet the Task can still continue: steering queued while
+   * that compaction ran is delivered right after it and keeps the loop going.
+   * The steering chip reopens a Task for that continuation, so its reply gets a
+   * ledger of its own instead of no footer at all.
+   */
+  reopenTaskAtSteering: boolean;
+  /**
+   * The run ended short of its answer — the last request_end was `fatal` or a `retryable` the
+   * ladder gave up on (no `retry_in_ms`), or an abort event followed (the user stopped it) — and
+   * no Task has opened since. The unfinished turn's input is then held, and a Retry sends it
+   * with no new message: its request_begin is the new run's first record, so it opens a Task of
+   * its own, footer and all (see startsRetryRun). Nothing else in a Trace issues a request after
+   * such an end without a user message first (a stop hook's continue writes a harness user
+   * text), so the rule reads the same live and on a history rebuild — where no task_state:idle
+   * closed the cut-short Task first.
+   */
+  runEnded: boolean;
+  nextItemId: number;
+}
+
+function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
+  return {
+    items: [],
+    nested,
+    meta: null,
+    agentState: null,
+    contextModel: null,
+    taskModel: null,
+    stats: createTaskStatsTracker(),
+    openText: null,
+    openThinking: null,
+    pendingText: null,
+    pendingThinking: null,
+    openSteering: null,
+    toolCards: new Map(),
+    subagents: new Map(),
+    unconfirmedSubagents: new Set(),
+    localDecisions,
+    pendingDecisions: new Map(),
+    pendingDecisionTs: new Map(),
+    lastTsMs: 0,
+    openRequestBeginMs: null,
+    openRequestFirstItemId: null,
+    openApprovalWaitMs: 0,
+    taskOpen: false,
+    taskStartLocalMs: 0,
+    taskFirstTsMs: 0,
+    taskLastTsMs: 0,
+    taskLastReqEndMs: null,
+    turnToolOutputs: false,
+    reopenTaskAtSteering: false,
+    runEnded: false,
+    nextItemId: 1,
+  };
+}
+
+/** Create the main-session model; localDecisions can inject a shared set (persisting across models when a resync rebuild swaps in a new one). */
+export function createStreamModel(localDecisions: Set<string> = new Set()): StreamModel {
+  return newModel(false, localDecisions);
+}
+
+function nextId(model: StreamModel): number {
+  return model.nextItemId++;
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
+
+/** Feed in one AmspRecord in order (history or live); nowMs is used for the Task's live timing (injectable for tests). */
+export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number = Date.now()): void {
+  // Task records: no item, no Task change, no timestamp — checked before the origin routing so a
+  // child's own pair leaves the parent's timing alone too.
+  if (isTaskRecord(msg)) return;
+  if (msg.origin && msg.origin.length > 0) {
+    routeNested(model, msg, nowMs);
+    return;
+  }
+  // A steering message's images arrive as user image messages directly behind its text, with
+  // nothing interleaved (core delivers the batch in one go) — so anything else on this session
+  // closes the collection window opened by the chip (see openSteering). Subagent messages
+  // returned above never reach here, so they leave the window alone.
+  // The server answers the same "what is one Task" question over the Trace — see
+  // `steeringImages` in server/src/services/trace-service.ts; the two need to stay in step.
+  if (!isCompleteUserImage(msg)) model.openSteering = null;
+  if (msg.type === "model_msg") {
+    // Internal messages within a compaction range (between begin and end)
+    // (the compaction prompt, thinking, summary output): never rendered as transcript items,
+    // never counted toward Task segmentation. The request's thinking and the summary being
+    // written are the exception (issue #290): live they arrive as their own partial_thinking
+    // / partial_text fragments (the engine forwards them between the paired events; the
+    // complete messages stay off the stream once partials carried them), and history rebuild
+    // reads the identical content back from the span's complete thinking and assistant text
+    // — both accumulate onto the running banner, so a reload shows the same text the live
+    // viewer watched being written.
+    if (model.stats.compactionActive) {
+      touchTask(model, msg.timestamp);
+      const tsMs = tsOf(msg.timestamp);
+      if (isPartialPayload(msg.payload)) {
+        const p = msg.payload as {
+          type?: string;
+          event_type?: string;
+          text?: string;
+          thinking?: string;
+        };
+        // Live, a section is timed by its own fragment, so this one timestamp both starts it
+        // (its first content) and, on the stop phase, settles it.
+        if (p.type === "partial_text" && p.text) appendCompactionSummaryText(model, p.text, tsMs);
+        else if (p.type === "partial_thinking") {
+          appendCompactionThinking(model, p.thinking ?? "", p.event_type !== "stop", tsMs, tsMs);
+        }
+        // Partials never advance lastTs (same rule as the normal path below).
+        return;
+      }
+      const p = msg.payload as { type?: string; role?: string; text?: string; thinking?: string };
+      // History rebuild has no fragments: the previous message's time approximates the
+      // section's start (the ThinkingItem convention), this message's own time settles it.
+      // Read before advanceLastTs below, exactly as the ordinary complete path reads it.
+      const startMs = model.lastTsMs > 0 ? model.lastTsMs : undefined;
+      if (p.type === "text" && p.role === "assistant" && p.text) {
+        appendCompactionSummaryText(model, p.text, startMs);
+      } else if (p.type === "thinking" && p.thinking) {
+        appendCompactionThinking(model, p.thinking, false, startMs, tsMs);
+      }
+      advanceLastTs(model, msg.timestamp);
+      return;
+    }
+    if (isPartialPayload(msg.payload)) {
+      touchTask(model, msg.timestamp);
+      handlePartial(model, msg.payload, tsOf(msg.timestamp));
+      // lastTsMs only advances from complete messages/events: an orphan
+      // delta during a mid-stream join shouldn't push "the previous
+      // message's time" up to just before a complete thinking message, or the approximated historical duration would collapse to ~0ms.
+      return;
+    }
+    handleComplete(
+      model,
+      msg.payload as CompleteModelPayload,
+      msg.timestamp,
+      nowMs,
+      (msg as AmspRecord & { tracePosition?: TracePosition }).tracePosition,
+    );
+    advanceLastTs(model, msg.timestamp);
+    return;
+  }
+  if (isEventMessage(msg)) {
+    // A Retry's first request opens its Task here, before anything is timed against the
+    // cut-short one — the same point a Prompt opens its own (see StreamModel.runEnded).
+    if (startsRetryRun(model, msg)) startTask(model, msg.timestamp, nowMs);
+    touchTask(model, msg.timestamp);
+    handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp), nowMs);
+    advanceLastTs(model, msg.timestamp);
+    return;
+  }
+  // session_meta: never rendered as an item itself, but read at BOTH levels. Both keep the
+  // agent_state path — the main session's Task summary classifies file-tool writes against
+  // `<agent_state>/memory/` for its memory-change rows. History pages seed it when the meta
+  // falls before their window. A NESTED child session additionally has no DTO
+  // loaded here, so it captures the identity the subagents panel needs (which agent runs this
+  // child, on which model); the main session takes the rest of its identity/config from the
+  // Session DTO. A rewritten session_meta (file rotation) overwrites with the same values. On
+  // the main session a meta naming another model than the one held means the Session switched
+  // models: a marker says so — never for a same-model rewrite, a nested child's meta, or the
+  // first meta of a model that was told nothing of the context it starts in.
+  if (msg.type === "session_meta") {
+    const p = msg.payload as SessionMetaPayload;
+    model.agentState = p.agent_state;
+    const next = { provider: p.provider, modelId: p.model_id };
+    const held = model.contextModel;
+    if (
+      !model.nested &&
+      held !== null &&
+      (held.provider !== next.provider || held.modelId !== next.modelId)
+    ) {
+      const tsMs = tsOf(msg.timestamp);
+      model.items.push({
+        kind: "model_change",
+        id: nextId(model),
+        from: { provider: held.provider, modelId: held.modelId },
+        to: next,
+        ...(tsMs !== undefined ? { tsMs } : {}),
+      });
+    }
+    model.contextModel = { sessionId: p.session_id, ...next };
+  }
+  if (msg.type === "session_meta" && model.nested) {
+    const p = msg.payload as SessionMetaPayload;
+    model.meta = {
+      agentId: agentIdFromStatePath(p.agent_state),
+      provider: p.provider,
+      modelId: p.model_id,
+      // Replayed from the child's own Trace, which may predate the required source.
+      source: normalizeSessionSource(p.source),
+    };
+  }
+}
+
+/**
+ * Whether the message is a Retry's first request: a `request_begin` after the request_end that
+ * ended the run, with no Task opened since (see StreamModel.runEnded). A compaction's own
+ * requests never count — compaction is housekeeping, not a run.
+ */
+function startsRetryRun(model: StreamModel, msg: AmspRecord): boolean {
+  return (
+    model.runEnded &&
+    !model.stats.compactionActive &&
+    (msg.payload as { type?: string }).type === "request_begin"
+  );
+}
+
+/** Whether the message is a complete user image — the only kind that can join an open steering chip. */
+function isCompleteUserImage(msg: AmspRecord): boolean {
+  return msg.type === "model_msg" && (msg.payload as { type?: string }).type === "image_url";
+}
+
+/**
+ * Agent id from a session_meta `agent_state` path: the path is
+ * `<root>/<projectId>/agents/<agentId>/agent_state`, so the agent id is the parent directory
+ * name. Returns null when the path has no parent segment (defensive — core always writes the full path).
+ */
+export function agentIdFromStatePath(agentStatePath: string): string | null {
+  const segments = agentStatePath.split(/[\\/]/).filter((s) => s.length > 0);
+  return segments.length >= 2 ? segments[segments.length - 2]! : null;
+}
+
+/**
+ * Whether any pending approval sits at or below the given origin chain (prefix match on
+ * approvalKey): `chain` is the ancestor chain ending with the subtree root's own session id.
+ * Drives the subagent chip's amber dot and the toolbar badge — a nested approval must stay
+ * discoverable even though the child conversation lives in the side panel.
+ */
+export function hasPendingWithinOrigin(
+  pendingKeys: Iterable<string>,
+  chain: readonly string[],
+): boolean {
+  const prefix = chain.join("/");
+  for (const key of pendingKeys) {
+    // The approvalKey delimiters are load-bearing here: a key is `origin.join("/") + " " +
+    // toolCallId`, so requiring the chain to be followed by a space (an approval on the subtree
+    // root itself) or a slash (one strictly below it) is what keeps a sibling whose id merely
+    // extends this chain ("c1" vs "c1x") from matching, and keeps a main-session key (leading
+    // space) from matching any chain. Refactoring approvalKey to another separator would
+    // silently break this predicate — change the two together.
+    if (key.startsWith(`${prefix} `) || key.startsWith(`${prefix}/`)) return true;
+  }
+  return false;
+}
+
+/** ISO timestamp → milliseconds (returns undefined if invalid). */
+function tsOf(timestamp: string): number | undefined {
+  const ms = Date.parse(timestamp);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+function advanceLastTs(model: StreamModel, timestamp: string): void {
+  const ms = Date.parse(timestamp);
+  if (Number.isFinite(ms)) model.lastTsMs = ms;
+}
+
+/**
+ * Replay a history rebuild. `serverNowMs` is the server's clock when it produced the
+ * response (see StreamControllerDeps.loadMessages); null when unavailable.
+ */
+export function pushMessages(
+  model: StreamModel,
+  messages: AmspRecord[],
+  nowMs: number = Date.now(),
+  serverNowMs: number | null = null,
+): void {
+  for (const msg of messages) pushMessage(model, msg, nowMs);
+  // Re-anchor a Task still open at the end of the replay. Every message in a
+  // rebuild is fed the same `nowMs`, so startTask stamped taskStartLocalMs
+  // with the instant the page loaded — and the header's live elapsed, which
+  // ticks over `now − taskStartLocalMs`, would restart from zero on every
+  // reload of a running Session. Back-date the anchor by the elapsed already
+  // behind this Task, so the ticking value resumes where it left off:
+  //
+  //   now − anchor  ==  (now − loadInstant) + elapsedSoFar
+  //
+  // elapsedSoFar is measured in SERVER time and applied to the local clock, so
+  // a client/server clock offset cancels out and never enters the result. Two
+  // readings of it, the larger winning:
+  //   - serverNowMs − taskFirstTsMs: the true elapsed, and the only one that
+  //     covers an event still in flight — a tool executing, a Request
+  //     streaming, a compaction running — where nothing has been appended to
+  //     the Trace since it began. Whole-second precision (the `Date` header's
+  //     format), which a chip ticking in whole seconds cannot show.
+  //   - taskLastTsMs − taskFirstTsMs: the span the Trace itself proves. The
+  //     fallback when no `Date` header came back, and a floor under a stale
+  //     one: a cached or intermediary-rewritten reading can only be older
+  //     than the true now, so it can under-report but never overshoot.
+  // A live stream pushes one message at a time with the real current clock,
+  // where both readings are still zero at startTask and this is a no-op.
+  if (model.taskOpen) {
+    const tracedSpan = model.taskLastTsMs - model.taskFirstTsMs;
+    const serverSpan = serverNowMs === null ? 0 : serverNowMs - model.taskFirstTsMs;
+    model.taskStartLocalMs = nowMs - Math.max(0, tracedSpan, serverSpan);
+  }
+}
+
+/** The live stream received task_state:idle: finalize the current Task from its Trace timestamps. */
+export function notifyTaskIdle(model: StreamModel): void {
+  finalizeOpenTask(model);
+}
+
+/** History rebuild is complete (end of stream): finalize the last Task using message timestamps. */
+export function finalizeHistory(model: StreamModel): void {
+  finalizeOpenTask(model);
+}
+
+/** Register an approval clicked on this end (so the subsequent approval_decision event is labeled "manual"). */
+export function registerLocalDecision(model: StreamModel, toolCallId: string): void {
+  model.localDecisions.add(toolCallId);
+}
+
+/**
+ * Pending-approvals table key: `origin.join("/") + " " + toolCallId` (empty
+ * origin for the main session). A parent/child session's tool_call_id can
+ * collide, so the origin chain must be included to distinguish them and
+ * avoid lighting up the approval button on the wrong tool card.
+ * The "/" and " " separators are relied on by hasPendingWithinOrigin's prefix
+ * matching — keep the two in sync if this format ever changes.
+ */
+export function approvalKey(origin: readonly string[] | undefined, toolCallId: string): string {
+  return `${origin?.join("/") ?? ""} ${toolCallId}`;
+}
+
+/** Locate a tool card in a nested model (at any depth) by its origin chain; returns null if there's no matching card. */
+export function findToolCard(
+  model: StreamModel,
+  origin: readonly string[] | undefined,
+  toolCallId: string,
+): ToolCallItem | null {
+  let cur: StreamModel | undefined = model;
+  for (const hop of origin ?? []) {
+    cur = cur.subagents.get(hop);
+    if (!cur) return null;
+  }
+  return cur.toolCards.get(toolCallId) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Task segmentation
+// ---------------------------------------------------------------------------
+
+/**
+ * Advance this round's "latest timestamp seen among its messages" — the
+ * **fallback for the round's end** (see taskLastReqEndMs: the normal
+ * round-end is set by request_end, and this only guarantees a usable
+ * upper bound for a degenerate round with no request_end at all,
+ * interrupted before its first Request even ran), and the floor under the
+ * live anchor back-dated on a history rebuild when the server's own clock
+ * did not come back with the response (see taskLastTsMs, pushMessages).
+ * Compaction forms its own round, and messages within its range don't
+ * belong to this round, so this isn't advanced for them.
+ */
+function touchTask(model: StreamModel, timestamp: string): void {
+  if (!model.taskOpen) return;
+  if (model.stats.compactionActive) return;
+  const ts = Date.parse(timestamp);
+  if (!Number.isFinite(ts) || ts <= model.taskLastTsMs) return;
+  model.taskLastTsMs = ts;
+}
+
+function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
+  // The previous Task is finalized by "the next Task starting" (the history-rebuild convention).
+  finalizeOpenTask(model);
+  // Finalize any retry state left over from the previous Task: when the
+  // server dies during a backoff window, the Trace's tail is
+  // request_end(timeout) with no abort, and history rebuild would leave a
+  // dangling "retrying…" — the new Task's first request_begin isn't its
+  // retry, so mark it gaveUp.
+  const waiting = findLastWaitingReconnect(model);
+  if (waiting) waiting.gaveUp = true;
+  // Any unclosed Request start / approval wait left over from the previous Task isn't carried into this Task's LLM timing.
+  model.openRequestBeginMs = null;
+  model.openApprovalWaitMs = 0;
+  model.turnToolOutputs = false;
+  model.reopenTaskAtSteering = false;
+  // A cut-short run's held input goes out with whatever opened this Task: a Prompt sends it
+  // along, and the Task's own next request belongs to it.
+  model.runEnded = false;
+  model.taskOpen = true;
+  model.taskModel = model.contextModel && {
+    provider: model.contextModel.provider,
+    modelId: model.contextModel.modelId,
+  };
+  model.taskStartLocalMs = nowMs;
+  const ts = Date.parse(timestamp);
+  model.taskFirstTsMs = Number.isFinite(ts) ? ts : nowMs;
+  model.taskLastTsMs = model.taskFirstTsMs;
+  model.taskLastReqEndMs = null;
+  // Usage outside this Task's boundary (e.g. a manual compaction) shouldn't be mistakenly counted into this Task's delta.
+  resetTaskCounters(model.stats);
+}
+
+function finalizeOpenTask(model: StreamModel): void {
+  if (!model.taskOpen) return;
+  model.taskOpen = false;
+  // No more tool output will arrive once a Task is finalized: close cards still "executing" and stop their LiveDuration.
+  closeExecutingToolCards(model);
+  // This round's duration = this round's last non-compaction request_end −
+  // the first message. The round's end is exactly the last Request's
+  // finish: compaction **mid-round** sits within the span and is naturally
+  // counted in (which is correct — it did occupy this round's wall-clock
+  // time), while compaction **after the round ends** sits outside the span
+  // and is naturally excluded — no compaction wall-clock addition/subtraction
+  // is needed at all, and history rebuild and live share the same
+  // convention, consistent before and after a refresh (see taskLastReqEndMs).
+  //
+  // Trace timestamps are the ONLY source here — the local clock is never
+  // consulted, so a round settles to the same number whether it was watched
+  // live or replayed from the Trace after a reload. A degenerate round (no
+  // request_end at all, e.g. interrupted before its first Request even ran)
+  // falls back to its message span, which the abort event's own timestamp
+  // still bounds; that span is what a later reload would compute, so taking
+  // the local clock instead — as this did before — only bought a number that
+  // silently changed on refresh, along with idle-detection and mid-join
+  // latency folded into it.
+  const endMs = model.taskLastReqEndMs ?? model.taskLastTsMs;
+  const elapsed = Math.max(0, endMs - model.taskFirstTsMs);
+  const stats = endTask(model.stats, elapsed);
+  if (model.nested) return;
+  const reply = collectTaskAssistant(model);
+  const memoryChanges = collectTaskMemoryChanges(model);
+  // No token_usage (the reply was interrupted mid-way) → there are no stats
+  // to show, but as long as this round produced any text, there still needs
+  // to be a footer: the timestamp and copy are both rendered by the stats
+  // row, so not producing it here would leave that reply with no footer at
+  // all. Only skip when both are absent — then there's truly nothing to do.
+  if (stats === null && reply.text === "") return;
+  const statsItem: TaskStatsItem = {
+    kind: "task_stats",
+    id: nextId(model),
+    stats,
+    assistantText: reply.text,
+    forkable: reply.completed,
+    ...(reply.atMs !== undefined ? { atMs: reply.atMs } : {}),
+    ...(reply.tracePosition !== undefined ? { forkPosition: reply.tracePosition } : {}),
+    ...(memoryChanges.length > 0 ? { memoryChanges } : {}),
+    ...(model.taskModel ? { model: model.taskModel } : {}),
+  };
+  // The stats row is inserted **before any trailing run of compaction banners** (and the
+  // model-change markers a switch's compaction leaves behind them): compaction is its own
+  // round, housekeeping outside this one, so it belongs after this round's ledger — a banner
+  // sandwiched between the reply and the row (assistant_text → compaction → task_stats) reads
+  // as if the row were the compaction's own stats.
+  // A wrap-up compaction normally settles the round on arrival, before its banner exists
+  // (see isWrapUpCompaction), so this loop is what still places the row correctly in the
+  // cases that test declines to judge — a mid-stream join, or a round whose reply never
+  // landed as an item.
+  let at = model.items.length;
+  while (at > 0 && ["compaction", "model_change"].includes(model.items[at - 1]!.kind)) at--;
+  model.items.splice(at, 0, statsItem);
+}
+
+/**
+ * Collect this Task's assistant text (walking backward from the end until
+ * the previous task_stats, concatenating assistant_text), and give the
+ * timestamp of the **last** assistant text item — the stats row is this
+ * round's reply's footer, and this is the timestamp it shows.
+ */
+function collectTaskAssistant(model: StreamModel): {
+  text: string;
+  atMs?: number;
+  tracePosition?: TracePosition;
+  completed: boolean;
+} {
+  const parts: string[] = [];
+  let atMs: number | undefined;
+  let tracePosition: TracePosition | undefined;
+  let completed = false;
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const it = model.items[i]!;
+    if (it.kind === "task_stats") break;
+    if (it.kind === "assistant_text" && it.text.trim()) {
+      parts.push(it.text);
+      if (atMs === undefined) {
+        atMs = it.atMs; // walking backward: the first hit is the last one
+        tracePosition = it.tracePosition;
+        completed = it.requestCompleted === true;
+      }
+    }
+  }
+  return {
+    text: parts.reverse().join("\n\n"),
+    ...(atMs !== undefined ? { atMs } : {}),
+    ...(tracePosition !== undefined ? { tracePosition } : {}),
+    completed,
+  };
+}
+
+/**
+ * Collect this Task's memory changes (same walk as collectTaskAssistant: backward until the
+ * previous task_stats): successfully completed `write_file` / `edit_file` calls whose path
+ * falls under `<agent_state>/memory/`, merged to one row per file. Only this level's tool
+ * cards are consulted — a subagent's memory writes belong to that child's own Agent and are
+ * out of this Task summary's scope.
+ */
+function collectTaskMemoryChanges(model: StreamModel): MemoryChangeRow[] {
+  if (model.agentState === null) return [];
+  const entries: MemoryChangeEntry[] = [];
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const it = model.items[i]!;
+    if (it.kind === "task_stats") break;
+    if (it.kind !== "tool_call" || !it.outputComplete || it.outputStatus !== "completed") continue;
+    if (it.name !== "write_file" && it.name !== "edit_file") continue;
+    let args: unknown;
+    try {
+      args = JSON.parse(it.argumentsText);
+    } catch {
+      continue; // a malformed argument record can't name a file
+    }
+    const filePath = (args as { file_path?: unknown }).file_path;
+    if (typeof filePath !== "string") continue;
+    const classed = classifyMemoryPath(filePath, model.agentState);
+    if (classed === null) continue;
+    const entry: MemoryChangeEntry = {
+      ...classed,
+      op: it.name === "write_file" ? "write" : "edit",
+    };
+    if (it.callStartedAtMs !== undefined) entry.atMs = it.callStartedAtMs;
+    entries.push(entry);
+  }
+  return mergeMemoryChanges(entries.reverse()); // walked backward; merge in call order
+}
+
+// ---------------------------------------------------------------------------
+// Streamed fragments
+// ---------------------------------------------------------------------------
+
+function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number): void {
+  switch (p.type) {
+    case "partial_text": {
+      if (p.event_type === "start") {
+        // start reopens the fragment; a stale pending that never got replaced keeps its streamed content and stops waiting to be replaced.
+        model.pendingText = null;
+        const item: AssistantTextItem = {
+          kind: "assistant_text",
+          id: nextId(model),
+          text: p.text ?? "",
+          streaming: true,
+          ...(tsMs !== undefined ? { atMs: tsMs } : {}),
+        };
+        model.openText = item;
+        model.items.push(item);
+        return;
+      }
+      const open = model.openText;
+      if (!open) return; // orphan delta/stop: ignored, converging once the complete message arrives
+      if (p.text) open.text += p.text;
+      if (p.event_type === "stop") {
+        open.streaming = false;
+        model.pendingText = open;
+        model.openText = null;
+      }
+      return;
+    }
+    case "partial_thinking": {
+      if (p.event_type === "start") {
+        model.pendingThinking = null;
+        const item: ThinkingItem = {
+          kind: "thinking",
+          id: nextId(model),
+          thinking: p.thinking ?? "",
+          streaming: true,
+        };
+        if (tsMs !== undefined) item.startedAtMs = tsMs;
+        model.openThinking = item;
+        model.items.push(item);
+        return;
+      }
+      const open = model.openThinking;
+      if (!open) return; // orphan, ignored
+      if (p.thinking) open.thinking += p.thinking;
+      if (p.event_type === "stop") {
+        open.streaming = false;
+        settleThinkingDuration(open, tsMs);
+        model.pendingThinking = open;
+        model.openThinking = null;
+      }
+      return;
+    }
+    case "partial_tool_call": {
+      const card = model.toolCards.get(p.tool_call_id);
+      // The complete message already arrived (history / dedup hit): the whole streamed copy is ignored.
+      if (card?.callComplete) return;
+      if (p.event_type === "start") {
+        if (card) {
+          // Duplicate start (out-of-order): reset the argument buffer.
+          card.name = p.name || card.name;
+          card.argumentsText = p.arguments ?? "";
+          card.callStreaming = true;
+          if (tsMs !== undefined && card.argStartedAtMs === undefined) card.argStartedAtMs = tsMs;
+          return;
+        }
+        const created = createToolCard(model, {
+          toolCallId: p.tool_call_id,
+          name: p.name,
+          argumentsText: p.arguments ?? "",
+          callStreaming: true,
+        });
+        if (tsMs !== undefined) created.argStartedAtMs = tsMs;
+        return;
+      }
+      if (!card) return; // orphan, ignored
+      if (p.name && !card.name) card.name = p.name;
+      if (p.arguments) card.argumentsText += p.arguments;
+      if (p.event_type === "stop") {
+        card.callStreaming = false;
+        // Execution start = the call's closing timestamp (same convention as Trace analysis: tool_call → tool_call_output).
+        if (tsMs !== undefined) card.callStartedAtMs = tsMs;
+      }
+      return;
+    }
+    case "partial_tool_call_output": {
+      const card = model.toolCards.get(p.tool_call_id);
+      // No matching call card (orphan) or output already complete: ignored, converging once the complete message arrives.
+      if (!card || card.outputComplete) return;
+      if (p.event_type === "start") {
+        card.outputStreaming = true;
+        if (p.output) card.output += p.output;
+        // A live-tail synthetic start (mid-stream join seed) may already carry the image
+        // set; same whole-set semantics as the delta branch below.
+        if (p.images && p.images.length > 0) card.images = p.images;
+        return;
+      }
+      if (!card.outputStreaming) return; // orphan delta/stop
+      if (p.output) card.output += p.output;
+      // Image delta: a single delta carries the whole array at once (the complete message converges it again, overwriting with the same value).
+      if (p.images && p.images.length > 0) card.images = p.images;
+      if (p.event_type === "stop") {
+        card.outputStreaming = false;
+        settleToolDuration(card, tsMs, model.stats);
+      }
+      return;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Complete messages
+// ---------------------------------------------------------------------------
+
+function handleComplete(
+  model: StreamModel,
+  p: CompleteModelPayload,
+  timestamp: string,
+  nowMs: number,
+  tracePosition?: TracePosition,
+): void {
+  switch (p.type) {
+    case "text": {
+      if (p.role === "user") {
+        // Compaction-summary injection (`[context_summary]` prefix, an
+        // internal input in the new context file): not rendered as a user bubble, doesn't
+        // start a new Task. The old `<context_summary>` prefix is still recognized — old
+        // Traces containing it are re-rendered through this reducer.
+        if (p.text.startsWith("[context_summary]") || p.text.startsWith("<context_summary>")) {
+          touchTask(model, timestamp);
+          return;
+        }
+        // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns):
+        // stays inside the running Task — it must NOT start a new Task (same exclusion idea
+        // as [context_summary]) — but unlike the summary it IS rendered, as a compact
+        // user-styled steering chip in-flow.
+        const steering = parseUserSteeringText(p.text);
+        if (steering !== null) {
+          // Unless a wrap-up compaction already settled the round it belongs to: this
+          // steering is exactly why the Task went on past that compaction, so it opens the
+          // continuation's own round rather than joining a closed one (see
+          // reopenTaskAtSteering).
+          if (model.reopenTaskAtSteering && !model.taskOpen) startTask(model, timestamp, nowMs);
+          touchTask(model, timestamp);
+          const steerMs = tsOf(timestamp);
+          const item: UserSteeringItem = {
+            kind: "user_steering",
+            id: nextId(model),
+            text: steering,
+            ...(steerMs !== undefined ? { atMs: steerMs } : {}),
+          };
+          model.items.push(item);
+          // Open the window for the images core delivers right behind this text.
+          model.openSteering = item;
+          return;
+        }
+        // A background completion notice ([background_task_done] block) injected into the
+        // running Task: same exclusion as steering — rendered inside the Task as the
+        // completion banner, never a Task starter, so no stats row is flushed at the
+        // injection point. Two ways to recognize the injection:
+        //   - the delivery stamp (`delivery: steering`), written by the engine's drain;
+        //   - POSITION, for notices written by a pre-stamp core (0.2.4 traces): a Task can
+        //     never end between a turn's paired tool outputs and the continuation request,
+        //     so a notice arriving while this turn's tool outputs are still owed to the
+        //     model (turnToolOutputs) is provably in-task even without the stamp. This is
+        //     the same rule trace analysis has always applied (a tool-calling request
+        //     forces a continuation), so the two pages agree on legacy data.
+        // An unstamped notice after a NO-tool final turn still falls through to the
+        // user_text branch below: there an idle-launched notice task is genuinely possible
+        // and position cannot tell the two apart — only the stamp can, and new cores write
+        // it.
+        const notice = parseBackgroundTaskDoneMessage(p.text);
+        if (notice !== null && (notice.done.delivery === "steering" || model.turnToolOutputs)) {
+          // A wrap-up compaction may have settled the round early; an injected notice is
+          // exactly what keeps the Task going past it, so it opens the continuation's own
+          // round rather than joining a closed one (same rule as the steering chip above).
+          if (model.reopenTaskAtSteering && !model.taskOpen) startTask(model, timestamp, nowMs);
+          touchTask(model, timestamp);
+          const noticeMs = tsOf(timestamp);
+          model.items.push({
+            kind: "background_notice",
+            id: nextId(model),
+            text: p.text,
+            ...(noticeMs !== undefined ? { atMs: noticeMs } : {}),
+          });
+          return;
+        }
+        // A complete text message on the main session's user side: starts a new Task.
+        startTask(model, timestamp, nowMs);
+        const atMs = tsOf(timestamp);
+        model.items.push({
+          kind: "user_text",
+          id: nextId(model),
+          text: p.text,
+          ...(p.sender === "harness" ? { sender: "harness" as const } : {}),
+          ...(atMs !== undefined ? { atMs } : {}),
+        });
+        return;
+      }
+      touchTask(model, timestamp);
+      // The complete message usually follows right after a fragment's stop: prefer replacing an already-closed pending fragment, then a still-open one.
+      const target = model.pendingText ?? model.openText;
+      if (target) {
+        // A blank body discards the fragment instead of settling it (same fidelity-only case as
+        // below — core starts a text segment on the first *truthy* delta, so a whitespace-only
+        // segment does stream). Blanking it in place would leave the live view showing an empty
+        // bubble that a reload then drops. Removing the item and clearing both slots is what
+        // discardFragmentFor does for the dedup path, and it leaves no fragment stuck streaming.
+        if (!p.text.trim()) {
+          removeItem(model, target);
+          if (target === model.openText) model.openText = null;
+          model.pendingText = null;
+          return;
+        }
+        // The complete message replaces the fragment's content (this guarantees consistency).
+        target.text = p.text;
+        target.streaming = false;
+        const doneMs = tsOf(timestamp);
+        if (doneMs !== undefined) target.atMs = doneMs; // the completion timestamp overrides the start placeholder
+        if (tracePosition !== undefined) target.tracePosition = tracePosition;
+        if (target === model.openText) model.openText = null;
+        model.pendingText = null;
+        return;
+      }
+      // Fidelity-only message: core emits a complete text/thinking message with an empty body
+      // when the provider attached an opaque payload to an otherwise empty part — on this text
+      // branch a Gemini thoughtSignature or a GPT-5 `fidelity.phase` segment marker (GPT-5's
+      // encrypted reasoning rides the *thinking* branch instead) — which is why the blank bubble
+      // showed up right after a thinking segment. The message has to exist so the fidelity
+      // round-trips into history, but it has nothing to show, and usually no fragment was opened
+      // for it either (core only starts a segment once a truthy delta arrives). Rendering it
+      // produced a blank "assistant:" bubble; collectTaskAssistant already skipped these when
+      // gathering the reply text, and with the blank-fragment discard above both the live and the
+      // history path now agree with it.
+      if (!p.text.trim()) return;
+      // No open fragment (history / mid-stream join): append directly.
+      const doneMs = tsOf(timestamp);
+      const item: AssistantTextItem = {
+        kind: "assistant_text",
+        id: nextId(model),
+        text: p.text,
+        streaming: false,
+        ...(doneMs !== undefined ? { atMs: doneMs } : {}),
+        ...(tracePosition !== undefined ? { tracePosition } : {}),
+      };
+      model.items.push(item);
+      return;
+    }
+    case "image_url": {
+      // An image belonging to the steering message just rendered: it joins that chip and
+      // leaves the running Task alone — unlike a Prompt's image, it starts nothing.
+      if (model.openSteering) {
+        touchTask(model, timestamp);
+        model.openSteering.images = [...(model.openSteering.images ?? []), p.image_url];
+        return;
+      }
+      startTask(model, timestamp, nowMs);
+      const imgMs = tsOf(timestamp);
+      model.items.push({
+        kind: "user_image",
+        id: nextId(model),
+        imageUrl: p.image_url,
+        ...(imgMs !== undefined ? { atMs: imgMs } : {}),
+      });
+      return;
+    }
+    case "thinking": {
+      touchTask(model, timestamp);
+      const tsMs = tsOf(timestamp);
+      const target = model.pendingThinking ?? model.openThinking;
+      if (target) {
+        // Blank body: discard the fragment rather than settle it (see the text branch).
+        if (!p.thinking.trim()) {
+          removeItem(model, target);
+          if (target === model.openThinking) model.openThinking = null;
+          model.pendingThinking = null;
+          return;
+        }
+        target.thinking = p.thinking;
+        target.streaming = false;
+        settleThinkingDuration(target, tsMs);
+        if (target === model.openThinking) model.openThinking = null;
+        model.pendingThinking = null;
+        return;
+      }
+      // Same fidelity-only case as the text branch above (GPT-5 encrypted reasoning): the
+      // message carries the payload, not a thought to show.
+      if (!p.thinking.trim()) return;
+      const item: ThinkingItem = {
+        kind: "thinking",
+        id: nextId(model),
+        thinking: p.thinking,
+        streaming: false,
+      };
+      // History rebuild (no fragment): approximate the thinking start with the previous message's time.
+      if (model.lastTsMs > 0) item.startedAtMs = model.lastTsMs;
+      settleThinkingDuration(item, tsMs);
+      model.items.push(item);
+      return;
+    }
+    case "tool_call": {
+      touchTask(model, timestamp);
+      const tsMs = tsOf(timestamp);
+      // A card that's already a complete call receives another complete tool_call with the same id:
+      // not a duplicate delivery (duplicates were already caught by dedup) but **another** call reusing
+      // the id — as seen in legacy Traces from a name-as-id provider (e.g. Gemini using the function
+      // name as tool_call_id). Take the create branch and start a new card (createToolCard repoints the
+      // Map to the newest card, so later output/approval attribute by id to the newest); never overwrite the old card.
+      const existing = model.toolCards.get(p.tool_call_id);
+      const card = existing?.callComplete ? undefined : existing;
+      if (card) {
+        card.name = p.name;
+        card.argumentsText = p.arguments;
+        card.callStreaming = false;
+        card.callComplete = true;
+        if (tsMs !== undefined) card.callStartedAtMs = tsMs;
+        noteApprovalWait(model, card); // Approval arrived first (mid-stream join): only here do both timestamps come together
+        return;
+      }
+      if (existing && !existing.outputComplete) {
+        // If the replaced old card is still "executing" (output not closed): the Map is about to
+        // repoint to the new card, so the old card will never get output — close it as aborted to stop
+        // the running timer (same behavior as closeExecutingToolCards).
+        existing.outputComplete = true;
+        existing.outputStreaming = false;
+        existing.outputStatus ??= "aborted";
+      }
+      const created = createToolCard(model, {
+        toolCallId: p.tool_call_id,
+        name: p.name,
+        argumentsText: p.arguments,
+        callStreaming: false,
+      });
+      created.callComplete = true;
+      if (tsMs !== undefined) created.callStartedAtMs = tsMs;
+      noteApprovalWait(model, created); // createToolCard may have already backfilled a pending approval timestamp
+      // History rebuild (no partial_tool_call start): approximate "argument
+      // generation started" with the previous message's time, same
+      // convention as thinking. Otherwise the tool duration would lose its
+      // argument-generation segment (often the bulk of it) after a refresh, for no reason.
+      if (model.lastTsMs > 0) created.argStartedAtMs = model.lastTsMs;
+      return;
+    }
+    case "tool_call_output": {
+      touchTask(model, timestamp);
+      let card = model.toolCards.get(p.tool_call_id);
+      if (!card) {
+        // Mid-stream join: create a card if the call card is missing (name unknown, UI falls back to showing tool_call_id).
+        card = createToolCard(model, {
+          toolCallId: p.tool_call_id,
+          name: "",
+          argumentsText: "",
+          callStreaming: false,
+        });
+      }
+      card.output = p.output;
+      // The complete message converges the images (the streamed delta already carried them once; overwrites with the same value; also serves as a fallback for a mid-stream join).
+      if (p.images && p.images.length > 0) card.images = p.images;
+      card.outputStreaming = false;
+      card.outputComplete = true;
+      // A result written before tool results carried a status reads as completed.
+      card.outputStatus = p.status ?? "completed";
+      settleToolDuration(card, tsOf(timestamp), model.stats);
+      // This turn owes the model its results, so a compaction triggering now is mid-Task
+      // and the round is not over (see turnToolOutputs).
+      model.turnToolOutputs = true;
+      return;
+    }
+    // inline_data / inline_thinking: same convention as the CLI's history rendering — not shown for now.
+    case "inline_data":
+    case "inline_thinking":
+      touchTask(model, timestamp);
+      return;
+  }
+}
+
+/**
+ * Close tool cards still "executing" (call complete, output not yet
+ * arrived): after an interruption or Task finalization, these cards will
+ * never get a tool_call_output, so mark output complete to stop the view
+ * layer's rolling timer; the duration stays unset and isn't shown. The
+ * status is recorded as aborted — these tools **never produced a
+ * result** (a call interrupted while it runs writes none), and leaving it
+ * unset would render as a "completed" checkmark, visually
+ * indistinguishable from "executed successfully but with empty output".
+ * A late-arriving complete tool_call_output (if any) still overrides unconditionally, unaffected by this.
+ */
+function closeExecutingToolCards(model: StreamModel): void {
+  for (const card of model.toolCards.values()) {
+    if (!card.outputComplete) settleUnfinishedCard(card);
+  }
+}
+
+/**
+ * Settle the cards a Request left with a call that will never run, once its request_end
+ * arrives: a call still streaming then (a join that missed its complete record), and — when the
+ * Request did not complete — a call with no approval decision. The engine decides every call it
+ * dispatches before the call's Request ends, so an undecided one was closed with the Request
+ * (written whole with the arguments that arrived) and will never get a result. Settled as
+ * aborted, so the timer doesn't keep spinning.
+ */
+function settleCutShortCalls(model: StreamModel, completed: boolean): void {
+  for (const card of model.toolCards.values()) {
+    if (card.outputComplete) continue;
+    if (!card.callComplete || (!completed && card.decision === undefined)) {
+      settleUnfinishedCard(card);
+    }
+  }
+}
+
+function settleUnfinishedCard(card: ToolCallItem): void {
+  card.callStreaming = false;
+  card.outputComplete = true;
+  card.outputStreaming = false;
+  card.outputStatus ??= "aborted";
+}
+
+/**
+ * Marks the assistant texts the main session's closing Request produced with whether it
+ * completed: the items appended since its request_begin (or, on a mid-stream join that missed
+ * it, those back to the previous Task's stats row) that no earlier request_end marked.
+ */
+function markRequestTexts(model: StreamModel, completed: boolean): void {
+  const from = model.openRequestFirstItemId;
+  model.openRequestFirstItemId = null;
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const it = model.items[i]!;
+    if (it.kind === "task_stats" || (from !== null && it.id < from)) break;
+    if (it.kind === "assistant_text" && it.requestCompleted === undefined) {
+      it.requestCompleted = completed;
+    }
+  }
+}
+
+/** Settle the thinking duration: end time - start time (skipped if either is missing; negative values clamp to 0). */
+function settleThinkingDuration(item: ThinkingItem, endMs: number | undefined): void {
+  if (endMs === undefined || item.startedAtMs === undefined) return;
+  item.durationMs = Math.max(0, endMs - item.startedAtMs);
+}
+
+/**
+ * Settle the tool duration = the argument-generation segment + the
+ * execution segment (excluding the human approval wait).
+ * - Argument-generation segment: callStartedAtMs − argStartedAtMs (tool_call
+ *   from generation start to closing);
+ * - Execution segment: endMs − the execution start point (preferring the
+ *   approval-granted timestamp approvalAtMs, deducting the approval wait;
+ *   falling back to the call's closing timestamp callStartedAtMs when there's no approval event).
+ * Adding the two gives the tool call's total duration; a later-arriving
+ * tool_call_output only fills in the execution segment, never overwriting
+ * the already-settled generation segment.
+ * Degrades to a pure execution segment when the start point is missing, still never negative.
+ */
+function settleToolDuration(
+  card: ToolCallItem,
+  endMs: number | undefined,
+  stats?: TaskStatsTracker,
+): void {
+  if (endMs === undefined) return;
+  const execStart = card.approvalAtMs ?? card.callStartedAtMs;
+  if (execStart === undefined) return;
+  const genMs =
+    card.argStartedAtMs !== undefined && card.callStartedAtMs !== undefined
+      ? Math.max(0, card.callStartedAtMs - card.argStartedAtMs)
+      : 0;
+  card.durationMs = genMs + Math.max(0, endMs - execStart);
+  // The execution half alone feeds the session's tool wall time: the generation half above is
+  // the model streaming arguments and is already inside taskLlmMs. Settling twice (a streamed
+  // stop, then the complete message) is harmless — the intervals are unioned, not summed.
+  if (stats) addToolExecution(stats, execStart, endMs);
+}
+
+/**
+ * Add this card's human approval wait (approval_decision timestamp − the
+ * tool_call's closing timestamp) into the currently unclosed Request, for
+ * request_end to deduct from the wall-clock duration (see StreamModel.openApprovalWaitMs).
+ *
+ * The normal order is tool_call arriving first, approval_decision later;
+ * joining the live stream mid-way can reverse this (the approval lands in
+ * pendingDecisions first, backfilled when the card is created). So whichever
+ * of the two timestamps arrives later triggers this, with
+ * approvalWaitCounted guarding against double-counting. An auto-approved
+ * interval is ≈0, so deducting it does no harm.
+ */
+function noteApprovalWait(model: StreamModel, card: ToolCallItem): void {
+  if (card.approvalWaitCounted) return;
+  const { callStartedAtMs: call, approvalAtMs: approval } = card;
+  if (call === undefined || approval === undefined) return;
+  card.approvalWaitCounted = true;
+  const wait = approval - call;
+  if (wait > 0) model.openApprovalWaitMs += wait;
+}
+
+function createToolCard(
+  model: StreamModel,
+  init: { toolCallId: string; name: string; argumentsText: string; callStreaming: boolean },
+): ToolCallItem {
+  const item: ToolCallItem = {
+    kind: "tool_call",
+    id: nextId(model),
+    toolCallId: init.toolCallId,
+    name: init.name,
+    argumentsText: init.argumentsText,
+    callStreaming: init.callStreaming,
+    callComplete: false,
+    output: "",
+    outputStreaming: false,
+    outputComplete: false,
+  };
+  // An approval decision that arrived before the card: backfilled at creation time.
+  const pending = model.pendingDecisions.get(init.toolCallId);
+  if (pending !== undefined) {
+    item.decision = pending;
+    item.decisionSource = model.localDecisions.has(init.toolCallId) ? "manual" : "remote";
+    model.pendingDecisions.delete(init.toolCallId);
+    const pendingTs = model.pendingDecisionTs.get(init.toolCallId);
+    if (pendingTs !== undefined) {
+      item.approvalAtMs = pendingTs;
+      model.pendingDecisionTs.delete(init.toolCallId);
+    }
+  }
+  model.toolCards.set(init.toolCallId, item);
+  model.items.push(item);
+  return item;
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?: number): void {
+  switch (p.type) {
+    case "approval_decision": {
+      const card = model.toolCards.get(p.tool_call_id);
+      if (card) {
+        card.decision = p.decision;
+        card.decisionSource = model.localDecisions.has(p.tool_call_id) ? "manual" : "remote";
+        // Approval-granted timestamp: execution timing starts from here (deducting the approval wait).
+        if (tsMs !== undefined && card.approvalAtMs === undefined) card.approvalAtMs = tsMs;
+        noteApprovalWait(model, card); // Normal order: approval arrives later, both timestamps are already available here
+      } else {
+        model.pendingDecisions.set(p.tool_call_id, p.decision);
+        if (tsMs !== undefined) model.pendingDecisionTs.set(p.tool_call_id, tsMs);
+      }
+      return;
+    }
+    case "abort": {
+      // In-flight tools won't get any more output after an interruption (a
+      // placeholder resend goes only to the model, never written to Trace): finalize the executing cards.
+      closeExecutingToolCards(model);
+      // A reconnect hint waiting to retry: an interruption means retries are
+      // exhausted/abandoned, so mark it gaveUp (this interruption marker item gives the reason).
+      const waiting = findLastWaitingReconnect(model);
+      if (waiting) waiting.gaveUp = true;
+      const item: AbortItem = { kind: "abort", id: nextId(model) };
+      if (typeof p.error_code === "string") item.errorCode = p.error_code;
+      if (typeof p.error_message === "string") item.errorMessage = p.error_message;
+      if (p.reason != null) item.reason = p.reason;
+      model.items.push(item);
+      // The stop ended the run with its turn held: a Retry's first request opens a new Task.
+      model.runEnded = true;
+      return;
+    }
+    case "token_usage":
+      trackMainUsage(model.stats, p);
+      return;
+    case "mcp_connect_begin": {
+      model.items.push({
+        kind: "mcp_connect",
+        id: nextId(model),
+        servers: p.servers,
+        running: true,
+        ...(tsMs !== undefined ? { beginTsMs: tsMs } : {}),
+      });
+      return;
+    }
+    case "mcp_connect_end": {
+      const item = findLastRunningMcpConnect(model);
+      // Mid-stream join without the begin: the connect status is transient — nothing to show.
+      if (!item) return;
+      item.running = false;
+      // Wall time comes from the pair's message timestamps (the payload carries no duplicate duration).
+      if (tsMs !== undefined && item.beginTsMs !== undefined) {
+        item.durationMs = Math.max(0, tsMs - item.beginTsMs);
+      }
+      if (p.status === "aborted") item.aborted = true;
+      // Headline count for the connect row: MCP tools discovered across connected servers.
+      item.toolCount = p.results.reduce((sum, r) => sum + (r.tools ?? 0), 0);
+      // Per-server outcomes back the row's server groups (error details live there, not
+      // on the header line).
+      item.results = p.results.map((r) => {
+        // Live results carry the unified pair; legacy Traces spell the detail `error`.
+        const detail = r.error_message ?? (r as { error?: string }).error;
+        return {
+          server: r.server,
+          status: r.status,
+          durationMs: r.duration_ms,
+          ...(r.tools !== undefined ? { tools: r.tools } : {}),
+          ...(detail !== undefined ? { error: detail.slice(0, 500) } : {}),
+          ...(r.error_code !== undefined ? { errorCode: r.error_code } : {}),
+        };
+      });
+      // A server skipped before any contact waits on the user (a vault key, a sign-in): named
+      // apart from the servers that failed to connect, so the row does not read as a failure.
+      const waits = (r: (typeof p.results)[number]) =>
+        r.error_code === "mcp_needs_setup" || r.error_code === "mcp_sign_in_required";
+      const failedResults = p.results.filter(
+        (r) => (r.status === "fatal" || (r.status as string) === "failed") && !waits(r),
+      );
+      if (failedResults.length > 0) item.failed = failedResults.map((r) => r.server);
+      const waitingResults = p.results.filter(waits);
+      if (waitingResults.length > 0) item.waiting = waitingResults.map((r) => r.server);
+      return;
+    }
+    case "tool_list_ready": {
+      // The Session's resolved toolset; the connect row keeps the MCP share as its
+      // expandable tool list. Non-MCP entries (built-in tools) aren't news to the user.
+      const item = findLastMcpConnect(model);
+      if (!item) return;
+      const mcpTools = p.tools.filter((t) => t.name.startsWith("mcp__"));
+      if (mcpTools.length > 0) {
+        item.tools = mcpTools.map((t) => ({
+          name: t.name,
+          ...(t.description !== undefined ? { description: t.description } : {}),
+        }));
+      }
+      return;
+    }
+    case "compaction_begin": {
+      // A wrap-up compaction is its own round, so the round it follows is over: settle that
+      // round's ledger NOW, before the banner exists, and the banner is created underneath
+      // it. Settling at task-idle instead would put the banner on screen first and slide the
+      // stats row in above it once the compaction finished — a jump, since a compaction
+      // request against the largest context of the session takes seconds.
+      if (isWrapUpCompaction(model)) {
+        finalizeOpenTask(model);
+        model.reopenTaskAtSteering = true;
+      }
+      beginCompaction(model.stats);
+      model.items.push({
+        kind: "compaction",
+        id: nextId(model),
+        reason: p.reason,
+        mode: p.mode,
+        running: true,
+        ...(tsMs !== undefined ? { beginTsMs: tsMs } : {}),
+      });
+      return;
+    }
+    case "compaction_end": {
+      // status decides whether context usage is cleared: when not completed, the original context is kept (see endCompaction).
+      endCompaction(model.stats, p.status);
+      const item = findLastRunningCompaction(model);
+      if (item) {
+        item.running = false;
+        item.status = p.status;
+        if (p.error_message !== undefined) item.errorMessage = p.error_message;
+        if (tsMs !== undefined && item.beginTsMs !== undefined) {
+          item.durationMs = Math.max(0, tsMs - item.beginTsMs);
+        }
+        // The result section runs for as long as the row does, so its wall time ends here too.
+        if (tsMs !== undefined && item.summaryStartedAtMs !== undefined) {
+          item.summaryDurationMs = Math.max(0, tsMs - item.summaryStartedAtMs);
+        }
+        // A compaction that did not complete produced no summary — only a half-written
+        // draft that was never adopted (a user quitting mid-compaction is the common case,
+        // closed as `failed` when the session next loads). Discard it, and the thinking that
+        // led to it, rather than leave a truncated summary on screen implying the context
+        // was replaced by it.
+        if (p.status !== "completed") {
+          delete item.summaryText;
+          delete item.thinkingText;
+          delete item.thinkingStreaming;
+          delete item.thinkingStartedAtMs;
+          delete item.thinkingDurationMs;
+          delete item.summaryStartedAtMs;
+          delete item.summaryDurationMs;
+        } else if (item.thinkingStreaming) {
+          // Nothing streams past the end: a fragment whose stop never arrived settles here,
+          // and its wall time settles with it rather than leaving the row without a number.
+          item.thinkingStreaming = false;
+          settleCompactionThinking(item, tsMs);
+        }
+      } else {
+        // Mid-stream join (missed the begin): append a completed banner directly.
+        const created: CompactionItem = {
+          kind: "compaction",
+          id: nextId(model),
+          reason: p.reason,
+          mode: p.mode,
+          running: false,
+          status: p.status,
+          ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
+        };
+        model.items.push(created);
+      }
+      return;
+    }
+    case "request_begin": {
+      // A retry request was sent: mark the waiting reconnect hint as resent (a no-op when there's no such item before a normal first request).
+      const waiting = findLastWaitingReconnect(model);
+      if (waiting) waiting.retrying = true;
+      // Record this Request's start (for output TPS timing); compaction requests aren't timed.
+      if (!model.stats.compactionActive) {
+        model.openRequestBeginMs = tsMs ?? null;
+        model.openRequestFirstItemId = model.nextItemId;
+        model.openApprovalWaitMs = 0;
+        // A new turn: whatever the previous one owed the model has been sent with it.
+        model.turnToolOutputs = false;
+      }
+      return;
+    }
+    case "request_end": {
+      // A retryable end: the engine retries carrying the content already
+      // produced, rendering a retry hint (with the attempt number); the terminal
+      // statuses aren't rendered (Request duration is covered by Trace performance
+      // analysis) and reset the consecutive-failure count. request events
+      // within a compaction range (only visible during history rebuild)
+      // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
+      if (model.stats.compactionActive) return;
+      // Pairs with request_begin to compute this Request's wall-clock
+      // duration, deducts the human approval wait, and adds the result to
+      // this Task's LLM time (for output TPS) — this duration includes tool
+      // argument generation but excludes tool execution (which happens
+      // between two Requests) and excludes the human approval wait (see openApprovalWaitMs).
+      if (model.openRequestBeginMs !== null && tsMs !== undefined) {
+        addLlmDuration(model.stats, tsMs - model.openRequestBeginMs - model.openApprovalWaitMs);
+      }
+      model.openRequestBeginMs = null;
+      model.openApprovalWaitMs = 0;
+      // The Request is over: its texts learn whether it completed (the fork point needs a
+      // completed one), and a call it cut short will never run.
+      markRequestTexts(model, p.status === "completed");
+      settleCutShortCalls(model, p.status === "completed");
+      // This is now the round's end (so far): update taskLastReqEndMs, with
+      // the duration taken as "it − the first message". This also settles
+      // compaction's Token attribution — reaching this point means a
+      // pending compaction is followed by this round's normal Request (a
+      // compaction triggered **mid-round**, which keeps running with a
+      // carry-over after compacting), so its usage belongs to this round
+      // and is settled into this round's cost. After a finalization
+      // compaction / manual /compact, there's no more Request in this
+      // round, so the pending compaction usage never reaches this step and is discarded at finalization (not counted into this round).
+      if (tsMs !== undefined) model.taskLastReqEndMs = tsMs;
+      commitPendingCompaction(model.stats);
+      // Whether this end ended the run: a fatal, or a retryable the ladder gave up on (no
+      // retry_in_ms; `0` is an immediate retry). A request after it opens a new Task.
+      model.runEnded =
+        p.status === "fatal" || (p.status === "retryable" && p.retry_in_ms === undefined);
+      // A fatal end stops the run — no abort event follows; this request_end is the
+      // terminal record, rendered as an error banner.
+      if (p.status === "fatal") {
+        const item: LlmErrorItem = { kind: "llm_error", id: nextId(model) };
+        if (typeof p.error_code === "string") item.errorCode = p.error_code;
+        if (typeof p.error_message === "string" && p.error_message) {
+          item.errorMessage = p.error_message;
+        }
+        model.items.push(item);
+        return;
+      }
+      // Every status the engine reconnects on gets an item — leaving one out would stall
+      // the session for the whole ladder with nothing on screen and no give-up control.
+      if (isReconnectStatus(p.status)) {
+        const item: ReconnectItem = {
+          kind: "reconnect",
+          id: nextId(model),
+          status: p.status,
+          // The core stamps the authoritative ordinal on every retryable request_end; only
+          // Traces written before the field existed lack it (rendered as attempt 1).
+          attempt: p.attempt ?? 1,
+          retrying: false,
+        };
+        if (typeof p.error_code === "string") item.errorCode = p.error_code;
+        if (typeof p.error_message === "string" && p.error_message) {
+          item.errorMessage = p.error_message;
+        }
+        // The engine announced its planned backoff: keep it with the CLIENT arrival time
+        // as the countdown anchor (skew-free — see ReconnectItem.arrivedAtMs).
+        if (typeof p.retry_in_ms === "number" && p.retry_in_ms > 0) {
+          item.plannedDelayMs = p.retry_in_ms;
+          item.arrivedAtMs = nowMs ?? Date.now();
+        } else if (p.status === "retryable" && p.retry_in_ms === undefined) {
+          // A live-protocol retryable without `retry_in_ms` is the ladder giving up — the run
+          // ends on it (an abort follows only in legacy Traces). `retry_in_ms: 0` is a retry
+          // with no wait (a rejected image replaced with a note), not a give-up. The legacy
+          // spellings never self-settle here: their era stamped no retry_in_ms mid-ladder,
+          // and their exhaustion is marked by the abort event instead.
+          item.gaveUp = true;
+        }
+        // One line per LADDER, not per attempt: a later attempt replaces the one before it, so
+        // a request that retries four times reads 已发起第 4 次重试 / "retry #4 sent" on a single
+        // line instead of stacking four. The count is already in the line, so nothing is lost
+        // from the transcript — and the Trace is untouched, keeping every attempt as its own
+        // event for the Trace panel, which builds from the raw events rather than from this model.
+        const continues = continuedLadder(model, item);
+        if (continues !== null) {
+          // The previous item's id is kept so the rendered line UPDATES rather than being
+          // replaced: a new key would remount the row and replay its entry animation, which
+          // reads as a new failure rather than the same one progressing.
+          model.items[model.items.length - 1] = { ...item, id: continues.id };
+        } else {
+          model.items.push(item);
+        }
+      }
+      return;
+    }
+  }
+}
+
+function findLastRunningMcpConnect(model: StreamModel): McpConnectItem | null {
+  for (let i = model.items.length - 1; i >= 0; i -= 1) {
+    const item = model.items[i]!;
+    if (item.kind === "mcp_connect" && item.running) return item;
+  }
+  return null;
+}
+
+/** Last connect row regardless of state: tool_list_ready lands right after its end. */
+function findLastMcpConnect(model: StreamModel): McpConnectItem | null {
+  for (let i = model.items.length - 1; i >= 0; i -= 1) {
+    const item = model.items[i]!;
+    if (item.kind === "mcp_connect") return item;
+  }
+  return null;
+}
+
+function findLastRunningCompaction(model: StreamModel): CompactionItem | null {
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const item = model.items[i]!;
+    if (item.kind === "compaction" && item.running) return item;
+  }
+  return null;
+}
+
+/**
+ * Appends streamed/replayed summary text onto the running compaction banner and starts the
+ * result section's wall time on its first content (no-op without a running banner); the
+ * section settles at compaction_end, where it stops showing itself as running.
+ */
+function appendCompactionSummaryText(
+  model: StreamModel,
+  text: string,
+  startMs: number | undefined,
+): void {
+  if (!text) return;
+  const item = findLastRunningCompaction(model);
+  if (!item) return;
+  item.summaryText = (item.summaryText ?? "") + text;
+  if (startMs !== undefined && item.summaryStartedAtMs === undefined) {
+    item.summaryStartedAtMs = startMs;
+  }
+}
+
+/**
+ * Appends streamed/replayed thinking onto the running compaction banner, records whether its
+ * fragment is still open, and times the section from its first content to the stop that closes
+ * it (no-op without a running banner). A content-free phase (the start, the stop) only moves
+ * the streaming flag, so a request that never thought leaves no empty draft — and no stray
+ * wall time — behind.
+ */
+function appendCompactionThinking(
+  model: StreamModel,
+  text: string,
+  streaming: boolean,
+  startMs: number | undefined,
+  endMs: number | undefined,
+): void {
+  const item = findLastRunningCompaction(model);
+  if (!item) return;
+  if (text) {
+    item.thinkingText = (item.thinkingText ?? "") + text;
+    if (startMs !== undefined && item.thinkingStartedAtMs === undefined) {
+      item.thinkingStartedAtMs = startMs;
+    }
+  }
+  item.thinkingStreaming = streaming;
+  if (!streaming) settleCompactionThinking(item, endMs);
+}
+
+/** Settle the thinking section: end time - its recorded start (a later attempt's stop extends the same span). */
+function settleCompactionThinking(item: CompactionItem, endMs: number | undefined): void {
+  if (endMs === undefined || item.thinkingStartedAtMs === undefined) return;
+  item.thinkingDurationMs = Math.max(0, endMs - item.thinkingStartedAtMs);
+}
+
+/**
+ * Whether a compaction starting right now wraps the round up rather than interrupting it
+ * mid-Task — the test for settling the round's stats row ahead of the banner.
+ *
+ * Two signals must agree, and either one being unsure simply leaves the old behavior (the row
+ * is placed above the trailing banners at finalization instead, see finalizeOpenTask):
+ *   - the turn that just ran produced no tool outputs — the engine's own criterion for a
+ *     mid-Task compaction (`turn.toolOutputs.length > 0`);
+ *   - the round's last item is the model's reply, which is what "the conversation ended" looks
+ *     like on screen. A client that joined mid-Task, or a history window paged in after this
+ *     round's tool outputs, can satisfy the first signal without ever having seen them, while a
+ *     tool card sitting at the end says the round is still working.
+ * A manual `/compact` between Tasks needs neither: no Task is open, so there is nothing to
+ * settle and the banner already lands after the previous round's row.
+ */
+function isWrapUpCompaction(model: StreamModel): boolean {
+  if (!model.taskOpen || model.turnToolOutputs) return false;
+  return model.items[model.items.length - 1]?.kind === "assistant_text";
+}
+
+/**
+ * The reconnect item this one supersedes, or null when it opens a new line.
+ *
+ * A ladder's attempts climb (1, 2, 3, …), and they are adjacent WHEN THE FAILED ATTEMPTS
+ * PRODUCED NOTHING — the `request_begin` that resends only marks the waiting item, so nothing
+ * is pushed between two such rungs. An attempt cut off after it had already streamed thinking
+ * or text pushes that content in between, and the ladder simply does not collapse: it renders
+ * one line per attempt, exactly as it did before. That is the conservative direction, and the
+ * reason this looks only at the tail rather than scanning back the way
+ * {@link findLastWaitingReconnect} does — a scan would have to decide where the replacement
+ * belongs among the content it skipped over.
+ *
+ * So the last item being a reconnect is necessary but NOT sufficient: a request that succeeded
+ * pushes nothing, so the next failure's item is adjacent to the previous ladder's last one
+ * while belonging to a different incident. That one restarts at attempt 1, which is what
+ * separates the two cases.
+ *
+ * A ladder that gave up is closed and is never superseded: its line carries the final failure
+ * and its detail, which is the one retry line worth keeping on screen.
+ *
+ * Traces written before the attempt ordinal existed read as attempt 1 throughout, so they never
+ * collapse and render exactly as they always did — the safe direction for a record this cannot
+ * re-derive.
+ */
+function continuedLadder(model: StreamModel, next: ReconnectItem): ReconnectItem | null {
+  const last = model.items[model.items.length - 1];
+  if (last === undefined || last.kind !== "reconnect") return null;
+  if (last.gaveUp === true) return null;
+  return next.attempt > last.attempt ? last : null;
+}
+
+function findLastWaitingReconnect(model: StreamModel): ReconnectItem | null {
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const item = model.items[i]!;
+    if (item.kind === "reconnect") {
+      return !item.retrying && !item.gaveUp ? item : null; // earlier items each already have a resolution, don't look further back
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// origin nested routing
+// ---------------------------------------------------------------------------
+
+function routeNested(model: StreamModel, msg: AmspRecord, nowMs: number): void {
+  const head = msg.origin![0]!;
+  // Sub-session token_usage: the request delta counts toward this level's stats (at any depth, same convention as the CLI).
+  if (isEventMessage(msg) && msg.payload.type === "token_usage") {
+    trackSubagentUsage(model.stats, msg.payload as TokenUsagePayload);
+  }
+  touchTask(model, msg.timestamp);
+
+  let sub = model.subagents.get(head);
+  if (!sub) {
+    sub = newModel(true, model.localDecisions);
+    sub.firstSeenLocalMs = nowMs;
+    model.subagents.set(head, sub);
+    bindSubagent(model, head, sub);
+    model.unconfirmedSubagents.add(head);
+  }
+  // The child's first model message is the opening prompt its spawning call handed it — right
+  // behind its session_meta, live and in its spliced Trace alike — and that prompt settles which
+  // card it belongs on. A deeper descendant's message reaching it first means the prompt was
+  // missed, and the binding by position stands.
+  if (model.unconfirmedSubagents.has(head) && isModelMessage(msg)) {
+    model.unconfirmedSubagents.delete(head);
+    const prompt = msg.origin!.length === 1 ? openingPrompt(msg) : null;
+    if (prompt !== null) moveToSpawningCard(model, head, sub, prompt);
+  }
+  // Elapsed-time stamps (see the StreamModel field docs): every message routed into this child's
+  // subtree — its own or a deeper descendant's — counts as its activity; the recursive pushMessage
+  // below stamps the deeper hops the same way.
+  sub.lastActivityLocalMs = nowMs;
+  const activityTs = tsOf(msg.timestamp);
+  if (activityTs !== undefined) {
+    if (sub.firstTsMs === undefined) sub.firstTsMs = activityTs;
+    if (sub.lastActivityTsMs === undefined || activityTs > sub.lastActivityTsMs) {
+      sub.lastActivityTsMs = activityTs;
+    }
+  }
+  // Strip the first origin hop and recursively feed into the nested model.
+  const rest = msg.origin!.slice(1);
+  const forwarded: AmspRecord = { ...msg };
+  if (rest.length > 0) forwarded.origin = rest;
+  else delete forwarded.origin;
+  pushMessage(sub, forwarded, nowMs);
+}
+
+/**
+ * Binding rule: bind to the most recent allowed
+ * (decision=allow) and not-yet-complete (output not yet complete)
+ * run_subagent tool card that hasn't been bound to an origin yet; append a standalone SubagentItem if none is found.
+ */
+function bindSubagent(model: StreamModel, sessionId: string, sub: StreamModel): void {
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const item = model.items[i]!;
+    if (
+      item.kind === "tool_call" &&
+      item.name === "run_subagent" &&
+      !item.subagent &&
+      !item.outputComplete &&
+      item.decision === "allow"
+    ) {
+      item.subagent = sub;
+      item.subagentSessionId = sessionId;
+      return;
+    }
+  }
+  model.items.push({ kind: "subagent", id: nextId(model), sessionId, model: sub });
+}
+
+/**
+ * Moves a child onto the card of the run_subagent call that spawned it. Its first binding goes
+ * by position, which picks the wrong card as soon as several calls run at once; the opening
+ * prompt is exact, because core starts a child with the call's `prompt` argument verbatim as its
+ * first user text. The spawning card is an allowed run_subagent card with that prompt, whose
+ * `agent_id`, `model_id` and `provider` (including inherited parent values) are what the child's
+ * session_meta records, and which holds no child yet or one still unconfirmed. When missing
+ * metadata leaves different selectors ambiguous, its positional binding stands. Otherwise,
+ * calls identical in all of that use the earliest one still running (calls start in
+ * order), else the latest finished one (a background launch returns before its child's prompt
+ * has streamed in). An unconfirmed child already on the spawning card trades places with this
+ * one and moves again on its own prompt. A child bound standalone stays: no open card was left
+ * for it, so its own was not open either.
+ */
+function moveToSpawningCard(
+  model: StreamModel,
+  sessionId: string,
+  sub: StreamModel,
+  prompt: string,
+): void {
+  const from = model.items.find(
+    (item): item is ToolCallItem =>
+      item.kind === "tool_call" && item.subagentSessionId === sessionId,
+  );
+  if (!from) return;
+  const target = spawningCard(model, sessionId, prompt, sub.meta);
+  if (target === null || target === from) return;
+  const displacedId = target.subagentSessionId;
+  const displaced = target.subagent;
+  target.subagent = sub;
+  target.subagentSessionId = sessionId;
+  if (displaced !== undefined && displacedId !== undefined) {
+    from.subagent = displaced;
+    from.subagentSessionId = displacedId;
+  } else {
+    delete from.subagent;
+    delete from.subagentSessionId;
+  }
+}
+
+/** The opening prompt a child's first model message carries: a user text from its parent agent (or, in a Trace older than `sender`, from no one named). */
+function openingPrompt(msg: AmspRecord): string | null {
+  const p = msg.payload as { type?: string; role?: string; text?: unknown; sender?: string };
+  if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return null;
+  return p.sender === undefined || p.sender === "parent_agent" ? p.text : null;
+}
+
+/** The card of the call that spawned `sessionId`, judged by its opening prompt (see moveToSpawningCard). */
+function spawningCard(
+  model: StreamModel,
+  sessionId: string,
+  prompt: string,
+  meta: NestedSessionMeta | null,
+): ToolCallItem | null {
+  const inherited = [
+    model.agentState === null ? null : agentIdFromStatePath(model.agentState),
+    model.contextModel?.modelId ?? null,
+    model.contextModel?.provider ?? null,
+  ];
+  const actual = meta === null ? null : [meta.agentId, meta.modelId, meta.provider];
+  let matchedIdentity: (string | null)[] | null = null;
+  let earliestRunning: ToolCallItem | null = null;
+  let latestFinished: ToolCallItem | null = null;
+  for (const item of model.items) {
+    if (item.kind !== "tool_call" || item.name !== "run_subagent" || item.decision !== "allow") {
+      continue;
+    }
+    const holder = item.subagentSessionId;
+    if (holder !== undefined && holder !== sessionId && !model.unconfirmedSubagents.has(holder)) {
+      continue;
+    }
+    const args = callArguments(item.argumentsText);
+    if (args === null || args.prompt !== prompt) continue;
+    const expected = ["agent_id", "model_id", "provider"].map((field, i) =>
+      typeof args[field] === "string" ? args[field] : inherited[i]!,
+    );
+    if (
+      actual !== null &&
+      expected.some((value, i) => value !== null && actual[i] !== null && value !== actual[i])
+    ) {
+      continue;
+    }
+    // A window without parent metadata cannot distinguish inheritance from an override.
+    // Preserve the existing binding instead of confirming an arbitrary same-prompt card.
+    if (matchedIdentity !== null && expected.some((value, i) => value !== matchedIdentity![i])) {
+      return null;
+    }
+    matchedIdentity = expected;
+    if (!item.outputComplete) earliestRunning ??= item;
+    else latestFinished = item;
+  }
+  return earliestRunning ?? latestFinished;
+}
+
+function callArguments(argumentsText: string): Record<string, unknown> | null {
+  try {
+    const args: unknown = JSON.parse(argumentsText);
+    return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Overlap dedup (connect-first + dedup)
+// ---------------------------------------------------------------------------
+
+/** Stands in for an image's content inside a dedup key (see dedupKey). */
+const IMAGE_IN_KEY = "<image>";
+
+/**
+ * An image slot's value as the dedup key sees it: inline bytes (`data:`) and a history page's
+ * reference to the same Trace record (`/api/sessions/<id>/trace-image?…`) are one image; any
+ * other address (a web URL) is kept, since it is the same string in both copies anyway.
+ */
+function imageInKey(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  return value.startsWith("data:") || /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
+    ? IMAGE_IN_KEY
+    : value;
+}
+
+/**
+ * The envelope a history copy and its SSE copy share. Disk-only transport metadata
+ * (`tracePosition`) must not make an otherwise identical SSE envelope look new, and neither
+ * may an image's form: a windowed history page carries a user `image_url` and a tool output's
+ * `images` by reference while the stream carries the bytes, and an SSE copy that escaped the
+ * overlap dedup would draw the person's image twice. Two images of one prompt may then share a
+ * key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
+ * appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ */
+function dedupKey(msg: AmspRecord): string {
+  const { tracePosition: _tracePosition, ...envelope } = msg as AmspRecord & {
+    tracePosition?: TracePosition;
+  };
+  if (msg.type === "model_msg") {
+    const p = msg.payload as { type?: string; image_url?: unknown; images?: unknown };
+    if (p.type === "image_url") {
+      return JSON.stringify({ ...envelope, payload: { ...p, image_url: imageInKey(p.image_url) } });
+    }
+    if (p.type === "tool_call_output" && Array.isArray(p.images)) {
+      return JSON.stringify({ ...envelope, payload: { ...p, images: p.images.map(imageInKey) } });
+    }
+  }
+  return JSON.stringify(envelope);
+}
+
+/** Build a dedup index from the envelope JSON of history's **last `limit` messages**. */
+export function buildDedupIndex(messages: AmspRecord[], limit = 100): Set<string> {
+  const index = new Set<string>();
+  for (let i = Math.max(0, messages.length - limit); i < messages.length; i++) {
+    index.add(dedupKey(messages[i]!));
+  }
+  return index;
+}
+
+/** Determine whether a complete message/event is exactly identical to history's envelope JSON (overlap dedup). */
+export function isDuplicate(index: Set<string>, msg: AmspRecord): boolean {
+  return index.has(dedupKey(msg));
+}
+
+/**
+ * When a complete message hits the dedup check, discard the corresponding
+ * in-flight streamed fragment: if a streamed copy was fed
+ * into the reducer before this complete message, its content duplicates
+ * history and must be entirely removed/cleared. Routed recursively to nested models by origin.
+ */
+export function discardFragmentFor(model: StreamModel, msg: AmspRecord): void {
+  if (msg.origin && msg.origin.length > 0) {
+    const sub = model.subagents.get(msg.origin[0]!);
+    if (!sub) return;
+    const rest = msg.origin.slice(1);
+    const forwarded: AmspRecord = { ...msg };
+    if (rest.length > 0) forwarded.origin = rest;
+    else delete forwarded.origin;
+    discardFragmentFor(sub, forwarded);
+    return;
+  }
+  if (msg.type !== "model_msg" || isPartialPayload(msg.payload)) return;
+  const p = msg.payload as CompleteModelPayload;
+  switch (p.type) {
+    case "text": {
+      if (p.role !== "assistant") return;
+      const target = model.pendingText ?? model.openText;
+      if (target) {
+        removeItem(model, target);
+        if (target === model.openText) model.openText = null;
+        model.pendingText = null;
+      }
+      return;
+    }
+    case "thinking": {
+      const target = model.pendingThinking ?? model.openThinking;
+      if (target) {
+        removeItem(model, target);
+        if (target === model.openThinking) model.openThinking = null;
+        model.pendingThinking = null;
+      }
+      return;
+    }
+    case "tool_call": {
+      const card = model.toolCards.get(p.tool_call_id);
+      if (card && !card.callComplete) {
+        removeItem(model, card);
+        model.toolCards.delete(p.tool_call_id);
+      }
+      return;
+    }
+    case "tool_call_output": {
+      const card = model.toolCards.get(p.tool_call_id);
+      if (card && !card.outputComplete) {
+        card.output = "";
+        card.outputStreaming = false;
+      }
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+function removeItem(model: StreamModel, item: ChatItem): void {
+  const idx = model.items.indexOf(item);
+  if (idx >= 0) model.items.splice(idx, 1);
+}

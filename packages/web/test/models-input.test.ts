@@ -24,7 +24,8 @@
  *   group's setting" — never the group's URL or masked key; where the group's
  *   key does not reach the model's own endpoint, that it does not apply; where
  *   the group sets nothing, the field's own hint (the environment's variable,
- *   the client's default endpoint, the shape of a required URL).
+ *   the endpoint the routed client defaults to, else that the client's default
+ *   applies, the shape of a required URL).
  * - The Details fold (model-dialog-details.tsx): closed when a dialog opens;
  *   the add dialog shows only the model id, display name and group, folding
  *   the connection, the test and the rest; the settings dialog keeps the API
@@ -651,6 +652,8 @@ describe("connectionPlaceholders (what a blank API key or base URL field says)",
   });
 
   it("falls back to the field's own hint where the group sets nothing", () => {
+    // A variable the server reports set covers a blank key and is named; a blank base URL uses
+    // the default and names no endpoint.
     expect(
       connectionPlaceholders(
         draft({ provider: "deepseek", modelId: "deepseek-flash" }),
@@ -662,17 +665,28 @@ describe("connectionPlaceholders (what a blank API key or base URL field says)",
       ),
     ).toEqual({
       apiKey: S.models.apiKeyEnvHint("DEEPSEEK_API_KEY"),
-      baseUrl: S.models.baseUrlNone,
+      baseUrl: S.models.baseUrlDefault,
     });
+    // Nothing covers a blank key here (no key, no group, no variable set): the field asks for one.
     expect(
       connectionPlaceholders(draft({ provider: "my-group" }), undefined, {
         baseUrlRequired: true,
       }),
-    ).toEqual({ apiKey: undefined, baseUrl: "https://…" });
+    ).toEqual({ apiKey: S.models.apiKeyEnterHint, baseUrl: S.models.baseUrlEnterHint });
+    // A model its client calls without a key (an open MMSP or vLLM server) says a blank sends
+    // none; a variable the server reports set still names itself first.
+    const vllm = draft({ provider: "vllm", modelId: "Qwen/Qwen3.8-27B" });
+    expect(connectionPlaceholders(vllm, undefined, { keyless: true, ...plain }).apiKey).toBe(
+      S.models.apiKeyKeylessHint,
+    );
+    expect(
+      connectionPlaceholders(vllm, undefined, { keyless: true, envKey: "VLLM_API_KEY", ...plain })
+        .apiKey,
+    ).toBe(S.models.apiKeyEnvHint("VLLM_API_KEY"));
     // A table with a key but no URL lends the key to models without one of their own.
     expect(connectionPlaceholders(draft(), { apiKeyMasked: "sk-g…2222" }, plain)).toEqual({
       apiKey: S.models.inheritFromGroup,
-      baseUrl: S.models.baseUrlNone,
+      baseUrl: S.models.baseUrlDefault,
     });
   });
 });

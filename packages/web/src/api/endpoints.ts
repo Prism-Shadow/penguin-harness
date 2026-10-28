@@ -28,6 +28,11 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  BackgroundImagePutResponse,
+  BackgroundImageRequest,
+  BackgroundImageResponse,
+  DraftsPatchRequest,
+  DraftsResponse,
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
@@ -257,8 +262,7 @@ import type {
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import type { RunRequest } from "@prismshadow/amsp";
-import { apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
+import { apiFetch, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam } from "../lib/session-grouping";
@@ -294,6 +298,20 @@ export const getPrefs = () => apiFetch<PrefsResponse>("/api/me/prefs");
 
 export const putPrefs = (prefs: UiPrefs) =>
   apiFetch<PrefsResponse>("/api/me/prefs", { method: "PUT", body: prefs });
+
+/** Every unsent draft the account keeps (lib/account-sync caches them in the browser). */
+export const getDrafts = () => apiFetch<DraftsResponse>("/api/me/drafts");
+
+/** Writes drafts by key; `null` removes one. */
+export const patchDrafts = (body: DraftsPatchRequest) =>
+  apiFetch<void>("/api/me/drafts", { method: "PATCH", body });
+
+/** The account's background image; its id also rides on the prefs, so a browser asks only when it changed. */
+export const getBackgroundImage = () =>
+  apiFetch<BackgroundImageResponse>("/api/me/background-image");
+
+export const putBackgroundImage = (body: BackgroundImageRequest) =>
+  apiFetch<BackgroundImagePutResponse>("/api/me/background-image", { method: "PUT", body });
 
 // Harness status bar (admin only) ---------------------------------------------------------
 
@@ -854,24 +872,6 @@ export const deleteAgentApiKey = (
   apiFetch<void>(`${agentApiBase(projectId, agentId)}/keys/${encodeURIComponent(keyId)}`, {
     method: "DELETE",
     server: machineId,
-  });
-
-/**
- * Runs the Agent once through its API for the owner's sign-in (the API tab's Try it): the body is
- * the public runs route's, and the answer the same AMSP event stream, handed back unread for
- * `readSse` (or the same JSON refusal, as an ApiError).
- */
-export const tryAgentApi = (
-  projectId: string,
-  agentId: string,
-  body: RunRequest,
-  opts: { signal?: AbortSignal; machineId: string | null },
-) =>
-  apiFetchStream(`${agentApiBase(projectId, agentId)}/try`, {
-    method: "POST",
-    body,
-    server: opts.machineId,
-    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
 // Session ---------------------------------------------------------------------

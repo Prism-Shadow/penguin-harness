@@ -49,7 +49,9 @@ export const INSTALL_ID_KEY = "penguin.installId";
  *   have. Against a new root it is at best inert and at worst a lie, which is the bug.
  * - `browser` — a display or input preference of this browser. It names nothing on the
  *   server, so a new root can honour it exactly as the old one did, and wiping a data root
- *   is not a request to reset someone's theme.
+ *   is not a request to reset someone's theme. The Settings pages' preferences among them are a
+ *   cache of the account's copy (lib/account-sync): kept across a wipe, they are what this
+ *   browser hands the new root's account on its first sign-in there.
  */
 export type KeyScope = "install" | "browser";
 
@@ -93,7 +95,13 @@ export const KEY_RULES: readonly KeyRule[] = [
     kind: "exact",
     key: "penguin.background.image",
     scope: "browser",
-    why: "Local wallpaper image; appearance only, with no reference to a server file.",
+    why: "Wallpaper image, cached from the account; appearance only, with no reference to a server file.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.background.imageId",
+    scope: "browser",
+    why: "Which of the account's wallpaper images the cached one is: a digest of the image, so a new root holding the same image answers with the same id.",
   },
   {
     kind: "exact",
@@ -345,6 +353,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.agentInstalls.",
+    scope: "install",
+    why: "What each Agent — of this server or of a machine — was last seen having installed, shown by the plugin market until it answers again. Project, machine and Agent ids in the key — a new root knows none of them.",
+  },
+  {
+    kind: "family",
     key: "penguin.machineMessaging.",
     scope: "install",
     why: "The messaging binding each machine conversation last answered, shown read-only while that machine is out of reach. Project, machine and Session ids in the key — a new root knows none of them.",
@@ -390,6 +404,24 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.a2uiDraft.",
     scope: "install",
     why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.prefsImported",
+    scope: "install",
+    why: "That this browser handed its preferences to an account on this root once already; a new root's accounts hold none, so they take them again.",
+  },
+  {
+    kind: "family",
+    key: "penguin.draftsImported.",
+    scope: "install",
+    why: "That this browser handed one user's drafts to their account on this root; keyed by user id, and a new root's account holds none.",
+  },
+  {
+    kind: "family",
+    key: "penguin.syncPending.",
+    scope: "install",
+    why: "One user's edits the account on this root has not acknowledged: draft keys naming Sessions and Projects of this root.",
   },
   {
     kind: "exact",

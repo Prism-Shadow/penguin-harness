@@ -61,9 +61,25 @@ function newestDate(dir, slug) {
  * The home page is excluded; Vite's own index.html already sits at the dist root.
  */
 
-/** Non-blog landing SPA pages (currently the desktop download page). */
+/**
+ * The AMSP page's name for crawlers and link unfurlers, in English like the rest of the static
+ * shell (the page sets the reader's language at runtime). `image` is a file under public/,
+ * rendered by `node scripts/capture-og-cover.mjs amsp`.
+ */
+const AMSP_META = {
+  title: "AMSP: Agent Message Stream Protocol",
+  description:
+    "Stream, parse and store agent messages with one protocol: AMSP, the Session stream of a PenguinHarness agent.",
+  image: "/og-amsp.png",
+  imageAlt: "AMSP: Agent Message Stream Protocol",
+};
+
+/**
+ * Non-blog landing SPA pages: the desktop download page and the AMSP page. A page with `meta`
+ * gets its own title, description and share card in its shell (route-shell.mjs).
+ */
 export function pageRoutes() {
-  return [{ route: "/download/" }];
+  return [{ route: "/download/" }, { route: "/amsp/", meta: AMSP_META }];
 }
 
 /** Blog routes, one per post plus the list page. */

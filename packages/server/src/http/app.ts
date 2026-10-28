@@ -5,7 +5,12 @@ import type { AppEnv } from "../auth/middleware.js";
 import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { authMiddleware, bearerToken, jsonOnlyWrites } from "../auth/middleware.js";
+import {
+  authMiddleware,
+  bearerToken,
+  jsonOnlyWrites,
+  sameOriginWrites,
+} from "../auth/middleware.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
@@ -151,7 +156,11 @@ export class HttpModule {
       }
       return capped.mw(c, next);
     });
-    app.use("/api/*", jsonOnlyWrites);
+    app.use("/api/*", sameOriginWrites(this.config.trustProxy));
+    // A machine's API is reached through this server (machines/proxy.ts), with this server's
+    // cookie: the same question, asked here because the hop drops the Origin.
+    app.use("/server/*", sameOriginWrites(this.config.trustProxy));
+    app.use("/api/*", jsonOnlyWrites(this.config.trustProxy));
 
     // A group's own auth declaration applies to both HTTP and socket calls, independent of order.
     const authenticate = gate;
@@ -162,8 +171,8 @@ export class HttpModule {
       (c.var.user as AppEnv["Variables"]["user"] | undefined) === undefined
         ? authenticate(c, next)
         : next();
-    // A Remote cookie carries token authority too, but only an actual Bearer may exchange
-    // credentials. An earlier user gate must not let that cookie skip this transport check.
+    // Only an actual Bearer may exchange credentials: a cookie an earlier user gate already
+    // authenticated (a Remote one included) must not skip this transport check.
     const tokenGate: MiddlewareHandler<AppEnv> = (c, next) =>
       c.var.sessionVia === "token" && bearerToken(c.req.header("authorization")) !== null
         ? next()

@@ -38,6 +38,7 @@ import type { ErrorLog } from "../../mechanisms/observability.js";
 import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { UserDraftsStore } from "../../mechanisms/account-data.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentsRouteDeps {
@@ -52,6 +53,8 @@ export interface AgentsRouteDeps {
   sessionService: SessionService;
   sessionsRepo: SessionIndex;
   traceIndex: TraceIndex;
+  /** Users' unsent drafts, which go with the Agent's Sessions. */
+  drafts: Pick<UserDraftsStore, "deleteByAgent">;
 }
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
@@ -179,6 +182,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     try {
       await settleWithin(runnings, 5000);
       await deps.agentService.deleteAgent(projectId, agentId);
+      // Found through the Session index, so before its rows go.
+      deps.drafts.deleteByAgent(projectId, agentId);
       deps.sessionsRepo.deleteByAgent(projectId, agentId);
       // Trace-index rows describe files the rm above just removed: drop them with the Agent.
       deps.traceIndex.removeAgent(projectId, agentId);

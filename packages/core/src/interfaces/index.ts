@@ -5,10 +5,11 @@
  * the published `@prismshadow/penguin-core/interfaces` entry and re-exports all three, so
  * every existing import path keeps working.
  *
- * `context_engine` only handles OmniMessage: the content crossing all three boundaries is
- * OmniMessage and nothing else. What crosses alongside it is the **control plane** —
- * `signal`, `thinkingLevel`, the `approve` callback, and the LLM's `LLMOutcome` return
- * value — deliberately not message-shaped, because none of it is conversation content.
+ * `context_engine` only handles AMSP records: the content crossing all three boundaries is
+ * records and nothing else. What crosses alongside them is the **control plane** —
+ * `signal`, `thinkingLevel`, the `approve` callback, the LLM's `LLMOutcome` return value, and
+ * the in-process mark on a tool call closed early (`markInterruptedToolCall`) — deliberately
+ * not message-shaped, because none of it is conversation content.
  * Protocol conversion and concrete implementations are each interface's own responsibility.
  *
  * Human is not an "interface/class with methods" but the SDK's input/output boundary itself:
@@ -20,5 +21,5 @@
  * contract and its extension seams — keep the page in sync when changing signatures here.
  */
 export type * from "./shared.js";
-export type * from "./llm.js";
+export * from "./llm.js";
 export * from "./environment.js";

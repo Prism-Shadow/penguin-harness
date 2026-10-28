@@ -69,6 +69,8 @@ export function reasonText(reading: MachineReading): string | null {
         : S.machines.retry.failed(reading.attempts, reading.maxAttempts);
     case "reconnectStopped":
       return reading.message;
+    case "restartNeeded":
+      return S.machines.restartNeededReason;
     default:
       return null;
   }

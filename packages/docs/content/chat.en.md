@@ -263,7 +263,7 @@ The chat page has two docks for panels: the right sidebar and the bottom panel. 
 | Panel | What it shows |
 | --- | --- |
 | **Agents panel** | The Task's subagents: the call graph and each subagent's live conversation |
-| **Command-line terminal** | The conversation's terminals, one tab each; see [Use a terminal](#use-a-terminal) |
+| **Terminal** | The conversation's terminals, one tab each; see [Use a terminal](#use-a-terminal) |
 | **Files** | The Workspace's files, with preview, editing and upload; see [Files panel](/files) |
 | **Memory** | The agent's memory |
 | **Trajectories** | The conversation's Trace files: a summary, per-turn statistics, an execution timeline and each event, with **Export** |
@@ -278,7 +278,7 @@ To make a dock as large as it goes, select **Full screen** in its header, or dra
 
 When the right sidebar is closed on a desktop-width window, or no panel is open on a narrow one, a round **Shortcuts** button floats 32px inside the right edge of the conversation. It is not shown on the draft page or while the conversation's history is loading or failed to load.
 
-1. Select the button, or focus it and press Enter or Space. A fan of round entries opens to its left: **Agents panel**, **Command-line terminal**, **Files**, **Memory**, **Trajectories**, **Remote control** and **Scheduled tasks**, then **Hide launcher**.
+1. Select the button, or focus it and press Enter or Space. A fan of round entries opens to its left: **Agents panel**, **Terminal**, **Files**, **Memory**, **Trajectories**, **Remote control** and **Scheduled tasks**, then **Hide launcher**.
 2. Point at an entry, or focus it, to see its name under the button.
 3. Select the entry. The panel opens in the right sidebar on a desktop-width window, or in the bottom sheet on a narrow one, and the button disappears.
 
@@ -293,9 +293,9 @@ Good to know:
 
 ### Use a terminal
 
-In the docks, terminals live in one **Command-line terminal** panel per conversation; they also open on the standalone `/terminal` page. The panel's top row holds the conversation's terminals as tabs, each with its number and title: select a tab to switch, **+** to start another terminal, and a tab's × to close that terminal after a confirmation. When the last terminal is closed or exits on its own (after `exit`, say), the panel closes with it. A terminal belongs to the conversation that opened it: it shows up only in that conversation's panel, and no other conversation can see or open it; terminals opened for the conversation on another device or browser are listed there too. A new conversation has no terminal until its first message is sent. Each runs your login shell with your own startup files, then puts this installation's `penguin` first on PATH, the same one agents get (see [PATH launcher](/configuration#path-launcher)).
+In the docks, terminals live in one **Terminal** panel per conversation; they also open on the standalone `/terminal` page. The panel's top row holds the conversation's terminals as tabs, each with its number and title: select a tab to switch, **+** to start another terminal, and a tab's × to close that terminal after a confirmation. When the last terminal is closed or exits on its own (after `exit`, say), the panel closes with it. A terminal belongs to the conversation that opened it: it shows up only in that conversation's panel, and no other conversation can see or open it; terminals opened for the conversation on another device or browser are listed there too. A new conversation has no terminal until its first message is sent. Each runs your login shell with your own startup files, then puts this installation's `penguin` first on PATH, the same one agents get (see [PATH launcher](/configuration#path-launcher)).
 
-- Ctrl+` shows or hides the Command-line terminal panel, opening it if it is not open yet and starting a terminal if the conversation has none.
+- Ctrl+` shows or hides the Terminal panel, opening it if it is not open yet and starting a terminal if the conversation has none.
 - Ctrl+Shift+` starts another terminal in the panel.
 - Ctrl+Alt+`, with a terminal focused, closes that terminal after a confirmation, like the × on its tab. The keystroke never reaches the shell. Ctrl+W does: it is readline's delete-word.
 
@@ -421,7 +421,7 @@ Archived conversations are listed under [Settings › Archived chats](/settings#
 | Ctrl+Alt+1 | Show or hide the sidebar |
 | Ctrl+Alt+2 | Show or hide the right sidebar |
 | Ctrl+Alt+3 | Show or hide the bottom panel |
-| Ctrl+` | Show or hide the Command-line terminal panel |
+| Ctrl+` | Show or hide the Terminal panel |
 | Ctrl+Shift+` | Start a new terminal |
 | Ctrl+Alt+` | Close the focused terminal, after confirmation |
 | Ctrl+S | Save in the Files panel's editor or the handbook |

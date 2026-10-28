@@ -19,7 +19,7 @@ import {
   tokenUsage,
   emptyTokenCounts,
 } from "@prismshadow/penguin-core";
-import type { LLMOutcome, OmniMessage } from "@prismshadow/penguin-core";
+import type { LLMOutcome, AmspRecord } from "@prismshadow/penguin-core";
 import {
   ProjectConfigService,
   collectUtilityCompletion,
@@ -29,9 +29,9 @@ import { makeTempRoot } from "./helpers.js";
 
 /** A stream shaped the way the real translator shapes one: partial fragments, then the complete backfill. */
 async function* streamOf(
-  messages: OmniMessage[],
+  messages: AmspRecord[],
   outcome: LLMOutcome,
-): AsyncGenerator<OmniMessage, LLMOutcome> {
+): AsyncGenerator<AmspRecord, LLMOutcome> {
   for (const m of messages) yield m;
   return outcome;
 }
@@ -108,13 +108,13 @@ describe("collectUtilityCompletion", () => {
         [
           partialThinking("start"),
           partialThinking("delta", "the name is Chinese, translate it"),
-          partialThinking("stop", "", "completed"),
-          thinkingMessage("the name is Chinese, translate it", "completed"),
+          partialThinking("stop", ""),
+          thinkingMessage("the name is Chinese, translate it"),
           partialText("start"),
           partialText("delta", "research_paper"),
           partialText("delta", "_lab"),
-          partialText("stop", "", "completed"),
-          assistantText("research_paper_lab", "completed"),
+          partialText("stop", ""),
+          assistantText("research_paper_lab"),
           tokenUsage(emptyTokenCounts(), emptyTokenCounts()),
         ],
         { status: "completed" },
@@ -130,8 +130,8 @@ describe("collectUtilityCompletion", () => {
         [
           partialThinking("start"),
           partialThinking("delta", "let me consider every possible identifier"),
-          partialThinking("stop", "", "retryable"),
-          thinkingMessage("let me consider every possible identifier", "retryable"),
+          partialThinking("stop", ""),
+          thinkingMessage("let me consider every possible identifier"),
         ],
         {
           status: "retryable",
@@ -158,7 +158,7 @@ describe("collectUtilityCompletion", () => {
 
   it("treats a whitespace-only answer as no answer", async () => {
     const result = await collectUtilityCompletion(
-      streamOf([assistantText("  \n ", "completed")], { status: "completed" }),
+      streamOf([assistantText("  \n ")], { status: "completed" }),
     );
     expect(result).toEqual({ ok: false, cause: "failed", error: "completed" });
   });

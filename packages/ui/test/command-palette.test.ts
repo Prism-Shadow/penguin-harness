@@ -74,7 +74,7 @@ describe("CommandPalette", () => {
       (m) => m[1],
     );
     expect(options).toEqual(["true", "false"]);
-    expect(html).toContain(">Harness history</button>");
+    expect(html).toContain(">Harness history</span>");
   });
 
   it("says the caller's sentence when there is nothing to list, and shows the hint only when given", () => {
@@ -83,6 +83,31 @@ describe("CommandPalette", () => {
     expect(empty).not.toContain('role="listbox"');
     expect(palette()).not.toContain("border-t");
     expect(palette({ hint: "Enter to run" })).toMatch(/border-t[^"]*">Enter to run<\/div>/);
+  });
+
+  it("appends the caller's completions after the filtered actions, and empties only when both are empty", () => {
+    const session = { id: "session:1", label: "A session", detail: "Running", run: noop };
+    const html = palette({ suggest: () => [session] });
+    const options = [...html.matchAll(/role="option" aria-selected="(true|false)"/g)].map(
+      (m) => m[1],
+    );
+    expect(options).toEqual(["true", "false", "false"]);
+    expect(html.indexOf(">A session<")).toBeGreaterThan(html.indexOf(">Reload page<"));
+    // The caller's sentence shows only when neither the standing actions nor the completions
+    // have anything.
+    expect(palette({ actions: [], suggest: () => [session] })).toContain(">A session<");
+    expect(palette({ actions: [], suggest: () => [] })).toContain(">Nothing matches</p>");
+    expect(palette({ suggest: () => [session] })).not.toContain("Nothing matches");
+  });
+
+  it("renders an action's detail beside the label, in the muted ink", () => {
+    const html = palette({
+      suggest: () => [{ id: "session:1", label: "A session", detail: "Running", run: noop }],
+    });
+    expect(html).toContain(">A session</span>");
+    expect(html).toMatch(/text-fg-subtle">Running<\/span>/);
+    // An action without a detail renders no second line.
+    expect(palette()).not.toMatch(/text-fg-subtle">/);
   });
 
   it("dims the page through the scrim hook, and paints in tokens", () => {

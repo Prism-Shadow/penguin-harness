@@ -266,10 +266,229 @@
   }
 }
 
+/* ---------- The AMSP page (pages/amsp.tsx) ----------
+   Code blocks outside article prose: the shared block (SiteCodeBlock) on its container's surface,
+   which only scrolls and pads; the highlighter writes its theme background inline, which only
+   !important can drop, and dark mode reads the dual-theme variables it baked in. */
+.amsp-code .site-code pre {
+  margin: 0;
+  overflow-x: auto;
+  padding: 0.625rem 0.75rem;
+  background: transparent !important;
+  font-size: 12.5px;
+  line-height: 1.25rem;
+  /* A line longer than its column wraps rather than scrolling out of it (on a phone). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* The quickstart's command and response cards wrap the same way, a long `data:` line hanging past
+   its field name. */
+.amsp-wrap .site-code-card-line {
+  padding-left: 6ch;
+  text-indent: -6ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+html.dark .amsp-code .shiki,
+html.dark .amsp-code .shiki span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+/* The player's code panel, as mmsp.penguin.ooo's: on the panel's own ground, under its label. */
+.amsp-code-panel .site-code pre {
+  padding: 0.375rem 0.75rem 0.5rem;
+}
+/* The usage bars grow in when the run ends (the outcome mounts with [DONE]). Reduced motion stops
+   the animation and leaves them at full length. */
+.amsp-bar {
+  transform-origin: left;
+  animation: amsp-bar-grow 700ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes amsp-bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
 /* Printing never scrolls, so scroll-reveal must not hide content on paper/PDF. */
 @media print {
   .reveal {
     opacity: 1;
     transform: none;
   }
+}
+
+/* ---------- Drawn blog figures: inline SVG in a post's Markdown ----------
+   A drawn figure is one <figure class="post-figure"> holding an <svg class="fig-svg">, a visually
+   hidden <ol class="fig-steps"> that says the same thing as text, and a <figcaption>. Every mark
+   carries one of the classes below and never an inline fill, stroke or colour, so a figure
+   follows the theme on the sites' palette (site-content.css). Within a post a class keeps one
+   meaning in every figure: the series fills .fig-s1 to .fig-s3 mean what the post's legend says
+   they mean, and they stay apart without colour too (solid, pale with an outline, mid with a
+   dashed edge). Below about 460px a figure keeps its drawing at a legible size and scrolls
+   sideways inside the prose column, as a table does, instead of shrinking its text past reading. */
+.post-figure {
+  margin: 1.75rem 0;
+  overflow-x: auto;
+}
+.post-figure .fig-svg {
+  display: block;
+  width: 100%;
+  min-width: 460px;
+  max-width: 600px;
+  height: auto;
+  margin: 0 auto;
+}
+.post-figure figcaption {
+  max-width: 600px;
+  margin: 0.625rem auto 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--site-gray-600);
+  /* No last line of a single character, which a CJK caption otherwise ends on easily. */
+  text-wrap: pretty;
+}
+html.dark .post-figure figcaption {
+  color: var(--site-gray-400);
+}
+/* The figure's content as text, for screen readers and for anything that reads the Markdown. */
+.post-figure .fig-steps {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Text: plain prose by default; a title over the drawing, a label naming a mark, a note or an
+   axis tick, a number, and an identifier set in mono (added to one of the others). */
+.fig-svg text {
+  font-size: 12px;
+  fill: var(--site-gray-600);
+}
+.fig-svg .fig-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  fill: var(--site-gray-900);
+}
+.fig-svg .fig-label {
+  font-weight: 500;
+  fill: var(--site-gray-700);
+}
+.fig-svg .fig-note,
+.fig-svg .fig-tick {
+  font-size: 11.5px;
+  fill: var(--site-gray-500);
+}
+.fig-svg .fig-num {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  fill: var(--site-gray-800);
+}
+.fig-svg .fig-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+html.dark .fig-svg text {
+  fill: var(--site-gray-400);
+}
+html.dark .fig-svg .fig-title {
+  fill: var(--site-gray-100);
+}
+html.dark .fig-svg .fig-label {
+  fill: var(--site-gray-300);
+}
+html.dark .fig-svg .fig-note,
+html.dark .fig-svg .fig-tick {
+  fill: var(--site-gray-500);
+}
+html.dark .fig-svg .fig-num {
+  fill: var(--site-gray-200);
+}
+
+/* Series fills: three, in the order a legend lists them. */
+.fig-svg .fig-s1 {
+  fill: var(--site-brand-700);
+}
+.fig-svg .fig-s2 {
+  fill: var(--site-brand-50);
+  stroke: var(--site-brand-600);
+  stroke-width: 1;
+}
+.fig-svg .fig-s3 {
+  fill: color-mix(in oklab, var(--site-amber-300) 55%, var(--site-amber-800));
+  stroke: var(--site-amber-800);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+html.dark .fig-svg .fig-s1 {
+  fill: var(--site-brand-300);
+}
+html.dark .fig-svg .fig-s2 {
+  fill: var(--site-brand-950);
+  stroke: var(--site-brand-400);
+}
+/* The dashed edge keeps amber-800 in dark: against the lighter fill it is what tells this series
+   from .fig-s1, which is about as light there. */
+html.dark .fig-svg .fig-s3 {
+  fill: color-mix(in oklab, var(--site-amber-300) 70%, var(--site-amber-800));
+}
+
+/* Guides: an axis, a bracket over a span, a dotted line that lines one point up with another,
+   and a solid marker that pins a position. */
+.fig-svg .fig-axis,
+.fig-svg .fig-bracket {
+  fill: none;
+  stroke: var(--site-gray-400);
+  stroke-width: 1;
+}
+.fig-svg .fig-link {
+  fill: none;
+  stroke: var(--site-gray-400);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.fig-svg .fig-marker {
+  fill: var(--site-gray-800);
+}
+html.dark .fig-svg .fig-axis,
+html.dark .fig-svg .fig-bracket,
+html.dark .fig-svg .fig-link {
+  stroke: var(--site-gray-600);
+}
+html.dark .fig-svg .fig-marker {
+  fill: var(--site-gray-200);
+}
+
+/* Flowcharts: a process box on the page's own background, a terminal (start or end) a step off
+   it, and the edges between them with the head their <marker> draws. */
+.fig-svg .fig-box,
+.fig-svg .fig-terminal {
+  fill: #fff;
+  stroke: var(--site-gray-400);
+  stroke-width: 1.25;
+}
+.fig-svg .fig-terminal {
+  fill: var(--site-gray-50);
+}
+.fig-svg .fig-edge {
+  fill: none;
+  stroke: var(--site-gray-500);
+  stroke-width: 1.25;
+}
+.fig-svg .fig-arrowhead {
+  fill: var(--site-gray-500);
+}
+html.dark .fig-svg .fig-box {
+  fill: var(--site-gray-950);
+  stroke: var(--site-gray-600);
+}
+html.dark .fig-svg .fig-terminal {
+  fill: var(--site-gray-900);
+  stroke: var(--site-gray-600);
 }

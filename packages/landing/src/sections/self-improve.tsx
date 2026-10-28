@@ -6,7 +6,7 @@
  * versions. Beside it, the three numbers the scoreboard records for every version, each line
  * growing from the left on a slow loop.
  *
- * The chart values are illustrative and the section says so. Their shapes follow the rules, not a
+ * The chart values are illustrative. Their shapes follow the rules, not a
  * wish: the score only rises because a version is kept only when it scores higher, while cost and
  * duration are recorded but never optimised, so they wander. Phones get the same loop as a stacked
  * reading. Reduced motion: the flow dots stay off and every line is drawn finished. Under the

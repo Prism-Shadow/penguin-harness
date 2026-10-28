@@ -21,7 +21,7 @@ PenguinHarness is made of these components. They share one data root and one mes
 
 | Component | Package | Description |
 | --- | --- | --- |
-| SDK | `@prismshadow/penguin-core` | The core engine: the ReAct loop, the [OmniMessage protocol](/omni-message), the LLM and Environment [interface contracts](/interfaces), Agent State and Trace. |
+| SDK | `@prismshadow/penguin-core` | The core engine: the ReAct loop, [AMSP records](/amsp-records) (from `@prismshadow/amsp`), the LLM and Environment [interface contracts](/interfaces), Agent State and Trace. |
 | CLI | `@prismshadow/penguin-cli` | The `penguin` command: an interactive REPL, one-shot Task runs, and model and Vault configuration. |
 | Server | `@prismshadow/penguin-server` | The Web backend: the HTTP [API and SSE streaming](/server-api), multi-user auth, Project authorization and usage statistics. |
 | Web App | `@prismshadow/penguin-web` | The browser UI: multi-session chat, agent management, the plugin library, model configuration, Trace observability and the Evaluation Center. |
@@ -50,7 +50,7 @@ These principles run through every component, and the design pages keep coming b
 
 ## A note on naming
 
-The unified message protocol is called **OmniMessage** in technical writing, and marketing materials also call it Penguin Message. This documentation uses OmniMessage throughout.
+One message of the unified format is called an **AMSP record** in technical writing (AMSP is the stream it travels on), and marketing materials also call it Penguin Message. This documentation says AMSP record throughout.
 
 ## Learn how it works
 

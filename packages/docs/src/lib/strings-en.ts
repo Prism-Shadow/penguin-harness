@@ -8,11 +8,12 @@ export const en: Strings = {
     home: "Home",
     blog: "Blog",
     download: "Download",
+    amsp: "AMSP",
     docs: "Docs",
     gallery: "Gallery",
     github: "GitHub",
-    openMenu: "Open navigation",
-    closeMenu: "Close navigation",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
   },
 
   theme: {

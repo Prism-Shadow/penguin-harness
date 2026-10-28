@@ -23,7 +23,7 @@ import type {
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "../interfaces/index.js";
-import type { CompactionMode } from "../omnimessage/types.js";
+import type { CompactionMode } from "@prismshadow/amsp/records";
 // The seeded compaction threshold is declared beside the derivation that caps it, so the
 // default and the cap cannot drift apart.
 import { DEFAULT_MAX_CONTEXT_LENGTH } from "../llm/context-limits.js";
@@ -925,9 +925,10 @@ export function defaultSystemConfig(): SystemConfig {
       // (see GenerativeModelConfig.requestTimeoutMs). It has to cover the wait for the FIRST
       // event, which is where a model that keeps its reasoning off the wire spends its whole
       // thinking phase: requests ask for thought summaries so most models stream something,
-      // but the ones that accept the flag and return nothing still go silent, and 120s used
-      // to cut them off mid-thought.
-      timeoutMs: 300000,
+      // but the ones that accept the flag and return nothing still go silent, and so does a
+      // model behind a relay that consumes the thinking stream upstream and sends nothing until
+      // the answer starts. 120s, and later 300s, cut such requests off mid-thought.
+      timeoutMs: 600000,
     },
     compaction: {
       max_context_length: DEFAULT_MAX_CONTEXT_LENGTH,

@@ -35,7 +35,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
+import type { AmspRecord, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
   ProjectCreateResponse,
   SessionCreateResponse,
@@ -986,7 +986,7 @@ describe("session-index", () => {
     // them into the objective as path lines from there. startGoal stands in for the run so
     // the assertion is about validation alone — a real goal loop would still be settling
     // after the test closed its database.
-    const started: OmniMessage[][] = [];
+    const started: AmspRecord[][] = [];
     vi.spyOn(t.deps.manager, "startGoal").mockImplementation(async (sessionId, args) => {
       started.push(args.messages);
       return { sessionId };

@@ -19,7 +19,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | Unset: the loopback counterpart is derived per request |
 | `PENGUIN_GO_ORIGIN` | Trusted origin for Penguin Go key authorization and account balance queries | `https://go.penguin.ooo` |
 | `MODELSCOPE_BRIDGE_URL` | Address of the authorization bridge the server-side ModelScope key authorization calls | `https://go.penguin.ooo/modelscope` |
-| `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` header | Unset: the header is ignored |
+| `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` and `x-forwarded-host` headers | Unset: both are ignored. The desktop app's server sets it |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | Unset: a random password is generated |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set with `penguin config lang` | `en` |
 | `PENGUIN_UPDATE_CHECK` | `off` disables the Web App's new-release check | Enabled |
@@ -29,7 +29,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 
 Notes:
 
-- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS and sets or strips the header itself. Session cookies are then marked `Secure`, and the hot-update network gate sees HTTPS.
+- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS. The proxy must overwrite `x-forwarded-proto` with `https`, and either keep the external `Host` header unchanged or overwrite `x-forwarded-host` with it; the server reads the first value of each. From them it takes the address the browser is on, its [public origin](/security#network-surface): session cookies are marked `Secure`, a write's `Origin` is checked against it, the hot-update network gate sees HTTPS, and a model provider's authorization redirects back to it. Without the setting, every write the Web App makes, signing in included, is refused with `403` `cross_origin_write`. The desktop app's embedded server sets it itself, because it listens on loopback only and is reached from outside only through the Penguin Remote relay, whose client should overwrite `x-forwarded-proto` with `https` and `x-forwarded-host` with the public host, each as a single value.
 - `PENGUIN_SEED_ADMIN_PASSWORD`: without it, the seed generates a random password that is hashed and discarded unseen, and you claim the account through the first-login link.
 - `PENGUIN_GO_ORIGIN`: server configuration, not an endpoint the browser can name. It must be a bare HTTPS origin; plain HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`, for integration environments. A path, credentials, a query string or a fragment is rejected at startup. See [Connect an account](/models#connect-an-account).
 - `MODELSCOPE_BRIDGE_URL`: server configuration like `PENGUIN_GO_ORIGIN`, not an endpoint the browser can name. It must be an HTTPS address with no credentials, query string or fragment. Unlike `PENGUIN_GO_ORIGIN`, a path prefix **is** allowed, because the production bridge lives under `https://go.penguin.ooo/modelscope`. See [Connect an account](/models#connect-an-account).
@@ -82,7 +82,7 @@ A model's base URL, protocol and API key each resolve from the Project config al
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-A new Project writes no `base_url` for these seven first-party groups, so their keyless models read these variables; a group or model whose base URL is the vendor's default endpoint reads them too. The gateway groups (openrouter, fireworks, siliconflow, atlascloud, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, modelscope) carry the gateway's base URL on their group, so their models need a key in the file: their OpenAI-compatible client would read `OPENAI_*` (or `ANTHROPIC_*` for opencode-go's Anthropic Messages models), which holds your OpenAI or Anthropic key. A custom, vLLM or user-created model with no base URL anywhere reads its protocol client's pair, `OPENAI_*` for the OpenAI-compatible protocols, and its requests go to that client's default endpoint (api.openai.com) unless `OPENAI_BASE_URL` is set. Penguin Go and ModelScope take their key from the group's connection only: connect the group from its header, or paste the key in its group settings. `PENGUIN_GO_API_KEY` and `PENGUIN_GO_BASE_URL` are no longer read; if you set only those, reconnect Penguin Go from its group header or paste the key. MiniMax's official Responses client uses `MINIMAX_*`; the built-in MiniMax preset carries no base URL and reaches the official endpoint through that client's default. A model on the `mmsp` client (an MMSP server) with a `base_url` and no `api_key` is sent no key, which is what an open MMSP server takes. For provider groups and the built-in model catalog, see [Models & Providers](/models).
+A new Project writes no `base_url` for these seven first-party groups, so their keyless models read these variables; a group or model whose base URL is the vendor's default endpoint reads them too. The gateway groups (openrouter, fireworks, siliconflow, atlascloud, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, modelscope) carry the gateway's base URL on their group, so their models need a key in the file: their OpenAI-compatible client would read `OPENAI_*` (or `ANTHROPIC_*` for opencode-go's Anthropic Messages models), which holds your OpenAI or Anthropic key. A custom or user-created model with no base URL anywhere reads its protocol client's pair, `OPENAI_*` for the OpenAI-compatible protocols, and its requests go to that client's default endpoint (`https://api.openai.com/v1`) unless `OPENAI_BASE_URL` is set. The vllm group's client reads vLLM's own pair, `VLLM_API_KEY` and `VLLM_BASE_URL`, and never `OPENAI_*`: a new Project writes `http://127.0.0.1:8000/v1`, where `vllm serve` answers by default, as the group's base URL, and a vllm model with no base URL anywhere goes to `VLLM_BASE_URL`, else to that same address. Penguin Go and ModelScope take their key from the group's connection only: connect the group from its header, or paste the key in its group settings. `PENGUIN_GO_API_KEY` and `PENGUIN_GO_BASE_URL` are no longer read; if you set only those, reconnect Penguin Go from its group header or paste the key. MiniMax's official Responses client uses `MINIMAX_*`; the built-in MiniMax preset carries no base URL and reaches the official endpoint through that client's default. A model on the `mmsp` client (an MMSP server) or the `openai-chat-vllm-adapter` client (a vLLM server) with a `base_url` and no `api_key` is sent no key, which is what a server started without one takes; the vLLM client sends vLLM's placeholder key `EMPTY`. For provider groups and the built-in model catalog, see [Models & Providers](/models).
 
 ## Project config
 
@@ -165,7 +165,7 @@ Edit this file with the CLI (`penguin config model …`) or on the Web App's Mod
 
 ### Group connections
 
-`[providers.<id>]` holds one group's connection, keyed by provider id: a built-in group or one you created. A new Project's file holds one for every built-in group the catalog gives an endpoint or protocol: the gateways' base URL and protocol, Penguin Go's relay base URL, vLLM's protocol. The first-party groups and custom get none. The Models page's group settings and connecting a group write it, and so does `penguin config model add --provider <group>` without `--model-id`. A user-created group's table is removed together with the group's last model.
+`[providers.<id>]` holds one group's connection, keyed by provider id: a built-in group or one you created. A new Project's file holds one for every built-in group the catalog gives an endpoint or protocol: the gateways' base URL and protocol, Penguin Go's relay base URL, vLLM's protocol and its local base URL `http://127.0.0.1:8000/v1`. The first-party groups and custom get none. The Models page's group settings and connecting a group write it, and so does `penguin config model add --provider <group>` without `--model-id`. A user-created group's table is removed together with the group's last model.
 
 | Key | Type | Description |
 | --- | --- | --- |
@@ -314,7 +314,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | `max_turns` | `-1` | Maximum LLM turns per Task |
 | `model.max_tokens` | `32000` | Output Token ceiling per Request |
 | `model.thinking_level` | `medium` | The thinking level each model context opens at, unless the Session pins one |
-| `model.timeoutMs` | `300000` | **Idle** budget for a Request, in milliseconds |
+| `model.timeoutMs` | `600000` | **Idle** budget for a Request, in milliseconds |
 | `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
@@ -338,7 +338,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `max_turns`: `-1` means unlimited; a positive integer caps the Task.
 - `model.max_tokens`: `-1` means no cap (the provider default). Each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model is never asked for more than fits.
 - `model.thinking_level`: `none` / `low` / `medium` / `high` / `xhigh` / `max`. The level is fixed for a model context, so a change lands at the next compaction. Without this field, the Project's `[default_chat]` `thinking_level` applies, then `medium`.
-- `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, which the default leaves room for.
+- `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, and so does a model behind a relay that consumes the thinking stream upstream and sends nothing until the answer starts. The default leaves room for both.
 - `compaction.max_context_length`: the effective threshold is the smaller of this value and the model's `context_window` − 2048. A small-window model therefore compacts inside its window, while a window above 258048 fires at this number. An entry with no `context_window` assumes a 128000 window.
 - `compaction.max_session_turns`: `-1` means unlimited.
 - `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Skills**, and `schedules.prompt` on **Schedules**.
@@ -370,7 +370,7 @@ max_turns: -1
 model:
   max_tokens: 32000
   thinking_level: medium
-  timeoutMs: 300000
+  timeoutMs: 600000
 
 compaction:
   max_context_length: 256000

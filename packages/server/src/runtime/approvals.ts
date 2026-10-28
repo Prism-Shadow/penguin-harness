@@ -21,12 +21,12 @@ import type { ApprovalMode } from "../api/types.js";
 import type {
   ApprovalDecision,
   ApproveFn,
-  OmniMessage,
+  AmspRecord,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
 
 export interface PendingApproval {
-  toolCall: OmniMessage<ToolCallPayload>;
+  toolCall: AmspRecord<ToolCallPayload>;
   origin?: string[];
 }
 
@@ -38,7 +38,7 @@ interface PendingEntry extends PendingApproval {
 export interface Approvals {
   readonly size: number;
   list(): PendingApproval[];
-  wait(toolCall: OmniMessage<ToolCallPayload>): Promise<ApprovalDecision>;
+  wait(toolCall: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision>;
   decide(toolCallId: string, decision: ApprovalDecision): boolean;
   denyAll(): void;
   denyMain(): void;
@@ -69,7 +69,7 @@ export class ApprovalRegistry implements Approvals {
   }
 
   /** Register and wait for a decision. Re-registering the same id (defensive) resolves the old entry as deny. */
-  wait(toolCall: OmniMessage<ToolCallPayload>): Promise<ApprovalDecision> {
+  wait(toolCall: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision> {
     const id = toolCall.payload.tool_call_id;
     return this.batch(
       () =>
@@ -161,7 +161,7 @@ export function makeApprove(args: {
   unattended?: () => boolean;
 }): ApproveFn {
   const { getMode, toolPermission, registry, publishRequest, unattended } = args;
-  const manual = (toolCall: OmniMessage<ToolCallPayload>): Promise<ApprovalDecision> => {
+  const manual = (toolCall: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision> => {
     if (unattended?.() === true) return Promise.resolve<ApprovalDecision>("deny");
     const promise = registry.wait(toolCall);
     publishRequest({

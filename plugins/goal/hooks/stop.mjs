@@ -21,7 +21,7 @@ import path from "node:path";
 import {
   GOAL_FILE,
   MAX_ROUNDS,
-  lastRoundRecords,
+  readRoundRecords,
   readGoal,
   readInput,
   readTrace,
@@ -76,7 +76,7 @@ if (goal === "broken") {
 // A goal that already ended on this Session (an earlier run) is not this run's business.
 if (goal.ended) process.exit(0);
 
-const round = lastRoundRecords(records);
+const round = readRoundRecords(tracePath, sessionId, records);
 goal.tokens_used += round.reduce((n, r) => n + uncachedTokens(r), 0);
 
 if (goal.status === "complete" || goal.status === "blocked") {

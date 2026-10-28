@@ -1,5 +1,5 @@
 /**
- * The chat stream's model (lib/omni/stream-model.ts): OmniMessages in, the items the chat
+ * The chat stream's model (lib/amsp/stream-model.ts): records in, the items the chat
  * renders out, and the same items whether a conversation arrives live or is rebuilt from
  * history.
  *
@@ -39,13 +39,17 @@
  * - Empty or blank fidelity-only messages render nothing, live or rebuilt.
  * - A Task's stats row lists the memory files it changed (completed writes and edits under
  *   the memory root only).
+ * - The Trace's Task records (task_begin / task_end) render nothing and move no Task: history
+ *   with them rebuilds the items a history without them does, a Task stopped before any
+ *   request included.
+ * - A Session's first message streams its session_meta ahead of task_begin: it renders nothing
+ *   and marks no model change.
  */
 import { describe, expect, it } from "vitest";
 import {
   abortEvent,
   approvalDecision,
   assistantText,
-  buildBackgroundTaskDoneMessage,
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
@@ -59,18 +63,17 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   thinkingMessage,
   tokenUsage,
   toolCall,
   toolCallOutput,
   userText,
   withOrigin,
-} from "@prismshadow/penguin-core/omnimessage";
-import type {
-  OmniMessage,
-  SessionMetaPayload,
-  TokenCounts,
-} from "@prismshadow/penguin-core/omnimessage";
+} from "@prismshadow/amsp";
+import { buildBackgroundTaskDoneMessage } from "@prismshadow/amsp/markers";
+import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/amsp";
 import {
   approvalKey,
   buildDedupIndex,
@@ -83,8 +86,8 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
-} from "../src/lib/omni/stream-model";
-import { liveSessionElapsedMs } from "../src/lib/omni/task-stats";
+} from "../src/lib/amsp/stream-model";
+import { liveSessionElapsedMs } from "../src/lib/amsp/task-stats";
 import type {
   AssistantTextItem,
   BackgroundNoticeItem,
@@ -98,7 +101,7 @@ import type {
   ToolCallItem,
   UserSteeringItem,
   UserTextItem,
-} from "../src/lib/omni/stream-model";
+} from "../src/lib/amsp/stream-model";
 
 /** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
 function noticeText(delivery?: "steering"): string {
@@ -115,7 +118,7 @@ function noticeText(delivery?: "steering"): string {
 }
 
 /** Override a message timestamp (constructor defaults to the current time). */
-function at<M extends OmniMessage>(msg: M, ts: string): M {
+function at<M extends AmspRecord>(msg: M, ts: string): M {
   return { ...msg, timestamp: ts };
 }
 
@@ -128,7 +131,7 @@ function out(n: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: n, total: n };
 }
 
-function meta(sessionId: string): OmniMessage<SessionMetaPayload> {
+function meta(sessionId: string): AmspRecord<SessionMetaPayload> {
   return sessionMeta({
     session_id: sessionId,
     model_id: "m",
@@ -166,16 +169,16 @@ describe("partial aggregation and full-message convergence", () => {
     expect(item.text).toBe("Hello!");
   });
 
-  it("partial_thinking works the same; stop_reason is recorded on the item", () => {
+  it("partial_thinking works the same", () => {
     const m = createStreamModel();
     pushMessage(m, partialThinking("start"));
     pushMessage(m, partialThinking("delta", "thinking"));
-    pushMessage(m, partialThinking("stop", "", "aborted"));
+    pushMessage(m, partialThinking("stop", ""));
     const item = items(m)[0] as ThinkingItem;
     expect(item.kind).toBe("thinking");
     expect(item.thinking).toBe("thinking");
-    expect(item.stopReason).toBe("aborted");
-    pushMessage(m, thinkingMessage("thinking (complete)", "aborted"));
+    expect(item.streaming).toBe(false);
+    pushMessage(m, thinkingMessage("thinking (complete)"));
     expect(items(m)).toHaveLength(1);
     expect(item.thinking).toBe("thinking (complete)");
   });
@@ -218,7 +221,10 @@ describe("partial aggregation and full-message convergence", () => {
     expect(card.output).toBe("a.txt\n");
     expect(card.outputStreaming).toBe(true);
     pushMessage(m, partialToolCallOutput({ eventType: "stop", toolCallId: "t1" }));
-    pushMessage(m, toolCallOutput({ output: "a.txt\nb.txt\n", toolCallId: "t1" }));
+    pushMessage(
+      m,
+      toolCallOutput({ output: "a.txt\nb.txt\n", toolCallId: "t1", status: "completed" }),
+    );
     expect(card.output).toBe("a.txt\nb.txt\n");
     expect(card.outputComplete).toBe(true);
   });
@@ -243,7 +249,10 @@ describe("partial aggregation and full-message convergence", () => {
       partialToolCallOutput({ eventType: "delta", output: "orphan", toolCallId: "t3" }),
     );
     expect(items(m)).toHaveLength(0);
-    pushMessage(m, toolCallOutput({ output: "full output", toolCallId: "t3" }));
+    pushMessage(
+      m,
+      toolCallOutput({ output: "full output", toolCallId: "t3", status: "completed" }),
+    );
     expect(items(m)).toHaveLength(1);
     expect((items(m)[0] as ToolCallItem).output).toBe("full output");
   });
@@ -273,7 +282,12 @@ describe("partial aggregation and full-message convergence", () => {
     // Full message converges: text is replaced, image is overwritten with the same value.
     pushMessage(
       m,
-      toolCallOutput({ output: "image/png, 4 B", toolCallId: "t4", images: [dataUrl] }),
+      toolCallOutput({
+        output: "image/png, 4 B",
+        toolCallId: "t4",
+        images: [dataUrl],
+        status: "completed",
+      }),
     );
     expect(card.output).toBe("image/png, 4 B");
     expect(card.images).toEqual([dataUrl]);
@@ -331,7 +345,7 @@ describe("live-tail synthetic starts (mid-stream join seeding)", () => {
     );
     expect(card.output).toBe("line 1\nline 2\nline 3\n");
     // Once the output is complete, a stray synthetic start must not reopen or append.
-    pushMessage(m, toolCallOutput({ output: "final", toolCallId: "t1" }));
+    pushMessage(m, toolCallOutput({ output: "final", toolCallId: "t1", status: "completed" }));
     pushMessage(
       m,
       partialToolCallOutput({ eventType: "start", output: "stale", toolCallId: "t1" }),
@@ -479,6 +493,16 @@ describe("approvals and events", () => {
     expect(banner.running).toBe(false);
     expect(banner.status).toBe("retryable");
     expect(banner.errorMessage).toBe("the response contained no usable summary");
+  });
+
+  it("a Session's first message streams its session_meta ahead of task_begin, and nothing renders for it", () => {
+    const m = createStreamModel();
+    pushMessage(m, meta("s1"));
+    pushMessage(m, taskBegin());
+    pushMessage(m, userText("first question"));
+    expect(items(m).map((i) => i.kind)).not.toContain("model_change");
+    expect(items(m)).toHaveLength(1);
+    expect(m.contextModel).toMatchObject({ sessionId: "s1" });
   });
 
   it("a main-session session_meta on another model pushes a model_change item after the compaction row; the window's first meta, a same-pair rewrite and a nested child's meta push none", () => {
@@ -832,7 +856,7 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     pushMessage(m, toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" }));
     pushMessage(m, requestEnd("completed"));
-    pushMessage(m, toolCallOutput({ output: "ok", toolCallId: "t1" }));
+    pushMessage(m, toolCallOutput({ output: "ok", toolCallId: "t1", status: "completed" }));
 
     const users = items(m).filter((i) => i.kind === "user_text") as UserTextItem[];
     expect(users.map((u) => u.text)).toContain("q2 after the crash");
@@ -1311,23 +1335,49 @@ describe("approvals and events", () => {
     expect(fresh.attempt).toBe(1);
   });
 
-  it("a tool_call closed non-completed (interrupt closure) settles the card on arrival instead of showing as running", () => {
+  it("a tool call the stream cut short settles as aborted once its Request ends, instead of showing as running", () => {
     const m = createStreamModel();
+    pushMessage(m, requestBegin());
     pushMessage(
       m,
-      toolCall({
-        name: "exec_command",
+      partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "tc-broken" }),
+    );
+    pushMessage(
+      m,
+      partialToolCall({
+        eventType: "delta",
+        name: "",
         arguments: '{"cmd": "ec',
         toolCallId: "tc-broken",
-        stopReason: "retryable",
       }),
+    );
+    pushMessage(m, partialToolCall({ eventType: "stop", name: "", toolCallId: "tc-broken" }));
+    // The call is written whole with the arguments that arrived, and never dispatched.
+    pushMessage(
+      m,
+      toolCall({ name: "exec_command", arguments: '{"cmd": "ec', toolCallId: "tc-broken" }),
     );
     const card = findToolCard(m, undefined, "tc-broken")!;
     expect(card.callComplete).toBe(true);
-    // This call was never dispatched for execution and will never have output: close it
-    // immediately with the call's own closure reason, so execution timing doesn't spin idle.
+    expect(card.outputComplete).toBe(false);
+    // Its Request ends without completing and with no decision on it: it will never run, so the
+    // card closes rather than spin its timer.
+    pushMessage(m, requestEnd("retryable", { retryInMs: 2000 }));
+    expect(card.callStreaming).toBe(false);
     expect(card.outputComplete).toBe(true);
-    expect(card.outputStopReason).toBe("retryable");
+    expect(card.outputStatus).toBe("aborted");
+  });
+
+  it("a call its unfinished Request dispatched keeps running until its output arrives", () => {
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "t1" }));
+    pushMessage(m, approvalDecision("allow", "t1"));
+    pushMessage(m, requestEnd("retryable", { retryInMs: 2000 }));
+    const card = findToolCard(m, undefined, "t1")!;
+    expect(card.outputComplete).toBe(false);
+    pushMessage(m, toolCallOutput({ output: "a.txt", toolCallId: "t1", status: "completed" }));
+    expect(card.outputStatus).toBe("completed");
   });
 
   it("request events inside a compaction span produce no retry notice (history rebuild exposes only the event pair for compaction)", () => {
@@ -1476,11 +1526,36 @@ describe("Task segmentation and stats triggering", () => {
       ...at(assistantText("fork here"), "2026-07-05T00:00:03.000Z"),
       tracePosition: { fileIndex: 2, ordinal: 17 },
     };
-    pushMessages(m, [at(userText("Q"), "2026-07-05T00:00:00.000Z"), reply]);
+    pushMessages(m, [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      requestBegin(),
+      reply,
+      requestEnd("completed"),
+    ]);
     finalizeHistory(m);
     const stats = items(m).find((item) => item.kind === "task_stats") as TaskStatsItem;
     expect(stats.forkable).toBe(true);
     expect(stats.forkPosition).toEqual({ fileIndex: 2, ordinal: 17 });
+  });
+
+  it("a reply whose Request did not complete is no fork point, and a Request cut off at its cap gets a retry line", () => {
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      requestBegin(),
+      at(assistantText("Half an ans"), "2026-07-05T00:00:01.000Z"),
+      requestEnd("retryable", { errorCode: "output_truncated", errorMessage: "cut", attempt: 6 }),
+    ]);
+    finalizeHistory(m);
+    const line = items(m).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(line).toMatchObject({
+      status: "retryable",
+      errorCode: "output_truncated",
+      attempt: 6,
+      gaveUp: true,
+    });
+    const stats = items(m).find((item) => item.kind === "task_stats") as TaskStatsItem;
+    expect(stats.forkable).toBe(false);
   });
 
   it("stream end (finalizeHistory) closes the last Task; rounds without usage get no stats figures but still get a footer", () => {
@@ -1522,7 +1597,7 @@ describe("Task segmentation and stats triggering", () => {
     expect(stats.stats!.tokens).toBe(800);
   });
 
-  it.each<[string, OmniMessage[], string]>([
+  it.each<[string, AmspRecord[], string]>([
     [
       "failed",
       [
@@ -1829,7 +1904,10 @@ describe("compaction attribution by position: in-round counts toward the round, 
       at(toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" }), "2026-07-05T00:00:02.000Z"),
       at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.500Z"),
       at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
-      at(toolCallOutput({ output: "ok", toolCallId: "t1" }), "2026-07-05T00:00:04.000Z"),
+      at(
+        toolCallOutput({ output: "ok", toolCallId: "t1", status: "completed" }),
+        "2026-07-05T00:00:04.000Z",
+      ),
       at(
         compactionBegin({ reason: "context", mode: "summarize", context: 100, turns: 1 }),
         "2026-07-05T00:00:05.000Z",
@@ -2185,7 +2263,10 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
       ),
       at(tokenUsage(counts(100), counts(100)), "2026-07-05T00:00:02.500Z"),
       at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
-      at(toolCallOutput({ output: "launched", toolCallId: "t1" }), "2026-07-05T00:00:04.000Z"),
+      at(
+        toolCallOutput({ output: "launched", toolCallId: "t1", status: "completed" }),
+        "2026-07-05T00:00:04.000Z",
+      ),
       at(userText(noticeText(), "harness"), "2026-07-05T00:00:08.000Z"),
       at(requestBegin(), "2026-07-05T00:00:09.000Z"),
       at(assistantText("it finished cleanly"), "2026-07-05T00:00:10.000Z"),
@@ -2490,7 +2571,12 @@ describe("overlap dedup (contract §7.2)", () => {
     const ref = (query: string) => `/api/sessions/s1/trace-image?${query}`;
     const userImage = at(imageUrlMessage(bytes), "2026-07-05T00:00:00.000Z");
     const shot = at(
-      toolCallOutput({ output: "two shots", toolCallId: "c1", images: [bytes, bytes] }),
+      toolCallOutput({
+        output: "two shots",
+        toolCallId: "c1",
+        images: [bytes, bytes],
+        status: "completed",
+      }),
       "2026-07-05T00:00:04.000Z",
     );
     // The page's copies: positioned Trace records whose images became route URLs.
@@ -2530,7 +2616,10 @@ describe("overlap dedup (contract §7.2)", () => {
     ).toBe(false);
     // A tool output with one more image than history's copy is not that copy.
     const out = (images: string[]) =>
-      at(toolCallOutput({ output: "shot", toolCallId: "c1", images }), "2026-07-05T00:00:04.000Z");
+      at(
+        toolCallOutput({ output: "shot", toolCallId: "c1", images, status: "completed" }),
+        "2026-07-05T00:00:04.000Z",
+      );
     expect(isDuplicate(buildDedupIndex([out([bytes])]), out([bytes, bytes]))).toBe(false);
   });
 
@@ -2589,7 +2678,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     pushMessage(m, at(partialThinking("start"), T0));
     pushMessage(m, at(partialThinking("delta", "reasoning"), T0));
     pushMessage(m, at(partialThinking("stop"), T1));
-    pushMessage(m, at(thinkingMessage("reasoning", "completed"), T1));
+    pushMessage(m, at(thinkingMessage("reasoning"), T1));
     const th = items(m)[0] as ThinkingItem;
     expect(th.startedAtMs).toBe(Date.parse(T0));
     expect(th.durationMs).toBe(3200);
@@ -2598,7 +2687,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
   it("history thinking (no fragments): approximates the start with the previous message's time", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("question"), T0));
-    pushMessage(m, at(thinkingMessage("reasoning", "completed"), T1));
+    pushMessage(m, at(thinkingMessage("reasoning"), T1));
     const th = items(m).find((i) => i.kind === "thinking") as ThinkingItem;
     expect(th.startedAtMs).toBe(Date.parse(T0));
     expect(th.durationMs).toBe(3200);
@@ -2610,7 +2699,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     const card = items(m)[0] as ToolCallItem;
     expect(card.callStartedAtMs).toBe(Date.parse(T1));
     expect(card.durationMs).toBeUndefined();
-    pushMessage(m, at(toolCallOutput({ output: "ok", toolCallId: "t1" }), T2));
+    pushMessage(m, at(toolCallOutput({ output: "ok", toolCallId: "t1", status: "completed" }), T2));
     expect(card.durationMs).toBe(4800);
   });
 
@@ -2619,7 +2708,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     const Ta = "2026-07-07T00:00:05.000Z"; // approval granted: after call(T1), before output(T2)
     pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), T1));
     pushMessage(m, at(approvalDecision("allow", "t1"), Ta));
-    pushMessage(m, at(toolCallOutput({ output: "ok", toolCallId: "t1" }), T2));
+    pushMessage(m, at(toolCallOutput({ output: "ok", toolCallId: "t1", status: "completed" }), T2));
     const card = items(m)[0] as ToolCallItem;
     expect(card.approvalAtMs).toBe(Date.parse(Ta));
     expect(card.durationMs).toBe(3000); // T2 - Ta (subtracting the T1->Ta approval wait), not 4800
@@ -2635,7 +2724,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     expect(card.outputStreaming).toBe(false);
     expect(card.durationMs).toBeUndefined();
     // Never produced a result: it must be recorded as aborted, otherwise it renders as a "completed" checkmark.
-    expect(card.outputStopReason).toBe("aborted");
+    expect(card.outputStatus).toBe("aborted");
   });
 
   it("Task close-out (task_state:idle) also closes running tool cards", () => {
@@ -2645,7 +2734,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     notifyTaskIdle(m);
     const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
     expect(card.outputComplete).toBe(true);
-    expect(card.outputStopReason).toBe("aborted");
+    expect(card.outputStatus).toBe("aborted");
   });
 
   it("history tools (no fragments): approximate the argument-generation start with the previous message's time; duration includes the generation segment", () => {
@@ -2657,7 +2746,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "th" }), T1));
     const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
     expect(card.argStartedAtMs).toBe(Date.parse(T0));
-    pushMessage(m, at(toolCallOutput({ output: "ok", toolCallId: "th" }), T2));
+    pushMessage(m, at(toolCallOutput({ output: "ok", toolCallId: "th", status: "completed" }), T2));
     // Generation segment T0->T1 (3200ms) + execution segment T1->T2 (4800ms).
     expect(card.durationMs).toBe(8000);
   });
@@ -2677,7 +2766,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     // Generation segment T0->T1 (3200ms) + execution segment T1->T2 (4800ms) = 8000ms (no approval wait).
     expect(card.durationMs).toBe(8000);
     // The later full tool_call_output only fills in the execution segment, without overwriting the generation segment already included.
-    pushMessage(m, at(toolCallOutput({ output: "x", toolCallId: "t2" }), T2));
+    pushMessage(m, at(toolCallOutput({ output: "x", toolCallId: "t2", status: "completed" }), T2));
     expect(card.durationMs).toBe(8000);
   });
 });
@@ -2690,13 +2779,19 @@ describe("multiple calls with a repeated tool_call_id (fallback for legacy Trace
       m,
       toolCall({ name: "get_time", arguments: '{"city":"Tokyo"}', toolCallId: "get_time" }),
     );
-    pushMessage(m, toolCallOutput({ output: "10:00 Tokyo", toolCallId: "get_time" }));
+    pushMessage(
+      m,
+      toolCallOutput({ output: "10:00 Tokyo", toolCallId: "get_time", status: "completed" }),
+    );
     // Round 2: same id called again (a legacy Trace where Gemini uses the function name as id).
     pushMessage(
       m,
       toolCall({ name: "get_time", arguments: '{"city":"Paris"}', toolCallId: "get_time" }),
     );
-    pushMessage(m, toolCallOutput({ output: "03:00 Paris", toolCallId: "get_time" }));
+    pushMessage(
+      m,
+      toolCallOutput({ output: "03:00 Paris", toolCallId: "get_time", status: "completed" }),
+    );
 
     const cards = items(m).filter((it) => it.kind === "tool_call") as ToolCallItem[];
     expect(cards).toHaveLength(2);
@@ -2711,7 +2806,7 @@ describe("multiple calls with a repeated tool_call_id (fallback for legacy Trace
   it("second call with a repeated id: streaming output and approval decisions attach to the newest card", () => {
     const m = createStreamModel();
     pushMessage(m, toolCall({ name: "exec", arguments: '{"cmd":"a"}', toolCallId: "exec" }));
-    pushMessage(m, toolCallOutput({ output: "out-a", toolCallId: "exec" }));
+    pushMessage(m, toolCallOutput({ output: "out-a", toolCallId: "exec", status: "completed" }));
     pushMessage(m, toolCall({ name: "exec", arguments: '{"cmd":"b"}', toolCallId: "exec" }));
     pushMessage(m, approvalDecision("allow", "exec"));
     pushMessage(m, partialToolCallOutput({ eventType: "start", toolCallId: "exec" }));
@@ -2738,7 +2833,7 @@ describe("multiple calls with a repeated tool_call_id (fallback for legacy Trace
     const cards = items(m).filter((it) => it.kind === "tool_call") as ToolCallItem[];
     expect(cards).toHaveLength(2);
     expect(cards[0]!.outputComplete).toBe(true);
-    expect(cards[0]!.outputStopReason).toBe("aborted");
+    expect(cards[0]!.outputStatus).toBe("aborted");
     expect(cards[1]!.outputComplete).toBe(false); // new card waits for output as normal
   });
 });
@@ -2847,10 +2942,7 @@ describe("task_stats memory changes", () => {
       m,
       toolCall({ name, arguments: JSON.stringify({ file_path: path }), toolCallId: id }),
     );
-    pushMessage(
-      m,
-      toolCallOutput({ output: "ok", toolCallId: id, stopReason: stop as "completed" }),
-    );
+    pushMessage(m, toolCallOutput({ output: "ok", toolCallId: id, status: stop as "completed" }));
   }
 
   it("collects completed write_file/edit_file under the memory root; write dominates the merged row", () => {
@@ -2907,5 +2999,53 @@ describe("task_stats memory changes", () => {
     expect(all).toHaveLength(3);
     expect(all[1]!.memoryChanges).toMatchObject([{ scope: "user", file: "y.md", op: "edit" }]);
     expect(all[2]!.memoryChanges).toBeUndefined(); // walk stops at the previous task_stats
+  });
+});
+
+describe("Task records", () => {
+  it("render nothing and move no Task: history with the pair rebuilds the items history without it does", () => {
+    const ts = (mmss: string) => `2026-07-20T10:${mmss}Z`;
+    const tasks: AmspRecord[][] = [
+      [
+        at(userText("q1"), ts("00:00.000")),
+        at(requestBegin(), ts("00:01.000")),
+        at(assistantText("a1"), ts("00:02.000")),
+        at(tokenUsage(counts(100), out(40)), ts("00:02.500")),
+        at(requestEnd("completed"), ts("00:03.000")),
+      ],
+      // Stopped before any request: its elapsed time runs to its last record, so the next
+      // Task's task_begin, minutes later, must not stretch it.
+      [at(userText("q2"), ts("01:00.000")), at(abortEvent(), ts("01:01.000"))],
+      [
+        at(userText("q3"), ts("05:00.000")),
+        at(requestBegin(), ts("05:01.000")),
+        at(assistantText("a3"), ts("05:02.000")),
+        at(tokenUsage(counts(200), out(40)), ts("05:02.500")),
+        at(requestEnd("completed"), ts("05:03.000")),
+      ],
+    ];
+    const ends = [ts("00:03.100"), ts("01:01.000"), ts("05:03.100")];
+    const NOW_MS = Date.parse(ts("06:00.000"));
+
+    const plain = createStreamModel();
+    pushMessages(plain, tasks.flat(), NOW_MS);
+    finalizeHistory(plain);
+    const paired = createStreamModel();
+    pushMessages(
+      paired,
+      tasks.flatMap((task, i) => [
+        at(taskBegin(), task[0]!.timestamp),
+        ...task,
+        at(taskEnd(), ends[i]!),
+      ]),
+      NOW_MS,
+    );
+    finalizeHistory(paired);
+
+    expect(items(paired)).toEqual(items(plain));
+    // The session's elapsed time is the same sum: 3s for the first Task, 1s for the stopped one,
+    // 3s for the last.
+    expect(paired.stats).toEqual(plain.stats);
+    expect(paired.stats.sessionElapsedMs).toBe(3000 + 1000 + 3000);
   });
 });

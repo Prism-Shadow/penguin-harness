@@ -1,5 +1,5 @@
 /**
- * The demo conversations as OmniMessage transcripts, in both languages, plus the scripted
+ * The demo conversations as record transcripts, in both languages, plus the scripted
  * reply a sent message streams. Every message is built by the small builders below, so the
  * envelopes (timestamps, roles, stop reasons) are always well-formed, and the running states
  * the gallery exists to show are set up the way the server produces them:
@@ -11,7 +11,7 @@
  */
 import type { GoalServerEvent } from "@prismshadow/penguin-server/api";
 import { IDS } from "./ids";
-import type { Lang, OmniMessage, PayloadOf, ToolCallMessage } from "./types";
+import type { Lang, AmspRecord, PayloadOf, ThinkingLevel, ToolCallMessage } from "./types";
 
 // ---------------------------------------------------------------------------------------------
 // Builders
@@ -22,9 +22,9 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const model = <T extends PayloadOf<"text" | "thinking" | "tool_call" | "tool_call_output">>(
   ms: number,
   payload: T,
-): OmniMessage => ({ timestamp: iso(ms), type: "model_msg", payload });
+): AmspRecord => ({ timestamp: iso(ms), type: "model_msg", payload });
 
-export const event = (ms: number, payload: OmniMessage["payload"]): OmniMessage => ({
+export const event = (ms: number, payload: AmspRecord["payload"]): AmspRecord => ({
   timestamp: iso(ms),
   type: "event_msg",
   payload,
@@ -40,7 +40,7 @@ export const meta = (
   ref: { provider: string; modelId: string; contextWindow: number },
   workspace: string,
   who: { agentId?: string; systemPrompt?: string; source?: "user" | "subagent" | "cli" } = {},
-): OmniMessage => ({
+): AmspRecord => ({
   timestamp: iso(ms),
   type: "session_meta",
   payload: {
@@ -63,16 +63,13 @@ export const userText = (
   ms: number,
   text: string,
   sender?: "harness" | "server" | "parent_agent",
-): OmniMessage => model(ms, { type: "text", role: "user", text, ...(sender ? { sender } : {}) });
+): AmspRecord => model(ms, { type: "text", role: "user", text, ...(sender ? { sender } : {}) });
 
-export const assistantText = (
-  ms: number,
-  text: string,
-  stopReason: "completed" | "aborted" = "completed",
-): OmniMessage => model(ms, { type: "text", role: "assistant", text, stop_reason: stopReason });
+export const assistantText = (ms: number, text: string): AmspRecord =>
+  model(ms, { type: "text", role: "assistant", text });
 
-export const thinking = (ms: number, text: string): OmniMessage =>
-  model(ms, { type: "thinking", role: "assistant", thinking: text, stop_reason: "completed" });
+export const thinking = (ms: number, text: string): AmspRecord =>
+  model(ms, { type: "thinking", role: "assistant", thinking: text });
 
 export const toolCall = (
   ms: number,
@@ -88,25 +85,31 @@ export const toolCall = (
     name,
     arguments: JSON.stringify(args),
     tool_call_id: id,
-    stop_reason: "completed",
   },
 });
 
-export const toolOutput = (ms: number, id: string, output: string): OmniMessage =>
+export const toolOutput = (ms: number, id: string, output: string): AmspRecord =>
   model(ms, {
     type: "tool_call_output",
     role: "user",
     output,
     tool_call_id: id,
-    stop_reason: "completed",
+    status: "completed",
   });
 
-export const requestBegin = (ms: number): OmniMessage => event(ms, { type: "request_begin" });
+/** A Task's start and end: the pair the Session writes around each Task (none around a switch). */
+export const taskBegin = (ms: number): AmspRecord => event(ms, { type: "task_begin" });
 
-export const requestEnd = (ms: number): OmniMessage =>
+export const taskEnd = (ms: number): AmspRecord => event(ms, { type: "task_end" });
+
+/** A request's start, at the thinking level it went out at when the transcript says one. */
+export const requestBegin = (ms: number, level?: ThinkingLevel): AmspRecord =>
+  event(ms, { type: "request_begin", ...(level !== undefined ? { thinking_level: level } : {}) });
+
+export const requestEnd = (ms: number): AmspRecord =>
   event(ms, { type: "request_end", status: "completed" });
 
-export const tokenUsage = (ms: number, sessionTotal: number, requestTotal: number): OmniMessage =>
+export const tokenUsage = (ms: number, sessionTotal: number, requestTotal: number): AmspRecord =>
   event(ms, {
     type: "token_usage",
     session: {
@@ -123,10 +126,10 @@ export const tokenUsage = (ms: number, sessionTotal: number, requestTotal: numbe
     },
   });
 
-export const approvalDecision = (ms: number, id: string, decision: "allow" | "deny"): OmniMessage =>
+export const approvalDecision = (ms: number, id: string, decision: "allow" | "deny"): AmspRecord =>
   event(ms, { type: "approval_decision", decision, tool_call_id: id });
 
-export const abortEvent = (ms: number): OmniMessage =>
+export const abortEvent = (ms: number): AmspRecord =>
   event(ms, { type: "abort", error_code: "user_abort" });
 
 /** A streaming fragment; `event_type` says whether it opens, extends or closes the fragment. */
@@ -137,7 +140,7 @@ export const partial = (
     | PayloadOf<"partial_thinking">
     | PayloadOf<"partial_tool_call">
     | PayloadOf<"partial_tool_call_output">,
-): OmniMessage => ({ timestamp: iso(ms), type: "model_msg", payload });
+): AmspRecord => ({ timestamp: iso(ms), type: "model_msg", payload });
 
 // ---------------------------------------------------------------------------------------------
 // The content, per language
@@ -484,7 +487,7 @@ export const TOOL_CALL_IDS = {
 } as const;
 
 export interface Transcript {
-  history: OmniMessage[];
+  history: AmspRecord[];
   /** An open thinking fragment the live tail carries (running thinking). */
   openThinking?: { startedAt: number; text: string };
   /** An open text fragment the live tail carries (a reply streaming in). */
@@ -506,12 +509,14 @@ export function doneTranscript(lang: Lang, now: number, ref: ModelRef): Transcri
     history: [
       meta(s(0), IDS.sessions.done, ref, IDS.workspace),
       userText(s(0), c.prompt),
-      requestBegin(s(0.4)),
+      // The finished Task ran at medium; the scripted reply a sent message plays goes out at
+      // high, so the Trace tab marks where the level changed.
+      requestBegin(s(0.4), "medium"),
       thinking(s(6), c.thinking),
       toolCall(s(7), "call_read_rag", "read_file", { path: "src/rag.ts" }),
       requestEnd(s(7.1)),
       toolOutput(s(7.5), "call_read_rag", RAG_EXCERPT),
-      requestBegin(s(7.8)),
+      requestBegin(s(7.8), "medium"),
       toolCall(s(14), "call_edit_rag", "edit_file", {
         path: "src/rag.ts",
         old_string: RAG_OLD,
@@ -519,14 +524,14 @@ export function doneTranscript(lang: Lang, now: number, ref: ModelRef): Transcri
       }),
       requestEnd(s(14.1)),
       toolOutput(s(14.6), "call_edit_rag", "Edited src/rag.ts (+3 -1)."),
-      requestBegin(s(15)),
+      requestBegin(s(15), "medium"),
       toolCall(s(18), "call_test", "exec_command", {
         cmd: "pnpm vitest run test/rag.test.ts",
         description: lang === "zh" ? "运行检索测试" : "Run the retrieval tests",
       }),
       requestEnd(s(18.1)),
       toolOutput(s(20.2), "call_test", TEST_OUTPUT),
-      requestBegin(s(20.5)),
+      requestBegin(s(20.5), "medium"),
       assistantText(s(31), c.answer),
       tokenUsage(s(31.2), 43_800, 12_400),
       requestEnd(s(31.2)),
@@ -653,7 +658,7 @@ export function shortTranscript(
 /** One step of a script: what to publish, `at` ms after the script starts. */
 export interface ScriptStep {
   at: number;
-  msg: OmniMessage;
+  msg: AmspRecord;
 }
 
 /** Splits text into word-sized chunks so a stream reads as one. */
@@ -670,10 +675,10 @@ export function scriptedReply(lang: Lang, callId: string): ScriptStep[] {
   const c = COPY[lang].reply;
   const steps: ScriptStep[] = [];
   let at = 250;
-  const push = (msg: OmniMessage) => steps.push({ at, msg });
+  const push = (msg: AmspRecord) => steps.push({ at, msg });
   const p = (ms: number, payload: Parameters<typeof partial>[1]) => partial(ms, payload);
 
-  push(requestBegin(0));
+  push(requestBegin(0, "high"));
   at += 300;
   push(p(0, { type: "partial_thinking", role: "assistant", event_type: "start", thinking: "" }));
   for (const chunk of chunks(c.thinking)) {
@@ -725,7 +730,7 @@ export function scriptedReply(lang: Lang, callId: string): ScriptStep[] {
   at += 1400;
   push(toolOutput(0, callId, RAG_EXCERPT));
   at += 300;
-  push(requestBegin(0));
+  push(requestBegin(0, "high"));
 
   at += 500;
   push(p(0, { type: "partial_text", role: "assistant", event_type: "start", text: "" }));

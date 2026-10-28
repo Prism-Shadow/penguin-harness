@@ -1,13 +1,15 @@
 /**
  * General page of the Settings dialog: per-account preferences that are neither appearance nor
- * credentials. Everything applies the moment it is touched — the stores persist each value
- * (language, currency and task-completion notifications per browser) — so the page carries
- * no Save button and no draft state to lose.
+ * credentials. Everything applies the moment it is touched — the stores persist each value to
+ * the account (lib/account-sync), so language, currency and notifications follow the person to
+ * every browser — and the page carries no Save button and no draft state to lose.
  *
  * The notification row is the one that reaches outside the app: turning it on asks the
  * platform for permission then and there (lib/notification-pref explains why the prompt
  * hangs off this switch rather than off a page load), so it settles on whatever that
- * request answered rather than on what was clicked.
+ * request answered rather than on what was clicked. The permission belongs to this browser
+ * alone, so the switch shows what THIS browser will do: on only where the account wants
+ * notifications and the platform granted them here.
  */
 import { useState, useSyncExternalStore } from "react";
 import { PrefRow, Segmented, SettingsGroup, ToggleRow, guardLeave } from "@prismshadow/penguin-ui";
@@ -62,7 +64,7 @@ export function GeneralSection() {
     else void guardLeave(() => setLang(next));
   };
 
-  const hint = notificationHintFor(access, asked);
+  const hint = notificationHintFor(access, asked, notificationsOn);
   const notificationHint =
     hint === "unsupported"
       ? S.settings.notificationsUnsupported
@@ -70,7 +72,9 @@ export function GeneralSection() {
         ? S.settings.notificationsDenied
         : hint === "dismissed"
           ? S.settings.notificationsDismissed
-          : undefined;
+          : hint === "notAllowedHere"
+            ? S.settings.notificationsNotAllowedHere
+            : undefined;
 
   return (
     <SettingsGroup>
@@ -84,7 +88,7 @@ export function GeneralSection() {
         label={S.settings.notifications}
         hint={notificationHint}
         info={S.settings.notificationsInfo}
-        checked={notificationsOn}
+        checked={notificationsOn && access === "granted"}
         disabled={access === "unsupported"}
         onChange={(on) => {
           if (!on) {

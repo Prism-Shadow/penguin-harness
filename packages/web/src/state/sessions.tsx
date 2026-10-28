@@ -85,7 +85,7 @@ import {
   publishBuiltinBrowserResync,
 } from "../features/builtin-browser/browser-events";
 import { WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
-import { publishUserEvent } from "../lib/omni/user-events";
+import { publishUserEvent } from "../lib/amsp/user-events";
 import { mergeCounts, mostRecentFirst } from "../lib/session-merge";
 import {
   forgetSessionMachines,
@@ -95,10 +95,13 @@ import {
 import {
   cachedMachineAgents,
   cachedMachineSessions,
-  rememberMachineAgents,
   rememberMachineSessions,
 } from "../lib/machine-cache";
-import { subscribeMachineAgentsChanged } from "../lib/machine-agent-lists";
+import {
+  machineAgentsOutOfReach,
+  readMachineAgents,
+  subscribeMachineAgentsChanged,
+} from "../lib/machine-agent-lists";
 import { setTerminalMachines } from "../lib/terminal-machines";
 import { machineIdOf } from "../lib/workspace-machines";
 import {
@@ -793,11 +796,14 @@ export function createSessionsStore() {
         if (!projectId || agentIds.length === 0) return;
         const g = ++gen;
         const adoptMark = adoptSeq;
-        // Only when there is nothing on screen. Rows already listed stay true while this
-        // refetches — a machine appearing or dropping out changes which servers are asked,
-        // not whether what is already shown is still so — and the chat page reads this flag
-        // to decide whether to draw a skeleton over the open conversation.
-        if (get().sessions.length === 0) set({ loading: true });
+        // `loading` is not raised here. It means "no list of this context yet": it starts
+        // raised, the Provider raises it again when the context (the Project, its Agent set)
+        // changes, and the first applied list clears it. A re-read keeps what is shown — rows,
+        // or "no Sessions yet" — because a machine appearing, dropping out or naming its Agents
+        // changes which servers are asked, not whether what is shown is still so; raising it
+        // for an empty list swapped that line for the sidebar's skeleton and back on every
+        // machine tick. The chat page reads the same flag before drawing a skeleton over the
+        // open conversation.
         let applied = false;
         reloadsInFlight += 1;
         // This server first, then every machine of the Project this server holds a
@@ -1796,13 +1802,16 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     const offline = offlineMachineIdsKey === "" ? [] : offlineMachineIdsKey.split(",");
     const remembered = (machineId: string) =>
       cachedMachineAgents(projectId, machineId).map((agent) => agent.agentId);
+    // A machine out of reach is asked again once it is back; one that stayed held and answered
+    // in this page load is not asked again (lib/machine-agent-lists.ts `readMachineAgents`), and
+    // a list a page is reading at the same moment is one request between them.
+    for (const machineId of offline) machineAgentsOutOfReach(projectId, machineId);
     void (async () => {
       const answers = await Promise.all([
         ...offline.map(async (machineId) => [machineId, remembered(machineId)] as const),
         ...held.map(async (machineId) => {
           try {
-            const listed = (await api.listAgents(projectId, machineId)).agents;
-            rememberMachineAgents(projectId, machineId, listed);
+            const listed = await readMachineAgents(projectId, machineId);
             return [machineId, listed.map((agent) => agent.agentId)] as const;
           } catch {
             return [machineId, remembered(machineId)] as const;
@@ -1888,7 +1897,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // over them.
   useEffect(() => {
     const conn = openUserEvents({
-      onOmniMessage: () => undefined,
+      onRecord: () => undefined,
       onServerEvent: (ev) => {
         applyUserEvent(store, ev, () => window.location.reload());
         // The surfaces that list this server's Sessions apart from the sidebar (the archive

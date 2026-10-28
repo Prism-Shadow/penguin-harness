@@ -16,6 +16,11 @@
  *   price alone saves at once.
  * - The add-group dialog says a taken group name as it is typed, holds Confirm while it is
  *   taken, and asks before Esc drops a typed name.
+ * - Its import holds Detect and Import while the base URL is blank and says the URL is required
+ *   under the field, whose placeholder asks for one, like every required base URL.
+ * - A model with no key anywhere names the variable its client reads when the server reports it
+ *   set, and otherwise asks for a key; the key field is never left without a placeholder.
+ * - The price fields say a model left without prices is not costed.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -80,8 +85,19 @@ const ATLAS = model({
  * The models API: GET answers the table, PUT stores what it is sent (the way the server reads
  * a full-table replace) unless told to refuse the next one.
  */
-function modelsServer() {
-  let table: ModelsResponse = { providers: {}, models: [ATLAS] };
+/** A DeepSeek preset with no key in the file: its client reads DEEPSEEK_API_KEY. */
+const deepseek = (envKeyMasked?: string) =>
+  model({
+    provider: "deepseek",
+    modelId: "deepseek-flash",
+    displayName: "DeepSeek Flash",
+    contextWindow: 1000000,
+    envKey: "DEEPSEEK_API_KEY",
+    ...(envKeyMasked !== undefined ? { envKeyMasked } : {}),
+  });
+
+function modelsServer(models: ModelInfo[] = [ATLAS]) {
+  let table: ModelsResponse = { providers: {}, models };
   let refuse = false;
   const puts: ModelsUpdateRequest[] = [];
   stubFetch((req) => {
@@ -141,8 +157,8 @@ const card = (name: string) =>
     .find((s) => s.textContent === name)
     ?.closest("button") ?? undefined;
 
-async function openModelsPage() {
-  const server = modelsServer();
+async function openModelsPage(models?: ModelInfo[]) {
+  const server = modelsServer(models);
   await mount(
     h(
       MemoryRouter,
@@ -305,5 +321,59 @@ describe("the model config dialog", () => {
     expect(promptOpen()).toBe(true);
     await click(button(en.common.keepEditing));
     expect(field(en.models.groupNameLabel).value).toBe("acme");
+  });
+
+  it("says on each price field that a model without prices is not costed", async () => {
+    await openModelsPage();
+    await click(button(`${en.models.addToGroup} ${providerInfo("custom")!.label}`));
+    await click(button(en.models.details));
+    for (const label of [
+      en.models.priceCacheRead,
+      en.models.priceCacheWrite,
+      en.models.priceOutput,
+    ]) {
+      expect(field(label).getAttribute("placeholder")).toBe(en.models.priceBlankHint);
+    }
+  });
+
+  it("asks for a key where the variable the model's client reads is not set", async () => {
+    await openModelsPage([ATLAS, deepseek()]);
+    await click(card("DeepSeek Flash")!);
+    await waitFor(() => dialogs().length === 1);
+    expect(field(en.models.apiKey).getAttribute("placeholder")).toBe(en.models.apiKeyEnterHint);
+  });
+
+  it("names the variable the model's client reads where the server reports it set", async () => {
+    await openModelsPage([ATLAS, deepseek("sk-d…0000")]);
+    await click(card("DeepSeek Flash")!);
+    await waitFor(() => dialogs().length === 1);
+    expect(field(en.models.apiKey).getAttribute("placeholder")).toBe(
+      en.models.apiKeyEnvHint("DEEPSEEK_API_KEY"),
+    );
+  });
+
+  it("holds an import while its base URL is blank, and says so under a field that asks for one", async () => {
+    await openModelsPage();
+    await type(document.querySelector(`input[placeholder="${en.models.searchPlaceholder}"]`)!, "");
+    await click(button(`＋ ${en.models.addGroup}`));
+    await type(field(en.models.groupNameLabel), "acme");
+    await click(button(en.models.groupModeImport));
+    const url = field(en.models.baseUrl);
+    expect(url.getAttribute("placeholder")).toBe(en.models.baseUrlEnterHint);
+    expect(document.body.textContent).toContain(en.models.baseUrlRequired);
+    expect(button(en.models.detectProtocol).disabled).toBe(true);
+
+    // A protocol picked by hand brings Import, which still waits for the base URL.
+    await click(button(`${en.models.protocol}: ${en.models.protocolUnset}`));
+    const chat = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((r) =>
+      r.textContent?.startsWith(en.models.protocolNames["openai-chat"]!),
+    );
+    await click(chat!);
+    expect(button(en.models.groupImportAll).disabled).toBe(true);
+
+    await type(url, "https://acme.example/v1");
+    expect(button(en.models.groupImportAll).disabled).toBe(false);
+    expect(button(en.models.detectProtocol).disabled).toBe(false);
+    expect(document.body.textContent).not.toContain(en.models.baseUrlRequired);
   });
 });

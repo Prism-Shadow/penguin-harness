@@ -31,7 +31,7 @@ import type {
   HookPayload,
   LLMInterface,
   LLMOutcome,
-  OmniMessage,
+  AmspRecord,
   SessionHooks,
   SessionMetaPayload,
   SessionOpenedContext,
@@ -52,7 +52,7 @@ const fakeEnvironment: EnvironmentInterface = {
 };
 
 /** Builds a token_usage: request.total is the context-usage figure, session.total the cumulative one. */
-const usage = (requestTotal: number, sessionTotal: number): OmniMessage =>
+const usage = (requestTotal: number, sessionTotal: number): AmspRecord =>
   tokenUsage(
     { cache_read: 0, cache_write: 0, output: 0, total: sessionTotal },
     { cache_read: 0, cache_write: 0, output: 0, total: requestTotal },
@@ -60,14 +60,14 @@ const usage = (requestTotal: number, sessionTotal: number): OmniMessage =>
 
 /** Answers each request from a script, recording the input it was sent. */
 class ScriptedLLM implements LLMInterface {
-  calls: OmniMessage[][] = [];
-  constructor(private readonly responses: OmniMessage[][]) {}
+  calls: AmspRecord[][] = [];
+  constructor(private readonly responses: AmspRecord[][]) {}
 
   async *streamGenerate({
     newMessages,
   }: {
-    newMessages: OmniMessage[];
-  }): AsyncGenerator<OmniMessage, LLMOutcome> {
+    newMessages: AmspRecord[];
+  }): AsyncGenerator<AmspRecord, LLMOutcome> {
     this.calls.push(newMessages);
     const next = this.responses.shift();
     if (!next) return { status: "retryable", errorMessage: "no scripted response" };
@@ -77,11 +77,11 @@ class ScriptedLLM implements LLMInterface {
 }
 
 /** One short final reply per request, as many as asked for. */
-const replies = (n: number): OmniMessage[][] =>
+const replies = (n: number): AmspRecord[][] =>
   Array.from({ length: n }, (_, i) => [assistantText(`answer ${i + 1}`), usage(20, 20 * (i + 1))]);
 
-async function collect(gen: AsyncGenerator<OmniMessage, unknown>): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
+async function collect(gen: AsyncGenerator<AmspRecord, unknown>): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) return all;
@@ -90,7 +90,7 @@ async function collect(gen: AsyncGenerator<OmniMessage, unknown>): Promise<OmniM
 }
 
 /** A record as the assertions read it: a text's `sender:text`, anything else its payload type. */
-function shape(msg: OmniMessage): string {
+function shape(msg: AmspRecord): string {
   const p = msg.payload as { type?: string; role?: string; sender?: string; text?: string };
   if (msg.type === "session_meta") return "session_meta";
   if (p.type === "text")
@@ -102,7 +102,7 @@ function shape(msg: OmniMessage): string {
   return p.type ?? msg.type;
 }
 
-const textsOf = (msgs: OmniMessage[]): string[] => msgs.map((m) => (m.payload as TextPayload).text);
+const textsOf = (msgs: AmspRecord[]): string[] => msgs.map((m) => (m.payload as TextPayload).text);
 
 /** A hook answering `context`, counting its runs and keeping what it was told. */
 function answering(
@@ -199,8 +199,8 @@ describe("Session user-prompt hooks", () => {
   });
 
   /** A Trace sink that keeps what it is handed, in order. */
-  function recordingTrace(): TraceSink & { written: OmniMessage[] } {
-    const written: OmniMessage[] = [];
+  function recordingTrace(): TraceSink & { written: AmspRecord[] } {
+    const written: AmspRecord[] = [];
     return {
       written,
       write: async (msg) => {
@@ -256,13 +256,16 @@ describe("Session user-prompt hooks", () => {
     const out = await collect(session.run([userText(prompt)]));
 
     // The Prompt itself is never yielded; what the hooks made of it is, ahead of the reply.
-    expect(out.map(shape).slice(0, 3)).toEqual([
+    expect(out.map(shape).slice(0, 5)).toEqual([
+      "session_meta",
+      "task_begin",
       "harness:ctx A",
       "hook:user_prompt:b-broken",
       "harness:ctx E",
     ]);
-    expect(trace.written.map(shape).slice(0, 5)).toEqual([
+    expect(trace.written.map(shape).slice(0, 6)).toEqual([
       "session_meta",
+      "task_begin",
       `user:${prompt}`,
       "harness:ctx A",
       "hook:user_prompt:b-broken",
@@ -341,14 +344,19 @@ describe("Session user-prompt hooks", () => {
 
     expect(hook.seen).toHaveLength(1);
     expect(llm.calls.map(textsOf)).toEqual([["start", "tick"], ["again"]]);
-    // The continuation is the one input a `continue` event announces.
+    // The continuation is the one input a `continue` event announces: the first Task closes
+    // and the continued one opens on it.
     const announced = out.findIndex(isHookContinue);
-    expect(shape(out[announced + 1]!)).toBe("harness:again");
+    expect(out.slice(announced + 1, announced + 4).map(shape)).toEqual([
+      "task_end",
+      "task_begin",
+      "harness:again",
+    ]);
   });
 
   it("consults none for a retry: a run with no input resends the failed turn's input alone", async () => {
     const hook = answering("clock", "tick");
-    const calls: OmniMessage[][] = [];
+    const calls: AmspRecord[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate({ newMessages }) {
         calls.push(newMessages);

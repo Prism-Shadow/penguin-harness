@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/data-analysis",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "Complete data-analysis tasks with bounded inspection, correct data semantics, native artifact handling, complete delivery, and risk-based verification.",
   "keywords": [
     "penguin-plugin",
@@ -36,5 +36,12 @@
     },
     "title": "Data Analysis",
     "title_zh": "数据分析"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^4.1.12"
   }
 }

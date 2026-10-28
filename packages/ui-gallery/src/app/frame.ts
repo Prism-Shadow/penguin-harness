@@ -36,8 +36,9 @@ export const APP_FRAME = { width: 1280, height: 800 } as const;
 export const PHONE_FRAME = { width: 390, height: 844 } as const;
 
 /**
- * The app's language preference key (`state/locale.tsx`). The theme keys are the package's;
- * this one is the app's own and has no export, so it is spelled here and pinned by a test.
+ * The app's language preference key (`state/locale-pref.ts`). The theme keys are the package's;
+ * this one is the app's own, spelled here so the frame script imports nothing of the app, and
+ * pinned by a test.
  */
 export const APP_LANG_KEY = "penguin.lang";
 

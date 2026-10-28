@@ -28,7 +28,7 @@ import type {
   HookSubagentSpawned,
   LLMInterface,
   LLMOutcome,
-  OmniMessage,
+  AmspRecord,
   PreToolUseHook,
   SessionMetaPayload,
   StopHook,
@@ -102,7 +102,7 @@ describe("runStopHooks", () => {
       type: "session_meta",
       origin: ["child-1"],
       payload: { session_id: "child-1" },
-    } as unknown as OmniMessage;
+    } as unknown as AmspRecord;
     const spawned = await runStopHooks([hook], stopInput(), async (req) => {
       asks.push(req);
       return { sessionId: "child-1", meta: childMeta };
@@ -496,7 +496,7 @@ describe("Session stop hooks", () => {
           : { decision: "stop" };
       },
     };
-    const writes: OmniMessage[] = [];
+    const writes: AmspRecord[] = [];
     const trace: TraceSink = {
       write: async (m) => {
         writes.push(m);
@@ -505,7 +505,7 @@ describe("Session stop hooks", () => {
     };
     const llm = echoLLM();
     const session = makeSession([hook], llm, { trace });
-    const stream: OmniMessage[] = [];
+    const stream: AmspRecord[] = [];
     for await (const msg of session.run([userText("hello")])) stream.push(msg);
     // Two Tasks ran: the second on the hook's input.
     expect(llm.inputs).toEqual(["hello", "again"]);
@@ -547,7 +547,7 @@ describe("Session stop hooks", () => {
     };
     const llm = echoLLM();
     const session = makeSession([hook], llm);
-    const stream: OmniMessage[] = [];
+    const stream: AmspRecord[] = [];
     for await (const msg of session.run([userText("hello")], { signal: controller.signal })) {
       stream.push(msg);
     }
@@ -562,7 +562,7 @@ describe("Session stop hooks", () => {
       type: "session_meta",
       origin: ["child-9"],
       payload: { session_id: "child-9" },
-    } as unknown as OmniMessage;
+    } as unknown as AmspRecord;
     const hook: StopHook = {
       name: "review",
       run: async () => ({ reason: "delegated", subagent: { prompt: "look" } }),
@@ -574,7 +574,7 @@ describe("Session stop hooks", () => {
         return { sessionId: "child-9", meta: childMeta };
       },
     });
-    const stream: OmniMessage[] = [];
+    const stream: AmspRecord[] = [];
     for await (const msg of session.run([userText("hello")], { approve: async () => "allow" })) {
       stream.push(msg);
     }
@@ -643,14 +643,13 @@ describe("Session pre-tool-use hooks", () => {
     const toolOutputs: string[] = [];
     return {
       toolOutputs,
-      async *streamGenerate({ newMessages }): AsyncGenerator<OmniMessage, LLMOutcome> {
+      async *streamGenerate({ newMessages }): AsyncGenerator<AmspRecord, LLMOutcome> {
         calls += 1;
         if (calls === 1) {
           yield toolCall({
             name: "exec_command",
             arguments: JSON.stringify({ cmd }),
             toolCallId: "c1",
-            stopReason: "completed",
           });
           yield tokenUsage(usage(1), usage(1));
           return { status: "completed" };
@@ -674,7 +673,7 @@ describe("Session pre-tool-use hooks", () => {
       yield toolCallOutput({
         output: "ran",
         toolCallId: tc.payload.tool_call_id,
-        stopReason: "completed",
+        status: "completed",
       });
     },
     toolPermission: () => undefined,
@@ -708,9 +707,9 @@ describe("Session pre-tool-use hooks", () => {
 
   async function collect(
     s: Session,
-    approve: (tc: OmniMessage) => Promise<"allow" | "deny">,
-  ): Promise<OmniMessage[]> {
-    const stream: OmniMessage[] = [];
+    approve: (tc: AmspRecord) => Promise<"allow" | "deny">,
+  ): Promise<AmspRecord[]> {
+    const stream: AmspRecord[] = [];
     for await (const msg of s.run([userText("go")], { approve: approve as never })) {
       stream.push(msg);
     }

@@ -3,8 +3,9 @@
  * built-in browser's tab registry, the pages this window hosts, the agent's activity, the
  * homepage and the browser's load — driven by the user channel's events and the window's own
  * actions (claim, close, activate, settings read or saved, a new tab asked for) — and the rule
- * that keeps a tab open while the panel is on screen. Then the second backend, the user's own
- * Chrome:
+ * that keeps a tab open while the panel is on screen, which counts only the docks of the
+ * conversation on screen (another conversation's panel showing opens nothing here). Then the
+ * second backend, the user's own Chrome:
  *
  * - Given a server with no desktop shell, the Browser panel is offered in a window that cannot
  *   host a page, and the agents' backend is Chrome; given a server too old to name backends, the
@@ -38,6 +39,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   INITIAL_BROWSER_STATE,
+  NO_BROWSER_SCOPE,
   activeTab,
   addressOf,
   browserOffered,
@@ -88,6 +90,11 @@ const open = (requestId: string, over: Partial<{ url: string; activate: boolean 
     url: over.url ?? "https://example.com/",
     activate: over.activate ?? true,
   });
+
+/** The docks on screen: `conversation`'s arrangement, showing the browser panel or not. */
+const docks = (conversation: string, browserShown = true) => ({ conversation, browserShown });
+const SHOWN = docks(NO_BROWSER_SCOPE);
+const HIDDEN = docks(NO_BROWSER_SCOPE, false);
 
 /** A desktop window whose server said the browser is available, with no tabs yet. */
 const READY = run(
@@ -434,30 +441,41 @@ describe("the new-tab page", () => {
     });
 
   it("is opened for a panel on screen with no tab: the first time, or after a restart", () => {
-    expect(wantsNewTabPage(READY, true)).toBe(true);
+    expect(wantsNewTabPage(READY, SHOWN)).toBe(true);
   });
 
   it("is not opened out of sight, or where the browser cannot be used", () => {
-    expect(wantsNewTabPage(READY, false)).toBe(false);
-    expect(wantsNewTabPage(INITIAL_BROWSER_STATE, true)).toBe(false);
-    expect(wantsNewTabPage(reduceBrowser(READY, { type: "unreachable" }), true)).toBe(false);
+    expect(wantsNewTabPage(READY, HIDDEN)).toBe(false);
+    expect(wantsNewTabPage(INITIAL_BROWSER_STATE, SHOWN)).toBe(false);
+    expect(wantsNewTabPage(reduceBrowser(READY, { type: "unreachable" }), SHOWN)).toBe(false);
+  });
+
+  it("is opened only for the conversation whose own docks show the browser", () => {
+    const incoming = run(READY, { type: "scope", scope: "b" });
+    // Switching away from a conversation that showed it: its panel is still mounted for a
+    // render, but the docks on screen are the incoming one's, and they do not show the browser.
+    expect(wantsNewTabPage(incoming, docks("b", false))).toBe(false);
+    expect(wantsNewTabPage(incoming, docks("a"))).toBe(false);
+    expect(wantsNewTabPage(incoming, docks("b"))).toBe(true);
   });
 
   it("is not opened beside a tab that is open", () => {
-    expect(wantsNewTabPage(run(READY, listed(tab(1))), true)).toBe(false);
+    expect(wantsNewTabPage(run(READY, listed(tab(1))), SHOWN)).toBe(false);
   });
 
   it("is not opened beside a tab on its way", () => {
     // Asked for by any window, the agent or a page: the page is being created here.
     const creating = run(READY, open("r1"));
-    expect(wantsNewTabPage(creating, true)).toBe(false);
+    expect(wantsNewTabPage(creating, SHOWN)).toBe(false);
     // Claimed, not yet in the registry.
     const claimed = run(creating, { type: "attached", key: guestKey("r1"), tabId: 4 });
-    expect(wantsNewTabPage(claimed, true)).toBe(false);
+    expect(wantsNewTabPage(claimed, SHOWN)).toBe(false);
     // This window's own request, before the server has asked it for the page.
     const asking = reduceBrowser(READY, { type: "opening", delta: 1 });
-    expect(wantsNewTabPage(asking, true)).toBe(false);
-    expect(wantsNewTabPage(reduceBrowser(asking, { type: "opening", delta: -1 }), true)).toBe(true);
+    expect(wantsNewTabPage(asking, SHOWN)).toBe(false);
+    expect(wantsNewTabPage(reduceBrowser(asking, { type: "opening", delta: -1 }), SHOWN)).toBe(
+      true,
+    );
   });
 
   it("replaces the last tab once it closes, however it closed", () => {
@@ -467,13 +485,13 @@ describe("the new-tab page", () => {
       { type: "attached", key: guestKey("r1"), tabId: 4 },
       listed(tab(4)),
     );
-    expect(wantsNewTabPage(one, true)).toBe(false);
+    expect(wantsNewTabPage(one, SHOWN)).toBe(false);
     // Its × here, or the agent's close through the server.
-    expect(wantsNewTabPage(reduceBrowser(one, { type: "closed", tabId: 4 }), true)).toBe(true);
+    expect(wantsNewTabPage(reduceBrowser(one, { type: "closed", tabId: 4 }), SHOWN)).toBe(true);
     const byAgent = run(one, event({ type: "builtin_browser_close", tabId: 4 }));
-    expect(wantsNewTabPage(byAgent, true)).toBe(true);
+    expect(wantsNewTabPage(byAgent, SHOWN)).toBe(true);
     // Closed while the panel was out of sight: nothing until it is shown again.
-    expect(wantsNewTabPage(byAgent, false)).toBe(false);
+    expect(wantsNewTabPage(byAgent, HIDDEN)).toBe(false);
   });
 
   it("counts this window's requests on their way, and never below none", () => {
@@ -723,8 +741,8 @@ describe("switching backends", () => {
       { ...READY, backends: [{ backend: "builtin", available: true }, chromeEntry()] },
       event({ type: "builtin_browser_backend", backend: "chrome" }),
     );
-    expect(wantsNewTabPage(desktopOnChrome, true)).toBe(false);
-    expect(wantsNewTabPage(WEB_CONNECTED, true)).toBe(false);
+    expect(wantsNewTabPage(desktopOnChrome, SHOWN)).toBe(false);
+    expect(wantsNewTabPage(WEB_CONNECTED, SHOWN)).toBe(false);
   });
 });
 
@@ -840,7 +858,7 @@ describe("conversation browser scopes", () => {
     state = run(state, { type: "closed", tabId: 2 });
     expect(activeTab(state)).toBeNull();
     expect(shownTabs(state).tabs).toEqual([]);
-    expect(wantsNewTabPage(state, true)).toBe(true);
+    expect(wantsNewTabPage(state, docks(state.scope))).toBe(true);
   });
 
   it("counts outstanding opens in the scope that requested them", () => {
@@ -849,9 +867,9 @@ describe("conversation browser scopes", () => {
       { type: "scope", scope: "a" },
       { type: "opening", delta: 1, scope: "a" },
     );
-    expect(wantsNewTabPage(state, true)).toBe(false);
+    expect(wantsNewTabPage(state, docks(state.scope))).toBe(false);
     state = run(state, { type: "scope", scope: "b" });
-    expect(wantsNewTabPage(state, true)).toBe(true);
+    expect(wantsNewTabPage(state, docks(state.scope))).toBe(true);
     state = run(
       state,
       event({
@@ -862,9 +880,9 @@ describe("conversation browser scopes", () => {
         url: "https://a.test",
       }),
     );
-    expect(wantsNewTabPage(state, true)).toBe(true);
+    expect(wantsNewTabPage(state, docks(state.scope))).toBe(true);
     state = run(state, { type: "opening", delta: -1, scope: "a" }, { type: "scope", scope: "a" });
-    expect(wantsNewTabPage(state, true)).toBe(false);
+    expect(wantsNewTabPage(state, docks(state.scope))).toBe(false);
   });
 
   it("adopts draft pages and a pending popup without replacing elements or storage", () => {
@@ -902,6 +920,6 @@ describe("conversation browser scopes", () => {
     );
     expect(state.guests.every((guest) => guest.scope === "saved")).toBe(true);
     state = run(state, { type: "scope", scope: "draft" });
-    expect(wantsNewTabPage(state, true)).toBe(true);
+    expect(wantsNewTabPage(state, docks(state.scope))).toBe(true);
   });
 });

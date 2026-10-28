@@ -21,12 +21,14 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  taskBegin,
+  taskEnd,
   tokenUsage,
   toolCall,
   toolListReady,
   userText,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord, TokenCounts } from "@prismshadow/amsp/records";
 import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js";
 import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { agentsMdPath, tracesDir } from "../src/state/paths.js";
@@ -70,7 +72,7 @@ const usage = (total: number): TokenCounts => ({
 async function writeTraceFile(
   root: string,
   sessionId: string,
-  messages: OmniMessage[],
+  messages: AmspRecord[],
   opts?: { dateDir?: string; index?: string },
 ): Promise<string> {
   const dir = path.join(
@@ -83,7 +85,7 @@ async function writeTraceFile(
   return file;
 }
 
-function metaFor(sessionId: string, workspaceDir: string, model = MODEL): OmniMessage {
+function metaFor(sessionId: string, workspaceDir: string, model = MODEL): AmspRecord {
   return sessionMeta({
     session_id: sessionId,
     provider: model.provider,
@@ -127,7 +129,7 @@ describe("agent.resumeSession", () => {
       metaFor(SID, workspace),
       userText("long task"),
       requestBegin(),
-      assistantText("partial answer", "aborted"),
+      assistantText("partial answer"),
       requestEnd("aborted"),
       abortEvent(),
     ]);
@@ -351,6 +353,40 @@ describe("agent.resumeSession", () => {
     session.dispose();
   });
 
+  it("a file closed by a compaction stays closed when Task records follow it: the restart opens the next context with the summary pending", async () => {
+    // A Task that ended on its compaction leaves its task_end, and the next Task its
+    // task_begin, behind the compaction_end: Task records never open the next file. A
+    // process that died right there must still find the summary in this file.
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      taskBegin(),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]the story so far[/summary]"),
+      requestEnd("completed"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      taskEnd(),
+      taskBegin(),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(session.compactability()).toBe("just_compacted");
+      // The summary is what the next run sends, and nothing of the closed context is replayed.
+      expect(session.hasPendingInput()).toBe(true);
+      expect(session.resumedHistory).toEqual([]);
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("compactability stays empty for a resumed session whose context has no completed turn", async () => {
     // The genuine `empty` case survives the fix: the only request in the trace was interrupted,
     // so no turn ever completed and there is truly nothing to fold.
@@ -389,9 +425,9 @@ describe("setHistory injection", () => {
           role: "user",
           output: "out",
           tool_call_id: "tc1",
-          stop_reason: "completed",
+          status: "completed",
         },
-      } as OmniMessage,
+      } as AmspRecord,
       userText("next"),
       assistantText("done"),
     ]);
@@ -411,7 +447,7 @@ describe("setHistory injection", () => {
 
 describe("agent.resumeSession system prompt per context", () => {
   const SID = "session-2026-07-06-13-00-00-abcdef11";
-  const promptOf = (session: { metaMessage: OmniMessage }): string =>
+  const promptOf = (session: { metaMessage: AmspRecord }): string =>
     (session.metaMessage.payload as { system_prompt: string }).system_prompt;
 
   it("opens a context closed by a completed compaction with the current AGENTS.md, not the closed file's recorded prompt", async () => {
@@ -448,14 +484,14 @@ describe("agent.resumeSession system prompt per context", () => {
   });
 
   it("ignores a legacy recorded thinking level on resume: the level is a per-request parameter", async () => {
-    const withLevel = (level: string): OmniMessage => {
+    const withLevel = (level: string): AmspRecord => {
       const meta = metaFor(SID, workspace);
       return {
         ...meta,
         payload: { ...meta.payload, thinking_level: level },
-      } as unknown as OmniMessage;
+      } as unknown as AmspRecord;
     };
-    const traceRecords = (meta: OmniMessage): OmniMessage[] => [
+    const traceRecords = (meta: AmspRecord): AmspRecord[] => [
       meta,
       userText("hello"),
       requestBegin(),
@@ -511,9 +547,9 @@ describe("agent.resumeSession after an in-session model switch", () => {
       session as {
         engineDeps: {
           initialState?: {
-            pendingSummary?: OmniMessage;
-            openingSummary?: OmniMessage;
-            carryOver?: OmniMessage[];
+            pendingSummary?: AmspRecord;
+            openingSummary?: AmspRecord;
+            carryOver?: AmspRecord[];
             sessionTurns?: number;
             pendingTraceRotation?: boolean;
           };
@@ -581,13 +617,13 @@ describe("agent.resumeSession after an in-session model switch", () => {
       [metaFor(SID, workspace, MODEL), toolListReady([]), userText(SUMMARY)],
       { index: "002" },
     );
-    const kind = (m: OmniMessage): string | undefined =>
+    const kind = (m: AmspRecord): string | undefined =>
       m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type;
 
     const session = await agent.resumeSession({ sessionId: SID });
     try {
       // Nothing ran since the restart: the engine is built by the switch itself.
-      const streamed: OmniMessage[] = [];
+      const streamed: AmspRecord[] = [];
       for await (const msg of session.switchModel({
         provider: ORIGINAL.provider,
         modelId: ORIGINAL.model_id,

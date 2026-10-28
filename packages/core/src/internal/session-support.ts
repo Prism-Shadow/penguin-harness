@@ -13,8 +13,9 @@ import { sessionShell } from "../environment/tools/command/shell.js";
 import type { SessionEnvironmentValues } from "../state/agent-state.js";
 import { modelVisiblePath } from "./model-visible-path.js";
 import { workspacesDir } from "../state/index.js";
-import { attachedImageLine, isWholeOriginBlock, userText } from "../omnimessage/index.js";
-import type { McpServerConnectResult, OmniMessage } from "../omnimessage/index.js";
+import { attachedImageLine, isWholeOriginBlock } from "@prismshadow/amsp/markers";
+import { userText } from "@prismshadow/amsp/records";
+import type { McpServerConnectResult, AmspRecord } from "@prismshadow/amsp/records";
 
 /** Session runtime environment fields: the placeholder substitution values for `assembleSystemPrompt`; producer and consumer share the same type. */
 export type SessionEnvironment = SessionEnvironmentValues;
@@ -153,7 +154,7 @@ const MIME_TO_EXT: Record<string, string> = {
 };
 
 /** An input image message — what both conversions below pull out of the input. */
-const isImage = (m: OmniMessage): boolean => (m.payload as { type?: string }).type === "image_url";
+const isImage = (m: AmspRecord): boolean => (m.payload as { type?: string }).type === "image_url";
 
 /**
  * Input conversion for when the session model doesn't support images: image messages
@@ -167,9 +168,9 @@ const isImage = (m: OmniMessage): boolean => (m.payload as { type?: string }).ty
  * parsed is replaced with an explanatory line rather than silently dropped.
  */
 export async function imagesToScratchpadPaths(
-  input: OmniMessage[],
+  input: AmspRecord[],
   dir: string,
-): Promise<OmniMessage[]> {
+): Promise<AmspRecord[]> {
   if (!input.some(isImage)) return input;
 
   const lines: string[] = [];
@@ -229,7 +230,7 @@ export async function imagesToScratchpadPaths(
  * carrying both kinds of attachment still reads as a single trailing block.
  * Returns `input` unchanged when there are no lines to append.
  */
-export function appendAttachmentLines(input: OmniMessage[], lines: string[]): OmniMessage[] {
+export function appendAttachmentLines(input: AmspRecord[], lines: string[]): AmspRecord[] {
   if (lines.length === 0) return input;
   const suffix = lines.join("\n");
   const lastTextIdx = input.findLastIndex((m) => {
@@ -240,6 +241,6 @@ export function appendAttachmentLines(input: OmniMessage[], lines: string[]): Om
   return input.map((m, i) => {
     if (i !== lastTextIdx) return m;
     const p = m.payload as { type: string; role: string; text: string };
-    return { ...m, payload: { ...p, text: `${p.text}\n\n${suffix}` } } as OmniMessage;
+    return { ...m, payload: { ...p, text: `${p.text}\n\n${suffix}` } } as AmspRecord;
   });
 }

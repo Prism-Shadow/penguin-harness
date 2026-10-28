@@ -19,6 +19,11 @@
  *   would pass it, and the cut page equals a unit-count cut at the same place (cursor,
  *   prior stats, messages) — even when the whole history is within the unit count.
  * - Given units carrying screenshots, an image counts as its reference URL, not its bytes.
+ *
+ * Task records (task_begin / task_end):
+ * - Given the same Tasks with and without the pair, the windows hold the same prompts and carry
+ *   the same prior figures — a Task stopped before any request included, whose elapsed time must
+ *   not stretch to the next Task's task_begin.
  */
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -33,16 +38,15 @@ import {
   approvalDecision,
   sessionMeta,
   subagentEvent,
+  taskBegin,
+  taskEnd,
   tokenUsage,
   toolCall,
   toolCallOutput,
   userText,
 } from "@prismshadow/penguin-core";
-import {
-  buildBackgroundTaskDoneMessage,
-  buildHandoffMessage,
-} from "@prismshadow/penguin-core/markers";
-import type { OmniMessage, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
+import { buildBackgroundTaskDoneMessage, buildHandoffMessage } from "@prismshadow/amsp/markers";
+import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { decodeCursor, encodeCursor } from "../src/services/message-window.js";
 import { MESSAGES_PAGE_MAX_BYTES } from "../src/services/trace-service.js";
 import type { TraceService } from "../src/services/trace-service.js";
@@ -53,7 +57,7 @@ const A = "agent-w";
 const S = "session-2026-07-20-10-00-00-aabb0001";
 const CHILD = "session-2026-07-20-10-00-05-ccdd0002";
 
-function at(ts: string, msg: OmniMessage): OmniMessage {
+function at(ts: string, msg: AmspRecord): AmspRecord {
   return { ...msg, timestamp: ts };
 }
 
@@ -76,7 +80,7 @@ function metaPayload(over: Partial<SessionMetaPayload> = {}): SessionMetaPayload
 }
 
 /** One complete turn (prompt → request → reply → usage), 4 messages, spaced inside one minute `mm`. */
-function turn(mm: number, n: number, sessionTotal: number): OmniMessage[] {
+function turn(mm: number, n: number, sessionTotal: number): AmspRecord[] {
   const t = (s: string) => `2026-07-20T10:${String(mm).padStart(2, "0")}:${s}Z`;
   return [
     at(t("00.000"), userText(`q${n}`)),
@@ -91,15 +95,16 @@ function turn(mm: number, n: number, sessionTotal: number): OmniMessage[] {
  * One Task whose tool output carries `outputChars` characters of text, or as many characters
  * of base64 in one PNG screenshot when `image` is set.
  */
-function heavyTurn(mm: number, n: number, outputChars: number, image = false): OmniMessage[] {
+function heavyTurn(mm: number, n: number, outputChars: number, image = false): AmspRecord[] {
   const t = (s: string) => `2026-07-20T10:${String(mm).padStart(2, "0")}:${s}Z`;
   const output = image
     ? toolCallOutput({
         output: "screenshot",
         toolCallId: `t${n}`,
         images: [`data:image/png;base64,${"A".repeat(outputChars)}`],
+        status: "completed",
       })
-    : toolCallOutput({ output: "x".repeat(outputChars), toolCallId: `t${n}` });
+    : toolCallOutput({ output: "x".repeat(outputChars), toolCallId: `t${n}`, status: "completed" });
   return [
     at(t("00.000"), userText(`q${n}`)),
     at(t("01.000"), requestBegin()),
@@ -113,8 +118,8 @@ function heavyTurn(mm: number, n: number, outputChars: number, image = false): O
   ];
 }
 
-const textOf = (m: OmniMessage): string | undefined => (m.payload as { text?: string }).text;
-const userTexts = (ms: OmniMessage[]): string[] =>
+const textOf = (m: AmspRecord): string | undefined => (m.payload as { text?: string }).text;
+const userTexts = (ms: AmspRecord[]): string[] =>
   ms
     .filter(
       (m) =>
@@ -322,7 +327,10 @@ describe("messages windowed reads", () => {
       at("2026-07-20T10:01:01.000Z", requestBegin()),
       at("2026-07-20T10:01:02.000Z", toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" })),
       at("2026-07-20T10:01:03.000Z", requestEnd("completed")),
-      at("2026-07-20T10:01:04.000Z", toolCallOutput({ output: "out", toolCallId: "t1" })),
+      at(
+        "2026-07-20T10:01:04.000Z",
+        toolCallOutput({ output: "out", toolCallId: "t1", status: "completed" }),
+      ),
       at("2026-07-20T10:01:05.000Z", userText("[user_steering]\nfaster\n[/user_steering]")),
       at("2026-07-20T10:01:05.100Z", imageUrlMessage("data:image/png;base64,AAAA")),
       at("2026-07-20T10:01:06.000Z", requestBegin()),
@@ -420,7 +428,10 @@ describe("messages windowed reads", () => {
       at("2026-07-20T10:01:01.000Z", requestBegin()),
       at("2026-07-20T10:01:02.000Z", toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" })),
       at("2026-07-20T10:01:03.000Z", requestEnd("completed")),
-      at("2026-07-20T10:01:04.000Z", toolCallOutput({ output: "launched", toolCallId: "t1" })),
+      at(
+        "2026-07-20T10:01:04.000Z",
+        toolCallOutput({ output: "launched", toolCallId: "t1", status: "completed" }),
+      ),
       at("2026-07-20T10:01:05.000Z", userText(plain, "harness")),
       at("2026-07-20T10:01:06.000Z", requestBegin()),
       at("2026-07-20T10:01:07.000Z", assistantText("done")),
@@ -515,6 +526,46 @@ describe("messages windowed reads", () => {
     expect(tail.prior.subagentTokens).toBe(0);
   });
 
+  it("Task records change no window: the same Tasks page with the same prompts and prior figures with or without them", async () => {
+    const PAIRED = "session-2026-07-20-10-00-00-aabb0009";
+    const tasks: AmspRecord[][] = [
+      turn(0, 1, 1000),
+      // Stopped before any request: its elapsed time runs to its last record (1s), so the next
+      // Task's task_begin, minutes later, must not stretch it.
+      [
+        at("2026-07-20T10:01:00.000Z", userText("q2")),
+        at("2026-07-20T10:01:01.000Z", abortEvent()),
+      ],
+      turn(5, 3, 3000),
+    ];
+    const ends = [
+      "2026-07-20T10:00:03.600Z",
+      "2026-07-20T10:01:01.000Z",
+      "2026-07-20T10:05:03.600Z",
+    ];
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...tasks.flat(),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-20", PAIRED, 1, [
+      sessionMeta(metaPayload({ session_id: PAIRED })),
+      ...tasks.flatMap((task, i) => [
+        at(task[0]!.timestamp, taskBegin()),
+        ...task,
+        at(ends[i]!, taskEnd()),
+      ]),
+    ]);
+
+    for (const limit of [1, 2]) {
+      const plain = await service.readMessagesPage(P, A, S, { kind: "tail", limit });
+      const paired = await service.readMessagesPage(P, A, PAIRED, { kind: "tail", limit });
+      expect(userTexts(paired.messages)).toEqual(userTexts(plain.messages));
+      expect(paired.prior).toEqual(plain.prior);
+    }
+    const tail = await service.readMessagesPage(P, A, PAIRED, { kind: "tail", limit: 1 });
+    expect(tail.prior.elapsedMs).toBe(3000 + 1000);
+  });
+
   it("subagent pointers expand only inside the window; earlier children feed prior.subagentTokens without appearing", async () => {
     const child2 = "session-2026-07-20-10-02-00-eeff0003";
     await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
@@ -528,7 +579,10 @@ describe("messages windowed reads", () => {
       ),
       at("2026-07-20T10:00:03.000Z", subagentEvent(CHILD)),
       at("2026-07-20T10:00:04.000Z", requestEnd("completed")),
-      at("2026-07-20T10:00:05.000Z", toolCallOutput({ output: "done", toolCallId: "c1" })),
+      at(
+        "2026-07-20T10:00:05.000Z",
+        toolCallOutput({ output: "done", toolCallId: "c1", status: "completed" }),
+      ),
       at("2026-07-20T10:00:06.000Z", tokenUsage(counts(1000), counts(100))),
       // Turn 2 spawns child2.
       at("2026-07-20T10:01:00.000Z", userText("q2")),
@@ -539,7 +593,10 @@ describe("messages windowed reads", () => {
       ),
       at("2026-07-20T10:01:03.000Z", subagentEvent(child2)),
       at("2026-07-20T10:01:04.000Z", requestEnd("completed")),
-      at("2026-07-20T10:01:05.000Z", toolCallOutput({ output: "done", toolCallId: "c2" })),
+      at(
+        "2026-07-20T10:01:05.000Z",
+        toolCallOutput({ output: "done", toolCallId: "c2", status: "completed" }),
+      ),
       at("2026-07-20T10:01:06.000Z", tokenUsage(counts(2000), counts(120))),
     ]);
     await writeTraceFile(root, P, A, "2026-07-20", CHILD, 1, [
@@ -626,8 +683,14 @@ describe("messages windowed reads", () => {
       at("2026-07-20T10:00:03.000Z", approvalDecision("allow", "t1")),
       at("2026-07-20T10:00:04.000Z", approvalDecision("allow", "t2")),
       at("2026-07-20T10:00:05.000Z", requestEnd("completed")),
-      at("2026-07-20T10:00:09.000Z", toolCallOutput({ output: "a", toolCallId: "t1" })),
-      at("2026-07-20T10:00:11.000Z", toolCallOutput({ output: "b", toolCallId: "t2" })),
+      at(
+        "2026-07-20T10:00:09.000Z",
+        toolCallOutput({ output: "a", toolCallId: "t1", status: "completed" }),
+      ),
+      at(
+        "2026-07-20T10:00:11.000Z",
+        toolCallOutput({ output: "b", toolCallId: "t2", status: "completed" }),
+      ),
       at("2026-07-20T10:00:11.000Z", requestBegin()),
       at("2026-07-20T10:00:13.000Z", assistantText("a1")),
       at("2026-07-20T10:00:13.000Z", requestEnd("completed")),
@@ -775,7 +838,7 @@ describe("messages windowed reads", () => {
     ]);
     const M1 = { provider: "custom", modelId: "m1" };
     const M2 = { provider: "other", modelId: "m2" };
-    const metas = (ms: OmniMessage[]) => ms.filter((m) => m.type === "session_meta");
+    const metas = (ms: AmspRecord[]) => ms.filter((m) => m.type === "session_meta");
 
     // Partway into the context after the switch: no meta in the window, and it runs on m2.
     const last = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });

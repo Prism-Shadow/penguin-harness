@@ -1,6 +1,6 @@
 {
   "name": "penguin-harness",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "private": true,
   "type": "module",
   "description": "PenguinHarness \u2014 Unified and Stable RSI Framework (TypeScript SDK, CLI, server and Web App). Fully automatic optimization: any model, any algorithm, any benchmark.",
@@ -33,13 +33,13 @@
     "@prismshadow/penguin-cli": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@types/node": "^24.0.0",
-    "concurrently": "^10.0.4",
+    "concurrently": "^10.0.6",
     "esbuild": "^0.28.1",
     "oxlint": "^1.81.0",
     "prettier": "^3.9.4",
     "tsx": "^4.20.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.12"
   },
   "packageManager": "pnpm@11.18.0"
 }

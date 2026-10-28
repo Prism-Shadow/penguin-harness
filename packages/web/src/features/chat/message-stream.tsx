@@ -7,7 +7,7 @@
  * own context menu (Copy / Add to conversation; open the link or copy its address — see
  * stream-selection-menu.tsx).
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ComponentProps, ReactNode, RefObject } from "react";
 import {
   A2uiActionsProvider,
@@ -17,16 +17,17 @@ import {
   Spinner,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import type { ChatItem } from "../../lib/omni/stream-model";
-import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
-import type { TaskStats } from "../../lib/omni/task-stats";
+import type { ChatItem } from "../../lib/amsp/stream-model";
+import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
+import type { TaskStats } from "../../lib/amsp/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
 import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
+import { readOnlyActions } from "./a2ui-answered";
 import { WorkspaceLinksProvider } from "./workspace-links";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
-import { createStreamFollow, stickToBottom } from "./stream-follow";
+import { createStreamFollow, followToBottom, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
 import { useStreamSelectionMenu } from "./stream-selection-menu";
@@ -40,8 +41,8 @@ import { FindRevealContext, useRegionRevealed } from "../../lib/find-expand";
  */
 export type A2uiActions = ComponentProps<typeof A2uiActionsProvider>["value"];
 
-/** The fill of every reply whose blocks do not take input, where picking is disabled anyway. */
-const NO_FILL = (): void => {};
+/** No reply yet: the read-only actions a first render starts from. */
+const NO_ACTIONS: ReadonlyMap<number, A2uiActions> = new Map();
 
 /** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
 export interface StreamRenderContext {
@@ -108,11 +109,12 @@ export interface StreamRenderContext {
    * The actions of the reply whose blocks take input: `interactive` set, `fill` putting the
    * picked text in this conversation's composer (an empty fill, a choice's "Other…", empties
    * it), `lang` the interface language, and `drafts` + `draftScope` keeping a form's or a
-   * multi-select's answers in progress across a reload. Honored for the main conversation only, and there for the latest
-   * reply with nothing said after it (see a2ui-reply.ts); every other reply gets the same
-   * language with input off and no drafts. Must keep its identity while its inputs do: the
-   * blocks read it through context, past the memoized Markdown, so a fresh object per render
-   * would re-render every block on every stream frame.
+   * multi-select's answers in progress across a reload. Honored for the main conversation only,
+   * and there for the latest reply with nothing said after it (see a2ui-reply.ts); every other
+   * reply gets the same language with input off, no drafts, and the text of the message that
+   * answered it, which its blocks read their answers back from (a2ui-answered.ts). Must keep its
+   * identity while its inputs do: the blocks read it through context, past the memoized
+   * Markdown, so a fresh object per render would re-render every block on every stream frame.
    */
   a2uiActions?: A2uiActions;
 }
@@ -163,15 +165,17 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
 
   // A reply's choice or form takes input only as the main conversation's open question
   // (a2ui-reply.ts; the subagent panel spreads this ctx under its own origin). Every other
-  // reply gets the same language with input off, derived once per actions object so both
-  // values keep their identity across stream frames.
+  // reply gets the same language with input off and the message that answered it
+  // (a2ui-answered.ts). The model mutates the items in place, so this is derived on every
+  // render; each reply keeps last render's actions object while its answer and language do,
+  // so its blocks do not re-render on every stream frame.
   const live = ctx.a2uiActions;
   const liveReply =
     live !== undefined ? items[interactiveReplyIndex(items, ctx.origin)] : undefined;
-  const still = useMemo<A2uiActions | undefined>(
-    () => (live === undefined ? undefined : { interactive: false, fill: NO_FILL, lang: live.lang }),
-    [live],
-  );
+  const keptActions = useRef(NO_ACTIONS);
+  const still =
+    live === undefined ? undefined : readOnlyActions(keptActions.current, items, live.lang);
+  if (still !== undefined) keptActions.current = still;
 
   // The stream's last item, the one place the line a run ended on may offer Retry. The ended
   // Task's own stats row can settle after it; anything else that follows — a message, a new
@@ -193,7 +197,10 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
       // answers, the question's reply changes a context value rather than its place in the
       // tree, so it is not remounted (no Markdown re-parse, no diagram re-render), and only
       // the blocks of a reply whose value changed re-render.
-      <A2uiActionsProvider key={seg.item.id} value={seg.item === liveReply ? live : still}>
+      <A2uiActionsProvider
+        key={seg.item.id}
+        value={seg.item === liveReply ? live : still.get(seg.item.id)!}
+      >
         <MessageItem item={seg.item} ctx={ctx} />
       </A2uiActionsProvider>
     ) : (
@@ -434,7 +441,7 @@ export function MessageStream({
     follow.hold(menuOpen);
     if (menuOpen) return;
     const el = scrollRef.current;
-    if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
+    if (el && !returningRef.current) followToBottom(el, follow);
     syncJump();
     // syncJump is recreated per render; the effect keys on the menu's open state only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -447,7 +454,9 @@ export function MessageStream({
   // Every snap goes through stickToBottom, which reports the landed position to the follow
   // model synchronously — the snap's async scroll event otherwise races late content growth
   // and could misinitialize follow as "parked above the bottom" right after entering a
-  // conversation (see stream-follow.ts).
+  // conversation (see stream-follow.ts). A following view's snap goes through followToBottom,
+  // which first judges the live position, so a scroll the browser has applied but not yet
+  // reported (a key, the scrollbar, a find or outline jump) is never undone.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
@@ -473,7 +482,7 @@ export function MessageStream({
     }
     lastPrependedRef.current = prepended;
     if (el) lastHeightRef.current = el.scrollHeight;
-    if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
+    if (el && !returningRef.current) followToBottom(el, follow);
     if (el) recordAnchor(el);
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
@@ -492,7 +501,7 @@ export function MessageStream({
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
       lastHeightRef.current = el.scrollHeight;
-      if (follow.snaps && !returningRef.current) stickToBottom(el, follow);
+      if (!returningRef.current) followToBottom(el, follow);
       syncJump();
     });
     ro.observe(el);
@@ -501,6 +510,28 @@ export function MessageStream({
     if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
     // syncJump is recreated per render; the observer only needs the stable follow object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow]);
+
+  // The wheel is heard natively, by a listener that is not passive and never prevents the
+  // default. React registers its wheel handlers as passive, and the browser then scrolls on the
+  // compositor first and tells the page up to a frame later: a stream commit in between would
+  // still follow, and its snap would pull the view back down under the reader's first upward
+  // tick. A blocking listener makes the browser hand the page the first wheel event of a gesture
+  // before it scrolls (the rest of the gesture stays asynchronous), so follow is off before the
+  // view moves.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      follow.wheel(e.deltaY);
+      if (e.deltaY < 0) cancelReturn(); // user takes over: the glide stops within a frame
+      syncJump();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // cancelReturn and syncJump are recreated per render but read only refs, state setters and
+    // the stable follow object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [follow]);
 
@@ -576,11 +607,6 @@ export function MessageStream({
         onContextMenu={selectionMenu.hostProps.onContextMenu}
         onKeyDown={selectionMenu.hostProps.onKeyDown}
         onScroll={onScroll}
-        onWheel={(e) => {
-          follow.wheel(e.deltaY);
-          if (e.deltaY < 0) cancelReturn(); // user takes over: the glide stops within a frame
-          syncJump();
-        }}
         onTouchStart={(e) => {
           const t = e.touches[0];
           if (t) follow.touchStart(t.clientY);
