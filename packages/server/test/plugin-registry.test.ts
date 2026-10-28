@@ -359,31 +359,6 @@ describe("the builtin index and the packages it lists", () => {
       expect(entry.authors.length, `${name} names no author`).toBeGreaterThan(0);
       expect(["Apache-2.0", "MIT"], name).toContain(entry.license);
       expect(entry.categories?.length ?? 0, `${name} names no category`).toBeGreaterThan(0);
-describe("the builtin catalogue and the packages it lists", () => {
-  it("marks builtin backends with the platforms their packages declare", async () => {
-    const index = await builtinPluginRegistry().index();
-    for (const entry of index) {
-      expect(entry.os, entry.name).toEqual(packages.get(entry.name)!.manifest.penguinOs);
-    }
-    expect(index.find((e) => e.name === "@penguinharness/sandbox-bwrap")!.os).toEqual(["linux"]);
-    expect(index.find((e) => e.name === "@penguinharness/sandbox-seatbelt")!.os).toEqual(["darwin"]);
-    expect(index.find((e) => e.name === "@penguinharness/sandbox-wsl")!.os).toEqual(["win32"]);
-    expect(index.find((e) => e.name === "@penguinharness/sandbox-dsh")!.os).toBeUndefined();
-  });
-
-  it("lists the sandbox backends in plugins/, each named as that package names itself", async () => {
-    const index = await builtinPluginRegistry().index();
-    // Valid under the format every registry is held to.
-    expect(parsePluginIndex(index, "builtin")).toEqual(index);
-    expect(index.length).toBeGreaterThan(0);
-    for (const entry of index) {
-      const pkg = packages.get(entry.name);
-      expect(pkg, `${entry.name} is listed but is no package in plugins/`).toBeDefined();
-      expect(entry.categories, entry.name).toHaveLength(1);
-      expect(entry.categories![0], entry.name).toBe("sandbox");
-      expect(pkg!.manifest.version, entry.name).toBe(entry.version);
-      expect(pkg!.manifest.description, entry.name).toBe(entry.description);
-      expect(pkg!.manifest.license, entry.name).toBe(entry.license);
     }
   });
 
@@ -458,6 +433,35 @@ describe("the builtin catalogue and the packages it lists", () => {
    */
   it("a remote registry offers none", async () => {
     expect(await httpPluginRegistry("https://example.invalid/index.json").readme("x")).toBeNull();
+  });
+});
+
+describe("the builtin catalogue and the packages it lists", () => {
+  it("marks builtin backends with the platforms their packages declare", async () => {
+    const index = await builtinPluginRegistry().index();
+    for (const entry of index) {
+      expect(entry.os, entry.name).toEqual(packages.get(entry.name)!.manifest.penguinOs);
+    }
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-bwrap")!.os).toEqual(["linux"]);
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-seatbelt")!.os).toEqual(["darwin"]);
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-wsl")!.os).toEqual(["win32"]);
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-dsh")!.os).toBeUndefined();
+  });
+
+  it("lists the sandbox backends in plugins/, each named as that package names itself", async () => {
+    const index = await builtinPluginRegistry().index();
+    // Valid under the format every registry is held to.
+    expect(parsePluginIndex(index, "builtin")).toEqual(index);
+    expect(index.length).toBeGreaterThan(0);
+    for (const entry of index) {
+      const pkg = packages.get(entry.name);
+      expect(pkg, `${entry.name} is listed but is no package in plugins/`).toBeDefined();
+      expect(entry.categories, entry.name).toHaveLength(1);
+      expect(entry.categories![0], entry.name).toBe("sandbox");
+      expect(pkg!.manifest.version, entry.name).toBe(entry.version);
+      expect(pkg!.manifest.description, entry.name).toBe(entry.description);
+      expect(pkg!.manifest.license, entry.name).toBe(entry.license);
+    }
   });
 });
 
