@@ -7,4 +7,4 @@
 
 [中文版](2026-10-28-hero-keyword-styles.zh.md)
 
-The home page slogan gained a rising underline beneath “keeps growing” and a fine oval around “within reach”, using the site's brand blue in light and dark themes. Both phrases received the same treatments in Chinese, with each clause kept together where space permits.
+The home page slogan gave “keeps growing” progressively larger, rising letters with an ascending stroke beneath them. “Within reach” received a solid, angled blue brush stroke behind the text. Both phrases received the same treatments in Chinese, with colors adjusted for light and dark themes and each clause kept together where space permits.

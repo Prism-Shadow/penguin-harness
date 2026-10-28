@@ -64,34 +64,53 @@
   line-height: 1.2;
   white-space: nowrap;
 }
-.dark .hero-word {
+.dark .hero-word-growth {
   color: var(--color-brand-300);
 }
 
-/* The rising stroke follows growth; the enclosing stroke brings reach into focus. */
+/* Increasing letter size and a rising baseline give the growth phrase a direction. */
+.hero-growth-letter {
+  display: inline-block;
+  font-size: calc(0.92em + 0.2em * var(--letter-progress));
+  font-weight: 700;
+  white-space: pre;
+  transform: translateY(calc(-0.1em * var(--letter-progress)));
+}
 .hero-word::after {
   position: absolute;
   pointer-events: none;
   content: "";
 }
 .hero-word-growth::after {
-  right: 0;
-  bottom: -0.06em;
+  right: -0.02em;
+  bottom: -0.03em;
   left: 0;
-  height: 0.18em;
-  border-bottom: 0.055em solid currentColor;
-  border-radius: 0 0 50% 50%;
-  transform: rotate(-4deg);
+  height: 0.11em;
+  background: currentColor;
+  clip-path: polygon(0 85%, 100% 0, 100% 35%, 0 100%);
+  transform: rotate(-2deg);
 }
+
+/* A close-fitting, angled brush stroke makes reach the slogan's strongest accent. */
 .hero-word-reach {
-  margin-inline: 0.36em;
+  isolation: isolate;
+  margin-inline: 0.17em;
+  padding: 0.06em 0.16em 0.1em;
+  color: var(--color-white);
+  font-weight: 700;
 }
 .hero-word-reach::after {
-  inset: -0.24em -0.4em;
-  border: 0.035em solid currentColor;
-  /* deslop-ignore-next-line 19 -- The oval is a phrase annotation, not a control surface. */
-  border-radius: 50%;
+  z-index: -1;
+  inset: 0 -0.04em;
+  background: var(--color-brand-700);
+  clip-path: polygon(1% 8%, 100% 0, 98.5% 92%, 0 100%);
   transform: rotate(-2deg);
+}
+.dark .hero-word-reach {
+  color: var(--color-brand-950);
+}
+.dark .hero-word-reach::after {
+  background: var(--color-brand-300);
 }
 .hero-automation {
   font-size: clamp(1rem, 2.1vw, 1.125rem);
