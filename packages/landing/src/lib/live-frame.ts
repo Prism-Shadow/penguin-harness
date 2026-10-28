@@ -30,13 +30,19 @@ const GALLERY_BASE = GALLERY_URL.replace(/\/$/, "");
 const modeOf = (dark: boolean) => (dark ? "dark" : "light");
 
 /** A live frame's document: the surface's route in the app's default theme, the site's language and mode. */
-export function liveFrameSrc(surface: SurfaceId, locale: Locale, dark: boolean): string {
+export function liveFrameSrc(
+  surface: SurfaceId,
+  locale: Locale,
+  dark: boolean,
+  autoplay?: "evolution",
+): string {
   const route = surfaceById(surface)?.route;
   if (route === undefined) throw new Error(`No gallery surface named ${surface}`);
   return embeddedFrameSrc(
     GALLERY_BASE,
     { theme: INITIAL_THEME_ID, mode: modeOf(dark), lang: locale },
     route,
+    autoplay,
   );
 }
 

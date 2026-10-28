@@ -4,6 +4,10 @@
  * streams a reply and settles, an approval decides the pending command, an abort stops a run and a
  * Retry then replays it without a new message (once) — and the self-evolution round, which reads
  * as one round and reports what the scoreboard holds.
+ * - Given an autoplay Session in either language, sending its prompt streams one evolution
+ *   round, rejects a duplicate start, carries its live answer on reconnect and shows the gain.
+ * - Given a running walkthrough, abort cancels every later step; retry completes the round
+ *   without echoing another prompt.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
@@ -28,6 +32,11 @@ import { REPLY_CLOSE_MS, REPLY_HOLD_MS, REPLY_LEAD_MS, resetStore } from "../src
 import { scriptDuration, streamScript } from "../src/app/mock/stream-script";
 import { streamingAnswer, TOOL_CALL_IDS } from "../src/app/mock/transcripts";
 import { payloadOf } from "../src/app/mock/types";
+import {
+  rsiPrompt,
+  rsiReferenceScore,
+  rsiCandidateEvaluation,
+} from "../src/app/mock/rsi-transcript";
 import type { AmspRecord, StreamHandlers } from "../src/app/mock/types";
 
 const NOW = Date.parse("2026-09-29T08:00:00Z");
@@ -443,5 +452,81 @@ describe("a sent message", () => {
     expect(said).not.toContain("user");
     expect(store.session(row.sessionId)?.status).toBe("idle");
     expect(store.retryTask(row.sessionId)).toBe(false);
+  });
+});
+
+describe("the evolution walkthrough", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each(["en", "zh"] as const)(
+    "streams the %s evolution round once and finishes with the evaluated improvement",
+    (lang) => {
+      vi.useFakeTimers();
+      const store = resetStore({ lang, signedIn: true, now: NOW, evolutionDemo: true });
+      const row = store.createSession(store.f.chatDefaults.agentId!, {});
+      const sub = collector();
+      store.channel(row.sessionId)!.subscribe(sub);
+      expect(store.startTask(row.sessionId, rsiPrompt(lang))).toBe(true);
+      expect(store.startTask(row.sessionId, rsiPrompt(lang))).toBe(false);
+      vi.advanceTimersByTime(19_500);
+      const fragments = store.liveTail(row.sessionId)!.fragments;
+      expect(fragments.some((m) => payloadOf(m)?.type === "partial_text")).toBe(true);
+      vi.advanceTimersByTime(10_000);
+      expect(store.session(row.sessionId)?.status).toBe("idle");
+      const messages = store.transcript(row.sessionId)!.history;
+      expect(
+        messages.filter((m) => {
+          const p = payloadOf(m);
+          return p?.type === "text" && p.role === "user" && !m.origin;
+        }),
+      ).toHaveLength(1);
+      expect(
+        messages.some((m) => {
+          const p = payloadOf(m);
+          return p?.type === "tool_call" && p.name === "edit_file";
+        }),
+      ).toBe(true);
+      expect(
+        messages.filter((m) => {
+          const p = payloadOf(m);
+          return p?.type === "tool_call" && p.name === "run_subagent";
+        }).length,
+      ).toBeGreaterThan(1);
+      const answer = messages.findLast((m) => {
+        const p = payloadOf(m);
+        return !m.origin && p?.type === "text" && p.role === "assistant";
+      });
+      const p = payloadOf(answer!);
+      expect(p?.type === "text" && p.text).toContain(String(rsiReferenceScore()));
+      expect(p?.type === "text" && p.text).toContain(String(rsiCandidateEvaluation().score));
+      expect(textDeltas(sub.messages).length).toBeGreaterThan(1);
+      store.dispose();
+    },
+  );
+
+  it("stops future evolution steps on abort and retries without echoing a second prompt", () => {
+    vi.useFakeTimers();
+    const store = resetStore({ lang: "en", signedIn: true, now: NOW, evolutionDemo: true });
+    const row = store.createSession(IDS.agents.general, {});
+    const sub = collector();
+    store.channel(row.sessionId)!.subscribe(sub);
+    store.startTask(row.sessionId, rsiPrompt("en"));
+    vi.advanceTimersByTime(2000);
+    store.abort(row.sessionId);
+    const count = sub.messages.length;
+    vi.advanceTimersByTime(30_000);
+    expect(sub.messages).toHaveLength(count);
+    expect(store.retryTask(row.sessionId)).toBe(true);
+    vi.advanceTimersByTime(30_000);
+    expect(store.session(row.sessionId)?.status).toBe("idle");
+    const prompts = store.transcript(row.sessionId)!.history.filter((m) => {
+      const p = payloadOf(m);
+      return !m.origin && p?.type === "text" && p.role === "user";
+    });
+    expect(prompts).toHaveLength(1);
+    expect(store.liveTail(row.sessionId)).toBeUndefined();
+    store.dispose();
   });
 });

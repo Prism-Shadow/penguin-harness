@@ -7,6 +7,8 @@
  *   and the asked mode.
  * - Given the same, the window bar's link opens that surface's own gallery page in the same
  *   language and mode, and in the phone view on a phone.
+ * - Given the hero's opt-in, its new conversation starts the evolution walkthrough; other
+ *   frames omit that opt-in and retain their interactive surfaces.
  */
 import { describe, expect, it } from "vitest";
 import { parseFrameParams } from "../../ui-gallery/src/app/frame";
@@ -15,6 +17,19 @@ import { INITIAL_THEME_ID } from "../../ui/src/tokens";
 import { gallerySurfaceUrl, liveFrameSrc } from "../src/lib/live-frame";
 
 describe("a live frame", () => {
+  it("opts the first new-conversation frame into the evolution walkthrough", () => {
+    const src = liveFrameSrc("chat-new", "zh", false, "evolution");
+    expect(parseFrameParams(new URL(src, "https://example.test").search)).toMatchObject({
+      route: "/chat/new",
+      lang: "zh",
+      autoplay: "evolution",
+    });
+    expect(
+      new URL(liveFrameSrc("chat-rsi", "en", false), "https://example.test").searchParams.has(
+        "autoplay",
+      ),
+    ).toBe(false);
+  });
   it("opens the surface's route in the gallery's frame document, embedded, in the site's language and mode", () => {
     for (const [surface, locale, dark] of [
       ["chat-rsi", "zh", true],

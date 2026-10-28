@@ -3,6 +3,8 @@
  * script writes the app's own storage keys, and the one key the package does not export is the
  * app's. A page outside the gallery names three preferences and leaves the rest to the app. A
  * frame whose URL names a custom background boots with it; the gallery's own frames name none.
+ * Given an autoplay request, only an embedded new conversation accepts it; other routes,
+ * standalone frames and unknown walkthrough names remain ordinary interactive frames.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -86,6 +88,27 @@ describe("the frame URL", () => {
   it("opens the chat when the route is missing or not a path, signed in by default", () => {
     expect(parseFrameParams("")).toEqual({ route: "/chat", lang: "en" });
     expect(parseFrameParams("?route=http://evil&lang=fr")).toEqual({ route: "/chat", lang: "en" });
+  });
+
+  it("starts the evolution walkthrough only in an embedded new conversation", () => {
+    const src = embeddedFrameSrc(
+      "/gallery",
+      { theme: "modern", mode: "light", lang: "en" },
+      "/chat/new",
+      "evolution",
+    );
+    expect(parseFrameParams(new URL(src, "https://example.test").search)).toMatchObject({
+      route: "/chat/new",
+      embedded: true,
+      autoplay: "evolution",
+    });
+    for (const search of [
+      "?route=/chat/new&autoplay=evolution",
+      "?route=/agents&embed=1&autoplay=evolution",
+      "?route=/chat/new&embed=1&autoplay=unknown",
+    ]) {
+      expect(parseFrameParams(search).autoplay).toBeUndefined();
+    }
   });
 
   it("boots with a custom background only when the URL names one", () => {

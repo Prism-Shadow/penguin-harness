@@ -14,8 +14,16 @@ import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
 import { raiseNotices } from "./notices";
-import { rsiEvaluatorTranscript, rsiTestTranscript, rsiTranscript } from "./rsi-transcript";
+import {
+  rsiEvaluatorTranscript,
+  rsiPrompt,
+  rsiTestTranscript,
+  rsiTitle,
+  rsiTranscript,
+  RSI_WORKSPACE,
+} from "./rsi-transcript";
 import { streamScript } from "./stream-script";
+import { evolutionReply } from "./evolution-reply";
 import {
   abortEvent,
   approvalDecision,
@@ -101,6 +109,7 @@ interface Live {
   loopFrom?: number;
   /** A stop left the turn held: the next message carries it, or a Retry resends it alone. */
   held?: boolean;
+  evolution?: boolean;
 }
 
 export class DemoStore {
@@ -112,10 +121,20 @@ export class DemoStore {
   private readonly live = new Map<string, Live>();
   private created = 0;
 
-  constructor(lang: Lang, now: number, signedIn: boolean, notices = false) {
+  constructor(
+    lang: Lang,
+    now: number,
+    signedIn: boolean,
+    notices = false,
+    private readonly evolutionDemo = false,
+  ) {
     this.lang = lang;
     this.signedIn = signedIn;
     this.f = buildFixtures(lang, now);
+    if (evolutionDemo) {
+      this.f.chatDefaults.agentId = IDS.agents.general;
+      this.f.chatDefaults.workspace = RSI_WORKSPACE;
+    }
     if (notices) raiseNotices(this.f);
     const ref = DEFAULT_MODEL;
     const seeded: Record<string, Transcript> = {
@@ -389,6 +408,11 @@ export class DemoStore {
     if (!live || !row) return false;
     if (row.status !== "idle") return false;
     const firstTurn = live.transcript.history.length === 0;
+    live.evolution =
+      this.evolutionDemo &&
+      firstTurn &&
+      row.agentId === IDS.agents.general &&
+      text === rsiPrompt(this.lang);
     this.stopScript(sessionId);
     delete live.held;
     this.setStatus(sessionId, "running");
@@ -414,11 +438,29 @@ export class DemoStore {
   /** The scripted reply of a running Task, then the Session settles (titled on its first turn). */
   private playReply(sessionId: string, live: Live, firstTurn: boolean): void {
     const callId = `call_${Date.now().toString(36)}`;
-    const steps = scriptedReply(this.lang, callId);
-    for (const step of steps) this.schedule(live, step.at, () => this.emit(live, step.msg));
+    const steps = live.evolution
+      ? evolutionReply(this.lang, Date.now(), DEFAULT_MODEL)
+      : scriptedReply(this.lang, callId);
+    for (const step of steps)
+      this.schedule(live, step.at, () => {
+        if (live.evolution && !step.msg.origin) {
+          const p = payloadOf(step.msg);
+          if (p?.type === "partial_text") {
+            if (p.event_type === "start")
+              live.transcript.openText = { startedAt: Date.now(), text: "" };
+            else if (p.event_type === "delta" && live.transcript.openText)
+              live.transcript.openText.text += p.text;
+            else if (p.event_type === "stop") delete live.transcript.openText;
+          }
+        }
+        this.emit(live, step.msg);
+      });
     const last = steps[steps.length - 1]?.at ?? 0;
     this.schedule(live, last + 200, () => {
-      if (firstTurn) this.patchSession(sessionId, { title: replyTitle(this.lang) });
+      if (firstTurn)
+        this.patchSession(sessionId, {
+          title: live.evolution ? rsiTitle(this.lang) : replyTitle(this.lang),
+        });
       this.setStatus(sessionId, "idle");
       live.timers = [];
     });
@@ -512,6 +554,7 @@ interface StoreInit {
   signedIn: boolean;
   /** Raise the notices a conversation can carry (notices.ts). */
   notices?: boolean;
+  evolutionDemo?: boolean;
 }
 
 /** The store the frame's language and sign-in state ask for; created once per document. */
@@ -522,6 +565,7 @@ export function getStore(init?: StoreInit): DemoStore {
       Date.now(),
       init?.signedIn ?? true,
       init?.notices ?? false,
+      init?.evolutionDemo ?? false,
     );
   }
   return current;
@@ -530,6 +574,12 @@ export function getStore(init?: StoreInit): DemoStore {
 /** A fresh store (tests, and a frame that re-seeds itself). */
 export function resetStore(init: StoreInit & { now?: number }): DemoStore {
   current?.dispose();
-  current = new DemoStore(init.lang, init.now ?? Date.now(), init.signedIn, init.notices ?? false);
+  current = new DemoStore(
+    init.lang,
+    init.now ?? Date.now(),
+    init.signedIn,
+    init.notices ?? false,
+    init.evolutionDemo ?? false,
+  );
   return current;
 }

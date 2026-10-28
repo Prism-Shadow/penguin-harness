@@ -14,17 +14,18 @@ import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.GALLERY_PORT ?? 7372);
 const BASE = `http://localhost:${PORT}`;
+const BASE_PATH = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   testDir: ".",
   timeout: 60_000,
   expect: { timeout: 10_000 },
   reporter: [["list"]],
-  use: { baseURL: BASE, headless: true, trace: "retain-on-failure" },
+  use: { baseURL: `${BASE}${BASE_PATH}`, headless: true, trace: "retain-on-failure" },
   webServer: {
     command: `pnpm exec vite --port ${PORT}`,
     cwd: fileURLToPath(new URL("..", import.meta.url)),
-    url: `${BASE}/lib.html`,
+    url: `${BASE}${BASE_PATH}lib.html`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

@@ -1,0 +1,12 @@
+# 首页 Agent 自动进化演示
+
+- **Date:** 2026-10-28
+- **Type:** feature
+- **Scope:** `landing`, `ui-gallery`
+- **PR:** [#1375](https://github.com/Prism-Shadow/penguin-harness/pull/1375)
+
+[English](2026-10-28-hero-evolution-walkthrough.md)
+
+首页第一个实机演示进入可见区域后，自动输入并发送 Agent 优化请求。对话通过 Web App 现有界面展示了评估、规则修改、并行复测，以及从 81 到 88.5 的分数提升。
+
+演示在用户操作时交还控制，保持外层页面的焦点和滚动位置，并在用户要求减少动态效果时保持静止。其他实机演示保留了原有行为。

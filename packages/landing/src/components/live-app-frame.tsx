@@ -69,18 +69,20 @@ export function LiveAppFrame({
   surface,
   title,
   className = "",
+  autoplay,
 }: {
   surface: SurfaceId;
   /** What the frame shows, for the frame's accessible name. */
   title: string;
   className?: string;
+  autoplay?: "evolution";
 }) {
   const { locale } = useSiteLocale();
   const { dark } = useSiteTheme();
   const phone = useMedia("(max-width: 639.98px)");
   const fine = useMedia("(hover: hover) and (pointer: fine)");
   const size = frameSize(phone);
-  const src = liveFrameSrc(surface, locale, dark);
+  const src = liveFrameSrc(surface, locale, dark, autoplay);
   const box = useRef<HTMLDivElement | null>(null);
   const [near, setNear] = useState(false);
   const [width, setWidth] = useState(0);
