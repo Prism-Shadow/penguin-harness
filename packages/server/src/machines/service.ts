@@ -281,10 +281,10 @@ interface Reconnecting {
   /** When the next attempt is due; null while one runs, and once the streak stopped. */
   nextAt: number | null;
   /**
-   * An attempt is under way. Kept apart from `nextAt` because a Stop retrying during an attempt
-   * stops the streak while that attempt still runs out (its ssh is not cut off).
+   * The signal of the attempt under way. Its own, not a flag: a cut attempt's late end must not
+   * clear the mark of the attempt that runs after it.
    */
-  running?: true;
+  running?: AbortSignal;
   /**
    * The streak stopped: nothing runs until a person's Retry (retryReconnect) begins another —
    * `cancelled` when that person stopped it (stopReconnecting).
@@ -462,10 +462,16 @@ export class MachinesService {
    */
   readonly #probing = new Map<string, Promise<void>>();
   /**
-   * Machines with a heavy operation in flight — an install, or the automatic sweep. Two
-   * transfers racing for one host is how a 30-second command times out with nothing to say.
+   * Machines a person's job is running on. Two transfers racing for one host is how a 30-second
+   * command times out with nothing to say.
    */
   readonly #busy = new Set<string>();
+  /**
+   * Machines this server's own work is running on — a reconnect attempt, a connection check, the
+   * boot's hand-over, a settle a stream asked for — each with the control that cuts it. A
+   * person's job never waits behind it: the job cuts it and starts (#drain).
+   */
+  readonly #auto = new Map<string, AbortController>();
   /** Sessions minted on machines, by address, reused until near their TTL. */
   readonly #sessions = new Map<string, { cookie: string; at: number }>();
   /**
@@ -525,8 +531,14 @@ export class MachinesService {
   readonly #passwords: SshPasswords;
   /** The boot's second sweep, pending (see start()). */
   #lateSweep: ReturnType<typeof setTimeout> | null = null;
-  /** The one settle in flight per machine: connect, the boot sweep and a refused stream join it. */
-  readonly #settling = new Map<string, Promise<SettleOutcome>>();
+  /**
+   * The one settle in flight per machine, with the signal of the work that started it: a later
+   * caller joins it, unless that work was cut.
+   */
+  readonly #settling = new Map<
+    string,
+    { run: Promise<SettleOutcome>; signal: AbortSignal | undefined }
+  >();
   /**
    * What each machine's last settle could not mend, by address. In memory like the statuses: it
    * holds the next automatic attempt back until one side's build changes; a person's press clears
@@ -613,14 +625,18 @@ export class MachinesService {
    * its own config, every time it is handed the alias; asking ssh for that answer first
    * (`ssh -G`) only to hand it back was a process per probe that could go stale against a file a
    * person edits, for no fact we used. The password is read when a connection opens, not here.
+   * `signal` is the automatic work's the target is built for (#withMachine): cut, what runs over
+   * the target ends.
    */
-  #targetOf(alias: string): RemoteTarget {
-    if (!this.#passwords.has(alias)) return { alias, user: "" };
+  #targetOf(alias: string, signal?: AbortSignal): RemoteTarget {
+    const cut = signal === undefined ? {} : { signal };
+    if (!this.#passwords.has(alias)) return { alias, user: "", ...cut };
     const passwords = this.#passwords;
     return {
       alias,
       user: "",
       password: { askpass: passwords.askpass(), read: () => passwords.read(alias) },
+      ...cut,
     };
   }
 
@@ -671,6 +687,8 @@ export class MachinesService {
   ): Promise<{ ok: true; session: ShellSession } | { ok: false; detail: string }> {
     const held = await this.#effects.hold(target);
     if (!held.ok) return held;
+    // Cut meanwhile: what it held is not recorded as this server's connection.
+    if (target.signal?.aborted === true) return { ok: false, detail: "it was stopped." };
     if (this.repo.get(address)?.sessionPid !== held.session.pid) {
       this.#record(address, { sessionPid: held.session.pid });
     }
@@ -966,7 +984,8 @@ export class MachinesService {
    * Checks a machine without writing anything there (machines/diagnose.ts): can this server
    * sign in, is it a platform a release exists for, does it have what the installer runs,
    * can it download the release itself, is there room, is the port free. Refused while a job
-   * works on that machine — the checks would queue behind the job's commands on its session.
+   * or this server's own work is on that machine — the checks would queue behind its commands
+   * on its session.
    */
   async diagnose(address: string): Promise<MachineDiagnosis | "unknown-machine" | "self" | "busy"> {
     const machine = this.#allMachines().find((entry) => entry.id === address);
@@ -974,18 +993,18 @@ export class MachinesService {
     if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
       return "self";
     }
-    if (this.#busy.has(address)) return "busy";
+    if (this.#taken(address)) return "busy";
     return this.#diagnoseNow(machine);
   }
 
   /**
    * The connection check itself, for a machine nothing else is working on — asked for by the API,
    * run after a job failed at a step it can explain, and after a machine kept connected failed to
-   * come back three times in a row.
+   * come back three times in a row. It writes nothing; `signal` cuts it when it is automatic work.
    */
-  async #diagnoseNow(machine: MachineInfo): Promise<MachineDiagnosis> {
+  async #diagnoseNow(machine: MachineInfo, signal?: AbortSignal): Promise<MachineDiagnosis> {
     const address = machine.id;
-    const target = this.#targetOf(machine.alias);
+    const target = this.#targetOf(machine.alias, signal);
     const checkedAt = this.#effects.now().toISOString();
     const done = (checks: MachineCheck[]): MachineDiagnosis => ({
       machineId: address,
@@ -1180,10 +1199,11 @@ export class MachinesService {
   }
 
   async #probeRound(projectId: string): Promise<void> {
-    // A machine a job is working on is left to the job: its commands would queue behind the
-    // job's on its one session, and the round — and the page's request waiting on it — with them.
+    // A machine a job or this server's own work is on is left to it: its commands would queue
+    // behind that work's on its one session, and the round — and the page's request waiting on
+    // it — with them.
     const queue = this.list(projectId).filter(
-      (m) => !m.local && m.installed !== null && !this.#busy.has(m.id),
+      (m) => !m.local && m.installed !== null && !this.#taken(m.id),
     );
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
@@ -1277,7 +1297,10 @@ export class MachinesService {
    * having worked.
    */
   async #refreshStatus(address: string, target: RemoteTarget): Promise<void> {
-    this.#recordProbe(address, await this.#probe(address, target));
+    const probe = await this.#probe(address, target);
+    // Cut meanwhile: the probe answered for work that is over, and its answer is not the status.
+    if (target.signal?.aborted === true) return;
+    this.#recordProbe(address, probe);
   }
 
   /** One probe of a machine, in the dialect its install found it to speak. */
@@ -1388,25 +1411,54 @@ export class MachinesService {
   }
 
   /**
-   * Whether a machine is taken — a job running or queued for it, or the automatic work (a
-   * reconnect, the boot's hand-over) on it. The single verbs refuse such a machine with 409;
-   * other machines are not held up by it.
+   * Whether a person's job is running or queued for a machine. The single verbs refuse such a
+   * machine with 409; other machines are not held up by it, and neither is it by this server's
+   * own work, which the job cuts (#drain).
    */
   #machineBusy(address: string): boolean {
     return this.#busy.has(address) || this.#queue.some((entry) => entry.job.machineId === address);
   }
 
+  /** Whether anything is on a machine: a person's job, or this server's own work. */
+  #taken(address: string): boolean {
+    return this.#machineBusy(address) || this.#auto.has(address);
+  }
+
   /**
    * Starts queued jobs until CONCURRENCY are working, oldest first, passing over a job whose
-   * machine is already being worked on — it starts when that work ends, which drains again.
+   * machine another job is working on — it starts when that job ends, which drains again. This
+   * server's own work on the machine is cut, and the job starts at once.
    */
   #drain(): void {
     while (this.#runningCount() < CONCURRENCY) {
       const index = this.#queue.findIndex((entry) => !this.#busy.has(entry.job.machineId));
       if (index === -1) return;
       const [next] = this.#queue.splice(index, 1);
+      this.#cutAuto(next!.job.machineId);
       void this.#run(next!.job, next!.opts, next!.work);
     }
+  }
+
+  /**
+   * Ends the automatic work on a machine at once: its running ssh command is ended, and what it
+   * learns after this is discarded and written nowhere (every step reads its target's signal
+   * before it writes). A reconnect attempt cut while its streak goes on is not counted: the
+   * streak looks again JOB_RECHECK_MS on, which waits for the job that cut it.
+   */
+  #cutAuto(address: string): void {
+    const work = this.#auto.get(address);
+    if (work === undefined) return;
+    this.#auto.delete(address);
+    const state = this.#reconnects.get(address);
+    if (state !== undefined && state.running === work.signal) {
+      delete state.running;
+      if (state.gaveUp === undefined) {
+        state.nextAt = this.#effects.now().getTime() + JOB_RECHECK_MS;
+        this.#schedule(address, JOB_RECHECK_MS);
+      }
+    }
+    work.abort();
+    this.#changed();
   }
 
   async #run(
@@ -1459,12 +1511,22 @@ export class MachinesService {
   /**
    * What a finished job leaves to do. A machine kept connected that the job left without its
    * connection — a restart that did not come back, a failed update — is brought back like any
-   * machine that was lost. A job that failed at a step a connection check can explain gets one,
-   * run as soon as the machine is free.
+   * machine that was lost; one whose streak had stopped begins a new one when the job went
+   * through, since what stopped it may be what the job mended (a Restart after Stop retrying),
+   * and otherwise stays stopped. A job that failed at a step a connection check can explain gets
+   * one, run as soon as the machine is free.
    */
   #afterJob(job: MachineJob): void {
     const address = job.machineId;
-    if (this.#keepsConnected(address) && !this.#isUp(address)) this.#lost(address, 0);
+    if (this.#keepsConnected(address) && !this.#isUp(address)) {
+      const state = this.#reconnects.get(address);
+      if (state?.gaveUp !== undefined && state.waitsForPassword !== true) {
+        if (job.result?.ok === true) this.#settle(address);
+        // Stopped by a person while the job ran: the session closes now, as Stop retrying does.
+        else if (state.gaveUp === "cancelled") closeConnectionTo(address);
+      }
+      this.#lost(address, 0);
+    }
     const result = job.result;
     if (
       result === null ||
@@ -1478,9 +1540,10 @@ export class MachinesService {
     if (machine === undefined) return;
     job.diagnosis = { state: "running" };
     this.#changed();
-    void this.#withMachine(address, () => this.#diagnoseNow(machine)).then(
+    void this.#withMachine(address, (signal) => this.#diagnoseNow(machine, signal)).then(
       (diagnosis) => {
-        // Something else took the machine first (a retry): the check can wait for its outcome.
+        // Something else took the machine first (a retry), or a job cut the check: it can wait
+        // for that outcome.
         if (diagnosis === null) delete job.diagnosis;
         else job.diagnosis = { state: "done", ...diagnosis };
         this.#changed();
@@ -1911,8 +1974,7 @@ export class MachinesService {
    * count; one that stopped (`gaveUp`) begins again from the first attempt, its last failure
    * and check still said until the new attempt answers; a machine that is down with no streak
    * yet begins one. An attempt already running, or a machine that is up, is left alone, so a
-   * second press starts no second attempt — and an attempt a Stop retrying left running out is
-   * taken as the new streak's first. Refused before anything runs: while a job is queued
+   * second press starts no second attempt. Refused before anything runs: while a job is queued
    * or running for it (the job decides how it ends), while its stored password is refused (a
    * try could lock the account; saving a password tries again), and for a machine not kept
    * connected (nothing to bring back — Start it).
@@ -1938,12 +2000,6 @@ export class MachinesService {
       delete state.gaveUp;
       // The new streak checks the machine again after its own third failure.
       state.diagnosedFor = null;
-      if (state.running === true) {
-        // The attempt a Stop retrying left running out is this streak's first: a second one
-        // beside it would double the ssh.
-        this.#changed();
-        return { ok: true, started: false };
-      }
       state.nextAt = now;
     } else if (state.nextAt === null) {
       return { ok: true, started: false };
@@ -1957,9 +2013,12 @@ export class MachinesService {
   /**
    * A person's Stop retrying on a machine this server is bringing back: the streak stops at once
    * (`gaveUp: "cancelled"`), its timer cleared, and nothing runs until a Retry, a Start or this
-   * server's restart. An attempt already under way is not cut off — its ssh runs out: one that
-   * connects leaves the machine connected, one that fails is followed by nothing. A machine that
-   * is up, or a streak that already stopped, is left alone.
+   * server's restart. The attempt under way is cut (#cutAuto): its ssh command ends, and what it
+   * would have learned is not counted and not said. A machine left without a connection has its
+   * session closed too, which ends the transport's own redial — after the job, when one is
+   * running (#afterJob); the record still keeps it connected, so a Retry or a boot brings it
+   * back. From here every job on the machine starts at once. A machine that is up, or a streak
+   * that already stopped, is left alone.
    */
   stopReconnecting(address: string): StopReconnectAnswer {
     const machine = this.#allMachines().find((entry) => entry.id === address);
@@ -1973,6 +2032,9 @@ export class MachinesService {
     this.#retryTimers.delete(address);
     state.gaveUp = "cancelled";
     state.nextAt = null;
+    this.#cutAuto(address);
+    // A job's commands ride that session too: with one running, the job's end closes it.
+    if (!this.#isUp(address) && !this.#machineBusy(address)) closeConnectionTo(address);
     this.#changed();
     return { ok: true, stopped: true };
   }
@@ -1990,9 +2052,15 @@ export class MachinesService {
      * there, or this server's own plan; null when this server has none to compare with.
      */
     expected: PushPlan | null,
+    /**
+     * A reconnect attempt's (#attempt): once it is cut, the connect writes nothing more — no
+     * status, no record, no connection, no end to the streak — and answers null.
+     */
+    signal?: AbortSignal,
   ): Promise<MachineJob["result"]> {
     const address = machine.id;
-    const target = this.#targetOf(machine.alias);
+    const target = this.#targetOf(machine.alias, signal);
+    const cut = () => signal?.aborted === true;
 
     // Asked even when the connection is already up: it is an ssh process on THIS side,
     // and it outlives the far server. Taking it as the answer reported "connected" over a
@@ -2001,6 +2069,7 @@ export class MachinesService {
     // that failed, or pick up a new key) now costs one probe and stays honest.
     say("Asking what is running there…", askPhase);
     const probed = await this.#probe(address, target);
+    if (cut()) return null;
     this.#recordProbe(address, probed);
     if (probed.state.kind === "unreachable") {
       // The same dead end an install reaches, and the same way out — installing anyway,
@@ -2033,6 +2102,7 @@ export class MachinesService {
       remotePort = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
       say(`Starting its server on port ${remotePort}…`, "connect");
       const started = await this.#effects.startServer(target, remotePort);
+      if (cut()) return null;
       if (!started.ok) {
         return {
           ok: false,
@@ -2047,6 +2117,7 @@ export class MachinesService {
       // machine says, not from what was asked for: the two differ when an earlier, slower
       // start is the server that answered.
       const after = await this.#probe(address, target);
+      if (cut()) return null;
       this.#recordProbe(address, after);
       if (after.state.kind === "running") remotePort = after.state.port;
     }
@@ -2061,6 +2132,7 @@ export class MachinesService {
     // cannot be asked at all falls through to that gate as it always did.
     if (expected !== null) {
       const settled = await this.#settleBuild(address, target, expected, say, remotePort);
+      if (cut()) return null;
       if (settled.kind === "incompatible") {
         return {
           ok: false,
@@ -2071,11 +2143,13 @@ export class MachinesService {
       remotePort = this.repo.get(address)?.remotePort ?? remotePort;
     }
     const lined = await this.#inLine(address, target, remotePort, expected, say);
+    if (cut()) return null;
     if (!lined.ok) return { ok: false, step: "sync", message: lined.message };
     remotePort = lined.port;
 
     say("Opening the connection…", "connect");
     const connection = await this.#connection(address, target);
+    if (cut()) return null;
     if (!connection.ok) {
       return {
         ok: false,
@@ -2097,6 +2171,7 @@ export class MachinesService {
       this.#projectsUsing(address),
       lined.unasked,
     );
+    if (cut()) return null;
     // Connected, by whichever way it came — a job or the supervision's own attempt: a streak of
     // reconnecting that was under way is over.
     this.#settle(address);
@@ -2168,6 +2243,8 @@ export class MachinesService {
     say(`It runs ${asked.build.version}; bringing it to ${expected.version} first…`);
     const handOver = () => this.#handOverBuild(address, target, expected, tell);
     const outcome = await (this.#checkout?.holding(expected, handOver) ?? handOver());
+    // Cut meanwhile: whatever the machine took, the record is written by the work that runs next.
+    if (target.signal?.aborted === true) return { ok: false, message: "it was stopped." };
     if (outcome.kind === "upgraded" && outcome.persisted) {
       this.#record(address, {
         version: expected.version,
@@ -2224,7 +2301,8 @@ export class MachinesService {
    * installer's `forceInstaller` puts that build on the disk, the stop and the start bring the
    * server back onto it, and the handshake is asked once more. An answer that agrees settles it;
    * one that does not ends `incompatible`. `port` is where its server answers, when the caller has
-   * just found that out; one run per machine, and a later caller joins it.
+   * just found that out; one run per machine, and a later caller joins it — unless the work that
+   * started it was cut, which leaves nothing to join.
    */
   async #settleBuild(
     address: string,
@@ -2234,15 +2312,18 @@ export class MachinesService {
     port?: number,
   ): Promise<SettleOutcome> {
     const inflight = this.#settling.get(address);
-    if (inflight !== undefined) return inflight;
+    if (inflight !== undefined && inflight.signal?.aborted !== true) return inflight.run;
     const run = this.#settleBuildOnce(address, target, plan, say, port).finally(() => {
-      if (this.#settling.get(address) === run) this.#settling.delete(address);
+      if (this.#settling.get(address)?.run === run) this.#settling.delete(address);
     });
-    this.#settling.set(address, run);
+    this.#settling.set(address, { run, signal: target.signal });
     return run;
   }
 
-  /** One settle, as `#settleBuild` describes it. Every step that can hang has its own deadline. */
+  /**
+   * One settle, as `#settleBuild` describes it. Every step that can hang has its own deadline.
+   * Cut (its target's signal), it ends `unanswered` at the next step and writes nothing more.
+   */
   async #settleBuildOnce(
     address: string,
     target: RemoteTarget,
@@ -2250,10 +2331,12 @@ export class MachinesService {
     say: Say,
     port?: number,
   ): Promise<SettleOutcome> {
+    const cut = () => target.signal?.aborted === true;
     const probed = port === undefined ? await this.#probe(address, target) : null;
     const at = port ?? (probed?.state.kind === "running" ? probed.state.port : null);
-    if (at === null) return { kind: "unanswered" };
+    if (at === null || cut()) return { kind: "unanswered" };
     const asked = await this.#handshakeAt(target, at);
+    if (cut()) return { kind: "unanswered" };
     const first = judgeHandshake(asked, plan);
     if (first.inLine) {
       this.#incompatible.delete(address);
@@ -2287,6 +2370,7 @@ export class MachinesService {
         }),
       (detail) => ({ kind: "failed" as const, step: "install", detail }),
     );
+    if (cut()) return { kind: "unanswered" };
     if (installed.kind === "failed") {
       return this.#signOff(
         address,
@@ -2303,6 +2387,7 @@ export class MachinesService {
       () => this.#restartForSettle(address, target, at, say),
       (detail) => ({ ok: false as const, detail }),
     );
+    if (cut()) return { kind: "unanswered" };
     if (!restarted.ok) {
       return this.#signOff(
         address,
@@ -2315,6 +2400,7 @@ export class MachinesService {
     // Asked once more, and only once: what answers now is the process the restart started.
     const nowAt = this.repo.get(address)?.remotePort ?? at;
     const second = judgeHandshake(await this.#handshakeAt(target, nowAt), plan);
+    if (cut()) return { kind: "unanswered" };
     if (second.inLine) {
       this.#incompatible.delete(address);
       this.#inLineRow(address, plan.version);
@@ -2325,7 +2411,8 @@ export class MachinesService {
 
   /**
    * A stream found no socket to a machine (machine-sockets.ts's `settle`): one settle is asked
-   * for, and the stream is told where it stands. Null when there is nothing to say.
+   * for, as automatic work a person's job cuts, and the stream is told where it stands. Null when
+   * there is nothing to say.
    */
   settleForStream(machineId: string): StreamSettle | null {
     const row = this.#rowFor(machineId);
@@ -2340,8 +2427,12 @@ export class MachinesService {
     if (this.#machineBusy(row.address)) {
       return { kind: "upgrading", detail: "a job is already working that machine" };
     }
-    const target = this.#targetOf(row.address.slice("ssh:".length));
-    void this.#settleBuild(row.address, target, plan, () => {}).catch(() => undefined);
+    // Refused while this server's own work is on the machine: a reconnect or the boot's hand-over
+    // settles it on the way, and a settle already asked for is the one this stream waits on.
+    const alias = row.address.slice("ssh:".length);
+    void this.#withMachine(row.address, (signal) =>
+      this.#settleBuild(row.address, this.#targetOf(alias, signal), plan, () => {}),
+    ).catch(() => undefined);
     return { kind: "upgrading", detail: `it is being brought onto ${plan.version}` };
   }
 
@@ -2365,6 +2456,7 @@ export class MachinesService {
       const started = await this.#effects.startServer(target, port);
       if (!started.ok) return { ok: false, detail: started.detail };
       await this.#refreshStatus(address, target);
+      if (target.signal?.aborted === true) return { ok: false, detail: "it was stopped." };
       this.#record(address, { remotePort: port });
       return { ok: true };
     }
@@ -2406,6 +2498,8 @@ export class MachinesService {
       this.#record(address, { sessionPid: null });
     }
     this.#settle(address);
+    // An attempt under way would hold the connection again and mark it kept.
+    this.#cutAuto(address);
     closeConnectionTo(address);
     this.#sessions.delete(address);
     this.#changed();
@@ -2507,7 +2601,8 @@ export class MachinesService {
   /**
    * Brings back each of `addresses` that this server keeps connected, is not connected, and is
    * due — never tried in this streak, or past its wait — five machines at a time. A machine a job
-   * is working on is passed over: the job leaves it connected or it does not (#afterJob).
+   * is working on is passed over: the job leaves it connected or it does not (#afterJob); so is
+   * one this server's own work is already on.
    */
   async #bringBack(addresses: readonly string[]): Promise<void> {
     if (this.#stopped) return;
@@ -2518,8 +2613,9 @@ export class MachinesService {
         return false;
       }
       const state = this.#reconnects.get(address);
-      if (this.#machineBusy(address)) {
-        // A job has it: looked at again in a while, when the job may have brought it back.
+      if (this.#taken(address)) {
+        // A job or this server's own work has it: looked at again in a while, when that may
+        // have brought it back.
         if (state !== undefined) this.#schedule(address, JOB_RECHECK_MS);
         return false;
       }
@@ -2540,7 +2636,7 @@ export class MachinesService {
       }
     }
     if (due.length > 0) this.#changed();
-    await this.#sweep(due, (address) => this.#attempt(address));
+    await this.#sweep(due, (address, _target, signal) => this.#attempt(address, signal));
   }
 
   /**
@@ -2548,14 +2644,15 @@ export class MachinesService {
    * if it is not, the connection held, the Project config handed over. A failure waits twice as long
    * as the one before; the third in a row, and any later one that fails differently, runs the
    * connection check, whose answer the page shows as the explanation. The streak stops at
-   * RECONNECT_MAX_ATTEMPTS failures, at the first that no retry can fix, or at a person's Stop
-   * retrying — which, coming while this attempt runs, lets it finish and schedules nothing after.
+   * RECONNECT_MAX_ATTEMPTS failures, or at the first that no retry can fix. `signal` cuts the
+   * attempt — a person's Stop retrying or job, this App going away (#cutAuto) — and a cut attempt
+   * leaves the streak as it was: not counted, its failure not said, nothing scheduled by it.
    */
-  async #attempt(address: string): Promise<void> {
+  async #attempt(address: string, signal: AbortSignal): Promise<void> {
     const state = this.#reconnects.get(address);
-    if (state === undefined || this.#stopped || state.running === true) return;
+    if (state === undefined || this.#stopped || state.running !== undefined) return;
     state.nextAt = null;
-    state.running = true;
+    state.running = signal;
     this.#changed();
     const machine = this.#allMachines().find((entry) => entry.id === address);
     let result: MachineJob["result"];
@@ -2563,12 +2660,12 @@ export class MachinesService {
       result =
         machine === undefined
           ? { ok: false, step: "connect", message: "that host is no longer in the ssh config." }
-          : await this.#connect(machine, () => {}, "check", await this.#readyPlan());
+          : await this.#connect(machine, () => {}, "check", await this.#readyPlan(), signal);
     } finally {
-      delete state.running;
+      if (state.running === signal) delete state.running;
     }
-    // Stopped, deleted or disposed meanwhile: what the attempt learned is nobody's now.
-    if (this.#stopped || this.#reconnects.get(address) !== state) return;
+    // Cut, stopped, deleted or disposed meanwhile: what the attempt learned is nobody's now.
+    if (signal.aborted || this.#stopped || this.#reconnects.get(address) !== state) return;
     if (result !== null && result.ok) {
       this.#settle(address);
       return;
@@ -2586,11 +2683,6 @@ export class MachinesService {
     if (state.sshReason === "password-rejected" || state.sshReason === "password-not-offered") {
       state.waitsForPassword = true;
       state.nextAt = null;
-      this.#changed();
-      return;
-    }
-    // A person stopped the streak while this attempt ran: its failure is said, nothing follows.
-    if (state.gaveUp === "cancelled") {
       this.#changed();
       return;
     }
@@ -2619,7 +2711,12 @@ export class MachinesService {
       state.diagnosedFor !== state.lastError
     ) {
       state.diagnosedFor = state.lastError;
-      const diagnosis = await this.#diagnoseNow(machine).catch(() => null);
+      const diagnosis = await this.#diagnoseNow(machine, signal).catch(() => null);
+      // Cut before it answered: no check was taken for this failure, so the next one runs it.
+      if (signal.aborted) {
+        state.diagnosedFor = null;
+        return;
+      }
       if (diagnosis !== null && this.#reconnects.get(address) === state) {
         state.diagnosis = diagnosis;
         this.#changed();
@@ -2722,9 +2819,11 @@ export class MachinesService {
   /**
    * Lets go of every connection THIS generation opened — the platform's dispose effect on a hot
    * push — and every subscription and timer with them: a transient session is closed, a held one
-   * is left in the resource registry for the successor to claim (transport/ssh-session.ts). The
-   * record of which machines are kept connected stays, so the successor's start() brings each
-   * back. Nothing here closes by a remembered pid: the child handles are this generation's own.
+   * is left in the resource registry for the successor to claim (transport/ssh-session.ts) —
+   * unless this generation's own work had a command running on it, which the cut ends with its
+   * session. The record of which machines are kept connected stays, so the successor's start()
+   * brings each back. Nothing here closes by a remembered pid: the child handles are this
+   * generation's own.
    */
   stop(): void {
     this.#stopped = true;
@@ -2738,6 +2837,9 @@ export class MachinesService {
     this.#unwatch();
     if (this.#lateSweep !== null) clearTimeout(this.#lateSweep);
     this.#lateSweep = null;
+    // This generation's own work ends with it: nothing it learns lands in a store that closes.
+    for (const work of this.#auto.values()) work.abort();
+    this.#auto.clear();
     closeAllConnections();
   }
 
@@ -2798,6 +2900,9 @@ export class MachinesService {
         envOnly,
         skipped,
       };
+      // Cut meanwhile: its requests were ended, and that is not what the machine's last sync
+      // came to.
+      if (target.signal?.aborted === true) return sync;
       this.#configSyncs.set(address, sync);
       this.#changed();
       return sync;
@@ -2982,6 +3087,10 @@ export class MachinesService {
     // A hot swap replaces the code a RUNNING server is serving; with none there is nothing
     // to swap, and nothing wrong either — its disk already holds what it will next load.
     if (probed.state.kind !== "running") return { kind: "no-server" };
+    // Cut meanwhile: nothing is recorded, and nothing is sent.
+    if (target.signal?.aborted === true) {
+      return { kind: "failed", step: "reach", detail: "it was stopped." };
+    }
     // A dial, not a hold: the agent below opens the session transiently if it is not up,
     // and a machine that was merely installed on is not made a held one by being brought
     // forward at boot — only a connect asks for that.
@@ -3040,6 +3149,7 @@ export class MachinesService {
     // It is a different process now, and possibly one with an identity it did not have a
     // moment ago: a machine mints its id when a server that mints one starts there.
     await this.#refreshStatus(address, target);
+    if (target.signal?.aborted === true) return { ok: false, detail: "it was stopped." };
     this.#record(address, { remotePort: port });
     return { ok: true, port };
   }
@@ -3315,29 +3425,38 @@ export class MachinesService {
 
   // --- the automatic sweeps, run when an App boots ----------------------------------------------
 
-  /** Runs `work` with this machine's slot held, or returns null when it is already busy. */
-  async #withMachine<T>(address: string, work: () => Promise<T>): Promise<T | null> {
-    if (this.#busy.has(address)) return null;
-    this.#busy.add(address);
+  /**
+   * Runs this server's own `work` on a machine, handing it the signal a person's job cuts it
+   * with (#cutAuto); null when a job or other such work already has the machine, or when the
+   * work was cut — what it answered then is not its outcome.
+   */
+  async #withMachine<T>(
+    address: string,
+    work: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T | null> {
+    if (this.#taken(address)) return null;
+    const auto = new AbortController();
+    this.#auto.set(address, auto);
     try {
-      return await work();
+      const result = await work(auto.signal);
+      return auto.signal.aborted ? null : result;
     } finally {
-      this.#busy.delete(address);
-      // A job queued while this ran was passed over by #drain; it may start now.
-      this.#drain();
+      if (this.#auto.get(address) === auto) this.#auto.delete(address);
     }
   }
 
   async #sweep(
     addresses: string[],
-    work: (address: string, target: RemoteTarget) => Promise<void>,
+    work: (address: string, target: RemoteTarget, signal: AbortSignal) => Promise<void>,
   ): Promise<void> {
     const queue = [...addresses];
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       for (let address = queue.shift(); address !== undefined; address = queue.shift()) {
-        const target = this.#targetOf(address.slice("ssh:".length));
+        const alias = address.slice("ssh:".length);
         try {
-          await this.#withMachine(address, () => work(address, target));
+          await this.#withMachine(address, (signal) =>
+            work(address, this.#targetOf(alias, signal), signal),
+          );
         } catch {
           // Best effort: the page shows the machine as it is.
         }
@@ -3364,13 +3483,13 @@ export class MachinesService {
       .filter((row) => row.version !== null)
       .map((row) => row.address);
     const sweep = () =>
-      this.#sweep(known, async (address, target) => {
+      this.#sweep(known, async (address, target, signal) => {
         const settled = await this.#settleBuild(address, target, plan, () => {});
-        if (settled.kind !== "unanswered") return;
+        if (settled.kind !== "unanswered" || signal.aborted) return;
         const outcome = await this.#handOverBuild(address, target, plan, () => {});
         // Recorded only when the machine also wrote it down: a swap it could not persist is
         // gone at its next restart, and a record of it would outlive the thing it records.
-        if (outcome.kind === "upgraded" && outcome.persisted) {
+        if (outcome.kind === "upgraded" && outcome.persisted && !signal.aborted) {
           this.#record(address, {
             version: plan.version,
             installedAt: this.#effects.now().toISOString(),

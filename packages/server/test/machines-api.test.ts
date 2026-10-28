@@ -53,8 +53,10 @@
  *   host that answers again ends the streak connected. A machine not kept connected, one a job is
  *   working on and an unknown host are refused before anything runs; a connected one is left alone.
  * - Given a person's Stop retrying, a waiting streak stops at once and nothing runs after it
- *   until a Retry, which counts from the first again; an attempt already under way runs out and
- *   nothing follows its failure, and a Retry meanwhile takes that attempt as its first.
+ *   until a Retry, which counts from the first again; an attempt already under way is cut and not
+ *   counted, a job pressed then starts at once, and a Retry runs a new attempt at once.
+ * - Given a person's job during an attempt, the job starts at once and the attempt is cut, not
+ *   counted; the streak looks again once the job is done.
  * - Given a refusal decidable without ssh (self-install, a second install, an unknown host, no
  *   image), nothing runs. Given ssh's own refusal, the job ends at the first step with why, for
  *   the page to say, and no offer to install anyway.
@@ -2810,15 +2812,22 @@ describe("machines API", () => {
     /**
      * A service keeping nas connected, whose host answers each probe with ssh's `said` — null for
      * up and running — after `hold` settles when one is set. `probes` counts the probes, one per
-     * attempt or connect; the connection check asks through `runOn`, never the probe.
+     * attempt or connect; the connection check asks through `runOn`, never the probe. A probe
+     * whose work is cut answers at once, as the transport's own cut does.
      */
     const host = async (now: () => Date) => {
       const far = { said: REFUSED as string | null, probes: 0, hold: null as Promise<void> | null };
       await boot({
         now,
-        probe: async () => {
+        probe: async (target) => {
           far.probes += 1;
-          if (far.hold !== null) await far.hold;
+          const cut = new Promise<void>((resolve) =>
+            target.signal?.addEventListener("abort", () => resolve(), { once: true }),
+          );
+          if (far.hold !== null) await Promise.race([far.hold, cut]);
+          if (target.signal?.aborted === true) {
+            return { state: { kind: "unreachable", detail: "stopped" }, machineId: null };
+          }
           return far.said === null
             ? { state: { kind: "running", port: 7364, pid: 4242 }, machineId: null }
             : { state: { kind: "unreachable", detail: far.said }, machineId: null };
@@ -2938,7 +2947,7 @@ describe("machines API", () => {
       expect(nas()?.reconnect?.gaveUp).toBeUndefined();
     });
 
-    it("Stop retrying during an attempt lets it run out and schedules nothing after its failure", async () => {
+    it("Stop retrying during an attempt ends it at once: Update starts straight away, and the cut attempt is not counted", async () => {
       const clock = { now: new Date("2026-08-24T12:00:00.000Z") };
       const far = await host(() => clock.now);
       await lookOver(clock, 1);
@@ -2950,15 +2959,67 @@ describe("machines API", () => {
       const running = t.deps.machines.autoConnect();
       await waitFor(() => far.probes === 2);
       expect((await admin.post(STOP)).status).toBe(200);
+      // The machine is free at once: the job runs now, it does not wait behind the attempt.
+      const used = await admin.post("/api/projects/default_project/machines/use", {
+        machines: ["ssh:nas"],
+      });
+      expect(used.status).toBe(202);
+      const job = ((await used.json()) as MachinesUseResponse).jobs.find(
+        (entry) => entry.machineId === "ssh:nas",
+      );
+      expect(job).toMatchObject({ queued: false, running: true });
       release();
       await running;
-      // Its failure is counted and said; nothing is scheduled after it.
-      expect(nas()?.reconnect).toMatchObject({ attempts: 2, gaveUp: "cancelled", nextAt: null });
+      await waitFor(() => t.deps.machines.jobs().every((entry) => !entry.running && !entry.queued));
+      // The cut attempt is neither counted nor said, and nothing is scheduled after it.
+      expect(nas()?.reconnect).toMatchObject({
+        attempts: 1,
+        gaveUp: "cancelled",
+        nextAt: null,
+        lastError: REFUSED,
+      });
       await lookOver(clock, 13);
       expect(far.probes).toBe(2);
     });
 
-    it("Retry after stopping an attempt still under way takes that attempt as its first, and starts no second one", async () => {
+    it("a job pressed during an attempt starts at once; the attempt is not counted, and the streak looks again once the job is done", async () => {
+      const clock = { now: new Date("2026-08-24T12:00:00.000Z") };
+      const far = await host(() => clock.now);
+      await lookOver(clock, 1);
+      let release!: () => void;
+      far.hold = new Promise((resolve) => {
+        release = resolve;
+      });
+      clock.now = new Date(clock.now.getTime() + 60_000);
+      const running = t.deps.machines.autoConnect();
+      await waitFor(() => far.probes === 2);
+      const restarted = await admin.post("/api/projects/default_project/machines/ssh:nas/restart");
+      expect(restarted.status).toBe(202);
+      const job = ((await restarted.json()) as MachinesResponse).jobs.find(
+        (entry) => entry.machineId === "ssh:nas",
+      );
+      expect(job).toMatchObject({ kind: "restart", queued: false, running: true });
+      await running;
+      expect(nas()?.reconnect).toMatchObject({
+        attempts: 1,
+        lastError: REFUSED,
+        nextAt: at(clock.now.getTime() + 5_000),
+      });
+      expect(nas()?.reconnect?.gaveUp).toBeUndefined();
+      // The host answers again, and the restart goes through.
+      far.said = null;
+      release();
+      await waitFor(() => t.deps.machines.jobs().every((entry) => !entry.running && !entry.queued));
+      expect(t.deps.machines.jobs().find((entry) => entry.machineId === "ssh:nas")?.result).toEqual(
+        { ok: true, connected: true },
+      );
+      clock.now = new Date(clock.now.getTime() + 5_000);
+      await t.deps.machines.autoConnect();
+      expect(nas()?.reconnect).toBeUndefined();
+      expect(nas()?.connection).not.toBeNull();
+    });
+
+    it("Retry after stopping an attempt runs a new one at once, the first of a new round", async () => {
       const clock = { now: new Date("2026-08-24T12:00:00.000Z") };
       const far = await host(() => clock.now);
       await lookOver(clock, 3);
@@ -2970,19 +3031,22 @@ describe("machines API", () => {
       const running = t.deps.machines.autoConnect();
       await waitFor(() => far.probes === 4);
       expect((await admin.post(STOP)).status).toBe(200);
+      far.hold = null;
       const retried = await admin.post(RECONNECT);
       const answered = ((await retried.json()) as MachinesResponse).machines.find(
         (m) => m.id === "ssh:nas",
       )?.reconnect;
       expect(answered).toMatchObject({ attempts: 0, nextAt: null });
       expect(answered?.gaveUp).toBeUndefined();
-      release();
-      await running;
-      expect(far.probes).toBe(4);
+      await waitFor(() => far.probes === 5 && typeof nas()?.reconnect?.nextAt === "string");
       expect(nas()?.reconnect).toMatchObject({
         attempts: 1,
         nextAt: at(clock.now.getTime() + 30_000),
       });
+      release();
+      await running;
+      expect(far.probes).toBe(5);
+      expect(nas()?.reconnect?.attempts).toBe(1);
     });
 
     it("Retry brings back a machine whose host answers again: the streak ends, and it is connected", async () => {
