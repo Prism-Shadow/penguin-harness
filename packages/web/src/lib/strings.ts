@@ -4029,8 +4029,37 @@ Benchmark：
     noSessions: "还没有 Session",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
-    sessionOnOfflineMachineUnknown: "这个对话在某台机器上，当前没有连接。",
+    /** The routed conversation's machine is connected and did not answer in time. */
+    sessionOnQuietMachine: (machine: string) =>
+      `这个对话在 ${machine} 上，但 ${machine} 暂时没有回应。`,
+    /** No machine can be named: nothing says whether it is not connected or not answering. */
+    sessionOnOfflineMachineUnknown: "本机没有这个对话，它可能在某台暂时联系不上的机器上。",
+    /**
+     * A link the list does not hold while machines that could hold it are silent: what is known —
+     * not here — and where it may be. At most three aliases are named; more end in 等. `state`
+     * says whether those machines are not connected, connected and not answering, or some of each.
+     */
+    sessionMaybeOnMachines: (
+      aliases: readonly string[],
+      more: boolean,
+      state: "disconnected" | "quiet" | "mixed",
+    ) => {
+      const why =
+        state === "disconnected"
+          ? "当前没有连接"
+          : state === "quiet"
+            ? "暂时没有回应"
+            : "当前没有连接或暂时没有回应";
+      return aliases.length === 1 && !more
+        ? `本机没有这个对话，它可能在 ${aliases[0]} 上，但 ${aliases[0]} ${why}。`
+        : `本机没有这个对话，它可能在 ${aliases.join("、")}${more ? " 等" : " "}机器上，但这些机器${why}。`;
+    },
     sessionOfflineHint: "连接恢复后会自动打开。",
+    sessionQuietHint: "机器回应后会自动打开。",
+    /** The machine holding the routed conversation will not show it to this server (403 session_forbidden). */
+    sessionRefused: (machine: string | null) =>
+      machine === null ? "这台机器不让本服务端查看这个对话" : `${machine} 不让本服务端查看这个对话`,
+    sessionRefusedHint: "对话仍在那台机器上，但它拒绝了本服务端的读取。",
     /** The routed conversation does not exist (a stale link, or deleted elsewhere): said in place, never swapped for another conversation. */
     sessionNotFound: "会话不存在或已被删除",
     sessionNotFoundHint: "这个链接指向的会话已经不在了，或者你没有访问它的权限。",
@@ -4057,6 +4086,48 @@ Benchmark：
       body: (alias: string) =>
         `${alias} 的版本和当前不一致，这里的对话不会自动刷新。请到「机器管理」重启这台机器。`,
       open: "去机器管理",
+    },
+    /**
+     * A conversation's history coming over from the machine it lives on: the row that stands in
+     * for the transcript until its newest messages arrive, the line over the transcript while the
+     * rest syncs behind it, and the line under an unfolded output while its whole text arrives.
+     * `alias` is null while the machine list has not answered.
+     */
+    historyTransfer: {
+      window: (alias: string | null) =>
+        alias === null ? "正在加载最近的对话" : `正在从 ${alias} 加载最近的对话`,
+      /** Behind the first paint: the rest of the conversation comes over to this server. */
+      fill: "更早的历史正在同步",
+      /** Behind the first paint: the whole of the outputs the transcript shows folded. */
+      heavy: "完整输出正在同步",
+      /** Under an unfolded output or thinking block while its whole text arrives. */
+      body: "正在加载完整内容",
+      /** The fetch failed: what failed, then the failure itself, on one line. */
+      bodyFailed: (reason: string) => `完整内容没能加载：${reason}`,
+      /** The Trace panel bringing a machine's Trace file over before it opens it. */
+      trace: (alias: string | null) =>
+        alias === null ? "正在获取 Trace" : `正在从 ${alias} 获取 Trace`,
+      /** The machine is not connected and the server reconnects: the attempt, then the seconds. */
+      reconnecting: (attempt: number) => `与机器的连接已断开，正在重连（第 ${attempt} 次）`,
+      reconnectIn: (seconds: number, attempt: number) =>
+        `与机器的连接已断开，${seconds} 秒后重连（第 ${attempt} 次）`,
+      /** Connected, but the machine sent nothing for a while: the server asks it again. */
+      asking: (attempt: number) => `机器没有回应，正在重新请求（第 ${attempt} 次）`,
+      askIn: (seconds: number, attempt: number) =>
+        `机器没有回应，${seconds} 秒后重新请求（第 ${attempt} 次）`,
+      /**
+       * Connected and beating, but nothing else from the machine for a minute (a route stuck over
+       * there): nothing is retried, so no attempt and no countdown.
+       */
+      slow: (alias: string | null) =>
+        alias === null
+          ? "机器已连接，但一分钟内没有传来新数据，仍在等待"
+          : `${alias} 已连接，但一分钟内没有传来新数据，仍在等待`,
+      /** A wait the server names in words this build does not know: said without guessing why. */
+      waitingOther: "正在等待机器",
+      retryNow: "立即重试",
+      /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
+      broken: "历史消息传输中断，请重试",
     },
     statsLabel: "统计信息",
     removeImage: "移除图片",
@@ -6334,6 +6405,13 @@ Benchmark：
       admin_required: "仅管理员可执行此操作。",
       desktop_single_user: "桌面应用为单用户模式，用户管理不可用。",
       not_found: "资源不存在，或你没有访问权限。",
+      trace_body_not_found: "这段内容已不在这个对话的 Trace 中。",
+      machine_refused: "机器拒绝了这次读取。",
+      machine_no_answer: "机器没有回应。",
+      machine_not_found: "这台机器不在当前 Project 的机器列表中。",
+      machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
+      machine_answered: "机器给出的应答无法使用，请重试。",
+      trace_changed: "读取期间这个对话的 Trace 一再变化，请重试。",
       internal: "服务器内部错误，请稍后重试。",
       agent_not_found: "该 Agent 已不存在。",
       job_running: "这台机器上有任务在执行，请等它完成。",

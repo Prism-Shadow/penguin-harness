@@ -10,6 +10,12 @@
  * understate this step's cost. While waiting on approval, the already-settled generation
  * segment is shown; the wait itself is marked by the hourglass icon alone, since the approval
  * block below the row is always on screen and names the tool and its arguments.
+ *
+ * A call from a history window may carry its output, a long argument or a child's inline image
+ * folded: the card shows the preview (head, an ellipsis line, tail — inside the argument's own
+ * string when an argument was folded) and fetches the whole when it is opened (elided-body.tsx),
+ * then shows that instead. An approval never shows a folded value: its block reads the call the
+ * pending approval carries, which the server always sends whole.
  */
 import { useMemo } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
@@ -18,11 +24,13 @@ import type { RunState, ToolCallDuration } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
+import { elidedArgumentsPreview, elidedPreview } from "../../lib/history/elided-preview";
 import { routedUrl } from "../../lib/session-machines";
 import { approvalKey } from "../../lib/amsp/stream-model";
 import type { ToolCallItem } from "../../lib/amsp/stream-model";
 import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
+import { ElidedBodyNote, hasElidedNote } from "./elided-body";
 import { SessionSubagentChip } from "./subagent-chip";
 import type { StreamRenderContext } from "./message-stream";
 
@@ -304,11 +312,19 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
   // the app (the tools config table, permission rules, the Trace viewer) keeps reading
   // `item.name`, so an alias can never change what a call means.
   const displayName = toolDisplayName(item.name, toolAliases);
+  // What is approved is what the approval itself carries: the whole call, never a history
+  // window's folded copy of it.
+  const approvalArguments = pending?.toolCall.payload.arguments ?? item.argumentsText;
   // Escape sequences are stripped at render time only (the stored stream/trace data keeps its
   // raw bytes): hardened child envs should no longer produce any, but historical traces and
   // force-color programs still can (#102). Memoized — the aggregated output can be large and
   // grows on every streamed delta.
-  const output = useMemo(() => stripAnsi(item.output), [item.output]);
+  const output = useMemo(
+    () => stripAnsi(elidedPreview(item.output, item.elidedOutput, "payload.output", "\n…\n")),
+    [item.output, item.elidedOutput],
+  );
+  // A child's inline image that came folded has no picture to draw until it is fetched.
+  const images = item.images?.filter((src) => src !== "") ?? [];
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
   const executing = item.callComplete && !item.outputComplete && !pending;
   // Whether the execution segment has run long enough for the "move to background" action (one
@@ -425,23 +441,22 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
       pending={
         pending
           ? {
-              preview: previewArguments(item.name, item.argumentsText),
-              payload: pendingFilePayload(item.name, item.argumentsText),
+              preview: previewArguments(item.name, approvalArguments),
+              payload: pendingFilePayload(item.name, approvalArguments),
               onDecide: (decision) => ctx.onApprove(item.toolCallId, decision, ctx.origin),
               labels: { allow: S.chat.approve, deny: S.chat.deny },
             }
           : undefined
       }
-      argumentsText={item.argumentsText}
+      argumentsText={elidedArgumentsPreview(item.argumentsText, item.elidedCall, "\n…\n")}
       output={output}
       outputStreaming={item.outputStreaming}
       images={
         // Inline bytes live, or a windowed history page's Trace references, which the browser
         // must fetch from the machine the Session lives on.
-        item.images && item.images.length > 0
-          ? { srcs: item.images.map(routedUrl), alt: S.chat.toolImageAlt }
-          : undefined
+        images.length > 0 ? { srcs: images.map(routedUrl), alt: S.chat.toolImageAlt } : undefined
       }
+      bodyNote={hasElidedNote(item) ? <ElidedBodyNote item={item} /> : undefined}
       // A bound subagent: a shortcut row into the subagents panel, shown whatever the card's
       // collapsed state (the nested conversation itself no longer renders inline).
       footer={

@@ -3,8 +3,11 @@
  * that expands to the full thinking text. It is the shared disclosure row, so its metrics and
  * colour states are the ones every other disclosure row uses, and it shares the run-state icons
  * (in progress, done, failed) with the tool-call rows. As a step of the agent's work it carries
- * the activity hook. Its text streams through `StreamText`, so it arrives the way a reply does.
+ * the activity hook. Its text streams through `StreamText`, so it arrives the way a reply does. A
+ * note of the caller's (`bodyNote`: the rest of a folded thinking still being fetched) follows the
+ * text, mounted only while the row is open.
  */
+import type { ReactNode } from "react";
 import {
   DISCLOSURE_BODY_MD_CLASS,
   DisclosureRow,
@@ -28,6 +31,8 @@ export interface ThinkingBlockProps {
   startedAtMs?: number;
   /** The settled duration, once finished. */
   durationMs?: number;
+  /** After the text, mounted only while the row is open (the rest of the text being fetched). */
+  bodyNote?: ReactNode;
 }
 
 export function ThinkingBlock({
@@ -37,6 +42,7 @@ export function ThinkingBlock({
   text,
   startedAtMs,
   durationMs,
+  bodyNote,
 }: ThinkingBlockProps) {
   const streaming = state === "running";
   return (
@@ -56,6 +62,7 @@ export function ThinkingBlock({
       }
     >
       <StreamText className={DISCLOSURE_BODY_MD_CLASS} text={text} streaming={streaming} />
+      {bodyNote !== undefined && bodyNote !== null && <div className="px-3 pb-2">{bodyNote}</div>}
     </DisclosureRow>
   );
 }
