@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** feature
 - **Scope:** `amsp`, `core`, `server`, `web`, `cli`, `docs`
+- **PR:** [#1388](https://github.com/Prism-Shadow/penguin-harness/pull/1388)
 - **Breaking:** yes — SDK: `ModelSwitchSupport` requires `reachable`, `ContextEngine.switchContext` takes an options object, and `ModelSwitchRefusal` no longer has `compaction_not_configured`
 
 [中文版](2026-10-29-switch-fallback.zh.md)

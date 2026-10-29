@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** feature
 - **Scope:** `amsp`, `core`, `server`, `web`, `cli`, `docs`
+- **PR:** [#1388](https://github.com/Prism-Shadow/penguin-harness/pull/1388)
 - **Breaking:** yes — SDK：`ModelSwitchSupport` 须实现 `reachable`，`ContextEngine.switchContext` 改为接收选项对象，`ModelSwitchRefusal` 不再有 `compaction_not_configured`
 
 [English](2026-10-29-switch-fallback.md)
