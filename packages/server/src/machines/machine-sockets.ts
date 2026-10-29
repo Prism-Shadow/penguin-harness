@@ -168,9 +168,12 @@ export class MachineSocket {
   readonly #credited = new Set<number>();
   #next = 1;
   #closed = false;
+  /** The connection under the socket, whose bytes say the link is alive before a frame is whole. */
+  readonly #raw: NodeJS.EventEmitter | null;
 
-  private constructor(ws: WebSocket) {
+  private constructor(ws: WebSocket, raw: NodeJS.EventEmitter | null = null) {
     this.#ws = ws;
+    this.#raw = raw;
     // Silence watchdog: the machine's socket sends a heartbeat frame every beat; nothing for
     // two beats means the channel is dead under us (an ssh session gone quiet), and every
     // stream on it must end so the browser re-issues — not sit on a socket that never speaks.
@@ -234,9 +237,15 @@ export class MachineSocket {
         ws.terminate();
       }, timeoutMs);
       deadline.unref?.();
+      // The upgrade's connection, kept for `onTraffic`: a frame larger than what a slow link
+      // carries in one stream's watchdog is still arriving, and its bytes say so.
+      let raw: NodeJS.EventEmitter | null = null;
+      ws.once("upgrade", (res) => {
+        raw = res.socket;
+      });
       ws.once("open", () => {
         clearTimeout(deadline);
-        resolve(new MachineSocket(ws));
+        resolve(new MachineSocket(ws, raw));
       });
       ws.once("unexpected-response", (_req, res) => {
         clearTimeout(deadline);
@@ -248,6 +257,17 @@ export class MachineSocket {
         reject(err);
       });
     });
+  }
+
+  /**
+   * Tells `listener` whenever bytes arrive on the connection, whole frames or not: liveness for
+   * a stream waiting on a frame that a slow link is still carrying. Returns the stop.
+   */
+  onTraffic(listener: () => void): () => void {
+    const raw = this.#raw;
+    if (raw === null) return () => undefined;
+    raw.on("data", listener);
+    return () => raw.off("data", listener);
   }
 
   get closed(): boolean {

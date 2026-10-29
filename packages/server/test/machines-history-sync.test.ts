@@ -7,6 +7,8 @@
  * - Given a machine stream that falls silent — no frame, not even its beat — when the
  *   watchdog's time passes, then that call alone is cancelled and asked again, a Session stream
  *   on the same socket keeps its subscription, and the call asked again delivers the window.
+ * - Given a large frame still crossing the link, when the watchdog's time passes since the last
+ *   whole event but not since the last byte, then the stream is kept.
  * - Given a reader that leaves while its window is on the way, then the machine's call is
  *   cancelled at once.
  * - Given a machine that is not connected, when a window is asked for, then the reader is told
@@ -31,6 +33,8 @@
  */
 import fs from "node:fs/promises";
 import http from "node:http";
+import net from "node:net";
+import type { Socket } from "node:net";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
@@ -38,6 +42,7 @@ import type { WebSocket } from "ws";
 import type { HistoryLinesWindow, HistoryProgress } from "../src/api/types.js";
 import { machineHistory } from "../src/machines/history-routes.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
+import type { MachineSocket } from "../src/machines/machine-sockets.js";
 import { machinesProxy } from "../src/machines/proxy.js";
 import type { ProxyTarget } from "../src/machines/proxy.js";
 import { TraceCache } from "../src/machines/trace-cache.js";
@@ -85,6 +90,56 @@ async function scriptedMachine(
       new Promise<void>((resolve) => {
         for (const ws of sockets) ws.terminate();
         wss.close(() => server.close(() => resolve()));
+      }),
+  };
+}
+
+/** A TCP valve to `port`: while shut, the bytes coming back are held, and let through as the test says. */
+async function valveTo(port: number) {
+  let held: Buffer[] = [];
+  let shut = false;
+  let near: Socket | null = null;
+  const open = new Set<Socket>();
+  const server = net.createServer((client) => {
+    const far = net.connect(port, "127.0.0.1");
+    open.add(client);
+    open.add(far);
+    near = client;
+    client.pipe(far);
+    far.on("data", (bytes: Buffer) => {
+      if (shut) held.push(bytes);
+      else client.write(bytes);
+    });
+    for (const end of [client, far]) {
+      end.on("error", () => undefined);
+      end.on("close", () => {
+        client.destroy();
+        far.destroy();
+      });
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    port: (server.address() as { port: number }).port,
+    shut: () => {
+      shut = true;
+    },
+    held: () => held.reduce((n, bytes) => n + bytes.length, 0),
+    /** Lets the next `n` held bytes through. */
+    release: (n: number) => {
+      const all = Buffer.concat(held);
+      held = [all.subarray(n)];
+      near?.write(all.subarray(0, n));
+    },
+    open: () => {
+      shut = false;
+      near?.write(Buffer.concat(held));
+      held = [];
+    },
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const socket of open) socket.destroy();
+        server.close(() => resolve());
       }),
   };
 }
@@ -182,6 +237,8 @@ function hub(
     /** What the socket cache answers instead of a socket (machine-sockets.ts's refusals). */
     refusal?: () => Response | null;
     cache?: TraceCache;
+    /** Sees each socket the job is handed. */
+    onSocket?: (socket: MachineSocket) => void;
   } = {},
 ) {
   const connected = options.connected ?? (() => true);
@@ -193,15 +250,15 @@ function hub(
   const refusal = options.refusal;
   const { history, sync } = machineHistory({
     cache,
-    sockets:
-      refusal === undefined
-        ? sockets
-        : {
-            socketFor: async (machineId, at) => {
-              const answer = refusal();
-              return answer !== null ? { answer } : sockets.socketFor(machineId, at);
-            },
-          },
+    sockets: {
+      socketFor: async (machineId, at) => {
+        const answer = refusal?.() ?? null;
+        if (answer !== null) return { answer };
+        const got = await sockets.socketFor(machineId, at);
+        if ("socket" in got) options.onSocket?.(got.socket);
+        return got;
+      },
+    },
     target: async () => target(),
     ...(options.known !== undefined ? { known: options.known } : {}),
     log: () => undefined,
@@ -269,6 +326,44 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
           tracePosition: { fileIndex: 1, ordinal },
         })),
     );
+  });
+
+  it("keeps a stream whose large frame is still crossing the link, its bytes heard though no event is whole", async () => {
+    let valve: Awaited<ReturnType<typeof valveTo>> | null = null;
+    // A window frame far larger than what a slow link carries in one watchdog (as an older
+    // machine sends it, whole; the extra field is nothing the hub reads).
+    const padded = { ...windowOf(FILE), pad: "p".repeat(300_000) };
+    const machine = await scriptedMachine((ws, id) => {
+      valve!.shut();
+      start(ws, id);
+      event(ws, id, "window", padded);
+      event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE });
+      event(ws, id, "ready", {});
+      event(ws, id, "done", {});
+      send(ws, { id, end: true, reason: "closed" });
+    });
+    close.push(machine.close);
+    valve = await valveTo(machine.port);
+    close.push(valve.close);
+    let heard = 0;
+    const { get } = hub(valve.port, {
+      onSocket: (socket) => void socket.onTraffic(() => (heard += 1)),
+    });
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => valve!.held() > 300_000);
+    valve.release(1_000);
+    await waitFor(() => heard > 0);
+    clock.advance(10_000);
+    const before = heard;
+    valve.release(100_000);
+    await waitFor(() => heard > before);
+    // Past the watchdog since the last whole event, but not since the last byte.
+    clock.advance(6_000);
+    valve.open();
+    await waitFor(() => history.has("done"));
+    expect(machine.calls("/history-lines")).toHaveLength(1);
   });
 
   it("cancels the machine's call the moment its last reader leaves, even in the middle of the fill", async () => {

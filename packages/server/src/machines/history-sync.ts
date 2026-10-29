@@ -13,9 +13,9 @@
  *
  * RESUMING IS ASKING AGAIN. Every stream opens with `have` (what the copy holds) and the machine
  * sends only what is missing, so a stream cut anywhere — the socket dropped, the stream silent
- * past its watchdog, a preemption — reopens from the copy, never from 0: at once when the cut
- * stream had moved (bytes committed, its window delivered, its end reached), else after a wait
- * that grows 1 s doubling to 30 s. A machine that is not connected, or that cannot be reached, is
+ * past its watchdog (no event and no byte on the socket), a preemption — reopens from the copy,
+ * never from 0: at once when the cut stream had moved (bytes committed, its window delivered, its
+ * end reached), else after a wait that grows 1 s doubling to 30 s. A machine that is not connected, or that cannot be reached, is
  * waited for the same way, for as long as a reader waits, and each reader is told
  * (`progress.waiting`). There is no deadline per stream.
  *
@@ -799,30 +799,46 @@ class HistoryJob {
       let chain: Promise<void> = Promise.resolve();
       let finished = false;
       let watchdog: unknown = null;
+      // Any bytes on the socket count as life, not only whole events: a large frame crossing a
+      // slow link arrives as bytes long before it arrives as an event.
+      let heard = this.#clock.now();
+      const unheard = socket.onTraffic(() => {
+        heard = this.#clock.now();
+      });
       const finish = (): void => {
         if (finished) return;
         finished = true;
+        unheard();
         if (watchdog !== null) this.#clock.clearTimeout(watchdog);
         resolve();
       };
-      const arm = (): void => {
+      const arm = (ms: number = watchdogMs): void => {
         if (watchdog !== null) this.#clock.clearTimeout(watchdog);
         watchdog = this.#clock.setTimeout(() => {
+          const quiet = this.#clock.now() - heard;
+          if (quiet < watchdogMs) {
+            arm(watchdogMs - quiet);
+            return;
+          }
           this.deps.log(
             `[machines] history of ${this.sessionId} on ${this.machineId}: nothing in ${watchdogMs} ms; asking again from what is held`,
           );
           socket.cancel(id);
           finish();
-        }, watchdogMs);
+        }, ms);
       };
       onCancel(() => {
         socket.cancel(id);
         finish();
       });
       const sink: Sink = {
-        onStart: () => arm(),
+        onStart: () => {
+          heard = this.#clock.now();
+          arm();
+        },
         onEvent: (frame) => {
           if (finished) return;
+          heard = this.#clock.now();
           arm();
           chain = chain
             .then(async () => {

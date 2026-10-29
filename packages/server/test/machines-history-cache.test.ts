@@ -8,7 +8,9 @@
  *   move, then come its page, records and done — the records the machine's own `/messages`
  *   answers, elided — and the hub's copy of the file equals the machine's, byte for byte.
  * - Given three records appended on the machine, when the conversation is opened again, then
- *   the machine sends exactly those three lines.
+ *   the machine sends exactly those three lines; and a Session held whole, reopened the way the
+ *   chat opens it (a budgeted first window, the window before it, the fill) after one more Task,
+ *   is sent only that Task's lines.
  * - Given the link cut mid-transfer, inside a line sent in parts, then the job reopens from what
  *   it holds: the copy equals the machine's file byte for byte, and the bytes that crossed over
  *   both streams exceed the file by at most one frame.
@@ -53,6 +55,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type {
   TraceEventsResponse,
   HistoryMessage,
+  HistoryPage,
   HistoryProgress,
   HistoryRecords,
   MessagesResponse,
@@ -304,6 +307,34 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(crossed.map((c) => c.off)).toEqual([size]);
     expect(crossed.reduce((sum, c) => sum + c.bytes, 0)).toBe(Buffer.byteLength(appended));
     expect(windowRecords(events)).toEqual(await machineWindow(sid, "?tailLimit=20"));
+    expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
+  });
+
+  it("sends a Session held whole, reopened as the chat opens it after one more Task, only that Task's lines", async () => {
+    const sid = uniqueSessionId();
+    const file = await machineSession(sid, [meta(sid), ...tasks(40, 400)]);
+    // As the chat opens it: a first window within a small budget, the rest of the 20 pairs
+    // before it, and the fill behind both.
+    const open = async () => {
+      const first = await read(sid, "?tailLimit=20&budget=4096&fill=1");
+      expect(first.at(-1)?.event).toBe("filled");
+      const page = JSON.parse(first.find((e) => e.event === "page")!.data) as HistoryPage;
+      const older = await read(sid, `?before=${encodeURIComponent(page.page!.before!)}&limit=18`);
+      expect(older.at(-1)?.event).toBe("done");
+      await waitFor(() => hub.sync.held().size === 0);
+    };
+    await open();
+    expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
+    const size = (await fs.stat(file)).size;
+    const task = [userText("one more"), assistantText("sure, here it is")]
+      .map((m) => `${JSON.stringify(m)}\n`)
+      .join("");
+    await fs.appendFile(file, task);
+
+    crossed = [];
+    await open();
+    expect(crossed.every((c) => c.off >= size)).toBe(true);
+    expect(crossed.reduce((sum, c) => sum + c.bytes, 0)).toBe(Buffer.byteLength(task));
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
   });
 
