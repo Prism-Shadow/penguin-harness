@@ -1,5 +1,5 @@
 /**
- * The model-picker dialog's logic (features/chat/model-picker-logic.ts).
+ * The model-picker dialog's logic (features/model-picker/model-picker-logic.ts).
  *
  * - The rail shows the groups holding a key-configured model, in the user's saved order; the
  *   selected and the default model stay visible without a key, the toggle counts and then lists
@@ -28,7 +28,7 @@ import {
   pickerRowTags,
   searchPickerGroups,
   stepIndex,
-} from "../src/features/chat/model-picker-logic";
+} from "../src/features/model-picker/model-picker-logic";
 import { S } from "../src/lib/strings";
 
 const configured = (

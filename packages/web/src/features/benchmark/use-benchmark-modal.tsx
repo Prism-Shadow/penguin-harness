@@ -56,8 +56,9 @@ import { S } from "../../lib/strings";
 import { formatScore } from "../../lib/format";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
-import { ModelCatalogSelect } from "../chat";
+import { PromptFold, composeAiPrompt, useAiBridge } from "../ai-create";
+import { pickDefaultAgent } from "../../lib/default-agent";
+import { ModelCatalogSelect } from "../model-picker";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import {
   MAX_RUNS,

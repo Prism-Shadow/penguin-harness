@@ -3,9 +3,13 @@
  * session list and the shell reach them through the module tree instead of importing them.
  */
 import { useMemo } from "react";
-import { DRAFT_SESSION_ID } from "./chat-page";
 import { clearDraft, sessionDraftKey } from "./draft-cache";
-import { draftSessionTitle, removeDraftSession, useDraftSessions } from "./draft-sessions";
+import {
+  DRAFT_SESSION_ID,
+  draftSessionTitle,
+  removeDraftSession,
+  useDraftSessions,
+} from "./draft-sessions";
 import { prepareNewChatDraft } from "./new-chat";
 import { useNewChat } from "./use-new-chat";
 import type { ChatDrafts, ParkedDraft } from "./iface";

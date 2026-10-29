@@ -33,7 +33,7 @@ import { MessageItem } from "./message-item";
 import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
 import { readOnlyActions } from "./a2ui-answered";
-import { WorkspaceLinksProvider } from "./workspace-links";
+import { WorkspaceLinksProvider } from "../workspace";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
 import {
   createStreamFollow,
