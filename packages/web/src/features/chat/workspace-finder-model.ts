@@ -648,3 +648,40 @@ export function clearButton(input: {
     input.stateDir !== null && input.machine === null ? tempWorkspacePath(input.stateDir) : null;
   return { fullPath: full };
 }
+
+/** The path of `name` inside the folder `dir`, joined with the separator `dir`'s family uses. */
+export function childPath(dir: string, name: string): string {
+  const sep = separatorOf(dir);
+  return dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;
+}
+
+/** The characters a Windows file name may not hold, besides the separators. */
+const WINDOWS_NAME_FORBIDDEN = /[\\/:*?"<>|]/;
+
+/** Why a new folder's name cannot be used here: what the row says under its field. */
+export type NewFolderProblem =
+  { kind: "invalid"; chars: string } | { kind: "hidden" } | { kind: "exists"; name: string };
+
+/**
+ * Checks the name typed in the new-folder row against the folder on screen, before anything is
+ * sent. The name is trimmed the way the Files panel trims one (`newEntryName`); unlike there it
+ * names one folder, made where the finder stands, so a separator is refused rather than read as
+ * folders in between — the row selects the folder it made, and a nested one would not be in the
+ * list. A leading dot makes a folder the list hides, which could then be neither seen nor
+ * picked. A name already in the listing (hidden entries and files included) is refused here;
+ * the server still has the last word, for a name taken meanwhile. Null when the name is empty
+ * (nothing to say yet) or usable.
+ */
+export function newFolderProblem(
+  name: string,
+  entries: readonly DirEntryInfo[],
+  platform: string | undefined,
+): NewFolderProblem | null {
+  if (name === "") return null;
+  if (platform === "win32" ? WINDOWS_NAME_FORBIDDEN.test(name) : name.includes("/")) {
+    return { kind: "invalid", chars: platform === "win32" ? '\\ / : * ? " < > |' : "/" };
+  }
+  if (name.startsWith(".")) return { kind: "hidden" };
+  if (entries.some((e) => e.name === name)) return { kind: "exists", name };
+  return null;
+}

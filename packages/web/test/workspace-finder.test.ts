@@ -27,6 +27,9 @@
  *   names the folder a temporary Workspace would get (a Windows path keeps its separator) —
  *   none without the Agent's directory, while another machine is browsed, or for an unknown
  *   layout.
+ * - A new folder's name is refused for a separator (and on Windows for the characters Windows
+ *   forbids), for a leading dot the list would hide, and for any entry already there, hidden or
+ *   a file; the folder it makes is joined onto the folder on screen with that path's separator.
  */
 import { describe, expect, it } from "vitest";
 import type { DirEntryInfo, DirListResponse, DirLocation } from "@prismshadow/penguin-server/api";
@@ -36,6 +39,7 @@ import {
   addToQuickAccess,
   canGoBack,
   canGoForward,
+  childPath,
   clearButton,
   defaultPlaces,
   deniedBox,
@@ -46,6 +50,7 @@ import {
   loadQuickAccess,
   locationName,
   locationPlaces,
+  newFolderProblem,
   parentOf,
   quickAccessKey,
   quickAccessPlaces,
@@ -533,5 +538,40 @@ describe("the footer's no-folder button", () => {
     );
     expect(tempWorkspacePath("/srv/agents/a/state")).toBeNull();
     expect(tempWorkspacePath("/")).toBeNull();
+  });
+});
+
+describe("a new folder's name", () => {
+  const here = [dir("projects"), dir(".git"), dir("notes.txt", "file")];
+
+  it.each([
+    { name: "a/b", platform: "linux", problem: { kind: "invalid", chars: "/" } },
+    { name: "a:b", platform: "win32", problem: { kind: "invalid", chars: '\\ / : * ? " < > |' } },
+    { name: "a\\b", platform: "win32", problem: { kind: "invalid", chars: '\\ / : * ? " < > |' } },
+    { name: ".cache", platform: "darwin", problem: { kind: "hidden" } },
+    { name: "notes.txt", platform: "linux", problem: { kind: "exists", name: "notes.txt" } },
+    { name: ".git", platform: "linux", problem: { kind: "hidden" } },
+    { name: "a:b", platform: "linux", problem: null },
+    { name: "drafts", platform: "win32", problem: null },
+    { name: "", platform: "linux", problem: null },
+  ])("$name on $platform → $problem", ({ name, platform, problem }) => {
+    expect(newFolderProblem(name, here, platform)).toEqual(problem);
+  });
+
+  it("an entry the list hides still counts as taken", () => {
+    const hidden: DirEntryInfo = { name: "AppData", path: "C:\\Users\\me\\AppData", hidden: true };
+    expect(newFolderProblem("AppData", [hidden], "win32")).toEqual({
+      kind: "exists",
+      name: "AppData",
+    });
+  });
+
+  it.each([
+    ["/home/me", "drafts", "/home/me/drafts"],
+    ["/", "drafts", "/drafts"],
+    ["C:\\Users\\me", "drafts", "C:\\Users\\me\\drafts"],
+    ["C:\\", "drafts", "C:\\drafts"],
+  ])("the folder made in %s as %s is %s", (folder, name, made) => {
+    expect(childPath(folder, name)).toBe(made);
   });
 });

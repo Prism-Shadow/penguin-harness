@@ -116,6 +116,21 @@ function targetExists(action: "move" | "create"): HttpError {
   );
 }
 
+/**
+ * The account running the server may not make anything in the folder a create aims at (a
+ * folder it may only read, or a read-only volume). Its own code, so a caller says that rather
+ * than "internal error, try again" — no retry makes a folder writable.
+ */
+function writeDenied(err: unknown): HttpError | null {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  if (code !== "EACCES" && code !== "EPERM" && code !== "EROFS") return null;
+  return new HttpError(
+    403,
+    "dir_write_denied",
+    "The server is not allowed to create anything in this directory; nothing was created.",
+  );
+}
+
 /** Whether anything at all is at `p`, a dangling link included (lstat, not stat). */
 async function occupied(p: string): Promise<boolean> {
   return fs.lstat(p).then(
@@ -563,9 +578,18 @@ export class WorkspaceFilesService implements WorkspaceFiles {
    * O_EXCL` for a file — which on POSIX also refuses a symlink at the final segment instead of
    * following it (Windows gets an lstat first, below) — and a non-recursive `mkdir` for a folder.
    * Either way an occupied path is 409 `target_exists` with nothing written, and on POSIX there
-   * is no check-then-act window to lose to the Agent writing the same path.
+   * is no check-then-act window to lose to the Agent writing the same path. A folder the server
+   * may not write in is 403 `dir_write_denied`.
    */
   async create(workspace: string, rel: string, kind: "file" | "dir"): Promise<void> {
+    try {
+      await this.createEntry(workspace, rel, kind);
+    } catch (err) {
+      throw writeDenied(err) ?? err;
+    }
+  }
+
+  private async createEntry(workspace: string, rel: string, kind: "file" | "dir"): Promise<void> {
     if (rel === "" || rel.endsWith("/")) throw badRequest("path must name the new entry.");
     const { dir, name } = await this.resolveWriteParent(workspace, rel);
     const target = path.join(dir, name);

@@ -74,6 +74,7 @@ import { formatDateTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { machineLabel, nameOnMachine, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
+import { newEntryName } from "../../lib/workspace-tree";
 import { useSessions } from "../../state/sessions";
 import { useMachines } from "../../state/machines";
 import {
@@ -83,6 +84,7 @@ import {
   baseName,
   canGoBack,
   canGoForward,
+  childPath,
   clearButton,
   defaultPlaces,
   deniedBox,
@@ -96,6 +98,7 @@ import {
   loadQuickAccess,
   locationName,
   locationPlaces,
+  newFolderProblem,
   parentOf,
   quickAccessPlaces,
   recentWorkspaces,
@@ -113,6 +116,7 @@ import type {
   FinderMenuItem,
   FinderMenuTarget,
   NavHistory,
+  NewFolderProblem,
   Place,
 } from "./workspace-finder-model";
 
@@ -260,6 +264,20 @@ export function WorkspaceFinder({
    */
   const menu = useRowContextMenu();
   const [menuTarget, setMenuTarget] = useState<FinderMenuTarget | null>(null);
+  /**
+   * The new-folder row, open over the folder it makes the new one in: the name typed so far,
+   * whether the create is on its way, and what the server said when it refused the last one.
+   * Any load closes it, a refresh of the same folder included — the row belongs to the listing
+   * it was opened over, and Escape or leaving leaves nothing behind.
+   */
+  const [newFolder, setNewFolder] = useState<{
+    dir: string;
+    name: string;
+    busy: boolean;
+    refusal: string | null;
+  } | null>(null);
+  const newFolderRef = useRef<HTMLInputElement>(null);
+  const newFolderNoteId = useId();
 
   /** Drawn by the desktop shell, which can ask macOS for a refused folder in the app's own name. */
   const inShell = useMemo(
@@ -293,6 +311,7 @@ export function WorkspaceFinder({
   ) => {
     const m = opts.machine === undefined ? machine : opts.machine;
     const seq = ++loadSeq.current;
+    setNewFolder(null);
     setLoading(true);
     api
       .listDirs(projectId, target, m)
@@ -355,6 +374,8 @@ export function WorkspaceFinder({
       // The root menu's state outlives its panel, which unmounts with the finder: left set, the
       // next open would pop the menu up again and pull focus into it.
       setRootMenuOpen(false);
+      // A name half typed when the finder closed is not waiting for the next open.
+      setNewFolder(null);
       return;
     }
     setAddressEditing(false);
@@ -499,6 +520,62 @@ export function WorkspaceFinder({
   const refresh = () => {
     const path = view.listing?.path ?? view.path;
     if (path !== "") load(path, { record: false, select: selected });
+  };
+
+  /** Opens the new-folder row over the folder on screen, or returns to the one already open. */
+  const beginNewFolder = () => {
+    const dir = view.listing?.path;
+    if (dir === undefined || loading) return;
+    if (newFolder?.dir === dir) {
+      newFolderRef.current?.focus();
+      return;
+    }
+    setNewFolder({ dir, name: "", busy: false, refusal: null });
+  };
+
+  /** Escape or the row's ×: the row goes, and nothing was made. */
+  const cancelNewFolder = () => {
+    setNewFolder(null);
+    listRef.current?.focus();
+  };
+
+  const newFolderName = newFolder === null ? "" : newEntryName(newFolder.name);
+  const newFolderIssue: NewFolderProblem | null =
+    newFolder === null
+      ? null
+      : newFolderProblem(newFolderName, view.listing?.entries ?? [], view.listing?.platform);
+
+  /**
+   * Makes the folder the row names, through the Files panel's own create on the browsed machine
+   * (a machine's own server answers for its disk). Made, it is listed and selected — not opened —
+   * so Choose takes it with one more press, and the keyboard is back on the list. Refused, the
+   * row stays on the name with the reason under it. A navigation meanwhile wins: the folder is
+   * made, and the finder stays where the user went.
+   */
+  const createFolder = () => {
+    const draft = newFolder;
+    if (draft === null || draft.busy || newFolderName === "" || newFolderIssue !== null) return;
+    const name = newFolderName;
+    const seq = loadSeq.current;
+    setNewFolder({ ...draft, busy: true, refusal: null });
+    api
+      .createWorkspaceDirEntry(
+        { projectId, workspace: draft.dir, machineId: machine },
+        { path: name, kind: "dir" },
+      )
+      .then(() => {
+        if (seq !== loadSeq.current) return;
+        load(draft.dir, { record: false, select: childPath(draft.dir, name) });
+        listRef.current?.focus();
+      })
+      .catch((err: unknown) => {
+        if (seq !== loadSeq.current) return;
+        const refusal =
+          err instanceof ApiError && err.code === "target_exists"
+            ? f.newFolderExists(name)
+            : apiErrorText(err);
+        setNewFolder((cur) => (cur?.dir === draft.dir ? { ...cur, busy: false, refusal } : cur));
+      });
   };
 
   /**
@@ -808,6 +885,9 @@ export function WorkspaceFinder({
     // bar's root menu is the toolbar's), so its keys bubble through here: its arrows and Enter
     // are the menu's, not the list's.
     if (!e.currentTarget.contains(target)) return;
+    // The new-folder field is a name being typed: its keys are its own (Enter and Escape it
+    // handles itself), so no chord moves the finder out from under it.
+    if (target === newFolderRef.current) return;
     const inFilter = target === filterRef.current;
     if (inList && isContextMenuKey(e)) {
       e.preventDefault();
@@ -1303,6 +1383,96 @@ export function WorkspaceFinder({
           className={`${controlBase} h-8 w-20 pl-7 pr-2 text-sm placeholder:text-fg-subtle sm:w-40`}
         />
       </label>
+      {/* New folder, inside the folder on screen: the toolbar's one command, so it stands apart
+          from the navigation glyphs at the toolbar's far end and keeps its word beside the
+          glyph where there is room. A folder that could not be read has nowhere to make one;
+          the box below says why, and the hint says what that means here. */}
+      <button
+        type="button"
+        className={`${navButtonClass} flex items-center ${ICON_GAP.row} whitespace-nowrap text-sm`}
+        disabled={currentFolder === null}
+        aria-label={S.files.newFolder}
+        data-tooltip={permissionDenied ? f.newFolderDenied : S.files.newFolder}
+        data-tooltip-extra={permissionDenied}
+        onClick={beginNewFolder}
+      >
+        <GlyphIcon d={ICONS.folderPlus} size={ICON_SIZE.iconButton} />
+        <span className="hidden sm:inline">{S.files.newFolder}</span>
+      </button>
+    </div>
+  );
+
+  /**
+   * The new-folder row, standing where the list's first row does: the folder glyph, the name
+   * field and the × that closes it. Enter makes the folder and Escape closes the row (the
+   * finder stays open). The reason a name cannot be used reads under the field in the
+   * secondary ink, as the row's own words rather than an alarm.
+   */
+  const newFolderNote =
+    newFolder === null
+      ? null
+      : newFolderIssue?.kind === "invalid"
+        ? f.newFolderInvalid(newFolderIssue.chars)
+        : newFolderIssue?.kind === "hidden"
+          ? f.newFolderHidden
+          : newFolderIssue?.kind === "exists"
+            ? f.newFolderExists(newFolderIssue.name)
+            : newFolder.refusal;
+  const newFolderRow = newFolder !== null && newFolder.dir === currentFolder && (
+    <div className="px-2 pt-1">
+      <div className={`flex items-start ${ICON_GAP.menu} rounded-md px-2 py-1`}>
+        <GlyphIcon
+          d={ICONS.folder}
+          size={ICON_SIZE.rowLead}
+          className="mt-1.5 shrink-0 text-fg-subtle"
+        />
+        <div className="min-w-0 flex-1">
+          <input
+            ref={newFolderRef}
+            autoFocus
+            value={newFolder.name}
+            readOnly={newFolder.busy}
+            aria-label={S.files.newFolderName}
+            aria-invalid={newFolderNote !== null ? true : undefined}
+            aria-describedby={newFolderNote !== null ? newFolderNoteId : undefined}
+            aria-busy={newFolder.busy}
+            placeholder={f.newFolderPlaceholder}
+            {...noAutofill}
+            onChange={(e) => {
+              const name = e.target.value;
+              setNewFolder((cur) => (cur === null ? cur : { ...cur, name, refusal: null }));
+            }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === "Enter") {
+                e.preventDefault();
+                createFolder();
+              } else if (e.key === "Escape") {
+                // Closes the row; it does not close the finder.
+                e.preventDefault();
+                e.stopPropagation();
+                cancelNewFolder();
+              }
+            }}
+            // The text-control look at the rows' type, which no Input rung has: the name being
+            // typed reads as the row it is about to become.
+            className={`${controlBase} h-7 w-full px-2 text-sm placeholder:text-fg-subtle`}
+          />
+          {newFolderNote !== null && (
+            <p id={newFolderNoteId} role="alert" className="mt-1 text-xs text-fg-muted">
+              {newFolderNote}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          aria-label={f.newFolderCancel}
+          onClick={cancelNewFolder}
+          className="mt-1 flex w-6 shrink-0 justify-center rounded-sm py-1 text-fg-subtle transition-colors duration-150 hover:text-fg"
+        >
+          <CloseIcon size={10} />
+        </button>
+      </div>
     </div>
   );
 
@@ -1511,6 +1681,7 @@ export function WorkspaceFinder({
             <span className="hidden w-36 shrink-0 sm:block">{f.columnModified}</span>
             <span className="w-6 shrink-0" aria-hidden />
           </div>
+          {newFolderRow}
           <div
             ref={listRef}
             id={listId}
