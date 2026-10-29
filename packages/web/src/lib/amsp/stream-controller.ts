@@ -42,7 +42,6 @@
  */
 import { isEventMessage, isPartialPayload } from "@prismshadow/amsp";
 import type { AmspRecord, ToolCallPayload } from "@prismshadow/amsp";
-import { withElidedBody } from "@prismshadow/penguin-core/interfaces";
 import type {
   GoalServerEvent,
   HistoryProgress,
@@ -55,6 +54,7 @@ import type {
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
 import type { HistoryStreamQuery } from "../../api/sse";
+import { BodyCache, foldedItems, takeHeldBodies } from "../history/folded-bodies";
 import { readBody, readHistory } from "../history/history-read";
 import { countUnits } from "../history/window-units";
 import type { HistoryRead, OpenBody, OpenHistory } from "../history/history-read";
@@ -72,7 +72,6 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
-  takeWholeRecord,
 } from "./stream-model";
 import type { BodyLoad, ChatItem, StreamModel, ThinkingItem, ToolCallItem } from "./stream-model";
 import { seedPriorStats } from "./task-stats";
@@ -439,6 +438,64 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     if (earlier !== undefined) model.subagents.set(head, earlier);
   };
 
+  /**
+   * Children the live model made from a record before any window had shown them — a background
+   * subagent of an older Task speaking again, or its approval re-sent on subscribe, while the
+   * window that holds its history is still to come — with every record routed to each since, in
+   * order. When an older window brings that child, the window's copy takes its place and these
+   * records are fed to it again (see takeOverLiveChildren). Bounded: a child that outgrows the
+   * log keeps what the live model made of it (null).
+   */
+  const liveOnlyChildren = new Map<string, AmspRecord[] | null>();
+  const LIVE_CHILD_LOG = 2_000;
+
+  /** Notes a record about to be routed to a child of the live model (see liveOnlyChildren). */
+  const noteChildRecord = (msg: AmspRecord): void => {
+    const head = msg.origin?.[0];
+    if (head === undefined) return;
+    if (!model.subagents.has(head)) {
+      // Made from this record: only a child an older window can still bring is logged.
+      if (prefixSubagents.has(head) || !older.hasMore) return;
+      liveOnlyChildren.set(head, [msg]);
+      return;
+    }
+    const log = liveOnlyChildren.get(head);
+    if (log === undefined || log === null) return;
+    if (log.length >= LIVE_CHILD_LOG) liveOnlyChildren.set(head, null);
+    else log.push(msg);
+  };
+
+  /**
+   * An older window just built holds a child the live model made without its history: the
+   * window's copy becomes the child — history first, then every record the live one took, fed
+   * again in order — and the card the first record left at the end of the newest Task goes, the
+   * child's own run_subagent card in the window being where it belongs. Merging a frozen
+   * window's child into the live one instead would leave two models of one child in play.
+   */
+  const takeOverLiveChildren = (window: StreamModel): void => {
+    for (const [sid, child] of window.subagents) {
+      const log = liveOnlyChildren.get(sid);
+      if (log === undefined) continue;
+      liveOnlyChildren.delete(sid);
+      const live = model.subagents.get(sid);
+      if (log === null || live === undefined || live === child) continue;
+      const stray = model.items.findIndex((i) => i.kind === "subagent" && i.model === live);
+      if (stray >= 0) model.items.splice(stray, 1);
+      for (const item of model.items) {
+        if (item.kind === "tool_call" && item.subagent === live) item.subagent = child;
+      }
+      model.unconfirmedSubagents.delete(sid);
+      model.subagents.set(sid, child);
+      for (const msg of log) {
+        const rest = msg.origin!.slice(1);
+        const forwarded: AmspRecord = { ...msg };
+        if (rest.length > 0) forwarded.origin = rest;
+        else delete forwarded.origin;
+        pushMessage(child, forwarded, now());
+      }
+    }
+  };
+
   /** Full clear (resync rebuilds): the server resends every still-pending approval_request on the same connection, child ones included. */
   const clearPending = (): void => {
     if (pending.size === 0) return;
@@ -474,6 +531,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       discardFragmentFor(model, msg);
       return;
     }
+    noteChildRecord(msg);
     pushMessage(model, msg, now());
   };
 
@@ -493,6 +551,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           const msg: AmspRecord = { ...ev.toolCall };
           if (ev.origin && ev.origin.length > 0) msg.origin = [...ev.origin];
           else delete msg.origin;
+          noteChildRecord(msg);
           pushMessage(model, msg, now());
           deps.onModelChange();
         } else if (card.elidedCall !== undefined) {
@@ -709,6 +768,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         // The tail moved on: the windows between join the earlier ones, after them.
         for (const w of bridged) {
           const m = freeze(w, w.page!);
+          takeOverLiveChildren(m);
           prefixItems = [...prefixItems, ...m.items];
           prefixUnits += countUnits(w.messages);
           prefixSubagents = new Map([...prefixSubagents, ...m.subagents]);
@@ -727,6 +787,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // freshModel and keep operating on the current model.
       if (freshModel) model = freshModel;
       const target = model;
+      // The children a replay is about to make are this model's to log, from scratch.
+      liveOnlyChildren.clear();
       if (res.page !== undefined) seedWindow(target, res.page);
       pushMessages(target, messages, now(), serverNowMs ?? null);
       const dedup = buildDedupIndex(messages, 100);
@@ -750,6 +812,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         }
       }
       phase = "live";
+      // Values fetched before a rebuild go back into the items it built folded again.
+      putHeldBodies();
       // History finalization trusts only the in-stream authoritative state:
       // finalize the last Task at the end of history only when idle; if the
       // snapshot hasn't arrived yet (rare), don't finalize — the
@@ -810,6 +874,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // full transcript with no envelope; prepending that would duplicate history.
       if (res.page === undefined) throw new Error("windowed history not supported");
       const m = freeze(res, res.page);
+      takeOverLiveChildren(m);
       prefixItems = [...m.items, ...prefixItems];
       prefixUnits += countUnits(res.messages);
       // Child sessions live in exactly one window (a spawn is contained in its Task),
@@ -873,68 +938,105 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     ...(fill ? { fill: true } : {}),
   });
 
+  /** Whole values fetched so far, by ref: a rebuilt item takes them back (folded-bodies.ts). */
+  const bodyCache = new BodyCache();
+  /**
+   * The fetches running, by the refs they fetch, with the items waiting on each: an item rebuilt
+   * by a resync while its values come over joins the fetch already running instead of starting
+   * another.
+   */
+  const bodyFetches = new Map<
+    string,
+    { progress: BodyLoad; items: Set<ToolCallItem | ThinkingItem> }
+  >();
+  /** The model's folded items whose values are all held take them back. */
+  const putHeldBodies = (): void => {
+    for (const folded of foldedItems(model)) takeHeldBodies(folded, bodyCache);
+  };
+
   /**
    * Fetches the whole of an item's folded values, one after another, and puts each record back
-   * whole once all of its values have arrived. The item carries the fetch's progress (`bodyLoad`)
-   * for the card to show; a failure stays on it until the next call, which starts over.
+   * whole once all of its values have arrived — on the item asked for, on any item that joined
+   * the fetch, and on the copy a resync rebuilt meanwhile. The item carries the fetch's progress
+   * (`bodyLoad`), which never goes back: a body stream the socket re-issued starts its count over,
+   * and the reader is shown the furthest point reached. A failure stays on the item until the
+   * next call, which starts over; values already fetched are not asked again.
    */
   const loadBodies = (item: ToolCallItem | ThinkingItem): void => {
     const openBody = deps.openBody;
     if (disposed || openBody === undefined) return;
     if (item.bodyLoad !== undefined && item.bodyLoad.error === null) return;
-    const folded = elidedRecordsOf(item);
-    if (folded.length === 0) return;
-    const steps = folded.flatMap(({ slot, elided }) =>
-      elided.entries.map((entry, i) => ({
-        slot,
-        elided,
-        entry,
-        last: i === elided.entries.length - 1,
-      })),
-    );
-    const progress: BodyLoad = {
-      doneBytes: 0,
-      totalBytes: steps.reduce((n, step) => n + step.entry.bytes, 0),
-      error: null,
+    if (elidedRecordsOf(item).length === 0) return;
+    // Fetched before (a resync put the item back folded): whole again, at once.
+    if (takeHeldBodies(item, bodyCache)) {
+      delete item.bodyLoad;
+      deps.onModelChange();
+      return;
+    }
+    const entries = elidedRecordsOf(item)
+      .flatMap(({ elided }) => elided.entries)
+      .filter((entry) => !bodyCache.has(entry.ref));
+    const key = entries.map((entry) => entry.ref).join("\n");
+    const running = bodyFetches.get(key);
+    if (running !== undefined) {
+      running.items.add(item);
+      item.bodyLoad = running.progress;
+      deps.onModelChange();
+      return;
+    }
+    const fetch = {
+      progress: {
+        doneBytes: 0,
+        totalBytes: entries.reduce((n, entry) => n + entry.bytes, 0),
+        error: null,
+      } as BodyLoad,
+      items: new Set([item]),
     };
-    item.bodyLoad = progress;
+    bodyFetches.set(key, fetch);
+    item.bodyLoad = fetch.progress;
     deps.onModelChange();
     let base = 0;
-    let record = steps[0]!.elided.record;
     const next = (at: number): void => {
-      if (disposed || item.bodyLoad !== progress) return;
-      const step = steps[at];
-      if (step === undefined) {
-        delete item.bodyLoad;
+      if (disposed || bodyFetches.get(key) !== fetch) return;
+      const entry = entries[at];
+      if (entry === undefined) {
+        bodyFetches.delete(key);
+        for (const waiting of fetch.items) {
+          takeHeldBodies(waiting, bodyCache);
+          delete waiting.bodyLoad;
+        }
+        putHeldBodies();
         deps.onModelChange();
         return;
       }
-      if (at > 0 && steps[at - 1]!.elided !== step.elided) record = step.elided.record;
       let ended = false;
       const self: { read: { close: () => void } | null } = { read: null };
       const end = (): void => {
         ended = true;
         if (self.read !== null) reads.delete(self.read);
       };
-      self.read = readBody(openBody, step.entry.ref, {
+      self.read = readBody(openBody, entry.ref, {
         onProgress: (doneBytes) => {
-          if (item.bodyLoad !== progress) return;
-          progress.doneBytes = base + Math.min(doneBytes, step.entry.bytes);
+          if (bodyFetches.get(key) !== fetch) return;
+          const reached = base + Math.min(doneBytes, entry.bytes);
+          if (reached <= fetch.progress.doneBytes) return;
+          fetch.progress.doneBytes = reached;
           deps.onModelChange();
         },
         onValue: (value) => {
           end();
-          if (item.bodyLoad !== progress) return;
-          record = withElidedBody(record, step.entry.path, value);
-          if (step.last) takeWholeRecord(item, step.slot, record);
-          base += step.entry.bytes;
-          progress.doneBytes = base;
+          if (bodyFetches.get(key) !== fetch) return;
+          bodyCache.set(entry.ref, value);
+          base += entry.bytes;
+          fetch.progress.doneBytes = Math.max(fetch.progress.doneBytes, base);
           next(at + 1);
         },
         onError: (message) => {
           end();
-          if (item.bodyLoad !== progress) return;
-          item.bodyLoad = { ...progress, error: message };
+          if (bodyFetches.get(key) !== fetch) return;
+          bodyFetches.delete(key);
+          const failed: BodyLoad = { ...fetch.progress, error: message };
+          for (const waiting of fetch.items) waiting.bodyLoad = failed;
           deps.onModelChange();
         },
       });
@@ -1061,6 +1163,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // Leaving the conversation stops every transfer it started, at once.
       for (const read of [...reads]) read.close();
       reads.clear();
+      bodyFetches.clear();
+      liveOnlyChildren.clear();
       waitingRead = null;
       fillRead = null;
     },

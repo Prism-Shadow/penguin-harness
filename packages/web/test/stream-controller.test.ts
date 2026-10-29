@@ -21,7 +21,9 @@
  * - Given a prompt with images, it counts as one Task, as the server counts it.
  * - Given the first paint's backfill, the older row is one loading state from its first window to
  *   its last, keeping its last reading between them; a scroll-up meanwhile asks nothing more.
- * - Given a subagent spawned in a backfilled Task speaking again live, its history stays with it.
+ * - Given a subagent spawned in a backfilled Task speaking again live, its history stays with it —
+ *   also when it speaks, or its approval is re-sent, before that window has landed: the window's
+ *   copy takes over the child, and no stray card is left in the newest Task.
  * - Given an older window landing, the transcript below it is untouched: the same items, the
  *   same ids, so the reading position holds.
  * - Given a machine's read reporting progress, it shows as the window's until the window is on
@@ -36,11 +38,14 @@
  *   it is closed and read again, never left for the socket to re-issue for ever.
  * - Given a live event equal to a history record that came folded (a long thinking block), the
  *   event is dropped as a duplicate: the block is drawn once. So is a live tool output whose
- *   image the window carries by reference.
+ *   image the window carries by reference, or — a child's, with no Trace position — folded away.
  * - Given the window read waiting on the machine, Retry now opens it again.
  * - Given an item with folded values unfolded, each value is fetched by its ref, the item shows
  *   the whole values once all have arrived, and a failed fetch is said on the item and starts
- *   over on the next unfold.
+ *   over on the next unfold. Its progress never runs back, even when the stream starts over.
+ * - Given a resync while a value comes over, the rebuilt item joins the fetch running and ends
+ *   whole; a later rebuild gives the item its whole value back at once, fetching nothing.
+ * - Given the window on screen, a re-issue that builds the window again stays off the fill row.
  *
  * Resync with earlier windows on screen (the decision tree in stream-controller.ts `rebuild`):
  * - Given the refetched tail starting where the old one did, the earlier windows are kept.
@@ -93,7 +98,12 @@ import {
 import type { HistoryTransfer, StreamController } from "../src/lib/amsp/stream-controller";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import { FakeHistoryStream, deliver, progressOf, windowEvents } from "./helpers/history-stream";
-import { approvalKey, findToolCard } from "../src/lib/amsp/stream-model";
+import {
+  approvalKey,
+  buildDedupIndex,
+  findToolCard,
+  isDuplicate,
+} from "../src/lib/amsp/stream-model";
 import type {
   AssistantTextItem,
   ChatItem,
@@ -1012,6 +1022,65 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     expect(texts).toEqual(["child history", "child live"]);
   });
 
+  /** The older Task that spawned background child c1, as a backfilled window carries it. */
+  const SPAWN_TASK: AmspRecord[] = [
+    at(userText("spawn"), "2026-07-04T00:00:00.000Z"),
+    at(
+      toolCall({ name: "run_subagent", arguments: '{"prompt":"go"}', toolCallId: "r1" }),
+      "2026-07-04T00:00:01.000Z",
+    ),
+    withOrigin(at(userText("go"), "2026-07-04T00:00:02.000Z"), "c1"),
+    withOrigin(at(assistantText("child history"), "2026-07-04T00:00:03.000Z"), "c1"),
+  ];
+  /** c1's replies as the subagents panel shows them: the earlier windows' children, the live model's winning. */
+  const childReplies = (h: Harness) =>
+    (
+      new Map([...h.controller.prefixSubagents, ...h.controller.model.subagents]).get("c1")
+        ?.items ?? []
+    )
+      .filter((i) => i.kind === "assistant_text")
+      .map((i) => (i as AssistantTextItem).text);
+
+  it("a child's approval re-sent before the window that spawned it lands keeps the child's history, and leaves no stray card", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    // The server re-sends c1's still-pending approval on subscribe.
+    const tc = withOrigin(
+      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "t9" }),
+      "c1",
+    );
+    h.controller.handleServer({ type: "approval_request", toolCall: tc, origin: ["c1"] });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 1 }));
+    await p;
+    h.resolveOlder(SPAWN_TASK, pageInfo({ earlierTurns: 0 }));
+    await flush();
+    expect(childReplies(h)).toEqual(["child history"]);
+    expect(h.controller.model.items.filter((i) => i.kind === "subagent")).toHaveLength(0);
+    // The approval still has its card, now on the child the window brought.
+    expect(findToolCard(h.controller.model, ["c1"], "t9")).not.toBeNull();
+  });
+
+  it("a child that speaks while the window that spawned it is on its way keeps its history, its live words after it", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 1 }));
+    await p;
+    h.controller.handleRecord(
+      withOrigin(at(assistantText("child live"), "2026-07-05T00:01:00.000Z"), "c1"),
+      "e1-9",
+    );
+    h.resolveOlder(SPAWN_TASK, pageInfo({ earlierTurns: 0 }));
+    await flush();
+    h.controller.handleRecord(
+      withOrigin(at(assistantText("child live 2"), "2026-07-05T00:02:00.000Z"), "c1"),
+      "e1-10",
+    );
+    expect(childReplies(h)).toEqual(["child history", "child live", "child live 2"]);
+    expect(h.controller.model.items.filter((i) => i.kind === "subagent")).toHaveLength(0);
+  });
+
   it("a failed backfill surfaces on older.error, stops the backfill, and can be retried", async () => {
     const h = createHarness();
     const p = h.controller.load();
@@ -1513,6 +1582,27 @@ describe("history over the stream", () => {
     expect(findToolCard(h.controller.model, [], "t1")?.images).toEqual([ref]);
   });
 
+  it("a child's live tool output is a duplicate of its window copy, whose large image the window folded away", () => {
+    // A child's record has no Trace position, so its image cannot be carried by reference: the
+    // window folds a large one to nothing, while the stream carries its bytes.
+    const live = withOrigin(
+      at(
+        toolCallOutput({
+          output: "shot",
+          toolCallId: "t1",
+          status: "completed",
+          images: [`data:image/png;base64,${"A".repeat(40_000)}`],
+        }),
+        "2026-07-05T00:00:02.000Z",
+      ),
+      "c1",
+    );
+    const source = { agentId: "a1", sessionId: "c1", fileIndex: 1, ordinal: 4 };
+    const { record: windowCopy, elided } = elideHistoryRecord(live, source);
+    expect(elided.map((e) => e.path)).toEqual(["payload.images.0"]);
+    expect(isDuplicate(buildDedupIndex([windowCopy]), live)).toBe(true);
+  });
+
   it("Retry now opens the window read again while the server waits for the machine", () => {
     const h = createHarness();
     void h.controller.load();
@@ -1565,6 +1655,89 @@ describe("history over the stream", () => {
     expect(card.output).toBe(whole);
     expect(card.bodyLoad).toBeUndefined();
     expect(card.elidedOutput).toBeUndefined();
+  });
+
+  it("a resync while a folded value comes over hands the fetch to the rebuilt item: no second fetch, and the item ends whole", async () => {
+    const whole = "the whole output ".repeat(2_000);
+    const { h, card } = await foldedCard(whole);
+    h.controller.loadBodies(card);
+    h.controller.handleServer({ type: "resync_required" });
+    const output = at(
+      toolCallOutput({ output: "headtail", toolCallId: "c1", status: "completed" }),
+      "2026-07-05T00:00:02.000Z",
+    );
+    const elided = [
+      { path: "payload.output", bytes: whole.length, lines: 1, head: 4, ref: "ref-out" },
+    ];
+    h.resolveLoad(
+      [
+        HISTORY_TASK[0]!,
+        at(
+          toolCall({ name: "exec_command", arguments: '{"cmd":"cat big.log"}', toolCallId: "c1" }),
+          "2026-07-05T00:00:01.000Z",
+        ),
+        { ...output, elided } as HistoryMessage,
+      ],
+      undefined,
+      null,
+      pageInfo(),
+    );
+    await flush();
+    const rebuilt = findToolCard(h.controller.model, [], "c1")!;
+    expect(rebuilt).not.toBe(card);
+    // Opened again on the rebuilt card: it joins the fetch running, it does not start another.
+    h.controller.loadBodies(rebuilt);
+    expect(h.stream.bodies).toHaveLength(1);
+    const body = h.stream.bodies[0]!.handlers;
+    body.onRecords?.({ windowId: "b", offset: 0, text: whole }, "part");
+    body.onDone?.(null);
+    expect(rebuilt.output).toBe(whole);
+    expect(rebuilt.bodyLoad).toBeUndefined();
+
+    // A later resync builds the item folded again: it takes the whole value back as it is built.
+    h.controller.handleServer({ type: "resync_required" });
+    h.resolveLoad(
+      [
+        HISTORY_TASK[0]!,
+        at(
+          toolCall({ name: "exec_command", arguments: '{"cmd":"cat big.log"}', toolCallId: "c1" }),
+          "2026-07-05T00:00:01.000Z",
+        ),
+        { ...output, elided } as HistoryMessage,
+      ],
+      undefined,
+      null,
+      pageInfo(),
+    );
+    await flush();
+    expect(findToolCard(h.controller.model, [], "c1")!.output).toBe(whole);
+    expect(h.stream.bodies).toHaveLength(1);
+  });
+
+  it("a folded value's progress never runs back when its stream is sent again from the start", async () => {
+    const whole = "x".repeat(40_000);
+    const { h, card } = await foldedCard(whole);
+    h.controller.loadBodies(card);
+    const body = h.stream.bodies[0]!.handlers;
+    const seen: number[] = [];
+    for (const done of [0, 30_000, 0, 10_000]) {
+      body.onProgress?.(progressOf("heavy", done, whole.length));
+      seen.push(card.bodyLoad!.doneBytes);
+    }
+    expect(seen).toEqual([0, 30_000, 30_000, 30_000]);
+  });
+
+  it("once the window is on screen, a re-issue that builds the window again does not show as the fill", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer(idle);
+    const read = h.stream.reads[0]!;
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo());
+    await p;
+    h.stream.progress(read, progressOf("fill", 1_000_000, 3_000_000));
+    // The stream dropped for longer than the server holds a window: it builds the window again.
+    h.stream.progress(read, progressOf("window", 10_000, 60_000));
+    expect(h.controller.transfer.fill).toEqual(progressOf("fill", 1_000_000, 3_000_000));
   });
 
   it("a failed fetch of a folded value is said on the item and starts over on the next unfold", async () => {

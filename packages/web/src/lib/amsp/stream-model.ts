@@ -2373,7 +2373,11 @@ const IMAGE_IN_KEY = "<image>";
  */
 function imageInKey(value: unknown): unknown {
   if (typeof value !== "string") return value;
-  return value.startsWith("data:") || /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
+  // "" is an image a history window folded away (a child's output has no Trace position to be
+  // carried by reference, so its large image is elided whole): the same picture as its bytes.
+  return value === "" ||
+    value.startsWith("data:") ||
+    /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
     ? IMAGE_IN_KEY
     : value;
 }
@@ -2388,11 +2392,12 @@ const KEY_SOURCE = { agentId: "", sessionId: "", fileIndex: 0, ordinal: 0 };
  *
  * - An image: a windowed history page carries a user `image_url` and a tool output's `images` by
  *   reference while the stream carries the bytes, and an SSE copy that escaped the overlap dedup
- *   would draw the person's image twice. Both forms stand in as one token — first, before
- *   anything is folded, so a large inline image is never folded away on one side only. Two images
- *   of one prompt may then share a key (same timestamp); that is harmless, since a history read
- *   holds a prompt whole (the server appends held inputs the Trace lacks), so each stream copy
- *   has its own history copy to match.
+ *   would draw the person's image twice. Every form stands in as one token, before anything is
+ *   folded: the bytes, the reference, and the empty string a window leaves where it folded an
+ *   image away — a child's record has no Trace position to carry its image by reference, so a
+ *   large one comes folded on the history side only. Two images of one prompt may then share a
+ *   key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
+ *   appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
  * - A bulky value: a history window carries a tool's output, a long argument or a thinking
  *   block folded (a head and a tail) while the stream carries it whole, so the key folds the
  *   stream's copy by the same rule the server folds by (folding a folded copy changes nothing).

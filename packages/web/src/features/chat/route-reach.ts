@@ -47,3 +47,20 @@ export function lookupVerdict(
   if (reach !== "answered") return "doubt";
   return failure.status === 404 ? "missing" : "failed";
 }
+
+/**
+ * Whether the routed Session is still being looked for: it is not listed, and either no lookup
+ * has failed yet, or the one that failed settled nothing — a holder had not answered when it
+ * failed (`doubted`, made again once they have), or one is still out of reach (`unowned`). The
+ * render in which a silent machine answers must still read the doubted failure as pending, or
+ * the page takes it for a verdict and opens another conversation before the lookup is made
+ * again.
+ */
+export function routeLookupPending(state: {
+  listed: boolean;
+  failed: boolean;
+  unowned: boolean;
+  doubted: boolean;
+}): boolean {
+  return !state.listed && (!state.failed || state.unowned || state.doubted);
+}

@@ -9,9 +9,12 @@
  * - Given a machine still being asked, nothing is settled yet either.
  * - Given the Session's machine on record, only that machine's standing counts: another machine
  *   out of reach does not hold up a verdict about a Session it does not have.
+ * - Given a lookup that failed in doubt, the Session stays looked for even once the silent machine
+ *   answers, until the lookup is made again: the page never takes the stale failure for a verdict
+ *   and opens another conversation.
  */
 import { describe, expect, it } from "vitest";
-import { lookupVerdict, routeReach } from "../src/features/chat/route-reach";
+import { lookupVerdict, routeLookupPending, routeReach } from "../src/features/chat/route-reach";
 
 const NOT_FOUND = { status: 404 };
 const NO_ANSWER = { status: 503 };
@@ -41,5 +44,13 @@ describe("a failed lookup of the routed Session", () => {
     expect(routeReach({ owner: "m1", offline: ["m2"], asking: ["m3"] })).toBe("answered");
     expect(routeReach({ owner: "m1", offline: ["m1"], asking: [] })).toBe("unanswered");
     expect(routeReach({ owner: "m1", offline: [], asking: ["m1"] })).toBe("asking");
+  });
+
+  it("keeps a lookup that failed in doubt pending after the silent machine answers, until it is made again", () => {
+    const base = { listed: false, failed: true, unowned: false };
+    expect(routeLookupPending({ ...base, doubted: true })).toBe(true);
+    expect(routeLookupPending({ ...base, doubted: false })).toBe(false);
+    expect(routeLookupPending({ ...base, unowned: true, doubted: false })).toBe(true);
+    expect(routeLookupPending({ ...base, listed: true, doubted: true })).toBe(false);
   });
 });

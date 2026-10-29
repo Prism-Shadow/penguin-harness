@@ -338,12 +338,15 @@ export function TraceFileView({
         .getAgentTraceAnalysis(projectId, agentId, sessionId, index)
         .then((a) => {
           if (signal.cancelled) return;
+          setFetching(null);
           setFile((prev) => fileAfterAnalysis(prev, a));
           setRounds(withoutFailures);
           setError(null);
         })
         .catch((err: unknown) => {
-          if (!signal.cancelled) setError(apiErrorText(err));
+          if (signal.cancelled) return;
+          setFetching(null);
+          setError(apiErrorText(err));
         });
     };
     const since = Date.now();
@@ -355,10 +358,10 @@ export function TraceFileView({
         onProgress: (progress) => {
           if (!signal.cancelled) setFetching({ since, progress });
         },
+        // The panel keeps the one loading state it shows until the analysis is in: clearing it
+        // here put the skeleton back between the transfer row and the file.
         onFilled: () => {
-          if (signal.cancelled) return;
-          setFetching(null);
-          readAnalysis();
+          if (!signal.cancelled) readAnalysis();
         },
         onError: (message) => {
           if (signal.cancelled) return;
@@ -542,7 +545,9 @@ export function TraceFileView({
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       pending={
-        fetching !== null ? (
+        // The transfer row only once the machine reports the file coming over; a file this
+        // server holds keeps the skeleton until its analysis is in.
+        fetching !== null && fetching.progress !== null ? (
           <HistoryFileLoading since={fetching.since} progress={fetching.progress} />
         ) : undefined
       }

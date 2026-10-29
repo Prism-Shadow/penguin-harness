@@ -1128,8 +1128,12 @@ export function createSessionsStore() {
             sessions: [...nextSessions, ...held],
             // Who could not say whether they hold a Session: the chat page must not take this
             // server's "no such Session" for the answer while one of them is silent or asked.
-            silentMachineIds: machineIds.filter((m) => silent.has(m) && !pending.has(m)),
-            askingMachineIds: machineIds.filter((m) => pending.has(m)),
+            // A resting machine being probed again stays silent until it answers: a page that
+            // said it is out of reach must not flip back to "still asking" on every retry.
+            silentMachineIds: machineIds.filter(
+              (m) => silent.has(m) && (!pending.has(m) || rested.has(m)),
+            ),
+            askingMachineIds: machineIds.filter((m) => pending.has(m) && !rested.has(m)),
             pageState: nextPageState,
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,

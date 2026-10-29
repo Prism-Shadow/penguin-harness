@@ -118,7 +118,7 @@ import {
   sessionProbeKey,
 } from "./session-project";
 import { RouteProbe } from "./route-probe";
-import { lookupVerdict, routeReach } from "./route-reach";
+import { lookupVerdict, routeLookupPending, routeReach } from "./route-reach";
 import { machineForSession } from "../../lib/session-machines";
 import { HistoryLoadFailed } from "./history-load-failed";
 import { HistoryLoading } from "./history-loading";
@@ -899,8 +899,17 @@ export function ChatPage() {
   // Read from `listed`, never from `selected`: the held Session above keeps the conversation
   // on screen through a refetch, but it must not tell the probe that the row is loaded — a
   // Session that really is gone has to keep probing until the lookup fails and releases both.
+  // A lookup that failed in doubt (route-reach.ts) stays pending until it is made again: the
+  // render in which the silent machine answers must not read the stale failure as a verdict and
+  // send the reader to another conversation.
   const routeSessionPending =
-    !!routeSessionId && listed === null && (probeFailedKey !== probeKey || routeSessionUnowned);
+    !!routeSessionId &&
+    routeLookupPending({
+      listed: listed !== null,
+      failed: probeFailedKey === probeKey,
+      unowned: routeSessionUnowned,
+      doubted: probeDoubtKey === probeKey,
+    });
   /**
    * The lookup has failed and the only servers that could still answer for this Session are
    * out of reach. It is not gone — so the redirect must not fire and the row must not be

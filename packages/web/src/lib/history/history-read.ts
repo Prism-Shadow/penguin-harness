@@ -103,7 +103,11 @@ export function readHistory(
     const live = (): boolean => !over && gen === generation;
     conn = open(query, {
       onProgress: (progress) => {
-        if (live()) sink.onProgress?.(progress, delivered);
+        if (!live()) return;
+        // Once the window is the caller's, only the fill behind it reports: a re-issue that
+        // builds the window again (it expired on the server) is not the fill's progress.
+        if (delivered && progress.phase === "window") return;
+        sink.onProgress?.(progress, delivered);
       },
       onPage: (page) => {
         if (live() && !delivered) assembler.page(page);
