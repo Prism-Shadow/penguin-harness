@@ -3681,6 +3681,8 @@ export class MachinesModule {
     const sockets = new MachineSockets((line) => console.log(line), {
       announce: () => toAdmins({ type: "machines_changed" }),
       settle: (machineId) => service?.settleForStream(machineId) ?? null,
+      // A socket is alive while its machine's link is: any byte on any connection to it.
+      heardAt: (machineId) => service?.links.heardAt(machineId) ?? null,
     });
     const events = new MachineEventHub(sockets, (line) => console.log(line));
     // The copy of the machines' Trace lines a remote conversation's history is read from

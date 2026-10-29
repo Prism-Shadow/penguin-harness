@@ -31,6 +31,7 @@
  * - Given the copy over its cap, when a stream completes, then an open job's Session is kept
  *   though it was read longest ago, and a Session no job holds goes.
  */
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
@@ -71,8 +72,10 @@ async function scriptedMachine(
   const wss = new WebSocketServer({ server });
   const frames: ClientFrame[] = [];
   const sockets: WebSocket[] = [];
+  let pings = 0;
   wss.on("connection", (ws) => {
     sockets.push(ws);
+    ws.on("ping", () => (pings += 1));
     ws.on("message", (data) => {
       const frame = JSON.parse(data.toString()) as ClientFrame;
       frames.push(frame);
@@ -87,6 +90,8 @@ async function scriptedMachine(
     calls: (pathPart: string) =>
       frames.filter((f) => f.call?.path.includes(pathPart)).map((f) => f.id),
     cancelled: (id: number) => frames.some((f) => f.id === id && f.cancel === true),
+    /** The protocol pings the hub sent. */
+    pings: () => pings,
     close: () =>
       new Promise<void>((resolve) => {
         for (const ws of sockets) ws.terminate();
@@ -572,6 +577,88 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     await new Promise((resolve) => setImmediate(resolve));
     expect(warnings.filter((w) => w.name === "MaxListenersExceededWarning")).toEqual([]);
   });
+
+  /** A socket to `port` from sockets of their own, dropped after `SILENCE` ms of nothing. */
+  const SILENCE = 400;
+  async function slowSocket(port: number, links?: LinkActivity) {
+    const own = new MachineSockets(() => undefined, {
+      silenceMs: SILENCE,
+      ...(links !== undefined ? { heardAt: (id: string) => links.heardAt(id) } : {}),
+    });
+    close.push(() => own.close());
+    const got = await own.socketFor(MACHINE, {
+      agent: new http.Agent(),
+      port,
+      cookie: "c",
+      session: 1,
+    });
+    if (!("socket" in got)) throw new Error("no socket");
+    let closedAt: number | null = null;
+    got.socket.onClose(() => (closedAt ??= Date.now()));
+    return { socket: got.socket, closedAt: () => closedAt };
+  }
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it("keeps a machine's socket up while one message trickles in past its silence, telling the machine it hears it, and drops it after true silence", async () => {
+    let valve: Awaited<ReturnType<typeof valveTo>> | null = null;
+    const machine = await scriptedMachine((ws, id) => {
+      valve!.shut();
+      start(ws, id);
+      event(ws, id, "window", { pad: randomBytes(45_000).toString("base64") });
+    });
+    close.push(machine.close);
+    valve = await valveTo(machine.port);
+    close.push(valve.close);
+    const { socket, closedAt } = await slowSocket(valve.port);
+    const events: string[] = [];
+    socket.call(
+      { method: "GET", path: "/api/slow", headers: { accept: "text/event-stream" } },
+      {
+        onStart: () => undefined,
+        onEvent: (frame) => void events.push(frame.event),
+        onEnd: () => undefined,
+        onResponse: () => undefined,
+      },
+    );
+    await waitFor(() => valve!.held() > 60_000);
+
+    // About 60 KB at 1 KB per 30 ms: some four silence periods with no whole message.
+    const began = Date.now();
+    while (valve.held() > 0) {
+      valve.release(1_000);
+      await pause(30);
+    }
+    const lastByte = Date.now();
+    await waitFor(() => events.length === 1);
+    expect(lastByte - began).toBeGreaterThan(3 * SILENCE);
+    expect(closedAt()).toBeNull();
+    expect(machine.pings()).toBeGreaterThan(0);
+
+    await waitFor(() => closedAt() !== null, 4 * SILENCE);
+    expect(closedAt()! - lastByte).toBeGreaterThanOrEqual(SILENCE - 50);
+  }, 15_000);
+
+  it("keeps a machine's socket up while bytes come on another connection to the machine, and drops it once the whole link is silent", async () => {
+    const machine = await scriptedMachine(() => undefined);
+    close.push(machine.close);
+    const valve = await valveTo(machine.port);
+    close.push(valve.close);
+    const links = new LinkActivity();
+    const { closedAt } = await slowSocket(valve.port, links);
+    // Nothing more comes back on the socket's own connection, not even an answer to a ping.
+    valve.shut();
+
+    const began = Date.now();
+    while (Date.now() - began < 3 * SILENCE) {
+      links.heard(MACHINE);
+      await pause(50);
+    }
+    const lastByte = Date.now();
+    expect(closedAt()).toBeNull();
+
+    await waitFor(() => closedAt() !== null, 4 * SILENCE);
+    expect(closedAt()! - lastByte).toBeGreaterThanOrEqual(SILENCE - 50);
+  }, 15_000);
 
   it("cancels the machine's call the moment its last reader leaves, even in the middle of the fill", async () => {
     const machine = await scriptedMachine((ws, id) => {
