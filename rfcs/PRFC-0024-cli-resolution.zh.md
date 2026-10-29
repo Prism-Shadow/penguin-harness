@@ -100,8 +100,8 @@ resolution 收调用方自己的入口与数据根。它从磁盘读两样东西
 | 记录 | 在，文件在 store 里 | 无声明，无旧名 loader | 故障 `loader-absent` |
 | 记录 | 在，文件不在 store 里 | 任意 | 故障 `cli-bundle-missing` |
 | 记录 | 在，指针不可用 | 任意 | 故障 `cli-pointer-unusable` |
-| 记录 | 没有 CLI 一节 | 任意 | 安装入口——`no-pushed-cli` |
-| 没有记录 | — | 任意 | 安装入口——`no-record` |
+| 记录 | 没有 CLI 一节 | 任意 | 调用方自己的入口——`no-pushed-cli` |
+| 没有记录 | — | 任意 | 调用方自己的入口——`no-record` |
 | 记录损坏 | — | 任意 | 故障 `damaged-record` |
 | 带推送的 CLI，且调用方自己就是它产品的 loader | — | — | 它自己——`pushed` 或 `legacy` |
 
