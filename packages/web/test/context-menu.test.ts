@@ -30,7 +30,7 @@ function sourceFiles(): Array<[string, string]> {
 const DROPDOWN = "packages/ui/src/components/overlays/dropdown/dropdown.tsx";
 const CONTEXT_MENU = "packages/ui/src/components/overlays/portal-panel/use-row-context-menu.ts";
 const RULES = "packages/ui/src/components/overlays/portal-panel/context-menu.ts";
-const SIDEBAR = "packages/web/src/components/layout/sidebar.tsx";
+const SIDEBAR = "packages/web/src/web-app/sidebar/sidebar.tsx";
 
 describe("sourceFiles", () => {
   it("scans every source root, and finds the menu modules in one place each", () => {
