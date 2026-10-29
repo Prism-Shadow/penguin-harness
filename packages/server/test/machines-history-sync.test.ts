@@ -49,7 +49,11 @@ import { machinesProxy } from "../src/machines/proxy.js";
 import type { ProxyTarget } from "../src/machines/proxy.js";
 import { TraceCache } from "../src/machines/trace-cache.js";
 import { decodeHistoryHave } from "../src/services/history-wire.js";
-import { MACHINE_STREAM_WATCHDOG_MS } from "../src/machines/history-sync.js";
+import {
+  MACHINE_STREAM_STALL_MS,
+  MACHINE_STREAM_WATCHDOG_MS,
+  SESSION_CONFIRM_TTL_MS,
+} from "../src/machines/history-sync.js";
 import { eventReader, manualClock, traceLine, windowRecords } from "./fixtures/history-stream.js";
 import { makeTempRoot, removeTempRoot, waitFor } from "./helpers.js";
 
@@ -638,27 +642,123 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     expect(closedAt()! - lastByte).toBeGreaterThanOrEqual(SILENCE - 50);
   }, 15_000);
 
-  it("keeps a machine's socket up while bytes come on another connection to the machine, and drops it once the whole link is silent", async () => {
+  it("keeps a machine's socket up on another connection's bytes for a while, and drops it once its own channel has been silent twice the period, however busy the link", async () => {
     const machine = await scriptedMachine(() => undefined);
     close.push(machine.close);
     const valve = await valveTo(machine.port);
     close.push(valve.close);
     const links = new LinkActivity();
     const { closedAt } = await slowSocket(valve.port, links);
-    // Nothing more comes back on the socket's own connection, not even an answer to a ping.
+    // Nothing more comes back on the socket's own connection, not even an answer to a ping;
+    // the rest of the link stays busy throughout.
     valve.shut();
+    const shut = Date.now();
+    let busy = true;
+    void (async () => {
+      while (busy) {
+        links.heard(MACHINE);
+        await pause(50);
+      }
+    })();
+    close.push(() => {
+      busy = false;
+    });
 
-    const began = Date.now();
-    while (Date.now() - began < 3 * SILENCE) {
-      links.heard(MACHINE);
-      await pause(50);
-    }
-    const lastByte = Date.now();
+    await pause(1.5 * SILENCE);
     expect(closedAt()).toBeNull();
-
     await waitFor(() => closedAt() !== null, 4 * SILENCE);
-    expect(closedAt()! - lastByte).toBeGreaterThanOrEqual(SILENCE - 50);
+    expect(closedAt()! - shut).toBeGreaterThanOrEqual(2 * SILENCE - 50);
+    busy = false;
   }, 15_000);
+
+  it("tells the reader the machine is slow when its stream carries only beats for a minute, and goes on", async () => {
+    let carry: ((name: string, data: unknown) => void) | null = null;
+    const machine = await scriptedMachine((ws, id) => {
+      start(ws, id);
+      event(ws, id, "window", windowOf(FILE));
+      carry = (name, data) => event(ws, id, name, data);
+    });
+    close.push(machine.close);
+    let bytes = 0;
+    const { get } = hub(machine.port, {
+      onSocket: (socket) => void socket.onTraffic(() => (bytes += 1)),
+    });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => carry !== null);
+    const beat = async () => {
+      const before = bytes;
+      carry!("ping", {});
+      await waitFor(() => bytes > before);
+    };
+    const slow = () => progressOf(history.events).some((p) => p.waiting?.reason === "slow");
+
+    // A route stuck over there: beats every five seconds, nothing else.
+    for (let at = 0; at < MACHINE_STREAM_STALL_MS - 5_000; at += 5_000) {
+      clock.advance(5_000);
+      await beat();
+    }
+    expect(slow()).toBe(false);
+    clock.advance(5_000);
+    await beat();
+    await waitFor(() => slow());
+
+    carry!("lines", { k: K, off: 0, ord: 0, text: FILE });
+    carry!("ready", {});
+    carry!("done", {});
+    await waitFor(() => history.has("done"));
+    expect(progressOf(history.events).at(-1)?.waiting ?? null).toBeNull();
+    expect(machine.calls("/history-lines")).toHaveLength(1);
+  });
+
+  it("asks the machine whether a Session the copy answers for is still there at most once a while, and drops it once the machine says it is gone", async () => {
+    let said: "there" | "gone" = "there";
+    let asked = 0;
+    const machine = await scriptedMachine(answerWindow, (req, res) => {
+      if (req.url !== `/api/sessions/${SID}`) {
+        res.statusCode = 404;
+        res.end();
+        return;
+      }
+      asked += 1;
+      res.setHeader("content-type", "application/json");
+      if (said === "there") {
+        res.end(JSON.stringify({ session: { sessionId: SID, projectId: "default_project" } }));
+      } else {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: { code: "session_not_found", message: "No." } }));
+      }
+    });
+    close.push(machine.close);
+    let connected = true;
+    const { get, cache } = hub(machine.port, { connected: () => connected });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await history.finished;
+    const events = `/api/sessions/${SID}/traces/1?offset=0&limit=2`;
+
+    expect((await get(events)).status).toBe(200);
+    expect((await get(events)).status).toBe(200);
+    expect(asked).toBe(1);
+    clock.advance(SESSION_CONFIRM_TTL_MS);
+    expect((await get(events)).status).toBe(200);
+    expect(asked).toBe(2);
+
+    // Away: the copy's last word stands, and nothing is asked.
+    connected = false;
+    clock.advance(SESSION_CONFIRM_TTL_MS);
+    expect((await get(events)).status).toBe(200);
+    expect(asked).toBe(2);
+
+    // Deleted over there, with nothing heard of it here: the next read finds out.
+    connected = true;
+    said = "gone";
+    const gone = await get(events);
+    expect(gone.status).toBe(404);
+    expect(((await gone.json()) as { error: { code: string } }).error.code).toBe(
+      "session_not_found",
+    );
+    await waitFor(() => cache.usedBytes === 0);
+  });
 
   it("cancels the machine's call the moment its last reader leaves, even in the middle of the fill", async () => {
     const machine = await scriptedMachine((ws, id) => {
@@ -851,6 +951,56 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
       page: { units: number; earlierTurns: number };
     };
     expect(page.page).toMatchObject({ units: 3, earlierTurns: 4 });
+  });
+
+  it("counts inputs held behind a running Task's prompt with that Task on an older page that marks no record", async () => {
+    // A build older than trace positions: three Tasks, the third running, two inputs held behind it.
+    const records = [0, 1, 2]
+      .flatMap((i) => [
+        traceLine(2 * i, `question ${i}`, "user"),
+        traceLine(2 * i + 1, `answer ${i}`),
+      ])
+      .slice(0, 5)
+      .concat([traceLine(6, "held one", "user"), traceLine(7, "held two", "user")])
+      .map((line) => JSON.parse(line) as object);
+    const body = JSON.stringify({
+      messages: records,
+      live: { cursor: "7", fragments: [] },
+      page: {
+        earlierTurns: 0,
+        prior: {
+          subagentTokens: 0,
+          elapsedMs: 0,
+          apiMs: 0,
+          toolMs: 0,
+          sessionTokens: 0,
+          contextTokens: 0,
+        },
+      },
+    });
+    const machine = await scriptedMachine(
+      (ws, id) =>
+        send(ws, {
+          id,
+          status: 421,
+          headers: {},
+          body: { error: { code: "not_on_socket", message: "HTTP only." } },
+        }),
+      (_req, res) => {
+        res.setHeader("content-type", "application/json");
+        res.end(body);
+      },
+    );
+    close.push(machine.close);
+    const { get } = hub(machine.port);
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=3`));
+    close.push(history.stop);
+    await waitFor(() => history.has("done"));
+    const page = JSON.parse(history.events.find((e) => e.event === "page")!.data) as {
+      page: { units: number };
+    };
+    expect(page.page.units).toBe(3);
   });
 
   it.each([

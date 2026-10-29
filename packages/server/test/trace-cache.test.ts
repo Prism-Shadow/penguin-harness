@@ -14,6 +14,8 @@
  * - Given a read the copy cannot match — more records than it holds, a run whose bytes no longer
  *   parse into its record count — then it answers null, never a wrong record; bytes its runs
  *   vouch for are answered as they are, a line that opens with NUL among them too.
+ * - Given a Session the machine deleted, when its copy is dropped, then its subagents' copies go
+ *   with it, except one another Session's group still names (a fork's).
  * - Given a run, when a range of it is let go, then the lines before and after it stay held
  *   with their own ordinals, the range is no longer offered, and other files are untouched.
  * - Given a run read once, when one more line is committed, then the next record read reads only
@@ -248,6 +250,36 @@ describe("the hub's copy of a machine's Trace lines", () => {
     expect((await reopened.have(M, S))[0]?.ranges?.map((r) => [r.lo, r.hi])).toEqual([
       [0, file.bytes.length],
     ]);
+  });
+
+  it("drops a deleted Session's copy and its subagents', keeping a subagent another Session still names", async () => {
+    const file = traceFile(2);
+    const cache = new TraceCache(root);
+    const fork = "session-fork";
+    const kept = "session-child-shared";
+    const own = "session-child-own";
+    const key = (sid: string) => `default_agent/${sid}/1`;
+    // A Session with two subagents, and a fork of it that shares one of them.
+    await cache.reconcile(M, S, [
+      fact(file.bytes, 2),
+      fact(file.bytes, 2, { k: key(kept) }),
+      fact(file.bytes, 2, { k: key(own) }),
+    ]);
+    await cache.reconcile(M, fork, [
+      fact(file.bytes, 2, { k: key(fork) }),
+      fact(file.bytes, 2, { k: key(kept) }),
+    ]);
+    for (const k of [K, key(kept), key(own), key(fork)]) {
+      await cache.commit(M, { k, off: 0, ord: 0, text: file.bytes.toString("utf8") });
+    }
+    const held = async (k: string) => (await cache.bytes(M, k, 0, file.bytes.length)) !== null;
+
+    await cache.dropSession(M, S);
+
+    expect(await held(K)).toBe(false);
+    expect(await held(key(own))).toBe(false);
+    expect(await held(key(kept))).toBe(true);
+    expect(await held(key(fork))).toBe(true);
   });
 
   it("lets go of a range of a run, keeping the lines around it and the other files", async () => {

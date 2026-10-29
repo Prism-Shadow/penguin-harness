@@ -174,11 +174,14 @@ let hub: {
 let onFrame: (frame: { k: string; off: number; bytes: number }) => void;
 /** Whether the hub has a forward to the machine; with none, only its copy can answer. */
 let connected = true;
+/** The Projects the hub has config for (an analysis is priced here only for those). */
+let hubProjects = new Set<string>();
 
 beforeEach(async () => {
   crossed = [];
   onFrame = () => undefined;
   connected = true;
+  hubProjects = new Set([PROJECT]);
   const sockets = new MachineSockets(() => undefined);
   const traces = path.join(hubRoot, `h-${Math.random().toString(36).slice(2)}`);
   const target = async () =>
@@ -190,6 +193,7 @@ beforeEach(async () => {
     sockets,
     target,
     analyze: (projectId, records) => machine.deps.traceService.analyzeRecords(projectId, records),
+    hasProject: (projectId) => hubProjects.has(projectId),
     log: () => undefined,
     tuning: {
       observe: (frame) => {
@@ -643,6 +647,47 @@ describe("a machine Session's history through the hub's copy", () => {
     await dropped(hub.cacheFile(sid, 1));
     // Not from the copy any more: the forward, which has no machine to reach.
     expect((await hub.get(image)).status).toBe(503);
+  });
+
+  it("stops answering from the copy of a Session deleted on the machine though nothing told this server, and drops it", async () => {
+    const sid = uniqueSessionId();
+    const png = `data:image/png;base64,${Buffer.from("secret picture").toString("base64")}`;
+    await machineSession(sid, [meta(sid), userText("look"), imageUrlMessage(png), ...tasks(2)]);
+    await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 2, [
+      meta(sid),
+      ...tasks(2),
+    ]);
+    expect((await read(sid, "?tailLimit=20&fill=1")).at(-1)?.event).toBe("filled");
+    await waitFor(() => hub.sync.held().size === 0);
+    // Deleted on the machine's own side: no event reaches this server, and no history is read.
+    const deleted = await machine.app.request(`/api/sessions/${sid}`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(deleted.status).toBe(204);
+
+    const image = await hub.get(`/api/sessions/${sid}/trace-image?file=1&ordinal=2`);
+    expect(image.status).toBe(404);
+    expect(((await image.json()) as { error: { code: string } }).error.code).toBe(
+      "session_not_found",
+    );
+    expect((await hub.get(`/api/sessions/${sid}/traces/1?offset=0&limit=5`)).status).toBe(404);
+    await dropped(hub.cacheFile(sid, 1));
+  });
+
+  it("leaves the analysis of a Session whose Project this server has no config for to the machine", async () => {
+    const sid = uniqueSessionId();
+    await machineSession(sid, [meta(sid), ...tasks(3)]);
+    expect((await read(sid, "?tailLimit=20&fill=1")).at(-1)?.event).toBe("filled");
+    await waitFor(() => hub.sync.held().size === 0);
+    const analysis = `/api/sessions/${sid}/traces/1/analysis`;
+    // Learnt and computed here while the Project is this server's ...
+    expect((await hub.get(analysis)).status).toBe(200);
+    connected = false;
+    expect((await hub.get(analysis)).status).toBe(200);
+    // ... and the machine's to price once it is not (forwarded: with the machine away, no answer).
+    hubProjects.clear();
+    expect((await hub.get(analysis)).status).toBe(503);
   });
 
   it("loads a Trace with a line of NULs in it, as the machine reads it", async () => {

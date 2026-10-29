@@ -31,7 +31,7 @@
 import { bodyAt, decodeBodyRef } from "@prismshadow/penguin-core/interfaces";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { HistoryFileKey, TraceAnalysisResponse, TraceEventsResponse } from "../api/types.js";
-import { HttpError } from "../http/errors.js";
+import { HttpError, errorBody } from "../http/errors.js";
 import type { SseRevocation } from "../http/sse.js";
 import {
   HeldWindows,
@@ -60,6 +60,12 @@ const AGENT_EVENTS =
   /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/traces\/([^/]+)\/([1-9]\d{0,5})(\/analysis)?$/;
 /** How many Sessions' Projects are remembered for the Project-scoped Trace path. */
 const PROJECTS_KEPT = 10_000;
+
+/** What a read the copy would have answered gets once the machine says the Session is gone. */
+const sessionGone = (): HttpError =>
+  new HttpError(404, "session_not_found", "Session does not exist.");
+const goneResponse = (): Response =>
+  Response.json(errorBody("session_not_found", "Session does not exist."), { status: 404 });
 
 /** A server event's JSON, or null when it is none. */
 function parsedEvent(data: string): { type?: unknown; sessionId?: unknown } | null {
@@ -106,6 +112,8 @@ export interface MachineHistoryDeps {
   windows?: HeldWindows;
   /** The Trace analysis of one file's records, priced with a Project's rates; absent: forwarded. */
   analyze?: (projectId: string, records: readonly AmspRecord[]) => Promise<TraceAnalysisResponse>;
+  /** Whether this server has a Project (and so its config) by that id; absent: always. */
+  hasProject?: (projectId: string) => boolean;
 }
 
 /**
@@ -121,13 +129,22 @@ export function machineHistory(deps: {
   known?: (machineId: string) => boolean;
   /** The Trace analysis over the copy's records (MachineHistoryDeps.analyze). */
   analyze?: MachineHistoryDeps["analyze"];
+  /** Whether this server has the Project an analysis would be priced with (MachineHistoryDeps.hasProject). */
+  hasProject?: MachineHistoryDeps["hasProject"];
   /** When bytes last came in from the machine on any of its connections (HistorySyncDeps.heardAt). */
   heardAt?: (machineId: string) => number | null;
   log: (line: string) => void;
   /** The sync's clock and knobs, as a test sets them. */
   tuning?: Pick<
     HistorySyncDeps,
-    "clock" | "watchdogMs" | "windowTextMax" | "retryFirstMs" | "retryMaxMs" | "observe"
+    | "clock"
+    | "watchdogMs"
+    | "windowTextMax"
+    | "confirmTtlMs"
+    | "stallMs"
+    | "retryFirstMs"
+    | "retryMaxMs"
+    | "observe"
   >;
 }): { history: MachineHistory; sync: HistorySync } {
   const sync = new HistorySync({
@@ -152,6 +169,7 @@ export function machineHistory(deps: {
       sync,
       cache: deps.cache,
       ...(deps.analyze !== undefined ? { analyze: deps.analyze } : {}),
+      ...(deps.hasProject !== undefined ? { hasProject: deps.hasProject } : {}),
     }),
     sync,
   };
@@ -163,6 +181,7 @@ export class MachineHistory {
   readonly #cache: TraceCache;
   readonly #windows: HeldWindows;
   readonly #analyze: MachineHistoryDeps["analyze"];
+  readonly #hasProject: MachineHistoryDeps["hasProject"];
   /** Each Session's Project on its machine, as the Session forward found it (`<machineId>\0<sessionId>`). */
   readonly #projects = new Map<string, string>();
 
@@ -171,6 +190,7 @@ export class MachineHistory {
     this.#cache = deps.cache;
     this.#windows = deps.windows ?? new HeldWindows();
     this.#analyze = deps.analyze;
+    this.#hasProject = deps.hasProject;
   }
 
   /** A machine's server event, as the event hub relays it (MachineEventHub.tap). */
@@ -220,7 +240,7 @@ export class MachineHistory {
         this.#rememberProject(machineId, sessionId, caller.projectId);
       }
       if (k === null) return null;
-      if (sessionEvents[3] === undefined) return this.#traceEvents(url, machineId, k);
+      if (sessionEvents[3] === undefined) return this.#traceEvents(url, machineId, sessionId, k);
       return this.#traceAnalysis(machineId, sessionId, k);
     }
     const agentEvents = AGENT_EVENTS.exec(remotePath);
@@ -245,10 +265,22 @@ export class MachineHistory {
       }
       const k = historyFileKey(agentId, sessionId, Number(agentEvents[4]));
       return agentEvents[5] === undefined
-        ? this.#traceEvents(url, machineId, k)
+        ? this.#traceEvents(url, machineId, sessionId, k)
         : this.#traceAnalysis(machineId, sessionId, k);
     }
     return null;
+  }
+
+  /**
+   * Whether the machine says the Session the copy is about to answer for is gone (asked at most
+   * once per a short TTL, HistorySync.sessionOn); its copy is dropped then. Away, or saying
+   * nothing usable, the copy's last word stands: false.
+   */
+  async #gone(machineId: string, sessionId: string): Promise<boolean> {
+    const fact = await this.#sync.sessionOn(machineId, sessionId);
+    if (fact.kind !== "gone") return false;
+    this.#projects.delete(`${machineId}\0${sessionId}`);
+    return true;
   }
 
   #rememberProject(machineId: string, sessionId: string, projectId: string): void {
@@ -361,6 +393,7 @@ export class MachineHistory {
       }
       const k = historyFileKey(named.agentId, named.sessionId, named.fileIndex);
       const held = await this.#cache.records(machineId, k, named.ordinal, named.ordinal + 1);
+      if (held !== null && (await this.#gone(machineId, sessionId))) throw sessionGone();
       let record = held?.[0]?.record ?? null;
       let fetched: { totalBytes: number } | null = null;
       if (record === null) {
@@ -390,6 +423,7 @@ export class MachineHistory {
     const held = await this.#cache.records(machineId, k, ordinal, ordinal + 1);
     const image = held?.[0] !== undefined ? traceRecordImage(held[0].record, slot) : null;
     if (image === null) return null;
+    if (await this.#gone(machineId, sessionId)) return goneResponse();
     return new Response(new Uint8Array(image.bytes), {
       status: 200,
       headers: {
@@ -400,7 +434,12 @@ export class MachineHistory {
     });
   }
 
-  async #traceEvents(url: URL, machineId: string, k: HistoryFileKey): Promise<Response | null> {
+  async #traceEvents(
+    url: URL,
+    machineId: string,
+    sessionId: string,
+    k: HistoryFileKey,
+  ): Promise<Response | null> {
     const offset = intParam(url, "offset", 0, 0);
     const limit = intParam(url, "limit", 1, 200);
     if (offset === null || limit === null || limit > 1000) return null;
@@ -413,6 +452,7 @@ export class MachineHistory {
     if (to > count.held) return null;
     const held = await this.#cache.records(machineId, k, from, to);
     if (held === null) return null;
+    if (await this.#gone(machineId, sessionId)) return goneResponse();
     return Response.json({
       events: held.map((entry) => entry.record),
       offset,
@@ -433,12 +473,19 @@ export class MachineHistory {
     if (this.#analyze === undefined) return null;
     const records = await this.#cache.wholeRecords(machineId, k);
     if (records === null) return null;
+    const fact = await this.#sync.sessionOn(machineId, sessionId);
+    if (fact.kind === "gone") {
+      this.#projects.delete(`${machineId}\0${sessionId}`);
+      return goneResponse();
+    }
     let projectId = this.#projects.get(`${machineId}\0${sessionId}`) ?? null;
     if (projectId === null) {
-      projectId = await this.#sync.projectOf(machineId, sessionId);
+      projectId = fact.kind === "there" ? fact.projectId : null;
       if (projectId === null) return null;
       this.#rememberProject(machineId, sessionId, projectId);
     }
+    // A Project this server has no config for (one made on the machine alone) is priced there.
+    if (this.#hasProject !== undefined && !this.#hasProject(projectId)) return null;
     return Response.json(await this.#analyze(projectId, records));
   }
 }

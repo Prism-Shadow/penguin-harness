@@ -1030,19 +1030,58 @@ export class TraceCache {
   }
 
   /**
-   * Drops a Session's copy and its descendants' (the group its last whole list named): the
-   * machine no longer has it, so nothing of it is kept or served from here.
+   * Drops a Session's copy and those of its descendants (the group its last whole list named)
+   * that no other Session's group still names: the machine no longer has it, so nothing of it is
+   * kept or served from here, while a fork that shares its subagents keeps their copies.
    */
   async dropSession(machineId: string, sessionId: string): Promise<void> {
     if (!(this.#opened !== null || (await this.#exists()))) return;
     await this.#ready;
-    for (const member of await this.groupSessions(machineId, sessionId)) {
+    // The Session's own copy goes; a descendant's goes with it unless a Session that stays still
+    // names it (a fork shares its source's subagents), and what a kept one names stays too.
+    const members = await this.groupSessions(machineId, sessionId);
+    const dropped = new Set(members);
+    const groups = await this.#groups(machineId);
+    // Until nothing changes: every Session that stays keeps whatever its own group names.
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const group of groups) {
+        if (dropped.has(group.sessionId)) continue;
+        for (const named of group.sessions) {
+          if (named !== sessionId && dropped.delete(named)) changed = true;
+        }
+      }
+    }
+    for (const member of dropped) {
       await this.#remove(
         (state) => state.machineId === machineId && state.sessionId === member,
         this.#sessionDir(machineId, member),
         (key) => key === `${machineId}\0${member}`,
       );
     }
+  }
+
+  /** Every Session group of a machine's copy, as its `group.json` files name them. */
+  async #groups(machineId: string): Promise<Array<{ sessionId: string; sessions: string[] }>> {
+    const out: Array<{ sessionId: string; sessions: string[] }> = [];
+    const dir = path.join(this.#root, dirNameOf(machineId));
+    for (const name of await this.#list(dir)) {
+      try {
+        const group = JSON.parse(await fs.readFile(path.join(dir, name, "group.json"), "utf8")) as {
+          machineId?: unknown;
+          sessionId?: unknown;
+          sessions?: unknown;
+        };
+        if (group.machineId !== machineId || typeof group.sessionId !== "string") continue;
+        const sessions = Array.isArray(group.sessions)
+          ? group.sessions.filter((id): id is string => typeof id === "string" && id !== "")
+          : [];
+        out.push({ sessionId: group.sessionId, sessions });
+      } catch {
+        // No group here (a Session never read whole, or a directory being removed).
+      }
+    }
+    return out;
   }
 
   /** Drops every machine's directory but those of `known` (run as the hub starts). */

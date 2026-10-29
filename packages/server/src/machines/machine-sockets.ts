@@ -203,8 +203,12 @@ export class MachineSocket {
       for (const listener of this.#traffic) listener();
     });
     const tick = setInterval(() => {
+      const now = Date.now();
       const last = Math.max(heard, liveness.heardAt?.() ?? 0);
-      if (Date.now() - last >= silenceMs) {
+      // The link's bytes stand in for this socket's for a while, not for good: a channel of its
+      // own that stays silent past twice the period (not even a pong to the pings below) is
+      // half-open, however busy the rest of the link is.
+      if (now - last >= silenceMs || now - heard >= 2 * silenceMs) {
         ws.terminate();
         return;
       }
