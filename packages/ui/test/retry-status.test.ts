@@ -10,7 +10,9 @@
  *   reaches none only when the moment has come; once it has, or without words for seconds, the
  *   plain sentence shows. Only a wait counts down.
  * - Given a reason, it is not on screen: a circled "?" after the sentence, named for it, holds
- *   it; without one there is no "?".
+ *   it; without one there is no "?". Placed inline (a conversation's retry), it is on the row
+ *   after the sentence instead, and there is no "?"; in a note it is the note's detail, never its
+ *   label, so no theme recases the provider's words.
  * - Given actions, each is a button with its words, and a row without any has none; an action
  *   the caller says is in flight spins and takes no press.
  * - Given the transcript's note frame, the row is the transcript's event note, which each theme
@@ -88,6 +90,31 @@ describe("the retry row", () => {
     expect(textOf(html)).toBe("Reconnect failed after 5 attempts");
     expect(html).toContain('aria-label="More info: Reconnect failed after 5 attempts"');
     expect(render({ phase: "gaveUp", label: "Failed" })).not.toContain("More info");
+  });
+
+  it("with its reason placed inline, says it after the sentence and has no ?", () => {
+    const html = render({
+      phase: "waiting",
+      label: "Retrying (attempt 4/10)",
+      reason: "Connection timed out: upstream request timeout after 60s",
+      reasonPlacement: "inline",
+    });
+    expect(textOf(html)).toBe(
+      "Retrying (attempt 4/10) · Connection timed out: upstream request timeout after 60s",
+    );
+    expect(html).not.toContain("More info");
+  });
+
+  it("in a note, keeps the inline reason out of the label a theme may recase", () => {
+    const html = render({
+      phase: "trying",
+      label: "Retrying (attempt 4/10)",
+      reason: "503 upstream overloaded",
+      reasonPlacement: "inline",
+      frame: "note",
+    });
+    expect(/data-slot="label">([^<]*)</.exec(html)?.[1]).toBe("Retrying (attempt 4/10)");
+    expect(/data-slot="detail"[^>]*>([^<]*)</.exec(html)?.[1]).toBe(" · 503 upstream overloaded");
   });
 
   it("draws a button for each action it is given, and none without", () => {

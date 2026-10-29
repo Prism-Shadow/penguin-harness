@@ -3742,8 +3742,11 @@ Scenarios:
         `Retrying in ${seconds} s (attempt ${n}/${m})`,
       sending: (n: number, m: number) => `Retrying (attempt ${n}/${m})`,
       sent: (n: number, m: number) => `Retried (attempt ${n}/${m})`,
-      gaveUp: (attempts: number) =>
-        attempts > 1 ? `Request failed after ${attempts} attempts` : "Request failed",
+      failed: (attempts: number, cause: string, message?: string) => {
+        const why = `${cause.charAt(0).toLowerCase()}${cause.slice(1)}`;
+        return `[Failed]: ${attempts > 1 ? `all ${attempts} requests failed (${why})` : why}${message ? `: ${message}` : ""}`;
+      },
+      why: (cause: string, message?: string) => (message ? `${cause}: ${message}` : cause),
       cause: (
         status: "retryable" | "failed" | "timeout" | "malformed",
         errorCode?: string,

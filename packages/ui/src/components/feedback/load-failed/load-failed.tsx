@@ -6,8 +6,9 @@
  * as one surface: a mark; a title saying what could not be loaded — or, where the cause is known,
  * where things stand ("gpu-box is unreachable; reconnecting"); a muted line under it, the failure
  * in words or what happens next; whatever the caller adds below (the shared retry row while
- * something retries on its own); the one press that moves on; and the raw technical detail folded
- * away at the bottom, for whoever has to diagnose it.
+ * something retries on its own); the one press that moves on, a text action rather than a boxed
+ * button, so the notice stays a few lines of words; and the raw technical detail folded away at
+ * the bottom, for whoever has to diagnose it.
  *
  * Not an alarm: the words stay in the body and muted inks, never the danger ink, and the title
  * and its reason are two lines, not one "failed: <error>" string. The mark says it failed: the
@@ -18,7 +19,7 @@
  */
 import type { ReactNode } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
-import { Button } from "../../actions/button/button";
+import { TextAction } from "../../actions/text-action/text-action";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { HelpFold } from "../../overlays/info-popover/help-fold";
@@ -67,7 +68,12 @@ export function LoadFailed({
           <p className="max-w-full break-words text-sm text-fg-muted">{description}</p>
         )}
         {children}
-        {action !== null && <Button onClick={action.onClick}>{action.label}</Button>}
+        {action !== null && (
+          // At the reason's size, under it: a word to press, not a box.
+          <TextAction className="text-sm" onClick={action.onClick}>
+            {action.label}
+          </TextAction>
+        )}
         {details !== null && (
           <HelpFold title={details.title} className="mt-2 max-w-full text-left">
             <p className="break-words font-mono text-xs text-fg-muted">{details.text}</p>

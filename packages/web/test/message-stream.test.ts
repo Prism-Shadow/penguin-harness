@@ -6,12 +6,13 @@
  * returns the real behaviour, and the test keeps what the link adapter spread onto each rendered
  * anchor in order to click it.
  * It also draws a run-ending LLM failure as its error banner, with a hint under a context overflow.
- * The line a run ended on — that banner, or the marker of a run the user stopped — offers Retry
- * while it is the stream's last item and no Task runs.
+ * The line a run ended on — that banner, the marker of a run the user stopped, or a retry ladder
+ * that gave up — offers Retry while it is the stream's last item and no Task runs. A ladder that
+ * gave up says so on that same notice, with the provider's own words in sight.
  *
  * Older history above the transcript:
  * - Given the previous window failed to load, the top says so on the shared retry row with a
- *   Retry, the error kept behind its "?" rather than spelled out on screen.
+ *   Retry, the error in sight after the sentence.
  * - Given the window is being loaded again, the failure is gone and the loading line shows.
  * - Given a Retry pressed while no load can start (the stream is rebuilding after a reconnect, so
  *   the failure stays as it was), Retry must not stay disabled: the next press asks again.
@@ -66,6 +67,9 @@ const WS = "/home/user/workspaces/tmp-1";
 
 /** All rendered <a ...> opening tags. */
 const anchors = (html: string) => html.match(/<a\b[^>]*>/g) ?? [];
+/** The words of every rendered button, tags dropped. */
+const buttonWords = (html: string) =>
+  [...html.matchAll(/<button\b[^>]*>(.*?)<\/button>/g)].map((m) => m[1]!.replace(/<[^>]*>/g, ""));
 
 describe("MessageStream links", () => {
   it("a reply's link to a Workspace file renders without a target, and its click opens the file", () => {
@@ -137,17 +141,34 @@ describe("MessageStream error banner", () => {
         onAddExcerpt: () => {},
       }),
     );
-  const retry = `>${S.chat.retryRun}</button>`;
+  const offersRetry = (html: string) => buttonWords(html).includes(S.chat.retryRun);
   // A Retry run's reply lands right after the line: the held input has been sent again.
   const reply: ChatItem = { kind: "assistant_text", id: 2, text: "Done.", streaming: false };
+  const gaveUp: ChatItem = {
+    kind: "reconnect",
+    id: 1,
+    status: "retryable",
+    attempt: 6,
+    retrying: false,
+    gaveUp: true,
+    errorCode: "network",
+    errorMessage: "503 upstream overloaded",
+  };
 
   it.each<[string, ChatItem]>([
     ["a failed run's banner", { kind: "llm_error", id: 1, errorMessage: "400 Bad Request" }],
     ["a stopped run's marker", { kind: "abort", id: 1, errorCode: "user_abort" }],
+    ["a retry ladder that gave up", gaveUp],
   ])("%s offers Retry as the last line while no Task runs, and not otherwise", (_, ended) => {
-    expect(stream([ended])).toContain(retry);
-    expect(stream([ended, reply])).not.toContain(retry);
-    expect(stream([ended], true)).not.toContain(retry);
+    expect(offersRetry(stream([ended]))).toBe(true);
+    expect(offersRetry(stream([ended, reply]))).toBe(false);
+    expect(offersRetry(stream([ended], true))).toBe(false);
+  });
+
+  it("a ladder that gave up is the run's last line, its provider's words in sight, not a retry row", () => {
+    const html = stream([gaveUp]);
+    expect(html).toContain("503 upstream overloaded");
+    expect(html).not.toContain("data-retry-phase");
   });
 });
 
@@ -177,12 +198,12 @@ describe("MessageStream older history", () => {
       }),
     );
 
-  it("a window that failed to load is said at the top with a Retry, its error behind the ?", () => {
+  it("a window that failed to load is said at the top with a Retry, its error in sight", () => {
     const html = top({ error: "socket closed: ECONNRESET" });
     expect(html).toContain('data-retry-phase="gaveUp"');
     expect(html).toContain(S.chat.loadEarlierFailed);
-    expect(html).toContain(`>${S.common.retry}</button>`);
-    expect(html).not.toContain("ECONNRESET");
+    expect(html).toContain("socket closed: ECONNRESET");
+    expect(buttonWords(html)).toContain(S.common.retry);
   });
 
   it("while the window loads again, the failure is gone and the loading line shows", () => {

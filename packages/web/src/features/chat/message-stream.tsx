@@ -638,20 +638,21 @@ export function MessageStream({
               while spinning pushed the transcript down by its own height, and the prepend's
               anchoring could not give that back. */}
           {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
-            <div className="flex h-7 items-center justify-center">
+            <div className="flex min-h-7 items-center justify-center">
               {older.loading ? (
                 <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
                   <Spinner size="sm" label={S.common.loading} />
                   {S.chat.loadingEarlier}
                 </span>
               ) : older.error !== null ? (
-                // The shared retry row, stopped: the cross, the sentence, the error behind its
-                // "?", and Retry — not a red sentence that is itself the button.
+                // The shared retry row, stopped: the cross, the sentence, the error after it in
+                // the muted ink, and Retry — not a red sentence that is itself the button.
                 <RetryStatus
                   key={olderPresses}
                   phase="gaveUp"
                   label={S.chat.loadEarlierFailed}
                   reason={older.error}
+                  reasonPlacement="inline"
                   retry={{
                     label: S.common.retry,
                     onClick: () => {

@@ -1,15 +1,25 @@
 /**
  * 重试: the one retry row every retrying surface shares — a machine's reconnect in its phases at a
  * card's size and at body size, inside a machine card beside a running one, a model request's
- * retry in a conversation (wearing the transcript's note frame), the card at phone width, and the
- * "could not load" notice a pane shows in place of its content, with the row inside it while a
- * machine is being brought back. The wait counts down live, and a press holds its actions until
- * the board starts the next attempt.
+ * retry in a conversation (wearing the transcript's note frame, its cause in sight) and the line
+ * a ladder that gave up ends the run with, beside the stop marker it matches; the text actions
+ * every press takes, in both looks; the card at phone width; and the "could not load" notice a
+ * pane shows in place of its content, with the row inside it while a machine is being brought
+ * back. The wait counts down live, and a press holds its actions until the board starts the next
+ * attempt.
  */
 import { useEffect, useState } from "react";
 import { DEFAULT_MAX_TURN_ATTEMPTS } from "@prismshadow/penguin-core/interfaces";
-import { ICONS, LoadFailed, MachineCard, MachineList, RetryStatus } from "@prismshadow/penguin-ui";
-import type { MachineCardProps, RetryStatusProps } from "@prismshadow/penguin-ui";
+import {
+  ICONS,
+  LoadFailed,
+  MachineCard,
+  MachineList,
+  MessageBubble,
+  RetryStatus,
+  TextAction,
+} from "@prismshadow/penguin-ui";
+import type { MachineCardProps, RetryStatusProps, TextActionLook } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
@@ -130,8 +140,13 @@ export function RetryBoard() {
   ];
 
   // A model request's ladder: the attempt of the engine's ceiling, the first request included.
-  // Between the messages each wears the transcript's note frame, as its other notes do.
-  const why = { reason: t.chatError, reasonTitle: t.chatCause, frame: "note" as const };
+  // Between the messages each wears the transcript's note frame, as its other notes do, its
+  // cause and the provider's words after the sentence.
+  const why = {
+    reason: t.chatWhy(t.chatCause, t.chatError),
+    reasonPlacement: "inline" as const,
+    frame: "note" as const,
+  };
   const chat: RetryStatusProps[] = [
     {
       phase: "waiting",
@@ -144,21 +159,39 @@ export function RetryBoard() {
     },
     { phase: "trying", label: t.chatSending(3, DEFAULT_MAX_TURN_ATTEMPTS), ...why },
     { phase: "retried", label: t.chatSent(3, DEFAULT_MAX_TURN_ATTEMPTS), ...why },
-    {
-      phase: "gaveUp",
-      label: t.chatGaveUp(6),
-      ...why,
-      retry: { label: t.retry, onClick: noop },
-    },
   ];
   // Older history that failed to load: the same row, stopped, centred above the transcript.
   const earlier: RetryStatusProps = {
     phase: "gaveUp",
     label: t.chatEarlierFailed,
     reason: t.networkError,
+    reasonPlacement: "inline",
     retry: { label: t.retry, onClick: noop },
     className: "justify-center",
   };
+  // The lines a run ends on, in either look of the text action: the ladder that gave up, the
+  // stop marker it matches, and a failure whose provider message runs long (clamped, Expand).
+  const endLines = (look: TextActionLook) => (
+    <div className="lib-stack" style={{ maxWidth: "46rem" }}>
+      {[
+        t.chatFailed(6, t.chatCause, t.chatError),
+        t.chatAborted,
+        t.chatFailed(6, t.chatCause, t.chatLongError),
+      ].map((line, index) => (
+        <MessageBubble
+          key={index}
+          variant="notice"
+          actions={
+            <TextAction look={look} onClick={noop}>
+              {t.retry}
+            </TextAction>
+          }
+        >
+          {line}
+        </MessageBubble>
+      ))}
+    </div>
+  );
   const away = lines[1]!;
 
   return (
@@ -191,6 +224,12 @@ export function RetryBoard() {
             <RetryStatus key={index} {...props} />
           ))}
         </div>
+      </BoardGroup>
+      <BoardGroup title={t.ended} aside={t.endedHint}>
+        <p className="lib-caption">{t.lookLink}</p>
+        {endLines("link")}
+        <p className="lib-caption">{t.lookBracket}</p>
+        {endLines("bracket")}
       </BoardGroup>
       <BoardGroup title={t.loadFailed} aside={t.loadFailedHint}>
         <div className="lib-stack" style={{ maxWidth: "46rem" }}>

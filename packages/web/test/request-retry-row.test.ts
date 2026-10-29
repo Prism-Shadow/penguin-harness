@@ -9,14 +9,13 @@
  * - Given no countdown (a wait under the floor, or none), it says the attempt is going out and
  *   offers nothing.
  * - Given the retry went out, it records the attempt sent and offers nothing.
- * - Given the ladder gave up, it says how many attempts it took, and offers Retry only when the
- *   caller grants one.
- * - The provider's own message waits behind the "?" under the cause in words; without one, the
- *   cause alone.
- * - Given no presses from the caller (a subagent's run), none are offered.
+ * - The cause in words and the provider's own message sit on the row, after the sentence;
+ *   without a message, the cause alone.
+ * - Given the ladder gave up, it is the run's last line: the bracketed label, how many attempts
+ *   failed and why, then the provider's own words — the same shape as the stop marker.
  */
 import { describe, expect, it, vi } from "vitest";
-import { requestRetryRow } from "../src/features/chat/request-retry-row";
+import { requestFailedNotice, requestRetryRow } from "../src/features/chat/request-retry-row";
 import type { RequestRetryPresses } from "../src/features/chat/request-retry-row";
 import type { ReconnectItem } from "../src/lib/amsp/stream-model";
 import { setActiveStrings, zh } from "../src/lib/strings";
@@ -50,7 +49,7 @@ function rowIn(
       sentence: row.countdown === undefined ? row.label : row.countdown(23),
       due: row.label,
       reason: row.reason,
-      reasonTitle: row.reasonTitle,
+      placement: row.reasonPlacement,
       retry: row.retry?.label ?? null,
       secondary: row.secondary?.label ?? null,
       row,
@@ -105,24 +104,10 @@ describe("the model request's retry row", () => {
     expect(rowIn("en", ladder({ retrying: true })).sentence).toBe("Retried (attempt 3/10)");
   });
 
-  it("after the ladder gave up says how many attempts it took, with Retry only when the caller grants one", () => {
-    const onRetry = vi.fn(async () => {});
-    expect(rowIn("zh", ladder({ attempt: 6, gaveUp: true }), null, { onRetry })).toMatchObject({
-      phase: "gaveUp",
-      sentence: "6 次请求均失败",
-      retry: "重试",
-      secondary: null,
-    });
-    expect(rowIn("en", ladder({ attempt: 6, gaveUp: true })).sentence).toBe(
-      "Request failed after 6 attempts",
-    );
-    expect(rowIn("en", ladder({ attempt: 6, gaveUp: true })).retry).toBeNull();
-  });
-
-  it("keeps the provider's message behind the ? under the cause in words, or the cause alone", () => {
+  it("puts the cause in words and the provider's message on the row, or the cause alone", () => {
     expect(rowIn("zh", ladder())).toMatchObject({
-      reason: "upstream request timeout after 60s",
-      reasonTitle: "连接超时或网络中断",
+      reason: "连接超时或网络中断：upstream request timeout after 60s",
+      placement: "inline",
     });
     const silent: ReconnectItem = {
       kind: "reconnect",
@@ -134,7 +119,38 @@ describe("the model request's retry row", () => {
     };
     expect(rowIn("en", silent)).toMatchObject({
       reason: "Network or service temporarily unavailable",
-      reasonTitle: null,
+      placement: "inline",
     });
+  });
+});
+
+describe("the line a ladder that gave up ends the run with", () => {
+  const noticeIn = (lang: "zh" | "en", item: ReconnectItem) => {
+    setActiveStrings(lang === "en" ? en : zh);
+    try {
+      return requestFailedNotice(item);
+    } finally {
+      setActiveStrings(zh);
+    }
+  };
+
+  it("says how many attempts failed and why, then the provider's words, beside the stop marker's shape", () => {
+    const gaveUp = ladder({ attempt: 6, gaveUp: true });
+    expect(noticeIn("zh", gaveUp)).toBe(
+      "[请求失败]：6 次请求均失败（连接超时或网络中断）：upstream request timeout after 60s",
+    );
+    expect(noticeIn("en", gaveUp)).toBe(
+      "[Failed]: all 6 requests failed (connection timed out): upstream request timeout after 60s",
+    );
+    const once: ReconnectItem = {
+      kind: "reconnect",
+      id: 1,
+      status: "retryable",
+      attempt: 1,
+      retrying: false,
+      gaveUp: true,
+      errorCode: "timeout",
+    };
+    expect(noticeIn("en", once)).toBe("[Failed]: connection timed out");
   });
 });
