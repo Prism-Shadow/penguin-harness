@@ -1,3 +1,6 @@
+import { useOrgPages } from "./use-org-pages";
+import { useLocale } from "../../state/locale";
+import { glyphOf } from "../../lib/nav-icons";
 /**
  * Company mode in the sidebar (`SidebarModule.modes` and `.sections`): the work mode beside
  * development, with the organization's six pages and the company-mode pages plugins contribute
@@ -29,6 +32,8 @@ function useCompanyMode(): ModeState {
   const company = useCompany();
   const location = useLocation();
   const navOrg = useNavOrg();
+  const { locale } = useLocale();
+  const contributedPages = useOrgPages().filter((page) => page.released);
   return {
     available: company.available,
     current: company.workMode === "company",
@@ -50,6 +55,15 @@ function useCompanyMode(): ModeState {
         to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
         label: S.nav.org[key],
         icon: COMPANY_NAV_ICONS[key],
+      })),
+      ...contributedPages.map((page) => ({
+        key: page.key,
+        to:
+          navOrg === null
+            ? null
+            : `/org/${encodeURIComponent(navOrg.projectId)}/${encodeURIComponent(navOrg.orgId)}/${page.path.replace(/^\/+/, "")}`,
+        label: (locale === "zh" ? page.titleZh : page.title) ?? page.title ?? page.key,
+        icon: glyphOf(page.icon ?? page.key),
       })),
     ],
   };

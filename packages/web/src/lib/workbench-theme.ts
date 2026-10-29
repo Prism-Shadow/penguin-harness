@@ -15,6 +15,8 @@
  * Reading the app's theme is cached per appearance (the root's class, attributes and font size),
  * and a frame that already carries a theme is not stamped with it again, so re-applying on every
  * appearance change and every frame load costs a lookup, not a style resolution.
+ *
+ * A contributed page uses the same frame contract (web-app/frame-page.tsx).
  */
 import {
   DEFAULT_THEME_ID,
@@ -23,6 +25,15 @@ import {
   resolveAccent,
   type ThemeId,
 } from "@prismshadow/penguin-ui";
+
+/**
+ * What a framed page may do. Same-origin on purpose — it is what lets the theme and the key
+ * forwarding below reach into the frame — so this is no confinement: the page is trusted
+ * code the server serves (a workflow's `ui/`, an installed plugin's page), framed to keep
+ * its document apart from the app's, not to keep it from the app's API.
+ */
+export const PAGE_FRAME_SANDBOX =
+  "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads";
 
 /** Where the base stylesheet is served from (packages/web/public). */
 export const WORKBENCH_THEME_HREF = "/workbench-ui.css";

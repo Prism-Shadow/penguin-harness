@@ -1,3 +1,4 @@
+import { useLocale } from "../../state/locale";
 import { sidebarDeps } from "./deps";
 import { currentModeIndex, sectionsIn } from "./modes";
 import { useMemo, useRef, useState } from "react";
@@ -17,7 +18,7 @@ import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { NEW_CHAT_ICON, glyphOf } from "../../lib/nav-icons";
 import { navKeysFor } from "./nav-state";
-import { navPagesOf, useWebAppPages } from "../index";
+import { navPagesOf, pageTitle, useWebAppPages } from "../index";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
@@ -47,6 +48,7 @@ import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
  */
 export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
+  const { locale } = useLocale();
   const navPages = navPagesOf(useWebAppPages());
   const navigate = useNavigate();
   const { currentProject, setCurrentAgentId } = useProject();
@@ -114,11 +116,8 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             : [
                 {
                   key,
-                  to: `/${key}`,
-                  label:
-                    typeof S.nav[key as keyof typeof S.nav] === "string"
-                      ? (S.nav[key as keyof typeof S.nav] as string)
-                      : (page.title ?? key),
+                  to: page.path,
+                  label: pageTitle(page, locale),
                   icon: glyphOf(page.icon ?? key),
                   note: notes.get(key) ?? null,
                 },
