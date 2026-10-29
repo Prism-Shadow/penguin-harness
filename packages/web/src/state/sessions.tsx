@@ -222,6 +222,12 @@ interface SessionsContextValue {
    * still name it, and is not yet a machine's to be "out of reach" either.
    */
   askingMachineIds: string[];
+  /**
+   * Bumped each time a list round has every machine's answer in (or its silence): what the page
+   * compares against to know that what it heard about a machine elsewhere — the hub naming one
+   * that did not answer it — has been asked again since.
+   */
+  listRound: number;
   reload: () => Promise<void>;
   /** Fetches the first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
   loadMoreFor: (agentIds: string[], workspaceGroup?: string) => Promise<void>;
@@ -374,6 +380,8 @@ interface SessionsStoreState {
    */
   silentMachineIds: string[];
   askingMachineIds: string[];
+  /** Rounds whose machine answers are all in (see the context's `listRound`). */
+  listRound: number;
   /**
    * machineId → the Agents THAT machine runs, which are not this Project's.
    *
@@ -793,6 +801,7 @@ export function createSessionsStore() {
       offlineMachineIds: [],
       silentMachineIds: [],
       askingMachineIds: [],
+      listRound: 0,
       agentIdsByMachine: {},
 
       sessions: [],
@@ -1180,7 +1189,10 @@ export function createSessionsStore() {
           retries = 0;
           applyAnswers(here, new Set(machineSources.map(([source]) => source)));
           applied = true;
-          if (machineSources.length === 0) return;
+          if (machineSources.length === 0) {
+            set({ listRound: get().listRound + 1 });
+            return;
+          }
           set({ loading: false });
           const there = (
             await Promise.all(machineSources.map(([source, wanted]) => ask(source, wanted)))
@@ -1196,6 +1208,7 @@ export function createSessionsStore() {
           }
           if (!current()) return;
           applyAnswers([...here, ...there], new Set());
+          set({ listRound: get().listRound + 1 });
         } finally {
           reloadsInFlight -= 1;
           // Only a reload that produced a list may report one. Abandoning above leaves the
@@ -2118,6 +2131,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       machinesUnreachable: unreachable.length > 0,
       offlineMachineIds: unreachable,
       askingMachineIds: state.askingMachineIds,
+      listRound: state.listRound,
       reload: state.reload,
       loadMoreFor: state.loadMoreFor,
       add: state.add,

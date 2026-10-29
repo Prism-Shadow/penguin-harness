@@ -24,7 +24,10 @@
  *   its last, keeping its last reading between them; a scroll-up meanwhile asks nothing more.
  * - Given a subagent spawned in a backfilled Task speaking again live, its history stays with it —
  *   also when it speaks, or its approval is re-sent, before that window has landed: the window's
- *   copy takes over the child, and no stray card is left in the newest Task.
+ *   copy takes over the child, and no stray card is left in the newest Task. A live record the
+ *   window also carries shows once (so does a child a resync's bridge reads again); a long
+ *   streamed reply does not exhaust the log; and a card of the running Task the older child was
+ *   bound to by position is let go for that Task's own child.
  * - Given an older window landing, the transcript below it is untouched: the same items, the
  *   same ids, so the reading position holds.
  * - Given a machine's read reporting progress, it shows as the window's until the window is on
@@ -1084,6 +1087,133 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     );
     expect(childReplies(h)).toEqual(["child history", "child live", "child live 2"]);
     expect(h.controller.model.items.filter((i) => i.kind === "subagent")).toHaveLength(0);
+  });
+
+  it("a child's live record the window also carries (cut after it was written) shows once", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 1 }));
+    await p;
+    const live = withOrigin(at(assistantText("child live"), "2026-07-05T00:01:00.000Z"), "c1");
+    h.controller.handleRecord(live, "e1-9");
+    h.resolveOlder([...SPAWN_TASK, live], pageInfo({ earlierTurns: 0 }));
+    await flush();
+    expect(childReplies(h)).toEqual(["child history", "child live"]);
+  });
+
+  it("a child the running Task spawned, read again by a resync's bridge, shows each record once", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running" });
+    h.resolveLoad(
+      [placed(HISTORY_TASK[0]!, "2:10"), placed(HISTORY_TASK[1]!, "2:11")],
+      undefined,
+      null,
+      pageInfo({ before: "2:10", earlierTurns: 30 }),
+    );
+    await p;
+    // The backfill fills up to 20 Tasks, with more history above.
+    h.resolveOlder(
+      [at(userText("older"), "2026-07-04T00:00:00.000Z")],
+      pageInfo({ before: "1:0", earlierTurns: 11, units: 19 }),
+    );
+    await flush();
+    const spawn = at(
+      toolCall({ name: "run_subagent", arguments: '{"prompt":"go2"}', toolCallId: "r2" }),
+      "2026-07-05T00:00:04.000Z",
+    );
+    const go2 = withOrigin(at(userText("go2"), "2026-07-05T00:00:05.000Z"), "c2");
+    const says = withOrigin(at(assistantText("c2 says"), "2026-07-05T00:00:06.000Z"), "c2");
+    h.controller.handleRecord(spawn, "e1-1");
+    h.controller.handleRecord(go2, "e1-2");
+    h.controller.handleRecord(says, "e1-3");
+    // A long drop: the tail moved on, and the bridge reads the Task that spawned c2.
+    h.controller.handleServer({ type: "resync_required" });
+    h.resolveLoad(
+      [placed(at(userText("new"), "2026-07-06T00:00:00.000Z"), "3:0")],
+      undefined,
+      null,
+      pageInfo({ before: "3:0", earlierTurns: 31 }),
+    );
+    await flush();
+    h.resolveOlder(
+      [
+        placed(at(userText("before"), "2026-07-04T23:00:00.000Z"), "2:5"),
+        placed(HISTORY_TASK[0]!, "2:10"),
+        placed(HISTORY_TASK[1]!, "2:11"),
+        placed(spawn, "2:12"),
+        go2,
+        says,
+      ],
+      pageInfo({ before: "2:5", earlierTurns: 29, units: 2 }),
+    );
+    await flush();
+    const c2 = new Map([...h.controller.prefixSubagents, ...h.controller.model.subagents]).get(
+      "c2",
+    );
+    expect(
+      (c2?.items ?? [])
+        .filter((i) => i.kind === "assistant_text")
+        .map((i) => (i as AssistantTextItem).text),
+    ).toEqual(["c2 says"]);
+  });
+
+  it("a child that streams more than 2,000 records before its window lands still keeps its history", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 1 }));
+    await p;
+    // One long streamed reply: thousands of deltas, then the reply whole.
+    h.controller.handleRecord(withOrigin(partialText("start", "a"), "c1"), "e1-10");
+    for (let i = 0; i < 2_500; i += 1) {
+      h.controller.handleRecord(withOrigin(partialText("delta", "a"), "c1"), `e1-${11 + i}`);
+    }
+    h.controller.handleRecord(
+      withOrigin(at(assistantText("long reply"), "2026-07-05T00:01:00.000Z"), "c1"),
+      "e1-3000",
+    );
+    h.resolveOlder(SPAWN_TASK, pageInfo({ earlierTurns: 0 }));
+    await flush();
+    expect(childReplies(h)).toEqual(["child history", "long reply"]);
+    expect(h.controller.model.items.filter((i) => i.kind === "subagent")).toHaveLength(0);
+  });
+
+  it("a run_subagent card of the running Task the older child was bound to by position is let go for its own child", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running" });
+    // The running Task has just spawned its own subagent: r2, allowed, no output yet.
+    h.resolveLoad(
+      [
+        at(userText("now"), "2026-07-05T00:00:00.000Z"),
+        at(
+          toolCall({ name: "run_subagent", arguments: '{"prompt":"new"}', toolCallId: "r2" }),
+          "2026-07-05T00:00:01.000Z",
+        ),
+        at(approvalDecision("allow", "r2"), "2026-07-05T00:00:01.500Z"),
+      ],
+      undefined,
+      null,
+      pageInfo({ before: "2:10", earlierTurns: 1 }),
+    );
+    await p;
+    // The older Task's background child c1 speaks before r2's child does.
+    h.controller.handleRecord(
+      withOrigin(at(assistantText("c1 live"), "2026-07-05T00:00:02.000Z"), "c1"),
+      "e1-9",
+    );
+    h.resolveOlder(SPAWN_TASK, pageInfo({ earlierTurns: 0 }));
+    await flush();
+    const r2 = findToolCard(h.controller.model, [], "r2") as ToolCallItem;
+    expect(r2.subagent).toBeUndefined();
+    // r2's own child speaks, opening with r2's prompt: it binds to r2.
+    h.controller.handleRecord(
+      withOrigin(at(userText("new"), "2026-07-05T00:00:03.000Z"), "c9"),
+      "e1-10",
+    );
+    expect(r2.subagentSessionId).toBe("c9");
   });
 
   it("a failed backfill surfaces on older.error, stops the backfill, and can be retried", async () => {

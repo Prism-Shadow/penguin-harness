@@ -442,13 +442,28 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * subagent of an older Task speaking again, or its approval re-sent on subscribe, while the
    * window that holds its history is still to come — with every record routed to each since, in
    * order. When an older window brings that child, the window's copy takes its place and these
-   * records are fed to it again (see takeOverLiveChildren). Bounded: a child that outgrows the
-   * log keeps what the live model made of it (null).
+   * records are fed to it again (see takeOverLiveChildren). Bounded (see noteChildRecord), and
+   * released once the window lands or the child turns out to be the newest Task's own.
    */
-  const liveOnlyChildren = new Map<string, AmspRecord[] | null>();
+  const liveOnlyChildren = new Map<string, AmspRecord[]>();
+  /** At most this many complete records are kept per child; past it, the oldest go first. */
   const LIVE_CHILD_LOG = 2_000;
 
-  /** Notes a record about to be routed to a child of the live model (see liveOnlyChildren). */
+  /** `msg` as its child sees it: the first origin hop stripped. */
+  const forChild = (msg: AmspRecord): AmspRecord => {
+    const rest = msg.origin!.slice(1);
+    const forwarded: AmspRecord = { ...msg };
+    if (rest.length > 0) forwarded.origin = rest;
+    else delete forwarded.origin;
+    return forwarded;
+  };
+
+  /**
+   * Notes a record about to be routed to a child of the live model (see liveOnlyChildren). A
+   * streamed fragment is kept only until its complete record arrives (the record replays it
+   * whole), so one long streamed reply costs one entry; the cap counts complete records and,
+   * reached, lets the oldest go rather than the history.
+   */
   const noteChildRecord = (msg: AmspRecord): void => {
     const head = msg.origin?.[0];
     if (head === undefined) return;
@@ -458,39 +473,73 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       liveOnlyChildren.set(head, [msg]);
       return;
     }
-    const log = liveOnlyChildren.get(head);
-    if (log === undefined || log === null) return;
-    if (log.length >= LIVE_CHILD_LOG) liveOnlyChildren.set(head, null);
-    else log.push(msg);
+    let log = liveOnlyChildren.get(head);
+    if (log === undefined) return;
+    if (!isPartialPayload(msg.payload)) {
+      log = log.filter((entry) => !isPartialPayload(entry.payload));
+      if (log.length >= LIVE_CHILD_LOG) log = log.slice(log.length - LIVE_CHILD_LOG + 1);
+      liveOnlyChildren.set(head, log);
+    }
+    log.push(msg);
+  };
+
+  /**
+   * A child of the live model whose opening prompt is the prompt of the run_subagent card of the
+   * newest Task it is bound to is that Task's own (the exact binding, not the positional one):
+   * no older window holds it, and its log goes.
+   */
+  const releaseIfNew = (msg: AmspRecord): void => {
+    const head = msg.origin?.[0];
+    if (head === undefined || msg.origin!.length !== 1 || !liveOnlyChildren.has(head)) return;
+    const p = msg.payload as { type?: string; role?: string; text?: unknown };
+    if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user") return;
+    const live = model.subagents.get(head);
+    const card = model.items.find((i) => i.kind === "tool_call" && i.subagent === live);
+    if (card === undefined || card.kind !== "tool_call") return;
+    let prompt: unknown;
+    try {
+      prompt = (JSON.parse(card.argumentsText) as { prompt?: unknown } | null)?.prompt;
+    } catch {
+      return;
+    }
+    if (typeof p.text === "string" && prompt === p.text) liveOnlyChildren.delete(head);
   };
 
   /**
    * An older window just built holds a child the live model made without its history: the
    * window's copy becomes the child — history first, then every record the live one took, fed
-   * again in order — and the card the first record left at the end of the newest Task goes, the
-   * child's own run_subagent card in the window being where it belongs. Merging a frozen
-   * window's child into the live one instead would leave two models of one child in play.
+   * again in order through the same overlap gate as a replayed buffer (a record the window was
+   * cut after carries is not taken twice) — and the card the first record left at the end of the
+   * newest Task goes, the child's own run_subagent card in the window being where it belongs. A
+   * card of the newest Task the live child was bound to by position only lets it go, so that
+   * Task's own child binds there when it speaks. Merging a frozen window's child into the live
+   * one instead would leave two models of one child in play.
    */
-  const takeOverLiveChildren = (window: StreamModel): void => {
+  const takeOverLiveChildren = (window: StreamModel, records: readonly AmspRecord[]): void => {
     for (const [sid, child] of window.subagents) {
       const log = liveOnlyChildren.get(sid);
       if (log === undefined) continue;
       liveOnlyChildren.delete(sid);
       const live = model.subagents.get(sid);
-      if (log === null || live === undefined || live === child) continue;
+      if (live === undefined || live === child) continue;
       const stray = model.items.findIndex((i) => i.kind === "subagent" && i.model === live);
       if (stray >= 0) model.items.splice(stray, 1);
       for (const item of model.items) {
-        if (item.kind === "tool_call" && item.subagent === live) item.subagent = child;
+        if (item.kind === "tool_call" && item.subagent === live) {
+          delete item.subagent;
+          delete item.subagentSessionId;
+        }
       }
       model.unconfirmedSubagents.delete(sid);
       model.subagents.set(sid, child);
-      for (const msg of log) {
-        const rest = msg.origin!.slice(1);
-        const forwarded: AmspRecord = { ...msg };
-        if (rest.length > 0) forwarded.origin = rest;
-        else delete forwarded.origin;
-        pushMessage(child, forwarded, now());
+      const held = records.filter((m) => m.origin?.[0] === sid).map(forChild);
+      const dedup = buildDedupIndex(held, held.length);
+      for (const msg of log.map(forChild)) {
+        if (!isPartialPayload(msg.payload) && isDuplicate(dedup, msg)) {
+          discardFragmentFor(child, msg);
+          continue;
+        }
+        pushMessage(child, msg, now());
       }
     }
   };
@@ -532,6 +581,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     }
     noteChildRecord(msg);
     pushMessage(model, msg, now());
+    releaseIfNew(msg);
   };
 
   const handleServer = (ev: ServerEvent): void => {
@@ -552,6 +602,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           else delete msg.origin;
           noteChildRecord(msg);
           pushMessage(model, msg, now());
+          releaseIfNew(msg);
           deps.onModelChange();
         } else if (card.elidedCall !== undefined) {
           // A history window folded this call's long arguments (a file to write, an edit); the
@@ -772,7 +823,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         // The tail moved on: the windows between join the earlier ones, after them.
         for (const w of bridged) {
           const m = freeze(w, w.page!);
-          takeOverLiveChildren(m);
+          takeOverLiveChildren(m, w.messages);
           prefixItems = [...prefixItems, ...m.items];
           // The server's count of the whole window, the part before the cut included: that part
           // is the earlier windows' already, so the sum can only exceed what is on screen — and
@@ -882,7 +933,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // full transcript with no envelope; prepending that would duplicate history.
       if (res.page === undefined) throw new Error("windowed history not supported");
       const m = freeze(res, res.page);
-      takeOverLiveChildren(m);
+      takeOverLiveChildren(m, res.messages);
       prefixItems = [...m.items, ...prefixItems];
       prefixUnits += res.page.units;
       // Child sessions live in exactly one window (a spawn is contained in its Task),

@@ -20,11 +20,14 @@ export type RouteReach = "answered" | "asking" | "unanswered";
 export function routeReach(state: {
   /** The machine the Session is known to live on, or null when unknown or this server. */
   owner: string | null;
+  /** The Session is known to live on this server (seen in its own list): this server answered. */
+  local?: boolean;
   /** Machines out of reach: no connection held, or silent in the list's last round. */
   offline: readonly string[];
   /** Machines the list is asking and has no answer from yet. */
   asking: readonly string[];
 }): RouteReach {
+  if (state.local === true && state.owner === null) return "answered";
   const counts = (ids: readonly string[]) =>
     state.owner === null ? ids.length > 0 : ids.includes(state.owner);
   if (counts(state.asking)) return "asking";
@@ -36,16 +39,39 @@ export function routeReach(state: {
  * What a failed lookup settles: `missing` (the Session does not exist — a 404 with every
  * possible holder answering), `doubt` (a holder had not answered: nothing is settled, and the
  * lookup is made again once they have), or `failed` (no answer to be had, with every holder
- * answering: not a verdict about the Session either).
+ * answering: not a verdict about the Session either). The hub's own `machine_no_answer` — a
+ * machine it asked gave no answer in time — is a doubt whatever this page knows of the
+ * machines; a hub from before that answer says 404 there, which the page's own knowledge of
+ * the silent machines turns into the same doubt.
  */
 export type LookupVerdict = "missing" | "doubt" | "failed";
 
+/** The hub's answer when a machine that could hold the Session did not answer in time. */
+export const MACHINE_NO_ANSWER = "machine_no_answer";
+
 export function lookupVerdict(
-  failure: { status: number | null },
+  failure: { status: number | null; code?: string | null },
   reach: RouteReach,
 ): LookupVerdict {
+  if (failure.code === MACHINE_NO_ANSWER) return "doubt";
   if (reach !== "answered") return "doubt";
   return failure.status === 404 ? "missing" : "failed";
+}
+
+/**
+ * The machines a `machine_no_answer` names, from its details: `machineIds` (several, comma
+ * separated) or `machineId` (one). Empty when it names none.
+ */
+export function silentMachinesOf(details: Readonly<Record<string, string>> | undefined): string[] {
+  const several = details?.machineIds;
+  if (several !== undefined && several !== "") {
+    return several
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => id !== "");
+  }
+  const one = details?.machineId;
+  return one === undefined || one === "" ? [] : [one];
 }
 
 /**
