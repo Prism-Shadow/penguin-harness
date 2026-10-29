@@ -88,6 +88,17 @@ function noAnswer(sessionId: string, silent: readonly SilentMachine[]): Response
   );
 }
 
+/** The answer when the machine holding a Session will not show it to this server (`403 session_forbidden`). */
+function forbidden(sessionId: string, machineId: string, alias: string | null): Response {
+  return machineError(
+    403,
+    "session_forbidden",
+    `The machine holding session ${sessionId} does not let this server read it.`,
+    machineId,
+    alias,
+  );
+}
+
 /** The code and message of an error body in the API's shape; empty for anything else. */
 function errorOf(text: string): { code?: string; message?: string } {
   try {
@@ -134,8 +145,12 @@ export class SessionForward {
     const { index, machines, relay } = this.deps;
     let fleet: Promise<MachineCandidate[]> | null = null;
     const fleetOf = () => (fleet ??= this.#fleet(projectIds));
-    const { place, silent } = await index.resolve(sessionId, fleetOf);
-    if (place === null) return silent.length === 0 ? null : noAnswer(sessionId, silent);
+    const { place, silent, refused } = await index.resolve(sessionId, fleetOf);
+    if (place === null) {
+      // A machine that holds it and will not show it: the refusal, as it said it.
+      if (refused.length > 0) return forbidden(sessionId, refused[0]!.machineId, refused[0]!.alias);
+      return silent.length === 0 ? null : noAnswer(sessionId, silent);
+    }
     const { machineId } = place;
     const aliasOf = async () =>
       (await fleetOf()).find((machine) => machine.machineId === machineId)?.alias ?? null;
@@ -170,7 +185,12 @@ export class SessionForward {
     );
 
     if (answer.status === 401 || answer.status === 403) {
-      const { message } = errorOf(await answer.text().catch(() => ""));
+      const { code, message } = errorOf(await answer.text().catch(() => ""));
+      // The machine knows the Session and will not show it to this server: not a deletion, and
+      // not this server's session refused either.
+      if (answer.status === 403 && code === "session_forbidden") {
+        return forbidden(sessionId, machineId, await aliasOf());
+      }
       return machineError(
         502,
         "machine_refused",

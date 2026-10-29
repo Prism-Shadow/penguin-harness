@@ -66,8 +66,17 @@ export class ServerPredatesSocket extends Error {
  */
 export interface MachineSocketLiveness {
   heardAt?: () => number | null;
+  /** The link's bytes per second lately (LinkActivity.rate). */
+  rate?: () => number;
   silenceMs?: number;
 }
+
+/**
+ * What the machine's ssh server may queue for one channel ahead of this socket's bytes (an
+ * OpenSSH channel window): on a busy link this socket's own silence is half-open only once it
+ * outlasts that much at the link's rate.
+ */
+export const CHANNEL_QUEUE_BYTES = 2 * 1024 * 1024;
 
 export interface MachineSocketTarget {
   agent: http.Agent;
@@ -206,9 +215,12 @@ export class MachineSocket {
       const now = Date.now();
       const last = Math.max(heard, liveness.heardAt?.() ?? 0);
       // The link's bytes stand in for this socket's for a while, not for good: a channel of its
-      // own that stays silent past twice the period (not even a pong to the pings below) is
+      // own that stays silent (not even a pong to the pings below) past what another channel can
+      // queue ahead of it at the link's rate — and never less than twice the period — is
       // half-open, however busy the rest of the link is.
-      if (now - last >= silenceMs || now - heard >= 2 * silenceMs) {
+      const rate = liveness.rate?.() ?? 0;
+      const ownLimit = Math.max(2 * silenceMs, rate > 0 ? (CHANNEL_QUEUE_BYTES / rate) * 1000 : 0);
+      if (now - last >= silenceMs || now - heard >= ownLimit) {
         ws.terminate();
         return;
       }
@@ -397,6 +409,7 @@ export class MachineSockets {
    */
   readonly #settle: ((machineId: string) => StreamSettle | null) | undefined;
   readonly #heardAt: ((machineId: string) => number | null) | undefined;
+  readonly #rateOf: ((machineId: string) => number) | undefined;
   readonly #silenceMs: number | undefined;
   #closed = false;
 
@@ -413,6 +426,8 @@ export class MachineSockets {
       settle?: (machineId: string) => StreamSettle | null;
       /** When bytes last came from a machine on any connection to it (MachinesService.links). */
       heardAt?: (machineId: string) => number | null;
+      /** How fast bytes come from a machine lately (MachinesService.links). */
+      rateOf?: (machineId: string) => number;
       /** The silence a socket is dropped after (MachineSocketLiveness.silenceMs). */
       silenceMs?: number;
     } = {},
@@ -421,6 +436,7 @@ export class MachineSockets {
     this.#announce = options.announce ?? (() => undefined);
     this.#settle = options.settle;
     this.#heardAt = options.heardAt;
+    this.#rateOf = options.rateOf;
     this.#silenceMs = options.silenceMs;
   }
 
@@ -461,8 +477,10 @@ export class MachineSockets {
    */
   async #dial(machineId: string, target: MachineSocketTarget): Promise<MachineSocket> {
     const heardAt = this.#heardAt;
+    const rateOf = this.#rateOf;
     const liveness: MachineSocketLiveness = {
       ...(heardAt !== undefined ? { heardAt: () => heardAt(machineId) } : {}),
+      ...(rateOf !== undefined ? { rate: () => rateOf(machineId) } : {}),
       ...(this.#silenceMs !== undefined ? { silenceMs: this.#silenceMs } : {}),
     };
     try {

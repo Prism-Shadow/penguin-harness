@@ -81,6 +81,8 @@ export const SESSION_CONFIRM_TTL_MS = 30_000;
  * (a slow disk, a hung read): its readers are told the machine is slow, and the stream goes on.
  */
 export const MACHINE_STREAM_STALL_MS = 60_000;
+/** The most Sessions whose machine's word is kept at once (HistorySync.sessionOn). */
+const FACTS_KEPT = 10_000;
 /** A window the copy cannot be assembled into is read again this often before it is an error. */
 const ASSEMBLY_ATTEMPTS = 3;
 /**
@@ -139,6 +141,8 @@ export interface HistorySyncDeps {
   confirmTtlMs?: number;
   /** How long a stream may carry only beats before its readers are told the machine is slow. */
   stallMs?: number;
+  /** The most Sessions whose machine's word is kept (FACTS_KEPT). */
+  factsKept?: number;
   retryFirstMs?: number;
   retryMaxMs?: number;
   /** Test observability: each run of Trace bytes a machine stream delivered, as it was handled. */
@@ -151,9 +155,16 @@ export interface HistorySyncDeps {
   }) => void;
 }
 
-/** What a machine says of a Session (HistorySync.sessionOn). */
+/**
+ * What a machine says of a Session (HistorySync.sessionOn): there (with its Project over
+ * there), gone (`session_not_found`), refused (`session_forbidden`: it is there, but not shown
+ * to this server), or unknown (away, silent, or no usable answer).
+ */
 export type SessionFact =
-  { kind: "there"; projectId: string | null } | { kind: "gone" } | { kind: "unknown" };
+  | { kind: "there"; projectId: string | null }
+  | { kind: "gone" }
+  | { kind: "refused" }
+  | { kind: "unknown" };
 
 /** A window read, in the trace service's terms. */
 export type WindowRead = MessagesPageRequest | { kind: "full" };
@@ -870,6 +881,9 @@ class HistoryJob {
       const stallMs = this.deps.stallMs ?? MACHINE_STREAM_STALL_MS;
       let moved = this.#clock.now();
       let slowSaid = false;
+      // Frames taken from the socket and not yet handled (written down, acknowledged): while
+      // any wait, the slow side is this server — the machine beats because it waits on the acks.
+      let unacked = 0;
       const slow = (said: boolean): void => {
         slowSaid = said;
         const waiting: Waiting = said ? { reason: "slow", attempt: 0, nextAt: 0 } : null;
@@ -914,8 +928,9 @@ class HistoryJob {
           arm();
           if (frame.event !== "ping") {
             moved = heard;
+            unacked += 1;
             if (slowSaid) slow(false);
-          } else if (!slowSaid && heard - moved >= stallMs) {
+          } else if (!slowSaid && unacked === 0 && heard - moved >= stallMs) {
             slow(true);
           }
           chain = chain
@@ -926,6 +941,9 @@ class HistoryJob {
               if (frame.event === "ping") return;
               handled += frame.data.length;
               socket.ack(id, handled);
+              // The machine may send again from here: its minute counts from this ack too.
+              unacked -= 1;
+              moved = this.#clock.now();
             })
             .catch((err: unknown) => {
               this.deps.log(
@@ -1392,28 +1410,28 @@ export class HistorySync {
   }
 
   /**
-   * What the machine says of a Session the copy answers for: there (with its Project over
-   * there), gone (its `404 session_not_found`: the copy is dropped, its readers end), or unknown
-   * (away, or no usable answer). Asked (`GET /api/sessions/:id`, a few hundred bytes) at most
-   * once per `confirmTtlMs` per Session, concurrent askers sharing one ask; an unknown is not kept.
+   * What the machine says of a Session the copy answers for (SessionFact); a `gone` drops the
+   * copy and ends its readers. Asked (`GET /api/sessions/:id`, a few hundred bytes) at most once
+   * per `confirmTtlMs` per Session, concurrent askers sharing one ask, and every answer of a
+   * machine that was asked but a `gone` is kept for that long — an unclear one too, so a silent
+   * machine is not asked on each read; a machine that is away is asked again once it is back.
    */
   sessionOn(machineId: string, sessionId: string): Promise<SessionFact> {
+    const known = this.known(machineId, sessionId);
+    if (known !== null) return Promise.resolve(known);
     const key = `${machineId}\0${sessionId}`;
-    const now = this.#clock.now();
-    const known = this.#facts.get(key);
-    if (
-      known !== undefined &&
-      now - known.at < (this.deps.confirmTtlMs ?? SESSION_CONFIRM_TTL_MS)
-    ) {
-      return Promise.resolve(known.fact);
-    }
     let asking = this.#asking.get(key);
     if (asking === undefined) {
       asking = this.#askSession(machineId, sessionId)
-        .then((fact) => {
-          if (fact.kind === "there") this.#facts.set(key, { at: this.#clock.now(), fact });
-          else this.#facts.delete(key);
-          if (fact.kind === "gone") this.sessionDeleted(machineId, sessionId);
+        .then(({ fact, asked }) => {
+          if (fact.kind === "gone") {
+            this.#facts.delete(key);
+            this.sessionDeleted(machineId, sessionId);
+          } else if (asked) {
+            // A machine that was asked: its word stands, an unclear one too. One that could
+            // not be asked (away) cost nothing, and is asked again the moment it is back.
+            this.#remember(key, fact);
+          }
           return fact;
         })
         .finally(() => this.#asking.delete(key));
@@ -1422,9 +1440,51 @@ export class HistorySync {
     return asking;
   }
 
-  async #askSession(machineId: string, sessionId: string): Promise<SessionFact> {
+  /** What the machine said of the Session within the TTL (sessionOn), or null. */
+  known(machineId: string, sessionId: string): SessionFact | null {
+    const key = `${machineId}\0${sessionId}`;
+    const known = this.#facts.get(key);
+    if (known === undefined) return null;
+    if (this.#clock.now() - known.at >= (this.deps.confirmTtlMs ?? SESSION_CONFIRM_TTL_MS)) {
+      this.#facts.delete(key);
+      return null;
+    }
+    return known.fact;
+  }
+
+  /**
+   * Asks the machine about the Session in the background when its last word is older than the
+   * TTL (sessionOn): a read the copy answers does not wait on it, and a `gone` drops the copy, so
+   * the read after it finds none.
+   */
+  check(machineId: string, sessionId: string): void {
+    if (this.known(machineId, sessionId) !== null) return;
+    this.sessionOn(machineId, sessionId).catch((err: unknown) => {
+      this.deps.log(
+        `[machines] asking ${machineId} about ${sessionId} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+  }
+
+  /** Keeps a machine's word for the TTL, the least recently told first to go past FACTS_KEPT. */
+  #remember(key: string, fact: SessionFact): void {
+    this.#facts.delete(key);
+    this.#facts.set(key, { at: this.#clock.now(), fact });
+    if (this.#facts.size > (this.deps.factsKept ?? FACTS_KEPT)) {
+      this.#facts.delete(this.#facts.keys().next().value!);
+    }
+  }
+
+  async #askSession(
+    machineId: string,
+    sessionId: string,
+  ): Promise<{ fact: SessionFact; asked: boolean }> {
     const target = await this.deps.target(machineId).catch(() => null);
-    if (target === null) return { kind: "unknown" };
+    if (target === null) return { fact: { kind: "unknown" }, asked: false };
+    return { fact: await this.#askOver(machineId, sessionId, target), asked: true };
+  }
+
+  async #askOver(machineId: string, sessionId: string, target: ProxyTarget): Promise<SessionFact> {
     const res = await this.deps
       .http(
         machineId,
@@ -1439,6 +1499,8 @@ export class HistorySync {
       error?: { code?: unknown };
     } | null;
     if (res.status === 404 && body?.error?.code === "session_not_found") return { kind: "gone" };
+    // The machine will not show this server's admin the Session: refused, never deleted.
+    if (res.status === 403 && body?.error?.code === "session_forbidden") return { kind: "refused" };
     if (!res.ok) return { kind: "unknown" };
     const projectId = body?.session?.projectId;
     return {

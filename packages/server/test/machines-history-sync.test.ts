@@ -50,6 +50,7 @@ import type { ProxyTarget } from "../src/machines/proxy.js";
 import { TraceCache } from "../src/machines/trace-cache.js";
 import { decodeHistoryHave } from "../src/services/history-wire.js";
 import {
+  HistorySync,
   MACHINE_STREAM_STALL_MS,
   MACHINE_STREAM_WATCHDOG_MS,
   SESSION_CONFIRM_TTL_MS,
@@ -587,7 +588,9 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
   async function slowSocket(port: number, links?: LinkActivity) {
     const own = new MachineSockets(() => undefined, {
       silenceMs: SILENCE,
-      ...(links !== undefined ? { heardAt: (id: string) => links.heardAt(id) } : {}),
+      ...(links !== undefined
+        ? { heardAt: (id: string) => links.heardAt(id), rateOf: (id: string) => links.rate(id) }
+        : {}),
     });
     close.push(() => own.close());
     const got = await own.socketFor(MACHINE, {
@@ -602,6 +605,8 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     return { socket: got.socket, closedAt: () => closedAt };
   }
   const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  /** Lets an ask the hub started behind an answer reach the machine, if it was going to. */
+  const settle = () => pause(100);
 
   it("keeps a machine's socket up while one message trickles in past its silence, telling the machine it hears it, and drops it after true silence", async () => {
     let valve: Awaited<ReturnType<typeof valveTo>> | null = null;
@@ -642,33 +647,61 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     expect(closedAt()! - lastByte).toBeGreaterThanOrEqual(SILENCE - 50);
   }, 15_000);
 
-  it("keeps a machine's socket up on another connection's bytes for a while, and drops it once its own channel has been silent twice the period, however busy the link", async () => {
+  /** Bytes at `perTick` every 50 ms on another connection to the machine, until stopped. */
+  function busyLinkOf(links: LinkActivity, perTick: number) {
+    let busy = true;
+    let last = Date.now();
+    void (async () => {
+      while (busy) {
+        links.heard(MACHINE, perTick);
+        last = Date.now();
+        await pause(50);
+      }
+    })();
+    const stop = () => {
+      busy = false;
+      return last;
+    };
+    close.push(() => void stop());
+    return stop;
+  }
+
+  it("drops a machine's socket whose own channel has been silent twice the period on a link fast enough that nothing could hold it back", async () => {
     const machine = await scriptedMachine(() => undefined);
     close.push(machine.close);
     const valve = await valveTo(machine.port);
     close.push(valve.close);
     const links = new LinkActivity();
     const { closedAt } = await slowSocket(valve.port, links);
-    // Nothing more comes back on the socket's own connection, not even an answer to a ping;
-    // the rest of the link stays busy throughout.
+    // Nothing more comes back on the socket's own connection, not even an answer to a ping,
+    // while the rest of the link carries some 20 MB/s.
     valve.shut();
     const shut = Date.now();
-    let busy = true;
-    void (async () => {
-      while (busy) {
-        links.heard(MACHINE);
-        await pause(50);
-      }
-    })();
-    close.push(() => {
-      busy = false;
-    });
+    const stop = busyLinkOf(links, 1_000_000);
 
     await pause(1.5 * SILENCE);
     expect(closedAt()).toBeNull();
     await waitFor(() => closedAt() !== null, 4 * SILENCE);
     expect(closedAt()! - shut).toBeGreaterThanOrEqual(2 * SILENCE - 50);
-    busy = false;
+    stop();
+  }, 15_000);
+
+  it("keeps a machine's socket whose own channel is starved behind a slow busy link, and drops it once the whole link is idle", async () => {
+    const machine = await scriptedMachine(() => undefined);
+    close.push(machine.close);
+    const valve = await valveTo(machine.port);
+    close.push(valve.close);
+    const links = new LinkActivity();
+    const { closedAt } = await slowSocket(valve.port, links);
+    // Some 10 KB/s on another channel: what it can queue ahead of this socket takes minutes.
+    valve.shut();
+    const stop = busyLinkOf(links, 500);
+
+    await pause(5 * SILENCE);
+    expect(closedAt()).toBeNull();
+    const lastByte = stop();
+    await waitFor(() => closedAt() !== null, 4 * SILENCE);
+    expect(closedAt()! - lastByte).toBeGreaterThanOrEqual(SILENCE - 50);
   }, 15_000);
 
   it("tells the reader the machine is slow when its stream carries only beats for a minute, and goes on", async () => {
@@ -712,53 +745,184 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     expect(machine.calls("/history-lines")).toHaveLength(1);
   });
 
-  it("asks the machine whether a Session the copy answers for is still there at most once a while, and drops it once the machine says it is gone", async () => {
-    let said: "there" | "gone" = "there";
-    let asked = 0;
+  it("does not call the machine slow while this server is the one behind on writing what it sent", async () => {
+    let carry: ((name: string, data: unknown) => void) | null = null;
+    const machine = await scriptedMachine((ws, id) => {
+      start(ws, id);
+      event(ws, id, "window", windowOf(FILE));
+      event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE });
+      carry = (name, data) => event(ws, id, name, data);
+    });
+    close.push(machine.close);
+    // A disk that takes its time: the lines wait on it, and so does their ack.
+    let release: () => void = () => undefined;
+    const written = new Promise<void>((resolve) => (release = resolve));
+    class SlowDisk extends TraceCache {
+      override async commit(...args: Parameters<TraceCache["commit"]>) {
+        await written;
+        return super.commit(...args);
+      }
+    }
+    let bytes = 0;
+    const { get } = hub(machine.port, {
+      cache: new SlowDisk(path.join(root, "machines", "traces")),
+      onSocket: (socket) => void socket.onTraffic(() => (bytes += 1)),
+    });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => carry !== null && progressOf(history.events).length > 0);
+    // The machine beats while it waits for the ack, for longer than a minute.
+    for (let at = 0; at <= MACHINE_STREAM_STALL_MS + 5_000; at += 5_000) {
+      clock.advance(5_000);
+      const before = bytes;
+      carry!("ping", {});
+      await waitFor(() => bytes > before);
+    }
+    // Long enough for a notice said meanwhile to reach the reader (progress goes out every 250 ms).
+    await pause(400);
+    release();
+    carry!("ready", {});
+    carry!("done", {});
+    await waitFor(() => history.has("done"));
+    expect(progressOf(history.events).some((p) => p.waiting?.reason === "slow")).toBe(false);
+  });
+
+  /**
+   * A machine whose HTTP side answers `GET /api/sessions/<SID>` as `said` says (there, gone,
+   * refused, or never), counting the asks; the copy holds its one-file Session after one read.
+   */
+  async function askedMachine() {
+    const state = {
+      said: "there" as "there" | "gone" | "refused" | "broken" | "never",
+      asked: 0,
+    };
+    const hanging: http.ServerResponse[] = [];
     const machine = await scriptedMachine(answerWindow, (req, res) => {
       if (req.url !== `/api/sessions/${SID}`) {
         res.statusCode = 404;
         res.end();
         return;
       }
-      asked += 1;
+      state.asked += 1;
       res.setHeader("content-type", "application/json");
-      if (said === "there") {
+      if (state.said === "never") {
+        hanging.push(res);
+      } else if (state.said === "there") {
         res.end(JSON.stringify({ session: { sessionId: SID, projectId: "default_project" } }));
-      } else {
+      } else if (state.said === "broken") {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: { code: "internal", message: "Oops." } }));
+      } else if (state.said === "gone") {
         res.statusCode = 404;
         res.end(JSON.stringify({ error: { code: "session_not_found", message: "No." } }));
+      } else {
+        res.statusCode = 403;
+        res.end(JSON.stringify({ error: { code: "session_forbidden", message: "Not you." } }));
       }
     });
+    // Torn down in reverse: the unanswered asks are cut before the machine's server closes.
     close.push(machine.close);
-    let connected = true;
-    const { get, cache } = hub(machine.port, { connected: () => connected });
+    close.push(() => {
+      for (const res of hanging) res.socket?.destroy();
+    });
+    const link = { connected: true };
+    const { get, cache, sync } = hub(machine.port, { connected: () => link.connected });
     const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
     await history.finished;
     const events = `/api/sessions/${SID}/traces/1?offset=0&limit=2`;
+    return { state, link, get, cache, sync, events };
+  }
 
-    expect((await get(events)).status).toBe(200);
-    expect((await get(events)).status).toBe(200);
-    expect(asked).toBe(1);
+  it("answers from the copy at once and asks the machine behind it whether the Session is still there, once a while, dropping the copy once it is gone", async () => {
+    const m = await askedMachine();
+
+    expect((await m.get(m.events)).status).toBe(200);
+    await waitFor(() => m.state.asked === 1);
+    expect((await m.get(m.events)).status).toBe(200);
+    await settle();
+    expect(m.state.asked).toBe(1);
     clock.advance(SESSION_CONFIRM_TTL_MS);
-    expect((await get(events)).status).toBe(200);
-    expect(asked).toBe(2);
+    expect((await m.get(m.events)).status).toBe(200);
+    await waitFor(() => m.state.asked === 2);
 
     // Away: the copy's last word stands, and nothing is asked.
-    connected = false;
+    m.link.connected = false;
     clock.advance(SESSION_CONFIRM_TTL_MS);
-    expect((await get(events)).status).toBe(200);
-    expect(asked).toBe(2);
+    expect((await m.get(m.events)).status).toBe(200);
+    await settle();
+    expect(m.state.asked).toBe(2);
+    expect(m.cache.usedBytes).toBeGreaterThan(0);
 
-    // Deleted over there, with nothing heard of it here: the next read finds out.
-    connected = true;
-    said = "gone";
-    const gone = await get(events);
-    expect(gone.status).toBe(404);
-    expect(((await gone.json()) as { error: { code: string } }).error.code).toBe(
-      "session_not_found",
-    );
-    await waitFor(() => cache.usedBytes === 0);
+    // Deleted over there, with nothing heard of it here: answered once more from the copy while
+    // the machine is asked, and no more once it said so.
+    m.link.connected = true;
+    m.state.said = "gone";
+    clock.advance(SESSION_CONFIRM_TTL_MS);
+    expect((await m.get(m.events)).status).toBe(200);
+    await waitFor(() => m.cache.usedBytes === 0);
+    expect((await m.get(m.events)).status).toBe(404);
+  });
+
+  it("answers from the copy at once while the machine is connected but silent, asking it once a while", async () => {
+    const m = await askedMachine();
+    m.state.said = "never";
+
+    for (let i = 0; i < 3; i += 1) {
+      const began = Date.now();
+      expect((await m.get(m.events)).status).toBe(200);
+      expect(Date.now() - began).toBeLessThan(1_000);
+    }
+    await waitFor(() => m.state.asked === 1);
+    expect(m.state.asked).toBe(1);
+  });
+
+  it("keeps the copy of a Session the machine will not show this server, and goes on answering from it", async () => {
+    const m = await askedMachine();
+    m.state.said = "refused";
+    const held = m.cache.usedBytes;
+
+    expect((await m.get(m.events)).status).toBe(200);
+    await waitFor(() => m.state.asked === 1);
+    await waitFor(() => m.sync.known(MACHINE, SID)?.kind === "refused");
+    expect((await m.get(m.events)).status).toBe(200);
+    await settle();
+    expect(m.cache.usedBytes).toBe(held);
+    expect(m.state.asked).toBe(1);
+  });
+
+  it("asks a machine that gave no usable answer only once a while, answering from the copy meanwhile", async () => {
+    const m = await askedMachine();
+    m.state.said = "broken";
+
+    expect((await m.get(m.events)).status).toBe(200);
+    await waitFor(() => m.sync.known(MACHINE, SID)?.kind === "unknown");
+    expect((await m.get(m.events)).status).toBe(200);
+    await settle();
+    expect(m.state.asked).toBe(1);
+  });
+
+  it("keeps the machines' word on only so many Sessions, the least recently told forgotten first", async () => {
+    const sync = new HistorySync({
+      cache: new TraceCache(path.join(root, "machines", "traces")),
+      target: async () => ({
+        agent: new http.Agent(),
+        port: 1,
+        cookie: "c",
+        adoptedAt: null,
+        session: 1,
+      }),
+      socket: () => Promise.reject(new Error("no socket in this case")),
+      http: async () => Response.json({ session: { projectId: "default_project" } }),
+      log: () => undefined,
+      clock,
+      factsKept: 2,
+    });
+    close.push(() => sync.close());
+    for (const sid of ["a", "b", "c"]) await sync.sessionOn(MACHINE, sid);
+
+    expect(sync.known(MACHINE, "a")).toBeNull();
+    expect(sync.known(MACHINE, "b")?.kind).toBe("there");
+    expect(sync.known(MACHINE, "c")?.kind).toBe("there");
   });
 
   it("cancels the machine's call the moment its last reader leaves, even in the middle of the fill", async () => {

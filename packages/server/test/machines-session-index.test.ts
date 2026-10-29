@@ -12,6 +12,8 @@
  * - Given a machine that fails or never answers, the id is unknown but not a miss, so the next
  *   resolve asks again, and that machine is named as silent; a machine that never answers is
  *   given up on at the deadline.
+ * - Given a machine that answers it will not show the Session (`403 session_forbidden`), it is
+ *   named as refusing, and the id is not a miss.
  * - Given machines that are not connected, they are not asked.
  * - Given a machine's `session_created` event, the id resolves to it without asking; its
  *   `session_deleted` forgets it, while another machine's `session_deleted` for the same id
@@ -138,6 +140,7 @@ describe("the Session → machine index", () => {
         { machineId: "b", alias: "alias-b" },
         { machineId: "c", alias: "alias-c" },
       ],
+      refused: [],
     });
     expect((await index.resolve(ID, fleet(denies, fails, throws))).place).toBeNull();
     expect(denies.asked).toHaveLength(2);
@@ -151,11 +154,32 @@ describe("the Session → machine index", () => {
     const denies = machine("b", absent);
     const pending = index.resolve(ID, fleet(silent, denies));
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(await pending).toEqual({ place: null, silent: [{ machineId: "a", alias: "alias-a" }] });
+    expect(await pending).toEqual({
+      place: null,
+      silent: [{ machineId: "a", alias: "alias-a" }],
+      refused: [],
+    });
 
     void index.resolve(ID, fleet(silent));
     await vi.advanceTimersByTimeAsync(0);
     expect(silent.asked).toHaveLength(2);
+  });
+
+  it("names a machine that holds the Session and will not show it, without remembering a miss", async () => {
+    const index = new SessionMachineIndex();
+    const denies = machine("a", absent);
+    const refuses = machine("b", async () => ({
+      status: 403,
+      text: JSON.stringify({ error: { code: "session_forbidden", message: "No." } }),
+    }));
+
+    expect(await index.resolve(ID, fleet(denies, refuses))).toEqual({
+      place: null,
+      silent: [],
+      refused: [{ machineId: "b", alias: "alias-b" }],
+    });
+    await index.resolve(ID, fleet(denies, refuses));
+    expect(refuses.asked).toHaveLength(2);
   });
 
   it("does not ask a machine that is not connected", async () => {

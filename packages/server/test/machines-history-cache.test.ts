@@ -649,7 +649,7 @@ describe("a machine Session's history through the hub's copy", () => {
     expect((await hub.get(image)).status).toBe(503);
   });
 
-  it("stops answering from the copy of a Session deleted on the machine though nothing told this server, and drops it", async () => {
+  it("finds a Session deleted on the machine though nothing told this server, drops its copy, and answers nothing more from it", async () => {
     const sid = uniqueSessionId();
     const png = `data:image/png;base64,${Buffer.from("secret picture").toString("base64")}`;
     await machineSession(sid, [meta(sid), userText("look"), imageUrlMessage(png), ...tasks(2)]);
@@ -666,13 +666,17 @@ describe("a machine Session's history through the hub's copy", () => {
     });
     expect(deleted.status).toBe(204);
 
-    const image = await hub.get(`/api/sessions/${sid}/trace-image?file=1&ordinal=2`);
-    expect(image.status).toBe(404);
-    expect(((await image.json()) as { error: { code: string } }).error.code).toBe(
+    // The read the copy answers does not wait on the machine; asking it behind the answer is
+    // what finds the deletion, and the copy goes.
+    const image = `/api/sessions/${sid}/trace-image?file=1&ordinal=2`;
+    expect((await hub.get(image)).status).toBe(200);
+    await dropped(hub.cacheFile(sid, 1));
+    const after = await hub.get(image);
+    expect(after.status).toBe(404);
+    expect(((await after.json()) as { error: { code: string } }).error.code).toBe(
       "session_not_found",
     );
     expect((await hub.get(`/api/sessions/${sid}/traces/1?offset=0&limit=5`)).status).toBe(404);
-    await dropped(hub.cacheFile(sid, 1));
   });
 
   it("leaves the analysis of a Session whose Project this server has no config for to the machine", async () => {
