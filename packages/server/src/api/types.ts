@@ -2609,15 +2609,17 @@ export interface HistoryHave extends Partial<HistoryHeldRange> {
   k: HistoryFileKey;
   /** The file's inode as a decimal string: NTFS file ids pass 2^53, which a JSON number cannot carry. */
   ino: string;
-  /** The device the file lives on, decimal, when the machine reported one. */
+  /** The device the file lives on, decimal: a hint, never compared (overlayfs can change it across a restart). */
   dev?: string;
+  /** Whole milliseconds, or 0 where the machine keeps no birth time; compared only when both sides know one. */
   birthtimeMs: number;
   /** Every run held, in any order. */
   ranges?: HistoryHeldRange[];
   /**
    * A line held in part: bytes [off, off + len) of the line starting at `off`, whose sha256 is
-   * `anchor`. The machine sends the rest of it first, from `off + len`; a partial that does not
-   * check is dropped and the line sent whole.
+   * `anchor`. The machine sends the rest of it from `off + len` — before `ready` when it is a light
+   * line of the window, after it otherwise; a partial that does not check is dropped and the line
+   * sent whole.
    */
   partial?: { off: number; len: number; anchor: string };
 }
@@ -2625,9 +2627,13 @@ export interface HistoryHave extends Partial<HistoryHeldRange> {
 /** One Trace file the window or the fill reads, as the machine sees it now. */
 export interface HistoryFileFact {
   k: HistoryFileKey;
-  /** The file's inode, decimal (see HistoryHave.ino). */
+  /**
+   * The file's identity: the inode (decimal, see HistoryHave.ino), the device (a hint, never
+   * compared), the birth time (0 where the platform keeps none: it then reads the change time,
+   * which every append moves). A held copy is the same file while `sameHistoryFile`
+   * (services/history-wire.ts) says so; its content is checked by its runs' anchors.
+   */
   ino: string;
-  /** Its device, decimal. */
   dev?: string;
   birthtimeMs: number;
   size: number;
@@ -2718,8 +2724,9 @@ export interface HistoryWindowPart {
 
 /**
  * Event names of the machine leg (`history-lines`), in order: `window` (or its `window-part`s),
- * the rest of a line the hub held in part, the window's light `lines`/`part`s, `ready` (the hub
- * can assemble the window), the heavy lines and the fill, `done`. `ping` beats from the start,
+ * the window's light `lines`/`part`s (with the rest of one the hub held in part), `ready` (the
+ * hub can assemble the window), the rest of every other line the hub held in part, the heavy
+ * lines and the fill, `done`. `ping` beats from the start,
  * planning included; `error` (HistoryStreamError) ends a stream that cannot be served, such as a
  * `body` ref into no line of the Session. Every event's data is at most FRAME_TEXT_BUDGET of text
  * plus its JSON envelope.
