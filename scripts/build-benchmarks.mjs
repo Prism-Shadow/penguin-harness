@@ -1,7 +1,8 @@
 /**
  * Fetch the Benchmark manifests and Case Markdown at build time for packaging.
  * Content lives in penguin-harness-benchmark/packages; this repository keeps no copy in git.
- * --refresh fetches the pinned commit again. Update REF to ship a new package revision.
+ * --refresh takes main again. PENGUIN_BENCHMARKS_SOURCE can name a local packages/ directory
+ * when developing both repositories.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
@@ -15,33 +16,37 @@ import { parseArgs } from "node:util";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const BENCHMARKS_DIR = path.join(ROOT, "node_modules", ".cache", "penguin-benchmarks");
 const REPOSITORY = "https://github.com/Prism-Shadow/penguin-harness-benchmark.git";
-const REF = "a9945e66cfe308c53bab3a50b170b306143dcac5";
 const require = createRequire(path.join(ROOT, "packages/core/package.json"));
 const { parse } = require("smol-toml");
 
 export async function buildBenchmarks({ refresh = false } = {}) {
-  if (!/^[0-9a-f]{40}$/.test(REF))
-    throw new Error("Benchmark REF must be a full lowercase commit id.");
-  if (!refresh) {
+  const source = process.env.PENGUIN_BENCHMARKS_SOURCE || undefined;
+  if (!source && !refresh) {
     try {
       await fs.access(path.join(BENCHMARKS_DIR, "catalog.json"));
-      if ((await fs.readFile(path.join(BENCHMARKS_DIR, ".ref"), "utf8")) === REF) return;
+      return;
     } catch {
-      // Fetch on the first build or when the configured commit changes.
+      // The first source build fetches the packages; later builds reuse that snapshot.
     }
   }
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-benchmarks-"));
   try {
-    const checkout = path.join(temp, "repo");
-    const git = (args) => execFileSync("git", args, { stdio: "pipe" });
-    git(["init", checkout]);
-    git(["-C", checkout, "remote", "add", "origin", REPOSITORY]);
-    git(["-C", checkout, "config", "remote.origin.promisor", "true"]);
-    git(["-C", checkout, "config", "remote.origin.partialclonefilter", "blob:none"]);
-    git(["-C", checkout, "sparse-checkout", "set", "packages"]);
-    git(["-C", checkout, "fetch", "--depth=1", "--filter=blob:none", "origin", REF]);
-    git(["-C", checkout, "checkout", "--detach", "FETCH_HEAD"]);
-    const packages = path.join(checkout, "packages");
+    let packages = source && path.resolve(source);
+    if (!packages) {
+      const checkout = path.join(temp, "repo");
+      const git = (args) => execFileSync("git", args, { stdio: "pipe" });
+      git([
+        "clone",
+        "--depth=1",
+        "--filter=blob:none",
+        "--sparse",
+        "--branch=main",
+        REPOSITORY,
+        checkout,
+      ]);
+      git(["-C", checkout, "sparse-checkout", "set", "packages"]);
+      packages = path.join(checkout, "packages");
+    }
     const staged = path.join(temp, "packages");
     await fs.mkdir(staged);
     const catalog = [];
@@ -89,8 +94,9 @@ export async function buildBenchmarks({ refresh = false } = {}) {
     await fs.writeFile(path.join(staged, "catalog.json"), `${JSON.stringify(catalog, null, 2)}\n`);
     await fs.rm(BENCHMARKS_DIR, { recursive: true, force: true });
     await fs.cp(staged, BENCHMARKS_DIR, { recursive: true });
-    await fs.writeFile(path.join(BENCHMARKS_DIR, ".ref"), REF);
-    console.log(`Benchmark packages: ${catalog.length} staged from ${REPOSITORY} (${REF})`);
+    console.log(
+      `Benchmark packages: ${catalog.length} staged from ${source ?? `${REPOSITORY} (main)`}`,
+    );
   } finally {
     await fs.rm(temp, { recursive: true, force: true });
   }
@@ -101,8 +107,7 @@ export async function stageBenchmarks(dest) {
   await fs.rm(dest, { recursive: true, force: true });
   await fs.cp(BENCHMARKS_DIR, dest, {
     recursive: true,
-    filter: (file) =>
-      !["catalog.json", ".ref"].some((name) => file === path.join(BENCHMARKS_DIR, name)),
+    filter: (file) => file !== path.join(BENCHMARKS_DIR, "catalog.json"),
   });
 }
 
