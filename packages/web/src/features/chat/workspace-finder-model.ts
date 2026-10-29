@@ -658,19 +658,27 @@ export function childPath(dir: string, name: string): string {
 /** The characters a Windows file name may not hold, besides the separators. */
 const WINDOWS_NAME_FORBIDDEN = /[\\/:*?"<>|]/;
 
+/** Device names Windows reserves, with or without an extension (`CON`, `nul.txt`, `COM1`). */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
 /** Why a new folder's name cannot be used here: what the row says under its field. */
 export type NewFolderProblem =
-  { kind: "invalid"; chars: string } | { kind: "hidden" } | { kind: "exists"; name: string };
+  | { kind: "invalid"; chars: string }
+  | { kind: "trailing" }
+  | { kind: "reserved"; name: string }
+  | { kind: "hidden" }
+  | { kind: "exists"; name: string };
 
 /**
  * Checks the name typed in the new-folder row against the folder on screen, before anything is
  * sent. The name is trimmed the way the Files panel trims one (`newEntryName`); unlike there it
  * names one folder, made where the finder stands, so a separator is refused rather than read as
  * folders in between — the row selects the folder it made, and a nested one would not be in the
- * list. A leading dot makes a folder the list hides, which could then be neither seen nor
- * picked. A name already in the listing (hidden entries and files included) is refused here;
- * the server still has the last word, for a name taken meanwhile. Null when the name is empty
- * (nothing to say yet) or usable.
+ * list. On Windows a trailing dot or space is refused (Windows drops it, so the folder made would
+ * not be the one named) and so is a device name Windows reserves. A leading dot makes a folder
+ * the list hides, which could then be neither seen nor picked. A name already in the listing
+ * (hidden entries and files included) is refused here; the server still has the last word, for a
+ * name taken meanwhile. Null when the name is empty (nothing to say yet) or usable.
  */
 export function newFolderProblem(
   name: string,
@@ -678,10 +686,36 @@ export function newFolderProblem(
   platform: string | undefined,
 ): NewFolderProblem | null {
   if (name === "") return null;
-  if (platform === "win32" ? WINDOWS_NAME_FORBIDDEN.test(name) : name.includes("/")) {
-    return { kind: "invalid", chars: platform === "win32" ? '\\ / : * ? " < > |' : "/" };
+  const windows = platform === "win32";
+  if (windows ? WINDOWS_NAME_FORBIDDEN.test(name) : name.includes("/")) {
+    return { kind: "invalid", chars: windows ? '\\ / : * ? " < > |' : "/" };
   }
+  if (windows && /[. ]$/.test(name)) return { kind: "trailing" };
+  if (windows && WINDOWS_RESERVED.test(name)) return { kind: "reserved", name };
   if (name.startsWith(".")) return { kind: "hidden" };
   if (entries.some((e) => e.name === name)) return { kind: "exists", name };
   return null;
+}
+
+/**
+ * The listed folder a name typed in the row became, or null when none did. The disk may store
+ * the name in another form than it was typed: macOS's HFS+ in decomposed Unicode, and the
+ * Windows and macOS file systems ignore case by default — so names are compared composed, and
+ * without case there. The name exactly as typed wins over a look-alike.
+ */
+export function findMadeFolder(
+  entries: readonly DirEntryInfo[],
+  name: string,
+  platform: string | undefined,
+): DirEntryInfo | null {
+  const folders = entries.filter(isFolder);
+  const exact = folders.find((e) => e.name === name);
+  if (exact !== undefined) return exact;
+  const loose = platform === "win32" || platform === "darwin";
+  const key = (text: string) => {
+    const composed = text.normalize("NFC");
+    return loose ? composed.toLowerCase() : composed;
+  };
+  const wanted = key(name);
+  return folders.find((e) => key(e.name) === wanted) ?? null;
 }

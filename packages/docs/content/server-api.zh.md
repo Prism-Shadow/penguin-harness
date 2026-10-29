@@ -811,7 +811,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/dir-skills?path=` | 目录所带的 Skill，用于导入到新 Agent |
 | GET | `/workspace-files?workspace=&path=` | 还没有 Session 可寻址时，**文件浏览**面板对一个目录的浏览（见下） |
 | GET / PUT / DELETE | `/workspace-files/content?workspace=&path=` | 读取、写入或删除该目录里的文件 |
-| POST | `/workspace-files/create?workspace=` / `/workspace-files/move?workspace=` | 新建文件或文件夹 / 移动 |
+| POST | `/workspace-files/create?workspace=` / `/workspace-files/move?workspace=` | 新建文件或文件夹（服务无权写入处返回 403 `dir_write_denied`）/ 移动 |
 | GET | `/workspace-files/search?workspace=&q=` | 按条目名搜索该目录 |
 | POST | `/workspace-files/reveal?workspace=&path=` | 在机器自带的文件管理器中显示文件 |
 
@@ -1018,7 +1018,7 @@ interface ApprovalDecisionRequest {
 
 - `GET /files/preview-redirect` 支撑**新页面打开**和**文件浏览**面板里的 HTML 渲染视图；见[独立源上的预览](#独立源上的预览)。
 - `PUT /files/content` 在 `ETag` 里带回写入后的版本：同一文件下一次带条件的写入就用这个标记，所以**文件浏览**面板的编辑器保存后可以继续编辑。
-- `POST /files/create` 新建一个空文本文件或一个文件夹，缺失的父目录与写入时一样自动创建。`path` 上已有任何条目（包括符号链接，不会跟随）时返回 409 `target_exists`，一个字节都不写。
+- `POST /files/create` 新建一个空文本文件或一个文件夹，缺失的父目录与写入时一样自动创建。`path` 上已有任何条目（包括符号链接，不会跟随）时返回 409 `target_exists`，一个字节都不写；运行服务的账户无权写入的目录或只读卷返回 403 `dir_write_denied`，同样什么都不写。
 - `POST /files/move` 移动文件或文件夹。`to` 缺失的父目录会自动创建。`from` 不存在时返回 404 `path_not_found`；对文件，`ifVersion` 不再匹配时返回 409 `file_changed`（带着标记时源文件却已消失，也算作已变化）。文件夹没有单一的版本标记，因此整棵移动、不带前置条件：对文件夹带 `ifVersion` 返回 400，把文件夹移入它自身之下也返回 400。`to` 位置已有内容时返回 409 `target_exists`——目标从未读取过，所以选择拒绝而不是覆盖；移动到条目自身路径返回 400。
 - `DELETE /files/content` 同样只对文件生效（对目录返回 400）。文件已不存在时返回 404 `path_not_found`；`ifVersion` 不再匹配时返回 409 `file_changed`。这个标记是可选的，不带标记时删除是无条件的，但**文件浏览**面板总是发送它读取时拿到的标记。
 - `POST /files/reveal` 在 macOS 和 Windows 上选中文件，在 Linux 桌面上打开文件所在目录。只有桌面 shell 自己的窗口可以调用它。服务器不是由桌面 shell 启动时返回 404 `not_found`；浏览器会话访问桌面模式服务器时返回 403 `desktop_shell_only`：这种会话无法与远程会话区分，而在服务器所在的机器上打开文件夹，对那头的用户毫无用处。路径的限制与读取相同（越界 400，不存在 404 `path_not_found`）；502 `reveal_failed` 表示文件管理器未能启动。

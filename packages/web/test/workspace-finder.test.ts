@@ -28,8 +28,11 @@
  *   none without the Agent's directory, while another machine is browsed, or for an unknown
  *   layout.
  * - A new folder's name is refused for a separator (and on Windows for the characters Windows
- *   forbids), for a leading dot the list would hide, and for any entry already there, hidden or
- *   a file; the folder it makes is joined onto the folder on screen with that path's separator.
+ *   forbids, a trailing dot or space, and a device name Windows reserves), for a leading dot the
+ *   list would hide, and for any entry already there, hidden or a file.
+ * - The folder a name became is found in the listing read back: as typed first, then composed
+ *   (an HFS+ name comes back decomposed), and without case only where the disk ignores it;
+ *   never a file.
  */
 import { describe, expect, it } from "vitest";
 import type { DirEntryInfo, DirListResponse, DirLocation } from "@prismshadow/penguin-server/api";
@@ -39,10 +42,10 @@ import {
   addToQuickAccess,
   canGoBack,
   canGoForward,
-  childPath,
   clearButton,
   defaultPlaces,
   deniedBox,
+  findMadeFolder,
   finderKeyAction,
   finderMenuItems,
   historyStep,
@@ -543,15 +546,24 @@ describe("the footer's no-folder button", () => {
 
 describe("a new folder's name", () => {
   const here = [dir("projects"), dir(".git"), dir("notes.txt", "file")];
+  const WINDOWS_CHARS = '\\ / : * ? " < > |';
 
   it.each([
     { name: "a/b", platform: "linux", problem: { kind: "invalid", chars: "/" } },
-    { name: "a:b", platform: "win32", problem: { kind: "invalid", chars: '\\ / : * ? " < > |' } },
-    { name: "a\\b", platform: "win32", problem: { kind: "invalid", chars: '\\ / : * ? " < > |' } },
+    { name: "a:b", platform: "win32", problem: { kind: "invalid", chars: WINDOWS_CHARS } },
+    { name: "a\\b", platform: "win32", problem: { kind: "invalid", chars: WINDOWS_CHARS } },
+    { name: "drafts.", platform: "win32", problem: { kind: "trailing" } },
+    { name: "drafts ", platform: "win32", problem: { kind: "trailing" } },
+    { name: "CON", platform: "win32", problem: { kind: "reserved", name: "CON" } },
+    { name: "nul.txt", platform: "win32", problem: { kind: "reserved", name: "nul.txt" } },
+    { name: "com1", platform: "win32", problem: { kind: "reserved", name: "com1" } },
     { name: ".cache", platform: "darwin", problem: { kind: "hidden" } },
     { name: "notes.txt", platform: "linux", problem: { kind: "exists", name: "notes.txt" } },
     { name: ".git", platform: "linux", problem: { kind: "hidden" } },
     { name: "a:b", platform: "linux", problem: null },
+    { name: "CON", platform: "linux", problem: null },
+    { name: "drafts.", platform: "darwin", problem: null },
+    { name: "console", platform: "win32", problem: null },
     { name: "drafts", platform: "win32", problem: null },
     { name: "", platform: "linux", problem: null },
   ])("$name on $platform → $problem", ({ name, platform, problem }) => {
@@ -565,13 +577,33 @@ describe("a new folder's name", () => {
       name: "AppData",
     });
   });
+});
+
+describe("the folder a new name became", () => {
+  const composed = "Café";
+  const decomposed = "Cafe\u0301";
+
+  it("is the listed folder named as typed, before a look-alike", () => {
+    const listed = [dir("drafts"), dir("Drafts")];
+    expect(findMadeFolder(listed, "Drafts", "darwin")?.name).toBe("Drafts");
+  });
+
+  it.each(["linux", "darwin", "win32"])(
+    "is found composed on %s, as HFS+ lists it decomposed",
+    (platform) => {
+      expect(findMadeFolder([dir(decomposed)], composed, platform)?.name).toBe(decomposed);
+    },
+  );
 
   it.each([
-    ["/home/me", "drafts", "/home/me/drafts"],
-    ["/", "drafts", "/drafts"],
-    ["C:\\Users\\me", "drafts", "C:\\Users\\me\\drafts"],
-    ["C:\\", "drafts", "C:\\drafts"],
-  ])("the folder made in %s as %s is %s", (folder, name, made) => {
-    expect(childPath(folder, name)).toBe(made);
+    ["darwin", "Drafts"],
+    ["win32", "Drafts"],
+    ["linux", undefined],
+  ])("ignores case on %s → %s", (platform, found) => {
+    expect(findMadeFolder([dir("Drafts")], "drafts", platform)?.name).toBe(found);
+  });
+
+  it("is never a file of that name", () => {
+    expect(findMadeFolder([dir("drafts", "file")], "drafts", "linux")).toBeNull();
   });
 });

@@ -9,10 +9,19 @@
  *   hands back its path on that machine.
  * - Given a name the folder on screen already lists, the reason reads under the field as it is
  *   typed, and Enter sends nothing.
- * - Given a name the server refuses (taken meanwhile, or a folder it may not write), the reason
- *   reads under the field, the row stays on the name, and nothing new is selected.
+ * - Given a folder of that name made elsewhere since the listing, the server's refusal reads
+ *   under the field, the listing is read again, and the folder already there is selected.
+ * - Given a folder the server may not write, its refusal reads under the field, the row stays on
+ *   the name, and nothing is selected.
+ * - Given a disk that lists the new folder in another form (decomposed), that folder is the one
+ *   selected; given one that does not list it at all, the row stays open saying so, and nothing
+ *   is selected — Choose does not fall back to the folder around it unannounced.
+ * - Given the create on its way, neither × nor Escape closes the row; when it lands, the folder
+ *   is selected.
  * - Given the row open with a name typed, Escape closes the row and not the finder, nothing is
  *   sent, and the row opens empty the next time.
+ * - Given a navigation on its way, New folder cannot be pressed and the open row is gone, so no
+ *   create can run for the folder being left.
  * - Given a folder the server may not read, New folder cannot be pressed.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -87,6 +96,12 @@ interface World {
   creates(): FetchRequest[];
   /** The next create is refused with this error instead. */
   refuseNext(status: number, code: string): void;
+  /** Someone else makes a folder in this server's home, after the finder listed it. */
+  madeElsewhere(name: string): void;
+  /** The disk keeps a created folder under the name this gives, not the one sent. */
+  storeAs(rename: (name: string) => string): void;
+  /** The next request of this kind waits until the returned function is called. */
+  holdNext(kind: "create" | "list"): () => void;
 }
 
 /**
@@ -97,6 +112,7 @@ interface World {
 function world(): World {
   const disks: Record<"here" | "there", Disk> = {
     here: new Map([
+      ["/home", [entry("/home", "me")]],
       ["/home/me", [entry("/home/me", "projects"), entry("/home/me", "notes.txt", "file")]],
       ["/home/me/projects", []],
     ]),
@@ -107,13 +123,21 @@ function world(): World {
   };
   const home = { here: "/home/me", there: "/srv" };
   let refusal: { status: number; code: string } | null = null;
+  let rename = (name: string) => name;
+  const holds: Record<"create" | "list", Promise<void> | null> = { create: null, list: null };
+  /** Waits out a hold on `kind`, once. */
+  const held = async (kind: "create" | "list") => {
+    const hold = holds[kind];
+    holds[kind] = null;
+    if (hold !== null) await hold;
+  };
   const listing = (disk: Disk, path: string) => {
     const entries = disk.get(path);
     if (entries === undefined) return apiError(404, "dir_not_found");
     const parent = path.slice(0, path.lastIndexOf("/")) || "/";
     return json({ path, parent, entries, platform: "linux" });
   };
-  const fetch = stubFetch((request) => {
+  const fetch = stubFetch(async (request) => {
     const { method, path, query, machine } = request;
     if (path === "/api/me") return json(ADMIN_ME);
     if (path === "/api/me/prefs") return json({ prefs: {} });
@@ -124,6 +148,7 @@ function world(): World {
     if (path === `${project}/machines`) return json(MACHINES);
     if (path === `${project}/agents`) return json({ agents: [] });
     if (path === `${project}/dirs`) {
+      if (query.get("places") !== "1") await held("list");
       const at = query.get("path") || home.here;
       if (at === "/root") return apiError(403, "dir_permission_denied");
       return listing(disks.here, at);
@@ -132,6 +157,7 @@ function world(): World {
       return listing(disks.there, query.get("path") || home.there);
     }
     if (path === `${project}/workspace-files/create` && method === "POST") {
+      await held("create");
       if (refusal !== null) {
         const answer = apiError(refusal.status, refusal.code);
         refusal = null;
@@ -143,8 +169,9 @@ function world(): World {
       const entries = disk.get(dir);
       if (entries === undefined) return apiError(400, "workspace_not_found");
       if (entries.some((e) => e.name === name)) return apiError(409, "target_exists");
-      disk.set(dir, [...entries, entry(dir, name)]);
-      disk.set(`${dir}/${name}`, []);
+      const stored = rename(name);
+      disk.set(dir, [...entries, entry(dir, stored)]);
+      disk.set(`${dir}/${stored}`, []);
       return new Response(null, { status: 204 });
     }
     return apiError(404, "not_found");
@@ -156,6 +183,20 @@ function world(): World {
       ),
     refuseNext: (status, code) => {
       refusal = { status, code };
+    },
+    madeElsewhere: (name) => {
+      const dir = home.here;
+      disks.here.set(dir, [...(disks.here.get(dir) ?? []), entry(dir, name)]);
+    },
+    storeAs: (next) => {
+      rename = next;
+    },
+    holdNext: (kind) => {
+      let release = () => {};
+      holds[kind] = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return release;
     },
   };
 }
@@ -216,6 +257,8 @@ const note = (): string | null => {
   return id === null ? null : (document.getElementById(id)?.textContent ?? null);
 };
 
+const cancelButton = () => button(S.chat.finder.newFolderCancel);
+
 const nameField = () => field(S.files.newFolderName) as HTMLInputElement;
 const hasNameField = () =>
   document.querySelector(`input[aria-label="${S.files.newFolderName}"]`) !== null;
@@ -273,37 +316,83 @@ describe("new folder in the Workspace finder", () => {
     expect(nameField().value).toBe("notes.txt");
   });
 
-  it.each([
-    {
-      why: "a name taken meanwhile",
-      status: 409,
-      code: "target_exists",
-      reason: () => S.chat.finder.newFolderExists("drafts"),
-    },
-    {
-      why: "a folder the server may not write",
-      status: 403,
-      code: "dir_write_denied",
-      reason: () => S.errors.byCode.dir_write_denied,
-    },
-  ])(
-    "$why is refused with the reason under the field, and the row stays on the name",
-    async ({ status, code, reason }) => {
-      const server = world();
-      await openFinder();
-      server.refuseNext(status, code);
+  it("a folder made elsewhere meanwhile is refused, read back and selected, with the reason kept", async () => {
+    const server = world();
+    const { onChoose } = await openFinder();
+    server.madeElsewhere("drafts");
 
-      await click(button(S.files.newFolder));
-      await type(nameField(), "drafts");
-      await press(nameField(), "Enter");
-      await waitFor(() => note() !== null);
+    await click(button(S.files.newFolder));
+    await type(nameField(), "drafts");
+    await press(nameField(), "Enter");
+    await waitFor(() => selectedRow() === "drafts");
 
-      expect(note()).toBe(reason());
-      expect(nameField().value).toBe("drafts");
-      expect(selectedRow()).toBeNull();
-      expect(rows()).not.toContain("drafts");
-    },
-  );
+    expect(note()).toBe(S.chat.finder.newFolderExists("drafts"));
+    expect(nameField().value).toBe("drafts");
+    await click(button(S.chat.finder.choose));
+    expect(onChoose).toHaveBeenCalledWith("/home/me/drafts", null);
+  });
+
+  it("a folder the server may not write is refused with the reason under the field, the row kept", async () => {
+    const server = world();
+    await openFinder();
+    server.refuseNext(403, "dir_write_denied");
+
+    await click(button(S.files.newFolder));
+    await type(nameField(), "drafts");
+    await press(nameField(), "Enter");
+    await waitFor(() => note() !== null);
+
+    expect(note()).toBe(S.errors.byCode.dir_write_denied);
+    expect(nameField().value).toBe("drafts");
+    expect(selectedRow()).toBeNull();
+    expect(rows()).not.toContain("drafts");
+  });
+
+  it("a folder the disk lists decomposed is still the one selected", async () => {
+    const server = world();
+    const { onChoose } = await openFinder();
+    server.storeAs((name) => name.normalize("NFD"));
+
+    await click(button(S.files.newFolder));
+    await type(nameField(), "Café");
+    await press(nameField(), "Enter");
+    await waitFor(() => selectedRow() !== null);
+
+    expect(hasNameField()).toBe(false);
+    await click(button(S.chat.finder.choose));
+    expect(onChoose).toHaveBeenCalledWith(`/home/me/${"Café".normalize("NFD")}`, null);
+  });
+
+  it("a folder made but not listed keeps the row open saying so, and selects nothing", async () => {
+    const server = world();
+    await openFinder();
+    server.storeAs(() => "something-else");
+
+    await click(button(S.files.newFolder));
+    await type(nameField(), "drafts");
+    await press(nameField(), "Enter");
+    await waitFor(() => note() !== null);
+
+    expect(note()).toBe(S.chat.finder.newFolderNotListed("drafts"));
+    expect(selectedRow()).toBeNull();
+  });
+
+  it("while the create is on its way, neither × nor Escape closes the row, and it lands selected", async () => {
+    const server = world();
+    await openFinder();
+    const release = server.holdNext("create");
+
+    await click(button(S.files.newFolder));
+    await type(nameField(), "drafts");
+    await press(nameField(), "Enter");
+    expect(cancelButton().disabled).toBe(true);
+    await press(nameField(), "Escape");
+    expect(nameField().value).toBe("drafts");
+
+    await run(release);
+    await waitFor(() => selectedRow() === "drafts");
+    expect(hasNameField()).toBe(false);
+  });
 
   it("Escape closes the row and not the finder, sends nothing, and the row opens empty again", async () => {
     const server = world();
@@ -319,6 +408,22 @@ describe("new folder in the Workspace finder", () => {
 
     await click(button(S.files.newFolder));
     expect(nameField().value).toBe("");
+  });
+
+  it("a navigation on its way closes the row and holds New folder, so nothing is made where the finder was", async () => {
+    const server = world();
+    await openFinder();
+    await click(button(S.files.newFolder));
+    await type(nameField(), "drafts");
+    const release = server.holdNext("list");
+
+    await click(button(S.chat.finder.up));
+
+    expect(hasNameField()).toBe(false);
+    expect(button(S.files.newFolder).disabled).toBe(true);
+    await run(release);
+    await waitFor(() => rows().includes("me"));
+    expect(server.creates()).toEqual([]);
   });
 
   it("a folder the server may not read offers no New folder", async () => {

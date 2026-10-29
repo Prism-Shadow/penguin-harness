@@ -3479,6 +3479,11 @@ export const zh = {
       newFolderInvalid: (chars: string): string => `名称不能包含 ${chars}`,
       newFolderHidden: "以「.」开头的是隐藏文件夹，这里不会列出，请换个名称",
       newFolderExists: (name: string): string => `这里已有名为「${name}」的项目`,
+      /** Windows drops a trailing dot or space, so the folder made would not be the one named. */
+      newFolderTrailing: "名称不能以空格或「.」结尾",
+      newFolderReserved: (name: string): string => `「${name}」是 Windows 保留的名称`,
+      /** Made, but the listing read back does not show it under that name. */
+      newFolderNotListed: (name: string): string => `已新建「${name}」，但这里的列表里找不到它`,
       empty: "此文件夹为空",
       noMatch: (q: string): string => `没有名称包含「${q}」的项目`,
       deniedTitle: "无法读取此文件夹",

@@ -3289,6 +3289,12 @@ export const en: Strings = {
       newFolderHidden:
         "A name starting with “.” makes a hidden folder, which this list doesn't show. Choose another name.",
       newFolderExists: (name: string): string => `Something named “${name}” is already here`,
+      /** Windows drops a trailing dot or space, so the folder made would not be the one named. */
+      newFolderTrailing: "A name can't end with a space or “.”",
+      newFolderReserved: (name: string): string => `“${name}” is a name Windows reserves`,
+      /** Made, but the listing read back does not show it under that name. */
+      newFolderNotListed: (name: string): string =>
+        `“${name}” was made, but this list doesn't show it`,
       empty: "This folder is empty",
       noMatch: (q: string): string => `Nothing here has "${q}" in its name`,
       deniedTitle: "Can't read this folder",
