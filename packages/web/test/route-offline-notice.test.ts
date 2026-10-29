@@ -9,6 +9,11 @@
  * - Given the same silent machines in another order, the words are the same: they change only
  *   when the set does.
  * - Given the Session's machine on record, the notice names that machine.
+ * - Given a silent machine that is connected (the hub's lookup, or the socket, gave up waiting on
+ *   it), it is said not to be answering; one with no connection held is said not to be
+ *   connected; several of each kind are said to be one or the other.
+ * - Given the same silent machines with the same connections, the words stay the same whatever
+ *   else connects or drops: they change only when the set, or the state of one in it, does.
  */
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -27,14 +32,23 @@ const LABELS = new Map([
   ["m4", "atlas"],
 ]);
 
-async function said(owner: string | null, offline: string[]): Promise<string> {
-  const { container } = await mount(h(RouteOfflineNotice, { owner, offline, labels: LABELS }));
+/** The notice's text; every silent machine is not connected unless `disconnected` says which. */
+async function said(
+  owner: string | null,
+  offline: string[],
+  disconnected: string[] = offline,
+): Promise<string> {
+  const { container } = await mount(
+    h(RouteOfflineNotice, { owner, offline, disconnected, labels: LABELS }),
+  );
   return container.textContent ?? "";
 }
 
 describe("the notice for a link to a conversation no answering server holds", () => {
   it("says this server does not have it and names the one silent machine it may be on", async () => {
-    expect(await said(null, ["m1"])).toContain(S.chat.sessionMaybeOnMachines(["mdi-b"], false));
+    expect(await said(null, ["m1"])).toContain(
+      S.chat.sessionMaybeOnMachines(["mdi-b"], false, "disconnected"),
+    );
   });
 
   it("names three silent machines, in one order whatever order they came in, and says there are more", async () => {
@@ -42,11 +56,41 @@ describe("the notice for a link to a conversation no answering server holds", ()
     await unmountAll();
     const other = await said(null, ["m2", "m3", "m1", "m4"]);
     expect(one).toBe(other);
-    expect(one).toContain(S.chat.sessionMaybeOnMachines(["atlas", "gpu-box", "lab"], true));
+    expect(one).toContain(
+      S.chat.sessionMaybeOnMachines(["atlas", "gpu-box", "lab"], true, "disconnected"),
+    );
     expect(one).not.toContain("mdi-b");
   });
 
   it("names the Session's own machine when it is on record", async () => {
     expect(await said("m1", ["m1", "m2"])).toContain(S.chat.sessionOnOfflineMachine("mdi-b"));
+  });
+});
+
+describe("a silent machine that is connected, against one that is not", () => {
+  it("says the Session's own machine is not answering when it is connected and the socket gave up on it", async () => {
+    const text = await said("m1", ["m1"], []);
+    expect(text).toContain(S.chat.sessionOnQuietMachine("mdi-b"));
+    expect(text).toContain(S.chat.sessionQuietHint);
+    expect(text).not.toContain(S.chat.sessionOnOfflineMachine("mdi-b"));
+  });
+
+  it("says a machine the hub named, connected, may hold it but is not answering", async () => {
+    const text = await said(null, ["m1"], []);
+    expect(text).toContain(S.chat.sessionMaybeOnMachines(["mdi-b"], false, "quiet"));
+    expect(text).not.toContain(S.chat.sessionMaybeOnMachines(["mdi-b"], false, "disconnected"));
+  });
+
+  it("says machines of both kinds are not connected or not answering", async () => {
+    expect(await said(null, ["m1", "m2"], ["m2"])).toContain(
+      S.chat.sessionMaybeOnMachines(["gpu-box", "mdi-b"], false, "mixed"),
+    );
+  });
+
+  it("keeps its words while machines outside the silent set connect or drop", async () => {
+    const before = await said(null, ["m1"], []);
+    await unmountAll();
+    const after = await said(null, ["m1"], ["m3", "m4"]);
+    expect(after).toBe(before);
   });
 });

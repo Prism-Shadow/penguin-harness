@@ -11,8 +11,11 @@
  *
  * The machines the hub named as silent count as out of reach until the list has asked them again
  * (a newer `listRound`); asking is started when the hub names them, for the first few doubts
- * only. A socket that gave up on the routed machine names nobody: the Session's own machine
- * stands in when it is on record.
+ * only. The page keeps naming them until a lookup settles with another answer: the list hearing
+ * a machine the hub does not is no news about the Session. A socket that gave up on the routed
+ * machine names nobody: the Session's own machine stands in when it is on record. Which of the
+ * named machines are not connected, as against connected and not answering, is the list's
+ * account of the connections (`disconnected`).
  *
  * Asking again backs off like the streams' retries (1 s, doubling, at most 30 s), so a hub that
  * keeps not hearing a machine the list hears is not asked in a loop. Once a lookup has failed in
@@ -47,6 +50,8 @@ export interface RouteLookupInput<T> {
   /** Machines out of reach, and machines the list is still asking. */
   offline: readonly string[];
   asking: readonly string[];
+  /** The machines no connection is held to; any other machine out of reach did not answer. */
+  disconnected: readonly string[];
   /** The list's completed rounds (state/sessions.tsx `listRound`). */
   listRound: number;
   /** One lookup: the row, or null when the answer is not one the page may show. */
@@ -71,8 +76,13 @@ export interface RouteLookup {
   /** Looked for, and the servers that could answer are out of reach: the page says so. */
   outOfReach: boolean;
   reach: RouteReach;
-  /** The machines out of reach, the hub's named ones included: for the page to name. */
+  /**
+   * The machines out of reach, for the page to name: the hub's named ones included until a
+   * lookup answers otherwise.
+   */
   silent: readonly string[];
+  /** Among `silent`, the machines not connected; the others are connected and did not answer. */
+  disconnected: readonly string[];
 }
 
 /** The wait before a doubted lookup is made again: 1 s, doubling per doubt, at most 30 s. */
@@ -97,13 +107,16 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
     alias: string | null;
   } | null>(null);
 
-  const hubSilent =
-    named !== null && named.key === key && named.round === input.listRound ? named.ids : [];
-  const silent = [...new Set([...input.offline, ...hubSilent])];
+  const namedHere = named !== null && named.key === key ? named.ids : [];
+  // For whether every server that could hold the Session has answered, the hub's word stands
+  // until the list has asked those machines again; for the words, until a lookup says otherwise.
+  const hubSilent = named !== null && named.round === input.listRound ? namedHere : [];
+  const silent = [...new Set([...input.offline, ...namedHere])];
+  const disconnected = silent.filter((id) => input.disconnected.includes(id));
   const reach = routeReach({
     owner: input.owner,
     local: input.local,
-    offline: silent,
+    offline: [...new Set([...input.offline, ...hubSilent])],
     asking: input.asking,
   });
   const failed = key !== null && failedKey === key;
@@ -139,6 +152,7 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
       found: (row, listLoading) => {
         setDoubtKey(null);
         setDoubts(null);
+        setNamed(null);
         latest.current.onFound(row, listLoading);
       },
       gone: (cause) => {
@@ -157,6 +171,8 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
           });
         }
         setDoubtKey(verdict === "doubt" ? key : null);
+        // Another answer than the hub's naming: the machines it named are no longer the news.
+        if (api?.code !== MACHINE_NO_ANSWER) setNamed(null);
         if (verdict !== "doubt") {
           setDoubts(null);
           return;
@@ -196,5 +212,6 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
     outOfReach,
     reach,
     silent,
+    disconnected,
   };
 }

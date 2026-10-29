@@ -277,6 +277,7 @@ export function ChatPage() {
     loading: sessionsLoading,
     machineLabels,
     offlineMachineIds,
+    disconnectedMachineIds,
     askingMachineIds,
     listRound,
     reload: reloadSessions,
@@ -500,6 +501,7 @@ export function ChatPage() {
     local: routeSessionId !== null && sessionKnownHere(routeSessionId),
     offline: offlineMachineIds,
     asking: askingMachineIds,
+    disconnected: disconnectedMachineIds,
     listRound,
     lookup: async () =>
       sessionForProject((await api.getSession(routeSessionId!)).session, projectId!),
@@ -2743,6 +2745,7 @@ export function ChatPage() {
                     <RouteOfflineNotice
                       owner={routeSessionOwner}
                       offline={routeLookup.silent}
+                      disconnected={routeLookup.disconnected}
                       labels={machineLabels}
                     />
                   ) : routeOutcome === "refused" && routeLookup.refused !== null ? (

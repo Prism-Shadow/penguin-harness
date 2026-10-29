@@ -217,6 +217,12 @@ interface SessionsContextValue {
    */
   offlineMachineIds: string[];
   /**
+   * Among `offlineMachineIds`, the machines no connection is held to; the others are connected
+   * and gave the list's last round no answer. What a page says about a machine out of reach —
+   * not connected, or not answering — follows this.
+   */
+  disconnectedMachineIds: string[];
+  /**
    * The machines the list is asking right now and has no answer from yet. Neither reachable nor
    * out of reach so far: a routed id missing from the list is not settled while one of them may
    * still name it, and is not yet a machine's to be "out of reach" either.
@@ -2131,6 +2137,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       loading: listed.loading,
       machinesUnreachable: unreachable.length > 0,
       offlineMachineIds: unreachable,
+      disconnectedMachineIds: state.offlineMachineIds,
       askingMachineIds: state.askingMachineIds,
       listRound: state.listRound,
       reload: state.reload,

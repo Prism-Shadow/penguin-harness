@@ -14,11 +14,14 @@
  *   Project is out of reach.
  * - Given a lookup that failed in doubt, the notice holds through a list round that asks other
  *   machines: it changes only when the silent machines change or the Session resolves.
+ * - Given the hub naming a machine the list still hears, the page keeps naming it through the
+ *   list round that hears it and the lookup made again, until a lookup answers otherwise.
  * - Given a hub that keeps answering `machine_no_answer` for a machine the list hears, the lookup
  *   is made again after a doubling wait (1 s, 2 s, 4 s …), and the list is asked to read the
  *   machines again for the first three doubts only.
  * - Given a socket that gave up on the routed machine (no machine named), the Session's own
- *   machine is said to be out of reach — not a skeleton that says nothing.
+ *   machine is said to be out of reach — not a skeleton that says nothing — and is said to be
+ *   not connected only when no connection is held to it.
  * - Given the machine that holds the Session refusing this server (403 `session_forbidden`), that
  *   is the answer: nothing pending, no out-of-reach notice, no not-found, and no new lookup —
  *   whatever other machine is away — with the refusing machine named.
@@ -75,6 +78,7 @@ async function page(initial: Partial<RouteLookupInput<Row>>) {
     local: false,
     offline: [],
     asking: [],
+    disconnected: [],
     listRound: 0,
     lookup: async () => null,
     onFound: () => {},
@@ -173,6 +177,37 @@ describe("a link to a Session the list does not hold", () => {
     expect(p.state.silent).toEqual(["m1"]);
   });
 
+  it("keeps naming the machine the hub named while the list hears it, until a lookup answers otherwise", async () => {
+    const { asked, lookup } = lookups();
+    const p = await page({ lookup });
+    const notice = () => JSON.stringify({ out: p.state.outOfReach, silent: p.state.silent });
+    asked[0]!.reject(noAnswer("m2"));
+    await settle();
+    const seen = [notice()];
+    // The list's reload asks m2, and m2 answers it.
+    await p.update({ asking: ["m2"] });
+    seen.push(notice());
+    await p.update({ asking: [], listRound: 1 });
+    seen.push(notice());
+    // The lookup made again in the meantime, and the hub naming m2 once more.
+    await wait(1_000);
+    expect(asked).toHaveLength(2);
+    seen.push(notice());
+    asked[1]!.reject(noAnswer("m2"));
+    await settle();
+    seen.push(notice());
+    expect(seen).toEqual(seen.map(() => JSON.stringify({ out: true, silent: ["m2"] })));
+
+    // The next lookup answers otherwise (m3 has gone quiet since): m2 is no longer named.
+    await p.update({ listRound: 2 });
+    await wait(2_000);
+    expect(asked).toHaveLength(3);
+    await p.update({ offline: ["m3"] });
+    asked[2]!.reject(notFound());
+    await settle();
+    expect(p.state).toMatchObject({ outOfReach: true, silent: ["m3"] });
+  });
+
   it("asks a hub that keeps not hearing a machine again after a doubling wait, and the list only thrice", async () => {
     const { asked, lookup } = lookups();
     const reread = vi.fn();
@@ -207,6 +242,11 @@ describe("a link to a Session the list does not hold", () => {
     asked[0]!.reject(new ApiError(0, "machine_no_answer", "network error"));
     await settle();
     expect(p.state).toMatchObject({ pending: true, outOfReach: true, silent: ["m1"] });
+    // m1 is connected: it did not answer, it is not away.
+    expect(p.state.disconnected).toEqual([]);
+    // Its connection drops: now it is.
+    await p.update({ offline: ["m1"], disconnected: ["m1", "m9"] });
+    expect(p.state).toMatchObject({ outOfReach: true, silent: ["m1"], disconnected: ["m1"] });
   });
 
   it("takes a machine's refusal as the answer, naming it, and does not ask again", async () => {

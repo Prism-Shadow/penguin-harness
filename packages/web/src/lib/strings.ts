@@ -4029,16 +4029,32 @@ Benchmark：
     noSessions: "还没有 Session",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
+    /** The routed conversation's machine is connected and did not answer in time. */
+    sessionOnQuietMachine: (machine: string) =>
+      `这个对话在 ${machine} 上，但 ${machine} 暂时没有回应。`,
     sessionOnOfflineMachineUnknown: "本机没有这个对话，它可能在某台当前没有连接的机器上。",
     /**
      * A link the list does not hold while machines that could hold it are silent: what is known —
-     * not here — and where it may be. At most three aliases are named; more end in 等.
+     * not here — and where it may be. At most three aliases are named; more end in 等. `state`
+     * says whether those machines are not connected, connected and not answering, or some of each.
      */
-    sessionMaybeOnMachines: (aliases: readonly string[], more: boolean) =>
-      aliases.length === 1 && !more
-        ? `本机没有这个对话，它可能在 ${aliases[0]} 上，但 ${aliases[0]} 当前没有连接。`
-        : `本机没有这个对话，它可能在 ${aliases.join("、")}${more ? " 等" : " "}机器上，但这些机器当前没有连接。`,
+    sessionMaybeOnMachines: (
+      aliases: readonly string[],
+      more: boolean,
+      state: "disconnected" | "quiet" | "mixed",
+    ) => {
+      const why =
+        state === "disconnected"
+          ? "当前没有连接"
+          : state === "quiet"
+            ? "暂时没有回应"
+            : "当前没有连接或暂时没有回应";
+      return aliases.length === 1 && !more
+        ? `本机没有这个对话，它可能在 ${aliases[0]} 上，但 ${aliases[0]} ${why}。`
+        : `本机没有这个对话，它可能在 ${aliases.join("、")}${more ? " 等" : " "}机器上，但这些机器${why}。`;
+    },
     sessionOfflineHint: "连接恢复后会自动打开。",
+    sessionQuietHint: "机器回应后会自动打开。",
     /** The machine holding the routed conversation will not show it to this server (403 session_forbidden). */
     sessionRefused: (machine: string | null) =>
       machine === null ? "这台机器不让本服务端查看这个对话" : `${machine} 不让本服务端查看这个对话`,
