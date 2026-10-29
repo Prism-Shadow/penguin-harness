@@ -84,7 +84,6 @@ describe("benchmark_config.toml", () => {
   it("a manifest written is read back as written, and an older reader finds its keys where they always were", async () => {
     const dir = await benchDir("report-writing-v1");
     const written = manifest({
-      ref: "1111111111111111111111111111111111111111",
       origin: {
         kind: "git",
         url: "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/x",
@@ -177,11 +176,6 @@ describe("benchmark_config.toml", () => {
     ["an id that is not text", "id = 7\n", "benchmark_manifest_invalid"],
     ["a version that is not a date version", 'version = "1.0.0"\n', "benchmark_manifest_invalid"],
     ["a version that is not text", "version = 2026\n", "benchmark_manifest_invalid"],
-    ["a task ref that is a branch", 'ref = "main"\n', "benchmark_manifest_invalid"],
-    ["a task ref that is a tag", 'ref = "v1.0"\n', "benchmark_manifest_invalid"],
-    ["a shortened task commit", 'ref = "abcdef0"\n', "benchmark_manifest_invalid"],
-    ["an uppercase task commit", `ref = "${"A".repeat(40)}"\n`, "benchmark_manifest_invalid"],
-    ["a task ref that is not text", "ref = 42\n", "benchmark_manifest_invalid"],
     ["an origin that is not a table", 'origin = "git"\n', "benchmark_manifest_invalid"],
     ["an origin kind nobody defined", '[origin]\nkind = "ftp"\n', "benchmark_manifest_invalid"],
     [
@@ -246,7 +240,6 @@ describe("benchmark_config.toml", () => {
     ["more than 1000 runs", manifest({ runs: 1001 })],
     ["a status nobody defined", manifest({ status: "someday" as BenchmarkManifest["status"] })],
     ["a version that is not a date version", manifest({ version: "v2" })],
-    ["a task ref that is not a commit", manifest({ ref: "main" })],
     ["an origin ref that is not a commit", manifest({ origin: { kind: "git", ref: "main" } })],
     ["an id outside the id characters", manifest({ id: "../x" })],
   ])("a manifest with %s is never written", async (_case, refused) => {

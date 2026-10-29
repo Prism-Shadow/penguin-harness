@@ -1,7 +1,7 @@
 ---
 name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline, or import a published Benchmark package.
-version: 2026.10.29.1
+version: 2026.10.29.2
 ---
 
 # Benchmark Design

@@ -2,8 +2,8 @@
 
 - **Date:** 2026-10-29
 - **Type:** fix
-- **Scope:** `core`, `skills`
+- **Scope:** `skills`
 
 [中文版](2026-10-29-benchmark-commit-pinning.zh.md)
 
-The manifest’s `ref` records the task-source commit and survives package import/export. Harbor evaluation and Benchmark design require full commit links; the task, run rules and checkout must agree with the declared revision. Import provenance remains in `[origin]`.
+Agent Evaluation and Benchmark Design require Case instructions to name the task repository and a full commit. Task links, run rules and checkout instructions use that same commit, which is recorded with the evaluation. Display packages continue to be fetched from `main` through the existing build and import flows.

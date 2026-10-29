@@ -6,12 +6,12 @@ The repository's README section *Running a task (for agents)*, which the stateme
 
 **The model, and no credentials.** Every cell runs the request's `provider` / `model_id`, which the caller fixes as `SKILL.md`'s "For the caller" says: the pair its own instructions name, else its own Session's model from its Environment. When it cannot determine the model, the caller stops and asks the user. Neither the caller nor a cell ever reads the server's `api-token` file, a Project's `.project_config.toml` (it holds the model keys) or the server's auth database `web.db`, and neither calls the server's HTTP API with a token read from disk — not to find the model, and not to check its key. The adapter reads the saved model entry itself, and the repository's helper prints the one host a cell needs (§B.3).
 
-**What the statement gives.** The Case's statement names the repository and launch. The package's top-level `ref` in `benchmark_config.toml` pins the task-source commit; it is separate from the import provenance in `[origin].ref`:
+**What the statement gives.** The Case's statement names the task repository, commit and launch:
 
 | Value | In the statement |
 | --- | --- |
 | `REPO` | The repository: the **Task** line's link up to `/tree/` |
-| `SHA` | The full 40-character lowercase commit in the Task link; the run-rules link, checkout sentence and package `ref` name the same commit |
+| `SHA` | The full 40-character lowercase commit in the Task link; the run-rules link and checkout sentence name the same commit |
 | `TASK_PATH`, `TASK` | `-p <TASK_PATH>` and `-i <TASK>` of the launch |
 | `HARBOR_VERSION` | `harbor==<HARBOR_VERSION>` of the launch |
 | `AGENT` | `-a <AGENT>` of the launch: the adapter inside the repository's `agents/` |
@@ -20,7 +20,7 @@ The repository's README section *Running a task (for agents)*, which the stateme
 | The host line | `--allow-agent-host <model provider API host>`: present only for a task whose agent phase has no network (§B.3) |
 | The overlay line | `--extra-docker-compose tools/docker/shared-network.yaml`: present only where the repository allows the shared network (§A.9) |
 
-Require an explicit full commit: branch links such as `main`, tags and abbreviated hashes are `benchmark_invalid`. The Task link, run-rules link and checkout sentence must agree, as must the package's `ref` when present; a mismatch is `benchmark_invalid`. Older packages without `ref` use the commit in their statement. The caller passes that `SHA` to every worker. All cells and later evaluations of the same package use that checkout; do not resolve a newer branch tip.
+Require an explicit full commit for task sources: branch links such as `main`, tags and abbreviated hashes are `benchmark_invalid`. The Task link, run-rules link and checkout sentence must agree. Record the repository URL and commit with the evaluation, and pass that `SHA` to every worker. All cells and later evaluations of the same package use that checkout. This requirement applies to running tasks; the display package may be fetched from `main`.
 
 The Case id without its `CASE-NNN-` prefix must equal `TASK`; otherwise the Case is `benchmark_invalid`. A statement with both the host line and the overlay line is `benchmark_invalid` as well: the repository never allows the shared network for a task without network.
 
