@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-29
 - **Type:** feature
-- **Scope:** `server`
+- **Scope:** `server`, `docs`
 
 [English](2026-10-29-machine-answers-compressed.md)
 
