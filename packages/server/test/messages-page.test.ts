@@ -711,6 +711,7 @@ describe("messages windowed reads", () => {
   it("cursor edge cases: unknown shard yields an empty end-of-history page; empty sessions page cleanly", async () => {
     expect(await service.readMessagesPage(P, A, S, { kind: "tail", limit: 5 })).toEqual({
       messages: [],
+      units: 0,
       prior: {
         turns: 0,
         subagentTokens: 0,

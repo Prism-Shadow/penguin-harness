@@ -28,7 +28,21 @@ export interface CancelFrame {
   cancel: true;
 }
 
-export type ClientFrame = CallFrame | CancelFrame;
+/**
+ * Client -> server: how much of a credit-flow stream (`x-flow: credit`) the client has
+ * handled — the summed `data` length (JS string length) of every event frame of that call so
+ * far except `ping`, cumulative. The server keeps at most the call's window of unacknowledged
+ * data in flight (stream-answer.ts); a call without the header is never held back, and an ack
+ * for an unknown id or a call without the header is ignored. A client sends acks only for a
+ * stream whose start frame echoed `x-flow: credit`: a server older than acks would close the
+ * socket on one.
+ */
+export interface AckFrame {
+  id: number;
+  ack: number;
+}
+
+export type ClientFrame = CallFrame | CancelFrame | AckFrame;
 
 /** Server -> client: a one-shot response, whole. */
 export interface ResponseFrame {
@@ -79,7 +93,12 @@ export const CALL_HEADERS: ReadonlySet<string> = new Set([
   "last-event-id",
   "accept",
   "content-type",
+  // `credit`: a stream call opts into acknowledged flow (AckFrame).
+  "x-flow",
 ]);
+
+/** The `x-flow` value that opts a stream call into acknowledged flow. */
+export const CREDIT_FLOW = "credit";
 
 const METHODS: ReadonlySet<string> = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
@@ -101,9 +120,15 @@ export function parseClientFrame(raw: string): { frame: ClientFrame } | { error:
     return { error: "frame id must be a non-negative integer" };
   }
   if (o.cancel === true) return { frame: { id: o.id, cancel: true } };
+  if ("ack" in o) {
+    if (typeof o.ack !== "number" || !Number.isFinite(o.ack) || o.ack < 0) {
+      return { error: "frame ack must be a non-negative number" };
+    }
+    return { frame: { id: o.id, ack: o.ack } };
+  }
   const call = o.call;
   if (typeof call !== "object" || call === null)
-    return { error: "frame carries neither call nor cancel" };
+    return { error: "frame carries neither call, cancel nor ack" };
   const c = call as Record<string, unknown>;
   if (typeof c.method !== "string" || !METHODS.has(c.method))
     return { error: "call.method is not a method" };

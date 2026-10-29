@@ -25,9 +25,11 @@
 import http from "node:http";
 import { WebSocket } from "ws";
 import type { MachineSocketFact } from "../api/types.js";
+import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame, ServerFrame } from "../socket/frames.js";
 import { apiSocketPath } from "../socket/ref.js";
 import { HEARTBEAT_MS } from "../socket/serve.js";
+import { API_SOCKET_DEFLATE } from "../socket/compression.js";
 
 /** The machine answered the handshake with a status: it is up, and has no socket to offer (or refused this server). */
 export class HandshakeRefused extends Error {
@@ -151,7 +153,8 @@ export function incompatibleAnswer(detail: string): Response {
 
 /** What a caller's stream call hears back from a socket (or, for the event hub, from its upstream). */
 export interface Sink {
-  onStart(status: number): void;
+  /** The stream began; `headers` are its start frame's (an `x-flow: credit` echo says it reads acks). */
+  onStart(status: number, headers?: Record<string, string>): void;
   onEvent(event: EventFrame): void;
   onEnd(): void;
   onResponse(status: number, body: unknown): void;
@@ -161,6 +164,8 @@ export interface Sink {
 export class MachineSocket {
   readonly #ws: WebSocket;
   readonly #calls = new Map<number, Sink>();
+  /** Calls whose start frame echoed `x-flow: credit`: the only ones `ack` speaks for. */
+  readonly #credited = new Set<number>();
   #next = 1;
   #closed = false;
 
@@ -187,11 +192,13 @@ export class MachineSocket {
       if (sink === undefined) return;
       if ("event" in frame) sink.onEvent(frame);
       else if ("end" in frame) {
-        this.#calls.delete(frame.id);
+        this.#forget(frame.id);
         sink.onEnd();
-      } else if ("stream" in frame) sink.onStart(frame.status);
-      else {
-        this.#calls.delete(frame.id);
+      } else if ("stream" in frame) {
+        if (frame.headers["x-flow"] === CREDIT_FLOW) this.#credited.add(frame.id);
+        sink.onStart(frame.status, frame.headers);
+      } else {
+        this.#forget(frame.id);
         sink.onResponse(frame.status, frame.body);
       }
     });
@@ -200,6 +207,7 @@ export class MachineSocket {
       this.#closed = true;
       const sinks = [...this.#calls.values()];
       this.#calls.clear();
+      this.#credited.clear();
       for (const sink of sinks) sink.onEnd();
     };
     ws.on("close", drop);
@@ -218,7 +226,8 @@ export class MachineSocket {
       const ws = new WebSocket(`ws://127.0.0.1:${target.port}${apiSocketPath()}`, {
         agent: target.agent,
         headers: { host: `localhost:${target.port}`, cookie: target.cookie },
-        perMessageDeflate: false,
+        // Offered, not imposed: a machine whose server predates compression answers without it.
+        perMessageDeflate: API_SOCKET_DEFLATE,
       });
       const deadline = setTimeout(() => {
         reject(new HandshakeTimeout(timeoutMs));
@@ -271,8 +280,27 @@ export class MachineSocket {
   }
 
   cancel(id: number): void {
+    this.#credited.delete(id);
     if (!this.#calls.delete(id)) return;
     if (this.#ws.readyState === this.#ws.OPEN) this.#ws.send(JSON.stringify({ id, cancel: true }));
+  }
+
+  #forget(id: number): void {
+    this.#calls.delete(id);
+    this.#credited.delete(id);
+  }
+
+  /**
+   * Acknowledges a credit-flow stream (`x-flow: credit`, socket/frames.ts AckFrame): this
+   * server has handled `cumulative` of that call's event data (`ping`s not counted). Nothing
+   * for a call already over, or for one whose start frame did not echo the header — a machine
+   * older than acks closes its socket on one.
+   */
+  ack(id: number, cumulative: number): void {
+    if (!this.#calls.has(id) || !this.#credited.has(id)) return;
+    if (this.#ws.readyState === this.#ws.OPEN) {
+      this.#ws.send(JSON.stringify({ id, ack: cumulative }));
+    }
   }
 
   /** Tears the socket down as dead: every stream on it ends, and the relay dials again next time. */

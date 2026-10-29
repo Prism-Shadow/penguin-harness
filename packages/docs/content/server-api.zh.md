@@ -864,7 +864,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 下面这些路径省略了 `/api/sessions/:sessionId` 前缀。Session 和 Trace 背后的存储模型见 [Session 与 Trace](/sessions-and-traces)。
 
-这里的每条路由都遵循两条约定。调用方无权访问的 Session 一律返回 `404` `session_not_found`，因此不会暴露它是否存在。一个 Session 同一时间只能运行一个 Task 或一次压缩：冲突的请求返回 409（`task_in_progress` / `compacting`）。
+这里的每条路由都遵循两条约定。调用方无权访问的 Session 返回 `404` `session_not_found`，因此不会暴露它是否存在；唯独管理员得到 `403` `session_forbidden`——本服务端以机器的管理员身份读取机器，拒绝不能被当成删除。一个 Session 同一时间只能运行一个 Task 或一次压缩：冲突的请求返回 409（`task_in_progress` / `compacting`）。
 
 ### Session 与历史
 
@@ -875,6 +875,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | DELETE | `/` | 删除 Session，连同它的 Trace、暂存文件和子 Agent Session |
 | GET | `/messages` | 记录历史，全量或按 Task 窗口 |
 | GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
+| GET | `/history-lines` | 历史流的机器一侧：窗口的信封与布局，随后是调用方缺少的 Trace 行 |
+| GET | `/trace-body?ref=` | 历史窗口折叠掉的一个值，完整取回（流） |
 | POST | `/fork` | 在一条已完成的助手回复之后分叉空闲的 Session：`{position: {fileIndex, ordinal}}` → `{session}` |
 | GET | `/stream` | SSE 事件流；见[流式传输（SSE）](#流式传输sse) |
 | GET | `/amsp` | 该 Session 的 AMSP 流：只有记录和 `ping`，不含 `/stream` 另加的服务器事件 |
@@ -888,8 +890,10 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `PATCH /` 带 `archived: true` 归档 Session；带 `archived: false` 取消归档，并让它留在侧边栏：由程序打开的 Session 此后再运行也保持 `active`，直到再次被归档。两者都以 `session_archived` 宣告。`subagent` 与 `company` 会话不在任何列表中，对它们设置 `archived` 返回 `409` `session_not_listed`。运行、恢复、定时任务投递或消息接入都照常作用于已归档的 Session，且不会取消归档。
 - `DELETE /` 先中止运行中的 Task，再移除 Session 的 Trace 文件、暂存文件、索引行和消息渠道绑定。它派生的子 Agent Session（由其 Trace 中的 `subagent` 记录找出）按同样的方式一并删除。每删除一个 Session 都以 `session_deleted` 宣告。
-- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、窗口按切分时的口径所含的 Task 数（`units`：一次 Prompt 连同其图片算一个，逐页加载到 N 个 Task 的客户端由此与 `tailLimit` 计数一致）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
+- `GET /history-lines` 是本服务端读取已连接机器上 Session 所用的接口（经 API 套接字调用；每个服务端都为自己的 Session 应答）。它恰好接受 `tailLimit=n`、`before=<游标>&limit=n`、`full=1`、`body=<ref>`、`fill=only[&file=<键>]` 之一，另可带 `budget=<字节>`（窗口的字节预算，按图片引用、正文折叠后的形态计，窗口展开的子 Agent 会话记录一并计入）、`fill=1`（交付窗口后继续发送该 Session 的其余各行）与 `have=`（base64url 编码的 JSON：每个 Trace 文件的 inode 与设备号（十进制字符串）、创建时间、调用方持有的每一段 `[lo, hi)` 及其首尾的散列，以及只持有一部分的行）。流在读取任何内容之前就开始并发出节拍。随后依次为 `window`（`/messages` 随记录附带的信封、该 Session 及其子 Agent 会话的 Trace 文件、窗口在其上的布局、重记录的折叠形态与各阶段总量；超过一帧时改为若干 `window-part`，各段文本拼接即其 JSON）、`lines` 与 `part`（只发整行，最新的段在前，超过一帧的单行拆成若干片，每片注明所属行的起点）、`ready`、只持有一部分的行的余下部分（只有窗口自身的轻行才在 `ready` 之前发）、重行与补齐部分，最后是 `done`。每个事件至多 32 KiB 文本。inode 相同、且双方都知道创建时间时创建时间也相同，才是调用方复制的那个文件（设备号从不比较，创建时间等于变更时间的视为未知）；不是同一文件，或大小、区段边界、序号、锚点不符时，标为 `reset` 并从头重发；只持有一部分的行若不符，只把该行整行重发。流开始后才发现无法应答的（`body` 的 ref 不指向该 Session 的行）以 `error` 事件结束。早于这条路由的服务端在套接字上答 `421` `not_on_socket`。无权读取该 Session 的管理员（本服务端读取机器所用的身份）在这里与 `trace-body` 上得到 `403` `session_forbidden`，拒绝因此不会被当成删除；其他无权读取的用户与所有 Session 路由一样得到 `404` `session_not_found`。
+- `GET /trace-body?ref=` 以流的形式取回历史窗口折叠掉的一个值（超过 16 KiB 的工具输出、图片、工具调用参数中的长字符串或思考文本，由 `elided` 条目的 `ref` 指明），事件为 `progress`、`part`（`{windowId, offset, text, last}`）与 `done`。ref 本身不授权任何读取：只有其 Agent 与 Session 都是合法 id，且其 Session 就是该 Session 或其历史展开所及的子 Agent 会话时才应答，行从该 Session 自身索引定位到的文件中读取；其余一律 404 `trace_body_not_found`。
 - `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
 - `GET /goal` 返回 `{goal}`：Session 从未跑过目标时为 `null`，否则为 `{objective, status, budget, used, rounds}`。`status` 取值为 `active`、`complete`、`blocked`、`budget_limited` 或 `aborted`，`budget` 为 -1 表示不限制。目标只存活在它的运行期间，所以 Session 已停止运行、目标却仍是 active 时，会报告为 `aborted`。见[目标模式](/goal-mode)。
 - `GET /amsp` 为登录用户或本机 API token 提供 Agent API 的 Session 流，与 `GET /api/amsp/v1/sessions/:sessionId/stream` 是同一个处理器：每条记录带其 `id:`，`event: ping` 立即发出、此后每 20 秒一次。续传所用的 `Last-Event-ID`（或 `lastEventId`）已被挤出缓冲时，不开流，直接以 `409` `resync_required` 作答。它不写任何 `server_event`，没有初始的 `task_state` 快照，也不补发 `approval_request`。见 [Session 流](/amsp#session-流)。
@@ -1462,6 +1466,7 @@ API 套接字是同一个 API 的第二种传输，供自带的 Web App 使用�
 { "id": 3, "call": { "method": "GET", "path": "/server/<machineId>/api/events" } }   // 机器的端点，路径与代理相同
 { "id": 4, "call": { "method": "GET", "path": "/api/projects/<projectId>/machines/events" } }   // 所有机器的事件，只有一条流
 { "id": 2, "cancel": true }                                                          // 结束一次流式调用
+{ "id": 5, "ack": 262144 }                                                           // 流控：已处理的事件数据量
 
 // 服务端 -> 客户端
 { "id": 1, "status": 200, "headers": { "date": "…" }, "body": { "projects": [] } }   // 一次性响应：一帧
@@ -1470,7 +1475,9 @@ API 套接字是同一个 API 的第二种传输，供自带的 Web App 使用�
 { "id": 2, "end": true, "reason": "closed" }                                        // "lagging"：带 last-event-id 重新发起
 ```
 
-`call.headers` 只接受 `last-event-id`、`accept` 与 `content-type`；凭据来自握手。JSON 正文以 `application/json` 发送；多部分正文与二进制响应（下载）不经套接字——后者回 `415 unsupported_transport`，客户端改用 fetch。服务端按 SSE 心跳的节奏 ping，两拍无应答即断开；发送积压超过水位的客户端，其流以 `reason: "lagging"` 结束——上文的投递保证对重新发起的调用与对一次重连完全相同。
+`call.headers` 只接受 `last-event-id`、`accept`、`content-type` 与 `x-flow`；凭据来自握手。JSON 正文以 `application/json` 发送；多部分正文与二进制响应（下载）不经套接字——后者回 `415 unsupported_transport`，客户端改用 fetch。服务端按 SSE 心跳的节奏 ping，两拍无应答即断开；发送积压超过水位的客户端，其流以 `reason: "lagging"` 结束——上文的投递保证对重新发起的调用与对一次重连完全相同。
+
+带 `x-flow: credit` 的流式调用由客户端控速。服务端在流的起始帧回显该头，客户端看到回显后才发 `{id, ack}`，回报该调用已处理的各事件帧 `data` 长度之和（`ping` 不计）——早于确认流控的服务端遇到不认识的帧会关闭套接字。服务端在途的未确认数据不超过该调用的窗口——确认速率的 2 秒量，介于 32 KiB 与 1 MiB 之间，起始 64 KiB——一次成批传输因此不会在同一套接字的其他调用之前堆积几分钟的数据；节拍 `ping` 不占窗口。不带该头的调用从不被限速。一次性调用在应答读取期间被释放（取消、套接字关闭）时，不再发出应答帧。握手没有 `Origin`（另一个服务端，如本服务端拨向机器）或来自另一台电脑上的浏览器时，套接字以不保留上下文的 permessage-deflate 压缩各帧（每帧单独压缩，任何一帧的大小都不取决于其他帧的内容）；本机浏览器的套接字不压缩。
 
 显式 Project aggregate 与 socket proxy 读取方的上游传输只走套接字。对于单机器 socket proxy 流，当没有通往该机器的套接字能承载这条流时，proxy 以 `502`/`504` 作答，原因见上文 **已连接机器的 API**，绝不改走 HTTP 转发，由该 proxy 读取方按自身退避重新发起。Project aggregate 对被关注机器的 dial/open 失败采用不同处理：聚合流自身保持打开，由 hub 在后台重试该机器，读取方不会因该机器失败而重开聚合流；只有聚合流自身结束、静默或因背压被结束时，才由读取方重开聚合流。显式聚合读取方只开一次调用——`GET /api/projects/<projectId>/machines/events`——而不是每台机器各开一次 proxy 调用；hub 把每台机器一次订阅扇入其中，并给事件标上来源机器（**socket hub 内每台机器一条事件流**）。该聚合读取方的流数量与机器数无关；socket hub 每台机器只持有一条上游流，不是每个读取方每台机器各一条。这描述的既是显式 aggregate/proxy 路径，也是默认的 Web App：它像任何显式读取方一样读取聚合流，每台机器一次订阅的保证同样覆盖它。
 
