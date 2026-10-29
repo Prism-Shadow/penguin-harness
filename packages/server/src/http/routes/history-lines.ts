@@ -98,6 +98,13 @@ export function historyLinesRoutes(deps: HistoryLinesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const log = deps.log ?? (() => undefined);
 
+  /**
+   * The path's Session, for a caller who may read it. A Session that does not exist is 404
+   * `session_not_found`. One the caller may not read is 404 too — its existence is not revealed
+   * — except to an admin, who is answered 403 `session_forbidden`: a hub reads its machines as
+   * their admin, and must not take a refusal for a deletion (it drops its copy of a Session the
+   * machine says is gone).
+   */
   const resolveSession = (c: Context<AppEnv>): SessionRow => {
     const sessionId = c.req.param("sessionId");
     const row = sessionId ? deps.sessions.findById(sessionId) : null;
@@ -107,6 +114,9 @@ export function historyLinesRoutes(deps: HistoryLinesRouteDeps): Hono<AppEnv> {
     try {
       deps.access.requireProjectAccess(c.var.user.userId, row.projectId);
     } catch {
+      if (c.var.user.isAdmin) {
+        throw new HttpError(403, "session_forbidden", "This account may not read this Session.");
+      }
       throw missing();
     }
     return row;
