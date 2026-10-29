@@ -3892,6 +3892,16 @@ Scenarios:
         `The machine is not answering, asking again (attempt ${attempt})`,
       askIn: (seconds: number, attempt: number) =>
         `The machine is not answering, asking again in ${seconds} s (attempt ${attempt})`,
+      /**
+       * Connected and beating, but nothing else from the machine for a minute (a route stuck over
+       * there): nothing is retried, so no attempt and no countdown.
+       */
+      slow: (alias: string | null) =>
+        alias === null
+          ? "The machine is connected but has sent no new data for a minute; still waiting"
+          : `${alias} is connected but has sent no new data for a minute; still waiting`,
+      /** A wait the server names in words this build does not know: said without guessing why. */
+      waitingOther: "Waiting for the machine",
       retryNow: "Retry now",
       /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
       broken: "The history transfer broke off; try again",
@@ -6134,6 +6144,8 @@ Scenarios:
       not_found: "This resource does not exist, or you do not have access.",
       trace_body_not_found: "This part is no longer in the conversation's Trace.",
       machine_refused: "The machine refused this read.",
+      machine_no_answer: "A machine that may hold this conversation did not answer in time.",
+      session_forbidden: "The machine does not let this server see this conversation.",
       machine_not_found: "This machine is not on the Project's machine list.",
       machine_outdated: "The machine runs an older version; update it on the Machines page.",
       machine_answered: "The machine's answer could not be used; try again.",

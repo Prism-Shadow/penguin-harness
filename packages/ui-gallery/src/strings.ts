@@ -907,6 +907,8 @@ export const zh = {
       transferUncounted: "尚未计数",
       transferTop: "对话顶部",
       transferTopWaiting: "对话顶部，等待机器时",
+      transferSlowCaption: "机器已连接、一分钟没有新数据时（不重试，不倒计时）",
+      transferSlow: (alias: string) => `${alias} 已连接，但一分钟内没有传来新数据，仍在等待`,
       transferBody: "展开的输出下",
       transferWindow: (alias: string) => `正在从 ${alias} 加载最近的对话`,
       transferFill: "更早的历史正在同步",

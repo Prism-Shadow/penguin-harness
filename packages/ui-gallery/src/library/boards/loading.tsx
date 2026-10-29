@@ -140,6 +140,22 @@ export function LoadingBoard() {
               {...AMOUNTS.fill}
             />
           </div>
+          <div className="grid gap-1" data-sample="slow">
+            <span className="lib-caption">{t.transferSlowCaption}</span>
+            <TransferProgress
+              mark={
+                <GlyphIcon
+                  d={ICONS.hourglass}
+                  size={ICON_SIZE.inlineGlyph}
+                  className="text-tone-attention-fg"
+                />
+              }
+              label={t.transferSlow("gpu-box")}
+              {...AMOUNTS.fill}
+            />
+            <TransferProgress size="sm" label={t.transferWindow("gpu-box")} {...AMOUNTS.window} />
+            <RetryStatus phase="waiting" label={t.transferSlow("gpu-box")} size="sm" />
+          </div>
           <div className="grid gap-1">
             <span className="lib-caption">{t.transferBody}</span>
             <TransferProgress label={t.transferBodyLabel} {...AMOUNTS.body} />

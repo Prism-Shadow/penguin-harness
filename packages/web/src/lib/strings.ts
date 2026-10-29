@@ -4094,6 +4094,16 @@ Benchmark：
       asking: (attempt: number) => `机器没有回应，正在重新请求（第 ${attempt} 次）`,
       askIn: (seconds: number, attempt: number) =>
         `机器没有回应，${seconds} 秒后重新请求（第 ${attempt} 次）`,
+      /**
+       * Connected and beating, but nothing else from the machine for a minute (a route stuck over
+       * there): nothing is retried, so no attempt and no countdown.
+       */
+      slow: (alias: string | null) =>
+        alias === null
+          ? "机器已连接，但一分钟内没有传来新数据，仍在等待"
+          : `${alias} 已连接，但一分钟内没有传来新数据，仍在等待`,
+      /** A wait the server names in words this build does not know: said without guessing why. */
+      waitingOther: "正在等待机器",
       retryNow: "立即重试",
       /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
       broken: "历史消息传输中断，请重试",
@@ -6376,6 +6386,8 @@ Benchmark：
       not_found: "资源不存在，或你没有访问权限。",
       trace_body_not_found: "这段内容已不在这个对话的 Trace 中。",
       machine_refused: "机器拒绝了这次读取。",
+      machine_no_answer: "可能持有这个对话的机器没有及时答复。",
+      session_forbidden: "这台机器不让本服务端查看这个对话。",
       machine_not_found: "这台机器不在当前 Project 的机器列表中。",
       machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
       machine_answered: "机器给出的应答无法使用，请重试。",

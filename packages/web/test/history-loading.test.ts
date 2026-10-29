@@ -18,6 +18,10 @@
  * - Given the server waiting for the machine during that read, the same line says so: its mark
  *   slot takes the hourglass and its sentence the waiting words, the amount and the bar stay as
  *   they stood, and the line is the transfer line still — not a retry row in another ink.
+ * - Given a machine that is connected but has sent no data for a minute (`slow`), both places say
+ *   so with no attempt, no countdown and no Retry now, since nothing is being retried; data
+ *   arriving clears it from the same line.
+ * - Given a waiting reason this build does not know, the words are neutral, not a guess at why.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -189,5 +193,55 @@ describe("the line at the transcript's top while a read runs behind it", () => {
     expect(container.textContent).toContain("120 / 380 KB");
     expect(bar(container)?.getAttribute("aria-valuenow")).toBe(String(120 * KIB));
     expect(container.querySelector("[data-retry-phase]")).toBeNull();
+  });
+
+  it("says a slow machine in the same line with no countdown, and lets it go when data arrives", async () => {
+    const line = (waiting: HistoryProgress["waiting"]) =>
+      h(HistoryTransferLine, { loading: true, older: progress(waiting), fill: null });
+    const { container, rerender } = await mount(line(null));
+    await run(() => vi.advanceTimersByTime(1_000));
+    const before = container.querySelector("[data-transfer]");
+    await rerender(line({ reason: "slow", attempt: 0, nextAt: 0 }));
+    expect(container.querySelector("[data-transfer]")).toBe(before);
+    expect(container.textContent).toContain(words.slow("box"));
+    expect(container.textContent).not.toContain(words.asking(0));
+    await rerender(line(null));
+    expect(container.querySelector("[data-transfer]")).toBe(before);
+    expect(container.textContent).not.toContain(words.slow("box"));
+    expect(container.textContent).toContain(S.chat.loadingEarlier);
+  });
+});
+
+describe("waits that retry nothing", () => {
+  it("say a slow machine under the pane's row with no countdown and no Retry now", async () => {
+    const { container } = await mount(
+      h(HistoryLoading, {
+        projectId: "p",
+        sessionId: "s1",
+        progress: progress({ reason: "slow", attempt: 0, nextAt: 0 }),
+        onRetryNow: () => {},
+      }),
+    );
+    await run(() => vi.advanceTimersByTime(1_000));
+    expect(container.textContent).toContain(words.slow("box"));
+    expect(container.querySelector("[data-retry-countdown]")).toBeNull();
+    expect(container.textContent).not.toContain(words.retryNow);
+  });
+
+  it("say a reason this build does not know in neutral words", async () => {
+    const unknown = { reason: "rebalancing", attempt: 0, nextAt: 0 } as unknown as NonNullable<
+      HistoryProgress["waiting"]
+    >;
+    const { container } = await mount(
+      h(HistoryLoading, {
+        projectId: "p",
+        sessionId: "s1",
+        progress: progress(unknown),
+        onRetryNow: () => {},
+      }),
+    );
+    await run(() => vi.advanceTimersByTime(1_000));
+    expect(container.textContent).toContain(words.waitingOther);
+    expect(container.textContent).not.toContain(words.asking(0));
   });
 });

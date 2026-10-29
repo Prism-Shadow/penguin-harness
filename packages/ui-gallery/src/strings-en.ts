@@ -926,6 +926,9 @@ export const en: GalleryStrings = {
       transferUncounted: "Nothing counted yet",
       transferTop: "Over the conversation",
       transferTopWaiting: "Over the conversation, waiting for the machine",
+      transferSlowCaption: "Connected, no new data for a minute (nothing retried, no countdown)",
+      transferSlow: (alias: string) =>
+        `${alias} is connected but has sent no new data for a minute; still waiting`,
       transferBody: "Under an unfolded output",
       transferWindow: (alias: string) => `Loading the latest messages from ${alias}`,
       transferFill: "Syncing earlier history",

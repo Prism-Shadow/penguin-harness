@@ -74,47 +74,69 @@ function useQuietSecond(active: boolean): boolean {
   return useElapsedPast(active ? (since ?? undefined) : undefined, SKELETON_MS);
 }
 
-/** The words for the server's wait on the machine: the attempt now, or the seconds to the next. */
-function waitingWords(waiting: NonNullable<HistoryProgress["waiting"]>): {
-  now: string;
-  inSeconds: (seconds: number) => string;
-} {
+/**
+ * The words for the server's wait on the machine. A retry (`not_connected`: it reconnects;
+ * `retrying`: connected and silent, it asks again) says its attempt and counts down to the next,
+ * and can be made now. `slow` — connected and beating, but no data for a minute — retries
+ * nothing: no attempt, no countdown, nothing to press. A reason this build does not know is said
+ * plainly, without guessing at its cause.
+ */
+function waitingWords(
+  waiting: NonNullable<HistoryProgress["waiting"]>,
+  alias: string | null,
+): { now: string; inSeconds?: (seconds: number) => string; retries: boolean } {
   const words = S.chat.historyTransfer;
-  return waiting.reason === "not_connected"
-    ? {
+  switch (waiting.reason) {
+    case "not_connected":
+      return {
         now: words.reconnecting(waiting.attempt),
         inSeconds: (seconds) => words.reconnectIn(seconds, waiting.attempt),
-      }
-    : {
+        retries: true,
+      };
+    case "retrying":
+      return {
         now: words.asking(waiting.attempt),
         inSeconds: (seconds) => words.askIn(seconds, waiting.attempt),
+        retries: true,
       };
+    case "slow":
+      return { now: words.slow(alias), retries: false };
+    default:
+      return { now: words.waitingOther, retries: false };
+  }
 }
 
 /**
- * The server's retry of the link to the machine, as the shared retry row, in the words of what
- * it reports: not connected (it reconnects), or connected and silent (it asks again).
+ * The server's wait on the machine, as the shared retry row, in the words of what it reports
+ * (waitingWords): a retry with its countdown and Retry now, or a wait that retries nothing.
  */
 function LinkRetry({
   waiting,
+  alias,
   onRetryNow,
   size,
   className = "",
 }: {
   waiting: NonNullable<HistoryProgress["waiting"]>;
+  alias: string | null;
   onRetryNow?: () => void;
   size: "xs" | "sm";
   className?: string;
 }) {
   const words = S.chat.historyTransfer;
-  const said = waitingWords(waiting);
+  const said = waitingWords(waiting, alias);
   return (
     <RetryStatus
       phase="waiting"
       label={said.now}
-      countdown={said.inSeconds}
-      nextAt={waiting.nextAt}
-      retry={onRetryNow === undefined ? null : { label: words.retryNow, onClick: onRetryNow }}
+      {...(said.inSeconds !== undefined
+        ? { countdown: said.inSeconds, nextAt: waiting.nextAt }
+        : {})}
+      retry={
+        onRetryNow === undefined || !said.retries
+          ? null
+          : { label: words.retryNow, onClick: onRetryNow }
+      }
       size={size}
       className={className}
     />
@@ -190,6 +212,7 @@ export function HistoryLoading({
           ) : progress !== null && progress.waiting !== null ? (
             <LinkRetry
               waiting={progress.waiting}
+              alias={alias}
               onRetryNow={onRetryNow}
               size="sm"
               className="justify-center text-left"
@@ -226,6 +249,7 @@ export function HistoryTransferLine({
   const past = useQuietSecond(active);
   const current = loading ? older : fill;
   const seconds = useCountdown(current?.waiting?.nextAt ?? null);
+  const { alias } = useMachineAlias(current?.machineId ?? null);
   if (!active || !past) return null;
   const words = S.chat.historyTransfer;
   if (loading && older === null) {
@@ -237,10 +261,10 @@ export function HistoryTransferLine({
     );
   }
   const reading = current!;
-  const waiting = reading.waiting === null ? null : waitingWords(reading.waiting);
+  const waiting = reading.waiting === null ? null : waitingWords(reading.waiting, alias);
   const label =
     waiting !== null
-      ? seconds !== null && seconds > 0
+      ? waiting.inSeconds !== undefined && seconds !== null && seconds > 0
         ? waiting.inSeconds(seconds)
         : waiting.now
       : loading
@@ -284,7 +308,7 @@ export function HistoryFileLoading({
       />
       <div className="min-h-4 text-xs">
         {progress !== null && progress.waiting !== null && (
-          <LinkRetry waiting={progress.waiting} size="xs" />
+          <LinkRetry waiting={progress.waiting} alias={alias} size="xs" />
         )}
       </div>
     </div>
