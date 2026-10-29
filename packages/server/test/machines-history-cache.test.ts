@@ -679,6 +679,36 @@ describe("a machine Session's history through the hub's copy", () => {
     expect((await hub.get(`/api/sessions/${sid}/traces/1?offset=0&limit=5`)).status).toBe(404);
   });
 
+  it("keeps the copy of a Session the machine will not show this server, on the copy's own reads and on a history read", async () => {
+    const sid = uniqueSessionId();
+    const png = `data:image/png;base64,${Buffer.from("a picture").toString("base64")}`;
+    await machineSession(sid, [meta(sid), userText("look"), imageUrlMessage(png), ...tasks(2)]);
+    expect((await read(sid, "?tailLimit=20&fill=1")).at(-1)?.event).toBe("filled");
+    await waitFor(() => hub.sync.held().size === 0);
+    // The machine refuses this server's admin the Session from now on.
+    const access = machine.deps.access as unknown as Record<string, unknown>;
+    const had = Object.prototype.hasOwnProperty.call(access, "requireProjectAccess");
+    const original = access.requireProjectAccess;
+    access.requireProjectAccess = () => {
+      throw new Error("refused");
+    };
+    try {
+      const image = `/api/sessions/${sid}/trace-image?file=1&ordinal=2`;
+      expect((await hub.get(image)).status).toBe(200);
+      await waitFor(() => hub.sync.known(MACHINE, sid)?.kind === "refused");
+      expect((await hub.get(image)).status).toBe(200);
+
+      const refused = await read(sid, "?tailLimit=20");
+      expect(refused.at(-1)?.event).toBe("error");
+      expect(JSON.parse(refused.at(-1)!.data)).toMatchObject({ code: "session_forbidden" });
+      await waitFor(() => hub.sync.held().size === 0);
+      expect(await fs.readFile(hub.cacheFile(sid, 1)).catch(() => null)).not.toBeNull();
+    } finally {
+      if (had) access.requireProjectAccess = original;
+      else delete access.requireProjectAccess;
+    }
+  });
+
   it("leaves the analysis of a Session whose Project this server has no config for to the machine", async () => {
     const sid = uniqueSessionId();
     await machineSession(sid, [meta(sid), ...tasks(3)]);
