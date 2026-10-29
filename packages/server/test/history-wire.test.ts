@@ -6,10 +6,21 @@
  * - Given every run a hub holds of a file, they all come back; given the single-run form a hub
  *   sent before runs, its one run comes back the same way.
  * - Given a key that is not an Agent/Session/file triple of ids (`..` in it), nothing decodes.
+ * - Given a stat whose birth time equals its change time (Linux without statx, where libuv
+ *   reports the change time that every append moves), the identity says it knows no birth time;
+ *   given a real one, it keeps it.
+ * - Given a copy and the file now, they are one file while the inode is the same: a different
+ *   device (overlayfs after a restart) or a birth time unknown on either side changes nothing;
+ *   another inode, or two known birth times that differ, is another file.
  */
 import { describe, expect, it } from "vitest";
 import type { HistoryHave } from "../src/api/types.js";
-import { decodeHistoryHave, encodeHistoryHave } from "../src/services/history-wire.js";
+import {
+  decodeHistoryHave,
+  encodeHistoryHave,
+  fileIdentityOf,
+  sameHistoryFile,
+} from "../src/services/history-wire.js";
 
 const run = (lo: number, hi: number) => ({ lo, loOrd: lo / 10, hi, loAnchor: "l", hiAnchor: "h" });
 
@@ -48,5 +59,39 @@ describe("have on the wire", () => {
   it("a key that is not three ids decodes to nothing", () => {
     const bad = { k: "../s/1", ino: "7", birthtimeMs: 1, ranges: [] };
     expect(decodeHistoryHave(Buffer.from(JSON.stringify([bad])).toString("base64url"))).toBeNull();
+  });
+
+  it("a birth time equal to the change time is no birth time; a real one is kept", () => {
+    const stat = (birth: bigint, change: bigint) => ({
+      ino: 2n ** 60n,
+      dev: 66306n,
+      birthtimeMs: birth,
+      ctimeMs: change,
+    });
+    expect(fileIdentityOf(stat(1_700_000_000_123n, 1_700_000_000_123n))).toEqual({
+      ino: (2n ** 60n).toString(),
+      dev: "66306",
+      birthtimeMs: 0,
+    });
+    expect(fileIdentityOf(stat(1_700_000_000_000n, 1_700_000_050_000n)).birthtimeMs).toBe(
+      1_700_000_000_000,
+    );
+  });
+
+  it("a copy is the same file while its inode is, whatever the device or an unknown birth time", () => {
+    const held = { ino: "77", dev: "1", birthtimeMs: 1_700_000_000_000 };
+    expect(sameHistoryFile(held, { ino: "77", dev: "2", birthtimeMs: 1_700_000_000_000 })).toBe(
+      true,
+    );
+    expect(sameHistoryFile(held, { ino: "77", dev: "1", birthtimeMs: 0 })).toBe(true);
+    expect(
+      sameHistoryFile({ ...held, birthtimeMs: 0 }, { ino: "77", dev: "1", birthtimeMs: 5 }),
+    ).toBe(true);
+    expect(sameHistoryFile(held, { ino: "78", dev: "1", birthtimeMs: 1_700_000_000_000 })).toBe(
+      false,
+    );
+    expect(sameHistoryFile(held, { ino: "77", dev: "1", birthtimeMs: 1_700_000_999_000 })).toBe(
+      false,
+    );
   });
 });

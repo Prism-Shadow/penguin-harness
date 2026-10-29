@@ -34,7 +34,7 @@ import {
   effectivePluginTable,
   loadProjectConfig,
 } from "@prismshadow/penguin-core";
-import type { ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
+import type { AmspRecord, ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   SshHostSummary,
   MachineCheck,
@@ -130,7 +130,8 @@ import { machinesProxy } from "./proxy.js";
 import type { ProxyTarget } from "./proxy.js";
 import { machineHistory } from "./history-routes.js";
 import type { MachineHistory } from "./history-routes.js";
-import { TraceCache } from "./trace-cache.js";
+import { traceCacheAt } from "./trace-cache.js";
+import type { TraceCache } from "./trace-cache.js";
 import { MachineEventHub } from "./event-hub.js";
 import { MachineSockets } from "./machine-sockets.js";
 import type { StreamSettle } from "./machine-sockets.js";
@@ -146,11 +147,13 @@ import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Channels, Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
 import type { Auth, Users } from "../mechanisms/identity.js";
+import type { Traces } from "../mechanisms/traces.js";
 import type { LiveStreams } from "../auth/live-streams.js";
 import { streamRevocation } from "../http/sse.js";
 import type { SseRevocation } from "../http/sse.js";
 import { userChannelKey } from "../http/routes/events.js";
 import { currentRemoteLayout } from "./layout.js";
+import { LinkActivity } from "./link-activity.js";
 import type { RemoteLayout } from "./layout.js";
 
 /**
@@ -466,6 +469,11 @@ async function within<T>(
 export class MachinesService {
   #job: MachineJob | null = null;
   /** Last probe per address. In memory on purpose: a status is only true for the moment it was taken. */
+  /**
+   * When bytes last came in from each machine, on any connection #dial hands out
+   * (link-activity.ts): the link's liveness, which the history streams' watchdog reads.
+   */
+  readonly links = new LinkActivity();
   readonly #statuses = new Map<string, MachineServerStatus>();
   /**
    * The probe round in flight per Project. Concurrent askers — every open tab schedules its
@@ -1154,7 +1162,8 @@ export class MachinesService {
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return null;
     return {
-      agent: this.#effects.agent(target, row.remotePort),
+      // Tapped: every byte back from the machine, socket or proxied request, says its link lives.
+      agent: this.links.tap(row.machineId ?? address, this.#effects.agent(target, row.remotePort)),
       port: row.remotePort,
       cookie: session.cookie,
       // The socket relay reuses a socket only within one ssh session (socket-relay.ts).
@@ -3627,6 +3636,8 @@ export class MachinesModule {
   @Use() private readonly resourceGroups!: ResourceGroups;
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
+  /** The Trace analysis the hub computes over its copy of a machine's file (history-routes.ts). */
+  @Use() private readonly traces?: Traces;
   @Provide() machines!: Machines;
   /** Session-level requests for a machine's Session, routed by its id (session-forward.ts). */
   @Provide() sessionForward!: MachineSessionForward;
@@ -3674,7 +3685,8 @@ export class MachinesModule {
     const events = new MachineEventHub(sockets, (line) => console.log(line));
     // The copy of the machines' Trace lines a remote conversation's history is read from
     // (trace-cache.ts): a cache under this data root, kept across generations and restarts.
-    const historyCache = new TraceCache(path.join(this.paths.root, "machines", "traces"));
+    // One per directory for the whole process: generations share it (traceCacheAt).
+    const historyCache = traceCacheAt(path.join(this.paths.root, "machines", "traces"));
     const machines = new MachinesService(
       this.paths.root,
       repo.ownId(),
@@ -3696,6 +3708,13 @@ export class MachinesModule {
       sockets,
       target: (machineId) => machines.proxyTarget(machineId),
       known: (machineId) => machines.knows(machineId),
+      heardAt: (machineId) => machines.links.heardAt(machineId),
+      ...(this.traces !== undefined
+        ? {
+            analyze: (projectId: string, records: readonly AmspRecord[]) =>
+              this.traces!.analyzeRecords(projectId, records),
+          }
+        : {}),
       log: (line) => console.log(line),
     });
     this.routes = machinesRoutes({ machines, access: this.access, events });
@@ -3709,9 +3728,12 @@ export class MachinesModule {
     this.sessionForward = machineSessionForward(machines, { sockets, events, history }, (line) =>
       console.log(line),
     );
+    // A Session deleted on its machine takes the hub's copy of it along (history-routes.ts).
+    const untap = events.tap((machineId, data) => history.hear(machineId, data));
     // Every transient ssh session THIS generation opened closes with it, and every held one is
     // left for the successor, whose start() re-holds each one the record says was held.
     effect(() => {
+      untap();
       machines.stop();
       sync.close();
       events.close();

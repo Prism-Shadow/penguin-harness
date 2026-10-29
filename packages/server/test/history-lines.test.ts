@@ -13,6 +13,10 @@
  * - Given a valid `have`, only the bytes past its `hi` are sent, and nothing of a final file
  *   the hub holds whole.
  * - Given a held partial line, the line is continued from the partial's end, not resent.
+ * - Given a window reopened after a cut inside a heavy line, `ready` comes after the window's own
+ *   bytes only: the rest of the held line follows it.
+ * - Given a file read again after an append, its device reported otherwise and its birth time
+ *   unknown, it is the same file: not reset.
  * - Given a wrong anchor, a file recreated under a new inode, or a file that shrank, that file
  *   is `reset` and sent from scratch.
  * - Given a file that vanished, it is absent from the window's files.
@@ -148,6 +152,21 @@ class Copies {
     if (at < end) return null;
     return this.bytes.get(k)!.subarray(start, end);
   };
+}
+
+/** The runs a hub's copy of a file holds, merged where they touch. */
+function heldRuns(copies: Copies, k: string): Array<[number, number]> {
+  const runs = copies.runs
+    .filter((r) => r.k === k)
+    .map((r): [number, number] => [r.off, r.off + r.length])
+    .sort((a, b) => a[0] - b[0]);
+  const out: Array<[number, number]> = [];
+  for (const [a, b] of runs) {
+    const last = out.at(-1);
+    if (last !== undefined && a <= last[1]) last[1] = Math.max(last[1], b);
+    else out.push([a, b]);
+  }
+  return out;
 }
 
 const sizesOf = (window: HistoryLinesWindow) => new Map(window.files.map((f) => [f.k, f.size]));
@@ -346,7 +365,7 @@ describe("history-lines, the machine leg", () => {
     );
   });
 
-  it("the rest of a held line comes first, so a long light line in the same stream cannot cut it", async () => {
+  it("a held heavy line's rest comes after ready, and a long light line before it cannot cut it", async () => {
     // As a hub meets it: a heavy line held in part, the runs on both sides of it held, and then
     // a live Task whose prompt is longer than a frame (text is never folded: a light line that
     // still goes as parts).
@@ -381,8 +400,14 @@ describe("history-lines, the machine leg", () => {
     };
     const again = await lines(sid, `tailLimit=2&have=${encodeHistoryHave([have])}`);
     const frames = again.filter(isFrame).map((e) => e.data as Frame);
-    // First, the held line's rest; and nothing of the two runs the hub holds.
-    expect(frames[0]).toMatchObject({ line: held.off, off: held.off + held.bytes.length });
+    // The held line's rest comes after `ready` (its stub stands in until then); nothing of the
+    // two runs the hub holds is sent.
+    const ready = again.findIndex((e) => e.event === "ready");
+    const rest = again.findIndex(
+      (e) => e.event === "part" && (e.data as HistoryPartFrame).line === held.off,
+    );
+    expect(rest).toBeGreaterThan(ready);
+    expect(again[rest]!.data).toMatchObject({ off: held.off + held.bytes.length });
     const inRun = (f: Frame) => runs.some(([a, b]) => f.off >= a && f.off < b);
     expect(frames.filter(inRun)).toEqual([]);
     copies.receive(again, sizesOf(windowOf(again)));
@@ -541,6 +566,52 @@ describe("history-lines, the machine leg", () => {
     },
   );
 
+  it("a window reopened after a cut inside a heavy line is ready after only its own bytes", async () => {
+    const { sid, paths, keys } = await seed();
+    const first = await lines(sid, "tailLimit=2");
+    const stub = windowOf(first).stubs[0]!;
+    let parts = 0;
+    const cut = first.findIndex((e) => e.event === "part" && ++parts === 2) + 1;
+    const copies = new Copies();
+    copies.receive(first.slice(0, cut), sizesOf(windowOf(first)));
+    const held = copies.committers.get(keys[1]!)!.partial()!;
+    expect(held.off).toBe(stub.offset);
+    // The newest Task, all of it held; the heavy line, in an older Task, held in part.
+    const file = await fs.readFile(paths[1]!);
+    const have: HistoryHave = {
+      ...(await haveOf(paths[1]!, keys[1]!, file, heldRuns(copies, keys[1]!))),
+      partial: { off: held.off, len: held.bytes.length, anchor: anchorOf(held.bytes) },
+    };
+    const again = await lines(sid, `tailLimit=1&have=${encodeHistoryHave([have])}`);
+    const ready = again.findIndex((e) => e.event === "ready");
+    const window = windowOf(again);
+    const beforeReady = again.slice(0, ready).filter(isFrame);
+    expect(beforeReady).toEqual([]);
+    expect(window.totals.window.bytes).toBe(0);
+    const rest = again
+      .slice(ready)
+      .filter(isFrame)
+      .map((e) => e.data as HistoryPartFrame);
+    expect(rest[0]).toMatchObject({ line: held.off, off: held.off + held.bytes.length });
+    expect(window.totals.heavy.bytes).toBe(stub.length - held.bytes.length);
+  });
+
+  it("a file read again after an append, its device reported otherwise and its birth time unknown, is not reset", async () => {
+    const { sid, paths, keys } = await seed();
+    const first = await lines(sid, "tailLimit=1&fill=1");
+    const copies = new Copies();
+    copies.receive(first, sizesOf(windowOf(first)));
+    const size = (await fs.stat(paths[1]!)).size;
+    const have = await haveOf(paths[1]!, keys[1]!, copies.bytes.get(keys[1]!)!, [[0, size]]);
+    await fs.appendFile(paths[1]!, `${JSON.stringify(userText("q6"))}\n`);
+    // As a copy taken on a machine whose overlayfs device moved, or that keeps no birth time.
+    const moved: HistoryHave = { ...have, dev: "999999", birthtimeMs: 0 };
+    const again = await lines(sid, `fill=only&file=${keys[1]}&have=${encodeHistoryHave([moved])}`);
+    expect(windowOf(again).files.find((f) => f.k === keys[1])?.reset).toBeUndefined();
+    const sent = again.filter(isFrame).map((e) => e.data as Frame);
+    expect(sent.map((f) => f.off)).toEqual([size]);
+  });
+
   it.each(["a wrong anchor", "a new inode", "a file that shrank"])(
     "%s resets the file and sends it from scratch",
     async (change) => {
@@ -627,12 +698,14 @@ describe("history-lines, the machine leg", () => {
     }
     const tiny = await windowAt("tailLimit=20&budget=1");
     expect(prompts(tiny.records)).toEqual(["q8"]);
+    expect(tiny.window.envelope.page?.units).toBe(1);
     expect(tiny.window.envelope.page?.before).toBeDefined();
 
     // 10 KiB holds a few folded Tasks; any one of them whole is four times that.
     const budget = 10 * 1024;
     const newest = await windowAt(`tailLimit=20&budget=${budget}`);
     const held = prompts(newest.records);
+    expect(newest.window.envelope.page?.units).toBe(held.length);
     expect(held.length).toBeGreaterThan(1);
     expect(held.length).toBeLessThan(8);
     expect(held.at(-1)).toBe("q8");

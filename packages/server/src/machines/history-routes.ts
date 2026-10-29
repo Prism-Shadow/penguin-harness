@@ -15,16 +15,22 @@
  *  - `GET …/sessions/:id/trace-image` — from the copy when it holds the record (a record never
  *    changes, the live file's included);
  *  - the Trace panel's events, `GET …/sessions/:id/traces/:index` and
- *    `GET …/projects/:p/agents/:a/traces/:id/:index` — from the copy only for a rotated file it
- *    holds whole: the live file grows on the machine, and its events are the machine's to count.
- *    The Project-scoped path is answered here only when this server knows the Session's Project,
- *    and a Project that is not the Session's finds nothing, as on the machine.
+ *    `GET …/projects/:p/agents/:a/traces/:id/:index` — from the copy for the records it holds
+ *    from the file's start, out of the machine's count as last told (the panel makes the file
+ *    whole first, so a live file reads as far as it is synced); a page past what is held goes
+ *    to the machine;
+ *  - its analysis, `…/traces/:index/analysis` on either path — computed here by the server's
+ *    own code over the copy's records (Traces.analyzeRecords) once the copy holds the file as
+ *    the machine last told it, priced with the Session's Project rates (the ones this server
+ *    hands that Project's machines); before that, the machine's.
  *
- * The Trace panel's analysis is still the machine's to answer: it prices the file with that
- * machine's Project rates.
+ * The Project-scoped paths, and the analysis on either path, are answered here only when this
+ * server knows the Session's Project; a Project that is not the Session's finds nothing, as on
+ * the machine.
  */
 import { bodyAt, decodeBodyRef } from "@prismshadow/penguin-core/interfaces";
-import type { HistoryFileKey, TraceEventsResponse } from "../api/types.js";
+import type { AmspRecord } from "@prismshadow/penguin-core";
+import type { HistoryFileKey, TraceAnalysisResponse, TraceEventsResponse } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { SseRevocation } from "../http/sse.js";
 import {
@@ -49,10 +55,23 @@ import type { ProxyPath, ProxyTarget } from "./proxy.js";
 import type { TraceCache } from "./trace-cache.js";
 
 const SESSION_READ = /^\/api\/sessions\/([^/]+)\/(history|trace-body|trace-image)$/;
-const SESSION_EVENTS = /^\/api\/sessions\/([^/]+)\/traces\/([1-9]\d{0,5})$/;
-const AGENT_EVENTS = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/traces\/([^/]+)\/([1-9]\d{0,5})$/;
+const SESSION_EVENTS = /^\/api\/sessions\/([^/]+)\/traces\/([1-9]\d{0,5})(\/analysis)?$/;
+const AGENT_EVENTS =
+  /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/traces\/([^/]+)\/([1-9]\d{0,5})(\/analysis)?$/;
 /** How many Sessions' Projects are remembered for the Project-scoped Trace path. */
 const PROJECTS_KEPT = 10_000;
+
+/** A server event's JSON, or null when it is none. */
+function parsedEvent(data: string): { type?: unknown; sessionId?: unknown } | null {
+  try {
+    const event = JSON.parse(data) as unknown;
+    return typeof event === "object" && event !== null
+      ? (event as { type?: unknown; sessionId?: unknown })
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /** A query integer of at least `min`, or null when it is absent or not one (the machine then answers it). */
 function intParam(url: URL, name: string, min: number, fallback?: number): number | null {
@@ -85,6 +104,8 @@ export interface MachineHistoryDeps {
   sync: HistorySync;
   cache: TraceCache;
   windows?: HeldWindows;
+  /** The Trace analysis of one file's records, priced with a Project's rates; absent: forwarded. */
+  analyze?: (projectId: string, records: readonly AmspRecord[]) => Promise<TraceAnalysisResponse>;
 }
 
 /**
@@ -98,11 +119,15 @@ export function machineHistory(deps: {
   target: (machineId: string) => Promise<ProxyTarget | null>;
   /** Whether this server still lists the machine (a removed machine's reads end with an error). */
   known?: (machineId: string) => boolean;
+  /** The Trace analysis over the copy's records (MachineHistoryDeps.analyze). */
+  analyze?: MachineHistoryDeps["analyze"];
+  /** When bytes last came in from the machine on any of its connections (HistorySyncDeps.heardAt). */
+  heardAt?: (machineId: string) => number | null;
   log: (line: string) => void;
   /** The sync's clock and knobs, as a test sets them. */
   tuning?: Pick<
     HistorySyncDeps,
-    "clock" | "watchdogMs" | "retryFirstMs" | "retryMaxMs" | "observe"
+    "clock" | "watchdogMs" | "windowTextMax" | "retryFirstMs" | "retryMaxMs" | "observe"
   >;
 }): { history: MachineHistory; sync: HistorySync } {
   const sync = new HistorySync({
@@ -110,6 +135,7 @@ export function machineHistory(deps: {
     cache: deps.cache,
     target: deps.target,
     ...(deps.known !== undefined ? { known: deps.known } : {}),
+    ...(deps.heardAt !== undefined ? { heardAt: deps.heardAt } : {}),
     socket: (machineId, target) => deps.sockets.socketFor(machineId, target),
     http: (machineId, target, remote, signal) => {
       const url = new URL(remote, "http://localhost");
@@ -121,7 +147,14 @@ export function machineHistory(deps: {
     },
     log: deps.log,
   });
-  return { history: new MachineHistory({ sync, cache: deps.cache }), sync };
+  return {
+    history: new MachineHistory({
+      sync,
+      cache: deps.cache,
+      ...(deps.analyze !== undefined ? { analyze: deps.analyze } : {}),
+    }),
+    sync,
+  };
 }
 
 /** The hub's history answers for machine Sessions, over one platform generation's sync jobs. */
@@ -129,6 +162,7 @@ export class MachineHistory {
   readonly #sync: HistorySync;
   readonly #cache: TraceCache;
   readonly #windows: HeldWindows;
+  readonly #analyze: MachineHistoryDeps["analyze"];
   /** Each Session's Project on its machine, as the Session forward found it (`<machineId>\0<sessionId>`). */
   readonly #projects = new Map<string, string>();
 
@@ -136,6 +170,21 @@ export class MachineHistory {
     this.#sync = deps.sync;
     this.#cache = deps.cache;
     this.#windows = deps.windows ?? new HeldWindows();
+    this.#analyze = deps.analyze;
+  }
+
+  /** A machine's server event, as the event hub relays it (MachineEventHub.tap). */
+  hear(machineId: string, data: string): void {
+    const event = parsedEvent(data);
+    if (event?.type === "session_deleted" && typeof event.sessionId === "string") {
+      this.sessionDeleted(machineId, event.sessionId);
+    }
+  }
+
+  /** The machine deleted the Session: its readers end, and nothing of it is kept or served here. */
+  sessionDeleted(machineId: string, sessionId: string): void {
+    this.#projects.delete(`${machineId}\0${sessionId}`);
+    this.#sync.sessionDeleted(machineId, sessionId);
   }
 
   /**
@@ -167,7 +216,12 @@ export class MachineHistory {
       const sessionId = decode(sessionEvents[1]!);
       if (sessionId === null) return null;
       const k = await this.#cache.ownFileKey(machineId, sessionId, Number(sessionEvents[2]));
-      return k === null ? null : this.#traceEvents(url, machineId, k);
+      if (caller.projectId !== undefined) {
+        this.#rememberProject(machineId, sessionId, caller.projectId);
+      }
+      if (k === null) return null;
+      if (sessionEvents[3] === undefined) return this.#traceEvents(url, machineId, k);
+      return this.#traceAnalysis(machineId, sessionId, k);
     }
     const agentEvents = AGENT_EVENTS.exec(remotePath);
     if (agentEvents !== null) {
@@ -189,11 +243,10 @@ export class MachineHistory {
           { status: 404 },
         );
       }
-      return this.#traceEvents(
-        url,
-        machineId,
-        historyFileKey(agentId, sessionId, Number(agentEvents[4])),
-      );
+      const k = historyFileKey(agentId, sessionId, Number(agentEvents[4]));
+      return agentEvents[5] === undefined
+        ? this.#traceEvents(url, machineId, k)
+        : this.#traceAnalysis(machineId, sessionId, k);
     }
     return null;
   }
@@ -351,10 +404,14 @@ export class MachineHistory {
     const offset = intParam(url, "offset", 0, 0);
     const limit = intParam(url, "limit", 1, 200);
     if (offset === null || limit === null || limit > 1000) return null;
-    const total = await this.#cache.finalRecords(machineId, k);
-    if (total === null) return null;
+    const count = await this.#cache.eventCount(machineId, k);
+    if (count === null) return null;
+    const { total } = count;
     const from = Math.min(offset, total);
-    const held = await this.#cache.records(machineId, k, from, Math.min(total, from + limit));
+    const to = Math.min(total, from + limit);
+    // A page past what the copy holds from the start is the machine's to answer.
+    if (to > count.held) return null;
+    const held = await this.#cache.records(machineId, k, from, to);
     if (held === null) return null;
     return Response.json({
       events: held.map((entry) => entry.record),
@@ -362,5 +419,26 @@ export class MachineHistory {
       limit,
       total,
     } satisfies TraceEventsResponse);
+  }
+
+  /**
+   * The Trace analysis of a file the copy holds as the machine last told it, priced with the
+   * Session's Project (remembered, or asked of the machine once); null (forwarded) otherwise.
+   */
+  async #traceAnalysis(
+    machineId: string,
+    sessionId: string,
+    k: HistoryFileKey,
+  ): Promise<Response | null> {
+    if (this.#analyze === undefined) return null;
+    const records = await this.#cache.wholeRecords(machineId, k);
+    if (records === null) return null;
+    let projectId = this.#projects.get(`${machineId}\0${sessionId}`) ?? null;
+    if (projectId === null) {
+      projectId = await this.#sync.projectOf(machineId, sessionId);
+      if (projectId === null) return null;
+      this.#rememberProject(machineId, sessionId, projectId);
+    }
+    return Response.json(await this.#analyze(projectId, records));
   }
 }

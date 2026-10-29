@@ -8,6 +8,7 @@
  * parsing), so each end reads the same bytes from its own copy.
  */
 import { createHash } from "node:crypto";
+import type { BigIntStats } from "node:fs";
 import type { HistoryFileKey, HistoryHave, HistoryHeldRange } from "../api/types.js";
 
 /**
@@ -55,6 +56,45 @@ export function historyLinesPath(sessionId: string, q: HistoryLinesQuery): strin
   }
   if (q.have.length > 0) params.set("have", encodeHistoryHave(q.have));
   return `/api/sessions/${encodeURIComponent(sessionId)}/history-lines?${params.toString()}`;
+}
+
+/** What says a Trace file is still the one a copy was taken of (see `sameHistoryFile`). */
+export interface HistoryFileIdentity {
+  /** The inode, decimal: an NTFS file id passes 2^53. */
+  ino: string;
+  /** The device, decimal. Reported, never compared: on overlayfs it can change across a restart. */
+  dev: string;
+  /** The birth time in whole milliseconds, or 0 where the platform keeps none. */
+  birthtimeMs: number;
+}
+
+/**
+ * A file's identity from a `bigint` stat. A birth time equal to the change time is no birth
+ * time: where Linux has no statx (old kernels, old container seccomp profiles) libuv reports
+ * the change time in its place, which moves on every append, and comparing it would reset the
+ * live file on every open. Such a file reports 0, and only inode and content identify it.
+ */
+export function fileIdentityOf(
+  stat: Pick<BigIntStats, "ino" | "dev" | "birthtimeMs" | "ctimeMs">,
+): HistoryFileIdentity {
+  return {
+    ino: stat.ino.toString(),
+    dev: stat.dev.toString(),
+    birthtimeMs: stat.birthtimeMs !== stat.ctimeMs ? Number(stat.birthtimeMs) : 0,
+  };
+}
+
+/**
+ * Whether a held copy and the file now are one file, by identity alone: the same inode, and the
+ * same birth time where both sides know one. The device is not compared. Content is the rest of
+ * the check — size, line edges, ordinals and the anchors of every held run (history-lines.ts).
+ */
+export function sameHistoryFile(
+  held: Pick<HistoryFileIdentity, "ino" | "birthtimeMs"> & { dev?: string },
+  now: Pick<HistoryFileIdentity, "ino" | "birthtimeMs"> & { dev?: string },
+): boolean {
+  if (held.ino !== now.ino) return false;
+  return held.birthtimeMs === 0 || now.birthtimeMs === 0 || held.birthtimeMs === now.birthtimeMs;
 }
 
 /** The longest run an anchor hashes. */

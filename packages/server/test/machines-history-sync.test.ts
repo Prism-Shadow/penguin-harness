@@ -43,6 +43,7 @@ import type { HistoryLinesWindow, HistoryProgress } from "../src/api/types.js";
 import { machineHistory } from "../src/machines/history-routes.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
 import type { MachineSocket } from "../src/machines/machine-sockets.js";
+import { LinkActivity } from "../src/machines/link-activity.js";
 import { machinesProxy } from "../src/machines/proxy.js";
 import type { ProxyTarget } from "../src/machines/proxy.js";
 import { TraceCache } from "../src/machines/trace-cache.js";
@@ -161,6 +162,7 @@ const windowOf = (file: string, k = K): HistoryLinesWindow => ({
   envelope: {
     page: {
       earlierTurns: 0,
+      units: 1,
       prior: {
         subagentTokens: 0,
         elapsedMs: 0,
@@ -239,13 +241,18 @@ function hub(
     cache?: TraceCache;
     /** Sees each socket the job is handed. */
     onSocket?: (socket: MachineSocket) => void;
+    /** The machine's link, as MachinesService taps every connection it dials to it. */
+    links?: LinkActivity;
+    log?: (line: string) => void;
+    windowTextMax?: number;
   } = {},
 ) {
   const connected = options.connected ?? (() => true);
+  const links = options.links;
+  const agent = (): http.Agent =>
+    links === undefined ? new http.Agent() : links.tap(MACHINE, new http.Agent());
   const target = (): ProxyTarget | null =>
-    connected()
-      ? { agent: new http.Agent(), port, cookie: "c", adoptedAt: null, session: 1 }
-      : null;
+    connected() ? { agent: agent(), port, cookie: "c", adoptedAt: null, session: 1 } : null;
   const cache = options.cache ?? new TraceCache(path.join(root, "machines", "traces"));
   const refusal = options.refusal;
   const { history, sync } = machineHistory({
@@ -261,8 +268,12 @@ function hub(
     },
     target: async () => target(),
     ...(options.known !== undefined ? { known: options.known } : {}),
-    log: () => undefined,
-    tuning: { clock },
+    ...(links !== undefined ? { heardAt: (machineId: string) => links.heardAt(machineId) } : {}),
+    log: options.log ?? (() => undefined),
+    tuning: {
+      clock,
+      ...(options.windowTextMax !== undefined ? { windowTextMax: options.windowTextMax } : {}),
+    },
   });
   close.push(() => sync.close());
   const proxy = machinesProxy(
@@ -364,6 +375,202 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     valve.open();
     await waitFor(() => history.has("done"));
     expect(machine.calls("/history-lines")).toHaveLength(1);
+  });
+
+  /**
+   * A machine whose history stream sends its window and then nothing until `release`, and whose
+   * HTTP side answers one long request a piece at a time, as the test says: a proxied answer
+   * taking the machine's whole link while the stream behind it on the socket hears nothing.
+   */
+  async function busyLink() {
+    let released: (() => void) | null = null;
+    let historyCalls = 0;
+    let answer: http.ServerResponse | null = null;
+    const machine = await scriptedMachine(
+      (ws, id, callPath) => {
+        if (!callPath.includes("/history-lines")) return;
+        historyCalls += 1;
+        if (historyCalls > 1) {
+          answerWindow(ws, id);
+          return;
+        }
+        start(ws, id);
+        event(ws, id, "window", windowOf(FILE));
+        released = () => {
+          event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE });
+          event(ws, id, "ready", {});
+          event(ws, id, "done", {});
+          send(ws, { id, end: true, reason: "closed" });
+        };
+      },
+      (_req, res) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.write("[");
+        answer = res;
+      },
+    );
+    close.push(machine.close);
+    const links = new LinkActivity(clock.now);
+    const logged: string[] = [];
+    const { get } = hub(machine.port, { links, log: (line) => logged.push(line) });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => released !== null && links.heardAt(MACHINE) !== null);
+    const models = await get("/api/projects/default_project/models");
+    await waitFor(() => answer !== null);
+    // The long answer, read as the page reads it: a piece has crossed once it is read.
+    const body = models.body!.getReader();
+    let read = 0;
+    let sent = 1;
+    const readTo = async (bytes: number) => {
+      while (read < bytes) read += (await body.read()).value?.length ?? Number.POSITIVE_INFINITY;
+    };
+    close.push(async () => {
+      answer?.end("]");
+      await body.cancel();
+    });
+    await readTo(sent);
+    return {
+      machine,
+      history,
+      models,
+      /** One more piece of the long answer crosses the link at the clock's now. */
+      piece: async () => {
+        const piece = `"${"m".repeat(1_000)}",`;
+        answer!.write(piece);
+        sent += piece.length;
+        await readTo(sent);
+        expect(links.heardAt(MACHINE)).toBe(clock.now());
+      },
+      release: () => released!(),
+      waited: () => progressOf(history.events).some((p) => p.waiting !== null),
+      /** The streams the watchdog has cut (it says so as it cuts, before anything else moves). */
+      cuts: () =>
+        logged.filter((line) => line.includes(`nothing in ${MACHINE_STREAM_WATCHDOG_MS} ms`))
+          .length,
+    };
+  }
+
+  it("keeps a stream that hears nothing while another connection's answer still crosses the machine's link", async () => {
+    const link = await busyLink();
+
+    // Twenty seconds without a byte on the stream's own socket, past its watchdog, while the
+    // link carries the other answer the whole time.
+    for (let i = 0; i < 4; i += 1) {
+      await link.piece();
+      clock.advance(5_000);
+    }
+    expect(link.cuts()).toBe(0);
+    link.release();
+    await waitFor(() => link.history.has("done"));
+
+    expect(link.waited()).toBe(false);
+    expect(link.machine.calls("/history-lines")).toHaveLength(1);
+    expect(windowRecords(link.history.events)).toHaveLength(2);
+    expect(link.models.status).toBe(200);
+  });
+
+  it("asks again once nothing at all came from the machine for the watchdog, counted from the link's last byte", async () => {
+    const link = await busyLink();
+    await link.piece();
+    clock.advance(5_000);
+    await link.piece();
+
+    // The link went quiet five seconds after the stream's last event: still alive at 15 s from
+    // that event, cut at 15 s from the link's last byte, and asked again after the first wait.
+    clock.advance(MACHINE_STREAM_WATCHDOG_MS - 1);
+    expect(link.cuts()).toBe(0);
+    clock.advance(1);
+    expect(link.cuts()).toBe(1);
+    const [first] = link.machine.calls("/history-lines");
+    await waitFor(() => link.waited());
+    expect(progressOf(link.history.events).at(-1)?.waiting).toMatchObject({ attempt: 1 });
+    clock.advance(1_000);
+    await waitFor(() => link.history.has("done"));
+    expect(link.machine.cancelled(first!)).toBe(true);
+    expect(link.machine.calls("/history-lines")).toHaveLength(2);
+  });
+
+  it("keeps nothing of bytes past the end the machine gave their file, and asks again after a wait", async () => {
+    let calls = 0;
+    const machine = await scriptedMachine((ws, id) => {
+      calls += 1;
+      if (calls > 1) {
+        answerWindow(ws, id);
+        return;
+      }
+      start(ws, id);
+      event(ws, id, "window", windowOf(FILE));
+      event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE + traceLine(2, "past the end") });
+    });
+    close.push(machine.close);
+    const { get, cache } = hub(machine.port);
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === 1));
+    expect(cache.usedBytes).toBe(0);
+    clock.advance(1_000);
+    await waitFor(() => history.has("done"));
+    expect(cache.usedBytes).toBe(Buffer.byteLength(FILE));
+    expect(windowRecords(history.events)).toHaveLength(2);
+  });
+
+  it("asks again after a wait when a window's parts outgrow any window", async () => {
+    let calls = 0;
+    const machine = await scriptedMachine((ws, id) => {
+      calls += 1;
+      if (calls > 1) {
+        answerWindow(ws, id);
+        return;
+      }
+      start(ws, id);
+      for (let i = 0; i < 3; i += 1)
+        event(ws, id, "window-part", { text: "w".repeat(600), last: false });
+    });
+    close.push(machine.close);
+    const { get } = hub(machine.port, { windowTextMax: 1_000 });
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === 1));
+    clock.advance(1_000);
+    await waitFor(() => history.has("done"));
+    expect(machine.calls("/history-lines")).toHaveLength(2);
+  });
+
+  it("hears a socket's bytes for any number of streams with one listener on its connection", async () => {
+    const machine = await scriptedMachine((ws, id) => {
+      start(ws, id);
+      event(ws, id, "ping", {});
+    });
+    close.push(machine.close);
+    const got = await sockets.socketFor(MACHINE, {
+      agent: new http.Agent(),
+      port: machine.port,
+      cookie: "c",
+      session: 1,
+    });
+    if (!("socket" in got)) throw new Error("no socket");
+    const warnings: Error[] = [];
+    const warned = (warning: Error) => warnings.push(warning);
+    process.on("warning", warned);
+    close.push(() => void process.off("warning", warned));
+    let heard = 0;
+    for (let i = 0; i < 20; i += 1) got.socket.onTraffic(() => (heard += 1));
+
+    got.socket.call(
+      { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+      {
+        onStart: () => undefined,
+        onEvent: () => undefined,
+        onEnd: () => undefined,
+        onResponse: () => undefined,
+      },
+    );
+    await waitFor(() => heard >= 20);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(warnings.filter((w) => w.name === "MaxListenersExceededWarning")).toEqual([]);
   });
 
   it("cancels the machine's call the moment its last reader leaves, even in the middle of the fill", async () => {
@@ -504,6 +711,59 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
       totalBytes: Buffer.byteLength(body),
     });
     expect(windowRecords(history.events)).toEqual(messages);
+  });
+
+  it("says how many Tasks an older machine's window holds, its own page saying none", async () => {
+    // Three Tasks, then an input the machine holds that its Trace has not caught up to.
+    const lines = [0, 1, 2].flatMap((i) => [
+      traceLine(2 * i, `question ${i}`, "user"),
+      traceLine(2 * i + 1, `answer ${i}`),
+    ]);
+    const held = JSON.parse(traceLine(6, "and one more", "user")) as object;
+    const body = JSON.stringify({
+      messages: [
+        ...lines.map((l, ordinal) => ({
+          ...(JSON.parse(l) as object),
+          tracePosition: { fileIndex: 1, ordinal },
+        })),
+        held,
+      ],
+      page: {
+        earlierTurns: 4,
+        prior: {
+          subagentTokens: 0,
+          elapsedMs: 0,
+          apiMs: 0,
+          toolMs: 0,
+          sessionTokens: 0,
+          contextTokens: 0,
+        },
+      },
+    });
+    const machine = await scriptedMachine(
+      (ws, id) =>
+        send(ws, {
+          id,
+          status: 421,
+          headers: {},
+          body: { error: { code: "not_on_socket", message: "HTTP only." } },
+        }),
+      (_req, res) => {
+        res.setHeader("content-type", "application/json");
+        res.end(body);
+      },
+    );
+    close.push(machine.close);
+    const { get } = hub(machine.port);
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=3`));
+    close.push(history.stop);
+    await waitFor(() => history.has("done"));
+
+    const page = JSON.parse(history.events.find((e) => e.event === "page")!.data) as {
+      page: { units: number; earlierTurns: number };
+    };
+    expect(page.page).toMatchObject({ units: 3, earlierTurns: 4 });
   });
 
   it.each([

@@ -50,8 +50,9 @@ import {
   hiAnchorRange,
   loAnchorRange,
   parseHistoryFileKey,
+  sameHistoryFile,
 } from "../services/history-wire.js";
-import { LineCommitter } from "../socket/line-frames.js";
+import { LineCommitter, frameBytes } from "../socket/line-frames.js";
 
 /** The on-disk format; a directory written by another one is wiped when the cache opens. */
 export const TRACE_CACHE_FORMAT = 2;
@@ -90,6 +91,8 @@ interface Sidecar {
   birthtimeMs: number;
   /** The machine's file size as last told; a copy with one run [0, size) is whole. */
   size: number;
+  /** The machine's record count for the file as last told (absent in a sidecar written before). */
+  records?: number;
   final: boolean;
   runs: Run[];
   lastReadAt: number;
@@ -152,22 +155,6 @@ function holesIn(runs: readonly Run[], from: number, to: number): Array<[number,
 /** What a copy counts toward the cap: its highest offset held (see the module header). */
 const extentOf = (runs: readonly Run[]): number =>
   runs.reduce((max, run) => Math.max(max, run.end), 0);
-
-/**
- * Whether a buffer read from the copy starts a line with NUL: a hole reads as zeros, and every
- * hole begins at a line start (runs end on `\n`), while no Trace line begins with NUL.
- */
-function opensWithNul(buf: Buffer): boolean {
-  if (buf.length > 0 && buf[0] === 0) return true;
-  for (
-    let at = buf.indexOf(NEWLINE);
-    at >= 0 && at + 1 < buf.length;
-    at = buf.indexOf(NEWLINE, at + 1)
-  ) {
-    if (buf[at + 1] === 0) return true;
-  }
-  return false;
-}
 
 /** The first index of `sorted` whose value is at least `value`. */
 function lowerBound(sorted: readonly number[], value: number): number {
@@ -430,10 +417,16 @@ export class TraceCache {
     machineId: string,
     sessionId: string,
     facts: readonly HistoryFileFact[],
+    /**
+     * Whether `facts` lists the Session's whole tree (a window or a fill stream's). A body
+     * stream lists only its own file: its facts check that file, and the files it does not name
+     * are not gone — nothing is dropped, and the group stays as the last whole list made it.
+     */
+    { whole = true }: { whole?: boolean } = {},
   ): Promise<void> {
     await this.#ready;
     const listed = new Set(facts.map((fact) => fact.k));
-    for (const state of await this.#groupFiles(machineId, sessionId)) {
+    for (const state of whole ? await this.#groupFiles(machineId, sessionId) : []) {
       if (listed.has(state.sidecar.k)) continue;
       await this.#serial(state, async () => {
         await this.#clear(state);
@@ -450,22 +443,27 @@ export class TraceCache {
       await this.#serial(state, async () => {
         if (state.dead) return;
         const sidecar = state.sidecar;
+        // One rule at both ends (history-wire.ts): the inode, and the birth time only where both
+        // know one; the device is kept, never compared. The anchors check the content.
         const moved =
           sidecar.ino === null ||
-          sidecar.ino !== String(fact.ino) ||
-          (sidecar.dev ?? null) !== (fact.dev ?? null) ||
-          sidecar.birthtimeMs !== fact.birthtimeMs;
+          !sameHistoryFile(
+            { ino: sidecar.ino, birthtimeMs: sidecar.birthtimeMs },
+            { ino: String(fact.ino), birthtimeMs: fact.birthtimeMs },
+          );
         if (fact.reset === true || moved || fact.size < sidecar.size) await this.#clear(state);
         sidecar.ino = String(fact.ino);
         if (fact.dev !== undefined) sidecar.dev = fact.dev;
         else delete sidecar.dev;
         sidecar.birthtimeMs = fact.birthtimeMs;
         sidecar.size = fact.size;
+        sidecar.records = fact.records;
         sidecar.final = fact.final;
         sidecar.lastReadAt = this.#now();
         await this.#writeSidecar(state);
       });
     }
+    if (!whole) return;
     sessions.delete(sessionId);
     const groupPath = path.join(this.#sessionDir(machineId, sessionId), "group.json");
     await fs.mkdir(path.dirname(groupPath), { recursive: true });
@@ -616,6 +614,9 @@ export class TraceCache {
     if (state === null) return 0;
     return this.#serial(state, async () => {
       if (state.dead) return 0;
+      // Nothing past the size the machine last gave the file: such bytes would count toward the
+      // cap (and allocate on disk) for lines no Trace has.
+      if (frame.off + frameBytes(frame).length > state.sidecar.size) return 0;
       const lines = state.committer.push(frame);
       if (lines === null) return 0;
       return this.#commitBytes(state, lines.off, frame.ord, lines.bytes);
@@ -727,8 +728,8 @@ export class TraceCache {
     if (end <= start) return Buffer.alloc(0);
     const covered = state.sidecar.runs.some((run) => run.start <= start && end <= run.end);
     if (!covered) return null;
-    const buf = await this.#read(state, start, end);
-    return buf === null || opensWithNul(buf) ? null : buf;
+    // The runs vouch for these bytes: a run is written down only once its bytes are on disk.
+    return this.#read(state, start, end);
   }
 
   /** Records `[from, to)` of a file by ordinal, or null unless all of them are held. */
@@ -751,7 +752,7 @@ export class TraceCache {
     const top = lines.ends[last];
     if (base === undefined || top === undefined || top > run.end) return null;
     const bytes = await this.#read(state, base, top);
-    if (bytes === null || opensWithNul(bytes)) return null;
+    if (bytes === null) return null;
     const out: CachedRecord[] = [];
     try {
       for (let i = first; i <= last; i++) {
@@ -775,28 +776,41 @@ export class TraceCache {
     const starts: number[] = [];
     const ends: number[] = [];
     for (const run of state.sidecar.runs) {
-      const before = starts.length;
-      let carry: Buffer = Buffer.alloc(0);
-      let lineStart = run.start;
-      for (let at = run.start; at < run.end; at += SCAN_CHUNK) {
-        const chunk = await this.#read(state, at, Math.min(run.end, at + SCAN_CHUNK));
-        if (chunk === null) return null;
-        const buf = carry.length > 0 ? Buffer.concat([carry, chunk]) : chunk;
-        let from = 0;
-        for (let nl = buf.indexOf(NEWLINE, from); nl >= 0; nl = buf.indexOf(NEWLINE, from)) {
-          if (isRecordLine(buf.subarray(from, nl + 1))) {
-            starts.push(lineStart + from);
-            ends.push(lineStart + nl + 1);
-          }
-          from = nl + 1;
-        }
-        lineStart += from;
-        carry = buf.subarray(from);
-      }
-      if (starts.length - before !== run.records) return null;
+      const lines = await this.#scan(state, run.start, run.end);
+      if (lines === null || lines.starts.length !== run.records) return null;
+      starts.push(...lines.starts);
+      ends.push(...lines.ends);
     }
     state.lines = { starts, ends };
     return state.lines;
+  }
+
+  /** The record lines of `[start, end)` of the copy (`start` a line start); null when unreadable. */
+  async #scan(
+    state: FileState,
+    start: number,
+    end: number,
+  ): Promise<{ starts: number[]; ends: number[] } | null> {
+    const starts: number[] = [];
+    const ends: number[] = [];
+    let carry: Buffer = Buffer.alloc(0);
+    let lineStart = start;
+    for (let at = start; at < end; at += SCAN_CHUNK) {
+      const chunk = await this.#read(state, at, Math.min(end, at + SCAN_CHUNK));
+      if (chunk === null) return null;
+      const buf = carry.length > 0 ? Buffer.concat([carry, chunk]) : chunk;
+      let from = 0;
+      for (let nl = buf.indexOf(NEWLINE, from); nl >= 0; nl = buf.indexOf(NEWLINE, from)) {
+        if (isRecordLine(buf.subarray(from, nl + 1))) {
+          starts.push(lineStart + from);
+          ends.push(lineStart + nl + 1);
+        }
+        from = nl + 1;
+      }
+      lineStart += from;
+      carry = buf.subarray(from);
+    }
+    return { starts, ends };
   }
 
   /**
@@ -813,6 +827,42 @@ export class TraceCache {
       only.start === 0 &&
       only.end === state.sidecar.size;
     return whole ? only.records : null;
+  }
+
+  /**
+   * How much of a file the Trace panel's events can be read from here: `held` records from
+   * ordinal 0 on, out of `total` — the machine's count as last told (a live file's included:
+   * the panel asks for what is synced), or the copy's own for a rotated file held whole. Null
+   * when the copy holds nothing from the file's start.
+   */
+  async eventCount(
+    machineId: string,
+    k: HistoryFileKey,
+  ): Promise<{ held: number; total: number } | null> {
+    const state = await this.#state(machineId, k, false);
+    if (state === null || state.dead) return null;
+    const first = state.sidecar.runs.find((run) => run.start === 0);
+    if (first === undefined) return null;
+    const final = await this.finalRecords(machineId, k);
+    return {
+      held: first.records,
+      total: final ?? Math.max(first.records, state.sidecar.records ?? 0),
+    };
+  }
+
+  /**
+   * Every record of a file whose copy holds all the bytes the machine last said it has (one run
+   * from 0 to its size), live or rotated; null otherwise. What the hub's Trace analysis reads.
+   */
+  async wholeRecords(machineId: string, k: HistoryFileKey): Promise<AmspRecord[] | null> {
+    const state = await this.#state(machineId, k, false);
+    if (state === null || state.dead) return null;
+    const [only, ...more] = state.sidecar.runs;
+    if (only === undefined || more.length > 0 || only.start !== 0) return null;
+    if (only.end !== state.sidecar.size) return null;
+    return (
+      (await this.records(machineId, k, 0, only.records))?.map((entry) => entry.record) ?? null
+    );
   }
 
   /** The key of a Session's own file `index`, when the copy has been told of it. */
@@ -840,6 +890,59 @@ export class TraceCache {
       await this.#serial(state, async () => {
         if (state.dead) return;
         await this.#clear(state);
+        await this.#writeSidecar(state);
+      });
+    }
+  }
+
+  /**
+   * Lets go of `ranges` of the files' copies, each whole lines (its edges are line edges), and
+   * keeps the rest of every run: the next `have` leaves them out, so the machine sends them
+   * again. What a window that did not read back as the machine laid it out lets go of
+   * (history-sync.ts) — its own ranges, never the rest of the group.
+   */
+  async release(
+    machineId: string,
+    ranges: readonly { k: HistoryFileKey; start: number; end: number }[],
+  ): Promise<void> {
+    await this.#ready;
+    const byFile = new Map<HistoryFileKey, Array<{ start: number; end: number }>>();
+    for (const { k, start, end } of ranges) {
+      if (end > start) byFile.set(k, [...(byFile.get(k) ?? []), { start, end }]);
+    }
+    for (const [k, cuts] of byFile) {
+      const state = await this.#state(machineId, k, false);
+      if (state === null) continue;
+      await this.#serial(state, async () => {
+        if (state.dead) return;
+        // The pieces kept are counted on their own, never through the range let go: that range
+        // is what did not read back. A piece after it takes its ordinal from the run's own count.
+        const count = async (a: number, b: number): Promise<number | null> =>
+          (await this.#scan(state, a, b))?.starts.length ?? null;
+        let runs = state.sidecar.runs;
+        for (const cut of cuts) {
+          const next: Run[] = [];
+          for (const run of runs) {
+            if (cut.end <= run.start || run.end <= cut.start) {
+              next.push(run);
+              continue;
+            }
+            const before = run.start < cut.start ? await count(run.start, cut.start) : null;
+            if (before !== null) next.push({ ...run, end: cut.start, records: before });
+            const after = cut.end < run.end ? await count(cut.end, run.end) : null;
+            if (after !== null) {
+              next.push({
+                start: cut.end,
+                end: run.end,
+                ordinal: run.ordinal + run.records - after,
+                records: after,
+              });
+            }
+          }
+          runs = next;
+        }
+        this.#setRuns(state, runs);
+        state.lines = null;
         await this.#writeSidecar(state);
       });
     }
@@ -926,6 +1029,22 @@ export class TraceCache {
     );
   }
 
+  /**
+   * Drops a Session's copy and its descendants' (the group its last whole list named): the
+   * machine no longer has it, so nothing of it is kept or served from here.
+   */
+  async dropSession(machineId: string, sessionId: string): Promise<void> {
+    if (!(this.#opened !== null || (await this.#exists()))) return;
+    await this.#ready;
+    for (const member of await this.groupSessions(machineId, sessionId)) {
+      await this.#remove(
+        (state) => state.machineId === machineId && state.sessionId === member,
+        this.#sessionDir(machineId, member),
+        (key) => key === `${machineId}\0${member}`,
+      );
+    }
+  }
+
   /** Drops every machine's directory but those of `known` (run as the hub starts). */
   async dropUnknown(known: ReadonlySet<string>): Promise<void> {
     if (this.#opened === null && !(await this.#exists())) return;
@@ -940,4 +1059,22 @@ export class TraceCache {
       );
     }
   }
+}
+
+/** The one cache over each directory in this process (traceCacheAt). */
+const cachesByRoot = new Map<string, TraceCache>();
+
+/**
+ * The cache over `root`, the same one every time: each platform generation asks for it, and a
+ * hot push's new generation must not keep a second view of the files beside the old one's — an
+ * old commit still in flight would write its sidecar over the new one's.
+ */
+export function traceCacheAt(root: string): TraceCache {
+  const key = path.resolve(root);
+  let cache = cachesByRoot.get(key);
+  if (cache === undefined) {
+    cache = new TraceCache(key);
+    cachesByRoot.set(key, cache);
+  }
+  return cache;
 }

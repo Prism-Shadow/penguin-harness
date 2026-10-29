@@ -213,6 +213,7 @@ const FIRST_PAINT = { kind: "tail", limit: TAIL_UNITS, budget: FIRST_PAINT_BYTES
 function pageInfo(over: Partial<MessagesPageInfo> = {}): MessagesPageInfo {
   return {
     earlierTurns: 0,
+    units: 1,
     prior: {
       subagentTokens: 0,
       elapsedMs: 0,

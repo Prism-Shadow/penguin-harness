@@ -67,7 +67,7 @@ describe("history-lines while it plans", () => {
     await readUntil("event: ping");
     expect(text).not.toContain("event: window");
     await vi.advanceTimersByTimeAsync(HISTORY_LINES_BEAT_MS);
-    release({ messages: [], sources: [], page: { prior: initialScanState().totals } });
+    release({ messages: [], sources: [], page: { prior: initialScanState().totals, units: 0 } });
     await readUntil("event: done");
     expect(text.match(/event: ping/g)?.length).toBeGreaterThanOrEqual(2);
     expect(text.indexOf("event: window")).toBeGreaterThan(text.lastIndexOf("event: ping"));

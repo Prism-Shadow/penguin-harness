@@ -89,6 +89,7 @@ import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import type { TraceLineIndexEntry } from "./trace-line-index.js";
 import type { RecordSource } from "./history-layout.js";
+import { fileIdentityOf } from "./history-wire.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
@@ -242,6 +243,8 @@ export interface MessagesPageResult {
   before?: string;
   /** Cumulative stats before the window (earlierTurns = prior.turns). */
   prior: WindowPriorStats;
+  /** The units (Tasks) the window holds: the scanner's boundaries from its start on. */
+  units: number;
   /**
    * The model of the context the window starts in: the `session_meta` heading the shard its
    * first unit lies in. One shard is one model context, and a window that starts partway into
@@ -749,6 +752,7 @@ export class TraceService implements Traces {
     const empty = (): MessagesPageResult => ({
       messages: [],
       prior: initialScanState().totals,
+      units: 0,
     });
     if (files.length === 0) return empty();
     const ctx: ExpandCtx = {
@@ -896,6 +900,10 @@ export class TraceService implements Traces {
       start = { pos: 0, ordinal: 0 };
       prior = initialScanState().totals;
     }
+    // The window's units are the boundaries from its start on: all of them when it starts at
+    // the beginning (a preamble before the first prompt opens none), else those from the chosen one.
+    const windowUnits =
+      startBoundary === null ? units.length : units.length - units.indexOf(startBoundary);
     const windowRaw = spanRaw.slice(starts[chosen]?.at ?? 0);
     // Expansion is record by record, so the measured units joined are the window expanded.
     const expanded =
@@ -908,6 +916,7 @@ export class TraceService implements Traces {
       messages: expanded,
       ...(before !== undefined ? { before } : {}),
       prior,
+      units: windowUnits,
       ...(startMeta
         ? {
             contextModel: {
@@ -993,9 +1002,7 @@ export class TraceService implements Traces {
               sessionId: session.sessionId,
               fileIndex: file.index,
               path: file.path,
-              ino: stat.ino.toString(),
-              dev: stat.dev.toString(),
-              birthtimeMs: Number(stat.birthtimeMs),
+              ...fileIdentityOf(stat),
               size: entry.size,
               scanned: entry.scanned,
               starts: entry.starts.slice(),
@@ -1315,7 +1322,17 @@ export class TraceService implements Traces {
     sessionId: string,
     index: number,
   ): Promise<TraceAnalysisResponse> {
-    const messages = await this.readFileByIndex(projectId, agentId, sessionId, index);
+    return this.analyzeRecords(
+      projectId,
+      await this.readFileByIndex(projectId, agentId, sessionId, index),
+    );
+  }
+
+  /** The analysis of one Trace file's records, however they were read (Traces.analyzeRecords). */
+  async analyzeRecords(
+    projectId: string,
+    messages: readonly AmspRecord[],
+  ): Promise<TraceAnalysisResponse> {
     // The file's head: the main session's first `session_meta`.
     const meta = messages.find(
       (m) => isSessionMeta(m) && (m.origin === undefined || m.origin.length === 0),

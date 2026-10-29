@@ -12,8 +12,10 @@
  * again once nothing waits. A fill nobody stays for any more ends, whoever's stream carries it.
  *
  * RESUMING IS ASKING AGAIN. Every stream opens with `have` (what the copy holds) and the machine
- * sends only what is missing, so a stream cut anywhere — the socket dropped, the stream silent
- * past its watchdog (no event and no byte on the socket), a preemption — reopens from the copy,
+ * sends only what is missing, so a stream cut anywhere — the socket dropped, the link silent
+ * past its watchdog (no byte from the machine on any of its connections: a stream starved behind
+ * another channel of the same ssh session is on a busy link, not a dead one), a preemption —
+ * reopens from the copy,
  * never from 0: at once when the cut stream had moved (bytes committed, its window delivered, its
  * end reached), else after a wait that grows 1 s doubling to 30 s. A machine that is not connected, or that cannot be reached, is
  * waited for the same way, for as long as a reader waits, and each reader is told
@@ -59,6 +61,7 @@ import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame } from "../socket/frames.js";
 import { LineCommitter, frameBytes } from "../socket/line-frames.js";
 import type { MachineSocket, Sink } from "./machine-sockets.js";
+import { withWindowUnits } from "./older-window-units.js";
 import type { ProxyTarget } from "./proxy.js";
 import type { TraceCache } from "./trace-cache.js";
 
@@ -69,6 +72,12 @@ export const RETRY_FIRST_MS = 1_000;
 export const RETRY_MAX_MS = 30_000;
 /** A window the copy cannot be assembled into is read again this often before it is an error. */
 const ASSEMBLY_ATTEMPTS = 3;
+/**
+ * The most a window's JSON may hold, joined from its `window-part`s: far past any window a machine
+ * lays out (facts, layout and stubs of a Session tree), and a bound on what a broken one can make
+ * this server hold.
+ */
+const WINDOW_TEXT_MAX = 16 * 1024 * 1024;
 
 /** The timers the job runs on; a test hands in its own clock. */
 export interface SyncClock {
@@ -105,9 +114,16 @@ export interface HistorySyncDeps {
   ): Promise<Response>;
   /** Whether this server still lists the machine; absent: always (a suite's own machine). */
   known?(machineId: string): boolean;
+  /**
+   * When bytes last came in from the machine on any of its connections, on this sync's clock
+   * (link-activity.ts; MachinesService.links); absent: the stream's own socket alone.
+   */
+  heardAt?(machineId: string): number | null;
   log(line: string): void;
   clock?: SyncClock;
   watchdogMs?: number;
+  /** The most a window's JSON may hold, joined from its parts (WINDOW_TEXT_MAX). */
+  windowTextMax?: number;
   retryFirstMs?: number;
   retryMaxMs?: number;
   /** Test observability: each run of Trace bytes a machine stream delivered, as it was handled. */
@@ -500,6 +516,21 @@ class HistoryJob {
     this.#fillWaiters.clear();
   }
 
+  /**
+   * The machine no longer has the Session (its `session_not_found`, or its `session_deleted`
+   * heard by the event hub): every reader hears so, and its copy goes — kept, it would go on
+   * answering for a conversation that was deleted.
+   */
+  gone(message = "Session does not exist."): void {
+    this.#stream?.stop();
+    this.#failAll(new HttpError(404, "session_not_found", message));
+    this.deps.cache.dropSession(this.machineId, this.sessionId).catch((err: unknown) => {
+      this.deps.log(
+        `[machines] dropping the history copy of ${this.sessionId} on ${this.machineId} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+  }
+
   #resolveFill(): void {
     for (const waiter of this.#fillWaiters) waiter.resolve();
     this.#fillWaiters.clear();
@@ -677,9 +708,7 @@ class HistoryJob {
       const { status, body } = answer;
       const code = codeOf(body);
       if (status === 404 && code === "session_not_found") {
-        this.#failAll(
-          new HttpError(404, "session_not_found", messageOf(body) ?? "Session does not exist."),
-        );
+        this.gone(messageOf(body));
         return null;
       }
       if (status === 401 || status === 403) {
@@ -815,7 +844,9 @@ class HistoryJob {
       const arm = (ms: number = watchdogMs): void => {
         if (watchdog !== null) this.#clock.clearTimeout(watchdog);
         watchdog = this.#clock.setTimeout(() => {
-          const quiet = this.#clock.now() - heard;
+          // The link's last byte, whichever connection carried it, or this stream's own.
+          const quiet =
+            this.#clock.now() - Math.max(heard, this.deps.heardAt?.(this.machineId) ?? heard);
           if (quiet < watchdogMs) {
             arm(watchdogMs - quiet);
             return;
@@ -882,6 +913,10 @@ class HistoryJob {
       case "window-part": {
         // A window larger than a frame comes in pieces: joined in order, parsed on the last.
         const piece = JSON.parse(frame.data) as HistoryWindowPart;
+        const max = this.deps.windowTextMax ?? WINDOW_TEXT_MAX;
+        if (stream.windowText.length + piece.text.length > max) {
+          this.#broken(stream, "a window larger than any machine sends");
+        }
         stream.windowText += piece.text;
         if (!piece.last) return;
         const text = stream.windowText;
@@ -892,6 +927,13 @@ class HistoryJob {
       case "lines":
       case "part": {
         const line = JSON.parse(frame.data) as HistoryLinesFrame | HistoryPartFrame;
+        const raw = frameBytes(line);
+        // Bytes past the size the window gave their file are no Trace bytes: nothing of them is
+        // kept (a held part grows only within it too, its parts being contiguous).
+        const size = stream.window?.files.find((file) => file.k === line.k)?.size;
+        if (size === undefined || line.off + raw.length > size) {
+          this.#broken(stream, `bytes of ${line.k} past the end it gave that file`);
+        }
         const committed = await this.#cached(() => this.deps.cache.commit(this.machineId, line), 0);
         // What the copy cannot serve, and a body's own line, are kept from the stream itself.
         const carried =
@@ -903,7 +945,6 @@ class HistoryJob {
           if (found !== undefined) stream.bodyRecord = found.record;
         }
         if (committed > 0 || carried !== null) stream.progressed = true;
-        const raw = frameBytes(line);
         const lines =
           frame.event === "lines"
             ? raw.reduce((n, byte) => (byte === 0x0a ? n + 1 : n), 0)
@@ -941,21 +982,34 @@ class HistoryJob {
     }
   }
 
+  /**
+   * The machine broke the stream's own rules: the stream ends (its handler throws), counted as
+   * no progress, so it is asked again only after the growing wait — never in a tight loop.
+   */
+  #broken(stream: MachineStream, what: string): never {
+    stream.progressed = false;
+    throw new Error(`the machine sent ${what}`);
+  }
+
   async #window(stream: MachineStream, window: HistoryLinesWindow): Promise<void> {
     stream.window = window;
+    // A body stream's `files` is its one file (history-lines.ts): no word on the rest of the tree.
+    const whole = stream.op?.kind !== "body";
     await this.#cached(
-      () => this.deps.cache.reconcile(this.machineId, this.sessionId, window.files),
+      () => this.deps.cache.reconcile(this.machineId, this.sessionId, window.files, { whole }),
       undefined,
     );
-    this.#windowSeen = true;
-    this.#group = [
-      this.sessionId,
-      ...new Set(
-        window.files
-          .map((file) => parseHistoryFileKey(file.k)?.sessionId)
-          .filter((id): id is string => id !== undefined && id !== this.sessionId),
-      ),
-    ];
+    if (whole) {
+      this.#windowSeen = true;
+      this.#group = [
+        this.sessionId,
+        ...new Set(
+          window.files
+            .map((file) => parseHistoryFileKey(file.k)?.sessionId)
+            .filter((id): id is string => id !== undefined && id !== this.sessionId),
+        ),
+      ];
+    }
     this.deps.cache.touch(this.machineId, this.#group);
     const { totals } = window;
     stream.left = {
@@ -1016,9 +1070,14 @@ class HistoryJob {
           ),
         );
       } else {
-        // What the copy holds does not read back as the machine laid it out: forgotten, and the
-        // window read again from the machine's bytes alone.
-        await this.#cached(() => this.deps.cache.forget(this.machineId, this.sessionId), undefined);
+        // What the copy holds of the window does not read back as the machine laid it out: those
+        // ranges are let go and sent again; the rest of the copy (other files, other runs) stays.
+        const ranges = window.layout.map((segment) => ({
+          k: segment.k,
+          start: segment.from[0],
+          end: segment.to[0],
+        }));
+        await this.#cached(() => this.deps.cache.release(this.machineId, ranges), undefined);
       }
       stream.stop();
       return;
@@ -1119,7 +1178,11 @@ class HistoryJob {
       op.track.add(value.byteLength, 0);
     }
     if (stream.cancelled) return;
-    const response = JSON.parse(Buffer.concat(chunks).toString("utf8")) as MessagesResponse;
+    // An older build's page has no `units`: counted here, as a newer machine's cut counts it.
+    const response = await withWindowUnits(
+      JSON.parse(Buffer.concat(chunks).toString("utf8")) as MessagesResponse,
+    );
+    if (stream.cancelled) return;
     const date = Date.parse(res.headers.get("date") ?? "");
     stream.delivered = true;
     this.#settle(op, {
@@ -1273,6 +1336,43 @@ export class HistorySync {
       else this.#jobs.set(key, job);
     }
     return new HistoryReader(job, signal);
+  }
+
+  /**
+   * The Project a machine Session belongs to over there, asked of the machine (its
+   * `GET /api/sessions/:id`, a few hundred bytes); null while it is away or cannot say.
+   */
+  async projectOf(machineId: string, sessionId: string): Promise<string | null> {
+    const target = await this.deps.target(machineId).catch(() => null);
+    if (target === null) return null;
+    const res = await this.deps
+      .http(
+        machineId,
+        target,
+        `/api/sessions/${encodeURIComponent(sessionId)}`,
+        AbortSignal.timeout(20_000),
+      )
+      .catch(() => null);
+    if (res === null || !res.ok) return null;
+    const body = (await res.json().catch(() => null)) as {
+      session?: { projectId?: unknown };
+    } | null;
+    const projectId = body?.session?.projectId;
+    return typeof projectId === "string" && projectId !== "" ? projectId : null;
+  }
+
+  /** The machine deleted the Session: its readers end with `session_not_found`, and its copy goes. */
+  sessionDeleted(machineId: string, sessionId: string): void {
+    const job = this.#jobs.get(`${machineId}\0${sessionId}`);
+    if (job !== undefined) {
+      job.gone();
+      return;
+    }
+    this.deps.cache.dropSession(machineId, sessionId).catch((err: unknown) => {
+      this.deps.log(
+        `[machines] dropping the history copy of ${sessionId} on ${machineId} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
   }
 
   /** The `<machineId>\0<sessionId>` directories open jobs use: eviction leaves them alone. */
