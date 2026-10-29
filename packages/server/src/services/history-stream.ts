@@ -1,5 +1,5 @@
 /**
- * The web leg of a history stream (spec 05 「历史流」): how `GET …/sessions/:id/history` and
+ * The web leg of a history stream (spec 05, "History stream"): how `GET …/sessions/:id/history` and
  * `…/trace-body` answer, for this server's own Sessions (http/routes/history.ts) and, on a hub,
  * for a machine's (machines/history-routes.ts) — one writer, so a record reads the same either way.
  *
@@ -8,13 +8,16 @@
  * FRAME_TEXT_BUDGET, a record longer than that as `part`s, then `done`. Ids are
  * `<windowId>:<offset after the event>`, the offset counting the window's text in JS string
  * length (what the reader's acks count): a stream re-issued with `last-event-id` while its window
- * is still held (2 min, the newest 8) continues where it stopped; otherwise the reader gets a new
- * window under a new id and drops what it had of the old one.
+ * is still held — 2 min, a few per reader and a few MiB in all, and only for the same Session,
+ * reader and query — continues where it stopped; otherwise the reader gets a new window under a
+ * new id and drops what it had of the old one. The reader closes the stream itself on `done`,
+ * `filled` or `error`: the socket client issues again any stream the server ends.
  *
  * Over the API socket the events go out as frames, paced by the reader's acks (`x-flow:
  * credit`, socket/stream-answer.ts); over HTTP as SSE text, paced by the reader's reading. A
  * named `ping` beats every 5 s either way, and no step has a deadline: a stream that waits on a
- * machine says so in its `progress`, at most every 250 ms and only when a number changed.
+ * machine says so in its `progress`, at most every 250 ms and only when a number changed. An HTTP
+ * stream is held against its sign-in as the channel streams are (http/sse.ts): signing out ends it.
  */
 import { randomBytes } from "node:crypto";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
@@ -33,6 +36,7 @@ import { FRAME_TEXT_BUDGET } from "../socket/line-frames.js";
 import { messagesPageQuery } from "./session-history.js";
 import { MESSAGES_PAGE_MAX_BYTES } from "./trace-service.js";
 import type { MessagesPageRequest } from "./trace-service.js";
+import type { SseRevocation } from "../http/sse.js";
 import { formatSseEvent } from "../socket/sse-text.js";
 import { answerOf } from "../socket/stream-answer.js";
 import type { StreamAnswer } from "../socket/stream-answer.js";
@@ -90,9 +94,12 @@ export function parseHistoryQuery(query: (name: string) => string | undefined): 
 export const HISTORY_BEAT_MS = 5_000;
 /** `progress` goes at most this often. */
 export const PROGRESS_EVERY_MS = 250;
-/** How long a sent window is held for a re-issued stream to continue, and how many are. */
+/** How long a sent window is held for a re-issued stream to continue. */
 export const HELD_WINDOW_MS = 120_000;
-export const HELD_WINDOWS = 8;
+/** How many windows, and how many bytes of them, are held per reader and in all. */
+export const HELD_WINDOWS_PER_USER = 8;
+export const HELD_BYTES_PER_USER = 8 * 1024 * 1024;
+export const HELD_BYTES = 32 * 1024 * 1024;
 
 /** One history stream's way out, over either transport. Sends go in order. */
 export interface HistoryOut {
@@ -141,10 +148,14 @@ class SseOut implements HistoryOut {
   #lastSent = Date.now();
   readonly #beat: ReturnType<typeof setInterval>;
 
-  constructor(request: Request) {
+  readonly #release: () => void;
+
+  constructor(request: Request, revocation: SseRevocation | undefined) {
     this.signal = this.#abort.signal;
     const abort = () => this.#abort.abort(new Error("the reader is gone"));
     request.signal.addEventListener("abort", abort, { once: true });
+    // Held for as long as the connection lives, so a sign-out elsewhere can end it (http/sse.ts).
+    this.#release = revocation?.streams.add(revocation.userId, abort) ?? (() => undefined);
     this.body = new ReadableStream<Uint8Array>(
       {
         start: (c) => {
@@ -156,6 +167,11 @@ class SseOut implements HistoryOut {
       new ByteLengthQueuingStrategy({ highWaterMark: 4 * FRAME_TEXT_BUDGET }),
     );
     this.#beat = setInterval(() => {
+      // The beat re-asks whether the sign-in behind the stream still holds, never renewing it.
+      if (revocation !== undefined && !revocation.sessionIsLive()) {
+        abort();
+        return;
+      }
       if (Date.now() - this.#lastSent >= HISTORY_BEAT_MS) void this.send("ping", null, "{}");
     }, HISTORY_BEAT_MS);
     this.#beat.unref?.();
@@ -187,6 +203,7 @@ class SseOut implements HistoryOut {
     if (this.#ended) return;
     this.#ended = true;
     clearInterval(this.#beat);
+    this.#release();
     this.#wakeUp();
     try {
       this.#controller?.close();
@@ -198,16 +215,20 @@ class SseOut implements HistoryOut {
 
 /**
  * Opens a history stream for `request`: over the socket when the socket carried the call, as
- * SSE text otherwise. The Response is the route's to return at once.
+ * SSE text otherwise — held against `revocation`, the sign-in behind it, when one is given. The
+ * Response is the route's to return at once.
  */
-export function openHistoryOut(request: Request): { out: HistoryOut; response: Response } {
+export function openHistoryOut(
+  request: Request,
+  options: { revocation?: SseRevocation } = {},
+): { out: HistoryOut; response: Response } {
   const answer = answerOf(request);
   if (answer !== null) {
     answer.start(200, { "content-type": "text/event-stream" });
     answer.beat(HISTORY_BEAT_MS);
     return { out: new AnswerOut(answer), response: new Response(null, { status: 200 }) };
   }
-  const out = new SseOut(request);
+  const out = new SseOut(request, options.revocation);
   return {
     out,
     response: new Response(out.body, {
@@ -261,23 +282,66 @@ export function serializeWindow(
   };
 }
 
-/** The windows sent lately, for a re-issued stream to continue: the newest few, for a while. */
+/** Whose a held window is: a re-issue continues it only for the same Session, reader and query. */
+export interface WindowOwner {
+  sessionId: string;
+  userId: string;
+  /** The read's parsed query, as one string. */
+  query: string;
+}
+
+interface HeldWindow {
+  window: HistoryWindow;
+  owner: WindowOwner;
+  bytes: number;
+  until: number;
+}
+
+/**
+ * The windows sent lately, for a re-issued stream to continue: for a while, a few per reader and
+ * a bounded number of bytes in all, the oldest let go first.
+ */
 export class HeldWindows {
-  readonly #held = new Map<string, { window: HistoryWindow; until: number }>();
+  readonly #held = new Map<string, HeldWindow>();
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
-  hold(window: HistoryWindow): void {
+  hold(window: HistoryWindow, owner: WindowOwner): void {
     this.#sweep();
-    this.#held.set(window.windowId, { window, until: this.now() + HELD_WINDOW_MS });
-    while (this.#held.size > HELD_WINDOWS) {
-      this.#held.delete(this.#held.keys().next().value!);
+    const bytes = window.page.bytes;
+    if (bytes > HELD_BYTES_PER_USER) return;
+    this.#held.set(window.windowId, { window, owner, bytes, until: this.now() + HELD_WINDOW_MS });
+    // Per reader, oldest first: at most HELD_WINDOWS_PER_USER windows within HELD_BYTES_PER_USER.
+    const mine = [...this.#held.values()].filter((entry) => entry.owner.userId === owner.userId);
+    let count = mine.length;
+    let mineBytes = mine.reduce((sum, entry) => sum + entry.bytes, 0);
+    for (const entry of mine) {
+      if (count <= HELD_WINDOWS_PER_USER && mineBytes <= HELD_BYTES_PER_USER) break;
+      if (entry.window.windowId === window.windowId) break;
+      this.#held.delete(entry.window.windowId);
+      count -= 1;
+      mineBytes -= entry.bytes;
+    }
+    // In all, oldest first: within HELD_BYTES.
+    let total = [...this.#held.values()].reduce((sum, entry) => sum + entry.bytes, 0);
+    for (const [id, entry] of this.#held) {
+      if (total <= HELD_BYTES) break;
+      if (id === window.windowId) continue;
+      this.#held.delete(id);
+      total -= entry.bytes;
     }
   }
 
-  find(windowId: string): HistoryWindow | null {
+  /** The window `windowId` names, when it is still held for this very owner. */
+  find(windowId: string, owner: WindowOwner): HistoryWindow | null {
     this.#sweep();
-    return this.#held.get(windowId)?.window ?? null;
+    const entry = this.#held.get(windowId);
+    if (entry === undefined) return null;
+    const same =
+      entry.owner.sessionId === owner.sessionId &&
+      entry.owner.userId === owner.userId &&
+      entry.owner.query === owner.query;
+    return same ? entry.window : null;
   }
 
   #sweep(): void {
@@ -369,16 +433,19 @@ export async function sendWindow(
  * Sends one whole value (`trace-body`) the way every server answers it (http/routes/
  * history-lines.ts for its own Sessions): a `progress` at 0, the value as `part`s of at most a
  * frame — their `windowId` the ref they answer — a `progress` at its end, then `done`. No ids:
- * a body read again is sent again.
+ * a body read again is sent again. A value the hub first fetched from its machine (`fetched`)
+ * has had its progress already, counted in the line's bytes: no second count from 0, only the
+ * end in that same total, so the numbers a reader shows never run backwards.
  */
 export async function sendBody(
   out: HistoryOut,
   ref: string,
   value: string,
   machineId: string | null,
+  fetched: { totalBytes: number } | null = null,
   budget: number = FRAME_TEXT_BUDGET,
 ): Promise<void> {
-  const totalBytes = Buffer.byteLength(value, "utf8");
+  const totalBytes = fetched?.totalBytes ?? Buffer.byteLength(value, "utf8");
   const progress = (doneBytes: number): HistoryProgress => ({
     phase: "heavy",
     machineId,
@@ -388,18 +455,16 @@ export async function sendBody(
     totalLines: 1,
     waiting: null,
   });
-  await out.send("progress", null, JSON.stringify(progress(0)));
+  if (fetched === null) await out.send("progress", null, JSON.stringify(progress(0)));
   let at = 0;
-  let doneBytes = 0;
   do {
     const end = cutAt(value, at, budget);
     const text = value.slice(at, end);
     const part: HistoryRecords = { windowId: ref, offset: at, text, last: end === value.length };
     await out.send("part", null, JSON.stringify(part));
-    doneBytes += Buffer.byteLength(text, "utf8");
     at = end;
   } while (at < value.length);
-  await out.send("progress", null, JSON.stringify(progress(doneBytes)));
+  await out.send("progress", null, JSON.stringify(progress(totalBytes)));
   await out.send("done", null, "{}");
 }
 

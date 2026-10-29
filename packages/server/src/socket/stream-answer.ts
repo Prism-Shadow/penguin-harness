@@ -18,6 +18,7 @@
  * `beat(ms)` keeps such a stream audible while it waits on credit or disk.
  */
 import { CreditWindow } from "./credit-window.js";
+import { CREDIT_FLOW } from "./frames.js";
 import type { EndFrame, EventFrame, ServerFrame, StreamStartFrame } from "./frames.js";
 
 /** How a call asked to be answered, beyond its frames. */
@@ -147,7 +148,14 @@ export class StreamAnswer {
     this.#send({
       status,
       stream: true,
-      headers: { date: new Date().toUTCString(), ...headers },
+      // Echoed for a credit call: a client acks only a stream that says it reads acks, so an
+      // ack never reaches a server older than them (which closes a socket on a frame it does
+      // not know).
+      headers: {
+        date: new Date().toUTCString(),
+        ...headers,
+        ...(this.credit ? { "x-flow": CREDIT_FLOW } : {}),
+      },
     });
     this.#armBeat();
   }
@@ -166,7 +174,9 @@ export class StreamAnswer {
       return;
     }
     this.#send({ event, eventId, data });
-    this.#credit?.sent(data.length);
+    // The beat is liveness, not payload: it never counts toward the window (nor do clients
+    // count it in their acks), so a quiet stream's pings cannot use its credit up.
+    if (event !== "ping") this.#credit?.sent(data.length);
     this.#armBeat();
   }
 

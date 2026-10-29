@@ -91,6 +91,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db/database.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachinesService } from "../src/machines/service.js";
+import { TraceCache, dirNameOf } from "../src/machines/trace-cache.js";
 import type { MachinesEffects } from "../src/machines/service.js";
 import { remoteLayoutFor } from "../src/machines/layout.js";
 import type { RemoteLayout } from "../src/machines/layout.js";
@@ -106,6 +107,7 @@ import {
   loginAdmin,
   makeTempRoot,
   provisionUser,
+  removeTempRoot,
   waitFor,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -3177,10 +3179,53 @@ describe("machines API", () => {
       expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(4242);
     });
 
+    /** A copy of one file of one machine's history, as a history stream leaves it. */
+    const holdHistoryOf = async (cache: TraceCache, machineId: string) => {
+      const line = `${JSON.stringify({ type: "model_msg", payload: { type: "text", role: "user", text: "hi" } })}\n`;
+      const k = "default_agent/session-1/1";
+      await cache.reconcile(machineId, "session-1", [
+        { k, ino: "1", birthtimeMs: 1, size: line.length, records: 1, final: true },
+      ]);
+      await cache.commit(machineId, { k, off: 0, ord: 0, text: line });
+    };
+    /** Whether a machine's history copy is still on disk (its removal runs on its own). */
+    const holds = (cacheRoot: string, machineId: string) =>
+      fs.existsSync(path.join(cacheRoot, dirNameOf(machineId)));
+    const untilGone = async (cacheRoot: string, machineId: string) => {
+      const deadline = Date.now() + 2_000;
+      while (holds(cacheRoot, machineId)) {
+        if (Date.now() > deadline) throw new Error(`the copy of ${machineId} was never dropped`);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    };
+
+    it("drops at start the history copies of machines it no longer lists, unless its ssh config cannot be read", async () => {
+      const cacheRoot = path.join(await makeTempRoot(), "traces");
+      try {
+        for (const readable of [false, true]) {
+          const cache = new TraceCache(cacheRoot);
+          await holdHistoryOf(cache, "NASmachineID0000");
+          await holdHistoryOf(cache, "GONEmachineID000");
+          await boot({ historyCache: cache, readConfig: () => (readable ? "Host nas\n" : null) });
+          installedNas();
+          await t.deps.machines.start();
+          expect(holds(cacheRoot, "GONEmachineID000")).toBe(!readable);
+          expect(holds(cacheRoot, "NASmachineID0000")).toBe(true);
+          t.deps.machines.stop();
+        }
+      } finally {
+        await removeTempRoot(path.dirname(cacheRoot));
+      }
+    });
+
     it("an uninstall stops the server, removes the program and keeps the data unless asked", async () => {
       const commands: string[] = [];
       let running = true;
+      const cacheRoot = path.join(await makeTempRoot(), "traces");
+      const historyCache = new TraceCache(cacheRoot);
+      await holdHistoryOf(historyCache, "NASmachineID0000");
       await boot({
+        historyCache,
         probe: async () =>
           running
             ? { state: { kind: "running", port: 7364, pid: 4242 }, machineId: "NASmachineID0000" }
@@ -3211,6 +3256,8 @@ describe("machines API", () => {
       // Still on the Project's list, as not installed; its id kept with its data.
       expect(nas).toMatchObject({ member: true, installed: null, machineId: "NASmachineID0000" });
       expect(nas?.keepConnected).toBeUndefined();
+      // The data stays, and so does this server's copy of the history read from it.
+      expect(holds(cacheRoot, "NASmachineID0000")).toBe(true);
 
       // Again, with the data: the id goes with it.
       installedNas();
@@ -3223,6 +3270,9 @@ describe("machines API", () => {
       expect(jobOf("ssh:nas")?.result).toEqual({ ok: true, uninstalled: true, dataRemoved: true });
       expect(commands.find((c) => c.includes("rm -rf"))).toContain('rm -rf "$dir/data"');
       expect(t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas")?.machineId).toBeNull();
+      // With the data goes the copy of the history read from it.
+      await untilGone(cacheRoot, "NASmachineID0000");
+      await removeTempRoot(path.dirname(cacheRoot));
     });
 
     it("refuses what it cannot do before any ssh runs", async () => {

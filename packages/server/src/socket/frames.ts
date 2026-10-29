@@ -31,9 +31,11 @@ export interface CancelFrame {
 /**
  * Client -> server: how much of a credit-flow stream (`x-flow: credit`) the client has
  * handled — the summed `data` length (JS string length) of every event frame of that call so
- * far, cumulative. The server keeps at most the call's window of unacknowledged data in
- * flight (stream-answer.ts); a call without the header is never held back, and an ack for an
- * unknown id or a call without the header is ignored.
+ * far except `ping`, cumulative. The server keeps at most the call's window of unacknowledged
+ * data in flight (stream-answer.ts); a call without the header is never held back, and an ack
+ * for an unknown id or a call without the header is ignored. A client sends acks only for a
+ * stream whose start frame echoed `x-flow: credit`: a server older than acks would close the
+ * socket on one.
  */
 export interface AckFrame {
   id: number;

@@ -9,15 +9,20 @@
  * free, and compressing would spend CPU on nothing. The handshake tells them apart by its
  * `Origin`: none is a server (a browser always sends one), a loopback host is this computer.
  * The peer address cannot tell: Penguin Remote's last hop reaches the server over loopback.
+ *
+ * No context takeover, either way: each frame is compressed on its own. A shared dictionary
+ * would let one frame's text shape the next one's size, and these sockets mix what a reader
+ * must not learn (a Trace's secrets, another user's frames on the hub's socket to a machine)
+ * with text an attacker can influence (CRIME/BREACH). It costs a few percent of the ratio.
  */
 import type { PerMessageDeflateOptions } from "ws";
 
-/** The deflate both ends offer and accept: level 6, context takeover on, nothing under 1 KiB. */
+/** The deflate both ends offer and accept: level 6, no context takeover, nothing under 1 KiB. */
 export const API_SOCKET_DEFLATE: PerMessageDeflateOptions = {
   threshold: 1024,
   zlibDeflateOptions: { level: 6 },
-  serverNoContextTakeover: false,
-  clientNoContextTakeover: false,
+  serverNoContextTakeover: true,
+  clientNoContextTakeover: true,
 };
 
 /** Whether `hostname` (a URL's, brackets kept for IPv6) names this computer. */

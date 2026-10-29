@@ -17,7 +17,7 @@ import { Readable } from "node:stream";
 import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
 import { answerOf } from "../socket/stream-answer.js";
 import type { MachineEventHub } from "./event-hub.js";
-import type { MachineHistory } from "./history-routes.js";
+import type { HistoryCaller, MachineHistory } from "./history-routes.js";
 import { MachineSocketRelay } from "./socket-relay.js";
 import type { MachineSockets } from "./machine-sockets.js";
 
@@ -222,15 +222,15 @@ export function machinesProxy(
     events?: MachineEventHub;
     history?: Pick<MachineHistory, "answer">;
   } = {},
-): (request: Request) => Promise<Response | null> {
+): (request: Request, caller?: HistoryCaller) => Promise<Response | null> {
   const relay = new MachineSocketRelay(log, shared);
-  return async (request) => {
+  return async (request, caller) => {
     const url = new URL(request.url);
     const path = parseProxyPath(url.pathname);
     if (path === null) return null;
     // A machine Session's history is the hub's to answer, from its copy of the machine's
     // lines, whether or not the machine is connected right now; the rest goes on below.
-    const own = (await shared.history?.answer(request, path)) ?? null;
+    const own = (await shared.history?.answer(request, path, caller)) ?? null;
     if (own !== null) return own;
     const target = await resolve(path.machineId);
     if (target === null) {

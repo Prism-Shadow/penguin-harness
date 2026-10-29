@@ -25,6 +25,7 @@
 import http from "node:http";
 import { WebSocket } from "ws";
 import type { MachineSocketFact } from "../api/types.js";
+import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame, ServerFrame } from "../socket/frames.js";
 import { apiSocketPath } from "../socket/ref.js";
 import { HEARTBEAT_MS } from "../socket/serve.js";
@@ -152,7 +153,8 @@ export function incompatibleAnswer(detail: string): Response {
 
 /** What a caller's stream call hears back from a socket (or, for the event hub, from its upstream). */
 export interface Sink {
-  onStart(status: number): void;
+  /** The stream began; `headers` are its start frame's (an `x-flow: credit` echo says it reads acks). */
+  onStart(status: number, headers?: Record<string, string>): void;
   onEvent(event: EventFrame): void;
   onEnd(): void;
   onResponse(status: number, body: unknown): void;
@@ -162,11 +164,16 @@ export interface Sink {
 export class MachineSocket {
   readonly #ws: WebSocket;
   readonly #calls = new Map<number, Sink>();
+  /** Calls whose start frame echoed `x-flow: credit`: the only ones `ack` speaks for. */
+  readonly #credited = new Set<number>();
   #next = 1;
   #closed = false;
+  /** The connection under the socket, whose bytes say the link is alive before a frame is whole. */
+  readonly #raw: NodeJS.EventEmitter | null;
 
-  private constructor(ws: WebSocket) {
+  private constructor(ws: WebSocket, raw: NodeJS.EventEmitter | null = null) {
     this.#ws = ws;
+    this.#raw = raw;
     // Silence watchdog: the machine's socket sends a heartbeat frame every beat; nothing for
     // two beats means the channel is dead under us (an ssh session gone quiet), and every
     // stream on it must end so the browser re-issues — not sit on a socket that never speaks.
@@ -188,11 +195,13 @@ export class MachineSocket {
       if (sink === undefined) return;
       if ("event" in frame) sink.onEvent(frame);
       else if ("end" in frame) {
-        this.#calls.delete(frame.id);
+        this.#forget(frame.id);
         sink.onEnd();
-      } else if ("stream" in frame) sink.onStart(frame.status);
-      else {
-        this.#calls.delete(frame.id);
+      } else if ("stream" in frame) {
+        if (frame.headers["x-flow"] === CREDIT_FLOW) this.#credited.add(frame.id);
+        sink.onStart(frame.status, frame.headers);
+      } else {
+        this.#forget(frame.id);
         sink.onResponse(frame.status, frame.body);
       }
     });
@@ -201,6 +210,7 @@ export class MachineSocket {
       this.#closed = true;
       const sinks = [...this.#calls.values()];
       this.#calls.clear();
+      this.#credited.clear();
       for (const sink of sinks) sink.onEnd();
     };
     ws.on("close", drop);
@@ -227,9 +237,15 @@ export class MachineSocket {
         ws.terminate();
       }, timeoutMs);
       deadline.unref?.();
+      // The upgrade's connection, kept for `onTraffic`: a frame larger than what a slow link
+      // carries in one stream's watchdog is still arriving, and its bytes say so.
+      let raw: NodeJS.EventEmitter | null = null;
+      ws.once("upgrade", (res) => {
+        raw = res.socket;
+      });
       ws.once("open", () => {
         clearTimeout(deadline);
-        resolve(new MachineSocket(ws));
+        resolve(new MachineSocket(ws, raw));
       });
       ws.once("unexpected-response", (_req, res) => {
         clearTimeout(deadline);
@@ -241,6 +257,17 @@ export class MachineSocket {
         reject(err);
       });
     });
+  }
+
+  /**
+   * Tells `listener` whenever bytes arrive on the connection, whole frames or not: liveness for
+   * a stream waiting on a frame that a slow link is still carrying. Returns the stop.
+   */
+  onTraffic(listener: () => void): () => void {
+    const raw = this.#raw;
+    if (raw === null) return () => undefined;
+    raw.on("data", listener);
+    return () => raw.off("data", listener);
   }
 
   get closed(): boolean {
@@ -273,16 +300,24 @@ export class MachineSocket {
   }
 
   cancel(id: number): void {
+    this.#credited.delete(id);
     if (!this.#calls.delete(id)) return;
     if (this.#ws.readyState === this.#ws.OPEN) this.#ws.send(JSON.stringify({ id, cancel: true }));
   }
 
+  #forget(id: number): void {
+    this.#calls.delete(id);
+    this.#credited.delete(id);
+  }
+
   /**
    * Acknowledges a credit-flow stream (`x-flow: credit`, socket/frames.ts AckFrame): this
-   * server has handled `cumulative` of that call's event data. Nothing for a call already over.
+   * server has handled `cumulative` of that call's event data (`ping`s not counted). Nothing
+   * for a call already over, or for one whose start frame did not echo the header — a machine
+   * older than acks closes its socket on one.
    */
   ack(id: number, cumulative: number): void {
-    if (!this.#calls.has(id)) return;
+    if (!this.#calls.has(id) || !this.#credited.has(id)) return;
     if (this.#ws.readyState === this.#ws.OPEN) {
       this.#ws.send(JSON.stringify({ id, ack: cumulative }));
     }

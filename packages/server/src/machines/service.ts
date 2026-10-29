@@ -141,10 +141,14 @@ import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Channels, Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
-import type { Users } from "../mechanisms/identity.js";
+import type { Auth, Users } from "../mechanisms/identity.js";
+import type { LiveStreams } from "../auth/live-streams.js";
+import { streamRevocation } from "../http/sse.js";
+import type { SseRevocation } from "../http/sse.js";
 import { userChannelKey } from "../http/routes/events.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
@@ -1125,6 +1129,11 @@ export class MachinesService {
    * this server adopted it (sent along, so that machine reads the Sessions it held before then
    * as CLI tasks). Null when the machine is not connected.
    */
+  /** Whether this server still has a record of the machine with that id. */
+  knows(machineId: string): boolean {
+    return this.#rowFor(machineId) !== null;
+  }
+
   async proxyTarget(machineId: string): Promise<ProxyTarget | null> {
     const row = this.#rowFor(machineId);
     if (row === null) return null;
@@ -2772,13 +2781,16 @@ export class MachinesService {
    */
   async start(): Promise<void> {
     // The history kept of a machine this server no longer lists — its alias gone from the ssh
-    // config, or never recorded — is dropped: nothing will ever read it again.
-    const listed = new Set(this.#effects.listAliases().map((alias) => `ssh:${alias}`));
-    const known = new Set<string>();
-    for (const row of this.repo.all()) {
-      if (row.machineId !== null && listed.has(row.address)) known.add(row.machineId);
+    // config, or never recorded — is dropped: nothing will ever read it again. An ssh config
+    // that cannot be read says nothing about the list, so then nothing is dropped.
+    if (this.#effects.historyCache !== null && this.#effects.readConfig() !== null) {
+      const listed = new Set(this.#effects.listAliases().map((alias) => `ssh:${alias}`));
+      const known = new Set<string>();
+      for (const row of this.repo.all()) {
+        if (row.machineId !== null && listed.has(row.address)) known.add(row.machineId);
+      }
+      await this.#effects.historyCache.dropUnknown(known).catch(() => undefined);
     }
-    void this.#effects.historyCache?.dropUnknown(known).catch(() => undefined);
     // Every machine kept connected is on its way back from the moment this server is up, and
     // says so at once — the hand-over below can take a while, and a machine read as merely not
     // connected meanwhile would look stopped.
@@ -3613,6 +3625,8 @@ export class MachinesModule {
   @Use() private readonly channels!: Channels;
   @Use() private readonly users!: Users;
   @Use() private readonly resourceGroups!: ResourceGroups;
+  @Use() private readonly liveStreams!: LiveStreams;
+  @Use() private readonly auth!: Auth;
   @Provide() machines!: Machines;
   /** Session-level requests for a machine's Session, routed by its id (session-forward.ts). */
   @Provide() sessionForward!: MachineSessionForward;
@@ -3681,10 +3695,17 @@ export class MachinesModule {
       cache: historyCache,
       sockets,
       target: (machineId) => machines.proxyTarget(machineId),
+      known: (machineId) => machines.knows(machineId),
       log: (line) => console.log(line),
     });
     this.routes = machinesRoutes({ machines, access: this.access, events });
-    this.serverProxyRoutes = machinesServerProxyRoutes(machines, { sockets, events, history });
+    this.serverProxyRoutes = machinesServerProxyRoutes(machines, {
+      sockets,
+      events,
+      history,
+      revocation: (c) =>
+        streamRevocation(c, c.var.user, { liveStreams: this.liveStreams, auth: this.auth }),
+    });
     this.sessionForward = machineSessionForward(machines, { sockets, events, history }, (line) =>
       console.log(line),
     );
@@ -3711,6 +3732,8 @@ export function machinesServerProxyRoutes(
     sockets?: MachineSockets;
     events?: MachineEventHub;
     history?: Pick<MachineHistory, "answer">;
+    /** The sign-in behind a request, for a history stream to be held against (http/sse.ts). */
+    revocation?: (c: Context<AppEnv>) => SseRevocation;
   } = {},
 ): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -3724,7 +3747,11 @@ export function machinesServerProxyRoutes(
     if (!c.var.user.isAdmin) {
       throw new HttpError(403, "admin_required", "Only an admin can reach a machine's API.");
     }
-    const answer = await proxy(c.req.raw);
+    const revocation = shared.revocation;
+    const answer = await proxy(c.req.raw, {
+      userId: c.var.user.userId,
+      ...(revocation !== undefined ? { revocation: () => revocation(c) } : {}),
+    });
     return answer ?? c.notFound();
   });
   return app;

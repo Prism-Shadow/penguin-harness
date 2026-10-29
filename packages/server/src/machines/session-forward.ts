@@ -21,13 +21,18 @@
  * api/client.ts), and a machine's refusal must never sign anyone out of this server.
  */
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import type { LiveStreams } from "../auth/live-streams.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { errorBody } from "../http/errors.js";
+import { streamRevocation } from "../http/sse.js";
+import type { SseRevocation } from "../http/sse.js";
+import type { Auth } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { MachineEventHub } from "./event-hub.js";
-import type { MachineHistory } from "./history-routes.js";
+import type { HistoryCaller, MachineHistory } from "./history-routes.js";
 import type { MachineSockets } from "./machine-sockets.js";
 import { forwardToMachine } from "./proxy.js";
 import type { MachinesService } from "./service.js";
@@ -92,6 +97,8 @@ export class SessionForward {
     request: Request,
     sessionId: string,
     projectIds: readonly string[],
+    /** Who asks: the hub's history answers bind a held window to its reader and its sign-in. */
+    caller?: Omit<HistoryCaller, "projectId">,
   ): Promise<Response | null> {
     const { index, machines, relay } = this.deps;
     let fleet: Promise<MachineCandidate[]> | null = null;
@@ -106,7 +113,11 @@ export class SessionForward {
     // The Session's history is this server's to answer, from its copy of the machine's lines,
     // connected or not (a stream waits for the machine and says so).
     const own =
-      (await this.deps.history?.answer(request, { machineId, remotePath: pathname })) ?? null;
+      (await this.deps.history?.answer(
+        request,
+        { machineId, remotePath: pathname },
+        { userId: caller?.userId ?? "", ...caller, projectId: place.projectId },
+      )) ?? null;
     if (own !== null) return own;
 
     const target = await machines.proxyTarget(machineId);
@@ -202,6 +213,8 @@ export function sessionForwardRoutes(deps: {
   sessions: Pick<SessionIndex, "findById">;
   access: Pick<Access, "accessibleProjectIds">;
   forward: Pick<SessionForward, "forward">;
+  /** The sign-in behind a request, for a history stream to be held against (http/sse.ts). */
+  revocation?: (c: Context<AppEnv>) => SseRevocation;
 }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use("/:sessionId/*", async (c, next) => {
@@ -212,6 +225,10 @@ export function sessionForwardRoutes(deps: {
       c.req.raw,
       sessionId,
       deps.access.accessibleProjectIds(user.userId),
+      {
+        userId: user.userId,
+        ...(deps.revocation !== undefined ? { revocation: () => deps.revocation!(c) } : {}),
+      },
     );
     return answer ?? next();
   });
@@ -235,12 +252,16 @@ export class SessionForwardRoutes {
   @Use() private readonly sessionsRepo!: SessionIndex;
   @Use() private readonly access!: Access;
   @Use() private readonly sessionForward!: MachineSessionForward;
+  @Use() private readonly liveStreams!: LiveStreams;
+  @Use() private readonly auth!: Auth;
   @Bind("SessionForwardRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = sessionForwardRoutes({
       sessions: this.sessionsRepo,
       access: this.access,
       forward: this.sessionForward,
+      revocation: (c) =>
+        streamRevocation(c, c.var.user, { liveStreams: this.liveStreams, auth: this.auth }),
     });
   }
 }

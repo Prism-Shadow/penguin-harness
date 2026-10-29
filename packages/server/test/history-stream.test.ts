@@ -8,6 +8,10 @@
  * - Given a record longer than one frame, then it arrives in parts that join to the record.
  * - Given a stream re-issued with the last event id it saw, then it continues the same window
  *   from there; once the window's hold has lapsed, it gets the window anew under a new id.
+ * - Given a resume id sent for another Session's path, or another query, then the reader gets that
+ *   Session's or query's own window anew, never the one the id named.
+ * - Given many windows held, then a reader keeps only its newest few within its byte bound, and
+ *   all readers together stay within theirs; a window too big for one reader is not held.
  * - Given `fill=1`, then `filled` follows `done`: a local Session already holds all of it.
  * - Given a Session the caller cannot see, then the stream's one event says
  *   `session_not_found`, and a malformed query is a `bad_request` the same way.
@@ -22,6 +26,13 @@ import {
 } from "@prismshadow/penguin-core";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import type { HistoryMessage, HistoryPage, MessagesResponse } from "../src/api/types.js";
+import {
+  HELD_BYTES,
+  HELD_BYTES_PER_USER,
+  HELD_WINDOWS_PER_USER,
+  HeldWindows,
+} from "../src/services/history-stream.js";
+import type { HistoryWindow } from "../src/services/history-stream.js";
 import { FRAME_TEXT_BUDGET } from "../src/socket/line-frames.js";
 import { eventReader, windowRecords } from "./fixtures/history-stream.js";
 import type { StreamEvent } from "./fixtures/history-stream.js";
@@ -162,6 +173,31 @@ describe("the history stream of a local Session", () => {
     expect(windowRecords(lapsed)).toEqual(windowRecords(whole));
   });
 
+  it("never continues another Session's window, or another query's, under a resume id", async () => {
+    const other = uniqueSessionId();
+    const row = sessionRow(other);
+    t.deps.sessionsRepo.insert(row);
+    await writeTraceFile(t.root, row.projectId, AGENT, "2026-10-29", other, 1, [
+      userText("the other conversation"),
+      assistantText("plain"),
+    ]);
+    const mine = await readAll(`/api/sessions/${SID}/history?tailLimit=1`);
+    const lastId = mine.filter((e) => e.id !== null).at(-1)!.id!;
+    const windowId = pageOf(mine).windowId;
+
+    const elsewhere = await readAll(`/api/sessions/${other}/history?tailLimit=1`, {
+      "last-event-id": lastId,
+    });
+    expect(pageOf(elsewhere).windowId).not.toBe(windowId);
+    expect(JSON.stringify(windowRecords(elsewhere))).toContain("the other conversation");
+    expect(JSON.stringify(windowRecords(elsewhere))).not.toContain("and this?");
+
+    const otherQuery = await readAll(`/api/sessions/${SID}/history?tailLimit=2`, {
+      "last-event-id": lastId,
+    });
+    expect(pageOf(otherQuery).windowId).not.toBe(windowId);
+  });
+
   it("follows done with filled for fill=1", async () => {
     const events = await readAll(`/api/sessions/${SID}/history?tailLimit=1&fill=1`);
     expect(events.slice(-2).map((e) => e.event)).toEqual(["done", "filled"]);
@@ -178,5 +214,44 @@ describe("the history stream of a local Session", () => {
     const events = await readAll(path);
     expect(events.map((e) => e.event)).toEqual(["error"]);
     expect((JSON.parse(events[0]!.data) as { code: string }).code).toBe(code);
+  });
+});
+
+describe("the windows held for a re-issued stream", () => {
+  const windowOf = (windowId: string, bytes: number): HistoryWindow => ({
+    windowId,
+    text: "",
+    page: { windowId, count: 0, bytes, serverNowMs: null },
+  });
+  const owner = (userId: string) => ({ sessionId: SID, userId, query: "q" });
+
+  it("keeps a few per reader and a bounded number of bytes in all, the oldest let go first", () => {
+    const held = new HeldWindows(() => 0);
+    for (let i = 0; i < HELD_WINDOWS_PER_USER + 2; i++)
+      held.hold(windowOf(`a${i}`, 10), owner("ann"));
+    expect(held.find("a0", owner("ann"))).toBeNull();
+    expect(held.find("a1", owner("ann"))).toBeNull();
+    expect(held.find(`a${HELD_WINDOWS_PER_USER + 1}`, owner("ann"))).not.toBeNull();
+    // Another reader's windows are not counted against the first one's.
+    held.hold(windowOf("b0", 10), owner("bob"));
+    expect(held.find("a2", owner("ann"))).not.toBeNull();
+    expect(held.find("b0", owner("ann"))).toBeNull();
+
+    // Bytes: a reader's big windows push out its older ones; one too big is not held at all.
+    held.hold(windowOf("big1", HELD_BYTES_PER_USER - 5), owner("bob"));
+    expect(held.find("b0", owner("bob"))).toBeNull();
+    held.hold(windowOf("huge", HELD_BYTES_PER_USER + 1), owner("bob"));
+    expect(held.find("huge", owner("bob"))).toBeNull();
+    expect(held.find("big1", owner("bob"))).not.toBeNull();
+  });
+
+  it("lets go of the oldest windows when all readers together pass the byte bound", () => {
+    const held = new HeldWindows(() => 0);
+    // Five readers, each within its own bound, together just past the bound for all.
+    const per = Math.floor(HELD_BYTES / 5) + 1;
+    for (const user of ["u1", "u2", "u3", "u4", "u5"]) held.hold(windowOf(user, per), owner(user));
+    expect(held.find("u1", owner("u1"))).toBeNull();
+    expect(held.find("u2", owner("u2"))).not.toBeNull();
+    expect(held.find("u5", owner("u5"))).not.toBeNull();
   });
 });

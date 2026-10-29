@@ -4,7 +4,8 @@
  * - Given this server dialling a machine, the dial offers permessage-deflate and a server that
  *   takes it negotiates it.
  * - Given a handshake with no Origin (another server) or from a browser on another computer,
- *   the runtime's upgrade answers with permessage-deflate.
+ *   the runtime's upgrade answers with permessage-deflate, without context takeover either
+ *   way: each frame is compressed on its own, so no frame's size depends on another's text.
  * - Given a handshake from a browser on this computer (a loopback Origin), it answers without.
  */
 import http from "node:http";
@@ -46,20 +47,23 @@ afterAll(async () => {
   await t.cleanup();
 });
 
-/** The extensions a handshake with these headers negotiated (the client offers deflate). */
+/** The extension header a handshake with these headers was answered with (the client offers deflate). */
 async function negotiated(host: string, origin?: string): Promise<string> {
   const ws = new WebSocket(`ws://127.0.0.1:${port}${apiSocketPath()}`, {
     headers: { host, cookie, ...(origin !== undefined ? { origin } : {}) },
     perMessageDeflate: API_SOCKET_DEFLATE,
+  });
+  let accepted = "";
+  ws.once("upgrade", (res) => {
+    accepted = String(res.headers["sec-websocket-extensions"] ?? "");
   });
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
     ws.once("unexpected-response", (_req, res) => reject(new Error(`refused ${res.statusCode}`)));
     ws.once("error", reject);
   });
-  const extensions = ws.extensions;
   ws.close();
-  return extensions;
+  return accepted;
 }
 
 describe("API socket compression", () => {
@@ -80,11 +84,15 @@ describe("API socket compression", () => {
     await new Promise<void>((resolve) => machine.close(() => resolve()));
   });
 
-  it("a handshake from another server or a browser on another computer is compressed", async () => {
-    expect(await negotiated(`localhost:${port}`)).toContain("permessage-deflate");
-    expect(await negotiated(`192.168.1.5:${port}`, `http://192.168.1.5:${port}`)).toContain(
-      "permessage-deflate",
-    );
+  it("a handshake from another server or a browser on another computer is compressed, frame by frame", async () => {
+    for (const answer of [
+      await negotiated(`localhost:${port}`),
+      await negotiated(`192.168.1.5:${port}`, `http://192.168.1.5:${port}`),
+    ]) {
+      expect(answer).toContain("permessage-deflate");
+      expect(answer).toContain("server_no_context_takeover");
+      expect(answer).toContain("client_no_context_takeover");
+    }
   });
 
   it("a handshake from a browser on this computer is not", async () => {

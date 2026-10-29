@@ -1,37 +1,50 @@
 /**
- * A machine Session's history, brought over and kept on the hub (spec 05 「远程会话的历史」): one
- * job per machine × Session runs the machine stream — `GET …/history-lines`, the machine's own
- * route, over the API socket held to it — that brings a window's Trace lines into the hub's copy
- * (trace-cache.ts) and, while a reader stays for it, the rest of the Session; every reader of
- * that Session shares it.
+ * A machine Session's history, brought over and kept on the hub (spec 05, "Remote Session
+ * history: the machine cuts, this server caches"): one job per machine × Session runs the machine
+ * stream — `GET …/history-lines`, the machine's own route, over the API socket held to it — that
+ * brings a window's Trace lines into the hub's copy (trace-cache.ts) and, while a reader stays for
+ * it, the rest of the Session; every reader of that Session shares it.
  *
  * ONE MACHINE STREAM AT A TIME. A window (a `history` call), a body (`trace-body`) or one file
  * (the Trace panel) waits its turn, first come first served. Once the stream in front of it has
  * delivered what its own reader waited for, what that stream still carries — the window's heavy
  * lines, the fill — gives way: it is cancelled, what it committed stays, and the fill is opened
- * again once nothing waits.
+ * again once nothing waits. A fill nobody stays for any more ends, whoever's stream carries it.
  *
  * RESUMING IS ASKING AGAIN. Every stream opens with `have` (what the copy holds) and the machine
  * sends only what is missing, so a stream cut anywhere — the socket dropped, the stream silent
- * past its watchdog, a preemption — reopens from the copy, never from 0. While the machine is
- * not connected, or no socket can be had, the job tries again 1 s doubling to 30 s for as long as
- * a reader waits, and tells each reader so (`progress.waiting`). There is no deadline per stream.
+ * past its watchdog (no event and no byte on the socket), a preemption — reopens from the copy,
+ * never from 0: at once when the cut stream had moved (bytes committed, its window delivered, its
+ * end reached), else after a wait that grows 1 s doubling to 30 s. A machine that is not connected, or that cannot be reached, is
+ * waited for the same way, for as long as a reader waits, and each reader is told
+ * (`progress.waiting`). There is no deadline per stream.
  *
- * NOBODY LEFT, NOTHING SENT. The last reader leaving cancels the machine stream at once.
+ * A COPY THAT CANNOT BE KEPT IS NO REASON NOT TO READ. When this server's copy fails (a disk that
+ * refuses writes, a directory that cannot open), the job stops using it: the window is assembled
+ * from the lines its own stream carried, and nothing is filled.
+ *
+ * NOBODY LEFT, NOTHING SENT. The last reader leaving cancels the machine stream at once. A
+ * generation that is replaced ends every stream it holds without an error, so each reader asks
+ * the generation that follows.
  *
  * A MACHINE ON AN OLDER BUILD has no `history-lines`: over the socket it answers a path its
  * platform does not own with 421 `not_on_socket` (HTTP would say 404). Its windows are then read
  * from `/messages` over HTTP inside the same stream — no deadline, the bytes counted as they
  * arrive — uncached and with nothing elided, since such a machine cannot send a body on its own.
+ * So is a machine this server cannot hold a socket to (`machine_incompatible`,
+ * `machine_socket_unavailable`). A machine that turns this server's session away (401/403) is an
+ * error, and one being brought onto this hub's build is waited for.
  */
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { BodySource } from "@prismshadow/penguin-core/interfaces";
 import type {
   HistoryFileKey,
   HistoryHave,
+  HistoryLinesFrame,
   HistoryLinesWindow,
   HistoryPartFrame,
-  HistoryLinesFrame,
   HistoryProgress,
+  HistoryWindowPart,
   MessagesResponse,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
@@ -44,7 +57,7 @@ import { SESSION_ROUTES_BASE } from "../services/trace-images.js";
 import type { MessagesPageRequest } from "../services/trace-service.js";
 import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame } from "../socket/frames.js";
-import { frameBytes } from "../socket/line-frames.js";
+import { LineCommitter, frameBytes } from "../socket/line-frames.js";
 import type { MachineSocket, Sink } from "./machine-sockets.js";
 import type { ProxyTarget } from "./proxy.js";
 import type { TraceCache } from "./trace-cache.js";
@@ -90,6 +103,8 @@ export interface HistorySyncDeps {
     path: string,
     signal: AbortSignal,
   ): Promise<Response>;
+  /** Whether this server still lists the machine; absent: always (a suite's own machine). */
+  known?(machineId: string): boolean;
   log(line: string): void;
   clock?: SyncClock;
   watchdogMs?: number;
@@ -116,6 +131,23 @@ export interface AssembledWindow {
   serverNowMs: number | null;
 }
 
+/** A body's line, once fetched: its record when the stream carried it whole, and the bytes counted. */
+export interface FetchedBody {
+  record: AmspRecord | null;
+  totalBytes: number;
+}
+
+/**
+ * The generation the job belonged to was replaced (a hot push, a shutdown): a reader's stream
+ * ends without an error, and the client asks the generation that follows.
+ */
+export class GenerationClosed extends Error {
+  constructor() {
+    super("This server's generation was replaced; ask again.");
+    this.name = "GenerationClosed";
+  }
+}
+
 export type ProgressListener = (progress: HistoryProgress) => void;
 type Phase = HistoryProgress["phase"];
 type Waiting = HistoryProgress["waiting"];
@@ -135,6 +167,10 @@ class Track {
     private readonly listener: ProgressListener,
   ) {
     this.#phase = phase;
+  }
+
+  get totalBytes(): number {
+    return this.#totalBytes;
   }
 
   /** A stream starts (or reaches) `phase`, with `remaining` still to come in it. */
@@ -180,12 +216,52 @@ class Track {
   }
 }
 
+/** The lines one stream carried, kept in memory for a reader the copy cannot serve. */
+class LineOverlay {
+  readonly #files = new Map<
+    HistoryFileKey,
+    { committer: LineCommitter; runs: Array<{ off: number; bytes: Buffer }> }
+  >();
+
+  /** Takes one frame; answers the whole lines it completes, if any. */
+  push(frame: HistoryLinesFrame | HistoryPartFrame): { off: number; bytes: Buffer } | null {
+    let file = this.#files.get(frame.k);
+    if (file === undefined) {
+      file = { committer: new LineCommitter(), runs: [] };
+      this.#files.set(frame.k, file);
+    }
+    const lines = file.committer.push(frame);
+    if (lines !== null) file.runs.push(lines);
+    return lines;
+  }
+
+  /** Bytes `[start, end)` of a file, when the stream carried every one of them. */
+  bytes(k: HistoryFileKey, start: number, end: number): Buffer | null {
+    const runs = [...(this.#files.get(k)?.runs ?? [])].sort((a, b) => a.off - b.off);
+    const pieces: Buffer[] = [];
+    let at = start;
+    for (const run of runs) {
+      if (at >= end) break;
+      const runEnd = run.off + run.bytes.length;
+      if (run.off > at || runEnd <= at) continue;
+      const piece = run.bytes.subarray(at - run.off, Math.min(run.bytes.length, end - run.off));
+      pieces.push(piece);
+      at += piece.length;
+    }
+    return at >= end ? Buffer.concat(pieces) : null;
+  }
+}
+
 /** One read waiting its turn on the machine stream. */
 interface Op {
   kind: "window" | "body" | "file";
   reader: HistoryReader;
   /** What the stream asks the machine, given what the copy holds. */
   query(have: HistoryHave[], fill: boolean): HistoryLinesQuery;
+  /** The one file a body or a file names: its `have` entry is the only one sent. */
+  only: HistoryFileKey | null;
+  /** A body op's record ordinal in `only`. */
+  ordinal: number | null;
   /** A window op's read, for an older machine's `/messages`. */
   read: WindowRead | null;
   /** A window op whose reader stays for the fill: its stream goes on into it. */
@@ -194,7 +270,7 @@ interface Op {
   /** How many times the copy could not be assembled into this window. */
   assemblies: number;
   settled: boolean;
-  resolve(value: AssembledWindow | null): void;
+  resolve(value: unknown): void;
   reject(err: unknown): void;
 }
 
@@ -215,12 +291,19 @@ interface MachineStream {
   /** What is left of each phase, as the machine's totals said. */
   left: Record<Phase, { bytes: number; lines: number }>;
   window: HistoryLinesWindow | null;
+  /** A window that comes as `window-part`s, joined so far. */
+  windowText: string;
   /** Its op has what it waited for (a window: at `ready`; a body or a file: at `done`). */
   delivered: boolean;
   sawDone: boolean;
-  frames: number;
+  /** It moved: bytes committed (or carried), its window delivered, its end reached. */
+  progressed: boolean;
+  /** The lines it carried, for a copy that cannot serve them and for a body's own record. */
+  overlay: LineOverlay;
+  bodyRecord: AmspRecord | null;
   answer: { status: number; body: unknown } | null;
-  failure: unknown;
+  /** The machine's own `error` event: the stream cannot be served. */
+  refused: { code: string; message: string } | null;
   /** Cut by the job (preempted, nobody left): not an interruption to recover from. */
   cancelled: boolean;
   stop(): void;
@@ -244,6 +327,25 @@ const isOlderBuild = (status: number, body: unknown): boolean =>
   (status === 421 && codeOf(body) === "not_on_socket") ||
   (status === 404 && codeOf(body) === "not_found");
 
+/**
+ * What a dial that found no socket means for a history stream (machine-sockets.ts's answers): a
+ * build without the socket, or a socket this server cannot have, reads `/messages` over HTTP; a
+ * refusal of this server's session is an error; a machine in its upgrade, or one that failed with
+ * a server error, is waited for; a generation closing ends the stream.
+ */
+function socketVerdict(body: unknown): "older" | "http" | "refused" | "closed" | "wait" {
+  const code = codeOf(body);
+  if (code === "machine_socket_refused") {
+    // The status the handshake was answered with, as the refusal names it.
+    const status = Number(/handshake with (\d{3})/.exec(messageOf(body) ?? "")?.[1] ?? 0);
+    if (status === 401 || status === 403) return "refused";
+    return status >= 500 ? "wait" : "older";
+  }
+  if (code === "machine_incompatible" || code === "machine_socket_unavailable") return "http";
+  if (code === "unavailable") return "closed";
+  return "wait";
+}
+
 /** The `/messages` query of a window read. */
 function messagesQuery(read: WindowRead): string {
   if (read.kind === "full") return "";
@@ -251,20 +353,42 @@ function messagesQuery(read: WindowRead): string {
   return `?before=${encodeURIComponent(encodeCursor(read.cursor))}&limit=${read.limit}`;
 }
 
+/** The records a run of whole lines holds, each with its ordinal from `ord` on. */
+function recordsOf(bytes: Buffer, ord: number): Array<{ ordinal: number; record: AmspRecord }> {
+  const out: Array<{ ordinal: number; record: AmspRecord }> = [];
+  let ordinal = ord;
+  for (const line of bytes.toString("utf8").split("\n")) {
+    const text = line.trim();
+    if (text === "") continue;
+    try {
+      out.push({ ordinal, record: JSON.parse(text) as AmspRecord });
+      ordinal += 1;
+    } catch {
+      // A malformed line is no record (the tolerant reader's rule).
+    }
+  }
+  return out;
+}
+
 /** One Session's sync job: its readers, its queue, its one machine stream. */
 class HistoryJob {
   readonly #readers = new Set<HistoryReader>();
+  /** The readers that stay for the fill: a window asked with it, or `fill()` itself. */
+  readonly #fillReaders = new Set<HistoryReader>();
   readonly #queue: Op[] = [];
   readonly #fillWaiters = new Set<FillWaiter>();
   #stream: MachineStream | null = null;
   #retry: unknown = null;
   #attempt = 0;
   #older = false;
+  /** This server's copy failed: windows come from the stream itself, and nothing is filled. */
+  #noCache = false;
   /** The last stream that carried the fill finished it, and no stream opened since. */
   #whole = false;
   #closed = false;
-  /** The Sessions the last window read, for eviction to leave alone while the job is open. */
+  /** The Sessions the last window read (until then, what the copy remembers), held from eviction. */
   #group: string[];
+  #windowSeen = false;
   readonly #clock: SyncClock;
 
   constructor(
@@ -272,15 +396,26 @@ class HistoryJob {
     readonly sessionId: string,
     private readonly deps: HistorySyncDeps,
     private readonly onIdle: (job: HistoryJob) => void,
-    /** The `<machineId>/<sessionId>` directories every open job uses. */
+    /** The `<machineId>\0<sessionId>` directories every open job uses. */
     private readonly held: () => Set<string>,
   ) {
     this.#clock = deps.clock ?? realClock;
     this.#group = [sessionId];
+    // Until the first window says which descendants the Session has, the copy remembers them.
+    deps.cache.groupSessions(machineId, sessionId).then(
+      (group) => {
+        if (!this.#windowSeen) this.#group = group;
+      },
+      () => undefined,
+    );
   }
 
   get group(): readonly string[] {
     return this.#group;
+  }
+
+  get closed(): boolean {
+    return this.#closed;
   }
 
   join(reader: HistoryReader): void {
@@ -290,6 +425,7 @@ class HistoryJob {
   /** A reader left: what it waited for is dropped, and with the last one the stream goes. */
   leave(reader: HistoryReader): void {
     if (!this.#readers.delete(reader)) return;
+    this.#fillReaders.delete(reader);
     for (let i = this.#queue.length - 1; i >= 0; i--) {
       const op = this.#queue[i]!;
       if (op.reader !== reader) continue;
@@ -310,16 +446,26 @@ class HistoryJob {
   }
 
   enqueue(op: Omit<Op, "settled" | "assemblies">): void {
+    if (this.#closed) {
+      op.reject(new GenerationClosed());
+      return;
+    }
+    if (op.kind === "window" && op.fill) this.#fillReaders.add(op.reader);
     this.#queue.push({ ...op, settled: false, assemblies: 0 });
     this.#pump();
   }
 
   /** The reader stays for the rest of the Session. */
   waitForFill(waiter: FillWaiter): void {
-    if (this.#whole || this.#older) {
+    if (this.#closed) {
+      waiter.reject(new GenerationClosed());
+      return;
+    }
+    if (this.#whole || this.#older || this.#noCache) {
       waiter.resolve();
       return;
     }
+    this.#fillReaders.add(waiter.reader);
     this.#fillWaiters.add(waiter);
     const stream = this.#stream;
     if (stream !== null && stream.fill && (stream.delivered || stream.op === null)) {
@@ -329,14 +475,17 @@ class HistoryJob {
     this.#pump();
   }
 
+  /** The generation is replaced: every reader's wait ends (GenerationClosed), and nothing more runs. */
   close(): void {
+    if (this.#closed) return;
     this.#closed = true;
+    this.#failAll(new GenerationClosed());
     this.#stream?.stop();
     if (this.#retry !== null) this.#clock.clearTimeout(this.#retry);
     this.#retry = null;
   }
 
-  #settle(op: Op, outcome: AssembledWindow | null | Error): void {
+  #settle(op: Op, outcome: unknown): void {
     if (op.settled) return;
     op.settled = true;
     if (outcome instanceof Error) op.reject(outcome);
@@ -351,6 +500,32 @@ class HistoryJob {
     this.#fillWaiters.clear();
   }
 
+  #resolveFill(): void {
+    for (const waiter of this.#fillWaiters) waiter.resolve();
+    this.#fillWaiters.clear();
+  }
+
+  /** This server's copy failed: the job reads on without it (see the module header). */
+  #cacheFailed(err: unknown): void {
+    if (this.#noCache) return;
+    this.#noCache = true;
+    this.deps.log(
+      `[machines] history copy of ${this.sessionId} on ${this.machineId} failed (${err instanceof Error ? err.message : String(err)}); reading on without it`,
+    );
+    this.#resolveFill();
+  }
+
+  /** A copy operation, or `fallback` once the copy has failed (it fails once, for the job's life). */
+  async #cached<T>(work: () => Promise<T>, fallback: T): Promise<T> {
+    if (this.#noCache) return fallback;
+    try {
+      return await work();
+    } catch (err) {
+      this.#cacheFailed(err);
+      return fallback;
+    }
+  }
+
   /** Decides what runs next. */
   #pump(): void {
     if (this.#closed) return;
@@ -359,7 +534,14 @@ class HistoryJob {
       const past = stream.delivered || stream.op === null;
       if (this.#readers.size === 0) stream.stop();
       else if (past && this.#queue.length > 0) stream.stop();
-      else if (stream.op === null && this.#fillWaiters.size === 0) stream.stop();
+      else if (past) {
+        // A stream past its own part goes on for whoever still wants what it carries: the fill's
+        // readers when it carries the fill, else the reader whose window it was.
+        const wanted = stream.fill
+          ? this.#fillReaders.size > 0 && !this.#noCache
+          : stream.op !== null && this.#readers.has(stream.op.reader);
+        if (!wanted) stream.stop();
+      }
       return;
     }
     if (this.#readers.size === 0) {
@@ -375,7 +557,9 @@ class HistoryJob {
   }
 
   async #run(op: Op | null): Promise<void> {
-    const fill = op === null || (op.kind === "window" && (op.fill || this.#fillWaiters.size > 0));
+    const fill =
+      !this.#noCache &&
+      (op === null || (op.kind === "window" && (op.fill || this.#fillReaders.size > 0)));
     let stop: () => void = () => undefined;
     const stream: MachineStream = {
       op,
@@ -387,11 +571,14 @@ class HistoryJob {
         fill: { bytes: 0, lines: 0 },
       },
       window: null,
+      windowText: "",
       delivered: false,
       sawDone: false,
-      frames: 0,
+      progressed: false,
+      overlay: new LineOverlay(),
+      bodyRecord: null,
       answer: null,
-      failure: null,
+      refused: null,
       cancelled: false,
       stop: () => {
         stream.cancelled = true;
@@ -405,27 +592,51 @@ class HistoryJob {
       const target = await this.deps.target(this.machineId);
       if (stream.cancelled) return;
       if (target === null) {
+        if (this.deps.known !== undefined && !this.deps.known(this.machineId)) {
+          this.#failAll(
+            new HttpError(
+              404,
+              "machine_not_found",
+              "The machine holding this conversation is no longer in this server's list.",
+              undefined,
+              { machineId: this.machineId },
+            ),
+          );
+          return;
+        }
         wait = "not_connected";
         return;
       }
       if (this.#older) {
-        await this.#readOlder(stream, target);
+        await this.#readOverHttp(stream, target);
         return;
       }
       const got = await this.deps.socket(this.machineId, target);
       if (stream.cancelled) return;
       if ("answer" in got) {
         const body = (await got.answer.json().catch(() => null)) as unknown;
-        if (codeOf(body) === "machine_socket_refused") {
-          // The handshake was answered with a status: a build without the socket at all.
-          this.#older = true;
-          await this.#readOlder(stream, target);
-          return;
+        const verdict = socketVerdict(body);
+        if (verdict === "older") this.#older = true;
+        if (verdict === "older" || verdict === "http") {
+          await this.#readOverHttp(stream, target);
+        } else if (verdict === "refused") {
+          this.#failAll(this.#refusedError(messageOf(body)));
+        } else if (verdict === "closed") {
+          this.#failAll(new GenerationClosed());
+        } else {
+          wait = "retrying";
         }
-        wait = "retrying";
         return;
       }
-      const have = await this.deps.cache.have(this.machineId, this.sessionId);
+      const have = await this.#cached(
+        () =>
+          this.deps.cache.have(
+            this.machineId,
+            this.sessionId,
+            op?.only !== null && op?.only !== undefined ? { only: op.only } : {},
+          ),
+        [] as HistoryHave[],
+      );
       if (stream.cancelled) return;
       const query: HistoryLinesQuery = op === null ? { kind: "fill", have } : op.query(have, fill);
       await this.#carry(stream, got.socket, historyLinesPath(this.sessionId, query), (cancel) => {
@@ -434,12 +645,11 @@ class HistoryJob {
       if (stream.answer !== null && isOlderBuild(stream.answer.status, stream.answer.body)) {
         this.#older = true;
         stream.answer = null;
-        await this.#readOlder(stream, target);
+        await this.#readOverHttp(stream, target);
         return;
       }
       wait = this.#outcome(stream);
     } catch (err) {
-      stream.failure = err;
       this.deps.log(
         `[machines] history of ${this.sessionId} on ${this.machineId}: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -448,6 +658,16 @@ class HistoryJob {
       this.#stream = null;
       this.#afterStream(stream, wait);
     }
+  }
+
+  #refusedError(detail: string | undefined): HttpError {
+    return new HttpError(
+      502,
+      "machine_refused",
+      `The machine holding session ${this.sessionId} refused this server's session${detail !== undefined ? `: ${detail}` : "."}`,
+      undefined,
+      { machineId: this.machineId },
+    );
   }
 
   /** What a stream's end means for its op, its fill and the next attempt. */
@@ -463,32 +683,26 @@ class HistoryJob {
         return null;
       }
       if (status === 401 || status === 403) {
-        this.#failAll(
-          new HttpError(
-            502,
-            "machine_refused",
-            `The machine holding session ${this.sessionId} refused this server's session (${status}).`,
-            undefined,
-            { machineId: this.machineId },
-          ),
-        );
+        this.#failAll(this.#refusedError(`${status}`));
         return null;
       }
       if (status >= 400 && status < 500 && status !== 409 && status !== 429) {
-        const err = new HttpError(
-          status,
-          code ?? "machine_answered",
-          messageOf(body) ?? `The machine answered ${status}.`,
+        this.#refuse(
+          new HttpError(
+            status,
+            code ?? "machine_answered",
+            messageOf(body) ?? `The machine answered ${status}.`,
+          ),
+          stream,
         );
-        if (stream.op !== null) this.#settle(stream.op, err);
-        // A fill the machine refuses is not asked for again and again.
-        if (stream.op === null) {
-          for (const waiter of this.#fillWaiters) waiter.reject(err);
-          this.#fillWaiters.clear();
-        }
         return null;
       }
       return "retrying";
+    }
+    if (stream.refused !== null) {
+      const { code, message } = stream.refused;
+      this.#refuse(new HttpError(code.endsWith("_not_found") ? 404 : 502, code, message), stream);
+      return null;
     }
     if (stream.sawDone) {
       this.#attempt = 0;
@@ -502,22 +716,45 @@ class HistoryJob {
           );
         } else {
           stream.delivered = true;
-          this.#settle(stream.op, null);
+          this.#settle(
+            stream.op,
+            stream.op.kind === "body"
+              ? ({
+                  record: stream.bodyRecord,
+                  totalBytes: stream.op.track.totalBytes,
+                } satisfies FetchedBody)
+              : null,
+          );
         }
       }
       if (stream.fill) {
         this.#whole = true;
-        for (const waiter of this.#fillWaiters) waiter.resolve();
-        this.#fillWaiters.clear();
+        this.#resolveFill();
       }
       // Evicted after a stream completes: every open job's group (this one's too) is left alone.
-      void this.deps.cache.evict(this.held());
+      this.deps.cache.evict(this.held()).catch((err: unknown) => {
+        this.deps.log(
+          `[machines] history copy eviction failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
       return null;
     }
     // Cut short (the socket dropped, the watchdog, an `end` without `done`): asked again, from
-    // the copy — at once when it was moving, after the usual wait when it never got going.
-    if (stream.frames > 0) this.#attempt = 0;
-    return stream.frames > 0 ? null : "retrying";
+    // the copy — at once when it moved, after the growing wait when it did not.
+    if (stream.progressed) {
+      this.#attempt = 0;
+      return null;
+    }
+    return "retrying";
+  }
+
+  /** A refusal for one stream: its op fails, and a fill it carried is not asked for again. */
+  #refuse(err: HttpError, stream: MachineStream): void {
+    if (stream.op !== null) this.#settle(stream.op, err);
+    if (stream.op === null || stream.fill) {
+      for (const waiter of this.#fillWaiters) waiter.reject(err);
+      this.#fillWaiters.clear();
+    }
   }
 
   #afterStream(stream: MachineStream, wait: "not_connected" | "retrying" | null): void {
@@ -525,7 +762,9 @@ class HistoryJob {
     // An op its stream did not get to the end of goes back to the front, unless its reader left
     // or it was settled (an error).
     if (op !== null && !op.settled && this.#readers.has(op.reader)) this.#queue.unshift(op);
-    if (wait !== null && !stream.cancelled && this.#readers.size > 0) this.#backoff(wait);
+    if (wait !== null && !stream.cancelled && !this.#closed && this.#readers.size > 0) {
+      this.#backoff(wait);
+    }
     this.#pump();
   }
 
@@ -560,40 +799,57 @@ class HistoryJob {
       let chain: Promise<void> = Promise.resolve();
       let finished = false;
       let watchdog: unknown = null;
+      // Any bytes on the socket count as life, not only whole events: a large frame crossing a
+      // slow link arrives as bytes long before it arrives as an event.
+      let heard = this.#clock.now();
+      const unheard = socket.onTraffic(() => {
+        heard = this.#clock.now();
+      });
       const finish = (): void => {
         if (finished) return;
         finished = true;
+        unheard();
         if (watchdog !== null) this.#clock.clearTimeout(watchdog);
         resolve();
       };
-      const arm = (): void => {
+      const arm = (ms: number = watchdogMs): void => {
         if (watchdog !== null) this.#clock.clearTimeout(watchdog);
         watchdog = this.#clock.setTimeout(() => {
+          const quiet = this.#clock.now() - heard;
+          if (quiet < watchdogMs) {
+            arm(watchdogMs - quiet);
+            return;
+          }
           this.deps.log(
             `[machines] history of ${this.sessionId} on ${this.machineId}: nothing in ${watchdogMs} ms; asking again from what is held`,
           );
           socket.cancel(id);
           finish();
-        }, watchdogMs);
+        }, ms);
       };
       onCancel(() => {
         socket.cancel(id);
         finish();
       });
       const sink: Sink = {
-        onStart: () => arm(),
+        onStart: () => {
+          heard = this.#clock.now();
+          arm();
+        },
         onEvent: (frame) => {
           if (finished) return;
+          heard = this.#clock.now();
           arm();
           chain = chain
             .then(async () => {
               if (finished) return;
               await this.#handle(stream, frame);
+              // The beat is not counted by either end (it is not what the window paces).
+              if (frame.event === "ping") return;
               handled += frame.data.length;
               socket.ack(id, handled);
             })
             .catch((err: unknown) => {
-              stream.failure = err;
               this.deps.log(
                 `[machines] history of ${this.sessionId} on ${this.machineId}: ${err instanceof Error ? err.message : String(err)}`,
               );
@@ -620,75 +876,109 @@ class HistoryJob {
   async #handle(stream: MachineStream, frame: EventFrame): Promise<void> {
     switch (frame.event) {
       case "window": {
-        const window = JSON.parse(frame.data) as HistoryLinesWindow;
-        stream.window = window;
-        stream.frames += 1;
-        await this.deps.cache.reconcile(this.machineId, this.sessionId, window.files);
-        this.#group = [
-          this.sessionId,
-          ...new Set(
-            window.files
-              .map((file) => parseHistoryFileKey(file.k)?.sessionId)
-              .filter((id): id is string => id !== undefined && id !== this.sessionId),
-          ),
-        ];
-        this.deps.cache.touch(this.machineId, this.#group);
-        const { totals } = window;
-        stream.left = {
-          window: { ...totals.window },
-          heavy: { ...totals.heavy },
-          fill: { ...totals.fill },
-        };
-        if (stream.op?.kind === "body") {
-          stream.left.heavy = {
-            bytes: totals.window.bytes + totals.heavy.bytes + totals.fill.bytes,
-            lines: totals.window.lines + totals.heavy.lines + totals.fill.lines,
-          };
-        }
-        this.#enter(stream, stream.phase);
+        await this.#window(stream, JSON.parse(frame.data) as HistoryLinesWindow);
+        return;
+      }
+      case "window-part": {
+        // A window larger than a frame comes in pieces: joined in order, parsed on the last.
+        const piece = JSON.parse(frame.data) as HistoryWindowPart;
+        stream.windowText += piece.text;
+        if (!piece.last) return;
+        const text = stream.windowText;
+        stream.windowText = "";
+        await this.#window(stream, JSON.parse(text) as HistoryLinesWindow);
         return;
       }
       case "lines":
       case "part": {
         const line = JSON.parse(frame.data) as HistoryLinesFrame | HistoryPartFrame;
-        await this.deps.cache.commit(this.machineId, line);
+        const committed = await this.#cached(() => this.deps.cache.commit(this.machineId, line), 0);
+        // What the copy cannot serve, and a body's own line, are kept from the stream itself.
+        const carried =
+          this.#noCache || stream.op?.kind === "body" ? stream.overlay.push(line) : null;
+        if (carried !== null && stream.op?.kind === "body" && stream.bodyRecord === null) {
+          const found = recordsOf(carried.bytes, line.ord).find(
+            (entry) => line.k === stream.op?.only && entry.ordinal === stream.op.ordinal,
+          );
+          if (found !== undefined) stream.bodyRecord = found.record;
+        }
+        if (committed > 0 || carried !== null) stream.progressed = true;
         const raw = frameBytes(line);
-        const bytes = raw.length;
         const lines =
           frame.event === "lines"
             ? raw.reduce((n, byte) => (byte === 0x0a ? n + 1 : n), 0)
             : (line as HistoryPartFrame).last
               ? 1
               : 0;
-        stream.frames += 1;
         this.deps.observe?.({
           machineId: this.machineId,
           sessionId: this.sessionId,
           k: line.k,
           off: line.off,
-          bytes,
+          bytes: raw.length,
         });
-        this.#count(stream, bytes, lines);
+        this.#count(stream, raw.length, lines);
         return;
       }
       case "ready":
-        stream.frames += 1;
         await this.#deliver(stream);
         return;
       case "done":
         stream.sawDone = true;
+        stream.progressed = true;
         return;
+      case "error": {
+        const body = JSON.parse(frame.data) as { code?: unknown; message?: unknown };
+        stream.refused = {
+          code: typeof body.code === "string" ? body.code : "machine_answered",
+          message:
+            typeof body.message === "string" ? body.message : "The machine refused the read.",
+        };
+        return;
+      }
       default:
         return;
     }
+  }
+
+  async #window(stream: MachineStream, window: HistoryLinesWindow): Promise<void> {
+    stream.window = window;
+    await this.#cached(
+      () => this.deps.cache.reconcile(this.machineId, this.sessionId, window.files),
+      undefined,
+    );
+    this.#windowSeen = true;
+    this.#group = [
+      this.sessionId,
+      ...new Set(
+        window.files
+          .map((file) => parseHistoryFileKey(file.k)?.sessionId)
+          .filter((id): id is string => id !== undefined && id !== this.sessionId),
+      ),
+    ];
+    this.deps.cache.touch(this.machineId, this.#group);
+    const { totals } = window;
+    stream.left = {
+      window: { ...totals.window },
+      heavy: { ...totals.heavy },
+      fill: { ...totals.fill },
+    };
+    if (stream.op?.kind === "body") {
+      stream.left.heavy = {
+        bytes: totals.window.bytes + totals.heavy.bytes + totals.fill.bytes,
+        lines: totals.window.lines + totals.heavy.lines + totals.fill.lines,
+      };
+    }
+    this.#enter(stream, stream.phase);
   }
 
   /** The readers of a stream in `phase`: its op's own, and in the fill (and the heavy lines) every fill waiter. */
   #tracks(stream: MachineStream, phase: Phase): Track[] {
     const out: Track[] = [];
     if (stream.op !== null && !stream.delivered) out.push(stream.op.track);
-    if (stream.fill && phase !== "window")
+    if (stream.fill && phase !== "window") {
       for (const waiter of this.#fillWaiters) out.push(waiter.track);
+    }
     return out;
   }
 
@@ -708,12 +998,12 @@ class HistoryJob {
     for (const track of this.#tracks(stream, stream.phase)) track.add(bytes, lines);
   }
 
-  /** `ready`: the window's light lines are all held; assembled from the copy, it goes to its reader. */
+  /** `ready`: the window's light lines are all here; assembled, it goes to its reader. */
   async #deliver(stream: MachineStream): Promise<void> {
     const op = stream.op;
     const window = stream.window;
     if (op === null || op.kind !== "window" || stream.delivered || window === null) return;
-    const assembled = await this.#assemble(window);
+    const assembled = await this.#assemble(stream, window);
     if (assembled === null) {
       op.assemblies += 1;
       if (op.assemblies >= ASSEMBLY_ATTEMPTS) {
@@ -728,22 +1018,28 @@ class HistoryJob {
       } else {
         // What the copy holds does not read back as the machine laid it out: forgotten, and the
         // window read again from the machine's bytes alone.
-        await this.deps.cache.forget(this.machineId, this.sessionId);
+        await this.#cached(() => this.deps.cache.forget(this.machineId, this.sessionId), undefined);
       }
       stream.stop();
       return;
     }
     stream.delivered = true;
+    stream.progressed = true;
     this.#settle(op, assembled);
     if (stream.fill) {
       this.#enter(stream, stream.left.heavy.bytes > 0 ? "heavy" : "fill");
     }
   }
 
-  async #assemble(window: HistoryLinesWindow): Promise<AssembledWindow | null> {
+  async #assemble(
+    stream: MachineStream,
+    window: HistoryLinesWindow,
+  ): Promise<AssembledWindow | null> {
     const records = await assembleWindow(
       window.layout,
-      (k, start, end) => this.deps.cache.bytes(this.machineId, k, start, end),
+      async (k, start, end) =>
+        stream.overlay.bytes(k, start, end) ??
+        (await this.#cached(() => this.deps.cache.bytes(this.machineId, k, start, end), null)),
       window.stubs,
     );
     if (records === null) return null;
@@ -769,12 +1065,12 @@ class HistoryJob {
   }
 
   /**
-   * An older machine: a window from its `/messages` over HTTP, counted as it arrives; a fill or
-   * a file has nothing to bring (nothing of such a machine is held); a body cannot be had.
+   * A window from the machine's `/messages` over HTTP, counted as it arrives (an older build, or
+   * a machine this server holds no socket to); a fill or a file has nothing to bring, since
+   * nothing of such a read is kept; a body cannot be had this way.
    */
-  async #readOlder(stream: MachineStream, target: ProxyTarget): Promise<void> {
-    for (const waiter of this.#fillWaiters) waiter.resolve();
-    this.#fillWaiters.clear();
+  async #readOverHttp(stream: MachineStream, target: ProxyTarget): Promise<void> {
+    this.#resolveFill();
     const op = stream.op;
     if (op === null) return;
     if (op.kind === "file") {
@@ -819,7 +1115,7 @@ class HistoryJob {
       const { done, value } = await reader.read();
       if (done) break;
       chunks.push(value);
-      stream.frames += 1;
+      stream.progressed = true;
       op.track.add(value.byteLength, 0);
     }
     if (stream.cancelled) return;
@@ -830,7 +1126,7 @@ class HistoryJob {
       response,
       sources: response.messages.map(() => null),
       serverNowMs: Number.isFinite(date) ? date : null,
-    });
+    } satisfies AssembledWindow);
   }
 }
 
@@ -852,21 +1148,16 @@ export class HistoryReader {
   }
 
   #op(
-    kind: Op["kind"],
-    query: Op["query"],
-    read: WindowRead | null,
-    fill: boolean,
+    fields: Pick<Op, "kind" | "query" | "only" | "ordinal" | "read" | "fill">,
     phase: Phase,
     progress: ProgressListener,
-  ): Promise<AssembledWindow | null> {
+  ): Promise<unknown> {
+    if (this.job.closed) return Promise.reject(new GenerationClosed());
     if (this.#closed) return Promise.reject(aborted());
     return new Promise((resolve, reject) => {
       this.job.enqueue({
-        kind,
+        ...fields,
         reader: this,
-        query,
-        read,
-        fill,
         track: this.#track(phase, progress),
         resolve,
         reject,
@@ -874,7 +1165,7 @@ export class HistoryReader {
     });
   }
 
-  /** A window, assembled from the copy once the machine has sent what it lacked. */
+  /** A window, assembled once the machine has sent what the copy lacked. */
   async window(
     read: WindowRead,
     fill: boolean,
@@ -884,8 +1175,9 @@ export class HistoryReader {
       const more = withFill ? { fill: true } : {};
       if (read.kind === "full") return { kind: "full", have, ...more };
       const budget = read.budget !== undefined ? { budget: read.budget } : {};
-      if (read.kind === "tail")
+      if (read.kind === "tail") {
         return { kind: "tail", limit: read.limit, have, ...budget, ...more };
+      }
       return {
         kind: "before",
         cursor: encodeCursor(read.cursor),
@@ -895,30 +1187,54 @@ export class HistoryReader {
         ...more,
       };
     };
-    const window = await this.#op("window", query, read, fill, "window", progress);
-    return window!;
+    return (await this.#op(
+      { kind: "window", query, only: null, ordinal: null, read, fill },
+      "window",
+      progress,
+    )) as AssembledWindow;
   }
 
   /** Settles once the copy holds the whole Session group, as of the stream that finished it. */
   fill(progress: ProgressListener): Promise<void> {
+    if (this.job.closed) return Promise.reject(new GenerationClosed());
     if (this.#closed) return Promise.reject(aborted());
     return new Promise((resolve, reject) => {
       this.job.waitForFill({ reader: this, track: this.#track("fill", progress), resolve, reject });
     });
   }
 
-  /** Settles once the copy holds the line of one elided value (a trace-body ref). */
-  async body(ref: string, progress: ProgressListener): Promise<void> {
-    await this.#op("body", (have) => ({ kind: "body", ref, have }), null, false, "heavy", progress);
+  /** The line of one elided value (a trace-body ref naming `k`, record `ordinal`), fetched. */
+  async body(
+    ref: string,
+    k: HistoryFileKey,
+    ordinal: number,
+    progress: ProgressListener,
+  ): Promise<FetchedBody> {
+    return (await this.#op(
+      {
+        kind: "body",
+        query: (have) => ({ kind: "body", ref, have }),
+        only: k,
+        ordinal,
+        read: null,
+        fill: false,
+      },
+      "heavy",
+      progress,
+    )) as FetchedBody;
   }
 
   /** Settles once the copy holds one file whole (the Trace panel's). */
   async file(k: HistoryFileKey, progress: ProgressListener): Promise<void> {
     await this.#op(
-      "file",
-      (have) => ({ kind: "fill", file: k, have }),
-      null,
-      false,
+      {
+        kind: "file",
+        query: (have) => ({ kind: "fill", file: k, have }),
+        only: k,
+        ordinal: null,
+        read: null,
+        fill: false,
+      },
       "fill",
       progress,
     );
@@ -934,12 +1250,13 @@ export class HistoryReader {
 /** Every machine Session's job, on one platform generation. */
 export class HistorySync {
   readonly #jobs = new Map<string, HistoryJob>();
+  #closed = false;
 
   constructor(private readonly deps: HistorySyncDeps) {}
 
   /** A reader of one machine Session's history, until `signal` aborts or it is closed. */
   reader(machineId: string, sessionId: string, signal: AbortSignal): HistoryReader {
-    const key = `${machineId}/${sessionId}`;
+    const key = `${machineId}\0${sessionId}`;
     let job = this.#jobs.get(key);
     if (job === undefined) {
       job = new HistoryJob(
@@ -951,21 +1268,25 @@ export class HistorySync {
         },
         () => this.held(),
       );
-      this.#jobs.set(key, job);
+      // A generation already replaced runs nothing: its reader's every ask ends at once.
+      if (this.#closed) job.close();
+      else this.#jobs.set(key, job);
     }
     return new HistoryReader(job, signal);
   }
 
-  /** The `<machineId>/<sessionId>` directories open jobs use: eviction leaves them alone. */
+  /** The `<machineId>\0<sessionId>` directories open jobs use: eviction leaves them alone. */
   held(): Set<string> {
     const out = new Set<string>();
     for (const job of this.#jobs.values()) {
-      for (const sessionId of job.group) out.add(`${job.machineId}/${sessionId}`);
+      for (const sessionId of job.group) out.add(`${job.machineId}\0${sessionId}`);
     }
     return out;
   }
 
+  /** The generation is replaced: every job's readers are let go (GenerationClosed), and no new job starts. */
   close(): void {
+    this.#closed = true;
     for (const job of this.#jobs.values()) job.close();
     this.#jobs.clear();
   }
