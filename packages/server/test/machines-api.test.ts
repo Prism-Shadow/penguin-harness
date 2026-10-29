@@ -40,7 +40,7 @@
  *   and a repointed alias adopts the newcomer; a machine recorded before adoption times were kept
  *   never gets one, whatever a probe or a connect hears later.
  * - Given a batch to use, machines work side by side and each ends connected; stop using keeps
- *   the install.
+ *   the install, and lets go of the answers the proxy kept from that machine alone.
  * - Given an ssh-config edit, a new block is appended, this app's block is rewritten in place,
  *   and a hand-written one is refused. A password is stored beside the config, never in it or in
  *   an answer, set even on a hand-written block, and deleted by key sign-in and with the machine.
@@ -90,6 +90,7 @@ import type {
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db/database.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
+import { MachineAnswers } from "../src/machines/answer-cache.js";
 import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
 import { remoteLayoutFor } from "../src/machines/layout.js";
@@ -2443,6 +2444,28 @@ describe("machines API", () => {
       // Nothing re-holds a machine nobody uses: the held mark is gone from the record. (The
       // fake transport's own registry is not the record's; the real one closes with the ssh.)
       expect(machinesRepo.get("ssh:nas")?.sessionPid ?? null).toBeNull();
+    });
+
+    it("stop using lets go of the answers the proxy kept from that machine, and only that machine's", async () => {
+      const answers = new MachineAnswers();
+      await boot({ answers });
+      machinesRepo.patch("ssh:nas", { machineId: "kUkIyqU-1GOfXgKD" });
+      machinesRepo.patch("ssh:build-box", { machineId: "Bu1Ld-b0x-000001" });
+      const kept = {
+        etag: 'W/"a"',
+        headers: [["content-type", "application/json"]] as [string, string][],
+        body: new TextEncoder().encode("{}"),
+      };
+      const nas = MachineAnswers.key("kUkIyqU-1GOfXgKD", "admin", "/api/me");
+      const box = MachineAnswers.key("Bu1Ld-b0x-000001", "admin", "/api/me");
+      answers.keep(nas, kept);
+      answers.keep(box, kept);
+
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      expect(answers.get(nas)).toBeNull();
+      expect(answers.get(box)).not.toBeNull();
     });
 
     it("a machine whose re-hold failed waits out a backoff before the next try", async () => {
