@@ -98,6 +98,8 @@ export function machineHistory(deps: {
   target: (machineId: string) => Promise<ProxyTarget | null>;
   /** Whether this server still lists the machine (a removed machine's reads end with an error). */
   known?: (machineId: string) => boolean;
+  /** When bytes last came in from the machine on any of its connections (HistorySyncDeps.heardAt). */
+  heardAt?: (machineId: string) => number | null;
   log: (line: string) => void;
   /** The sync's clock and knobs, as a test sets them. */
   tuning?: Pick<
@@ -110,6 +112,7 @@ export function machineHistory(deps: {
     cache: deps.cache,
     target: deps.target,
     ...(deps.known !== undefined ? { known: deps.known } : {}),
+    ...(deps.heardAt !== undefined ? { heardAt: deps.heardAt } : {}),
     socket: (machineId, target) => deps.sockets.socketFor(machineId, target),
     http: (machineId, target, remote, signal) => {
       const url = new URL(remote, "http://localhost");

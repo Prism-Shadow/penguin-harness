@@ -77,6 +77,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
+import net from "node:net";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -1903,6 +1904,52 @@ describe("machines API", () => {
       const res = await admin.put(`/api/projects/${PROJECT}/command-policy`, { rules: [] });
       expect(res.status).toBe(200);
       expect(synced).toHaveBeenCalledWith(PROJECT);
+    });
+  });
+
+  describe("a machine's link", () => {
+    it("is heard whenever bytes come back on a connection dialled to the machine, and they all reach the reader", async () => {
+      const ID = "Q2pLinkHeard0001";
+      const body = "x".repeat(64 * 1024);
+      const far = http.createServer((_req, res) => res.end(body));
+      await new Promise<void>((resolve) => far.listen(0, "127.0.0.1", resolve));
+      const farPort = (far.address() as AddressInfo).port;
+      try {
+        // The agent a dial hands out reaches the machine's server, wherever it is asked to go.
+        await boot({
+          agent: () => {
+            const agent = new http.Agent();
+            (agent as unknown as { createConnection: unknown }).createConnection = () =>
+              net.connect(farPort, "127.0.0.1");
+            return agent;
+          },
+        });
+        machinesRepo.patch("ssh:nas", {
+          version: "9.9.9",
+          installedAt: "2026-08-01T00:00:00.000Z",
+          machineId: ID,
+          remotePort: 7364,
+        });
+        connected.add("ssh:nas");
+        const target = await service.proxyTarget(ID);
+        expect(service.links.heardAt(ID)).toBeNull();
+
+        const got = await new Promise<string>((resolve, reject) => {
+          const req = http.get(
+            { agent: target!.agent, host: "127.0.0.1", port: target!.port, path: "/" },
+            (res) => {
+              const chunks: Buffer[] = [];
+              res.on("data", (c: Buffer) => chunks.push(c));
+              res.on("end", () => resolve(Buffer.concat(chunks).toString()));
+            },
+          );
+          req.on("error", reject);
+        });
+        expect(got).toBe(body);
+        expect(service.links.heardAt(ID)).not.toBeNull();
+      } finally {
+        await new Promise<void>((resolve) => far.close(() => resolve()));
+      }
     });
   });
 

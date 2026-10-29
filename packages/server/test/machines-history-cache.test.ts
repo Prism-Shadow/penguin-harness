@@ -33,6 +33,7 @@
  * - Given a fill cut inside the first line it sends of a file, then it resumes from what it held.
  * - Given a reader that leaves mid-fill and comes back, then only what was not brought crosses.
  */
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import type { Server as HttpServer } from "node:http";
@@ -88,12 +89,16 @@ const PROJECT = "default_project";
 /** A TCP link to the machine's port: every byte it carries back is counted, and it can be cut. */
 async function linkTo(port: number) {
   const open = new Set<Socket>();
+  /** Bytes carried, from the machine (`down`) and to it (`up`), on every connection. */
+  const carried = { down: 0, up: 0 };
   const server = net.createServer((near) => {
     const far = net.connect(port, "127.0.0.1");
     open.add(near);
     open.add(far);
     near.pipe(far);
     far.pipe(near);
+    far.on("data", (bytes: Buffer) => (carried.down += bytes.length));
+    near.on("data", (bytes: Buffer) => (carried.up += bytes.length));
     const drop = () => {
       near.destroy();
       far.destroy();
@@ -108,6 +113,8 @@ async function linkTo(port: number) {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
     port: (server.address() as { port: number }).port,
+    /** What it has carried so far, each way. */
+    carried: () => ({ ...carried }),
     /** Drops every connection it carries, as a lost link does; new ones get through. */
     cut: () => {
       for (const socket of open) socket.destroy();
@@ -310,19 +317,46 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
   });
 
+  /**
+   * Opens `sid` as the chat opens it: a first window within a small budget, the rest of the 20
+   * pairs before it, and the fill behind both.
+   */
+  const openAsTheChat = async (sid: string) => {
+    const first = await read(sid, "?tailLimit=20&budget=4096&fill=1");
+    expect(first.at(-1)?.event).toBe("filled");
+    const page = JSON.parse(first.find((e) => e.event === "page")!.data) as HistoryPage;
+    const older = await read(sid, `?before=${encodeURIComponent(page.page!.before!)}&limit=18`);
+    expect(older.at(-1)?.event).toBe("done");
+    await waitFor(() => hub.sync.held().size === 0);
+  };
+
+  it("reopens a Session it holds whole and unchanged for a few hundred bytes each way, none of them Trace", async () => {
+    const sid = uniqueSessionId();
+    // Answers that do not compress, so a window sent again would show on the link.
+    const noisy = Array.from({ length: 40 }, (_, i) => [
+      userText(`question ${i}`),
+      assistantText(randomBytes(300).toString("base64")),
+    ]).flat();
+    const file = await machineSession(sid, [meta(sid), ...noisy]);
+    await openAsTheChat(sid);
+    expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
+
+    crossed = [];
+    const before = link.carried();
+    await openAsTheChat(sid);
+    const after = link.carried();
+
+    // Two streams (the first window, then the rest of the 20 pairs), each the machine's window
+    // facts and no line: about 2.3 KB from the machine and 1.1 KB of `have` to it, for 26 KB.
+    expect(crossed).toEqual([]);
+    expect(after.down - before.down).toBeLessThan(3 * 1024);
+    expect(after.up - before.up).toBeLessThan(2 * 1024);
+  });
+
   it("sends a Session held whole, reopened as the chat opens it after one more Task, only that Task's lines", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [meta(sid), ...tasks(40, 400)]);
-    // As the chat opens it: a first window within a small budget, the rest of the 20 pairs
-    // before it, and the fill behind both.
-    const open = async () => {
-      const first = await read(sid, "?tailLimit=20&budget=4096&fill=1");
-      expect(first.at(-1)?.event).toBe("filled");
-      const page = JSON.parse(first.find((e) => e.event === "page")!.data) as HistoryPage;
-      const older = await read(sid, `?before=${encodeURIComponent(page.page!.before!)}&limit=18`);
-      expect(older.at(-1)?.event).toBe("done");
-      await waitFor(() => hub.sync.held().size === 0);
-    };
+    const open = () => openAsTheChat(sid);
     await open();
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
     const size = (await fs.stat(file)).size;

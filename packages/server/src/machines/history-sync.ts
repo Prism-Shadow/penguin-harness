@@ -12,8 +12,10 @@
  * again once nothing waits. A fill nobody stays for any more ends, whoever's stream carries it.
  *
  * RESUMING IS ASKING AGAIN. Every stream opens with `have` (what the copy holds) and the machine
- * sends only what is missing, so a stream cut anywhere — the socket dropped, the stream silent
- * past its watchdog (no event and no byte on the socket), a preemption — reopens from the copy,
+ * sends only what is missing, so a stream cut anywhere — the socket dropped, the link silent
+ * past its watchdog (no byte from the machine on any of its connections: a stream starved behind
+ * another channel of the same ssh session is on a busy link, not a dead one), a preemption —
+ * reopens from the copy,
  * never from 0: at once when the cut stream had moved (bytes committed, its window delivered, its
  * end reached), else after a wait that grows 1 s doubling to 30 s. A machine that is not connected, or that cannot be reached, is
  * waited for the same way, for as long as a reader waits, and each reader is told
@@ -105,6 +107,11 @@ export interface HistorySyncDeps {
   ): Promise<Response>;
   /** Whether this server still lists the machine; absent: always (a suite's own machine). */
   known?(machineId: string): boolean;
+  /**
+   * When bytes last came in from the machine on any of its connections, on this sync's clock
+   * (link-activity.ts; MachinesService.links); absent: the stream's own socket alone.
+   */
+  heardAt?(machineId: string): number | null;
   log(line: string): void;
   clock?: SyncClock;
   watchdogMs?: number;
@@ -815,7 +822,9 @@ class HistoryJob {
       const arm = (ms: number = watchdogMs): void => {
         if (watchdog !== null) this.#clock.clearTimeout(watchdog);
         watchdog = this.#clock.setTimeout(() => {
-          const quiet = this.#clock.now() - heard;
+          // The link's last byte, whichever connection carried it, or this stream's own.
+          const quiet =
+            this.#clock.now() - Math.max(heard, this.deps.heardAt?.(this.machineId) ?? heard);
           if (quiet < watchdogMs) {
             arm(watchdogMs - quiet);
             return;

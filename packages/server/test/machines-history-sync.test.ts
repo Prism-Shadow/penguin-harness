@@ -43,6 +43,7 @@ import type { HistoryLinesWindow, HistoryProgress } from "../src/api/types.js";
 import { machineHistory } from "../src/machines/history-routes.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
 import type { MachineSocket } from "../src/machines/machine-sockets.js";
+import { LinkActivity } from "../src/machines/link-activity.js";
 import { machinesProxy } from "../src/machines/proxy.js";
 import type { ProxyTarget } from "../src/machines/proxy.js";
 import { TraceCache } from "../src/machines/trace-cache.js";
@@ -239,13 +240,17 @@ function hub(
     cache?: TraceCache;
     /** Sees each socket the job is handed. */
     onSocket?: (socket: MachineSocket) => void;
+    /** The machine's link, as MachinesService taps every connection it dials to it. */
+    links?: LinkActivity;
+    log?: (line: string) => void;
   } = {},
 ) {
   const connected = options.connected ?? (() => true);
+  const links = options.links;
+  const agent = (): http.Agent =>
+    links === undefined ? new http.Agent() : links.tap(MACHINE, new http.Agent());
   const target = (): ProxyTarget | null =>
-    connected()
-      ? { agent: new http.Agent(), port, cookie: "c", adoptedAt: null, session: 1 }
-      : null;
+    connected() ? { agent: agent(), port, cookie: "c", adoptedAt: null, session: 1 } : null;
   const cache = options.cache ?? new TraceCache(path.join(root, "machines", "traces"));
   const refusal = options.refusal;
   const { history, sync } = machineHistory({
@@ -261,7 +266,8 @@ function hub(
     },
     target: async () => target(),
     ...(options.known !== undefined ? { known: options.known } : {}),
-    log: () => undefined,
+    ...(links !== undefined ? { heardAt: (machineId: string) => links.heardAt(machineId) } : {}),
+    log: options.log ?? (() => undefined),
     tuning: { clock },
   });
   close.push(() => sync.close());
@@ -364,6 +370,120 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     valve.open();
     await waitFor(() => history.has("done"));
     expect(machine.calls("/history-lines")).toHaveLength(1);
+  });
+
+  /**
+   * A machine whose history stream sends its window and then nothing until `release`, and whose
+   * HTTP side answers one long request a piece at a time, as the test says: a proxied answer
+   * taking the machine's whole link while the stream behind it on the socket hears nothing.
+   */
+  async function busyLink() {
+    let released: (() => void) | null = null;
+    let historyCalls = 0;
+    let answer: http.ServerResponse | null = null;
+    const machine = await scriptedMachine(
+      (ws, id, callPath) => {
+        if (!callPath.includes("/history-lines")) return;
+        historyCalls += 1;
+        if (historyCalls > 1) {
+          answerWindow(ws, id);
+          return;
+        }
+        start(ws, id);
+        event(ws, id, "window", windowOf(FILE));
+        released = () => {
+          event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE });
+          event(ws, id, "ready", {});
+          event(ws, id, "done", {});
+          send(ws, { id, end: true, reason: "closed" });
+        };
+      },
+      (_req, res) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.write("[");
+        answer = res;
+      },
+    );
+    close.push(machine.close);
+    const links = new LinkActivity(clock.now);
+    const logged: string[] = [];
+    const { get } = hub(machine.port, { links, log: (line) => logged.push(line) });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => released !== null && links.heardAt(MACHINE) !== null);
+    const models = await get("/api/projects/default_project/models");
+    await waitFor(() => answer !== null);
+    // The long answer, read as the page reads it: a piece has crossed once it is read.
+    const body = models.body!.getReader();
+    let read = 0;
+    let sent = 1;
+    const readTo = async (bytes: number) => {
+      while (read < bytes) read += (await body.read()).value?.length ?? Number.POSITIVE_INFINITY;
+    };
+    close.push(async () => {
+      answer?.end("]");
+      await body.cancel();
+    });
+    await readTo(sent);
+    return {
+      machine,
+      history,
+      models,
+      /** One more piece of the long answer crosses the link at the clock's now. */
+      piece: async () => {
+        const piece = `"${"m".repeat(1_000)}",`;
+        answer!.write(piece);
+        sent += piece.length;
+        await readTo(sent);
+        expect(links.heardAt(MACHINE)).toBe(clock.now());
+      },
+      release: () => released!(),
+      waited: () => progressOf(history.events).some((p) => p.waiting !== null),
+      /** The streams the watchdog has cut (it says so as it cuts, before anything else moves). */
+      cuts: () =>
+        logged.filter((line) => line.includes(`nothing in ${MACHINE_STREAM_WATCHDOG_MS} ms`))
+          .length,
+    };
+  }
+
+  it("keeps a stream that hears nothing while another connection's answer still crosses the machine's link", async () => {
+    const link = await busyLink();
+
+    // Twenty seconds without a byte on the stream's own socket, past its watchdog, while the
+    // link carries the other answer the whole time.
+    for (let i = 0; i < 4; i += 1) {
+      await link.piece();
+      clock.advance(5_000);
+    }
+    expect(link.cuts()).toBe(0);
+    link.release();
+    await waitFor(() => link.history.has("done"));
+
+    expect(link.waited()).toBe(false);
+    expect(link.machine.calls("/history-lines")).toHaveLength(1);
+    expect(windowRecords(link.history.events)).toHaveLength(2);
+    expect(link.models.status).toBe(200);
+  });
+
+  it("asks again once nothing at all came from the machine for the watchdog, counted from the link's last byte", async () => {
+    const link = await busyLink();
+    await link.piece();
+    clock.advance(5_000);
+    await link.piece();
+
+    // The link went quiet five seconds after the stream's last event: still alive at 15 s from
+    // that event, cut at 15 s from the link's last byte, and asked again after the first wait.
+    clock.advance(MACHINE_STREAM_WATCHDOG_MS - 1);
+    expect(link.cuts()).toBe(0);
+    clock.advance(1);
+    expect(link.cuts()).toBe(1);
+    const [first] = link.machine.calls("/history-lines");
+    await waitFor(() => link.waited());
+    expect(progressOf(link.history.events).at(-1)?.waiting).toMatchObject({ attempt: 1 });
+    clock.advance(1_000);
+    await waitFor(() => link.history.has("done"));
+    expect(link.machine.cancelled(first!)).toBe(true);
+    expect(link.machine.calls("/history-lines")).toHaveLength(2);
   });
 
   it("cancels the machine's call the moment its last reader leaves, even in the middle of the fill", async () => {

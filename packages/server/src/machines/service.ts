@@ -151,6 +151,7 @@ import { streamRevocation } from "../http/sse.js";
 import type { SseRevocation } from "../http/sse.js";
 import { userChannelKey } from "../http/routes/events.js";
 import { currentRemoteLayout } from "./layout.js";
+import { LinkActivity } from "./link-activity.js";
 import type { RemoteLayout } from "./layout.js";
 
 /**
@@ -466,6 +467,11 @@ async function within<T>(
 export class MachinesService {
   #job: MachineJob | null = null;
   /** Last probe per address. In memory on purpose: a status is only true for the moment it was taken. */
+  /**
+   * When bytes last came in from each machine, on any connection #dial hands out
+   * (link-activity.ts): the link's liveness, which the history streams' watchdog reads.
+   */
+  readonly links = new LinkActivity();
   readonly #statuses = new Map<string, MachineServerStatus>();
   /**
    * The probe round in flight per Project. Concurrent askers — every open tab schedules its
@@ -1154,7 +1160,8 @@ export class MachinesService {
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return null;
     return {
-      agent: this.#effects.agent(target, row.remotePort),
+      // Tapped: every byte back from the machine, socket or proxied request, says its link lives.
+      agent: this.links.tap(row.machineId ?? address, this.#effects.agent(target, row.remotePort)),
       port: row.remotePort,
       cookie: session.cookie,
       // The socket relay reuses a socket only within one ssh session (socket-relay.ts).
@@ -3696,6 +3703,7 @@ export class MachinesModule {
       sockets,
       target: (machineId) => machines.proxyTarget(machineId),
       known: (machineId) => machines.knows(machineId),
+      heardAt: (machineId) => machines.links.heardAt(machineId),
       log: (line) => console.log(line),
     });
     this.routes = machinesRoutes({ machines, access: this.access, events });
