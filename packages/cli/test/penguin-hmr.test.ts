@@ -40,7 +40,7 @@ async function makeProduct(): Promise<{ loader: string }> {
   const manifest = {
     name: "fixture-cli",
     version: "0.0.0",
-    penguin: { pushedCliLoader: "./dist/penguin-hmr.js" },
+    penguin: { cliLoader: "./dist/penguin-hmr.js" },
   };
   await fs.writeFile(path.join(dir, "package.json"), JSON.stringify(manifest, null, 2));
   return { loader };

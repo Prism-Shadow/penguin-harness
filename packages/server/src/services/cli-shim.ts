@@ -27,8 +27,8 @@
  * CLI — an explicit `PENGUIN_CLI_ENTRY` (what `penguin server|web` and the desktop shell
  * pass for themselves), else, for a server running from a checkout, that checkout's CLI,
  * from source while the server itself runs from source — and {@link resolveCli}, at the end
- * of this module, decides between that entry and the loader of a pushed CLI, which is the
- * entry that runs the same code this server runs. See {@link shimFromResolution}.
+ * of this module, decides between that entry and the CLI loader — the entry that loads a
+ * pushed CLI — which runs the same code this server runs. See {@link shimFromResolution}.
  *
  * Rewritten at every boot, so a moved checkout is picked up by the next start; while a
  * server is running, a dist that moved out from under it has already broken the server
@@ -456,13 +456,13 @@ function writeExecutable(file: string, content: string): void {
  *
  * The question is small. A data root holds the record of its last push
  * (`hmr/harness.json`, PRFC-0023), and an installation ships a CLI. A pushed CLI is a bundle
- * the record points at, and a product ships a **loader** that loads it. So: the loader of a
- * pushed CLI when there is one, the caller's own entry when there is nothing pushed, and a
- * named fault when the pieces do not line up.
+ * the record points at, and a product ships a **CLI loader** that loads it. So: the CLI
+ * loader when a CLI was pushed, the caller's own entry when nothing was, and a named fault
+ * when the pieces do not line up.
  *
  * The loader's identity is a declaration in its package manifest:
  *
- *     "penguin": { "pushedCliLoader": "./dist/penguin-hmr.js" }
+ *     "penguin": { "cliLoader": "./dist/penguin-hmr.js" }
  *
  * A rename that keeps the field works. A field that names nothing usable answers one named
  * fault. Products built before the declaration carry none, and only there does the old file
@@ -583,7 +583,7 @@ async function loaderDeclarationFor(entry: string): Promise<LoaderDeclaration> {
   }
 }
 
-/** Reads one package manifest's `penguin.pushedCliLoader` field. */
+/** Reads one package manifest's `penguin.cliLoader` field. */
 async function readLoaderDeclaration(manifest: string): Promise<LoaderDeclaration> {
   let raw: string;
   try {
@@ -606,10 +606,10 @@ async function readLoaderDeclaration(manifest: string): Promise<LoaderDeclaratio
   if (typeof namespace !== "object" || Array.isArray(namespace)) {
     return { state: "broken", detail: `${manifest}: \`penguin\` is not an object` };
   }
-  const declared = (namespace as Record<string, unknown>).pushedCliLoader;
+  const declared = (namespace as Record<string, unknown>).cliLoader;
   if (declared === undefined || declared === null) return { state: "absent" };
   if (typeof declared !== "string" || declared.trim().length === 0) {
-    return { state: "broken", detail: `${manifest}: \`penguin.pushedCliLoader\` names no file` };
+    return { state: "broken", detail: `${manifest}: \`penguin.cliLoader\` names no file` };
   }
   const dir = path.dirname(manifest);
   const file = path.resolve(dir, declared);
@@ -618,7 +618,7 @@ async function readLoaderDeclaration(manifest: string): Promise<LoaderDeclaratio
   if (file !== dir && !file.startsWith(dir + path.sep)) {
     return {
       state: "broken",
-      detail: `${manifest}: \`penguin.pushedCliLoader\` points outside ${dir}: ${declared}`,
+      detail: `${manifest}: \`penguin.cliLoader\` points outside ${dir}: ${declared}`,
     };
   }
   return { state: "declared", file };
