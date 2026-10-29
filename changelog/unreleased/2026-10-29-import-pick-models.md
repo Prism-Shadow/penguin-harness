@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#1385](https://github.com/Prism-Shadow/penguin-harness/pull/1385)
 
 [中文版](2026-10-29-import-pick-models.zh.md)
 
