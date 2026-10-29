@@ -1356,9 +1356,10 @@ export function createSessionsStore() {
           try {
             fetched = (await api.getSession(sessionId, source)).session;
           } catch (err) {
-            // A 404 is an answer (the Session is gone, or was never this server's); anything
+            // A 404 is an answer (the Session is gone, or was never this server's), and so is a
+            // 403 (an admin refused it: asking again on the next flip changes nothing); anything
             // else may succeed on the next flip.
-            gone = err instanceof ApiError && err.status === 404;
+            gone = err instanceof ApiError && (err.status === 404 || err.status === 403);
           }
           const { latest } = entry;
           adopting.delete(sessionId);

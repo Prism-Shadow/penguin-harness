@@ -1,10 +1,11 @@
 /**
- * Who is refused the history routes, and how (http/routes/history-lines.ts). A hub reads its
- * machines as their admin, and drops its copy of a Session the machine says does not exist, so a
- * refusal must not read as a deletion.
+ * Who is refused a Session's routes, and how (http/session-access.ts). A hub reads its machines
+ * as their admin, checks a Session still exists with `GET /api/sessions/:id`, and drops its copy
+ * of a Session the machine says does not exist, so a refusal must not read as a deletion.
  *
  * - Given an admin without access to a Session (the identity a hub reads a machine as), the
- *   machine leg — window and fill alike — and `trace-body` answer 403 `session_forbidden`.
+ *   Session itself, its history, the machine leg — window and fill alike — and `trace-body`
+ *   answer 403 `session_forbidden`.
  * - Given an ordinary user without access, they answer 404 `session_not_found`: a Session's
  *   existence is not revealed to someone who may not read it.
  * - Given a Session that does not exist, an admin is answered 404 `session_not_found`.
@@ -19,7 +20,7 @@ import type { TestApp } from "./helpers.js";
 
 const AGENT = "default_agent";
 
-describe("refusals on the history routes", () => {
+describe("refusals on a Session's routes", () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
   let outsider: ReturnType<typeof apiClient>;
@@ -62,8 +63,10 @@ describe("refusals on the history routes", () => {
   const codeOf = async (res: Response) =>
     ((await res.json()) as { error: { code: string } }).error.code;
 
-  it("an admin without access is refused with 403 session_forbidden, window, fill and body alike", async () => {
+  it("an admin without access is refused with 403 session_forbidden on the Session, its history, window, fill and body", async () => {
     for (const path of [
+      `/api/sessions/${sid}`,
+      `/api/sessions/${sid}/messages?tailLimit=1`,
       `/api/sessions/${sid}/history-lines?tailLimit=1`,
       `/api/sessions/${sid}/history-lines?fill=only`,
       `/api/sessions/${sid}/trace-body?ref=${ref}`,
@@ -75,14 +78,22 @@ describe("refusals on the history routes", () => {
   });
 
   it("an ordinary user without access is told 404, the Session's existence unrevealed", async () => {
-    const res = await outsider.get(`/api/sessions/${sid}/history-lines?tailLimit=1`);
-    expect(res.status).toBe(404);
-    expect(await codeOf(res)).toBe("session_not_found");
+    for (const path of [`/api/sessions/${sid}`, `/api/sessions/${sid}/history-lines?tailLimit=1`]) {
+      const res = await outsider.get(path);
+      expect(res.status).toBe(404);
+      expect(await codeOf(res)).toBe("session_not_found");
+    }
   });
 
   it("a Session that does not exist is 404 session_not_found, to an admin too", async () => {
-    const res = await admin.get(`/api/sessions/${uniqueSessionId()}/history-lines?tailLimit=1`);
-    expect(res.status).toBe(404);
-    expect(await codeOf(res)).toBe("session_not_found");
+    const gone = uniqueSessionId();
+    for (const path of [
+      `/api/sessions/${gone}`,
+      `/api/sessions/${gone}/history-lines?tailLimit=1`,
+    ]) {
+      const res = await admin.get(path);
+      expect(res.status).toBe(404);
+      expect(await codeOf(res)).toBe("session_not_found");
+    }
   });
 });

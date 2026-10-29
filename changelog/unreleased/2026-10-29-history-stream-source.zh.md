@@ -15,7 +15,7 @@ API 套接字上的流式调用可以用 `x-flow: credit` 请求确认流控：�
 
 每个分窗的历史页都给出所含的 Task 数（`page.units`），在切窗处按同一规则计出；逐页加载到 N 个 Task 的客户端由此与 `tailLimit`、`limit` 的计数一致。
 
-无权读取某个 Session 的管理员（本服务端读取机器所用的身份）访问这些路由时得到 403 `session_forbidden`，而不是被告知该 Session 不存在；其他无权读取的用户仍得到 404。
+无权读取某个 Session 的管理员（本服务端读取机器所用的身份）访问任何 Session 路由时都得到 403 `session_forbidden`，而不是被告知该 Session 不存在；其他无权读取的用户仍得到 404，Web App 则提示没有访问该 Session 的权限。
 
 `GET /api/sessions/:sessionId/trace-body?ref=` 取回一个被折叠的值的全文，且只应答指向该 Session 自身或其派生的子 Agent 会话中某一行的 ref；其他 ref（包括指向其他 Project 文件的）一律返回 404。
 

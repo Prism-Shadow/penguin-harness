@@ -44,6 +44,7 @@ import type {
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { sessionMessages, sessionTraceImage } from "../../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
+import { readableSession } from "../session-access.js";
 import { amspSessionStream } from "../../amsp/session-stream.js";
 import { pendingApprovals } from "../../amsp/approvals.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
@@ -774,27 +775,11 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  /** Look up ownership and check access (404 if the index has no such Session, or access is denied — never leaking existence). */
+  /** Look up ownership and check access (http/session-access.ts: 404, or 403 to a refused admin). */
   const resolveSession = (c: Context<AppEnv>): SessionRow => {
     const sessionId = c.req.param("sessionId");
     const row = sessionId ? deps.sessionsRepo.findById(sessionId) : null;
-    if (!row) {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
-    try {
-      deps.access.requireProjectAccess(c.var.user.userId, row.projectId);
-    } catch {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
-    return row;
+    return readableSession(row, c.var.user, deps.access);
   };
 
   app.get("/:sessionId", async (c) => {

@@ -6142,6 +6142,7 @@ Scenarios:
       workspace_missing: "This Session's Workspace no longer exists.",
       workspace_not_found: "That Workspace does not exist, or is not a directory.",
       session_not_found: "This Session no longer exists, or you do not have access.",
+      session_forbidden: "You do not have access to this Session.",
       session_deleting: "This Session is being deleted.",
       approval_not_found: "This approval request was already answered, or is no longer valid.",
       process_not_found: "This background process already exited, or was removed.",
