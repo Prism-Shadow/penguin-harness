@@ -275,6 +275,17 @@ export class MachineSocket {
     if (this.#ws.readyState === this.#ws.OPEN) this.#ws.send(JSON.stringify({ id, cancel: true }));
   }
 
+  /**
+   * Acknowledges a credit-flow stream (`x-flow: credit`, socket/frames.ts AckFrame): this
+   * server has handled `cumulative` of that call's event data. Nothing for a call already over.
+   */
+  ack(id: number, cumulative: number): void {
+    if (!this.#calls.has(id)) return;
+    if (this.#ws.readyState === this.#ws.OPEN) {
+      this.#ws.send(JSON.stringify({ id, ack: cumulative }));
+    }
+  }
+
   /** Tears the socket down as dead: every stream on it ends, and the relay dials again next time. */
   terminate(): void {
     this.#ws.terminate();

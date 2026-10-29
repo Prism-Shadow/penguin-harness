@@ -87,6 +87,7 @@ import { sessionIdCreatedAt } from "./session-service.js";
 import { listCategory, listingMarksOf, readRecordedSource } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
+import type { RecordSource } from "./history-layout.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
@@ -187,8 +188,47 @@ interface LocatedFile {
 }
 
 /** A windowed history read's request shape (see readMessagesPage). */
-export type MessagesPageRequest =
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: MessageCursor; limit: number };
+export type MessagesPageRequest = (
+  { kind: "tail"; limit: number } | { kind: "before"; cursor: MessageCursor; limit: number }
+) & {
+  /**
+   * The window's byte budget as the `history` stream sends its records — images by reference
+   * and bodies elided (core's history-elision.ts) — capped at MESSAGES_PAGE_MAX_BYTES. Absent:
+   * MESSAGES_PAGE_MAX_BYTES of records with their bodies whole, as `/messages` serves them.
+   */
+  budget?: number;
+};
+
+/**
+ * A history window with where each record was read from: what `readMessagesPage` (or, for
+ * `full`, `readMessages`) returns, plus `sources`, parallel to `messages` — the input of the
+ * history layout (history-layout.ts) and of each record's body refs.
+ */
+export interface HistoryWindowRead {
+  messages: HistoryMessage[];
+  sources: RecordSource[];
+  /** The window's page facts; absent for the full transcript. */
+  page?: Omit<MessagesPageResult, "messages">;
+}
+
+/** One Trace file of a Session or a descendant, as the machine leg of a history stream reads it. */
+export interface HistoryTraceFile {
+  agentId: string;
+  sessionId: string;
+  fileIndex: number;
+  path: string;
+  ino: number;
+  birthtimeMs: number;
+  /** Bytes, as the line index last saw the file. */
+  size: number;
+  /** One past the last `\n`: whole lines end here; an unterminated tail lies beyond. */
+  scanned: number;
+  /** Each record's first byte and one past its last, by ordinal (trace-line-index.ts). */
+  starts: number[];
+  ends: number[];
+  /** A rotated shard (its Session has a newer one): it never changes again. */
+  final: boolean;
+}
 
 /** A windowed history read's result (route maps it onto MessagesResponse.page). */
 export interface MessagesPageResult {
@@ -771,6 +811,31 @@ export class TraceService implements Traces {
           }
         : {}),
     };
+  }
+
+  /**
+   * A history window as `readMessagesPage` reads it (`full`: the whole transcript, as
+   * `readMessages` does), with the Trace file and ordinal of every record beside it.
+   */
+  async readHistoryWindow(
+    _projectId: string,
+    _agentId: string,
+    _sessionId: string,
+    _req: MessagesPageRequest | { kind: "full" },
+  ): Promise<HistoryWindowRead> {
+    throw new Error("readHistoryWindow: not implemented yet");
+  }
+
+  /**
+   * Every Trace file of the Session and of its descendants (subagent children, recursively, by
+   * the same depth and cycle rules the history expansion follows), with their line offsets.
+   */
+  async historyTraceFiles(
+    _projectId: string,
+    _agentId: string,
+    _sessionId: string,
+  ): Promise<HistoryTraceFile[]> {
+    throw new Error("historyTraceFiles: not implemented yet");
   }
 
   /**

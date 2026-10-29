@@ -10,8 +10,20 @@
  * is no queue, because nothing can be written before the stream it belongs to has begun.
  * The call's Request signal is the one release path: a cancel frame, the socket closing and
  * a reader lagging past the send watermark all end the route's own subscription through it.
+ *
+ * A call that asked for acknowledged flow (`x-flow: credit`, frames.ts AckFrame) is also paced:
+ * a route that ships bulk awaits `writable(size)` before each event, and the answer lets an
+ * event go only while the data the client has not acknowledged stays inside the call's window
+ * — so one big transfer cannot queue minutes of bytes ahead of every other call on the socket.
+ * `beat(ms)` keeps such a stream audible while it waits on credit or disk.
  */
 import type { EndFrame, EventFrame, ServerFrame, StreamStartFrame } from "./frames.js";
+
+/** How a call asked to be answered, beyond its frames. */
+export interface StreamAnswerOptions {
+  /** The call carried `x-flow: credit`: events are paced by the client's acks. */
+  credit?: boolean;
+}
 
 /** The frames an answer sends, its id stamped in by the class. */
 type AnswerFrame = Omit<StreamStartFrame, "id"> | Omit<EventFrame, "id"> | Omit<EndFrame, "id">;
@@ -31,7 +43,9 @@ export class StreamAnswer {
     controller: AbortController,
     /** Whether the reader is beyond the send watermark (the socket's bufferedAmount). */
     lagging: () => boolean,
+    options: StreamAnswerOptions = {},
   ) {
+    this.credit = options.credit ?? false;
     this.#send = (frame) => send({ ...frame, id } as ServerFrame);
     this.#abort = () => controller.abort();
     this.signal = controller.signal;
@@ -45,6 +59,31 @@ export class StreamAnswer {
 
   /** The call's Request's signal: a route wires its own cleanup to it (see the class comment). */
   readonly signal: AbortSignal;
+
+  /** Whether the call asked for acknowledged flow (`x-flow: credit`). */
+  readonly credit: boolean;
+
+  /**
+   * Resolves once an event of `size` (its `data` length) may be sent under the call's credit
+   * window: at once for a call without `x-flow: credit`, and at once whenever nothing is
+   * unacknowledged, so an event larger than the window still goes. Rejects with the signal's
+   * reason once the call is released (cancel, the socket closing), so a route waiting on it
+   * leaves its loop and runs its own cleanup.
+   */
+  writable(_size: number): Promise<void> {
+    if (this.signal.aborted) return Promise.reject(this.signal.reason);
+    return Promise.resolve();
+  }
+
+  /** The client has handled `cumulative` of this call's event data (an AckFrame, from serve.ts). */
+  ack(_cumulative: number): void {}
+
+  /**
+   * Keeps the stream audible: a named `ping` event (no id) whenever nothing else was sent for
+   * `ms`, until the answer ends. The client's per-stream watchdog (`StreamOptions.heartbeatMs`)
+   * hears it.
+   */
+  beat(_ms: number): void {}
 
   /** Settles when the answer is over, however it ended — its `end`, the lagging break, or the call's release (serve.ts waits on it). */
   readonly done: Promise<void>;

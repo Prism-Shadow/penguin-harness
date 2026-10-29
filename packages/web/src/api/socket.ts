@@ -135,6 +135,14 @@ export interface StreamOptions {
    * would end a healthy subscription every two beats forever.
    */
   heartbeatMs?: number;
+  /**
+   * Acknowledged flow (`x-flow: credit`, the server's socket/frames.ts AckFrame): the stream
+   * acknowledges the event data it has handled, and the server keeps no more than its window
+   * of unacknowledged data in flight — for an endpoint that ships bulk, so one big transfer
+   * cannot hold back the socket's other calls. Only an endpoint that paces its events reads
+   * the header; on any other it changes nothing.
+   */
+  flow?: boolean;
 }
 
 type State = "closed" | "connecting" | "open" | "unavailable";

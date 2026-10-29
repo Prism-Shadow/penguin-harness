@@ -26,7 +26,7 @@
 import type { WebSocket } from "ws";
 import { API_SOCKET_PATH, sessionKindPath } from "../api/types.js";
 import { declined } from "../hmr/hono-seam.js";
-import { CALL_HEADERS, parseClientFrame } from "./frames.js";
+import { CALL_HEADERS, CREDIT_FLOW, parseClientFrame } from "./frames.js";
 import type { CallFrame, ServerFrame } from "./frames.js";
 import { StreamAnswer } from "./stream-answer.js";
 
@@ -96,6 +96,8 @@ const errorBody = (code: string, message: string) => ({ error: { code, message }
 export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   /** In-flight calls by id; a streaming call stays here until its answer is over. */
   const inflight = new Map<number, AbortController>();
+  /** The stream answers among them, for the acks a credit-flow call is paced by. */
+  const answers = new Map<number, StreamAnswer>();
   let alive = true;
 
   const send = (frame: ServerFrame): void => {
@@ -136,16 +138,24 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       inflight.get(frame.id)?.abort();
       return;
     }
+    if ("ack" in frame) {
+      answers.get(frame.id)?.ack(frame.ack);
+      return;
+    }
     if (inflight.has(frame.id)) return ws.close(1002, `call id ${frame.id} is in flight`);
     const controller = new AbortController();
     inflight.set(frame.id, controller);
-    void dispatch(frame, controller).finally(() => inflight.delete(frame.id));
+    void dispatch(frame, controller).finally(() => {
+      inflight.delete(frame.id);
+      answers.delete(frame.id);
+    });
   });
 
   ws.on("close", () => {
     clearInterval(heartbeat);
     for (const controller of inflight.values()) controller.abort();
     inflight.clear();
+    answers.clear();
   });
   ws.on("error", (err) => deps.log(`[socket] ${err.message}`));
 
@@ -178,8 +188,11 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
     // answer the stream directly (stream-answer.ts). Every other call is made as any call
     // is, and whatever Response comes back is framed below.
     const answer = (headers["accept"] ?? "").includes("text/event-stream")
-      ? new StreamAnswer(id, send, controller, () => ws.bufferedAmount > HIGH_WATER_BYTES)
+      ? new StreamAnswer(id, send, controller, () => ws.bufferedAmount > HIGH_WATER_BYTES, {
+          credit: headers["x-flow"] === CREDIT_FLOW,
+        })
       : null;
+    if (answer !== null) answers.set(id, answer);
     let res: Response;
     try {
       res = await (answer === null ? deps.fetch(request) : deps.fetchStream(request, answer));

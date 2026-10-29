@@ -15,6 +15,7 @@
  */
 import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
+  ElidedBody,
   MCPServerConfig,
   ThinkingLevelName,
   ToolDefinitionConfig,
@@ -2399,8 +2400,14 @@ export interface TracePosition {
   ordinal: number;
 }
 
-/** History-only transport metadata; `tracePosition` is never persisted into Trace JSONL. */
-export type HistoryMessage = AmspRecord & { tracePosition?: TracePosition };
+/**
+ * History-only transport metadata; neither field is ever persisted into Trace JSONL.
+ * `elided` names the bulky values the `history` stream sent as a preview (core's
+ * history-elision.ts); `GET …/trace-body?ref=` returns each one whole.
+ */
+export type HistoryMessage = AmspRecord & { tracePosition?: TracePosition; elided?: ElidedBody[] };
+
+export type { ElidedBody };
 
 export interface SessionForkRequest {
   /** The final root assistant text record of the completed Task to keep. */
@@ -2553,6 +2560,176 @@ export interface MessagesResponse {
    */
   page?: MessagesPageInfo;
 }
+
+// ---------------------------------------------------------------------------
+// History streams (a remote Session's history, newest first, cached on the hub)
+// ---------------------------------------------------------------------------
+//
+// Two legs, both stream calls over the API socket with `x-flow: credit`:
+//   - machine leg, `GET /api/sessions/:id/history-lines` (served by every server; the hub
+//     calls it over its machine socket): the window's envelope and layout, then the Trace
+//     lines the hub does not hold, whole lines only, newest first;
+//   - web leg, `GET /api/sessions/:id/history` and `…/trace-body?ref=` (every server): the
+//     window as whole-record lines with progress, bulky bodies elided.
+
+/** One Trace file of a Session or a descendant: `${agentId}/${sessionId}/${fileIndex}`. */
+export type HistoryFileKey = string;
+
+/**
+ * What the hub holds of one Trace file, sent as `have=` (base64url JSON of the array) so the
+ * machine sends only what is missing. `[lo, hi)` is the contiguous run the hub holds at the
+ * top of its copy, from a line start to just after a `\n`; bytes it holds below `lo` are not
+ * claimed (the machine may send them again; the hub skips committed bytes).
+ */
+export interface HistoryHave {
+  k: HistoryFileKey;
+  ino: number;
+  birthtimeMs: number;
+  lo: number;
+  /** Records before `lo` (the ordinal of the first record at or after it). */
+  loOrd: number;
+  hi: number;
+  /** sha256 (base64url) of bytes [lo, min(hi, lo + 4 KiB)). */
+  loAnchor: string;
+  /** sha256 (base64url) of bytes [max(lo, hi − 4 KiB), hi). */
+  hiAnchor: string;
+  /** A line held in part: bytes [off, off + len), whose sha256 is `anchor`; the machine continues it from `off + len`. */
+  partial?: { off: number; len: number; anchor: string };
+}
+
+/** One Trace file the window or the fill reads, as the machine sees it now. */
+export interface HistoryFileFact {
+  k: HistoryFileKey;
+  ino: number;
+  birthtimeMs: number;
+  size: number;
+  /** Record count by the tolerant reader's rule (blank and unparseable lines are no record). */
+  records: number;
+  /** A rotated shard: it never changes again, and a whole copy is good for good. */
+  final: boolean;
+  /** The hub's `have` for this file did not validate: drop the copy, the lines come from scratch. */
+  reset?: true;
+}
+
+/**
+ * One run of records the window takes from one file, in window order: records [from, to) by
+ * ordinal, bytes [from, to) by offset (blank and malformed lines inside the run are skipped as
+ * the tolerant reader skips them). `origin` null: the Session's own records, which carry their
+ * `tracePosition`; otherwise the child Session chain its records are tagged with, outer to
+ * inner, prepended to any `origin` a line carries.
+ */
+export interface HistorySegment {
+  k: HistoryFileKey;
+  from: [offset: number, ordinal: number];
+  to: [offset: number, ordinal: number];
+  origin: string[] | null;
+}
+
+/**
+ * A window record whose line is heavy, in its final web form — `tracePosition` or `origin` set,
+ * images by reference, bodies elided, its `elided` entries attached — so the hub can deliver
+ * the window before that line's bytes arrive. `[offset, offset + length)` is its line.
+ */
+export interface HistoryStub {
+  k: HistoryFileKey;
+  ordinal: number;
+  offset: number;
+  length: number;
+  record: HistoryMessage;
+}
+
+/** The machine leg's first event, `window`. */
+export interface HistoryLinesWindow {
+  /** What `/messages` answers beside the records, captured before any file is read. */
+  envelope: {
+    page?: MessagesPageInfo;
+    live?: MessagesLiveTail;
+    pendingInputs: AmspRecord[];
+    serverNowMs: number;
+    status: SessionStatus;
+  };
+  /** Every Trace file of the Session and its descendants; a file the hub holds that is absent here is gone. */
+  files: HistoryFileFact[];
+  layout: HistorySegment[];
+  stubs: HistoryStub[];
+  /** Bytes (of `text`) and lines this stream will send in each phase. */
+  totals: Record<"window" | "heavy" | "fill", { bytes: number; lines: number }>;
+}
+
+/** `lines`: whole lines of file `k` from byte `off`; `ord` = records before `off`. */
+export interface HistoryLinesFrame {
+  k: HistoryFileKey;
+  off: number;
+  ord: number;
+  text: string;
+  /** `text` is base64 (bytes that are not valid UTF-8). */
+  b64?: true;
+}
+
+/** `part`: a piece of one line of file `k`, in order; `ord` = records before that line. */
+export interface HistoryPartFrame {
+  k: HistoryFileKey;
+  off: number;
+  ord: number;
+  text: string;
+  last: boolean;
+  b64?: true;
+}
+
+/**
+ * Event names of the machine leg (`history-lines`), in order: `window`, the window's light
+ * `lines`/`part`s, `ready` (the hub can assemble the window), the heavy lines and the fill,
+ * `done`; `ping` beats while the stream waits on credit or disk.
+ */
+export type HistoryLinesEvent = "window" | "lines" | "part" | "ready" | "done" | "ping";
+
+/** The web leg's `progress` event: at most every 250 ms, and only when a number changed. */
+export interface HistoryProgress {
+  phase: "window" | "heavy" | "fill";
+  /** The machine the bytes come from; null for this server's own Session. */
+  machineId: string | null;
+  doneBytes: number;
+  totalBytes: number;
+  doneLines: number;
+  totalLines: number;
+  /** The machine is out of reach and the hub is retrying. */
+  waiting: null | { reason: "not_connected" | "retrying"; attempt: number; nextAt: number };
+}
+
+/** The web leg's `page` event: what the window holds beside its records. */
+export interface HistoryPage {
+  windowId: string;
+  /** Records the window carries. */
+  count: number;
+  /** Bytes of their lines. */
+  bytes: number;
+  page?: MessagesPageInfo;
+  live?: MessagesLiveTail;
+  serverNowMs: number | null;
+}
+
+/**
+ * The web leg's `records` event (whole lines, each one `HistoryMessage` JSON, `offset` counting
+ * the window's text so far) and `part` event (a piece of one record longer than a frame, with
+ * `last` ending it).
+ */
+export interface HistoryRecords {
+  windowId: string;
+  offset: number;
+  text: string;
+  last?: boolean;
+}
+
+/** The web leg's `error` event: terminal; the reader stops and shows it. */
+export interface HistoryStreamError {
+  code: string;
+  message: string;
+  details?: ErrorDetails;
+}
+
+/** Event names of the web leg (`history`, `trace-body`); `ping` is the beat. */
+export type HistoryStreamEvent =
+  "progress" | "page" | "records" | "part" | "done" | "filled" | "error" | "ping";
 
 // ---------------------------------------------------------------------------
 // Task run, approval, interruption, compaction
