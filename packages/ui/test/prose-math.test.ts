@@ -21,6 +21,12 @@
  * - Given a reply streamed in deltas, no frame shows a partial or a wrong formula, shell text
  *   never loses a dollar sign mid-stream, and the last frame holds the formulas a one-shot render
  *   typesets.
+ *
+ * And every inline formula, whatever its delimiters (math-punctuation.ts):
+ *
+ * - Given a closing mark right after it or an opening mark right before it (`$x$，`, `（$x$）`),
+ *   formula and marks are one group a line cannot break inside, settled and streaming alike.
+ * - Given display math, or a formula KaTeX could not parse, nothing is grouped.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -69,6 +75,17 @@ const pending = (html: string) =>
   [...html.matchAll(/<span class="math math-inline">([^<]*)<\/span>/g)].map((match) =>
     unescape(match[1]!),
   );
+/** Where the `<span>` opening at `at` closes: the index just past its `</span>`. */
+const spanEnd = (html: string, at: number) => {
+  const tag = /<(\/?)span\b[^>]*>/g;
+  tag.lastIndex = at;
+  let depth = 0;
+  for (let match = tag.exec(html); match !== null; match = tag.exec(html)) {
+    depth += match[1] === "/" ? -1 : 1;
+    if (depth === 0) break;
+  }
+  return tag.lastIndex;
+};
 /** The reader-visible text with each typeset formula replaced by `∎`, so the prose around it shows. */
 const proseAround = (html: string) => {
   let out = "";
@@ -77,16 +94,14 @@ const proseAround = (html: string) => {
     const at = html.indexOf('<span class="katex">', from);
     if (at === -1) return text(out + html.slice(from));
     out += html.slice(from, at) + "∎";
-    const tag = /<(\/?)span\b[^>]*>/g;
-    tag.lastIndex = at;
-    let depth = 0;
-    for (let match = tag.exec(html); match !== null; match = tag.exec(html)) {
-      depth += match[1] === "/" ? -1 : 1;
-      if (depth === 0) break;
-    }
-    from = tag.lastIndex;
+    from = spanEnd(html, at);
   }
 };
+/** What each no-break group holds, as `proseAround` reads it (a streaming formula is its source). */
+const groups = (html: string) =>
+  [...html.matchAll(/<span class="math-nobreak">/g)].map((match) =>
+    proseAround(html.slice(match.index, spanEnd(html, match.index))),
+  );
 
 /** The reply the single-dollar form was turned on for, as pasted (its `,` was most likely `\,`). */
 const REPORTED = String.raw`判分逻辑是「一次运行 = 一个观测」：3 次运行给 3 个总分，然后报告 mean、样本标准差（分母 $n-1=2$，不是 $n$），以及均值标准误 $s/\sqrt{3}$。如果要 95% 置信区间，用 $t_{0.975,2}=4.303$，$\bar T\pm 4.303,s/\sqrt3$。算出来会很长，而这恰好说明 3 次不够用。`;
@@ -251,6 +266,37 @@ describe("single-dollar inline math", () => {
     const html = render("It costs $5 and $x$ is the rest.");
     expect(typeset(html)).toEqual(["x"]);
     expect(proseAround(html)).toBe("It costs $5 and ∎ is the rest.");
+  });
+});
+
+describe("an inline formula keeps its punctuation on its line", () => {
+  it("groups a formula with the closing mark after it and the opening mark before it", () => {
+    for (const [source, grouped] of [
+      ["分母 $n-1=2$，不是", ["∎，"]],
+      ["（$x$）", ["（∎）"]],
+      [String.raw`比值 \(r\)。`, ["∎。"]],
+      // One mark on each side: the browser keeps `).` together on its own.
+      ["f($x$). Then", ["(∎)"]],
+      ["$a$，$b$。", ["∎，", "∎。"]],
+      // A text shortened by an escape still gives up its mark.
+      [String.raw`a \* b（$x$）`, ["（∎）"]],
+    ] as const) {
+      expect(groups(render(source)), source).toEqual(grouped);
+    }
+    expect(groups(render(REPORTED))).toEqual(["∎，", "∎）", "∎。", "∎，", "∎。"]);
+  });
+
+  it("leaves a formula with no mark beside it, display math and a failed formula alone", () => {
+    for (const source of ["设 $x$ 为", "$$x$$，", String.raw`\[x\]，`, String.raw`$\frac{$，`]) {
+      expect(groups(render(source)), source).toEqual([]);
+    }
+  });
+
+  it("groups a streaming formula's source the same way, so settling changes only the formula", () => {
+    const streaming = renderToStaticMarkup(createElement(Md, { text: REPORTED, streaming: true }));
+    expect(groups(streaming)).toEqual(
+      REPORTED_FORMULAS.map((formula, index) => formula + "，）。，。"[index]),
+    );
   });
 });
 

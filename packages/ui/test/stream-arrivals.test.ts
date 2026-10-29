@@ -12,8 +12,9 @@
  * - Given a list item, a code block or a table that arrived whole, the element itself carries its
  *   arrival, so its bullet, frame and rules fade with its text; the text inside is split only by
  *   the runs that came after it.
- * - Given a run that starts inside inline code or after an escape, it starts at the right
- *   character: delimiters and escapes in the source never shift it.
+ * - Given a run that starts inside inline code, after an escape or beside the punctuation an
+ *   inline formula keeps on its line, it starts at the right character: delimiters, escapes and
+ *   that grouping never shift it.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -118,6 +119,11 @@ describe("runs of Markdown fading in", () => {
     const escaped = "a \\*b\\* c d";
     expect(render(escaped, [{ start: escaped.indexOf("c d"), at: 3 }])).toBe(
       '<p>a *b* <span data-arrive="3">c d</span></p>',
+    );
+    // The `（` is cut off the text before the formula to join its group; the text keeps its run.
+    const grouped = "see\nmore（$x$）";
+    expect(render(grouped, [{ start: grouped.indexOf("more"), at: 7 }])).toBe(
+      '<p>see\n<span data-arrive="7">more</span><span class="math-nobreak"><span data-arrive="7">（</span><span class="math math-inline" data-arrive="7">x</span><span data-arrive="7">）</span></span></p>',
     );
   });
 });

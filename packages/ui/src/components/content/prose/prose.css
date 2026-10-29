@@ -377,6 +377,21 @@ html.dark .shiki span {
   vertical-align: middle;
 }
 
+/* An inline formula and the punctuation mark it touches (math-punctuation.ts): one group no line
+   breaks inside, so a line never starts with the `，` after a formula or ends on the `（` before
+   one. The guard above still holds the formula, less room for its two marks, so the group fits the
+   column. While a reply streams the formula is its TeX source, which may still wrap inside itself;
+   only its edges stay with the marks. */
+.md-body .math-nobreak {
+  white-space: nowrap;
+}
+.md-body .math-nobreak > .katex {
+  max-width: calc(100% - 2em);
+}
+.md-body .math-nobreak > .math-inline {
+  white-space: normal;
+}
+
 /* ---------- The diff viewer (diff-viewer.tsx) ---------- */
 
 /* A changed word inside a changed line: the stronger wash of its side. The row carries the light

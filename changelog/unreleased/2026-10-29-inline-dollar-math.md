@@ -21,3 +21,4 @@ A formula written as `$…$` in a chat reply, a Trace event, a benchmark case or
 
 - While a reply streams, a `$…$` whose closing `$` is the last character received shows as typed until the next character arrives, so shell text never drops its dollar signs for a frame. Formulas are typeset when the reply settles, as before.
 - `$$…$$` keeps rendering as display math, and `$…$` next to it stays inline.
+- An inline formula, in either `$…$` or `\(…\)`, stays on one line with the punctuation mark right after it (`，。、；：！？）」』》】` and `,.;:!?)`) and the one right before it (`（「『《【` and `(`), so a line no longer starts with the `，` that follows a formula. A formula too wide for the column still scrolls inside itself, with its punctuation beside it.
