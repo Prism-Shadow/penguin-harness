@@ -70,6 +70,17 @@ export const MACHINE_STREAM_WATCHDOG_MS = 15_000;
 /** The first wait before trying a machine again, doubled per attempt up to RETRY_MAX_MS. */
 export const RETRY_FIRST_MS = 1_000;
 export const RETRY_MAX_MS = 30_000;
+/**
+ * How long a machine's word that a Session is still there stands before a read the copy answers
+ * on its own (an image, the Trace panel) asks again: a deletion this server never heard of (made
+ * on the machine, or by another hub, while nothing watched it) is noticed within this.
+ */
+export const SESSION_CONFIRM_TTL_MS = 30_000;
+/**
+ * A machine stream that has carried only its beats for this long has a route stuck over there
+ * (a slow disk, a hung read): its readers are told the machine is slow, and the stream goes on.
+ */
+export const MACHINE_STREAM_STALL_MS = 60_000;
 /** A window the copy cannot be assembled into is read again this often before it is an error. */
 const ASSEMBLY_ATTEMPTS = 3;
 /**
@@ -124,6 +135,10 @@ export interface HistorySyncDeps {
   watchdogMs?: number;
   /** The most a window's JSON may hold, joined from its parts (WINDOW_TEXT_MAX). */
   windowTextMax?: number;
+  /** How long a machine's word that a Session is there stands (SESSION_CONFIRM_TTL_MS). */
+  confirmTtlMs?: number;
+  /** How long a stream may carry only beats before its readers are told the machine is slow. */
+  stallMs?: number;
   retryFirstMs?: number;
   retryMaxMs?: number;
   /** Test observability: each run of Trace bytes a machine stream delivered, as it was handled. */
@@ -135,6 +150,10 @@ export interface HistorySyncDeps {
     bytes: number;
   }) => void;
 }
+
+/** What a machine says of a Session (HistorySync.sessionOn). */
+export type SessionFact =
+  { kind: "there"; projectId: string | null } | { kind: "gone" } | { kind: "unknown" };
 
 /** A window read, in the trace service's terms. */
 export type WindowRead = MessagesPageRequest | { kind: "full" };
@@ -711,6 +730,18 @@ class HistoryJob {
         this.gone(messageOf(body));
         return null;
       }
+      // The machine will not show this server's admin the Session: a refusal, said as it is.
+      // The Session is there, so its copy stays, and no wait would change the answer.
+      if (status === 403 && code === "session_forbidden") {
+        this.#failAll(
+          new HttpError(
+            403,
+            "session_forbidden",
+            messageOf(body) ?? "The machine does not let this server read the Session.",
+          ),
+        );
+        return null;
+      }
       if (status === 401 || status === 403) {
         this.#failAll(this.#refusedError(`${status}`));
         return null;
@@ -834,6 +865,16 @@ class HistoryJob {
       const unheard = socket.onTraffic(() => {
         heard = this.#clock.now();
       });
+      // Beats keep a stream alive, but a stream that carries nothing else is stuck over there:
+      // its readers are told so (not cut), and told no more once anything else arrives.
+      const stallMs = this.deps.stallMs ?? MACHINE_STREAM_STALL_MS;
+      let moved = this.#clock.now();
+      let slowSaid = false;
+      const slow = (said: boolean): void => {
+        slowSaid = said;
+        const waiting: Waiting = said ? { reason: "slow", attempt: 0, nextAt: 0 } : null;
+        for (const track of this.#tracks(stream, stream.phase)) track.wait(waiting);
+      };
       const finish = (): void => {
         if (finished) return;
         finished = true;
@@ -871,6 +912,12 @@ class HistoryJob {
           if (finished) return;
           heard = this.#clock.now();
           arm();
+          if (frame.event !== "ping") {
+            moved = heard;
+            if (slowSaid) slow(false);
+          } else if (!slowSaid && heard - moved >= stallMs) {
+            slow(true);
+          }
           chain = chain
             .then(async () => {
               if (finished) return;
@@ -1313,9 +1360,15 @@ export class HistoryReader {
 /** Every machine Session's job, on one platform generation. */
 export class HistorySync {
   readonly #jobs = new Map<string, HistoryJob>();
+  /** What each machine said of a Session lately (sessionOn), by `<machineId>\0<sessionId>`. */
+  readonly #facts = new Map<string, { at: number; fact: SessionFact }>();
+  readonly #asking = new Map<string, Promise<SessionFact>>();
+  readonly #clock: SyncClock;
   #closed = false;
 
-  constructor(private readonly deps: HistorySyncDeps) {}
+  constructor(private readonly deps: HistorySyncDeps) {
+    this.#clock = deps.clock ?? realClock;
+  }
 
   /** A reader of one machine Session's history, until `signal` aborts or it is closed. */
   reader(machineId: string, sessionId: string, signal: AbortSignal): HistoryReader {
@@ -1339,12 +1392,39 @@ export class HistorySync {
   }
 
   /**
-   * The Project a machine Session belongs to over there, asked of the machine (its
-   * `GET /api/sessions/:id`, a few hundred bytes); null while it is away or cannot say.
+   * What the machine says of a Session the copy answers for: there (with its Project over
+   * there), gone (its `404 session_not_found`: the copy is dropped, its readers end), or unknown
+   * (away, or no usable answer). Asked (`GET /api/sessions/:id`, a few hundred bytes) at most
+   * once per `confirmTtlMs` per Session, concurrent askers sharing one ask; an unknown is not kept.
    */
-  async projectOf(machineId: string, sessionId: string): Promise<string | null> {
+  sessionOn(machineId: string, sessionId: string): Promise<SessionFact> {
+    const key = `${machineId}\0${sessionId}`;
+    const now = this.#clock.now();
+    const known = this.#facts.get(key);
+    if (
+      known !== undefined &&
+      now - known.at < (this.deps.confirmTtlMs ?? SESSION_CONFIRM_TTL_MS)
+    ) {
+      return Promise.resolve(known.fact);
+    }
+    let asking = this.#asking.get(key);
+    if (asking === undefined) {
+      asking = this.#askSession(machineId, sessionId)
+        .then((fact) => {
+          if (fact.kind === "there") this.#facts.set(key, { at: this.#clock.now(), fact });
+          else this.#facts.delete(key);
+          if (fact.kind === "gone") this.sessionDeleted(machineId, sessionId);
+          return fact;
+        })
+        .finally(() => this.#asking.delete(key));
+      this.#asking.set(key, asking);
+    }
+    return asking;
+  }
+
+  async #askSession(machineId: string, sessionId: string): Promise<SessionFact> {
     const target = await this.deps.target(machineId).catch(() => null);
-    if (target === null) return null;
+    if (target === null) return { kind: "unknown" };
     const res = await this.deps
       .http(
         machineId,
@@ -1353,12 +1433,24 @@ export class HistorySync {
         AbortSignal.timeout(20_000),
       )
       .catch(() => null);
-    if (res === null || !res.ok) return null;
+    if (res === null) return { kind: "unknown" };
     const body = (await res.json().catch(() => null)) as {
       session?: { projectId?: unknown };
+      error?: { code?: unknown };
     } | null;
+    if (res.status === 404 && body?.error?.code === "session_not_found") return { kind: "gone" };
+    if (!res.ok) return { kind: "unknown" };
     const projectId = body?.session?.projectId;
-    return typeof projectId === "string" && projectId !== "" ? projectId : null;
+    return {
+      kind: "there",
+      projectId: typeof projectId === "string" && projectId !== "" ? projectId : null,
+    };
+  }
+
+  /** The Project a machine Session belongs to over there (sessionOn); null when it cannot say. */
+  async projectOf(machineId: string, sessionId: string): Promise<string | null> {
+    const fact = await this.sessionOn(machineId, sessionId);
+    return fact.kind === "there" ? fact.projectId : null;
   }
 
   /** The machine deleted the Session: its readers end with `session_not_found`, and its copy goes. */

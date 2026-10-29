@@ -140,7 +140,7 @@ import type { HandshakeReading } from "./handshake.js";
 import { machineSessionForward } from "./session-forward.js";
 import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
-import type { Access } from "../mechanisms/projects.js";
+import type { Access, Projects } from "../mechanisms/projects.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
@@ -3638,6 +3638,8 @@ export class MachinesModule {
   @Use() private readonly auth!: Auth;
   /** The Trace analysis the hub computes over its copy of a machine's file (history-routes.ts). */
   @Use() private readonly traces?: Traces;
+  /** This server's Projects: an analysis is priced here only for a Project it has config for. */
+  @Use() private readonly projects?: Projects;
   @Provide() machines!: Machines;
   /** Session-level requests for a machine's Session, routed by its id (session-forward.ts). */
   @Provide() sessionForward!: MachineSessionForward;
@@ -3716,6 +3718,9 @@ export class MachinesModule {
             analyze: (projectId: string, records: readonly AmspRecord[]) =>
               this.traces!.analyzeRecords(projectId, records),
           }
+        : {}),
+      ...(this.projects !== undefined
+        ? { hasProject: (projectId: string) => this.projects!.findById(projectId) !== null }
         : {}),
       log: (line) => console.log(line),
     });
