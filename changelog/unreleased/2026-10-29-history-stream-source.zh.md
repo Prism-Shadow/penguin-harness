@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** feature
 - **Scope:** `server`, `core`, `web`, `docs`
+- **PR:** [#1391](https://github.com/Prism-Shadow/penguin-harness/pull/1391)
 
 [English](2026-10-29-history-stream-source.md)
 
