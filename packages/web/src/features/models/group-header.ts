@@ -19,6 +19,7 @@ import {
   isAddableGroup,
   type ModelProviderInfo,
 } from "@prismshadow/penguin-server/model-catalog";
+
 import type { ProviderConnectionDto } from "@prismshadow/penguin-server/api";
 
 /**

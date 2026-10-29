@@ -7,7 +7,7 @@
  * (`Segmented`) pins it out of flow and folds its text into the option's accessible name.
  *
  * The notice — the sentence a person gets the first time they switch this browser into the
- * mode (state/company.tsx's `setWorkMode`), and the once-only decision behind it. The flag
+ * mode (features/company/company-state.tsx's `setWorkMode`), and the once-only decision behind it. The flag
  * lives in localStorage rather than in the user's preferences because it is about this
  * browser having shown a toast, not about the user: a second browser is a second first time,
  * and a preferences round trip would decide it too late to toast on the click that caused it.

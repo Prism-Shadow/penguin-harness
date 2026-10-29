@@ -2,7 +2,7 @@
  * A ticket's detail, as the dialog every company surface opens in place — the board, the
  * finance ledger, the overview's inbox and a channel's ticket reference all put the same
  * window on screen instead of carrying the reader to another page. The shell state says which
- * ticket is open (state/company.tsx) and `TicketDialogHost`, mounted once by the organization
+ * ticket is open (features/company/company-state.tsx) and `TicketDialogHost`, mounted once by the organization
  * layout, is what renders it.
  *
  * The header names the ticket with its priority chip on the same line, and carries the back
@@ -72,7 +72,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { PathMarkdown, PathText } from "./path-capsule";

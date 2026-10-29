@@ -144,6 +144,7 @@ import {
   type ModelProviderBridgeAuth,
   type ModelProviderInfo,
 } from "@prismshadow/penguin-server/model-catalog";
+
 import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
 import {
   allGroupKeys,

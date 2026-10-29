@@ -25,7 +25,7 @@ import {
   type NotificationAccess,
 } from "../../lib/notification-pref";
 
-import { useCompany } from "../../state/company";
+import { useCompany } from "../company";
 import { resolveSystemLocale, useLocale, type LangPref } from "../../state/locale";
 
 import { useTheme, type Currency } from "../../state/theme";

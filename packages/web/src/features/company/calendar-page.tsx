@@ -60,7 +60,7 @@ import { employeeColor } from "../../lib/category-colors";
 import { toneInk, type Tone } from "../../lib/tone";
 
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   cadenceOf,
