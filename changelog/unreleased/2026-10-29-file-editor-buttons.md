@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** fix
 - **Scope:** `web`, `ui`
+- **PR:** [#1389](https://github.com/Prism-Shadow/penguin-harness/pull/1389)
 
 [中文版](2026-10-29-file-editor-buttons.zh.md)
 
