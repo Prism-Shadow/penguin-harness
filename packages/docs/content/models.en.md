@@ -79,10 +79,10 @@ The group appears in the list once its first model is saved.
 3. In **Custom base URL**, enter the endpoint's base URL.
 4. Select **Detect** at the top-right of the field, or pick the protocol from the menu at the right edge of the field. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
 5. Select **Fetch model list**. PenguinHarness asks the endpoint for its model list and shows it under the fields, one model id per row, in the endpoint's order, every model ticked.
-6. Untick the models you do not want. **Select all** and **Select none** act on the rows on screen; a list of more than 10 models also has a filter box, and filtering never changes a tick on a row it hides.
+6. Untick the models you do not want. **Select all** and **Select none** act on the rows the filter matches; a list of more than 10 models also has a filter box, and filtering never changes a tick on a row it hides.
 7. Select **Import {n} models**. Only the ticked models are saved into the new group. The button is unavailable while no model is ticked.
 
-The list belongs to the API key, base URL and protocol it was fetched with: change any of them and the list goes away until you fetch it again.
+The list belongs to the API key, base URL and protocol it was fetched with: it is hidden while any of them differs from what it was fetched with, and comes back with its ticks when all three match again. While the list is being fetched or the models saved, those three fields cannot be edited.
 
 The base URL, the protocol and the key you entered are saved once, as the group's settings; the imported models carry none of them and follow the group. Only the model id comes from the endpoint: prices, context window, and display name stay empty, and vision stays off until you detect it or turn it on. That is the same starting point as a model you add by hand.
 

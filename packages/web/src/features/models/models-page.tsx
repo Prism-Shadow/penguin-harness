@@ -2123,8 +2123,10 @@ export function ModelsPage() {
  *   action becomes "import N models", held while nothing is ticked. That one hands the
  *   group's connection and the rows of the ticked models to the page for one table PUT: the
  *   base URL, protocol and key are written once, as the group's, and the rows store nothing
- *   of them. The list answers for the key, base URL and protocol it was fetched with: editing
- *   any of them puts it away and brings the fetch action back.
+ *   of them. The list answers for the key, base URL and protocol it was fetched with: it is
+ *   hidden, and the fetch action is back, while any of them differs from those, and it returns
+ *   with its ticks once all three match again. The three are locked while a fetch or the save
+ *   runs, so a request never answers for values that changed under it.
  *
  * Detection failure turns the suffix amber and keeps both ways out usable — pick the
  * protocol by hand, or switch back to create-only. Errors render inside the dialog;
@@ -2374,7 +2376,12 @@ function AddGroupDialog({
                 size="sm"
                 variant="primary"
                 disabled={busy || !nameValid || list.picked.size === 0}
-                onClick={() => void runImport()}
+                // Fetch and Import are one button in one place, and the list lands within a
+                // double-click: the second click of a double-click on Fetch must not import.
+                // A keyboard press reports detail 0 and a single click 1.
+                onClick={(e) => {
+                  if (e.detail <= 1) void runImport();
+                }}
               >
                 {S.models.groupImportPicked(list.picked.size)}
               </Button>
@@ -2418,6 +2425,9 @@ function AddGroupDialog({
               size="sm"
               label={S.models.apiKey}
               value={apiKey}
+              // Locked while a fetch or save runs, like the base URL: the request speaks with
+              // this key, and the list it brings back answers for it.
+              disabled={busy}
               onChange={(e) => {
                 form.patch({ apiKey: e.target.value });
                 setError(null);
@@ -2474,6 +2484,7 @@ function AddGroupDialog({
                     path={suffixLabel}
                     detecting={detecting}
                     tone={detectFailed ? "warn" : null}
+                    disabled={busy}
                     onPick={pickProtocol}
                   />
                 </div>

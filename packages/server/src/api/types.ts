@@ -1023,8 +1023,8 @@ export interface ModelProtocolDetectResponse {
 /**
  * Endpoint model listing (POST /api/projects/:p/models/list, owner): given a base URL and
  * the protocol `/detect` reported, returns every model id the endpoint serves (MMSP's
- * `listModels()` on the routed client). Used by the add-group dialog to import a provider's
- * whole listing in one go; the ids come back in the endpoint's own order.
+ * `listModels()` on the routed client). Used by the add-group dialog to fill the list the
+ * user picks the models to import from; the ids come back in the endpoint's own order.
  */
 export interface EndpointModelListRequest {
   /** Endpoint base URL (as typed in the add-group dialog). */

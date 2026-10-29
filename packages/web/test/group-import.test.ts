@@ -44,17 +44,10 @@ describe("the group's connection", () => {
 
 describe("pickableModelIds", () => {
   it("offers each usable id once, in the endpoint's order, and counts the entries it leaves out", () => {
-    const { ids, dropped } = pickableModelIds([
-      "m-b",
-      " m-a ",
-      "m-b",
-      "",
-      "x".repeat(201),
-      "m-\u0000nul",
-      "m-a",
-    ]);
+    // Which ids are unusable is buildImportedRows' rule too, covered below; one stands in here.
+    const { ids, dropped } = pickableModelIds(["m-b", " m-a ", "m-b", "", "m-a"]);
     expect(ids).toEqual(["m-b", "m-a"]);
-    expect(dropped).toBe(5);
+    expect(dropped).toBe(3);
   });
 });
 
