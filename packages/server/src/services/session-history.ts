@@ -16,6 +16,7 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { Context } from "hono";
 import type {
   HistoryMessage,
+  SessionStatus,
   MessagesLiveTail,
   MessagesPageInfo,
   MessagesResponse,
@@ -39,11 +40,11 @@ export interface SessionHistoryDeps {
 }
 
 /** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default. */
-const MESSAGES_PAGE_LIMIT_MAX = 1000;
-const MESSAGES_PAGE_LIMIT_DEFAULT = 200;
+export const MESSAGES_PAGE_LIMIT_MAX = 1000;
+export const MESSAGES_PAGE_LIMIT_DEFAULT = 200;
 
-/** Parse one windowed-read unit-count param (positive integer, capped). */
-function pageLimit(raw: string, name: string): number {
+/** Parse one windowed-read unit-count param (positive integer, capped); a 400 otherwise. */
+export function pageLimit(raw: string, name: string): number {
   if (!/^\d{1,4}$/.test(raw)) throw badRequest(`${name} must be a positive integer.`);
   const v = Number.parseInt(raw, 10);
   if (v < 1 || v > MESSAGES_PAGE_LIMIT_MAX) {
@@ -107,22 +108,30 @@ export function messagesPageQuery(
 
 /**
  * What a history read answers beside its records, captured before the read starts: the
- * running Task's live tail and its held inputs (see the comment in `captureHistoryEnvelope`).
+ * running Task's live tail and its held inputs (see the comment in `captureHistoryEnvelope`),
+ * the Session's status, and this server's clock.
  */
 export interface HistoryEnvelope {
   live?: MessagesLiveTail;
   pendingInputs: AmspRecord[];
+  status: SessionStatus;
+  serverNowMs: number;
 }
 
 /**
- * The envelope of a read of `sessionId`, captured now. Call it synchronously before the Trace
- * read starts: the live-tail contract rests on that order.
+ * The envelope of a read of `sessionId`, captured now — `/messages`, the `history` stream and a
+ * machine's `history-lines` all take it from here. Call it synchronously before the Trace read
+ * starts, with no await in between: the live-tail contract rests on that order. `kind` is the
+ * read's: a tail or the whole transcript ends at the live edge; a `before` window, or a read that
+ * is no window at all (`none`: a body, the fill), carries neither the live tail nor held inputs.
  */
 export function captureHistoryEnvelope(
   deps: Pick<SessionHistoryDeps, "manager" | "channels">,
   sessionId: string,
-  kind: "tail" | "before" | "full",
+  kind: "tail" | "before" | "full" | "none",
 ): HistoryEnvelope {
+  const status = deps.manager.statusOf(sessionId);
+  const serverNowMs = Date.now();
   // Live tail (running/compacting sessions only): capture the channel cursor and the
   // open-fragment snapshot together, synchronously — no await between the two, and both
   // BEFORE the trace read starts. That ordering is what makes the client contract safe
@@ -138,9 +147,9 @@ export function captureHistoryEnvelope(
   // transcript's live edge, so the attachment's semantics are identical. A `before`
   // page is immutable history — attaching in-flight fragments to it would seed them at
   // the wrong position — so it never carries `live`.
-  if (kind === "before") return { pendingInputs: [] };
+  if (kind === "before" || kind === "none") return { pendingInputs: [], status, serverNowMs };
   let live: MessagesLiveTail | undefined;
-  if (deps.manager.statusOf(sessionId) !== "idle") {
+  if (status !== "idle") {
     live = {
       cursor: deps.channels.get(sessionId).lastEventId,
       fragments: deps.manager.liveFragments(sessionId),
@@ -160,7 +169,7 @@ export function captureHistoryEnvelope(
     ...deps.manager.pendingInputs(sessionId),
     ...deps.manager.pendingBootstrap(sessionId),
   ];
-  return { ...(live !== undefined ? { live } : {}), pendingInputs };
+  return { ...(live !== undefined ? { live } : {}), pendingInputs, status, serverNowMs };
 }
 
 /** A windowed read's page facts as `MessagesResponse.page` carries them. */
@@ -190,7 +199,7 @@ export function messagesPageInfo(result: Omit<MessagesPageResult, "messages">): 
  */
 export function historyResponse(
   read: { messages: HistoryMessage[]; page?: MessagesPageInfo },
-  envelope: HistoryEnvelope,
+  envelope: Pick<HistoryEnvelope, "live" | "pendingInputs">,
   sessionId: string,
   imageBase: string,
 ): MessagesResponse {

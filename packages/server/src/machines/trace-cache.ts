@@ -65,7 +65,7 @@ const NEWLINE = 0x0a;
 /** How much of a run one read of the record index takes at a time. */
 const SCAN_CHUNK = 1024 * 1024;
 /** What a `have` may take of the machine's ceiling, leaving room for the rest of the query. */
-const HAVE_BUDGET_CHARS = HAVE_MAX_CHARS - 2048;
+export const HAVE_BUDGET_CHARS = HAVE_MAX_CHARS - 2048;
 
 /** The directory name of an id: a hash, so no id can collide with another or misname a path. */
 export const dirNameOf = (id: string): string =>
@@ -84,8 +84,9 @@ interface Sidecar {
   version: number;
   machineId: string;
   k: HistoryFileKey;
-  /** The machine file's identity as it reported it (`HistoryFileFact.ino`). */
-  ino: HistoryFileFact["ino"] | null;
+  /** The machine file's identity as it reported it (`HistoryFileFact.ino`/`dev`, decimal). */
+  ino: string | null;
+  dev?: string;
   birthtimeMs: number;
   /** The machine's file size as last told; a copy with one run [0, size) is whole. */
   size: number;
@@ -102,8 +103,6 @@ interface FileState {
   dataPath: string;
   sidecarPath: string;
   committer: LineCommitter;
-  /** The records before the line held in part (its part frame's `ord`), while one is held. */
-  partialOrd: number | null;
   /** Every record's line in the copy, sorted by offset; built on first read, extended by commits. */
   lines: { starts: number[]; ends: number[] } | null;
   /** Removed (evicted, dropped): a write still queued for it does nothing. */
@@ -210,6 +209,8 @@ export interface TraceCacheOptions {
   now?: () => number;
   /** Test observability: every byte range read from a copy, as [start, end). */
   observeRead?: (start: number, end: number) => void;
+  /** The most characters a group's `have` may take (HAVE_BUDGET_CHARS; a test sets a small one). */
+  haveBudgetChars?: number;
 }
 
 /** One record read back from the copy: the record, and where its line lies. */
@@ -232,6 +233,7 @@ export class TraceCache {
   readonly #capBytes: number;
   readonly #now: () => number;
   readonly #observeRead: ((start: number, end: number) => void) | undefined;
+  readonly #haveBudget: number;
   /** Loaded files, by `<machineId>\0<k>`. */
   readonly #files = new Map<string, FileState>();
   /** What each Session directory counts toward the cap, and when it was read, by `<machineId>\0<sessionId>`. */
@@ -248,6 +250,7 @@ export class TraceCache {
     this.#capBytes = options.capBytes ?? TRACE_CACHE_CAP_BYTES;
     this.#now = options.now ?? Date.now;
     this.#observeRead = options.observeRead;
+    this.#haveBudget = options.haveBudgetChars ?? HAVE_BUDGET_CHARS;
   }
 
   /**
@@ -371,7 +374,6 @@ export class TraceCache {
       dataPath,
       sidecarPath,
       committer: new LineCommitter(),
-      partialOrd: null,
       lines: null,
       dead: false,
     };
@@ -414,7 +416,6 @@ export class TraceCache {
   async #clear(state: FileState): Promise<void> {
     this.#setRuns(state, []);
     state.committer = new LineCommitter();
-    state.partialOrd = null;
     state.lines = null;
     await rmEventually(state.dataPath);
   }
@@ -451,10 +452,13 @@ export class TraceCache {
         const sidecar = state.sidecar;
         const moved =
           sidecar.ino === null ||
-          String(sidecar.ino) !== String(fact.ino) ||
+          sidecar.ino !== String(fact.ino) ||
+          (sidecar.dev ?? null) !== (fact.dev ?? null) ||
           sidecar.birthtimeMs !== fact.birthtimeMs;
         if (fact.reset === true || moved || fact.size < sidecar.size) await this.#clear(state);
-        sidecar.ino = fact.ino;
+        sidecar.ino = String(fact.ino);
+        if (fact.dev !== undefined) sidecar.dev = fact.dev;
+        else delete sidecar.dev;
         sidecar.birthtimeMs = fact.birthtimeMs;
         sidecar.size = fact.size;
         sidecar.final = fact.final;
@@ -529,7 +533,7 @@ export class TraceCache {
         return extentOf(b.sidecar.runs) - extentOf(a.sidecar.runs);
       });
     }
-    const budget = request.budget ?? HAVE_BUDGET_CHARS;
+    const budget = request.budget ?? this.#haveBudget;
     const out: HistoryHave[] = [];
     // The encoded size of the JSON array so far: `[`, `]`, the entries and their commas, base64url.
     let jsonBytes = 2;
@@ -544,22 +548,34 @@ export class TraceCache {
     return out;
   }
 
+  /**
+   * One file's entry: every run, each with the anchors of its own edges, and the line held in
+   * part — offered even before any whole line of the file is held, so a cut inside a file's
+   * first line resumes from where it stopped.
+   */
   async #haveOf(state: FileState): Promise<HistoryHave | null> {
-    const top = state.sidecar.runs.at(-1);
-    if (top === undefined || state.dead || state.sidecar.ino === null) return null;
-    const lo = await this.#read(state, ...loAnchorRange(top.start, top.end));
-    const hi = await this.#read(state, ...hiAnchorRange(top.start, top.end));
-    if (lo === null || hi === null) return null;
+    if (state.dead || state.sidecar.ino === null) return null;
+    const ranges: NonNullable<HistoryHave["ranges"]> = [];
+    for (const run of state.sidecar.runs) {
+      const lo = await this.#read(state, ...loAnchorRange(run.start, run.end));
+      const hi = await this.#read(state, ...hiAnchorRange(run.start, run.end));
+      if (lo === null || hi === null) continue;
+      ranges.push({
+        lo: run.start,
+        loOrd: run.ordinal,
+        hi: run.end,
+        loAnchor: anchorOf(lo),
+        hiAnchor: anchorOf(hi),
+      });
+    }
     const partial = state.committer.partial();
+    if (ranges.length === 0 && partial === null) return null;
     return {
       k: state.sidecar.k,
       ino: state.sidecar.ino,
+      ...(state.sidecar.dev !== undefined ? { dev: state.sidecar.dev } : {}),
       birthtimeMs: state.sidecar.birthtimeMs,
-      lo: top.start,
-      loOrd: top.ordinal,
-      hi: top.end,
-      loAnchor: anchorOf(lo),
-      hiAnchor: anchorOf(hi),
+      ranges,
       ...(partial !== null
         ? {
             partial: {
@@ -601,11 +617,7 @@ export class TraceCache {
     return this.#serial(state, async () => {
       if (state.dead) return 0;
       const lines = state.committer.push(frame);
-      if (lines === null) {
-        state.partialOrd = frame.ord;
-        return 0;
-      }
-      if (state.committer.partial() === null) state.partialOrd = null;
+      if (lines === null) return 0;
       return this.#commitBytes(state, lines.off, frame.ord, lines.bytes);
     });
   }

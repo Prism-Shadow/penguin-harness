@@ -21,9 +21,15 @@
  *   reference are answered from it, even with the machine away; the live file's events are the
  *   machine's (it grows there), and whatever the copy cannot answer is forwarded.
  * - Given a value the window elided, then `trace-body` sends it whole: the first time after
- *   fetching its one line, the next time from the copy alone.
+ *   fetching its one line, its progress counted once in one total, the next time from the copy
+ *   alone.
  * - Given the conversation opened by its URL alone (no machine prefix, as a reload asks), then
- *   the hub's Session forward answers it with the same stream, its copy under the hub's root.
+ *   the hub's Session forward answers it with the same stream, its copy under the hub's root; the
+ *   Trace panel's Project-scoped events are then answered from the copy for that Session's
+ *   Project and find nothing under another; and its HTTP stream ends when its user is signed out.
+ * - Given a line held below the newest run (a body fetched), then the fill does not send it again.
+ * - Given a fill cut inside the first line it sends of a file, then it resumes from what it held.
+ * - Given a reader that leaves mid-fill and comes back, then only what was not brought crosses.
  */
 import fs from "node:fs/promises";
 import http from "node:http";
@@ -42,7 +48,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
+import { elideHistoryRecord, encodeBodyRef } from "@prismshadow/penguin-core/interfaces";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type {
   TraceEventsResponse,
@@ -67,6 +73,7 @@ import {
   loginAdmin,
   makeTempRoot,
   removeTempRoot,
+  waitFor,
   writeTraceFile,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -422,6 +429,107 @@ describe("a machine Session's history through the hub's copy", () => {
     expect((await hub.get(`/api/sessions/${sid}/traces/1/analysis`)).status).toBe(503);
   });
 
+  it("does not send again a line held below the newest run", async () => {
+    const sid = uniqueSessionId();
+    const file = await machineSession(sid, [
+      meta(sid),
+      ...tasks(5),
+      userText("read it"),
+      toolCall({ name: "read_file", arguments: '{"file_path":"/w/a.txt"}', toolCallId: "c1" }),
+      toolCallOutput({ output: "x".repeat(200_000), toolCallId: "c1", status: "completed" }),
+      assistantText("read"),
+      ...tasks(5),
+    ]);
+    const window = windowRecords(await read(sid, "?tailLimit=2")) as HistoryMessage[];
+    expect(window.some((r) => (r.payload as { type?: string }).type === "tool_call_output")).toBe(
+      false,
+    );
+    const ref = encodeBodyRef(
+      { agentId: AGENT, sessionId: sid, fileIndex: 1, ordinal: 13 },
+      "payload.output",
+    );
+    const body = eventReader(
+      await hub.get(`/api/sessions/${sid}/trace-body?ref=${encodeURIComponent(ref)}`),
+    );
+    await body.finished;
+    expect(body.has("done")).toBe(true);
+    await waitFor(() => hub.sync.held().size === 0);
+
+    crossed = [];
+    expect((await read(sid, "?fill=only")).at(-1)?.event).toBe("filled");
+    const size = (await fs.stat(file)).size;
+    expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
+    // The fill brought what was missing around the held output line, never the line again.
+    expect(crossed.reduce((sum, c) => sum + c.bytes, 0)).toBeLessThan(size - 200_000);
+  });
+
+  it("resumes a fill cut inside a file's first line held, before anything of the file was whole", async () => {
+    const sid = uniqueSessionId();
+    machine.deps.sessionsRepo.insert(sessionRow(sid));
+    const first = await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 1, [
+      meta(sid),
+      ...tasks(2),
+      userText("read it"),
+      toolCall({ name: "read_file", arguments: '{"file_path":"/w/b.txt"}', toolCallId: "c9" }),
+      toolCallOutput({
+        output: "y".repeat(12 * FRAME_TEXT_BUDGET),
+        toolCallId: "c9",
+        status: "completed",
+      }),
+    ]);
+    await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 2, [
+      meta(sid),
+      ...tasks(2),
+    ]);
+    const k1 = `${AGENT}/${sid}/1`;
+    await read(sid, "?tailLimit=1");
+    await waitFor(() => hub.sync.held().size === 0);
+    let parts = 0;
+    let cut = false;
+    onFrame = (frame) => {
+      if (frame.k !== k1 || cut) return;
+      parts += 1;
+      if (parts === 4) {
+        cut = true;
+        link.cut();
+      }
+    };
+    crossed = [];
+    expect((await read(sid, "?fill=only")).at(-1)?.event).toBe("filled");
+
+    expect(cut).toBe(true);
+    expect(await fs.readFile(hub.cacheFile(sid, 1))).toEqual(await fs.readFile(first));
+    const size = (await fs.stat(first)).size;
+    const sent = crossed.filter((c) => c.k === k1).reduce((sum, c) => sum + c.bytes, 0);
+    expect(sent).toBeLessThanOrEqual(size + FRAME_TEXT_BUDGET);
+  });
+
+  it("sends a reader that left and came back only what its first open had not brought", async () => {
+    const sid = uniqueSessionId();
+    const file = await machineSession(sid, [meta(sid), ...tasks(150, 1_000)]);
+    let leave: () => Promise<void> = async () => undefined;
+    let left: Promise<void> | null = null;
+    // The reader leaves the moment the fourth run of lines has crossed.
+    onFrame = () => {
+      if (crossed.length === 4) left = leave();
+    };
+    const leaving = eventReader(await hub.get(`/api/sessions/${sid}/history?tailLimit=20&fill=1`));
+    leave = leaving.stop;
+    await waitFor(() => left !== null);
+    await left;
+    onFrame = () => undefined;
+    await waitFor(() => hub.sync.held().size === 0);
+    const before = crossed.reduce((sum, c) => sum + c.bytes, 0);
+    expect(before).toBeLessThan((await fs.stat(file)).size);
+
+    expect((await read(sid, "?tailLimit=20&fill=1")).at(-1)?.event).toBe("filled");
+    const size = (await fs.stat(file)).size;
+    expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
+    expect(crossed.reduce((sum, c) => sum + c.bytes, 0)).toBeLessThanOrEqual(
+      size + FRAME_TEXT_BUDGET,
+    );
+  });
+
   it("sends an elided value whole, fetching its line once and then from the copy", async () => {
     const sid = uniqueSessionId();
     const output = "row\n".repeat(10_000);
@@ -431,25 +539,42 @@ describe("a machine Session's history through the hub's copy", () => {
       toolCall({ name: "read_file", arguments: '{"file_path":"/w/a.txt"}', toolCallId: "c1" }),
       toolCallOutput({ output, toolCallId: "c1", status: "completed" }),
       assistantText("done"),
+      ...tasks(2),
     ]);
-    const window = windowRecords(await read(sid, "?tailLimit=20")) as HistoryMessage[];
-    const ref = window.flatMap((r) => r.elided ?? []).find((e) => e.path === "payload.output")?.ref;
-    expect(ref).toEqual(expect.any(String));
+    // The newest Task alone: the output's line lies in an older one, never brought.
+    await read(sid, "?tailLimit=1");
+    await waitFor(() => hub.sync.held().size === 0);
+    const ref = encodeBodyRef(
+      { agentId: AGENT, sessionId: sid, fileIndex: 1, ordinal: 3 },
+      "payload.output",
+    );
 
     const body = async () => {
       const reader = eventReader(
-        await hub.get(`/api/sessions/${sid}/trace-body?ref=${encodeURIComponent(ref!)}`),
+        await hub.get(`/api/sessions/${sid}/trace-body?ref=${encodeURIComponent(ref)}`),
       );
       await reader.finished;
-      return reader
-        .named()
-        .filter((e) => e.event === "part")
-        .map((e) => (JSON.parse(e.data) as HistoryRecords).text)
-        .join("");
+      const events = reader.named();
+      return {
+        value: events
+          .filter((e) => e.event === "part")
+          .map((e) => (JSON.parse(e.data) as HistoryRecords).text)
+          .join(""),
+        progress: progress(events),
+      };
     };
-    expect(await body()).toBe(output);
     crossed = [];
-    expect(await body()).toBe(output);
+    const fetched = await body();
+    expect(fetched.value).toBe(output);
+    expect(crossed.length).toBeGreaterThan(0);
+    // One total for the whole stream, counted up once, never back to 0.
+    expect(new Set(fetched.progress.map((p) => p.totalBytes)).size).toBe(1);
+    const done = fetched.progress.map((p) => p.doneBytes);
+    expect(done).toEqual([...done].sort((a, b) => a - b));
+    expect(done.at(-1)).toBe(fetched.progress[0]!.totalBytes);
+
+    crossed = [];
+    expect((await body()).value).toBe(output);
     expect(crossed).toEqual([]);
   });
 });
@@ -457,13 +582,15 @@ describe("a machine Session's history through the hub's copy", () => {
 describe("a machine Session's history opened by its URL alone", () => {
   let hubApp: TestApp;
   let hubCookie = "";
+  /** Whether the hub has lost its forward to the machine. */
+  let away = false;
 
   beforeAll(async () => {
     hubApp = await createTestApp({
       machines: fakeMachinesNode(
         () => [{ machineId: MACHINE, alias: "gpu-box", api: appApi(machine.app, cookie) }],
         (machineId) =>
-          machineId === MACHINE
+          machineId === MACHINE && !away
             ? { agent: new http.Agent(), port: link.port, cookie, adoptedAt: null, session: 1 }
             : null,
       ),
@@ -496,5 +623,65 @@ describe("a machine Session's history opened by its URL alone", () => {
       "001.jsonl",
     );
     expect(await fs.readFile(copy)).toEqual(await fs.readFile(file));
+  });
+  it("answers the Trace panel's Project-scoped events from the copy for the Session's Project, and finds nothing under another", async () => {
+    const sid = uniqueSessionId();
+    await machineSession(sid, [meta(sid), ...tasks(2)]);
+    await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 2, [
+      meta(sid),
+      ...tasks(1),
+    ]);
+    const opened = eventReader(
+      await hubApp.app.request(`/api/sessions/${sid}/history?tailLimit=20&fill=1`, {
+        headers: { cookie: hubCookie },
+      }),
+    );
+    await opened.finished;
+    expect(opened.named().at(-1)?.event).toBe("filled");
+
+    away = true;
+    try {
+      const events = (project: string) =>
+        hubApp.app.request(
+          `/server/${MACHINE}/api/projects/${project}/agents/${AGENT}/traces/${sid}/1?offset=0&limit=5`,
+          { headers: { cookie: hubCookie } },
+        );
+      const own = await events(PROJECT);
+      expect(own.status).toBe(200);
+      expect(((await own.json()) as TraceEventsResponse).total).toBe(5);
+      const wrong = await events("another_project");
+      expect(wrong.status).toBe(404);
+      expect(((await wrong.json()) as { error: { code: string } }).error.code).toBe(
+        "trace_not_found",
+      );
+    } finally {
+      away = false;
+    }
+  });
+
+  // Last: it resets the admin's password, which signs the suite's admin out.
+  it("ends an HTTP history stream the moment its user is signed out everywhere", async () => {
+    const sid = uniqueSessionId();
+    await machineSession(sid, [meta(sid), ...tasks(1)]);
+    away = true;
+    try {
+      const waiting = eventReader(
+        await hubApp.app.request(`/api/sessions/${sid}/history?tailLimit=20`, {
+          headers: { cookie: hubCookie },
+        }),
+      );
+      await waitFor(() => waiting.has("progress"));
+      expect(waiting.ended).toBe(false);
+      await hubApp.deps.adminService.resetPassword("admin", "a new password, long enough");
+      // At once — well before the stream's next beat would notice the sign-in gone.
+      const ended = await Promise.race([
+        waiting.finished.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2_000)),
+      ]);
+      expect(ended).toBe(true);
+      expect(waiting.has("done")).toBe(false);
+    } finally {
+      away = false;
+    }
   });
 });

@@ -24,6 +24,8 @@
  *   asks the next one), and a stream asked of it afterwards ends at once.
  * - Given a fill another reader's window stream carries, when the last reader staying for the
  *   fill leaves, then that machine call is cancelled.
+ * - Given a Session with more subagents held than a `have` can name, then every open loads: its
+ *   `have` stays within the machine's ceiling, and a file left out is simply sent again.
  * - Given the copy over its cap, when a stream completes, then an open job's Session is kept
  *   though it was read longest ago, and a Session no job holds goes.
  */
@@ -39,6 +41,7 @@ import { MachineSockets } from "../src/machines/machine-sockets.js";
 import { machinesProxy } from "../src/machines/proxy.js";
 import type { ProxyTarget } from "../src/machines/proxy.js";
 import { TraceCache } from "../src/machines/trace-cache.js";
+import { decodeHistoryHave } from "../src/services/history-wire.js";
 import { MACHINE_STREAM_WATCHDOG_MS } from "../src/machines/history-sync.js";
 import { eventReader, manualClock, traceLine, windowRecords } from "./fixtures/history-stream.js";
 import { makeTempRoot, removeTempRoot, waitFor } from "./helpers.js";
@@ -87,8 +90,9 @@ async function scriptedMachine(
 }
 
 const send = (ws: WebSocket, frame: object) => ws.send(JSON.stringify(frame));
+/** A stream's start, echoing acknowledged flow as a machine's server does (the hub acks only then). */
 const start = (ws: WebSocket, id: number) =>
-  send(ws, { id, status: 200, stream: true, headers: {} });
+  send(ws, { id, status: 200, stream: true, headers: { "x-flow": "credit" } });
 const event = (
   ws: WebSocket,
   id: number,
@@ -115,11 +119,22 @@ const windowOf = (file: string, k = K): HistoryLinesWindow => ({
     serverNowMs: 1_700_000_000_000,
     status: "idle",
   },
-  files: [{ k, ino: 11, birthtimeMs: 5, size: Buffer.byteLength(file), records: 2, final: false }],
-  layout: [{ k, from: [0, 0], to: [Buffer.byteLength(file), 2], origin: null }],
+  files: [
+    {
+      k,
+      ino: "11",
+      birthtimeMs: 5,
+      size: Buffer.byteLength(file),
+      records: file.split("\n").length - 1,
+      final: false,
+    },
+  ],
+  layout: [
+    { k, from: [0, 0], to: [Buffer.byteLength(file), file.split("\n").length - 1], origin: null },
+  ],
   stubs: [],
   totals: {
-    window: { bytes: Buffer.byteLength(file), lines: 2 },
+    window: { bytes: Buffer.byteLength(file), lines: file.split("\n").length - 1 },
     heavy: { bytes: 0, lines: 0 },
     fill: { bytes: 0, lines: 0 },
   },
@@ -128,8 +143,9 @@ const windowOf = (file: string, k = K): HistoryLinesWindow => ({
 /** The Session a machine call names. */
 const sessionOf = (callPath: string): string => /\/api\/sessions\/([^/]+)\//.exec(callPath)![1]!;
 
-/** The whole answer of a healthy machine to one window call (of `sid`'s one-file Session). */
-function answerWindow(ws: WebSocket, id: number, sid = SID): void {
+/** The whole answer of a healthy machine to one window call (the one-file Session it names). */
+function answerWindow(ws: WebSocket, id: number, callPath?: string): void {
+  const sid = callPath !== undefined ? sessionOf(callPath) : SID;
   const k = `default_agent/${sid}/1`;
   start(ws, id);
   event(ws, id, "window", windowOf(FILE, k));
@@ -539,18 +555,22 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     expect(late.named()).toEqual([]);
   });
 
-  it("cancels a fill another reader's window stream carries once its last reader leaves", async () => {
+  it("cancels a fill another reader's window stream carries once its last fill reader leaves, its owner still there", async () => {
+    // A window larger than the owner's reader takes in at once: its route is still sending it.
+    const big = Array.from({ length: 300 }, (_, i) =>
+      traceLine(i, `${i} ${"b".repeat(1_000)}`),
+    ).join("");
     const answered: string[] = [];
     const machine = await scriptedMachine((ws, id, callPath) => {
       answered.push(callPath);
       start(ws, id);
       // A fill that never ends; the window call also gets its window first.
       event(ws, id, "window", {
-        ...windowOf(FILE),
-        totals: { ...windowOf(FILE).totals, fill: { bytes: 1_000_000, lines: 100 } },
+        ...windowOf(big),
+        totals: { ...windowOf(big).totals, fill: { bytes: 1_000_000, lines: 100 } },
       });
       if (callPath.includes("tailLimit")) {
-        event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE });
+        event(ws, id, "lines", { k: K, off: 0, ord: 0, text: big });
         event(ws, id, "ready", {});
       }
     });
@@ -559,9 +579,15 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
 
     const filler = eventReader(await get(`/api/sessions/${SID}/history?fill=only`));
     await waitFor(() => machine.calls("/history-lines").length === 1);
-    const window = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
-    await window.finished; // its window delivered, its reader gone
+    // The owner asks its window and never reads it: it stays attached, its records unsent.
+    const owner = await get(`/api/sessions/${SID}/history?tailLimit=20`);
+    close.push(() => owner.body?.cancel());
+    await waitFor(() => machine.calls("/history-lines").length === 2);
     const [, carrying] = machine.calls("/history-lines");
+    // Delivered: the hub has handled the window, its lines and `ready`.
+    await waitFor(
+      () => machine.frames.filter((f) => f.id === carrying && f.ack !== undefined).length >= 3,
+    );
     expect(new URL(answered[1]!, "http://x").searchParams.get("fill")).toBe("1");
     expect(machine.cancelled(carrying!)).toBe(false);
 
@@ -573,7 +599,7 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     let t = 0;
     const machine = await scriptedMachine((ws, id, callPath) => {
       const sid = sessionOf(callPath);
-      if (sid !== "s-open") return answerWindow(ws, id, sid);
+      if (sid !== "s-open") return answerWindow(ws, id, callPath);
       const k = `default_agent/${sid}/1`;
       start(ws, id);
       event(ws, id, "window", {
@@ -608,5 +634,61 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     expect(await cache.bytes(MACHINE, "default_agent/s-open/1", 0, 1)).not.toBeNull();
+  });
+  it("loads a Session with many subagents on every open, its `have` within what the machine takes", async () => {
+    // The machine's ceiling, scaled down with the copy's budget: 150 files of held runs pass it.
+    const ceiling = 20_000;
+    const children = Array.from(
+      { length: 150 },
+      (_, i) => `session-2026-10-29-09-00-01-${String(i).padStart(8, "0")}`,
+    );
+    const childFile = traceLine(0, "child answer");
+    const opened: string[] = [];
+    const machine = await scriptedMachine((ws, id, callPath) => {
+      // As the machine does: a `have` past its ceiling, or one it cannot decode, is a 400.
+      const have = new URL(callPath, "http://x").searchParams.get("have");
+      if (have !== null && (have.length > ceiling || decodeHistoryHave(have) === null)) {
+        send(ws, {
+          id,
+          status: 400,
+          headers: {},
+          body: { error: { code: "bad_request", message: "have" } },
+        });
+        opened.push("refused");
+        return;
+      }
+      opened.push("served");
+      const window = windowOf(FILE);
+      window.files = [
+        ...window.files,
+        ...children.map((child) => ({
+          k: `default_agent/${child}/1`,
+          ino: "21",
+          birthtimeMs: 5,
+          size: Buffer.byteLength(childFile),
+          records: 1,
+          final: true,
+        })),
+      ];
+      start(ws, id);
+      event(ws, id, "window", window);
+      event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE });
+      for (const child of children) {
+        event(ws, id, "lines", { k: `default_agent/${child}/1`, off: 0, ord: 0, text: childFile });
+      }
+      event(ws, id, "ready", {});
+      event(ws, id, "done", {});
+      send(ws, { id, end: true, reason: "closed" });
+    });
+    close.push(machine.close);
+    const { get } = hub(machine.port, {
+      cache: new TraceCache(path.join(root, "copy"), { haveBudgetChars: ceiling - 1_000 }),
+    });
+    for (let open = 0; open < 3; open++) {
+      const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+      await history.finished;
+      expect(history.named().at(-1)?.event).toBe("done");
+    }
+    expect(opened).toEqual(["served", "served", "served"]);
   });
 });

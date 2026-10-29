@@ -44,6 +44,7 @@ import type {
   HistoryLinesWindow,
   HistoryPartFrame,
   HistoryProgress,
+  HistoryWindowPart,
   MessagesResponse,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
@@ -290,6 +291,8 @@ interface MachineStream {
   /** What is left of each phase, as the machine's totals said. */
   left: Record<Phase, { bytes: number; lines: number }>;
   window: HistoryLinesWindow | null;
+  /** A window that comes as `window-part`s, joined so far. */
+  windowText: string;
   /** Its op has what it waited for (a window: at `ready`; a body or a file: at `done`). */
   delivered: boolean;
   sawDone: boolean;
@@ -568,6 +571,7 @@ class HistoryJob {
         fill: { bytes: 0, lines: 0 },
       },
       window: null,
+      windowText: "",
       delivered: false,
       sawDone: false,
       progressed: false,
@@ -857,6 +861,16 @@ class HistoryJob {
     switch (frame.event) {
       case "window": {
         await this.#window(stream, JSON.parse(frame.data) as HistoryLinesWindow);
+        return;
+      }
+      case "window-part": {
+        // A window larger than a frame comes in pieces: joined in order, parsed on the last.
+        const piece = JSON.parse(frame.data) as HistoryWindowPart;
+        stream.windowText += piece.text;
+        if (!piece.last) return;
+        const text = stream.windowText;
+        stream.windowText = "";
+        await this.#window(stream, JSON.parse(text) as HistoryLinesWindow);
         return;
       }
       case "lines":

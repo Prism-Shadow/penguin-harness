@@ -2789,7 +2789,7 @@ export class MachinesService {
       for (const row of this.repo.all()) {
         if (row.machineId !== null && listed.has(row.address)) known.add(row.machineId);
       }
-      void this.#effects.historyCache.dropUnknown(known).catch(() => undefined);
+      await this.#effects.historyCache.dropUnknown(known).catch(() => undefined);
     }
     // Every machine kept connected is on its way back from the moment this server is up, and
     // says so at once — the hand-over below can take a while, and a machine read as merely not

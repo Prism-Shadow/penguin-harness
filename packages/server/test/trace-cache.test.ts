@@ -16,13 +16,14 @@
  *   never a wrong record.
  * - Given a run read once, when one more line is committed, then the next record read reads only
  *   that record's bytes, not the whole run again.
- * - Given a held run, when `have` is asked, then it names that run with the anchors of its edge
- *   bytes; when the machine resets the file or its identity changes, the copy starts over; a file
+ * - Given held runs, when `have` is asked, then it names every one with the anchors of its own
+ *   edges; when the machine resets the file or its identity changes, the copy starts over; a file
  *   the machine no longer lists is dropped.
- * - Given a group of 200 held files, then `have` stays within what the machine takes, the
- *   Session's own file first; asked for one file, it names that file alone.
+ * - Given a group of 200 held files, then `have` stays within its budget (and the machine's
+ *   ceiling), the Session's own file first; asked for one file, it names that file alone.
  * - Given a line that arrives in parts, when the stream stops before its last part, then `have`
- *   offers the partial, and the parts that continue it complete the line byte for byte.
+ *   offers the partial — even when it is the file's first line and nothing whole is held yet —
+ *   and the parts that continue it complete the line byte for byte.
  * - Given the cache over its cap, when it evicts, then the least recently read Session goes
  *   first, and never one held; a copy of a file's tail counts up to its highest offset.
  * - Given a commit and an eviction of the same Session at once, then the copy is gone and
@@ -74,7 +75,7 @@ const fact = (
   over: Partial<HistoryFileFact> = {},
 ): HistoryFileFact => ({
   k: K,
-  ino: 7,
+  ino: "7",
   birthtimeMs: 1000,
   size: bytes.length,
   records,
@@ -181,6 +182,10 @@ describe("the hub's copy of a machine's Trace lines", () => {
     await fs.rm(path.dirname(dataPath(M, S)), { recursive: true, force: true });
     await cache.commit(M, linesFrame(file, 6, 7));
 
+    // Only the line committed after it is claimed to the machine, and read back.
+    expect((await cache.have(M, S))[0]?.ranges?.map((r) => [r.lo, r.hi])).toEqual([
+      [file.starts[6], file.bytes.length],
+    ]);
     const reopened = new TraceCache(root);
     expect(await reopened.bytes(M, K, 0, file.bytes.length)).toBeNull();
     expect(await reopened.bytes(M, K, file.starts[6]!, file.bytes.length)).toEqual(
@@ -243,21 +248,33 @@ describe("the hub's copy of a machine's Trace lines", () => {
     expect(await cache.have(M, S)).toEqual([
       {
         k: K,
-        ino: 7,
+        ino: "7",
         birthtimeMs: 1000,
-        lo,
-        loOrd: 2,
-        hi,
-        loAnchor: anchorOf(file.bytes.subarray(...loAnchorRange(lo, hi))),
-        hiAnchor: anchorOf(file.bytes.subarray(...hiAnchorRange(lo, hi))),
+        ranges: [
+          {
+            lo,
+            loOrd: 2,
+            hi,
+            loAnchor: anchorOf(file.bytes.subarray(...loAnchorRange(lo, hi))),
+            hiAnchor: anchorOf(file.bytes.subarray(...hiAnchorRange(lo, hi))),
+          },
+        ],
       },
+    ]);
+
+    // A run held below the newest is named too, with its own anchors.
+    await cache.commit(M, linesFrame(file, 0, 1));
+    const [both] = await cache.have(M, S);
+    expect(both?.ranges?.map((r) => [r.lo, r.loOrd, r.hi])).toEqual([
+      [0, 0, file.starts[1]],
+      [lo, 2, hi],
     ]);
 
     await cache.reconcile(M, S, [fact(file.bytes, 5, { reset: true })]);
     expect(await cache.have(M, S)).toEqual([]);
 
     await cache.commit(M, linesFrame(file, 0, 5));
-    await cache.reconcile(M, S, [fact(file.bytes, 5, { ino: 8 })]);
+    await cache.reconcile(M, S, [fact(file.bytes, 5, { ino: "8" })]);
     expect(await cache.bytes(M, K, 0, 10)).toBeNull();
 
     await cache.commit(M, linesFrame(file, 0, 5));
@@ -266,7 +283,7 @@ describe("the hub's copy of a machine's Trace lines", () => {
     expect(await cache.bytes(M, K, 0, 10)).toBeNull();
   });
 
-  it("keeps a group's `have` within what the machine takes, its own file first, or names one file alone", async () => {
+  it("keeps a group's `have` within its budget, its own file first, or names one file alone", async () => {
     const one = line(0);
     const facts: HistoryFileFact[] = [];
     for (let i = 0; i < 200; i++) {
@@ -277,12 +294,14 @@ describe("the hub's copy of a machine's Trace lines", () => {
     await cache.reconcile(M, S, facts);
     for (const f of facts) await cache.commit(M, { k: f.k, off: 0, ord: 0, text: one });
 
-    const have = await cache.have(M, S);
-    const encoded = encodeHistoryHave(have);
-    expect(encoded.length).toBeLessThanOrEqual(HAVE_MAX_CHARS);
-    expect(decodeHistoryHave(encoded)).not.toBeNull();
+    const whole = await cache.have(M, S);
+    expect(encodeHistoryHave(whole).length).toBeLessThanOrEqual(HAVE_MAX_CHARS);
+    expect(decodeHistoryHave(encodeHistoryHave(whole))).not.toBeNull();
+    const have = await cache.have(M, S, { budget: 8_000 });
+    expect(encodeHistoryHave(have).length).toBeLessThanOrEqual(8_000);
     expect(have[0]?.k).toBe(K);
     expect(have.length).toBeGreaterThan(10);
+    expect(have.length).toBeLessThan(whole.length);
     const child = facts[150]!.k;
     expect((await cache.have(M, S, { only: child })).map((h) => h.k)).toEqual([child]);
   });
@@ -294,7 +313,7 @@ describe("the hub's copy of a machine's Trace lines", () => {
     const cache = new TraceCache(root);
     await cache.reconcile(M, S, [fact(bytes, 2)]);
     await cache.commit(M, { k: K, off: 0, ord: 0, text: line(0) });
-    await cache.commit(M, { k: K, off, ord: 1, text: big.slice(0, 2000), last: false });
+    await cache.commit(M, { k: K, line: off, off, ord: 1, text: big.slice(0, 2000), last: false });
 
     const [have] = await cache.have(M, S);
     expect(have?.partial).toEqual({
@@ -304,9 +323,32 @@ describe("the hub's copy of a machine's Trace lines", () => {
     });
     expect(await cache.bytes(M, K, off, off + 10)).toBeNull();
 
-    await cache.commit(M, { k: K, off: off + 2000, ord: 1, text: big.slice(2000), last: true });
+    await cache.commit(M, {
+      k: K,
+      line: off,
+      off: off + 2000,
+      ord: 1,
+      text: big.slice(2000),
+      last: true,
+    });
     expect(await cache.bytes(M, K, 0, bytes.length)).toEqual(bytes);
     expect((await cache.have(M, S))[0]?.partial).toBeUndefined();
+  });
+
+  it("offers a file's first line held in part before any whole line of it is", async () => {
+    const big = line(0, "w".repeat(5000));
+    const cache = new TraceCache(root);
+    await cache.reconcile(M, S, [fact(Buffer.from(big), 1)]);
+    await cache.commit(M, { k: K, line: 0, off: 0, ord: 0, text: big.slice(0, 3000), last: false });
+    expect(await cache.have(M, S)).toEqual([
+      {
+        k: K,
+        ino: "7",
+        birthtimeMs: 1000,
+        ranges: [],
+        partial: { off: 0, len: 3000, anchor: anchorOf(Buffer.from(big.slice(0, 3000))) },
+      },
+    ]);
   });
 
   it("evicts the least recently read Session first, and never one held", async () => {
