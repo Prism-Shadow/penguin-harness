@@ -29,7 +29,7 @@
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { backup } from "node:sqlite";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import { CLI_TOKEN_MAX_TTL_MS, mintApiToken, mintApiTokenOnceSeeded } from "../src/auth-token.js";
@@ -139,13 +139,19 @@ describe("minting against a server's database", () => {
 
 describe("minting while the server is still starting", () => {
   /**
-   * The server's schema step, run once and copied into each case: a fresh web.db written
-   * statement by statement costs a second or more of fsyncs on a Windows runner.
+   * The server's schema step, run once in memory, written out in one go and copied into each
+   * case. A web.db the schema step writes statement by statement, and reopens in WAL mode on
+   * every round of the wait, costs seconds of fsyncs and file churn on a Windows runner.
    */
   let schemaOnly: string;
   beforeAll(async () => {
     schemaOnly = path.join(await makeTempRoot(), "web.db");
-    openDatabase(schemaOnly).close();
+    const schema = openDatabase(":memory:");
+    try {
+      await backup(schema, schemaOnly);
+    } finally {
+      schema.close();
+    }
   });
 
   /** Listeners standing in for live servers' ports, closed after each case. */
@@ -196,12 +202,8 @@ describe("minting while the server is still starting", () => {
     return { wait, waited: () => now };
   }
 
-  /** The first thing a server creating web.db leaves on disk: the file, with no tables yet. */
-  function createBareFile(dbPath: string): void {
-    const db = new DatabaseSync(dbPath);
-    db.exec("PRAGMA journal_mode = WAL;");
-    db.close();
-  }
+  /** The first thing a server creating web.db leaves on disk: an empty file, no tables yet. */
+  const createBareFile = (dbPath: string) => fs.writeFileSync(dbPath, "");
 
   /** The server's schema step: tables created, no account in them yet. */
   const createSchema = (dbPath: string) => fs.copyFileSync(schemaOnly, dbPath);
