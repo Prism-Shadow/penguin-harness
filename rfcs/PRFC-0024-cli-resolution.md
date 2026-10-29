@@ -42,7 +42,7 @@ A server supervisor deciding which entry to re-spawn, a remote machine command d
 
 ### Resolution answers in a fixed order
 
-Resolution reads the record first and the declaration second. A root with no record runs the installed entry, a damaged record is a fault, and a record with a pushed CLI picks the loader. The loader answers `pushed` when the declaration names it and `legacy` when only the pre-declaration name does; a product that declares no loader and carries no legacy loader answers a fault. Every answer carries its name, and each consumer records the name it acted under.
+Resolution answers from the root's record and the caller product's declaration. A root with no record runs the caller's entry, a damaged record is a fault, and a record with a pushed CLI picks the product's loader: `pushed` when the declaration names it, `legacy` when only the pre-declaration name does, a fault when neither is there. A caller that is the loader itself answers with itself and carries the bundle the record names. Every answer carries its name, and each consumer records the name it acted under.
 
 ### Identity by declaration
 
@@ -72,25 +72,23 @@ Remote commands resolve the peer's loader by asking: the peer declares, the call
 
 ### Where the answer lives
 
-Resolution is one module outside the hot-update layer. That layer — `packages/hmr`, `packages/server/src/hmr/` and `packages/desktop/` — carries the store and the record's mechanism, and a change there ships by rebuilding and redeploying every installation; the decision procedure is the part a deployment may want to change without that cost. The module is published as a subpath of the server package, `@prismshadow/penguin-server/cli-resolution` — the subpath mechanism that already carries `./hmr/manifest` and `./version-report` into a process with no server in it — so no channel's packaging changes: the loader imports the answer, and the server's own consumers import it directly.
+Resolution is one function in the command-shim module, `packages/server/src/services/cli-shim.ts` — the module that already decides which CLI the `penguin` on a person's PATH runs — published as the server package's `@prismshadow/penguin-server/cli-shim` subpath, beside `./hmr/manifest` and `./version-report`. It sits outside the hot-update layer: that layer — `packages/hmr`, `packages/server/src/hmr/` and `packages/desktop/` — carries the store and the record's mechanism, and a change there ships by rebuilding and redeploying every installation, while the decision procedure is the part a deployment may want to change without that cost. The CLI's loader imports the same subpath, so the loader and the shim act on one answer, and no channel's packaging changes.
 
-The record's five states are read there. The layer's reader answers three — `readPushedCli` says nothing pushed, a bundle, or broken — merging the two "nothing pushed" states into one and the three faults into one, so the resolver reads `<root>/hmr/harness.json` itself and projects onto the layer's three answers wherever the layer answers at all. A test pins that projection, so the two readers cannot drift apart unnoticed.
+The record's five states are read in that module. The layer's reader answers three — `readPushedCli` says nothing pushed, a bundle, or broken — merging the two "nothing pushed" states into one and the three faults into one, so the resolver reads `<root>/hmr/harness.json` itself and projects onto the layer's three answers wherever the layer answers at all. A test pins that projection, so the two readers cannot drift apart unnoticed.
 
 ### Resolution: the inputs and the order
 
-Resolution takes four inputs: the caller's own entry, the data root, the record that root holds, and the declaration the caller's product carries. Its answers are one entry with a reason, or one fault with a name.
+Resolution takes the caller's own entry and the data root. It reads two things from disk: the record that root holds, and the declaration the caller's product carries in the nearest package manifest above its entry. Its answers are one entry with a reason, or one fault with a name.
 
-1. **Self.** A caller whose own entry is the loader answers with itself, under the reason its name earns: `pushed` for the declared loader, `legacy` for the legacy name. The rule keeps a loader from loading itself.
-2. **The record.** [PRFC-0023](./PRFC-0023-harness-meta.md#reference-level-explanation)'s record is read into the states steps 3 to 7 name; the resolver reads the file itself, because the layer's reader merges them (see "Where the answer lives").
-3. **No record.** A root that holds no record holds no pushed CLI, so the installed entry runs, under the reason `no-record`.
-4. **A damaged record.** A record the reader cannot read or parse answers the fault `damaged-record`.
-5. **The CLI pointer.** A record with no CLI entry at all holds no pushed CLI, so the installed entry runs, under the reason `no-pushed-cli`.
-6. **An unusable pointer.** A CLI entry with no pointer, an empty or malformed pointer, or a pointer that resolves outside the store answers the fault `cli-pointer-unusable`.
-7. **A pointer with no file.** A pointer the store no longer holds answers the fault `cli-bundle-missing`.
-8. **The declared loader.** A product that declares a loader answers it under the reason `pushed` when the target is present, and the fault `loader-missing` when the target is absent.
-9. **The legacy loader.** A product that declares no loader answers the legacy loader under the reason `legacy` while the transition window is open and that loader is present; with neither a declaration nor a legacy loader the answer is the fault `loader-absent`.
+1. **Self, with a pushed CLI.** A caller whose own entry is its product's loader answers with itself, under the name it earns: `pushed` for the declared loader, `legacy` for the legacy name. The answer carries the pushed bundle, so a loader never loads itself.
+2. **The record.** [PRFC-0023](./PRFC-0023-harness-meta.md#reference-level-explanation)'s record is read into the states steps 5 to 7 name; the resolver reads the file itself, because the layer's reader merges them (see "Where the answer lives").
+3. **The declared loader.** A product that declares a loader answers it under the reason `pushed` when the target is present, and the fault `loader-missing` when the target is absent or the declaration is broken.
+4. **The legacy loader.** A product that declares no loader answers the legacy loader under the reason `legacy` while the transition window is open and that loader is present; with neither a declaration nor a legacy loader the answer is the fault `loader-absent`.
+5. **No record.** A root that holds no record holds no pushed CLI: the caller's own entry runs, under the reason `no-record`.
+6. **The CLI pointer.** A record with no CLI entry at all holds no pushed CLI: the caller's own entry runs, under the reason `no-pushed-cli`.
+7. **A record the resolver cannot use.** A record it cannot read or parse answers `damaged-record`; a CLI pointer with no path, an empty one, or one outside the store answers `cli-pointer-unusable`; a pointer whose file the store no longer holds answers `cli-bundle-missing`.
 
-The first step that applies decides the answer, and later steps stay unread.
+The first case that applies decides the answer. Cases 3 and 4 apply to a record that holds a pushed CLI; cases 5 to 7 apply to one that holds none.
 
 ### The cases and their answers
 
@@ -105,9 +103,9 @@ The first step that applies decides the answer, and later steps stay unread.
 | record | no CLI entry | any | the installed entry — `no-pushed-cli` |
 | no record | — | any | the installed entry — `no-record` |
 | damaged record | — | any | fault `damaged-record` |
-| the caller is the loader | — | — | the caller itself — `pushed` or `legacy` |
+| a pushed CLI, and the caller is its product's loader | — | — | the caller itself — `pushed` or `legacy` |
 
-Presence decides the answer; loading is a report of its own. A loader present on disk that cannot load the CLI reports `loader-unloadable` as its first act, and a consumer that probes — the push gate before it accepts a push, the release assertion before it ships an artifact — turns a failed probe into that same fault before anything runs.
+Presence decides the answer; loading is a report of its own. A loader present on disk that cannot load the CLI reports `loader-unloadable` as its first act, and a consumer that probes — the push gate before it accepts a push, the release assertion before it ships an artifact — turns a failed probe into that same fault before anything runs. A loader invoked on a root that holds no pushed CLI answers the reason of the last three cases, `no-record` or `no-pushed-cli`, or their fault: it is the entry there.
 
 A consumer acts on the answer. A supervisor that must start a server runs the installed entry when the answer is a fault and records the fault name. The loader runs nothing on a fault and reports it, and reports `no-record` when a person or a remote command invokes it on a root that holds no record. A remote command surfaces the peer's fault unchanged. The command shim carries resolution's answer, so the entry a person reaches is the entry a supervisor would run. A consumer whose own entry cannot be re-spawned — an extension-less symlink on `PATH`, a source run through a TypeScript runner — runs the server in process and records the condition `entry-not-respawnable`.
 
@@ -229,6 +227,12 @@ Resolution generalizes: the web assets and the platform halves of a push can be 
 ---
 
 ## Changes
+
+### v1.3.0
+
+- Resolution lives in the command-shim module, `packages/server/src/services/cli-shim.ts`, published as `@prismshadow/penguin-server/cli-shim`: one function beside the code that already decides what `penguin` runs, where v1.2.0 had a module of its own.
+- The answer carries the pushed bundle, so the loader reads the record once, through the same function the shim uses. The record's five states and the declaration's three answers stay; the second record reader and the helper that projected it are gone.
+- The order is restated in seven cases: with a pushed CLI, a caller that is its loader answers itself and then the declared loader, the legacy loader, or a fault; without one, the caller's entry runs under `no-record` or `no-pushed-cli`, or the record's fault answers.
 
 ### v1.2.0
 
