@@ -56,7 +56,6 @@ import type {
 import type { HistoryStreamQuery } from "../../api/sse";
 import { BodyCache, foldedItems, takeHeldBodies } from "../history/folded-bodies";
 import { readBody, readHistory } from "../history/history-read";
-import { countUnits } from "../history/window-units";
 import type { HistoryRead, OpenBody, OpenHistory } from "../history/history-read";
 import type { HistoryWindow } from "../history/window-assembler";
 import {
@@ -692,7 +691,12 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           `${m.tracePosition.fileIndex}:${m.tracePosition.ordinal}` === to,
       );
       if (cut < 0) return null;
-      windows.unshift({ ...w, messages: w.messages.slice(cut), page: toPage });
+      // Seeded as the old tail was; its unit count stays the window's own (see load).
+      windows.unshift({
+        ...w,
+        messages: w.messages.slice(cut),
+        page: { ...toPage, units: w.page.units },
+      });
       return windows;
     }
     return null;
@@ -770,7 +774,10 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           const m = freeze(w, w.page!);
           takeOverLiveChildren(m);
           prefixItems = [...prefixItems, ...m.items];
-          prefixUnits += countUnits(w.messages);
+          // The server's count of the whole window, the part before the cut included: that part
+          // is the earlier windows' already, so the sum can only exceed what is on screen — and
+          // a bridge keeps everything that was, so no backfill is owed after it either way.
+          prefixUnits += w.page!.units;
           prefixSubagents = new Map([...prefixSubagents, ...m.subagents]);
         }
         tailStartCursor = start;
@@ -780,7 +787,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         // or a cut that could not be proven. Any previously-loaded prefix is superseded.
         adoptTailPage(res.page);
       }
-      tailUnits = countUnits(res.messages);
+      // A window without a page is the whole transcript: nothing older to backfill.
+      tailUnits = res.page?.units ?? 0;
       const { messages, live, serverNowMs } = res;
       // Rebuild path: make the freshly-built model visible only now, atomically — the old model
       // stayed on screen throughout the refetch above (see rebuild). Initial load / retry pass no
@@ -876,7 +884,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       const m = freeze(res, res.page);
       takeOverLiveChildren(m);
       prefixItems = [...m.items, ...prefixItems];
-      prefixUnits += countUnits(res.messages);
+      prefixUnits += res.page.units;
       // Child sessions live in exactly one window (a spawn is contained in its Task),
       // so the merge is disjoint; newer windows' entries win defensively on a clash.
       const mergedSubagents = new Map(m.subagents);

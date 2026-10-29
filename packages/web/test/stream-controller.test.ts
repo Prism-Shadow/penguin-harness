@@ -18,7 +18,8 @@
  *   asking for the Tasks still missing, until 20 Tasks are on screen — and none once they are.
  * - Given the beginning reached before 20 Tasks, no further window is asked for, and nothing marks
  *   the beginning; only a window the reader scrolled up for, past those Tasks, says it is there.
- * - Given a prompt with images, it counts as one Task, as the server counts it.
+ * - Given a window, its Tasks are the count its page gives (the server's): a prompt with its
+ *   images is one.
  * - Given the first paint's backfill, the older row is one loading state from its first window to
  *   its last, keeping its last reading between them; a scroll-up meanwhile asks nothing more.
  * - Given a subagent spawned in a backfilled Task speaking again live, its history stays with it —
@@ -209,7 +210,10 @@ function createHarness(): Harness {
 /** The first read's query: the newest Tasks within the first-paint budget, and (on a first load) the fill. */
 const FIRST_PAINT = { kind: "tail", limit: TAIL_UNITS, budget: FIRST_PAINT_BYTES } as const;
 
-/** Shorthand for a page envelope (zeroed priors unless overridden). */
+/**
+ * Shorthand for a page envelope (zeroed priors unless overridden). `units` is the server's count
+ * of the Tasks the window holds: one, as most windows here hold, unless the case says otherwise.
+ */
 function pageInfo(over: Partial<MessagesPageInfo> = {}): MessagesPageInfo {
   return {
     earlierTurns: 0,
@@ -687,9 +691,9 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     // One Task fits the budget: the first paint, with the fill behind it.
     h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 40 }));
     await p;
-    h.resolveOlder(turns(5), pageInfo({ before: "2:4", earlierTurns: 35 }));
+    h.resolveOlder(turns(5), pageInfo({ before: "2:4", earlierTurns: 35, units: 5 }));
     await flush();
-    h.resolveOlder(turns(14, "03"), pageInfo({ before: "1:30", earlierTurns: 21 }));
+    h.resolveOlder(turns(14, "03"), pageInfo({ before: "1:30", earlierTurns: 21, units: 14 }));
     await flush();
     // Each older window asks for what is still missing of the 20, and none once they are there.
     expect(h.queries()).toEqual([
@@ -917,7 +921,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     expect(h.loadCalls()).toBe(1);
   });
 
-  it("a prompt with images counts as one Task toward the 20 the conversation opens on, as the server counts it", async () => {
+  it("counts the Tasks a window's page says it holds, not its prompts: a prompt with its images is one", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "idle" });
@@ -932,7 +936,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       ],
       undefined,
       null,
-      pageInfo({ before: "2:10", earlierTurns: 30 }),
+      pageInfo({ before: "2:10", earlierTurns: 30, units: 1 }),
     );
     await p;
     expect(h.queries()[1]).toEqual({ kind: "before", cursor: "2:10", limit: 19 });
@@ -946,7 +950,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     await p;
     expect(h.controller.older.loading).toBe(true);
     h.stream.progress(h.stream.next(isOlderRead), progressOf("window", 3_000, 9_000));
-    h.resolveOlder(turns(5), pageInfo({ before: "2:4", earlierTurns: 35 }));
+    h.resolveOlder(turns(5), pageInfo({ before: "2:4", earlierTurns: 35, units: 5 }));
     await flush();
     // Between its windows: still loading, and the row keeps its last reading.
     expect(h.controller.older.loading).toBe(true);
@@ -954,7 +958,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     // A scroll to the top meanwhile asks for nothing of its own.
     await h.controller.loadOlder();
     expect(h.queries().filter(isOlderRead)).toHaveLength(2);
-    h.resolveOlder(turns(14, "03"), pageInfo({ before: "1:30", earlierTurns: 21 }));
+    h.resolveOlder(turns(14, "03"), pageInfo({ before: "1:30", earlierTurns: 21, units: 14 }));
     await flush();
     expect(h.controller.older.loading).toBe(false);
     expect(h.controller.transfer.older).toBeNull();
@@ -979,7 +983,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       turns(20, "05"),
       undefined,
       null,
-      pageInfo({ before: "2:10", earlierTurns: 1 }),
+      pageInfo({ before: "2:10", earlierTurns: 1, units: 20 }),
     );
     await p2;
     expect(long.loadCalls()).toBe(1);
@@ -1287,7 +1291,7 @@ describe("resync decision tree (windowed history)", () => {
     h.controller.handleServer({ type: "task_state", state: "idle" });
     h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 30 }));
     await p;
-    h.resolveOlder(turns(3), pageInfo({ before: "2:4", earlierTurns: 27 }));
+    h.resolveOlder(turns(3), pageInfo({ before: "2:4", earlierTurns: 27, units: 3 }));
     await flush();
     const inFlight = h.stream.next(isOlderRead);
     h.controller.handleServer({ type: "resync_required" });
@@ -1298,10 +1302,13 @@ describe("resync decision tree (windowed history)", () => {
     expect(h.queries().at(-1)).toEqual({ kind: "before", cursor: "2:4", limit: 16 });
     expect(h.controller.older.loading).toBe(true);
     // The closed read's window, sent late anyway, lands nowhere.
-    h.stream.window(inFlight, { messages: turns(3, "03") as HistoryMessage[], page: pageInfo() });
+    h.stream.window(inFlight, {
+      messages: turns(3, "03") as HistoryMessage[],
+      page: pageInfo({ units: 3 }),
+    });
     await flush();
     expect(h.controller.older.loading).toBe(true);
-    h.resolveOlder(turns(16, "03"), pageInfo({ before: "1:0", earlierTurns: 11 }));
+    h.resolveOlder(turns(16, "03"), pageInfo({ before: "1:0", earlierTurns: 11, units: 16 }));
     await flush();
     expect(h.controller.older.loading).toBe(false);
     expect(texts(h.controller.prefixItems)).toHaveLength(19);
@@ -1316,7 +1323,7 @@ describe("resync decision tree (windowed history)", () => {
     h.controller.handleServer({ type: "task_state", state: "idle" });
     h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 30 }));
     await p;
-    h.resolveOlder(turns(3), pageInfo({ before: "2:4", earlierTurns: 27 }));
+    h.resolveOlder(turns(3), pageInfo({ before: "2:4", earlierTurns: 27, units: 3 }));
     await flush();
     const orphan = h.stream.next(isOlderRead);
     h.controller.handleServer({ type: "resync_required" });
