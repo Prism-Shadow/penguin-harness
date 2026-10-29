@@ -213,11 +213,11 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       await res.body?.cancel().catch(() => undefined);
       return;
     }
-    await answerOnce(id, res);
+    await answerOnce(id, res, controller.signal);
   }
 
   /** Frames a Response a route answered without streaming, as any call's answer. */
-  async function answerOnce(id: number, res: Response): Promise<void> {
+  async function answerOnce(id: number, res: Response, signal: AbortSignal): Promise<void> {
     if (isDeclined(res)) {
       // Not the platform's to answer: not this transport's to carry either.
       httpRequired(id);
@@ -227,6 +227,9 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
     // (a download) does not ride this transport — the client falls back to HTTP on 415.
     const type = res.headers.get("content-type") ?? "";
     const text = await res.text().catch(() => "");
+    // Released while the body was read (a cancel, the socket closing): the caller has given
+    // the call up, and an answer now would be a wrong one — a 200 with whatever was read.
+    if (signal.aborted) return;
     let parsed: unknown = null;
     if (text !== "") {
       if (type.includes("json")) {

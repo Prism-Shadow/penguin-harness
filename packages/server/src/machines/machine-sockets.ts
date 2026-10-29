@@ -28,6 +28,7 @@ import type { MachineSocketFact } from "../api/types.js";
 import type { EventFrame, ServerFrame } from "../socket/frames.js";
 import { apiSocketPath } from "../socket/ref.js";
 import { HEARTBEAT_MS } from "../socket/serve.js";
+import { API_SOCKET_DEFLATE } from "../socket/compression.js";
 
 /** The machine answered the handshake with a status: it is up, and has no socket to offer (or refused this server). */
 export class HandshakeRefused extends Error {
@@ -218,7 +219,8 @@ export class MachineSocket {
       const ws = new WebSocket(`ws://127.0.0.1:${target.port}${apiSocketPath()}`, {
         agent: target.agent,
         headers: { host: `localhost:${target.port}`, cookie: target.cookie },
-        perMessageDeflate: false,
+        // Offered, not imposed: a machine whose server predates compression answers without it.
+        perMessageDeflate: API_SOCKET_DEFLATE,
       });
       const deadline = setTimeout(() => {
         reject(new HandshakeTimeout(timeoutMs));
