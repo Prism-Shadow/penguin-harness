@@ -65,6 +65,8 @@ export function readHistory(
   let delivered = false;
   let fresh = 0;
   let assembler = new WindowAssembler();
+  /** The connection now read; events of one this read has replaced are not its news. */
+  let generation = 0;
 
   const finish = (): void => {
     over = true;
@@ -97,18 +99,20 @@ export function readHistory(
 
   function start(): void {
     assembler = new WindowAssembler();
+    const gen = ++generation;
+    const live = (): boolean => !over && gen === generation;
     conn = open(query, {
       onProgress: (progress) => {
-        if (!over) sink.onProgress?.(progress, delivered);
+        if (live()) sink.onProgress?.(progress, delivered);
       },
       onPage: (page) => {
-        if (!over && !delivered) assembler.page(page);
+        if (live() && !delivered) assembler.page(page);
       },
       onRecords: (frame, kind) => {
-        if (!over && !delivered) guard(() => assembler.frame(frame, kind));
+        if (live() && !delivered) guard(() => assembler.frame(frame, kind));
       },
       onDone: (windowId) => {
-        if (over) return;
+        if (!live()) return;
         if (query.kind === "fill") {
           finish();
           sink.onFilled?.();
@@ -118,18 +122,22 @@ export function readHistory(
         if (delivered) return;
         guard(() => {
           const window = assembler.done(windowId);
-          if (window === null) return;
+          // The server ends the stream after `done`: a `done` for no window held here is a broken
+          // stream, read again from scratch — left open, the socket would re-issue it for ever.
+          if (window === null) throw new HistoryStreamBroken("done for a window never begun");
           delivered = true;
           if (!fillsAfter) finish();
           sink.onWindow?.(window);
         });
       },
       onFilled: () => {
-        if (over) return;
+        if (!live()) return;
         finish();
         sink.onFilled?.();
       },
-      onError: (error) => fail(errorText(error)),
+      onError: (error) => {
+        if (live()) fail(errorText(error));
+      },
     });
   }
 
@@ -162,6 +170,7 @@ export function readBody(open: OpenBody, ref: string, sink: BodyReadSink): { clo
   let over = false;
   let fresh = 0;
   let value = "";
+  let generation = 0;
 
   const finish = (): void => {
     over = true;
@@ -176,12 +185,14 @@ export function readBody(open: OpenBody, ref: string, sink: BodyReadSink): { clo
 
   function start(): void {
     value = "";
+    const gen = ++generation;
+    const live = (): boolean => !over && gen === generation;
     conn = open(ref, {
       onProgress: (progress) => {
-        if (!over) sink.onProgress?.(progress.doneBytes);
+        if (live()) sink.onProgress?.(progress.doneBytes);
       },
       onRecords: (frame) => {
-        if (over) return;
+        if (!live()) return;
         if (frame.offset > value.length) {
           // Pieces were lost: read the value again from its start.
           conn?.close();
@@ -197,11 +208,13 @@ export function readBody(open: OpenBody, ref: string, sink: BodyReadSink): { clo
         value += frame.text.slice(value.length - frame.offset);
       },
       onDone: () => {
-        if (over) return;
+        if (!live()) return;
         finish();
         sink.onValue(value);
       },
-      onError: (error) => fail(errorText(error)),
+      onError: (error) => {
+        if (live()) fail(errorText(error));
+      },
     });
   }
 

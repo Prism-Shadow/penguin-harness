@@ -26,6 +26,8 @@
  *   a window rebuilt under a new id replaces the one in part: every record lands once.
  * - Given a stream that lost frames, it is read again from scratch, a couple of times, and then
  *   the load fails with an error rather than a window with a hole in it.
+ * - Given a stream that closes a window it never began (the server ends the stream after `done`),
+ *   it is closed and read again, never left for the socket to re-issue for ever.
  * - Given a live event equal to a history record that came folded (a long thinking block), the
  *   event is dropped as a duplicate: the block is drawn once.
  * - Given the window read waiting on the machine, Retry now opens it again.
@@ -1210,6 +1212,15 @@ describe("history over the stream", () => {
     expect(h.stream.reads.every((r) => r.closed)).toBe(true);
     expect(h.errors.at(-1)).toEqual(expect.any(String));
     expect(h.controller.model.items).toHaveLength(0);
+  });
+
+  it("a stream that closes a window it never began is read again, not left open", () => {
+    const h = createHarness();
+    void h.controller.load();
+    const first = h.stream.reads[0]!;
+    first.handlers.onDone?.("w9");
+    expect(first.closed).toBe(true);
+    expect(h.stream.reads).toHaveLength(2);
   });
 
   it("a live copy of a history record that came folded is dropped as a duplicate, not drawn twice", async () => {
