@@ -26,10 +26,9 @@
  * Which CLI that is, is decided once per boot: {@link resolveCliLaunch} names the installed
  * CLI — an explicit `PENGUIN_CLI_ENTRY` (what `penguin server|web` and the desktop shell
  * pass for themselves), else, for a server running from a checkout, that checkout's CLI,
- * from source while the server itself runs from source — and resolution
- * (@prismshadow/penguin-server/cli-resolution) decides between that entry and the loader
- * of a pushed CLI, which is the entry that runs the same code this server runs. See
- * {@link shimFromResolution}.
+ * from source while the server itself runs from source — and {@link resolveCli}, at the end
+ * of this module, decides between that entry and the loader of a pushed CLI, which is the
+ * entry that runs the same code this server runs. See {@link shimFromResolution}.
  *
  * Rewritten at every boot, so a moved checkout is picked up by the next start; while a
  * server is running, a dist that moved out from under it has already broken the server
@@ -40,10 +39,10 @@
  * installation's `penguin` answer in its place.
  */
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { CliFaultName, CliReason, CliResolution } from "../cli-resolution.js";
 
 /** `<root>/bin`, the directory the shim is written to and the Session puts on PATH. */
 export function cliShimDir(root: string): string {
@@ -192,7 +191,7 @@ export interface ShimLaunchAnswer {
   execArgs: string[];
   unavailable: string | null;
   /** The answer's name: a reason, a fault, or `no-entry` when there was nothing to ask about. */
-  answer: CliReason | CliFaultName | "no-entry";
+  answer: CliReason | CliFault | "no-entry";
 }
 
 /**
@@ -444,4 +443,294 @@ function writeExecutable(file: string, content: string): void {
   // Explicit: writeFileSync applies `mode` only when it creates the file, so a shim
   // rewritten over an earlier one would keep whatever bits that one had.
   fs.chmodSync(file, 0o755);
+}
+
+// ---------------------------------------------------------------------------
+// Resolution: which CLI entry runs
+// ---------------------------------------------------------------------------
+
+/**
+ * Which entry runs a harness command, answered once for every consumer that runs one — this
+ * shim, a server being re-spawned, a remote machine command, the push gate — and for the
+ * CLI's own loader, which imports this module as `@prismshadow/penguin-server/cli-shim`.
+ *
+ * The question is small. A data root holds the record of its last push
+ * (`hmr/harness.json`, PRFC-0023), and an installation ships a CLI. A pushed CLI is a bundle
+ * the record points at, and a product ships a **loader** that loads it. So: the loader of a
+ * pushed CLI when there is one, the caller's own entry when there is nothing pushed, and a
+ * named fault when the pieces do not line up.
+ *
+ * The loader's identity is a declaration in its package manifest:
+ *
+ *     "penguin": { "pushedCliLoader": "./dist/penguin-hmr.js" }
+ *
+ * A rename that keeps the field works. A field that names nothing usable answers one named
+ * fault. Products built before the declaration carry none, and only there does the old file
+ * name answer — recorded as `legacy` while the transition window lasts.
+ */
+
+/** The loader's file name in products built before the declaration (the transition window). */
+export const LEGACY_LOADER_NAME = "penguin-hmr.js";
+
+/** The six faults a consumer can report, in the RFC's order. */
+export const CLI_FAULTS = [
+  "damaged-record",
+  "cli-pointer-unusable",
+  "cli-bundle-missing",
+  "loader-missing",
+  "loader-absent",
+  "loader-unloadable",
+] as const;
+
+export type CliFault = (typeof CLI_FAULTS)[number];
+
+/** The four reasons an entry can be the answer. */
+export const CLI_REASONS = ["pushed", "legacy", "no-record", "no-pushed-cli"] as const;
+
+export type CliReason = (typeof CLI_REASONS)[number];
+
+/**
+ * Resolution's answer: one entry — with the pushed bundle when the record holds one — or one
+ * named fault. A supervisor runs `entry`; a loader loads `bundle`; both record the name.
+ */
+export type CliResolution =
+  | {
+      kind: "entry";
+      /** The entry to run: the product's loader, the legacy loader, or the caller's own. */
+      entry: string;
+      reason: CliReason;
+      /** The pushed CLI bundle the record names; null when nothing is pushed. */
+      bundle: string | null;
+    }
+  | { kind: "fault"; fault: CliFault; detail: string };
+
+/** What `<root>/hmr/harness.json` says about the pushed CLI, in the five states that differ. */
+type CliRecord =
+  | { state: "none" }
+  | { state: "damaged"; detail: string }
+  | { state: "absent" }
+  | { state: "unusable"; detail: string }
+  | { state: "missing"; file: string }
+  | { state: "bundle"; file: string };
+
+/**
+ * Reads the record's CLI half into those states. Never throws: a record a reader cannot act
+ * on is one of the answers, because every caller has to say something useful either way.
+ *
+ * `cli.bundle` is written only by the hot-update layer, but a reader still keeps a malformed
+ * value from walking out of the store with `..`: an escape is `unusable`, like a pointer
+ * that names nothing.
+ */
+async function readCliRecord(root: string): Promise<CliRecord> {
+  const file = path.join(root, "hmr", "harness.json");
+  let raw: string;
+  try {
+    raw = await fsp.readFile(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { state: "none" };
+    return { state: "damaged", detail: `${file} could not be read: ${messageOf(err)}` };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return { state: "damaged", detail: `${file} is not readable JSON: ${messageOf(err)}` };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { state: "damaged", detail: `${file} does not hold a JSON object` };
+  }
+  const cli: unknown = (parsed as Record<string, unknown>).cli;
+  if (cli === undefined) return { state: "absent" };
+  const bundle: unknown =
+    typeof cli === "object" && cli !== null ? (cli as { bundle?: unknown }).bundle : undefined;
+  if (typeof bundle !== "string" || bundle.length === 0) {
+    return { state: "unusable", detail: `harness.json has a \`cli\` entry with no bundle path` };
+  }
+  const hmrDir = path.join(root, "hmr");
+  const abs = path.resolve(hmrDir, bundle);
+  if (abs !== hmrDir && !abs.startsWith(hmrDir + path.sep)) {
+    return {
+      state: "unusable",
+      detail: `harness.json points \`cli.bundle\` outside ${hmrDir}: ${bundle}`,
+    };
+  }
+  if (!fs.existsSync(abs)) return { state: "missing", file: abs };
+  return { state: "bundle", file: abs };
+}
+
+/** What a product's package manifest says about its loader: a file, nothing, or something broken. */
+type LoaderDeclaration =
+  | { state: "declared"; file: string }
+  /** No manifest to ask, or one from before the declaration. */
+  | { state: "absent" }
+  /** A declaration that names no usable loader: a named fault, never a fallback. */
+  | { state: "broken"; detail: string };
+
+/**
+ * The declaration of the product that owns `entry`: the nearest package manifest above it,
+ * read after resolving symlinks, because a bin link or a `PATH` entry names the file whose
+ * package carries the declaration. The walk stops at that manifest whether it declares a
+ * loader or not — a product must not inherit the declaration of the directory above it.
+ */
+async function loaderDeclarationFor(entry: string): Promise<LoaderDeclaration> {
+  let dir = path.dirname(await realPathOf(entry));
+  for (;;) {
+    const manifest = path.join(dir, "package.json");
+    if (fs.existsSync(manifest)) return readLoaderDeclaration(manifest);
+    const parent = path.dirname(dir);
+    if (parent === dir) return { state: "absent" };
+    dir = parent;
+  }
+}
+
+/** Reads one package manifest's `penguin.pushedCliLoader` field. */
+async function readLoaderDeclaration(manifest: string): Promise<LoaderDeclaration> {
+  let raw: string;
+  try {
+    raw = await fsp.readFile(manifest, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { state: "absent" };
+    return { state: "broken", detail: `${manifest} could not be read: ${messageOf(err)}` };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return { state: "broken", detail: `${manifest} is not readable JSON: ${messageOf(err)}` };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { state: "broken", detail: `${manifest} does not hold a JSON object` };
+  }
+  const namespace = (parsed as Record<string, unknown>).penguin;
+  if (namespace === undefined || namespace === null) return { state: "absent" };
+  if (typeof namespace !== "object" || Array.isArray(namespace)) {
+    return { state: "broken", detail: `${manifest}: \`penguin\` is not an object` };
+  }
+  const declared = (namespace as Record<string, unknown>).pushedCliLoader;
+  if (declared === undefined || declared === null) return { state: "absent" };
+  if (typeof declared !== "string" || declared.trim().length === 0) {
+    return { state: "broken", detail: `${manifest}: \`penguin.pushedCliLoader\` names no file` };
+  }
+  const dir = path.dirname(manifest);
+  const file = path.resolve(dir, declared);
+  // A declaration names a path inside its own product: one that climbs out names some other
+  // installation's file, which is worse than naming none.
+  if (file !== dir && !file.startsWith(dir + path.sep)) {
+    return {
+      state: "broken",
+      detail: `${manifest}: \`penguin.pushedCliLoader\` points outside ${dir}: ${declared}`,
+    };
+  }
+  return { state: "declared", file };
+}
+
+/**
+ * Which entry runs this command, in the RFC's fixed order. The first case that applies
+ * decides; the answer carries its reason or its fault name.
+ *
+ * 1. A pushed CLI, and the caller is its product's loader: the caller itself, `pushed` (or
+ *    `legacy` for a product from before the declaration). A loader never loads itself; the
+ *    bundle it loads rides along.
+ * 2. A pushed CLI, and the product declares a loader: that loader, `pushed` — or the fault
+ *    `loader-missing` when the declaration names no present file, broken included.
+ * 3. A pushed CLI, no declaration, the legacy loader beside the caller: it, `legacy`.
+ * 4. A pushed CLI, no declaration, no legacy loader: fault `loader-absent`.
+ * 5. No record: the caller's own entry, `no-record`.
+ * 6. A record with no CLI section: the caller's own entry, `no-pushed-cli`.
+ * 7. A damaged record, an unusable pointer, a pointer the store lost: that fault.
+ */
+export async function resolveCli(input: {
+  /** The caller's own entry, absolute: what this process runs, or the entry it offers. */
+  self: string;
+  /** The data root whose record says whether a CLI was pushed here. */
+  root: string;
+  /** Whether the transition window is open. Default true. */
+  legacyWindow?: boolean;
+}): Promise<CliResolution> {
+  const self = path.resolve(input.self);
+  const declaration = await loaderDeclarationFor(self);
+  const record = await readCliRecord(path.resolve(input.root));
+  const declared = declaration.state === "declared" ? declaration.file : null;
+
+  if (record.state === "bundle") {
+    // 1. The caller is the loader: it answers itself, and the bundle says what it loads.
+    if (declared !== null ? await sameFile(self, declared) : isLegacyName(self, declaration)) {
+      return {
+        kind: "entry",
+        entry: self,
+        reason: declared !== null ? "pushed" : "legacy",
+        bundle: record.file,
+      };
+    }
+    // 2, 3. The product's declared loader, present or not.
+    if (declared !== null) {
+      return isFile(declared)
+        ? { kind: "entry", entry: declared, reason: "pushed", bundle: record.file }
+        : { kind: "fault", fault: "loader-missing", detail: `${declared} is not present` };
+    }
+    if (declaration.state === "broken") {
+      return { kind: "fault", fault: "loader-missing", detail: declaration.detail };
+    }
+    // 4, 5. The legacy name, only where no declaration exists.
+    if (input.legacyWindow !== false) {
+      const legacy = path.join(path.dirname(self), LEGACY_LOADER_NAME);
+      if (isFile(legacy)) {
+        return { kind: "entry", entry: legacy, reason: "legacy", bundle: record.file };
+      }
+    }
+    return {
+      kind: "fault",
+      fault: "loader-absent",
+      detail: `no loader is declared above ${path.dirname(self)}`,
+    };
+  }
+
+  // 6, 7. Nothing pushed: the caller's own entry is the answer, named for why.
+  if (record.state === "none")
+    return { kind: "entry", entry: self, reason: "no-record", bundle: null };
+  if (record.state === "absent") {
+    return { kind: "entry", entry: self, reason: "no-pushed-cli", bundle: null };
+  }
+  // 8. The record is there and cannot be used: a named fault.
+  if (record.state === "damaged") {
+    return { kind: "fault", fault: "damaged-record", detail: record.detail };
+  }
+  if (record.state === "unusable") {
+    return { kind: "fault", fault: "cli-pointer-unusable", detail: record.detail };
+  }
+  return { kind: "fault", fault: "cli-bundle-missing", detail: record.file };
+}
+
+/** Whether the caller is the legacy loader of a product that declares nothing. */
+function isLegacyName(self: string, declaration: LoaderDeclaration): boolean {
+  return declaration.state === "absent" && path.basename(self) === LEGACY_LOADER_NAME;
+}
+
+/** A file that is really there: a directory named like the loader names no loader. */
+function isFile(file: string): boolean {
+  try {
+    return fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Whether two entries name the same file, through symlinks and relative spellings. */
+async function sameFile(a: string, b: string): Promise<boolean> {
+  if (path.resolve(a) === path.resolve(b)) return true;
+  return (await realPathOf(a)) === (await realPathOf(b));
+}
+
+/** The real path of a file that exists; the plain absolute path otherwise. */
+async function realPathOf(file: string): Promise<string> {
+  const abs = path.resolve(file);
+  try {
+    return await fsp.realpath(abs);
+  } catch {
+    return abs;
+  }
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

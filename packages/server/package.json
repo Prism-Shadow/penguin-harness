@@ -42,9 +42,9 @@
       "types": "./dist/hmr/manifest.d.ts",
       "import": "./dist/hmr/manifest.js"
     },
-    "./cli-resolution": {
-      "types": "./dist/cli-resolution.d.ts",
-      "import": "./dist/cli-resolution.js"
+    "./cli-shim": {
+      "types": "./dist/cli-shim.d.ts",
+      "import": "./dist/cli-shim.js"
     },
     "./version-report": {
       "types": "./dist/version-report.d.ts",
