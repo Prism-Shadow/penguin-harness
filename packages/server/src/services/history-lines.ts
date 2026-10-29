@@ -31,7 +31,6 @@ import {
   ELIDE_BYTES,
   elideHistoryRecord,
 } from "@prismshadow/penguin-core/interfaces";
-import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   HistoryFileFact,
   HistoryHave,
@@ -42,8 +41,6 @@ import type {
   HistoryStreamError,
   HistoryStub,
   HistoryWindowPart,
-  MessagesLiveTail,
-  MessagesPageInfo,
 } from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import { HttpError } from "../http/errors.js";
@@ -65,9 +62,15 @@ import {
 } from "./history-wire.js";
 import type { HistoryLinesQuery } from "./history-wire.js";
 import { decodeCursor } from "./message-window.js";
-import { appendPendingInputs } from "./session-history.js";
+import {
+  MESSAGES_PAGE_LIMIT_DEFAULT,
+  appendPendingInputs,
+  captureHistoryEnvelope,
+  messagesPageInfo,
+  pageLimit,
+} from "./session-history.js";
 import { withImagesByReference } from "./trace-images.js";
-import type { HistoryTraceFile, HistoryWindowRead, MessagesPageResult } from "./trace-service.js";
+import type { HistoryTraceFile, HistoryWindowRead } from "./trace-service.js";
 
 /** A machine-leg stream beats this often while it waits on credit or disk. */
 export const HISTORY_LINES_BEAT_MS = 5_000;
@@ -76,10 +79,6 @@ export const HISTORY_LINES_BEAT_MS = 5_000;
 const READ_CHUNK = 1024 * 1024;
 
 const NEWLINE = 0x0a;
-
-/** Unit-count bounds, as `/messages` takes them. */
-const LIMIT_MAX = 1000;
-const LIMIT_DEFAULT = 200;
 
 export interface HistoryLinesDeps {
   traces: Pick<Traces, "readHistoryWindow" | "historyTraceFiles">;
@@ -118,7 +117,7 @@ export function parseHistoryLinesQuery(url: URL): HistoryLinesQuery {
   if (tail !== null) {
     return {
       kind: "tail",
-      limit: positiveInt(tail, "tailLimit", LIMIT_MAX),
+      limit: pageLimit(tail, "tailLimit"),
       ...(budget !== undefined ? { budget } : {}),
       fill: fillAfter,
       have,
@@ -132,7 +131,7 @@ export function parseHistoryLinesQuery(url: URL): HistoryLinesQuery {
     return {
       kind: "before",
       cursor: before,
-      limit: limit === null ? LIMIT_DEFAULT : positiveInt(limit, "limit", LIMIT_MAX),
+      limit: limit === null ? MESSAGES_PAGE_LIMIT_DEFAULT : pageLimit(limit, "limit"),
       ...(budget !== undefined ? { budget } : {}),
       fill: fillAfter,
       have,
@@ -145,60 +144,6 @@ export function parseHistoryLinesQuery(url: URL): HistoryLinesQuery {
   if (body !== null) return { kind: "body", ref: body, have };
   const file = q.get("file");
   return { kind: "fill", ...(file !== null ? { file } : {}), have };
-}
-
-/**
- * What `/messages` answers beside the records, captured in one synchronous tick before any
- * Trace file is read — the live-tail contract (api/types.ts MessagesLiveTail): every event up
- * to the cursor is in `fragments`, and whatever the Trace read misses is in the lines that
- * follow or in the reader's buffered stream. A `before` window is immutable history and
- * carries neither the live tail nor the held inputs; neither does a read that is no window.
- */
-export function captureHistoryEnvelope(
-  deps: Pick<HistoryLinesDeps, "manager" | "channels">,
-  sessionId: string,
-  windowed: "live" | "history" | "none",
-): Omit<HistoryLinesWindow["envelope"], "page"> {
-  const status = deps.manager.statusOf(sessionId);
-  let live: MessagesLiveTail | undefined;
-  let pendingInputs: AmspRecord[] = [];
-  if (windowed === "live") {
-    if (status !== "idle") {
-      live = {
-        cursor: deps.channels.get(sessionId).lastEventId,
-        fragments: deps.manager.liveFragments(sessionId),
-      };
-    }
-    pendingInputs = [
-      ...deps.manager.pendingInputs(sessionId),
-      ...deps.manager.pendingBootstrap(sessionId),
-    ];
-  }
-  return {
-    ...(live !== undefined ? { live } : {}),
-    pendingInputs,
-    serverNowMs: Date.now(),
-    status,
-  };
-}
-
-/** The page envelope of a windowed read, as `/messages` builds it. */
-function pageInfoOf(page: Omit<MessagesPageResult, "messages">): MessagesPageInfo {
-  return {
-    ...(page.before !== undefined ? { before: page.before } : {}),
-    earlierTurns: page.prior.turns,
-    units: page.units,
-    prior: {
-      subagentTokens: page.prior.subagentTokens,
-      elapsedMs: page.prior.elapsedMs,
-      apiMs: page.prior.apiMs,
-      toolMs: page.prior.toolMs,
-      sessionTokens: page.prior.sessionTokens,
-      contextTokens: page.prior.contextTokens,
-    },
-    ...(page.contextModel !== undefined ? { contextModel: page.contextModel } : {}),
-    ...(page.agentState !== undefined ? { agentState: page.agentState } : {}),
-  };
 }
 
 type Range = [start: number, end: number];
@@ -341,7 +286,7 @@ export async function planHistoryLines(
   const envelope = captureHistoryEnvelope(
     deps,
     sessionId,
-    q.kind === "tail" || q.kind === "full" ? "live" : q.kind === "before" ? "history" : "none",
+    q.kind === "tail" || q.kind === "full" || q.kind === "before" ? q.kind : "none",
   );
   let read: HistoryWindowRead | null = null;
   if (q.kind === "tail") {
@@ -540,7 +485,7 @@ export async function planHistoryLines(
   return {
     window: {
       envelope: {
-        ...(read?.page !== undefined ? { page: pageInfoOf(read.page) } : {}),
+        ...(read?.page !== undefined ? { page: messagesPageInfo(read.page) } : {}),
         ...envelope,
         // Only the held inputs this window does not already hold, judged on its raw records —
         // `/messages`' own dedup, before any stub serves a record's image by reference: the hub

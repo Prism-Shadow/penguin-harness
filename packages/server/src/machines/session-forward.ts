@@ -21,17 +21,23 @@
  * api/client.ts), and a machine's refusal must never sign anyone out of this server.
  */
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import type { LiveStreams } from "../auth/live-streams.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { errorBody } from "../http/errors.js";
+import { streamRevocation } from "../http/sse.js";
+import type { SseRevocation } from "../http/sse.js";
+import type { Auth } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { MachineEventHub } from "./event-hub.js";
+import type { HistoryCaller, MachineHistory } from "./history-routes.js";
 import type { MachineSockets } from "./machine-sockets.js";
 import { forwardToMachine } from "./proxy.js";
 import type { MachinesService } from "./service.js";
 import { SessionMachineIndex } from "./session-index.js";
-import type { MachineCandidate } from "./session-index.js";
+import type { MachineCandidate, SilentMachine } from "./session-index.js";
 import { MachineSocketRelay } from "./socket-relay.js";
 
 /** What the forward needs of the machines service. */
@@ -55,6 +61,44 @@ function machineError(
   return Response.json(errorBody(code, message, details), { status });
 }
 
+/**
+ * The answer when no machine was found to hold a Session and some that could did not say: not
+ * "no such Session" — this server only could not ask them. The first is named as every machine
+ * error names its machine; several are listed as well.
+ */
+function noAnswer(sessionId: string, silent: readonly SilentMachine[]): Response {
+  const [first] = silent;
+  const names = silent.map((machine) => machine.alias).join(", ");
+  return Response.json(
+    errorBody(
+      "machine_no_answer",
+      `Session ${sessionId} may be on ${silent.length === 1 ? "the machine" : "one of the machines"} ${names}, which did not answer in time.`,
+      {
+        machineId: first!.machineId,
+        alias: first!.alias,
+        ...(silent.length > 1
+          ? {
+              machineIds: silent.map((machine) => machine.machineId).join(","),
+              aliases: names,
+            }
+          : {}),
+      },
+    ),
+    { status: 503 },
+  );
+}
+
+/** The answer when the machine holding a Session will not show it to this server (`403 session_forbidden`). */
+function forbidden(sessionId: string, machineId: string, alias: string | null): Response {
+  return machineError(
+    403,
+    "session_forbidden",
+    `The machine holding session ${sessionId} does not let this server read it.`,
+    machineId,
+    alias,
+  );
+}
+
 /** The code and message of an error body in the API's shape; empty for anything else. */
 function errorOf(text: string): { code?: string; message?: string } {
   try {
@@ -76,28 +120,51 @@ export class SessionForward {
       machines: SessionForwardMachines;
       index: SessionMachineIndex;
       relay: MachineSocketRelay;
+      /**
+       * The hub's own history answers (history-routes.ts), asked before the machine is; told when
+       * the machine says the Session is gone, so its copy goes too.
+       */
+      history?: Pick<MachineHistory, "answer"> & Partial<Pick<MachineHistory, "sessionDeleted">>;
     },
   ) {}
 
   /**
    * Forwards `request` to the machine that holds `sessionId`, looking among the machines of
    * `projectIds` (the Projects the caller can open) when the index does not know it yet. Null
-   * when no machine holds it; otherwise the machine's answer, or this server's own reason why
-   * there is none.
+   * when every machine asked answered that it holds no such Session (the local routes then say
+   * `session_not_found`); 503 `machine_no_answer` when some that could hold it did not answer;
+   * otherwise the machine's answer, or this server's own reason why there is none.
    */
   async forward(
     request: Request,
     sessionId: string,
     projectIds: readonly string[],
+    /** Who asks: the hub's history answers bind a held window to its reader and its sign-in. */
+    caller?: Omit<HistoryCaller, "projectId">,
   ): Promise<Response | null> {
     const { index, machines, relay } = this.deps;
     let fleet: Promise<MachineCandidate[]> | null = null;
     const fleetOf = () => (fleet ??= this.#fleet(projectIds));
-    const place = await index.resolve(sessionId, fleetOf);
-    if (place === null) return null;
+    const { place, silent, refused } = await index.resolve(sessionId, fleetOf);
+    if (place === null) {
+      // A machine that holds it and will not show it: the refusal, as it said it.
+      if (refused.length > 0) return forbidden(sessionId, refused[0]!.machineId, refused[0]!.alias);
+      return silent.length === 0 ? null : noAnswer(sessionId, silent);
+    }
     const { machineId } = place;
     const aliasOf = async () =>
       (await fleetOf()).find((machine) => machine.machineId === machineId)?.alias ?? null;
+    const pathname = new URL(request.url).pathname;
+
+    // The Session's history is this server's to answer, from its copy of the machine's lines,
+    // connected or not (a stream waits for the machine and says so).
+    const own =
+      (await this.deps.history?.answer(
+        request,
+        { machineId, remotePath: pathname },
+        { userId: caller?.userId ?? "", ...caller, projectId: place.projectId },
+      )) ?? null;
+    if (own !== null) return own;
 
     const target = await machines.proxyTarget(machineId);
     if (target === null) {
@@ -109,7 +176,6 @@ export class SessionForward {
         await aliasOf(),
       );
     }
-    const pathname = new URL(request.url).pathname;
     const answer = await forwardToMachine(
       request,
       { machineId, remotePath: pathname },
@@ -119,7 +185,12 @@ export class SessionForward {
     );
 
     if (answer.status === 401 || answer.status === 403) {
-      const { message } = errorOf(await answer.text().catch(() => ""));
+      const { code, message } = errorOf(await answer.text().catch(() => ""));
+      // The machine knows the Session and will not show it to this server: not a deletion, and
+      // not this server's session refused either.
+      if (answer.status === 403 && code === "session_forbidden") {
+        return forbidden(sessionId, machineId, await aliasOf());
+      }
       return machineError(
         502,
         "machine_refused",
@@ -134,7 +205,10 @@ export class SessionForward {
       // A Session never moves to another machine, so its own machine saying it has no such
       // Session means it was deleted there. The next request for the id asks again.
       const said = await answer.text();
-      if (errorOf(said).code === "session_not_found") index.forget(sessionId, machineId);
+      if (errorOf(said).code === "session_not_found") {
+        index.forget(sessionId, machineId);
+        this.deps.history?.sessionDeleted?.(machineId, sessionId);
+      }
       // The body was read whole, so the upstream's framing headers no longer describe it.
       const headers = new Headers(answer.headers);
       headers.delete("content-length");
@@ -143,6 +217,7 @@ export class SessionForward {
     }
     if (request.method === "DELETE" && answer.ok && SESSION_PATH.test(pathname)) {
       index.forget(sessionId, machineId);
+      this.deps.history?.sessionDeleted?.(machineId, sessionId);
     }
     return answer;
   }
@@ -168,12 +243,21 @@ export abstract class MachineSessionForward extends Interface<Pick<SessionForwar
  */
 export function machineSessionForward(
   machines: SessionForwardMachines,
-  shared: { sockets: MachineSockets; events: MachineEventHub },
+  shared: {
+    sockets: MachineSockets;
+    events: MachineEventHub;
+    history?: Pick<MachineHistory, "answer"> & Partial<Pick<MachineHistory, "sessionDeleted">>;
+  },
   log: (line: string) => void = () => undefined,
 ): SessionForward {
   const index = new SessionMachineIndex();
   shared.events.tap((machineId, data) => index.hear(machineId, data));
-  return new SessionForward({ machines, index, relay: new MachineSocketRelay(log, shared) });
+  return new SessionForward({
+    machines,
+    index,
+    relay: new MachineSocketRelay(log, shared),
+    ...(shared.history !== undefined ? { history: shared.history } : {}),
+  });
 }
 
 /**
@@ -184,6 +268,8 @@ export function sessionForwardRoutes(deps: {
   sessions: Pick<SessionIndex, "findById">;
   access: Pick<Access, "accessibleProjectIds">;
   forward: Pick<SessionForward, "forward">;
+  /** The sign-in behind a request, for a history stream to be held against (http/sse.ts). */
+  revocation?: (c: Context<AppEnv>) => SseRevocation;
 }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use("/:sessionId/*", async (c, next) => {
@@ -194,6 +280,10 @@ export function sessionForwardRoutes(deps: {
       c.req.raw,
       sessionId,
       deps.access.accessibleProjectIds(user.userId),
+      {
+        userId: user.userId,
+        ...(deps.revocation !== undefined ? { revocation: () => deps.revocation!(c) } : {}),
+      },
     );
     return answer ?? next();
   });
@@ -217,12 +307,16 @@ export class SessionForwardRoutes {
   @Use() private readonly sessionsRepo!: SessionIndex;
   @Use() private readonly access!: Access;
   @Use() private readonly sessionForward!: MachineSessionForward;
+  @Use() private readonly liveStreams!: LiveStreams;
+  @Use() private readonly auth!: Auth;
   @Bind("SessionForwardRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = sessionForwardRoutes({
       sessions: this.sessionsRepo,
       access: this.access,
       forward: this.sessionForward,
+      revocation: (c) =>
+        streamRevocation(c, c.var.user, { liveStreams: this.liveStreams, auth: this.auth }),
     });
   }
 }

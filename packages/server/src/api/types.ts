@@ -2743,8 +2743,18 @@ export interface HistoryProgress {
   totalBytes: number;
   doneLines: number;
   totalLines: number;
-  /** The machine is out of reach and the hub is retrying. */
-  waiting: null | { reason: "not_connected" | "retrying"; attempt: number; nextAt: number };
+  /**
+   * The hub waits on the machine: `not_connected` (out of reach, the hub reconnects) and
+   * `retrying` (connected and silent, the hub asks again), each with its attempt and the time of
+   * the next; or `slow` — connected and beating, but the machine has sent nothing else for a
+   * minute (a route stuck over there): nothing is retried, `attempt` and `nextAt` are 0, and the
+   * stream goes on. Null again once bytes move.
+   */
+  waiting: null | {
+    reason: "not_connected" | "retrying" | "slow";
+    attempt: number;
+    nextAt: number;
+  };
 }
 
 /** The web leg's `page` event: what the window holds beside its records. */

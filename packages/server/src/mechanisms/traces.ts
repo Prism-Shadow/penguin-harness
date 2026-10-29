@@ -194,6 +194,14 @@ export abstract class Traces {
     sessionId: string,
     index: number,
   ): Promise<TraceAnalysisResponse>;
+  /**
+   * The same analysis of one Trace file's records read elsewhere — a machine's file from the
+   * hub's copy (machines/history-routes.ts) — priced with `projectId`'s rates.
+   */
+  abstract analyzeRecords(
+    projectId: string,
+    messages: readonly AmspRecord[],
+  ): Promise<TraceAnalysisResponse>;
   abstract agentTraces(
     projectId: string,
     agentId: string,

@@ -1322,7 +1322,17 @@ export class TraceService implements Traces {
     sessionId: string,
     index: number,
   ): Promise<TraceAnalysisResponse> {
-    const messages = await this.readFileByIndex(projectId, agentId, sessionId, index);
+    return this.analyzeRecords(
+      projectId,
+      await this.readFileByIndex(projectId, agentId, sessionId, index),
+    );
+  }
+
+  /** The analysis of one Trace file's records, however they were read (Traces.analyzeRecords). */
+  async analyzeRecords(
+    projectId: string,
+    messages: readonly AmspRecord[],
+  ): Promise<TraceAnalysisResponse> {
     // The file's head: the main session's first `session_meta`.
     const meta = messages.find(
       (m) => isSessionMeta(m) && (m.origin === undefined || m.origin.length === 0),

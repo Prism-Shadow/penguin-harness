@@ -286,9 +286,11 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 该代理仅限管理员，且只使用单一身份：请求在对端以那台机器的管理员身份执行，所用会话由本服务器凭借自身的 ssh 访问能力签发（在那台机器上执行 `penguin auth token`）。浏览器的 Cookie 不会传到对端，机器上的 Cookie 也不会带回本地。只有 `/api` 会转发，前端仍在本地运行。
 
-**机器上的 Session 也可以只凭 id 访问。** 管理员发出的 `/api/sessions/:sessionId/…` 请求，若本服务器自己的索引里没有该 Session，就会转发到持有它的机器，转发方式、身份与请求头规则都与 `/server/<machineId>/api/sessions/:sessionId/…` 相同，流也同样只走 socket。本服务器从内存中的索引查出机器：索引由各机器的 `session_created` 与 `session_deleted` 事件填充；遇到没见过的 id，则同时询问调用方各 Project 的每台已连接机器（`GET /api/sessions/:sessionId`），先答 `200` 的机器即持有该 Session。所有机器都否认的 id 会被记为未知 10 秒。本服务器自己索引里的 Session 一律在本地应答，非管理员调用方照常得到 `404` `session_not_found`。除机器自己的应答外，还有三种结果：
+**机器上的 Session 也可以只凭 id 访问。** 管理员发出的 `/api/sessions/:sessionId/…` 请求，若本服务器自己的索引里没有该 Session，就会转发到持有它的机器，转发方式、身份与请求头规则都与 `/server/<machineId>/api/sessions/:sessionId/…` 相同，流也同样只走 socket。本服务器从内存中的索引查出机器：索引由各机器的 `session_created` 与 `session_deleted` 事件填充；遇到没见过的 id，则同时询问调用方各 Project 的每台已连接机器（`GET /api/sessions/:sessionId`），先答 `200` 的机器即持有该 Session。所有机器都否认的 id 会被记为未知 10 秒。本服务器自己索引里的 Session 一律在本地应答，非管理员调用方照常得到 `404` `session_not_found`。除机器自己的应答外，还有五种结果：
 
-- `404` `session_not_found`——没有机器持有该 id。
+- `404` `session_not_found`——可能持有该 id 的每台已连接机器都答复没有。
+- `403` `session_forbidden`——有机器持有该 id，但不让本服务器查看；`details` 给出它的 `machineId` 与 `alias`。这从不被当作删除，该 id 也不会被记为未知。
+- `503` `machine_no_answer`——没有机器答复持有该 id，而有可能持有它的机器在 5 秒内没有应答，或应答无法使用；`details` 给出第一台的 `machineId` 与 `alias`，有多台时另给 `machineIds` 与 `aliases`（以逗号分隔）。该 id 不会被记为未知，再次请求会再次询问这些机器。
 - `503` `not_connected`——持有该 Session 的机器未连接；`details` 给出它的 `machineId` 与 `alias`。
 - `502` `machine_refused`——机器拒绝了本服务器的会话（对端答 `401` 或 `403`）；`details` 同样指明机器。机器的拒绝从不以 `401` 转交，因为客户端会把本服务器答的 `401` 当作自己被登出。
 
