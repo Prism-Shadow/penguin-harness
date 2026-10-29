@@ -89,6 +89,7 @@ import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import type { TraceLineIndexEntry } from "./trace-line-index.js";
 import type { RecordSource } from "./history-layout.js";
+import { fileIdentityOf } from "./history-wire.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
@@ -1001,9 +1002,7 @@ export class TraceService implements Traces {
               sessionId: session.sessionId,
               fileIndex: file.index,
               path: file.path,
-              ino: stat.ino.toString(),
-              dev: stat.dev.toString(),
-              birthtimeMs: Number(stat.birthtimeMs),
+              ...fileIdentityOf(stat),
               size: entry.size,
               scanned: entry.scanned,
               starts: entry.starts.slice(),

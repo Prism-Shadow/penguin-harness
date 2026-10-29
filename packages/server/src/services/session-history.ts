@@ -48,7 +48,7 @@ function pageLimit(raw: string, name: string): number {
  * writes the very same envelopes, and the client's overlap dedup uses the same rule — and
  * only the history tail can contain them (inputs are the newest records when this races).
  */
-function appendPendingInputs(messages: AmspRecord[], pending: AmspRecord[]): AmspRecord[] {
+export function appendPendingInputs(messages: AmspRecord[], pending: AmspRecord[]): AmspRecord[] {
   if (pending.length === 0) return messages;
   const envelopeKey = (message: AmspRecord): string => {
     const { tracePosition: _tracePosition, ...envelope } = message as AmspRecord & {

@@ -11,9 +11,10 @@
  *
  *   window   HistoryLinesWindow: envelope, files, layout, stubs, totals — or, when larger than
  *            a frame, `window-part`s whose texts join to it
- *   part     the rest of each line the hub holds in part, so a held line completes first
- *   lines    the window's light lines (and a line longer than a frame as `part`s)
+ *   lines    the window's light lines (and a line longer than a frame as `part`s), the rest of
+ *            one the hub holds in part among them
  *   ready    the hub can assemble the window now
+ *   part     the rest of every other line the hub holds in part (a heavy line, another file's)
  *   lines    the window's heavy lines, then with `fill=1` the rest of the Session's files:
  *            each file from its top backward, the Session's own newest first, then its
  *            descendants' — frames carry lines in file order, the frames themselves go back
@@ -60,9 +61,11 @@ import {
   hiAnchorRange,
   historyFileKey,
   loAnchorRange,
+  sameHistoryFile,
 } from "./history-wire.js";
 import type { HistoryLinesQuery } from "./history-wire.js";
 import { decodeCursor } from "./message-window.js";
+import { appendPendingInputs } from "./session-history.js";
 import { withImagesByReference } from "./trace-images.js";
 import type { HistoryTraceFile, HistoryWindowRead, MessagesPageResult } from "./trace-service.js";
 
@@ -264,7 +267,8 @@ async function byteAt(path: string, at: number): Promise<number> {
 
 /**
  * What a `have` entry earns: the runs it vouches for and its partial line, or null for a file
- * that is not the one the hub copied (another inode, device or birth time, a run past its last
+ * that is not the one the hub copied (another inode, or birth time where both know one — see
+ * history-wire.ts `sameHistoryFile` — a run past its last
  * `\n`, a run whose edges are not line edges, or whose ordinals or anchors differ). A partial
  * line that does not check is dropped on its own: the file's runs stay held, and the line is
  * sent whole.
@@ -273,8 +277,7 @@ async function validate(
   file: HistoryTraceFile,
   have: HistoryHave,
 ): Promise<{ held: Range[]; partial: FilePlan["partial"] } | null> {
-  if (have.ino !== file.ino || have.birthtimeMs !== file.birthtimeMs) return null;
-  if (have.dev !== undefined && have.dev !== file.dev) return null;
+  if (!sameHistoryFile(have, file)) return null;
   const ranges = have.ranges ?? [];
   const held: Range[] = [];
   for (const r of ranges) {
@@ -395,17 +398,6 @@ export async function planHistoryLines(
     body = { plan, line: [start, end] };
   }
 
-  // First, the rest of every line the hub holds in part, so a held line is completed before
-  // any other line of its file arrives. (A `body` read sends only its own line's rest.)
-  const windowSends: Send[] = [];
-  for (const plan of plans.values()) {
-    const p = plan.partial;
-    if (p === null) continue;
-    if (body !== null && (body.plan !== plan || body.line[0] !== p.off)) continue;
-    plan.sent.push([p.off, p.lineEnd]);
-    windowSends.push({ kind: "rest", plan, lineStart: p.off, from: p.off + p.len, end: p.lineEnd });
-  }
-
   // The window: its layout, its heavy lines (sent after `ready`, a stub standing in), and
   // the light bytes the hub lacks.
   const layout =
@@ -448,6 +440,33 @@ export async function planHistoryLines(
       if (!unterminated) heavy.set(k, [...(heavy.get(k) ?? []), [start, end]]);
     });
   }
+  // The rest of each line the hub holds in part. Before `ready` only when the window needs it
+  // to be assembled — a light line of the window itself (a long prompt); every other one, a
+  // heavy line of the window included (its stub stands in) or a line of another file of the
+  // Session, goes after `ready`, ahead of the heavy lines: a window reopened after a cut inside
+  // a 1.5 MB screenshot must not wait for the screenshot. Parts name their line, so a rest
+  // completes its held line whatever arrives before it. (A `body` read sends only its line's.)
+  const windowSends: Send[] = [];
+  const restsAfterReady: Send[] = [];
+  const lightInWindow = (plan: FilePlan, off: number, end: number): boolean =>
+    layout.some((s) => s.k === plan.k && s.from[0] <= off && end <= s.to[0]) &&
+    !(heavy.get(plan.k) ?? []).some(([a]) => a === off);
+  for (const plan of plans.values()) {
+    const p = plan.partial;
+    if (p === null) continue;
+    if (body !== null && (body.plan !== plan || body.line[0] !== p.off)) continue;
+    plan.sent.push([p.off, p.lineEnd]);
+    const rest: Send = {
+      kind: "rest",
+      plan,
+      lineStart: p.off,
+      from: p.off + p.len,
+      end: p.lineEnd,
+    };
+    if (body !== null || lightInWindow(plan, p.off, p.lineEnd)) windowSends.push(rest);
+    else restsAfterReady.push(rest);
+  }
+
   for (const segment of [...layout].reverse()) {
     const plan = plans.get(segment.k)!;
     let pieces: Range[] = [[segment.from[0], Math.min(segment.to[0], plan.file.scanned)]];
@@ -465,7 +484,7 @@ export async function planHistoryLines(
       windowSends.push({ kind: "range", plan: body.plan, range, backward: false });
     }
   }
-  const heavySends: Send[] = [];
+  const heavySends: Send[] = [...restsAfterReady];
   for (const [k, lines] of heavy) {
     const plan = plans.get(k)!;
     for (const line of [...lines].reverse()) {
@@ -523,6 +542,16 @@ export async function planHistoryLines(
       envelope: {
         ...(read?.page !== undefined ? { page: pageInfoOf(read.page) } : {}),
         ...envelope,
+        // Only the held inputs this window does not already hold, judged on its raw records —
+        // `/messages`' own dedup, before any stub serves a record's image by reference: the hub
+        // dedups again on what it assembles, where a stubbed image no longer equals its held
+        // inline copy and would be appended a second time.
+        pendingInputs:
+          read === null
+            ? envelope.pendingInputs
+            : appendPendingInputs(read.messages, envelope.pendingInputs).slice(
+                read.messages.length,
+              ),
       },
       files: facts,
       layout,
