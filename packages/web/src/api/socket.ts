@@ -123,6 +123,10 @@ interface StreamEntry {
   heartbeatMs: number | null;
   /** Fires when no frame carrying this stream's id has arrived for two beats. */
   streamDeadline: ReturnType<typeof setTimeout> | null;
+  /** The caller asked for acknowledged flow (`StreamOptions.flow`). */
+  flow: boolean;
+  /** Event data handled on the current issue, the cumulative figure an ack reports. */
+  handled: number;
 }
 
 /** What `stream` may be told beyond the handlers; see `heartbeatMs`. */
@@ -536,6 +540,8 @@ export class ApiSocket {
       closed: false,
       heartbeatMs: options.heartbeatMs ?? null,
       streamDeadline: null,
+      flow: options.flow === true,
+      handled: 0,
     };
     this.#waiting.add(entry);
     if (this.isUnavailable()) return { close: () => this.#dropStream(entry) };
@@ -661,6 +667,9 @@ export class ApiSocket {
     this.#streams.set(id, entry);
     const headers: Record<string, string> = { accept: "text/event-stream" };
     if (entry.lastEventId !== null) headers["last-event-id"] = entry.lastEventId;
+    // Credit is counted per call: a new issue starts from nothing acknowledged.
+    entry.handled = 0;
+    if (entry.flow) headers["x-flow"] = "credit";
     entry.openDeadline = this.#clearTimer(entry.openDeadline);
     entry.openDeadline = setTimeout(() => {
       entry.openDeadline = null;
@@ -749,33 +758,15 @@ export class ApiSocket {
       stream.openDeadline = this.#clearTimer(stream.openDeadline);
       this.#armStreamDeadline(stream);
       if ("event" in frame) {
-        const eventId = (frame.eventId as string | null) ?? null;
-        if (eventId !== null) stream.lastEventId = eventId;
-        let data: unknown;
         try {
-          data = JSON.parse(frame.data as string);
-        } catch {
-          return; // single-line JSON by protocol; anything else is skipped unread
-        }
-        // SSE names a frame by its `event:` line, and sse-text.ts defaults an absent one to
-        // `message` — the AmspRecord shape. Everything else is named dispatch, with the
-        // handlers this module knows by name first and `onEvent` for the rest.
-        const name = typeof frame.event === "string" ? frame.event : "message";
-        if (name === "server_event") {
-          stream.handlers.onServerEvent(data as ServerEvent, eventId);
-        } else if (name === "message") {
-          stream.handlers.onRecord(data as AmspRecord, eventId);
-        } else if (name === "heartbeat" || name === "ping") {
-          // Liveness only, and it has already been banked above: the beat is never an
-          // application event, so it reaches no handler. `ping` is the session and user
-          // streams' own beat; over HTTP the SSE reader drops it by the same name — and
-          // here it is a frame whose `{}` payload must not be read as a record.
-        } else if (stream.handlers.onEvent !== undefined) {
-          stream.handlers.onEvent(name, data, eventId);
-        } else {
-          // No named-event handler: an unlisted name is a record, exactly as every name
-          // but `server_event` was treated before `onEvent` existed.
-          stream.handlers.onRecord(data as AmspRecord, eventId);
+          this.#streamEvent(stream, frame);
+        } finally {
+          // Handled, however it went (a skipped frame too): an unacknowledged frame would
+          // hold the server's credit window shut for good.
+          if (stream.flow && this.#streams.get(id) === stream) {
+            stream.handled += typeof frame.data === "string" ? frame.data.length : 0;
+            this.#ack(id, stream.handled);
+          }
         }
       } else if ("stream" in frame) {
         stream.failures = 0;
@@ -815,6 +806,48 @@ export class ApiSocket {
       headers: (frame.headers as Record<string, string> | undefined) ?? {},
       body: frame.body,
     });
+  }
+
+  /** One event of a stream, to its handlers. */
+  #streamEvent(stream: StreamEntry, frame: Record<string, unknown>): void {
+    const eventId = (frame.eventId as string | null) ?? null;
+    if (eventId !== null) stream.lastEventId = eventId;
+    let data: unknown;
+    try {
+      data = JSON.parse(frame.data as string);
+    } catch {
+      return; // single-line JSON by protocol; anything else is skipped unread
+    }
+    // SSE names a frame by its `event:` line, and sse-text.ts defaults an absent one to
+    // `message` — the AmspRecord shape. Everything else is named dispatch, with the
+    // handlers this module knows by name first and `onEvent` for the rest.
+    const name = typeof frame.event === "string" ? frame.event : "message";
+    if (name === "server_event") {
+      stream.handlers.onServerEvent(data as ServerEvent, eventId);
+    } else if (name === "message") {
+      stream.handlers.onRecord(data as AmspRecord, eventId);
+    } else if (name === "heartbeat" || name === "ping") {
+      // Liveness only, and it has already been banked above: the beat is never an
+      // application event, so it reaches no handler. `ping` is the session and user
+      // streams' own beat; over HTTP the SSE reader drops it by the same name — and
+      // here it is a frame whose `{}` payload must not be read as a record.
+    } else if (stream.handlers.onEvent !== undefined) {
+      stream.handlers.onEvent(name, data, eventId);
+    } else {
+      // No named-event handler: an unlisted name is a record, exactly as every name
+      // but `server_event` was treated before `onEvent` existed.
+      stream.handlers.onRecord(data as AmspRecord, eventId);
+    }
+  }
+
+  /** Tells the server how much of a flow stream was handled (the server's AckFrame). */
+  #ack(id: number, handled: number): void {
+    if (this.#state !== "open" || this.#ws === null) return;
+    try {
+      this.#ws.send(JSON.stringify({ id, ack: handled }));
+    } catch {
+      // A socket that cannot send is closing; the stream is re-issued on the reconnect.
+    }
   }
 
   /** The socket is gone: fail the calls, park the streams, and come back on the backoff. */

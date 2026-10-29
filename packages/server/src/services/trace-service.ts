@@ -90,6 +90,7 @@ import { TraceLineIndex } from "./trace-line-index.js";
 import type { RecordSource } from "./history-layout.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import type { Paths } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
@@ -271,6 +272,8 @@ interface ExpandCtx {
   ancestry: Set<string>;
   depth: number;
   raw: Map<string, AmspRecord[] | null>;
+  /** Where each record was read from, when the caller asked (readHistoryWindow). */
+  sources?: WeakMap<object, RecordSource>;
 }
 
 /**
@@ -469,17 +472,32 @@ export class TraceService implements Traces {
     agentId: string,
     sessionId: string,
   ): Promise<HistoryMessage[]> {
+    return this.readAll(projectId, agentId, sessionId);
+  }
+
+  private async readAll(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    sources?: WeakMap<object, RecordSource>,
+  ): Promise<HistoryMessage[]> {
     const ctx: ExpandCtx = {
       projectScanned: false,
       ancestry: new Set([sessionId]),
       depth: 0,
       raw: new Map(),
+      ...(sources !== undefined ? { sources } : {}),
     };
     const files = await this.locateAll(projectId, agentId, sessionId);
     const out: AmspRecord[] = [];
     for (const file of files) {
-      const raw = await this.readShard(file.path);
-      out.push(...(await this.expandMessages(projectId, positioned(raw, file.index), ctx)));
+      const raw = positioned(await this.readShard(file.path), file.index);
+      if (sources !== undefined) {
+        raw.forEach((m, ordinal) =>
+          sources.set(m, { agentId, sessionId, fileIndex: file.index, ordinal, chain: null }),
+        );
+      }
+      out.push(...(await this.expandMessages(projectId, raw, ctx)));
     }
     return out;
   }
@@ -517,7 +535,22 @@ export class TraceService implements Traces {
       const files = await this.locateAll(projectId, childAgent, childSid);
       if (files.length > 0) {
         raw = [];
-        for (const file of files) raw.push(...(await this.readShard(file.path)));
+        for (const file of files) {
+          const records = await this.readShard(file.path);
+          if (ctx.sources !== undefined) {
+            const sources = ctx.sources;
+            records.forEach((m, ordinal) =>
+              sources.set(m, {
+                agentId: childAgent,
+                sessionId: childSid,
+                fileIndex: file.index,
+                ordinal,
+                chain: [],
+              }),
+            );
+          }
+          raw.push(...records);
+        }
       }
     }
     ctx.raw.set(childSid, raw);
@@ -554,7 +587,15 @@ export class TraceService implements Traces {
         out.push(msg);
         continue;
       }
-      for (const m of nested) out.push({ ...m, origin: [childSid, ...(m.origin ?? [])] });
+      for (const m of nested) {
+        const copy = { ...m, origin: [childSid, ...(m.origin ?? [])] };
+        // The copy was read where its original was; its chain gains this level.
+        const source = ctx.sources?.get(m);
+        if (source !== undefined) {
+          ctx.sources!.set(copy, { ...source, chain: [childSid, ...(source.chain ?? [])] });
+        }
+        out.push(copy);
+      }
     }
     return out;
   }
@@ -671,6 +712,16 @@ export class TraceService implements Traces {
     sessionId: string,
     req: MessagesPageRequest,
   ): Promise<MessagesPageResult> {
+    return this.readPage(projectId, agentId, sessionId, req);
+  }
+
+  private async readPage(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    req: MessagesPageRequest,
+    sources?: WeakMap<object, RecordSource>,
+  ): Promise<MessagesPageResult> {
     const files = await this.locateAll(projectId, agentId, sessionId);
     const empty = (): MessagesPageResult => ({
       messages: [],
@@ -682,6 +733,7 @@ export class TraceService implements Traces {
       ancestry: new Set([sessionId]),
       depth: 0,
       raw: new Map(),
+      ...(sources !== undefined ? { sources } : {}),
     };
 
     // The window's exclusive end: the newest shard's end (tail), or the cursor (before).
@@ -752,27 +804,48 @@ export class TraceService implements Traces {
           }
           nextUnit += 1;
         }
-        spanRaw.push({
+        const record: HistoryMessage = {
           ...messages[i]!,
           tracePosition: { fileIndex: files[pos]!.index, ordinal: i },
+        };
+        sources?.set(record, {
+          agentId,
+          sessionId,
+          fileIndex: files[pos]!.index,
+          ordinal: i,
+          chain: null,
         });
+        spanRaw.push(record);
       }
     }
 
     // Byte budget: newest first, a unit joins while the page stays within it; the first one
-    // always joins. Sized as the route serves it, images by reference (trace-images.ts).
+    // always joins. Sized as the route serves it, images by reference (trace-images.ts) — and,
+    // for a history stream's budget, its bulky bodies folded (core's history-elision.ts).
+    const budget =
+      req.budget === undefined
+        ? MESSAGES_PAGE_MAX_BYTES
+        : Math.min(Math.max(0, req.budget), MESSAGES_PAGE_MAX_BYTES);
+    const served = (m: HistoryMessage): HistoryMessage => {
+      const referenced = withImagesByReference(sessionId, m);
+      if (req.budget === undefined) return referenced;
+      const position = m.tracePosition!;
+      return elideHistoryRecord(referenced, {
+        agentId,
+        sessionId,
+        fileIndex: position.fileIndex,
+        ordinal: position.ordinal,
+      }).record;
+    };
     let chosen = starts.length - 1;
     let pageBytes = 0;
     for (let k = starts.length - 1; k >= 0; k--) {
       const unitEnd = k + 1 < starts.length ? starts[k + 1]!.at : spanRaw.length;
       let unitBytes = 0;
       for (let i = starts[k]!.at; i < unitEnd; i++) {
-        unitBytes += Buffer.byteLength(
-          JSON.stringify(withImagesByReference(sessionId, spanRaw[i]!)),
-          "utf8",
-        );
+        unitBytes += Buffer.byteLength(JSON.stringify(served(spanRaw[i]!)), "utf8");
       }
-      if (k < starts.length - 1 && pageBytes + unitBytes > MESSAGES_PAGE_MAX_BYTES) break;
+      if (k < starts.length - 1 && pageBytes + unitBytes > budget) break;
       pageBytes += unitBytes;
       chosen = k;
     }
@@ -818,12 +891,23 @@ export class TraceService implements Traces {
    * `readMessages` does), with the Trace file and ordinal of every record beside it.
    */
   async readHistoryWindow(
-    _projectId: string,
-    _agentId: string,
-    _sessionId: string,
-    _req: MessagesPageRequest | { kind: "full" },
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    req: MessagesPageRequest | { kind: "full" },
   ): Promise<HistoryWindowRead> {
-    throw new Error("readHistoryWindow: not implemented yet");
+    const sources = new WeakMap<object, RecordSource>();
+    const sourceOf = (m: HistoryMessage): RecordSource => {
+      const source = sources.get(m);
+      if (source === undefined) throw new Error("a history record was read from nowhere");
+      return source;
+    };
+    if (req.kind === "full") {
+      const messages = await this.readAll(projectId, agentId, sessionId, sources);
+      return { messages, sources: messages.map(sourceOf) };
+    }
+    const { messages, ...page } = await this.readPage(projectId, agentId, sessionId, req, sources);
+    return { messages, sources: messages.map(sourceOf), page };
   }
 
   /**
@@ -831,11 +915,53 @@ export class TraceService implements Traces {
    * the same depth and cycle rules the history expansion follows), with their line offsets.
    */
   async historyTraceFiles(
-    _projectId: string,
-    _agentId: string,
-    _sessionId: string,
+    projectId: string,
+    agentId: string,
+    sessionId: string,
   ): Promise<HistoryTraceFile[]> {
-    throw new Error("historyTraceFiles: not implemented yet");
+    const out: HistoryTraceFile[] = [];
+    const seen = new Set<string>([sessionId]);
+    // The Session, then its descendants level by level, as deep as the expansion goes.
+    let level: Array<{ agentId: string; sessionId: string }> = [{ agentId, sessionId }];
+    for (let depth = 0; level.length > 0; depth++) {
+      const next: Array<{ agentId: string; sessionId: string }> = [];
+      for (const session of level) {
+        const files = await this.locateAll(projectId, session.agentId, session.sessionId);
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]!;
+          let entry;
+          let stat;
+          try {
+            entry = await this.lineIndex.ensure(file.path);
+            stat = await fs.stat(file.path);
+          } catch {
+            continue; // vanished since it was indexed: absent, as the machine leg reports it
+          }
+          out.push({
+            agentId: session.agentId,
+            sessionId: session.sessionId,
+            fileIndex: file.index,
+            path: file.path,
+            ino: stat.ino,
+            birthtimeMs: stat.birthtimeMs,
+            size: entry.size,
+            scanned: entry.scanned,
+            starts: entry.starts.slice(),
+            ends: entry.ends.slice(),
+            final: i < files.length - 1,
+          });
+        }
+        if (depth >= MAX_SUBAGENT_DEPTH) continue;
+        const children = await this.subagentChildren(projectId, session.agentId, session.sessionId);
+        for (const child of children) {
+          if (child.agentId === null || seen.has(child.sessionId)) continue;
+          seen.add(child.sessionId);
+          next.push({ agentId: child.agentId, sessionId: child.sessionId });
+        }
+      }
+      level = next;
+    }
+    return out;
   }
 
   /**
