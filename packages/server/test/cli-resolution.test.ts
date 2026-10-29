@@ -50,7 +50,7 @@ async function makeProduct(
   if (options.loader !== false) await fs.writeFile(loader, "export const cli = async () => 0;\n");
   const manifest: Record<string, unknown> = { name: "fixture-cli", version: "0.0.0" };
   if (options.declare !== false) {
-    manifest.penguin = { pushedCliLoader: options.declare ?? `./dist/${LEGACY_LOADER_NAME}` };
+    manifest.penguin = { cliLoader: options.declare ?? `./dist/${LEGACY_LOADER_NAME}` };
   }
   await fs.writeFile(path.join(dir, "package.json"), JSON.stringify(manifest, null, 2));
   return { dir, entry, loader };

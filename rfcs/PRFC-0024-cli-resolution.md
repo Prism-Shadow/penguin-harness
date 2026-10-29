@@ -10,14 +10,14 @@
 ## Summary
 [summary]: #summary
 
-This RFC makes the choice of which CLI entry to run a named problem — **resolution** — shared by every consumer that runs the harness's CLI: server startup, remote machine commands, the push gate, and the user-facing command shim. Resolution answers from what the installation declares and what [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) holds. Every [distro channel](./PRFC-0021-distros.md#guide-level-explanation)'s product ships a **pushed-CLI loader** — the desktop application's does not yet — and a resolution that cannot find a usable loader answers with a named fault. The answer is a decision procedure with a fixed order: each state of the record and the declaration yields one entry or one named fault.
+This RFC makes the choice of which CLI entry to run a named problem — **resolution** — shared by every consumer that runs the harness's CLI: server startup, remote machine commands, the push gate, and the user-facing command shim. Resolution answers from what the installation declares and what [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) holds. Every [distro channel](./PRFC-0021-distros.md#guide-level-explanation)'s product ships a **CLI loader** — the entry that loads whichever CLI the data root's record points at, itself an installed artifact that survives a hot push; the desktop application's does not yet — and a resolution that cannot find a usable loader answers with a named fault. The answer is a decision procedure with a fixed order: each state of the record and the declaration yields one entry or one named fault.
 
 ## Motivation
 [motivation]: #motivation
 
 ### The loader's identity is a file name today
 
-The pushed-CLI loader's identity is a file name agreed by convention across packages, versions, and machines. No declaration anywhere says "this is the loader"; the name is spelled independently in five places — a remote-command path, a startup check, a desktop launcher, the push gate, a package's bin map. When the name changes, those places break in three ways: one loudly, two silently, all at run time. A name used as a protocol field with nobody managing it as a protocol is the defect in one sentence.
+The CLI loader's identity is a file name agreed by convention across packages, versions, and machines. No declaration anywhere says "this is the loader"; the name is spelled independently in five places — a remote-command path, a startup check, a desktop launcher, the push gate, a package's bin map. When the name changes, those places break in three ways: one loudly, two silently, all at run time. A name used as a protocol field with nobody managing it as a protocol is the defect in one sentence.
 
 ### Two channels where the pushed CLI cannot arrive
 
@@ -33,7 +33,7 @@ The pushed CLI's rework is next: renaming, reshaping entries, changing how serve
 ### The concepts
 
 - **The installed entry** — the CLI entry a channel's product installs and a person types; what runs when nothing else is known.
-- **The pushed-CLI loader** — the entry that loads whichever CLI the data root's record points at; it is itself a product of the installation and survives hot pushes.
+- **The CLI loader** — the entry that loads whichever CLI the data root's record points at; it is itself a product of the installation and survives hot pushes.
 - **Resolution** — the shared question "which entry runs this command", answered from what the installation declares and what the record holds.
 
 ### Every consumer asks the same question
@@ -46,11 +46,11 @@ Resolution answers from the root's record and the caller product's declaration. 
 
 ### Identity by declaration
 
-The loader identifies itself by a field in its package manifest, `penguin.pushedCliLoader`, holding the loader's path relative to that manifest. Resolution discovers the loader from that field. A rename that keeps the field intact is invisible to resolution; a rename that breaks it becomes a named fault at the point of discovery.
+The loader identifies itself by a field in its package manifest, `penguin.cliLoader`, holding the loader's path relative to that manifest. Resolution discovers the loader from that field. A rename that keeps the field intact is invisible to resolution; a rename that breaks it becomes a named fault at the point of discovery.
 
 ### Every channel ships its loader
 
-Every channel's product carries a loadable pushed-CLI loader, asserted at build time on the release surface, so that reshaping a product does not silently drop the half of the harness that loads pushed code. What the assertion checks — entry and loader both present and loadable in every artifact — is this RFC's claim; how the release workflow phrases its failure is left open below. One channel does not ship one today: the desktop application carries no loader, so its data root answers the fault `loader-absent` until the desktop product ships one.
+Every channel's product carries a loadable CLI loader, asserted at build time on the release surface, so that reshaping a product does not silently drop the half of the harness that loads pushed code. What the assertion checks — entry and loader both present and loadable in every artifact — is this RFC's claim; how the release workflow phrases its failure is left open below. One channel does not ship one today: the desktop application carries no loader, so its data root answers the fault `loader-absent` until the desktop product ships one.
 
 ### A fault is named
 
@@ -114,7 +114,7 @@ A consumer acts on the answer. A supervisor that must start a server runs the in
 A product declares its loader in the package manifest of the package that ships it:
 
 ```json
-"penguin": { "pushedCliLoader": "./dist/penguin-hmr.js" }
+"penguin": { "cliLoader": "./dist/penguin-hmr.js" }
 ```
 
 The value is a path relative to the manifest's directory, and resolution resolves it there; a value that climbs out of the package names no loader. A reader finds the manifest by walking up from the entry it holds — the nearest package manifest is the product's own — and resolves a bin symlink or a `PATH` link to the file it names first.
@@ -148,7 +148,7 @@ The window closes when the release line carrying declarations reaches the machin
 
 ### Carriers of identity
 
-The carrier is the package manifest's `penguin.pushedCliLoader` field. Three properties decide it. A reader consults a manifest without running the product, which a person, a remote caller and a release assertion all need. A manifest belongs to one product, so each channel declares the loader its own artifact ships. And every channel's packaging already carries a manifest, so the declaration needs no second delivery mechanism.
+The carrier is the package manifest's `penguin.cliLoader` field. Three properties decide it. A reader consults a manifest without running the product, which a person, a remote caller and a release assertion all need. A manifest belongs to one product, so each channel declares the loader its own artifact ships. And every channel's packaging already carries a manifest, so the declaration needs no second delivery mechanism.
 
 The other two candidates each miss one of those. An exported identity constant is readable by running the product's code, which a remote caller and a build assertion cannot do. A pointer in the record describes one data root rather than a product, and a root that holds no record still has a loader to find.
 
@@ -169,13 +169,13 @@ Resolution depends on presence: a reader that can trust the record to exist neve
 
 ### Declarations identify, names are recorded
 
-> However artifacts are named or renamed across [distro channels](./PRFC-0021-distros.md#guide-level-explanation), [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation) still identifies the [pushed-CLI loader](./PRFC-0024-cli-resolution.md#guide-level-explanation) by the declaration its product carries, and a file name answers only where no declaration exists, recorded as a legacy answer.
+> However artifacts are named or renamed across [distro channels](./PRFC-0021-distros.md#guide-level-explanation), [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation) still identifies the [CLI loader](./PRFC-0024-cli-resolution.md#guide-level-explanation) by the declaration its product carries, and a file name answers only where no declaration exists, recorded as a legacy answer.
 
 This is the property the whole RFC fixes. A name shared by convention across packages and machines fails three different ways at run time when it changes; a future rework that reintroduces recognition by file name brings that pattern back with it. The legacy name is the one place a name still answers, and it answers only while a product declares nothing; the answer is recorded, so the window can close on evidence and a name never sits beside a declaration.
 
 ### Every channel ships its loader
 
-> However a [distro channel](./PRFC-0021-distros.md#guide-level-explanation)'s product is reshaped, it still ships the [pushed-CLI loader](./PRFC-0024-cli-resolution.md#guide-level-explanation); a product that cannot load pushed code is incomplete.
+> However a [distro channel](./PRFC-0021-distros.md#guide-level-explanation)'s product is reshaped, it still ships the [CLI loader](./PRFC-0024-cli-resolution.md#guide-level-explanation); a product that cannot load pushed code is incomplete.
 
 A channel that drops the loader silently splits its own update surface: platform and web pushes land, CLI pushes rot in the record. The invariant is what the build-time assertion defends; the assertion's wording can change, and the property may not be retired by accident.
 
@@ -228,6 +228,10 @@ Resolution generalizes: the web assets and the platform halves of a push can be 
 
 ## Changes
 
+### v1.4.0
+
+- Renamed the carrier of identity to `penguin.cliLoader`: the field names the entry that loads the CLI, so the name says what the loader does. The declaration's shape, its discovery and its faults are unchanged.
+
 ### v1.3.0
 
 - Resolution lives in the command-shim module, `packages/server/src/services/cli-shim.ts`, published as `@prismshadow/penguin-server/cli-shim`: one function beside the code that already decides what `penguin` runs, where v1.2.0 had a module of its own.
@@ -236,10 +240,10 @@ Resolution generalizes: the web assets and the platform halves of a push can be 
 
 ### v1.2.0
 
-- Decided the carrier of identity: the package manifest's `penguin.pushedCliLoader` field, with the reasons and the two rejected candidates in "Carriers of identity".
+- Decided the carrier of identity: the package manifest's `penguin.cliLoader` field, with the reasons and the two rejected candidates in "Carriers of identity".
 - Added the declaration's reference shape: the field, its resolution against the manifest's directory, the walk from an entry to its package's manifest, and the declared, absent and broken answers.
 - Added the record's five states as the resolver reads them: no record, damaged, no CLI section, unusable pointer, and pointer with no file. The layer's reader keeps its three answers; the resolver reads the record itself and projects onto them.
-- Carried the procedure into code: one resolver answers which entry runs; the pushed-CLI loader reports its answer by name, and the command shim runs it. It lives outside the hot-update layer, published as a server-package subpath (see "Where the answer lives"). Machine remote commands and the push gate still answer privately.
+- Carried the procedure into code: one resolver answers which entry runs; the CLI loader reports its answer by name, and the command shim runs it. It lives outside the hot-update layer, published as a server-package subpath (see "Where the answer lives"). Machine remote commands and the push gate still answer privately.
 - The Machines page reads the loader's failures by name — the reports this version introduces, and the sentences releases shipped before them — so a machine whose store holds no CLI keeps its "install it again from this page" remedy whichever release installed it.
 - The desktop channel stays open: its product ships no loader and declares none, so a desktop data root answers `loader-absent`. Closing it changes the desktop package, which belongs to the hot-update layer.
 
