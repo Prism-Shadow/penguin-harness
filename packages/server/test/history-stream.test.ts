@@ -14,7 +14,8 @@
  *   all readers together stay within theirs; a window too big for one reader is not held.
  * - Given `fill=1`, then `filled` follows `done`: a local Session already holds all of it.
  * - Given a Session the caller cannot see, then the stream's one event says
- *   `session_not_found`, and a malformed query is a `bad_request` the same way.
+ *   `session_not_found`, and a malformed query is a `bad_request` the same way; an admin its
+ *   Project refuses is told `session_forbidden` instead (the rule every Session route reads by).
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
@@ -214,6 +215,23 @@ describe("the history stream of a local Session", () => {
     const events = await readAll(path);
     expect(events.map((e) => e.event)).toEqual(["error"]);
     expect((JSON.parse(events[0]!.data) as { code: string }).code).toBe(code);
+  });
+
+  it("tells an admin the Session's Project refuses that it is refused, not that the Session is gone", async () => {
+    const access = t.deps.access as unknown as Record<string, unknown>;
+    const had = Object.prototype.hasOwnProperty.call(access, "requireProjectAccess");
+    const original = access.requireProjectAccess;
+    access.requireProjectAccess = () => {
+      throw new Error("refused");
+    };
+    try {
+      const events = await readAll(`/api/sessions/${SID}/history?tailLimit=1`);
+      expect(events.map((e) => e.event)).toEqual(["error"]);
+      expect((JSON.parse(events[0]!.data) as { code: string }).code).toBe("session_forbidden");
+    } finally {
+      if (had) access.requireProjectAccess = original;
+      else delete access.requireProjectAccess;
+    }
   });
 });
 

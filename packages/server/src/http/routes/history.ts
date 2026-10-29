@@ -44,7 +44,7 @@ import {
 } from "../../services/session-history.js";
 import type { SessionHistoryDeps } from "../../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
-import { HttpError } from "../errors.js";
+import { readableSession } from "../session-access.js";
 import { streamRevocation } from "../sse.js";
 
 export interface HistoryRouteDeps {
@@ -60,9 +60,6 @@ export interface HistoryRouteDeps {
   auth?: Auth;
   now?: () => number;
 }
-
-const notFound = (): HttpError =>
-  new HttpError(404, "session_not_found", "Session does not exist or you do not have access.");
 
 /** One local history stream, from its parsed query to its end. */
 async function serveHistory(
@@ -125,13 +122,13 @@ export function historyRoutes(deps: HistoryRouteDeps): Hono<AppEnv> {
     const lastEventId = c.req.header("last-event-id") ?? null;
     void (async () => {
       try {
-        const row = deps.sessions.findById(c.req.param("sessionId"));
-        if (row === null) throw notFound();
-        try {
-          deps.access.requireProjectAccess(c.var.user.userId, row.projectId);
-        } catch {
-          throw notFound();
-        }
+        // The rule every Session route resolves by: a refused admin is told so (403
+        // `session_forbidden`), anyone else finds nothing.
+        const row = readableSession(
+          deps.sessions.findById(c.req.param("sessionId")),
+          c.var.user,
+          deps.access,
+        );
         const query = parseHistoryQuery((name) => c.req.query(name));
         await serveHistory(out, deps, windows, row, query, lastEventId, c.var.user.userId);
       } catch (err) {
