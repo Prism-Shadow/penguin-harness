@@ -179,8 +179,10 @@
 
    The number is generated content and `user-select: none`, so dragging across the code selects
    the code alone; the copy affordances are unaffected either way, since they copy the string the
-   component was given and never the DOM. Its fill is the canvas the surface sits on, so code
-   scrolled under the sticky number is hidden. */
+   component was given and never the DOM. It has no fill of its own: the gutter shows whatever the
+   surface sits on — the canvas, a translucent theme's panel, a wallpaper — exactly as the code
+   beside it does. Unwrapped code scrolled sideways is clipped where it passes under the sticky
+   number instead (below). */
 .code-lines pre {
   counter-reset: code-line;
 }
@@ -204,8 +206,14 @@
   text-indent: 0;
   user-select: none;
   -webkit-user-select: none;
-  background-color: var(--ui-canvas);
   color: var(--ui-code-gutter);
+}
+/* Scrolled sideways (gutter-clip.ts keeps the offset): each line's code is clipped from its own
+   start by as much of it as has slid under the number — the offset, less the pre's own left
+   padding, which scrolls away first. The other three edges are left loose so a glyph's overhang
+   is not cut. */
+.code-surface[data-scrolled-x] .line-code {
+  clip-path: inset(-1em -1em -1em max(0px, var(--code-scroll-x, 0px) - 0.75rem));
 }
 
 /* The editor's two layers, stacked in one grid cell so the taller of them sizes the box and a

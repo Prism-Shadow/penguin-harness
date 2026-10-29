@@ -4913,8 +4913,8 @@ Benchmark：
     discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
     discard: "放弃",
     unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
-    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
-    stopEditing: "退出编辑",
+    /** The editor's ×: drops what was typed and goes back to the preview, without asking — the button is the discard. */
+    discardChanges: "放弃更改",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",

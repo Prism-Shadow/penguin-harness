@@ -54,7 +54,6 @@ import type {
 } from "react";
 import {
   Button,
-  CloseIcon,
   ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
@@ -1370,13 +1369,36 @@ export function WorkspaceBrowser({
     else unsavedDrafts.set(key, draft);
   };
 
-  const requestSave = (): void => {
+  /**
+   * Whether the save under way leaves the editor once it lands: the header's ✓ is "done" and
+   * returns to the preview, the save shortcut keeps the editor open, as a code editor's does.
+   * Read when the write lands, so it outlives the confirmation and conflict dialogs in between.
+   */
+  const leaveOnSave = useRef(false);
+
+  /**
+   * Back to the source view, the draft dropped without asking: the header's ✗ is the discard
+   * itself, and a save that has just landed has nothing left to lose. The source view comes
+   * back where the editor was scrolled, not where it was before Edit.
+   */
+  const leaveEditor = (): void => {
+    const host = editorHost.current;
+    bodyScrollOnReturn.current =
+      host === null ? null : { top: host.scrollTop, left: host.scrollLeft };
+    discardEditor();
+  };
+
+  /** A save asked for: by the ✓ (`leave`, back to the preview once written) or by the shortcut. */
+  const requestSave = (leave = false): void => {
     const current = editorRef.current;
     if (current === null || saving) return;
     if (!isDirty(current)) {
-      toastInfo(S.common.noChangesToSave);
+      // Nothing to write: ✓ is done all the same, while the shortcut says why nothing happened.
+      if (leave) leaveEditor();
+      else toastInfo(S.common.noChangesToSave);
       return;
     }
+    leaveOnSave.current = leave;
     // Already known to have moved under the editor: the ordinary "the file will be
     // overwritten" confirmation understates that, so ask the conflict question instead —
     // and sending the stale precondition first would only earn the same dialog a round
@@ -1391,7 +1413,9 @@ export function WorkspaceBrowser({
    * offers `overwrite`, which is the same write with no precondition. The draft is never
    * dropped on a refusal: the editor stays exactly as the user left it.
    *
-   * A save that lands leaves the editor open, as a code editor does: nothing remounts it, so
+   * A save from the ✓ returns to the preview once it lands — unless something was typed while
+   * the write was in flight, which stays in the editor, unsaved. A save from the shortcut
+   * leaves the editor open, as a code editor does: nothing remounts it, so
    * the caret, the selection and the scroll stay where they were. What was written becomes the
    * baseline — anything typed while the write was in flight stays unsaved on top of it — and
    * the version the write produced is the next save's precondition. A server that reports no
@@ -1419,7 +1443,9 @@ export function WorkspaceBrowser({
       );
       if (scopeKeyRef.current !== key) return;
       const stash = draftKey(key, current.path);
-      if (written === null) {
+      if (leaveOnSave.current && editorRef.current?.draft === sent) {
+        leaveEditor();
+      } else if (written === null) {
         unsavedDrafts.delete(stash);
         setEditor(null);
       } else {
@@ -1462,18 +1488,6 @@ export function WorkspaceBrowser({
     } finally {
       if (scopeKeyRef.current === key) setSaving(false);
     }
-  };
-
-  /**
-   * Leaves the editor for the source view, asking first when there are unsaved changes. The
-   * source view comes back where the editor was scrolled, not where it was before Edit.
-   */
-  const stopEditing = (): void => {
-    const host = editorHost.current;
-    const at = host === null ? null : { top: host.scrollTop, left: host.scrollLeft };
-    void navigateGuarded(null, () => {
-      bodyScrollOnReturn.current = at;
-    });
   };
 
   // ------------------------------------------------------------------------------ upload
@@ -2358,15 +2372,15 @@ export function WorkspaceBrowser({
             is open: a `Button size="sm"` stands 29px against these 27px, and the header would
             grow by two pixels the moment Edit was pressed. The save keeps no primary tint —
             it opens a confirmation whose own button carries that weight. */}
-        <Tooltip label={S.files.stopEditing} placement="bottom" className="shrink-0">
+        <Tooltip label={S.files.discardChanges} placement="bottom" className="shrink-0">
           <button
             type="button"
-            aria-label={S.files.stopEditing}
-            onClick={stopEditing}
+            aria-label={S.files.discardChanges}
+            onClick={leaveEditor}
             disabled={saving}
             className={`${iconActionClass} disabled:opacity-40`}
           >
-            <CloseIcon size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.cross} size={ICON_SIZE.iconButton} />
           </button>
         </Tooltip>
         <Tooltip
@@ -2381,7 +2395,7 @@ export function WorkspaceBrowser({
           <button
             type="button"
             aria-label={S.common.save}
-            onClick={requestSave}
+            onClick={() => requestSave(true)}
             disabled={saving}
             className={`${iconActionClass} disabled:opacity-40`}
           >
@@ -2465,7 +2479,7 @@ export function WorkspaceBrowser({
             initialScroll={editorOpening.current}
             hostRef={editorHost}
             onChange={updateDraft}
-            onSave={requestSave}
+            onSave={() => requestSave()}
             // The editor.save binding (⌘S / Ctrl+S by default), read from the keymap at the
             // keystroke so a rebinding in the settings takes effect without a remount.
             isSaveKey={(event) => isShortcut(event, keymap(), "editor.save", currentPlatform())}
