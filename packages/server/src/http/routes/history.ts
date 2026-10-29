@@ -1,5 +1,5 @@
 /**
- * `GET /api/sessions/:sessionId/history` for this server's own Sessions (spec 05 「历史流」):
+ * `GET /api/sessions/:sessionId/history` for this server's own Sessions (spec 05, "History stream"):
  * the window `/messages` answers for the same query, as a stream of whole-record lines with
  * their bulky values elided (services/history-stream.ts). A Session another machine holds never
  * gets here: the hub answers it from its copy of that machine's lines, in front of this group
@@ -12,13 +12,17 @@
  * `fill=only` answers `filled` alone.
  *
  * Every failure, a missing Session included, is the stream's terminal `error` event rather than
- * a status: a stream answered with a status is one the socket client issues again.
+ * a status: a stream answered with a status is one the socket client issues again. A re-issue
+ * continues a held window only for the Session, reader and query it was sent for, and an HTTP
+ * stream ends when its sign-in does.
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { LiveStreams } from "../../auth/live-streams.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
 import type { Channels } from "../../hmr/capabilities.js";
+import type { Auth } from "../../mechanisms/identity.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { SessionIndex } from "../../mechanisms/sessions.js";
 import type { Traces } from "../../mechanisms/traces.js";
@@ -41,6 +45,7 @@ import {
 import type { SessionHistoryDeps } from "../../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
 import { HttpError } from "../errors.js";
+import { streamRevocation } from "../sse.js";
 
 export interface HistoryRouteDeps {
   sessions: Pick<SessionIndex, "findById">;
@@ -50,6 +55,9 @@ export interface HistoryRouteDeps {
   channels: SessionHistoryDeps["channels"];
   /** The windows sent lately, for a re-issued stream to continue (one per route group otherwise). */
   windows?: HeldWindows;
+  /** What an HTTP stream is held against: signing out ends it (http/sse.ts). */
+  liveStreams?: LiveStreams;
+  auth?: Auth;
   now?: () => number;
 }
 
@@ -64,13 +72,15 @@ async function serveHistory(
   row: SessionRow,
   query: HistoryQuery,
   lastEventId: string | null,
+  userId: string,
 ): Promise<void> {
   if (query.kind === "fill") {
     await out.send("filled", null, "{}");
     return;
   }
+  const owner = { sessionId: row.sessionId, userId, query: JSON.stringify(query) };
   const resume = resumePoint(lastEventId);
-  const held = resume !== null ? windows.find(resume.windowId) : null;
+  const held = resume !== null ? windows.find(resume.windowId, owner) : null;
   let window = held;
   if (window === null) {
     const envelope = captureHistoryEnvelope(deps, row.sessionId, query.read.kind);
@@ -94,7 +104,7 @@ async function serveHistory(
       (_m, i) => read.sources[i] ?? null,
       (deps.now ?? Date.now)(),
     );
-    windows.hold(window);
+    windows.hold(window, owner);
   }
   await sendWindow(out, window, held !== null ? resume!.offset : null);
   if (query.fill) await out.send("filled", null, "{}");
@@ -104,7 +114,14 @@ export function historyRoutes(deps: HistoryRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const windows = deps.windows ?? new HeldWindows(deps.now);
   app.get("/:sessionId/history", (c) => {
-    const { out, response } = openHistoryOut(c.req.raw);
+    const revocation =
+      deps.liveStreams !== undefined && deps.auth !== undefined
+        ? streamRevocation(c, c.var.user, { liveStreams: deps.liveStreams, auth: deps.auth })
+        : undefined;
+    const { out, response } = openHistoryOut(
+      c.req.raw,
+      revocation !== undefined ? { revocation } : {},
+    );
     const lastEventId = c.req.header("last-event-id") ?? null;
     void (async () => {
       try {
@@ -116,7 +133,7 @@ export function historyRoutes(deps: HistoryRouteDeps): Hono<AppEnv> {
           throw notFound();
         }
         const query = parseHistoryQuery((name) => c.req.query(name));
-        await serveHistory(out, deps, windows, row, query, lastEventId);
+        await serveHistory(out, deps, windows, row, query, lastEventId, c.var.user.userId);
       } catch (err) {
         if (!out.signal.aborted) await sendError(out, err);
       } finally {
@@ -148,6 +165,8 @@ export class HistoryRoutes {
   @Use() private readonly traces!: Traces;
   @Use() private readonly manager!: ManagerIface;
   @Use() private readonly channels!: Channels;
+  @Use() private readonly liveStreams!: LiveStreams;
+  @Use() private readonly auth!: Auth;
   @Bind("HistoryRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = historyRoutes({
@@ -156,6 +175,8 @@ export class HistoryRoutes {
       traces: this.traces,
       manager: this.manager,
       channels: this.channels,
+      liveStreams: this.liveStreams,
+      auth: this.auth,
     });
   }
 }

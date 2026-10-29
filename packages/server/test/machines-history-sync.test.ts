@@ -12,8 +12,22 @@
  * - Given a machine that is not connected, when a window is asked for, then the reader is told
  *   it waits — the attempt, and when the next one is — and the window arrives once it is back.
  * - Given a machine on an older build (its socket answers `history-lines` 421), then the window
- *   is read from its `/messages` over HTTP inside the same stream, the bytes counted as they come.
+ *   is read from its `/messages` over HTTP inside the same stream, the bytes counted as they come;
+ *   so is one this server holds no socket to.
+ * - Given a machine that turns this server's session away at the handshake, then the stream ends
+ *   with `machine_refused`; given one being brought onto this hub's build, the reader is told it
+ *   waits; given one this server no longer lists, the stream ends with `machine_not_found`.
+ * - Given a machine stream that keeps ending without moving, then it is asked again only after a
+ *   growing wait the reader is told of, never at once in a loop.
+ * - Given a copy that cannot be written, then the window still arrives, from the stream itself.
+ * - Given the generation replaced, then every stream it holds ends without an error (the reader
+ *   asks the next one), and a stream asked of it afterwards ends at once.
+ * - Given a fill another reader's window stream carries, when the last reader staying for the
+ *   fill leaves, then that machine call is cancelled.
+ * - Given the copy over its cap, when a stream completes, then an open job's Session is kept
+ *   though it was read longest ago, and a Session no job holds goes.
  */
+import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -84,7 +98,7 @@ const event = (
 ) => send(ws, { id, event: name, eventId, data: JSON.stringify(data) });
 
 /** The window event of a one-file Session whose whole file is the window. */
-const windowOf = (file: string): HistoryLinesWindow => ({
+const windowOf = (file: string, k = K): HistoryLinesWindow => ({
   envelope: {
     page: {
       earlierTurns: 0,
@@ -101,10 +115,8 @@ const windowOf = (file: string): HistoryLinesWindow => ({
     serverNowMs: 1_700_000_000_000,
     status: "idle",
   },
-  files: [
-    { k: K, ino: 11, birthtimeMs: 5, size: Buffer.byteLength(file), records: 2, final: false },
-  ],
-  layout: [{ k: K, from: [0, 0], to: [Buffer.byteLength(file), 2], origin: null }],
+  files: [{ k, ino: 11, birthtimeMs: 5, size: Buffer.byteLength(file), records: 2, final: false }],
+  layout: [{ k, from: [0, 0], to: [Buffer.byteLength(file), 2], origin: null }],
   stubs: [],
   totals: {
     window: { bytes: Buffer.byteLength(file), lines: 2 },
@@ -113,11 +125,15 @@ const windowOf = (file: string): HistoryLinesWindow => ({
   },
 });
 
-/** The whole answer of a healthy machine to one window call. */
-function answerWindow(ws: WebSocket, id: number): void {
+/** The Session a machine call names. */
+const sessionOf = (callPath: string): string => /\/api\/sessions\/([^/]+)\//.exec(callPath)![1]!;
+
+/** The whole answer of a healthy machine to one window call (of `sid`'s one-file Session). */
+function answerWindow(ws: WebSocket, id: number, sid = SID): void {
+  const k = `default_agent/${sid}/1`;
   start(ws, id);
-  event(ws, id, "window", windowOf(FILE));
-  event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE });
+  event(ws, id, "window", windowOf(FILE, k));
+  event(ws, id, "lines", { k, off: 0, ord: 0, text: FILE });
   event(ws, id, "ready", {});
   event(ws, id, "done", {});
   send(ws, { id, end: true, reason: "closed" });
@@ -142,15 +158,36 @@ afterEach(async () => {
 });
 
 /** The hub's proxy to the machine on `port`, its history answered from a copy under the temp root. */
-function hub(port: number, connected: () => boolean = () => true) {
+function hub(
+  port: number,
+  options: {
+    connected?: () => boolean;
+    known?: (machineId: string) => boolean;
+    /** What the socket cache answers instead of a socket (machine-sockets.ts's refusals). */
+    refusal?: () => Response | null;
+    cache?: TraceCache;
+  } = {},
+) {
+  const connected = options.connected ?? (() => true);
   const target = (): ProxyTarget | null =>
     connected()
       ? { agent: new http.Agent(), port, cookie: "c", adoptedAt: null, session: 1 }
       : null;
+  const cache = options.cache ?? new TraceCache(path.join(root, "machines", "traces"));
+  const refusal = options.refusal;
   const { history, sync } = machineHistory({
-    cache: new TraceCache(path.join(root, "machines", "traces")),
-    sockets,
+    cache,
+    sockets:
+      refusal === undefined
+        ? sockets
+        : {
+            socketFor: async (machineId, at) => {
+              const answer = refusal();
+              return answer !== null ? { answer } : sockets.socketFor(machineId, at);
+            },
+          },
     target: async () => target(),
+    ...(options.known !== undefined ? { known: options.known } : {}),
     log: () => undefined,
     tuning: { clock },
   });
@@ -163,7 +200,7 @@ function hub(port: number, connected: () => boolean = () => true) {
   );
   const get = async (remote: string, headers: Record<string, string> = {}) =>
     (await proxy(new Request(`http://localhost/server/${MACHINE}${remote}`, { headers })))!;
-  return { get };
+  return { get, sync, cache };
 }
 
 const progressOf = (events: { event: string; data: string }[]): HistoryProgress[] =>
@@ -200,6 +237,9 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     const [session] = machine.calls("/stream");
 
     clock.advance(MACHINE_STREAM_WATCHDOG_MS);
+    // The cut stream brought nothing but its window: asked again after the first wait.
+    await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === 1));
+    clock.advance(1_000);
     await waitFor(() => history.has("done"));
 
     expect(machine.cancelled(first!)).toBe(true);
@@ -273,7 +313,7 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     let connected = false;
     const machine = await scriptedMachine(answerWindow);
     close.push(machine.close);
-    const { get } = hub(machine.port, () => connected);
+    const { get } = hub(machine.port, { connected: () => connected });
 
     const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
     close.push(history.stop);
@@ -353,5 +393,220 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
       totalBytes: Buffer.byteLength(body),
     });
     expect(windowRecords(history.events)).toEqual(messages);
+  });
+
+  it.each([
+    ["has no socket to offer this server", "machine_socket_unavailable", 502],
+    ["is on a build this hub cannot bring it to", "machine_incompatible", 502],
+  ])("reads the window over HTTP from a machine that %s", async (_name, code, status) => {
+    const body = JSON.stringify({
+      messages: [],
+      page: {
+        earlierTurns: 0,
+        prior: {
+          subagentTokens: 0,
+          elapsedMs: 0,
+          apiMs: 0,
+          toolMs: 0,
+          sessionTokens: 0,
+          contextTokens: 0,
+        },
+      },
+    });
+    const machine = await scriptedMachine(answerWindow, (_req, res) => {
+      res.setHeader("content-type", "application/json");
+      res.end(body);
+    });
+    close.push(machine.close);
+    const { get } = hub(machine.port, {
+      refusal: () => Response.json({ error: { code, message: "no socket" } }, { status }),
+    });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => history.has("done"));
+    expect(machine.calls("/history-lines")).toEqual([]);
+  });
+
+  it("ends the stream with machine_refused when the machine turns this server's session away", async () => {
+    const { get } = hub(1, {
+      refusal: () =>
+        Response.json(
+          {
+            error: {
+              code: "machine_socket_refused",
+              message: "m answered the API socket handshake with 401; update the program on it",
+            },
+          },
+          { status: 502 },
+        ),
+    });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await history.finished;
+    const last = history.named().at(-1)!;
+    expect(last.event).toBe("error");
+    expect((JSON.parse(last.data) as { code: string }).code).toBe("machine_refused");
+  });
+
+  it("tells the reader it waits while the machine is brought onto this hub's build", async () => {
+    let upgrading = true;
+    const machine = await scriptedMachine(answerWindow);
+    close.push(machine.close);
+    const { get } = hub(machine.port, {
+      refusal: () =>
+        upgrading
+          ? Response.json(
+              { error: { code: "machine_upgrading", message: "installing" } },
+              { status: 503 },
+            )
+          : null,
+    });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => progressOf(history.events).some((p) => p.waiting?.reason === "retrying"));
+    upgrading = false;
+    clock.advance(1_000);
+    await waitFor(() => history.has("done"));
+  });
+
+  it("ends the stream with machine_not_found for a machine this server no longer lists", async () => {
+    const { get } = hub(1, { connected: () => false, known: () => false });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await history.finished;
+    const last = history.named().at(-1)!;
+    expect(last.event).toBe("error");
+    expect((JSON.parse(last.data) as { code: string }).code).toBe("machine_not_found");
+  });
+
+  it("asks a machine stream that keeps ending without moving again only after a wait it tells of", async () => {
+    let calls = 0;
+    const machine = await scriptedMachine((ws, id) => {
+      calls += 1;
+      start(ws, id);
+      event(ws, id, "window", windowOf(FILE));
+      send(ws, { id, end: true, reason: "closed" });
+    });
+    close.push(machine.close);
+    const { get } = hub(machine.port);
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === 1));
+    expect(calls).toBe(1);
+    expect(progressOf(history.events).at(-1)?.waiting).toMatchObject({
+      reason: "retrying",
+      attempt: 1,
+    });
+
+    clock.advance(1_000);
+    await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === 2));
+    expect(calls).toBe(2);
+  });
+
+  it("delivers the window from the stream itself when the copy cannot be written", async () => {
+    let calls = 0;
+    const machine = await scriptedMachine((ws, id) => {
+      calls += 1;
+      answerWindow(ws, id);
+    });
+    close.push(machine.close);
+    // A file where the copy's directory should be: nothing of the copy can open or write.
+    const blocked = path.join(root, "blocked");
+    await fs.writeFile(blocked, "not a directory");
+    const { get } = hub(machine.port, { cache: new TraceCache(path.join(blocked, "traces")) });
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20&fill=1`));
+    await history.finished;
+
+    expect(
+      history
+        .named()
+        .map((e) => e.event)
+        .filter((e) => e !== "progress"),
+    ).toEqual(["page", "records", "done", "filled"]);
+    expect(windowRecords(history.events)).toHaveLength(2);
+    expect(calls).toBe(1);
+  });
+
+  it("ends every stream of a replaced generation without an error, and any asked of it afterwards", async () => {
+    const { get, sync } = hub(1, { connected: () => false });
+    const waiting = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await waitFor(() => progressOf(waiting.events).some((p) => p.waiting?.attempt === 1));
+
+    sync.close();
+    await waiting.finished;
+    expect(waiting.named().map((e) => e.event)).toEqual(["progress"]);
+
+    const late = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await late.finished;
+    expect(late.named()).toEqual([]);
+  });
+
+  it("cancels a fill another reader's window stream carries once its last reader leaves", async () => {
+    const answered: string[] = [];
+    const machine = await scriptedMachine((ws, id, callPath) => {
+      answered.push(callPath);
+      start(ws, id);
+      // A fill that never ends; the window call also gets its window first.
+      event(ws, id, "window", {
+        ...windowOf(FILE),
+        totals: { ...windowOf(FILE).totals, fill: { bytes: 1_000_000, lines: 100 } },
+      });
+      if (callPath.includes("tailLimit")) {
+        event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE });
+        event(ws, id, "ready", {});
+      }
+    });
+    close.push(machine.close);
+    const { get } = hub(machine.port);
+
+    const filler = eventReader(await get(`/api/sessions/${SID}/history?fill=only`));
+    await waitFor(() => machine.calls("/history-lines").length === 1);
+    const window = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await window.finished; // its window delivered, its reader gone
+    const [, carrying] = machine.calls("/history-lines");
+    expect(new URL(answered[1]!, "http://x").searchParams.get("fill")).toBe("1");
+    expect(machine.cancelled(carrying!)).toBe(false);
+
+    await filler.stop();
+    await waitFor(() => machine.cancelled(carrying!));
+  });
+
+  it("keeps an open job's Session when the copy is over its cap, and lets one no job holds go", async () => {
+    let t = 0;
+    const machine = await scriptedMachine((ws, id, callPath) => {
+      const sid = sessionOf(callPath);
+      if (sid !== "s-open") return answerWindow(ws, id, sid);
+      const k = `default_agent/${sid}/1`;
+      start(ws, id);
+      event(ws, id, "window", {
+        ...windowOf(FILE, k),
+        totals: { ...windowOf(FILE, k).totals, fill: { bytes: 10, lines: 1 } },
+      });
+      event(ws, id, "lines", { k, off: 0, ord: 0, text: FILE });
+      event(ws, id, "ready", {});
+    });
+    close.push(machine.close);
+    const cache = new TraceCache(path.join(root, "copy"), {
+      capBytes: Math.floor(Buffer.byteLength(FILE) * 2.5),
+      now: () => ++t,
+    });
+    const { get } = hub(machine.port, { cache });
+    const read = async (sid: string) => {
+      const reader = eventReader(await get(`/api/sessions/${sid}/history?tailLimit=20`));
+      await reader.finished;
+    };
+
+    // Read first, so read longest ago — but its job stays open, waiting for its fill.
+    const open = eventReader(await get(`/api/sessions/s-open/history?tailLimit=20&fill=1`));
+    close.push(open.stop);
+    await waitFor(() => open.has("done"));
+    await read("s-done");
+    await read("s-last");
+
+    // Evicted once the last stream completed, while the open job's Session is held.
+    const deadline = Date.now() + 2_000;
+    while ((await cache.bytes(MACHINE, "default_agent/s-done/1", 0, 1)) !== null) {
+      if (Date.now() > deadline) throw new Error("the Session no job holds was never evicted");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(await cache.bytes(MACHINE, "default_agent/s-open/1", 0, 1)).not.toBeNull();
   });
 });

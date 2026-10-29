@@ -17,8 +17,9 @@
  *   as it is now; a subagent's file deleted on the machine leaves no copy behind.
  * - Given `fill=1` over a Session longer than its window, then after `done` the fill's
  *   progress follows and `filled` ends the stream, with the whole Session held.
- * - Given a file the copy holds whole, then the Trace panel's events and an image by reference
- *   are answered from it, even with the machine away; what it cannot answer is forwarded.
+ * - Given a rotated file the copy holds whole, then the Trace panel's events and an image by
+ *   reference are answered from it, even with the machine away; the live file's events are the
+ *   machine's (it grows there), and whatever the copy cannot answer is forwarded.
  * - Given a value the window elided, then `trace-body` sends it whole: the first time after
  *   fetching its one line, the next time from the copy alone.
  * - Given the conversation opened by its URL alone (no machine prefix, as a reload asks), then
@@ -44,6 +45,7 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type {
+  TraceEventsResponse,
   HistoryMessage,
   HistoryProgress,
   HistoryRecords,
@@ -53,7 +55,7 @@ import { machineHistory } from "../src/machines/history-routes.js";
 import type { HistorySync } from "../src/machines/history-sync.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
 import { machinesProxy } from "../src/machines/proxy.js";
-import { TraceCache } from "../src/machines/trace-cache.js";
+import { TraceCache, dirNameOf } from "../src/machines/trace-cache.js";
 import { FRAME_TEXT_BUDGET } from "../src/socket/line-frames.js";
 import { attachTerminalWebSocket } from "../src/terminal/ws.js";
 import { eventReader, windowRecords } from "./fixtures/history-stream.js";
@@ -183,7 +185,12 @@ beforeEach(async () => {
     get: async (remote) =>
       (await proxy(new Request(`http://localhost/server/${MACHINE}${remote}`)))!,
     cacheFile: (sid, index = 1) =>
-      path.join(traces, MACHINE, sid, `${String(index).padStart(3, "0")}.jsonl`),
+      path.join(
+        traces,
+        dirNameOf(MACHINE),
+        dirNameOf(sid),
+        `${String(index).padStart(3, "0")}.jsonl`,
+      ),
   };
 });
 
@@ -375,29 +382,43 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
   });
 
-  it("answers the Trace panel's events and an image by reference from a whole copy, with the machine away", async () => {
+  it("answers a rotated file's events and an image by reference from the copy, and leaves the live file's to the machine", async () => {
     const sid = uniqueSessionId();
     const png = `data:image/png;base64,${Buffer.from("not really a png").toString("base64")}`;
     await machineSession(sid, [meta(sid), userText("look"), imageUrlMessage(png), ...tasks(2)]);
+    const live = await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 2, [
+      meta(sid),
+      ...tasks(2),
+    ]);
     const window = windowRecords(await read(sid, "?tailLimit=20&fill=1")) as HistoryMessage[];
     const image = window.find((r) => (r.payload as { type?: string }).type === "image_url");
     const url = (image!.payload as { image_url: string }).image_url;
     expect(url).toMatch(/\/trace-image\?file=1&ordinal=2$/);
-    const events = await (
-      await machine.app.request(`/api/sessions/${sid}/traces/1?offset=1&limit=3`, {
-        headers: { cookie },
-      })
-    ).json();
+    const machineEvents = async (index: number) =>
+      (await (
+        await machine.app.request(`/api/sessions/${sid}/traces/${index}?offset=1&limit=3`, {
+          headers: { cookie },
+        })
+      ).json()) as TraceEventsResponse;
+
+    // The live file grows on the machine: its events are the machine's to count.
+    await fs.appendFile(live, `${JSON.stringify(userText("one more"))}\n`);
+    const viaHub = (await (
+      await hub.get(`/api/sessions/${sid}/traces/2?offset=1&limit=3`)
+    ).json()) as TraceEventsResponse;
+    expect(viaHub).toEqual(await machineEvents(2));
+    const rotated = await machineEvents(1);
 
     connected = false;
     const fromCopy = await hub.get(`/api/sessions/${sid}/traces/1?offset=1&limit=3`);
     expect(fromCopy.status).toBe(200);
-    expect(await fromCopy.json()).toEqual(events);
+    expect(await fromCopy.json()).toEqual(rotated);
     const picture = await hub.get(url);
     expect(picture.status).toBe(200);
     expect(picture.headers.get("content-type")).toBe("image/png");
     expect(Buffer.from(await picture.arrayBuffer()).toString()).toBe("not really a png");
-    // What the copy does not hold is forwarded as before, and with no forward that says so.
+    // What the copy does not answer is forwarded as before, and with no forward that says so.
+    expect((await hub.get(`/api/sessions/${sid}/traces/2?offset=1&limit=3`)).status).toBe(503);
     expect((await hub.get(`/api/sessions/${sid}/traces/1/analysis`)).status).toBe(503);
   });
 
@@ -466,7 +487,14 @@ describe("a machine Session's history opened by its URL alone", () => {
 
     expect(reader.named().at(-1)?.event).toBe("done");
     expect(windowRecords(reader.events)).toEqual(await machineWindow(sid, "?tailLimit=20"));
-    const copy = path.join(hubApp.root, "machines", "traces", MACHINE, sid, "001.jsonl");
+    const copy = path.join(
+      hubApp.root,
+      "machines",
+      "traces",
+      dirNameOf(MACHINE),
+      dirNameOf(sid),
+      "001.jsonl",
+    );
     expect(await fs.readFile(copy)).toEqual(await fs.readFile(file));
   });
 });
