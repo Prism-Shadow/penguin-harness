@@ -26,6 +26,7 @@
  */
 import type { BodySource } from "@prismshadow/penguin-core/interfaces";
 import type {
+  HistoryFileKey,
   HistoryHave,
   HistoryLinesWindow,
   HistoryPartFrame,
@@ -33,7 +34,6 @@ import type {
   HistoryProgress,
   MessagesResponse,
 } from "../api/types.js";
-import type { HistoryFileKey } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { assembleWindow } from "../services/history-layout.js";
 import { historyLinesPath, parseHistoryFileKey } from "../services/history-wire.js";
