@@ -162,6 +162,7 @@ const windowOf = (file: string, k = K): HistoryLinesWindow => ({
   envelope: {
     page: {
       earlierTurns: 0,
+      units: 1,
       prior: {
         subagentTokens: 0,
         elapsedMs: 0,
@@ -624,6 +625,59 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
       totalBytes: Buffer.byteLength(body),
     });
     expect(windowRecords(history.events)).toEqual(messages);
+  });
+
+  it("says how many Tasks an older machine's window holds, its own page saying none", async () => {
+    // Three Tasks, then an input the machine holds that its Trace has not caught up to.
+    const lines = [0, 1, 2].flatMap((i) => [
+      traceLine(2 * i, `question ${i}`, "user"),
+      traceLine(2 * i + 1, `answer ${i}`),
+    ]);
+    const held = JSON.parse(traceLine(6, "and one more", "user")) as object;
+    const body = JSON.stringify({
+      messages: [
+        ...lines.map((l, ordinal) => ({
+          ...(JSON.parse(l) as object),
+          tracePosition: { fileIndex: 1, ordinal },
+        })),
+        held,
+      ],
+      page: {
+        earlierTurns: 4,
+        prior: {
+          subagentTokens: 0,
+          elapsedMs: 0,
+          apiMs: 0,
+          toolMs: 0,
+          sessionTokens: 0,
+          contextTokens: 0,
+        },
+      },
+    });
+    const machine = await scriptedMachine(
+      (ws, id) =>
+        send(ws, {
+          id,
+          status: 421,
+          headers: {},
+          body: { error: { code: "not_on_socket", message: "HTTP only." } },
+        }),
+      (_req, res) => {
+        res.setHeader("content-type", "application/json");
+        res.end(body);
+      },
+    );
+    close.push(machine.close);
+    const { get } = hub(machine.port);
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=3`));
+    close.push(history.stop);
+    await waitFor(() => history.has("done"));
+
+    const page = JSON.parse(history.events.find((e) => e.event === "page")!.data) as {
+      page: { units: number; earlierTurns: number };
+    };
+    expect(page.page).toMatchObject({ units: 3, earlierTurns: 4 });
   });
 
   it.each([

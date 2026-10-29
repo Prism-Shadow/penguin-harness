@@ -61,6 +61,7 @@ import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame } from "../socket/frames.js";
 import { LineCommitter, frameBytes } from "../socket/line-frames.js";
 import type { MachineSocket, Sink } from "./machine-sockets.js";
+import { withWindowUnits } from "./older-window-units.js";
 import type { ProxyTarget } from "./proxy.js";
 import type { TraceCache } from "./trace-cache.js";
 
@@ -1128,7 +1129,11 @@ class HistoryJob {
       op.track.add(value.byteLength, 0);
     }
     if (stream.cancelled) return;
-    const response = JSON.parse(Buffer.concat(chunks).toString("utf8")) as MessagesResponse;
+    // An older build's page has no `units`: counted here, as a newer machine's cut counts it.
+    const response = await withWindowUnits(
+      JSON.parse(Buffer.concat(chunks).toString("utf8")) as MessagesResponse,
+    );
+    if (stream.cancelled) return;
     const date = Date.parse(res.headers.get("date") ?? "");
     stream.delivered = true;
     this.#settle(op, {
