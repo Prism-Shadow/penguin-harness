@@ -50,6 +50,7 @@ import {
   hiAnchorRange,
   loAnchorRange,
   parseHistoryFileKey,
+  sameHistoryFile,
 } from "../services/history-wire.js";
 import { LineCommitter, frameBytes } from "../socket/line-frames.js";
 
@@ -442,11 +443,14 @@ export class TraceCache {
       await this.#serial(state, async () => {
         if (state.dead) return;
         const sidecar = state.sidecar;
+        // One rule at both ends (history-wire.ts): the inode, and the birth time only where both
+        // know one; the device is kept, never compared. The anchors check the content.
         const moved =
           sidecar.ino === null ||
-          sidecar.ino !== String(fact.ino) ||
-          (sidecar.dev ?? null) !== (fact.dev ?? null) ||
-          sidecar.birthtimeMs !== fact.birthtimeMs;
+          !sameHistoryFile(
+            { ino: sidecar.ino, birthtimeMs: sidecar.birthtimeMs },
+            { ino: String(fact.ino), birthtimeMs: fact.birthtimeMs },
+          );
         if (fact.reset === true || moved || fact.size < sidecar.size) await this.#clear(state);
         sidecar.ino = String(fact.ino);
         if (fact.dev !== undefined) sidecar.dev = fact.dev;

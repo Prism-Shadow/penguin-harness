@@ -19,7 +19,8 @@
  * - Given a run read once, when one more line is committed, then the next record read reads only
  *   that record's bytes, not the whole run again.
  * - Given held runs, when `have` is asked, then it names every one with the anchors of its own
- *   edges; when the machine resets the file or its identity changes, the copy starts over; a file
+ *   edges; when the machine resets the file or its identity changes (another inode, or a birth
+ *   time both sides know that differs; never the device), the copy starts over; a file
  *   the machine no longer lists is dropped.
  * - Given a group of 200 held files, then `have` stays within its budget (and the machine's
  *   ceiling), the Session's own file first; asked for one file, it names that file alone.
@@ -334,6 +335,29 @@ describe("the hub's copy of a machine's Trace lines", () => {
     await cache.reconcile(M, S, []);
     expect(await cache.have(M, S)).toEqual([]);
     expect(await cache.bytes(M, K, 0, 10)).toBeNull();
+  });
+
+  it("keeps its copy across a new device or a birth time one side does not know, and starts over when a known one changes", async () => {
+    const file = traceFile(4);
+    const cache = new TraceCache(root);
+    const held = async () => (await cache.bytes(M, K, 0, file.bytes.length)) !== null;
+    await cache.reconcile(M, S, [fact(file.bytes, 4, { dev: "1" })]);
+    await cache.commit(M, linesFrame(file, 0, 4));
+
+    // A container restart on overlayfs: another device number, the same file — and, on a
+    // machine without statx, no birth time with it.
+    await cache.reconcile(M, S, [fact(file.bytes, 4, { dev: "2", birthtimeMs: 0 })]);
+    expect(await held()).toBe(true);
+    await cache.reconcile(M, S, [fact(file.bytes, 4, { dev: "3" })]);
+    expect(await held()).toBe(true);
+    // A machine without statx reports no birth time; then one again.
+    await cache.reconcile(M, S, [fact(file.bytes, 4, { birthtimeMs: 0 })]);
+    expect(await held()).toBe(true);
+    await cache.reconcile(M, S, [fact(file.bytes, 4, { birthtimeMs: 2000 })]);
+    expect(await held()).toBe(true);
+    // Both known and different: another file under the same inode.
+    await cache.reconcile(M, S, [fact(file.bytes, 4, { birthtimeMs: 3000 })]);
+    expect(await held()).toBe(false);
   });
 
   it("keeps a group's `have` within its budget, its own file first, or names one file alone", async () => {
