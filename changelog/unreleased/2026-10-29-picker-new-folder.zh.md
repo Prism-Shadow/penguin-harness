@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** feature
 - **Scope:** `web`, `server`
+- **PR:** [#1387](https://github.com/Prism-Shadow/penguin-harness/pull/1387)
 
 [English](2026-10-29-picker-new-folder.md)
 
