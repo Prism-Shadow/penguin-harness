@@ -13,17 +13,40 @@
  *   as the rooted one; `released` and the renderer it named are kept; `orgPagesOf` selects
  *   these pages from the table.
  * - A merged iframe page is routed at its path and draws a sandboxed frame of its src.
+ * - Safe mode is the one switch: the provider tells the store nobody is signed in, so the table
+ *   is the compiled one with nothing in flight; off again, the signed-in user's request is due.
+ *   The rest of the answer goes with it: no surfaces, no quick starts, no company-mode page,
+ *   and a refresh (after a plugin change) asks nothing.
  */
 import { createElement, type ComponentType } from "react";
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
-import { describe, expect, it, vi } from "vitest";
-import { contributedPagesOf, createContributionsStore } from "../src/web-app/contributions";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as api from "../src/api/endpoints";
+import {
+  contributedPagesOf,
+  createContributionsStore,
+  WebAppPagesProvider,
+  useContributions,
+  useWebAppPages,
+  useWebAppPagesPending,
+  type ContributionsValue,
+} from "../src/web-app/contributions";
+
+import { webAppDeps, type WebAppDeps } from "../src/web-app/deps";
+
+import { setSafeMode } from "../src/rescue/safe-mode";
 import type { WebAppPage } from "../src/web-app";
 import { ThemeProvider } from "../src/state/theme";
 import { orgPagesOf } from "../src/features/company/use-org-pages";
+
+// The provider reads the signed-in user and asks the server through these.
+vi.mock("../src/state/auth", () => ({ useAuth: () => ({ user: { userId: "bob" } }) }));
+vi.mock("../src/api/endpoints", () => ({
+  getContributions: vi.fn(() => new Promise<never>(() => undefined)),
+}));
 
 const Blank: ComponentType = () => null;
 
@@ -316,5 +339,58 @@ describe("orgPagesOf", () => {
     );
     expect(orgPagesOf(merged).map((p) => p.id)).toEqual(["b", "c"]);
     expect(orgPagesOf(COMPILED)).toEqual([]);
+  });
+});
+
+describe("safe mode", () => {
+  afterEach(() => setSafeMode(false));
+
+  /** The provider's table and pending flag as its first render sees them, before any effect. */
+  function firstRender(): string {
+    function Probe() {
+      const pages = useWebAppPages();
+      return createElement(
+        "p",
+        null,
+        `${pages.map((p) => p.key).join(",")} pending=${String(useWebAppPagesPending())}`,
+      );
+    }
+    const Root = webAppDeps.provide({ pages: COMPILED } as unknown as WebAppDeps, () =>
+      createElement(WebAppPagesProvider, null, createElement(Probe)),
+    );
+    return renderToStaticMarkup(createElement(Root));
+  }
+
+  it("skips every contribution: the table is the compiled one and nothing is in flight", () => {
+    setSafeMode(true);
+    expect(firstRender()).toBe("<p>agents,terminal pending=false</p>");
+  });
+
+  it("leaving it makes the signed-in user's request due again", () => {
+    setSafeMode(true);
+    firstRender();
+    setSafeMode(false);
+    expect(firstRender()).toBe("<p>agents,terminal pending=true</p>");
+  });
+
+  it("hands out no quick starts or org pages; a refresh asks nothing", async () => {
+    setSafeMode(true);
+    let value: ContributionsValue | null = null;
+    let orgPages = -1;
+    function Probe() {
+      value = useContributions();
+      orgPages = orgPagesOf(useWebAppPages()).length;
+      return null;
+    }
+    const Root = webAppDeps.provide({ pages: COMPILED } as unknown as WebAppDeps, () =>
+      createElement(WebAppPagesProvider, null, createElement(Probe)),
+    );
+    renderToStaticMarkup(createElement(Root));
+    const held = value as ContributionsValue | null;
+    expect(held?.quickStarts).toEqual([]);
+    expect(orgPages).toBe(0);
+    const asked = vi.mocked(api.getContributions).mock.calls.length;
+    await expect(held?.refresh()).resolves.toBeNull();
+    expect(vi.mocked(api.getContributions).mock.calls.length).toBe(asked);
   });
 });

@@ -12,3 +12,5 @@ export { useContributions, useWebAppPages } from "./contributions";
 export function useWebAppLayers(): readonly WebAppLayer[] {
   return webAppDeps.useDeps().layers;
 }
+
+export { RescuePalette, HarnessHistoryOverlay } from "./recovery";

@@ -32,6 +32,7 @@ import {
   createBrowserRouter,
   createMemoryRouter,
   createRoutesFromElements,
+  useRouteError,
 } from "react-router";
 import { releaseBootWallpaper } from "@prismshadow/penguin-ui/boot";
 import { NavigationGuard } from "../lib/unsaved/navigation-guard";
@@ -136,9 +137,15 @@ function BarePage({ id }: { id: string }) {
  * are read and mounted under the organization layout by OrgRoutes
  * (features/company/org-routes.tsx).
  */
+/** Let App's independent rescue boundary handle route failures too. The data router's
+ * default boundary would otherwise replace a broken page with its own, actionless error UI. */
+function RouteError(): never {
+  throw useRouteError();
+}
+
 function appRoutes(pages: readonly WebAppPage[]) {
   return createRoutesFromElements(
-    <Route element={<RootFrame />}>
+    <Route element={<RootFrame />} errorElement={<RouteError />}>
       <Route path="/login" element={<LoginRoute />} />
       {pages
         .filter((page) => page.frame === "bare")
