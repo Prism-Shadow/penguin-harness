@@ -730,6 +730,18 @@ class HistoryJob {
         this.gone(messageOf(body));
         return null;
       }
+      // The machine will not show this server's admin the Session: a refusal, said as it is.
+      // The Session is there, so its copy stays, and no wait would change the answer.
+      if (status === 403 && code === "session_forbidden") {
+        this.#failAll(
+          new HttpError(
+            403,
+            "session_forbidden",
+            messageOf(body) ?? "The machine does not let this server read the Session.",
+          ),
+        );
+        return null;
+      }
       if (status === 401 || status === 403) {
         this.#failAll(this.#refusedError(`${status}`));
         return null;

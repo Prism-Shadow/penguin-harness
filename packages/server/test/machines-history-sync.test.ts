@@ -685,7 +685,8 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     });
     const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
     close.push(history.stop);
-    await waitFor(() => carry !== null);
+    // The window handled here (its phase begun) before the clock moves: the minute counts from it.
+    await waitFor(() => carry !== null && progressOf(history.events).length > 0);
     const beat = async () => {
       const before = bytes;
       carry!("ping", {});
@@ -1033,6 +1034,39 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     close.push(history.stop);
     await waitFor(() => history.has("done"));
     expect(machine.calls("/history-lines")).toEqual([]);
+  });
+
+  it("ends the stream with session_forbidden when the machine will not show the Session, keeping its copy and never waiting", async () => {
+    let calls = 0;
+    const machine = await scriptedMachine((ws, id) => {
+      calls += 1;
+      if (calls === 1) {
+        answerWindow(ws, id);
+        return;
+      }
+      send(ws, {
+        id,
+        status: 403,
+        headers: {},
+        body: {
+          error: { code: "session_forbidden", message: "This account may not read this Session." },
+        },
+      });
+    });
+    close.push(machine.close);
+    const { get, cache } = hub(machine.port);
+    const first = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await first.finished;
+    const held = cache.usedBytes;
+    expect(held).toBeGreaterThan(0);
+
+    const refused = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    await refused.finished;
+    const error = refused.events.find((e) => e.event === "error");
+    expect(JSON.parse(error!.data)).toMatchObject({ code: "session_forbidden" });
+    expect(progressOf(refused.events).some((p) => p.waiting !== null)).toBe(false);
+    expect(machine.calls("/history-lines")).toHaveLength(2);
+    expect(cache.usedBytes).toBe(held);
   });
 
   it("ends the stream with machine_refused when the machine turns this server's session away", async () => {
