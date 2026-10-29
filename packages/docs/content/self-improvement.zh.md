@@ -171,6 +171,7 @@ kind = "agent"
 | `title`、`description` | 标题（缺省时以目录名代替）和可选的描述；由服务端写入时分别不超过 200 和 2,000 个字符 |
 | `description_zh` | 可选：中文描述，中文界面下代替 `description` 显示，与插件的 `description_zh` 一样；长度限制相同 |
 | `version` | 日期版本 `"YYYY.MM.DD.N"` |
+| `ref` | 可选的任务源码 commit，完整 40 位小写哈希。Harbor 包填写此项，Case 链接及检出说明使用同一 commit；与包导入来源的 `[origin].ref` 分开 |
 | `status` | `draft`、`published` 或 `failed`，见 [Benchmark 状态](#benchmark-状态) |
 | `runs` | 每题运行次数，正整数，缺省为 1；由服务端写入时不超过 1,000 |
 | `[origin]` | 这份副本的来源，记在 `kind` 里：`builtin`（随 Project 预置）、`manual`（手动创建表单）、`agent`（由 `benchmark-design` 写入）、`git`（Agent 从仓库文件夹导入：带 `url`、解析到的 40 位提交 `ref`、`path` 与 `imported_at`）或 `zip`（上传的包：带 `imported_at`） |
@@ -191,7 +192,7 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 | `published` | Formal Baseline 已经记录 | 可以使用 |
 | `failed` | `benchmark-design` 报告了 `calibration_failed` | 遮罩显示为创建失败，并提示删除后重新创建 |
 
-`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。清单里没有这个键，或者取值既不是 `draft` 也不是 `failed`，都按 `published` 读取。清单不可用（不是合法的 TOML、`id` 与所在目录不符，或 `version`、`[origin]` 不合规）的 Benchmark 仍以目录名列出，按 `failed` 处理：评估中心把它遮罩并说明原因，修好文件之前不能使用。
+`failed` 的 Benchmark 不能使用。手动创建的 Benchmark、内置示例和内置 Benchmark 一开始就是 `published`。清单里没有这个键，或者取值既不是 `draft` 也不是 `failed`，都按 `published` 读取。清单不可用（不是合法的 TOML、`id` 与所在目录不符，或 `version`、`ref`、`[origin]` 不合规）的 Benchmark 仍以目录名列出，按 `failed` 处理：评估中心把它遮罩并说明原因，修好文件之前不能使用。
 
 ### 评估记录
 

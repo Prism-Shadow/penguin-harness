@@ -17,7 +17,7 @@ A package is how a Benchmark travels between Projects and servers: a folder name
 - `benchmark_config.toml` is the manifest: `id` (the folder's name), `title`, `description`, `version` (a date version, `"YYYY.MM.DD.N"`), `status`, `runs`, and an `[origin]` table last (`kind`, plus `url`, `ref`, `path` and `imported_at` for a repository import). A manifest written before `id`, `version` and `[origin]` existed has none of them and is still a package: its folder's name is its id, and it is unversioned. A package is always `published`: a draft or a failed calibration does not travel.
 - Every `CASE-*` folder holds `statement/README.md` and `rubric/README.md`. After `CASE-` come letters, digits, `_` and `-` only.
 - Never in a package: `scoreboard.yaml` (the copy's evaluation records), `.jobs/` (its Harbor trials), any other entry whose name starts with `.`, and symlinks. A package's scores start empty wherever it lands.
-- No large originals. A case whose task needs large files links them from its statement at a branch, tag or commit, the way the built-in Benchmarks' `## How this case is run` sections do.
+- No large originals. A case whose task needs large files links them from its statement at a full 40-character lowercase commit, the way the built-in Benchmarks' `## How this case is run` sections do. For Harbor tasks, record that commit as the manifest's top-level `ref`; the task link, run-rules link and checkout instruction must agree with it. Branches, tags and abbreviated hashes do not pin an evaluation.
 
 The built-in Benchmarks are published in this format under `packages/<id>/` of https://github.com/Prism-Shadow/penguin-harness-benchmark.
 
@@ -50,7 +50,7 @@ A Benchmark's files are the source of truth. Import it by copying its manifest a
    printf 'evaluations: []\n' > "$DEST/scoreboard.yaml"
    ```
 
-   Preserve the package's title, description, version and cases. Set the manifest's `id` if it was absent. Replace its `[origin]` table (do not append a second table): for a repository source, use `kind = "git"`, `url` (the supplied link), `ref` (the pinned commit), `path` (the repository folder) and `imported_at` (the import time in ISO 8601). For a local source, use `kind = "zip"` and `imported_at`. Never bring over `scoreboard.yaml` or `.jobs/` from the source.
+   Preserve the package's title, description, version, task `ref` and cases. Set the manifest's `id` if it was absent. Replace its `[origin]` table (do not append a second table): for a repository source, use `kind = "git"`, `url` (the supplied link), `ref` (the package import's commit), `path` (the repository folder) and `imported_at` (the import time in ISO 8601). For a local source, use `kind = "zip"` and `imported_at`. The top-level `ref` pins the task source and stays unchanged during import. Never bring over `scoreboard.yaml` or `.jobs/` from the source.
 6. **Verify and report.** Read the copied manifest, count the case folders and check their files against the source. Confirm the scoreboard contains `evaluations: []`. Report the id, title, version, case count, destination and recorded source, including any companion package. Remove the temporary directory you created. Importing does not start an evaluation; run one only if the user requests it.
 
 ## Exporting a package

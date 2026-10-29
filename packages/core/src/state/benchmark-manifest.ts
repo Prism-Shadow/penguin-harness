@@ -90,6 +90,8 @@ export interface BenchmarkManifest {
   descriptionZh?: string;
   /** `YYYY.MM.DD.N`; absent in a file written before versions, which is unversioned. */
   version?: string;
+  /** The task repository's full 40-character lowercase commit, when cases use external tasks. */
+  ref?: string;
   /** A file that says neither `draft` nor `failed` is published. */
   status: BenchmarkStatus;
   /** Runs per case, a positive integer; absent when the file gives none, which counts as 1. Written: up to 1000. */
@@ -177,6 +179,15 @@ function versionOf(raw: unknown): string | undefined {
   return raw;
 }
 
+/** The task-source commit, separate from the package import's origin.ref. */
+function refOf(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || !/^[0-9a-f]{40}$/.test(raw)) {
+    throw invalid(`"ref" must be a 40-character lowercase commit id.`);
+  }
+  return raw;
+}
+
 /**
  * The `[origin]` table, when the file has one: a `kind` it knows, and its other keys strings that
  * are not empty. `imported_at` may also be a TOML date-time, read as its ISO 8601 text.
@@ -223,6 +234,7 @@ export function parseBenchmarkManifest(text: string, dirId: string): BenchmarkMa
   }
   const id = idOf(config.id, dirId);
   const version = versionOf(config.version);
+  const ref = refOf(config.ref);
   const origin = originOf(config.origin);
   const { title, description, runs, status } = config;
   const descriptionZh = config.description_zh;
@@ -232,6 +244,7 @@ export function parseBenchmarkManifest(text: string, dirId: string): BenchmarkMa
     ...(typeof description === "string" && description !== "" ? { description } : {}),
     ...(typeof descriptionZh === "string" && descriptionZh !== "" ? { descriptionZh } : {}),
     ...(version !== undefined ? { version } : {}),
+    ...(ref !== undefined ? { ref } : {}),
     // The two states that make a Benchmark unusable are literal: "draft" while it is still being
     // built, "failed" when its calibration never produced a result to freeze. A file written
     // before the key existed has none, and an unrecognized value is neither: both are published.
@@ -268,6 +281,7 @@ export function checkBenchmarkManifest(manifest: BenchmarkManifest): void {
     throw invalid(`"description_zh" must be text of at most ${MAX_DESCRIPTION} characters.`);
   }
   versionOf(manifest.version);
+  refOf(manifest.ref);
   if (!STATUSES.includes(manifest.status)) {
     throw invalid(`"status" must be one of ${STATUSES.join(", ")}.`);
   }
@@ -292,6 +306,7 @@ function serializeBenchmarkManifest(manifest: BenchmarkManifest): string {
       ? { description_zh: manifest.descriptionZh }
       : {}),
     ...(manifest.version !== undefined ? { version: manifest.version } : {}),
+    ...(manifest.ref !== undefined ? { ref: manifest.ref } : {}),
     status: manifest.status,
     ...(manifest.runs !== undefined ? { runs: manifest.runs } : {}),
   };

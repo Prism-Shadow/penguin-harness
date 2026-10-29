@@ -704,7 +704,8 @@ describe("benchmark packages", () => {
     }
 
     it("carries the manifest as it reads and the cases, none of the copy's own state, and imports back as the same package with no scores", async () => {
-      const manifestText = await seedBenchmark();
+      const taskRef = "1111111111111111111111111111111111111111";
+      const manifestText = await seedBenchmark({ ref: taskRef });
 
       const res = await member.get(`${base}/report-writing-v1/archive`);
 
@@ -730,6 +731,9 @@ describe("benchmark packages", () => {
 
       expect(imported.status).toBe(201);
       const benchDir = path.join(dir, "report-writing-v1");
+      expect(
+        parseToml(await fs.readFile(path.join(benchDir, "benchmark_config.toml"), "utf8")).ref,
+      ).toBe(taskRef);
       for (const [rel, text] of Object.entries(CASES)) {
         expect(await fs.readFile(path.join(benchDir, rel), "utf8"), rel).toBe(text);
       }

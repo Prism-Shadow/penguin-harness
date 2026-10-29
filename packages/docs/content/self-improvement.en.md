@@ -171,6 +171,7 @@ kind = "agent"
 | `title`, `description` | The title (without one, the directory name stands in) and an optional description; at most 200 and 2,000 characters when the server writes them |
 | `description_zh` | Optional: the description in Chinese, shown instead of `description` in the Chinese interface, as a plugin's `description_zh` is; same limit |
 | `version` | A date version, `"YYYY.MM.DD.N"` |
+| `ref` | Optional task-source commit: a full 40-character lowercase hash. Harbor packages record it and use the same commit in Case links and checkout instructions; it is separate from the package import’s `[origin].ref` |
 | `status` | `draft`, `published` or `failed`; see [Benchmark status](#benchmark-status) |
 | `runs` | Runs per case, a positive integer, 1 when absent; at most 1,000 when the server writes it |
 | `[origin]` | Where this copy came from, in `kind`: `builtin` (seeded with the Project), `manual` (the create form), `agent` (written by `benchmark-design`), `git` (an agent imported a repository folder: `url`, the 40-character commit `ref` it resolved to, `path` and `imported_at`) or `zip` (an uploaded package: `imported_at`) |
@@ -191,7 +192,7 @@ A Benchmark's **package** is `benchmark_config.toml` and its case directories. `
 | `published` | The Formal Baseline is recorded | Usable |
 | `failed` | `benchmark-design` reports `calibration_failed` | Masked as a failed creation, with a request to delete it and create it again |
 
-A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A manifest without the key, or with any value other than `draft` or `failed`, reads as published. A Benchmark whose manifest the server cannot use (not TOML, an `id` that is not its directory's, or a `version` or `[origin]` out of shape) still lists under its directory name, as failed: the Evaluation Center masks it and shows why, and it cannot be used until the file is fixed.
+A failed Benchmark cannot be used. A Benchmark created by hand, the built-in example and the built-in Benchmarks are published from the start. A manifest without the key, or with any value other than `draft` or `failed`, reads as published. A Benchmark whose manifest the server cannot use (not TOML, an `id` that is not its directory's, or a `version`, `ref` or `[origin]` out of shape) still lists under its directory name, as failed: the Evaluation Center masks it and shows why, and it cannot be used until the file is fixed.
 
 ### Evaluation records
 
