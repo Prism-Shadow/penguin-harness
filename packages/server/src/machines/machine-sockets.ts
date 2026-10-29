@@ -77,6 +77,12 @@ export interface MachineSocketLiveness {
  * outlasts that much at the link's rate.
  */
 export const CHANNEL_QUEUE_BYTES = 2 * 1024 * 1024;
+/**
+ * The most periods a socket's own silence is let stretch to on a slow link: 10 minutes at the
+ * default 40 s. A link that only trickles would otherwise excuse a half-open channel for hours
+ * (2 MiB at 100 B/s is nearly six).
+ */
+export const OWN_SILENCE_MAX_PERIODS = 15;
 
 export interface MachineSocketTarget {
   agent: http.Agent;
@@ -216,10 +222,13 @@ export class MachineSocket {
       const last = Math.max(heard, liveness.heardAt?.() ?? 0);
       // The link's bytes stand in for this socket's for a while, not for good: a channel of its
       // own that stays silent (not even a pong to the pings below) past what another channel can
-      // queue ahead of it at the link's rate — and never less than twice the period — is
-      // half-open, however busy the rest of the link is.
+      // queue ahead of it at the link's rate — never less than twice the period, never more than
+      // OWN_SILENCE_MAX_PERIODS of it — is half-open, however busy the rest of the link is.
       const rate = liveness.rate?.() ?? 0;
-      const ownLimit = Math.max(2 * silenceMs, rate > 0 ? (CHANNEL_QUEUE_BYTES / rate) * 1000 : 0);
+      const ownLimit = Math.min(
+        OWN_SILENCE_MAX_PERIODS * silenceMs,
+        Math.max(2 * silenceMs, rate > 0 ? (CHANNEL_QUEUE_BYTES / rate) * 1000 : 0),
+      );
       if (now - last >= silenceMs || now - heard >= ownLimit) {
         ws.terminate();
         return;

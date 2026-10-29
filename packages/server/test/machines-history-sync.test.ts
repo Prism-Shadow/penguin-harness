@@ -42,7 +42,7 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import type { HistoryLinesWindow, HistoryProgress } from "../src/api/types.js";
 import { machineHistory } from "../src/machines/history-routes.js";
-import { MachineSockets } from "../src/machines/machine-sockets.js";
+import { MachineSockets, OWN_SILENCE_MAX_PERIODS } from "../src/machines/machine-sockets.js";
 import type { MachineSocket } from "../src/machines/machine-sockets.js";
 import { LinkActivity } from "../src/machines/link-activity.js";
 import { machinesProxy } from "../src/machines/proxy.js";
@@ -685,6 +685,23 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     expect(closedAt()! - shut).toBeGreaterThanOrEqual(2 * SILENCE - 50);
     stop();
   }, 15_000);
+
+  it("drops a machine's socket whose own channel stays silent behind a link that only trickles, once it has waited the most it ever waits", async () => {
+    const machine = await scriptedMachine(() => undefined);
+    close.push(machine.close);
+    const valve = await valveTo(machine.port);
+    close.push(valve.close);
+    const links = new LinkActivity();
+    const { closedAt } = await slowSocket(valve.port, links);
+    // About 100 B/s on another channel: 2 MiB of queue at that rate would excuse hours.
+    valve.shut();
+    const shut = Date.now();
+    const stop = busyLinkOf(links, 5);
+
+    await waitFor(() => closedAt() !== null, (OWN_SILENCE_MAX_PERIODS + 4) * SILENCE);
+    stop();
+    expect(closedAt()! - shut).toBeGreaterThanOrEqual(OWN_SILENCE_MAX_PERIODS * SILENCE - 50);
+  }, 20_000);
 
   it("keeps a machine's socket whose own channel is starved behind a slow busy link, and drops it once the whole link is idle", async () => {
     const machine = await scriptedMachine(() => undefined);
