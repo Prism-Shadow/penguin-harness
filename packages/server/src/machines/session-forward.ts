@@ -82,8 +82,11 @@ export class SessionForward {
       machines: SessionForwardMachines;
       index: SessionMachineIndex;
       relay: MachineSocketRelay;
-      /** The hub's own history answers (history-routes.ts), asked before the machine is. */
-      history?: Pick<MachineHistory, "answer">;
+      /**
+       * The hub's own history answers (history-routes.ts), asked before the machine is; told when
+       * the machine says the Session is gone, so its copy goes too.
+       */
+      history?: Pick<MachineHistory, "answer"> & Partial<Pick<MachineHistory, "sessionDeleted">>;
     },
   ) {}
 
@@ -154,7 +157,10 @@ export class SessionForward {
       // A Session never moves to another machine, so its own machine saying it has no such
       // Session means it was deleted there. The next request for the id asks again.
       const said = await answer.text();
-      if (errorOf(said).code === "session_not_found") index.forget(sessionId, machineId);
+      if (errorOf(said).code === "session_not_found") {
+        index.forget(sessionId, machineId);
+        this.deps.history?.sessionDeleted?.(machineId, sessionId);
+      }
       // The body was read whole, so the upstream's framing headers no longer describe it.
       const headers = new Headers(answer.headers);
       headers.delete("content-length");
@@ -163,6 +169,7 @@ export class SessionForward {
     }
     if (request.method === "DELETE" && answer.ok && SESSION_PATH.test(pathname)) {
       index.forget(sessionId, machineId);
+      this.deps.history?.sessionDeleted?.(machineId, sessionId);
     }
     return answer;
   }
@@ -191,7 +198,7 @@ export function machineSessionForward(
   shared: {
     sockets: MachineSockets;
     events: MachineEventHub;
-    history?: Pick<MachineHistory, "answer">;
+    history?: Pick<MachineHistory, "answer"> & Partial<Pick<MachineHistory, "sessionDeleted">>;
   },
   log: (line: string) => void = () => undefined,
 ): SessionForward {

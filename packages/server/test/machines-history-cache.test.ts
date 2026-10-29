@@ -62,6 +62,7 @@ import type {
   MessagesResponse,
 } from "../src/api/types.js";
 import { machineHistory } from "../src/machines/history-routes.js";
+import type { MachineHistory } from "../src/machines/history-routes.js";
 import type { HistorySync } from "../src/machines/history-sync.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
 import { machinesProxy } from "../src/machines/proxy.js";
@@ -166,6 +167,7 @@ let crossed: { k: string; off: number; bytes: number }[];
 let hub: {
   sync: HistorySync;
   sockets: MachineSockets;
+  history: MachineHistory;
   get: (remote: string) => Promise<Response>;
   cacheFile: (sid: string, index?: number) => string;
 };
@@ -187,6 +189,7 @@ beforeEach(async () => {
     cache: new TraceCache(traces),
     sockets,
     target,
+    analyze: (projectId, records) => machine.deps.traceService.analyzeRecords(projectId, records),
     log: () => undefined,
     tuning: {
       observe: (frame) => {
@@ -199,6 +202,7 @@ beforeEach(async () => {
   hub = {
     sync,
     sockets,
+    history,
     get: async (remote) =>
       (await proxy(new Request(`http://localhost/server/${MACHINE}${remote}`)))!,
     cacheFile: (sid, index = 1) =>
@@ -245,6 +249,15 @@ async function machineSession(
     machine.deps.sessionsRepo.insert(sessionRow(sid, { agentId }));
   }
   return writeTraceFile(machine.root, PROJECT, agentId, "2026-10-29", sid, 1, records);
+}
+
+/** Resolves once `file` of the copy is gone (a drop runs behind the stream that caused it). */
+async function dropped(file: string): Promise<void> {
+  const start = Date.now();
+  while ((await fs.stat(file).catch(() => null)) !== null) {
+    if (Date.now() - start > 2000) throw new Error(`${file} was never dropped`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
 }
 
 /** A history stream through the hub, read to its end. */
@@ -454,7 +467,7 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
   });
 
-  it("answers a rotated file's events and an image by reference from the copy, and leaves the live file's to the machine", async () => {
+  it("answers the Trace panel's events and analysis of a file synced to the copy, live or rotated, and an image by reference, the machine away", async () => {
     const sid = uniqueSessionId();
     const png = `data:image/png;base64,${Buffer.from("not really a png").toString("base64")}`;
     await machineSession(sid, [meta(sid), userText("look"), imageUrlMessage(png), ...tasks(2)]);
@@ -466,32 +479,221 @@ describe("a machine Session's history through the hub's copy", () => {
     const image = window.find((r) => (r.payload as { type?: string }).type === "image_url");
     const url = (image!.payload as { image_url: string }).image_url;
     expect(url).toMatch(/\/trace-image\?file=1&ordinal=2$/);
-    const machineEvents = async (index: number) =>
-      (await (
-        await machine.app.request(`/api/sessions/${sid}/traces/${index}?offset=1&limit=3`, {
-          headers: { cookie },
-        })
-      ).json()) as TraceEventsResponse;
+    const machineSays = async (remote: string) =>
+      (await (await machine.app.request(remote, { headers: { cookie } })).json()) as unknown;
 
-    // The live file grows on the machine: its events are the machine's to count.
+    // The live file grew on the machine; the panel makes it whole before it reads it.
     await fs.appendFile(live, `${JSON.stringify(userText("one more"))}\n`);
-    const viaHub = (await (
-      await hub.get(`/api/sessions/${sid}/traces/2?offset=1&limit=3`)
-    ).json()) as TraceEventsResponse;
-    expect(viaHub).toEqual(await machineEvents(2));
-    const rotated = await machineEvents(1);
+    expect((await read(sid, "?fill=only&file=2")).at(-1)?.event).toBe("filled");
+    const own = {
+      live: await machineSays(`/api/sessions/${sid}/traces/2?offset=1&limit=3`),
+      tail: await machineSays(`/api/sessions/${sid}/traces/2?offset=4&limit=200`),
+      rotated: await machineSays(`/api/sessions/${sid}/traces/1?offset=1&limit=3`),
+      analysis: await machineSays(`/api/sessions/${sid}/traces/2/analysis`),
+    };
 
     connected = false;
-    const fromCopy = await hub.get(`/api/sessions/${sid}/traces/1?offset=1&limit=3`);
-    expect(fromCopy.status).toBe(200);
-    expect(await fromCopy.json()).toEqual(rotated);
+    const json = async (res: Response) => {
+      expect(res.status).toBe(200);
+      return (await res.json()) as unknown;
+    };
+    expect(await json(await hub.get(`/api/sessions/${sid}/traces/2?offset=1&limit=3`))).toEqual(
+      own.live,
+    );
+    expect(await json(await hub.get(`/api/sessions/${sid}/traces/2?offset=4&limit=200`))).toEqual(
+      own.tail,
+    );
+    expect(await json(await hub.get(`/api/sessions/${sid}/traces/1?offset=1&limit=3`))).toEqual(
+      own.rotated,
+    );
     const picture = await hub.get(url);
     expect(picture.status).toBe(200);
     expect(picture.headers.get("content-type")).toBe("image/png");
     expect(Buffer.from(await picture.arrayBuffer()).toString()).toBe("not really a png");
-    // What the copy does not answer is forwarded as before, and with no forward that says so.
-    expect((await hub.get(`/api/sessions/${sid}/traces/2?offset=1&limit=3`)).status).toBe(503);
-    expect((await hub.get(`/api/sessions/${sid}/traces/1/analysis`)).status).toBe(503);
+    // On the machine's own path no Project comes along: with the machine away the analysis is
+    // the machine's (and there is no forward); once it is back the Project is asked of it once,
+    // and the analysis is the hub's from then on, the machine away again.
+    const analysis = `/api/sessions/${sid}/traces/2/analysis`;
+    expect((await hub.get(analysis)).status).toBe(503);
+    connected = true;
+    expect(await json(await hub.get(analysis))).toEqual(own.analysis);
+    connected = false;
+    expect(await json(await hub.get(analysis))).toEqual(own.analysis);
+  });
+
+  it("keeps the rest of the Session's copy when one folded value is fetched from the machine", async () => {
+    const sid = uniqueSessionId();
+    machine.deps.sessionsRepo.insert(sessionRow(sid));
+    const rotated = await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 1, [
+      meta(sid),
+      ...tasks(4),
+    ]);
+    await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 2, [
+      meta(sid),
+      userText("read it"),
+      toolCall({ name: "read_file", arguments: '{"file_path":"/w/a.txt"}', toolCallId: "c1" }),
+      toolCallOutput({ output: "row\n".repeat(10_000), toolCallId: "c1", status: "completed" }),
+      assistantText("done"),
+      ...tasks(2),
+    ]);
+    await read(sid, "?tailLimit=1");
+    await waitFor(() => hub.sync.held().size === 0);
+    expect((await read(sid, "?fill=only&file=1")).at(-1)?.event).toBe("filled");
+    await waitFor(() => hub.sync.held().size === 0);
+
+    const ref = encodeBodyRef(
+      { agentId: AGENT, sessionId: sid, fileIndex: 2, ordinal: 3 },
+      "payload.output",
+    );
+    crossed = [];
+    const body = eventReader(
+      await hub.get(`/api/sessions/${sid}/trace-body?ref=${encodeURIComponent(ref)}`),
+    );
+    await body.finished;
+    expect(body.has("done")).toBe(true);
+    expect(crossed.length).toBeGreaterThan(0);
+    await waitFor(() => hub.sync.held().size === 0);
+
+    expect(await fs.readFile(hub.cacheFile(sid, 1))).toEqual(await fs.readFile(rotated));
+    crossed = [];
+    expect((await read(sid, "?fill=only&file=1")).at(-1)?.event).toBe("filled");
+    expect(crossed.filter((c) => c.k === `${AGENT}/${sid}/1`)).toEqual([]);
+  });
+
+  it("unfolds a subagent's value after one of the Session's own was fetched", async () => {
+    const sid = uniqueSessionId();
+    const child = uniqueSessionId();
+    await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", child, 1, [
+      meta(child),
+      toolCall({ name: "read_file", arguments: '{"file_path":"/w/c.txt"}', toolCallId: "k1" }),
+      toolCallOutput({ output: "c".repeat(60_000), toolCallId: "k1", status: "completed" }),
+      assistantText("the child's answer"),
+    ]);
+    await machineSession(sid, [
+      meta(sid),
+      userText("read it"),
+      toolCall({ name: "read_file", arguments: '{"file_path":"/w/a.txt"}', toolCallId: "c1" }),
+      toolCallOutput({ output: "r".repeat(60_000), toolCallId: "c1", status: "completed" }),
+      assistantText("done"),
+      userText("delegate"),
+      subagentEvent(child),
+      assistantText("delegated"),
+      ...tasks(1),
+    ]);
+    await read(sid, "?tailLimit=1");
+    await waitFor(() => hub.sync.held().size === 0);
+    const unfold = async (ref: string) => {
+      const reader = eventReader(
+        await hub.get(`/api/sessions/${sid}/trace-body?ref=${encodeURIComponent(ref)}`),
+      );
+      await reader.finished;
+      await waitFor(() => hub.sync.held().size === 0);
+      return reader.named().at(-1)?.event;
+    };
+    const childRef = encodeBodyRef(
+      { agentId: AGENT, sessionId: child, fileIndex: 1, ordinal: 2 },
+      "payload.output",
+    );
+    const ownRef = encodeBodyRef(
+      { agentId: AGENT, sessionId: sid, fileIndex: 1, ordinal: 3 },
+      "payload.output",
+    );
+
+    expect(await unfold(childRef)).toBe("done");
+    expect(await unfold(ownRef)).toBe("done");
+    expect(await unfold(childRef)).toBe("done");
+  });
+
+  it("lets go of a Session the machine deleted: its copy goes, and nothing of it is answered from here", async () => {
+    const sid = uniqueSessionId();
+    const png = `data:image/png;base64,${Buffer.from("secret picture").toString("base64")}`;
+    await machineSession(sid, [meta(sid), userText("look"), imageUrlMessage(png), ...tasks(2)]);
+    await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 2, [
+      meta(sid),
+      ...tasks(2),
+    ]);
+    expect((await read(sid, "?tailLimit=20&fill=1")).at(-1)?.event).toBe("filled");
+    await waitFor(() => hub.sync.held().size === 0);
+    const deleted = await machine.app.request(`/api/sessions/${sid}`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(deleted.status).toBe(204);
+
+    const again = await read(sid, "?tailLimit=20");
+    expect(again.at(-1)).toMatchObject({ event: "error" });
+    expect(JSON.parse(again.at(-1)!.data)).toMatchObject({ code: "session_not_found" });
+    await dropped(hub.cacheFile(sid, 1));
+    expect((await hub.get(`/api/sessions/${sid}/traces/1?offset=0&limit=5`)).status).toBe(404);
+    expect((await hub.get(`/api/sessions/${sid}/trace-image?file=1&ordinal=2`)).status).toBe(404);
+  });
+
+  it("drops a Session's copy when the machine says it deleted it", async () => {
+    const sid = uniqueSessionId();
+    const png = `data:image/png;base64,${Buffer.from("secret picture").toString("base64")}`;
+    await machineSession(sid, [meta(sid), userText("look"), imageUrlMessage(png), ...tasks(2)]);
+    expect((await read(sid, "?tailLimit=20&fill=1")).at(-1)?.event).toBe("filled");
+    await waitFor(() => hub.sync.held().size === 0);
+    connected = false;
+    const image = `/api/sessions/${sid}/trace-image?file=1&ordinal=2`;
+    expect((await hub.get(image)).status).toBe(200);
+
+    hub.history.hear(MACHINE, JSON.stringify({ type: "session_deleted", sessionId: sid }));
+
+    await dropped(hub.cacheFile(sid, 1));
+    // Not from the copy any more: the forward, which has no machine to reach.
+    expect((await hub.get(image)).status).toBe(503);
+  });
+
+  it("loads a Trace with a line of NULs in it, as the machine reads it", async () => {
+    const sid = uniqueSessionId();
+    const file = await machineSession(sid, [meta(sid), ...tasks(2)]);
+    // A crash can leave such a line; the machine's reader skips it as no record.
+    await fs.appendFile(file, Buffer.from([0, 0, 0, 0, 0x0a]));
+    await fs.appendFile(
+      file,
+      tasks(2)
+        .map((m) => `${JSON.stringify(m)}\n`)
+        .join(""),
+    );
+
+    const events = await read(sid, "?tailLimit=20");
+    expect(events.at(-1)?.event).toBe("done");
+    expect(windowRecords(events)).toEqual(await machineWindow(sid, "?tailLimit=20"));
+  });
+
+  it("reads a window again from the machine when its copy does not read back, keeping the rest of the copy", async () => {
+    const sid = uniqueSessionId();
+    machine.deps.sessionsRepo.insert(sessionRow(sid));
+    const rotated = await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 1, [
+      meta(sid),
+      ...tasks(3),
+    ]);
+    const live = await writeTraceFile(machine.root, PROJECT, AGENT, "2026-10-29", sid, 2, [
+      meta(sid),
+      ...tasks(40, 300),
+    ]);
+    expect((await read(sid, "?tailLimit=30&fill=1")).at(-1)?.event).toBe("filled");
+    await waitFor(() => hub.sync.held().size === 0);
+    // A record in the middle of the window damaged in the copy, past what the machine's checks
+    // of the held run's edges read: the copy no longer reads back as the machine laid it out.
+    const liveBytes = await fs.readFile(live);
+    const lineStart = liveBytes.lastIndexOf(0x0a, liveBytes.indexOf("question 20")) + 1;
+    expect(lineStart).toBeGreaterThan(4096);
+    expect(liveBytes.length - lineStart).toBeGreaterThan(4096);
+    const copy = await fs.open(hub.cacheFile(sid, 2), "r+");
+    await copy.write(Buffer.from("#"), 0, 1, lineStart);
+    await copy.close();
+
+    crossed = [];
+    const events = await read(sid, "?tailLimit=30");
+    expect(events.at(-1)?.event).toBe("done");
+    expect(windowRecords(events)).toEqual(await machineWindow(sid, "?tailLimit=30"));
+    // Only the window's own bytes came again, and the copy is whole once more.
+    expect(crossed.length).toBeGreaterThan(0);
+    expect(crossed.every((c) => c.k === `${AGENT}/${sid}/2` && c.off > 0)).toBe(true);
+    expect(await fs.readFile(hub.cacheFile(sid, 1))).toEqual(await fs.readFile(rotated));
+    expect(await fs.readFile(hub.cacheFile(sid, 2))).toEqual(liveBytes);
   });
 
   it("does not send again a line held below the newest run", async () => {

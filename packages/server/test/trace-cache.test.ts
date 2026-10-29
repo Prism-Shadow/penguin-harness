@@ -12,8 +12,10 @@
  * - Given a copy whose data file went away under it, when a later line is committed, then the
  *   runs that file held are forgotten: nothing reads back as zeros.
  * - Given a read the copy cannot match — more records than it holds, a run whose bytes no longer
- *   parse into its record count, a run whose line starts read as NUL — then it answers null,
- *   never a wrong record.
+ *   parse into its record count — then it answers null, never a wrong record; bytes its runs
+ *   vouch for are answered as they are, a line that opens with NUL among them too.
+ * - Given a run, when a range of it is let go, then the lines before and after it stay held
+ *   with their own ordinals, the range is no longer offered, and other files are untouched.
  * - Given a run read once, when one more line is committed, then the next record read reads only
  *   that record's bytes, not the whole run again.
  * - Given held runs, when `have` is asked, then it names every one with the anchors of its own
@@ -38,7 +40,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { HistoryFileFact } from "../src/api/types.js";
-import { TraceCache, dirNameOf } from "../src/machines/trace-cache.js";
+import { TraceCache, dirNameOf, traceCacheAt } from "../src/machines/trace-cache.js";
 import {
   HAVE_MAX_CHARS,
   anchorOf,
@@ -205,21 +207,72 @@ describe("the hub's copy of a machine's Trace lines", () => {
     await handle.write(Buffer.from("#".repeat(10)), 0, 10, file.starts[1]!);
     await handle.close();
     expect(await new TraceCache(root).records(M, K, 0, 2)).toBeNull();
+  });
 
-    // A line start gone to zeros (a hole the sidecar wrongly vouches for) is not a line.
-    const zeroed = await fs.open(dataPath(M, S), "r+");
-    await zeroed.write(
-      Buffer.alloc(file.starts[3]! - file.starts[2]!),
-      0,
-      file.starts[3]! - file.starts[2]!,
-      file.starts[2]!,
-    );
-    await zeroed.close();
+  it("answers the bytes its runs vouch for as they are, a line that opens with NUL among them", async () => {
+    // A crash can leave a line of NULs in a Trace; the machine's reader skips it as no record.
+    const nul = Buffer.from([0, 0, 0, 0, 0x0a]);
+    const head = traceFile(2);
+    const bytes = Buffer.concat([head.bytes, nul, traceFile(2).bytes]);
+    const cache = new TraceCache(root);
+    await cache.reconcile(M, S, [fact(bytes, 4)]);
+    await cache.commit(M, { k: K, off: 0, ord: 0, text: bytes.toString("utf8") });
+
+    expect(await new TraceCache(root).bytes(M, K, 0, bytes.length)).toEqual(bytes);
+  });
+
+  it("keeps nothing of a frame past the size the machine gave its file", async () => {
+    const file = traceFile(3);
+    const cache = new TraceCache(root);
+    await cache.reconcile(M, S, [fact(file.bytes, 3)]);
+
+    const past = Buffer.concat([file.bytes, Buffer.from(line(3, "past the end"))]);
+    expect(await cache.commit(M, { k: K, off: 0, ord: 0, text: past.toString("utf8") })).toBe(0);
+    expect(cache.usedBytes).toBe(0);
+    expect((await cache.have(M, S))[0]?.ranges ?? []).toEqual([]);
+  });
+
+  it("is one copy for every generation over its directory, so neither writes over the other's runs", async () => {
+    const file = traceFile(6);
+    const old = traceCacheAt(root);
+    const next = traceCacheAt(root);
+    await old.reconcile(M, S, [fact(file.bytes, 6)]);
+    // Both have read the file's state before either commits, as across a hot push.
+    await old.have(M, S);
+    await next.have(M, S);
+    await old.commit(M, linesFrame(file, 0, 3));
+    await next.commit(M, linesFrame(file, 3, 6));
+
     const reopened = new TraceCache(root);
-    expect(await reopened.bytes(M, K, file.starts[2]!, file.bytes.length)).toBeNull();
-    expect(await reopened.bytes(M, K, 0, file.starts[1]!)).toEqual(
-      file.bytes.subarray(0, file.starts[1]!),
-    );
+    expect((await reopened.have(M, S))[0]?.ranges?.map((r) => [r.lo, r.hi])).toEqual([
+      [0, file.bytes.length],
+    ]);
+  });
+
+  it("lets go of a range of a run, keeping the lines around it and the other files", async () => {
+    const file = traceFile(6);
+    const other = traceFile(3);
+    const K2 = `default_agent/${S}/2`;
+    const cache = new TraceCache(root);
+    await cache.reconcile(M, S, [fact(file.bytes, 6), fact(other.bytes, 3, { k: K2 })]);
+    await cache.commit(M, linesFrame(file, 0, 6));
+    await cache.commit(M, { k: K2, off: 0, ord: 0, text: other.bytes.toString("utf8") });
+
+    await cache.release(M, [{ k: K, start: file.starts[2]!, end: file.starts[4]! }]);
+
+    const have = await cache.have(M, S);
+    expect(have.find((h) => h.k === K)?.ranges?.map((r) => [r.lo, r.loOrd, r.hi])).toEqual([
+      [0, 0, file.starts[2]],
+      [file.starts[4], 4, file.bytes.length],
+    ]);
+    expect(have.find((h) => h.k === K2)?.ranges?.map((r) => [r.lo, r.hi])).toEqual([
+      [0, other.bytes.length],
+    ]);
+    expect((await cache.records(M, K, 4, 6))?.map((r) => r.offset)).toEqual([
+      file.starts[4],
+      file.starts[5],
+    ]);
+    expect(await cache.records(M, K, 2, 3)).toBeNull();
   });
 
   it("reads one record after a commit without reading the whole run again", async () => {

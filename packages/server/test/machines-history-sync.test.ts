@@ -244,6 +244,7 @@ function hub(
     /** The machine's link, as MachinesService taps every connection it dials to it. */
     links?: LinkActivity;
     log?: (line: string) => void;
+    windowTextMax?: number;
   } = {},
 ) {
   const connected = options.connected ?? (() => true);
@@ -269,7 +270,10 @@ function hub(
     ...(options.known !== undefined ? { known: options.known } : {}),
     ...(links !== undefined ? { heardAt: (machineId: string) => links.heardAt(machineId) } : {}),
     log: options.log ?? (() => undefined),
-    tuning: { clock },
+    tuning: {
+      clock,
+      ...(options.windowTextMax !== undefined ? { windowTextMax: options.windowTextMax } : {}),
+    },
   });
   close.push(() => sync.close());
   const proxy = machinesProxy(
@@ -485,6 +489,88 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     await waitFor(() => link.history.has("done"));
     expect(link.machine.cancelled(first!)).toBe(true);
     expect(link.machine.calls("/history-lines")).toHaveLength(2);
+  });
+
+  it("keeps nothing of bytes past the end the machine gave their file, and asks again after a wait", async () => {
+    let calls = 0;
+    const machine = await scriptedMachine((ws, id) => {
+      calls += 1;
+      if (calls > 1) {
+        answerWindow(ws, id);
+        return;
+      }
+      start(ws, id);
+      event(ws, id, "window", windowOf(FILE));
+      event(ws, id, "lines", { k: K, off: 0, ord: 0, text: FILE + traceLine(2, "past the end") });
+    });
+    close.push(machine.close);
+    const { get, cache } = hub(machine.port);
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === 1));
+    expect(cache.usedBytes).toBe(0);
+    clock.advance(1_000);
+    await waitFor(() => history.has("done"));
+    expect(cache.usedBytes).toBe(Buffer.byteLength(FILE));
+    expect(windowRecords(history.events)).toHaveLength(2);
+  });
+
+  it("asks again after a wait when a window's parts outgrow any window", async () => {
+    let calls = 0;
+    const machine = await scriptedMachine((ws, id) => {
+      calls += 1;
+      if (calls > 1) {
+        answerWindow(ws, id);
+        return;
+      }
+      start(ws, id);
+      for (let i = 0; i < 3; i += 1)
+        event(ws, id, "window-part", { text: "w".repeat(600), last: false });
+    });
+    close.push(machine.close);
+    const { get } = hub(machine.port, { windowTextMax: 1_000 });
+
+    const history = eventReader(await get(`/api/sessions/${SID}/history?tailLimit=20`));
+    close.push(history.stop);
+    await waitFor(() => progressOf(history.events).some((p) => p.waiting?.attempt === 1));
+    clock.advance(1_000);
+    await waitFor(() => history.has("done"));
+    expect(machine.calls("/history-lines")).toHaveLength(2);
+  });
+
+  it("hears a socket's bytes for any number of streams with one listener on its connection", async () => {
+    const machine = await scriptedMachine((ws, id) => {
+      start(ws, id);
+      event(ws, id, "ping", {});
+    });
+    close.push(machine.close);
+    const got = await sockets.socketFor(MACHINE, {
+      agent: new http.Agent(),
+      port: machine.port,
+      cookie: "c",
+      session: 1,
+    });
+    if (!("socket" in got)) throw new Error("no socket");
+    const warnings: Error[] = [];
+    const warned = (warning: Error) => warnings.push(warning);
+    process.on("warning", warned);
+    close.push(() => void process.off("warning", warned));
+    let heard = 0;
+    for (let i = 0; i < 20; i += 1) got.socket.onTraffic(() => (heard += 1));
+
+    got.socket.call(
+      { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+      {
+        onStart: () => undefined,
+        onEvent: () => undefined,
+        onEnd: () => undefined,
+        onResponse: () => undefined,
+      },
+    );
+    await waitFor(() => heard >= 20);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(warnings.filter((w) => w.name === "MaxListenersExceededWarning")).toEqual([]);
   });
 
   it("cancels the machine's call the moment its last reader leaves, even in the middle of the fill", async () => {

@@ -168,12 +168,17 @@ export class MachineSocket {
   readonly #credited = new Set<number>();
   #next = 1;
   #closed = false;
-  /** The connection under the socket, whose bytes say the link is alive before a frame is whole. */
-  readonly #raw: NodeJS.EventEmitter | null;
+  /**
+   * Who hears the bytes of the connection under the socket, which say the link is alive before a
+   * frame is whole: one `data` listener on the connection for all of them, however many streams.
+   */
+  readonly #traffic = new Set<() => void>();
 
   private constructor(ws: WebSocket, raw: NodeJS.EventEmitter | null = null) {
     this.#ws = ws;
-    this.#raw = raw;
+    raw?.on("data", () => {
+      for (const listener of this.#traffic) listener();
+    });
     // Silence watchdog: the machine's socket sends a heartbeat frame every beat; nothing for
     // two beats means the channel is dead under us (an ssh session gone quiet), and every
     // stream on it must end so the browser re-issues — not sit on a socket that never speaks.
@@ -264,10 +269,10 @@ export class MachineSocket {
    * a stream waiting on a frame that a slow link is still carrying. Returns the stop.
    */
   onTraffic(listener: () => void): () => void {
-    const raw = this.#raw;
-    if (raw === null) return () => undefined;
-    raw.on("data", listener);
-    return () => raw.off("data", listener);
+    // A wrapper of its own, so the same listener given twice is two subscriptions.
+    const heard = (): void => listener();
+    this.#traffic.add(heard);
+    return () => this.#traffic.delete(heard);
   }
 
   get closed(): boolean {
