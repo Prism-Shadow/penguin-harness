@@ -37,7 +37,7 @@ import type { MachineSockets } from "./machine-sockets.js";
 import { forwardToMachine } from "./proxy.js";
 import type { MachinesService } from "./service.js";
 import { SessionMachineIndex } from "./session-index.js";
-import type { MachineCandidate } from "./session-index.js";
+import type { MachineCandidate, SilentMachine } from "./session-index.js";
 import { MachineSocketRelay } from "./socket-relay.js";
 
 /** What the forward needs of the machines service. */
@@ -59,6 +59,33 @@ function machineError(
 ): Response {
   const details = { machineId, ...(alias !== null ? { alias } : {}) };
   return Response.json(errorBody(code, message, details), { status });
+}
+
+/**
+ * The answer when no machine was found to hold a Session and some that could did not say: not
+ * "no such Session" — this server only could not ask them. The first is named as every machine
+ * error names its machine; several are listed as well.
+ */
+function noAnswer(sessionId: string, silent: readonly SilentMachine[]): Response {
+  const [first] = silent;
+  const names = silent.map((machine) => machine.alias).join(", ");
+  return Response.json(
+    errorBody(
+      "machine_no_answer",
+      `Session ${sessionId} may be on ${silent.length === 1 ? "the machine" : "one of the machines"} ${names}, which did not answer in time.`,
+      {
+        machineId: first!.machineId,
+        alias: first!.alias,
+        ...(silent.length > 1
+          ? {
+              machineIds: silent.map((machine) => machine.machineId).join(","),
+              aliases: names,
+            }
+          : {}),
+      },
+    ),
+    { status: 503 },
+  );
 }
 
 /** The code and message of an error body in the API's shape; empty for anything else. */
@@ -93,8 +120,9 @@ export class SessionForward {
   /**
    * Forwards `request` to the machine that holds `sessionId`, looking among the machines of
    * `projectIds` (the Projects the caller can open) when the index does not know it yet. Null
-   * when no machine holds it; otherwise the machine's answer, or this server's own reason why
-   * there is none.
+   * when every machine asked answered that it holds no such Session (the local routes then say
+   * `session_not_found`); 503 `machine_no_answer` when some that could hold it did not answer;
+   * otherwise the machine's answer, or this server's own reason why there is none.
    */
   async forward(
     request: Request,
@@ -106,8 +134,8 @@ export class SessionForward {
     const { index, machines, relay } = this.deps;
     let fleet: Promise<MachineCandidate[]> | null = null;
     const fleetOf = () => (fleet ??= this.#fleet(projectIds));
-    const place = await index.resolve(sessionId, fleetOf);
-    if (place === null) return null;
+    const { place, silent } = await index.resolve(sessionId, fleetOf);
+    if (place === null) return silent.length === 0 ? null : noAnswer(sessionId, silent);
     const { machineId } = place;
     const aliasOf = async () =>
       (await fleetOf()).find((machine) => machine.machineId === machineId)?.alias ?? null;

@@ -30,6 +30,21 @@ export interface SessionPlace {
   projectId: string;
 }
 
+/** A connected machine that was asked about a Session and gave no answer in time, or no usable one. */
+export interface SilentMachine {
+  machineId: string;
+  alias: string;
+}
+
+/**
+ * Where a Session lives, or why that is unknown: `silent` names the machines that could hold it
+ * and did not say (an empty list with no place means every machine asked answered no).
+ */
+export interface SessionResolution {
+  place: SessionPlace | null;
+  silent: readonly SilentMachine[];
+}
+
 /** A machine the index may ask about a Session: a client to its API while connected, null otherwise. */
 export interface MachineCandidate {
   machineId: string;
@@ -77,7 +92,7 @@ export class SessionMachineIndex {
   /** sessionId → when the miss expires. */
   readonly #misses = new Map<string, number>();
   /** The ask in flight for an id, so that concurrent requests for it share one round of asks. */
-  readonly #asking = new Map<string, Promise<SessionPlace | null>>();
+  readonly #asking = new Map<string, Promise<SessionResolution>>();
   readonly #now: () => number;
   readonly #capacity: number;
   readonly #missTtlMs: number;
@@ -121,18 +136,19 @@ export class SessionMachineIndex {
 
   /**
    * Where the Session lives: as already known, or else asked of `candidates`. They are all asked
-   * at the same time, and the first to answer 200 wins. Null when none holds it; when every
-   * connected machine answered that it does not, the id is remembered as a miss for a while.
+   * at the same time, and the first to answer 200 wins. No place when none holds it; when every
+   * connected machine answered that it does not, the id is remembered as a miss for a while, and
+   * when some gave no answer in time (or none usable) they are named in `silent`.
    */
   resolve(
     sessionId: string,
     candidates: () => Promise<readonly MachineCandidate[]>,
-  ): Promise<SessionPlace | null> {
+  ): Promise<SessionResolution> {
     const known = this.lookup(sessionId);
-    if (known !== null) return Promise.resolve(known);
+    if (known !== null) return Promise.resolve({ place: known, silent: [] });
     const until = this.#misses.get(sessionId);
     if (until !== undefined) {
-      if (until > this.#now()) return Promise.resolve(null);
+      if (until > this.#now()) return Promise.resolve({ place: null, silent: [] });
       this.#misses.delete(sessionId);
     }
     let asking = this.#asking.get(sessionId);
@@ -166,50 +182,51 @@ export class SessionMachineIndex {
   async #ask(
     sessionId: string,
     candidates: () => Promise<readonly MachineCandidate[]>,
-  ): Promise<SessionPlace | null> {
+  ): Promise<SessionResolution> {
     // A machine that is not connected cannot be asked. It does not keep the id from being a
     // miss either: the miss is short, and a bad id must not reach every connected machine on
     // every retry while one machine stays offline.
     const fleet = (await candidates()).filter((machine) => machine.api !== null);
     const path = `/api/sessions/${encodeURIComponent(sessionId)}`;
-    const outcome = await new Promise<{ place: SessionPlace | null; certain: boolean }>(
-      (resolve) => {
-        let pending = fleet.length;
-        if (pending === 0) {
-          resolve({ place: null, certain: true });
-          return;
-        }
-        let certain = true;
-        const timer = setTimeout(
-          () => resolve({ place: null, certain: false }),
-          this.#askTimeoutMs,
-        );
-        timer.unref?.();
-        for (const machine of fleet) {
-          void askOne(machine, path).then((answer) => {
-            if ("found" in answer) {
-              clearTimeout(timer);
-              resolve({ place: answer.found, certain: true });
-              return;
-            }
-            if ("failed" in answer) certain = false;
-            pending -= 1;
-            if (pending === 0) {
-              clearTimeout(timer);
-              resolve({ place: null, certain });
-            }
-          });
-        }
-      },
-    );
+    const outcome = await new Promise<SessionResolution>((resolve) => {
+      // Who has not said no: asked and not answered yet, or answered with nothing usable.
+      const unsaid = new Map(fleet.map((machine) => [machine.machineId, machine]));
+      const failed = new Set<string>();
+      const silent = (): SilentMachine[] =>
+        [...unsaid.values()].map(({ machineId, alias }) => ({ machineId, alias }));
+      if (fleet.length === 0) {
+        resolve({ place: null, silent: [] });
+        return;
+      }
+      const timer = setTimeout(
+        () => resolve({ place: null, silent: silent() }),
+        this.#askTimeoutMs,
+      );
+      timer.unref?.();
+      for (const machine of fleet) {
+        void askOne(machine, path).then((answer) => {
+          if ("found" in answer) {
+            clearTimeout(timer);
+            resolve({ place: answer.found, silent: [] });
+            return;
+          }
+          if ("failed" in answer) failed.add(machine.machineId);
+          else unsaid.delete(machine.machineId);
+          if (unsaid.size === failed.size) {
+            clearTimeout(timer);
+            resolve({ place: null, silent: silent() });
+          }
+        });
+      }
+    });
     if (outcome.place !== null) {
       this.note(sessionId, outcome.place.machineId, outcome.place.projectId);
-    } else if (outcome.certain) {
+    } else if (outcome.silent.length === 0) {
       this.#misses.delete(sessionId);
       this.#misses.set(sessionId, this.#now() + this.#missTtlMs);
       if (this.#misses.size > MISS_CAPACITY) this.#evictOldest(this.#misses);
     }
-    return outcome.place;
+    return outcome;
   }
 
   #evictOldest(map: Map<string, unknown>): void {
