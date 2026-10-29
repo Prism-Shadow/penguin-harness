@@ -22,6 +22,8 @@
  *   so with no attempt, no countdown and no Retry now, since nothing is being retried; data
  *   arriving clears it from the same line.
  * - Given a waiting reason this build does not know, the words are neutral, not a guess at why.
+ * - Given the machines account not answered yet, the transcript-top line waits for it as the
+ *   pane's row does, so the machine's name never replaces 「机器…」 in a line already shown.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -209,6 +211,24 @@ describe("the line at the transcript's top while a read runs behind it", () => {
     expect(container.querySelector("[data-transfer]")).toBe(before);
     expect(container.textContent).not.toContain(words.slow("box"));
     expect(container.textContent).toContain(S.chat.loadingEarlier);
+  });
+});
+
+describe("the line names the machine only once the machines list has answered", () => {
+  it("says nothing until then, so its words never change when the name arrives", async () => {
+    machines.account = unanswered();
+    const line = () =>
+      h(HistoryTransferLine, {
+        loading: true,
+        older: progress({ reason: "slow", attempt: 0, nextAt: 0 }),
+        fill: null,
+      });
+    const { container, rerender } = await mount(line());
+    await run(() => vi.advanceTimersByTime(3_000));
+    expect(container.textContent).toBe("");
+    machines.account = answered();
+    await rerender(line());
+    expect(container.textContent).toContain(words.slow("box"));
   });
 });
 

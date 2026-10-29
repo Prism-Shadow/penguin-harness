@@ -6144,7 +6144,7 @@ Scenarios:
       not_found: "This resource does not exist, or you do not have access.",
       trace_body_not_found: "This part is no longer in the conversation's Trace.",
       machine_refused: "The machine refused this read.",
-      machine_no_answer: "A machine that may hold this conversation did not answer in time.",
+      machine_no_answer: "The machine didn't answer.",
       session_forbidden: "The machine does not let this server see this conversation.",
       machine_not_found: "This machine is not on the Project's machine list.",
       machine_outdated: "The machine runs an older version; update it on the Machines page.",

@@ -6386,7 +6386,7 @@ Benchmark：
       not_found: "资源不存在，或你没有访问权限。",
       trace_body_not_found: "这段内容已不在这个对话的 Trace 中。",
       machine_refused: "机器拒绝了这次读取。",
-      machine_no_answer: "可能持有这个对话的机器没有及时答复。",
+      machine_no_answer: "机器没有回应。",
       session_forbidden: "这台机器不让本服务端查看这个对话。",
       machine_not_found: "这台机器不在当前 Project 的机器列表中。",
       machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",

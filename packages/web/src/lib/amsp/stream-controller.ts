@@ -449,6 +449,25 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   /** At most this many complete records are kept per child; past it, the oldest go first. */
   const LIVE_CHILD_LOG = 2_000;
 
+  /** The fragment type each complete model message is streamed as. */
+  const FRAGMENT_OF: Readonly<Record<string, string>> = {
+    text: "partial_text",
+    thinking: "partial_thinking",
+    tool_call: "partial_tool_call",
+    tool_call_output: "partial_tool_call_output",
+  };
+
+  /** Whether `complete` is the whole of the message the fragment `entry` streamed. */
+  const completes = (complete: AmspRecord, entry: AmspRecord): boolean => {
+    if (!isPartialPayload(entry.payload)) return false;
+    const c = complete.payload as { type?: string; role?: string; tool_call_id?: string };
+    const f = entry.payload as { type?: string; tool_call_id?: string };
+    if (complete.type !== "model_msg" || FRAGMENT_OF[c.type ?? ""] !== f.type) return false;
+    if (c.type === "text" && c.role !== "assistant") return false;
+    if ((complete.origin ?? []).join("/") !== (entry.origin ?? []).join("/")) return false;
+    return c.tool_call_id === undefined || c.tool_call_id === f.tool_call_id;
+  };
+
   /** `msg` as its child sees it: the first origin hop stripped. */
   const forChild = (msg: AmspRecord): AmspRecord => {
     const rest = msg.origin!.slice(1);
@@ -460,9 +479,10 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
 
   /**
    * Notes a record about to be routed to a child of the live model (see liveOnlyChildren). A
-   * streamed fragment is kept only until its complete record arrives (the record replays it
-   * whole), so one long streamed reply costs one entry; the cap counts complete records and,
-   * reached, lets the oldest go rather than the history.
+   * streamed fragment is kept only until the complete record of its own message arrives (the
+   * record replays it whole) — fragments of another message still streaming stay — so one long
+   * streamed reply costs one entry; the cap counts complete records and, reached, lets the oldest
+   * go rather than the history.
    */
   const noteChildRecord = (msg: AmspRecord): void => {
     const head = msg.origin?.[0];
@@ -476,8 +496,12 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     let log = liveOnlyChildren.get(head);
     if (log === undefined) return;
     if (!isPartialPayload(msg.payload)) {
-      log = log.filter((entry) => !isPartialPayload(entry.payload));
-      if (log.length >= LIVE_CHILD_LOG) log = log.slice(log.length - LIVE_CHILD_LOG + 1);
+      log = log.filter((entry) => !completes(msg, entry));
+      const whole = log.filter((entry) => !isPartialPayload(entry.payload));
+      if (whole.length >= LIVE_CHILD_LOG) {
+        const oldest = whole[whole.length - LIVE_CHILD_LOG]!;
+        log = log.slice(log.indexOf(oldest) + 1);
+      }
       liveOnlyChildren.set(head, log);
     }
     log.push(msg);

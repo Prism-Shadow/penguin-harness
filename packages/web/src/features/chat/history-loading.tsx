@@ -249,8 +249,10 @@ export function HistoryTransferLine({
   const past = useQuietSecond(active);
   const current = loading ? older : fill;
   const seconds = useCountdown(current?.waiting?.nextAt ?? null);
-  const { alias } = useMachineAlias(current?.machineId ?? null);
-  if (!active || !past) return null;
+  // The machine is named only once the machines list has answered, as on every other row: the
+  // line's words do not change when the name arrives.
+  const { alias, known } = useMachineAlias(current?.machineId ?? null);
+  if (!active || !past || !known) return null;
   const words = S.chat.historyTransfer;
   if (loading && older === null) {
     return (

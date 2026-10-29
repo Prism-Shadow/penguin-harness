@@ -10,7 +10,14 @@
  * dependencies, so it runs again even though nothing else about the page changed.
  *
  * The machines the hub named as silent count as out of reach until the list has asked them again
- * (a newer `listRound`); asking is started when the hub names them.
+ * (a newer `listRound`); asking is started when the hub names them, for the first few doubts
+ * only. A socket that gave up on the routed machine names nobody: the Session's own machine
+ * stands in when it is on record.
+ *
+ * Asking again backs off like the streams' retries (1 s, doubling, at most 30 s), so a hub that
+ * keeps not hearing a machine the list hears is not asked in a loop. Once a lookup has failed in
+ * doubt, the page keeps saying so — through list rounds that ask other machines, and while the
+ * lookup is made again — until the set of silent machines changes or the Session resolves.
  */
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
@@ -63,6 +70,12 @@ export interface RouteLookup {
   silent: readonly string[];
 }
 
+/** The wait before a doubted lookup is made again: 1 s, doubling per doubt, at most 30 s. */
+const RETRY_MIN_MS = 1_000;
+const RETRY_MAX_MS = 30_000;
+/** Doubts that ask the list to read the named machines again; past them, its own rounds do. */
+const RELOADS = 3;
+
 export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
   const { key } = input;
   const [probe] = useState(() => new RouteProbe());
@@ -71,6 +84,8 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
   const [doubtKey, setDoubtKey] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [named, setNamed] = useState<{ key: string; ids: string[]; round: number } | null>(null);
+  /** Doubts in a row for `key`: the backoff's exponent and the reload budget. */
+  const [doubts, setDoubts] = useState<{ key: string; count: number } | null>(null);
 
   const hubSilent =
     named !== null && named.key === key && named.round === input.listRound ? named.ids : [];
@@ -86,13 +101,18 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
   const unowned = key !== null && !input.deletedHere && reach !== "answered";
   const pending =
     key !== null && routeLookupPending({ listed: input.listed, failed, unowned, doubted });
-  const outOfReach = pending && failed && reach === "unanswered";
+  // A lookup that failed in doubt keeps saying so until it resolves: a list round asking other
+  // machines, or the wait before it is made again, is no news to the reader.
+  const outOfReach = pending && failed && (reach === "unanswered" || doubted);
+  const doubtCount = doubts !== null && doubts.key === key ? doubts.count : 0;
 
   // Read when a lookup settles, which is after the render that sent it.
   const latest = useRef(input);
   latest.current = input;
   const reachNow = useRef(reach);
   reachNow.current = reach;
+  const doubtsNow = useRef(doubts);
+  doubtsNow.current = doubts;
 
   useEffect(() => {
     probe.track(key, input.listLoading);
@@ -104,31 +124,48 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
     probe.run(key, () => latest.current.lookup(), {
       found: (row, listLoading) => {
         setDoubtKey(null);
+        setDoubts(null);
         latest.current.onFound(row, listLoading);
       },
       gone: (cause) => {
         setFailedKey(key);
         const api = cause instanceof ApiError ? cause : null;
-        if (api?.code === MACHINE_NO_ANSWER) {
-          setNamed({ key, ids: silentMachinesOf(api.details), round: latest.current.listRound });
-          latest.current.onMachinesSilent();
-        }
         const verdict = lookupVerdict(
           { status: api?.status ?? null, code: api?.code ?? null },
           reachNow.current,
         );
         if (verdict === "missing") setMissingKey(key);
         setDoubtKey(verdict === "doubt" ? key : null);
+        if (verdict !== "doubt") {
+          setDoubts(null);
+          return;
+        }
+        const count = (doubtsNow.current?.key === key ? doubtsNow.current.count : 0) + 1;
+        setDoubts({ key, count });
+        if (api?.code === MACHINE_NO_ANSWER) {
+          // The hub names the machines it could not ask; a socket that gave up on the routed
+          // machine names nobody, and the Session's own machine, when on record, is the one.
+          const owner = latest.current.owner;
+          const ids = silentMachinesOf(api.details);
+          setNamed({
+            key,
+            ids: ids.length > 0 ? ids : owner !== null ? [owner] : [],
+            round: latest.current.listRound,
+          });
+          if (count <= RELOADS) latest.current.onMachinesSilent();
+        }
       },
     });
   }, [probe, key, input.listLoading, input.listed, input.deletedHere, pending, attempt]);
 
   // A lookup that failed in doubt is made again once every server that could hold the Session
-  // has answered; its answer, found or not, is the verdict.
+  // has answered, after the backoff; its answer, found or not, is the verdict.
   useEffect(() => {
     if (key === null || doubtKey !== key || reach !== "answered") return;
-    setAttempt((n) => n + 1);
-  }, [key, doubtKey, reach]);
+    const wait = Math.min(RETRY_MAX_MS, RETRY_MIN_MS * 2 ** Math.max(0, doubtCount - 1));
+    const timer = setTimeout(() => setAttempt((n) => n + 1), wait);
+    return () => clearTimeout(timer);
+  }, [key, doubtKey, reach, doubtCount]);
 
   return {
     failed,

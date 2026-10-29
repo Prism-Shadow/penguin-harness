@@ -12,17 +12,35 @@
  *   the Session is looked up again.
  * - Given a Session known to be on this server, its 404 is the verdict whatever machine of the
  *   Project is out of reach.
+ * - Given a lookup that failed in doubt, the notice holds through a list round that asks other
+ *   machines: it changes only when the silent machines change or the Session resolves.
+ * - Given a hub that keeps answering `machine_no_answer` for a machine the list hears, the lookup
+ *   is made again after a doubling wait (1 s, 2 s, 4 s …), and the list is asked to read the
+ *   machines again for the first three doubts only.
+ * - Given a socket that gave up on the routed machine (no machine named), the Session's own
+ *   machine is said to be out of reach — not a skeleton that says nothing.
  */
 import { createElement as h } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../src/api/client";
 import { useRouteLookup } from "../src/features/chat/use-route-lookup";
 import type { RouteLookup, RouteLookupInput } from "../src/features/chat/use-route-lookup";
 import { mount, settle, unmountAll } from "./helpers/dom";
 
+beforeEach(() => {
+  // Fake time that also moves with real time: the DOM helpers settle on a zero-delay timer.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
 afterEach(async () => {
   await unmountAll();
+  vi.useRealTimers();
 });
+
+/** Lets the wait before a lookup is made again pass. */
+const wait = async (ms: number) => {
+  await vi.advanceTimersByTimeAsync(ms);
+  await settle();
+};
 
 type Row = { sessionId: string };
 
@@ -61,18 +79,19 @@ async function page(initial: Partial<RouteLookupInput<Row>>) {
     ...initial,
   };
   const seen: { now: RouteLookup | null } = { now: null };
-  function Probe(p: RouteLookupInput<Row>) {
-    seen.now = useRouteLookup(p);
+  // The input rides in one prop: React keeps `key` for itself and would not hand it over.
+  function Probe({ input }: { input: RouteLookupInput<Row> }) {
+    seen.now = useRouteLookup(input);
     return null;
   }
-  const { rerender } = await mount(h(Probe, props));
+  const { rerender } = await mount(h(Probe, { input: props }));
   return {
     get state() {
       return seen.now!;
     },
     update: async (patch: Partial<RouteLookupInput<Row>>) => {
       props = { ...props, ...patch };
-      await rerender(h(Probe, props));
+      await rerender(h(Probe, { input: props }));
       await settle();
     },
   };
@@ -88,6 +107,9 @@ describe("a link to a Session the list does not hold", () => {
     expect(p.state).toMatchObject({ pending: true, outOfReach: true, missing: false });
 
     await p.update({ offline: [] });
+    // Still said while the lookup waits to be made again: no flash of a skeleton.
+    expect(p.state.outOfReach).toBe(true);
+    await wait(1_000);
     expect(asked).toHaveLength(2);
     asked[1]!.resolve({ sessionId: "s1" });
     await settle();
@@ -100,6 +122,7 @@ describe("a link to a Session the list does not hold", () => {
     asked[0]!.reject(notFound());
     await settle();
     await p.update({ offline: [] });
+    await wait(1_000);
     asked[1]!.reject(notFound());
     await settle();
     expect(p.state).toMatchObject({ pending: false, missing: true });
@@ -118,6 +141,7 @@ describe("a link to a Session the list does not hold", () => {
 
     // The list's next round heard m2 answer.
     await p.update({ listRound: 1 });
+    await wait(1_000);
     expect(asked).toHaveLength(2);
     asked[1]!.resolve({ sessionId: "s1" });
     await settle();
@@ -130,5 +154,55 @@ describe("a link to a Session the list does not hold", () => {
     asked[0]!.reject(notFound());
     await settle();
     expect(p.state).toMatchObject({ pending: false, missing: true });
+  });
+
+  it("keeps saying the machines are out of reach through a list round that asks the others", async () => {
+    const { asked, lookup } = lookups();
+    const p = await page({ lookup, offline: ["m1"] });
+    asked[0]!.reject(notFound());
+    await settle();
+    const seen = [p.state.outOfReach];
+    await p.update({ asking: ["m2", "m3"] });
+    seen.push(p.state.outOfReach);
+    await p.update({ asking: [], listRound: 1 });
+    seen.push(p.state.outOfReach);
+    expect(seen).toEqual([true, true, true]);
+    expect(p.state.silent).toEqual(["m1"]);
+  });
+
+  it("asks a hub that keeps not hearing a machine again after a doubling wait, and the list only thrice", async () => {
+    const { asked, lookup } = lookups();
+    const reread = vi.fn();
+    const p = await page({ lookup, onMachinesSilent: reread });
+    const waits: number[] = [];
+    for (let round = 1; round <= 5; round += 1) {
+      asked[asked.length - 1]!.reject(noAnswer("m2"));
+      await settle();
+      // The list's round hears m2.
+      await p.update({ listRound: round });
+      const before = asked.length;
+      let waited = 0;
+      while (asked.length === before && waited < 60_000) {
+        await wait(500);
+        waited += 500;
+      }
+      waits.push(waited);
+    }
+    // 1 s, doubling (to within the half-second steps the clock is moved in, which real time
+    // nudges along as well).
+    const doubling = [1_000, 2_000, 4_000, 8_000, 16_000];
+    expect(waits.map((w, i) => Math.abs(w - doubling[i]!) <= 500)).toEqual(
+      doubling.map(() => true),
+    );
+    expect(reread).toHaveBeenCalledTimes(3);
+    expect(p.state.outOfReach).toBe(true);
+  });
+
+  it("says the Session's own machine is out of reach when the socket gave up on it", async () => {
+    const { asked, lookup } = lookups();
+    const p = await page({ lookup, owner: "m1" });
+    asked[0]!.reject(new ApiError(0, "machine_no_answer", "network error"));
+    await settle();
+    expect(p.state).toMatchObject({ pending: true, outOfReach: true, silent: ["m1"] });
   });
 });

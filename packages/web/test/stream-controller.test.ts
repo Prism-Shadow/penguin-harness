@@ -1180,6 +1180,69 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     expect(h.controller.model.items.filter((i) => i.kind === "subagent")).toHaveLength(0);
   });
 
+  it("a child with more than 2,000 complete live records before its window lands keeps its history and its newest records", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 1 }));
+    await p;
+    for (let i = 0; i < 2_001; i += 1) {
+      h.controller.handleRecord(
+        withOrigin(at(assistantText(`live ${i}`), "2026-07-05T00:01:00.000Z"), "c1"),
+        `e1-${10 + i}`,
+      );
+    }
+    h.resolveOlder(SPAWN_TASK, pageInfo({ earlierTurns: 0 }));
+    await flush();
+    const texts = childReplies(h);
+    expect(texts[0]).toBe("child history");
+    expect(texts.at(-1)).toBe("live 2000");
+    expect(h.controller.model.items.filter((i) => i.kind === "subagent")).toHaveLength(0);
+  });
+
+  it("a child's output still streaming keeps its start when another of its calls completes before the window lands", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 1 }));
+    await p;
+    const call = (id: string, ts: string) =>
+      withOrigin(
+        at(toolCall({ name: "exec_command", arguments: `{"cmd":"${id}"}`, toolCallId: id }), ts),
+        "c1",
+      );
+    const callA = call("ta", "2026-07-05T00:00:10.000Z");
+    const callB = call("tb", "2026-07-05T00:00:10.500Z");
+    const outB = withOrigin(
+      at(
+        toolCallOutput({ output: "b done", toolCallId: "tb", status: "completed" }),
+        "2026-07-05T00:00:12.000Z",
+      ),
+      "c1",
+    );
+    // The older Task's child runs two tools at once: a's output streams while b ends.
+    h.controller.handleRecord(callA, "e1-1");
+    h.controller.handleRecord(callB, "e1-2");
+    h.controller.handleRecord(
+      withOrigin(
+        partialToolCallOutput({ eventType: "start", output: "AAA", toolCallId: "ta" }),
+        "c1",
+      ),
+      "e1-3",
+    );
+    h.controller.handleRecord(outB, "e1-4");
+    h.controller.handleRecord(
+      withOrigin(
+        partialToolCallOutput({ eventType: "delta", output: "BBB", toolCallId: "ta" }),
+        "c1",
+      ),
+      "e1-5",
+    );
+    h.resolveOlder([...SPAWN_TASK, callA, callB, outB], pageInfo({ earlierTurns: 0 }));
+    await flush();
+    expect((findToolCard(h.controller.model, ["c1"], "ta") as ToolCallItem).output).toBe("AAABBB");
+  });
+
   it("a run_subagent card of the running Task the older child was bound to by position is let go for its own child", async () => {
     const h = createHarness();
     const p = h.controller.load();
