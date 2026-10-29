@@ -14,6 +14,7 @@ import {
   EmptyState,
   GlyphIcon,
   ICONS,
+  RetryStatus,
   Spinner,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -636,13 +637,14 @@ export function MessageStream({
                   {S.chat.loadingEarlier}
                 </span>
               ) : older.error !== null ? (
-                <button
-                  type="button"
-                  onClick={older.onLoad}
-                  className="whitespace-nowrap py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                >
-                  {S.chat.loadEarlierRetry}
-                </button>
+                // The shared retry row, stopped: the cross, the sentence, the error behind its
+                // "?", and Retry — not a red sentence that is itself the button.
+                <RetryStatus
+                  phase="gaveUp"
+                  label={S.chat.loadEarlierFailed}
+                  reason={older.error}
+                  retry={{ label: S.common.retry, onClick: older.onLoad }}
+                />
               ) : !older.hasMore && older.prependedCount > 0 ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}

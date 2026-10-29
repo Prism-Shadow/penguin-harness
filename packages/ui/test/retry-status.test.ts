@@ -13,6 +13,11 @@
  *   it; without one there is no "?".
  * - Given actions, each is a button with its words, and a row without any has none; an action
  *   the caller says is in flight spins and takes no press.
+ * - Given the transcript's note frame, the row is the transcript's event note, which each theme
+ *   draws as its other notes: running to the theme while an attempt is live, settled otherwise,
+ *   and never in the error state, whose recipes set the words in the danger ink. Its mark is
+ *   drawn outside the slot a theme may hide, and its sentence, presses and "?" are the plain
+ *   row's.
  * - The countdown's seconds: none without a target, never below nothing.
  */
 import { createElement } from "react";
@@ -103,6 +108,47 @@ describe("the retry row", () => {
     const button = /<button[^>]*>/.exec(html)![0];
     expect(button).toContain('aria-busy="true"');
     expect(button).toMatch(/\sdisabled=""/);
+  });
+});
+
+describe("the retry row as a transcript note", () => {
+  /** The note's head: the activity row a theme dresses. */
+  const headOf = (html: string) => /<div data-slot="head"[^>]*>/.exec(html)?.[0] ?? "";
+
+  it.each<[RetryPhase, "running" | "done"]>([
+    ["trying", "running"],
+    ["waiting", "running"],
+    ["retried", "done"],
+    ["gaveUp", "done"],
+    ["cancelled", "done"],
+    ["blocked", "done"],
+  ])(
+    "%s: is the transcript's event note, %s to its theme, and keeps its mark in sight",
+    (phase, state) => {
+      const html = render({ phase, label: "Where things stand", frame: "note" });
+      expect(textOf(html)).toBe("Where things stand");
+      expect(html).toContain(`data-retry-phase="${phase}"`);
+      const head = headOf(html);
+      expect(head).toContain('data-kind="event"');
+      expect(head).toContain(`data-state="${state}"`);
+      // The mark is drawn, and not in the activity hook's mark slot, which a theme may hide.
+      expect(html).not.toContain('data-slot="mark"');
+      expect(html.includes('data-live="spinner"') || html.includes("<svg")).toBe(true);
+    },
+  );
+
+  it("keeps its press and the reason behind the ? as the plain row does", () => {
+    const html = render({
+      phase: "gaveUp",
+      label: "Request failed after 6 attempts",
+      reason: "upstream request timeout after 60s",
+      reasonTitle: "Connection timed out",
+      retry: { label: "Retry", onClick: noop },
+      frame: "note",
+    });
+    expect(textOf(html)).toBe("Request failed after 6 attemptsRetry");
+    expect(html).toContain('aria-label="More info: Request failed after 6 attempts"');
+    expect(html.match(/<button/g)).toHaveLength(2);
   });
 });
 

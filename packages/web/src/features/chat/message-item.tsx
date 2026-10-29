@@ -188,16 +188,17 @@ function ReconnectLine({
       : null;
   const left = useCountdown(target);
   const main = ctx.origin.length === 0;
+  // A note between the messages, spaced like the transcript's other notes.
   return (
-    <div className="anim-msg my-1">
-      <RetryStatus
-        {...requestRetryRow(item, left !== null && left > 0 ? target : null, {
-          onRetryNow: main ? ctx.onRetryNow : undefined,
-          onStop: main ? ctx.onGiveUp : undefined,
-          onRetry: item.gaveUp ? retryOffer(ctx, last) : undefined,
-        })}
-      />
-    </div>
+    <RetryStatus
+      {...requestRetryRow(item, left !== null && left > 0 ? target : null, {
+        onRetryNow: main ? ctx.onRetryNow : undefined,
+        onStop: main ? ctx.onGiveUp : undefined,
+        onRetry: item.gaveUp ? retryOffer(ctx, last) : undefined,
+      })}
+      frame="note"
+      className="anim-msg my-2"
+    />
   );
 }
 

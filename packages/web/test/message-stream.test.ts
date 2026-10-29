@@ -7,6 +7,11 @@
  * The line a run ended on — that banner, or the marker of a run the user stopped — offers Retry
  * while it is the stream's last item and no Task runs.
  *
+ * Older history above the transcript:
+ * - Given the previous window failed to load, the top says so on the shared retry row with a
+ *   Retry, the error kept behind its "?" rather than spelled out on screen.
+ * - Given the window is being loaded again, the failure is gone and the loading line shows.
+ *
  * What a prompt carried is drawn as one message, the way the composer showed it:
  * - Given a prompt's text and the image items right behind it, the images sit above the text in
  *   the same message (one outline anchor), not as messages of their own.
@@ -26,7 +31,11 @@ import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MessageStream } from "../src/features/chat/message-stream";
-import type { A2uiActions, StreamRenderContext } from "../src/features/chat/message-stream";
+import type {
+  A2uiActions,
+  OlderHistoryControls,
+  StreamRenderContext,
+} from "../src/features/chat/message-stream";
 import type { ChatItem } from "../src/lib/amsp/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
@@ -134,6 +143,47 @@ describe("MessageStream error banner", () => {
     expect(stream([ended])).toContain(retry);
     expect(stream([ended, reply])).not.toContain(retry);
     expect(stream([ended], true)).not.toContain(retry);
+  });
+});
+
+describe("MessageStream older history", () => {
+  const ctx: StreamRenderContext = {
+    pendingApprovals: new Map(),
+    onApprove: async () => {},
+    origin: [],
+    taskRunning: false,
+  };
+  const reply: ChatItem = { kind: "assistant_text", id: 1, text: "Done.", streaming: false };
+  const top = (over: Partial<OlderHistoryControls>) =>
+    renderToStaticMarkup(
+      createElement(MessageStream, {
+        items: [reply],
+        version: 1,
+        ctx,
+        onAddExcerpt: () => {},
+        older: {
+          hasMore: true,
+          loading: false,
+          error: null,
+          prependedCount: 0,
+          onLoad: () => {},
+          ...over,
+        },
+      }),
+    );
+
+  it("a window that failed to load is said at the top with a Retry, its error behind the ?", () => {
+    const html = top({ error: "socket closed: ECONNRESET" });
+    expect(html).toContain('data-retry-phase="gaveUp"');
+    expect(html).toContain(S.chat.loadEarlierFailed);
+    expect(html).toContain(`>${S.common.retry}</button>`);
+    expect(html).not.toContain("ECONNRESET");
+  });
+
+  it("while the window loads again, the failure is gone and the loading line shows", () => {
+    const html = top({ loading: true, error: "socket closed: ECONNRESET" });
+    expect(html).not.toContain("data-retry-phase");
+    expect(html).toContain(S.chat.loadingEarlier);
   });
 });
 

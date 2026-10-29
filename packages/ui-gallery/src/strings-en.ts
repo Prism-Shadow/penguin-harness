@@ -1876,16 +1876,29 @@ export const en: GalleryStrings = {
     retry: {
       phases: "Five phases",
       phasesHint:
-        "A card's middle line: trying (a spinner and Stop retrying), waiting for the next attempt (an hourglass, the countdown in the sentence, Retry now and Stop retrying), failed (a cross in the danger tone and Retry), stopped by a person (a pause and Retry), not worth retrying (a cross in the danger tone, with Retry or none). Why it failed sits behind the circled ? after the sentence; only the mark is coloured.",
+        "A card's middle line: trying (a spinner and Stop retrying), waiting for the next attempt (an hourglass, the countdown in the sentence, Retry now and Stop retrying), failed (a cross in the danger tone and Retry), stopped by a person (a pause and Retry), not worth retrying (a cross in the danger tone, with Retry or none). Why it failed sits behind the circled ? after the sentence; only the mark is coloured. The sentence is never bold: the body ink while an attempt is live, muted once it stops.",
       blocks: "At body size",
       blocksHint:
-        "In a dialog section and in a conversation: the same one line at body size, the actions link-style text in it.",
+        "In a dialog section and in a load-failure notice: the same one line at body size, the actions link-style text in it.",
       inCard: "In a machine card",
       inCardHint:
         "The card's middle while no job runs; in the narrow column both actions wrap under the sentence together; a press disables them until the next attempt begins.",
       inChat: "In a conversation",
       inChatHint:
-        "A model request being retried wears the same row: the attempt of the engine's ceiling, the cause and the provider's words behind the ?, Retry now and Stop retrying while it waits.",
+        "A model request being retried wears the same row, in the transcript's note frame, the shape of its other notes (injected by the harness, a skill invoked): the attempt of the engine's ceiling, the cause and the provider's words behind the ?, Retry now and Stop retrying while it waits. Earlier messages that failed to load get the same row at the top of the conversation.",
+      loadFailed: "Could not load",
+      loadFailedHint:
+        "What stands where content could not be loaded: a mark, a one-line title, a muted line under it with the reason or what happens next, the retry row while something retries on its own, one button, and the raw error folded under Technical details. No red words: the mark says it failed.",
+      historyFailed: "Couldn't load the message history",
+      networkError: "Network error, please check your connection",
+      awayHeadline: (alias: string) => `${alias} is reconnecting`,
+      awayHint:
+        "The conversation is kept on that machine and loads as soon as the connection is back.",
+      openMachines: "Go to Machines",
+      details: "Technical details",
+      transportError:
+        "The connection to QS7J4YVgSovi-Z2c did not answer: the session's SOCKS port did not answer: connect ECONNREFUSED 127.0.0.1:37747",
+      chatEarlierFailed: "Couldn't load earlier messages",
       narrow: "Narrow",
       narrowHint: "At phone width the line wraps under the name; the actions are never cut.",
       trying: (n: number, m: number) => `Reconnecting (attempt ${n}/${m})`,

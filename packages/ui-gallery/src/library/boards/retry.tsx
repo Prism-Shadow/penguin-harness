@@ -1,12 +1,14 @@
 /**
  * 重试: the one retry row every retrying surface shares — a machine's reconnect in its phases at a
  * card's size and at body size, inside a machine card beside a running one, a model request's
- * retry in a conversation, and the card at phone width. The wait counts down live, and a press
- * holds its actions until the board starts the next attempt.
+ * retry in a conversation (wearing the transcript's note frame), the card at phone width, and the
+ * "could not load" notice a pane shows in place of its content, with the row inside it while a
+ * machine is being brought back. The wait counts down live, and a press holds its actions until
+ * the board starts the next attempt.
  */
 import { useEffect, useState } from "react";
 import { DEFAULT_MAX_TURN_ATTEMPTS } from "@prismshadow/penguin-core/interfaces";
-import { ICONS, MachineCard, MachineList, RetryStatus } from "@prismshadow/penguin-ui";
+import { ICONS, LoadFailed, MachineCard, MachineList, RetryStatus } from "@prismshadow/penguin-ui";
 import type { MachineCardProps, RetryStatusProps } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
@@ -128,7 +130,8 @@ export function RetryBoard() {
   ];
 
   // A model request's ladder: the attempt of the engine's ceiling, the first request included.
-  const why = { reason: t.chatError, reasonTitle: t.chatCause };
+  // Between the messages each wears the transcript's note frame, as its other notes do.
+  const why = { reason: t.chatError, reasonTitle: t.chatCause, frame: "note" as const };
   const chat: RetryStatusProps[] = [
     {
       phase: "waiting",
@@ -148,6 +151,15 @@ export function RetryBoard() {
       retry: { label: t.retry, onClick: noop },
     },
   ];
+  // Older history that failed to load: the same row, stopped, centred above the transcript.
+  const earlier: RetryStatusProps = {
+    phase: "gaveUp",
+    label: t.chatEarlierFailed,
+    reason: t.networkError,
+    retry: { label: t.retry, onClick: noop },
+    className: "justify-center",
+  };
+  const away = lines[1]!;
 
   return (
     <div className="gf-board">
@@ -174,9 +186,32 @@ export function RetryBoard() {
       </BoardGroup>
       <BoardGroup title={t.inChat} aside={t.inChatHint}>
         <div className="lib-stack" style={{ maxWidth: "46rem" }}>
+          <RetryStatus {...earlier} />
           {chat.map((props, index) => (
             <RetryStatus key={index} {...props} />
           ))}
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.loadFailed} aside={t.loadFailedHint}>
+        <div className="lib-stack" style={{ maxWidth: "46rem" }}>
+          <div className="lib-box">
+            <LoadFailed
+              title={t.historyFailed}
+              description={t.networkError}
+              action={{ label: t.retry, onClick: noop }}
+            />
+          </div>
+          <div className="lib-box">
+            <LoadFailed
+              glyph={ICONS.server}
+              title={t.awayHeadline("mini")}
+              description={t.awayHint}
+              action={{ label: t.openMachines, onClick: noop }}
+              details={{ title: t.details, text: t.transportError }}
+            >
+              <RetryStatus {...away} size="sm" className="justify-center text-left" />
+            </LoadFailed>
+          </div>
         </div>
       </BoardGroup>
       <BoardGroup title={t.narrow} aside={t.narrowHint}>

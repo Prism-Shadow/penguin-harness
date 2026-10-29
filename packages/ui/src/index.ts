@@ -36,6 +36,7 @@ export * from "./components/feedback/badge/badge";
 export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
 export * from "./components/feedback/empty-state/empty-state";
+export * from "./components/feedback/load-failed/load-failed";
 
 // W1 — actions.
 export * from "./components/actions/close-button/close-button";

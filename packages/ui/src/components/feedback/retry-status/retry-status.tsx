@@ -20,12 +20,24 @@
  *   refused password): the cross in the danger tone; the caller offers a Retry only where a try
  *   is harmless.
  *
- * Only the mark carries colour. The last failure, or the fix, is never a paragraph under the
- * sentence: it waits behind the "?" (`InfoPopover`), which opens on hover, under a short title
- * of its own when the caller gives one ("Last failure"), so a failure that holds a colon of its
- * own never reads as two labels in a row. The presses are link-style text at the sentence's
- * size, never boxed: on a wide surface the whole row is one line; in a narrow column they wrap
- * under the sentence, together.
+ * Only the mark carries colour. The sentence is set at the body weight: in the body ink while an
+ * attempt is live (trying, waiting), receding to the muted ink once the row has settled — the
+ * rule every activity row follows — and never in the danger ink, since a failure in red words
+ * reads as an alarm; the cross beside it already says it. The spinner is drawn on the glyphs'
+ * rung, so the sentence does not shift when a running attempt settles. The last failure, or the
+ * fix, is never a paragraph under the sentence: it waits behind the "?" (`InfoPopover`), which
+ * opens on hover, under a short title of its own when the caller gives one ("Last failure"), so
+ * a failure that holds a colon of its own never reads as two labels in a row. The presses are
+ * link-style text at the sentence's size, never boxed: on a wide surface the whole row is one
+ * line; in a narrow column they wrap under the sentence, together.
+ *
+ * Two frames. `none` is the row alone, for a card's middle, a dialog's section or a centred
+ * notice. `note` is for a row that stands between a conversation's messages: it wears the
+ * transcript's one-line note (`TranscriptNote`'s box and head, an activity row of the `event`
+ * kind), so each theme draws it the way it draws the transcript's other notes — Primer a grey
+ * strip at its content's width, Frost a line of words, Console a transcript line — with the
+ * sentence as the note's label. The phase's mark stays in every theme there: it is the row's one
+ * carrier of colour, so it sits outside the activity hook's mark slot, which a theme may hide.
  *
  * A press belongs to one attempt (`RetryActions`): it disables both — the pressed one spinning
  * while the press's promise is pending — until `attemptKey` changes, which is the caller saying
@@ -38,6 +50,10 @@
 import { useState } from "react";
 import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
 import { Button } from "../../actions/button/button";
+import {
+  TRANSCRIPT_NOTE_FRAME_CLASS,
+  TRANSCRIPT_NOTE_HEAD_CLASS,
+} from "../../chat/transcript-note/transcript-note";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { Spinner } from "../../icons/spinner/spinner";
@@ -156,9 +172,19 @@ export interface RetryStatusProps extends Omit<RetryActionsProps, "attemptKey"> 
   reason?: string | null;
   /** What the explanation is, as the "?" panel's first line ("Last failure"); null for none. */
   reasonTitle?: string | null;
+  /**
+   * `none`: the row alone (a card, a dialog, a centred notice). `note`: the transcript's one-line
+   * note, for a row between a conversation's messages; it takes the note's rung, whatever `size`.
+   */
+  frame?: RetryFrame;
   /** The root is the row itself, so `justify-center` centres it under a centred headline. */
   className?: string;
 }
+
+export type RetryFrame = "none" | "note";
+
+/** The phases in which an attempt is live: the sentence speaks in the body ink, as running work does. */
+const LIVE: ReadonlySet<RetryPhase> = new Set<RetryPhase>(["trying", "waiting"]);
 
 /** The mark each phase draws: a glyph and the ink it takes. The spinner is `trying`'s. */
 const MARK: Record<Exclude<RetryPhase, "trying">, { glyph: string; ink: string }> = {
@@ -173,10 +199,11 @@ const MARK: Record<Exclude<RetryPhase, "trying">, { glyph: string; ink: string }
 
 function PhaseMark({ phase, label }: { phase: RetryPhase; label: string }) {
   if (phase === "trying") {
-    // The sentence beside it names what runs; the spinner adds no second announcement.
+    // The sentence beside it names what runs; the spinner adds no second announcement. It takes
+    // the spinner rung nearest the glyphs' 13 px, so the glyph that replaces it fills the same box.
     return (
       <span aria-hidden="true" className="inline-flex h-[1lh] shrink-0 items-center">
-        <Spinner size="xs" tone="success" label={label} />
+        <Spinner size="sm" tone="success" label={label} />
       </span>
     );
   }
@@ -200,12 +227,68 @@ export function RetryStatus({
   retry = null,
   secondary = null,
   size = "xs",
+  frame = "none",
   className = "",
 }: RetryStatusProps) {
   const seconds = useCountdown(phase === "waiting" ? nextAt : null);
   const counting = seconds !== null && seconds > 0 && countdown !== undefined;
   const sentence = counting ? countdown(seconds) : label;
   const hasActions = retry !== null || secondary !== null;
+  const note = frame === "note";
+  const live = LIVE.has(phase);
+  // The sentence and its "?" stay together: the sentence wraps inside its own box, never away
+  // from the "?". While the seconds tick, the sentence changes too often to be read out; the
+  // phase's own changes still are.
+  const words = (
+    <span
+      aria-live={counting ? "off" : undefined}
+      data-retry-countdown={counting ? "" : undefined}
+      className={`flex min-w-0 items-start ${ICON_GAP.row} tabular-nums ${live ? "text-fg" : "text-fg-muted"}`}
+    >
+      {/* In a note the sentence is its label, which a theme sets as it sets the transcript's. */}
+      {note ? <span data-slot="label">{sentence}</span> : sentence}
+      {reason !== null && (
+        <InfoPopover label={label} className="h-[1lh]">
+          {reasonTitle !== null && <span className="block font-medium text-fg">{reasonTitle}</span>}
+          {reason}
+        </InfoPopover>
+      )}
+    </span>
+  );
+  // The two keep one line where it has room; a column narrower than both wraps them rather than
+  // letting a label overflow it.
+  const presses = hasActions && (
+    <span className={`flex min-w-0 flex-wrap items-start gap-x-3${note ? " ml-1" : ""}`}>
+      <RetryActions
+        retry={retry}
+        secondary={secondary}
+        attemptKey={`${phase}:${nextAt ?? ""}:${label}`}
+        size={note ? "xs" : size}
+      />
+    </span>
+  );
+  if (note) {
+    // The note's head is an activity row: running while an attempt is live, settled otherwise —
+    // never the error state, whose recipe sets the words in the danger ink.
+    return (
+      <div
+        role="status"
+        data-retry-phase={phase}
+        className={`ui-frame ${TRANSCRIPT_NOTE_FRAME_CLASS} w-fit max-w-full ${className}`}
+      >
+        <div
+          data-slot="head"
+          data-kind="event"
+          data-state={live ? "running" : "done"}
+          className={`ui-activity ${TRANSCRIPT_NOTE_HEAD_CLASS} flex-wrap`}
+        >
+          <PhaseMark phase={phase} label={label} />
+          {words}
+          {presses}
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       role="status"
@@ -215,36 +298,8 @@ export function RetryStatus({
       <PhaseMark phase={phase} label={label} />
       {/* Beside the mark, so presses that wrap line up under the sentence, not under the mark. */}
       <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
-        {/* The sentence and its "?" stay together: the sentence wraps inside its own box, never
-            away from the "?". While the seconds tick, the sentence changes too often to be read
-            out; the phase's own changes still are. */}
-        <span
-          aria-live={counting ? "off" : undefined}
-          data-retry-countdown={counting ? "" : undefined}
-          className={`flex min-w-0 items-start ${ICON_GAP.row} font-medium tabular-nums`}
-        >
-          {sentence}
-          {reason !== null && (
-            <InfoPopover label={label} className="h-[1lh]">
-              {reasonTitle !== null && (
-                <span className="block font-medium text-fg">{reasonTitle}</span>
-              )}
-              {reason}
-            </InfoPopover>
-          )}
-        </span>
-        {hasActions && (
-          // The two keep one line where it has room; a column narrower than both wraps them
-          // rather than letting a label overflow it.
-          <span className="flex min-w-0 flex-wrap items-start gap-x-3">
-            <RetryActions
-              retry={retry}
-              secondary={secondary}
-              attemptKey={`${phase}:${nextAt ?? ""}:${label}`}
-              size={size}
-            />
-          </span>
-        )}
+        {words}
+        {presses}
       </div>
     </div>
   );

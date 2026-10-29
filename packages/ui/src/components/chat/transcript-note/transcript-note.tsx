@@ -34,6 +34,19 @@ import {
   ActivityMarkSlot,
 } from "../../layout/disclosure-row/disclosure-row";
 
+/**
+ * The note's box, under the `ui-frame` hook its host writes: shared with the other one-line rows
+ * that stand between a conversation's messages (the retry row's `note` frame), so the transcript
+ * has one note shape.
+ */
+export const TRANSCRIPT_NOTE_FRAME_CLASS = "flex rounded-md border border-line bg-surface-muted";
+
+/**
+ * The note's head, under the `ui-activity` hook its host writes (an `event` row): the small rung,
+ * in the muted ink.
+ */
+export const TRANSCRIPT_NOTE_HEAD_CLASS = `${ACTIVITY_HEAD_CLASS} min-w-0 flex-1 rounded-[inherit] text-xs text-fg-muted`;
+
 export interface TranscriptNoteProps {
   /** The leading mark: a registry glyph's path, drawn in the subtle ink, or a node of the caller's. */
   mark?: string | ReactNode;
@@ -115,12 +128,10 @@ export function TranscriptNote({
   // The fill is the box's and the head's corners follow it, so a hover tints the whole pill; a
   // theme that takes the box away paints the head itself. The box does not clip, so the focus
   // ring drawn round a head that is a button stays whole.
-  const head = `ui-activity ${ACTIVITY_HEAD_CLASS} min-w-0 flex-1 rounded-[inherit] text-xs text-fg-muted ${
-    truncate ? "" : "flex-wrap"
-  }`;
+  const head = `ui-activity ${TRANSCRIPT_NOTE_HEAD_CLASS} ${truncate ? "" : "flex-wrap"}`;
   return (
     <div
-      className={`ui-frame flex ${fill ? "w-full" : "w-fit max-w-full"} rounded-md border border-line bg-surface-muted ${className}`}
+      className={`ui-frame ${TRANSCRIPT_NOTE_FRAME_CLASS} ${fill ? "w-full" : "w-fit max-w-full"} ${className}`}
     >
       {action !== undefined ? (
         <button
