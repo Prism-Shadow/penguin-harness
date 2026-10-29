@@ -1,7 +1,7 @@
 ---
 name: skilladam-rsi-toolkit
 description: "Run a SkillAdam experiment on the Project's selected Benchmarks: train once in a continuing Agent Session, freeze the learned Skill, then evaluate it repeatedly on held-out tasks."
-version: 2026.10.28.7
+version: 2026.10.29.1
 ---
 
 # SkillAdam

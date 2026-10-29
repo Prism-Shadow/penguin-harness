@@ -26,6 +26,7 @@ Shared reporting and plugin integration: [Saigyouji-Yuyuko1000](https://github.c
 - Report mean and sample standard deviation across complete test repetitions. Aggregate questions within each repetition first; for overall results, also average Benchmarks within each repetition first. Keep Train and Test separate.
 - Record experiment, component and State versions, preferring user-specified versions. Record cost, time and cached-input, uncached-input and output tokens per training unit and test-case repetition.
 - Use `baseline`/`final` for comparisons and numbered `step` labels for training progress, retaining original stage names for traceability. SkillAdam and TRACE record Train-score curves; OpenSkill records virtual validation; Evo-Harness does not require an iterative curve.
+- Repository-backed tasks use the full commit declared by the selected package and Case instructions throughout learning and every test repetition.
 
 ## Packaging
 

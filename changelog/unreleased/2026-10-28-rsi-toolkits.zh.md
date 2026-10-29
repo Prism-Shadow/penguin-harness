@@ -26,6 +26,7 @@
 - 对完整测试重复得分计算均值与样本标准差。每次先汇总题目；跨 Benchmark 总结果再先逐次平均各 Benchmark。Train 与 Test 分开统计。
 - 记录实验、组件及 State 版本，优先采用用户指定版本。按训练单元和每道测试题的每次作答记录费用、时间，以及缓存输入、非缓存输入和输出 token。
 - 对比统一使用 `baseline`／`final`，训练进度使用编号的 `step`，保留原阶段名称用于追溯。SkillAdam 和 TRACE 记录 Train 得分曲线，OpenSkill 记录虚拟验证，Evo-Harness 不要求多轮曲线。
+- 仓库中的任务使用选定包及 Case 说明声明的完整 commit，学习和全部测试重复均保持一致。
 
 ## 打包
 

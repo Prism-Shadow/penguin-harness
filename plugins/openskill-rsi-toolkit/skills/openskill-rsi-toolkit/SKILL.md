@@ -1,7 +1,7 @@
 ---
 name: openskill-rsi-toolkit
 description: Run OpenSkill (Open-World Self-Evolution for LLM Agents, Yan et al. 2026). Retrieve domain knowledge and verification anchors, refine skills using independent virtual tests without target supervision, freeze the last revision, then evaluate the Target on its Benchmark.
-version: 2026.10.28.6
+version: 2026.10.29.1
 ---
 
 # OpenSkill

@@ -26,8 +26,9 @@ repository or an experiment script. The Skill owns the remaining orchestration.
 3. A Workspace Case uses its local `statement/` as public input. A Harbor Case uses the
    repository, revision, `-p` directory and `-i` task named by its statement. Do not derive
    task paths from old GDPevo names or assume a shared `benchmarks/gdpevo/tasks/` directory.
-   Resolve the linked branch/tag once to a full commit; pin it for this whole experiment,
-   including both post-freeze evaluations. The local installed package and its statement
+   Require the statement's full 40-character lowercase commit and match it to the package's
+   top-level `ref` when present. Use it throughout construction and both post-freeze
+   evaluations; branches and tags are not task revisions. The local installed package and its statement
    hashes are authoritative: never replace them with a newly downloaded package.
 4. For Harbor, follow [harbor.md](harbor.md) §A for the shared checkout and prerequisites.
    During construction, read only its run instructions, selected `task.toml`, selected

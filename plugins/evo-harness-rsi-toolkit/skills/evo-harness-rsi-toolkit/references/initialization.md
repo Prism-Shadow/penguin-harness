@@ -37,9 +37,12 @@ Harness can use those instead without changing Evo's learning method.
 
 A built-in package can contain run
 descriptions while its data and environments live in the linked repository.
-Fetch the documented resources once at the requested revision, or resolve the
-documented branch/tag once and record its commit. Reuse that checkout throughout
-the experiment. Use the declared official resource cache and record it; do not introduce a
+For repository-backed tasks, require the full 40-character lowercase commit named
+by the statement. The Task link, run-rules link and checkout instruction must agree
+with the package's top-level `ref` when present. Fetch and record that commit once;
+reuse it throughout training and all baseline/final test repetitions. A requested
+version selects a matching package; do not substitute a branch, tag or task revision
+beneath the installed statements. Use the declared official resource cache and record it; do not introduce a
 second method-specific checkout or silently substitute tasks or graders. Preserve native task
 conversion, split and scoring behavior.
 

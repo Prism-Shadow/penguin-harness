@@ -118,8 +118,9 @@ penguin run \
 ```
 
    (Never pass `--source`: it is retired; every Session `penguin run` creates is a CLI Session and lands in Settings › Archived chats.) Use the exact requested Agent, Project, Workspace and model pair; never fall back to a Project default. Retry a launch only when unchanged Workspace and Trace evidence proves the Target did not start, each retry with a new diagnosis and a specific correction. Return `evaluation_failed` when no safe repair remains or it is unclear whether the Target started.
-3. **Harbor cases.** A statement may name a branch, tag or full commit. Use the checkout
-   and commit fixed by the controller for this experiment and follow [harbor.md](harbor.md)
+3. **Harbor cases.** Require the statement's full 40-character lowercase commit, matching
+   the package's top-level `ref` when present. Use that checkout throughout this experiment
+   and follow [harbor.md](harbor.md)
    §B–C in place of the Workspace launch. Require the statement’s exact `-p` and `-i`, the
    requested Target State archive, model and thinking level. Preserve its network, time and
    turn settings; do not replace the selected task with an old repository layout. One cell
