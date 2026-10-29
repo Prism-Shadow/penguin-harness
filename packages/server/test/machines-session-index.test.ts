@@ -10,7 +10,8 @@
  * - Given every connected machine says it has no such Session, the id is a miss: asked again
  *   within the miss window it reaches no machine; after the window it asks again.
  * - Given a machine that fails or never answers, the id is unknown but not a miss, so the next
- *   resolve asks again; a machine that never answers is given up on at the deadline.
+ *   resolve asks again, and that machine is named as silent; a machine that never answers is
+ *   given up on at the deadline.
  * - Given machines that are not connected, they are not asked.
  * - Given a machine's `session_created` event, the id resolves to it without asking; its
  *   `session_deleted` forgets it, while another machine's `session_deleted` for the same id
@@ -68,11 +69,17 @@ describe("the Session → machine index", () => {
     const a = machine("a", absent);
     const b = machine("b", holds("blog"));
 
-    expect(await index.resolve(ID, fleet(a, b))).toEqual({ machineId: "b", projectId: "blog" });
+    expect((await index.resolve(ID, fleet(a, b))).place).toEqual({
+      machineId: "b",
+      projectId: "blog",
+    });
     expect(a.asked).toEqual([`/api/sessions/${ID}`]);
     expect(b.asked).toEqual([`/api/sessions/${ID}`]);
 
-    expect(await index.resolve(ID, fleet(a, b))).toEqual({ machineId: "b", projectId: "blog" });
+    expect((await index.resolve(ID, fleet(a, b))).place).toEqual({
+      machineId: "b",
+      projectId: "blog",
+    });
     expect(a.asked).toHaveLength(1);
     expect(b.asked).toHaveLength(1);
   });
@@ -81,7 +88,7 @@ describe("the Session → machine index", () => {
     const index = new SessionMachineIndex();
     const b = machine("b", holds());
     const both = await Promise.all([index.resolve(ID, fleet(b)), index.resolve(ID, fleet(b))]);
-    expect(both).toEqual([
+    expect(both.map((resolution) => resolution.place)).toEqual([
       { machineId: "b", projectId: PROJECT },
       { machineId: "b", projectId: PROJECT },
     ]);
@@ -94,7 +101,7 @@ describe("the Session → machine index", () => {
     const slow = machine("slow", () => new Promise((resolve) => (late = resolve)));
     const quick = machine("quick", holds());
 
-    expect(await index.resolve(ID, fleet(slow, quick))).toEqual({
+    expect((await index.resolve(ID, fleet(slow, quick))).place).toEqual({
       machineId: "quick",
       projectId: PROJECT,
     });
@@ -108,13 +115,13 @@ describe("the Session → machine index", () => {
     const index = new SessionMachineIndex({ now: () => now, missTtlMs: 10_000 });
     const a = machine("a", absent);
 
-    expect(await index.resolve(ID, fleet(a))).toBeNull();
+    expect((await index.resolve(ID, fleet(a))).place).toBeNull();
     now += 9_000;
-    expect(await index.resolve(ID, fleet(a))).toBeNull();
+    expect((await index.resolve(ID, fleet(a))).place).toBeNull();
     expect(a.asked).toHaveLength(1);
 
     now += 2_000;
-    expect(await index.resolve(ID, fleet(a))).toBeNull();
+    expect((await index.resolve(ID, fleet(a))).place).toBeNull();
     expect(a.asked).toHaveLength(2);
   });
 
@@ -124,8 +131,15 @@ describe("the Session → machine index", () => {
     const fails = machine("b", async () => ({ status: 500, text: "{}" }));
     const throws = machine("c", () => Promise.reject(new Error("the channel closed")));
 
-    expect(await index.resolve(ID, fleet(denies, fails, throws))).toBeNull();
-    expect(await index.resolve(ID, fleet(denies, fails, throws))).toBeNull();
+    const first = await index.resolve(ID, fleet(denies, fails, throws));
+    expect(first).toEqual({
+      place: null,
+      silent: [
+        { machineId: "b", alias: "alias-b" },
+        { machineId: "c", alias: "alias-c" },
+      ],
+    });
+    expect((await index.resolve(ID, fleet(denies, fails, throws))).place).toBeNull();
     expect(denies.asked).toHaveLength(2);
   });
 
@@ -134,9 +148,10 @@ describe("the Session → machine index", () => {
     const index = new SessionMachineIndex({ askTimeoutMs: 5_000 });
     const silent = machine("a", () => new Promise(() => undefined));
 
-    const pending = index.resolve(ID, fleet(silent));
+    const denies = machine("b", absent);
+    const pending = index.resolve(ID, fleet(silent, denies));
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(await pending).toBeNull();
+    expect(await pending).toEqual({ place: null, silent: [{ machineId: "a", alias: "alias-a" }] });
 
     void index.resolve(ID, fleet(silent));
     await vi.advanceTimersByTimeAsync(0);
@@ -146,7 +161,7 @@ describe("the Session → machine index", () => {
   it("does not ask a machine that is not connected", async () => {
     const index = new SessionMachineIndex();
     const offline: MachineCandidate = { machineId: "a", alias: "box", api: null };
-    expect(await index.resolve(ID, fleet(offline))).toBeNull();
+    expect((await index.resolve(ID, fleet(offline))).place).toBeNull();
   });
 
   it("learns a Session from its machine's events and forgets it when that machine deletes it", async () => {
@@ -156,7 +171,10 @@ describe("the Session → machine index", () => {
       "b",
       JSON.stringify({ type: "session_created", projectId: PROJECT, agentId: "x", sessionId: ID }),
     );
-    expect(await index.resolve(ID, fleet(a))).toEqual({ machineId: "b", projectId: PROJECT });
+    expect((await index.resolve(ID, fleet(a))).place).toEqual({
+      machineId: "b",
+      projectId: PROJECT,
+    });
     expect(a.asked).toEqual([]);
 
     // Another machine deleting a Session it minted under the same id says nothing about b's.
