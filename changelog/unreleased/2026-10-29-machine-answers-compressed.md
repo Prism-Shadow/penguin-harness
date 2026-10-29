@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** feature
 - **Scope:** `server`, `docs`
+- **PR:** [#1396](https://github.com/Prism-Shadow/penguin-harness/pull/1396)
 
 [中文版](2026-10-29-machine-answers-compressed.zh.md)
 
