@@ -160,6 +160,8 @@ export * from "./components/feedback/duration-slot/duration-slot";
 export * from "./components/feedback/retry-status/countdown";
 export * from "./components/feedback/retry-status/use-countdown";
 export * from "./components/feedback/retry-status/retry-status";
+// A transfer under way: what comes over, the amount against the whole, and a thin bar.
+export * from "./components/feedback/transfer-progress/transfer-progress";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";
 export * from "./components/data/stat-tile/stat-tile";

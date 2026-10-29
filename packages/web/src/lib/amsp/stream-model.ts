@@ -78,6 +78,8 @@ import type {
   TokenUsagePayload,
   ToolStatus,
 } from "@prismshadow/amsp";
+import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
+import type { ElidedBody, HistoryRecordLike } from "@prismshadow/penguin-core/interfaces";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
@@ -178,6 +180,24 @@ export interface AssistantTextItem {
   tracePosition?: TracePosition;
 }
 
+/**
+ * A history record that came with values left out — the bulky bodies the transcript shows folded
+ * (a tool's output, a long argument, a thinking block, a child's inline image): the record as it
+ * arrived, previews in place, and the entries naming what was left out. The whole values are
+ * fetched when the reader unfolds the item; `takeWholeRecord` then puts the record back.
+ */
+export interface ElidedRecord {
+  record: HistoryRecordLike;
+  entries: ElidedBody[];
+}
+
+/** An item's folded values being fetched: the bytes so far of their total, or why it failed. */
+export interface BodyLoad {
+  doneBytes: number;
+  totalBytes: number;
+  error: string | null;
+}
+
 export interface ThinkingItem {
   kind: "thinking";
   id: number;
@@ -187,6 +207,10 @@ export interface ThinkingItem {
   startedAtMs?: number;
   /** Thinking duration (settled when the complete message arrives: message time - start time). */
   durationMs?: number;
+  /** The text came as a preview of a longer one (a history window folds long thinking). */
+  elided?: ElidedRecord;
+  /** The whole text being fetched. */
+  bodyLoad?: BodyLoad;
 }
 
 export interface ToolCallItem {
@@ -241,6 +265,12 @@ export interface ToolCallItem {
   argStartedAtMs?: number;
   /** Total tool duration (settled when the tool_call_output complete message arrives) = the argument-generation segment + the execution segment, excluding the approval wait (see settleToolDuration). */
   durationMs?: number;
+  /** The call's arguments came with a long string value as a preview (a history window folds it). */
+  elidedCall?: ElidedRecord;
+  /** The output (or a child's inline image) came as a preview. */
+  elidedOutput?: ElidedRecord;
+  /** The whole values being fetched. */
+  bodyLoad?: BodyLoad;
 }
 
 /** A standalone sub-session card for when no run_subagent tool card can be bound. */
@@ -679,6 +709,11 @@ export interface StreamModel {
    * closed the cut-short Task first.
    */
   runEnded: boolean;
+  /**
+   * Tasks this model has opened (every `startTask`): how many Tasks of the conversation a
+   * window put on screen, which is what the first paint backfills older windows up to.
+   */
+  tasksStarted: number;
   nextItemId: number;
 }
 
@@ -714,6 +749,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     turnToolOutputs: false,
     reopenTaskAtSteering: false,
     runEnded: false,
+    tasksStarted: 0,
     nextItemId: 1,
   };
 }
@@ -803,6 +839,7 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       msg.timestamp,
       nowMs,
       (msg as AmspRecord & { tracePosition?: TracePosition }).tracePosition,
+      elidedOf(msg),
     );
     advanceLastTs(model, msg.timestamp);
     return;
@@ -1029,6 +1066,7 @@ function touchTask(model: StreamModel, timestamp: string): void {
 function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   // The previous Task is finalized by "the next Task starting" (the history-rebuild convention).
   finalizeOpenTask(model);
+  model.tasksStarted += 1;
   // Finalize any retry state left over from the previous Task: when the
   // server dies during a backoff window, the Trace's tail is
   // request_end(timeout) with no abort, and history rebuild would leave a
@@ -1306,12 +1344,20 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
 // Complete messages
 // ---------------------------------------------------------------------------
 
+/** What a history record left out, or undefined for a record carried whole (every live one). */
+function elidedOf(msg: AmspRecord): ElidedRecord | undefined {
+  const record = msg as HistoryRecordLike;
+  const entries = record.elided;
+  return entries !== undefined && entries.length > 0 ? { record, entries } : undefined;
+}
+
 function handleComplete(
   model: StreamModel,
   p: CompleteModelPayload,
   timestamp: string,
   nowMs: number,
   tracePosition?: TracePosition,
+  elided?: ElidedRecord,
 ): void {
   switch (p.type) {
     case "text": {
@@ -1472,6 +1518,8 @@ function handleComplete(
         }
         target.thinking = p.thinking;
         target.streaming = false;
+        if (elided !== undefined) target.elided = elided;
+        else delete target.elided;
         settleThinkingDuration(target, tsMs);
         if (target === model.openThinking) model.openThinking = null;
         model.pendingThinking = null;
@@ -1485,6 +1533,7 @@ function handleComplete(
         id: nextId(model),
         thinking: p.thinking,
         streaming: false,
+        ...(elided !== undefined ? { elided } : {}),
       };
       // History rebuild (no fragment): approximate the thinking start with the previous message's time.
       if (model.lastTsMs > 0) item.startedAtMs = model.lastTsMs;
@@ -1505,6 +1554,8 @@ function handleComplete(
       if (card) {
         card.name = p.name;
         card.argumentsText = p.arguments;
+        if (elided !== undefined) card.elidedCall = elided;
+        else delete card.elidedCall;
         card.callStreaming = false;
         card.callComplete = true;
         if (tsMs !== undefined) card.callStartedAtMs = tsMs;
@@ -1526,6 +1577,7 @@ function handleComplete(
         callStreaming: false,
       });
       created.callComplete = true;
+      if (elided !== undefined) created.elidedCall = elided;
       if (tsMs !== undefined) created.callStartedAtMs = tsMs;
       noteApprovalWait(model, created); // createToolCard may have already backfilled a pending approval timestamp
       // History rebuild (no partial_tool_call start): approximate "argument
@@ -1548,6 +1600,8 @@ function handleComplete(
         });
       }
       card.output = p.output;
+      if (elided !== undefined) card.elidedOutput = elided;
+      else delete card.elidedOutput;
       // The complete message converges the images (the streamed delta already carried them once; overwrites with the same value; also serves as a fallback for a mid-stream join).
       if (p.images && p.images.length > 0) card.images = p.images;
       card.outputStreaming = false;
@@ -2331,17 +2385,29 @@ function imageInKey(value: unknown): unknown {
     : value;
 }
 
+/** Where a dedup key's folded values would be fetched from: nowhere, the key drops the refs. */
+const KEY_SOURCE = { agentId: "", sessionId: "", fileIndex: 0, ordinal: 0 };
+
 /**
  * The envelope a history copy and its SSE copy share. Disk-only transport metadata
- * (`tracePosition`) must not make an otherwise identical SSE envelope look new, and neither
- * may an image's form: a windowed history page carries a user `image_url` and a tool output's
- * `images` by reference while the stream carries the bytes, and an SSE copy that escaped the
- * overlap dedup would draw the person's image twice. Two images of one prompt may then share a
- * key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
- * appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ * (`tracePosition`, the `elided` entries) must not make an otherwise identical SSE envelope look
+ * new, and neither may a value's form. A history window carries its bulky values folded — a
+ * tool's output, a long argument, a thinking block, as a head and a tail — while the stream
+ * carries them whole, so the key folds the stream's copy by the same rule the server folds by
+ * (folding a folded copy changes nothing), the way it stands in for images. And a windowed history
+ * page carries a user `image_url` and a tool output's `images` by reference while the stream
+ * carries the bytes: an SSE copy that escaped the overlap dedup would draw the person's image
+ * twice. Two images of one prompt may then share a key (same timestamp); that is harmless, since
+ * a history read holds a prompt whole (the server appends held inputs the Trace lacks), so each
+ * stream copy has its own history copy to match.
  */
-function dedupKey(msg: AmspRecord): string {
-  const { tracePosition: _tracePosition, ...envelope } = msg as AmspRecord & {
+function dedupKey(input: AmspRecord): string {
+  const msg = elideHistoryRecord(input as HistoryRecordLike, KEY_SOURCE).record;
+  const {
+    tracePosition: _tracePosition,
+    elided: _elided,
+    ...envelope
+  } = msg as HistoryRecordLike & {
     tracePosition?: TracePosition;
   };
   if (msg.type === "model_msg") {
@@ -2368,6 +2434,57 @@ export function buildDedupIndex(messages: AmspRecord[], limit = 100): Set<string
 /** Determine whether a complete message/event is exactly identical to history's envelope JSON (overlap dedup). */
 export function isDuplicate(index: Set<string>, msg: AmspRecord): boolean {
   return index.has(dedupKey(msg));
+}
+
+// ---------------------------------------------------------------------------
+// Folded bodies (history windows carry bulky values as previews)
+// ---------------------------------------------------------------------------
+
+/** Which of an item's values a folded record fills: a call's arguments, its output, a thinking text. */
+export type ElidedSlot = "call" | "output" | "thinking";
+
+/** An item's folded records, each with the slot its whole values go back into. */
+export function elidedRecordsOf(
+  item: ToolCallItem | ThinkingItem,
+): { slot: ElidedSlot; elided: ElidedRecord }[] {
+  if (item.kind === "thinking") {
+    return item.elided === undefined ? [] : [{ slot: "thinking", elided: item.elided }];
+  }
+  const out: { slot: ElidedSlot; elided: ElidedRecord }[] = [];
+  if (item.elidedCall !== undefined) out.push({ slot: "call", elided: item.elidedCall });
+  if (item.elidedOutput !== undefined) out.push({ slot: "output", elided: item.elidedOutput });
+  return out;
+}
+
+/**
+ * The item takes a record whose values are whole again (`withElidedBody` put each one back): it
+ * shows them from now on, and that slot is folded no more.
+ */
+export function takeWholeRecord(
+  item: ToolCallItem | ThinkingItem,
+  slot: ElidedSlot,
+  record: HistoryRecordLike,
+): void {
+  const p = record.payload as {
+    arguments?: unknown;
+    output?: unknown;
+    images?: unknown;
+    thinking?: unknown;
+  };
+  if (item.kind === "thinking") {
+    if (slot !== "thinking") return;
+    if (typeof p.thinking === "string") item.thinking = p.thinking;
+    delete item.elided;
+    return;
+  }
+  if (slot === "call") {
+    if (typeof p.arguments === "string") item.argumentsText = p.arguments;
+    delete item.elidedCall;
+  } else if (slot === "output") {
+    if (typeof p.output === "string") item.output = p.output;
+    if (Array.isArray(p.images) && p.images.length > 0) item.images = p.images as string[];
+    delete item.elidedOutput;
+  }
 }
 
 /**

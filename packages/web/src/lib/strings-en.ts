@@ -3852,6 +3852,35 @@ Scenarios:
         `${alias} is on a different version, so this conversation won't update by itself. Go to Machines and restart it.`,
       open: "Go to Machines",
     },
+    /**
+     * A conversation's history coming over from the machine it lives on: the row that stands in
+     * for the transcript until its newest messages arrive, the line over the transcript while the
+     * rest syncs behind it, and the line under an unfolded output while its whole text arrives.
+     * `alias` is null while the machine list has not answered.
+     */
+    historyTransfer: {
+      window: (alias: string | null) =>
+        alias === null
+          ? "Loading the latest messages"
+          : `Loading the latest messages from ${alias}`,
+      /** Behind the first paint: the rest of the conversation comes over to this server. */
+      fill: "Syncing earlier history",
+      /** Behind the first paint: the whole of the outputs the transcript shows folded. */
+      heavy: "Syncing full outputs",
+      /** Under an unfolded output or thinking block while its whole text arrives. */
+      body: "Loading the full text",
+      bodyFailed: "Could not load the full text",
+      /** The Trace panel bringing a machine's Trace file over before it opens it. */
+      trace: (alias: string | null) =>
+        alias === null ? "Fetching the Trace" : `Fetching the Trace from ${alias}`,
+      /** The link to the machine dropped and the server retries: the attempt, then the seconds. */
+      retrying: (attempt: number) => `Connection lost, retrying (attempt ${attempt})`,
+      retryIn: (seconds: number, attempt: number) =>
+        `Connection lost, retrying in ${seconds} s (attempt ${attempt})`,
+      retryNow: "Retry now",
+      /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
+      broken: "The history transfer broke off; try again",
+    },
     statsLabel: "Stats",
     removeImage: "Remove image",
     openAgents: "Agents panel",

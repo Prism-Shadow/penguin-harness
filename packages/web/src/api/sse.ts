@@ -7,6 +7,10 @@
  *   credentials_updated / hello, and `heartbeat` — the stream's own beat);
  * - The machines aggregate uses `event: machine_event`, data `{machineId, event}` — one
  *   machine's own server event, tagged with the machine it came from.
+ * - A history read (`history`, `trace-body`) is a stream too, of named events only — `progress`,
+ *   `page`, `records`, `part`, `done`, `filled`, `error` — with acknowledged flow and a 5 s
+ *   `ping`. It is a read with an end, so its reader closes it once the read is over: the socket
+ *   re-issues any stream the server ends, which here would read the window again.
  * - A stream is a call on the page's one API socket (api/socket.ts, PRFC-0011), which
  *   re-issues it with `last-event-id` after any interruption (the server replays from its
  *   ring buffer; if the event was already evicted, it pushes resync_required instead). There
@@ -17,7 +21,14 @@
  * Docs: /docs/server-api § "Streaming (SSE)".
  */
 import type { AmspRecord } from "@prismshadow/amsp";
-import type { MachineEvent, ServerEvent } from "@prismshadow/penguin-server/api";
+import type {
+  HistoryPage,
+  HistoryProgress,
+  HistoryRecords,
+  HistoryStreamError,
+  MachineEvent,
+  ServerEvent,
+} from "@prismshadow/penguin-server/api";
 import { apiUrl } from "../lib/server-context";
 import { machineForSession } from "../lib/session-machines";
 import { apiSocket } from "./socket";
@@ -150,4 +161,142 @@ export function openMachineEvents(
     onError: handlers.onError,
   };
   return subscribe(path, streamHandlers, { heartbeatMs: STREAM_HEARTBEAT_MS });
+}
+
+/**
+ * The beat a history stream speaks at: the server writes a `ping` every 5 s while it has nothing
+ * else to send (while the machine behind it is slow, or out of reach and being retried). Two
+ * silent beats end the stream here and re-issue it from its last event id, which the server
+ * continues the same window from.
+ */
+export const HISTORY_STREAM_BEAT_MS = 5_000;
+
+/**
+ * One read of a Session's history over the `history` stream: the newest `limit` Tasks (`tail`,
+ * cut at `budget` bytes of records when given, and with `fill` the stream stays open after the
+ * window to bring the rest of the Session to the server that serves this page), the Tasks before
+ * a cursor (`before`), the whole transcript (`full`), or no window at all — only one Trace file
+ * made whole on this page's server (`fill`, the Trace panel's read of a machine's file).
+ */
+export type HistoryStreamQuery =
+  | { kind: "tail"; limit: number; budget?: number; fill?: boolean }
+  | { kind: "before"; cursor: string; limit: number; budget?: number }
+  | { kind: "full" }
+  | { kind: "fill"; file: number };
+
+/** What a history or trace-body stream says, event by event. */
+export interface HistoryStreamHandlers {
+  /** How far the bytes behind the read have come, and whether the machine is being waited for. */
+  onProgress?: (progress: HistoryProgress) => void;
+  /** A window begins: what it holds beside its records. A new window id replaces any window in part. */
+  onPage?: (page: HistoryPage) => void;
+  /** Whole record lines (`records`), or a piece of one record longer than a frame (`part`). */
+  onRecords?: (frame: HistoryRecords, kind: "records" | "part") => void;
+  /** The window (or the body, or a `fill` read) is complete. */
+  onDone?: (windowId: string | null) => void;
+  /** After a window read with `fill`: the rest of the Session is on this page's server. */
+  onFilled?: () => void;
+  /**
+   * The read is over and failed: the server's `error` event, or the stream refused for good (it
+   * answered 401, 403 or 404 — reported as `not_found`). A stream that dropped is not an error:
+   * the socket re-issues it from its last event id by itself.
+   */
+  onError: (error: HistoryStreamError) => void;
+}
+
+/**
+ * A history or trace-body stream on the page's one socket, with acknowledged flow: the server
+ * keeps no more than its window of unacknowledged data in flight, so a long history never holds
+ * back the socket's other calls. Event names are dispatched to the handlers; the beat (`ping`)
+ * is the socket's own business.
+ */
+function subscribeHistory(path: string, handlers: HistoryStreamHandlers): StreamConnection {
+  return subscribe(
+    path,
+    {
+      // Every event of these streams is named; an unnamed frame would be no record of theirs.
+      onRecord: () => undefined,
+      onServerEvent: () => undefined,
+      onEvent: (name, data) => {
+        switch (name) {
+          case "progress":
+            handlers.onProgress?.(data as HistoryProgress);
+            return;
+          case "page":
+            handlers.onPage?.(data as HistoryPage);
+            return;
+          case "records":
+          case "part":
+            handlers.onRecords?.(data as HistoryRecords, name);
+            return;
+          case "done":
+            handlers.onDone?.((data as { windowId?: string } | null)?.windowId ?? null);
+            return;
+          case "filled":
+            handlers.onFilled?.();
+            return;
+          case "error":
+            handlers.onError(data as HistoryStreamError);
+            return;
+        }
+      },
+      onError: (closed) => {
+        if (closed) handlers.onError({ code: "not_found", message: "the stream was refused" });
+      },
+    },
+    { flow: true, heartbeatMs: HISTORY_STREAM_BEAT_MS },
+  );
+}
+
+/** The query string of a history read, in the server's grammar (the `/messages` one plus `budget` and `fill`). */
+function historyQuery(query: HistoryStreamQuery): string {
+  const params = new URLSearchParams();
+  switch (query.kind) {
+    case "tail":
+      params.set("tailLimit", String(query.limit));
+      if (query.budget !== undefined) params.set("budget", String(query.budget));
+      if (query.fill === true) params.set("fill", "1");
+      break;
+    case "before":
+      params.set("before", query.cursor);
+      params.set("limit", String(query.limit));
+      if (query.budget !== undefined) params.set("budget", String(query.budget));
+      break;
+    case "full":
+      break;
+    case "fill":
+      params.set("fill", "only");
+      params.set("file", String(query.file));
+      break;
+  }
+  const text = params.toString();
+  return text === "" ? "" : `?${text}`;
+}
+
+/**
+ * Reads a Session's history over the `history` stream (GET /api/sessions/:sessionId/history),
+ * routed like every other Session call: a Session on a machine is answered by this page's server
+ * from what it holds of that machine's Trace, asking the machine only for what it lacks.
+ */
+export function openHistoryStream(
+  sessionId: string,
+  query: HistoryStreamQuery,
+  handlers: HistoryStreamHandlers,
+): StreamConnection {
+  const path = `/api/sessions/${encodeURIComponent(sessionId)}/history${historyQuery(query)}`;
+  return subscribeHistory(apiUrl(path, machineForSession(sessionId)), handlers);
+}
+
+/**
+ * Reads the whole of one value a history record carried as a preview (GET
+ * /api/sessions/:sessionId/trace-body?ref=): its pieces arrive as `part` events in order, then
+ * `done`. `ref` is the history record's own handle for the value, opaque here.
+ */
+export function openTraceBodyStream(
+  sessionId: string,
+  ref: string,
+  handlers: HistoryStreamHandlers,
+): StreamConnection {
+  const path = `/api/sessions/${encodeURIComponent(sessionId)}/trace-body?ref=${encodeURIComponent(ref)}`;
+  return subscribeHistory(apiUrl(path, machineForSession(sessionId)), handlers);
 }

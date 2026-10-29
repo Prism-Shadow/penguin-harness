@@ -481,7 +481,7 @@ export const en: GalleryStrings = {
       },
       loading: {
         title: "Loading",
-        description: "The spinner, the skeletons and the progress bar.",
+        description: "The spinner, the skeletons, the progress bar and the transfer row.",
       },
       streaming: {
         title: "Streaming",
@@ -918,6 +918,22 @@ export const en: GalleryStrings = {
       progressLabel: "Download progress",
       progressOver: "Over the limit",
       progressIndeterminate: "Indeterminate",
+      transfer: "Transfer row",
+      transferHint:
+        "History coming over from a machine: the line that stands in for the conversation, the line over it, the line under an unfolded output",
+      transferPane: "In the conversation's place, after a second",
+      transferPaneWaiting: "In the conversation's place, while the link is down",
+      transferUncounted: "Nothing counted yet",
+      transferTop: "Over the conversation",
+      transferBody: "Under an unfolded output",
+      transferWindow: (alias: string) => `Loading the latest messages from ${alias}`,
+      transferFill: "Syncing earlier history",
+      transferOlder: "Loading earlier messages…",
+      transferBodyLabel: "Loading the full text",
+      transferTrying: (n: number) => `Connection lost, retrying (attempt ${n})`,
+      transferRetryIn: (s: number, n: number) =>
+        `Connection lost, retrying in ${s} s (attempt ${n})`,
+      transferRetryNow: "Retry now",
     },
     streaming: {
       reply: "Assistant reply",

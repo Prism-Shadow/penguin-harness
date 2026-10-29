@@ -120,6 +120,7 @@ import {
 import { RouteProbe } from "./route-probe";
 import { machineForSession } from "../../lib/session-machines";
 import { HistoryLoadFailed } from "./history-load-failed";
+import { HistoryLoading } from "./history-loading";
 import { MachineRestartNotice } from "./machine-restart-notice";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
@@ -2056,6 +2057,7 @@ export function ChatPage() {
   const modelPricing = pricingOf(activeModelRef);
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
+    bodies: stream.bodies,
     onApprove,
     onSendToBackground,
     origin: [],
@@ -2707,11 +2709,14 @@ export function ChatPage() {
                         onRetry={stream.retry}
                       />
                     ) : stream.loading ? (
-                      <div className="space-y-3 p-6">
-                        <Skeleton className="h-5 w-1/3" />
-                        <Skeleton className="h-5 w-2/3" />
-                        <Skeleton className="h-5 w-1/2" />
-                      </div>
+                      // The skeleton, and past a second, for a conversation on a machine, how far
+                      // its newest messages have come over and how the link stands.
+                      <HistoryLoading
+                        projectId={projectId}
+                        sessionId={selected.sessionId}
+                        progress={stream.transfer.window}
+                        onRetryNow={stream.retryNow}
+                      />
                     ) : (
                       // The empty state shares the same structure as the message stream (message
                       // area + bottom input area): only the message area's content differs, and
@@ -2747,6 +2752,7 @@ export function ChatPage() {
                                 error: stream.older.error,
                                 prependedCount: stream.prefixItems.length,
                                 onLoad: stream.loadOlder,
+                                transfer: stream.transfer,
                               }}
                               // Tick-rail minimap over the stream's left gutter (zero layout
                               // width; hides itself when the gutter is too narrow or the

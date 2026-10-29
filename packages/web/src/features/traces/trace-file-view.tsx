@@ -36,11 +36,18 @@
  * message linked highlighting: hovering either side highlights the other (only one bar / one
  * message lights up at a time); clicking a bar scrolls to the corresponding message and pins the
  * highlight for PIN_MS.
+ *
+ * A Trace file of a Session on a machine is made whole on this server before its analysis is
+ * read — the `history` stream's `fill` read, with the transfer row while it runs — and the
+ * analysis and the rounds are then answered from what this server holds: forwarded whole, a big
+ * file's analysis outlasts any one call on a slow link. Each refresh brings over only what the
+ * file grew by.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import type { AmspRecord } from "@prismshadow/amsp";
 import type {
+  HistoryProgress,
   TraceAnalysisResponse,
   TraceModelSegment,
   TraceOtherSpan,
@@ -58,7 +65,11 @@ import {
   Text,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { openHistoryStream } from "../../api/sse";
 import { CostPartsRows, ElapsedSplitRows, StatHint } from "../../components/ui/stat-hint";
+import { readHistory } from "../../lib/history/history-read";
+import { machineForSession } from "../../lib/session-machines";
+import { HistoryFileLoading } from "../chat/history-loading";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import {
@@ -262,6 +273,11 @@ export function TraceFileView({
   const [rounds, setRounds] = useState<ReadonlyMap<number, RoundEntry>>(new Map());
   const [shownRounds, setShownRounds] = useState(TRACE_ROUNDS_PAGE);
   const [error, setError] = useState<string | null>(null);
+  /** The file being made whole on this server first (a Session on a machine): since when, and how far. */
+  const [fetching, setFetching] = useState<{
+    since: number;
+    progress: HistoryProgress | null;
+  } | null>(null);
   /** Message row pinned highlighted after a bar-click jump; auto-clears when its timer fires (independent of hover highlighting, and can stack with it). */
   const [pinnedRow, setPinnedRow] = useState<string | null>(null);
   /** The round in view under the toolbar; null before the panel has scrolled (the newest round, which the file opens on). */
@@ -318,19 +334,49 @@ export function TraceFileView({
   // read here: the rounds to read follow from the analysis (the effect below).
   useEffect(() => {
     const signal = { cancelled: false };
-    api
-      .getAgentTraceAnalysis(projectId, agentId, sessionId, index)
-      .then((a) => {
-        if (signal.cancelled) return;
-        setFile((prev) => fileAfterAnalysis(prev, a));
-        setRounds(withoutFailures);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (!signal.cancelled) setError(apiErrorText(err));
-      });
+    const readAnalysis = (): void => {
+      api
+        .getAgentTraceAnalysis(projectId, agentId, sessionId, index)
+        .then((a) => {
+          if (signal.cancelled) return;
+          setFile((prev) => fileAfterAnalysis(prev, a));
+          setRounds(withoutFailures);
+          setError(null);
+        })
+        .catch((err: unknown) => {
+          if (!signal.cancelled) setError(apiErrorText(err));
+        });
+    };
+    if (machineForSession(sessionId) === null) {
+      readAnalysis();
+      return () => {
+        signal.cancelled = true;
+      };
+    }
+    const since = Date.now();
+    setFetching({ since, progress: null });
+    const read = readHistory(
+      (query, handlers) => openHistoryStream(sessionId, query, handlers),
+      { kind: "fill", file: index },
+      {
+        onProgress: (progress) => {
+          if (!signal.cancelled) setFetching({ since, progress });
+        },
+        onFilled: () => {
+          if (signal.cancelled) return;
+          setFetching(null);
+          readAnalysis();
+        },
+        onError: (message) => {
+          if (signal.cancelled) return;
+          setFetching(null);
+          setError(message);
+        },
+      },
+    );
     return () => {
       signal.cancelled = true;
+      read.close();
     };
   }, [projectId, agentId, sessionId, index, reloadSignal]);
 
@@ -502,6 +548,11 @@ export function TraceFileView({
       onJumpToRound={jumpToRound}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
+      pending={
+        fetching !== null ? (
+          <HistoryFileLoading since={fetching.since} progress={fetching.progress} />
+        ) : undefined
+      }
     />
   );
 }
@@ -530,6 +581,7 @@ export function TraceFileBody({
   onJumpToRound,
   toolbarStart,
   toolbarEnd,
+  pending,
 }: {
   rootRef?: RefObject<HTMLDivElement | null>;
   /** null while the file's analysis is being read. */
@@ -554,6 +606,8 @@ export function TraceFileBody({
   onJumpToRound: (taskIndex: number) => void;
   toolbarStart?: ReactNode;
   toolbarEnd?: ReactNode;
+  /** What stands in while the analysis is read: the skeleton unless the caller has more to say. */
+  pending?: ReactNode;
 }) {
   // Cost is not priced here: the analysis carries each round's cost (and the file's), priced by
   // the server with the cost center's own rule — the Project's current rates for the file's
@@ -647,7 +701,7 @@ export function TraceFileBody({
       {error !== null && <p className={`mb-3 text-xs ${toneInk.danger}`}>{error}</p>}
 
       {analysis === null ? (
-        error === null && <Skeleton className="h-40" />
+        error === null && (pending ?? <Skeleton className="h-40" />)
       ) : (
         <div className="space-y-6">
           {/* Global summary: split into three groups by nature (count / Token usage /

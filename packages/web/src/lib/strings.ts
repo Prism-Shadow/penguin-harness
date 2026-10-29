@@ -4058,6 +4058,33 @@ Benchmark：
         `${alias} 的版本和当前不一致，这里的对话不会自动刷新。请到「机器管理」重启这台机器。`,
       open: "去机器管理",
     },
+    /**
+     * A conversation's history coming over from the machine it lives on: the row that stands in
+     * for the transcript until its newest messages arrive, the line over the transcript while the
+     * rest syncs behind it, and the line under an unfolded output while its whole text arrives.
+     * `alias` is null while the machine list has not answered.
+     */
+    historyTransfer: {
+      window: (alias: string | null) =>
+        alias === null ? "正在加载最近的对话" : `正在从 ${alias} 加载最近的对话`,
+      /** Behind the first paint: the rest of the conversation comes over to this server. */
+      fill: "更早的历史正在同步",
+      /** Behind the first paint: the whole of the outputs the transcript shows folded. */
+      heavy: "完整输出正在同步",
+      /** Under an unfolded output or thinking block while its whole text arrives. */
+      body: "正在加载完整内容",
+      bodyFailed: "完整内容没能加载",
+      /** The Trace panel bringing a machine's Trace file over before it opens it. */
+      trace: (alias: string | null) =>
+        alias === null ? "正在获取 Trace" : `正在从 ${alias} 获取 Trace`,
+      /** The link to the machine dropped and the server retries: the attempt, then the seconds. */
+      retrying: (attempt: number) => `连接中断，正在重试（第 ${attempt} 次）`,
+      retryIn: (seconds: number, attempt: number) =>
+        `连接中断，${seconds} 秒后重试（第 ${attempt} 次）`,
+      retryNow: "立即重试",
+      /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
+      broken: "历史消息传输中断，请重试",
+    },
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openAgents: "智能体面板",

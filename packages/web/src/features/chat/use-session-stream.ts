@@ -4,8 +4,9 @@
  *
  * 1. On entering a Session, connect SSE first; events are handed to the controller (buffered if
  *    history isn't ready yet);
- * 2. GET messages renders history, then replays the buffer (overlap deduped); on load failure,
- *    expose error and a retry entry point;
+ * 2. The history stream renders history — the newest Tasks first, older windows and the fill
+ *    behind them, with how far the bytes have come (`transfer`) — then replays the buffer
+ *    (overlap deduped); on load failure, expose error and a retry entry point;
  * 3. Disconnects are auto-reconnected by the browser (Last-Event-ID built in; server replays from
  *    its buffer), and a connection that went silent is reopened by api/sse.ts from the last id
  *    seen; resync_required → controller rebuilds the model and keeps consuming the same
@@ -24,22 +25,37 @@ import type {
   SessionStatus,
   SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
-import { getGoal, getMessages } from "../../api/endpoints";
+import { getGoal } from "../../api/endpoints";
 import { probeSession } from "../../api/session-probe";
 import { apiSocket } from "../../api/socket";
-import { openSessionStream } from "../../api/sse";
+import { openHistoryStream, openSessionStream, openTraceBodyStream } from "../../api/sse";
 import { machineForSession } from "../../lib/session-machines";
 import { createStreamController } from "../../lib/amsp/stream-controller";
 import type {
+  HistoryTransfer,
   OlderHistoryState,
   PendingApproval,
   StreamController,
 } from "../../lib/amsp/stream-controller";
 import { createStreamModel } from "../../lib/amsp/stream-model";
-import type { ChatItem, StreamModel } from "../../lib/amsp/stream-model";
+import type {
+  ChatItem,
+  StreamModel,
+  ThinkingItem,
+  ToolCallItem,
+} from "../../lib/amsp/stream-model";
 import type { GoalBannerState } from "./goal-use";
 
-export type { OlderHistoryState, PendingApproval } from "../../lib/amsp/stream-controller";
+export type {
+  HistoryTransfer,
+  OlderHistoryState,
+  PendingApproval,
+} from "../../lib/amsp/stream-controller";
+
+/** Fetches the whole of an item's folded values (see the stream controller's loadBodies). */
+export interface ElidedBodies {
+  load: (item: ToolCallItem | ThinkingItem) => void;
+}
 
 /** Minimum spacing between version commits: below one frame at 8fps, invisible as staleness, but ~8× fewer full re-parses of the growing message during a fast large-code stream. */
 const BUMP_MIN_INTERVAL_MS = 120;
@@ -96,6 +112,15 @@ export interface SessionStreamState {
   /** Re-fetch history (only meaningful after a load failure). */
   retry: () => void;
   /**
+   * How far the reads behind the transcript have come: the window it waits on, an older window,
+   * and the fill behind the first paint. All null for a Session on this server.
+   */
+  transfer: HistoryTransfer;
+  /** Reads the window the transcript waits on again now (Retry now while the machine is waited for). */
+  retryNow: () => void;
+  /** Unfolds an item's folded values: their whole text is fetched and put in place. */
+  bodies: ElidedBodies;
+  /**
    * Goal-banner state: an in-flight goal restored from the Session's GOAL.json on load (only
    * when still active), then kept live by goal_* server events; terminal states reached during this
    * page's lifetime stay visible until the session changes. Null = no banner.
@@ -107,6 +132,7 @@ const EMPTY_PENDING: ReadonlyMap<string, PendingApproval> = new Map();
 const EMPTY_PREFIX: readonly ChatItem[] = [];
 const EMPTY_SUBAGENTS: ReadonlyMap<string, StreamModel> = new Map();
 const IDLE_OLDER: OlderHistoryState = { hasMore: false, loading: false, error: null };
+const NO_TRANSFER: HistoryTransfer = { window: null, older: null, fill: null };
 
 export function useSessionStream(
   sessionId: string | null,
@@ -126,6 +152,7 @@ export function useSessionStream(
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
   const [describes, setDescribes] = useState<string | null>(sessionId);
+  const [transfer, setTransfer] = useState<HistoryTransfer>(NO_TRANSFER);
 
   /**
    * A history still loading after this is said out loud, with where the call went and what the
@@ -215,6 +242,7 @@ export function useSessionStream(
       setLoading(false);
       setError(null);
       setGoal(null);
+      setTransfer(NO_TRANSFER);
       setPendingTick((t) => t + 1);
       setVersion((v) => v + 1);
       return;
@@ -223,6 +251,7 @@ export function useSessionStream(
     setDescribes(sessionId);
     setLoading(true);
     setError(null);
+    setTransfer(NO_TRANSFER);
     // First-frame placeholder: the task_state snapshot from the stream (pushed on subscribe)
     // subsequently overrides it as the authoritative state.
     setTaskState(initialStatus);
@@ -253,10 +282,12 @@ export function useSessionStream(
 
     const controller = createStreamController({
       sessionId,
-      // The whole response rides through: `live` (in-progress stream tail) lets the
-      // controller seed the currently streaming message after a reload, and `page` (the
-      // windowed-history envelope) drives tail-first loading (see stream-controller).
-      loadMessages: (page) => getMessages(sessionId, page),
+      // The whole window rides through: `live` (in-progress stream tail) lets the controller
+      // seed the currently streaming message after a reload, and `page` (the windowed-history
+      // envelope) drives tail-first loading (see stream-controller).
+      openHistory: (query, handlers) => openHistoryStream(sessionId, query, handlers),
+      openBody: (ref, handlers) => openTraceBodyStream(sessionId, ref, handlers),
+      onTransfer: setTransfer,
       onTaskState: setTaskState,
       onQueuedFollowUps: setQueuedFollowUps,
       onPendingSteering: setPendingSteering,
@@ -334,6 +365,14 @@ export function useSessionStream(
     void controllerRef.current?.loadOlder();
   }, []);
 
+  const retryNow = useCallback(() => {
+    controllerRef.current?.retryNow();
+  }, []);
+
+  const bodiesRef = useRef<ElidedBodies>({
+    load: (item) => controllerRef.current?.loadBodies(item),
+  });
+
   // pendingTick participates in the render dependencies, ensuring pending-table changes trigger a re-render.
   void pendingTick;
 
@@ -358,6 +397,9 @@ export function useSessionStream(
     resolveApproval,
     error,
     retry,
+    transfer,
+    retryNow,
+    bodies: bodiesRef.current,
     goal,
   };
 }

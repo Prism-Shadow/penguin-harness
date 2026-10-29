@@ -21,18 +21,31 @@
  *   messages aren't written to the parent Trace, so the card can be missing
  *   after a reload), the toolCall carried by the event (with origin) is fed
  *   to the reducer to rebuild the nested card, making the sub-session's approval visible and decidable;
- * - Live-tail seeding: while a Task runs, `/messages` also returns `live`
+ * - Live-tail seeding: while a Task runs, a history window also carries `live`
  *   ({cursor, fragments} — see MessagesLiveTail): buffered partial events at
  *   or before the cursor are dropped (their content is already accumulated
  *   inside the fragments), the synthetic `partial_* start` fragments are fed
  *   through the normal reducer path at the cursor's position, and the rest of
  *   the buffer replays on top — so the in-progress message survives a refresh
  *   with its streamed prefix intact and keeps streaming.
+ * - History over the stream: every window is a read of the `history` stream
+ *   (lib/history/history-read.ts), which reports how far the bytes behind it have
+ *   come. The first read asks for the newest Tasks that fit FIRST_PAINT_BYTES, so a
+ *   conversation on a slow machine shows its latest messages within seconds; the
+ *   older windows then follow until TAIL_UNITS Tasks are on screen, each prepended
+ *   like a scroll-up backfill, and the first read stays open while the server brings
+ *   the rest of the Session over behind them (the fill). Leaving the conversation
+ *   (`dispose`) closes every read, which stops the transfer at once.
+ * - Folded bodies: a history window carries a bulky value (a tool's output, a long
+ *   argument, a thinking block) as a preview; `loadBodies` fetches the whole of an
+ *   item's folded values when the reader unfolds it and puts them in place.
  */
 import { isEventMessage, isPartialPayload } from "@prismshadow/amsp";
 import type { AmspRecord, ToolCallPayload } from "@prismshadow/amsp";
+import { withElidedBody } from "@prismshadow/penguin-core/interfaces";
 import type {
   GoalServerEvent,
+  HistoryProgress,
   MessagesLiveTail,
   MessagesPageInfo,
   PendingFollowUpInfo,
@@ -41,11 +54,16 @@ import type {
   ServerEvent,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
+import type { HistoryStreamQuery } from "../../api/sse";
+import { readBody, readHistory } from "../history/history-read";
+import type { HistoryRead, OpenBody, OpenHistory } from "../history/history-read";
+import type { HistoryWindow } from "../history/window-assembler";
 import {
   approvalKey,
   buildDedupIndex,
   createStreamModel,
   discardFragmentFor,
+  elidedRecordsOf,
   finalizeHistory,
   findToolCard,
   isDuplicate,
@@ -53,8 +71,9 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
+  takeWholeRecord,
 } from "./stream-model";
-import type { ChatItem, StreamModel } from "./stream-model";
+import type { BodyLoad, ChatItem, StreamModel, ThinkingItem, ToolCallItem } from "./stream-model";
 import { seedPriorStats } from "./task-stats";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */
@@ -77,10 +96,6 @@ function parseEventId(id: string): { epoch: string; seq: number } | null {
   return { epoch: id.slice(0, sep), seq };
 }
 
-/** A windowed history request (mirrors the server's tailLimit / before params). */
-export type MessagesPageQuery =
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
-
 /**
  * Initial (tail) window size, in message-bearing units — one unit = one Task, opened by
  * a user prompt (the server's cut rule; see MessagesPageInfo). A conversation opens on its
@@ -90,6 +105,15 @@ export type MessagesPageQuery =
  * a page may then hold fewer units than asked for while still carrying `before`.
  */
 export const TAIL_UNITS = 20;
+
+/**
+ * The first read's byte budget, measured on the records as the history stream sends them
+ * (images by reference, bulky bodies folded): the newest whole Tasks that fit it — always at
+ * least one — are the first paint, and the rest of the TAIL_UNITS follow in older windows. At
+ * 10 KB/s and the ~3x the link's compression reaches on text, 64 KiB is two to three seconds
+ * on the wire, where a whole 20-Task window can be minutes.
+ */
+export const FIRST_PAINT_BYTES = 64 * 1024;
 
 /** Scroll-up backfill window size: each scroll to the top adds 20 more Q&A pairs. */
 export const OLDER_UNITS = 20;
@@ -107,18 +131,17 @@ export interface StreamControllerDeps {
   /** The Session whose stream this is: the owner of the model a history window starts on (see MessagesPageInfo.contextModel). */
   sessionId: string;
   /**
-   * Fetch history messages (GET /api/sessions/:id/messages), including the live tail while
-   * running. `serverNowMs` is the server's clock at read time (the response's `Date` header);
-   * omitted/null just costs a running Task's header the time its in-flight event has taken so
-   * far, which falls back to the Trace's own span (see pushMessages). `page` requests a
-   * WINDOW (the response then carries `page`); omitted = the legacy full transcript.
+   * Opens one read of this Session's `history` stream (api/sse.ts `openHistoryStream`): a
+   * window's records with its `page` envelope and, while a Task runs, its live tail, and the
+   * server's clock at read time (`serverNowMs`; null just costs a running Task's header the time
+   * its in-flight event has taken so far, which falls back to the Trace's own span, see
+   * pushMessages).
    */
-  loadMessages: (page?: MessagesPageQuery) => Promise<{
-    messages: AmspRecord[];
-    live?: MessagesLiveTail;
-    serverNowMs?: number | null;
-    page?: MessagesPageInfo;
-  }>;
+  openHistory: OpenHistory;
+  /** Opens one read of a folded value (api/sse.ts `openTraceBodyStream`); absent, nothing unfolds to more. */
+  openBody?: OpenBody;
+  /** How far the reads behind the transcript have come (see HistoryTransfer). */
+  onTransfer?: (transfer: HistoryTransfer) => void;
   /** Authoritative running state from the stream (covers both the subscription snapshot and transition events). */
   onTaskState: (state: SessionStatus) => void;
   /** Queued follow-up count carried on task_state events (absent on old servers -> 0). */
@@ -156,6 +179,20 @@ export interface OlderHistoryState {
   error: string | null;
 }
 
+/**
+ * How far the bytes behind the transcript have come, per read: `window` while the window the
+ * transcript waits on is read (the first paint, a rebuild), `older` while an older window is,
+ * and `fill` while the server brings the rest of the Session over behind the first paint. Null
+ * when no such read is under way, and for a Session on this server, whose reads report nothing.
+ */
+export interface HistoryTransfer {
+  window: HistoryProgress | null;
+  older: HistoryProgress | null;
+  fill: HistoryProgress | null;
+}
+
+const NO_TRANSFER: HistoryTransfer = { window: null, older: null, fill: null };
+
 export interface StreamController {
   /** The current view model (a resync rebuild swaps in a new object): the LIVE tail window. */
   readonly model: StreamModel;
@@ -170,11 +207,16 @@ export interface StreamController {
   /** Outline entries that exist before the OLDEST loaded window: the outline's global numbering offset. */
   readonly outlineOffset: number;
   readonly older: OlderHistoryState;
+  readonly transfer: HistoryTransfer;
   readonly pendingApprovals: ReadonlyMap<string, PendingApproval>;
-  /** Load history for the first time (called once after connect-first): fetches the TAIL window. */
+  /** Load history for the first time (called once after connect-first): the first paint, then older windows up to TAIL_UNITS Tasks. */
   load: () => Promise<void>;
   /** Retry entry point after a history load failure (keeps the buffer, refetches history). */
   retry: () => Promise<void>;
+  /** The window the transcript waits on is read again now (Retry now while the server waits for the machine). */
+  retryNow: () => void;
+  /** Fetches the whole of an item's folded values and puts them in place; no-op while fetching, or with nothing folded. */
+  loadBodies: (item: ToolCallItem | ThinkingItem) => void;
   /** Prepend the previous window (scroll-up backfill); no-op while loading, failed, at the beginning, or before the initial load settled. */
   loadOlder: () => Promise<void>;
   /** SSE AmspRecord entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
@@ -226,12 +268,80 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   const older: OlderHistoryState = { hasMore: false, loading: false, error: null };
   /** Outline entries before the OLDEST loaded window (the outline's numbering offset). */
   let outlineOffset = 0;
+  /** Tasks the backfilled windows hold (with the live model's, the Tasks on screen). */
+  let prefixTasks = 0;
+
+  // —— Reads of the history stream ——
+  let transfer: HistoryTransfer = NO_TRANSFER;
+  /** Every read opened, closed on dispose (closing a finished one does nothing). */
+  const reads: { close: () => void }[] = [];
+  /** The window read the transcript waits on, while its window has not arrived. */
+  let waitingRead: HistoryRead | null = null;
+  /** A window read whose fill runs on behind the transcript; null once filled or failed. */
+  let fillRead: HistoryRead | null = null;
+
+  const setTransfer = (key: keyof HistoryTransfer, value: HistoryProgress | null): void => {
+    if (transfer[key] === value) return;
+    transfer = { ...transfer, [key]: value };
+    deps.onTransfer?.(transfer);
+  };
+
+  /**
+   * One window over the history stream. `track` names where its progress shows until the window
+   * arrives; a read that fills on after it reports the fill under `fill`. A `window` read takes
+   * the place of one still waiting (a retry, a rebuild): the old one is closed, not left to run.
+   */
+  const readWindow = (
+    query: HistoryStreamQuery,
+    track: "window" | "older",
+  ): Promise<HistoryWindow> =>
+    new Promise<HistoryWindow>((resolve, reject) => {
+      const fills = query.kind === "tail" && query.fill === true;
+      let delivered = false;
+      let self: HistoryRead | null = null;
+      const read = readHistory(deps.openHistory, query, {
+        onProgress: (progress, after) => {
+          if (disposed) return;
+          setTransfer(after ? "fill" : track, progress);
+        },
+        onWindow: (window) => {
+          delivered = true;
+          if (waitingRead === self) waitingRead = null;
+          if (fills) fillRead = self;
+          setTransfer(track, null);
+          resolve(window);
+        },
+        onFilled: () => {
+          if (fillRead === self) fillRead = null;
+          setTransfer("fill", null);
+        },
+        onError: (message) => {
+          if (waitingRead === self) waitingRead = null;
+          if (delivered) {
+            // The fill failed behind a transcript already on screen: older windows are still
+            // read on scroll, so all the reader loses is the head start.
+            if (fillRead === self) fillRead = null;
+            setTransfer("fill", null);
+            return;
+          }
+          setTransfer(track, null);
+          reject(new Error(message));
+        },
+      });
+      self = read;
+      reads.push(read);
+      if (track === "window") {
+        waitingRead?.close();
+        waitingRead = delivered ? null : read;
+      }
+    });
 
   /** Reset all windowed-history bookkeeping to "everything loaded from the beginning". */
   const resetPaging = (): void => {
     prefixItems = [];
     prefixSubagents = new Map();
     prependCount = 0;
+    prefixTasks = 0;
     nextBefore = null;
     tailStartCursor = null;
     older.hasMore = false;
@@ -360,11 +470,14 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    *      the last tail fetch, the common mid-Task resync.
    *   3. Prefix retained but the refetched tail reaches the very beginning (no cursor)
    *      → the tail alone provably covers everything: drop the prefix and use it.
-   *   4. Anything else — the start cursor moved (new units arrived), the response
-   *      carried no page envelope, or the tail fetch itself failed mid-decision —
-   *      is doubt: fall back to the legacy FULL refetch (one complete transcript, no
-   *      prefix, offsets zeroed). Slow but beyond suspicion.
+   *   4. Anything else — the start cursor moved (new units arrived), or the response
+   *      carried no page envelope — is doubt: the prefix is dropped and the refetched
+   *      tail is the new baseline, backfilled again up to TAIL_UNITS Tasks like a first
+   *      load. Never the whole transcript: on a slow machine that is minutes on the
+   *      wire, with the live stream buffering behind it all the while.
    *
+   * The tail is read exactly as the first paint read it (same unit count, same byte
+   * budget), so with no new unit the same cut comes back and its start cursor matches.
    * The decision runs inside load() (it needs the response); this entry only picks the
    * request shape.
    */
@@ -385,7 +498,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     // focus/draft.) Deltas arriving during the refetch are buffered and replayed on swap; the brief
     // no-new-text pause is invisible next to a full teardown.
     await load(epoch, createStreamModel(localDecisions), {
-      page: { kind: "tail", limit: TAIL_UNITS },
+      // The fill rides along unless one already runs behind the transcript.
+      query: firstPaint(fillRead === null),
       splice: prefixItems.length > 0,
     });
   };
@@ -439,33 +553,25 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
 
   const load = async (
     currentEpoch: number,
-    freshModel?: StreamModel,
-    opts: { page?: MessagesPageQuery; splice?: boolean } = {},
+    freshModel: StreamModel | undefined,
+    opts: { query: HistoryStreamQuery; splice?: boolean },
   ): Promise<void> => {
     try {
-      let res = await deps.loadMessages(opts.page);
+      const res = await readWindow(opts.query, "window");
       if (disposed || currentEpoch !== epoch) return;
-      if (opts.splice === true) {
-        // The resync decision tree's prefix-retained branches (see rebuild): splice only
-        // on exact cursor continuity; a beginning-reaching tail supersedes the prefix;
-        // everything else falls back to the full read within this same epoch (events
-        // keep buffering meanwhile).
-        const start = res.page?.before ?? null;
-        if (res.page !== undefined && start !== null && start === tailStartCursor) {
-          // Continuity proven: keep prefix and paging state exactly as they are.
-        } else if (res.page !== undefined && start === null) {
-          adoptTailPage(res.page); // tail covers everything: prefix dropped, provably complete
-        } else {
-          res = await deps.loadMessages();
-          if (disposed || currentEpoch !== epoch) return;
-          adoptTailPage(undefined); // full transcript: no prefix, no cursors
-        }
-      } else if (opts.page !== undefined) {
-        // Fresh tail baseline (initial load / retry): any previously-loaded prefix is
-        // superseded by the new window chain.
-        adoptTailPage(res.page);
+      const start = res.page?.before ?? null;
+      if (
+        opts.splice === true &&
+        res.page !== undefined &&
+        start !== null &&
+        start === tailStartCursor
+      ) {
+        // The resync decision tree's continuity branch (see rebuild): keep the prefix and
+        // the paging state exactly as they are.
       } else {
-        adoptTailPage(undefined);
+        // A fresh tail baseline: the initial load, a retry, a tail reaching the beginning,
+        // or doubt. Any previously-loaded prefix is superseded by the new window chain.
+        adoptTailPage(res.page);
       }
       const { messages, live, serverNowMs } = res;
       // Rebuild path: make the freshly-built model visible only now, atomically — the old model
@@ -505,6 +611,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       deps.onError(null);
       deps.onLoading(false);
       deps.onModelChange();
+      void backfill(currentEpoch);
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return;
       failed = true;
@@ -514,27 +621,24 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   };
 
   /**
-   * Scroll-up backfill: fetch the window before the oldest loaded one and prepend it.
-   * The window's messages build a FRESH model (its own negative id base, priors seeded,
-   * finalizeHistory closing its last Task — complete by construction, since a newer
-   * window follows), whose items freeze into the prefix. Guarded to the live phase: a
-   * rebuild in flight owns the loading pipeline, and its epoch bump discards any
-   * backfill that raced it.
+   * Scroll-up backfill: fetch the window of `limit` Tasks before the oldest loaded one and
+   * prepend it. The window's messages build a FRESH model (its own negative id base, priors
+   * seeded, finalizeHistory closing its last Task — complete by construction, since a newer
+   * window follows), whose items freeze into the prefix: the live model's items are never
+   * touched, so the transcript below stays exactly where it was. Guarded to the live phase: a
+   * rebuild in flight owns the loading pipeline, and its epoch bump discards any backfill that
+   * raced it. True when a window was prepended.
    */
-  const loadOlder = async (): Promise<void> => {
-    if (disposed || phase !== "live" || failed) return;
-    if (older.loading || !older.hasMore || nextBefore === null) return;
+  const loadOlderWindow = async (limit: number): Promise<boolean> => {
+    if (disposed || phase !== "live" || failed) return false;
+    if (older.loading || !older.hasMore || nextBefore === null) return false;
     const currentEpoch = epoch;
     older.loading = true;
     older.error = null;
     deps.onModelChange();
     try {
-      const res = await deps.loadMessages({
-        kind: "before",
-        cursor: nextBefore,
-        limit: OLDER_UNITS,
-      });
-      if (disposed || currentEpoch !== epoch) return;
+      const res = await readWindow({ kind: "before", cursor: nextBefore, limit }, "older");
+      if (disposed || currentEpoch !== epoch) return false;
       // A before-request against a server without windowing support would return the
       // full transcript with no envelope; prepending that would duplicate history.
       if (res.page === undefined) throw new Error("windowed history not supported");
@@ -545,6 +649,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       pushMessages(m, res.messages, now(), null);
       finalizeHistory(m);
       prefixItems = [...m.items, ...prefixItems];
+      prefixTasks += m.tasksStarted;
       // Child sessions live in exactly one window (a spawn is contained in its Task),
       // so the merge is disjoint; newer windows' entries win defensively on a clash.
       const mergedSubagents = new Map(m.subagents);
@@ -553,15 +658,103 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       nextBefore = res.page.before ?? null;
       older.hasMore = res.page.before !== undefined;
       outlineOffset = res.page.earlierTurns;
+      return true;
     } catch (e) {
-      if (disposed || currentEpoch !== epoch) return;
+      if (disposed || currentEpoch !== epoch) return false;
       older.error = e instanceof Error ? e.message : String(e);
+      return false;
     } finally {
       if (!disposed && currentEpoch === epoch) {
         older.loading = false;
         deps.onModelChange();
       }
     }
+  };
+
+  /** Tasks on screen: the live model's and every backfilled window's. */
+  const tasksOnScreen = (): number => model.tasksStarted + prefixTasks;
+
+  /**
+   * After a first paint (or a rebuild that took a new baseline): older windows, each asking for
+   * the Tasks still missing, until TAIL_UNITS Tasks are on screen or the beginning is reached.
+   * Stops at the first window that does not land (a failure shows on the older row and is
+   * retried from there, a scroll-up already loading takes over, a newer epoch supersedes it).
+   */
+  const backfill = async (currentEpoch: number): Promise<void> => {
+    while (!disposed && currentEpoch === epoch && tasksOnScreen() < TAIL_UNITS) {
+      if (!(await loadOlderWindow(TAIL_UNITS - tasksOnScreen()))) return;
+    }
+  };
+
+  /** The first read's shape: the newest Tasks that fit the first-paint budget. */
+  const firstPaint = (fill: boolean): HistoryStreamQuery => ({
+    kind: "tail",
+    limit: TAIL_UNITS,
+    budget: FIRST_PAINT_BYTES,
+    ...(fill ? { fill: true } : {}),
+  });
+
+  /**
+   * Fetches the whole of an item's folded values, one after another, and puts each record back
+   * whole once all of its values have arrived. The item carries the fetch's progress (`bodyLoad`)
+   * for the card to show; a failure stays on it until the next call, which starts over.
+   */
+  const loadBodies = (item: ToolCallItem | ThinkingItem): void => {
+    const openBody = deps.openBody;
+    if (disposed || openBody === undefined) return;
+    if (item.bodyLoad !== undefined && item.bodyLoad.error === null) return;
+    const folded = elidedRecordsOf(item);
+    if (folded.length === 0) return;
+    const steps = folded.flatMap(({ slot, elided }) =>
+      elided.entries.map((entry, i) => ({
+        slot,
+        elided,
+        entry,
+        last: i === elided.entries.length - 1,
+      })),
+    );
+    const progress: BodyLoad = {
+      doneBytes: 0,
+      totalBytes: steps.reduce((n, step) => n + step.entry.bytes, 0),
+      error: null,
+    };
+    item.bodyLoad = progress;
+    deps.onModelChange();
+    let base = 0;
+    let record = steps[0]!.elided.record;
+    const next = (at: number): void => {
+      if (disposed || item.bodyLoad !== progress) return;
+      const step = steps[at];
+      if (step === undefined) {
+        delete item.bodyLoad;
+        deps.onModelChange();
+        return;
+      }
+      if (at > 0 && steps[at - 1]!.elided !== step.elided) record = step.elided.record;
+      reads.push(
+        readBody(openBody, step.entry.ref, {
+          onProgress: (doneBytes) => {
+            if (item.bodyLoad !== progress) return;
+            progress.doneBytes = base + Math.min(doneBytes, step.entry.bytes);
+            deps.onModelChange();
+          },
+          onValue: (value) => {
+            if (item.bodyLoad !== progress) return;
+            record = withElidedBody(record, step.entry.path, value);
+            if (step.last) takeWholeRecord(item, step.slot, record);
+            base += step.entry.bytes;
+            progress.doneBytes = base;
+            next(at + 1);
+          },
+          onError: (message) => {
+            if (item.bodyLoad !== progress) return;
+            item.bodyLoad = { ...progress, error: message };
+            deps.onModelChange();
+          },
+        }),
+      );
+    };
+    next(0);
   };
 
   return {
@@ -580,12 +773,15 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     get older(): OlderHistoryState {
       return older;
     },
+    get transfer(): HistoryTransfer {
+      return transfer;
+    },
     get pendingApprovals(): ReadonlyMap<string, PendingApproval> {
       return pending;
     },
     load: () => {
       epoch += 1;
-      return load(epoch, undefined, { page: { kind: "tail", limit: TAIL_UNITS } });
+      return load(epoch, undefined, { query: firstPaint(true) });
     },
     retry: async () => {
       if (disposed || !failed) return;
@@ -599,11 +795,19 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       deps.onError(null);
       deps.onLoading(true);
       epoch += 1;
+      // A fill still running behind the old transcript carries on; only a read that never got
+      // that far asks for one again.
       await load(epoch, createStreamModel(localDecisions), {
-        page: { kind: "tail", limit: TAIL_UNITS },
+        query: firstPaint(fillRead === null),
       });
     },
-    loadOlder,
+    retryNow: () => {
+      waitingRead?.reissue();
+    },
+    loadBodies,
+    loadOlder: async () => {
+      await loadOlderWindow(OLDER_UNITS);
+    },
     handleRecord: (msg, eventId = null) => {
       if (disposed) return;
       if (eventId !== null) lastEventId = eventId;
@@ -666,6 +870,10 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     },
     dispose: () => {
       disposed = true;
+      // Leaving the conversation stops every transfer it started, at once.
+      for (const read of reads.splice(0)) read.close();
+      waitingRead = null;
+      fillRead = null;
     },
   };
 }
