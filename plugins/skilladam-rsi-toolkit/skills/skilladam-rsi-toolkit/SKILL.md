@@ -1,7 +1,7 @@
 ---
 name: skilladam-rsi-toolkit
 description: "Run a SkillAdam experiment on the Project's selected Benchmarks: train once in a continuing Agent Session, freeze the learned Skill, then evaluate it repeatedly on held-out tasks."
-version: 2026.10.29.1
+version: 2026.10.29.2
 ---
 
 # SkillAdam
@@ -27,7 +27,7 @@ Both states are updated after evaluating a candidate, including rejected candida
 
 Find the selected Benchmarks in the current Project, using the Environment's App Data Dir. Read their manifests and Case statements, then follow the linked runtime instructions. Built-in packages contain descriptions and run instructions; fetch task sources and environments when those instructions require them. A request naming the installed Benchmarks is sufficient: the user need not supply a repository link.
 
-Match each selected benchmark's Train and Test packages from their documentation. Package Cases may represent either a single question or an entire continuous training task. Use the documented native paths rather than deriving paths from package names or old task-group numbers. A branch link such as `main` is valid; resolve it once for this experiment and record the checkout used. [Benchmark setup](references/benchmark.md) covers this handoff.
+Match each selected benchmark's Train and Test packages from their documentation. Package Cases may represent either a single question or an entire continuous training task. Use the documented native paths rather than deriving paths from package names or old task-group numbers. For repository-backed tasks, use the full 40-character lowercase commit declared by the Case and package, and keep that checkout throughout the experiment. [Benchmark setup](references/benchmark.md) covers this handoff.
 
 Resolve the remaining settings from the request and benchmark instructions:
 

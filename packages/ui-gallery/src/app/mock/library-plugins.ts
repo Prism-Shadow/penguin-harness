@@ -142,7 +142,7 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "skilladam-rsi-toolkit",
         '"Run a SkillAdam experiment on the Project\'s selected Benchmarks: train once in a continuing Agent Session, freeze the learned Skill, then evaluate it repeatedly on held-out tasks."',
-        "2026.10.29.1",
+        "2026.10.29.2",
       ),
     ]),
     libraryPlugin(tracePkg, traceIcon, [
