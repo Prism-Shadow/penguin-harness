@@ -317,8 +317,14 @@ export interface SessionLoader {
    * Load a runtime Session from an index row: recover (with a Trace) or self-heal
    * rebuild (no Trace, under the row's session_id). Throws HttpError(409) for unrecoverable
    * cases such as a missing Workspace.
+   *
+   * `switchTo`: the load is for a model switch to that model alone (see
+   * `SessionManager.startSwitch`). A Session whose model can no longer be reached recovers
+   * anyway — the switch sends that model nothing and hands the history over by Trace path —
+   * and one that left no Trace is rebuilt on the target directly, which is all a never-run
+   * Session's switch is.
    */
-  load(row: SessionRow): Promise<RuntimeSession>;
+  load(row: SessionRow, opts?: { switchTo?: ModelRefDto }): Promise<RuntimeSession>;
 }
 
 /**
@@ -346,7 +352,8 @@ export function createCoreSessionLoader(
   } = {},
 ): SessionLoader {
   return {
-    async load(row: SessionRow): Promise<RuntimeSession> {
+    async load(row: SessionRow, loadOpts = {}): Promise<RuntimeSession> {
+      const { switchTo } = loadOpts;
       const agent = await createAgent({
         root,
         projectId: row.projectId,
@@ -368,7 +375,10 @@ export function createCoreSessionLoader(
         // config / Trace missing session_meta, etc.) are converged to 409, preserving
         // the original message rather than bubbling up as 500.
         try {
-          const session = await agent.resumeSession({ sessionId: row.sessionId });
+          const session = await agent.resumeSession({
+            sessionId: row.sessionId,
+            ...(switchTo ? { allowUnreachableModel: true } : {}),
+          });
           // The row's stored level — the knob position the user last chose — restored onto
           // the runtime as a plain assignment: it rides the resumed Session's requests.
           if (row.thinkingLevel) session.thinkingLevel = row.thinkingLevel;
@@ -398,19 +408,22 @@ export function createCoreSessionLoader(
       // organization runtime's are `company`, the Agent API's `api` (unrunSource), the list's
       // reading of the same row.
       const knownSource = sources?.get(row.sessionId) ?? unrunSource(row.client);
+      // A switch rebuilds it on the target: the model the row names may be gone, and a
+      // Session that never ran has no context on it to close.
+      const model = switchTo ?? { provider: row.provider, modelId: row.modelId };
       try {
         return await agent.createSession({
           sessionId: row.sessionId,
           workspaceDir: row.workspace,
-          modelId: row.modelId,
-          provider: row.provider,
+          modelId: model.modelId,
+          provider: model.provider,
           // The rebuilt Session records that source in its fresh session_meta (an unknown one
           // is core's default, `user`), and starts its first context at the row's pinned level.
           ...(knownSource !== undefined ? { source: knownSource } : {}),
           ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
         });
       } catch (err) {
-        if (isMissingCredential(err)) throw modelCredentialMissing(row.modelId);
+        if (isMissingCredential(err)) throw modelCredentialMissing(model.modelId);
         throw toUnrecoverableError(err);
       }
     },
@@ -1500,6 +1513,13 @@ export class SessionManager {
    * leaves them where they were. Usage: a drive bills to the model it started on, so the
    * switch's compaction request goes to the model that served it and the next run to the new
    * one.
+   *
+   * A Session not in memory is loaded for this switch (`SessionLoader.load`'s `switchTo`): one
+   * whose model can no longer be reached is resumed anyway, since core then hands its history
+   * over by Trace path rather than ask that model for a summary, and one that left no Trace is
+   * rebuilt on the target — the load is then the whole switch (200). A runtime loaded here that
+   * the switch did not move is not kept: the next access loads it the ordinary way, so a
+   * Session left on a model it cannot reach still answers a new Task with that load's refusal.
    */
   async startSwitch(
     sessionId: string,
@@ -1509,14 +1529,21 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
-      const entry = await this.ensureEntry(sessionId);
-      this.assertIdle(entry);
-      if (entry.provider === ref.provider && entry.modelId === ref.modelId) {
+      const held = this.entries.get(sessionId) ?? this.deps.sessions.findById(sessionId);
+      if (held && held.provider === ref.provider && held.modelId === ref.modelId) {
         throw new HttpError(
           409,
           "same_model",
           `This Session already runs on ${ref.provider} / ${ref.modelId}.`,
         );
+      }
+      const entry = await this.ensureEntry(sessionId, { switchTo: ref });
+      const loadedHere = entry !== held;
+      this.assertIdle(entry);
+      const from = { provider: entry.provider, modelId: entry.modelId };
+      if (from.provider === ref.provider && from.modelId === ref.modelId) {
+        // The load rebuilt a Session that left no Trace on the target: switched already.
+        return { sessionId: entry.sessionId, switched: true };
       }
       if (!entry.session.switchModel) {
         throw new HttpError(
@@ -1525,6 +1552,13 @@ export class SessionManager {
           "Switching the model is not available for this Session.",
         );
       }
+      // A runtime this switch loaded and did not move is dropped once nothing holds it.
+      const dropUnmoved = (): void => {
+        if (!loadedHere || this.entries.get(entry.sessionId) !== entry) return;
+        if (entry.provider !== from.provider || entry.modelId !== from.modelId) return;
+        if (entry.status !== "idle" || entry.running !== null || entry.followUps.length > 0) return;
+        this.entries.delete(entry.sessionId);
+      };
       const ac = new AbortController();
       const gen = entry.session.switchModel({ ...ref, signal: ac.signal });
       const head = gen.next();
@@ -1539,12 +1573,14 @@ export class SessionManager {
         if (first.done) return settled();
         entry.status = "compacting";
         this.publishState(entry, "compacting");
-        return this.drive(entry, resumeFrom(first.value, gen));
+        return this.drive(entry, resumeFrom(first.value, gen)).then(dropUnmoved);
       }, settled);
       let first: IteratorResult<AmspRecord, StopReason>;
       try {
         first = await head;
       } catch (err) {
+        settled();
+        dropUnmoved();
         throw switchRefusal(err, ref);
       }
       entry.lastActivityMs = Date.now();
@@ -2109,7 +2145,10 @@ export class SessionManager {
     }
   }
 
-  private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
+  private async ensureEntry(
+    sessionId: string,
+    loadOpts?: { switchTo?: ModelRefDto },
+  ): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
     /** Background-task counts the discarded runtime last reported (see the publish below). */
     let discardedBackgroundTasks: SessionBackgroundTasks | undefined;
@@ -2144,7 +2183,9 @@ export class SessionManager {
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
-    const session = await this.deps.loader.load(row);
+    const session = await (loadOpts
+      ? this.deps.loader.load(row, loadOpts)
+      : this.deps.loader.load(row));
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);

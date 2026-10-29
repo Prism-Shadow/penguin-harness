@@ -5,7 +5,9 @@
  *   (Workspace / Model cannot be swapped).
  * - Pairing-fallback placeholders, once constructed, are written into the original trace file;
  *   session_meta is never written twice.
- * - Errors when the session doesn't exist / the workspace is missing / the model is no longer in the project config.
+ * - Errors when the session doesn't exist / the workspace is missing / the model is no longer in the project config
+ *   — unless the caller resumes only to switch away from that model (`allowUnreachableModel`), in
+ *   which case the switch sends it nothing and hands the history over by Trace path.
  * - `groupHistoryToUniMessages` groups by adjacent same role; `GenerativeModel.setHistory` injects into MMSP.
  */
 import fs from "node:fs/promises";
@@ -261,6 +263,85 @@ describe("agent.resumeSession", () => {
       /is not in the Project config/,
     );
   });
+
+  it.each([
+    {
+      why: "gone from the config",
+      gone: { provider: "custom", model_id: "vanished-model" },
+      refusal: /is not in the Project config/,
+    },
+    {
+      // The seeded gateway names its endpoint and holds no key: its client cannot be built.
+      why: "left without a key",
+      gone: { provider: "tokendance", model_id: "glm-5.3" },
+      refusal: /./,
+    },
+  ])(
+    "a model $why resumes only when allowed, and then only to switch: the switch sends it nothing and hands the history over by Trace path",
+    async ({ gone, refusal }) => {
+      const agent = await createAgent({});
+      const oldFile = await writeTraceFile(tmpRoot, SID, [
+        metaFor(SID, workspace, gone),
+        userText("q1"),
+        requestBegin(),
+        assistantText("a1"),
+        requestEnd("completed"),
+        tokenUsage(usage(42), usage(42)),
+      ]);
+      const before = await fs.readFile(oldFile, "utf8");
+      await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(refusal);
+
+      const session = await agent.resumeSession({ sessionId: SID, allowUnreachableModel: true });
+      const streamed: AmspRecord[] = [];
+      const switching = session.switchModel({ provider: MODEL.provider, modelId: MODEL.model_id });
+      let status: string | undefined;
+      for (;;) {
+        const res = await switching.next();
+        if (res.done) {
+          status = res.value;
+          break;
+        }
+        streamed.push(res.value);
+      }
+
+      expect(status).toBe("completed");
+      expect(session.sessionId).toBe(SID);
+      expect(session.modelId).toBe(MODEL.model_id);
+      // No compaction pair: nothing was asked of the vanished model. The stream ends with the new
+      // context's meta, on the target, then the handoff naming the file the history is in.
+      const kinds = streamed.map((m) =>
+        m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type,
+      );
+      expect(kinds).not.toContain("compaction_begin");
+      expect(kinds.slice(-2)).toEqual(["session_meta", "text"]);
+      const handoff = (streamed.at(-1)!.payload as { text: string }).text;
+      expect(handoff).toMatch(/^\[model_switch_from\]/);
+      expect(handoff).toContain(`session: ${SID}`);
+      expect(handoff).toContain(`trace: ${oldFile}`);
+      expect(handoff).toContain(`workspace: ${workspace}`);
+      expect(handoff).toContain(`previous_model: ${gone.model_id}`);
+      // The left file is untouched; the new one opens on the target with the handoff at its head.
+      expect(await fs.readFile(oldFile, "utf8")).toBe(before);
+      const latest = await findLatestTraceFile(
+        tracesDir(tmpRoot, "default_project", "default_agent"),
+        SID,
+      );
+      expect(latest!.path).not.toBe(oldFile);
+      const head = await readTrace(latest!.path);
+      expect(head[0]!.payload).toMatchObject({
+        provider: MODEL.provider,
+        model_id: MODEL.model_id,
+      });
+      expect((head.at(-1)!.payload as { text: string }).text).toBe(handoff);
+      session.dispose();
+
+      // A restart resumes the new file on the target, the handoff still the text it opened with.
+      const again = await agent.resumeSession({ sessionId: SID });
+      expect(again.modelId).toBe(MODEL.model_id);
+      expect(again.hasPendingInput()).toBe(true);
+      again.dispose();
+    },
+  );
 
   it("errors clearly when session_meta lacks provider (old-format trace, no migration)", async () => {
     // An old-format trace's session_meta only has model_id (from the composite-id era): no backward compat, just a clear error.

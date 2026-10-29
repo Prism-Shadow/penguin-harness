@@ -52,6 +52,9 @@ import type {
 
 const metaMessage = sessionMeta(META);
 
+/** What a model switch opens the next context with when it cannot summarize (opaque to the engine). */
+const HANDOFF = userText("[model_switch_from]\nread the trace file\n[/model_switch_from]");
+
 /** Everything in a request's config that takes part in the cached prefix. */
 function configFingerprint(request: RecordedRequest): string {
   const copy: Record<string, unknown> = { ...request.wireConfig };
@@ -298,7 +301,7 @@ describe("prompt-cache invariants of request assembly", () => {
     });
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
-    await collect(engine.switchContext());
+    await collect(engine.switchContext({ handoff: HANDOFF }));
     await collect(engine.run([userText("task two")], { approve: allowAll }));
 
     // The switch's compaction request is an ordinary compaction request to the OLD model: same
@@ -344,7 +347,7 @@ describe("prompt-cache invariants of request assembly", () => {
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
     const controller = new AbortController();
-    const switching = engine.switchContext(controller.signal);
+    const switching = engine.switchContext({ signal: controller.signal, handoff: HANDOFF });
     let aborted: string | undefined;
     for (;;) {
       const res = await switching.next();
@@ -355,7 +358,7 @@ describe("prompt-cache invariants of request assembly", () => {
       const payload = res.value.payload as { type?: string; event_type?: string };
       if (payload.type === "partial_text" && payload.event_type === "delta") controller.abort();
     }
-    await expect(collect(engine.switchContext())).rejects.toThrow(
+    await expect(collect(engine.switchContext({ handoff: HANDOFF }))).rejects.toThrow(
       "the target's context could not be assembled",
     );
     await collect(engine.run([userText("task two")], { approve: allowAll }));
@@ -378,5 +381,58 @@ describe("prompt-cache invariants of request assembly", () => {
     const last = wireMessage(first.requests[3]!, -1);
     expect(last.role).toBe("user");
     expect(last.content.at(-1)!.text).toBe("task two");
+  });
+
+  it("a model switch that cannot summarize hands over by Trace path: an unreachable old model is sent nothing, a failed summary only extends its line, and the target's first request opens with the handoff", async () => {
+    const target = "claude-opus-4-7";
+    const run = async (
+      script: ScriptedReply[],
+      summarize: boolean,
+    ): Promise<{ first: RecordedRequest[]; second: RecordedRequest[] }> => {
+      const first = recordingModel(modelConfig(), script);
+      const second = recordingModel(modelConfig({ modelId: target }), [{ text: "Read it." }]);
+      const engine = new ContextEngine({
+        llm: first.model,
+        environment: fakeEnvironment,
+        compaction: compactionSettings(),
+        // One summary attempt: its transport drop ends the compaction at once.
+        compactionMaxReconnects: 0,
+        openNextContext: () => ({ llm: second.model }),
+      });
+      await collect(engine.run([userText("task one")], { approve: allowAll }));
+      await collect(engine.switchContext({ handoff: HANDOFF, summarize }));
+      await collect(engine.run([userText("task two")], { approve: allowAll }));
+      return { first: first.requests, second: second.requests };
+    };
+
+    // The old model is known unreachable: the switch sends it nothing at all.
+    const unreachable = await run([{ text: "First answer.", promptTokens: 20 }], false);
+    // The summary request fails on the old model: one ordinary compaction request, extending
+    // the turn it follows, and nothing about the target in it.
+    const failed = await run(
+      [
+        { text: "First answer.", promptTokens: 20 },
+        { text: "[summary]half", promptTokens: 30, outcome: "retryable-after-text" },
+      ],
+      true,
+    );
+
+    expect(unreachable.first).toHaveLength(1);
+    expect(failed.first).toHaveLength(2);
+    const reasons = diagnoseSeries(failed.first);
+    expect(reasons, formatDiagnostics(failed.first, reasons)).toEqual([{ type: "none" }]);
+    expect(configFingerprint(failed.first[1]!)).toBe(configFingerprint(failed.first[0]!));
+    expect(wireMessage(failed.first[1]!, -1).content[0]!.text).toBe(COMPACTION_PROMPT);
+    for (const { second } of [unreachable, failed]) {
+      // A new cache line on the target, opening with the handoff where a summary would be.
+      expect(second).toHaveLength(1);
+      expect(second[0]!.wireConfig.model).toBe(target);
+      const opening = wireMessage(second[0]!, 0);
+      expect(opening.role).toBe("user");
+      expect(opening.content.map((b) => b.text)).toEqual([
+        (HANDOFF.payload as { text: string }).text,
+        "task two",
+      ]);
+    }
   });
 });

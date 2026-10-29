@@ -45,12 +45,13 @@ import { isTaskRecord, parseUserSteeringText } from "@prismshadow/penguin-core";
 import {
   parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
+  parseInPlaceModelSwitch,
   parseModelSwitchMessage,
 } from "@prismshadow/amsp/markers";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 4;
+export const CACHE_VERSION = 5;
 
 /** Cumulative totals at a point in the trace (all values are "before this point"). */
 export interface WindowPriorStats {
@@ -308,6 +309,11 @@ export async function scanMessages(
   fromOrdinal = 0,
   toOrdinal = messages.length,
 ): Promise<void> {
+  // The Session the shard belongs to, as its head names it (an in-session switch's handoff
+  // names the Session itself).
+  const sessionId = (
+    messages.find((m) => m.type === "session_meta")?.payload as { session_id?: string } | undefined
+  )?.session_id;
   for (let i = fromOrdinal; i < toOrdinal; i++) {
     const msg = messages[i]!;
     // Shards never contain origin-carrying messages (core's Writer filters them);
@@ -331,8 +337,14 @@ export async function scanMessages(
       }
       if (p.type === "text" && p.role === "user" && typeof p.text === "string") {
         const text = p.text;
-        // Compaction-summary injection: no item, no Task, no run change.
-        if (text.startsWith("[context_summary]") || text.startsWith("<context_summary>")) {
+        // Compaction-summary injection, or the Trace handoff an in-session model switch opens
+        // the next context with in its place: no item, no Task, no run change (the Web folds the
+        // handoff into the switch's marker).
+        if (
+          text.startsWith("[context_summary]") ||
+          text.startsWith("<context_summary>") ||
+          parseInPlaceModelSwitch(text, sessionId) !== null
+        ) {
           touchTask(state, ms);
           continue;
         }

@@ -593,6 +593,7 @@ async function driveModelSwitch(onRequest: (request: RecordedRequest) => void): 
     }),
     modelSwitch: {
       validate: async () => {},
+      reachable: async () => true,
       reassembleInitialContext: async () => ({}),
     },
   });

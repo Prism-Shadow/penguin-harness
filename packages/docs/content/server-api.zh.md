@@ -952,7 +952,7 @@ interface MessagesResponse {
 - `POST /retry-now` 对应重连倒计时上的**立即重试**按钮。它跳过当前的退避等待，立即发起下一次重试，不改动尝试计数。`skipped: false` 表示当时没有等待在进行，这不是错误。
 - `POST /retry` 对应运行出错或被用户中断后的**重试**按钮。运行以 `fatal` 结束、放弃重连或被中断后，没跑完的那一轮输入会连同模型已产出的内容一起留给下一次运行；服务器重启后恢复的 Session 会从自己的 Trace 重建它。这个路由以空输入启动一个 Task，只把那份输入重新发出：不发布或记录新的用户消息，也不运行 `user_prompt` 钩子。响应 202 `{sessionId, queued: false}`；Session 忙碌时返回 409 `task_in_progress` / `compacting`，没有留存的输入时返回 409 `nothing_to_retry`，例如后来的消息已经把它补发出去。
 - `POST /compact` 在没有可压缩内容时返回 409，原因写在错误码里：`compaction_not_configured`（Agent 没有配置压缩）、`nothing_to_compact`（上下文还没有完整的对话轮次）或 `already_compacted`（上次压缩之后没有新内容）。服务器重启后恢复的 Session 会从自己的 Trace 推导出这些状态，所以已有对话无需先跑一个 Task 也能压缩。
-- `POST /switch-model` 接收 `{provider, modelId}`，必须是完整的一对（只给一半返回 400）。它先用当前模型压缩上下文（总是 summarize 模式），再在目标模型上开启下一个上下文。返回 202 并像 `/compact` 一样流式进行，Session 状态为 `compacting`：上下文有完成的轮可总结时，流上先是一对普通的 manual `compaction_begin` / `compaction_end`（否则没有：刚压缩过，或首个请求没有完成），随后是新上下文的开档记录和它的 `session_meta`，其 `provider` / `model_id` 就是 Session 此后所用的模型；从这条记录起 `GET /` 返回新的模型组合。压缩以非 `completed` 结束即没有切换：不会跟随 `session_meta`，Session 保持原模型。从未运行过的 Session 没有可压缩的上下文，切换在请求内完成，返回 200 与更新后的 `{session}`，不产生任何事件。拒绝返回 409，原因写在错误码里：`task_in_progress` / `compacting`（忙）、`same_model`、`model_not_configured`（目标不在 Project 的模型表中）、`model_unavailable`（目标无法构造，例如缺少凭据）和 `compaction_not_configured`。切换的压缩请求计入原模型的用量，之后的 Task 计入新模型。
+- `POST /switch-model` 接收 `{provider, modelId}`，必须是完整的一对（只给一半返回 400）。它先用当前模型压缩上下文（总是 summarize 模式），再在目标模型上开启下一个上下文。返回 202 并像 `/compact` 一样流式进行，Session 状态为 `compacting`：上下文有完成的轮可总结时，流上先是一对普通的 manual `compaction_begin` / `compaction_end`（否则没有：刚压缩过，或首个请求没有完成），随后是新上下文的开档记录和它的 `session_meta`，其 `provider` / `model_id` 就是 Session 此后所用的模型；从这条记录起 `GET /` 返回新的模型组合。拿不到摘要时切换照样完成，改为交接 Trace 路径：紧跟 `session_meta` 的是一条整条为 `[model_switch_from]` 块的用户文本，其 `session` 为本 Session，点名被离开的上下文的 Trace 文件。压缩以 `completed` 与 `aborted` 之外的状态结束，或当前模型已不在配置中、缺少凭据时都是如此；后一种情形不推压缩事件对，也不向该模型发任何请求。只有压缩以 `aborted` 结束才没有切换：不会跟随 `session_meta`，Session 保持原模型。从未运行过的 Session 没有可压缩的上下文，切换在请求内完成，返回 200 与更新后的 `{session}`，不产生任何事件。拒绝返回 409，原因写在错误码里：`task_in_progress` / `compacting`（忙）、`same_model`、`model_not_configured`（目标不在 Project 的模型表中）、`model_unavailable`（目标无法构造，例如缺少凭据）。这两个码都只针对目标：本 Session 自己的模型已不在配置中或缺少凭据时，服务器照样为切换加载它，交接其历史。切换的压缩请求计入原模型的用量，之后的 Task 计入新模型。
 
 ### 请求体
 
@@ -982,7 +982,7 @@ interface ApprovalDecisionRequest {
 }
 ```
 
-换模型有两条路。会话内切换走上面的 `POST /switch-model`：同一个 Session 先压缩，再在另一个模型上继续，会话 id 与历史不变。Web App 的 `/model` 交接则是用另一个模型开一个新会话，没有专用端点。和 `/agent` 交接一样，它把几条普通路由组合起来：
+换模型有两条路。会话内切换走上面的 `POST /switch-model`：同一个 Session 先压缩（或交接 Trace 路径），再在另一个模型上继续，会话 id 与历史不变。Web App 的 `/model` 交接则是用另一个模型开一个新会话，没有专用端点。和 `/agent` 交接一样，它把几条普通路由组合起来：
 
 1. 创建 Session：为同一个 Agent 打开新 Session，沿用所选模型和源 Workspace。
 2. `POST /tasks` 发送第一条消息，开头是 `[model_switch_from]` 来源块，写明源 session id、它的 `tracePath`、Workspace 以及之前的模型组合。

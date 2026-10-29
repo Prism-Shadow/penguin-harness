@@ -27,6 +27,7 @@ import {
 } from "@prismshadow/amsp/records";
 import {
   buildBackgroundTaskDoneMessage,
+  buildModelSwitchMessage,
   stripLeadingMarkerBlocks,
 } from "@prismshadow/amsp/markers";
 import type {
@@ -192,14 +193,16 @@ export interface SessionConfig {
 /** `Session.run` options: the engine's per-call options. */
 export type SessionRunOptions = RunOptions;
 
-/** Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}). */
+/**
+ * Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}).
+ * Both are about the target: a model the Session is on that cannot be reached is no reason to
+ * refuse — the switch hands the history over by its Trace path instead.
+ */
 export type ModelSwitchRefusal =
   /** The target pair names no entry in the Project config on disk. */
   | "model_not_configured"
-  /** The target is configured but its client cannot be constructed (a missing credential foremost), or this Session has no switch support. */
-  | "model_unavailable"
-  /** The Session has a context to close but no compaction configured to close it with. */
-  | "compaction_not_configured";
+  /** The target is configured but its client cannot be constructed (a missing credential foremost), or this Session cannot switch at all (no switch support, or no opener for a next context). */
+  | "model_unavailable";
 
 /**
  * A model switch refused before anything was sent or recorded: no event was produced and the
@@ -229,6 +232,13 @@ export interface ModelSwitchSupport {
    * exactly where Session creation would have failed.
    */
   validate(ref: ModelRef): Promise<void>;
+  /**
+   * Whether `ref` can still be reached, by the same rule `validate` applies — configured on
+   * disk, with a client that can be constructed — answered instead of thrown. Asked of the
+   * model the running context is on: one that cannot be reached is sent nothing, and the
+   * switch hands its history over by Trace path.
+   */
+  reachable(ref: ModelRef): Promise<boolean>;
   /**
    * Re-assembles the Session's not-yet-opened first context on `ref` — the switch of a Session
    * that never ran, which has no context to close. The Environment is re-equipped for it, and
@@ -990,6 +1000,14 @@ export class Session {
    * and the record is yielded last, so the stream names the model too. Only callable at a Task
    * boundary, like `compact()`. Not the `/model` handoff, which opens a NEW Session.
    *
+   * When the summary cannot be had — the model the Session is on can no longer be reached
+   * (no longer configured, or its client cannot be built: it is then sent nothing), or the
+   * compaction ends other than `completed` or `aborted` — the switch hands the history over
+   * by its Trace path instead, the way `/model` does: the next context opens on the target
+   * with a `[model_switch_from]` block naming this Session, the Trace file of the context it
+   * leaves, its Workspace and the model it was on, in the place the summary would have taken,
+   * and that block follows the meta on the stream. Only a stop keeps the Session where it was.
+   *
    * Before any event: the model the Session is already on is a no-op, and a target that
    * cannot be switched to is refused with a {@link ModelSwitchRefusedError} naming why
    * (anything else thrown is a failure). A Session that never ran has no context to close:
@@ -999,20 +1017,19 @@ export class Session {
    * the opener is told here.
    *
    * Returns the terminal status: `completed` — the Session is on the target, and children
-   * spawned from here inherit it; anything else — the switch was stopped or its compaction
-   * failed (the events say how) and the Session stays on the model it was on.
+   * spawned from here inherit it; `aborted` — the switch was stopped, and the Session stays on
+   * the model it was on.
    */
   async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<AmspRecord, StopReason> {
     const target: ModelRef = { provider: opts.provider, model_id: opts.modelId };
-    if (sameModelRef(target, { provider: this.provider, model_id: this.modelId })) {
-      return "completed";
-    }
-    if (!this.modelSwitch) {
-      throw new ModelSwitchRefusedError(
+    const from: ModelRef = { provider: this.provider, model_id: this.modelId };
+    if (sameModelRef(target, from)) return "completed";
+    const unavailable = (): ModelSwitchRefusedError =>
+      new ModelSwitchRefusedError(
         "model_unavailable",
         "Switching the model is not available for this Session.",
       );
-    }
+    if (!this.modelSwitch) throw unavailable();
     await this.modelSwitch.validate(target);
     if (!this.engine && !this.metaWritten) {
       // Never ran: no context to close and nothing recorded — the first context is simply
@@ -1024,16 +1041,19 @@ export class Session {
       if (first.maxTurns !== undefined) this.engineDeps.maxTurns = first.maxTurns;
       return "completed";
     }
-    if (this.compactability() === "unsupported") {
-      throw new ModelSwitchRefusedError(
-        "compaction_not_configured",
-        "Context compaction is not configured for this Session, so its model cannot be switched.",
-      );
-    }
+    // A context to close needs a next one to open.
+    if (!this.engineDeps.openNextContext) throw unavailable();
+    const summarize = await this.modelSwitch.reachable(from);
+    // Written now, while the Trace still points at the file of the context being left.
+    const handoff = this.switchHandoff(from);
     if (!(yield* this.ensureEngine(opts.signal))) return "aborted";
     this.switchTarget = target;
     try {
-      const status = yield* this.engine!.switchContext(opts.signal);
+      const status = yield* this.engine!.switchContext({
+        signal: opts.signal,
+        handoff,
+        summarize,
+      });
       // Input an aborted bootstrap left with the Session rides on like the engine's pending
       // input: its text alone, in memory (the original stays where the abort wrote it).
       if (status === "completed") {
@@ -1045,6 +1065,28 @@ export class Session {
     } finally {
       this.switchTarget = undefined;
     }
+  }
+
+  /**
+   * The handoff a model switch opens the next context with when it cannot summarize: the
+   * `/model` origin block, worded for this same conversation, naming the Trace file of the
+   * context being left (the running file, on the machine the Session runs on), the Workspace
+   * and the model left behind. A Session without a Trace sink has no file to name.
+   */
+  private switchHandoff(from: ModelRef): AmspRecord {
+    const tracePath = this.trace?.currentPath?.();
+    return userText(
+      buildModelSwitchMessage(
+        {
+          sessionId: this.sessionId,
+          ...(tracePath !== undefined ? { tracePath } : {}),
+          workspace: this.workspaceDir,
+          prevProvider: from.provider,
+          prevModelId: from.model_id,
+        },
+        { inPlace: true },
+      ),
+    );
   }
 
   /**

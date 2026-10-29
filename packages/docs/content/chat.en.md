@@ -173,12 +173,12 @@ There are two ways to change the model, and they do different things.
 
 Select the model name in the composer's toolbar and pick another model. The picker is disabled while a Task runs or a compaction is under way, and picking the current model does nothing. A dialog asks first, because the switch compacts the context on the current model before moving on:
 
-- **Compact and switch**: the context is compacted on the current model (always a summary, even when the agent is configured to discard), and the conversation then continues on the new model. If the compaction fails or is aborted, the conversation stays on the current model.
+- **Compact and switch**: the context is compacted on the current model (always a summary, even when the agent is configured to discard), and the conversation then continues on the new model. If the compaction fails, the conversation still moves: the new model gets the path of this conversation's Trace file instead of a summary, and reads the earlier history from it when it needs to. If you stop the compaction, the conversation stays on the current model.
 - **Cancel**: keeps the current model.
 
-Right after a compaction or another switch there is nothing to compact, so the dialog says nothing is compacted again and the button reads **Switch**; a conversation with no messages yet switches at once.
+Right after a compaction or another switch there is nothing to compact, so the dialog says nothing is compacted again and the button reads **Switch**; a conversation with no messages yet switches at once. When the current model is unavailable (removed from the model configuration, or without a key), the dialog says nothing is summarized and the new model gets the Trace file path; the button reads **Switch**, and no request is sent to the unavailable model.
 
-The switch shows in the conversation as a compaction row followed by a "Model switched · A → B" marker (the marker alone when there was nothing to compact: right after a compaction or another switch, or when the last request never completed). A failed compaction shows as a failed compaction row with no marker. Once switched, the model badge, the context window and the cost estimate follow the new model.
+The switch shows in the conversation as a compaction row followed by a "Model switched · A → B" marker (the marker alone when there was nothing to compact: right after a compaction or another switch, or when the last request never completed). A switch that handed over the Trace file path reads "Model switched · A → B · handed over by Trace", after the failed compaction row when there was one; hover it to see the file. A stopped compaction shows as a stopped compaction row with no marker. Once switched, the model badge, the context window and the cost estimate follow the new model.
 
 ### In a new conversation
 

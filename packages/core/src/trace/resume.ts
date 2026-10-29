@@ -58,6 +58,7 @@ import {
   buildContextSummaryText,
   extractSummary,
   MARKER_TAGS,
+  parseModelSwitchMessage,
   startsWithMarker,
 } from "@prismshadow/amsp/markers";
 
@@ -76,9 +77,10 @@ export interface ResumeResult {
   /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
   pendingSummary?: AmspRecord;
   /**
-   * The `[context_summary]` this file's context opened with, while no turn has completed on
-   * it: its first pending input (so it is in `carryOver` too). A model switch away from such
-   * a context writes it at the head of the next file (see ContextEngine's `openingSummary`).
+   * The `[context_summary]` this file's context opened with — or the `[model_switch_from]`
+   * handoff a model switch opened it with instead — while no turn has completed on it: its
+   * first pending input (so it is in `carryOver` too). A model switch away from such a context
+   * writes it at the head of the next file (see ContextEngine's `openingSummary`).
    */
   openingSummary?: AmspRecord;
   /** Session-level cumulative Token carry-over (the session value from the last token_usage). */
@@ -276,16 +278,18 @@ function isCompactionEnd(msg: AmspRecord): msg is AmspRecord<CompactionEndPayloa
 }
 
 /**
- * Whether the message is a `[context_summary]` user text: the first input of a context a
- * summarize compaction opened. Read off the text because no field marks the record (see the
- * markers module's consumption boundary for why that is safe here).
+ * Whether the message is the text a context opened with: a `[context_summary]` user text (the
+ * first input of a context a summarize compaction opened), or a user text that is one whole
+ * `[model_switch_from]` block (the handoff a model switch opened it with when it could not
+ * summarize). Read off the text because no field marks the record (see the markers module's
+ * consumption boundary for why that is safe here).
  */
-function isContextSummary(msg: AmspRecord): boolean {
+function isOpeningText(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: string };
+  if (p.type !== "text" || p.role !== "user") return false;
+  const text = p.text ?? "";
   return (
-    p.type === "text" &&
-    p.role === "user" &&
-    startsWithMarker(p.text ?? "", MARKER_TAGS.contextSummary)
+    startsWithMarker(text, MARKER_TAGS.contextSummary) || parseModelSwitchMessage(text) !== null
   );
 }
 
@@ -516,7 +520,7 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
     history,
     carryOver: [...pending, ...pairingBackfill],
     contextClosed: false,
-    ...(opening !== undefined && isContextSummary(opening) ? { openingSummary: opening } : {}),
+    ...(opening !== undefined && isOpeningText(opening) ? { openingSummary: opening } : {}),
     sessionTokens,
     lastRequestTotal,
     sessionTurns,

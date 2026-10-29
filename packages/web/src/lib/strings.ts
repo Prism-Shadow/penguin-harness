@@ -3379,13 +3379,16 @@ export const zh = {
     thinkingSwitchApplied: (to: string): string => `上下文已压缩，思考等级已切换为「${to}」。`,
     /** Compaction ended without completing — the switch still applies, so say both. */
     thinkingSwitchCompactFailed: "压缩未成功完成，思考等级已照常切换。",
-    /** In-conversation model switch (the session toolbar's model picker). Title is the confirm dialog's accessible name only. Unlike the thinking level there is no "switch anyway": a switch always compacts on the current model first, and a failed compaction keeps it. */
+    /** In-conversation model switch (the session toolbar's model picker). Title is the confirm dialog's accessible name only. Unlike the thinking level there is no "switch anyway": a switch compacts on the current model first while that model is available; a failed compaction, or a current model that is unavailable, hands the history over by Trace path instead. */
     modelSwitchInSessionTitle: "切换模型",
     modelSwitchInSessionConfirm: "压缩并切换",
     /** Confirm label when the transcript is empty: nothing to compact, so it only switches. */
     modelSwitchInSessionDirectConfirm: "切换",
     modelSwitchInSessionBody: (from: string, to: string): string =>
-      `将先用当前模型「${from}」压缩上下文，成功后以「${to}」继续本对话；压缩失败则保持「${from}」。`,
+      `将先用当前模型「${from}」压缩上下文，成功后以「${to}」继续本对话；压缩失败则改为把本对话的 Trace 文件路径交给「${to}」。`,
+    /** Body when the current model is unavailable (not configured, or no key): nothing is summarized, and the target gets the Trace path. */
+    modelSwitchInSessionHandoverBody: (from: string, to: string): string =>
+      `「${from}」当前不可用，不做摘要：将把本对话的 Trace 文件路径交给「${to}」，由它按需读取此前的历史。`,
     /** Body when the transcript is empty: there is no context to compact, so the switch is immediate. */
     modelSwitchInSessionDirectBody: (to: string): string =>
       `当前上下文没有内容，将直接切换到「${to}」。`,
@@ -4220,6 +4223,14 @@ Benchmark：
     compactionResult: "压缩结果",
     /** The marker between two contexts on different models (an in-session model switch), naming both by model id. */
     modelChanged: (from: string, to: string): string => `模型已切换 · ${from} → ${to}`,
+    /** The same marker when the switch handed the history over by Trace path instead of a summary. */
+    modelChangedByTrace: (from: string, to: string): string =>
+      `模型已切换 · ${from} → ${to} · 经 Trace 交接`,
+    /** Its hover: why there is no summary, and the file the new model reads the history from. */
+    modelChangedByTraceHint: (tracePath?: string): string =>
+      tracePath
+        ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
+        : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";

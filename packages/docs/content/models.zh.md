@@ -673,7 +673,7 @@ core 按**端点主机**决定这些请求头（`packages/core/src/llm/app-attri
 
 ### 模型与 Agent
 
-Agent 从不绑定模型。模型在创建 Session 时确定，所以同一个 Agent 可以用不同模型运行不同的 Session；Session 之后还能换模型：对话工具栏的模型选择器先用当前模型压缩上下文，再在新模型上继续本对话（见 [Session 与 Trace](/sessions-and-traces#会话内切换模型)）。
+Agent 从不绑定模型。模型在创建 Session 时确定，所以同一个 Agent 可以用不同模型运行不同的 Session；Session 之后还能换模型：对话工具栏的模型选择器先用当前模型压缩上下文，再在新模型上继续本对话；当前模型不可用或压缩失败时，改为把本对话的 Trace 文件路径交给新模型（见 [Session 与 Trace](/sessions-and-traces#会话内切换模型)）。
 
 `/model` 命令则是通过交接在另一个模型上开新会话：
 

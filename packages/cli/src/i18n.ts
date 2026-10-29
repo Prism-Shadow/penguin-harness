@@ -1067,7 +1067,7 @@ export interface Messages {
   thinkingHeld(level: string): string;
   /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
   thinkingInvalid(value: string): string;
-  /** Bare `/switch-model`: the Session's current model (a formatted label) plus the usage; a switch compacts first. */
+  /** Bare `/switch-model`: the Session's current model (a formatted label) plus the usage; a switch compacts first (or hands over by Trace path when it cannot). */
   switchModelCurrent(model: string): string;
   /** `/switch-model` with anything but exactly `<provider> <model_id>`. */
   switchModelUsage(): string;
@@ -1083,8 +1083,8 @@ export interface Messages {
   switchModelNotConfigured(model: string, listCommand: string, addCommand: string): string;
   /** 409 `model_unavailable`: the target is configured but cannot be constructed (e.g. no credential); `detail` is the server's message, verbatim (may be empty). */
   switchModelUnavailable(model: string, detail: string): string;
-  /** 409 `compaction_not_configured`: a switch always compacts first, and this Session has no compaction. */
-  switchModelNoCompaction(): string;
+  /** A switch that could not summarize handed the history over by its Trace path: the file the new model reads it from (absent for a Session that records no Trace). */
+  switchModelHandedOver(tracePath?: string): string;
   /** `/verbose` toggled on: tool output renders in full from here on. */
   verboseOn(): string;
   /** `/verbose` toggled off: long tool output is collapsed again from here on. */
@@ -2241,8 +2241,8 @@ const en: Messages = {
     `[model switch] ${model} is not in the Project config: ${listCommand} lists the configured models, ${addCommand} adds it`,
   switchModelUnavailable: (model, detail) =>
     `[model switch] ${model} is configured but cannot be used${detail ? `: ${detail}` : ""}`,
-  switchModelNoCompaction: () =>
-    "[model switch] context compaction is not configured for this Session, and a model switch always compacts first",
+  switchModelHandedOver: (tracePath) =>
+    `[model switch] no summary: the new model reads the earlier history from its Trace file${tracePath ? ` ${tracePath}` : ""}`,
   verboseOn: () => "[verbose] on — tool output from here on shows in full",
   verboseOff: () =>
     "[verbose] off — long tool output from here on is collapsed (/verbose to toggle)",
@@ -3319,8 +3319,8 @@ const zh: Messages = {
     `[切换模型] Project 配置中没有 ${model}：${listCommand} 列出已配置的模型，${addCommand} 可添加它`,
   switchModelUnavailable: (model, detail) =>
     `[切换模型] ${model} 已配置但无法使用${detail ? `：${detail}` : ""}`,
-  switchModelNoCompaction: () =>
-    "[切换模型] 本 Session 未配置上下文压缩，而切换模型必须先压缩，因此无法切换",
+  switchModelHandedOver: (tracePath) =>
+    `[切换模型] 未生成摘要：新模型按需读取此前的 Trace 文件${tracePath ? ` ${tracePath}` : ""}`,
   verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
   verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",
   toolOutputElided: (hidden) => `……（另有 ${hidden} 行，/verbose 显示完整输出）`,
