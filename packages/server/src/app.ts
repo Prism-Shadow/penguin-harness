@@ -301,20 +301,18 @@ export async function bootAppDeps(
   const logDouble = replacements.find(([cls]) => cls === ConsoleLog)?.[1] as Log | undefined;
   const shimLog = (line: string): void => (logDouble ?? new ConsoleLog()).line(line);
   // Which entry `penguin` is, answered once by the shared procedure rather than privately
-  // here: the loader of a pushed CLI when this root holds one, else the installed CLI, and
-  // the installed CLI with the fault named when resolution faults. Asked pre-boot for the
-  // same reason the shim is written pre-boot — it describes this installation, not a state
-  // a push can change under a running App.
-  const installedCli = {
+  // here: the loader of a pushed CLI when this root holds one, else this server's own entry,
+  // and that entry with the fault named when resolution faults. Asked pre-boot for the same
+  // reason the shim is written pre-boot — it describes this installation, not a state a push
+  // can change under a running App.
+  const ownCli = {
     entry: config.cliEntry ?? null,
     execArgs: config.cliLaunch?.execArgs ?? [],
     unavailable: config.cliLaunch?.unavailable ?? null,
   };
   const resolvedCli =
-    installedCli.entry === null
-      ? null
-      : await resolveCli({ self: installedCli.entry, root: config.root });
-  const shimAnswer = shimFromResolution(installedCli, resolvedCli);
+    ownCli.entry === null ? null : await resolveCli({ self: ownCli.entry, root: config.root });
+  const shimAnswer = shimFromResolution(ownCli, resolvedCli);
   const shim = ensureCliShim(config.root, shimAnswer.entry, {
     execArgs: shimAnswer.execArgs,
     unavailable: shimAnswer.unavailable,

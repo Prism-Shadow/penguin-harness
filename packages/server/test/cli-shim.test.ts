@@ -23,7 +23,7 @@ import {
   ensureCliShim,
   posixShimScript,
   posixStubScript,
-  resolveCliLaunch,
+  offeredCli,
   windowsShimScript,
   windowsStubScript,
   workspaceRoot,
@@ -212,7 +212,7 @@ describe("ensureCliShim", () => {
   });
 });
 
-describe("resolveCliLaunch: which CLI a server offers", () => {
+describe("offeredCli: which CLI a server offers", () => {
   const LOADER = "file:///repo/tsx/loader.mjs";
 
   /** A checkout with the CLI pieces asked for; returns the workspace root. */
@@ -243,20 +243,20 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
       electron: false,
       tsLoader: loaderFound,
     };
-    expect(resolveCliLaunch({ ...base, explicit: " /opt/penguin/dist/penguin.js " })).toEqual({
+    expect(offeredCli({ ...base, explicit: " /opt/penguin/dist/penguin.js " })).toEqual({
       entry: "/opt/penguin/dist/penguin.js",
       execArgs: [],
       checkout: repo,
       origin: "env",
       unavailable: null,
     });
-    expect(resolveCliLaunch({ ...base, explicit: "  " }).origin).toBe("source");
+    expect(offeredCli({ ...base, explicit: "  " }).origin).toBe("source");
   });
 
   it("offers nothing, and reports nothing missing, outside a checkout", async () => {
     const notARepo = await tempRoot();
     expect(
-      resolveCliLaunch({
+      offeredCli({
         explicit: undefined,
         moduleDir: notARepo,
         source: false,
@@ -268,7 +268,7 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
 
   it("a server running from source offers the CLI source through the checkout's loader", async () => {
     const repo = await checkout({ source: true, build: true });
-    const launch = resolveCliLaunch({
+    const launch = offeredCli({
       explicit: undefined,
       moduleDir: serverSrc(repo),
       source: true,
@@ -286,7 +286,7 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
 
   it("…and the build when the loader does not resolve", async () => {
     const repo = await checkout({ source: true, build: true });
-    const launch = resolveCliLaunch({
+    const launch = offeredCli({
       explicit: undefined,
       moduleDir: serverSrc(repo),
       source: true,
@@ -306,10 +306,10 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
       return dir;
     };
     const opts = { explicit: undefined, source: false, electron: false, tsLoader: loaderFound };
-    expect(resolveCliLaunch({ ...opts, moduleDir: fromDist(built) }).origin).toBe("build");
+    expect(offeredCli({ ...opts, moduleDir: fromDist(built) }).origin).toBe("build");
 
     const unbuilt = await checkout({ source: true });
-    expect(resolveCliLaunch({ ...opts, moduleDir: fromDist(unbuilt) }).origin).toBe("source");
+    expect(offeredCli({ ...opts, moduleDir: fromDist(unbuilt) }).origin).toBe("source");
   });
 
   it("Electron runs no loader: the build only, else a reason that says what to build", async () => {
@@ -320,10 +320,10 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
       return dir;
     };
     const opts = { explicit: undefined, source: false, electron: true, tsLoader: loaderFound };
-    expect(resolveCliLaunch({ ...opts, moduleDir: desktopDist(built) }).origin).toBe("build");
+    expect(offeredCli({ ...opts, moduleDir: desktopDist(built) }).origin).toBe("build");
 
     const unbuilt = await checkout({ source: true });
-    const launch = resolveCliLaunch({ ...opts, moduleDir: desktopDist(unbuilt) });
+    const launch = offeredCli({ ...opts, moduleDir: desktopDist(unbuilt) });
     expect(launch.entry).toBeNull();
     expect(launch.checkout).toBe(unbuilt);
     expect(launch.unavailable).toContain(path.join("packages", "cli", "dist", "penguin.js"));
@@ -332,7 +332,7 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
 
   it("a checkout with neither a runnable source nor a build says so", async () => {
     const repo = await checkout({ source: true });
-    const launch = resolveCliLaunch({
+    const launch = offeredCli({
       explicit: undefined,
       moduleDir: serverSrc(repo),
       source: true,
@@ -360,7 +360,7 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
 });
 
 /** This checkout's own CLI, the way a dev server running from source offers it. */
-const THIS_CHECKOUT_CLI = resolveCliLaunch({
+const THIS_CHECKOUT_CLI = offeredCli({
   explicit: undefined,
   moduleDir: path.dirname(fileURLToPath(import.meta.url)),
   source: true,
