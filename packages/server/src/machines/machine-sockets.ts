@@ -59,6 +59,16 @@ export class ServerPredatesSocket extends Error {
   }
 }
 
+/**
+ * How a socket tells a dead link from a busy one. The default period is two of the machine's
+ * beats; `heardAt` is the machine's link (link-activity.ts): when bytes last came from the
+ * machine on any connection to it.
+ */
+export interface MachineSocketLiveness {
+  heardAt?: () => number | null;
+  silenceMs?: number;
+}
+
 export interface MachineSocketTarget {
   agent: http.Agent;
   port: number;
@@ -174,20 +184,37 @@ export class MachineSocket {
    */
   readonly #traffic = new Set<() => void>();
 
-  private constructor(ws: WebSocket, raw: NodeJS.EventEmitter | null = null) {
+  private constructor(
+    ws: WebSocket,
+    raw: NodeJS.EventEmitter | null = null,
+    liveness: MachineSocketLiveness = {},
+  ) {
     this.#ws = ws;
+    // Silence watchdog. The machine's socket sends a heartbeat frame every beat, and nothing
+    // from the machine for two beats means the channel is dead under us (an ssh session gone
+    // quiet): every stream on it must end so the browser re-issues, not sit on a socket that
+    // never speaks. Nothing means no byte at all — of this socket, whole frame or not, or of
+    // any other connection to the machine: on a slow link its ssh server queues those ahead of
+    // this socket's bytes, and a socket behind a long queue is on a busy link, not a dead one.
+    const silenceMs = liveness.silenceMs ?? 2 * HEARTBEAT_MS;
+    let heard = Date.now();
     raw?.on("data", () => {
+      heard = Date.now();
       for (const listener of this.#traffic) listener();
     });
-    // Silence watchdog: the machine's socket sends a heartbeat frame every beat; nothing for
-    // two beats means the channel is dead under us (an ssh session gone quiet), and every
-    // stream on it must end so the browser re-issues — not sit on a socket that never speaks.
-    let watchdog = setTimeout(() => ws.terminate(), 2 * HEARTBEAT_MS);
-    watchdog.unref?.();
+    const tick = setInterval(() => {
+      const last = Math.max(heard, liveness.heardAt?.() ?? 0);
+      if (Date.now() - last >= silenceMs) {
+        ws.terminate();
+        return;
+      }
+      // Heard within the period: the machine is told so too. Its own check waits on the answer
+      // to its ping, which sits behind that same queue, or on anything from here (socket/serve.ts).
+      if (ws.readyState === ws.OPEN) ws.ping();
+    }, silenceMs / 4);
+    tick.unref?.();
     ws.on("message", (data, isBinary) => {
-      clearTimeout(watchdog);
-      watchdog = setTimeout(() => ws.terminate(), 2 * HEARTBEAT_MS);
-      watchdog.unref?.();
+      heard = Date.now();
       if (isBinary) return;
       let frame: ServerFrame;
       try {
@@ -211,7 +238,7 @@ export class MachineSocket {
       }
     });
     const drop = () => {
-      clearTimeout(watchdog);
+      clearInterval(tick);
       this.#closed = true;
       const sinks = [...this.#calls.values()];
       this.#calls.clear();
@@ -226,7 +253,11 @@ export class MachineSocket {
    * Resolves on the open handshake; rejects when the machine refuses (no socket there), cannot
    * be reached, or has not answered within `timeoutMs`.
    */
-  static open(target: MachineSocketTarget, timeoutMs: number): Promise<MachineSocket> {
+  static open(
+    target: MachineSocketTarget,
+    timeoutMs: number,
+    liveness: MachineSocketLiveness = {},
+  ): Promise<MachineSocket> {
     return new Promise((resolve, reject) => {
       // No Origin: the machine's guard reads its absence as a non-browser client, which this is.
       // The socket's own route: the session minted over there is the admin's, and the
@@ -250,7 +281,7 @@ export class MachineSocket {
       });
       ws.once("open", () => {
         clearTimeout(deadline);
-        resolve(new MachineSocket(ws, raw));
+        resolve(new MachineSocket(ws, raw, liveness));
       });
       ws.once("unexpected-response", (_req, res) => {
         clearTimeout(deadline);
@@ -361,6 +392,8 @@ export class MachineSockets {
    * answered as they always were.
    */
   readonly #settle: ((machineId: string) => StreamSettle | null) | undefined;
+  readonly #heardAt: ((machineId: string) => number | null) | undefined;
+  readonly #silenceMs: number | undefined;
   #closed = false;
 
   constructor(
@@ -374,11 +407,17 @@ export class MachineSockets {
        */
       announce?: () => void;
       settle?: (machineId: string) => StreamSettle | null;
+      /** When bytes last came from a machine on any connection to it (MachinesService.links). */
+      heardAt?: (machineId: string) => number | null;
+      /** The silence a socket is dropped after (MachineSocketLiveness.silenceMs). */
+      silenceMs?: number;
     } = {},
   ) {
     this.#dialTimeoutMs = options.dialTimeoutMs ?? SOCKET_DIAL_TIMEOUT_MS;
     this.#announce = options.announce ?? (() => undefined);
     this.#settle = options.settle;
+    this.#heardAt = options.heardAt;
+    this.#silenceMs = options.silenceMs;
   }
 
   /** Ends this generation's sockets, including a dial that settles after disposal. */
@@ -416,9 +455,14 @@ export class MachineSockets {
    * One dial, with an unanswered handshake told apart: the same port answering HTTP means the
    * server is up and older than the socket, which no amount of dialling again will change.
    */
-  async #dial(target: MachineSocketTarget): Promise<MachineSocket> {
+  async #dial(machineId: string, target: MachineSocketTarget): Promise<MachineSocket> {
+    const heardAt = this.#heardAt;
+    const liveness: MachineSocketLiveness = {
+      ...(heardAt !== undefined ? { heardAt: () => heardAt(machineId) } : {}),
+      ...(this.#silenceMs !== undefined ? { silenceMs: this.#silenceMs } : {}),
+    };
     try {
-      return await MachineSocket.open(target, this.#dialTimeoutMs);
+      return await MachineSocket.open(target, this.#dialTimeoutMs, liveness);
     } catch (err) {
       if (!(err instanceof HandshakeTimeout) || this.#closed) throw err;
       const checkMs = Math.min(this.#dialTimeoutMs, HTTP_CHECK_TIMEOUT_MS);
@@ -461,7 +505,7 @@ export class MachineSockets {
       if (this.#facts.get(machineId)?.state !== "unanswered") this.#state(machineId, "dialling");
       const entry: CachedSocket = {
         session: target.session,
-        pending: this.#dial(target),
+        pending: this.#dial(machineId, target),
       };
       entry.pending.then(
         (socket) => {
