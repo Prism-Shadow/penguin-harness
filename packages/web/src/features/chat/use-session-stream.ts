@@ -131,7 +131,12 @@ export interface SessionStreamState {
 const EMPTY_PENDING: ReadonlyMap<string, PendingApproval> = new Map();
 const EMPTY_PREFIX: readonly ChatItem[] = [];
 const EMPTY_SUBAGENTS: ReadonlyMap<string, StreamModel> = new Map();
-const IDLE_OLDER: OlderHistoryState = { hasMore: false, loading: false, error: null };
+const IDLE_OLDER: OlderHistoryState = {
+  hasMore: false,
+  loading: false,
+  error: null,
+  beyondTail: false,
+};
 const NO_TRANSFER: HistoryTransfer = { window: null, older: null, fill: null };
 
 export function useSessionStream(

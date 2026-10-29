@@ -176,13 +176,14 @@ export const HISTORY_STREAM_BEAT_MS = 5_000;
  * cut at `budget` bytes of records when given, and with `fill` the stream stays open after the
  * window to bring the rest of the Session to the server that serves this page), the Tasks before
  * a cursor (`before`), the whole transcript (`full`), or no window at all — only one Trace file
- * made whole on this page's server (`fill`, the Trace panel's read of a machine's file).
+ * made whole on this page's server (`fill`, the Trace panel's read, of the Agent's file `file`;
+ * this server's own Session answers `filled` at once).
  */
 export type HistoryStreamQuery =
   | { kind: "tail"; limit: number; budget?: number; fill?: boolean }
   | { kind: "before"; cursor: string; limit: number; budget?: number }
   | { kind: "full" }
-  | { kind: "fill"; file: number };
+  | { kind: "fill"; file: number; agent?: string };
 
 /** What a history or trace-body stream says, event by event. */
 export interface HistoryStreamHandlers {
@@ -267,6 +268,7 @@ function historyQuery(query: HistoryStreamQuery): string {
     case "fill":
       params.set("fill", "only");
       params.set("file", String(query.file));
+      if (query.agent !== undefined) params.set("agent", query.agent);
       break;
   }
   const text = params.toString();

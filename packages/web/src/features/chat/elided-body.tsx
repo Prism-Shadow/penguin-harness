@@ -5,9 +5,9 @@
  * only while the row is open, so mounting it is the fetch's start.
  *
  * While the values come over the note is the transfer row (after a second, so a local fetch never
- * flashes it); a fetch that failed is the shared retry row, stopped, with the failure behind its
- * "?" and a Retry. When the values are in place the row shows them instead of the preview, and the
- * note is gone.
+ * flashes it); a fetch that failed is the shared retry row, stopped, its failure said inline in the
+ * sentence (never behind a "?") and a Retry as text. When the values are in place the row shows
+ * them instead of the preview, and the note is gone.
  *
  * The loader reaches the rows through a context the message stream provides, so the subagents
  * panel's stream, which renders the same rows, unfolds them the same way.
@@ -42,10 +42,11 @@ export function ElidedBodyNote({ item }: { item: ToolCallItem | ThinkingItem }) 
   const words = S.chat.historyTransfer;
   if (load !== undefined && load.error !== null) {
     return (
+      // The reason rides in the sentence; once the shared row places a reason inline
+      // (`reasonPlacement="inline"`), it moves to `reason` and the sentence is the phrase alone.
       <RetryStatus
         phase="gaveUp"
-        label={words.bodyFailed}
-        reason={load.error}
+        label={words.bodyFailed(load.error)}
         retry={{ label: S.common.retry, onClick: () => bodies?.load(item) }}
       />
     );

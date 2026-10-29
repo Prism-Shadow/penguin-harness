@@ -3869,14 +3869,21 @@ Scenarios:
       heavy: "Syncing full outputs",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "Loading the full text",
-      bodyFailed: "Could not load the full text",
+      /** The fetch failed: what failed, then the failure itself, on one line. */
+      bodyFailed: (reason: string) => `Could not load the full text: ${reason}`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
       trace: (alias: string | null) =>
         alias === null ? "Fetching the Trace" : `Fetching the Trace from ${alias}`,
-      /** The link to the machine dropped and the server retries: the attempt, then the seconds. */
-      retrying: (attempt: number) => `Connection lost, retrying (attempt ${attempt})`,
-      retryIn: (seconds: number, attempt: number) =>
-        `Connection lost, retrying in ${seconds} s (attempt ${attempt})`,
+      /** The machine is not connected and the server reconnects: the attempt, then the seconds. */
+      reconnecting: (attempt: number) =>
+        `Lost the connection to the machine, reconnecting (attempt ${attempt})`,
+      reconnectIn: (seconds: number, attempt: number) =>
+        `Lost the connection to the machine, reconnecting in ${seconds} s (attempt ${attempt})`,
+      /** Connected, but the machine sent nothing for a while: the server asks it again. */
+      asking: (attempt: number) =>
+        `The machine is not answering, asking again (attempt ${attempt})`,
+      askIn: (seconds: number, attempt: number) =>
+        `The machine is not answering, asking again in ${seconds} s (attempt ${attempt})`,
       retryNow: "Retry now",
       /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
       broken: "The history transfer broke off; try again",
@@ -6117,6 +6124,12 @@ Scenarios:
       admin_required: "Only an admin can perform this operation.",
       desktop_single_user: "The desktop app is single-user; user management is unavailable.",
       not_found: "This resource does not exist, or you do not have access.",
+      trace_body_not_found: "This part is no longer in the conversation's Trace.",
+      machine_refused: "The machine refused this read.",
+      machine_not_found: "This machine is not on the Project's machine list.",
+      machine_outdated: "The machine runs an older version; update it on the Machines page.",
+      machine_answered: "The machine's answer could not be used; try again.",
+      trace_changed: "The conversation's Trace kept changing while it was read; try again.",
       internal: "The server hit an internal error. Please try again shortly.",
       agent_not_found: "This agent no longer exists.",
       job_running: "A job is running on that machine; wait for it to finish.",

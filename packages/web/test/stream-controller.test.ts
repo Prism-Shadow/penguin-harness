@@ -3,8 +3,9 @@
  * authoritative state while streaming (history-closing decision), the generation guard
  * against rebuild re-entrancy during replay, resync rebuild (clears the pending table +
  * keeps localDecisions), approval re-delivery keyed by origin composite key + missing
- * card backfill, the local answer time an optimistic resolveApproval stamps, and history
- * load failure/retry.
+ * card backfill — and, for a call a history window folded, the whole call the approval carries in
+ * place of the folded copy — the local answer time an optimistic resolveApproval stamps, and
+ * history load failure/retry.
  *
  * Windowed history: a conversation opens on its newest 20 Q&A pairs and each scroll to the top
  * asks for 20 more; a page the server cut short at its byte budget still offers the history
@@ -15,7 +16,12 @@
  * - Given a conversation opened, the first read asks for the newest Tasks within the first-paint
  *   budget and the fill behind them; once its window is on screen, older windows follow, each
  *   asking for the Tasks still missing, until 20 Tasks are on screen — and none once they are.
- * - Given the beginning reached before 20 Tasks, no further window is asked for.
+ * - Given the beginning reached before 20 Tasks, no further window is asked for, and nothing marks
+ *   the beginning; only a window the reader scrolled up for, past those Tasks, says it is there.
+ * - Given a prompt with images, it counts as one Task, as the server counts it.
+ * - Given the first paint's backfill, the older row is one loading state from its first window to
+ *   its last, keeping its last reading between them; a scroll-up meanwhile asks nothing more.
+ * - Given a subagent spawned in a backfilled Task speaking again live, its history stays with it.
  * - Given an older window landing, the transcript below it is untouched: the same items, the
  *   same ids, so the reading position holds.
  * - Given a machine's read reporting progress, it shows as the window's until the window is on
@@ -29,11 +35,20 @@
  * - Given a stream that closes a window it never began (the server ends the stream after `done`),
  *   it is closed and read again, never left for the socket to re-issue for ever.
  * - Given a live event equal to a history record that came folded (a long thinking block), the
- *   event is dropped as a duplicate: the block is drawn once.
+ *   event is dropped as a duplicate: the block is drawn once. So is a live tool output whose
+ *   image the window carries by reference.
  * - Given the window read waiting on the machine, Retry now opens it again.
  * - Given an item with folded values unfolded, each value is fetched by its ref, the item shows
  *   the whole values once all have arrived, and a failed fetch is said on the item and starts
  *   over on the next unfold.
+ *
+ * Resync with earlier windows on screen (the decision tree in stream-controller.ts `rebuild`):
+ * - Given the refetched tail starting where the old one did, the earlier windows are kept.
+ * - Given it starting later, the windows between are read while the old transcript stays on
+ *   screen, cut at the old start by their Trace positions, and join the earlier ones; given a cut
+ *   that cannot be proven, the new tail is the baseline and the windows behind it are read again.
+ * - Given a backfill window in flight, it is closed and nothing it sends lands; the backfill goes
+ *   on behind the kept windows, and the newest read alone drives the older row.
  *
  * Memory updates when session_meta falls before the window:
  * - Given a completed tail, loading it shows one update per topic, excluding the index.
@@ -205,6 +220,22 @@ const HISTORY_TASK: AmspRecord[] = [
   at(assistantText("answer"), "2026-07-05T00:00:03.000Z"),
   at(tokenUsage(counts(1000), counts(1000)), "2026-07-05T00:00:05.000Z"),
 ];
+
+/** `n` Tasks of one question and one answer each, a minute apart on day `day`. */
+const turns = (n: number, day = "04"): AmspRecord[] =>
+  Array.from({ length: n }, (_, i) => {
+    const minute = String(i).padStart(2, "0");
+    return [
+      at(userText(`question ${i}`), `2026-07-${day}T00:${minute}:00.000Z`),
+      at(assistantText(`answer ${i}`), `2026-07-${day}T00:${minute}:30.000Z`),
+    ];
+  }).flat();
+
+/** `msg` as a window carries it: at its place in the Trace (`<file>:<ordinal>`, the cursors' terms). */
+function placed<M extends AmspRecord>(msg: M, position: string): M & HistoryMessage {
+  const [fileIndex, ordinal] = position.split(":").map(Number) as [number, number];
+  return { ...msg, tracePosition: { fileIndex, ordinal } };
+}
 
 describe("the running Task's live anchor is back-dated from the server's clock at read time", () => {
   it("counts an event still in flight, which the Trace's own span cannot see", async () => {
@@ -381,6 +412,31 @@ describe("approval re-delivery (origin composite key + missing-card backfill)", 
     h.controller.handleServer({ type: "approval_request", toolCall: tc });
     expect(h.controller.model.items.filter((i) => i.kind === "tool_call")).toHaveLength(1);
     expect(h.controller.pendingApprovals.has(approvalKey(undefined, "t2"))).toBe(true);
+  });
+
+  it("a pending approval re-delivered after a reload shows the whole call it asks about, not the folded history copy", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running" });
+    const content = Array.from({ length: 800 }, (_, i) => `line ${i} ${"y".repeat(30)}`).join("\n");
+    const call = at(
+      toolCall({
+        name: "write_file",
+        arguments: JSON.stringify({ file_path: "/w/big.txt", content }),
+        toolCallId: "w1",
+      }),
+      "2026-07-05T00:00:01.000Z",
+    );
+    // The window folds the file's content; the server re-sends the pending approval whole.
+    const source = { agentId: "a1", sessionId: "s1", fileIndex: 1, ordinal: 1 };
+    const { record: folded, elided } = elideHistoryRecord(call, source);
+    expect(elided).toHaveLength(1);
+    h.controller.handleServer({ type: "approval_request", toolCall: call });
+    h.resolveLoad([HISTORY_TASK[0]!, folded], undefined, null, pageInfo());
+    await p;
+    const card = findToolCard(h.controller.model, [], "w1")!;
+    expect(JSON.parse(card.argumentsText)).toEqual({ file_path: "/w/big.txt", content });
+    expect(card.elidedCall).toBeUndefined();
   });
 
   it("approval_decision events remove the matching pending entry by origin composite key", async () => {
@@ -613,16 +669,6 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     at(assistantText("old answer"), "2026-07-04T00:00:02.000Z"),
     at(tokenUsage(counts(400), counts(400)), "2026-07-04T00:00:04.000Z"),
   ];
-  /** `n` Tasks of one question and one answer each, a minute apart on day `day`. */
-  const turns = (n: number, day = "04"): AmspRecord[] =>
-    Array.from({ length: n }, (_, i) => {
-      const minute = String(i).padStart(2, "0");
-      return [
-        at(userText(`question ${i}`), `2026-07-${day}T00:${minute}:00.000Z`),
-        at(assistantText(`answer ${i}`), `2026-07-${day}T00:${minute}:30.000Z`),
-      ];
-    }).flat();
-
   it("the first read asks for the newest Tasks within the first-paint budget, then older windows follow until 20 Tasks are on screen", async () => {
     const h = createHarness();
     const p = h.controller.load();
@@ -640,7 +686,12 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       { kind: "before", cursor: "2:10", limit: 19 },
       { kind: "before", cursor: "2:4", limit: 14 },
     ]);
-    expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: null });
+    expect(h.controller.older).toEqual({
+      hasMore: true,
+      loading: false,
+      error: null,
+      beyondTail: false,
+    });
     // Then each scroll to the top asks for 20 more.
     const scroll = h.controller.loadOlder();
     h.resolveOlder(OLD_TURN, pageInfo({ earlierTurns: 0 }));
@@ -772,7 +823,12 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       "assistant_text",
       "task_stats",
     ]);
-    expect(h.controller.older).toEqual({ hasMore: false, loading: false, error: null });
+    expect(h.controller.older).toEqual({
+      hasMore: false,
+      loading: false,
+      error: null,
+      beyondTail: false,
+    });
     expect(h.controller.outlineOffset).toBe(0);
     // Ids stay unique across the concatenated view (negative prefix base vs. positive live ids).
     const ids = [...h.controller.prefixItems, ...h.controller.model.items].map((i) => i.id);
@@ -850,6 +906,112 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     expect(h.loadCalls()).toBe(1);
   });
 
+  it("a prompt with images counts as one Task toward the 20 the conversation opens on, as the server counts it", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    const bytes = "data:image/png;base64,iVBORw0KGgo=";
+    // One send: a text and two images, then the answer.
+    h.resolveLoad(
+      [
+        at(userText("look at these"), "2026-07-05T00:00:00.000Z"),
+        at(imageUrlMessage(bytes), "2026-07-05T00:00:00.000Z"),
+        at(imageUrlMessage(bytes), "2026-07-05T00:00:00.000Z"),
+        at(assistantText("seen"), "2026-07-05T00:00:03.000Z"),
+      ],
+      undefined,
+      null,
+      pageInfo({ before: "2:10", earlierTurns: 30 }),
+    );
+    await p;
+    expect(h.queries()[1]).toEqual({ kind: "before", cursor: "2:10", limit: 19 });
+  });
+
+  it("the first paint's backfill is one loading state from its first window to its last: the row never flips between windows", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 40 }));
+    await p;
+    expect(h.controller.older.loading).toBe(true);
+    h.stream.progress(h.stream.next(isOlderRead), progressOf("window", 3_000, 9_000));
+    h.resolveOlder(turns(5), pageInfo({ before: "2:4", earlierTurns: 35 }));
+    await flush();
+    // Between its windows: still loading, and the row keeps its last reading.
+    expect(h.controller.older.loading).toBe(true);
+    expect(h.controller.transfer.older).toEqual(progressOf("window", 3_000, 9_000));
+    // A scroll to the top meanwhile asks for nothing of its own.
+    await h.controller.loadOlder();
+    expect(h.queries().filter(isOlderRead)).toHaveLength(2);
+    h.resolveOlder(turns(14, "03"), pageInfo({ before: "1:30", earlierTurns: 21 }));
+    await flush();
+    expect(h.controller.older.loading).toBe(false);
+    expect(h.controller.transfer.older).toBeNull();
+  });
+
+  it("reaching the beginning is said only after the reader scrolled up past the Tasks the conversation opened on", async () => {
+    // Opened short of 20 Tasks: the backfill reaches the beginning, and nothing marks it.
+    const short = createHarness();
+    const p1 = short.controller.load();
+    short.controller.handleServer({ type: "task_state", state: "idle" });
+    short.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 1 }));
+    await p1;
+    short.resolveOlder(OLD_TURN, pageInfo({ earlierTurns: 0 }));
+    await flush();
+    expect(short.controller.older).toMatchObject({ hasMore: false, beyondTail: false });
+
+    // Opened on its 20 newest Tasks: the reader scrolls up to the rest, and the beginning says so.
+    const long = createHarness();
+    const p2 = long.controller.load();
+    long.controller.handleServer({ type: "task_state", state: "idle" });
+    long.resolveLoad(
+      turns(20, "05"),
+      undefined,
+      null,
+      pageInfo({ before: "2:10", earlierTurns: 1 }),
+    );
+    await p2;
+    expect(long.loadCalls()).toBe(1);
+    const scroll = long.controller.loadOlder();
+    long.resolveOlder(OLD_TURN, pageInfo({ earlierTurns: 0 }));
+    await scroll;
+    expect(long.controller.older).toMatchObject({ hasMore: false, beyondTail: true });
+  });
+
+  it("a subagent spawned in a backfilled Task keeps its history when it speaks again live", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 1 }));
+    await p;
+    // The Task before spawned c1, whose records the backfilled window carries.
+    h.resolveOlder(
+      [
+        at(userText("spawn"), "2026-07-04T00:00:00.000Z"),
+        at(
+          toolCall({ name: "run_subagent", arguments: '{"prompt":"go"}', toolCallId: "r1" }),
+          "2026-07-04T00:00:01.000Z",
+        ),
+        withOrigin(at(userText("go"), "2026-07-04T00:00:02.000Z"), "c1"),
+        withOrigin(at(assistantText("child history"), "2026-07-04T00:00:03.000Z"), "c1"),
+      ],
+      pageInfo({ earlierTurns: 0 }),
+    );
+    await flush();
+    // c1 runs on in the background, and speaks.
+    h.controller.handleRecord(
+      withOrigin(at(assistantText("child live"), "2026-07-05T00:01:00.000Z"), "c1"),
+      "e1-9",
+    );
+    // The panel's view: the earlier windows' children, the live model's winning a clash.
+    const panel = new Map([...h.controller.prefixSubagents, ...h.controller.model.subagents]);
+    const texts = panel
+      .get("c1")!
+      .items.filter((i) => i.kind === "assistant_text")
+      .map((i) => (i as AssistantTextItem).text);
+    expect(texts).toEqual(["child history", "child live"]);
+  });
+
   it("a failed backfill surfaces on older.error, stops the backfill, and can be retried", async () => {
     const h = createHarness();
     const p = h.controller.load();
@@ -858,7 +1020,12 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     await p;
     h.rejectOlder(new Error("boom"));
     await flush();
-    expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: "boom" });
+    expect(h.controller.older).toEqual({
+      hasMore: true,
+      loading: false,
+      error: "boom",
+      beyondTail: false,
+    });
     expect(h.controller.prefixItems).toHaveLength(0);
     expect(h.loadCalls()).toBe(2);
     const again = h.controller.loadOlder();
@@ -996,21 +1163,97 @@ describe("resync decision tree (windowed history)", () => {
     expect(h.controller.model.items.some((i) => i.kind === "user_text")).toBe(true);
   });
 
-  it("prefix + moved cursor (new units arrived): doubt — the prefix is dropped and the new tail is backfilled again, never the whole transcript", async () => {
+  /** A Task after HISTORY_TASK, read once new units arrived. */
+  const NEW_TASK: AmspRecord[] = [
+    at(userText("new question"), "2026-07-06T00:00:00.000Z"),
+    at(assistantText("new answer"), "2026-07-06T00:00:03.000Z"),
+  ];
+  const texts = (items: readonly ChatItem[]) =>
+    items.filter((i) => i.kind === "user_text").map((i) => i.text);
+
+  it("prefix + moved cursor (new units arrived): the windows between are read behind the old transcript and cut at the old start — nothing the reader had is dropped or read twice", async () => {
     const h = await withPrefix();
+    const prefixBefore = [...h.controller.prefixItems];
     h.controller.handleServer({ type: "resync_required" });
-    // The tail window slid forward: splicing would leave a gap between prefix and tail.
-    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "3:0", earlierTurns: 9 }));
+    // The tail slid forward: it starts at 3:0 now, where the old one started at 2:10.
+    h.resolveLoad(NEW_TASK, undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await flush();
+    // The gap is read while the old transcript stays on screen.
+    expect(h.queries().at(-1)).toEqual({ kind: "before", cursor: "3:0", limit: OLDER_UNITS });
+    expect(texts(h.controller.model.items)).toEqual(["question"]);
+    // It reaches back past the old start; the cut falls on the record at 2:10.
+    h.resolveOlder(
+      [
+        placed(at(userText("old question"), "2026-07-04T00:00:00.000Z"), "1:0"),
+        ...HISTORY_TASK.map((m, i) => placed(m, `2:${10 + i}`)),
+      ],
+      pageInfo({ earlierTurns: 0 }),
+    );
     await flush();
     expect(h.queries().some((q) => q.kind === "full")).toBe(false);
+    expect(h.controller.prefixItems.slice(0, prefixBefore.length)).toEqual(prefixBefore);
+    expect(texts(h.controller.prefixItems)).toEqual(["old question", "question"]);
+    expect(texts(h.controller.model.items)).toEqual(["new question"]);
+    expect(h.controller.older).toMatchObject({ hasMore: false, loading: false });
+    expect(h.loadCalls()).toBe(4); // initial + backfill + resync + the one window between
+  });
+
+  it("prefix + moved cursor whose cut cannot be proven: the new tail is the baseline and the windows behind it are read again", async () => {
+    const h = await withPrefix();
+    h.controller.handleServer({ type: "resync_required" });
+    h.resolveLoad(NEW_TASK, undefined, null, pageInfo({ before: "3:0", earlierTurns: 9 }));
+    await flush();
+    // No record of the window sits at the old start (2:10).
+    h.resolveOlder(HISTORY_TASK, pageInfo({ before: "2:5", earlierTurns: 8 }));
+    await flush();
     expect(h.controller.prefixItems).toHaveLength(0);
     expect(h.controller.outlineOffset).toBe(9);
-    // The windows behind the new tail are read again from its own cursor.
-    expect(h.queries()[h.loadCalls() - 1]).toEqual({ kind: "before", cursor: "3:0", limit: 19 });
-    h.resolveOlder([at(userText("old question"), "2026-07-04T00:00:00.000Z")], pageInfo());
+    expect(h.queries().at(-1)).toEqual({ kind: "before", cursor: "3:0", limit: 19 });
+  });
+
+  it("a resync during the backfill closes the window in flight and the newest read owns the row: the backfill goes on from the kept windows", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 30 }));
+    await p;
+    h.resolveOlder(turns(3), pageInfo({ before: "2:4", earlierTurns: 27 }));
     await flush();
-    expect(h.controller.prefixItems.filter((i) => i.kind === "user_text")).toHaveLength(1);
-    expect(h.controller.model.items.filter((i) => i.kind === "user_text")).toHaveLength(1);
+    const inFlight = h.stream.next(isOlderRead);
+    h.controller.handleServer({ type: "resync_required" });
+    expect(inFlight.closed).toBe(true);
+    // Same start: the kept windows stand, and the backfill picks up behind them.
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 30 }));
+    await flush();
+    expect(h.queries().at(-1)).toEqual({ kind: "before", cursor: "2:4", limit: 16 });
+    expect(h.controller.older.loading).toBe(true);
+    // The closed read's window, sent late anyway, lands nowhere.
+    h.stream.window(inFlight, { messages: turns(3, "03") as HistoryMessage[], page: pageInfo() });
+    await flush();
+    expect(h.controller.older.loading).toBe(true);
+    h.resolveOlder(turns(16, "03"), pageInfo({ before: "1:0", earlierTurns: 11 }));
+    await flush();
+    expect(h.controller.older.loading).toBe(false);
+    expect(texts(h.controller.prefixItems)).toHaveLength(19);
+    // And a scroll to the top asks for more.
+    void h.controller.loadOlder();
+    expect(h.queries().at(-1)).toEqual({ kind: "before", cursor: "1:0", limit: OLDER_UNITS });
+  });
+
+  it("an older read from before a rebuild no longer reaches the row", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 30 }));
+    await p;
+    h.resolveOlder(turns(3), pageInfo({ before: "2:4", earlierTurns: 27 }));
+    await flush();
+    const orphan = h.stream.next(isOlderRead);
+    h.controller.handleServer({ type: "resync_required" });
+    h.resolveLoad(NEW_TASK, undefined, null, pageInfo({ before: "3:0", earlierTurns: 31 }));
+    await flush();
+    h.stream.progress(orphan, progressOf("window", 5, 10));
+    expect(h.controller.transfer.older).toBeNull();
   });
 
   it("prefix + tail reaching the beginning: prefix superseded without a second fetch", async () => {
@@ -1240,6 +1483,34 @@ describe("history over the stream", () => {
     );
     await p;
     expect(h.controller.model.items.filter((i) => i.kind === "thinking")).toHaveLength(1);
+  });
+
+  it("a live tool output whose image the window carries by reference is a duplicate of its history copy", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    const big = `data:image/png;base64,${"A".repeat(40_000)}`;
+    const call = at(
+      toolCall({ name: "screenshot", arguments: "{}", toolCallId: "t1" }),
+      "2026-07-05T00:00:01.000Z",
+    );
+    const live = at(
+      toolCallOutput({ output: "ok", toolCallId: "t1", status: "completed", images: [big] }),
+      "2026-07-05T00:00:02.000Z",
+    );
+    // The stream delivered the output, its picture inline, while the window was read.
+    h.controller.handleRecord(call, "e1-1");
+    h.controller.handleRecord(live, "e1-2");
+    h.controller.handleServer(idle);
+    const ref = "/api/sessions/s1/trace-image?file=1&ordinal=2";
+    const pageCopy = placed({ ...live, payload: { ...live.payload, images: [ref] } }, "1:2");
+    h.resolveLoad(
+      [HISTORY_TASK[0]!, call, pageCopy, ...HISTORY_TASK.slice(1)],
+      undefined,
+      null,
+      pageInfo(),
+    );
+    await p;
+    expect(findToolCard(h.controller.model, [], "t1")?.images).toEqual([ref]);
   });
 
   it("Retry now opens the window read again while the server waits for the machine", () => {

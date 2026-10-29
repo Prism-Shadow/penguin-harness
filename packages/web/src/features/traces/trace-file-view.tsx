@@ -37,11 +37,11 @@
  * message lights up at a time); clicking a bar scrolls to the corresponding message and pins the
  * highlight for PIN_MS.
  *
- * A Trace file of a Session on a machine is made whole on this server before its analysis is
- * read — the `history` stream's `fill` read, with the transfer row while it runs — and the
- * analysis and the rounds are then answered from what this server holds: forwarded whole, a big
- * file's analysis outlasts any one call on a slow link. Each refresh brings over only what the
- * file grew by.
+ * A Trace file is made whole on this server before its analysis is read — the `history`
+ * stream's `fill` read of that one file, with the transfer row while it runs — and for a Session
+ * on a machine the analysis and the rounds are then answered from what this server holds:
+ * forwarded whole, a big file's analysis outlasts any one call on a slow link. Each refresh
+ * brings over only what the file grew by; a Session on this server answers `filled` at once.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
@@ -68,7 +68,6 @@ import * as api from "../../api/endpoints";
 import { openHistoryStream } from "../../api/sse";
 import { CostPartsRows, ElapsedSplitRows, StatHint } from "../../components/ui/stat-hint";
 import { readHistory } from "../../lib/history/history-read";
-import { machineForSession } from "../../lib/session-machines";
 import { HistoryFileLoading } from "../chat/history-loading";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -347,17 +346,11 @@ export function TraceFileView({
           if (!signal.cancelled) setError(apiErrorText(err));
         });
     };
-    if (machineForSession(sessionId) === null) {
-      readAnalysis();
-      return () => {
-        signal.cancelled = true;
-      };
-    }
     const since = Date.now();
     setFetching({ since, progress: null });
     const read = readHistory(
       (query, handlers) => openHistoryStream(sessionId, query, handlers),
-      { kind: "fill", file: index },
+      { kind: "fill", file: index, agent: agentId },
       {
         onProgress: (progress) => {
           if (!signal.cancelled) setFetching({ since, progress });

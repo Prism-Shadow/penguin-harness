@@ -48,7 +48,9 @@ export function elidedArgumentsPreview(
   if (entries.length === 0) return text;
   const whole = entries.find((e) => e.path === ARGUMENTS);
   if (whole !== undefined) {
-    return whole.head < text.length ? `${text.slice(0, whole.head)}${gap}${text.slice(whole.head)}` : text;
+    return whole.head < text.length
+      ? `${text.slice(0, whole.head)}${gap}${text.slice(whole.head)}`
+      : text;
   }
   let doc: unknown;
   try {

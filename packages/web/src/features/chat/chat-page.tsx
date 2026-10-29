@@ -2753,6 +2753,7 @@ export function ChatPage() {
                                 prependedCount: stream.prefixItems.length,
                                 onLoad: stream.loadOlder,
                                 transfer: stream.transfer,
+                                beyondTail: stream.older.beyondTail,
                               }}
                               // Tick-rail minimap over the stream's left gutter (zero layout
                               // width; hides itself when the gutter is too narrow or the

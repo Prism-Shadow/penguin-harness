@@ -277,7 +277,12 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   let tailStartCursor: string | null = null;
   /** The live tail window's page as it was read: the seeds of a window cut at its start. */
   let tailPage: MessagesPageInfo | undefined;
-  const older: OlderHistoryState = { hasMore: false, loading: false, error: null, beyondTail: false };
+  const older: OlderHistoryState = {
+    hasMore: false,
+    loading: false,
+    error: null,
+    beyondTail: false,
+  };
   /** Outline entries before the OLDEST loaded window (the outline's numbering offset). */
   let outlineOffset = 0;
   /** Units (the server's Tasks) of the tail window as read, and of every frozen window. */
@@ -611,7 +616,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       ).done;
       if (disposed || currentEpoch !== epoch || w.page === undefined) return null;
       const start = w.page.before ?? null;
-      const pastOldStart = to === null ? start === null : start === null || compareCursor(start, to) <= 0;
+      const pastOldStart =
+        to === null ? start === null : start === null || compareCursor(start, to) <= 0;
       if (!pastOldStart) {
         windows.unshift(w);
         cursor = start!;
@@ -622,7 +628,9 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         return windows;
       }
       const cut = w.messages.findIndex(
-        (m) => m.tracePosition !== undefined && `${m.tracePosition.fileIndex}:${m.tracePosition.ordinal}` === to,
+        (m) =>
+          m.tracePosition !== undefined &&
+          `${m.tracePosition.fileIndex}:${m.tracePosition.ordinal}` === to,
       );
       if (cut < 0) return null;
       windows.unshift({ ...w, messages: w.messages.slice(cut), page: toPage });

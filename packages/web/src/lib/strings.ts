@@ -4073,14 +4073,19 @@ Benchmark：
       heavy: "完整输出正在同步",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "正在加载完整内容",
-      bodyFailed: "完整内容没能加载",
+      /** The fetch failed: what failed, then the failure itself, on one line. */
+      bodyFailed: (reason: string) => `完整内容没能加载：${reason}`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
       trace: (alias: string | null) =>
         alias === null ? "正在获取 Trace" : `正在从 ${alias} 获取 Trace`,
-      /** The link to the machine dropped and the server retries: the attempt, then the seconds. */
-      retrying: (attempt: number) => `连接中断，正在重试（第 ${attempt} 次）`,
-      retryIn: (seconds: number, attempt: number) =>
-        `连接中断，${seconds} 秒后重试（第 ${attempt} 次）`,
+      /** The machine is not connected and the server reconnects: the attempt, then the seconds. */
+      reconnecting: (attempt: number) => `与机器的连接已断开，正在重连（第 ${attempt} 次）`,
+      reconnectIn: (seconds: number, attempt: number) =>
+        `与机器的连接已断开，${seconds} 秒后重连（第 ${attempt} 次）`,
+      /** Connected, but the machine sent nothing for a while: the server asks it again. */
+      asking: (attempt: number) => `机器没有回应，正在重新请求（第 ${attempt} 次）`,
+      askIn: (seconds: number, attempt: number) =>
+        `机器没有回应，${seconds} 秒后重新请求（第 ${attempt} 次）`,
       retryNow: "立即重试",
       /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
       broken: "历史消息传输中断，请重试",
@@ -6361,6 +6366,12 @@ Benchmark：
       admin_required: "仅管理员可执行此操作。",
       desktop_single_user: "桌面应用为单用户模式，用户管理不可用。",
       not_found: "资源不存在，或你没有访问权限。",
+      trace_body_not_found: "这段内容已不在这个对话的 Trace 中。",
+      machine_refused: "机器拒绝了这次读取。",
+      machine_not_found: "这台机器不在当前 Project 的机器列表中。",
+      machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
+      machine_answered: "机器给出的应答无法使用，请重试。",
+      trace_changed: "读取期间这个对话的 Trace 一再变化，请重试。",
       internal: "服务器内部错误，请稍后重试。",
       agent_not_found: "该 Agent 已不存在。",
       job_running: "这台机器上有任务在执行，请等它完成。",

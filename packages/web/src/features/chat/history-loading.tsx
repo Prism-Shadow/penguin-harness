@@ -13,15 +13,22 @@
  * is in it, so the row does not move when the link drops or comes back.
  *
  * `HistoryTransferLine` is the one line at the transcript's top, in the older-history row, while
- * a read runs behind the transcript: an older window still coming over (its own progress), or the
- * rest of the conversation syncing behind the first paint. It goes when the read does — the data
- * changed: there is nothing left to fetch.
+ * a read runs behind the transcript: an older window coming over (the first paint's backfill is
+ * one such read from its first window to its last), or the rest of the conversation syncing
+ * behind the first paint. Like the skeleton it says nothing for its first second, and it goes when
+ * the read does — the data changed: there is nothing left to fetch.
+ *
+ * Nothing on these rows changes while its data does not: the machine is named only once the
+ * machine list has answered (the skeleton stays until then, then the row keeps the name it
+ * started with), and the link's state is said by what the server reports of it — a machine that
+ * is not connected is not one that is slow to answer.
  */
 import { useState } from "react";
 import type { HistoryProgress } from "@prismshadow/penguin-server/api";
 import {
   RetryStatus,
   Skeleton,
+  Spinner,
   TransferProgress,
   toastError,
   useElapsedPast,
@@ -38,14 +45,32 @@ import { machineAway } from "./machine-away";
 /** How long a read may take before its progress replaces the skeleton. */
 const SKELETON_MS = 1_000;
 
-/** A machine's alias from the live machines account; null while the list has not answered. */
-function useMachineAlias(machineId: string | null): string | null {
+/**
+ * A machine's alias from the live machines account, and whether the account has answered: a
+ * row that names the machine waits for it, so its words do not change when the name arrives.
+ */
+function useMachineAlias(machineId: string | null): { alias: string | null; known: boolean } {
   const machines = useMachines();
-  if (machineId === null) return null;
-  return machines.state?.machines.find((m) => !m.local && m.machineId === machineId)?.alias ?? null;
+  const alias =
+    machineId === null
+      ? null
+      : (machines.state?.machines.find((m) => !m.local && m.machineId === machineId)?.alias ??
+        null);
+  return { alias, known: machineId === null || alias !== null || machines.settled };
 }
 
-/** The server's retry of the link to the machine, as the shared retry row. */
+/** Whether `active` has held for a second; false again as soon as it stops. */
+function useQuietSecond(active: boolean): boolean {
+  const [since, setSince] = useState<number | null>(null);
+  if (active && since === null) setSince(Date.now());
+  if (!active && since !== null) setSince(null);
+  return useElapsedPast(active ? (since ?? undefined) : undefined, SKELETON_MS);
+}
+
+/**
+ * The server's retry of the link to the machine, as the shared retry row, in the words of what
+ * it reports: not connected (it reconnects), or connected and silent (it asks again).
+ */
 function LinkRetry({
   waiting,
   onRetryNow,
@@ -58,11 +83,14 @@ function LinkRetry({
   className?: string;
 }) {
   const words = S.chat.historyTransfer;
+  const lost = waiting.reason === "not_connected";
   return (
     <RetryStatus
       phase="waiting"
-      label={words.retrying(waiting.attempt)}
-      countdown={(seconds) => words.retryIn(seconds, waiting.attempt)}
+      label={lost ? words.reconnecting(waiting.attempt) : words.asking(waiting.attempt)}
+      countdown={(seconds) =>
+        lost ? words.reconnectIn(seconds, waiting.attempt) : words.askIn(seconds, waiting.attempt)
+      }
       nextAt={waiting.nextAt}
       retry={onRetryNow === undefined ? null : { label: words.retryNow, onClick: onRetryNow }}
       size={size}
@@ -88,8 +116,8 @@ export function HistoryLoading({
   const past = useElapsedPast(since, SKELETON_MS);
   const machines = useMachines();
   const machineId = progress?.machineId ?? machineForSession(sessionId);
-  const alias = useMachineAlias(machineId);
-  if (!past || machineId === null) {
+  const { alias, known } = useMachineAlias(machineId);
+  if (!past || machineId === null || !known) {
     return (
       <div className="space-y-3 p-6">
         <Skeleton className="h-5 w-1/3" />
@@ -152,26 +180,40 @@ export function HistoryLoading({
 }
 
 /**
- * The older-history row's transfer line, or null when no read runs behind the transcript. An
- * older window being read wins: it is what the reader scrolled up for.
+ * The older-history row while a read runs behind the transcript, or null when none does: an
+ * older window being read (`loading`: its progress when the server reports one, the plain
+ * spinner line when it does not, as for a Session on this server), else the sync behind the
+ * first paint, or the link's retry while the server waits on the machine. Nothing for the
+ * first second, as the skeleton.
  */
 export function HistoryTransferLine({
+  loading,
   older,
   fill,
 }: {
+  loading: boolean;
   older: HistoryProgress | null;
   fill: HistoryProgress | null;
 }) {
-  const reading = older ?? fill;
-  if (reading === null) return null;
-  if (reading.waiting !== null) return <LinkRetry waiting={reading.waiting} size="xs" />;
+  const active = loading || fill !== null;
+  const past = useQuietSecond(active);
+  if (!active || !past) return null;
   const words = S.chat.historyTransfer;
-  const label =
-    reading === older
-      ? S.chat.loadingEarlier
-      : reading.phase === "heavy"
-        ? words.heavy
-        : words.fill;
+  if (loading && older === null) {
+    return (
+      <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
+        <Spinner size="sm" label={S.common.loading} />
+        {S.chat.loadingEarlier}
+      </span>
+    );
+  }
+  const reading = loading ? older! : fill!;
+  if (reading.waiting !== null) return <LinkRetry waiting={reading.waiting} size="xs" />;
+  const label = loading
+    ? S.chat.loadingEarlier
+    : reading.phase === "heavy"
+      ? words.heavy
+      : words.fill;
   return (
     <TransferProgress
       label={label}
@@ -195,8 +237,8 @@ export function HistoryFileLoading({
   progress: HistoryProgress | null;
 }) {
   const past = useElapsedPast(since, SKELETON_MS);
-  const alias = useMachineAlias(progress?.machineId ?? null);
-  if (!past) return <Skeleton className="h-40" />;
+  const { alias, known } = useMachineAlias(progress?.machineId ?? null);
+  if (!past || !known) return <Skeleton className="h-40" />;
   const total = progress?.totalBytes ?? 0;
   return (
     <div className="flex flex-col gap-2 py-6">

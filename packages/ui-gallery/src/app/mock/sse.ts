@@ -111,7 +111,7 @@ export type HistoryStreamQuery =
   | { kind: "tail"; limit: number; budget?: number; fill?: boolean }
   | { kind: "before"; cursor: string; limit: number; budget?: number }
   | { kind: "full" }
-  | { kind: "fill"; file: number };
+  | { kind: "fill"; file: number; agent?: string };
 
 /** A history read's handlers, as the app declares them. */
 export interface HistoryStreamHandlers {
@@ -145,7 +145,7 @@ export function openHistoryStream(
     await Promise.resolve();
     if (!open) return;
     if (query.kind === "fill") {
-      handlers.onDone?.(null);
+      handlers.onFilled?.();
       return;
     }
     let answer: MessagesResponse;

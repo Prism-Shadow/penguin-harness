@@ -9,13 +9,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ComponentProps, ReactNode, RefObject } from "react";
-import {
-  A2uiActionsProvider,
-  EmptyState,
-  GlyphIcon,
-  ICONS,
-  Spinner,
-} from "@prismshadow/penguin-ui";
+import { A2uiActionsProvider, EmptyState, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/amsp/stream-model";
 import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
@@ -306,19 +300,11 @@ export interface OlderHistoryControls {
    * row while nothing else is in it). Absent or null for a Session on this server.
    */
   transfer?: Pick<HistoryTransfer, "older" | "fill">;
-}
-
-/**
- * What the older-history row's transfer line shows, or null for nothing: an older window's own
- * progress while it loads, and the sync behind the first paint while the row has nothing else to
- * say. A failure keeps the row's retry; a Session on this server reports no progress at all.
- */
-function rowTransfer(older: OlderHistoryControls): Pick<HistoryTransfer, "older" | "fill"> | null {
-  const transfer = older.transfer;
-  if (transfer === undefined) return null;
-  if (older.loading) return transfer.older === null ? null : { older: transfer.older, fill: null };
-  if (older.error !== null || transfer.fill === null) return null;
-  return { older: null, fill: transfer.fill };
+  /**
+   * A window was loaded because the reader scrolled up past the Tasks the conversation opened
+   * on: only then does reaching the beginning say so. Absent = true (every window counts).
+   */
+  beyondTail?: boolean;
 }
 
 /** Distance from the top (px) at which scrolling starts fetching the previous history window. */
@@ -617,12 +603,12 @@ export function MessageStream({
     syncJump();
   };
 
-  const transferRow = older === undefined ? null : rowTransfer(older);
-  // The older-history row: once there is history above, and while a read runs behind it.
-  const olderRow =
+  // A read behind the transcript says so in the row (an older window loading, or the sync behind
+  // the first paint); a failure keeps the row's retry. The row itself stands only where there
+  // is history above, so a conversation that fits one window never gains or loses it.
+  const reading =
     older !== undefined &&
-    items.length > 0 &&
-    (older.hasMore || older.prependedCount > 0 || transferRow !== null);
+    (older.loading || (older.error === null && (older.transfer?.fill ?? null) !== null));
 
   return (
     <div className="relative h-full min-h-0">
@@ -661,15 +647,14 @@ export function MessageStream({
               its height the moment there IS history above: a spinner that took space only
               while spinning pushed the transcript down by its own height, and the prepend's
               anchoring could not give that back. */}
-          {older && olderRow && (
+          {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
             <div className="flex h-7 items-center justify-center">
-              {transferRow !== null ? (
-                <HistoryTransferLine {...transferRow} />
-              ) : older.loading ? (
-                <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
-                  <Spinner size="sm" label={S.common.loading} />
-                  {S.chat.loadingEarlier}
-                </span>
+              {reading ? (
+                <HistoryTransferLine
+                  loading={older.loading}
+                  older={older.transfer?.older ?? null}
+                  fill={older.transfer?.fill ?? null}
+                />
               ) : older.error !== null ? (
                 <button
                   type="button"
@@ -678,7 +663,7 @@ export function MessageStream({
                 >
                   {S.chat.loadEarlierRetry}
                 </button>
-              ) : !older.hasMore && older.prependedCount > 0 ? (
+              ) : !older.hasMore && older.prependedCount > 0 && older.beyondTail !== false ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}
                 </span>
