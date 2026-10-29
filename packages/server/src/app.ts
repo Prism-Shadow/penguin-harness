@@ -49,8 +49,7 @@ import {
   type Log,
   type ProxyControl,
 } from "./hmr/capabilities.js";
-import { ensureCliShim, shimFromResolution } from "./services/cli-shim.js";
-import { loaderDeclarationFor, resolveCli } from "./cli-resolution.js";
+import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
@@ -314,11 +313,7 @@ export async function bootAppDeps(
   const resolvedCli =
     installedCli.entry === null
       ? null
-      : await resolveCli({
-          self: installedCli.entry,
-          root: config.root,
-          declaration: await loaderDeclarationFor(installedCli.entry),
-        });
+      : await resolveCli({ self: installedCli.entry, root: config.root });
   const shimAnswer = shimFromResolution(installedCli, resolvedCli);
   const shim = ensureCliShim(config.root, shimAnswer.entry, {
     execArgs: shimAnswer.execArgs,

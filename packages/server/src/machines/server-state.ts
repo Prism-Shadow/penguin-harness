@@ -114,7 +114,7 @@ const SENTENCE_NO_PUSHED_CLI =
 
 /**
  * The named reports the loader answers with now — `<name>: <detail>`, one line, the names of
- * `@prismshadow/penguin-server/cli-resolution`'s faults and of the two reasons that answer the
+ * `@prismshadow/penguin-server/cli-shim`'s faults and of the two reasons that answer the
  * installed entry. A machine whose store holds no CLI, or whose store lost it, or that
  * carries no loader it can load, needs one remedy: an install from this page. The name says
  * which part broke, and the page's sentence says what to do about all of them.
