@@ -119,6 +119,7 @@ import {
 } from "./session-project";
 import { RouteProbe } from "./route-probe";
 import { lookupVerdict, routeLookupPending, routeReach } from "./route-reach";
+import { RouteOfflineNotice } from "./route-offline-notice";
 import { machineForSession } from "../../lib/session-machines";
 import { HistoryLoadFailed } from "./history-load-failed";
 import { HistoryLoading } from "./history-loading";
@@ -2835,15 +2836,10 @@ export function ChatPage() {
                       </>
                     )
                   ) : routeSessionOffline ? (
-                    <EmptyState
-                      title={
-                        routeSessionOwner === null
-                          ? S.chat.sessionOnOfflineMachineUnknown
-                          : S.chat.sessionOnOfflineMachine(
-                              machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
-                            )
-                      }
-                      description={S.chat.sessionOfflineHint}
+                    <RouteOfflineNotice
+                      owner={routeSessionOwner}
+                      offline={offlineMachineIds}
+                      labels={machineLabels}
                     />
                   ) : !sessionsLoading && routeOutcome === "notFound" ? (
                     // A dead link: said in place, with the one way on that fits the mode —

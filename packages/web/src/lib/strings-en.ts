@@ -3829,7 +3829,15 @@ Scenarios:
     sessionOnOfflineMachine: (machine: string) =>
       `This conversation is on ${machine}, which is not connected right now.`,
     sessionOnOfflineMachineUnknown:
-      "This conversation is on a machine that is not connected right now.",
+      "This server doesn't have this conversation. It may be on a machine that isn't connected right now.",
+    /**
+     * A link the list does not hold while machines that could hold it are silent: what is known —
+     * not here — and where it may be. At most three aliases are named; more end in "and others".
+     */
+    sessionMaybeOnMachines: (aliases: readonly string[], more: boolean) =>
+      aliases.length === 1 && !more
+        ? `This server doesn't have this conversation. It may be on ${aliases[0]}, but ${aliases[0]} isn't connected right now.`
+        : `This server doesn't have this conversation. It may be on ${aliases.join(", ")}${more ? " and others" : ""}, but those machines aren't connected right now.`,
     sessionOfflineHint: "It will open as soon as the connection is back.",
     sessionNotFound: "This conversation does not exist or was deleted",
     sessionNotFoundHint:
