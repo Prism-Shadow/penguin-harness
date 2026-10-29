@@ -55,7 +55,12 @@ describe("the transcript's place while history loads", () => {
     const onRetryNow = vi.fn();
     const waiting = { reason: "retrying" as const, attempt: 2, nextAt: Date.now() + 6_000 };
     await mount(
-      h(HistoryLoading, { projectId: "p", sessionId: "s1", progress: progress(waiting), onRetryNow }),
+      h(HistoryLoading, {
+        projectId: "p",
+        sessionId: "s1",
+        progress: progress(waiting),
+        onRetryNow,
+      }),
     );
     await run(() => vi.advanceTimersByTime(1_000));
     await click(button(S.chat.historyTransfer.retryNow));

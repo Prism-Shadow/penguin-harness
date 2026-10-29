@@ -55,7 +55,7 @@ export function TransferProgress({
   return (
     <div
       data-transfer=""
-      className={`flex min-w-0 flex-wrap items-start gap-x-2 gap-y-0.5 ${TEXT[size]} text-fg-muted ${className}`}
+      className={`flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1 ${TEXT[size]} text-fg-muted ${className}`}
     >
       <span className="min-w-0 break-words">{label}</span>
       {amount !== null && (
