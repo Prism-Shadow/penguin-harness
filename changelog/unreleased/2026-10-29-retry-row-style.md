@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** fix
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1386](https://github.com/Prism-Shadow/penguin-harness/pull/1386)
 
 [中文版](2026-10-29-retry-row-style.zh.md)
 
