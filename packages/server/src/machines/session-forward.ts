@@ -27,6 +27,7 @@ import { errorBody } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { MachineEventHub } from "./event-hub.js";
+import type { MachineHistory } from "./history-routes.js";
 import type { MachineSockets } from "./machine-sockets.js";
 import { forwardToMachine } from "./proxy.js";
 import type { MachinesService } from "./service.js";
@@ -76,6 +77,8 @@ export class SessionForward {
       machines: SessionForwardMachines;
       index: SessionMachineIndex;
       relay: MachineSocketRelay;
+      /** The hub's own history answers (history-routes.ts), asked before the machine is. */
+      history?: Pick<MachineHistory, "answer">;
     },
   ) {}
 
@@ -98,6 +101,13 @@ export class SessionForward {
     const { machineId } = place;
     const aliasOf = async () =>
       (await fleetOf()).find((machine) => machine.machineId === machineId)?.alias ?? null;
+    const pathname = new URL(request.url).pathname;
+
+    // The Session's history is this server's to answer, from its copy of the machine's lines,
+    // connected or not (a stream waits for the machine and says so).
+    const own =
+      (await this.deps.history?.answer(request, { machineId, remotePath: pathname })) ?? null;
+    if (own !== null) return own;
 
     const target = await machines.proxyTarget(machineId);
     if (target === null) {
@@ -109,7 +119,6 @@ export class SessionForward {
         await aliasOf(),
       );
     }
-    const pathname = new URL(request.url).pathname;
     const answer = await forwardToMachine(
       request,
       { machineId, remotePath: pathname },
@@ -168,12 +177,21 @@ export abstract class MachineSessionForward extends Interface<Pick<SessionForwar
  */
 export function machineSessionForward(
   machines: SessionForwardMachines,
-  shared: { sockets: MachineSockets; events: MachineEventHub },
+  shared: {
+    sockets: MachineSockets;
+    events: MachineEventHub;
+    history?: Pick<MachineHistory, "answer">;
+  },
   log: (line: string) => void = () => undefined,
 ): SessionForward {
   const index = new SessionMachineIndex();
   shared.events.tap((machineId, data) => index.hear(machineId, data));
-  return new SessionForward({ machines, index, relay: new MachineSocketRelay(log, shared) });
+  return new SessionForward({
+    machines,
+    index,
+    relay: new MachineSocketRelay(log, shared),
+    ...(shared.history !== undefined ? { history: shared.history } : {}),
+  });
 }
 
 /**

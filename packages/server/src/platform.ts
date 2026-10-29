@@ -124,6 +124,7 @@ import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
 import { TerminalRelay } from "./machines/terminal-relay.js";
 import { SessionForwardRoutes } from "./machines/session-forward.js";
+import { HistoryRoutes } from "./http/routes/history.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -542,6 +543,7 @@ export class WorkbenchesModule {}
     MachinesModule,
     TerminalRelay,
     SessionForwardRoutes,
+    HistoryRoutes,
     WorkbenchesModule,
     BuiltinBrowserModule,
     AgentApiModule,

@@ -128,6 +128,9 @@ import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
 import type { ProxyTarget } from "./proxy.js";
+import { machineHistory } from "./history-routes.js";
+import type { MachineHistory } from "./history-routes.js";
+import { TraceCache } from "./trace-cache.js";
 import { MachineEventHub } from "./event-hub.js";
 import { MachineSockets } from "./machine-sockets.js";
 import type { StreamSettle } from "./machine-sockets.js";
@@ -387,6 +390,11 @@ export interface MachinesEffects {
    * proxy's, created beside it, so this is an injected reader rather than a field here.
    */
   socketFact: (machineId: string) => MachineSocketFact | null;
+  /**
+   * This server's copy of its machines' Trace lines (trace-cache.ts): a machine's goes when the
+   * machine leaves this server's list or its data is removed. Null where nothing is kept.
+   */
+  historyCache: Pick<TraceCache, "dropMachine" | "dropUnknown"> | null;
 }
 
 /** The id of the entry standing for the machine this server runs on. */
@@ -590,6 +598,7 @@ export class MachinesService {
       passwordSignIn,
       lateSweepMs: 20_000,
       socketFact: () => null,
+      historyCache: null,
       ...effects,
     };
     this.#passwords = new SshPasswords(path.join(dataRoot, "machines"));
@@ -2762,6 +2771,14 @@ export class MachinesService {
    * hold up the App that serves everything else.
    */
   async start(): Promise<void> {
+    // The history kept of a machine this server no longer lists — its alias gone from the ssh
+    // config, or never recorded — is dropped: nothing will ever read it again.
+    const listed = new Set(this.#effects.listAliases().map((alias) => `ssh:${alias}`));
+    const known = new Set<string>();
+    for (const row of this.repo.all()) {
+      if (row.machineId !== null && listed.has(row.address)) known.add(row.machineId);
+    }
+    void this.#effects.historyCache?.dropUnknown(known).catch(() => undefined);
     // Every machine kept connected is on its way back from the moment this server is up, and
     // says so at once — the hand-over below can take a while, and a machine read as merely not
     // connected meanwhile would look stopped.
@@ -3340,6 +3357,10 @@ export class MachinesService {
     this.#statuses.delete(address);
     this.#apiSeen.delete(address);
     this.#configSyncs.delete(address);
+    // The history kept of its Sessions goes with the data they were read from.
+    if (removeData && machine.machineId !== null) {
+      void this.#effects.historyCache?.dropMachine(machine.machineId).catch(() => undefined);
+    }
     closeConnectionTo(address);
     this.#changed();
     return { ok: true, uninstalled: true, dataRemoved: removeData };
@@ -3637,6 +3658,9 @@ export class MachinesModule {
       settle: (machineId) => service?.settleForStream(machineId) ?? null,
     });
     const events = new MachineEventHub(sockets, (line) => console.log(line));
+    // The copy of the machines' Trace lines a remote conversation's history is read from
+    // (trace-cache.ts): a cache under this data root, kept across generations and restarts.
+    const historyCache = new TraceCache(path.join(this.paths.root, "machines", "traces"));
     const machines = new MachinesService(
       this.paths.root,
       repo.ownId(),
@@ -3647,20 +3671,28 @@ export class MachinesModule {
         shippedImage: shippedImage(),
         socketFact: (machineId) => sockets.fact(machineId),
         announce: () => toAdmins({ type: "machines_changed" }),
+        historyCache,
       },
       () => this.hmr.assetsDir(),
     );
     service = machines;
     this.machines = machines;
+    const { history, sync } = machineHistory({
+      cache: historyCache,
+      sockets,
+      target: (machineId) => machines.proxyTarget(machineId),
+      log: (line) => console.log(line),
+    });
     this.routes = machinesRoutes({ machines, access: this.access, events });
-    this.serverProxyRoutes = machinesServerProxyRoutes(machines, { sockets, events });
-    this.sessionForward = machineSessionForward(machines, { sockets, events }, (line) =>
+    this.serverProxyRoutes = machinesServerProxyRoutes(machines, { sockets, events, history });
+    this.sessionForward = machineSessionForward(machines, { sockets, events, history }, (line) =>
       console.log(line),
     );
     // Every transient ssh session THIS generation opened closes with it, and every held one is
     // left for the successor, whose start() re-holds each one the record says was held.
     effect(() => {
       machines.stop();
+      sync.close();
       events.close();
       sockets.close();
     });
@@ -3675,7 +3707,11 @@ export class MachinesModule {
  */
 export function machinesServerProxyRoutes(
   machines: MachinesService,
-  shared: { sockets?: MachineSockets; events?: MachineEventHub } = {},
+  shared: {
+    sockets?: MachineSockets;
+    events?: MachineEventHub;
+    history?: Pick<MachineHistory, "answer">;
+  } = {},
 ): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const proxy = machinesProxy(
