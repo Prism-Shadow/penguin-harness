@@ -1330,6 +1330,13 @@ router
         ? {
             page: {
               earlierTurns: 0,
+              // The mock's transcripts are plain prompt-and-answer Tasks: one per user prompt.
+              units: messages.filter(
+                (m) =>
+                  m.type === "model_msg" &&
+                  (m.payload as { type?: string; role?: string }).type === "text" &&
+                  (m.payload as { role?: string }).role === "user",
+              ).length,
               prior: {
                 subagentTokens: 0,
                 elapsedMs: 0,

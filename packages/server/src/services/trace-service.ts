@@ -242,6 +242,8 @@ export interface MessagesPageResult {
   before?: string;
   /** Cumulative stats before the window (earlierTurns = prior.turns). */
   prior: WindowPriorStats;
+  /** The units (Tasks) the window holds: the scanner's boundaries from its start on. */
+  units: number;
   /**
    * The model of the context the window starts in: the `session_meta` heading the shard its
    * first unit lies in. One shard is one model context, and a window that starts partway into
@@ -749,6 +751,7 @@ export class TraceService implements Traces {
     const empty = (): MessagesPageResult => ({
       messages: [],
       prior: initialScanState().totals,
+      units: 0,
     });
     if (files.length === 0) return empty();
     const ctx: ExpandCtx = {
@@ -896,6 +899,10 @@ export class TraceService implements Traces {
       start = { pos: 0, ordinal: 0 };
       prior = initialScanState().totals;
     }
+    // The window's units are the boundaries from its start on: all of them when it starts at
+    // the beginning (a preamble before the first prompt opens none), else those from the chosen one.
+    const windowUnits =
+      startBoundary === null ? units.length : units.length - units.indexOf(startBoundary);
     const windowRaw = spanRaw.slice(starts[chosen]?.at ?? 0);
     // Expansion is record by record, so the measured units joined are the window expanded.
     const expanded =
@@ -908,6 +915,7 @@ export class TraceService implements Traces {
       messages: expanded,
       ...(before !== undefined ? { before } : {}),
       prior,
+      units: windowUnits,
       ...(startMeta
         ? {
             contextModel: {

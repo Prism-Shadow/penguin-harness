@@ -260,6 +260,7 @@ describe("the mocked API", () => {
     const tail = await api.getMessages(running.sessionId, { kind: "tail", limit: 50 });
     expect(tail.page).toEqual({
       earlierTurns: 0,
+      units: expect.any(Number),
       prior: expect.objectContaining({ elapsedMs: 0 }),
     });
     expect(tail.live).toBeDefined();

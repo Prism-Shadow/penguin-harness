@@ -13,6 +13,8 @@ The socket between two servers, and the socket to a browser on another computer,
 
 Every server answered `GET /api/sessions/:sessionId/history-lines` for its own Sessions. The stream began and beat before anything was read. It sent a history window's envelope and the layout of the Trace bytes its records come from, then the rest of any line the caller held in part, then only the Trace lines the caller did not hold: whole lines, newest first, with no event over 32 KiB of text, the window included. Every range the caller held was checked by file identity, size, line edges and the hashes of its first and last bytes, and a file that failed the check was sent again from scratch. Inode numbers travelled as decimal strings, so NTFS file ids above 2^53 stayed exact.
 
+Every windowed history page said how many Tasks it held (`page.units`), counted where the window was cut and by the same rule, so a client paging until it had N Tasks counted what `tailLimit` and `limit` count.
+
 `GET /api/sessions/:sessionId/trace-body?ref=` returned one folded value whole, and only for a ref into the Session's own lines or those of a subagent Session it had spawned; any other ref, including one naming another Project's files, answered 404.
 
 Core's `interfaces` subpath gained the folding rule that history windows use: a tool output, a subagent's inline image, a long string inside a tool call's arguments or a thinking block over 16 KiB kept a short head and tail, and an `elided` entry named the value so that it could be fetched when unfolded.

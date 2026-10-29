@@ -161,6 +161,7 @@ interface MessagesResponse {
   page?: {
     before?: string; // pass back as `before`; absent at the beginning
     earlierTurns: number;
+    units: number; // the Tasks the window holds, counted as it was cut
     prior: Record<string, number>;
     contextModel?: { provider: string; modelId: string };
     agentState?: string;

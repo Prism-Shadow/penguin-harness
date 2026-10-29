@@ -177,6 +177,7 @@ export function messagesPageInfo(result: Omit<MessagesPageResult, "messages">): 
   return {
     ...(result.before !== undefined ? { before: result.before } : {}),
     earlierTurns: result.prior.turns,
+    units: result.units,
     prior: {
       subagentTokens: result.prior.subagentTokens,
       elapsedMs: result.prior.elapsedMs,

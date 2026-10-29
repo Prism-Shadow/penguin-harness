@@ -2499,6 +2499,14 @@ export interface MessagesPageInfo {
    */
   earlierTurns: number;
   /**
+   * How many units (Tasks) the window holds, as the window was cut: the same boundaries the
+   * cut is made at (message-window.ts `scanMessages`), so a client that pages until it has N
+   * Tasks on screen counts what `tailLimit` / `limit` count — a prompt with its images, or two
+   * sends merged into one, is one. At most the `tailLimit` / `limit` asked for; fewer when the
+   * byte budget cut the window short or the history begins inside it.
+   */
+  units: number;
+  /**
    * Cumulative stats accrued before this window, seeded into the client's stats
    * tracker so header chips and per-turn cumulative rows equal a full load:
    * finished-Task elapsed, subagent token totals, and the last main-session
