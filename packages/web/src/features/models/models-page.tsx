@@ -191,7 +191,8 @@ import { dismissTodo } from "../../lib/todo-dismissals";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
 import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
 import type { PresetSyncHost } from "./preset-sync";
-import { buildImportedRows, groupImportConnection } from "./group-import";
+import { buildImportedRows, groupImportConnection, pickableModelIds } from "./group-import";
+import { ImportPickList } from "./group-import-picker";
 import {
   applyProviderUpdate,
   groupKeyMissesRow,
@@ -2117,10 +2118,13 @@ export function ModelsPage() {
  *   dialog's field rhythm: API key first, then the base URL with the detect action at its
  *   top-right and the in-field protocol picker as manual override (ProtocolSuffixMenu —
  *   the same one-to-one path menu). Only once a protocol is determined (detected or
- *   picked) does the "import all models" action appear; it lists the endpoint
- *   (POST models/list) and hands the group's connection and the appended rows to the page
- *   for one table PUT: the base URL, protocol and key are written once, as the group's, and
- *   the rows store nothing of them.
+ *   picked) does the "fetch model list" action appear; it lists the endpoint
+ *   (POST models/list) into a pick list (ImportPickList), every model ticked, and the
+ *   action becomes "import N models", held while nothing is ticked. That one hands the
+ *   group's connection and the rows of the ticked models to the page for one table PUT: the
+ *   base URL, protocol and key are written once, as the group's, and the rows store nothing
+ *   of them. The list answers for the key, base URL and protocol it was fetched with: editing
+ *   any of them puts it away and brings the fetch action back.
  *
  * Detection failure turns the suffix amber and keeps both ways out usable — pick the
  * protocol by hand, or switch back to create-only. Errors render inside the dialog;
@@ -2166,6 +2170,17 @@ function AddGroupDialog({
   const [detectFailed, setDetectFailed] = useState(false);
   /** Progress line while list/save runs (null = idle); also gates every action against re-entry. */
   const [importing, setImporting] = useState<string | null>(null);
+  /**
+   * The fetched listing: the endpoint it answers for, the ids on offer, how many listing entries
+   * offered nothing (for the toast), and the ticked ids. The ticks are part of the dialog's form
+   * and commit with Import; null until a listing landed.
+   */
+  const [listing, setListing] = useState<{
+    endpoint: string;
+    ids: string[];
+    dropped: number;
+    picked: Set<string>;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Detection run counter: a manual pick or an edited URL supersedes an in-flight run (same convention as the model dialog). */
   const detectSeq = useRef(0);
@@ -2238,9 +2253,19 @@ function AddGroupDialog({
     form.patch({ clientType: t });
   };
 
-  const runImport = async () => {
+  /** The endpoint a listing answers for: the key, base URL and protocol as they would be sent. */
+  const endpointOf = (url: string, protocol: string, key: string) =>
+    JSON.stringify([url, protocol, key]);
+  /** The listing on screen: only while the fields still name the endpoint it came from. */
+  const list =
+    listing !== null &&
+    clientType !== null &&
+    listing.endpoint === endpointOf(baseUrl.trim(), clientType, apiKey.trim())
+      ? listing
+      : null;
+
+  const fetchList = async () => {
     if (!nameValid || clientType === null) return;
-    const n = trimmed;
     const url = baseUrl.trim();
     if (!detectableBaseUrl(url)) {
       setError(S.models.groupImportNeedUrl);
@@ -2263,18 +2288,38 @@ function AddGroupDialog({
         );
         return;
       }
-      const built = buildImportedRows(rows, n, listed.models);
-      if (built.added === 0) {
+      const { ids, dropped } = pickableModelIds(listed.models);
+      if (ids.length === 0) {
         setError(S.models.groupImportEmpty);
         return;
       }
-      setImporting(S.models.groupImportSaving(built.added));
+      setListing({
+        endpoint: endpointOf(url, clientType, key),
+        ids,
+        dropped,
+        picked: new Set(ids),
+      });
+    } catch (e) {
+      setError(apiErrorText(e));
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  const runImport = async () => {
+    if (!nameValid || clientType === null || list === null || list.picked.size === 0) return;
+    const n = trimmed;
+    const chosen = list.ids.filter((id) => list.picked.has(id));
+    const built = buildImportedRows(rows, n, chosen);
+    setError(null);
+    setImporting(S.models.groupImportSaving(built.added));
+    try {
       await onImport(
         [...rows, ...built.rows],
         n,
-        groupImportConnection({ baseUrl: url, clientType, apiKey: key }),
+        groupImportConnection({ baseUrl: baseUrl.trim(), clientType, apiKey: apiKey.trim() }),
         built.added,
-        built.skipped,
+        list.dropped + built.skipped,
       );
     } catch (e) {
       setError(apiErrorText(e));
@@ -2311,18 +2356,29 @@ function AddGroupDialog({
               {S.common.confirm}
             </Button>
           ) : (
-            // The import action exists only once the protocol is determined (detected or
-            // hand-picked): before that there is nothing meaningful to run.
-            clientType !== null && (
+            // The import actions exist only once the protocol is determined (detected or
+            // hand-picked): before that there is nothing meaningful to run. Fetch the list
+            // first; once it is on screen, import what is ticked.
+            clientType !== null &&
+            (list === null ? (
               <Button
                 size="sm"
                 variant="primary"
                 disabled={busy || !nameValid || baseUrlMissing}
+                onClick={() => void fetchList()}
+              >
+                {S.models.groupImportFetch}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy || !nameValid || list.picked.size === 0}
                 onClick={() => void runImport()}
               >
-                {S.models.groupImportAll}
+                {S.models.groupImportPicked(list.picked.size)}
               </Button>
-            )
+            ))
           )}
         </>
       }
@@ -2424,6 +2480,14 @@ function AddGroupDialog({
               </div>
               {baseUrlError && <FieldError>{baseUrlError}</FieldError>}
             </div>
+            {list !== null && (
+              <ImportPickList
+                ids={list.ids}
+                picked={list.picked}
+                disabled={busy}
+                onChange={(picked) => setListing({ ...list, picked })}
+              />
+            )}
             {importing !== null && (
               <p className="text-xs text-gray-500 dark:text-gray-400">{importing}</p>
             )}

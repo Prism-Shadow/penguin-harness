@@ -16,8 +16,16 @@
  *   price alone saves at once.
  * - The add-group dialog says a taken group name as it is typed, holds Confirm while it is
  *   taken, and asks before Esc drops a typed name.
- * - Its import holds Detect and Import while the base URL is blank and says the URL is required
+ * - Its import holds Detect and Fetch while the base URL is blank and says the URL is required
  *   under the field, whose placeholder asks for one, like every required base URL.
+ * - Its import fetches the endpoint's list first, each model once and every one ticked; only the
+ *   models left ticked are written, under the new group, beside the rows already there, with
+ *   the group's connection written once.
+ * - Import is held while nothing is ticked.
+ * - A filter hides rows without changing their ticks, and Select none clears only the rows the
+ *   filter shows.
+ * - An endpoint edited after the list arrived puts the list away, nothing is written, and the
+ *   list is fetched again from the new endpoint.
  * - A model with no key anywhere names the variable its client reads when the server reports it
  *   set, and otherwise asks for a key; the key field is never left without a placeholder.
  * - The price fields say a model left without prices is not costed.
@@ -26,6 +34,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createElement as h } from "react";
 import { MemoryRouter } from "react-router";
 import type {
+  EndpointModelListRequest,
   ModelInfo,
   ModelsResponse,
   ModelsUpdateRequest,
@@ -96,11 +105,17 @@ const deepseek = (envKeyMasked?: string) =>
     ...(envKeyMasked !== undefined ? { envKeyMasked } : {}),
   });
 
-function modelsServer(models: ModelInfo[] = [ATLAS]) {
+function modelsServer(models: ModelInfo[] = [ATLAS], listing: string[] = []) {
   let table: ModelsResponse = { providers: {}, models };
   let refuse = false;
   const puts: ModelsUpdateRequest[] = [];
+  /** Every endpoint listing asked for (POST models/list), as sent. */
+  const lists: EndpointModelListRequest[] = [];
   stubFetch((req) => {
+    if (req.path === "/api/projects/p1/models/list" && req.method === "POST") {
+      lists.push(req.body as EndpointModelListRequest);
+      return json({ ok: true, models: listing });
+    }
     if (req.path === "/api/me") return json(ADMIN_ME);
     if (req.path === "/api/projects") return json({ projects: [PROJECT] });
     if (req.path === "/api/projects/p1/agents") return json({ agents: [] });
@@ -145,6 +160,7 @@ function modelsServer(models: ModelInfo[] = [ATLAS]) {
   });
   return {
     puts,
+    lists,
     refuseNext: () => {
       refuse = true;
     },
@@ -157,8 +173,8 @@ const card = (name: string) =>
     .find((s) => s.textContent === name)
     ?.closest("button") ?? undefined;
 
-async function openModelsPage(models?: ModelInfo[]) {
-  const server = modelsServer(models);
+async function openModelsPage(models?: ModelInfo[], listing?: string[]) {
+  const server = modelsServer(models, listing);
   await mount(
     h(
       MemoryRouter,
@@ -187,6 +203,52 @@ async function editAtlas() {
   await click(card("Atlas")!);
   await waitFor(() => dialogs().length === 1);
 }
+
+const searchBox = () =>
+  document.querySelector<HTMLInputElement>(`input[placeholder="${en.models.searchPlaceholder}"]`)!;
+
+/** Picks OpenAI Chat Completions from the base URL field's protocol menu. */
+async function pickChatProtocol() {
+  await click(button(`${en.models.protocol}: ${en.models.protocolUnset}`));
+  const chat = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((r) =>
+    r.textContent?.startsWith(en.models.protocolNames["openai-chat"]!),
+  );
+  await click(chat!);
+}
+
+/** The add-group dialog in import mode for group `acme`, its endpoint filled in, the protocol picked. */
+async function openImport(listing: string[]) {
+  const server = await openModelsPage(undefined, listing);
+  // The entry is hidden while searching: the list it would extend is being filtered.
+  await type(searchBox(), "");
+  await click(button(`＋ ${en.models.addGroup}`));
+  await type(field(en.models.groupNameLabel), "acme");
+  await click(button(en.models.groupModeImport));
+  await type(field(en.models.apiKey), "sk-acme");
+  await type(field(en.models.baseUrl), "https://acme.example/v1");
+  await pickChatProtocol();
+  return server;
+}
+
+/** The pick list's boxes on screen, each with the model id its row names. */
+const pickRows = () =>
+  [...document.querySelectorAll<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')].map(
+    (box) => ({ box, id: box.closest("label")?.textContent ?? "" }),
+  );
+const pickBox = (id: string) => pickRows().find((row) => row.id === id)?.box;
+const tickedIds = () =>
+  pickRows()
+    .filter((row) => row.box.checked)
+    .map((row) => row.id);
+
+async function fetchList(firstId: string) {
+  await click(button(en.models.groupImportFetch));
+  await waitFor(() => pickBox(firstId) !== undefined);
+}
+
+/** The model ids a PUT wrote under `group`, in the order sent. */
+const idsIn = (put: ModelsUpdateRequest, group: string) =>
+  put.models.filter((m) => m.provider === group).map((m) => m.modelId);
 
 const promptOpen = () => hasButton(en.common.discard);
 
@@ -354,7 +416,7 @@ describe("the model config dialog", () => {
 
   it("holds an import while its base URL is blank, and says so under a field that asks for one", async () => {
     await openModelsPage();
-    await type(document.querySelector(`input[placeholder="${en.models.searchPlaceholder}"]`)!, "");
+    await type(searchBox(), "");
     await click(button(`＋ ${en.models.addGroup}`));
     await type(field(en.models.groupNameLabel), "acme");
     await click(button(en.models.groupModeImport));
@@ -363,17 +425,86 @@ describe("the model config dialog", () => {
     expect(document.body.textContent).toContain(en.models.baseUrlRequired);
     expect(button(en.models.detectProtocol).disabled).toBe(true);
 
-    // A protocol picked by hand brings Import, which still waits for the base URL.
-    await click(button(`${en.models.protocol}: ${en.models.protocolUnset}`));
-    const chat = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((r) =>
-      r.textContent?.startsWith(en.models.protocolNames["openai-chat"]!),
-    );
-    await click(chat!);
-    expect(button(en.models.groupImportAll).disabled).toBe(true);
+    // A protocol picked by hand brings Fetch, which still waits for the base URL.
+    await pickChatProtocol();
+    expect(button(en.models.groupImportFetch).disabled).toBe(true);
 
     await type(url, "https://acme.example/v1");
-    expect(button(en.models.groupImportAll).disabled).toBe(false);
+    expect(button(en.models.groupImportFetch).disabled).toBe(false);
     expect(button(en.models.detectProtocol).disabled).toBe(false);
     expect(document.body.textContent).not.toContain(en.models.baseUrlRequired);
+  });
+
+  it("imports only the models left ticked, under the new group, with its connection once", async () => {
+    const server = await openImport(["m-a", "m-b", "m-b", "m-c"]);
+    await fetchList("m-a");
+    expect(server.lists).toEqual([
+      { baseUrl: "https://acme.example/v1", clientType: "openai-chat", apiKey: "sk-acme" },
+    ]);
+    // A repeated id is offered once, and every model starts ticked.
+    expect(pickRows().map((row) => row.id)).toEqual(["m-a", "m-b", "m-c"]);
+    expect(tickedIds()).toEqual(["m-a", "m-b", "m-c"]);
+    expect(server.puts).toHaveLength(0);
+
+    await click(pickBox("m-b")!);
+    await click(button(en.models.groupImportPicked(2)));
+    await waitFor(() => server.puts.length === 1);
+
+    const put = server.puts[0]!;
+    expect(idsIn(put, "acme")).toEqual(["m-a", "m-c"]);
+    // The rows already configured are sent once, as they were.
+    expect(idsIn(put, "custom")).toEqual(["atlas-1"]);
+    expect(put.models).toHaveLength(3);
+    expect(put.providers).toEqual({
+      acme: { baseUrl: "https://acme.example/v1", clientType: "openai-chat", apiKey: "sk-acme" },
+    });
+    await waitFor(() => dialogs().length === 0);
+  });
+
+  it("holds Import while nothing is ticked", async () => {
+    const server = await openImport(["m-a", "m-b"]);
+    await fetchList("m-a");
+    await click(button(en.models.groupImportSelectNone));
+    expect(tickedIds()).toEqual([]);
+    expect(button(en.models.groupImportPicked(0)).disabled).toBe(true);
+
+    await click(pickBox("m-b")!);
+    expect(button(en.models.groupImportPicked(1)).disabled).toBe(false);
+    expect(server.puts).toHaveLength(0);
+  });
+
+  it("keeps the ticks a filter hides, and Select none clears only the rows it shows", async () => {
+    const plain = ["m-01", "m-02", "m-03", "m-04", "m-05", "m-06"];
+    const fp8 = plain.map((id) => `${id}-fp8`);
+    const server = await openImport([...plain, ...fp8]);
+    await fetchList("m-01");
+    await click(pickBox("m-01")!);
+
+    await type(field(en.models.groupImportFilter), "FP8");
+    expect(pickRows().map((row) => row.id)).toEqual(fp8);
+    await click(button(en.models.groupImportSelectNone));
+    expect(tickedIds()).toEqual([]);
+
+    await type(field(en.models.groupImportFilter), "");
+    expect(tickedIds()).toEqual(plain.slice(1));
+    await click(button(en.models.groupImportPicked(5)));
+    await waitFor(() => server.puts.length === 1);
+    expect(idsIn(server.puts[0]!, "acme")).toEqual(plain.slice(1));
+  });
+
+  it("puts the list away when the endpoint is edited, and fetches it again from the new one", async () => {
+    const server = await openImport(["m-a"]);
+    await fetchList("m-a");
+
+    await type(field(en.models.baseUrl), "https://other.example/v1");
+    expect(pickBox("m-a")).toBeUndefined();
+    expect(hasButton(en.models.groupImportPicked(1))).toBe(false);
+
+    await fetchList("m-a");
+    expect(server.lists.map((req) => req.baseUrl)).toEqual([
+      "https://acme.example/v1",
+      "https://other.example/v1",
+    ]);
+    expect(server.puts).toHaveLength(0);
   });
 });
