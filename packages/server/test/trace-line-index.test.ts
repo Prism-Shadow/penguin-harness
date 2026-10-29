@@ -13,12 +13,15 @@
  * - Concurrent first reads of one file share that one scan.
  * - An appended file is followed by reading only the appended bytes, never its prefix again.
  * - A truncated file, a file replaced by another, and a same-size rewrite are indexed anew.
- * - Only the most recently used files keep their index: an evicted file is scanned again.
+ * - Only the most recently used files keep their index: an evicted file is scanned again —
+ *   unless a caller retains it, which keeps it however many files come after.
+ * - Given `subagent` records, the index keeps each one's child Session and time, in order, also
+ *   across growth and for a pointer that is still an unterminated tail.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readTraceTolerant, userText } from "@prismshadow/penguin-core";
+import { readTraceTolerant, subagentEvent, userText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { TraceLineIndex } from "../src/services/trace-line-index.js";
 import { makeTempRoot } from "./helpers.js";
@@ -206,5 +209,41 @@ describe("trace line index", () => {
     await index.readRange(files[1]!, 0, 1);
     expect(scans(files[0]!)).toHaveLength(0);
     expect(scans(files[1]!)).toHaveLength(1);
+  });
+  it("a retained file keeps its index however many files come after it", async () => {
+    index = new TraceLineIndex({
+      maxFiles: 2,
+      observeRead: (p, start, end) => reads.push({ path: p, start, end }),
+    });
+    const files = ["a", "b", "c", "d"].map((name) => path.join(dir, `${name}.jsonl`));
+    for (const f of files) await fs.writeFile(f, line(userText("one")));
+    const release = index.retain(files[0]!);
+    for (const f of files) await index.ensure(f);
+    reads = [];
+    await index.ensure(files[0]!);
+    expect(reads).toEqual([]);
+    release();
+    for (const f of files.slice(1)) await index.ensure(f);
+    reads = [];
+    await index.ensure(files[0]!);
+    expect(reads.filter((r) => r.path === files[0])).not.toEqual([]);
+  });
+
+  it("keeps each subagent pointer's child and time, across growth and a pointer still torn", async () => {
+    const spawn = (sid: string, at: string) => ({ ...subagentEvent(sid), timestamp: at });
+    await fs.writeFile(
+      file,
+      line(userText("q")) + line(spawn("child-1", "t1")) + JSON.stringify(spawn("child-2", "t2")),
+    );
+    expect((await index.ensure(file)).pointers).toEqual([
+      { ordinal: 1, sessionId: "child-1", timestamp: "t1" },
+      { ordinal: 2, sessionId: "child-2", timestamp: "t2" },
+    ]);
+    await fs.appendFile(file, `\n${line(userText("r"))}${line(spawn("child-3", "t3"))}`);
+    expect((await index.ensure(file)).pointers.map((p) => [p.ordinal, p.sessionId])).toEqual([
+      [1, "child-1"],
+      [2, "child-2"],
+      [4, "child-3"],
+    ]);
   });
 });

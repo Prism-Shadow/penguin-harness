@@ -6,20 +6,23 @@
  * beside the records, the layout of the Trace bytes the records come from
  * (history-layout.ts), and then only the Trace lines the hub does not already hold — whole
  * lines, newest segment first, in frames of at most FRAME_TEXT_BUDGET (socket/line-frames.ts),
- * paced by the hub's acks. Events, in order:
+ * paced by the hub's acks. The stream begins, and beats, before anything is read, so however
+ * long the plan takes the hub hears it. Events, in order:
  *
- *   window   HistoryLinesWindow: envelope, files, layout, stubs, totals
+ *   window   HistoryLinesWindow: envelope, files, layout, stubs, totals — or, when larger than
+ *            a frame, `window-part`s whose texts join to it
+ *   part     the rest of each line the hub holds in part, so a held line completes first
  *   lines    the window's light lines (and a line longer than a frame as `part`s)
  *   ready    the hub can assemble the window now
  *   lines    the window's heavy lines, then with `fill=1` the rest of the Session's files:
  *            each file from its top backward, the Session's own newest first, then its
  *            descendants' — frames carry lines in file order, the frames themselves go back
- *   done
+ *   done     (or `error`, for a stream that cannot be served: a ref into no line of it)
  *
- * `have` names what the hub holds; a file whose `have` does not validate (identity, size,
- * anchors, ordinals, the held partial line) is `reset` and planned from scratch. Bytes past a
- * file's last `\n` are never sent: a record that is still an unterminated tail rides the
- * window as a stub instead.
+ * `have` names every run the hub holds of each file; a file whose `have` does not validate
+ * (identity, size, line edges, ordinals, anchors) is `reset` and planned from scratch, and a
+ * held partial line that does not validate is simply sent whole. Bytes past a file's last
+ * `\n` are never sent: a record that is still an unterminated tail rides the window as a stub.
  */
 import fs from "node:fs/promises";
 import {
@@ -31,9 +34,13 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   HistoryFileFact,
   HistoryHave,
+  HistoryLinesFrame,
   HistoryLinesWindow,
   HistoryMessage,
+  HistoryPartFrame,
+  HistoryStreamError,
   HistoryStub,
+  HistoryWindowPart,
   MessagesLiveTail,
   MessagesPageInfo,
 } from "../api/types.js";
@@ -44,7 +51,7 @@ import { badRequest } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
 import type { Traces } from "../mechanisms/traces.js";
 import type { Sessions } from "../runtime/session-manager.js";
-import { lineFrames, partFrames } from "../socket/line-frames.js";
+import { FRAME_TEXT_BUDGET, lineFrames, partFrames } from "../socket/line-frames.js";
 import type { LineFrame, PartFrame } from "../socket/line-frames.js";
 import { windowLayout } from "./history-layout.js";
 import {
@@ -239,40 +246,58 @@ async function readRange(path: string, start: number, end: number): Promise<Buff
 interface FilePlan {
   file: HistoryTraceFile;
   k: string;
-  /** The run the hub holds and this machine vouches for; null when none (or reset). */
-  held: Range | null;
-  /** A partial line the hub holds: the rest of it goes as parts from `off + len`. */
+  /** The runs the hub holds and this machine vouches for (none when reset). */
+  held: Range[];
+  /** A partial line the hub holds: the rest of it goes first, as parts from `off + len`. */
   partial: { off: number; len: number; lineEnd: number } | null;
   reset: boolean;
-  /** Ranges the window and heavy phases send, so the fill skips them. */
+  /** Ranges this stream sends before the fill (and the held partial's line), which the fill skips. */
   sent: Range[];
 }
 
-/** What a `have` entry earns: the run it vouches for and its partial line, or a reset. */
+/** The byte at `at` of a file, or -1 past its end. */
+async function byteAt(path: string, at: number): Promise<number> {
+  const b = await readRange(path, at, at + 1);
+  return b.length === 0 ? -1 : b[0]!;
+}
+
+/**
+ * What a `have` entry earns: the runs it vouches for and its partial line, or null for a file
+ * that is not the one the hub copied (another inode, device or birth time, a run past its last
+ * `\n`, a run whose edges are not line edges, or whose ordinals or anchors differ). A partial
+ * line that does not check is dropped on its own: the file's runs stay held, and the line is
+ * sent whole.
+ */
 async function validate(
   file: HistoryTraceFile,
   have: HistoryHave,
-): Promise<{ held: Range | null; partial: FilePlan["partial"] } | null> {
+): Promise<{ held: Range[]; partial: FilePlan["partial"] } | null> {
   if (have.ino !== file.ino || have.birthtimeMs !== file.birthtimeMs) return null;
-  if (have.hi > file.scanned || have.hi > file.size) return null;
-  if (have.loOrd !== recordsBefore(file.starts, have.lo)) return null;
-  if (have.lo > 0 && (await readRange(file.path, have.lo - 1, have.lo))[0] !== NEWLINE) return null;
-  let held: Range | null = null;
-  if (have.hi > have.lo) {
-    const [la, lb] = loAnchorRange(have.lo, have.hi);
-    const [ha, hb] = hiAnchorRange(have.lo, have.hi);
-    if (anchorOf(await readRange(file.path, la, lb)) !== have.loAnchor) return null;
-    if (anchorOf(await readRange(file.path, ha, hb)) !== have.hiAnchor) return null;
-    held = [have.lo, have.hi];
+  if (have.dev !== undefined && have.dev !== file.dev) return null;
+  const ranges = have.ranges ?? [];
+  const held: Range[] = [];
+  for (const r of ranges) {
+    if (r.hi > file.scanned || r.hi > file.size) return null;
+    if (r.hi === r.lo) continue;
+    if (r.loOrd !== recordsBefore(file.starts, r.lo)) return null;
+    if (r.lo > 0 && (await byteAt(file.path, r.lo - 1)) !== NEWLINE) return null;
+    if ((await byteAt(file.path, r.hi - 1)) !== NEWLINE) return null;
+    const [la, lb] = loAnchorRange(r.lo, r.hi);
+    const [ha, hb] = hiAnchorRange(r.lo, r.hi);
+    if (anchorOf(await readRange(file.path, la, lb)) !== r.loAnchor) return null;
+    if (anchorOf(await readRange(file.path, ha, hb)) !== r.hiAnchor) return null;
+    held.push([r.lo, r.hi]);
   }
   let partial: FilePlan["partial"] = null;
   if (have.partial !== undefined) {
     const { off, len, anchor } = have.partial;
     const index = recordsBefore(file.starts, off);
     const lineEnd = file.starts[index] === off ? file.ends[index]! : -1;
-    if (lineEnd < 0 || len <= 0 || off + len >= lineEnd || lineEnd > file.scanned) return null;
-    if (anchorOf(await readRange(file.path, off, off + len)) !== anchor) return null;
-    partial = { off, len, lineEnd };
+    const fits = lineEnd >= 0 && len > 0 && off + len < lineEnd && lineEnd <= file.scanned;
+    const inHeld = held.some(([a, b]) => a <= off && off < b);
+    if (fits && !inHeld && anchorOf(await readRange(file.path, off, off + len)) === anchor) {
+      partial = { off, len, lineEnd };
+    }
   }
   return { held, partial };
 }
@@ -281,19 +306,6 @@ async function validate(
 type Send =
   | { kind: "range"; plan: FilePlan; range: Range; backward: boolean }
   | { kind: "rest"; plan: FilePlan; lineStart: number; from: number; end: number };
-
-/** `range` of `plan`'s file as sends, the partly held line's rest cut out as its own. */
-function sendsOf(plan: FilePlan, range: Range, backward: boolean): Send[] {
-  const p = plan.partial;
-  if (p === null || p.off < range[0] || p.off >= range[1]) {
-    return [{ kind: "range", plan, range, backward }];
-  }
-  const below: Send = { kind: "range", plan, range: [range[0], p.off], backward };
-  const rest: Send = { kind: "rest", plan, lineStart: p.off, from: p.off + p.len, end: p.lineEnd };
-  const above: Send = { kind: "range", plan, range: [p.lineEnd, range[1]], backward };
-  const parts = [below, rest, above].filter((s) => s.kind === "rest" || s.range[1] > s.range[0]);
-  return backward ? parts.reverse() : parts;
-}
 
 /** Bytes a send puts on the wire (file bytes) and the records it carries. */
 function sizeOf(send: Send): { bytes: number; lines: number } {
@@ -348,7 +360,7 @@ export async function planHistoryLines(
   const plans = new Map<string, FilePlan>();
   for (const file of files) {
     const k = historyFileKey(file.agentId, file.sessionId, file.fileIndex);
-    plans.set(k, { file, k, held: null, partial: null, reset: false, sent: [] });
+    plans.set(k, { file, k, held: [], partial: null, reset: false, sent: [] });
   }
   for (const have of q.have) {
     const plan = plans.get(have.k);
@@ -360,8 +372,38 @@ export async function planHistoryLines(
       plan.partial = valid.partial;
     }
   }
-  const missing = (plan: FilePlan, range: Range): Range[] =>
-    plan.held === null ? [range] : subtract([range], plan.held);
+  /** What of `range` the hub lacks and this stream has not planned yet. */
+  const missing = (plan: FilePlan, range: Range): Range[] => {
+    let pieces: Range[] = [range];
+    for (const cut of [...plan.held, ...plan.sent]) pieces = subtract(pieces, cut);
+    return pieces.filter(([a, b]) => b > a);
+  };
+  const holds = (plan: FilePlan, start: number, end: number): boolean =>
+    plan.held.some(([a, b]) => a <= start && end <= b);
+
+  let body: { plan: FilePlan; line: Range } | null = null;
+  if (q.kind === "body") {
+    const ref = decodeBodyRef(q.ref);
+    if (ref === null) throw new HttpError(400, "invalid_ref", "ref is not a trace-body ref.");
+    const plan = plans.get(historyFileKey(ref.agentId, ref.sessionId, ref.fileIndex));
+    const start = plan?.file.starts[ref.ordinal];
+    const end = plan?.file.ends[ref.ordinal];
+    if (plan === undefined || start === undefined || end === undefined || end > plan.file.scanned) {
+      throw new HttpError(404, "trace_body_not_found", "The ref names no line of this Session.");
+    }
+    body = { plan, line: [start, end] };
+  }
+
+  // First, the rest of every line the hub holds in part, so a held line is completed before
+  // any other line of its file arrives. (A `body` read sends only its own line's rest.)
+  const windowSends: Send[] = [];
+  for (const plan of plans.values()) {
+    const p = plan.partial;
+    if (p === null) continue;
+    if (body !== null && (body.plan !== plan || body.line[0] !== p.off)) continue;
+    plan.sent.push([p.off, p.lineEnd]);
+    windowSends.push({ kind: "rest", plan, lineStart: p.off, from: p.off + p.len, end: p.lineEnd });
+  }
 
   // The window: its layout, its heavy lines (sent after `ready`, a stub standing in), and
   // the light bytes the hub lacks.
@@ -372,15 +414,18 @@ export async function planHistoryLines(
   const stubs: HistoryStub[] = [];
   const heavy = new Map<string, Range[]>();
   if (read !== null) {
+    // One stub per record: a child expanded under two pointers puts its lines in the window
+    // twice, and both places take the same stub.
+    const stubbed = new Set<string>();
     read.messages.forEach((record, i) => {
       const source = read.sources[i]!;
       const k = historyFileKey(source.agentId, source.sessionId, source.fileIndex);
+      if (stubbed.has(`${k}#${source.ordinal}`)) return;
       const plan = plans.get(k)!;
       const start = plan.file.starts[source.ordinal]!;
       const end = plan.file.ends[source.ordinal]!;
       const unterminated = end > plan.file.scanned;
-      const heldWhole = plan.held !== null && plan.held[0] <= start && end <= plan.held[1];
-      if (heldWhole) return;
+      if (holds(plan, start, end)) return;
       const served = elideHistoryRecord(withImagesByReference(sessionId, record), {
         agentId: source.agentId,
         sessionId: source.sessionId,
@@ -391,6 +436,7 @@ export async function planHistoryLines(
         const servedBytes = Buffer.byteLength(JSON.stringify(served), "utf8");
         if (end - start < servedBytes + ELIDE_BYTES) return; // light: its line goes as it is
       }
+      stubbed.add(`${k}#${source.ordinal}`);
       stubs.push({
         k,
         ordinal: source.ordinal,
@@ -401,26 +447,31 @@ export async function planHistoryLines(
       if (!unterminated) heavy.set(k, [...(heavy.get(k) ?? []), [start, end]]);
     });
   }
-  const windowSends: Send[] = [];
   for (const segment of [...layout].reverse()) {
     const plan = plans.get(segment.k)!;
     let pieces: Range[] = [[segment.from[0], Math.min(segment.to[0], plan.file.scanned)]];
     for (const line of heavy.get(segment.k) ?? []) pieces = subtract(pieces, line);
     for (const piece of pieces) {
       for (const range of missing(plan, piece)) {
-        if (range[1] <= range[0]) continue;
         plan.sent.push(range);
-        windowSends.push(...sendsOf(plan, range, false));
+        windowSends.push({ kind: "range", plan, range, backward: false });
       }
+    }
+  }
+  if (body !== null) {
+    for (const range of missing(body.plan, body.line)) {
+      body.plan.sent.push(range);
+      windowSends.push({ kind: "range", plan: body.plan, range, backward: false });
     }
   }
   const heavySends: Send[] = [];
   for (const [k, lines] of heavy) {
     const plan = plans.get(k)!;
     for (const line of [...lines].reverse()) {
-      if (plan.sent.some(([a, b]) => a <= line[0] && line[1] <= b)) continue;
-      plan.sent.push(line);
-      heavySends.push(...sendsOf(plan, line, false));
+      for (const range of missing(plan, line)) {
+        plan.sent.push(range);
+        heavySends.push({ kind: "range", plan, range, backward: false });
+      }
     }
   }
 
@@ -444,10 +495,8 @@ export async function planHistoryLines(
     );
     for (const plan of order) {
       if (q.kind === "fill" && q.file !== undefined && q.file !== plan.k) continue;
-      let pieces = missing(plan, [0, plan.file.scanned]);
-      for (const sent of plan.sent) pieces = subtract(pieces, sent);
-      for (const range of [...pieces].reverse()) {
-        if (range[1] > range[0]) fillSends.push(...sendsOf(plan, range, true));
+      for (const range of missing(plan, [0, plan.file.scanned]).reverse()) {
+        fillSends.push({ kind: "range", plan, range, backward: true });
       }
     }
   }
@@ -457,23 +506,11 @@ export async function planHistoryLines(
       bytes: 0,
       lines: 0,
     });
-  let filesOut = [...plans.values()];
-  if (q.kind === "body") {
-    const ref = decodeBodyRef(q.ref);
-    if (ref === null) throw new HttpError(400, "invalid_ref", "ref is not a trace-body ref.");
-    const k = historyFileKey(ref.agentId, ref.sessionId, ref.fileIndex);
-    const plan = plans.get(k);
-    const start = plan?.file.starts[ref.ordinal];
-    const end = plan?.file.ends[ref.ordinal];
-    if (plan === undefined || start === undefined || end === undefined || end > plan.file.scanned) {
-      throw new HttpError(404, "trace_body_not_found", "The ref names no line of this Session.");
-    }
-    windowSends.push(...sendsOf(plan, [start, end], false));
-    filesOut = [plan];
-  }
+  const filesOut = body !== null ? [body.plan] : [...plans.values()];
   const facts: HistoryFileFact[] = filesOut.map((plan) => ({
     k: plan.k,
     ino: plan.file.ino,
+    dev: plan.file.dev,
     birthtimeMs: plan.file.birthtimeMs,
     size: plan.file.size,
     records: plan.file.starts.length,
@@ -559,37 +596,72 @@ function units(frames: Iterable<LineFrame | PartFrame>): Array<Array<LineFrame |
   return out;
 }
 
+/**
+ * A JSON text as `window-part` pieces whose event data stays within one frame: each piece's
+ * escaped form (it rides inside a JSON string) is measured, not its length.
+ */
+function* windowParts(
+  text: string,
+  budget: number = FRAME_TEXT_BUDGET,
+): Iterable<HistoryWindowPart> {
+  let pos = 0;
+  while (pos < text.length) {
+    let n = Math.min(text.length - pos, budget);
+    for (;;) {
+      let end = pos + n;
+      if (end < text.length && (text.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
+      const piece = text.slice(pos, end);
+      const last = end === text.length;
+      if (JSON.stringify({ text: piece, last }).length <= budget || n <= 64) {
+        yield { text: piece, last };
+        pos = end;
+        break;
+      }
+      n = Math.floor(n * 0.8);
+    }
+  }
+}
+
+/** A stream that cannot be served, said in the stream: it has begun, so no status is left. */
+export async function sendHistoryLinesError(sink: EventSink, err: HttpError): Promise<void> {
+  const error: HistoryStreamError = { code: err.code, message: err.message };
+  const data = JSON.stringify(error);
+  await sink.writable(data.length);
+  await sink.send("error", null, data);
+}
+
 /** Sends one prepared stream's events (the plan is planHistoryLines'). */
 export async function sendHistoryLines(sink: EventSink, plan: HistoryLinesPlan): Promise<void> {
-  sink.beat(HISTORY_LINES_BEAT_MS);
   const emit = async (event: string, id: string | null, payload: unknown): Promise<void> => {
     const data = JSON.stringify(payload);
     await sink.writable(data.length);
     await sink.send(event, id, data);
   };
-  const emitUnit = async (fp: FilePlan, unit: Array<LineFrame | PartFrame>, lineStart: number) => {
-    const ord = recordsBefore(fp.file.starts, lineStart);
+  const emitUnit = async (fp: FilePlan, unit: Array<LineFrame | PartFrame>) => {
     for (const frame of unit) {
       const after =
         frame.off + Buffer.byteLength(frame.text, frame.b64 === true ? "base64" : "utf8");
       const id = `${fp.k}@${after}`;
       if ("last" in frame) {
-        await emit("part", id, {
+        const part: HistoryPartFrame = {
           k: fp.k,
+          line: frame.line,
           off: frame.off,
-          ord,
+          ord: recordsBefore(fp.file.starts, frame.line),
           text: frame.text,
           last: frame.last,
-          ...(frame.b64 === true ? { b64: true } : {}),
-        });
+          ...(frame.b64 === true ? { b64: true as const } : {}),
+        };
+        await emit("part", id, part);
       } else {
-        await emit("lines", id, {
+        const lines: HistoryLinesFrame = {
           k: fp.k,
           off: frame.off,
           ord: recordsBefore(fp.file.starts, frame.off),
           text: frame.text,
-          ...(frame.b64 === true ? { b64: true } : {}),
-        });
+          ...(frame.b64 === true ? { b64: true as const } : {}),
+        };
+        await emit("lines", id, lines);
       }
     }
   };
@@ -597,7 +669,7 @@ export async function sendHistoryLines(sink: EventSink, plan: HistoryLinesPlan):
     const fp = send.plan;
     if (send.kind === "rest") {
       const bytes = await readRange(fp.file.path, send.from, send.end);
-      await emitUnit(fp, [...partFrames(bytes, send.from)], send.lineStart);
+      await emitUnit(fp, [...partFrames(bytes, send.from, FRAME_TEXT_BUDGET, send.lineStart)]);
       return;
     }
     const [a, b] = send.range;
@@ -607,10 +679,18 @@ export async function sendHistoryLines(sink: EventSink, plan: HistoryLinesPlan):
     for await (const { off, bytes } of chunks) {
       const ordered = units(lineFrames(bytes, off));
       if (send.backward) ordered.reverse();
-      for (const unit of ordered) await emitUnit(fp, unit, unit[0]!.off);
+      for (const unit of ordered) await emitUnit(fp, unit);
     }
   };
-  await emit("window", null, plan.window);
+  // The window in one event when it fits a frame; otherwise in pieces of one frame each, so
+  // nothing on the socket waits behind it longer than behind any line.
+  const window = JSON.stringify(plan.window);
+  if (window.length <= FRAME_TEXT_BUDGET) {
+    await sink.writable(window.length);
+    await sink.send("window", null, window);
+  } else {
+    for (const part of windowParts(window)) await emit("window-part", null, part);
+  }
   for (const send of plan.windowSends) await run(send);
   await emit("ready", null, {});
   for (const send of plan.heavySends) await run(send);

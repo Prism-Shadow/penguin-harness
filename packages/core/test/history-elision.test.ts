@@ -12,7 +12,8 @@
  * - Given a record already folded, folding it again changes nothing.
  * - Given an entry's ref, it names the record's line and path, and the whole value read at that
  *   path from the original record, put back, gives the original record.
- * - Given something that is not a ref, nothing is decoded.
+ * - Given something that is not a ref — or a ref whose Agent or Session is not an id (`..`, a
+ *   `/`), the shape a path traversal takes — nothing is decoded.
  */
 import { describe, expect, it } from "vitest";
 import { thinkingMessage, toolCall, toolCallOutput, userText } from "../src/index.js";
@@ -20,6 +21,7 @@ import type { AmspRecord } from "../src/index.js";
 import {
   bodyAt,
   decodeBodyRef,
+  encodeBodyRef,
   ELIDE_BYTES,
   ELIDE_PREVIEW,
   elideHistoryRecord,
@@ -129,6 +131,12 @@ describe("history elision", () => {
 
   it("something that is not a ref decodes to nothing", () => {
     expect(decodeBodyRef("not a ref!")).toBeNull();
+    for (const agentId of ["../../other/agents/a", "a/b", ".."]) {
+      expect(decodeBodyRef(encodeBodyRef({ ...SOURCE, agentId }, "payload.output"))).toBeNull();
+    }
+    expect(
+      decodeBodyRef(encodeBodyRef({ ...SOURCE, sessionId: "../s" }, "payload.output")),
+    ).toBeNull();
     expect(decodeBodyRef(Buffer.from('{"a":"x"}').toString("base64url"))).toBeNull();
   });
 });

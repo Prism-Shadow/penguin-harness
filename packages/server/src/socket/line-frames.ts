@@ -9,10 +9,10 @@
  *
  * Offsets are file byte offsets; `text` is the bytes as UTF-8, or base64 (`b64`) for the rare
  * run of bytes that is not valid UTF-8 (a crash-torn line a later write healed), so a copy is
- * always byte-exact. A part never cuts a UTF-8 sequence. The receiver (`LineCommitter`) commits
- * only whole lines — every committed run ends with `\n` — and holds a partial line until its
- * last part, so a transfer cut anywhere resumes from `off + partial length` and the copy equals
- * the source.
+ * always byte-exact. A part never cuts a UTF-8 sequence, and names the first byte of its line.
+ * The receiver (`LineCommitter`) commits only whole lines — every committed run starts at a line
+ * start and ends with `\n` — and holds each partial line, by its start, until its last part, so
+ * a transfer cut anywhere resumes from `off + partial length` and the copy equals the source.
  */
 
 import { isUtf8 } from "node:buffer";
@@ -32,6 +32,8 @@ export interface LineFrame {
 
 /** A piece of one line longer than the budget, in order; `last` ends the line. */
 export interface PartFrame {
+  /** The first byte of the line this piece belongs to. */
+  line: number;
   off: number;
   text: string;
   last: boolean;
@@ -88,6 +90,8 @@ export function* partFrames(
   line: Buffer,
   offset: number,
   budget: number = FRAME_TEXT_BUDGET,
+  /** Where the line starts: `offset` unless these bytes are the rest of a line. */
+  lineStart: number = offset,
 ): Iterable<PartFrame> {
   const utf8 = isUtf8(line);
   let pos = 0;
@@ -99,6 +103,7 @@ export function* partFrames(
     }
     const piece = line.subarray(pos, cut);
     yield {
+      line: lineStart,
       off: offset + pos,
       text: utf8 ? piece.toString("utf8") : piece.toString("base64"),
       last: cut === line.length,
@@ -115,63 +120,66 @@ export interface CommittedLines {
 }
 
 /**
- * The receiving side of one file's frames, kept for as long as the receiver keeps that file:
- * whole lines pass through, and the bytes of a line not yet ended are held until its `\n`
- * arrives. Whole-line frames for other places in the file pass through and leave a held line
- * alone (a window's light lines come before the rest of a heavy line held from an earlier
- * stream); a part that does not continue the held line starts a line afresh, and what was held
- * is given up — the sender restarts a line from its first byte unless it was told of the
- * partial, so a part never continues anything but the held line.
+ * The receiving side of one file's frames, kept for as long as the receiver keeps that file.
+ * Whole-line frames commit as they are; a part is held with the other parts of its line (by the
+ * line's first byte) until the last one, and only a line whose every byte from its start was
+ * held commits. A part whose line's head is not held — the rest of a partial this receiver no
+ * longer has — is dropped, never committed: a run always starts at a line start. Several lines
+ * may be held at once (the rest of a heavy line resumed after a light line longer than a frame).
  */
 export class LineCommitter {
-  #held: { off: number; chunks: Buffer[]; length: number } | null = null;
+  /** Lines held in part, by their first byte: the bytes so far. */
+  readonly #held = new Map<number, { chunks: Buffer[]; length: number }>();
+  /** The line most recently added to, for `partial()`. */
+  #newest: number | null = null;
 
   /** The whole lines this frame completes, or null while a line is still partial. */
   push(frame: LineFrame | PartFrame): CommittedLines | null {
     const bytes = frameBytes(frame);
-    const held = this.#held;
-    if (held !== null && held.off + held.length === frame.off) {
-      if (!bytes.includes(NEWLINE)) {
-        // Still inside the line: kept as a chunk, joined once when the line ends.
-        held.chunks.push(bytes);
-        held.length += bytes.length;
-        return null;
-      }
-      return this.#settle(
-        held.off,
-        Buffer.concat([...held.chunks, bytes], held.length + bytes.length),
-      );
-    }
     if (!("last" in frame)) {
-      // Whole lines elsewhere: they pass through. A trailing piece (a sender that framed bytes
-      // not ending with `\n`) is the newest partial and replaces any held one.
+      // Whole lines: they commit, and a held line they cover is moot.
       const whole = bytes.lastIndexOf(NEWLINE) + 1;
-      if (whole < bytes.length) {
-        this.#held = {
-          off: frame.off + whole,
-          chunks: [bytes.subarray(whole)],
-          length: bytes.length - whole,
-        };
+      if (whole === 0) return null;
+      for (const start of [...this.#held.keys()]) {
+        if (start >= frame.off && start < frame.off + whole) this.#drop(start);
       }
-      return whole === 0 ? null : { off: frame.off, bytes: bytes.subarray(0, whole) };
+      return { off: frame.off, bytes: bytes.subarray(0, whole) };
     }
-    return this.#settle(frame.off, bytes);
-  }
-
-  /** Commits `run` (at `off`) up to its last `\n` and holds the rest. */
-  #settle(off: number, run: Buffer): CommittedLines | null {
+    let held = this.#held.get(frame.line);
+    if (frame.off === frame.line) {
+      held = { chunks: [], length: 0 }; // the line from its first byte: whatever was held restarts
+      this.#held.set(frame.line, held);
+    } else if (held === undefined || frame.line + held.length !== frame.off) {
+      return null; // not the next piece of a line held from its start
+    }
+    held.chunks.push(bytes);
+    held.length += bytes.length;
+    this.#newest = frame.line;
+    if (!frame.last) return null;
+    const run = Buffer.concat(held.chunks, held.length);
+    this.#drop(frame.line);
     const whole = run.lastIndexOf(NEWLINE) + 1;
-    this.#held =
-      whole < run.length
-        ? { off: off + whole, chunks: [run.subarray(whole)], length: run.length - whole }
-        : null;
-    return whole === 0 ? null : { off, bytes: run.subarray(0, whole) };
+    return whole === 0 ? null : { off: frame.line, bytes: run.subarray(0, whole) };
   }
 
-  /** The held partial line — where it starts and the bytes so far — or null. */
+  #drop(start: number): void {
+    this.#held.delete(start);
+    if (this.#newest === start) this.#newest = null;
+  }
+
+  /** The line most recently held in part — where it starts and its bytes so far — or null. */
   partial(): { off: number; bytes: Buffer } | null {
-    const held = this.#held;
-    if (held === null) return null;
-    return { off: held.off, bytes: Buffer.concat(held.chunks, held.length) };
+    const start = this.#newest ?? [...this.#held.keys()].at(-1);
+    if (start === undefined) return null;
+    const held = this.#held.get(start)!;
+    return { off: start, bytes: Buffer.concat(held.chunks, held.length) };
+  }
+
+  /** Every line held in part. */
+  partials(): Array<{ off: number; bytes: Buffer }> {
+    return [...this.#held].map(([off, held]) => ({
+      off,
+      bytes: Buffer.concat(held.chunks, held.length),
+    }));
   }
 }

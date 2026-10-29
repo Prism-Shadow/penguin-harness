@@ -115,22 +115,24 @@ export async function assembleWindow(
   bytes: (k: HistoryFileKey, start: number, end: number) => Promise<Buffer | null> | Buffer | null,
   stubs: readonly HistoryStub[] = [],
 ): Promise<HistoryMessage[] | null> {
-  const stubsOf = new Map<HistoryFileKey, HistoryStub[]>();
+  // By file and ordinal: one record has one stub, however often it is listed — a child Session
+  // expanded under two pointers (one per context it opened) puts the same lines in the window
+  // twice, and each of its runs takes the stub at its own place.
+  const stubsOf = new Map<HistoryFileKey, Map<number, HistoryStub>>();
   for (const stub of stubs) {
-    const list = stubsOf.get(stub.k) ?? [];
-    list.push(stub);
-    stubsOf.set(stub.k, list);
+    const byOrdinal = stubsOf.get(stub.k) ?? new Map<number, HistoryStub>();
+    byOrdinal.set(stub.ordinal, stub);
+    stubsOf.set(stub.k, byOrdinal);
   }
-  for (const list of stubsOf.values()) list.sort((a, b) => a.ordinal - b.ordinal);
   const out: HistoryMessage[] = [];
   for (const segment of layout) {
     const file = parseHistoryFileKey(segment.k);
     if (file === null) return null;
     const [fromOffset, fromOrdinal] = segment.from;
     const [toOffset, toOrdinal] = segment.to;
-    const inside = (stubsOf.get(segment.k) ?? []).filter(
-      (s) => s.ordinal >= fromOrdinal && s.ordinal < toOrdinal,
-    );
+    const inside = [...(stubsOf.get(segment.k)?.values() ?? [])]
+      .filter((s) => s.ordinal >= fromOrdinal && s.ordinal < toOrdinal)
+      .sort((a, b) => a.ordinal - b.ordinal);
     // The run between the stubs, gap by gap: [offset, ordinal) up to each stub, then past it.
     let offset = fromOffset;
     let ordinal = fromOrdinal;

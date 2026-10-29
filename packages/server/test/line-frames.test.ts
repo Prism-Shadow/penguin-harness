@@ -6,12 +6,15 @@
  * - Given a line longer than the budget, it arrives as parts no larger than the budget, never
  *   cutting a multi-byte character, and the committer joins them byte-exact.
  * - Given bytes after the last newline, they are not framed: only whole lines leave.
- * - Given frames that end inside a line, the committer commits only up to the last newline and
- *   holds the rest as its partial.
+ * - Given a line's parts, the committer holds them by the line's first byte and commits the
+ *   line, from that byte, only with its last part.
  * - Given a transfer cut after a partial, a sender resuming from the partial's end completes
  *   the line, and the committed bytes equal the source.
- * - Given whole lines for another place in the file while a line is held, they commit and the
- *   held line stays held; a part that starts a line afresh gives the held one up.
+ * - Given a held line, and then — before its rest — whole lines elsewhere and the parts of
+ *   another line longer than a frame, both lines commit whole from their first byte: nothing is
+ *   committed from the middle of a line.
+ * - Given a part whose line's head is not held (the rest of a partial the receiver lost), it is
+ *   dropped, never committed.
  * - Given blank lines, malformed lines and bytes that are not UTF-8, they survive byte-exact.
  */
 import { describe, expect, it } from "vitest";
@@ -79,14 +82,15 @@ describe("line frames", () => {
     expect(sent.toString()).toBe('{"a":1}\n{"b":2}\n');
   });
 
-  it("the committer commits only up to the last newline and holds the rest", () => {
+  it("a line's parts are held by its first byte and the line commits from there with its last", () => {
     const committer = new LineCommitter();
-    const first = committer.push({ off: 10, text: '{"a":1}\n{"b":' });
-    expect(first).toEqual({ off: 10, bytes: Buffer.from('{"a":1}\n') });
+    expect(committer.push({ line: 18, off: 18, text: '{"b":', last: false })).toBeNull();
     expect(committer.partial()).toEqual({ off: 18, bytes: Buffer.from('{"b":') });
-    expect(committer.push({ off: 23, text: "2" })).toBeNull();
-    const second = committer.push({ off: 24, text: "}\n" });
-    expect(second).toEqual({ off: 18, bytes: Buffer.from('{"b":2}\n') });
+    expect(committer.push({ line: 18, off: 23, text: "2", last: false })).toBeNull();
+    expect(committer.push({ line: 18, off: 24, text: "}\n", last: true })).toEqual({
+      off: 18,
+      bytes: Buffer.from('{"b":2}\n'),
+    });
     expect(committer.partial()).toBeNull();
   });
 
@@ -102,7 +106,7 @@ describe("line frames", () => {
     const resume = held.off + held.bytes.length;
     const lineEnd = source.indexOf(0x0a, resume) + 1;
     const rest = [
-      ...partFrames(source.subarray(resume, lineEnd), resume, BUDGET),
+      ...partFrames(source.subarray(resume, lineEnd), resume, BUDGET, held.off),
       ...lineFrames(source.subarray(lineEnd), lineEnd, BUDGET),
     ];
     const resumed = commitAll(rest, committer);
@@ -111,24 +115,35 @@ describe("line frames", () => {
     expect(sent).toBe(source.length);
   });
 
-  it("whole lines elsewhere leave a held line alone; a part starting a line afresh gives it up", () => {
+  it("a held line survives whole lines and another long line arriving first; both commit whole", () => {
+    // A heavy line held in part from an earlier stream; then a stream whose light lines — one
+    // of them longer than a frame — come before the rest of the held line.
+    const heavy = Buffer.from(`{"heavy":"${"h".repeat(200)}"}\n`);
+    const light = Buffer.from(`{"a":1}\n{"long":"${"L".repeat(150)}"}\n`);
+    const source = Buffer.concat([heavy, light]);
     const committer = new LineCommitter();
-    expect(committer.push({ off: 500, text: '{"long":"aaaa', last: false })).toBeNull();
-    // The window's light lines, at another offset, pass through.
-    expect(committer.push({ off: 0, text: '{"a":1}\n' })).toEqual({
-      off: 0,
-      bytes: Buffer.from('{"a":1}\n'),
-    });
-    expect(committer.partial()).toEqual({ off: 500, bytes: Buffer.from('{"long":"aaaa') });
-    // The rest of the held line, from where it stopped.
-    expect(committer.push({ off: 513, text: 'bb"}\n', last: true })).toEqual({
-      off: 500,
-      bytes: Buffer.from('{"long":"aaaabb"}\n'),
-    });
-    // A part elsewhere begins a new line; the one held before it is given up.
-    committer.push({ off: 900, text: '{"x":"', last: false });
-    committer.push({ off: 2000, text: '{"y":"', last: false });
-    expect(committer.partial()).toEqual({ off: 2000, bytes: Buffer.from('{"y":"') });
+    const heavyParts = [...partFrames(heavy, 0, BUDGET)];
+    const runs = commitAll(heavyParts.slice(0, 2), committer).runs;
+    const held = committer.partial()!;
+    expect(held.off).toBe(0);
+    const resume = held.bytes.length;
+    const second = [
+      ...lineFrames(light, heavy.length, BUDGET),
+      ...partFrames(heavy.subarray(resume), resume, BUDGET, 0),
+    ];
+    const after = commitAll(second, committer).runs;
+    const starts = new Set([0, heavy.length, heavy.length + 8]);
+    expect([...runs, ...after].every((r) => starts.has(r.off))).toBe(true);
+    expect(copyOf([...runs, ...after], source.length)).toEqual(source);
+    expect(committer.partials()).toEqual([]);
+  });
+
+  it("a part whose line's head is not held is dropped, never committed", () => {
+    const committer = new LineCommitter();
+    // The rest of a line that started at 100, from a receiver that holds nothing of it.
+    expect(committer.push({ line: 100, off: 164, text: 'end"}\n', last: true })).toBeNull();
+    expect(committer.push({ line: 100, off: 140, text: "middle", last: false })).toBeNull();
+    expect(committer.partials()).toEqual([]);
   });
 
   it("blank lines, malformed lines and bytes that are not UTF-8 survive byte-exact", () => {

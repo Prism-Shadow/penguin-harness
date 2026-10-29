@@ -125,7 +125,12 @@ interface StreamEntry {
   streamDeadline: ReturnType<typeof setTimeout> | null;
   /** The caller asked for acknowledged flow (`StreamOptions.flow`). */
   flow: boolean;
-  /** Event data handled on the current issue, the cumulative figure an ack reports. */
+  /**
+   * The current issue's start frame echoed `x-flow: credit`: the server reads acks. Only then
+   * are they sent — a server older than acks closes the whole socket on a frame it does not know.
+   */
+  credited: boolean;
+  /** Event data handled on the current issue (`ping`s aside), the cumulative figure an ack reports. */
   handled: number;
 }
 
@@ -541,6 +546,7 @@ export class ApiSocket {
       heartbeatMs: options.heartbeatMs ?? null,
       streamDeadline: null,
       flow: options.flow === true,
+      credited: false,
       handled: 0,
     };
     this.#waiting.add(entry);
@@ -669,6 +675,7 @@ export class ApiSocket {
     if (entry.lastEventId !== null) headers["last-event-id"] = entry.lastEventId;
     // Credit is counted per call: a new issue starts from nothing acknowledged.
     entry.handled = 0;
+    entry.credited = false;
     if (entry.flow) headers["x-flow"] = "credit";
     entry.openDeadline = this.#clearTimer(entry.openDeadline);
     entry.openDeadline = setTimeout(() => {
@@ -763,12 +770,15 @@ export class ApiSocket {
         } finally {
           // Handled, however it went (a skipped frame too): an unacknowledged frame would
           // hold the server's credit window shut for good.
-          if (stream.flow && this.#streams.get(id) === stream) {
+          // The beat is liveness, not payload: the server does not count it either.
+          if (stream.credited && frame.event !== "ping" && this.#streams.get(id) === stream) {
             stream.handled += typeof frame.data === "string" ? frame.data.length : 0;
             this.#ack(id, stream.handled);
           }
         }
       } else if ("stream" in frame) {
+        const headers = (frame.headers as Record<string, string> | undefined) ?? {};
+        stream.credited = stream.flow && headers["x-flow"] === "credit";
         stream.failures = 0;
         stream.handlers.onOpen?.();
       } else if ("end" in frame) {

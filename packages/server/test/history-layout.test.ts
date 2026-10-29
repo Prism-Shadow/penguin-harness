@@ -15,6 +15,10 @@
  *   record in that line's place.
  * - Given a run that is not on hand, or bytes that hold another record count than the layout
  *   names (a file rewritten since), assembly refuses rather than answer wrong.
+ *
+ * And the files a history stream plans over (`historyTraceFiles`): given a Session with thirty-four
+ * subagents (more files than the index used to keep) read once, reading it again reads no byte
+ * of an unchanged Trace.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -270,5 +274,38 @@ describe("history layout", () => {
     const rewritten = (k: string, start: number, end: number) =>
       k === first.k ? Buffer.from(more) : files.get(k)!.bytes.subarray(start, end);
     expect(await assembleWindow(layout, rewritten)).toBeNull();
+  });
+});
+
+describe("the files a history stream plans over", () => {
+  it("a second read of an unchanged Session with thirty-four subagents reads no Trace byte", async () => {
+    const root = await makeTempRoot();
+    const harness = makeTraceHarness(root);
+    try {
+      const children = Array.from(
+        { length: 34 },
+        (_, i) => `session-2026-07-09-11-00-00-${String(i).padStart(8, "0")}`,
+      );
+      for (const child of children) {
+        await writeRaw(root, W, child, 1, line(meta(child, W)) + line(assistantText("done")));
+      }
+      await writeRaw(
+        root,
+        A,
+        S,
+        1,
+        line(meta(S, A)) + children.map((c, i) => task(i, [subagentEvent(c)])).join(""),
+      );
+      const reads: Array<[string, number, number]> = [];
+      harness.service.observeLineRead = (p, start, end) => reads.push([p, start, end]);
+      const first = await harness.service.historyTraceFiles(P, A, S);
+      expect(first).toHaveLength(35);
+      reads.length = 0;
+      expect(await harness.service.historyTraceFiles(P, A, S)).toEqual(first);
+      expect(reads).toEqual([]);
+    } finally {
+      harness.close();
+      await removeTempRoot(root);
+    }
   });
 });

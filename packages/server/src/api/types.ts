@@ -2576,15 +2576,11 @@ export interface MessagesResponse {
 export type HistoryFileKey = string;
 
 /**
- * What the hub holds of one Trace file, sent as `have=` (base64url JSON of the array) so the
- * machine sends only what is missing. `[lo, hi)` is the contiguous run the hub holds at the
- * top of its copy, from a line start to just after a `\n`; bytes it holds below `lo` are not
- * claimed (the machine may send them again; the hub skips committed bytes).
+ * One run of a Trace file the hub holds: bytes [lo, hi), from a line start to just after a
+ * `\n`, vouched for by the hashes of its edges. Every run is checked on its own, so a hub that
+ * holds several runs (a window, then older pages, then part of the fill) is sent none of them.
  */
-export interface HistoryHave {
-  k: HistoryFileKey;
-  ino: number;
-  birthtimeMs: number;
+export interface HistoryHeldRange {
   lo: number;
   /** Records before `lo` (the ordinal of the first record at or after it). */
   loOrd: number;
@@ -2593,14 +2589,38 @@ export interface HistoryHave {
   loAnchor: string;
   /** sha256 (base64url) of bytes [max(lo, hi − 4 KiB), hi). */
   hiAnchor: string;
-  /** A line held in part: bytes [off, off + len), whose sha256 is `anchor`; the machine continues it from `off + len`. */
+}
+
+/**
+ * What the hub holds of one Trace file, sent as `have=` (base64url JSON of the array) so the
+ * machine sends only what is missing: the file's identity, every run held (`ranges`), and a
+ * line held in part. The single-run form (`lo`…`hiAnchor` beside `k`, no `ranges`) is still
+ * read while the hub moves to `ranges`; it names one run, the top one.
+ */
+export interface HistoryHave extends Partial<HistoryHeldRange> {
+  k: HistoryFileKey;
+  /** The file's inode as a decimal string: NTFS file ids pass 2^53, which a JSON number cannot carry. */
+  ino: string;
+  /** The device the file lives on, decimal, when the machine reported one. */
+  dev?: string;
+  birthtimeMs: number;
+  /** Every run held, in any order. */
+  ranges?: HistoryHeldRange[];
+  /**
+   * A line held in part: bytes [off, off + len) of the line starting at `off`, whose sha256 is
+   * `anchor`. The machine sends the rest of it first, from `off + len`; a partial that does not
+   * check is dropped and the line sent whole.
+   */
   partial?: { off: number; len: number; anchor: string };
 }
 
 /** One Trace file the window or the fill reads, as the machine sees it now. */
 export interface HistoryFileFact {
   k: HistoryFileKey;
-  ino: number;
+  /** The file's inode, decimal (see HistoryHave.ino). */
+  ino: string;
+  /** Its device, decimal. */
+  dev?: string;
   birthtimeMs: number;
   size: number;
   /** Record count by the tolerant reader's rule (blank and unparseable lines are no record). */
@@ -2669,6 +2689,8 @@ export interface HistoryLinesFrame {
 /** `part`: a piece of one line of file `k`, in order; `ord` = records before that line. */
 export interface HistoryPartFrame {
   k: HistoryFileKey;
+  /** The first byte of the line this part belongs to. */
+  line: number;
   off: number;
   ord: number;
   text: string;
@@ -2677,11 +2699,25 @@ export interface HistoryPartFrame {
 }
 
 /**
- * Event names of the machine leg (`history-lines`), in order: `window`, the window's light
- * `lines`/`part`s, `ready` (the hub can assemble the window), the heavy lines and the fill,
- * `done`; `ping` beats while the stream waits on credit or disk.
+ * `window-part`: a piece of the `window` event's JSON text, for a window larger than one frame
+ * (FRAME_TEXT_BUDGET). The pieces come in order before anything else; joined, their texts are
+ * the `HistoryLinesWindow` JSON, and the piece with `last` completes it.
  */
-export type HistoryLinesEvent = "window" | "lines" | "part" | "ready" | "done" | "ping";
+export interface HistoryWindowPart {
+  text: string;
+  last: boolean;
+}
+
+/**
+ * Event names of the machine leg (`history-lines`), in order: `window` (or its `window-part`s),
+ * the rest of a line the hub held in part, the window's light `lines`/`part`s, `ready` (the hub
+ * can assemble the window), the heavy lines and the fill, `done`. `ping` beats from the start,
+ * planning included; `error` (HistoryStreamError) ends a stream that cannot be served, such as a
+ * `body` ref into no line of the Session. Every event's data is at most FRAME_TEXT_BUDGET of text
+ * plus its JSON envelope.
+ */
+export type HistoryLinesEvent =
+  "window" | "window-part" | "lines" | "part" | "ready" | "done" | "error" | "ping";
 
 /** The web leg's `progress` event: at most every 250 ms, and only when a number changed. */
 export interface HistoryProgress {
