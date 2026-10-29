@@ -3831,7 +3831,7 @@ Scenarios:
     sessionOnQuietMachine: (machine: string) =>
       `This conversation is on ${machine}, which isn't answering right now.`,
     sessionOnOfflineMachineUnknown:
-      "This server doesn't have this conversation. It may be on a machine that isn't connected right now.",
+      "This server doesn't have this conversation. It may be on a machine this server can't reach right now.",
     /**
      * A link the list does not hold while machines that could hold it are silent: what is known —
      * not here — and where it may be. At most three aliases are named; more end in "and others".

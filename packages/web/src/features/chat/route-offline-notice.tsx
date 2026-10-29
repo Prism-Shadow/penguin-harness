@@ -4,7 +4,8 @@
  * said: with its machine on record, that the conversation is there and the machine is out of
  * reach; without one, that this server does not have it and which silent machines it may be on —
  * never that it exists. A machine is said to be not connected only when no connection is held to
- * it; one that is connected and did not answer in time is said not to be answering. The aliases
+ * it; one that is connected and did not answer in time is said not to be answering; with none to
+ * name, only that it may be on a machine this server cannot reach. The aliases
  * are sorted, so the words change only when the set of silent machines, or which of them are
  * connected, does.
  */

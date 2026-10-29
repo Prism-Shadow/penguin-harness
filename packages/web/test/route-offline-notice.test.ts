@@ -12,13 +12,16 @@
  * - Given a silent machine that is connected (the hub's lookup, or the socket, gave up waiting on
  *   it), it is said not to be answering; one with no connection held is said not to be
  *   connected; several of each kind are said to be one or the other.
+ * - Given no machine to name (the socket gave up with none on record), the notice says only that
+ *   the conversation may be on a machine this server cannot reach — not that one is disconnected.
  * - Given the same silent machines with the same connections, the words stay the same whatever
  *   else connects or drops: they change only when the set, or the state of one in it, does.
  */
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { RouteOfflineNotice } from "../src/features/chat/route-offline-notice";
-import { S } from "../src/lib/strings";
+import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 import { mount, unmountAll } from "./helpers/dom";
 
 afterEach(async () => {
@@ -85,6 +88,21 @@ describe("a silent machine that is connected, against one that is not", () => {
     expect(await said(null, ["m1", "m2"], ["m2"])).toContain(
       S.chat.sessionMaybeOnMachines(["gpu-box", "mdi-b"], false, "mixed"),
     );
+  });
+
+  it("says only that a machine it cannot name is out of reach, not that it is disconnected", async () => {
+    for (const strings of [zh, en]) {
+      setActiveStrings(strings);
+      try {
+        const text = await said(null, [], []);
+        expect(text).toContain(S.chat.sessionOnOfflineMachineUnknown);
+        expect(text).toContain(S.chat.sessionOfflineHint);
+        expect(text).not.toMatch(/没有连接|not connected|isn't connected/);
+      } finally {
+        setActiveStrings(zh);
+        await unmountAll();
+      }
+    }
   });
 
   it("keeps its words while machines outside the silent set connect or drop", async () => {

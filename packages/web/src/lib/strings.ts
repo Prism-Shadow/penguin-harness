@@ -4032,7 +4032,8 @@ Benchmark：
     /** The routed conversation's machine is connected and did not answer in time. */
     sessionOnQuietMachine: (machine: string) =>
       `这个对话在 ${machine} 上，但 ${machine} 暂时没有回应。`,
-    sessionOnOfflineMachineUnknown: "本机没有这个对话，它可能在某台当前没有连接的机器上。",
+    /** No machine can be named: nothing says whether it is not connected or not answering. */
+    sessionOnOfflineMachineUnknown: "本机没有这个对话，它可能在某台暂时联系不上的机器上。",
     /**
      * A link the list does not hold while machines that could hold it are silent: what is known —
      * not here — and where it may be. At most three aliases are named; more end in 等. `state`
