@@ -184,6 +184,7 @@ function pageInfoOf(page: Omit<MessagesPageResult, "messages">): MessagesPageInf
   return {
     ...(page.before !== undefined ? { before: page.before } : {}),
     earlierTurns: page.prior.turns,
+    units: page.units,
     prior: {
       subagentTokens: page.prior.subagentTokens,
       elapsedMs: page.prior.elapsedMs,

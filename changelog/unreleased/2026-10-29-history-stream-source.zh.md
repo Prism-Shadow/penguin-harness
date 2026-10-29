@@ -13,6 +13,8 @@ API 套接字上的流式调用可以用 `x-flow: credit` 请求确认流控：�
 
 每个服务端都为自己的 Session 提供 `GET /api/sessions/:sessionId/history-lines`。流在读取任何内容之前就开始并发出节拍；先给出历史窗口的信封与其记录所在 Trace 字节的布局，再发调用方只持有一部分的行的余下部分，然后只发送调用方尚未持有的 Trace 行——只发整行、最新的在前，包括窗口在内的每个事件都不超过 32 KiB 文本。调用方持有的每一段都按文件身份、大小、行边界以及首尾字节的散列校验，校验不过的文件从头重发。inode 以十进制字符串传递，超过 2^53 的 NTFS 文件 id 也保持精确。
 
+每个分窗的历史页都给出所含的 Task 数（`page.units`），在切窗处按同一规则计出；逐页加载到 N 个 Task 的客户端由此与 `tailLimit`、`limit` 的计数一致。
+
 `GET /api/sessions/:sessionId/trace-body?ref=` 取回一个被折叠的值的全文，且只应答指向该 Session 自身或其派生的子 Agent 会话中某一行的 ref；其他 ref（包括指向其他 Project 文件的）一律返回 404。
 
 core 的 `interfaces` 子路径新增历史窗口使用的折叠规则：超过 16 KiB 的工具输出、子 Agent 会话的内联图片、工具调用参数中的长字符串与思考文本只保留开头与结尾的一小段，并附一条 `elided` 记录指明该值，展开时据此取回全文。

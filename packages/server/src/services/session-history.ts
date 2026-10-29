@@ -153,6 +153,7 @@ export async function sessionMessages(
     const info: MessagesPageInfo = {
       ...(result.before !== undefined ? { before: result.before } : {}),
       earlierTurns: result.prior.turns,
+      units: result.units,
       prior: {
         subagentTokens: result.prior.subagentTokens,
         elapsedMs: result.prior.elapsedMs,

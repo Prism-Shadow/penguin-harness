@@ -627,12 +627,14 @@ describe("history-lines, the machine leg", () => {
     }
     const tiny = await windowAt("tailLimit=20&budget=1");
     expect(prompts(tiny.records)).toEqual(["q8"]);
+    expect(tiny.window.envelope.page?.units).toBe(1);
     expect(tiny.window.envelope.page?.before).toBeDefined();
 
     // 10 KiB holds a few folded Tasks; any one of them whole is four times that.
     const budget = 10 * 1024;
     const newest = await windowAt(`tailLimit=20&budget=${budget}`);
     const held = prompts(newest.records);
+    expect(newest.window.envelope.page?.units).toBe(held.length);
     expect(held.length).toBeGreaterThan(1);
     expect(held.length).toBeLessThan(8);
     expect(held.at(-1)).toBe("q8");
