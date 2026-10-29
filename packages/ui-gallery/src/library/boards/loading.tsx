@@ -2,10 +2,14 @@
  * 加载: the running-state spinner on its three rungs, the skeleton line, list and card, the
  * progress bar on its three heights, toned and indeterminate, and the transfer row in every place
  * a conversation's history coming over from a machine shows it — standing in for the transcript
- * (counting, not yet counted, with the link down), over the transcript, under an unfolded output.
+ * (counting, not yet counted, waiting for the machine), over the transcript (going on, and
+ * waiting in the same line), under an unfolded output.
  */
 import { useState } from "react";
 import {
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
   ProgressBar,
   RetryStatus,
   Skeleton,
@@ -119,8 +123,22 @@ export function LoadingBoard() {
           </div>
           <div className="grid gap-1">
             <span className="lib-caption">{t.transferTop}</span>
-            <TransferProgress label={t.transferFill} {...AMOUNTS.fill} />
-            <TransferProgress label={t.transferOlder} {...AMOUNTS.older} />
+            <TransferProgress mark={null} label={t.transferFill} {...AMOUNTS.fill} />
+            <TransferProgress mark={null} label={t.transferOlder} {...AMOUNTS.older} />
+          </div>
+          <div className="grid gap-1">
+            <span className="lib-caption">{t.transferTopWaiting}</span>
+            <TransferProgress
+              mark={
+                <GlyphIcon
+                  d={ICONS.hourglass}
+                  size={ICON_SIZE.inlineGlyph}
+                  className="text-tone-attention-fg"
+                />
+              }
+              label={t.transferTrying(2)}
+              {...AMOUNTS.fill}
+            />
           </div>
           <div className="grid gap-1">
             <span className="lib-caption">{t.transferBody}</span>

@@ -15,6 +15,9 @@
  * - Given a conversation on this server, whose reads report no progress, the skeleton stays.
  * - Given an older window read behind the transcript, the line at its top says nothing for its
  *   first second, then how far the window has come, and goes when the read does.
+ * - Given the server waiting for the machine during that read, the same line says so: its mark
+ *   slot takes the hourglass and its sentence the waiting words, the amount and the bar stay as
+ *   they stood, and the line is the transfer line still — not a retry row in another ink.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -171,5 +174,20 @@ describe("the line at the transcript's top while a read runs behind it", () => {
     expect(container.textContent).toContain("120 / 380 KB");
     await rerender(h(HistoryTransferLine, { loading: false, older: null, fill: null }));
     expect(container.textContent).toBe("");
+  });
+
+  it("says the server's wait on the machine in the same line, keeping the amount and the bar", async () => {
+    const line = (waiting: HistoryProgress["waiting"]) =>
+      h(HistoryTransferLine, { loading: true, older: progress(waiting), fill: null });
+    const { container, rerender } = await mount(line(null));
+    await run(() => vi.advanceTimersByTime(1_000));
+    const transfer = () => container.querySelector("[data-transfer]");
+    const before = transfer();
+    await rerender(line({ reason: "retrying", attempt: 2, nextAt: Date.now() - 1 }));
+    expect(transfer()).toBe(before);
+    expect(container.textContent).toContain(words.asking(2));
+    expect(container.textContent).toContain("120 / 380 KB");
+    expect(bar(container)?.getAttribute("aria-valuenow")).toBe(String(120 * KIB));
+    expect(container.querySelector("[data-retry-phase]")).toBeNull();
   });
 });

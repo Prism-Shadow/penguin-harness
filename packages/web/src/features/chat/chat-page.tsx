@@ -118,6 +118,7 @@ import {
   sessionProbeKey,
 } from "./session-project";
 import { RouteProbe } from "./route-probe";
+import { lookupVerdict, routeReach } from "./route-reach";
 import { machineForSession } from "../../lib/session-machines";
 import { HistoryLoadFailed } from "./history-load-failed";
 import { HistoryLoading } from "./history-loading";
@@ -274,8 +275,8 @@ export function ChatPage() {
     sessions,
     loading: sessionsLoading,
     machineLabels,
-    machinesUnreachable,
     offlineMachineIds,
+    askingMachineIds,
     reload: reloadSessions,
     add: addSession,
     remove: removeSession,
@@ -479,6 +480,11 @@ export function ChatPage() {
   const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
   /** The probe that failed did so with a 404: the server has no such Session for this user. */
   const [probeMissingKey, setProbeMissingKey] = useState<string | null>(null);
+  /**
+   * The probe that failed did so while a server that could hold the Session had not answered
+   * (route-reach.ts): no verdict, and the lookup is made again once they all have.
+   */
+  const [probeDoubtKey, setProbeDoubtKey] = useState<string | null>(null);
   const heldSession = useRef<SessionInfo | null>(null);
   heldSession.current = heldRouteSession(
     heldSession.current,
@@ -874,6 +880,14 @@ export function ChatPage() {
     const machineId = machineForSession(sessionId);
     return machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
   };
+  const reach = routeReach({
+    owner: routeSessionOwner,
+    offline: offlineMachineIds,
+    asking: askingMachineIds,
+  });
+  /** Read when a lookup settles, which is after the render that sent it. */
+  const reachRef = useRef(reach);
+  reachRef.current = reach;
   const routeSessionUnowned =
     !!routeSessionId &&
     // Except one we deleted ourselves. That is the one case where a failed lookup settles it
@@ -881,9 +895,7 @@ export function ChatPage() {
     // held the page on a skeleton for as long as some machine stayed down, on the ordinary
     // act of deleting the conversation you are looking at.
     !isSessionDeleted(routeSessionId) &&
-    (routeSessionOwner === null
-      ? machinesUnreachable
-      : offlineMachineIds.includes(routeSessionOwner));
+    reach !== "answered";
   // Read from `listed`, never from `selected`: the held Session above keeps the conversation
   // on screen through a refetch, but it must not tell the probe that the row is loaded — a
   // Session that really is gone has to keep probing until the lookup fails and releases both.
@@ -896,7 +908,8 @@ export function ChatPage() {
    * hung page. Say what is actually the matter instead, and let the machine list open it when
    * the connection is back — the server says so the moment it is (state/machines.tsx).
    */
-  const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
+  const routeSessionOffline =
+    routeSessionPending && probeFailedKey === probeKey && reach === "unanswered";
   /** The direct lookup of the routed Session, one per page (route-probe.ts). */
   const [routeProbe] = useState(() => new RouteProbe());
   /** A row the lookup found while the Session list was still loading, to add once it settles. */
@@ -944,9 +957,16 @@ export function ChatPage() {
         // this effect re-runs when it settles and asks again.
         gone: (cause) => {
           setProbeFailedKey(probeKey);
-          // Only an answer that the Session does not exist settles it as missing; a failure to
-          // get any answer is not that, and keeps the old way on.
-          if (cause instanceof ApiError && cause.status === 404) setProbeMissingKey(probeKey);
+          // Only an answer that the Session does not exist, given while every server that
+          // could hold it answered, settles it as missing; one given while a machine was silent
+          // is asked again once it is not (route-reach.ts). A failure to get any answer is not
+          // a verdict, and keeps the old way on.
+          const verdict = lookupVerdict(
+            { status: cause instanceof ApiError ? cause.status : null },
+            reachRef.current,
+          );
+          if (verdict === "missing") setProbeMissingKey(probeKey);
+          else if (verdict === "doubt") setProbeDoubtKey(probeKey);
         },
       },
     );
@@ -964,6 +984,14 @@ export function ChatPage() {
     addSession,
     isSessionDeleted,
   ]);
+  // A lookup that failed while a machine that could hold the Session was silent settled nothing:
+  // once every such machine has answered, it is made again — and the answer, found or not, is
+  // the verdict (route-reach.ts).
+  useEffect(() => {
+    if (probeKey === null || probeDoubtKey !== probeKey || reach !== "answered") return;
+    setProbeDoubtKey(null);
+    setProbeFailedKey(null);
+  }, [probeKey, probeDoubtKey, reach]);
   // The row found during the list's first load, added once the list has settled and only if
   // it did not bring the row itself (one beyond the first page, or an organization's row,
   // which no list page serves and whose status and title events reach only listed rows).

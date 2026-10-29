@@ -16,7 +16,10 @@
  * a read runs behind the transcript: an older window coming over (the first paint's backfill is
  * one such read from its first window to its last), or the rest of the conversation syncing
  * behind the first paint. Like the skeleton it says nothing for its first second, and it goes when
- * the read does — the data changed: there is nothing left to fetch.
+ * the read does — the data changed: there is nothing left to fetch. While the server waits for
+ * the machine the same line says so: the hourglass in its mark slot and the waiting words in its
+ * sentence, the amount and the bar as they stood — one line in one ink, in one place, from the
+ * first byte to the last.
  *
  * Nothing on these rows changes while its data does not: the machine is named only once the
  * machine list has answered (the skeleton stays until then, then the row keeps the name it
@@ -26,11 +29,15 @@
 import { useState } from "react";
 import type { HistoryProgress } from "@prismshadow/penguin-server/api";
 import {
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
   RetryStatus,
   Skeleton,
   Spinner,
   TransferProgress,
   toastError,
+  useCountdown,
   useElapsedPast,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -67,6 +74,23 @@ function useQuietSecond(active: boolean): boolean {
   return useElapsedPast(active ? (since ?? undefined) : undefined, SKELETON_MS);
 }
 
+/** The words for the server's wait on the machine: the attempt now, or the seconds to the next. */
+function waitingWords(waiting: NonNullable<HistoryProgress["waiting"]>): {
+  now: string;
+  inSeconds: (seconds: number) => string;
+} {
+  const words = S.chat.historyTransfer;
+  return waiting.reason === "not_connected"
+    ? {
+        now: words.reconnecting(waiting.attempt),
+        inSeconds: (seconds) => words.reconnectIn(seconds, waiting.attempt),
+      }
+    : {
+        now: words.asking(waiting.attempt),
+        inSeconds: (seconds) => words.askIn(seconds, waiting.attempt),
+      };
+}
+
 /**
  * The server's retry of the link to the machine, as the shared retry row, in the words of what
  * it reports: not connected (it reconnects), or connected and silent (it asks again).
@@ -83,14 +107,12 @@ function LinkRetry({
   className?: string;
 }) {
   const words = S.chat.historyTransfer;
-  const lost = waiting.reason === "not_connected";
+  const said = waitingWords(waiting);
   return (
     <RetryStatus
       phase="waiting"
-      label={lost ? words.reconnecting(waiting.attempt) : words.asking(waiting.attempt)}
-      countdown={(seconds) =>
-        lost ? words.reconnectIn(seconds, waiting.attempt) : words.askIn(seconds, waiting.attempt)
-      }
+      label={said.now}
+      countdown={said.inSeconds}
       nextAt={waiting.nextAt}
       retry={onRetryNow === undefined ? null : { label: words.retryNow, onClick: onRetryNow }}
       size={size}
@@ -179,12 +201,17 @@ export function HistoryLoading({
   );
 }
 
+/** The waiting mark in the transfer line's slot: the retry row's own hourglass, in its tone. */
+const WAITING_MARK = (
+  <GlyphIcon d={ICONS.hourglass} size={ICON_SIZE.inlineGlyph} className="text-tone-attention-fg" />
+);
+
 /**
  * The older-history row while a read runs behind the transcript, or null when none does: an
  * older window being read (`loading`: its progress when the server reports one, the plain
  * spinner line when it does not, as for a Session on this server), else the sync behind the
- * first paint, or the link's retry while the server waits on the machine. Nothing for the
- * first second, as the skeleton.
+ * first paint — and, while the server waits on the machine, the same line saying so. Nothing
+ * for the first second, as the skeleton.
  */
 export function HistoryTransferLine({
   loading,
@@ -197,6 +224,8 @@ export function HistoryTransferLine({
 }) {
   const active = loading || fill !== null;
   const past = useQuietSecond(active);
+  const current = loading ? older : fill;
+  const seconds = useCountdown(current?.waiting?.nextAt ?? null);
   if (!active || !past) return null;
   const words = S.chat.historyTransfer;
   if (loading && older === null) {
@@ -207,15 +236,21 @@ export function HistoryTransferLine({
       </span>
     );
   }
-  const reading = loading ? older! : fill!;
-  if (reading.waiting !== null) return <LinkRetry waiting={reading.waiting} size="xs" />;
-  const label = loading
-    ? S.chat.loadingEarlier
-    : reading.phase === "heavy"
-      ? words.heavy
-      : words.fill;
+  const reading = current!;
+  const waiting = reading.waiting === null ? null : waitingWords(reading.waiting);
+  const label =
+    waiting !== null
+      ? seconds !== null && seconds > 0
+        ? waiting.inSeconds(seconds)
+        : waiting.now
+      : loading
+        ? S.chat.loadingEarlier
+        : reading.phase === "heavy"
+          ? words.heavy
+          : words.fill;
   return (
     <TransferProgress
+      mark={waiting !== null ? WAITING_MARK : null}
       label={label}
       amount={transferAmount(reading.doneBytes, reading.totalBytes)}
       {...(reading.totalBytes > 0 ? { value: reading.doneBytes, max: reading.totalBytes } : {})}

@@ -922,17 +922,18 @@ export const en: GalleryStrings = {
       transferHint:
         "History coming over from a machine: the line that stands in for the conversation, the line over it, the line under an unfolded output",
       transferPane: "In the conversation's place, after a second",
-      transferPaneWaiting: "In the conversation's place, while the link is down",
+      transferPaneWaiting: "In the conversation's place, waiting for the machine",
       transferUncounted: "Nothing counted yet",
       transferTop: "Over the conversation",
+      transferTopWaiting: "Over the conversation, waiting for the machine",
       transferBody: "Under an unfolded output",
       transferWindow: (alias: string) => `Loading the latest messages from ${alias}`,
       transferFill: "Syncing earlier history",
       transferOlder: "Loading earlier messages…",
       transferBodyLabel: "Loading the full text",
-      transferTrying: (n: number) => `Connection lost, retrying (attempt ${n})`,
+      transferTrying: (n: number) => `The machine is not answering, asking again (attempt ${n})`,
       transferRetryIn: (s: number, n: number) =>
-        `Connection lost, retrying in ${s} s (attempt ${n})`,
+        `The machine is not answering, asking again in ${s} s (attempt ${n})`,
       transferRetryNow: "Retry now",
     },
     streaming: {

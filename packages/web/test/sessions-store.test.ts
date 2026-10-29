@@ -22,7 +22,9 @@
  * - This server not answering abandons the reload: the rows stand and loading stays clear.
  * - A machine is asked once this server's rows are on screen, and holds nothing back: they show
  *   and loading clears as soon as this server answers; the machine keeps the rows it showed and
- *   its cache until its own answer lands, which builds the list again.
+ *   its cache until its own answer lands, which builds the list again. Until then it stands as
+ *   being asked, and a held machine that answers nothing stands as out of reach — so the chat
+ *   page never takes this server's "no such Session" for a verdict while it might hold it.
  * - Two machines' counts for one path stay apart.
  * - A group's next page is asked only of the machine the group is on, by path.
  *
@@ -484,6 +486,8 @@ describe("the list across machines", () => {
     const store = boot(["M1"], ["M2"]);
     await store.getState().reload();
     expect(ids(store)).toEqual(["m2-cached", "here", "m1-cached"]);
+    // The held one that said nothing is out of reach for this round, as the one not held is.
+    expect(store.getState().silentMachineIds).toEqual(["M1"]);
     expect(machineForSession("m2-cached")).toBe("M2");
     expect(cachedMachineSessions("p", "M1").map((s) => s.sessionId)).toEqual(["m1-cached"]);
     // Counts come only from servers that answered: the cache makes no claim about now.
@@ -624,6 +628,20 @@ describe("a machine still being asked", () => {
     await done;
     expect(ids(store)).toEqual(["there", "here"]);
     expect(store.getState().countsByAgent.get("a1")?.active).toBe(2);
+  });
+
+  it("stands as being asked until its answer lands", async () => {
+    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+    const held = hold("M1");
+    const store = boot(["M1"]);
+    const done = store.getState().reload();
+    await vi.waitFor(() => expect(store.getState().loading).toBe(false));
+    expect(store.getState()).toMatchObject({ askingMachineIds: ["M1"], silentMachineIds: [] });
+
+    held.release("M1");
+    await done;
+    expect(store.getState()).toMatchObject({ askingMachineIds: [], silentMachineIds: [] });
   });
 
   it("keeps the rows it showed, and its cache, until its own answer lands", async () => {
