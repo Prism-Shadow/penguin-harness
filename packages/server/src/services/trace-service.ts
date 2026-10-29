@@ -87,6 +87,7 @@ import { sessionIdCreatedAt } from "./session-service.js";
 import { listCategory, listingMarksOf, readRecordedSource } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
+import type { TraceLineIndexEntry } from "./trace-line-index.js";
 import type { RecordSource } from "./history-layout.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -218,7 +219,9 @@ export interface HistoryTraceFile {
   sessionId: string;
   fileIndex: number;
   path: string;
-  ino: number;
+  /** Inode and device, decimal: an NTFS file id passes 2^53. */
+  ino: string;
+  dev: string;
   birthtimeMs: number;
   /** Bytes, as the line index last saw the file. */
   size: number;
@@ -358,10 +361,18 @@ export class TraceService implements Traces {
    */
   observeShardRead?: (path: string) => void;
   /**
-   * Record offsets per Trace file (trace-line-index.ts): the events endpoint and the image
-   * route read only the records they serve. Tests wire their own to observe the reads.
+   * Test observability: every byte range the line index reads from a Trace file (a scan, or a
+   * page of records). Production wiring leaves it unset.
    */
-  private lineIndex = new TraceLineIndex();
+  observeLineRead?: (path: string, start: number, end: number) => void;
+  /**
+   * Record offsets per Trace file (trace-line-index.ts): the events endpoint and the image
+   * route read only the records they serve, and a Session's subagents are found without
+   * reading its Traces again.
+   */
+  private lineIndex = new TraceLineIndex({
+    observeRead: (path, start, end) => this.observeLineRead?.(path, start, end),
+  });
 
   /**
    * All of this Session's Trace files (sorted by index ascending), served from the
@@ -376,7 +387,24 @@ export class TraceService implements Traces {
     agentId: string,
     sessionId: string,
   ): Promise<LocatedFile[]> {
-    await this.index.reconcileAgent(projectId, agentId);
+    return this.locateIn(projectId, agentId, sessionId, new Set());
+  }
+
+  /**
+   * `locateAll` within one walk over many Sessions: each Agent's index is reconciled once per
+   * walk (`reconciled` remembers which), not once per Session — a walk over a Session's forty
+   * subagents under one Agent would otherwise gate that Agent's Trace tree forty times.
+   */
+  private async locateIn(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    reconciled: Set<string>,
+  ): Promise<LocatedFile[]> {
+    if (!reconciled.has(agentId)) {
+      await this.index.reconcileAgent(projectId, agentId);
+      reconciled.add(agentId);
+    }
     let rows = this.store.listFilesBySession(projectId, agentId, sessionId);
     if (rows.length === 0) {
       await this.index.reconcileAgent(projectId, agentId, { force: true });
@@ -415,27 +443,22 @@ export class TraceService implements Traces {
     const seen = new Set<string>([sessionId]);
     const out: Array<{ sessionId: string; agentId: string | null; spawnedAt: string }> = [];
     for (const file of files) {
-      let text: string;
+      // The line index keeps each file's pointers as it scans it: a file it has seen costs no
+      // read here, and one that grew costs only its new bytes. A torn final line is no record,
+      // so it holds no pointer.
+      let pointers: TraceLineIndexEntry["pointers"];
       try {
-        text = await fs.readFile(file.path, "utf8");
+        pointers = (await this.lineIndex.ensure(file.path)).pointers.slice();
       } catch {
         continue; // Vanished mid-walk: nothing in it can be deleted any more either.
       }
-      for (const line of text.split("\n")) {
-        if (!line.includes('"subagent"')) continue;
-        let msg: AmspRecord;
-        try {
-          msg = JSON.parse(line) as AmspRecord;
-        } catch {
-          continue; // A torn final line (a crashed writer) holds no complete pointer.
-        }
-        const child = subagentPointer(msg);
-        if (child === null || seen.has(child)) continue;
-        seen.add(child);
+      for (const pointer of pointers) {
+        if (seen.has(pointer.sessionId)) continue;
+        seen.add(pointer.sessionId);
         out.push({
-          sessionId: child,
-          agentId: await this.resolveChildAgent(projectId, child, ctx),
-          spawnedAt: msg.timestamp,
+          sessionId: pointer.sessionId,
+          agentId: await this.resolveChildAgent(projectId, pointer.sessionId, ctx),
+          spawnedAt: pointer.timestamp,
         });
       }
     }
@@ -820,32 +843,39 @@ export class TraceService implements Traces {
     }
 
     // Byte budget: newest first, a unit joins while the page stays within it; the first one
-    // always joins. Sized as the route serves it, images by reference (trace-images.ts) — and,
-    // for a history stream's budget, its bulky bodies folded (core's history-elision.ts).
-    const budget =
-      req.budget === undefined
-        ? MESSAGES_PAGE_MAX_BYTES
-        : Math.min(Math.max(0, req.budget), MESSAGES_PAGE_MAX_BYTES);
+    // always joins. Sized as the route serves it, images by reference (trace-images.ts). For a
+    // history stream's budget, as that stream sends it: bulky bodies folded (core's
+    // history-elision.ts), and a unit's subagent records counted with it — each unit is
+    // expanded as it is measured, and the window is those expansions joined.
+    const streamed = req.budget !== undefined;
+    const budget = streamed
+      ? Math.min(Math.max(0, req.budget!), MESSAGES_PAGE_MAX_BYTES)
+      : MESSAGES_PAGE_MAX_BYTES;
     const served = (m: HistoryMessage): HistoryMessage => {
       const referenced = withImagesByReference(sessionId, m);
-      if (req.budget === undefined) return referenced;
-      const position = m.tracePosition!;
-      return elideHistoryRecord(referenced, {
-        agentId,
-        sessionId,
-        fileIndex: position.fileIndex,
-        ordinal: position.ordinal,
-      }).record;
+      if (!streamed) return referenced;
+      const source = ctx.sources?.get(m);
+      const position = m.tracePosition;
+      return elideHistoryRecord(
+        referenced,
+        source ??
+          (position !== undefined
+            ? { agentId, sessionId, fileIndex: position.fileIndex, ordinal: position.ordinal }
+            : { agentId, sessionId: m.origin?.at(-1) ?? sessionId, fileIndex: 1, ordinal: 0 }),
+      ).record;
     };
     let chosen = starts.length - 1;
     let pageBytes = 0;
+    const unitRecords = new Map<number, AmspRecord[]>();
     for (let k = starts.length - 1; k >= 0; k--) {
       const unitEnd = k + 1 < starts.length ? starts[k + 1]!.at : spanRaw.length;
+      const unit = streamed
+        ? await this.expandMessages(projectId, spanRaw.slice(starts[k]!.at, unitEnd), ctx)
+        : spanRaw.slice(starts[k]!.at, unitEnd);
       let unitBytes = 0;
-      for (let i = starts[k]!.at; i < unitEnd; i++) {
-        unitBytes += Buffer.byteLength(JSON.stringify(served(spanRaw[i]!)), "utf8");
-      }
+      for (const m of unit) unitBytes += Buffer.byteLength(JSON.stringify(served(m)), "utf8");
       if (k < starts.length - 1 && pageBytes + unitBytes > budget) break;
+      if (streamed) unitRecords.set(k, unit);
       pageBytes += unitBytes;
       chosen = k;
     }
@@ -867,7 +897,11 @@ export class TraceService implements Traces {
       prior = initialScanState().totals;
     }
     const windowRaw = spanRaw.slice(starts[chosen]?.at ?? 0);
-    const expanded = await this.expandMessages(projectId, windowRaw, ctx);
+    // Expansion is record by record, so the measured units joined are the window expanded.
+    const expanded =
+      streamed && unitRecords.size > 0
+        ? [...unitRecords.keys()].sort((a, b) => a - b).flatMap((k) => unitRecords.get(k)!)
+        : await this.expandMessages(projectId, windowRaw, ctx);
     // The start shard was read for the window above, so its head is on hand.
     const startMeta = shardMessages.get(start.pos)?.find(isSessionMeta);
     return {
@@ -921,47 +955,69 @@ export class TraceService implements Traces {
   ): Promise<HistoryTraceFile[]> {
     const out: HistoryTraceFile[] = [];
     const seen = new Set<string>([sessionId]);
-    // The Session, then its descendants level by level, as deep as the expansion goes.
-    let level: Array<{ agentId: string; sessionId: string }> = [{ agentId, sessionId }];
-    for (let depth = 0; level.length > 0; depth++) {
-      const next: Array<{ agentId: string; sessionId: string }> = [];
-      for (const session of level) {
-        const files = await this.locateAll(projectId, session.agentId, session.sessionId);
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i]!;
-          let entry;
-          let stat;
-          try {
-            entry = await this.lineIndex.ensure(file.path);
-            stat = await fs.stat(file.path);
-          } catch {
-            continue; // vanished since it was indexed: absent, as the machine leg reports it
+    const reconciled = new Set<string>();
+    const ctx = { projectScanned: false };
+    // Every file this walk indexes stays indexed until it is done: its children are read from
+    // the same entries, and one walk over more files than the index keeps would drop its own.
+    const releases: Array<() => void> = [];
+    try {
+      // The Session, then its descendants level by level, as deep as the expansion goes.
+      let level: Array<{ agentId: string; sessionId: string }> = [{ agentId, sessionId }];
+      for (let depth = 0; level.length > 0; depth++) {
+        const next: Array<{ agentId: string; sessionId: string }> = [];
+        for (const session of level) {
+          const files = await this.locateIn(
+            projectId,
+            session.agentId,
+            session.sessionId,
+            reconciled,
+          );
+          // The children, from the pointers the same index entries keep (as subagentChildren
+          // finds them, without locating the Session's files a second time).
+          const pointers: TraceLineIndexEntry["pointers"] = [];
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i]!;
+            releases.push(this.lineIndex.retain(file.path));
+            let entry;
+            let stat;
+            try {
+              entry = await this.lineIndex.ensure(file.path);
+              // As bigints: an NTFS file id passes 2^53, which a number would round.
+              stat = await fs.stat(file.path, { bigint: true });
+            } catch {
+              continue; // vanished since it was indexed: absent, as the machine leg reports it
+            }
+            pointers.push(...entry.pointers);
+            out.push({
+              agentId: session.agentId,
+              sessionId: session.sessionId,
+              fileIndex: file.index,
+              path: file.path,
+              ino: stat.ino.toString(),
+              dev: stat.dev.toString(),
+              birthtimeMs: Number(stat.birthtimeMs),
+              size: entry.size,
+              scanned: entry.scanned,
+              starts: entry.starts.slice(),
+              ends: entry.ends.slice(),
+              final: i < files.length - 1,
+            });
           }
-          out.push({
-            agentId: session.agentId,
-            sessionId: session.sessionId,
-            fileIndex: file.index,
-            path: file.path,
-            ino: stat.ino,
-            birthtimeMs: stat.birthtimeMs,
-            size: entry.size,
-            scanned: entry.scanned,
-            starts: entry.starts.slice(),
-            ends: entry.ends.slice(),
-            final: i < files.length - 1,
-          });
+          if (depth >= MAX_SUBAGENT_DEPTH) continue;
+          for (const pointer of pointers) {
+            if (seen.has(pointer.sessionId)) continue;
+            seen.add(pointer.sessionId);
+            const childAgent = await this.resolveChildAgent(projectId, pointer.sessionId, ctx);
+            if (childAgent !== null)
+              next.push({ agentId: childAgent, sessionId: pointer.sessionId });
+          }
         }
-        if (depth >= MAX_SUBAGENT_DEPTH) continue;
-        const children = await this.subagentChildren(projectId, session.agentId, session.sessionId);
-        for (const child of children) {
-          if (child.agentId === null || seen.has(child.sessionId)) continue;
-          seen.add(child.sessionId);
-          next.push({ agentId: child.agentId, sessionId: child.sessionId });
-        }
+        level = next;
       }
-      level = next;
+      return out;
+    } finally {
+      for (const release of releases) release();
     }
-    return out;
   }
 
   /**

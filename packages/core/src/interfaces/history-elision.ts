@@ -129,6 +129,13 @@ export function encodeBodyRef(source: BodySource, path: string): string {
   );
 }
 
+/**
+ * The id alphabet of Agents and Sessions (core's isValidId): a ref naming anything else is not
+ * one. A ref is the client's to send back, so its ids are checked before any path is built
+ * from them — `..` in one would otherwise reach another Project's Traces.
+ */
+const ID = /^[A-Za-z0-9_-]+$/;
+
 /** What a ref names, or null when it is not one. */
 export function decodeBodyRef(ref: string): (BodySource & { path: string }) | null {
   const text = fromBase64Url(ref);
@@ -143,7 +150,9 @@ export function decodeBodyRef(ref: string): (BodySource & { path: string }) | nu
   const o = v as Record<string, unknown>;
   const count = (x: unknown): x is number =>
     typeof x === "number" && Number.isSafeInteger(x) && x >= 0;
-  if (typeof o.a !== "string" || o.a === "" || typeof o.s !== "string" || o.s === "") return null;
+  if (typeof o.a !== "string" || !ID.test(o.a) || typeof o.s !== "string" || !ID.test(o.s)) {
+    return null;
+  }
   if (!count(o.i) || o.i < 1 || !count(o.o) || typeof o.p !== "string") return null;
   return { agentId: o.a, sessionId: o.s, fileIndex: o.i, ordinal: o.o, path: o.p };
 }

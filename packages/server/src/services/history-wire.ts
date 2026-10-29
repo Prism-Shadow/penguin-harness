@@ -8,7 +8,7 @@
  * parsing), so each end reads the same bytes from its own copy.
  */
 import { createHash } from "node:crypto";
-import type { HistoryFileKey, HistoryHave } from "../api/types.js";
+import type { HistoryFileKey, HistoryHave, HistoryHeldRange } from "../api/types.js";
 
 /**
  * One `history-lines` call: what it reads — the newest `limit` units (`tail`), the units before
@@ -61,7 +61,10 @@ export function historyLinesPath(sessionId: string, q: HistoryLinesQuery): strin
 export const ANCHOR_BYTES = 4096;
 
 /** The ceiling on an encoded `have=` (the socket path builds its Request in-process; this bounds the work). */
-export const HAVE_MAX_CHARS = 64 * 1024;
+export const HAVE_MAX_CHARS = 256 * 1024;
+
+/** The id alphabet of Agents and Sessions (core's isValidId): a key is never a path. */
+const ID = /^[A-Za-z0-9_-]+$/;
 
 /** The wire name of one Trace file. Agent and Session ids never hold a `/`. */
 export function historyFileKey(
@@ -79,7 +82,7 @@ export function parseHistoryFileKey(
   const parts = k.split("/");
   if (parts.length !== 3) return null;
   const [agentId, sessionId, index] = parts as [string, string, string];
-  if (agentId === "" || sessionId === "" || !/^[1-9]\d{0,5}$/.test(index)) return null;
+  if (!ID.test(agentId) || !ID.test(sessionId) || !/^[1-9]\d{0,5}$/.test(index)) return null;
   return { agentId, sessionId, fileIndex: Number(index) };
 }
 
@@ -106,7 +109,24 @@ export function encodeHistoryHave(have: readonly HistoryHave[]): string {
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 
-/** A `have=` value, or null when it is not one (the machine then answers 400). */
+/** A file id as the wire carries it: a decimal string, or (from a hub not yet moved) a count. */
+function decimalId(v: unknown): string | null {
+  if (typeof v === "string") return /^\d{1,40}$/.test(v) ? v : null;
+  return isCount(v) ? String(v) : null;
+}
+
+function heldRange(v: unknown): HistoryHeldRange | null {
+  if (typeof v !== "object" || v === null) return null;
+  const r = v as Record<string, unknown>;
+  if (!isCount(r.lo) || !isCount(r.loOrd) || !isCount(r.hi) || r.hi < r.lo) return null;
+  if (typeof r.loAnchor !== "string" || typeof r.hiAnchor !== "string") return null;
+  return { lo: r.lo, loOrd: r.loOrd, hi: r.hi, loAnchor: r.loAnchor, hiAnchor: r.hiAnchor };
+}
+
+/**
+ * A `have=` value, or null when it is not one (the machine then answers 400). Each entry comes
+ * back with every run it names in `ranges` — a single-run entry (its run beside `k`) included.
+ */
 export function decodeHistoryHave(raw: string): HistoryHave[] | null {
   if (raw.length > HAVE_MAX_CHARS) return null;
   let value: unknown;
@@ -121,9 +141,22 @@ export function decodeHistoryHave(raw: string): HistoryHave[] | null {
     if (typeof item !== "object" || item === null) return null;
     const h = item as Record<string, unknown>;
     if (typeof h.k !== "string" || parseHistoryFileKey(h.k) === null) return null;
-    if (!isCount(h.ino) || typeof h.birthtimeMs !== "number") return null;
-    if (!isCount(h.lo) || !isCount(h.loOrd) || !isCount(h.hi) || h.hi < h.lo) return null;
-    if (typeof h.loAnchor !== "string" || typeof h.hiAnchor !== "string") return null;
+    const ino = decimalId(h.ino);
+    const dev = h.dev === undefined ? undefined : decimalId(h.dev);
+    if (ino === null || dev === null || typeof h.birthtimeMs !== "number") return null;
+    let ranges: HistoryHeldRange[] = [];
+    if (h.ranges !== undefined) {
+      if (!Array.isArray(h.ranges)) return null;
+      for (const r of h.ranges) {
+        const range = heldRange(r);
+        if (range === null) return null;
+        ranges.push(range);
+      }
+    } else if (h.lo !== undefined || h.hi !== undefined) {
+      const range = heldRange(h);
+      if (range === null) return null;
+      ranges = [range];
+    }
     let partial: HistoryHave["partial"];
     if (h.partial !== undefined) {
       const p = h.partial as Record<string, unknown> | null;
@@ -133,13 +166,10 @@ export function decodeHistoryHave(raw: string): HistoryHave[] | null {
     }
     out.push({
       k: h.k,
-      ino: h.ino,
+      ino,
+      ...(dev !== undefined ? { dev } : {}),
       birthtimeMs: h.birthtimeMs,
-      lo: h.lo,
-      loOrd: h.loOrd,
-      hi: h.hi,
-      loAnchor: h.loAnchor,
-      hiAnchor: h.hiAnchor,
+      ranges,
       ...(partial !== undefined ? { partial } : {}),
     });
   }

@@ -2,8 +2,11 @@
  * Acknowledged flow on the API socket (socket/serve.ts, socket/stream-answer.ts): a stream call
  * with `x-flow: credit` keeps at most its window of unacknowledged event data in flight.
  *
- * - Given a bulk stream with credit, no more than its window is ever unacknowledged, and it
- *   goes on as the client acknowledges.
+ * - Given a bulk stream with credit, its start frame says so (`x-flow: credit`), no more than
+ *   its window is ever unacknowledged, and it goes on as the client acknowledges. A stream
+ *   without the header says nothing of credit.
+ * - Given events larger than the window and a beat between them, each event goes once the one
+ *   before is acknowledged: the beat's pings take no credit.
  * - Given acknowledgements that arrive fast, the window grows past its start; given slow ones,
  *   it shrinks to its floor — it follows the measured delivery.
  * - Given a bulk stream waiting for credit, a one-shot call on the same socket is answered.
@@ -61,8 +64,8 @@ const streamCall = (id: number, path: string, flow: boolean) => ({
   },
 });
 
-/** A socket whose `/api/bulk` route sends `count` events of EVENT, each after `writable`. */
-function bulkSocket(count: number) {
+/** A socket whose `/api/bulk` route sends `count` events of `event`, each after `writable`. */
+function bulkSocket(count: number, event: string = EVENT, beatMs?: number) {
   const ws = new StandInSocket();
   const route = { released: false, waits: 0, answer: null as StreamAnswer | null };
   serveApiSocket(ws as unknown as WebSocket, {
@@ -70,12 +73,13 @@ function bulkSocket(count: number) {
     fetchStream: async (_request, answer) => {
       route.answer = answer;
       answer.start(200, { "content-type": "text/event-stream" });
+      if (beatMs !== undefined) answer.beat(beatMs);
       void (async () => {
         try {
           for (let i = 0; i < count; i++) {
             route.waits += 1;
-            await answer.writable(EVENT.length);
-            answer.event("chunk", null, EVENT);
+            await answer.writable(event.length);
+            answer.event("chunk", null, event);
           }
           answer.end();
         } catch {
@@ -104,6 +108,9 @@ describe("acknowledged flow on the API socket", () => {
     const { ws, route } = bulkSocket(40);
     ws.frame(streamCall(1, "/api/bulk", true));
     await flush();
+    expect(ws.sent.find((f) => f.id === 1 && "stream" in f)).toMatchObject({
+      headers: { "x-flow": "credit" },
+    });
     const window = 64 * 1024;
     expect(ws.events(1).length * EVENT.length).toBe(window);
     // Acks arrive in arbitrary steps; after each, what is in flight stays within the window.
@@ -153,6 +160,26 @@ describe("acknowledged flow on the API socket", () => {
     slow.ws.close();
   });
 
+  it("events larger than the window go one per ack, and the beat between them takes no credit", async () => {
+    const big = "y".repeat(100 * 1024);
+    const { ws } = bulkSocket(3, big, 5_000);
+    ws.frame(streamCall(1, "/api/bulk", true));
+    await flush();
+    const chunks = () => ws.events(1).filter((e) => e.event === "chunk").length;
+    expect(chunks()).toBe(1); // alone in flight, though larger than the window
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ws.events(1).map((e) => e.event)).toEqual(["chunk", "ping"]);
+    // The client acknowledges the data it handled, pings aside (as both clients count).
+    ws.frame({ id: 1, ack: big.length });
+    await flush();
+    expect(chunks()).toBe(2);
+    await vi.advanceTimersByTimeAsync(5_000);
+    ws.frame({ id: 1, ack: 2 * big.length });
+    await flush();
+    expect(chunks()).toBe(3);
+    ws.close();
+  });
+
   it("a one-shot call on the same socket is answered while a bulk stream waits for credit", async () => {
     const { ws } = bulkSocket(40);
     ws.frame(streamCall(1, "/api/bulk", true));
@@ -182,6 +209,8 @@ describe("acknowledged flow on the API socket", () => {
     const { ws, route } = bulkSocket(40);
     ws.frame(streamCall(1, "/api/bulk", false));
     await flush();
+    const start = ws.sent.find((f) => f.id === 1 && "stream" in f) as { headers: object };
+    expect(start.headers).not.toHaveProperty("x-flow");
     expect(ws.events(1)).toHaveLength(40);
     expect(ws.sent.find((f) => f.id === 1 && "end" in f)).toBeDefined();
     expect(route.released).toBe(true);

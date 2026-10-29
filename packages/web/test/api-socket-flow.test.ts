@@ -2,9 +2,12 @@
  * Acknowledged flow on the API socket client (api/socket.ts `StreamOptions.flow`), against a
  * scripted WebSocket.
  *
- * - Given a flow stream, its call says `x-flow: credit`, and after each event it has handled
- *   it acknowledges the event data handled so far, cumulatively — a frame it could not read
- *   included, so the server's window never stays shut.
+ * - Given a flow stream whose start frame echoes `x-flow: credit`, after each event it has
+ *   handled it acknowledges the event data handled so far, cumulatively — a frame it could not
+ *   read included, so the server's window never stays shut, and the beat's `ping` left out, as
+ *   the server leaves it out.
+ * - Given a flow stream whose server did not echo the header (one older than acks, which would
+ *   close the socket on one), no ack is ever sent.
  * - Given a flow stream re-issued after the server ended it, the new call counts from zero.
  * - Given a stream without flow, no ack is ever sent.
  */
@@ -36,13 +39,18 @@ const handlers: StreamHandlers = {
   onEvent: (name, data) => handled.push([name, data]),
 };
 
-async function openStream(flow: boolean) {
+async function openStream(flow: boolean, echoed = flow) {
   handled.length = 0;
   const conn = socket.stream("/api/sessions/s1/history", handlers, { flow });
   await Promise.resolve();
   await Promise.resolve();
   last().open();
-  last().receive({ id: 1, status: 200, stream: true, headers: {} });
+  last().receive({
+    id: 1,
+    status: 200,
+    stream: true,
+    headers: echoed ? { "x-flow": "credit" } : {},
+  });
   return conn;
 }
 
@@ -69,8 +77,15 @@ describe("acknowledged flow", () => {
     expect(acks()).toEqual([
       { id: 1, ack: first.length },
       { id: 1, ack: first.length + unreadable.length },
-      { id: 1, ack: first.length + unreadable.length + ping.length },
     ]);
+    conn.close();
+  });
+
+  it("a flow stream whose server did not echo the header never acknowledges", async () => {
+    const conn = await openStream(true, false);
+    last().receive({ id: 1, event: "records", eventId: "w1:1", data: '{"n":1}' });
+    expect(handled).toEqual([["records", { n: 1 }]]);
+    expect(acks()).toEqual([]);
     conn.close();
   });
 
@@ -84,7 +99,7 @@ describe("acknowledged flow", () => {
       .filter((f) => "call" in f)
       .at(-1) as { id: number; call: { headers: Record<string, string> } };
     expect(reissued.call.headers).toMatchObject({ "x-flow": "credit", "last-event-id": "w1:3" });
-    last().receive({ id: reissued.id, status: 200, stream: true, headers: {} });
+    last().receive({ id: reissued.id, status: 200, stream: true, headers: { "x-flow": "credit" } });
     last().receive({ id: reissued.id, event: "records", eventId: "w1:5", data: '{"n":22}' });
     expect(acks().at(-1)).toEqual({ id: reissued.id, ack: '{"n":22}'.length });
     conn.close();
