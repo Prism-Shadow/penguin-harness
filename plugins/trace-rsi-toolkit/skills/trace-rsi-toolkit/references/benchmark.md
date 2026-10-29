@@ -2,7 +2,7 @@
 
 Read the selected Project's `benchmark_config.toml` and Case `statement/README.md`, then the linked repository README, public task manifest and adapter documentation. These define task paths, input access, feedback, scoring, exports and runtime limits. TRACE defines the learning procedure.
 
-Resolve the matching Train/Test packages, the continuous training entry point and its constituent questions, native trial/result locations, State import contract, model connection and executable installation. For repository-backed tasks, require the full 40-character lowercase commit in the statement; the Task link, run-rules link and checkout instruction must agree with the package's top-level `ref` when present. Fetch and record that commit once, then use it throughout training and all baseline/final test repetitions. A user-specified version selects a matching package; do not substitute a branch, tag or task revision beneath the installed statements.
+Resolve the matching Train/Test packages, the continuous training entry point and its constituent questions, native trial/result locations, State import contract, model connection and executable installation. For repository-backed tasks, require the full 40-character lowercase commit in the statement; the Task link, run-rules link and checkout instruction must name the same commit. Record the repository URL and commit, then fetch that checkout once, then use it throughout training and all baseline/final test repetitions. A user-specified version selects a matching package; do not substitute a branch, tag or task revision beneath the installed statements.
 
 ## Current GDPevo layout
 

@@ -14,7 +14,7 @@ Resolve:
 
 A package may contain one Train Case that includes several questions, and several independent Test Cases. Read that mapping explicitly. Do not derive it from an old task-group name or assume every directory is an independent training trial.
 
-When statements link a task-source repository, require a full 40-character lowercase commit. The Task link, run-rules link and checkout instruction must agree with the package's top-level `ref` when present. Fetch and record that commit once; use it throughout training and every baseline/final test repetition. A user-specified version selects a matching package, not a different task revision beneath the installed statements. Do not follow branches or tags.
+When statements link a task-source repository, require a full 40-character lowercase commit. The Task link, run-rules link and checkout instruction must name the same commit. Record the repository URL and commit, then fetch that checkout once; use it throughout training and every baseline/final test repetition. A user-specified version selects a matching package, not a different task revision beneath the installed statements. Do not follow branches or tags.
 
 ## Launch and collect
 

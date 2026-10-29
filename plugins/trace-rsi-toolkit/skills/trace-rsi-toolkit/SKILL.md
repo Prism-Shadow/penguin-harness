@@ -1,7 +1,7 @@
 ---
 name: trace-rsi-toolkit
 description: Organize TRACE experiments on published Benchmarks, train a modular skill bank from Actor trajectories, select a checkpoint by training scores, and compare it with a no-Skill baseline on independent tests.
-version: 2026.10.29.1
+version: 2026.10.29.2
 ---
 
 # TRACE

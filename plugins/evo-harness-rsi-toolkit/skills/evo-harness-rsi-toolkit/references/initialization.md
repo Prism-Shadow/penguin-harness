@@ -38,8 +38,8 @@ Harness can use those instead without changing Evo's learning method.
 A built-in package can contain run
 descriptions while its data and environments live in the linked repository.
 For repository-backed tasks, require the full 40-character lowercase commit named
-by the statement. The Task link, run-rules link and checkout instruction must agree
-with the package's top-level `ref` when present. Fetch and record that commit once;
+by the statement. The Task link, run-rules link and checkout instruction must name
+the same commit. Record the repository URL and commit, then fetch that checkout once;
 reuse it throughout training and all baseline/final test repetitions. A requested
 version selects a matching package; do not substitute a branch, tag or task revision
 beneath the installed statements. Use the declared official resource cache and record it; do not introduce a

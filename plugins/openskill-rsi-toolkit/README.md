@@ -27,7 +27,7 @@ penguin plugin install ./plugins/openskill-rsi-toolkit --project-id <project_id>
 ## 当前 Benchmark 的适配
 
 - 从项目 `benchmarks/<id>/benchmark_config.toml` 和 Case statement 读取实际配置。
-- Harbor 的任务路径与版本来自 statement，使用完整 40 位小写 commit，并与包内 `ref`（如有）一致；
+- Harbor 的任务路径与版本来自 statement，使用完整 40 位小写 commit，任务链接、运行规则和检出说明保持一致；
   构建及 Baseline、OpenSkill 测试共用该提交。内置包仍可能需要下载 Harbor 任务和环境镜像。
 - 支持 GDPevo 按领域拆分的 Train/Test 包、`train_tasks` 中的多个问题及相邻共享 `env/`。
   一个训练组保持为一个构建 Case，并记录其问题数；正式对比写入配对 Test 的 scoreboard。
