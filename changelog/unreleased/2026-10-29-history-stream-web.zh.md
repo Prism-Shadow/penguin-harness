@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** fix
 - **Scope:** `web`, `ui`, `ui-gallery`
+- **PR:** [#1393](https://github.com/Prism-Shadow/penguin-harness/pull/1393)
 
 [English](2026-10-29-history-stream-web.md)
 
