@@ -26,6 +26,7 @@
  * - Given a live server that never seeds, the wait gives up at its bound, saying so.
  * - Given a server that exits while the mint waits, the wait ends with the ordinary answer.
  */
+import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -34,9 +35,9 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import { CLI_TOKEN_MAX_TTL_MS, mintApiToken, mintApiTokenOnceSeeded } from "../src/auth-token.js";
 import type { MintTokenResult, SeedWait } from "../src/auth-token.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase, openExistingDatabase } from "../src/db/database.js";
 import { UsersRepo } from "../src/db/repos/users.js";
-import { acquireServerLock } from "../src/lock.js";
+import { acquireServerLock, releaseServerLock } from "../src/lock.js";
 import { apiClient, createTestApp, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -137,6 +138,16 @@ describe("minting against a server's database", () => {
 });
 
 describe("minting while the server is still starting", () => {
+  /**
+   * The server's schema step, run once and copied into each case: a fresh web.db written
+   * statement by statement costs a second or more of fsyncs on a Windows runner.
+   */
+  let schemaOnly: string;
+  beforeAll(async () => {
+    schemaOnly = path.join(await makeTempRoot(), "web.db");
+    openDatabase(schemaOnly).close();
+  });
+
   /** Listeners standing in for live servers' ports, closed after each case. */
   const listeners: net.Server[] = [];
   afterEach(async () => {
@@ -145,7 +156,10 @@ describe("minting while the server is still starting", () => {
     );
   });
 
-  /** A lock the liveness probe accepts, as a server writes it the moment its port binds. */
+  /**
+   * A lock the liveness probe accepts, as a server writes it the moment its port binds. Its
+   * exit is the server's own: the lock removed, then the port closed (index.ts's shutdown).
+   */
   async function liveServerOn(root: string): Promise<{ exit: () => Promise<void> }> {
     const srv = net.createServer();
     const port = await new Promise<number>((resolve) => {
@@ -153,7 +167,12 @@ describe("minting while the server is still starting", () => {
     });
     listeners.push(srv);
     acquireServerLock(root, { pid: process.pid, port, startedAt: new Date().toISOString() });
-    return { exit: () => new Promise<void>((resolve) => srv.close(() => resolve())) };
+    return {
+      exit: () => {
+        releaseServerLock(root);
+        return new Promise<void>((resolve) => srv.close(() => resolve()));
+      },
+    };
   }
 
   /**
@@ -184,12 +203,12 @@ describe("minting while the server is still starting", () => {
     db.close();
   }
 
-  /** The server's own schema step: tables created, no account in them yet. */
-  const createSchema = (dbPath: string) => openDatabase(dbPath).close();
+  /** The server's schema step: tables created, no account in them yet. */
+  const createSchema = (dbPath: string) => fs.copyFileSync(schemaOnly, dbPath);
 
-  /** An account row, as the seed (or an admin adding a user) writes it. */
+  /** An account row, as the seed (or an admin adding a user) writes it, into a schema in place. */
   function addAccount(dbPath: string, userId: string): void {
-    const db = openDatabase(dbPath);
+    const db = openExistingDatabase(dbPath);
     try {
       wire(UsersRepo, { db: db }).insert({
         userId,
@@ -236,6 +255,7 @@ describe("minting while the server is still starting", () => {
   it("a live server whose accounts do not include admin has been seeded already: the mint fails at once", async () => {
     const root = await makeTempRoot();
     const dbPath = path.join(root, "web.db");
+    createSchema(dbPath);
     addAccount(dbPath, "alice");
     await liveServerOn(root);
     const clock = jumpingClock();
