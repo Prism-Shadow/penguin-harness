@@ -61,9 +61,7 @@ const AGENT_EVENTS =
 /** How many Sessions' Projects are remembered for the Project-scoped Trace path. */
 const PROJECTS_KEPT = 10_000;
 
-/** What a read the copy would have answered gets once the machine says the Session is gone. */
-const sessionGone = (): HttpError =>
-  new HttpError(404, "session_not_found", "Session does not exist.");
+/** What a read gets once the machine said the Session is gone. */
 const goneResponse = (): Response =>
   Response.json(errorBody("session_not_found", "Session does not exist."), { status: 404 });
 
@@ -271,18 +269,6 @@ export class MachineHistory {
     return null;
   }
 
-  /**
-   * Whether the machine says the Session the copy is about to answer for is gone (asked at most
-   * once per a short TTL, HistorySync.sessionOn); its copy is dropped then. Away, or saying
-   * nothing usable, the copy's last word stands: false.
-   */
-  async #gone(machineId: string, sessionId: string): Promise<boolean> {
-    const fact = await this.#sync.sessionOn(machineId, sessionId);
-    if (fact.kind !== "gone") return false;
-    this.#projects.delete(`${machineId}\0${sessionId}`);
-    return true;
-  }
-
   #rememberProject(machineId: string, sessionId: string, projectId: string): void {
     const key = `${machineId}\0${sessionId}`;
     this.#projects.delete(key);
@@ -393,7 +379,7 @@ export class MachineHistory {
       }
       const k = historyFileKey(named.agentId, named.sessionId, named.fileIndex);
       const held = await this.#cache.records(machineId, k, named.ordinal, named.ordinal + 1);
-      if (held !== null && (await this.#gone(machineId, sessionId))) throw sessionGone();
+      if (held !== null) this.#sync.check(machineId, sessionId);
       let record = held?.[0]?.record ?? null;
       let fetched: { totalBytes: number } | null = null;
       if (record === null) {
@@ -423,7 +409,7 @@ export class MachineHistory {
     const held = await this.#cache.records(machineId, k, ordinal, ordinal + 1);
     const image = held?.[0] !== undefined ? traceRecordImage(held[0].record, slot) : null;
     if (image === null) return null;
-    if (await this.#gone(machineId, sessionId)) return goneResponse();
+    this.#sync.check(machineId, sessionId);
     return new Response(new Uint8Array(image.bytes), {
       status: 200,
       headers: {
@@ -452,7 +438,7 @@ export class MachineHistory {
     if (to > count.held) return null;
     const held = await this.#cache.records(machineId, k, from, to);
     if (held === null) return null;
-    if (await this.#gone(machineId, sessionId)) return goneResponse();
+    this.#sync.check(machineId, sessionId);
     return Response.json({
       events: held.map((entry) => entry.record),
       offset,
@@ -473,13 +459,13 @@ export class MachineHistory {
     if (this.#analyze === undefined) return null;
     const records = await this.#cache.wholeRecords(machineId, k);
     if (records === null) return null;
-    const fact = await this.#sync.sessionOn(machineId, sessionId);
-    if (fact.kind === "gone") {
-      this.#projects.delete(`${machineId}\0${sessionId}`);
-      return goneResponse();
-    }
+    // Whether it is still there is asked behind the answer; only a Project not known yet is
+    // waited for (it cannot be priced without one), once per TTL.
+    this.#sync.check(machineId, sessionId);
     let projectId = this.#projects.get(`${machineId}\0${sessionId}`) ?? null;
     if (projectId === null) {
+      const fact = await this.#sync.sessionOn(machineId, sessionId);
+      if (fact.kind === "gone") return goneResponse();
       projectId = fact.kind === "there" ? fact.projectId : null;
       if (projectId === null) return null;
       this.#rememberProject(machineId, sessionId, projectId);

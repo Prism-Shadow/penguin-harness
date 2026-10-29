@@ -54,7 +54,7 @@ let connected = true;
  * A second machine of the Project, when a case lists it: one that never answers, or one that
  * answers it holds no such Session.
  */
-let second: "none" | "mute" | "absent" = "none";
+let second: "none" | "mute" | "absent" | "forbidden" = "none";
 const SECOND = "Wq3mN8rT2vYx-Ab1";
 const SECOND_ALIAS = "gpu-box";
 let secondMachine: http.Server;
@@ -116,6 +116,8 @@ beforeAll(async () => {
   secondMachine = http.createServer((_req, res) => {
     if (second === "absent") {
       json(res, 404, { error: { code: "session_not_found", message: "No such Session." } });
+    } else if (second === "forbidden") {
+      json(res, 403, { error: { code: "session_forbidden", message: "Not for this account." } });
     }
     // Mute: the request is taken and never answered.
   });
@@ -244,6 +246,21 @@ describe("a Session-level request for a machine's Session", () => {
       second = "none";
     }
   }, 20_000);
+
+  it("answers 403 session_forbidden naming the machine that holds the Session and will not show it, never a 404", async () => {
+    const id = "session-2026-10-22-09-00-00-0f0bdd1e";
+    second = "forbidden";
+    try {
+      const res = await apiClient(t.app, admin).get(`/api/sessions/${id}/messages`);
+      expect(res.status).toBe(403);
+      expect(await errorOf(res)).toMatchObject({
+        code: "session_forbidden",
+        details: { machineId: SECOND, alias: SECOND_ALIAS },
+      });
+    } finally {
+      second = "none";
+    }
+  });
 
   it("is the Session routes' 404 when every machine that could hold the Session says it does not", async () => {
     const id = "session-2026-10-22-09-00-00-0ddba11e";

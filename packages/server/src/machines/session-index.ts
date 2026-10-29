@@ -38,11 +38,13 @@ export interface SilentMachine {
 
 /**
  * Where a Session lives, or why that is unknown: `silent` names the machines that could hold it
- * and did not say (an empty list with no place means every machine asked answered no).
+ * and did not say, `refused` those that hold it and will not show it to this server
+ * (`403 session_forbidden`); no place with both empty means every machine asked answered no.
  */
 export interface SessionResolution {
   place: SessionPlace | null;
   silent: readonly SilentMachine[];
+  refused: readonly SilentMachine[];
 }
 
 /** A machine the index may ask about a Session: a client to its API while connected, null otherwise. */
@@ -69,12 +71,16 @@ const MISS_TTL_MS = 10_000;
 const ASK_TIMEOUT_MS = 5_000;
 
 /** One machine's answer to "do you hold this Session?". */
-type Answer = { found: SessionPlace } | { absent: true } | { failed: true };
+type Answer = { found: SessionPlace } | { absent: true } | { refused: true } | { failed: true };
 
 async function askOne(machine: MachineCandidate, path: string): Promise<Answer> {
   try {
     const res = await machine.api!.request("GET", path);
     if (res.status === 404) return { absent: true };
+    if (res.status === 403) {
+      const code = (JSON.parse(res.text) as { error?: { code?: unknown } } | null)?.error?.code;
+      if (code === "session_forbidden") return { refused: true };
+    }
     if (res.status !== 200) return { failed: true };
     const body = JSON.parse(res.text) as { session?: { projectId?: unknown } } | null;
     const projectId = body?.session?.projectId;
@@ -145,10 +151,10 @@ export class SessionMachineIndex {
     candidates: () => Promise<readonly MachineCandidate[]>,
   ): Promise<SessionResolution> {
     const known = this.lookup(sessionId);
-    if (known !== null) return Promise.resolve({ place: known, silent: [] });
+    if (known !== null) return Promise.resolve({ place: known, silent: [], refused: [] });
     const until = this.#misses.get(sessionId);
     if (until !== undefined) {
-      if (until > this.#now()) return Promise.resolve({ place: null, silent: [] });
+      if (until > this.#now()) return Promise.resolve({ place: null, silent: [], refused: [] });
       this.#misses.delete(sessionId);
     }
     let asking = this.#asking.get(sessionId);
@@ -192,14 +198,16 @@ export class SessionMachineIndex {
       // Who has not said no: asked and not answered yet, or answered with nothing usable.
       const unsaid = new Map(fleet.map((machine) => [machine.machineId, machine]));
       const failed = new Set<string>();
+      // Who holds it and will not show it to this server: an answer, not silence.
+      const refused: SilentMachine[] = [];
       const silent = (): SilentMachine[] =>
         [...unsaid.values()].map(({ machineId, alias }) => ({ machineId, alias }));
       if (fleet.length === 0) {
-        resolve({ place: null, silent: [] });
+        resolve({ place: null, silent: [], refused: [] });
         return;
       }
       const timer = setTimeout(
-        () => resolve({ place: null, silent: silent() }),
+        () => resolve({ place: null, silent: silent(), refused }),
         this.#askTimeoutMs,
       );
       timer.unref?.();
@@ -207,21 +215,24 @@ export class SessionMachineIndex {
         void askOne(machine, path).then((answer) => {
           if ("found" in answer) {
             clearTimeout(timer);
-            resolve({ place: answer.found, silent: [] });
+            resolve({ place: answer.found, silent: [], refused: [] });
             return;
           }
           if ("failed" in answer) failed.add(machine.machineId);
           else unsaid.delete(machine.machineId);
+          if ("refused" in answer) {
+            refused.push({ machineId: machine.machineId, alias: machine.alias });
+          }
           if (unsaid.size === failed.size) {
             clearTimeout(timer);
-            resolve({ place: null, silent: silent() });
+            resolve({ place: null, silent: silent(), refused });
           }
         });
       }
     });
     if (outcome.place !== null) {
       this.note(sessionId, outcome.place.machineId, outcome.place.projectId);
-    } else if (outcome.silent.length === 0) {
+    } else if (outcome.silent.length === 0 && outcome.refused.length === 0) {
       this.#misses.delete(sessionId);
       this.#misses.set(sessionId, this.#now() + this.#missTtlMs);
       if (this.#misses.size > MISS_CAPACITY) this.#evictOldest(this.#misses);

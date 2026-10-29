@@ -17,9 +17,14 @@ type CreateConnection = (
   callback: (err: Error | null, socket?: Duplex) => void,
 ) => Duplex | undefined | null;
 
-/** The last time bytes arrived from each machine, by machine id. */
+/** How far back the link's rate is measured. */
+const RATE_SPAN_MS = 10_000;
+
+/** The last time bytes arrived from each machine, and how fast, by machine id. */
 export class LinkActivity {
   readonly #heard = new Map<string, number>();
+  /** Bytes per whole second of the last RATE_SPAN_MS, oldest first, by machine id. */
+  readonly #seconds = new Map<string, Array<{ second: number; bytes: number }>>();
   readonly #now: () => number;
 
   constructor(now: () => number = Date.now) {
@@ -40,7 +45,9 @@ export class LinkActivity {
       if (socket === undefined || socket === null || tapped.has(socket)) return;
       tapped.add(socket);
       setImmediate(() => {
-        if (!socket.destroyed) socket.on("data", () => this.heard(machineId));
+        if (!socket.destroyed) {
+          socket.on("data", (chunk: Buffer) => this.heard(machineId, chunk.length));
+        }
       });
     };
     holder.createConnection = (options, callback) => {
@@ -56,9 +63,32 @@ export class LinkActivity {
     return agent;
   }
 
-  /** Marks `machineId` heard now. */
-  heard(machineId: string): void {
-    this.#heard.set(machineId, this.#now());
+  /** Marks `machineId` heard now, `bytes` having come in. */
+  heard(machineId: string, bytes = 0): void {
+    const now = this.#now();
+    this.#heard.set(machineId, now);
+    const second = Math.floor(now / 1000);
+    const seconds = this.#seconds.get(machineId) ?? [];
+    const last = seconds.at(-1);
+    if (last?.second === second) last.bytes += bytes;
+    else seconds.push({ second, bytes });
+    while (seconds.length > 0 && seconds[0]!.second <= second - RATE_SPAN_MS / 1000)
+      seconds.shift();
+    this.#seconds.set(machineId, seconds);
+  }
+
+  /**
+   * The bytes per second that came from `machineId` over the last RATE_SPAN_MS (counted from the
+   * first second heard in it); 0 when nothing did.
+   */
+  rate(machineId: string): number {
+    const seconds = this.#seconds.get(machineId);
+    if (seconds === undefined || seconds.length === 0) return 0;
+    const now = Math.floor(this.#now() / 1000);
+    const live = seconds.filter((entry) => entry.second > now - RATE_SPAN_MS / 1000);
+    if (live.length === 0) return 0;
+    const span = now - live[0]!.second + 1;
+    return live.reduce((sum, entry) => sum + entry.bytes, 0) / span;
   }
 
   /** When bytes last came in from `machineId`; null when none has since this server started. */
