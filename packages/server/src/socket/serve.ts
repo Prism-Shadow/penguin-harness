@@ -127,6 +127,15 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   ws.on("pong", () => {
     alive = true;
   });
+  // A peer that pings us hears this socket: the hub pings a machine only while it still hears
+  // that machine's link. On a slow link our own ping waits behind everything queued ahead of it
+  // (a page's worth of history is most of a beat at 10 KB/s), so its pong can come back later
+  // than a beat while the peer is receiving all along — dropping it then would cut a live link.
+  // A dead link carries no pings, so the check above still ends it; a browser cannot send
+  // protocol pings, so nothing changes for one.
+  ws.on("ping", () => {
+    alive = true;
+  });
 
   ws.on("message", (data, isBinary) => {
     alive = true; // traffic is proof of life too
