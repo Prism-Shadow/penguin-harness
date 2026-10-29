@@ -10,14 +10,14 @@
 ## Summary
 [summary]: #summary
 
-本 RFC 把「这次运行哪个 CLI 入口」收成一个有名字的问题——**resolution**——由每个要跑 harness CLI 的消费方共享：server 启动、机器远端命令、推送闸门、用户可见的命令 shim。resolution 从安装的声明与 [harness meta](./PRFC-0023-harness-meta.zh.md#guide-level-explanation) 作答。每条 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 的产品都带一个 **pushed-CLI loader**——桌面应用还没有；找不到可用 loader 时，resolution 给出具名故障。答案是带固定顺序的判定过程：记录与声明的每一种状态，各自得出一个入口或一个具名故障。
+本 RFC 把「这次运行哪个 CLI 入口」收成一个有名字的问题——**resolution**——由每个要跑 harness CLI 的消费方共享：server 启动、机器远端命令、推送闸门、用户可见的命令 shim。resolution 从安装的声明与 [harness meta](./PRFC-0023-harness-meta.zh.md#guide-level-explanation) 作答。每条 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 的产品都带一个 **CLI loader**——加载数据根记录所指那份 CLI 的入口，本身是安装的产物、在热推送后存活；桌面应用还没有——找不到可用 loader 时，resolution 给出具名故障。答案是带固定顺序的判定过程：记录与声明的每一种状态，各自得出一个入口或一个具名故障。
 
 ## Motivation
 [motivation]: #motivation
 
 ### loader 的身份今天是一个文件名
 
-pushed-CLI loader 的身份今天是一个文件名，靠约定在包、版本与机器之间流传。一份声明能指着它说「这就是 loader」的地方今天不存在；名字在五处被各自拼写——远端命令路径、启动检查、桌面启动器、推送闸门、包的 bin 映射。改名时这些地方以三种方式坏掉：一处响亮地坏，两处无声地坏，全部发生在运行期。这个名字被当作协议字段使用，却没人把它当协议管理。
+CLI loader 的身份今天是一个文件名，靠约定在包、版本与机器之间流传。一份声明能指着它说「这就是 loader」的地方今天不存在；名字在五处被各自拼写——远端命令路径、启动检查、桌面启动器、推送闸门、包的 bin 映射。改名时这些地方以三种方式坏掉：一处响亮地坏，两处无声地坏，全部发生在运行期。这个名字被当作协议字段使用，却没人把它当协议管理。
 
 ### 两条通道上推送 CLI 抵达不了
 
@@ -33,7 +33,7 @@ pushed CLI 的重构就在眼前：改名、改入口形态、改 server 启动�
 ### 概念
 
 - **安装入口**——通道产品装下的、一个人会敲的那个 CLI 入口；别的都不知道时运行它。
-- **pushed-CLI loader**——加载数据根记录所指那份 CLI 的入口；它本身是安装的产物，并在热推送后存活。
+- **CLI loader**——加载数据根记录所指那份 CLI 的入口；它本身是安装的产物，并在热推送后存活。
 - **resolution**——那个共享的问题「这条命令运行哪个入口」；答案来自安装声明了什么、记录里有什么。
 
 ### 每个消费方问的是同一个问题
@@ -46,11 +46,11 @@ resolution 从根里的记录与调用方产品的声明作答。没有记录的
 
 ### 身份靠声明
 
-loader 靠包清单里的一个字段亮明身份：`penguin.pushedCliLoader`，值是相对该清单的 loader 路径。resolution 从这个字段发现 loader。一次保住字段的改名对 resolution 不可见；一次破坏字段的改名在发现点变成具名故障。
+loader 靠包清单里的一个字段亮明身份：`penguin.cliLoader`，值是相对该清单的 loader 路径。resolution 从这个字段发现 loader。一次保住字段的改名对 resolution 不可见；一次破坏字段的改名在发现点变成具名故障。
 
 ### 每条通道都带 loader
 
-每条通道的产品都带一个可加载的 pushed-CLI loader，由发行面在构建期断言。这样一次产品重塑不会无声丢掉加载推送代码的那一半。断言查什么——入口与 loader 在每个产物中都在、都加载——是本 RFC 的主张；发行工作流怎样措辞它的失败，见 Unresolved。今天有一条通道还没带上它：桌面应用不带 loader，它的数据根一直答故障 `loader-absent`，直到桌面产品带上一个。
+每条通道的产品都带一个可加载的 CLI loader，由发行面在构建期断言。这样一次产品重塑不会无声丢掉加载推送代码的那一半。断言查什么——入口与 loader 在每个产物中都在、都加载——是本 RFC 的主张；发行工作流怎样措辞它的失败，见 Unresolved。今天有一条通道还没带上它：桌面应用不带 loader，它的数据根一直答故障 `loader-absent`，直到桌面产品带上一个。
 
 ### 故障要具名
 
@@ -114,7 +114,7 @@ resolution 收调用方自己的入口与数据根。它从磁盘读两样东西
 产品在发货那个包的包清单里声明它的 loader：
 
 ```json
-"penguin": { "pushedCliLoader": "./dist/penguin-hmr.js" }
+"penguin": { "cliLoader": "./dist/penguin-hmr.js" }
 ```
 
 值是一条相对清单所在目录的路径，resolution 按那个目录解析它；爬出这个包的值不指向任何 loader。读者从手上的入口向上走，找到最近的那份包清单——它就是产品自己的清单——并把 bin symlink 或 `PATH` 链接先解析成它指向的文件。
@@ -148,7 +148,7 @@ resolution 收调用方自己的入口与数据根。它从磁盘读两样东西
 
 ### 身份的载体
 
-载体是包清单里的 `penguin.pushedCliLoader` 字段。三条性质定下它。读一份清单不需要运行产品，人、远端调用方与发行断言都需要这一点。清单属于一个产品，所以每条通道声明自己产物里带的那一个 loader。每条通道的打包本来就会带上清单，声明因此不需要第二套投递机制。
+载体是包清单里的 `penguin.cliLoader` 字段。三条性质定下它。读一份清单不需要运行产品，人、远端调用方与发行断言都需要这一点。清单属于一个产品，所以每条通道声明自己产物里带的那一个 loader。每条通道的打包本来就会带上清单，声明因此不需要第二套投递机制。
 
 另外两个候选各缺其中一条。导出的身份常量只有运行产品代码才读得到，而远端调用方与构建期断言做不到这件事。记录里的指针描述的是一个数据根、而非一个产品，而没有记录的根里仍然有 loader 要找。
 
@@ -169,13 +169,13 @@ resolution 依赖常在：一个可以信任记录存在的 reader，才不需�
 
 ### 声明认身份，名字留记录
 
-> 无论产物在 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 之间怎样命名或改名，[resolution](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation) 仍然按产物携带的声明识别 [pushed-CLI loader](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation)；文件名只在没有声明处作答，并记为一次旧名回答。
+> 无论产物在 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 之间怎样命名或改名，[resolution](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation) 仍然按产物携带的声明识别 [CLI loader](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation)；文件名只在没有声明处作答，并记为一次旧名回答。
 
 这是整份 RFC 要固定的那条属性。一个靠约定跨包跨机器共享的名字，改名时以三种方式在运行期分别损坏；未来的重做若重新引入按文件名认人，三种坏法的形态就随它回来。旧名是名字还在作答的唯一一处，它只在产品什么都没声明时作答；答案有记录，窗口就能凭证据关闭，名字也不会与声明并排存在。
 
 ### 每条通道都带着 loader 发货
 
-> 无论一条 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 的产品怎样重塑，它仍然带着 [pushed-CLI loader](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation)。
+> 无论一条 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 的产品怎样重塑，它仍然带着 [CLI loader](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation)。
 
 丢掉 loader 的通道会无声劈开自己的更新面：platform 与 web 的推送照落，CLI 的推送在记录里腐坏。invariant 是构建期断言所捍卫的东西本身；断言的措辞可以改，属性不能顺手退役。
 
@@ -228,6 +228,10 @@ resolution 可以推广：一次推送的 web 资产与 platform 两半可以按
 
 ## Changes
 
+### v1.4.0
+
+- 身份载体改名 `penguin.cliLoader`：字段的名字说的是它做什么——加载 CLI 的那个入口。声明的形状、发现方式与它给出的故障都不变。
+
 ### v1.3.0
 
 - resolution 住在命令 shim 模块 `packages/server/src/services/cli-shim.ts` 里，以 `@prismshadow/penguin-server/cli-shim` 发布：一个函数，与早已决定 `penguin` 运行什么的那份代码放在一起；v1.2.0 时为它单开过一份模块。
@@ -236,10 +240,10 @@ resolution 可以推广：一次推送的 web 资产与 platform 两半可以按
 
 ### v1.2.0
 
-- 定下身份的载体：包清单里的 `penguin.pushedCliLoader` 字段，理由与被否掉的两个候选写在「身份的载体」一节。
+- 定下身份的载体：包清单里的 `penguin.cliLoader` 字段，理由与被否掉的两个候选写在「身份的载体」一节。
 - 新增声明的参考形状：字段本身、按清单所在目录解析、从入口走到它所属包的清单，以及已声明、缺席、损坏三种答案。
 - 新增 record 的五种状态，即 resolver 读到的形态：没有记录、记录损坏、没有 CLI 一节、指针不可用、指针所指文件不在。那一层的 reader 保持它那三种答案；resolver 自己读记录，并把答案投影到它那三种上。
-- 把判定带进代码：一个 resolver 回答运行哪个入口；pushed-CLI loader 按名字报告它的答案，命令 shim 运行它。它位于热更新层之外，以 server 包的子路径发布（见「答案在哪里」）。机器远端命令与推送闸门仍各自作答。
+- 把判定带进代码：一个 resolver 回答运行哪个入口；CLI loader 按名字报告它的答案，命令 shim 运行它。它位于热更新层之外，以 server 包的子路径发布（见「答案在哪里」）。机器远端命令与推送闸门仍各自作答。
 - 机器页按名字读 loader 的失败——这一版引入的具名报告，以及更早发布线发的那两句句子——存储里没有 CLI 的机器因此拿到「在这页重装一次」那句，不论它是哪条发布线装上去的。
 - 桌面通道仍然开着：它的产品不带 loader、也不声明 loader，桌面数据根因此答 `loader-absent`。关掉它要改桌面包，而桌面包属于热更新层。
 
