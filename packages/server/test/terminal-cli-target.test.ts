@@ -17,7 +17,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveCliLaunch } from "../src/services/cli-shim.js";
+import { offeredCli } from "../src/services/cli-shim.js";
 import { apiClient, createTestApp, loginAdmin, type TestApp } from "./helpers.js";
 
 const PROMPT = "READY>";
@@ -38,7 +38,7 @@ function onPath(name: string): string | null {
 const bash = process.platform === "win32" ? null : onPath("bash");
 
 /** This checkout's CLI, as a dev server running from source offers it. */
-const cli = resolveCliLaunch({
+const cli = offeredCli({
   explicit: undefined,
   moduleDir: path.dirname(fileURLToPath(import.meta.url)),
   source: true,

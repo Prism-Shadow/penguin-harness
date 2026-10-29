@@ -23,12 +23,13 @@
  * shell happens to resolve — under the desktop app that interpreter is the Electron binary,
  * which runs a script only with `ELECTRON_RUN_AS_NODE` set; and the default above.
  *
- * Which CLI that is, is decided once per boot: {@link resolveCliLaunch} names the installed
- * CLI — an explicit `PENGUIN_CLI_ENTRY` (what `penguin server|web` and the desktop shell
+ * Which CLI that is, is decided once per boot: {@link offeredCli} names the CLI this server
+ * offers — an explicit `PENGUIN_CLI_ENTRY` (what `penguin server|web` and the desktop shell
  * pass for themselves), else, for a server running from a checkout, that checkout's CLI,
  * from source while the server itself runs from source — and {@link resolveCli}, at the end
- * of this module, decides between that entry and the CLI loader — the entry that loads a
- * pushed CLI — which runs the same code this server runs. See {@link shimFromResolution}.
+ * of this module, decides between that entry and the CLI loader — the entry that loads
+ * whichever CLI the data root's record points at — which runs the same code this server
+ * runs. See {@link shimFromResolution}.
  *
  * Rewritten at every boot, so a moved checkout is picked up by the next start; while a
  * server is running, a dist that moved out from under it has already broken the server
@@ -57,7 +58,7 @@ export function cliShimDir(root: string): string {
  */
 export type CliOrigin = "env" | "source" | "build";
 
-/** How this server offers its CLI, decided once per boot by {@link resolveCliLaunch}. */
+/** How this server offers its CLI, decided once per boot by {@link offeredCli}. */
 export interface CliLaunch {
   /** The script the shim runs, or null when there is none to run. */
   entry: string | null;
@@ -109,7 +110,7 @@ export function checkoutTsLoader(checkout: string): string | null {
   }
 }
 
-export interface ResolveCliLaunchOptions {
+export interface OfferedCliOptions {
   /** `PENGUIN_CLI_ENTRY` as the environment has it; blank counts as unset. */
   explicit: string | undefined;
   /** The directory of the server module asking: where the walk to a checkout starts. */
@@ -137,7 +138,7 @@ export interface ResolveCliLaunchOptions {
  * 4. A checkout with neither: no entry, and the reason, which the shim and every terminal then
  *    state instead of letting another installation's `penguin` stand in.
  */
-export function resolveCliLaunch(opts: ResolveCliLaunchOptions): CliLaunch {
+export function offeredCli(opts: OfferedCliOptions): CliLaunch {
   const checkout = workspaceRoot(opts.moduleDir);
   const explicit = opts.explicit?.trim();
   if (explicit) {
@@ -175,8 +176,8 @@ export function resolveCliLaunch(opts: ResolveCliLaunchOptions): CliLaunch {
   };
 }
 
-/** The CLI this installation offers, before resolution has a say. */
-export interface InstalledCli {
+/** The CLI this server offers as its own, before resolution has a say. */
+export interface OwnCli {
   /** The entry this server was told to offer, or null when it has none. */
   entry: string | null;
   /** Interpreter options before it (see CliLaunch.execArgs). */
@@ -198,36 +199,33 @@ export interface ShimLaunchAnswer {
  * The shim's entry, from resolution's answer.
  *
  * The shim carries the answer rather than deciding for itself: the loader a root with a
- * pushed CLI resolves to, the installed CLI for a root with no pushed one, and the
- * installed CLI with the fault recorded when resolution faults — a server that starts on
- * its installed CLI beats one that does not, and that fallback is now a named decision
- * instead of an accident. A loader is a plain file, so only the installed entry keeps the
- * interpreter options a source run needs.
+ * pushed CLI resolves to, the caller's own entry for a root with no pushed one, and that
+ * entry with the fault recorded when resolution faults — a server that starts on its own
+ * entry beats one that does not, and that fallback is now a named decision instead of an
+ * accident. A loader is a plain file, so only the own entry keeps the interpreter options a
+ * source run needs.
  */
-export function shimFromResolution(
-  installed: InstalledCli,
-  resolved: CliResolution | null,
-): ShimLaunchAnswer {
-  if (installed.entry === null || resolved === null) {
+export function shimFromResolution(own: OwnCli, resolved: CliResolution | null): ShimLaunchAnswer {
+  if (own.entry === null || resolved === null) {
     return {
-      entry: installed.entry,
-      execArgs: [...installed.execArgs],
-      unavailable: installed.unavailable,
+      entry: own.entry,
+      execArgs: [...own.execArgs],
+      unavailable: own.unavailable,
       answer: "no-entry",
     };
   }
   if (resolved.kind === "fault") {
     return {
-      entry: installed.entry,
-      execArgs: [...installed.execArgs],
-      unavailable: installed.unavailable,
+      entry: own.entry,
+      execArgs: [...own.execArgs],
+      unavailable: own.unavailable,
       answer: resolved.fault,
     };
   }
-  const same = resolved.entry === installed.entry;
+  const same = resolved.entry === own.entry;
   return {
     entry: resolved.entry,
-    execArgs: same ? [...installed.execArgs] : [],
+    execArgs: same ? [...own.execArgs] : [],
     unavailable: null,
     answer: resolved.reason,
   };
@@ -466,26 +464,26 @@ function writeExecutable(file: string, content: string): void {
  *
  * A rename that keeps the field works. A field that names nothing usable answers one named
  * fault. Products built before the declaration carry none, and only there does the old file
- * name answer — recorded as `legacy` while the transition window lasts.
+ * name answer — recorded as `legacy-loader` while the transition window lasts.
  */
 
 /** The loader's file name in products built before the declaration (the transition window). */
 export const LEGACY_LOADER_NAME = "penguin-hmr.js";
 
-/** The six faults a consumer can report, in the RFC's order. */
+/** The six faults a consumer can report, in the RFC's order; each names the piece that broke. */
 export const CLI_FAULTS = [
-  "damaged-record",
-  "cli-pointer-unusable",
-  "cli-bundle-missing",
-  "loader-missing",
-  "loader-absent",
-  "loader-unloadable",
+  "record-unreadable",
+  "cli-path-unusable",
+  "cli-file-missing",
+  "declared-loader-missing",
+  "no-loader",
+  "cli-unloadable",
 ] as const;
 
 export type CliFault = (typeof CLI_FAULTS)[number];
 
-/** The four reasons an entry can be the answer. */
-export const CLI_REASONS = ["pushed", "legacy", "no-record", "no-pushed-cli"] as const;
+/** The three reasons an entry can be the answer; each says which entry answered. */
+export const CLI_REASONS = ["declared-loader", "legacy-loader", "own-entry"] as const;
 
 export type CliReason = (typeof CLI_REASONS)[number];
 
@@ -518,8 +516,8 @@ type CliRecord =
  * on is one of the answers, because every caller has to say something useful either way.
  *
  * `cli.bundle` is written only by the hot-update layer, but a reader still keeps a malformed
- * value from walking out of the store with `..`: an escape is `unusable`, like a pointer
- * that names nothing.
+ * value from walking out of the store with `..`: an escape is `unusable`, like a path that
+ * names nothing.
  */
 async function readCliRecord(root: string): Promise<CliRecord> {
   const file = path.join(root, "hmr", "harness.json");
@@ -628,16 +626,18 @@ async function readLoaderDeclaration(manifest: string): Promise<LoaderDeclaratio
  * Which entry runs this command, in the RFC's fixed order. The first case that applies
  * decides; the answer carries its reason or its fault name.
  *
- * 1. A pushed CLI, and the caller is its product's loader: the caller itself, `pushed` (or
- *    `legacy` for a product from before the declaration). A loader never loads itself; the
- *    bundle it loads rides along.
- * 2. A pushed CLI, and the product declares a loader: that loader, `pushed` — or the fault
- *    `loader-missing` when the declaration names no present file, broken included.
- * 3. A pushed CLI, no declaration, the legacy loader beside the caller: it, `legacy`.
- * 4. A pushed CLI, no declaration, no legacy loader: fault `loader-absent`.
- * 5. No record: the caller's own entry, `no-record`.
- * 6. A record with no CLI section: the caller's own entry, `no-pushed-cli`.
- * 7. A damaged record, an unusable pointer, a pointer the store lost: that fault.
+ * 1. A pushed CLI, and the caller is its product's loader: the caller itself,
+ *    `declared-loader` (or `legacy-loader` for a product from before the declaration). A
+ *    loader never loads itself; the bundle it loads rides along.
+ * 2. A pushed CLI, and the product declares a loader: that loader, `declared-loader` — or the
+ *    fault `declared-loader-missing` when the declaration names no present file, broken
+ *    included.
+ * 3. A pushed CLI, no declaration, the legacy loader beside the caller: it, `legacy-loader`.
+ * 4. A pushed CLI, no declaration, no legacy loader: fault `no-loader`.
+ * 5. Nothing pushed — no record, or a record with no CLI section: the caller's own entry,
+ *    `own-entry`.
+ * 6. A record that cannot be read, a CLI path that cannot be used, a path whose file the
+ *    store lost: that fault.
  */
 export async function resolveCli(input: {
   /** The caller's own entry, absolute: what this process runs, or the entry it offers. */
@@ -658,47 +658,49 @@ export async function resolveCli(input: {
       return {
         kind: "entry",
         entry: self,
-        reason: declared !== null ? "pushed" : "legacy",
+        reason: declared !== null ? "declared-loader" : "legacy-loader",
         bundle: record.file,
       };
     }
     // 2, 3. The product's declared loader, present or not.
     if (declared !== null) {
       return isFile(declared)
-        ? { kind: "entry", entry: declared, reason: "pushed", bundle: record.file }
-        : { kind: "fault", fault: "loader-missing", detail: `${declared} is not present` };
+        ? { kind: "entry", entry: declared, reason: "declared-loader", bundle: record.file }
+        : {
+            kind: "fault",
+            fault: "declared-loader-missing",
+            detail: `${declared} is not present`,
+          };
     }
     if (declaration.state === "broken") {
-      return { kind: "fault", fault: "loader-missing", detail: declaration.detail };
+      return { kind: "fault", fault: "declared-loader-missing", detail: declaration.detail };
     }
     // 4, 5. The legacy name, only where no declaration exists.
     if (input.legacyWindow !== false) {
       const legacy = path.join(path.dirname(self), LEGACY_LOADER_NAME);
       if (isFile(legacy)) {
-        return { kind: "entry", entry: legacy, reason: "legacy", bundle: record.file };
+        return { kind: "entry", entry: legacy, reason: "legacy-loader", bundle: record.file };
       }
     }
     return {
       kind: "fault",
-      fault: "loader-absent",
+      fault: "no-loader",
       detail: `no loader is declared above ${path.dirname(self)}`,
     };
   }
 
-  // 6, 7. Nothing pushed: the caller's own entry is the answer, named for why.
-  if (record.state === "none")
-    return { kind: "entry", entry: self, reason: "no-record", bundle: null };
-  if (record.state === "absent") {
-    return { kind: "entry", entry: self, reason: "no-pushed-cli", bundle: null };
+  // 6. Nothing pushed — no record, or a record with no CLI section: the caller's own entry.
+  if (record.state === "none" || record.state === "absent") {
+    return { kind: "entry", entry: self, reason: "own-entry", bundle: null };
   }
-  // 8. The record is there and cannot be used: a named fault.
+  // 7. The record is there and cannot be used: a named fault.
   if (record.state === "damaged") {
-    return { kind: "fault", fault: "damaged-record", detail: record.detail };
+    return { kind: "fault", fault: "record-unreadable", detail: record.detail };
   }
   if (record.state === "unusable") {
-    return { kind: "fault", fault: "cli-pointer-unusable", detail: record.detail };
+    return { kind: "fault", fault: "cli-path-unusable", detail: record.detail };
   }
-  return { kind: "fault", fault: "cli-bundle-missing", detail: record.file };
+  return { kind: "fault", fault: "cli-file-missing", detail: record.file };
 }
 
 /** Whether the caller is the legacy loader of a product that declares nothing. */

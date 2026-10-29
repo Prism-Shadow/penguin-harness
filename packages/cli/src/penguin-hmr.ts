@@ -5,9 +5,9 @@
  * Which entry runs is the shared answer in the server's command-shim module,
  * `@prismshadow/penguin-server/cli-shim` — the same answer the `penguin` written into this
  * data root's `bin/` runs under. This loader asks it for the pushed bundle, and reports a
- * fault by name: `no-record` and `no-pushed-cli` when nothing is pushed here,
- * `damaged-record`, `cli-pointer-unusable`, `cli-bundle-missing` and `loader-missing` when
- * the installation is broken, `loader-unloadable` when the bundle cannot load.
+ * fault by name: `own-entry` when nothing is pushed here, `record-unreadable`,
+ * `cli-path-unusable`, `cli-file-missing` and `declared-loader-missing` when the
+ * installation is broken, `cli-unloadable` when the pushed CLI cannot be loaded.
  */
 // First import on purpose, as in penguin.ts: the pushed CLI bundle this entry loads
 // reaches node:sqlite the same way (see warnings.ts).
@@ -32,7 +32,7 @@ export async function loadPushedCli(
   // A fault is reported by name: it says which part of the installation is broken, where a
   // wrapper that only said "no CLI pushed" would hide the difference.
   if (answer.kind === "fault") throw new Error(`${answer.fault}: ${answer.detail}`);
-  // The two reasons that answer an entry with no bundle mean nothing is pushed here: this
+  // The one reason that answers an entry with no bundle means nothing is pushed here: this
   // entry exists to run the PUSHED CLI, and there is none to run.
   if (answer.bundle === null) {
     throw new Error(`${answer.reason}: nothing is pushed to ${root}; use \`penguin\` instead`);
@@ -48,11 +48,11 @@ export async function loadPushedCli(
     // A loader that is present but cannot load its CLI reports this as its first act; the
     // push gate and the release assertion turn a failed probe into the same name.
     throw new Error(
-      `loader-unloadable: ${bundlePath}: ${err instanceof Error ? err.message : String(err)}`,
+      `cli-unloadable: ${bundlePath}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
   if (typeof mod.cli !== "function") {
-    throw new Error(`loader-unloadable: ${bundlePath} does not export 'cli'`);
+    throw new Error(`cli-unloadable: ${bundlePath} does not export 'cli'`);
   }
   return mod.cli;
 }

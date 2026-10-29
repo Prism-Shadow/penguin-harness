@@ -1,6 +1,6 @@
 /**
  * `penguin-hmr` acts on resolution's answer and reports it by name: it runs the pushed CLI
- * a root holds, and answers `no-record`, `damaged-record` or `loader-unloadable` with a
+ * a root holds, and answers `own-entry`, `record-unreadable` or `cli-unloadable` with a
  * sentence of its own when it cannot.
  *
  * The loader runs as a fixture product's own entry here — the file layout every channel
@@ -78,23 +78,23 @@ describe("penguin-hmr loads what resolution answers", () => {
     await expect(cli([])).resolves.toBe(7);
   });
 
-  it("reports `no-record` on a root nothing was ever pushed to", async () => {
+  it("reports `own-entry` on a root nothing was ever pushed to", async () => {
     const product = await makeProduct();
-    await expect(loadPushedCli(await makeRoot(), product.loader)).rejects.toThrow(/^no-record:/);
+    await expect(loadPushedCli(await makeRoot(), product.loader)).rejects.toThrow(/^own-entry:/);
   });
 
-  it("reports `damaged-record` for a record that will not parse", async () => {
+  it("reports `record-unreadable` for a record that will not parse", async () => {
     const product = await makeProduct();
     const root = await makeRoot({ raw: "{ not json" });
-    await expect(loadPushedCli(root, product.loader)).rejects.toThrow(/^damaged-record:/);
+    await expect(loadPushedCli(root, product.loader)).rejects.toThrow(/^record-unreadable:/);
   });
 
-  it("reports `loader-unloadable` for a bundle that cannot load", async () => {
+  it("reports `cli-unloadable` for a CLI that cannot load", async () => {
     const product = await makeProduct();
     const root = await makeRoot({
       record: PUSHED,
       bundle: "export const notACli = async () => 0;\n",
     });
-    await expect(loadPushedCli(root, product.loader)).rejects.toThrow(/^loader-unloadable:/);
+    await expect(loadPushedCli(root, product.loader)).rejects.toThrow(/^cli-unloadable:/);
   });
 });
