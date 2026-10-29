@@ -864,7 +864,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 下面这些路径省略了 `/api/sessions/:sessionId` 前缀。Session 和 Trace 背后的存储模型见 [Session 与 Trace](/sessions-and-traces)。
 
-这里的每条路由都遵循两条约定。调用方无权访问的 Session 一律返回 `404` `session_not_found`，因此不会暴露它是否存在。一个 Session 同一时间只能运行一个 Task 或一次压缩：冲突的请求返回 409（`task_in_progress` / `compacting`）。
+这里的每条路由都遵循两条约定。调用方无权访问的 Session 返回 `404` `session_not_found`，因此不会暴露它是否存在；唯独管理员得到 `403` `session_forbidden`——本服务端以机器的管理员身份读取机器，拒绝不能被当成删除。一个 Session 同一时间只能运行一个 Task 或一次压缩：冲突的请求返回 409（`task_in_progress` / `compacting`）。
 
 ### Session 与历史
 

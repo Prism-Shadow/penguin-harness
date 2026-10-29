@@ -40,6 +40,7 @@ import type { HistoryLinesDeps } from "../../services/history-lines.js";
 import { FRAME_TEXT_BUDGET } from "../../socket/line-frames.js";
 import { HttpError } from "../errors.js";
 import { eventStream } from "../event-stream.js";
+import { readableSession } from "../session-access.js";
 import type { EventSink } from "../event-stream.js";
 import { badRequest } from "../validate.js";
 
@@ -98,28 +99,11 @@ export function historyLinesRoutes(deps: HistoryLinesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const log = deps.log ?? (() => undefined);
 
-  /**
-   * The path's Session, for a caller who may read it. A Session that does not exist is 404
-   * `session_not_found`. One the caller may not read is 404 too — its existence is not revealed
-   * — except to an admin, who is answered 403 `session_forbidden`: a hub reads its machines as
-   * their admin, and must not take a refusal for a deletion (it drops its copy of a Session the
-   * machine says is gone).
-   */
+  /** The path's Session, for a caller who may read it (http/session-access.ts). */
   const resolveSession = (c: Context<AppEnv>): SessionRow => {
     const sessionId = c.req.param("sessionId");
     const row = sessionId ? deps.sessions.findById(sessionId) : null;
-    const missing = () =>
-      new HttpError(404, "session_not_found", "Session does not exist or you do not have access.");
-    if (!row) throw missing();
-    try {
-      deps.access.requireProjectAccess(c.var.user.userId, row.projectId);
-    } catch {
-      if (c.var.user.isAdmin) {
-        throw new HttpError(403, "session_forbidden", "This account may not read this Session.");
-      }
-      throw missing();
-    }
-    return row;
+    return readableSession(row, c.var.user, deps.access);
   };
 
   app.get("/:sessionId/history-lines", (c) => {

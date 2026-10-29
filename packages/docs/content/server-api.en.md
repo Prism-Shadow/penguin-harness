@@ -864,7 +864,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 
 The paths below omit the `/api/sessions/:sessionId` prefix. For the storage model behind Sessions and Traces, see [Sessions and Traces](/sessions-and-traces).
 
-Two conventions apply to every route here. A Session the caller cannot access always returns `404` `session_not_found`, so its existence is never revealed. And only one Task or compaction runs in a Session at a time: a conflicting request returns 409 (`task_in_progress` / `compacting`).
+Two conventions apply to every route here. A Session the caller cannot access returns `404` `session_not_found`, so its existence is never revealed — except to an admin, who is answered `403` `session_forbidden`: a hub reads its machines as their admin and must not take a refusal for a deletion. And only one Task or compaction runs in a Session at a time: a conflicting request returns 409 (`task_in_progress` / `compacting`).
 
 ### Session and history
 

@@ -15,7 +15,7 @@ Every server answered `GET /api/sessions/:sessionId/history-lines` for its own S
 
 Every windowed history page said how many Tasks it held (`page.units`), counted where the window was cut and by the same rule, so a client paging until it had N Tasks counted what `tailLimit` and `limit` count.
 
-An admin without access to a Session, the identity a hub reads its machines as, was refused these routes with 403 `session_forbidden` rather than told the Session did not exist; anyone else without access still got 404.
+An admin without access to a Session, the identity a hub reads its machines as, was refused every Session route with 403 `session_forbidden` rather than told the Session did not exist; anyone else without access still got 404, and the Web App said the Session was not accessible.
 
 `GET /api/sessions/:sessionId/trace-body?ref=` returned one folded value whole, and only for a ref into the Session's own lines or those of a subagent Session it had spawned; any other ref, including one naming another Project's files, answered 404.
 
