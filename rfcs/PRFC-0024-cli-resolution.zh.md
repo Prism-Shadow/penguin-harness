@@ -42,7 +42,7 @@ pushed CLI 的重构就在眼前：改名、改入口形态、改 server 启动�
 
 ### resolution 按固定顺序作答
 
-resolution 先读记录，再读声明。没有记录的数据根运行安装入口，记录损坏是一个故障，带推送 CLI 的记录选出 loader。声明指名了 loader 时答 `pushed`，只有旧名存在时答 `legacy`；既无声明、也没有旧名 loader 的产品答一个故障。每个答案都带着自己的名字，每个消费方记下它据以行动的那个名字。
+resolution 从根里的记录与调用方产品的声明作答。没有记录的数据根运行调用方的入口，记录损坏是一个故障，带推送 CLI 的记录选出产品的 loader：声明指名了它时答 `pushed`，只有旧名存在时答 `legacy`，两者都没有时答一个故障。调用方自己就是那个 loader 时，resolution 答它自己，并带上记录指名的 bundle。每个答案都带着自己的名字，每个消费方记下它据以行动的那个名字。
 
 ### 身份靠声明
 
@@ -72,25 +72,23 @@ loader 靠包清单里的一个字段亮明身份：`penguin.pushedCliLoader`，
 
 ### 答案在哪里
 
-resolution 是一个模块，位于热更新层之外。那一层——`packages/hmr`、`packages/server/src/hmr/` 与 `packages/desktop/`——承载 store 与记录的机制，改动那里意味着重建并重装每一台安装；判定过程是部署方可能想改、却不必付这个代价的那部分。模块以 server 包的子路径发布，`@prismshadow/penguin-server/cli-resolution`——把 `./hmr/manifest` 与 `./version-report` 送进一个没有 server 的进程的，就是这套子路径机制——所以没有任何一条通道的打包需要改：loader 引入答案，server 自己的消费方直接引入它。
+resolution 是命令 shim 模块里的一个函数，`packages/server/src/services/cli-shim.ts`——也就是早已决定用户 `PATH` 上那个 `penguin` 运行什么的那份模块——以 server 包的 `@prismshadow/penguin-server/cli-shim` 子路径发布，与 `./hmr/manifest`、`./version-report` 并排。它位于热更新层之外：那一层——`packages/hmr`、`packages/server/src/hmr/` 与 `packages/desktop/`——承载 store 与记录的机制，改动那里意味着重建并重装每一台安装；判定过程是部署方可能想改、却不必付这个代价的那部分。CLI 的 loader 引入同一个子路径，于是 loader 与 shim 据同一个答案行动，也没有任何一条通道的打包需要改。
 
-记录的五种状态在那里读。那一层的 reader 只答三种——`readPushedCli` 说「没有推送」「有个 bundle」「坏了」——把两个「没有推送」并成一个、把三个故障并成一个，所以 resolver 自己读 `<root>/hmr/harness.json`，并在那一层会作答的地方把答案投影到它的三种上。有一条用例钉住这层投影，两份 reader 因此不会无声地走岔。
+记录的五种状态在这份模块里读。那一层的 reader 只答三种——`readPushedCli` 说「没有推送」「有个 bundle」「坏了」——把两个「没有推送」并成一个、把三个故障并成一个，所以 resolver 自己读 `<root>/hmr/harness.json`，并在那一层会作答的地方把答案投影到它的三种上。有一条用例钉住这层投影，两份 reader 因此不会无声地走岔。
 
 ### resolution 的输入与顺序
 
-resolution 收四个输入：调用方自己的入口、数据根、根里那份记录，以及调用方产品携带的声明。它的答案是一个入口加一个理由，或一个故障加一个名字。
+resolution 收调用方自己的入口与数据根。它从磁盘读两样东西：根里那份记录，以及调用方产品在入口之上最近一份包清单里携带的声明。它的答案是一个入口加一个理由，或一个故障加一个名字。
 
-1. **自身。** 调用方自己的入口就是 loader 时，resolution 答它自己，理由取它名字应得的那一个：声明的 loader 答 `pushed`，旧名答 `legacy`。这条规则让 loader 不去加载自己。
-2. **记录。** [PRFC-0023](./PRFC-0023-harness-meta.zh.md#reference-level-explanation) 的记录被读成第 3 到第 7 步各自的名字；resolver 自己读这份文件，因为那一层的 reader 把它们并在一起（见「答案在哪里」）。
-3. **没有记录。** 没有记录的根里没有推送的 CLI，安装入口运行，理由 `no-record`。
-4. **记录损坏。** 读不出或解析不了的记录答故障 `damaged-record`。
-5. **CLI 指针。** 记录里根本没有 CLI 一节，根里就没有推送的 CLI，安装入口运行，理由 `no-pushed-cli`。
-6. **指针不可用。** CLI 一节里没有指针、指针为空或形状不合法、或指针解析到 store 之外，答故障 `cli-pointer-unusable`。
-7. **指针指向的文件不在。** store 里已经没有了该指针指向的文件，答故障 `cli-bundle-missing`。
-8. **声明的 loader。** 产品声明了 loader：目标存在时答这个 loader，理由 `pushed`；目标缺失时答故障 `loader-missing`。
-9. **旧名的 loader。** 产品没有声明时，过渡窗口开着且旧名 loader 存在，答那个 loader，理由 `legacy`；既无声明、也无旧名 loader 时，答故障 `loader-absent`。
+1. **自身，且有推送的 CLI。** 调用方自己的入口就是它产品的 loader 时，resolution 答它自己，理由取它名字应得的那一个：声明的 loader 答 `pushed`，旧名答 `legacy`。答案带上推送的 bundle，所以 loader 不去加载自己。
+2. **记录。** [PRFC-0023](./PRFC-0023-harness-meta.zh.md#reference-level-explanation) 的记录被读成第 5 到第 7 步各自的名字；resolver 自己读这份文件，因为那一层的 reader 把它们并在一起（见「答案在哪里」）。
+3. **声明的 loader。** 产品声明了 loader：目标存在时答这个 loader，理由 `pushed`；目标缺失或声明坏掉时答故障 `loader-missing`。
+4. **旧名的 loader。** 产品没有声明时，过渡窗口开着且旧名 loader 存在，答那个 loader，理由 `legacy`；既无声明、也无旧名 loader 时，答故障 `loader-absent`。
+5. **没有记录。** 没有记录的根里没有推送的 CLI：调用方自己的入口运行，理由 `no-record`。
+6. **CLI 指针。** 记录里根本没有 CLI 一节，根里就没有推送的 CLI：调用方自己的入口运行，理由 `no-pushed-cli`。
+7. **用不了的记录。** 读不出或解析不了的记录答 `damaged-record`；CLI 指针没有路径、为空、或解析到 store 之外，答 `cli-pointer-unusable`；store 里已经没有了该指针指向的文件，答 `cli-bundle-missing`。
 
-第一条命中的步骤决定答案，后面的步骤不再读。
+第一条命中的情形决定答案。第 3、4 条适用于带推送 CLI 的记录；第 5 到第 7 条适用于不带的那一种。
 
 ### 各情形与答案
 
@@ -105,9 +103,9 @@ resolution 收四个输入：调用方自己的入口、数据根、根里那份
 | 记录 | 没有 CLI 一节 | 任意 | 安装入口——`no-pushed-cli` |
 | 没有记录 | — | 任意 | 安装入口——`no-record` |
 | 记录损坏 | — | 任意 | 故障 `damaged-record` |
-| 调用方自己就是 loader | — | — | 它自己——`pushed` 或 `legacy` |
+| 带推送的 CLI，且调用方自己就是它产品的 loader | — | — | 它自己——`pushed` 或 `legacy` |
 
-存在决定答案；加载成不成是另一份报告。磁盘上存在、加载不了 CLI 的 loader，第一件事就是报 `loader-unloadable`；会做探测的消费方——收下推送之前的推送闸门、发出产物之前的发行断言——在运行任何东西之前把探测失败变成同一个故障。
+存在决定答案；加载成不成是另一份报告。磁盘上存在、加载不了 CLI 的 loader，第一件事就是报 `loader-unloadable`；会做探测的消费方——收下推送之前的推送闸门、发出产物之前的发行断言——在运行任何东西之前把探测失败变成同一个故障。在没有推送 CLI 的根上被调用的 loader，答最后三条情形的理由 `no-record` 或 `no-pushed-cli`，或它们的故障：它就是那里的入口。
 
 消费方据答案行动。必须起 server 的监督者在答案是故障时运行安装入口，并记下故障名。loader 在故障上什么都不运行，只把故障报出来；一个人或一条远端命令在没有记录的根上调用它时，它报 `no-record`。远端命令原样转达对端的故障。命令 shim 承载 resolution 的答案，人敲到的入口就是监督者会运行的那个入口。自己入口无法再拉起进程的消费方——`PATH` 上的无扩展名 symlink、经 TypeScript 运行器跑的源跑——在进程内运行 server，并记下 `entry-not-respawnable` 这一情形。
 
@@ -229,6 +227,12 @@ resolution 可以推广：一次推送的 web 资产与 platform 两半可以按
 ---
 
 ## Changes
+
+### v1.3.0
+
+- resolution 住在命令 shim 模块 `packages/server/src/services/cli-shim.ts` 里，以 `@prismshadow/penguin-server/cli-shim` 发布：一个函数，与早已决定 `penguin` 运行什么的那份代码放在一起；v1.2.0 时为它单开过一份模块。
+- 答案带上推送的 bundle，loader 因此只读一次记录，走的是 shim 用的同一个函数。记录的五种状态与声明的三种答案保留；第二份记录读法与那条投影辅助函数去掉。
+- 判定顺序改写成七条：带推送的 CLI 时，调用方自己是 loader 就答它自己，否则答声明的 loader、旧名 loader 或一个故障；不带时，调用方自己的入口运行，理由 `no-record` 或 `no-pushed-cli`，或答记录的故障。
 
 ### v1.2.0
 
