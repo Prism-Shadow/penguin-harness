@@ -21,9 +21,9 @@ import type {
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
 } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
+import * as api from "../api/endpoints";
+import { formatDateTime } from "../lib/format";
+import { S } from "../lib/strings";
 import { ModuleTreeView } from "./module-tree-view";
 
 /** The last path segment without its extension: `store/platform/1a2b….mjs` → `1a2b…`. */
