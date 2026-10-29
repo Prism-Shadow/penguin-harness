@@ -437,18 +437,57 @@ describe("the builtin index and the packages it lists", () => {
 });
 
 describe("the builtin catalogue and the packages it lists", () => {
+  const programEntry = process.argv[1];
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "penguin-catalogue-"));
+  });
+  afterEach(async () => {
+    if (programEntry !== undefined) process.argv[1] = programEntry;
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * The catalogue is the index the running build carries: `plugins/` beside the program, with
+   * the `index.json` scripts/build-plugins.mjs rebuilt from the packages it packed. The build
+   * reads each entry's `os` — the platforms the plugin runs on — from the package's own
+   * `penguinOs` field (npm's `os` would make npm refuse the package elsewhere), so an entry is
+   * staged here exactly as the build stages it: what `manifestOf` reads off the package, plus
+   * its `penguinOs` as `os`.
+   */
+  async function shippedCatalogue(names: Iterable<string>): Promise<void> {
+    const entries: PluginIndexEntry[] = [];
+    for (const name of names) {
+      const pkg = packages.get(name);
+      if (pkg === undefined) continue;
+      entries.push({
+        ...manifestOf(pkg.manifest as never, name, pkg.manifest.version, hash("d")),
+        ...(pkg.manifest.penguinOs !== undefined ? { os: pkg.manifest.penguinOs } : {}),
+      });
+    }
+    await installation(dir, entries);
+  }
+
   it("marks builtin backends with the platforms their packages declare", async () => {
+    const backends = [...packages].filter(([, { dir }]) => dir.startsWith("sandbox-"));
+    expect(backends).toHaveLength(4);
+    await shippedCatalogue(backends.map(([name]) => name));
     const index = await builtinPluginRegistry().index();
     for (const entry of index) {
       expect(entry.os, entry.name).toEqual(packages.get(entry.name)!.manifest.penguinOs);
     }
     expect(index.find((e) => e.name === "@penguinharness/sandbox-bwrap")!.os).toEqual(["linux"]);
-    expect(index.find((e) => e.name === "@penguinharness/sandbox-seatbelt")!.os).toEqual(["darwin"]);
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-seatbelt")!.os).toEqual([
+      "darwin",
+    ]);
     expect(index.find((e) => e.name === "@penguinharness/sandbox-wsl")!.os).toEqual(["win32"]);
     expect(index.find((e) => e.name === "@penguinharness/sandbox-dsh")!.os).toBeUndefined();
   });
 
   it("lists the sandbox backends in plugins/, each named as that package names itself", async () => {
+    const backends = [...packages].filter(([, { dir }]) => dir.startsWith("sandbox-"));
+    expect(backends).toHaveLength(4);
+    await shippedCatalogue(backends.map(([name]) => name));
     const index = await builtinPluginRegistry().index();
     // Valid under the format every registry is held to.
     expect(parsePluginIndex(index, "builtin")).toEqual(index);
