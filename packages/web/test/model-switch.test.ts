@@ -33,10 +33,11 @@ describe("sessionModelPickerDisabled", () => {
 describe("switchContextShape", () => {
   /** The configured models the picker offers: the current model A, with a key, and B. */
   const keyed = { credential: { apiKeyMasked: "sk-…" }, effective: { apiKeySource: "model" } };
-  const configured = [
+  const listOf = (models: unknown[]) => ({ models: models as ModelInfo[], providers: {} });
+  const configured = listOf([
     { ...A, ...keyed },
     { ...B, ...keyed },
-  ] as unknown as ModelInfo[];
+  ]);
   const switchContextShape = (items: Parameters<typeof shapeOf>[0]) =>
     shapeOf(items, A, configured);
   const user = { kind: "user" };
@@ -76,13 +77,24 @@ describe("switchContextShape", () => {
   });
 
   it("hands over by Trace path when the current model is gone from the list or has no key, and only when there is something to compact", () => {
-    const keyless = [{ ...A, effective: { apiKeySource: "none" } }] as unknown as ModelInfo[];
-    expect(shapeOf([user], A, [{ ...B, ...keyed }] as unknown as ModelInfo[])).toBe("handover");
+    const keyless = listOf([{ ...A, effective: { apiKeySource: "none" } }]);
+    expect(shapeOf([user], A, listOf([{ ...B, ...keyed }]))).toBe("handover");
     expect(shapeOf([user], A, keyless)).toBe("handover");
     expect(shapeOf([], A, keyless)).toBe("empty");
     expect(shapeOf([user, done], A, keyless)).toBe("compacted");
     // While the list loads the server decides: the dialog promises the ordinary compaction.
     expect(shapeOf([user], A, undefined)).toBe("compact");
+  });
+
+  it("a model whose endpoint is called without a key is available though it has none: it compacts as usual", () => {
+    const vllm = {
+      provider: "vllm",
+      modelId: "Qwen/Qwen3.8-27B",
+      clientType: "openai-chat-vllm-adapter",
+      credential: { baseUrl: "http://127.0.0.1:8000/v1" },
+      effective: { apiKeySource: "none" },
+    };
+    expect(shapeOf([user], vllm, listOf([vllm]))).toBe("compact");
   });
 });
 

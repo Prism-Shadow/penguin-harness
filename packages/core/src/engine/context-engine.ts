@@ -1198,54 +1198,61 @@ export class ContextEngine {
   /**
    * A model switch's rotation: closes the running context and opens the next one at once.
    * Which model the next context runs on is the opener's business (`openNextContext`, which
-   * the Session owns); the engine only closes and opens. Callable at a Task boundary with an
-   * opener, like `compact()`.
+   * the Session owns); the engine only closes and opens. Callable at a Task boundary, with
+   * compaction configured, like `compact()` — or, with a `handoff`, with an opener alone.
    *
    * - A context with completed turns is closed by `compact()`, always in **summarize** mode:
    *   the summary is what the next model continues from. It is an ordinary compaction request
    *   on the running LLM object — the same model, prompt, toolset and parameters, one appended
-   *   user turn — so it extends the prefix the provider has cached. A stop (`aborted`) leaves
-   *   the context as it was. Any other end short of `completed`, no compaction configured, or
-   *   `summarize: false` (the caller knows the running model cannot answer, so it is sent
-   *   nothing) replaces the context instead, and the next one opens with `handoff` where the
-   *   summary would have been: the text the caller wrote for a model that has to read the
-   *   history itself.
+   *   user turn — so it extends the prefix the provider has cached. Short of `completed`, the
+   *   context stays as it was, unless the caller gave a `handoff`: then any end but a stop
+   *   (`aborted`, or `signal` fired by then), and `summarize: false` (the caller knows the
+   *   running model cannot answer, so it is sent nothing), replace the context instead, and the
+   *   next one opens with the handoff where the summary would have been — the text the caller
+   *   wrote for a model that has to read the history itself.
    * - A context with none has nothing to summarize or hand over and is simply replaced: no
    *   request and no event pair.
    *
-   * A replaced context's pending text rides on in memory. Nothing is written until the next
-   * context is open, so an opener that throws leaves the Trace as it was. The next context's
-   * Trace file is then opened at once rather than at its first message: its `session_meta` is
-   * the durable record of the switch — a resume reads the model from the latest file — and the
-   * text the context opens with (a summary, or the handoff) follows it. That meta is yielded
-   * last, followed only by a handoff, which nothing else streams. Returns the terminal status.
+   * A replaced context's pending text rides on in memory — the text it held before the summary
+   * request, which a committed attempt would otherwise have consumed. Nothing is written until
+   * the next context is open, so an opener that throws leaves the Trace and the running context
+   * as they were. The next context's Trace file is then opened at once rather than at its first
+   * message: its `session_meta` is the durable record of the switch — a resume reads the model
+   * from the latest file — and the text the context opens with (a summary, or the handoff)
+   * follows it. That meta is yielded last, followed only by a handoff, which nothing else
+   * streams. Returns the terminal status.
    */
-  async *switchContext(opts: {
-    signal?: AbortSignal | undefined;
-    /** What the next context opens with when a context with turns is closed without a summary. */
-    handoff: AmspRecord;
-    /** False sends the running model nothing: the context is replaced and handed over at once. */
-    summarize?: boolean;
-  }): AsyncGenerator<AmspRecord, StopReason> {
+  async *switchContext(
+    signal?: AbortSignal,
+    opts?: {
+      /** What the next context opens with when a context with turns is closed without a summary. */
+      handoff: AmspRecord;
+      /** False sends the running model nothing: the context is replaced and handed over at once. */
+      summarize?: boolean;
+    },
+  ): AsyncGenerator<AmspRecord, StopReason> {
     const turns = this.sessionTurns > 0;
+    // A switch carries text alone: tool outputs pair with tool calls only the context left
+    // behind holds, and images stay behind with them. Read before the summary request, which
+    // consumes what it folds in once an attempt commits.
+    const heldText = this.pendingCarryOver.filter(
+      (m) => (m.payload as { type?: string }).type === "text",
+    );
     let summarized = false;
-    if (turns && opts.summarize !== false) {
-      const status = yield* this.compact({ signal: opts.signal, mode: "summarize" });
-      if (status === "aborted") return status;
-      summarized = status === "completed";
+    if (turns && (opts === undefined || opts.summarize !== false)) {
+      const status = yield* this.compact({ signal, mode: "summarize" });
+      if (status === "completed") summarized = true;
+      else if (opts === undefined) return status ?? "fatal";
+      else if (status === "aborted" || signal?.aborted) return "aborted";
     }
     let handedOver = false;
     if (!summarized) {
       yield* this.startNewContext();
-      // A switch carries text alone: tool outputs pair with tool calls only the context left
-      // behind holds, and images stay behind with them.
-      this.pendingCarryOver = this.pendingCarryOver.filter(
-        (m) => (m.payload as { type?: string }).type === "text",
-      );
-      if (turns) {
+      this.pendingCarryOver = heldText;
+      if (turns && opts) {
         // The handoff takes the summary's place: the text the new context opens with.
         this.openingSummary = opts.handoff;
-        this.pendingCarryOver = [opts.handoff, ...this.pendingCarryOver];
+        this.pendingCarryOver = [opts.handoff, ...heldText];
         handedOver = true;
       }
     }
@@ -1263,7 +1270,7 @@ export class ContextEngine {
     // Session moved).
     const meta = opened ?? this.contextMeta;
     if (meta) yield meta;
-    if (handedOver) yield opts.handoff;
+    if (handedOver && opts) yield opts.handoff;
     return "completed";
   }
 

@@ -13,10 +13,13 @@
  * served each request — the switch's own compaction request to the previous model, the next Task
  * to the new one.
  *
- * A Session that is not in memory is loaded for the switch through the real loader and core: one
- * whose model was removed from the Project config hands its history over by Trace path (202), one
- * that left no Trace is rebuilt on the target (200), and a load the switch did not move is not
- * kept — the next Task meets the ordinary load's refusal.
+ * A Session that is not in memory is loaded the ordinary way first, through the real loader and
+ * core: one whose model was removed from the Project config hands its history over by Trace path
+ * (202); one that left no Trace answers a target it cannot use with the target's own 409 whether
+ * its model is still configured or not, and is rebuilt on a good target (200); a load the switch
+ * did not move is not kept — the next Task meets the ordinary load's refusal. While a runtime
+ * loaded for the switch alone is still on the model it cannot reach, no Task is started or queued
+ * on it.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -46,7 +49,8 @@ import type {
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
+import { HttpError } from "../src/http/errors.js";
 import { compactionThresholdFor } from "../src/services/context-breakdown.js";
 import { apiClient, createTestApp, provisionUser, waitFor, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -57,6 +61,8 @@ const A: ModelRefDto = { provider: "custom", modelId: "m-alpha" };
 const B: ModelRefDto = { provider: "custom", modelId: "m-beta" };
 /** Not in the Project config: core refuses it, and the manager answers with the refusal's code. */
 const UNKNOWN: ModelRefDto = { provider: "custom", modelId: "m-nowhere" };
+/** Configured without a key on a base URL: its client cannot be built. */
+const KEYLESS: ModelRefDto = { provider: "custom", modelId: "m-keyless" };
 const WINDOW_A = 1_000_000;
 const WINDOW_B = 200_000;
 
@@ -735,22 +741,23 @@ describe("POST /switch-model", () => {
         requestEnd("completed"),
         tokenUsage(counts(42), counts(42)),
       ]);
-    /** Removes A from the Project config: B is all that is configured. */
-    const removeA = async (): Promise<void> => {
+    /** Configures B, a keyless KEYLESS (its client cannot be built), and A only when `withA`. */
+    const configure = async (withA: boolean): Promise<void> => {
+      const row = (model: ModelRefDto, apiKey?: string) => ({
+        ...model,
+        ...(apiKey ? { apiKey } : {}),
+        baseUrl: "https://models.example/v1",
+        clientType: "openai",
+        contextWindow: WINDOW_B,
+      });
       const put = await api.put(`/api/projects/${PROJECT}/models`, {
         defaultModel: B,
-        models: [
-          {
-            ...B,
-            apiKey: "sk-beta",
-            baseUrl: "https://beta.example/v1",
-            clientType: "openai",
-            contextWindow: WINDOW_B,
-          },
-        ],
+        models: [...(withA ? [row(A, "sk-alpha")] : []), row(B, "sk-beta"), row(KEYLESS)],
       });
       expect(put.status).toBe(200);
     };
+    /** Removes A from the Project config. */
+    const removeA = (): Promise<void> => configure(false);
 
     it("a model removed from the config is sent nothing: 202, B's meta then the handoff naming A's Trace file, and the row on B", async () => {
       const file = await traceOnA();
@@ -787,6 +794,34 @@ describe("POST /switch-model", () => {
       expect(row()).toMatchObject(A);
     });
 
+    it.each([
+      {
+        model: "on a model still configured",
+        withA: true,
+        target: UNKNOWN,
+        code: "model_not_configured",
+      },
+      {
+        model: "on a model still configured",
+        withA: true,
+        target: KEYLESS,
+        code: "model_unavailable",
+      },
+      { model: "on a model now gone", withA: false, target: UNKNOWN, code: "model_not_configured" },
+      { model: "on a model now gone", withA: false, target: KEYLESS, code: "model_unavailable" },
+    ])(
+      "a Session that left no Trace, $model, answers a target it cannot use with 409 $code",
+      async ({ withA, target, code }) => {
+        index();
+        await configure(withA);
+
+        const res = await api.post(url, target);
+        expect(res.status).toBe(409);
+        expect(await errorCode(res)).toBe(code);
+        expect(row()).toMatchObject(A);
+      },
+    );
+
     it("a Session that left no Trace is rebuilt on the target, though the model it was created on is gone: 200", async () => {
       index();
       await removeA();
@@ -797,5 +832,75 @@ describe("POST /switch-model", () => {
       expect(session).toMatchObject({ sessionId: SID, ...B });
       expect(row()).toMatchObject(B);
     });
+  });
+});
+
+describe("POST /switch-model on a Session the ordinary load refuses", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  /** What each load was asked for: `{}` the ordinary load, `{ switchTo }` the switch's own. */
+  const loads: Array<{ switchTo?: ModelRefDto }> = [];
+  let release: () => void = () => {};
+
+  beforeEach(async () => {
+    loads.length = 0;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The ordinary load refuses the Session (its model is gone); the switch's own load hands
+    // back a runtime still on that model, whose switch waits and is then stopped.
+    const loader: SessionLoader = {
+      async load(_row, opts) {
+        loads.push(opts ?? {});
+        if (!opts?.switchTo) {
+          throw new HttpError(409, "session_unrecoverable", "The Session's model is gone.");
+        }
+        return switchFake(A, { kind: "stream", status: "aborted", gate });
+      },
+    };
+    t = await createTestApp({ loader });
+    const { cookie } = await provisionUser(t.app, "stranded");
+    api = apiClient(t.app, cookie);
+    t.deps.sessionsRepo.insert({
+      sessionId: SID,
+      projectId: "stranded-default_project",
+      agentId: "default_agent",
+      provider: A.provider,
+      modelId: A.modelId,
+      workspace: "/tmp/w",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: "2026-09-16T10:00:00.000Z",
+      lastActiveAt: "2026-09-16T10:00:00.000Z",
+    });
+  });
+  afterEach(async () => {
+    release();
+    await t.cleanup();
+  });
+
+  it("no Task runs on the runtime loaded for the switch: neither started nor queued while it switches, each answered with the ordinary load's 409, and nothing is kept once the switch stops", async () => {
+    const errorCode = async (res: Response): Promise<string> =>
+      ((await res.json()) as { error: { code: string } }).error.code;
+    expect((await api.post(`/api/sessions/${SID}/switch-model`, B)).status).toBe(202);
+    expect(loads).toEqual([{}, { switchTo: B }]);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "compacting");
+
+    const queued = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "and then this" }],
+      queueIfBusy: true,
+    });
+    expect(queued.status).toBe(409);
+    expect(await errorCode(queued)).toBe("session_unrecoverable");
+
+    release();
+    await waitFor(() => t.deps.manager.statusOf(SID) !== "compacting");
+    const after = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "now" }],
+    });
+    expect(after.status).toBe(409);
+    expect(await errorCode(after)).toBe("session_unrecoverable");
+    // That answer came from a fresh ordinary load: the switch's runtime was not kept.
+    expect(loads).toEqual([{}, { switchTo: B }, {}]);
   });
 });

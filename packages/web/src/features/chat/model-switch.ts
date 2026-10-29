@@ -15,11 +15,13 @@
  * Only a stopped compaction streams no meta, and the Session then stays on its model.
  */
 import type {
-  ModelInfo,
   ModelRefDto,
+  ModelsResponse,
   SessionInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
+import { modelCalledKeyless } from "@prismshadow/penguin-server/model-catalog";
+import { groupShape } from "../models/connection";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { trailingCompaction } from "./thinking-level";
 import type { ThinkingSwitchItem } from "./thinking-level";
@@ -42,26 +44,38 @@ export function sessionModelPickerDisabled(status: SessionStatus): boolean {
  *   nothing said since: the server runs no compaction and streams no pair, and the
  *   conversation continues on the target from what that context opened with;
  * - `"handover"` — there is conversation to compact, but the current model is unavailable (no
- *   longer configured, or without a key): nothing is summarized, and the target gets the
- *   conversation's Trace file path instead.
+ *   longer configured, or without a key on an endpoint that wants one): nothing is summarized,
+ *   and the target gets the conversation's Trace file path instead.
  */
 export type SwitchContextShape = "compact" | "empty" | "compacted" | "handover";
 
 /**
  * Reads the shape off the transcript's end, the way the thinking switch's guard does (see
  * `trailingCompaction`), and off the configured models: `models` is the list the picker offers
- * (undefined while it loads, which reads as available — the server decides either way).
+ * (absent while it loads, which reads as available — the server decides either way). A row
+ * with no key is available when its endpoint is one called without a key (an open MMSP or vLLM
+ * server — the catalog's `modelCalledKeyless`, the rule the models page's key field uses).
  */
 export function switchContextShape(
   items: ReadonlyArray<ThinkingSwitchItem>,
   current: ModelRefDto,
-  models: ReadonlyArray<ModelInfo> | undefined,
+  models: Pick<ModelsResponse, "models" | "providers"> | null | undefined,
 ): SwitchContextShape {
   if (items.length === 0) return "empty";
   if (trailingCompaction(items).compacted) return "compacted";
-  if (models === undefined) return "compact";
-  const entry = models.find((m) => sameModelRef(m, current));
-  return entry !== undefined && hasConfiguredKey(entry) ? "compact" : "handover";
+  if (!models) return "compact";
+  const entry = models.models.find((m) => sameModelRef(m, current));
+  if (entry === undefined) return "handover";
+  const keyless = modelCalledKeyless(
+    {
+      provider: entry.provider,
+      modelId: entry.modelId,
+      clientType: entry.clientType,
+      baseUrl: entry.credential?.baseUrl,
+    },
+    groupShape(models.providers[entry.provider]),
+  );
+  return hasConfiguredKey(entry) || keyless ? "compact" : "handover";
 }
 
 /**

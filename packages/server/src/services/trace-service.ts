@@ -24,6 +24,7 @@ import {
   matchAttachedImageLine,
   modelVisiblePath,
   parseBackgroundTaskDoneMessage,
+  parseInPlaceModelSwitch,
   parseTraceLines,
   parseUserSteeringText,
   readTraceTolerant,
@@ -140,7 +141,12 @@ function isTaskStartingUser(msg: AmspRecord): boolean {
   return !p.text.startsWith("[context_summary]") && !p.text.startsWith("<context_summary>");
 }
 
-function rewriteForkText(text: string, sourceScratchpad: string, forkScratchpad: string): string {
+function rewriteForkText(
+  text: string,
+  sourceScratchpad: string,
+  forkScratchpad: string,
+  sessions: { source: string; fork: string },
+): string {
   const source = modelVisiblePath(sourceScratchpad).replace(/\/$/, "");
   const target = modelVisiblePath(forkScratchpad).replace(/\/$/, "");
   const rewriteTarget = (value: string): string | null => {
@@ -148,9 +154,23 @@ function rewriteForkText(text: string, sourceScratchpad: string, forkScratchpad:
     if (value.startsWith(`${source}/`)) return `${target}${value.slice(source.length)}`;
     return null;
   };
+  // An in-session model switch's Trace handoff names the Session itself and one of its Trace
+  // files: in the fork it names the fork and the fork's copy of that file, or the fork would
+  // read it as a /model block pointing at the Session it was cut from.
+  const handoff = parseInPlaceModelSwitch(text, sessions.source) !== null;
   return text
     .split("\n")
     .map((line) => {
+      if (handoff && line.startsWith(`session: ${sessions.source}`)) {
+        return `session: ${sessions.fork}${line.slice(`session: ${sessions.source}`.length)}`;
+      }
+      if (handoff && line.startsWith("trace: ")) {
+        const file = line.slice("trace: ".length);
+        const base = path.basename(file);
+        if (base.startsWith(`${sessions.source}_`)) {
+          return `trace: ${path.join(path.dirname(file), sessions.fork + base.slice(sessions.source.length))}`;
+        }
+      }
       const trimmed = line.trim();
       const image = matchAttachedImageLine(trimmed);
       if (image !== null) {
@@ -896,7 +916,10 @@ export class TraceService implements Traces {
           ...msg,
           payload: {
             ...msg.payload,
-            text: rewriteForkText(p.text, sourceScratchpad, forkScratchpad),
+            text: rewriteForkText(p.text, sourceScratchpad, forkScratchpad, {
+              source: sourceSessionId,
+              fork: newSessionId,
+            }),
           },
         } as AmspRecord;
       }

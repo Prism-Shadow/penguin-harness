@@ -107,6 +107,7 @@ import type {
   ApproveFn,
   CommandPolicyConfig,
   GenerativeModelConfig,
+  LLMInterface,
   ProxyEnvPolicy,
   SpawnConfiner,
   SubagentHandle,
@@ -986,8 +987,19 @@ export class Agent {
       }
     }
 
-    return this.newSession(spec, context, rt, trace, {
+    // Nor does any other request reach it: a bare request (a title) asked of the Session
+    // before it moves gets the stand-in too, and the ordinary one once it is on another model.
+    let session: Session | undefined;
+    const bareOffTheUnreachable =
+      (r: string): (() => LLMInterface) =>
+      () =>
+        session !== undefined &&
+        !sameModelRef({ provider: session.provider, model_id: session.modelId }, ref)
+          ? rt.createBareLLM()
+          : unreachableModel(r);
+    session = this.newSession(spec, context, rt, trace, {
       bootstrap,
+      ...(reason !== undefined ? { createBareLLM: bareOffTheUnreachable(reason) } : {}),
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
       initialEngineState: {
@@ -1008,6 +1020,7 @@ export class Agent {
       },
       resumedHistory: resumed.renderMessages,
     });
+    return session;
   }
 
   /**
@@ -1578,32 +1591,25 @@ export class Agent {
     // The composition layer's half of an in-session model switch (see Session.switchModel):
     // the target is validated exactly as a creation model is — configured on disk, credential
     // present at client construction — before anything is sent or recorded, and the model the
-    // Session is on is asked the same question to decide whether it is sent the summary
-    // request; a Session that never ran has its first context assembled again on the target,
-    // which the bootstrap then opens like any first context. One reachability rule behind
-    // both: null when reachable, else the refusal.
-    const unreachableReason = async (ref: ModelRef): Promise<ModelSwitchRefusedError | null> => {
-      const entry = await this.modelEntryOnDisk(ref);
-      if (!entry)
-        return new ModelSwitchRefusedError("model_not_configured", modelNotConfigured(ref));
-      try {
-        createBareLLM(entry);
-        return null;
-      } catch (err) {
-        // A configured model whose client cannot be built — a missing credential foremost:
-        // a refusal with the loader's own wording, not a failure of the switch.
-        return new ModelSwitchRefusedError(
-          "model_unavailable",
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-    };
+    // Session is on is asked the same question before it is sent the summary request; a
+    // Session that never ran has its first context assembled again on the target, which the
+    // bootstrap then opens like any first context.
     const modelSwitch: ModelSwitchSupport = {
       validate: async (ref) => {
-        const refusal = await unreachableReason(ref);
-        if (refusal) throw refusal;
+        const entry = await this.modelEntryOnDisk(ref);
+        if (!entry)
+          throw new ModelSwitchRefusedError("model_not_configured", modelNotConfigured(ref));
+        try {
+          createBareLLM(entry);
+        } catch (err) {
+          // A configured target whose client cannot be built — a missing credential foremost:
+          // a refusal with the loader's own wording, not a failure of the switch.
+          throw new ModelSwitchRefusedError(
+            "model_unavailable",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       },
-      reachable: async (ref) => (await unreachableReason(ref)) === null,
       reassembleInitialContext: async (ref) => {
         const next = await this.assembleContext(spec, await switchTargetEntry(ref));
         equip(next);

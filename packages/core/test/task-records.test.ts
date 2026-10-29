@@ -190,9 +190,6 @@ describe("Task records", () => {
       }),
       modelSwitch: {
         async validate() {},
-        async reachable() {
-          return true;
-        },
         async reassembleInitialContext(ref) {
           return { sessionMeta: sessionMeta(metaFor(ref.model_id)) };
         },

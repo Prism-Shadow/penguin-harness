@@ -58,7 +58,7 @@ import {
   buildContextSummaryText,
   extractSummary,
   MARKER_TAGS,
-  parseModelSwitchMessage,
+  parseInPlaceModelSwitch,
   startsWithMarker,
 } from "@prismshadow/amsp/markers";
 
@@ -280,16 +280,18 @@ function isCompactionEnd(msg: AmspRecord): msg is AmspRecord<CompactionEndPayloa
 /**
  * Whether the message is the text a context opened with: a `[context_summary]` user text (the
  * first input of a context a summarize compaction opened), or a user text that is one whole
- * `[model_switch_from]` block (the handoff a model switch opened it with when it could not
- * summarize). Read off the text because no field marks the record (see the markers module's
- * consumption boundary for why that is safe here).
+ * `[model_switch_from]` block naming `sessionId`, the file's own Session (the handoff a model
+ * switch opened it with when it could not summarize — a `/model` conversation's first message
+ * names the Session it came from, and is the user's Prompt). Read off the text because no field
+ * marks the record (see the markers module's consumption boundary for why that is safe here).
  */
-function isOpeningText(msg: AmspRecord): boolean {
+function isOpeningText(msg: AmspRecord, sessionId: string | undefined): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: string };
   if (p.type !== "text" || p.role !== "user") return false;
   const text = p.text ?? "";
   return (
-    startsWithMarker(text, MARKER_TAGS.contextSummary) || parseModelSwitchMessage(text) !== null
+    startsWithMarker(text, MARKER_TAGS.contextSummary) ||
+    parseInPlaceModelSwitch(text, sessionId) !== null
   );
 }
 
@@ -520,7 +522,9 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
     history,
     carryOver: [...pending, ...pairingBackfill],
     contextClosed: false,
-    ...(opening !== undefined && isOpeningText(opening) ? { openingSummary: opening } : {}),
+    ...(opening !== undefined && isOpeningText(opening, meta?.payload.session_id)
+      ? { openingSummary: opening }
+      : {}),
     sessionTokens,
     lastRequestTotal,
     sessionTurns,

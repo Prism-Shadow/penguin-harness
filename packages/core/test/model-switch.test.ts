@@ -62,7 +62,7 @@ import type {
   SessionOpenContextOptions,
 } from "../src/session.js";
 import type { ModelRef } from "../src/state/project-config.js";
-import { parseModelSwitchMessage } from "@prismshadow/amsp/markers";
+import { buildModelSwitchMessage, parseModelSwitchMessage } from "@prismshadow/amsp/markers";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 
 // ---------------------------------------------------------------------------
@@ -277,9 +277,9 @@ function harness(
       if (ref.model_id === "unknown") {
         throw new Error(`Model is not in the Project config: ${ref.model_id}`);
       }
-    },
-    async reachable(ref) {
-      return !(args.unreachable ?? []).includes(ref.model_id);
+      if ((args.unreachable ?? []).includes(ref.model_id)) {
+        throw new ModelSwitchRefusedError("model_unavailable", `${ref.model_id} has no key`);
+      }
     },
     async reassembleInitialContext(ref) {
       reassembled.push(ref);
@@ -375,8 +375,9 @@ describe("in-session model switch", () => {
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
     expect(result).toBe("completed");
-    // The target was validated before anything else happened.
-    expect(h.validated).toEqual([MODEL_B]);
+    // The target was validated before anything else happened; then the model being left was
+    // asked the same, to know it can be sent the summary request.
+    expect(h.validated).toEqual([MODEL_B, MODEL_A]);
     // An ordinary manual summarize pair: nothing on it names a model.
     expect(compactionEvents(all)).toEqual([
       { type: "compaction_begin", reason: "manual", mode: "summarize", context: 50, turns: 1 },
@@ -1143,7 +1144,7 @@ describe("in-session model switch", () => {
       });
       await collect(engine.run([userText("task one")], { approve: allowAll }));
 
-      const { all, result } = await collectWithReturn(engine.switchContext({ handoff }));
+      const { all, result } = await collectWithReturn(engine.switchContext(undefined, { handoff }));
 
       expect(result).toBe("completed");
       expect(compactionEvents(all)[1]).toMatchObject({
@@ -1545,6 +1546,134 @@ describe("in-session model switch", () => {
     );
   });
 
+  it("a /model conversation's source block stays its Prompt after a restart: a switch carries it as text and opens the next file without it", async () => {
+    // The first message of a conversation /model opened names the Session it came from; its
+    // first request never completed. Only a handoff naming this Session opens a context.
+    const sourceBlock = buildModelSwitchMessage({
+      sessionId: "the-source-session",
+      tracePath: "/data/traces/the-source-session_001.jsonl",
+      prevModelId: "model-z",
+    });
+    const resumed = resumeTrace([sessionMeta(metaFor(MODEL_A)), userText(sourceBlock)]);
+    expect(resumed.openingSummary).toBeUndefined();
+    const inPlace = buildModelSwitchMessage({ sessionId: SESSION_ID }, { inPlace: true });
+    const handedOver = resumeTrace([sessionMeta(metaFor(MODEL_A)), userText(inPlace)]);
+    expect(handedOver.openingSummary).toBe(handedOver.carryOver[0]);
+
+    const llmB = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 20)] }], "B");
+    const h = harness(traces, {
+      llmA: new ScriptedLLM([], "A"),
+      llms: { [MODEL_B.model_id]: [llmB] },
+      extras: {
+        metaAlreadyWritten: true,
+        initialEngineState: { carryOver: resumed.carryOver, sessionTurns: 0 },
+      },
+    });
+    sessions.push(h.session);
+
+    expect(await collectWithReturn(switchTo(h.session, MODEL_B))).toMatchObject({
+      result: "completed",
+    });
+    const opened = await readTrace(h.trace.currentPath());
+    expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready"]);
+    await collect(h.session.run([userText("go on")], { approve: allowAll }));
+    expect(llmB.calls[0]!.map(textOf)).toEqual([sourceBlock, "go on"]);
+  });
+
+  it("a stop right after a failed summary keeps the old model: nothing is opened, and the next run extends the old context", async () => {
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        { messages: [], outcome: { status: "fatal", errorCode: "auth", errorMessage: "nope" } },
+        { messages: [assistantText("answer two"), usage(60, 110)] },
+      ],
+      "A",
+    );
+    const h = harness(traces, { llmA, llms: { [MODEL_B.model_id]: [new ScriptedLLM([], "B")] } });
+    sessions.push(h.session);
+    const oldPath = h.trace.currentPath();
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+
+    const controller = new AbortController();
+    const switching = switchTo(h.session, MODEL_B, controller.signal);
+    let result: string | undefined;
+    for (;;) {
+      const res = await switching.next();
+      if (res.done) {
+        result = res.value;
+        break;
+      }
+      if ((res.value.payload as { type?: string }).type === "compaction_end") controller.abort();
+    }
+
+    expect(result).toBe("aborted");
+    expect(h.opens).toEqual([]);
+    expect(h.session.modelId).toBe(MODEL_A.model_id);
+    expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`]);
+    await collect(h.session.run([userText("task two")], { approve: allowAll }));
+    expect(llmA.calls).toHaveLength(3);
+    expect(h.trace.currentPath()).toBe(oldPath);
+  });
+
+  it("a summary that fails and then a target whose context cannot be opened leave the old model in place, its context extendable", async () => {
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        { messages: [], outcome: { status: "fatal", errorCode: "auth", errorMessage: "nope" } },
+        { messages: [assistantText("answer two"), usage(60, 110)] },
+      ],
+      "A",
+    );
+    // Nothing is prepared for a context on B: the opener throws.
+    const h = harness(traces, { llmA, llms: {} });
+    sessions.push(h.session);
+    const oldPath = h.trace.currentPath();
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+
+    await expect(collect(switchTo(h.session, MODEL_B))).rejects.toThrow(
+      /no LLM prepared for a context on model-b/,
+    );
+    expect(h.session.modelId).toBe(MODEL_A.model_id);
+    expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`]);
+    await collect(h.session.run([userText("task two")], { approve: allowAll }));
+    expect(llmA.calls).toHaveLength(3);
+    expect(llmA.calls[2]!.map(textOf)).toEqual(["task two"]);
+    expect(h.trace.currentPath()).toBe(oldPath);
+  });
+
+  it("text the context held reaches the target even when the summary request committed an unusable answer before it gave up", async () => {
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        // The next Task's request is refused: its prompt is held as text.
+        { messages: [], outcome: { status: "fatal", errorCode: "rejected", errorMessage: "no" } },
+        // The summary request answers, but with nothing usable: committed, then given up on.
+        { messages: [assistantText(""), usage(60, 110)] },
+      ],
+      "A",
+    );
+    const llmB = new ScriptedLLM([{ messages: [assistantText("on B"), usage(20, 130)] }], "B");
+    const handoff = userText("[model_switch_from]\nhandoff\n[/model_switch_from]");
+    const engine = new ContextEngine({
+      llm: llmA,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      compactionMaxReconnects: 0,
+      openNextContext: () => ({ llm: llmB, sessionMeta: sessionMeta(metaFor(MODEL_B)) }),
+    });
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    await collect(engine.run([userText("task two, unanswered")], { approve: allowAll }));
+
+    const { result } = await collectWithReturn(engine.switchContext(undefined, { handoff }));
+    await collect(engine.run([userText("task three")], { approve: allowAll }));
+
+    expect(result).toBe("completed");
+    const sent = llmB.calls[0]!.map(textOf);
+    expect(sent[0]).toBe(textOf(handoff));
+    expect(sent.join("\n")).toContain("task two, unanswered");
+    expect(sent.at(-1)).toBe("task three");
+  });
+
   it("with no compaction configured there is no summary to ask for: a context with turns hands over by Trace path", async () => {
     const llmA = new ScriptedLLM([{ messages: [assistantText("answer one"), usage(50, 50)] }], "A");
     const h = harness(traces, {
@@ -1578,7 +1707,6 @@ describe("in-session model switch", () => {
         ? {
             modelSwitch: {
               validate: async () => {},
-              reachable: async () => true,
               reassembleInitialContext: async () => ({}),
             },
           }

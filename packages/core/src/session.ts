@@ -195,14 +195,21 @@ export type SessionRunOptions = RunOptions;
 
 /**
  * Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}).
- * Both are about the target: a model the Session is on that cannot be reached is no reason to
- * refuse — the switch hands the history over by its Trace path instead.
+ * The refusals `switchModel` produces are about the target: a model the Session is on that
+ * cannot be reached is no reason to refuse — the switch hands the history over by its Trace
+ * path instead.
  */
 export type ModelSwitchRefusal =
   /** The target pair names no entry in the Project config on disk. */
   | "model_not_configured"
   /** The target is configured but its client cannot be constructed (a missing credential foremost), or this Session cannot switch at all (no switch support, or no opener for a next context). */
-  | "model_unavailable";
+  | "model_unavailable"
+  /**
+   * No longer produced: a Session without compaction hands its history over by Trace path
+   * instead of refusing. Kept so SDK callers that branch on it still compile; remove it at the
+   * next breaking release (0.3.0), together with any host mapping of it.
+   */
+  | "compaction_not_configured";
 
 /**
  * A model switch refused before anything was sent or recorded: no event was produced and the
@@ -229,16 +236,11 @@ export interface ModelSwitchSupport {
    * Validates a switch target before anything is sent or recorded: resolves it against the
    * Project config as it is on disk and constructs its client, so a pair that is not
    * configured, or has no credential, is refused here (a {@link ModelSwitchRefusedError})
-   * exactly where Session creation would have failed.
+   * exactly where Session creation would have failed. The Session asks the same of the model
+   * it is on: a refusal there means that model is sent nothing, and the switch hands the
+   * history over by Trace path.
    */
   validate(ref: ModelRef): Promise<void>;
-  /**
-   * Whether `ref` can still be reached, by the same rule `validate` applies — configured on
-   * disk, with a client that can be constructed — answered instead of thrown. Asked of the
-   * model the running context is on: one that cannot be reached is sent nothing, and the
-   * switch hands its history over by Trace path.
-   */
-  reachable(ref: ModelRef): Promise<boolean>;
   /**
    * Re-assembles the Session's not-yet-opened first context on `ref` — the switch of a Session
    * that never ran, which has no context to close. The Environment is re-equipped for it, and
@@ -1043,17 +1045,21 @@ export class Session {
     }
     // A context to close needs a next one to open.
     if (!this.engineDeps.openNextContext) throw unavailable();
-    const summarize = await this.modelSwitch.reachable(from);
+    // The model the Session is on, asked the target's question: one that is no longer
+    // configured, or whose client cannot be built, is sent nothing.
+    const summarize = await this.modelSwitch.validate(from).then(
+      () => true,
+      (err: unknown) => {
+        if (err instanceof ModelSwitchRefusedError) return false;
+        throw err;
+      },
+    );
     // Written now, while the Trace still points at the file of the context being left.
     const handoff = this.switchHandoff(from);
     if (!(yield* this.ensureEngine(opts.signal))) return "aborted";
     this.switchTarget = target;
     try {
-      const status = yield* this.engine!.switchContext({
-        signal: opts.signal,
-        handoff,
-        summarize,
-      });
+      const status = yield* this.engine!.switchContext(opts.signal, { handoff, summarize });
       // Input an aborted bootstrap left with the Session rides on like the engine's pending
       // input: its text alone, in memory (the original stays where the abort wrote it).
       if (status === "completed") {

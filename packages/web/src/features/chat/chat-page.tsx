@@ -1931,7 +1931,7 @@ export function ChatPage() {
       const shape = switchContextShape(
         [...stream.prefixItems, ...stream.model.items],
         selected,
-        models?.models,
+        models,
       );
       setModelSwitchAsk({ to: ref, shape });
     },

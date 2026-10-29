@@ -301,7 +301,7 @@ describe("prompt-cache invariants of request assembly", () => {
     });
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
-    await collect(engine.switchContext({ handoff: HANDOFF }));
+    await collect(engine.switchContext());
     await collect(engine.run([userText("task two")], { approve: allowAll }));
 
     // The switch's compaction request is an ordinary compaction request to the OLD model: same
@@ -347,7 +347,7 @@ describe("prompt-cache invariants of request assembly", () => {
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
     const controller = new AbortController();
-    const switching = engine.switchContext({ signal: controller.signal, handoff: HANDOFF });
+    const switching = engine.switchContext(controller.signal);
     let aborted: string | undefined;
     for (;;) {
       const res = await switching.next();
@@ -358,7 +358,7 @@ describe("prompt-cache invariants of request assembly", () => {
       const payload = res.value.payload as { type?: string; event_type?: string };
       if (payload.type === "partial_text" && payload.event_type === "delta") controller.abort();
     }
-    await expect(collect(engine.switchContext({ handoff: HANDOFF }))).rejects.toThrow(
+    await expect(collect(engine.switchContext())).rejects.toThrow(
       "the target's context could not be assembled",
     );
     await collect(engine.run([userText("task two")], { approve: allowAll }));
@@ -400,7 +400,7 @@ describe("prompt-cache invariants of request assembly", () => {
         openNextContext: () => ({ llm: second.model }),
       });
       await collect(engine.run([userText("task one")], { approve: allowAll }));
-      await collect(engine.switchContext({ handoff: HANDOFF, summarize }));
+      await collect(engine.switchContext(undefined, { handoff: HANDOFF, summarize }));
       await collect(engine.run([userText("task two")], { approve: allowAll }));
       return { first: first.requests, second: second.requests };
     };
@@ -434,5 +434,41 @@ describe("prompt-cache invariants of request assembly", () => {
         "task two",
       ]);
     }
+  });
+
+  it("a summary that fails and then a target that cannot be opened leave the old model's line intact: the next request still extends the last one", async () => {
+    const first = recordingModel(modelConfig(), [
+      { text: "First answer.", promptTokens: 20 },
+      { text: "[summary]half", promptTokens: 30, outcome: "retryable-after-text" },
+      { text: "Second answer.", promptTokens: 40 },
+    ]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings(),
+      compactionMaxReconnects: 0,
+      openNextContext: () => {
+        throw new Error("the target's context could not be assembled");
+      },
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    await expect(collect(engine.switchContext(undefined, { handoff: HANDOFF }))).rejects.toThrow(
+      "the target's context could not be assembled",
+    );
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+
+    // The turn, the failed summary request, the next turn — all on the old model. The summary
+    // request extended the turn; nothing of it was committed, so the next turn extends the turn
+    // too. Neither the handoff nor anything of the target reached the wire.
+    expect(first.requests).toHaveLength(3);
+    const [turn, summary, next] = first.requests as [
+      RecordedRequest,
+      RecordedRequest,
+      RecordedRequest,
+    ];
+    expect(diagnoseCacheMiss(turn, summary)).toEqual({ type: "none" });
+    expect(diagnoseCacheMiss(turn, next)).toEqual({ type: "none" });
+    expect(JSON.stringify(first.requests.map((r) => r.wire))).not.toContain("model_switch_from");
   });
 });

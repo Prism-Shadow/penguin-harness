@@ -17,6 +17,8 @@
  *   tail page.
  * - A Trace with Task records is cut after the selected Task's task_end, before the next Task's
  *   task_begin: the fork never ends on an unclosed Task.
+ * - An in-session switch's Trace handoff is rewritten to name the fork and the fork's copy of the
+ *   file it points at.
  * - Concurrent forks get unique Sessions and never overwrite the source.
  * - A user without Project access is not told the endpoint exists.
  */
@@ -41,6 +43,7 @@ import {
   tracesDir,
   userText,
 } from "@prismshadow/penguin-core";
+import { buildModelSwitchMessage, parseInPlaceModelSwitch } from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import type {
   MessagesResponse,
@@ -729,6 +732,73 @@ describe("session fork", () => {
       provider: "custom",
       modelId: "fork-model",
     });
+  });
+
+  it("a switch's Trace handoff names the fork and the fork's copy of the file it points at, so the fork still reads it as its own", async () => {
+    const { scratch } = await seedSource();
+    // The source switched models without a summary: shard 2 opens with the handoff naming the
+    // source Session and its shard 1.
+    const sourceFile = path.join(
+      tracesDir(t.root, projectId, "default_agent"),
+      "2026-08-14",
+      `${SID}_001.jsonl`,
+    );
+    const handoff = buildModelSwitchMessage(
+      {
+        sessionId: SID,
+        tracePath: sourceFile,
+        workspace,
+        prevProvider: "custom",
+        prevModelId: "fork-model",
+      },
+      { inPlace: true },
+    );
+    await writeTraceFile(t.root, projectId, "default_agent", "2026-08-14", SID, 2, [
+      at(
+        "2026-08-14T10:01:05.000Z",
+        sessionMeta({
+          session_id: SID,
+          provider: "custom",
+          model_id: "fork-model-b",
+          model_context_window: 20_000,
+          system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
+          agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+          workspace,
+          source: "user",
+        }),
+      ),
+      at("2026-08-14T10:01:06.000Z", userText(handoff)),
+      at("2026-08-14T10:01:07.000Z", userText("on the new model")),
+      at("2026-08-14T10:01:08.000Z", requestBegin()),
+      at("2026-08-14T10:01:09.000Z", assistantText("answered on b")),
+      at("2026-08-14T10:01:10.000Z", requestEnd("completed")),
+      at("2026-08-14T10:01:10.100Z", tokenUsage(counts(300), counts(100))),
+    ]);
+
+    const fork = (await (
+      await api.post(`/api/sessions/${SID}/fork`, { position: { fileIndex: 2, ordinal: 4 } })
+    ).json()) as SessionForkResponse;
+    const forkId = fork.session.sessionId;
+    const shard2 = parseTraceLines(
+      await fs.readFile(
+        path.join(
+          tracesDir(t.root, projectId, "default_agent"),
+          "2026-08-14",
+          `${forkId}_002.jsonl`,
+        ),
+        "utf8",
+      ),
+    );
+    const text = (shard2[1]!.payload as { text: string }).text;
+    expect(parseInPlaceModelSwitch(text, forkId)).toMatchObject({
+      sessionId: forkId,
+      tracePath: path.join(path.dirname(sourceFile), `${forkId}_001.jsonl`),
+      prevModelId: "fork-model",
+    });
+    // The file it names is the fork's own copy, there to be read.
+    await expect(
+      fs.access(path.join(path.dirname(sourceFile), `${forkId}_001.jsonl`)),
+    ).resolves.toBeUndefined();
   });
 
   it("gives concurrent forks unique Sessions without overwriting the source", async () => {

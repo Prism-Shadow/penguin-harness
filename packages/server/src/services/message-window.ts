@@ -35,7 +35,10 @@
  * Task records (`task_begin` / `task_end`) are skipped outright, before anything else looks at
  * a message: Tasks are still derived from user prompts here, and skipping keeps every cut,
  * count and timing exactly what it is on a Trace written before the records existed — the
- * cached prefix records stay valid, so CACHE_VERSION is unchanged by them.
+ * cached prefix records stay valid, so CACHE_VERSION is unchanged by them. So is it by the
+ * in-session switch's Trace handoff, which counts like a summary: no shard written before it
+ * existed holds a `[model_switch_from]` block naming its own Session (a `/model` block names
+ * the Session it came from), so no cached record changes.
  *
  * Scan state is carried across shards (a Task can span a rotation). Cached per-shard
  * prefix records (trace_files.page_stats) persist the carry so old shards are read at
@@ -51,7 +54,7 @@ import {
 import type { AmspRecord } from "@prismshadow/penguin-core";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 5;
+export const CACHE_VERSION = 4;
 
 /** Cumulative totals at a point in the trace (all values are "before this point"). */
 export interface WindowPriorStats {

@@ -292,6 +292,10 @@ describe("agent.resumeSession", () => {
       await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(refusal);
 
       const session = await agent.resumeSession({ sessionId: SID, allowUnreachableModel: true });
+      // Nothing is asked of that model before the switch either: a title gets no answer.
+      expect(
+        await session.generateTitle({ material: { userText: "q1", assistantText: "a1" } }),
+      ).toMatchObject({ title: null });
       const streamed: AmspRecord[] = [];
       const switching = session.switchModel({ provider: MODEL.provider, modelId: MODEL.model_id });
       let status: string | undefined;
