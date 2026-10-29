@@ -1,3 +1,15 @@
+/**
+ * The web app's pages. Each one is a contribution to WebApp's `pages` slot (web-app/module.ts):
+ * the feature that owns it declares its route, its frame, whether it sits in the main nav,
+ * whether the server refuses it to non-admins, whether it is offered yet, and its place, and
+ * binds the component that draws it. `pageTableOf` turns the contributions into the table the
+ * router mounts and the sidebar derives its nav group from.
+ *
+ * Pages a pushed platform or a plugin contributes arrive from the server (GET
+ * /api/contributions) in the `PageEntry` shape, which names a renderer instead of carrying a
+ * component; `contributedPages` picks the ones to mount beside this table — a page whose
+ * renderer this build does not carry is skipped, since there is nothing to draw it with.
+ */
 import type { ComponentType } from "react";
 import type { Contributed } from "@prismshadow/penguin-core/kernel";
 
@@ -14,6 +26,10 @@ export interface PageData {
   released: boolean;
   /** The page's place in the table, and so in the nav. */
   order: number;
+  /** A main-nav page's row: its name in English and in Chinese, and its glyph's name in the UI package's icon registry (`ICONS`). */
+  title?: string;
+  titleZh?: string;
+  icon?: string;
 }
 
 /** A page with the component its feature bound. */
@@ -31,6 +47,11 @@ export function pageTableOf(contributions: readonly Contributed[]): readonly Web
       Component: c.code as ComponentType,
     }))
     .sort((a, b) => a.order - b.order);
+}
+
+/** A page's nav name in the given language; the key stands in for a page that names none. */
+export function pageTitle(page: PageData, locale: "zh" | "en"): string {
+  return (locale === "zh" ? page.titleZh : page.title) ?? page.title ?? page.key;
 }
 
 /** The main nav's pages, in table order — offered or not, for any role. */

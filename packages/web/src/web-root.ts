@@ -1,7 +1,8 @@
+import { MainSidebarBadgesModule } from "./features/models/main-sidebar-badges.module";
 /**
  * The composition root: the one file that lists the module classes, the web app's counterpart
  * of the server's platform.ts. `bootWeb()` boots the tree once, before the first render
- * (main.tsx), and hands back the shell's root component — the routed app with every module's
+ * (main.tsx), and hands back WebApp's root component — the routed app with every module's
  * contributions bound in.
  *
  * The manifests and interfaces come from `ifaces.json`, which scripts/gen-ifaces.mjs generates
@@ -23,6 +24,7 @@ import {
 import table from "./ifaces.json";
 import { WebAppModule, type WebApp } from "./web-app/module";
 
+import { SidebarModule } from "./web-app/sidebar/module";
 import type { AppRouterProps } from "./web-app/router";
 import { SessionsModule } from "./state/sessions.module";
 import { ChatModule } from "./features/chat/module";
@@ -39,10 +41,16 @@ import { BuiltinBrowserModule } from "./features/builtin-browser/module";
 import { PaletteModule } from "./features/palette/module";
 import { SettingsModule } from "./features/settings/module";
 import { SchedulesModule } from "./features/schedules/module";
+import { SessionListModule } from "./features/session-list/module";
+import { ProjectsModule } from "./features/projects/module";
+import { MessagingModule } from "./features/messaging/module";
+import { DockModule } from "./features/dock/module";
 
 @Module({
   children: [
     WebAppModule,
+    SidebarModule,
+    MainSidebarBadgesModule,
     SessionsModule,
     ChatModule,
     AgentsModule,
@@ -58,6 +66,10 @@ import { SchedulesModule } from "./features/schedules/module";
     PaletteModule,
     SettingsModule,
     SchedulesModule,
+    SessionListModule,
+    ProjectsModule,
+    MessagingModule,
+    DockModule,
   ],
 })
 export class WebRoot {}

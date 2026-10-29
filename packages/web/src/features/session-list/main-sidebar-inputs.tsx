@@ -1,3 +1,4 @@
+import { sectionsIn, currentModeIndex } from "../../lib/sidebar-modes";
 import { useLocation, useMatch, useNavigate } from "react-router";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -8,15 +9,17 @@ import { useCompany } from "../../lib/company-context";
 import { parseOrgKey } from "../company";
 import type {
   MainSidebarProps,
+  SidebarBindingReader,
   SidebarNavSelector,
   SidebarPagesReader,
 } from "../../lib/main-sidebar-bindings";
 
-/** Consecutive live main statements 0..11, called once in original hook order. */
+/** Consecutive live main statements 0..18, called once in original hook order. */
 export function useMainSidebarInputs(
   props: MainSidebarProps,
   navPagesOf: SidebarNavSelector,
   useWebAppPages: SidebarPagesReader,
+  useSidebarBindings: SidebarBindingReader,
 ) {
   const { onNavigate, onCollapse, initialSearchOpen = false } = props;
 
@@ -46,9 +49,19 @@ export function useMainSidebarInputs(
 
   /** The badges over the update and to-do trails (use-update-badges.ts); the avatar's dot follows the update flow's offer / restart states. */
   const badges = useUpdateBadges();
+  const { sections, modes, badges: slotBadges, useModes, useNotes } = useSidebarBindings();
+  const modeStates = useModes();
+  const currentMode = currentModeIndex(modeStates);
+  const modeKey = currentMode < 0 ? "dev" : modes[currentMode]!.key;
+  const notes = useNotes();
+  const offeredModes = modes.filter((_, i) => modeStates[i]!.available);
+  const renderSections = (place: "header" | "body") =>
+    sectionsIn(sections, modeKey, place).map(({ id, section: { Full } }) => (
+      <Full key={id} {...(onNavigate ? { onNavigate } : {})} />
+    ));
   const company = useCompany();
   /** Company mode swaps the Project switcher, the page nav and the session list for their organization forms. */
-  const inCompany = company.workMode === "company";
+  const inCompany = currentMode >= 0;
   /** The organization the company nav points at: the open one, else the one last opened (the switcher names the same). */
   const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
   return {
@@ -57,6 +70,7 @@ export function useMainSidebarInputs(
     initialSearchOpen,
     navPagesOf,
     useWebAppPages,
+    useSidebarBindings,
     navigate,
     location,
     user,
@@ -82,6 +96,17 @@ export function useMainSidebarInputs(
     chatMatch,
     activeSessionId,
     badges,
+    sections,
+    modes,
+    slotBadges,
+    useModes,
+    useNotes,
+    modeStates,
+    currentMode,
+    modeKey,
+    notes,
+    offeredModes,
+    renderSections,
     company,
     inCompany,
     navOrg,

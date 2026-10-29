@@ -26,11 +26,11 @@ export function renderMainGroupByWorkspace(scope: MainSidebarState) {
     filterRows,
     groupDragProps,
     newChat,
-    browseFiles,
     machineNameOf,
     registeredKeys,
     openRenameWorkspace,
     renderGroupBody,
+    onNavigate,
   } = scope;
   return groupMode !== "workspace" ? null : loading && sessions.length === 0 ? (
     <SkeletonList rows={5} />
@@ -107,7 +107,8 @@ export function renderMainGroupByWorkspace(scope: MainSidebarState) {
                               registry entry for those two to act on). */}
                 {fullPath !== null && (
                   <GroupOverflowMenu
-                    onBrowse={() => browseFiles(fullPath, group.machineId)}
+                    target={{ path: fullPath, machineId: group.machineId }}
+                    host={{ newChat, ...(onNavigate ? { onNavigate } : {}) }}
                     {...(registeredKeys.has(group.key)
                       ? {
                           onRename: () => openRenameWorkspace(fullPath, group.machineId),

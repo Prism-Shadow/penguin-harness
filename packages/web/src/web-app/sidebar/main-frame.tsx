@@ -1,3 +1,10 @@
+import type { ReactNode } from "react";
+import {
+  MainSidebarFragments,
+  renderMainSessionList,
+  renderMainSessionDialogs,
+} from "../../features/session-list";
+import { sectionsIn } from "../../lib/sidebar-modes";
 import {
   NavRow,
   Segmented,
@@ -5,96 +12,33 @@ import {
   SidebarNavArea,
   SidebarNavGroup,
 } from "@prismshadow/penguin-ui";
-
 import { S } from "../../lib/strings";
-
 import { DRAFT_SESSION_ID } from "../../features/chat";
-
-import { ProjectSwitcher } from "../../features/projects";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import {
-  NoOrganizationsSidebar,
-  OrgSwitcher,
-  CompanyBetaBadge,
-  ChannelSidebar,
-  OrgSessionGroups,
-} from "../../features/company";
-
 import { NEW_CHAT_ICON } from "../../lib/main-sidebar-persistence";
 import type { MainSidebarView } from "./main-navigation";
-import { renderMainSessionList, renderMainSessionDialogs } from "../../features/session-list";
 
 export function renderMainSidebarFrame(scope: MainSidebarView) {
   const {
-    navigate,
     location,
-    agents,
-    countsByAgent,
-    loading,
+    locale,
     activeSessionId,
-    company,
+    sections,
+    modeKey,
+    offeredModes,
+    renderSections,
     inCompany,
-    navOrg,
-    sessions,
-    byAgent,
-    currentProjectId,
     navCollapsed,
     navDrag,
     navToggleRef,
-    groupMode,
-    regrouped,
-    collapsedGroups,
-    pinnedGroups,
-    sortMode,
-    setDeletingWorkspace,
-    searchOpen,
-    setSearchOpen,
-    searchInputRef,
     rootRef,
-    searchTitle,
     newChatTitle,
     collapseTitle,
-    searchQuery,
-    setSearchQuery,
-    listSettingsOpen,
-    setListSettingsOpen,
     canDrag,
-    pendingLoads,
-    setDeletingDraft,
-    setGroupMode,
     toggleNavGroup,
     navAreaDrop,
-    workspaceGroupCounts,
-    orderedAgents,
-    orderedWorkspaceGroups,
-    agentGroupSequence,
-    workspaceGroupSequence,
-    toggleGroup,
-    togglePin,
-    setSortMode,
-    searching,
-    groupsOnPage,
-    groupPagerRow,
-    filterRows,
-    timeRows,
-    timeGroups,
-    timeMoreAgents,
-    closeSearch,
-    groupDragProps,
-    shownDrafts,
-    hasSearchMatches,
-    trackedLoadMore,
-    go,
     newChat,
-    browseFiles,
-    newEntity,
-    newEntityLabel,
-    addWorkspace,
-    machineNameOf,
-    registeredKeys,
-    openRenameWorkspace,
     switchMode,
-    renderGroupBody,
     companyNavItems,
     pinnedNavPages,
     collapsibleNavPages,
@@ -102,10 +46,12 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
     accountRow,
     onNavigate,
     onCollapse,
+    initialSearchOpen,
   } = scope;
   const dialogs = renderMainSessionDialogs(scope);
+  const mainSessionList = renderMainSessionList(scope);
 
-  return (
+  const frame = (
     <SidebarFrame
       rootRef={rootRef}
       // The page nav and the Session list are one find-in-page region (components/find/).
@@ -115,21 +61,23 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
       // the choice persists per user. The 内测版 tag rides on 公司 — the switch is the one
       // control that names the mode, so the mark stands on the word it qualifies rather than
       // somewhere inside the mode it describes.
-      {...(company.available
+      {...(offeredModes.length > 0
         ? {
             modeSwitch: {
               label: S.company.workMode,
               control: (
                 <Segmented
                   options={[
-                    { value: "dev" as const, label: S.company.modeDev },
-                    {
-                      value: "company" as const,
-                      label: S.company.modeCompany,
-                      badge: { node: <CompanyBetaBadge />, name: S.company.beta },
-                    },
+                    { value: "dev", label: S.company.modeDev },
+                    ...offeredModes.map(({ key, title, titleZh, mode }) => ({
+                      value: key,
+                      label: locale === "zh" ? titleZh : title,
+                      ...(mode.badge
+                        ? { badge: { node: <mode.badge.Node />, name: mode.badge.name() } }
+                        : {}),
+                    })),
                   ]}
-                  value={company.workMode}
+                  value={modeKey}
                   onChange={switchMode}
                   cols={2}
                 />
@@ -144,7 +92,7 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
         : {})}
       switcher={
         // The Project switcher; the organization switcher in company mode.
-        inCompany ? <OrgSwitcher {...(onNavigate ? { onNavigate } : {})} /> : <ProjectSwitcher />
+        renderSections("header")
       }
       // New chat: always pinned, in the one slot between the switcher above and the scroll area
       // below; it has no pin button and cannot be dragged. A page row like the nav's (no fill at
@@ -172,7 +120,14 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
             ),
           })}
       account={accountRow}
-      overlays={dialogs}
+      overlays={
+        <>
+          {dialogs}
+          {sections.map(({ id, section: { Overlays } }) =>
+            Overlays ? <Overlays key={id} /> : null,
+          )}
+        </>
+      }
     >
       {/* The page nav: in development mode the pinned pages, then the collapsible ones folded
           away under the slim toggle (with nothing collapsible there is no toggle); in company
@@ -222,29 +177,32 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
       </SidebarNavGroup>
 
       {inCompany ? (
-        navOrg !== null ? (
-          /* Company mode: the organization's channels, where development mode lists
-             conversations, and below them its 工位 group — one row per employee's desk. */
-          <>
-            <ChannelSidebar
-              projectId={navOrg.projectId}
-              orgId={navOrg.orgId}
-              {...(onNavigate ? { onNavigate } : {})}
-            />
-            <OrgSessionGroups
-              projectId={navOrg.projectId}
-              orgId={navOrg.orgId}
-              activeSessionId={activeSessionId}
-              {...(onNavigate ? { onNavigate } : {})}
-            />
-          </>
-        ) : (
-          /* No organization to list: the create block, not an empty channel list. */
-          <NoOrganizationsSidebar {...(onNavigate ? { onNavigate } : {})} />
-        )
+        renderSections("body")
       ) : (
-        renderMainSessionList(scope)
+        <MainSidebarFragments.Provider value={{ sessionList: mainSessionList }}>
+          {sectionsIn(sections, "dev", "body").map(({ id, section: { Full } }) => (
+            <Full key={id} {...(onNavigate ? { onNavigate } : {})} />
+          ))}
+        </MainSidebarFragments.Provider>
       )}
     </SidebarFrame>
+  );
+  return sections.reduceRight<ReactNode>(
+    (inner, { id, mode, section: { Scope } }) =>
+      Scope ? (
+        <Scope
+          key={id}
+          current={mode === modeKey}
+          canDrag={canDrag}
+          rootRef={rootRef}
+          initialSearchOpen={initialSearchOpen}
+          {...(onNavigate ? { onNavigate } : {})}
+        >
+          {inner}
+        </Scope>
+      ) : (
+        inner
+      ),
+    frame,
   );
 }
