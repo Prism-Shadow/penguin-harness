@@ -723,14 +723,13 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
     for (const said of [
       "no CLI pushed to /home/cnns/.penguin/data; use `penguin` instead",
       "the CLI pushed to /home/cnns/.penguin/data is unusable: the committed CLI bundle is missing from the store: /home/cnns/.penguin/data/hmr/store/cli/x.mjs",
-      "no-record: no record in /home/cnns/.penguin/data",
-      "no-pushed-cli: the record in /home/cnns/.penguin/data holds no CLI",
-      "damaged-record: /home/cnns/.penguin/data/hmr/harness.json is not readable JSON: Unexpected token",
-      "cli-pointer-unusable: harness.json points `cli.bundle` outside /home/cnns/.penguin/data/hmr: ../x.mjs",
-      "cli-bundle-missing: /home/cnns/.penguin/data/hmr/store/cli/x.mjs",
-      "loader-missing: /home/cnns/.penguin/lib/package.json declares /home/cnns/.penguin/lib/dist/penguin-hmr.js",
-      "loader-absent: nothing declared above /home/cnns/.penguin/lib/dist",
-      "loader-unloadable: /home/cnns/.penguin/data/hmr/store/cli/x.mjs: Cannot find module 'y'",
+      "own-entry: nothing is pushed to /home/cnns/.penguin/data; use `penguin` instead",
+      "record-unreadable: /home/cnns/.penguin/data/hmr/harness.json is not readable JSON: Unexpected token",
+      "cli-path-unusable: harness.json points `cli.bundle` outside /home/cnns/.penguin/data/hmr: ../x.mjs",
+      "cli-file-missing: /home/cnns/.penguin/data/hmr/store/cli/x.mjs",
+      "declared-loader-missing: /home/cnns/.penguin/lib/package.json declares /home/cnns/.penguin/lib/dist/penguin-hmr.js",
+      "no-loader: nothing declared above /home/cnns/.penguin/lib/dist",
+      "cli-unloadable: /home/cnns/.penguin/data/hmr/store/cli/x.mjs: Cannot find module 'y'",
     ]) {
       const probe = await probeServerState(
         target,
