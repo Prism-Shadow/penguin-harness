@@ -45,6 +45,8 @@ import { SessionListModule } from "./features/session-list/module";
 import { ProjectsModule } from "./features/projects/module";
 import { MessagingModule } from "./features/messaging/module";
 import { DockModule } from "./features/dock/module";
+import { WorkspaceModule } from "./features/workspace/module";
+import { TracesModule } from "./features/traces/module";
 
 @Module({
   children: [
@@ -70,6 +72,8 @@ import { DockModule } from "./features/dock/module";
     ProjectsModule,
     MessagingModule,
     DockModule,
+    WorkspaceModule,
+    TracesModule,
   ],
 })
 export class WebRoot {}
