@@ -21,6 +21,8 @@ import awmIcon from "../../../../../plugins/awm-rsi-toolkit/icon.svg?raw";
 import awmPkg from "../../../../../plugins/awm-rsi-toolkit/package.json";
 import defaultIcon from "../../../../../plugins/default-rsi-toolkit/icon.svg?raw";
 import defaultPkg from "../../../../../plugins/default-rsi-toolkit/package.json";
+import gepaIcon from "../../../../../plugins/gepa-rsi-toolkit/icon.svg?raw";
+import gepaPkg from "../../../../../plugins/gepa-rsi-toolkit/package.json";
 import oproIcon from "../../../../../plugins/opro-rsi-toolkit/icon.svg?raw";
 import oproPkg from "../../../../../plugins/opro-rsi-toolkit/package.json";
 
@@ -108,6 +110,13 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "agent-optimization",
         "Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.",
+      ),
+    ]),
+    libraryPlugin(gepaPkg, gepaIcon, [
+      skill(
+        "gepa-rsi-toolkit",
+        "Run GEPA (Reflective Prompt Evolution Can Outperform Reinforcement Learning, Agrawal et al. 2025) on an agent and a frozen Benchmark - reflect on a minibatch of its Traces and scores to rewrite the instruction, keep a child that beats its parent, draw parents from the per-case Pareto front, keep the best average.",
+        "2026.10.22.1",
       ),
     ]),
     libraryPlugin(oproPkg, oproIcon, [

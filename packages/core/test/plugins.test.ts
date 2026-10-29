@@ -339,6 +339,7 @@ describe("groupPlugins / loadPluginGroups", () => {
       "ape-rsi-toolkit",
       "awm-rsi-toolkit",
       "default-rsi-toolkit",
+      "gepa-rsi-toolkit",
       "opro-rsi-toolkit",
     ]);
     expect(names("office-productivity")).toEqual([

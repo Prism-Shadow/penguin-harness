@@ -64,6 +64,7 @@ const SKILLS = [
   "ape-rsi-toolkit",
   "ace-rsi-toolkit",
   "awm-rsi-toolkit",
+  "gepa-rsi-toolkit",
   "data-analysis",
   "penguin-sdk",
   "penguin-plugin",
