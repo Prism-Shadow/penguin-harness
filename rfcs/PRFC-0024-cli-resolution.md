@@ -100,8 +100,8 @@ The first case that applies decides the answer. Cases 3 and 4 apply to a record 
 | record | present, file in the store | no declaration, no legacy loader | fault `loader-absent` |
 | record | present, file missing from the store | any | fault `cli-bundle-missing` |
 | record | present, pointer unusable | any | fault `cli-pointer-unusable` |
-| record | no CLI entry | any | the installed entry — `no-pushed-cli` |
-| no record | — | any | the installed entry — `no-record` |
+| record | no CLI entry | any | the caller's own entry — `no-pushed-cli` |
+| no record | — | any | the caller's own entry — `no-record` |
 | damaged record | — | any | fault `damaged-record` |
 | a pushed CLI, and the caller is its product's loader | — | — | the caller itself — `pushed` or `legacy` |
 
