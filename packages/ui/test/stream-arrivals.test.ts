@@ -35,7 +35,7 @@ const MIXED = [
   "| Check | Result |\n| --- | --- |\n",
   "| Build | ok |\n",
   "| Locks | none |\n\n",
-  "The ratio stays near \\( \\frac{a}{b} \\) across runs.\n\n",
+  "The ratio stays near \\( \\frac{a}{b} \\) across runs, $a/b$ for short.\n\n",
   "$$\nx^2 + y^2\n$$\n\n",
   "中文段落也要平滑地显现。",
 ].join("");
@@ -61,7 +61,13 @@ describe("runs of Markdown fading in", () => {
   it("never change what the Markdown says, whichever blocks they fall in", () => {
     for (const step of [7, 13, 29]) {
       for (const from of [0, MIXED.indexOf("## Summary"), MIXED.indexOf("```bash")]) {
-        for (const length of [MIXED.indexOf("| Check"), MIXED.indexOf("$$"), MIXED.length]) {
+        // A cut right after `$a/b$` too: a closer at the stream's edge is shown as text.
+        for (const length of [
+          MIXED.indexOf("| Check"),
+          MIXED.indexOf("$ for short") + 1,
+          MIXED.indexOf("$$"),
+          MIXED.length,
+        ]) {
           const text = MIXED.slice(0, length);
           const runs = runsFrom(Math.min(from, length - 1), length, step);
           const html = render(text, runs);
