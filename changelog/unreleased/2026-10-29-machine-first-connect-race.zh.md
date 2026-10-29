@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** fix
 - **Scope:** `server`, `cli`, `docs`
+- **PR:** [#1398](https://github.com/Prism-Shadow/penguin-harness/pull/1398)
 
 [English](2026-10-29-machine-first-connect-race.md)
 
