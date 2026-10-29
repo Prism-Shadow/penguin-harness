@@ -10,7 +10,7 @@
 ## Summary
 [summary]: #summary
 
-This RFC makes the choice of which CLI entry to run a named problem — **resolution** — shared by every consumer that runs the harness's CLI: server startup, remote machine commands, the push gate, and the user-facing command shim. Resolution answers from what the installation declares and what [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) holds. Every [distro channel](./PRFC-0021-distros.md#guide-level-explanation)'s product ships a **CLI loader** — the entry that loads whichever CLI the data root's record points at, itself an installed artifact that survives a hot push; the desktop application's does not yet — and a resolution that cannot find a usable loader answers with a named fault. The answer is a decision procedure with a fixed order: each state of the record and the declaration yields one entry or one named fault.
+This RFC makes the choice of which CLI entry to run a named problem — **resolution** — shared by every consumer that runs the harness's CLI: server startup, remote machine commands, the push gate, and the user-facing command shim. Resolution answers from what the installation declares and what [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) holds — the root's record, the file `hmr/harness.json` a push writes. Every [distro channel](./PRFC-0021-distros.md#guide-level-explanation)'s product ships a **CLI loader** — the entry that loads whichever CLI the record points at, itself a product of the installation and survives hot pushes; the desktop application's does not yet — and a resolution that cannot find a usable loader answers with a named fault. The answer is a decision procedure with a fixed order: each state of the record and the declaration yields one entry or one named fault.
 
 ## Motivation
 [motivation]: #motivation
@@ -32,9 +32,13 @@ The pushed CLI's rework is next: renaming, reshaping entries, changing how serve
 
 ### The concepts
 
-- **The installed entry** — the CLI entry a channel's product installs and a person types; what runs when nothing else is known.
-- **The CLI loader** — the entry that loads whichever CLI the data root's record points at; it is itself a product of the installation and survives hot pushes.
+- **The product's entry** — the CLI entry a channel's product ships and a person types; what runs when nothing else is known.
+- **The CLI loader** — the entry that loads whichever CLI the record points at; it is itself a product of the installation and survives hot pushes.
 - **Resolution** — the shared question "which entry runs this command", answered from what the installation declares and what the record holds.
+- **The record** — the file `<root>/hmr/harness.json`, written by a push: it says which platform, CLI and web files the root holds, and where they live.
+- **The store** — the root's `hmr/` directory, where a push writes those files.
+- **The bundle** — one file a push writes; the pushed CLI is the bundle the record's CLI path names.
+- **The legacy name** — `penguin-hmr.js`, the loader's file name in products built before the declaration.
 
 ### Every consumer asks the same question
 
@@ -42,7 +46,7 @@ A server supervisor deciding which entry to re-spawn, a remote machine command d
 
 ### Resolution answers in a fixed order
 
-Resolution answers from the root's record and the caller product's declaration. A root with no record runs the caller's entry, a damaged record is a fault, and a record with a pushed CLI picks the product's loader: `pushed` when the declaration names it, `legacy` when only the pre-declaration name does, a fault when neither is there. A caller that is the loader itself answers with itself and carries the bundle the record names. Every answer carries its name, and each consumer records the name it acted under.
+Resolution answers from the root's record and the caller product's declaration. A root with no record, or a record with no CLI entry, runs the caller's own entry, under the reason `own-entry`; a record it cannot use is a fault; a record with a pushed CLI picks the product's loader: `declared-loader` when the declaration names it, `legacy-loader` when only the pre-declaration name does, a fault when neither is there. A caller that is the loader itself answers with itself and carries the bundle the record names. Every answer carries its name, and each consumer records the name it acted under.
 
 ### Identity by declaration
 
@@ -50,11 +54,11 @@ The loader identifies itself by a field in its package manifest, `penguin.cliLoa
 
 ### Every channel ships its loader
 
-Every channel's product carries a loadable CLI loader, asserted at build time on the release surface, so that reshaping a product does not silently drop the half of the harness that loads pushed code. What the assertion checks — entry and loader both present and loadable in every artifact — is this RFC's claim; how the release workflow phrases its failure is left open below. One channel does not ship one today: the desktop application carries no loader, so its data root answers the fault `loader-absent` until the desktop product ships one.
+Every channel's product carries a loadable CLI loader, asserted at build time on the release surface, so that reshaping a product does not silently drop the half of the harness that loads pushed code. What the assertion checks — entry and loader both present and loadable in every artifact — is this RFC's claim; how the release workflow phrases its failure is left open below. One channel does not ship one today: the desktop application carries no loader, so its data root answers the fault `no-loader` until the desktop product ships one.
 
 ### A fault is named
 
-A resolution that cannot find a usable loader answers at the point of failure with a named fault; the reference section fixes the names. Where a lesser entry then runs anyway — the installed CLI in place of the pushed one — that fallback is a recorded, named decision. "A server that starts beats one that does not" stays available as a choice and stops being available as an accident. A rename that makes the pushed path vanish then becomes a report visible at install time.
+A resolution that cannot find a usable loader answers at the point of failure with a named fault; the reference section fixes the names. Where a lesser entry then runs anyway — the product's own entry in place of the pushed CLI — that fallback is a recorded, named decision. "A server that starts beats one that does not" stays available as a choice and stops being available as an accident. A rename that makes the pushed path vanish then becomes a report visible at install time.
 
 ### Cross-version peers
 
@@ -74,40 +78,39 @@ Remote commands resolve the peer's loader by asking: the peer declares, the call
 
 Resolution is one function in the command-shim module, `packages/server/src/services/cli-shim.ts` — the module that already decides which CLI the `penguin` on a person's PATH runs — published as the server package's `@prismshadow/penguin-server/cli-shim` subpath, beside `./hmr/manifest` and `./version-report`. It sits outside the hot-update layer: that layer — `packages/hmr`, `packages/server/src/hmr/` and `packages/desktop/` — carries the store and the record's mechanism, and a change there ships by rebuilding and redeploying every installation, while the decision procedure is the part a deployment may want to change without that cost. The CLI's loader imports the same subpath, so the loader and the shim act on one answer, and no channel's packaging changes.
 
-The record's five states are read in that module. The layer's reader answers three — `readPushedCli` says nothing pushed, a bundle, or broken — merging the two "nothing pushed" states into one and the three faults into one, so the resolver reads `<root>/hmr/harness.json` itself and projects onto the layer's three answers wherever the layer answers at all. A test pins that projection, so the two readers cannot drift apart unnoticed.
+The record's five states — no record, a record that cannot be read, a record with no CLI entry, a CLI path that cannot be used, and a path whose file the store lost — are read in that module. The layer's reader answers three — `readPushedCli` says nothing pushed, a bundle, or broken — merging the two "nothing pushed" states into one and the three faults into one, so the resolver reads `<root>/hmr/harness.json` itself and projects onto the layer's three answers wherever the layer answers at all. A test pins that projection, so the two readers cannot drift apart unnoticed.
 
 ### Resolution: the inputs and the order
 
 Resolution takes the caller's own entry and the data root. It reads two things from disk: the record that root holds, and the declaration the caller's product carries in the nearest package manifest above its entry. Its answers are one entry with a reason, or one fault with a name.
 
-1. **Self, with a pushed CLI.** A caller whose own entry is its product's loader answers with itself, under the name it earns: `pushed` for the declared loader, `legacy` for the legacy name. The answer carries the pushed bundle, so a loader never loads itself.
-2. **The record.** [PRFC-0023](./PRFC-0023-harness-meta.md#reference-level-explanation)'s record is read into the states steps 5 to 7 name; the resolver reads the file itself, because the layer's reader merges them (see "Where the answer lives").
-3. **The declared loader.** A product that declares a loader answers it under the reason `pushed` when the target is present, and the fault `loader-missing` when the target is absent or the declaration is broken.
-4. **The legacy loader.** A product that declares no loader answers the legacy loader under the reason `legacy` while the transition window is open and that loader is present; with neither a declaration nor a legacy loader the answer is the fault `loader-absent`.
-5. **No record.** A root that holds no record holds no pushed CLI: the caller's own entry runs, under the reason `no-record`.
-6. **The CLI pointer.** A record with no CLI entry at all holds no pushed CLI: the caller's own entry runs, under the reason `no-pushed-cli`.
-7. **A record the resolver cannot use.** A record it cannot read or parse answers `damaged-record`; a CLI pointer with no path, an empty one, or one outside the store answers `cli-pointer-unusable`; a pointer whose file the store no longer holds answers `cli-bundle-missing`.
+1. **Self, with a pushed CLI.** A caller whose own entry is its product's loader answers with itself, under the name it earns: `declared-loader` for the declared loader, `legacy-loader` for the legacy name. The answer carries the pushed bundle, so a loader never loads itself.
+2. **The record.** [PRFC-0023](./PRFC-0023-harness-meta.md#reference-level-explanation)'s record is read into the shapes the fault cases name; the resolver reads the file itself, because the layer's reader merges them (see "Where the answer lives").
+3. **The declared loader.** A product that declares a loader answers it under the reason `declared-loader` when the target is present, and the fault `declared-loader-missing` when the target is absent or the declaration is broken.
+4. **The legacy loader.** A product that declares no loader answers the legacy loader under the reason `legacy-loader` while the transition window is open and that loader is present; with neither a declaration nor a legacy loader the answer is the fault `no-loader`.
+5. **No pushed CLI.** A root whose record is missing, or whose record carries no CLI entry, holds no pushed CLI: the caller's own entry runs, under the reason `own-entry`. The two shapes stay apart in the reader — they are two of the record's states — and answer the same way.
+6. **A record the resolver cannot use.** A record it cannot read or parse answers `record-unreadable`; a CLI path with no value, an empty one, or one outside the store answers `cli-path-unusable`; a path whose file the store no longer holds answers `cli-file-missing`.
 
-The first case that applies decides the answer. Cases 3 and 4 apply to a record that holds a pushed CLI; cases 5 to 7 apply to one that holds none.
+The first case that applies decides the answer. Cases 3 and 4 apply to a record that holds a pushed CLI; cases 5 and 6 apply to one that holds none.
 
 ### The cases and their answers
 
-| Record | CLI pointer | Declaration | Answer |
+| Record | CLI path | Declaration | Answer |
 | --- | --- | --- | --- |
-| record | present, file in the store | declared loader present | the loader — `pushed` |
-| record | present, file in the store | declared loader absent | fault `loader-missing` |
-| record | present, file in the store | no declaration, legacy loader present, window open | the legacy loader — `legacy` |
-| record | present, file in the store | no declaration, no legacy loader | fault `loader-absent` |
-| record | present, file missing from the store | any | fault `cli-bundle-missing` |
-| record | present, pointer unusable | any | fault `cli-pointer-unusable` |
-| record | no CLI entry | any | the caller's own entry — `no-pushed-cli` |
-| no record | — | any | the caller's own entry — `no-record` |
-| damaged record | — | any | fault `damaged-record` |
-| a pushed CLI, and the caller is its product's loader | — | — | the caller itself — `pushed` or `legacy` |
+| record | present, file in the store | declared loader present | the loader — `declared-loader` |
+| record | present, file in the store | declared loader absent | fault `declared-loader-missing` |
+| record | present, file in the store | no declaration, legacy loader present, window open | the legacy loader — `legacy-loader` |
+| record | present, file in the store | no declaration, no legacy loader | fault `no-loader` |
+| record | present, file missing from the store | any | fault `cli-file-missing` |
+| record | present, path unusable | any | fault `cli-path-unusable` |
+| record | no CLI entry | any | the caller's own entry — `own-entry` |
+| no record | — | any | the caller's own entry — `own-entry` |
+| damaged record | — | any | fault `record-unreadable` |
+| a pushed CLI, and the caller is its product's loader | — | — | the caller itself — `declared-loader` or `legacy-loader` |
 
-Presence decides the answer; loading is a report of its own. A loader present on disk that cannot load the CLI reports `loader-unloadable` as its first act, and a consumer that probes — the push gate before it accepts a push, the release assertion before it ships an artifact — turns a failed probe into that same fault before anything runs. A loader invoked on a root that holds no pushed CLI answers the reason of the last three cases, `no-record` or `no-pushed-cli`, or their fault: it is the entry there.
+Presence decides the answer; loading is a report of its own. A loader present on disk that cannot load the CLI reports `cli-unloadable` as its first act, and a consumer that probes — the push gate before it accepts a push, the release assertion before it ships an artifact — turns a failed probe into that same fault before anything runs. A loader invoked on a root that holds no pushed CLI answers the reason of the two "no pushed CLI" cases, `own-entry`, or their fault: it is the entry there.
 
-A consumer acts on the answer. A supervisor that must start a server runs the installed entry when the answer is a fault and records the fault name. The loader runs nothing on a fault and reports it, and reports `no-record` when a person or a remote command invokes it on a root that holds no record. A remote command surfaces the peer's fault unchanged. The command shim carries resolution's answer, so the entry a person reaches is the entry a supervisor would run. A consumer whose own entry cannot be re-spawned — an extension-less symlink on `PATH`, a source run through a TypeScript runner — runs the server in process and records the condition `entry-not-respawnable`.
+A consumer acts on the answer. A supervisor that must start a server runs the product's own entry when the answer is a fault and records the fault name. The loader runs nothing on a fault and reports it, and reports `own-entry` when a person or a remote command invokes it on a root that holds no pushed CLI. A remote command surfaces the peer's fault unchanged. The command shim carries resolution's answer, so the entry a person reaches is the entry a supervisor would run. A consumer whose own entry cannot be started as a process of its own — an extension-less symlink on `PATH`, a source run through a TypeScript runner — runs the server in process and records the condition `entry-not-rerunnable`.
 
 ### The declaration's shape
 
@@ -119,38 +122,38 @@ A product declares its loader in the package manifest of the package that ships 
 
 The value is a path relative to the manifest's directory, and resolution resolves it there; a value that climbs out of the package names no loader. A reader finds the manifest by walking up from the entry it holds — the nearest package manifest is the product's own — and resolves a bin symlink or a `PATH` link to the file it names first.
 
-The field gives three answers, kept apart because the decision order treats them differently: declared, absent for a product from before the declaration, and broken for a field that names no usable file. A broken field answers `loader-missing`, and the legacy name stays unread.
+The field gives three answers, kept apart because the decision order treats them differently: declared, absent for a product from before the declaration, and broken for a field that names no usable file. A broken field answers `declared-loader-missing`, and the legacy name stays unread.
 
 The declaration travels with the product: the npm package ships its manifest, the release payload's `lib/` is that same package deployed with the field intact, the Docker image copies that `lib/`, the desktop application ships its own manifest beside its bundles, and a source checkout has the manifest in the tree. A peer's declaration is the same file in its program directory, so a caller reads it instead of spelling a path.
 
 ### What each channel answers
 
-Every channel's product installs one entry, every product but the desktop application's declares a loader, and provisioning writes the root's first record ([PRFC-0023](./PRFC-0023-harness-meta.md#guide-level-explanation)). The table reads resolution's answer per channel, at the first run and after a push.
+Every channel's product ships one entry, every product but the desktop application's declares a loader, and provisioning writes the root's first record ([PRFC-0023](./PRFC-0023-harness-meta.md#guide-level-explanation)). The table reads resolution's answer per channel, at the first run and after a push.
 
-| Channel | Installed entry | Declared loader | First run | After a push |
+| Channel | Product's entry | Declared loader | First run | After a push |
 | --- | --- | --- | --- | --- |
-| npm package | the main CLI bin | the loader bin beside it | the loader — `pushed` | the loader — `pushed` |
-| release tarball, universal included | the launcher script | the loader beside the installed CLI pair | the loader — `pushed` | the loader — `pushed` |
-| Docker image | the extension-less symlink today, a re-runnable entry after the change below | the loader inside the image | the loader — `pushed`; the symlink entry answers `entry-not-respawnable` until it is reshaped | the loader — `pushed` |
-| desktop application | the bundled CLI, started through the shell's launch entry | none today: the product ships no loader | fault `loader-absent` — the channel's gap, still open | fault `loader-absent`, until the product ships a loader |
-| source checkout | the built CLI; a source run has no re-runnable entry | the loader beside the built CLI | built run: the loader — `pushed`; source run: `entry-not-respawnable` | the loader — `pushed`; the dev root's provisioning stays open below |
-| machines-installed peer | the loader, which is the peer's only CLI face | the same loader | the loader — `pushed`; a bare release never installed from a peer answers `no-record` | the loader — `pushed` |
+| npm package | the main CLI bin | the loader bin beside it | the loader — `declared-loader` | the loader — `declared-loader` |
+| release tarball, universal included | the launcher script | the loader beside the installed CLI pair | the loader — `declared-loader` | the loader — `declared-loader` |
+| Docker image | the extension-less symlink today, a re-runnable entry after the change below | the loader inside the image | the loader — `declared-loader`; the symlink entry answers `entry-not-rerunnable` until it is reshaped | the loader — `declared-loader` |
+| desktop application | the bundled CLI, started through the shell's launch entry | none today: the product ships no loader | fault `no-loader` — the channel's gap, still open | fault `no-loader`, until the product ships a loader |
+| source checkout | the built CLI; a source run has no re-runnable entry | the loader beside the built CLI | built run: the loader — `declared-loader`; source run: `entry-not-rerunnable` | the loader — `declared-loader`; the dev root's provisioning stays open below |
+| machines-installed peer | the loader, which is the peer's only CLI face | the same loader | the loader — `declared-loader`; a bare release never installed from a peer answers `own-entry` | the loader — `declared-loader` |
 
-A remote command is the one consumer that resolves across machines: it reads the peer's declaration and invokes the declared loader, and a peer built before declarations answers by the legacy name. The peer's own resolution then runs, so a peer whose record is damaged reports `damaged-record`, and a peer that was never pushed and never installed from a peer reports `no-record`.
+A remote command is the one consumer that resolves across machines: it reads the peer's declaration and invokes the declared loader, and a peer built before declarations answers by the legacy name. The peer's own resolution then runs, so a peer whose record cannot be read reports `record-unreadable`, and a peer that was never pushed and never installed from a peer reports `own-entry`.
 
 ### The transition window
 
-The legacy name is the loader's file name in products built before the declaration: `penguin-hmr.js`. Resolution reads the declaration first and the legacy name second, and reaches the legacy name only where no declaration exists. An answer from the legacy name is recorded as `legacy`, so the window stays visible while it lasts.
+The legacy name is the loader's file name in products built before the declaration: `penguin-hmr.js`. Resolution reads the declaration first and the legacy name second, and reaches the legacy name only where no declaration exists. An answer from the legacy name is recorded as `legacy-loader`, so the window stays visible while it lasts.
 
-A declaration that names a missing or unloadable loader answers its fault alone, and the legacy name stays unread. A new product with a broken declaration is a broken installation, and a fallback would hide it.
+A declaration that names a loader that is missing or cannot be used answers its fault alone, and the legacy name stays unread. A new product with a broken declaration is a broken installation, and a fallback would hide it.
 
-The window closes when the release line carrying declarations reaches the machines a deployment cares about. After that, the products drop the legacy branch, and a product without a declaration answers `loader-absent`. The length of the window, and the exact shape of the probe a caller uses on a peer, stay open below.
+The window closes when the release line carrying declarations reaches the machines a deployment cares about. After that, the products drop the legacy branch, and a product without a declaration answers `no-loader`. The length of the window, and the exact shape of the probe a caller uses on a peer, stay open below.
 
 ### Carriers of identity
 
 The carrier is the package manifest's `penguin.cliLoader` field. Three properties decide it. A reader consults a manifest without running the product, which a person, a remote caller and a release assertion all need. A manifest belongs to one product, so each channel declares the loader its own artifact ships. And every channel's packaging already carries a manifest, so the declaration needs no second delivery mechanism.
 
-The other two candidates each miss one of those. An exported identity constant is readable by running the product's code, which a remote caller and a build assertion cannot do. A pointer in the record describes one data root rather than a product, and a root that holds no record still has a loader to find.
+The other two candidates each miss one of those. An exported identity constant is readable by running the product's code, which a remote caller and a build assertion cannot do. A path in the record belongs to one data root rather than a product, and a root that holds no record still has a loader to find.
 
 ### Channel assertions at build time *(candidate)*
 
@@ -158,7 +161,7 @@ The release surface asserts, per artifact: the entry exists, the loader exists b
 
 ### The two gap channels
 
-For the channel whose `PATH` entry is an extension-less symlink, the entry gains a re-runnable shape (a real file, or a launcher), so resolution works there as everywhere else; the shape is still open below. For the desktop application, the product would ship the loader beside its bundled CLI and declare it in its own manifest, so that a desktop data root runs a pushed CLI like the other five channels. That change is not part of this version: the desktop package belongs to the hot-update layer, whose changes ship by rebuilding and redeploying every installation, so a desktop data root answers `loader-absent` today.
+For the channel whose `PATH` entry is an extension-less symlink, the entry gains a re-runnable shape (a real file, or a launcher), so resolution works there as everywhere else; the shape is still open below. For the desktop application, the product would ship the loader beside its bundled CLI and declare it in its own manifest, so that a desktop data root runs a pushed CLI like the other five channels. That change is not part of this version: the desktop package belongs to the hot-update layer, whose changes ship by rebuilding and redeploying every installation, so a desktop data root answers `no-loader` today.
 
 ### Division of labor with PRFC-0023
 
@@ -169,7 +172,7 @@ Resolution depends on presence: a reader that can trust the record to exist neve
 
 ### Declarations identify, names are recorded
 
-> However artifacts are named or renamed across [distro channels](./PRFC-0021-distros.md#guide-level-explanation), [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation) still identifies the [CLI loader](./PRFC-0024-cli-resolution.md#guide-level-explanation) by the declaration its product carries, and a file name answers only where no declaration exists, recorded as a legacy answer.
+> However artifacts are named or renamed across [distro channels](./PRFC-0021-distros.md#guide-level-explanation), [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation) still identifies the [CLI loader](./PRFC-0024-cli-resolution.md#guide-level-explanation) by the declaration its product carries, and a file name answers only where no declaration exists, recorded under the reason `legacy-loader`.
 
 This is the property the whole RFC fixes. A name shared by convention across packages and machines fails three different ways at run time when it changes; a future rework that reintroduces recognition by file name brings that pattern back with it. The legacy name is the one place a name still answers, and it answers only while a product declares nothing; the answer is recorded, so the window can close on evidence and a name never sits beside a declaration.
 
@@ -183,7 +186,7 @@ A channel that drops the loader silently splits its own update surface: platform
 
 > However [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation) falls back to a lesser entry, the fallback is still a named, recorded decision.
 
-Fallbacks are fine: a server that starts on the installed CLI genuinely beats one that does not. The present defect lies in the choice to fall back being made by nobody, silently, at the worst moment. Naming the fault turns a rework-discovered breakage into an installation-discovered one.
+Fallbacks are fine: a server that starts on its own entry genuinely beats one that does not. The present defect lies in the choice to fall back being made by nobody, silently, at the worst moment. Naming the fault turns a rework-discovered breakage into an installation-discovered one.
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -216,7 +219,7 @@ A few details stay open, each with the reason it cannot be settled here.
 - The exact shape of the peer probe: it depends on what an older peer can answer, and no field in a manifest tells a caller how to ask.
 - Whether a failed build-time assertion is a hard release failure or a warning during the window: the assertion is new, and the release has to carry it for a while before its false positives are known.
 - What the symlink channel's `PATH` face becomes. The extension-less link is still what that image exposes, and reshaping it changes how a person reaches the CLI there.
-- When the desktop application ships its loader. The product carries none, so its data root answers `loader-absent`; the change belongs to the hot-update layer.
+- When the desktop application ships its loader. The product carries none, so its data root answers `no-loader`; the change belongs to the hot-update layer.
 - Whether the record's five states move into the layer's reader, leaving resolution a projection over one reader instead of a second reader of the same file.
 
 ## Future possibilities
@@ -228,6 +231,13 @@ Resolution generalizes: the web assets and the platform halves of a push can be 
 
 ## Changes
 
+### v1.5.0
+
+- Renamed the answer vocabulary so each name says what it is. The three reasons name the entry that answered: `declared-loader`, `legacy-loader`, `own-entry`. The two "nothing pushed" reasons, `no-record` and `no-pushed-cli`, became one — they answered the same entry, and the record's shapes stay as the reader's five states. The six faults name the piece that broke: `record-unreadable`, `cli-path-unusable`, `cli-file-missing`, `declared-loader-missing`, `no-loader`, `cli-unloadable`.
+- Renamed the concept "the installed entry" to "the product's entry": a source checkout ships a built CLI, a machine peer ships only the loader, and the desktop product ships a packaged CLI, so "installed" described some channels and not others.
+- Defined the record, the store, the bundle and the legacy name at first use, and renamed the condition `entry-not-respawnable` to `entry-not-rerunnable`.
+- Renamed the resolver that answers which CLI a server offers from `resolveCliLaunch` to `offeredCli`, so it no longer reads as a variant of `resolveCli`, which is resolution itself.
+
 ### v1.4.0
 
 - Renamed the carrier of identity to `penguin.cliLoader`: the field names the entry that loads the CLI, so the name says what the loader does. The declaration's shape, its discovery and its faults are unchanged.
@@ -236,22 +246,22 @@ Resolution generalizes: the web assets and the platform halves of a push can be 
 
 - Resolution lives in the command-shim module, `packages/server/src/services/cli-shim.ts`, published as `@prismshadow/penguin-server/cli-shim`: one function beside the code that already decides what `penguin` runs, where v1.2.0 had a module of its own.
 - The answer carries the pushed bundle, so the loader reads the record once, through the same function the shim uses. The record's five states and the declaration's three answers stay; the second record reader and the helper that projected it are gone.
-- The order is restated in seven cases: with a pushed CLI, a caller that is its loader answers itself and then the declared loader, the legacy loader, or a fault; without one, the caller's entry runs under `no-record` or `no-pushed-cli`, or the record's fault answers.
+- The order is restated in cases: with a pushed CLI, a caller that is its loader answers itself and then the declared loader, the legacy loader, or a fault; without one, the caller's entry runs under `own-entry`, or the record's fault answers.
 
 ### v1.2.0
 
 - Decided the carrier of identity: the package manifest's `penguin.cliLoader` field, with the reasons and the two rejected candidates in "Carriers of identity".
 - Added the declaration's reference shape: the field, its resolution against the manifest's directory, the walk from an entry to its package's manifest, and the declared, absent and broken answers.
-- Added the record's five states as the resolver reads them: no record, damaged, no CLI section, unusable pointer, and pointer with no file. The layer's reader keeps its three answers; the resolver reads the record itself and projects onto them.
+- Added the record's five states as the resolver reads them: no record, a record that cannot be read, no CLI entry, an unusable CLI path, and a path with no file. The layer's reader keeps its three answers; the resolver reads the record itself and projects onto them.
 - Carried the procedure into code: one resolver answers which entry runs; the CLI loader reports its answer by name, and the command shim runs it. It lives outside the hot-update layer, published as a server-package subpath (see "Where the answer lives"). Machine remote commands and the push gate still answer privately.
 - The Machines page reads the loader's failures by name — the reports this version introduces, and the sentences releases shipped before them — so a machine whose store holds no CLI keeps its "install it again from this page" remedy whichever release installed it.
-- The desktop channel stays open: its product ships no loader and declares none, so a desktop data root answers `loader-absent`. Closing it changes the desktop package, which belongs to the hot-update layer.
+- The desktop channel stays open: its product ships no loader and declares none, so a desktop data root answers `no-loader`. Closing it changes the desktop package, which belongs to the hot-update layer.
 
 ### v1.1.0
 
 - Added the resolution procedure: four inputs, nine steps in a fixed order, and the table of cases with one entry or one named fault each.
-- Added the per-channel answers: the installed entry, the declared loader, and resolution's answer at the first run and after a push, for all six channels.
-- Added the transition window's handling: the legacy name answers only where no declaration exists, its answer is recorded as `legacy`, and a broken declaration answers its fault alone.
+- Added the per-channel answers: the product's entry, the declared loader, and resolution's answer at the first run and after a push, for all six channels.
+- Added the transition window's handling: the legacy name answers only where no declaration exists, its answer is recorded as `legacy-loader`, and a broken declaration answers its fault alone.
 - Retired the invariant "Identity by declaration" and replaced it with "Declarations identify, names are recorded": the earlier sentence said identity comes from a declaration or the record, and the window answers by the legacy name.
 
 ### v1.0.0
