@@ -684,9 +684,7 @@ function channelAgents(org: LoadedOrg, channel: ChannelConfig): Set<string> {
 /**
  * Tail-scans each channel's recent day files, publishes every new message and queues its
  * mentions inside that channel's membership in `org_desk_mentions`; a message that names
- * nobody is queued for the channel's default recipients (`notify`) instead, the same way —
- * unless a plugin claims the channel, which then handles its messages itself. Nothing is sent
- * here: the queue is written before the channel's offset moves, and
+ * nobody is queued for the channel's default recipients (`notify`) instead, the same way.
  * {@link deliverDeskMentions} carries it to the desks that are idle. Archived channels take no
  * posts, so there is nothing new to find in them; an invalid `channel.toml` is reported and
  * the channel skipped.

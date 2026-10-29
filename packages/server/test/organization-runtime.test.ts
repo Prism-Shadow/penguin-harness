@@ -2415,57 +2415,6 @@ describe("organization runtime", () => {
       expect(cache.agentsWithDeskMentions(P, ORG)).toEqual([]);
     });
 
-    it("a channel a plugin claims keeps its message — recorded, published — and wakes no desk", async () => {
-      const asked: Array<{ projectId: string; orgId: string; channelId: string }> = [];
-      deps.channelClaimed = (channel) => {
-        asked.push(channel);
-        return channel.channelId === DEFAULT_CHANNEL_ID;
-      };
-      const m = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
-        text: `@${HR} over to the room`,
-      });
-      expect(m.mentions).toEqual([`agent:${HR}`]);
-      expect(started).toHaveLength(0);
-      expect(asked).toEqual([{ projectId: P, orgId: ORG, channelId: DEFAULT_CHANNEL_ID }]);
-      expect(
-        events.some(
-          (e) =>
-            e.type === "org_channel" && (e as { message?: { id: string } }).message?.id === m.id,
-        ),
-      ).toBe(true);
-      const read = await service.channelMessages(
-        P,
-        ORG,
-        { userId: "alice" },
-        DEFAULT_CHANNEL_ID,
-        {},
-      );
-      expect(read.messages.map((x) => x.id)).toContain(m.id);
-      // Unclaimed again, the channel delivers as it always did.
-      deps.channelClaimed = () => false;
-      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
-        text: `@${HR} back to your desk`,
-      });
-      expect(started).toHaveLength(1);
-    });
-
-    it("a claim that throws is recorded and does not claim", () => {
-      const failures: unknown[] = [];
-      const claimed = channelClaimsOf(
-        [
-          () => {
-            throw new Error("plugin bug");
-          },
-          (c) => c.channelId === "room_a",
-        ],
-        (err) => failures.push(err),
-      );
-      expect(claimed?.({ projectId: P, orgId: ORG, channelId: "room_a" })).toBe(true);
-      expect(claimed?.({ projectId: P, orgId: ORG, channelId: "room_b" })).toBe(false);
-      expect(failures).toHaveLength(2);
-      expect(channelClaimsOf([], () => {})).toBeUndefined();
-    });
-
     it("refuses a sessionId that names no employee's session: nothing is written, nobody is woken", async () => {
       const at = new Date(nowMs).toISOString();
       const row = (sessionId: string, projectId: string, agentId: string) => ({
