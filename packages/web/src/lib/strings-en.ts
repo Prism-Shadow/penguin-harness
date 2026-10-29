@@ -4670,9 +4670,8 @@ Scenarios:
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "Wrap",
     unsaved: "Unsaved changes",
-    saveConfirmTitle: "Save file",
-    saveConfirm: (name: string): string =>
-      `Save changes to ${name}? The file in the Workspace will be overwritten.`,
+    /** The editor's ✓: writes the draft and goes back to the preview (the save shortcut saves and stays). */
+    saveAndClose: "Save and close",
     editTooLarge: (kb: number): string =>
       `The file is larger than ${kb}KB and cannot be edited here — download it instead`,
     saveTooLarge: (mb: number): string =>

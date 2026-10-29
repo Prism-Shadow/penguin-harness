@@ -90,14 +90,15 @@ Three buttons float over the top right of the file view: **Copy code**, **Wrap**
 
 1. Open the file in the preview, then select **Edit** at the top right of the file view. The preview becomes an editor: the same highlighted text with line numbers, now editable. There is no rich editor. The editor opens where the preview was scrolled, with the cursor at the start of the first line in view.
 2. Make your changes.
-3. Select **Save** (the check mark), or press Ctrl+S / Cmd+S.
-4. In the **Save file** dialog, select **Save** to write the file back.
+3. Select **Save and close** (the check mark) to write the file back and return to the preview, which comes back where the editor was scrolled.
 
-As in a code editor, saving leaves the editor open, with the cursor, the selection and the scroll where they were.
+To save and keep editing, press Ctrl+S / Cmd+S instead. As in a code editor, the editor stays open, with the cursor, the selection and the scroll where they were.
 
-Select **Stop editing** (×) to return to the preview. It asks first when there are unsaved changes, and the preview comes back where the editor was scrolled.
+Select **Discard changes** (×) to drop what you typed and return to the preview. It does not ask first: the button is the discard.
 
-The panel asks before your unsaved changes are lost: when you switch to another file, close the panel's tab, or leave the page.
+If the file changed on disk after you opened it, either kind of save asks whether to overwrite it. Your text stays in the editor until you choose.
+
+The panel asks before your unsaved changes are lost any other way: when you switch to another file, close the panel's tab, or leave the page.
 
 > [!TIP]
 > Collapsing or hiding the dock loses nothing. The panel stays exactly as it was, preview, tree and draft included, and comes back untouched without asking.

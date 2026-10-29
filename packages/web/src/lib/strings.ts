@@ -4905,8 +4905,8 @@ Benchmark：
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "自动换行",
     unsaved: "有未保存的修改",
-    saveConfirmTitle: "保存文件",
-    saveConfirm: (name: string): string => `保存对 ${name} 的修改？Workspace 中的该文件将被覆盖。`,
+    /** The editor's ✓: writes the draft and goes back to the preview (the save shortcut saves and stays). */
+    saveAndClose: "保存并退出",
     editTooLarge: (kb: number): string => `文件超过 ${kb}KB，无法在此编辑，请下载后编辑`,
     saveTooLarge: (mb: number): string => `内容超过 ${mb}MB 写入上限，未保存`,
     discardTitle: "放弃未保存的修改",

@@ -6,7 +6,8 @@
  *
  * - Given a highlighted file, typing on one line keeps every line's element — and the number
  *   drawn with it — in place: the lines the typing did not touch keep their colours, the typed
- *   line shows its new text plain, and takes its colours back when the next highlight lands.
+ *   line shows its new text plain, and takes its colours back when the next highlight lands,
+ *   which leaves the untouched lines' markup as it was rather than rewriting it.
  * - Given a new line typed, the lines after it keep their elements, one number further down.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -63,6 +64,7 @@ describe("typing in the file editor", () => {
     await settleHighlight();
     const before = lineElements();
     expect(before.map(coloured)).toEqual([true, true, true, true]);
+    const firstToken = before[0]!.querySelector("span[style]");
 
     await type(textarea(), CODE.replace("const b = 2;", "const b = 22;"));
 
@@ -74,6 +76,7 @@ describe("typing in the file editor", () => {
     await settleHighlight();
     expect(same(lineElements(), before)).toEqual([true, true, true, true]);
     expect(lineElements().map(coloured)).toEqual([true, true, true, true]);
+    expect(lineElements()[0]!.querySelector("span[style]")).toBe(firstToken);
   });
 
   it("keeps the elements of the lines after a new line, one number further down", async () => {

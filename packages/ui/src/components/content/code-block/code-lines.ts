@@ -82,12 +82,20 @@ function common(a: readonly string[], b: readonly string[]): { head: number; tai
 }
 
 /**
+ * A line as Shiki compares it: Shiki splits on `\r?\n` and keeps no carriage return, while the
+ * surface splits on `\n` alone, so a CRLF file's lines end in `\r` on one side only.
+ */
+const bare = (text: string): string => (text.endsWith("\r") ? text.slice(0, -1) : text);
+
+/**
  * The rows to draw for `lines`. A line before or after the edit keeps the key of the row it was
  * in `previous`, so its element (and the number drawn in front of it) stays. The lines the edit
  * touched take over the keys of the rows they replace, in order — a line typed in keeps its
  * element too — and only lines beyond those get new keys. A line keeps its colours from
- * `highlighted` while it is one of the lines that rendering was made of, aligned the same way,
- * and is plain otherwise.
+ * `highlighted` while it is one of the lines that rendering was made of, aligned the same way
+ * (a carriage return aside), and is plain otherwise. A row whose markup is the same as its
+ * element already holds keeps that very object: React rewrites an element's inner HTML whenever
+ * the object changes, so a fresh highlight would otherwise rewrite every line it left alone.
  */
 export function alignRows(
   previous: readonly CodeRow[],
@@ -101,27 +109,26 @@ export function alignRows(
   );
   const hl = highlighted?.lines ?? [];
   const coloured = common(
-    hl.map((line) => line.text),
-    lines,
+    hl.map((line) => bare(line.text)),
+    lines.map(bare),
   );
   /** How many rows of `previous` the edit replaced: their keys go to the lines that replace them. */
   const replaced = previous.length - kept.head - kept.tail;
   return lines.map((text, i) => {
     const fromEnd = lines.length - 1 - i;
-    const key =
-      i < kept.head
-        ? previous[i]!.key
+    const before =
+      i < kept.head || (fromEnd >= kept.tail && i - kept.head < replaced)
+        ? previous[i]!
         : fromEnd < kept.tail
-          ? previous[previous.length - 1 - fromEnd]!.key
-          : i - kept.head < replaced
-            ? previous[i]!.key
-            : newKey();
-    const html =
+          ? previous[previous.length - 1 - fromEnd]!
+          : null;
+    const markup =
       i < coloured.head
         ? hl[i]!.html
         : fromEnd < coloured.tail
           ? hl[hl.length - 1 - fromEnd]!.html
           : null;
-    return { key, text, html };
+    const html = markup !== null && before?.html?.__html === markup.__html ? before.html : markup;
+    return { key: before?.key ?? newKey(), text, html };
   });
 }

@@ -25,6 +25,7 @@
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -216,8 +217,25 @@ export function CodeSurface({
     if (rows !== null) drawn.current = rows;
   }, [rows]);
 
+  /**
+   * Unwrapped, the numbers are a column of their own, sticky at the scroll box's left edge, and
+   * the code layer is clipped under it as it scrolls sideways (gutter-clip.ts). Wrapped, nothing
+   * scrolls sideways, and each line draws its own number in front of its first row (prose.css),
+   * which is what keeps a number beside its line however many rows the line wraps to.
+   */
+  const column = lines !== null && !wrap;
+  const lineCount = lines?.length ?? 0;
+  const numbers = useMemo(
+    () => (column ? Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n") : ""),
+    [column, lineCount],
+  );
   const surfaceRef = useRef<HTMLDivElement>(null);
-  useGutterClip(surfaceRef, lineNumbers && !wrap);
+  const layerRef = useRef<HTMLElement | null>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  useGutterClip({ surface: surfaceRef, layer: layerRef, gutter: gutterRef }, column);
+  const setLayer = useCallback((el: HTMLElement | null) => {
+    layerRef.current = el;
+  }, []);
 
   return (
     <div
@@ -234,8 +252,14 @@ export function CodeSurface({
             ({ "--code-gutter": `${String(lines.length).length + 2}ch` } as CSSProperties)
       }
     >
+      {column && (
+        <div ref={gutterRef} className="code-gutter" aria-hidden="true">
+          {numbers}
+        </div>
+      )}
       {rows !== null ? (
         <pre
+          ref={setLayer}
           className={split?.pre.className}
           style={split?.pre.style}
           tabIndex={split?.pre.tabIndex}
@@ -243,9 +267,8 @@ export function CodeSurface({
           <code>
             {/* No newline between the spans: they are blocks, and the text a selection
                 serialises out of a run of blocks already carries the breaks. The code sits in
-                an inner span of its own, apart from the number drawn before it, so it can be
-                clipped where it scrolls under the number (gutter-clip.ts); the inner span is
-                keyed by its kind, so a line turning plain or coloured keeps its line element. */}
+                an inner span keyed by its kind, so a line turning plain or coloured keeps its
+                line element, and with it the number drawn in front of it. */}
             {rows.map((row) => (
               <span key={row.key} className="line">
                 {row.html !== null ? (
@@ -260,7 +283,7 @@ export function CodeSurface({
           </code>
         </pre>
       ) : htmlProp !== undefined ? (
-        <div dangerouslySetInnerHTML={htmlProp} />
+        <div ref={setLayer} dangerouslySetInnerHTML={htmlProp} />
       ) : (
         <pre>
           <code>{arrivalText(code, arrivals)}</code>

@@ -131,14 +131,19 @@
    register while every value that decides where a glyph lands — family, size, line height,
    letter spacing, tab size, padding, wrap mode — is the same in both. Size and line height are
    inherited so one wrapper sets them for both layers. */
+.code-surface {
+  /* The code's inset from the surface's edge: the message code block's own padding, kept to the
+     pixel. The Files panel's two layers, the textarea's indent past the gutter and the gutter's
+     clip all read it, so they cannot disagree. */
+  --code-pad-x: 0.75rem;
+  --code-pad-y: 0.625rem;
+}
 .code-surface :is(pre, textarea) {
   margin: 0;
   border: 0;
   border-radius: 0;
   background: transparent !important;
-  /* The message code block's own padding, kept to the pixel; the Files panel's two layers only
-     need to agree. */
-  padding: 0.625rem 0.75rem;
+  padding: var(--code-pad-y) var(--code-pad-x);
   font-size: inherit;
   line-height: inherit;
   letter-spacing: normal;
@@ -181,8 +186,7 @@
    the code alone; the copy affordances are unaffected either way, since they copy the string the
    component was given and never the DOM. It has no fill of its own: the gutter shows whatever the
    surface sits on — the canvas, a translucent theme's panel, a wallpaper — exactly as the code
-   beside it does. Unwrapped code scrolled sideways is clipped where it passes under the sticky
-   number instead (below). */
+   beside it does. Unwrapped, the numbers move to a column of their own (below). */
 .code-lines pre {
   counter-reset: code-line;
 }
@@ -193,7 +197,7 @@
   text-indent: calc(-1 * var(--code-gutter, 4ch));
 }
 .code-lines textarea {
-  padding-left: calc(0.75rem + var(--code-gutter, 4ch));
+  padding-left: calc(var(--code-pad-x) + var(--code-gutter, 4ch));
 }
 .code-lines .line::before {
   content: counter(code-line);
@@ -208,12 +212,42 @@
   -webkit-user-select: none;
   color: var(--ui-code-gutter);
 }
-/* Scrolled sideways (gutter-clip.ts keeps the offset): each line's code is clipped from its own
-   start by as much of it as has slid under the number — the offset, less the pre's own left
-   padding, which scrolls away first. The other three edges are left loose so a glyph's overhang
-   is not cut. */
-.code-surface[data-scrolled-x] .line-code {
-  clip-path: inset(-1em -1em -1em max(0px, var(--code-scroll-x, 0px) - 0.75rem));
+/* Unwrapped, a line is one row, so the numbers are one column of their own (CodeSurface's
+   `.code-gutter`) in the surface's cell, sticky at the scroll box's left edge, and the code layer
+   is clipped under it as it scrolls sideways — one element's style per scroll step
+   (gutter-clip.ts), where a mark on every line would restyle every line. A line keeps an empty
+   mark so a blank line still has its row, and its code starts past the column as before. */
+.code-surface.code-nowrap.code-lines {
+  display: grid;
+}
+.code-surface.code-nowrap.code-lines > * {
+  grid-area: 1 / 1;
+}
+.code-nowrap.code-lines .line {
+  text-indent: 0;
+}
+.code-nowrap.code-lines .line::before {
+  content: "";
+  position: static;
+  width: 0;
+  padding: 0;
+}
+.code-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  justify-self: start;
+  align-self: start;
+  box-sizing: content-box;
+  width: calc(var(--code-gutter, 4ch) - 1.25ch);
+  padding: var(--code-pad-y) 1.25ch var(--code-pad-y) var(--code-pad-x);
+  font-family: var(--ui-font-mono);
+  white-space: pre;
+  text-align: right;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  color: var(--ui-code-gutter);
 }
 
 /* The editor's two layers, stacked in one grid cell so the taller of them sizes the box and a
@@ -250,8 +284,13 @@
 .code-editor-host[data-composing="true"] textarea {
   color: var(--ui-fg);
 }
-.code-editor-host[data-composing="true"] .code-editor > :not(textarea) {
+.code-editor-host[data-composing="true"] .code-editor > :not(textarea, .code-gutter) {
   visibility: hidden;
+}
+/* The numbers stay while the code steps aside: they do not change with what is being composed,
+   and hiding them for each composition would blink the gutter at every word typed through an IME. */
+.code-editor-host[data-composing="true"] .code-editor .line::before {
+  visibility: visible;
 }
 
 /* Shiki's dark palette. The highlighted markup carries both themes: the light colours inline, the
