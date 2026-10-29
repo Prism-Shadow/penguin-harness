@@ -3,6 +3,7 @@
 - **Date:** 2026-10-29
 - **Type:** feature
 - **Scope:** `ui`
+- **PR:** [#1397](https://github.com/Prism-Shadow/penguin-harness/pull/1397)
 
 [English](2026-10-29-inline-dollar-math.md)
 
