@@ -16,7 +16,6 @@
   "files": [
     "icon.svg",
     "skills",
-    "hooks",
     "LICENSE"
   ],
   "publishConfig": {
@@ -29,8 +28,8 @@
     "category": "rsi",
     "icon": "icon.svg",
     "quick_start": {
-      "prompt": "Use trace-rsi-toolkit to train on the selected Benchmarks, choose each training-selected skill bank, and compare it with a no-Skill baseline on three complete test repetitions.",
-      "prompt_zh": "使用 trace-rsi-toolkit 在选定的 Benchmark 上训练，按训练分数选择技能库，与无 Skill 基线各进行三次完整测试并汇报对比结果。",
+      "prompt": "Use TRACE on the selected Project Benchmarks with the requested model and budget.",
+      "prompt_zh": "使用 TRACE，按指定模型和预算完成选定 Project Benchmark 的实验。",
       "skills": [
         "trace-rsi-toolkit"
       ]

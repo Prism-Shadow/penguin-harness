@@ -121,15 +121,15 @@ export function rsiToolkitPlugins(): PluginItem[] {
     libraryPlugin(evoPkg, evoIcon, [
       skill(
         "evo-harness-rsi-toolkit",
-        '"Run Evo on selected Project Benchmarks: one training pass, negative-feedback reflection in the original Solver Session, one batch compilation, then repeated frozen baseline/final evaluation."',
-        "2026.10.29.2",
+        '"Run Evo-Harness on selected Project Benchmarks: reflect on negative feedback in the original Solver Session, compile one batch of reusable Skills, then evaluate frozen baseline and final."',
+        "2026.10.29.4",
       ),
     ]),
     libraryPlugin(openskillPkg, openskillIcon, [
       skill(
         "openskill-rsi-toolkit",
-        "Run OpenSkill (Open-World Self-Evolution for LLM Agents, Yan et al. 2026). Retrieve domain knowledge and verification anchors, refine skills using independent virtual tests without target supervision, freeze the last revision, then evaluate the Target on its Benchmark.",
-        "2026.10.29.2",
+        '"Run OpenSkill on selected Project Benchmarks: research domain knowledge, refine reusable Skills with independent virtual tests, freeze the last revision, then evaluate baseline and final."',
+        "2026.10.29.4",
       ),
     ]),
     libraryPlugin(oproPkg, oproIcon, [
@@ -142,14 +142,14 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "skilladam-rsi-toolkit",
         '"Run a SkillAdam experiment on the Project\'s selected Benchmarks: train once in a continuing Agent Session, freeze the learned Skill, then evaluate it repeatedly on held-out tasks."',
-        "2026.10.29.3",
+        "2026.10.29.4",
       ),
     ]),
     libraryPlugin(tracePkg, traceIcon, [
       skill(
         "trace-rsi-toolkit",
         "Organize TRACE experiments on published Benchmarks, train a modular skill bank from Actor trajectories, select a checkpoint by training scores, and compare it with a no-Skill baseline on independent tests.",
-        "2026.10.29.2",
+        "2026.10.29.4",
       ),
     ]),
   ];

@@ -30,10 +30,8 @@ Shared reporting and plugin integration: [Saigyouji-Yuyuko1000](https://github.c
 
 ## Packaging
 
-Registered all four plugins for core, CLI and desktop packaging, the bilingual plugin catalogs, the self-improvement documentation, the website algorithm list and the UI Gallery demo. Shipped plugins omit development tests; OpenSkill has no development acceptance or replay prerequisite.
+Registered all four plugins for core, CLI and desktop packaging, the bilingual plugin catalogs, self-improvement documentation, the website algorithm list and the UI Gallery demo.
 
-Repositories without GDPevo manifests no longer load PyYAML during Evo resource preparation. GDPevo retains its declared PyYAML dependency.
-
-Evo resource preparation records source versions without per-file fingerprint comparisons or resume-time drift checks.
+Each toolkit contains its method instructions and focused references. The four methods use Penguin's existing tools and the selected Benchmark's runtime, without bundling a separate experiment executor, benchmark-specific launcher, recovery framework or development tests. Shared evaluation/reporting instructions keep the native scoreboard format and repeated-test statistics aligned.
 
 Windows Web tests normalize module paths before selecting the socket stand-in.

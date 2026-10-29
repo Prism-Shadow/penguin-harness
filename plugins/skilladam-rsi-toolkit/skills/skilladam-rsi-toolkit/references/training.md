@@ -1,7 +1,7 @@
 ---
 name: skilladam-training
 description: "Run SkillAdam on the supplied training tasks in a continuing Session: initialize a Skill from execution feedback, evolve it with an issue tracker and adaptive edit budget, then export the learned Skill."
-version: 2026.10.28.4
+version: 2026.10.29.4
 ---
 
 # Train with SkillAdam
@@ -27,7 +27,7 @@ The algorithm changes text, not model weights. Feedback consists of trajectories
 
 Resolve the training tasks, feedback interface, working-Skill location, fixed model/tools, batch size and iteration budget from the training request and benchmark instructions. The task set and number of rounds belong to the experiment; SkillAdam does not prescribe a benchmark, grouping or split.
 
-Record the parameters before training: sampling seed, maximum proposal iterations, `beta2`, `base_budget`, `min_budget`, `variance_cap`, and the benchmark's acceptance metrics and thresholds. The numerical helper uses `beta2=0.9`, `base_budget=4`, `min_budget=1`, `variance_cap=0.1` as configurable defaults. A budget counts edit regions (hunks) in a unified diff.
+Record the parameters before training: sampling seed when sampling is used, maximum proposal iterations, `beta2`, `base_budget`, `min_budget`, `variance_cap`, and the benchmark's acceptance metrics and thresholds. The toolkit uses `beta2=0.9`, `base_budget=4`, `min_budget=1`, `variance_cap=0.1` as configurable defaults. A budget counts edit regions (hunks) in a unified diff.
 
 Use the supplied benchmark's input locations, feedback API or command, metric definitions and export paths. Keep this Session and environment throughout learning; do not start Harbor trials between tasks or candidates.
 
@@ -52,8 +52,6 @@ For each proposal iteration, begin with the last accepted Skill and optimizer st
 
 A null, invalid or unchanged candidate consumes a proposal iteration while leaving the Skill, EIT, variance and budget unchanged, following Algorithm 1's null-candidate branch. Save the reason. For valid evaluated candidates, continue with the state updates below whether the candidate was accepted or rejected.
 
-The optional `scripts/skilladam.py prepare` command applies a proposed unified diff to a separate candidate file and checks its hunk budget. It accepts a JSON object containing `reasoning` and `patch`; the diff names `a/SKILL.md` and `b/SKILL.md` and preserves the working Skill's frontmatter.
-
 ## Carry the evidence forward
 
 Update the EIT from the previous tracker, current rollout evidence, proposed edit, candidate feedback and acceptance decision. Each issue records a problem, its status and the history of attempted fixes with their outcomes. A rejected candidate still supplies evidence about an attempted fix. Describe resolution on the Skill actually retained.
@@ -67,17 +65,9 @@ next_budget = max(min_budget,
                  round(base_budget * (1 - clip(V / variance_cap, 0, 1))))
 ```
 
-Save the retained Skill, updated tracker, `V` and `next_budget` before the next iteration. The helper's `compare` command computes these quantities from paired normalized score maps, for example `{"case-a": 0.5, "case-b": 0.8}`:
+Calculate these quantities from paired scores on the same normalized scale (for a `0..100` score, divide by 100 before using these default parameters). Use the experiment's parameters and the saved running variance from the preceding iteration. Save the retained Skill, updated EIT, `V` and `next_budget` for the next iteration.
 
-```bash
-python3 <skill-directory>/scripts/skilladam.py compare \
-  --before before-scores.json --after candidate-scores.json \
-  --previous-variance <saved-V> --beta2 <beta2> \
-  --base-budget <base-budget> --min-budget <min-budget> \
-  --variance-cap <variance-cap>
-```
-
-Use the parameters from the training request and pass the saved running variance at each iteration. The helper's default acceptance decision is strict improvement of mean normalized reward. Use that decision only when it matches the benchmark's declared rule; otherwise apply the declared criteria and use the calculated variance and next budget separately. Supply training measurements only: the helper treats case names as opaque identifiers and cannot infer the dataset split from them.
+The default acceptance rule is strict improvement of mean normalized reward. Use it when the Benchmark defines that comparison; otherwise apply its declared improvement and protected metrics. Acceptance and the variance update are separate decisions: a uniformly harmful edit has low variance but must not be accepted as an improvement.
 
 ## Keep the learning record
 

@@ -1,7 +1,7 @@
 ---
 name: trace-training
 description: Run TRACE as the main Curator inside one continuing training environment, using fresh Actor sessions and exporting the training-selected skill bank.
-version: 2026.10.28.1
+version: 2026.10.29.4
 ---
 
 # TRACE training
@@ -96,4 +96,4 @@ Copy the exact selected bank to the Skill export path in benchmark-training.md. 
 
 Where the benchmark requires final training answers, export each task's last unmodified candidate from the selected stage's batch and record its attempt id. For identical banks pooled across stages, use the selected earliest originating stage consistently. Follow the public answer filenames and format; do not generate new answers during export.
 
-Report completed stages, actual stage means, selected stage/hash and unresolved failures. Missing phases or failed scoring mean an incomplete handoff. Preserve the last valid bank and evidence; the Organizer decides eligible infrastructure recovery under the declared policy. Do not extend the budget or select using held-out results.
+Report completed stages, actual stage means, selected stage/hash and unresolved failures. These measured training stages have `curve_kind: benchmark_score`. Missing phases or failed scoring mean an incomplete handoff. Preserve the last valid bank and evidence; the Organizer decides eligible infrastructure recovery under the declared policy. Do not extend the budget or select using held-out results.

@@ -16,7 +16,6 @@
   "files": [
     "icon.svg",
     "skills",
-    "!skills/**/test_*.py",
     "LICENSE"
   ],
   "publishConfig": {

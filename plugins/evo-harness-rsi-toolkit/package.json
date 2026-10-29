@@ -16,9 +16,7 @@
   "files": [
     "icon.svg",
     "skills",
-    "!skills/**/test_*.py",
-    "LICENSE",
-    "README.md"
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
@@ -35,12 +33,9 @@
       "skills": [
         "evo-harness-rsi-toolkit"
       ],
-      "prompt": "Use the selected Benchmark for Evo-Harness RSI, resolve this Project’s experiment settings, and autonomously complete learning, export, freezing and the Base/Skill comparison. Ask once for required missing inputs.",
-      "prompt_zh": "使用指定 Benchmark 进行 Evo-Harness RSI；自动读取本项目已有实验配置，按冻结方法完成学习、导出、Base／Skill 对比和汇总，必要缺项集中询问一次。"
+      "prompt": "Use Evo-Harness on the selected Project Benchmarks with the requested model and budget.",
+      "prompt_zh": "使用 Evo-Harness，按指定模型和预算完成选定 Project Benchmark 的实验。"
     },
     "icon": "icon.svg"
-  },
-  "scripts": {
-    "test": "python3 -B -m unittest discover -s skills/evo-harness-rsi-toolkit/scripts -p \"test_*.py\" -v"
   }
 }

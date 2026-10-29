@@ -1,84 +1,35 @@
 ---
 name: evo-training
-description: "Coordinate one Evo training batch with original-Solver reflection and one independent compilation."
+description: "Coordinate one Evo training batch with reflection in the original Solver Session and one independent library compilation."
 ---
 
 # One Evo training batch
 
-You are the training coordinator inside this Benchmark environment. Read the
-frozen `training-request.json`, train-only `benchmark-training.md` and complete
-role instructions. You orchestrate; Solvers answer tasks and one Evolver curates.
-Use only the selected training roster and fixed pre-batch library. Keep the same
-model, tools and thinking level throughout, including every delegated role.
+You are the training coordinator in this Benchmark environment. Read the run configuration, train-only brief and [learning roles](roles.md). Keep this Session and environment for the whole batch. Solvers answer tasks; one independent Evolver compiles their negative-feedback lessons.
 
-1. Export the pre-batch library for the declared topic. Install its exact context
-   before Solver creation. Every Solver gets identical pre-batch guidance; no
-   earlier candidate or edited library reaches a later Solver. Complete public
-   input reads before scoring. Install the frozen context before opening Solver
-   Sessions; native children reload State when their contexts are created. Hash input grants before dispatch and pass those
-   hashes with the candidate schema. Keep input and output paths per task.
-2. Launch one native Solver per task, in roster order when business state is
-   shared. Its inline `prompt` contains the full Solver and reflection roles,
-   public task and allowed material locations, input hashes, answer path,
-   one-grade interface and output contracts. For a GDPevo contract, use the
-   exact `training_io` and member list returned by the resource resolver; do not
-   infer ports, task counts or paths from the group number. Use `run_in_background: true` and
-   retain its child/Session ID. The Solver makes one answer and one actual
-   external scoring call, observes all feedback, and reflects there when negative.
-   GDPevo uses `python3 -B scripts/evo.py grade --request judge-request.json`.
-   Its request has `task_id`, complete frozen `train_ids`, the declared `url`,
-   final `answer` path and this batch's private `feedback_dir`. The helper sends
-   the native `{"task_id": ..., "answer": {...}}` body once, stores the full raw
-   response and frozen answer hash, and reuses that receipt on repetition.
-   It never retries an interrupted request or turns a transport error into zero.
-   Read the complete successful result in this original Solver conversation;
-   its `negative` is `not correct or score < 1` for normalized GDPevo feedback.
-   Other Benchmarks retain their declared negative-feedback predicate.
-   If the coordinator supplies feedback instead, continue that same child with
-   `input_subagent` and the full raw feedback. Never spawn another Reflector.
-   Empty follow-up polls collect output; a nonempty follow-up continues the same
-   original Session. Do not resend an already completed reflection.
-3. Preserve each answer, full raw authorized feedback, complete native trajectory,
-   Session ID and negative reflection (including an explicit empty array).
-   Successful tasks have no candidates. A grader/transport failure stops the
-   batch as incomplete. The coordinator never rewrites role-authored candidates.
-   Verify no post-grade answer edits, rescoring, new business retrieval, hidden
-   grading material or test access. Reflection may reason over data already
-   observed; it may not acquire new evidence from business services.
-4. After all tasks finish, invoke one independent native Evolver with its full
-   role, all authorized training contexts (successes included as counterevidence),
-   all negative candidates and the entire private pre-batch library. Supply
-   five-entry ceilings and the 16,000-byte export budget. Empty candidates still
-   require that real Evolver invocation and an explicit empty decision array.
-5. Validate its decisions with `evo.py compile`. Structural or size errors may
-   be repaired in that same Evolver conversation before compilation. Do not
-   add new lessons yourself, retest a proposed method, rerun learning, ask a
-   second reviewer or use a score acceptance gate. Freeze the validated library
-   and export once. GDPevo requires `/app/submission/answers/<task_id>.json` for every member
-   and a nonempty `/app/submission/skill/SKILL.md`. Publish the complete staged
-   export there, not only its nested method directories. Follow the Benchmark's
-   answer/Skill export paths; collect
-   the complete learning artifacts before the container exits.
+## Solve and reflect
 
-The compile request is an object with `task_ids`, `topic`, `contexts`, `library`,
-`candidates`, `decisions` and optional `max_bytes` (at most 16000). Every context
-identifies `task_id`, `attempt_id`, the original `session_id`, `status: "ok"`,
-the benchmark-derived boolean `negative`, `input_sha256` and `tool_call_ids`.
-For GDPevo derive status/negative from the persisted real grade, preserving its
-raw response and answer hash beside the native trace; never hand-author a score.
-Those reference lists come from the actual native record, never invented IDs.
-The helper checks references and coverage; the coordinator checks the real trace
-and complete roster. Follow the role's candidate and decision schemas.
+Freeze the pre-batch library, model, tools and thinking level. Give every Solver the same complete general descriptions and matching-topic bodies before it acts. Later tasks do not receive earlier candidates or an updated library. Keep task outputs separate and follow the declared order when business state is shared.
 
-```bash
-python3 scripts/evo.py compile --request batch.json
-python3 scripts/evo.py export --request frozen-library.json --output exported-skills
-```
+For each task:
 
-Save compile stdout and the complete export receipt privately. The export request has `library` from that output,
-the frozen `topic` and optional `max_bytes`. Export refuses an existing output
-directory. Keep the private library, input/answer/feedback records, candidate
-arrays, decisions and role identities beside the native learning record. They
-do not enter the learned Skill package or frozen test State. Report actual
-grades and usage, including incomplete/failed work. Do not invent a training
-curve or claim semantic correctness from passing structural validation.
+1. Start one Solver with the public task, permitted inputs/tools, Solver and reflection roles, answer path and actual feedback interface.
+2. Let it answer once and obtain one authorized grade. Preserve the submitted answer and complete raw feedback. A failed scoring call leaves the batch incomplete; do not manufacture a score or resubmit a graded attempt to improve it.
+3. On success, retain the trajectory without candidates. On negative feedback, let this same Solver reflect on its actual history. If the coordinator receives the grade, deliver the full feedback by continuing the original child Session with `input_subagent`.
+4. Save its negative candidates, including an explicit empty list when no supported lesson emerges. After grading, the Solver reasons over already observed evidence; it does not edit the answer, query new business data or ask for another grade.
+
+Use the Benchmark's declared negative-feedback rule. For normalized feedback, a partial score is not full success; an infrastructure error is not a low task score.
+
+## Compile once
+
+After all tasks finish, start one independent Evolver with the complete private pre-batch library, all negative candidates and all authorized training contexts. Include successful contexts as counterevidence, without turning them into positive-source candidates.
+
+The Evolver makes ADD/MERGE/REVISE/SKIP decisions according to [roles.md](roles.md). Retain decisions and reasons, including an empty decision set when there are no candidates. Keep the five-general/five-per-topic ceilings and the 16,000-byte export budget.
+
+The same Evolver may finish or correct its compilation before export. Do not introduce another Solver pass, candidate test, score gate or second Evolver. A low earlier task score does not establish that a proposed repair will work.
+
+## Export
+
+Freeze the compiled library and export its complete reader, index and eligible methods to the Benchmark's declared Skill location. General exports contain descriptions only; full general bodies remain private. Follow the Benchmark's required answer locations using the original submitted answers, without generating replacements during export.
+
+Save the learning records separately: task order, original Solver identities, answers, full authorized feedback, trajectories, negative candidates, one Evolver's decisions, private library and final export. Record actual cost, duration and token usage for producing this library, including delegated work once. Report missing tasks or deviations. One pass and one compilation provide training observations, not a multi-round optimization curve.

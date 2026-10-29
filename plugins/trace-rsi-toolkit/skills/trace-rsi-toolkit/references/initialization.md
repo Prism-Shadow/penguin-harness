@@ -1,6 +1,6 @@
 # Prepare the experiment
 
-Resolve the Project from the Penguin Environment's App Data Dir. Use the requested output location; for repository-backed experiments default to `<benchmark-repository>/jobs/<experiment-id>/`, otherwise the session workspace or scratchpad. Organizer-created configurations, staging copies, archives and reports belong there. Runtime-managed Agent files and Harbor trials keep their normal locations.
+Resolve the Project from the Penguin Environment's App Data Dir. Use the requested output location, otherwise the Session workspace or scratchpad. Organizer-created configurations, staging copies, archives and reports belong there. Runtime-managed Agent files and Harbor trials keep their normal locations.
 
 Assign a stable experiment/report version. Record the actual Harness, toolkit, runner and benchmark package versions, resolved source commit, local source changes, provider/model/thinking per role, budgets, cases, public types, ordering, limits and selection rule. Record a concrete model revision when exposed; otherwise retain the actual model identifier. Add State versions/digests as they are frozen.
 
@@ -80,4 +80,8 @@ tar --exclude=./.vault.toml --exclude=./memory --exclude=./schedule \
   -czf "$STATE_TAR" -C "$STATE_DIR" .
 ```
 
-Bind `agent_state_tar`, agent/project identity, runtime and model configuration explicitly using the adapter's documented arguments. Credentials travel through its private configuration mechanism, not prompts or archives. Executable installation and Agent State are separate inputs; see [source-bundle.md](source-bundle.md) only when a source runtime is requested.
+Bind `agent_state_tar`, agent/project identity, runtime and model configuration explicitly using the adapter's documented arguments. Credentials travel through its private configuration mechanism, not prompts or archives. Executable installation and Agent State are separate inputs; use the same prepared source bundle for all trials when one is requested.
+
+## Source-built runtime when requested
+
+Use the Benchmark's normal executable installation unless the experiment requests a source build. Prefer its prepared bundle. Otherwise follow the current adapter's contract, including the CLI's production dependencies, plugin resources, Benchmark packages and compatible runtime. Record the source commit and bundle digest and reuse that build throughout. Keep credentials and Agent State separate from the executable; editing a learned Skill does not require rebuilding it.

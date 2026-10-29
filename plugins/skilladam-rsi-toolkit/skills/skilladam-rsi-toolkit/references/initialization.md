@@ -6,7 +6,7 @@ Use the user's experiment/report version when supplied; otherwise assign a stabl
 
 ## Runtime and directories
 
-Read the selected Case statements and benchmark instructions. They specify Docker, Harbor or another runner, its adapter, model configuration, task paths and artifact collection. Reuse the current CLI and configured model connection. Follow the benchmark's installation procedure for the Target; a source build is described in [source-bundle.md](source-bundle.md) when required. The adapter copies credentials privately; keep them out of prompts and experiment records.
+Read the selected Case statements and benchmark instructions. They specify Docker, Harbor or another runner, its adapter, model configuration, task paths and artifact collection. Reuse the current CLI and configured model connection. Follow the benchmark's installation procedure for the Target; use the same prepared source build throughout when the experiment requests one. The adapter copies credentials privately; keep them out of prompts and experiment records.
 
 Use a separate directory for each benchmark or independent training unit, with one set of frozen State archives and learning records. Give test outputs distinct paths by State, repetition and case. Keep a launch index so the controller can resume collection after context compaction. Keep task source and grading implementation unchanged during the experiment. Fetch benchmark source once at the requested version, or resolve the installed package's link when no version was requested; an existing unrelated checkout is not an input.
 
@@ -33,9 +33,8 @@ Copy the base, then install:
 | Toolkit file | Destination relative to the training Agent State |
 | --- | --- |
 | `references/training.md` | `skills/skilladam-training/SKILL.md` |
-| `scripts/skilladam.py` | `skills/skilladam-training/scripts/skilladam.py` |
 
-Add `training-request.json` at the State root. It contains this run's benchmark, training unit and cases, training sampling seed, batch rule, proposal iterations, optimizer parameters, acceptance rule, runtime and export locations. Test repetition indices belong to the controller's test schedule and do not create additional training requests.
+Add `training-request.json` at the State root. It contains this run's benchmark, training unit and cases, sampling seed when applicable, batch rule, finite proposal iteration count, optimizer parameters, acceptance rule, runtime and export locations. Test repetition indices belong to the controller's test schedule and do not create additional training requests.
 
 Write `skills/skilladam-training/benchmark-training.md` from the selected benchmark's learner-facing instructions: where training inputs and tools are, how to request feedback, what the score means, and where to export answers, the final Skill and learning records. Include the selected training material; held-out questions and repository grader files do not belong in this brief.
 
@@ -74,3 +73,7 @@ tar --exclude=./.vault.toml --exclude=./memory --exclude=./schedule \
 ```
 
 The executable installation and the Agent State are separate inputs. Pass the frozen archive to the adapter using the argument documented by the benchmark. Verify that each requested learned Skill reaches its corresponding test State before launching tests.
+
+## Source-built runtime when requested
+
+Method instructions and learned Skills travel in State archives. Use the Benchmark's normal executable installation unless a source build is requested. Prefer a prepared bundle; otherwise follow the current adapter's installation-bundle contract and stage the CLI with its production dependencies, plugin resources, Benchmark packages and compatible runtime. Keep credentials and State separate. Record the source commit and bundle digest, and reuse that executable for all trials; candidate Skill edits only change the State.
