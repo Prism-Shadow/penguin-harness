@@ -6,14 +6,24 @@
  * each (`--shard=1/2`, `--shard=2/2`: scripts/ci-plan.mjs).
  */
 import { fileURLToPath } from "node:url";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vitest/config";
 
+/**
+ * A path in vite's spelling: forward slashes on every OS. vite hands `resolveId` its importers
+ * that way (`C:/…/src/api/client.ts` on Windows), while node:path answers with backslashes
+ * there, so the two are compared only after both are spelled alike — compared raw, no importer
+ * on Windows ever looked like the app's, and every suite ran without its socket. `comparable`
+ * also reads a drive letter in either case, as Windows does.
+ */
+const slashed = (path: string): string => path.replaceAll("\\", "/");
+const comparable = (path: string): string =>
+  slashed(path).replace(/^[A-Za-z]:/, (drive) => drive.toLowerCase());
 const here = dirname(fileURLToPath(import.meta.url));
 /** The app's socket module, the stand-in a node suite runs in its place, and the app itself. */
-const appSource = resolve(here, "src") + sep;
-const socketModule = resolve(here, "src/api/socket.ts");
-const socketStandIn = resolve(here, "test/socket-stand-in.ts");
+const appSource = `${comparable(resolve(here, "src"))}/`;
+const socketModule = comparable(resolve(here, "src/api/socket.ts"));
+const socketStandIn = slashed(resolve(here, "test/socket-stand-in.ts"));
 
 /**
  * The app has one transport for its API calls now: everything but the runtime's own paths is a
@@ -29,9 +39,9 @@ const socketStandInPlugin: Plugin = {
   enforce: "pre",
   resolveId(source, importer) {
     if (importer === undefined) return null;
-    const from = importer.split("?")[0]!;
+    const from = comparable(importer.split("?")[0]!);
     if (!from.startsWith(appSource)) return null;
-    const wanted = resolve(dirname(from), source);
+    const wanted = comparable(resolve(dirname(from), source));
     if (wanted !== socketModule && `${wanted}.ts` !== socketModule) return null;
     return socketStandIn;
   },
