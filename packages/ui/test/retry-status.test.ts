@@ -18,11 +18,15 @@
  *   and never in the error state, whose recipes set the words in the danger ink. Its mark is
  *   drawn outside the slot a theme may hide, and its sentence, presses and "?" are the plain
  *   row's.
- * - The countdown's seconds: none without a target, never below nothing.
+ * - The countdown's seconds: none without a target, never below nothing; their place in the
+ *   caller's sentence is found wherever its language puts them, so they can keep their width.
  */
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { countdownSeconds } from "../src/components/feedback/retry-status/countdown";
+import {
+  countdownParts,
+  countdownSeconds,
+} from "../src/components/feedback/retry-status/countdown";
 import { RetryStatus } from "../src/components/feedback/retry-status/retry-status";
 import type {
   RetryPhase,
@@ -113,7 +117,7 @@ describe("the retry row", () => {
 
 describe("the retry row as a transcript note", () => {
   /** The note's head: the activity row a theme dresses. */
-  const headOf = (html: string) => /<div data-slot="head"[^>]*>/.exec(html)?.[0] ?? "";
+  const headOf = (html: string) => /<\w+\b[^>]*\sdata-slot="head"[^>]*>/.exec(html)?.[0] ?? "";
 
   it.each<[RetryPhase, "running" | "done"]>([
     ["trying", "running"],
@@ -153,6 +157,18 @@ describe("the retry row as a transcript note", () => {
 });
 
 describe("the countdown's seconds", () => {
+  it("are found in the caller's sentence wherever its language puts them, and not where it shows none", () => {
+    expect(countdownParts((s) => `Retrying in ${s} s (attempt 4/10)`)).toEqual({
+      before: "Retrying in ",
+      after: " s (attempt 4/10)",
+    });
+    expect(countdownParts((s) => `第 4/10 次请求将在 ${s} 秒后发起`)).toEqual({
+      before: "第 4/10 次请求将在 ",
+      after: " 秒后发起",
+    });
+    expect(countdownParts(() => "Retrying shortly")).toBeNull();
+  });
+
   it("are none without a target, and never fewer than none", () => {
     expect(countdownSeconds(null, NOW)).toBeNull();
     expect(countdownSeconds(undefined, NOW)).toBeNull();

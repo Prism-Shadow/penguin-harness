@@ -1,8 +1,10 @@
+// @vitest-environment jsdom
 /**
  * MessageStream hands the links in its Markdown the conversation's Workspace and file opener
- * (react-dom/server static markup, node env, no DOM). Static markup carries no handlers, so
- * replyLinkBehavior is wrapped rather than replaced: every call still returns the real behaviour,
- * and the test keeps what the link adapter spread onto each rendered anchor in order to click it.
+ * (react-dom/server static markup; the one press below is driven in a live DOM). Static markup
+ * carries no handlers, so replyLinkBehavior is wrapped rather than replaced: every call still
+ * returns the real behaviour, and the test keeps what the link adapter spread onto each rendered
+ * anchor in order to click it.
  * It also draws a run-ending LLM failure as its error banner, with a hint under a context overflow.
  * The line a run ended on — that banner, or the marker of a run the user stopped — offers Retry
  * while it is the stream's last item and no Task runs.
@@ -11,6 +13,8 @@
  * - Given the previous window failed to load, the top says so on the shared retry row with a
  *   Retry, the error kept behind its "?" rather than spelled out on screen.
  * - Given the window is being loaded again, the failure is gone and the loading line shows.
+ * - Given a Retry pressed while no load can start (the stream is rebuilding after a reconnect, so
+ *   the failure stays as it was), Retry must not stay disabled: the next press asks again.
  *
  * What a prompt carried is drawn as one message, the way the composer showed it:
  * - Given a prompt's text and the image items right behind it, the images sit above the text in
@@ -40,6 +44,7 @@ import type { ChatItem } from "../src/lib/amsp/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { LocaleProvider } from "../src/state/locale";
+import { button, click, mount, unmountAll } from "./helpers/dom";
 import { stubLocalStorage } from "./helpers/storage";
 
 /** The behaviour each rendered link received, by the href it was sorted from. */
@@ -184,6 +189,26 @@ describe("MessageStream older history", () => {
     const html = top({ loading: true, error: "socket closed: ECONNRESET" });
     expect(html).not.toContain("data-retry-phase");
     expect(html).toContain(S.chat.loadingEarlier);
+  });
+
+  it("a Retry that started no load stays pressable, and the next press asks again", async () => {
+    // A press that starts nothing: the failure, and so the row's state, stay as they were.
+    const onLoad = vi.fn();
+    await mount(
+      createElement(MessageStream, {
+        items: [reply],
+        version: 1,
+        ctx,
+        onAddExcerpt: () => {},
+        older: { hasMore: true, loading: false, error: "socket closed", prependedCount: 0, onLoad },
+      }),
+    );
+    await click(button(S.common.retry));
+    expect(onLoad).toHaveBeenCalledTimes(1);
+    expect(button(S.common.retry).disabled).toBe(false);
+    await click(button(S.common.retry));
+    expect(onLoad).toHaveBeenCalledTimes(2);
+    await unmountAll();
   });
 });
 

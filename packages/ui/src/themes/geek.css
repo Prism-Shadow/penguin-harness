@@ -775,9 +775,10 @@
   }
   /* A hover changes the ink alone — the label steps up to the body ink — so the group looks the
      same at rest, hovered, open and stuck; no fill moves. Only a row that does something answers
-     the pointer: a harness note or a server with nothing to open stays as it is. */
+     the pointer: a harness note, a server with nothing to open, or a retry row (its links are its
+     only presses) stays as it is. */
   :root[data-theme="geek"]
-    .ui-frame:has(> .ui-tree, > .ui-activity)
+    .ui-frame:has(> .ui-tree, > .ui-activity):not([data-retry-phase])
     > [data-slot="head"]:is(button, :has(button)):hover
     [data-slot="label"],
   :root[data-theme="geek"]

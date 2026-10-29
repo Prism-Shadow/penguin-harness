@@ -23,9 +23,10 @@
  * Only the mark carries colour. The sentence is set at the body weight: in the body ink while an
  * attempt is live (trying, waiting), receding to the muted ink once the row has settled — the
  * rule every activity row follows — and never in the danger ink, since a failure in red words
- * reads as an alarm; the cross beside it already says it. The spinner is drawn on the glyphs'
- * rung, so the sentence does not shift when a running attempt settles. The last failure, or the
- * fix, is never a paragraph under the sentence: it waits behind the "?" (`InfoPopover`), which
+ * reads as an alarm; the cross beside it already says it. The mark sits in a box of one width
+ * whatever the phase draws, and the countdown's seconds keep the width of the wait's widest
+ * number, so the sentence does not shift when an attempt settles or as the seconds tick. The last
+ * failure, or the fix, is never a paragraph under the sentence: it waits behind the "?" (`InfoPopover`), which
  * opens on hover, under a short title of its own when the caller gives one ("Last failure"), so
  * a failure that holds a colon of its own never reads as two labels in a row. The presses are
  * link-style text at the sentence's size, never boxed: on a wide surface the whole row is one
@@ -37,7 +38,9 @@
  * kind), so each theme draws it the way it draws the transcript's other notes — Primer a grey
  * strip at its content's width, Frost a line of words, Console a transcript line — with the
  * sentence as the note's label. The phase's mark stays in every theme there: it is the row's one
- * carrier of colour, so it sits outside the activity hook's mark slot, which a theme may hide.
+ * carrier of colour, so it sits outside the activity hook's mark slot, which a theme may hide. And
+ * the row does not answer a hover as a note that is a button does (the themes skip
+ * `[data-retry-phase]`): its presses are the only things to press.
  *
  * A press belongs to one attempt (`RetryActions`): it disables both — the pressed one spinning
  * while the press's promise is pending — until `attemptKey` changes, which is the caller saying
@@ -50,15 +53,13 @@
 import { useState } from "react";
 import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
 import { Button } from "../../actions/button/button";
-import {
-  TRANSCRIPT_NOTE_FRAME_CLASS,
-  TRANSCRIPT_NOTE_HEAD_CLASS,
-} from "../../chat/transcript-note/transcript-note";
+import { TranscriptNoteFrame } from "../../chat/transcript-note/transcript-note";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { Spinner } from "../../icons/spinner/spinner";
 import { InfoPopover } from "../../overlays/info-popover/info-popover";
-import { useCountdown } from "./use-countdown";
+import { countdownParts } from "./countdown";
+import { useCountdown, useWidestDigits } from "./use-countdown";
 
 export type RetryPhase = "trying" | "waiting" | "retried" | "gaveUp" | "cancelled" | "blocked";
 
@@ -175,6 +176,10 @@ export interface RetryStatusProps extends Omit<RetryActionsProps, "attemptKey"> 
   /**
    * `none`: the row alone (a card, a dialog, a centred notice). `note`: the transcript's one-line
    * note, for a row between a conversation's messages; it takes the note's rung, whatever `size`.
+   *
+   * In a note the sentence is the note's label, and a theme may recase a label (Console sets it
+   * in capitals: "RETRYING IN 39 S"). So the sentence there must be a fixed phrase with numbers at
+   * most — never a name, a path or a provider's words, which belong behind the "?".
    */
   frame?: RetryFrame;
   /** The root is the row itself, so `justify-center` centres it under a centred headline. */
@@ -197,20 +202,43 @@ const MARK: Record<Exclude<RetryPhase, "trying">, { glyph: string; ink: string }
   blocked: { glyph: ICONS.xCircle, ink: "text-tone-danger-fg" },
 };
 
+/**
+ * The mark's box: one line high, as wide as the glyphs whatever the phase draws in it, its mark
+ * centred — so the 12 px spinner and the 13 px glyphs that follow it leave the sentence where it
+ * was. On the first line when the sentence wraps.
+ */
+const MARK_BOX = "inline-flex h-[1lh] shrink-0 items-center justify-center self-start";
+const MARK_WIDTH = { width: ICON_SIZE.inlineGlyph } as const;
+
 function PhaseMark({ phase, label }: { phase: RetryPhase; label: string }) {
   if (phase === "trying") {
-    // The sentence beside it names what runs; the spinner adds no second announcement. It takes
-    // the spinner rung nearest the glyphs' 13 px, so the glyph that replaces it fills the same box.
+    // The sentence beside it names what runs; the spinner adds no second announcement.
     return (
-      <span aria-hidden="true" className="inline-flex h-[1lh] shrink-0 items-center">
+      <span aria-hidden="true" className={MARK_BOX} style={MARK_WIDTH}>
         <Spinner size="sm" tone="success" label={label} />
       </span>
     );
   }
   const mark = MARK[phase];
   return (
-    <span className="inline-flex h-[1lh] shrink-0 items-center">
+    <span className={MARK_BOX} style={MARK_WIDTH}>
       <GlyphIcon d={mark.glyph} size={ICON_SIZE.inlineGlyph} className={mark.ink} />
+    </span>
+  );
+}
+
+/**
+ * The seconds in the countdown sentence, in a slot as wide as the wait's widest number: that many
+ * zeros, drawn invisibly in the same cell (a pseudo-element, so they are not text), hold the
+ * width, and the digits sit at its end — so 10 ticking down to 9 moves nothing after them.
+ */
+function Seconds({ value, digits }: { value: number; digits: number }) {
+  return (
+    <span
+      data-digits={"0".repeat(digits)}
+      className="inline-grid justify-items-end before:invisible before:col-start-1 before:row-start-1 before:content-[attr(data-digits)]"
+    >
+      <span className="col-start-1 row-start-1">{value}</span>
     </span>
   );
 }
@@ -230,9 +258,22 @@ export function RetryStatus({
   frame = "none",
   className = "",
 }: RetryStatusProps) {
-  const seconds = useCountdown(phase === "waiting" ? nextAt : null);
+  const target = phase === "waiting" ? nextAt : null;
+  const seconds = useCountdown(target);
   const counting = seconds !== null && seconds > 0 && countdown !== undefined;
-  const sentence = counting ? countdown(seconds) : label;
+  const digits = useWidestDigits(target, counting ? seconds : null);
+  const around = counting ? countdownParts(countdown) : null;
+  const sentence = !counting ? (
+    label
+  ) : around === null ? (
+    countdown(seconds)
+  ) : (
+    <>
+      {around.before}
+      <Seconds value={seconds} digits={digits} />
+      {around.after}
+    </>
+  );
   const hasActions = retry !== null || secondary !== null;
   const note = frame === "note";
   const live = LIVE.has(phase);
@@ -258,7 +299,7 @@ export function RetryStatus({
   // The two keep one line where it has room; a column narrower than both wraps them rather than
   // letting a label overflow it.
   const presses = hasActions && (
-    <span className={`flex min-w-0 flex-wrap items-start gap-x-3${note ? " ml-1" : ""}`}>
+    <span className="flex min-w-0 flex-wrap items-start gap-x-3">
       <RetryActions
         retry={retry}
         secondary={secondary}
@@ -267,26 +308,27 @@ export function RetryStatus({
       />
     </span>
   );
+  // Beside the mark, so presses that wrap line up under the sentence, not under the mark.
+  const body = (
+    <span className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
+      {words}
+      {presses}
+    </span>
+  );
   if (note) {
     // The note's head is an activity row: running while an attempt is live, settled otherwise —
-    // never the error state, whose recipe sets the words in the danger ink.
+    // never the error state, whose recipe sets the words in the danger ink. The head itself does
+    // not wrap: the body does, beside the mark.
     return (
-      <div
-        role="status"
-        data-retry-phase={phase}
-        className={`ui-frame ${TRANSCRIPT_NOTE_FRAME_CLASS} w-fit max-w-full ${className}`}
+      <TranscriptNoteFrame
+        state={live ? "running" : "done"}
+        wrap={false}
+        className={className}
+        attributes={{ role: "status", "data-retry-phase": phase }}
       >
-        <div
-          data-slot="head"
-          data-kind="event"
-          data-state={live ? "running" : "done"}
-          className={`ui-activity ${TRANSCRIPT_NOTE_HEAD_CLASS} flex-wrap`}
-        >
-          <PhaseMark phase={phase} label={label} />
-          {words}
-          {presses}
-        </div>
-      </div>
+        <PhaseMark phase={phase} label={label} />
+        {body}
+      </TranscriptNoteFrame>
     );
   }
   return (
@@ -296,11 +338,7 @@ export function RetryStatus({
       className={`flex min-w-0 items-start ${ICON_GAP.row} ${TEXT[size]} ${className}`}
     >
       <PhaseMark phase={phase} label={label} />
-      {/* Beside the mark, so presses that wrap line up under the sentence, not under the mark. */}
-      <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
-        {words}
-        {presses}
-      </div>
+      {body}
     </div>
   );
 }

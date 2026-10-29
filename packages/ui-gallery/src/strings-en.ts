@@ -1889,7 +1889,7 @@ export const en: GalleryStrings = {
       loadFailed: "Could not load",
       loadFailedHint:
         "What stands where content could not be loaded: a mark, a one-line title, a muted line under it with the reason or what happens next, the retry row while something retries on its own, one button, and the raw error folded under Technical details. No red words: the mark says it failed.",
-      historyFailed: "Couldn't load the message history",
+      historyFailed: "Could not load the message history",
       networkError: "Network error, please check your connection",
       awayHeadline: (alias: string) => `${alias} is reconnecting`,
       awayHint:
@@ -1898,7 +1898,7 @@ export const en: GalleryStrings = {
       details: "Technical details",
       transportError:
         "The connection to QS7J4YVgSovi-Z2c did not answer: the session's SOCKS port did not answer: connect ECONNREFUSED 127.0.0.1:37747",
-      chatEarlierFailed: "Couldn't load earlier messages",
+      chatEarlierFailed: "Could not load earlier messages",
       narrow: "Narrow",
       narrowHint: "At phone width the line wraps under the name; the actions are never cut.",
       trying: (n: number, m: number) => `Reconnecting (attempt ${n}/${m})`,

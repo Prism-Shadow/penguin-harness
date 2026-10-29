@@ -384,6 +384,14 @@ export function MessageStream({
     );
   };
 
+  /**
+   * Presses of the earlier-messages Retry, the key of its row. The shared row holds a press until
+   * its next attempt begins, but a press that starts no load (the stream is rebuilding after a
+   * reconnect) brings no new attempt and leaves the failure as it was; a fresh row per press keeps
+   * Retry pressable, while a load that does start replaces the row with its spinner anyway.
+   */
+  const [olderPresses, setOlderPresses] = useState(0);
+
   /** Held refs for prepend scroll anchoring (see the layout effect below). */
   const olderRef = useRef(older);
   olderRef.current = older;
@@ -640,10 +648,17 @@ export function MessageStream({
                 // The shared retry row, stopped: the cross, the sentence, the error behind its
                 // "?", and Retry — not a red sentence that is itself the button.
                 <RetryStatus
+                  key={olderPresses}
                   phase="gaveUp"
                   label={S.chat.loadEarlierFailed}
                   reason={older.error}
-                  retry={{ label: S.common.retry, onClick: older.onLoad }}
+                  retry={{
+                    label: S.common.retry,
+                    onClick: () => {
+                      setOlderPresses((n) => n + 1);
+                      older.onLoad();
+                    },
+                  }}
                 />
               ) : !older.hasMore && older.prependedCount > 0 ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">

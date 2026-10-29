@@ -7,8 +7,9 @@
  * - Given only a title, nothing else is drawn: no reason line, no press, no fold.
  * - Given no glyph of the caller's, the mark is the failure's cross; given the glyph of the thing
  *   whose state this is (a machine), that glyph instead.
- * - Given technical detail, it is folded under its own title, out of sight until opened; what the
- *   caller adds (a live status row) sits between the words and the press.
+ * - Given a live status of the caller's and technical detail, the status sits between the words
+ *   and the press, and the detail comes last, under its own title. (That the detail stays folded
+ *   until opened is the fold's behaviour, driven in the web app's history-load-failed suite.)
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -42,14 +43,14 @@ describe("the could-not-load notice", () => {
   });
 
   it("marks the failure with the cross, or with the caller's glyph for the thing whose state it is", () => {
-    const failed = render({ title: "Couldn't load" });
+    const failed = render({ title: "Could not load" });
     expect(failed).toContain(`d="${ICONS.xCircle}"`);
     const away = render({ title: "gpu-box is reconnecting", glyph: ICONS.server });
     expect(away).toContain(`d="${ICONS.server}"`);
     expect(away).not.toContain(`d="${ICONS.xCircle}"`);
   });
 
-  it("keeps the technical detail folded, and puts the caller's status between the words and the press", () => {
+  it("puts the caller's status between the words and the press, and the detail last", () => {
     const html = render({
       title: "gpu-box is reconnecting",
       description: "The conversation loads once the connection is back.",
@@ -57,11 +58,13 @@ describe("the could-not-load notice", () => {
       details: { title: "Technical details", text: "connect ECONNREFUSED 127.0.0.1:37747" },
       children: createElement("div", { role: "status" }, "Reconnecting in 23 s"),
     });
-    // The fold's body is in the page but hidden, so the error shows only on request.
-    expect(html).toMatch(/<div id="[^"]+" hidden[^>]*><p[^>]*>connect ECONNREFUSED/);
-    expect(html).toContain(">Technical details</button>");
-    const at = (text: string) => html.indexOf(text);
-    expect(at("loads once the connection")).toBeLessThan(at("Reconnecting in 23 s"));
-    expect(at("Reconnecting in 23 s")).toBeLessThan(at(">Go to Machines</button>"));
+    const order = [
+      "loads once the connection",
+      "Reconnecting in 23 s",
+      "Go to Machines",
+      "Technical details",
+    ].map((text) => html.indexOf(text));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 });
