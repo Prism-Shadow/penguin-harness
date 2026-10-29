@@ -119,6 +119,7 @@ import {
 } from "./session-project";
 import { useRouteLookup } from "./use-route-lookup";
 import { RouteOfflineNotice } from "./route-offline-notice";
+import { RouteRefusedNotice } from "./route-refused-notice";
 import { machineForSession, sessionKnownHere } from "../../lib/session-machines";
 import { HistoryLoadFailed } from "./history-load-failed";
 import { HistoryLoading } from "./history-loading";
@@ -927,6 +928,7 @@ export function ChatPage() {
     routeSessionId,
     deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
     missing: routeLookup.missing,
+    refused: routeLookup.refused !== null,
   });
 
   // Auto-select the last conversation when the route doesn't select one: the most recently
@@ -2741,6 +2743,14 @@ export function ChatPage() {
                     <RouteOfflineNotice
                       owner={routeSessionOwner}
                       offline={routeLookup.silent}
+                      labels={machineLabels}
+                    />
+                  ) : routeOutcome === "refused" && routeLookup.refused !== null ? (
+                    // The machine holding it will not show it to this server: said in place,
+                    // neither gone nor out of reach.
+                    <RouteRefusedNotice
+                      machineId={routeLookup.refused.machineId}
+                      alias={routeLookup.refused.alias}
                       labels={machineLabels}
                     />
                   ) : !sessionsLoading && routeOutcome === "notFound" ? (

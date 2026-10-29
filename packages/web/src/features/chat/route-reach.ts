@@ -44,15 +44,21 @@ export function routeReach(state: {
  * machines; a hub from before that answer says 404 there, which the page's own knowledge of
  * the silent machines turns into the same doubt.
  */
-export type LookupVerdict = "missing" | "doubt" | "failed";
+export type LookupVerdict = "missing" | "doubt" | "failed" | "refused";
 
 /** The hub's answer when a machine that could hold the Session did not answer in time. */
 export const MACHINE_NO_ANSWER = "machine_no_answer";
+/**
+ * The answer when the machine holding the Session will not show it to this server: an answer,
+ * not a doubt — the Session is there, and asking again changes nothing.
+ */
+export const SESSION_FORBIDDEN = "session_forbidden";
 
 export function lookupVerdict(
   failure: { status: number | null; code?: string | null },
   reach: RouteReach,
 ): LookupVerdict {
+  if (failure.code === SESSION_FORBIDDEN) return "refused";
   if (failure.code === MACHINE_NO_ANSWER) return "doubt";
   if (reach !== "answered") return "doubt";
   return failure.status === 404 ? "missing" : "failed";

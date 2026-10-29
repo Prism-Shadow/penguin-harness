@@ -61,6 +61,11 @@ export interface RouteLookup {
   failed: boolean;
   /** The verdict: the Session does not exist. */
   missing: boolean;
+  /**
+   * The verdict: the machine holding the Session will not show it to this server (403
+   * `session_forbidden`) — the machine, as the answer names it; null otherwise.
+   */
+  refused: { machineId: string | null; alias: string | null } | null;
   /** Still being looked for. */
   pending: boolean;
   /** Looked for, and the servers that could answer are out of reach: the page says so. */
@@ -86,6 +91,11 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
   const [named, setNamed] = useState<{ key: string; ids: string[]; round: number } | null>(null);
   /** Doubts in a row for `key`: the backoff's exponent and the reload budget. */
   const [doubts, setDoubts] = useState<{ key: string; count: number } | null>(null);
+  const [refusal, setRefusal] = useState<{
+    key: string;
+    machineId: string | null;
+    alias: string | null;
+  } | null>(null);
 
   const hubSilent =
     named !== null && named.key === key && named.round === input.listRound ? named.ids : [];
@@ -98,9 +108,13 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
   });
   const failed = key !== null && failedKey === key;
   const doubted = key !== null && doubtKey === key;
+  const refused = key !== null && refusal !== null && refusal.key === key && !input.listed;
   const unowned = key !== null && !input.deletedHere && reach !== "answered";
+  // A refusal is an answer from the machine that holds the Session: nothing is pending on it.
   const pending =
-    key !== null && routeLookupPending({ listed: input.listed, failed, unowned, doubted });
+    key !== null &&
+    !refused &&
+    routeLookupPending({ listed: input.listed, failed, unowned, doubted });
   // A lookup that failed in doubt keeps saying so until it resolves: a list round asking other
   // machines, or the wait before it is made again, is no news to the reader.
   const outOfReach = pending && failed && (reach === "unanswered" || doubted);
@@ -135,6 +149,13 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
           reachNow.current,
         );
         if (verdict === "missing") setMissingKey(key);
+        if (verdict === "refused") {
+          setRefusal({
+            key,
+            machineId: api?.details?.machineId ?? null,
+            alias: api?.details?.alias ?? null,
+          });
+        }
         setDoubtKey(verdict === "doubt" ? key : null);
         if (verdict !== "doubt") {
           setDoubts(null);
@@ -170,6 +191,7 @@ export function useRouteLookup<T>(input: RouteLookupInput<T>): RouteLookup {
   return {
     failed,
     missing: key !== null && missingKey === key,
+    refused: refused ? { machineId: refusal!.machineId, alias: refusal!.alias } : null,
     pending,
     outOfReach,
     reach,

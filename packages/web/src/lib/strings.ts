@@ -4039,6 +4039,10 @@ Benchmark：
         ? `本机没有这个对话，它可能在 ${aliases[0]} 上，但 ${aliases[0]} 当前没有连接。`
         : `本机没有这个对话，它可能在 ${aliases.join("、")}${more ? " 等" : " "}机器上，但这些机器当前没有连接。`,
     sessionOfflineHint: "连接恢复后会自动打开。",
+    /** The machine holding the routed conversation will not show it to this server (403 session_forbidden). */
+    sessionRefused: (machine: string | null) =>
+      machine === null ? "这台机器不让本服务端查看这个对话" : `${machine} 不让本服务端查看这个对话`,
+    sessionRefusedHint: "对话仍在那台机器上，但它拒绝了本服务端的读取。",
     /** The routed conversation does not exist (a stale link, or deleted elsewhere): said in place, never swapped for another conversation. */
     sessionNotFound: "会话不存在或已被删除",
     sessionNotFoundHint: "这个链接指向的会话已经不在了，或者你没有访问它的权限。",
@@ -6387,7 +6391,6 @@ Benchmark：
       trace_body_not_found: "这段内容已不在这个对话的 Trace 中。",
       machine_refused: "机器拒绝了这次读取。",
       machine_no_answer: "机器没有回应。",
-      session_forbidden: "这台机器不让本服务端查看这个对话。",
       machine_not_found: "这台机器不在当前 Project 的机器列表中。",
       machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
       machine_answered: "机器给出的应答无法使用，请重试。",

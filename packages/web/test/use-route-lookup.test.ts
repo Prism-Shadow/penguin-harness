@@ -19,6 +19,9 @@
  *   machines again for the first three doubts only.
  * - Given a socket that gave up on the routed machine (no machine named), the Session's own
  *   machine is said to be out of reach — not a skeleton that says nothing.
+ * - Given the machine that holds the Session refusing this server (403 `session_forbidden`), that
+ *   is the answer: nothing pending, no out-of-reach notice, no not-found, and no new lookup —
+ *   whatever other machine is away — with the refusing machine named.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -204,5 +207,25 @@ describe("a link to a Session the list does not hold", () => {
     asked[0]!.reject(new ApiError(0, "machine_no_answer", "network error"));
     await settle();
     expect(p.state).toMatchObject({ pending: true, outOfReach: true, silent: ["m1"] });
+  });
+
+  it("takes a machine's refusal as the answer, naming it, and does not ask again", async () => {
+    const { asked, lookup } = lookups();
+    const p = await page({ lookup, offline: ["m2"] });
+    asked[0]!.reject(
+      new ApiError(403, "session_forbidden", "refused", undefined, {
+        machineId: "m1",
+        alias: "box",
+      }),
+    );
+    await settle();
+    expect(p.state).toMatchObject({
+      pending: false,
+      outOfReach: false,
+      missing: false,
+      refused: { machineId: "m1", alias: "box" },
+    });
+    await wait(60_000);
+    expect(asked).toHaveLength(1);
   });
 });

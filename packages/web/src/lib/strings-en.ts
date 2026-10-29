@@ -3839,6 +3839,13 @@ Scenarios:
         ? `This server doesn't have this conversation. It may be on ${aliases[0]}, but ${aliases[0]} isn't connected right now.`
         : `This server doesn't have this conversation. It may be on ${aliases.join(", ")}${more ? " and others" : ""}, but those machines aren't connected right now.`,
     sessionOfflineHint: "It will open as soon as the connection is back.",
+    /** The machine holding the routed conversation will not show it to this server (403 session_forbidden). */
+    sessionRefused: (machine: string | null) =>
+      machine === null
+        ? "The machine does not let this server see this conversation"
+        : `${machine} does not let this server see this conversation`,
+    sessionRefusedHint:
+      "The conversation is still there, but that machine refuses this server's reads.",
     sessionNotFound: "This conversation does not exist or was deleted",
     sessionNotFoundHint:
       "The conversation this link points to is gone, or you do not have access to it.",
@@ -6145,7 +6152,6 @@ Scenarios:
       trace_body_not_found: "This part is no longer in the conversation's Trace.",
       machine_refused: "The machine refused this read.",
       machine_no_answer: "The machine didn't answer.",
-      session_forbidden: "The machine does not let this server see this conversation.",
       machine_not_found: "This machine is not on the Project's machine list.",
       machine_outdated: "The machine runs an older version; update it on the Machines page.",
       machine_answered: "The machine's answer could not be used; try again.",
