@@ -56,6 +56,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { HistoryStreamQuery } from "../../api/sse";
 import { readBody, readHistory } from "../history/history-read";
+import { countUnits } from "../history/window-units";
 import type { HistoryRead, OpenBody, OpenHistory } from "../history/history-read";
 import type { HistoryWindow } from "../history/window-assembler";
 import {
@@ -127,6 +128,9 @@ export const OLDER_UNITS = 20;
  */
 const PREPEND_ID_SPAN = 1_000_000;
 
+/** A resync's bridge between a moved tail and the earlier windows gives up after this many reads. */
+const MAX_BRIDGE_WINDOWS = 20;
+
 export interface StreamControllerDeps {
   /** The Session whose stream this is: the owner of the model a history window starts on (see MessagesPageInfo.contextModel). */
   sessionId: string;
@@ -177,6 +181,12 @@ export interface OlderHistoryState {
   loading: boolean;
   /** The last backfill failed (the affordance offers a retry); null = fine. */
   error: string | null;
+  /**
+   * A window was read because the reader scrolled up for it, past the TAIL_UNITS Tasks a
+   * conversation opens on: only then does reaching the beginning say so (a conversation that
+   * fits the first 20 Tasks looks as it always has, with no marker).
+   */
+  beyondTail: boolean;
 }
 
 /**
@@ -254,7 +264,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   let prefixItems: ChatItem[] = [];
   /** Nested subagent models owned by backfilled windows. */
   let prefixSubagents = new Map<string, StreamModel>();
-  /** How many windows have been prepended (derives each one's negative item-id base). */
+  /** How many windows have been frozen into the prefix (derives each one's negative item-id base). */
   let prependCount = 0;
   /** Cursor for the NEXT older window (= the oldest loaded window's start); null = beginning reached or full transcript loaded. */
   let nextBefore: string | null = null;
@@ -262,23 +272,30 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * The LIVE tail window's start cursor, as returned by the last tail fetch — the resync
    * continuity anchor: a refetched tail whose start cursor equals this provably abuts the
    * retained prefix. Null = the tail reaches the beginning (or the transcript was loaded
-   * whole), in which case there is no prefix to splice against.
+   * whole).
    */
   let tailStartCursor: string | null = null;
-  const older: OlderHistoryState = { hasMore: false, loading: false, error: null };
+  /** The live tail window's page as it was read: the seeds of a window cut at its start. */
+  let tailPage: MessagesPageInfo | undefined;
+  const older: OlderHistoryState = { hasMore: false, loading: false, error: null, beyondTail: false };
   /** Outline entries before the OLDEST loaded window (the outline's numbering offset). */
   let outlineOffset = 0;
-  /** Tasks the backfilled windows hold (with the live model's, the Tasks on screen). */
-  let prefixTasks = 0;
+  /** Units (the server's Tasks) of the tail window as read, and of every frozen window. */
+  let tailUnits = 0;
+  let prefixUnits = 0;
+  /** The first paint's older windows are being read, up to TAIL_UNITS: one row for all of them. */
+  let backfilling = false;
 
   // —— Reads of the history stream ——
   let transfer: HistoryTransfer = NO_TRANSFER;
-  /** Every read opened, closed on dispose (closing a finished one does nothing). */
-  const reads: { close: () => void }[] = [];
+  /** The reads open now, closed on dispose; a read leaves the set when it ends. */
+  const reads = new Set<{ close: () => void }>();
   /** The window read the transcript waits on, while its window has not arrived. */
   let waitingRead: HistoryRead | null = null;
   /** A window read whose fill runs on behind the transcript; null once filled or failed. */
   let fillRead: HistoryRead | null = null;
+  /** The older window being read (a scroll-up, or the first paint's backfill); one at a time. */
+  let olderRead: HistoryRead | null = null;
 
   const setTransfer = (key: keyof HistoryTransfer, value: HistoryProgress | null): void => {
     if (transfer[key] === value) return;
@@ -288,76 +305,133 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
 
   /**
    * One window over the history stream. `track` names where its progress shows until the window
-   * arrives; a read that fills on after it reports the fill under `fill`. A `window` read takes
-   * the place of one still waiting (a retry, a rebuild): the old one is closed, not left to run.
+   * arrives (`quiet`: nowhere, a read behind a transcript that stays as it is); a read that fills
+   * on after it reports the fill under `fill`. An `older` read belongs to the epoch it was opened
+   * in: once a rebuild moves on, nothing it says reaches the row. A `window` read takes the place
+   * of one still waiting (a retry, a rebuild): the old one is closed, not left to run. A read
+   * leaves the open set when it ends, and the window it assembled goes to the caller only.
    */
   const readWindow = (
     query: HistoryStreamQuery,
-    track: "window" | "older",
-  ): Promise<HistoryWindow> =>
-    new Promise<HistoryWindow>((resolve, reject) => {
-      const fills = query.kind === "tail" && query.fill === true;
-      let delivered = false;
-      let self: HistoryRead | null = null;
-      const read = readHistory(deps.openHistory, query, {
-        onProgress: (progress, after) => {
-          if (disposed) return;
-          setTransfer(after ? "fill" : track, progress);
-        },
-        onWindow: (window) => {
-          delivered = true;
-          if (waitingRead === self) waitingRead = null;
-          if (fills) fillRead = self;
-          setTransfer(track, null);
-          resolve(window);
-        },
-        onFilled: () => {
-          if (fillRead === self) fillRead = null;
-          setTransfer("fill", null);
-        },
-        onError: (message) => {
-          if (waitingRead === self) waitingRead = null;
-          if (delivered) {
-            // The fill failed behind a transcript already on screen: older windows are still
-            // read on scroll, so all the reader loses is the head start.
-            if (fillRead === self) fillRead = null;
-            setTransfer("fill", null);
-            return;
-          }
-          setTransfer(track, null);
-          reject(new Error(message));
-        },
-      });
-      self = read;
-      reads.push(read);
-      if (track === "window") {
-        waitingRead?.close();
-        waitingRead = delivered ? null : read;
-      }
+    track: "window" | "older" | "quiet",
+    readEpoch: number,
+  ): { done: Promise<HistoryWindow>; read: HistoryRead } => {
+    let resolve!: (window: HistoryWindow) => void;
+    let reject!: (error: Error) => void;
+    const done = new Promise<HistoryWindow>((ok, fail) => {
+      resolve = ok;
+      reject = fail;
     });
+    const fills = query.kind === "tail" && query.fill === true;
+    let delivered = false;
+    let ended = false;
+    const self: { read: HistoryRead | null } = { read: null };
+    const end = (): void => {
+      ended = true;
+      if (self.read !== null) reads.delete(self.read);
+    };
+    const owned = (): boolean => !disposed && (track !== "older" || readEpoch === epoch);
+    const read = readHistory(deps.openHistory, query, {
+      onProgress: (progress, after) => {
+        if (!owned()) return;
+        if (after) setTransfer("fill", progress);
+        else if (track !== "quiet") setTransfer(track, progress);
+      },
+      onWindow: (window) => {
+        delivered = true;
+        if (waitingRead === self.read) waitingRead = null;
+        if (fills) fillRead = self.read;
+        else end();
+        // The first paint's backfill keeps its row's last reading between its windows.
+        if (track === "window" || (track === "older" && owned() && !backfilling)) {
+          setTransfer(track, null);
+        }
+        resolve(window);
+      },
+      onFilled: () => {
+        end();
+        if (fillRead === self.read) fillRead = null;
+        setTransfer("fill", null);
+      },
+      onError: (message) => {
+        end();
+        if (waitingRead === self.read) waitingRead = null;
+        if (delivered) {
+          // The fill failed behind a transcript already on screen: older windows are still
+          // read on scroll, so all the reader loses is the head start.
+          if (fillRead === self.read) fillRead = null;
+          setTransfer("fill", null);
+          return;
+        }
+        if (track === "window" || (track === "older" && owned())) setTransfer(track, null);
+        reject(new Error(message));
+      },
+    });
+    self.read = read;
+    if (!ended) reads.add(read);
+    if (track === "window") {
+      if (waitingRead !== null && waitingRead !== read) {
+        waitingRead.close();
+        reads.delete(waitingRead);
+      }
+      waitingRead = delivered ? null : read;
+    }
+    return { done, read };
+  };
 
   /** Reset all windowed-history bookkeeping to "everything loaded from the beginning". */
   const resetPaging = (): void => {
     prefixItems = [];
     prefixSubagents = new Map();
     prependCount = 0;
-    prefixTasks = 0;
+    prefixUnits = 0;
     nextBefore = null;
     tailStartCursor = null;
+    tailPage = undefined;
     older.hasMore = false;
     older.loading = false;
     older.error = null;
+    older.beyondTail = false;
     outlineOffset = 0;
   };
 
   /** Adopt a TAIL page's pagination envelope as the fresh baseline (initial load / prefix-dropping rebuild). */
   const adoptTailPage = (page: MessagesPageInfo | undefined): void => {
     resetPaging();
+    tailPage = page;
     if (page === undefined) return; // full transcript: nothing older exists by definition
     nextBefore = page.before ?? null;
     tailStartCursor = page.before ?? null;
     older.hasMore = page.before !== undefined;
     outlineOffset = page.earlierTurns;
+  };
+
+  /**
+   * The older window being read stops: a rebuild owns the chain now, a retry starts it over.
+   * Its read is closed — the bytes behind it stop — and the row lets it go.
+   */
+  const stopOlder = (): void => {
+    if (olderRead !== null) {
+      olderRead.close();
+      reads.delete(olderRead);
+      olderRead = null;
+    }
+    backfilling = false;
+    older.loading = false;
+    setTransfer("older", null);
+  };
+
+  /**
+   * A subagent a backfilled window spawned can still speak (it runs on in the background past
+   * its Task): the live model takes that window's child model over before anything reaches it,
+   * so the child's live records, its pending approvals and its card land on the history the
+   * window holds, not on a new, empty child.
+   */
+  const adoptEarlierChild = (origin: readonly string[] | undefined): void => {
+    const head = origin?.[0];
+    if (head === undefined || model.subagents.has(head)) return;
+    const earlier = prefixSubagents.get(head);
+    if (earlier !== undefined) model.subagents.set(head, earlier);
   };
 
   /** Full clear (resync rebuilds): the server resends every still-pending approval_request on the same connection, child ones included. */
@@ -383,6 +457,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   };
 
   const feedRecord = (msg: AmspRecord, dedup: Set<string> | null): void => {
+    adoptEarlierChild(msg.origin);
     // The SDK has already produced an approval_decision: sync the pending-approvals table (keyed by the origin composite key).
     if (isEventMessage(msg) && msg.payload.type === "approval_decision") {
       if (pending.delete(approvalKey(msg.origin, msg.payload.tool_call_id))) {
@@ -404,14 +479,22 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         const entry: PendingApproval = { toolCall: ev.toolCall };
         if (ev.origin) entry.origin = ev.origin;
         pending.set(approvalKey(ev.origin, toolCallId), entry);
+        adoptEarlierChild(ev.origin);
+        const card = findToolCard(model, ev.origin, toolCallId);
         // Resend scenario (reload / mid-stream join): sub-session messages
         // aren't in the parent Trace, so the tool card can be missing —
         // feed the event's toolCall (with origin) to the reducer to rebuild the nested card, so the approval button is visible.
-        if (!findToolCard(model, ev.origin, toolCallId)) {
+        if (!card) {
           const msg: AmspRecord = { ...ev.toolCall };
           if (ev.origin && ev.origin.length > 0) msg.origin = [...ev.origin];
           else delete msg.origin;
           pushMessage(model, msg, now());
+          deps.onModelChange();
+        } else if (card.elidedCall !== undefined) {
+          // A history window folded this call's long arguments (a file to write, an edit); the
+          // approval carries them whole, and what is approved must be what is shown.
+          card.argumentsText = ev.toolCall.payload.arguments;
+          delete card.elidedCall;
           deps.onModelChange();
         }
         deps.onPendingChange();
@@ -453,33 +536,27 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   };
 
   /**
-   * resync_required decision tree — which refetch rebuilds the model. Resync means the
-   * SSE buffer was evicted and the transcript state is suspect, so every branch below
-   * chooses correctness over cleverness (ANY doubt falls back to the full read):
+   * resync_required decision tree — which refetch rebuilds the model. Resync means the SSE
+   * buffer was evicted and the transcript state is suspect, so every branch chooses what can
+   * be proven; and none of them takes away what the reader is looking at — the old transcript
+   * stays on screen until the new one is whole, and then holds every Task the old one held:
    *
-   *   1. No backfilled prefix → refetch the TAIL window. Identical in shape to the
-   *      initial load: the window is a disk-true suffix, the buffered events replay
-   *      with overlap dedup, and the live attachment weaves in under the existing
-   *      channel-epoch guard (weaveLiveTail skips seeding when the cursor's epoch
-   *      doesn't match the events seen on this connection).
-   *   2. Prefix retained → refetch the TAIL window and splice ONLY when continuity is
-   *      provable: the refetched window's start cursor must EQUAL the recorded start
-   *      of the current tail window (cursors are (shard, ordinal) positions on
-   *      immutable storage, so equality proves the new tail abuts the prefix exactly —
-   *      no gap, no overlap). Equality holds precisely when no new unit started since
-   *      the last tail fetch, the common mid-Task resync.
-   *   3. Prefix retained but the refetched tail reaches the very beginning (no cursor)
-   *      → the tail alone provably covers everything: drop the prefix and use it.
-   *   4. Anything else — the start cursor moved (new units arrived), or the response
-   *      carried no page envelope — is doubt: the prefix is dropped and the refetched
-   *      tail is the new baseline, backfilled again up to TAIL_UNITS Tasks like a first
-   *      load. Never the whole transcript: on a slow machine that is minutes on the
-   *      wire, with the live stream buffering behind it all the while.
+   *   1. The refetched tail starts where the current one started (cursors are (shard, ordinal)
+   *      positions on append-only storage, so equality proves the new tail abuts what lies
+   *      before it — no gap, no overlap): splice, the earlier windows kept as they are. The
+   *      common mid-Task resync.
+   *   2. It starts later (new units arrived): the windows between the two starts are read
+   *      while the old transcript stays on screen, the oldest cut exactly at the old start by
+   *      the records' Trace positions, and they join the earlier windows; nothing the reader
+   *      had is dropped and nothing is read twice. When the cut cannot be proven (a window
+   *      without a page, no record at the old start), the refetched tail is the new baseline
+   *      (case 3's shape).
+   *   3. It reaches the very beginning, or carries no page envelope (the whole transcript):
+   *      it alone covers everything, and the earlier windows give way to it.
    *
-   * The tail is read exactly as the first paint read it (same unit count, same byte
-   * budget), so with no new unit the same cut comes back and its start cursor matches.
-   * The decision runs inside load() (it needs the response); this entry only picks the
-   * request shape.
+   * The tail is read exactly as the first paint read it (same unit count, same byte budget),
+   * so with no new unit the same cut comes back. An older window in flight is closed first: it
+   * belongs to the chain being rebuilt.
    */
   const rebuild = async (): Promise<void> => {
     epoch += 1;
@@ -489,6 +566,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     // disconnected shouldn't leave a lingering button; the server will
     // resend still-pending approval_request events on the same connection afterward, naturally rebuilding it.
     clearPending();
+    stopOlder();
     // Atomic swap — deliberately NOT `onLoading(true)`. The fresh model (shared localDecisions
     // injected, so approvals decided on this end stay labeled "manual") is handed to load(), which
     // makes it the visible model only once history is back in hand. Until then the OLD transcript
@@ -500,8 +578,57 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     await load(epoch, createStreamModel(localDecisions), {
       // The fill rides along unless one already runs behind the transcript.
       query: firstPaint(fillRead === null),
-      splice: prefixItems.length > 0,
+      bridge: true,
     });
+  };
+
+  /** Cursors (`<shard>:<ordinal>`) in Trace order. */
+  const compareCursor = (a: string, b: string): number => {
+    const [af = 0, ao = 0] = a.split(":").map(Number);
+    const [bf = 0, bo = 0] = b.split(":").map(Number);
+    return af !== bf ? af - bf : ao - bo;
+  };
+
+  /**
+   * The windows between a refetched tail's start (`from`) and the old tail's (`to`; null: the
+   * beginning), read newest first behind the old transcript, the oldest cut at `to` by its
+   * records' Trace positions and seeded as the old tail was (`toPage`). Null when the cut
+   * cannot be proven.
+   */
+  const bridgeGap = async (
+    from: string,
+    to: string | null,
+    toPage: MessagesPageInfo,
+    currentEpoch: number,
+  ): Promise<HistoryWindow[] | null> => {
+    const windows: HistoryWindow[] = [];
+    let cursor = from;
+    for (let n = 0; n < MAX_BRIDGE_WINDOWS; n += 1) {
+      const w = await readWindow(
+        { kind: "before", cursor, limit: OLDER_UNITS },
+        "quiet",
+        currentEpoch,
+      ).done;
+      if (disposed || currentEpoch !== epoch || w.page === undefined) return null;
+      const start = w.page.before ?? null;
+      const pastOldStart = to === null ? start === null : start === null || compareCursor(start, to) <= 0;
+      if (!pastOldStart) {
+        windows.unshift(w);
+        cursor = start!;
+        continue;
+      }
+      if (to === null) {
+        windows.unshift(w);
+        return windows;
+      }
+      const cut = w.messages.findIndex(
+        (m) => m.tracePosition !== undefined && `${m.tracePosition.fileIndex}:${m.tracePosition.ordinal}` === to,
+      );
+      if (cut < 0) return null;
+      windows.unshift({ ...w, messages: w.messages.slice(cut), page: toPage });
+      return windows;
+    }
+    return null;
   };
 
   /**
@@ -554,25 +681,38 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   const load = async (
     currentEpoch: number,
     freshModel: StreamModel | undefined,
-    opts: { query: HistoryStreamQuery; splice?: boolean },
+    opts: { query: HistoryStreamQuery; bridge?: boolean },
   ): Promise<void> => {
     try {
-      const res = await readWindow(opts.query, "window");
+      const res = await readWindow(opts.query, "window", currentEpoch).done;
       if (disposed || currentEpoch !== epoch) return;
       const start = res.page?.before ?? null;
-      if (
-        opts.splice === true &&
-        res.page !== undefined &&
-        start !== null &&
-        start === tailStartCursor
-      ) {
-        // The resync decision tree's continuity branch (see rebuild): keep the prefix and
-        // the paging state exactly as they are.
+      const continuous = res.page !== undefined && start !== null && start === tailStartCursor;
+      let bridged: HistoryWindow[] | null = null;
+      if (opts.bridge === true && !continuous && start !== null && tailPage !== undefined) {
+        bridged = await bridgeGap(start, tailStartCursor, tailPage, currentEpoch);
+        if (disposed || currentEpoch !== epoch) return;
+      }
+      if (opts.bridge === true && continuous) {
+        // The resync decision tree's continuity branch (see rebuild): keep the prefix and the
+        // paging state exactly as they are.
+        tailPage = res.page;
+      } else if (bridged !== null) {
+        // The tail moved on: the windows between join the earlier ones, after them.
+        for (const w of bridged) {
+          const m = freeze(w, w.page!);
+          prefixItems = [...prefixItems, ...m.items];
+          prefixUnits += countUnits(w.messages);
+          prefixSubagents = new Map([...prefixSubagents, ...m.subagents]);
+        }
+        tailStartCursor = start;
+        tailPage = res.page;
       } else {
         // A fresh tail baseline: the initial load, a retry, a tail reaching the beginning,
-        // or doubt. Any previously-loaded prefix is superseded by the new window chain.
+        // or a cut that could not be proven. Any previously-loaded prefix is superseded.
         adoptTailPage(res.page);
       }
+      tailUnits = countUnits(res.messages);
       const { messages, live, serverNowMs } = res;
       // Rebuild path: make the freshly-built model visible only now, atomically — the old model
       // stayed on screen throughout the refetch above (see rebuild). Initial load / retry pass no
@@ -620,6 +760,17 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     }
   };
 
+  /** A window as a frozen model of its own: a fresh negative id base, priors seeded, its last Task closed. */
+  const freeze = (w: HistoryWindow, page: MessagesPageInfo): StreamModel => {
+    prependCount += 1;
+    const m = createStreamModel(localDecisions);
+    m.nextItemId = -prependCount * PREPEND_ID_SPAN;
+    seedWindow(m, page);
+    pushMessages(m, w.messages, now(), null);
+    finalizeHistory(m);
+    return m;
+  };
+
   /**
    * Scroll-up backfill: fetch the window of `limit` Tasks before the oldest loaded one and
    * prepend it. The window's messages build a FRESH model (its own negative id base, priors
@@ -627,29 +778,32 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * window follows), whose items freeze into the prefix: the live model's items are never
    * touched, so the transcript below stays exactly where it was. Guarded to the live phase: a
    * rebuild in flight owns the loading pipeline, and its epoch bump discards any backfill that
-   * raced it. True when a window was prepended.
+   * raced it. `auto`: the first paint's backfill, which a scroll-up waits for. True when a
+   * window was prepended.
    */
-  const loadOlderWindow = async (limit: number): Promise<boolean> => {
+  const loadOlderWindow = async (limit: number, auto: boolean): Promise<boolean> => {
     if (disposed || phase !== "live" || failed) return false;
-    if (older.loading || !older.hasMore || nextBefore === null) return false;
+    if (olderRead !== null || !older.hasMore || nextBefore === null) return false;
+    if (!auto && backfilling) return false;
     const currentEpoch = epoch;
     older.loading = true;
     older.error = null;
     deps.onModelChange();
+    const { done, read } = readWindow(
+      { kind: "before", cursor: nextBefore, limit },
+      "older",
+      currentEpoch,
+    );
+    olderRead = read;
     try {
-      const res = await readWindow({ kind: "before", cursor: nextBefore, limit }, "older");
+      const res = await done;
       if (disposed || currentEpoch !== epoch) return false;
       // A before-request against a server without windowing support would return the
       // full transcript with no envelope; prepending that would duplicate history.
       if (res.page === undefined) throw new Error("windowed history not supported");
-      prependCount += 1;
-      const m = createStreamModel(localDecisions);
-      m.nextItemId = -prependCount * PREPEND_ID_SPAN;
-      seedWindow(m, res.page);
-      pushMessages(m, res.messages, now(), null);
-      finalizeHistory(m);
+      const m = freeze(res, res.page);
       prefixItems = [...m.items, ...prefixItems];
-      prefixTasks += m.tasksStarted;
+      prefixUnits += countUnits(res.messages);
       // Child sessions live in exactly one window (a spawn is contained in its Task),
       // so the merge is disjoint; newer windows' entries win defensively on a clash.
       const mergedSubagents = new Map(m.subagents);
@@ -658,31 +812,48 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       nextBefore = res.page.before ?? null;
       older.hasMore = res.page.before !== undefined;
       outlineOffset = res.page.earlierTurns;
+      if (!auto) older.beyondTail = true;
       return true;
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return false;
       older.error = e instanceof Error ? e.message : String(e);
       return false;
     } finally {
+      if (olderRead === read) olderRead = null;
       if (!disposed && currentEpoch === epoch) {
-        older.loading = false;
+        older.loading = backfilling;
         deps.onModelChange();
       }
     }
   };
 
-  /** Tasks on screen: the live model's and every backfilled window's. */
-  const tasksOnScreen = (): number => model.tasksStarted + prefixTasks;
+  /** Units on screen: the tail window's and every frozen window's, counted as the server counts. */
+  const unitsOnScreen = (): number => tailUnits + prefixUnits;
 
   /**
    * After a first paint (or a rebuild that took a new baseline): older windows, each asking for
-   * the Tasks still missing, until TAIL_UNITS Tasks are on screen or the beginning is reached.
-   * Stops at the first window that does not land (a failure shows on the older row and is
-   * retried from there, a scroll-up already loading takes over, a newer epoch supersedes it).
+   * the units still missing, until TAIL_UNITS are on screen or the beginning is reached. The
+   * whole run is one loading state — the older row says one thing from its start to its end,
+   * never flipping between windows. Stops at the first window that does not land (a failure
+   * shows on the older row and is retried from there; a newer epoch supersedes it).
    */
   const backfill = async (currentEpoch: number): Promise<void> => {
-    while (!disposed && currentEpoch === epoch && tasksOnScreen() < TAIL_UNITS) {
-      if (!(await loadOlderWindow(TAIL_UNITS - tasksOnScreen()))) return;
+    if (disposed || currentEpoch !== epoch || !older.hasMore) return;
+    if (unitsOnScreen() >= TAIL_UNITS) return;
+    backfilling = true;
+    older.loading = true;
+    deps.onModelChange();
+    try {
+      while (!disposed && currentEpoch === epoch && older.hasMore && unitsOnScreen() < TAIL_UNITS) {
+        if (!(await loadOlderWindow(TAIL_UNITS - unitsOnScreen(), true))) break;
+      }
+    } finally {
+      if (!disposed && currentEpoch === epoch) {
+        backfilling = false;
+        older.loading = olderRead !== null;
+        setTransfer("older", null);
+        deps.onModelChange();
+      }
     }
   };
 
@@ -731,28 +902,35 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         return;
       }
       if (at > 0 && steps[at - 1]!.elided !== step.elided) record = step.elided.record;
-      reads.push(
-        readBody(openBody, step.entry.ref, {
-          onProgress: (doneBytes) => {
-            if (item.bodyLoad !== progress) return;
-            progress.doneBytes = base + Math.min(doneBytes, step.entry.bytes);
-            deps.onModelChange();
-          },
-          onValue: (value) => {
-            if (item.bodyLoad !== progress) return;
-            record = withElidedBody(record, step.entry.path, value);
-            if (step.last) takeWholeRecord(item, step.slot, record);
-            base += step.entry.bytes;
-            progress.doneBytes = base;
-            next(at + 1);
-          },
-          onError: (message) => {
-            if (item.bodyLoad !== progress) return;
-            item.bodyLoad = { ...progress, error: message };
-            deps.onModelChange();
-          },
-        }),
-      );
+      let ended = false;
+      const self: { read: { close: () => void } | null } = { read: null };
+      const end = (): void => {
+        ended = true;
+        if (self.read !== null) reads.delete(self.read);
+      };
+      self.read = readBody(openBody, step.entry.ref, {
+        onProgress: (doneBytes) => {
+          if (item.bodyLoad !== progress) return;
+          progress.doneBytes = base + Math.min(doneBytes, step.entry.bytes);
+          deps.onModelChange();
+        },
+        onValue: (value) => {
+          end();
+          if (item.bodyLoad !== progress) return;
+          record = withElidedBody(record, step.entry.path, value);
+          if (step.last) takeWholeRecord(item, step.slot, record);
+          base += step.entry.bytes;
+          progress.doneBytes = base;
+          next(at + 1);
+        },
+        onError: (message) => {
+          end();
+          if (item.bodyLoad !== progress) return;
+          item.bodyLoad = { ...progress, error: message };
+          deps.onModelChange();
+        },
+      });
+      if (!ended) reads.add(self.read);
     };
     next(0);
   };
@@ -795,6 +973,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       deps.onError(null);
       deps.onLoading(true);
       epoch += 1;
+      stopOlder();
       // A fill still running behind the old transcript carries on; only a read that never got
       // that far asks for one again.
       await load(epoch, createStreamModel(localDecisions), {
@@ -806,7 +985,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     },
     loadBodies,
     loadOlder: async () => {
-      await loadOlderWindow(OLDER_UNITS);
+      await loadOlderWindow(OLDER_UNITS, false);
     },
     handleRecord: (msg, eventId = null) => {
       if (disposed) return;
@@ -864,6 +1043,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // that sets approvalAtMs lands a broadcast later, and in that window an elapsed-time gate
       // reading the card would fall back to the call's start and count the human wait as
       // execution — then jump forward when the event finally arrives.
+      adoptEarlierChild(entry.origin);
       const card = findToolCard(model, entry.origin, entry.toolCall.payload.tool_call_id);
       if (card) card.localApprovalAtMs = now();
       deps.onPendingChange();
@@ -871,7 +1051,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     dispose: () => {
       disposed = true;
       // Leaving the conversation stops every transfer it started, at once.
-      for (const read of reads.splice(0)) read.close();
+      for (const read of [...reads]) read.close();
+      reads.clear();
       waitingRead = null;
       fillRead = null;
     },

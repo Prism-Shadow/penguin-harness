@@ -12,8 +12,10 @@
  * block below the row is always on screen and names the tool and its arguments.
  *
  * A call from a history window may carry its output, a long argument or a child's inline image
- * folded: the card shows the preview (head, an ellipsis line, tail) and fetches the whole when it
- * is opened (elided-body.tsx), then shows that instead.
+ * folded: the card shows the preview (head, an ellipsis line, tail — inside the argument's own
+ * string when an argument was folded) and fetches the whole when it is opened (elided-body.tsx),
+ * then shows that instead. An approval never shows a folded value: its block reads the call the
+ * pending approval carries, which the server always sends whole.
  */
 import { useMemo } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
@@ -22,7 +24,7 @@ import type { RunState, ToolCallDuration } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
-import { elidedPreview } from "../../lib/history/elided-preview";
+import { elidedArgumentsPreview, elidedPreview } from "../../lib/history/elided-preview";
 import { routedUrl } from "../../lib/session-machines";
 import { approvalKey } from "../../lib/amsp/stream-model";
 import type { ToolCallItem } from "../../lib/amsp/stream-model";
@@ -310,6 +312,9 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
   // the app (the tools config table, permission rules, the Trace viewer) keeps reading
   // `item.name`, so an alias can never change what a call means.
   const displayName = toolDisplayName(item.name, toolAliases);
+  // What is approved is what the approval itself carries: the whole call, never a history
+  // window's folded copy of it.
+  const approvalArguments = pending?.toolCall.payload.arguments ?? item.argumentsText;
   // Escape sequences are stripped at render time only (the stored stream/trace data keeps its
   // raw bytes): hardened child envs should no longer produce any, but historical traces and
   // force-color programs still can (#102). Memoized — the aggregated output can be large and
@@ -436,14 +441,14 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
       pending={
         pending
           ? {
-              preview: previewArguments(item.name, item.argumentsText),
-              payload: pendingFilePayload(item.name, item.argumentsText),
+              preview: previewArguments(item.name, approvalArguments),
+              payload: pendingFilePayload(item.name, approvalArguments),
               onDecide: (decision) => ctx.onApprove(item.toolCallId, decision, ctx.origin),
               labels: { allow: S.chat.approve, deny: S.chat.deny },
             }
           : undefined
       }
-      argumentsText={item.argumentsText}
+      argumentsText={elidedArgumentsPreview(item.argumentsText, item.elidedCall, "\n…\n")}
       output={output}
       outputStreaming={item.outputStreaming}
       images={

@@ -709,11 +709,6 @@ export interface StreamModel {
    * closed the cut-short Task first.
    */
   runEnded: boolean;
-  /**
-   * Tasks this model has opened (every `startTask`): how many Tasks of the conversation a
-   * window put on screen, which is what the first paint backfills older windows up to.
-   */
-  tasksStarted: number;
   nextItemId: number;
 }
 
@@ -749,7 +744,6 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     turnToolOutputs: false,
     reopenTaskAtSteering: false,
     runEnded: false,
-    tasksStarted: 0,
     nextItemId: 1,
   };
 }
@@ -1066,7 +1060,6 @@ function touchTask(model: StreamModel, timestamp: string): void {
 function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   // The previous Task is finalized by "the next Task starting" (the history-rebuild convention).
   finalizeOpenTask(model);
-  model.tasksStarted += 1;
   // Finalize any retry state left over from the previous Task: when the
   // server dies during a backoff window, the Trace's tail is
   // request_end(timeout) with no abort, and history rebuild would leave a
@@ -2391,34 +2384,37 @@ const KEY_SOURCE = { agentId: "", sessionId: "", fileIndex: 0, ordinal: 0 };
 /**
  * The envelope a history copy and its SSE copy share. Disk-only transport metadata
  * (`tracePosition`, the `elided` entries) must not make an otherwise identical SSE envelope look
- * new, and neither may a value's form. A history window carries its bulky values folded — a
- * tool's output, a long argument, a thinking block, as a head and a tail — while the stream
- * carries them whole, so the key folds the stream's copy by the same rule the server folds by
- * (folding a folded copy changes nothing), the way it stands in for images. And a windowed history
- * page carries a user `image_url` and a tool output's `images` by reference while the stream
- * carries the bytes: an SSE copy that escaped the overlap dedup would draw the person's image
- * twice. Two images of one prompt may then share a key (same timestamp); that is harmless, since
- * a history read holds a prompt whole (the server appends held inputs the Trace lacks), so each
- * stream copy has its own history copy to match.
+ * new, and neither may a value's form:
+ *
+ * - An image: a windowed history page carries a user `image_url` and a tool output's `images` by
+ *   reference while the stream carries the bytes, and an SSE copy that escaped the overlap dedup
+ *   would draw the person's image twice. Both forms stand in as one token — first, before
+ *   anything is folded, so a large inline image is never folded away on one side only. Two images
+ *   of one prompt may then share a key (same timestamp); that is harmless, since a history read
+ *   holds a prompt whole (the server appends held inputs the Trace lacks), so each stream copy
+ *   has its own history copy to match.
+ * - A bulky value: a history window carries a tool's output, a long argument or a thinking
+ *   block folded (a head and a tail) while the stream carries it whole, so the key folds the
+ *   stream's copy by the same rule the server folds by (folding a folded copy changes nothing).
  */
 function dedupKey(input: AmspRecord): string {
-  const msg = elideHistoryRecord(input as HistoryRecordLike, KEY_SOURCE).record;
+  let msg = input as HistoryRecordLike;
+  if (msg.type === "model_msg") {
+    const p = msg.payload as { type?: string; image_url?: unknown; images?: unknown };
+    if (p.type === "image_url") {
+      msg = { ...msg, payload: { ...p, image_url: imageInKey(p.image_url) } } as HistoryRecordLike;
+    } else if (p.type === "tool_call_output" && Array.isArray(p.images)) {
+      msg = { ...msg, payload: { ...p, images: p.images.map(imageInKey) } } as HistoryRecordLike;
+    }
+  }
+  const folded = elideHistoryRecord(msg, KEY_SOURCE).record;
   const {
     tracePosition: _tracePosition,
     elided: _elided,
     ...envelope
-  } = msg as HistoryRecordLike & {
+  } = folded as HistoryRecordLike & {
     tracePosition?: TracePosition;
   };
-  if (msg.type === "model_msg") {
-    const p = msg.payload as { type?: string; image_url?: unknown; images?: unknown };
-    if (p.type === "image_url") {
-      return JSON.stringify({ ...envelope, payload: { ...p, image_url: imageInKey(p.image_url) } });
-    }
-    if (p.type === "tool_call_output" && Array.isArray(p.images)) {
-      return JSON.stringify({ ...envelope, payload: { ...p, images: p.images.map(imageInKey) } });
-    }
-  }
   return JSON.stringify(envelope);
 }
 

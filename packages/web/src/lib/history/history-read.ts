@@ -126,6 +126,8 @@ export function readHistory(
           // stream, read again from scratch — left open, the socket would re-issue it for ever.
           if (window === null) throw new HistoryStreamBroken("done for a window never begun");
           delivered = true;
+          // The window is the caller's now; a fill read stays open, holding no copy of it.
+          assembler = new WindowAssembler();
           if (!fillsAfter) finish();
           sink.onWindow?.(window);
         });
@@ -210,7 +212,9 @@ export function readBody(open: OpenBody, ref: string, sink: BodyReadSink): { clo
       onDone: () => {
         if (!live()) return;
         finish();
-        sink.onValue(value);
+        const whole = value;
+        value = "";
+        sink.onValue(whole);
       },
       onError: (error) => {
         if (live()) fail(errorText(error));
